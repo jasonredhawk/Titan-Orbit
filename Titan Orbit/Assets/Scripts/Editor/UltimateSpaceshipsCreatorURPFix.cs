@@ -17,6 +17,7 @@ namespace TitanOrbit.Editor
         [MenuItem("Titan Orbit/Fix All UltimateSpaceshipsCreator Materials for URP")]
         public static void FixAllMaterialsForURP()
         {
+            // --- FixAllMaterialsForURP ---
             Shader urpLit = Shader.Find("Universal Render Pipeline/Lit")
                 ?? Shader.Find("Universal Render Pipeline/Simple Lit");
             Shader urpSkybox = Shader.Find("Universal Render Pipeline/Skybox/Cubemap")
@@ -74,6 +75,7 @@ namespace TitanOrbit.Editor
 
         static void ConvertStandardToURPLit(Material mat, Shader urpLit)
         {
+            // --- ConvertStandardToURPLit ---
             Texture mainTex = mat.HasProperty("_MainTex") ? mat.GetTexture("_MainTex") : null;
             Color baseColor = mat.HasProperty("_Color") ? mat.GetColor("_Color") : Color.white;
             Texture bumpMap = mat.HasProperty("_BumpMap") ? mat.GetTexture("_BumpMap") : null;
@@ -102,6 +104,7 @@ namespace TitanOrbit.Editor
 
         static void ConvertSkyboxToURP(Material mat, Shader urpSkybox)
         {
+            // --- ConvertSkyboxToURP ---
             // Built-in Skybox/Cubemap uses _Tex; URP Skybox/Cubemap uses _Tex as well
             Texture tex = mat.HasProperty("_Tex") ? mat.GetTexture("_Tex") : null;
             Color tint = mat.HasProperty("_Tint") ? mat.GetColor("_Tint") : new Color(0.5f, 0.5f, 0.5f, 0.5f);

@@ -4,8 +4,10 @@ using UnityEngine;
 namespace TitanOrbit.Camera
 {
     /// <summary>
-    /// Closed Catmull-Rom loop around the ship. Waypoint 0 is always the camera anchor
-    /// (current pose when the path is built). Segment 0 departs straight toward waypoint 1.
+    /// Closed Catmull-Rom camera path orbiting the local ship for theatrical idle / menu shots.
+    /// Waypoint 0 is always the camera anchor (current pose when the path is built); segment 0
+    /// departs straight toward waypoint 1. Used by cinematic camera rigs — not the gameplay follow
+    /// camera (<see cref="Game.CameraFollowEcs"/>). Internal class; configured from host MonoBehaviour.
     /// </summary>
     internal sealed class CameraTheatricalOrbit
     {
@@ -24,9 +26,14 @@ namespace TitanOrbit.Camera
         private System.Random rng;
         private bool hasPath;
 
+        /// <summary>[TITAN-ORBIT] Sets ship characteristic radius used for path radius multipliers.</summary>
         public void SetCharacteristicRadius(float radius) =>
             characteristicRadiusCached = Mathf.Max(1f, radius);
 
+        /// <summary>
+        /// Stores designer ranges for random waypoint generation and path duration. Called once
+        /// when the cinematic rig initializes.
+        /// </summary>
         public void ConfigurePathGeneration(
             int randomWaypointCount,
             float minElevationDeg,
@@ -76,8 +83,15 @@ namespace TitanOrbit.Camera
             hasPath = localWaypoints.Count >= 4;
         }
 
+        /// <summary>
+        /// Advances path progress; when complete, rebuilds a new random loop from the end pose.
+        /// </summary>
+        /// <param name="deltaTime">Frame delta in seconds.</param>
+        /// <param name="focusWorld">Ship/world focus point the path orbits.</param>
+        /// <param name="shipRotation">Ship orientation for local-space waypoint conversion.</param>
         public void Advance(float deltaTime, Vector3 focusWorld, Quaternion shipRotation)
         {
+            // --- Advance ---
             if (!hasPath || pathDurationSeconds <= 0.0001f)
                 return;
 
@@ -89,6 +103,10 @@ namespace TitanOrbit.Camera
             BeginPathFromCamera(endPosition, focusWorld, shipRotation);
         }
 
+        /// <summary>
+        /// Samples camera position along the current path segment. Outputs look target (focus) and
+        /// zoom blend based on distance from focus.
+        /// </summary>
         public void Sample(
             Vector3 focusWorld,
             Quaternion shipRotation,
@@ -140,6 +158,7 @@ namespace TitanOrbit.Camera
 
         private Vector3 GenerateRandomLocalOffset()
         {
+            // --- GenerateRandomLocalOffset ---
             float baseRadius = Mathf.Max(2f, characteristicRadiusCached);
             float azimuth = (float)(rng.NextDouble() * Mathf.PI * 2d);
             float elevDeg = Mathf.Lerp(minElevationDeg, maxElevationDeg, (float)rng.NextDouble());
@@ -159,6 +178,7 @@ namespace TitanOrbit.Camera
 
         private static Vector3 CatmullRom(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float t)
         {
+            // --- CatmullRom ---
             float t2 = t * t;
             float t3 = t2 * t;
             return 0.5f * (

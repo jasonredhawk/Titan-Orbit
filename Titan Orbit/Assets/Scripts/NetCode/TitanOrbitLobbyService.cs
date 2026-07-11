@@ -95,6 +95,7 @@ namespace TitanOrbit.NetCode
 
         public static List<LobbySummary> FilterBrowsableDedicatedLobbies(List<LobbySummary> lobbies)
         {
+            // --- FilterBrowsableDedicatedLobbies ---
             if (lobbies == null || lobbies.Count == 0)
                 return new List<LobbySummary>();
 
@@ -120,6 +121,7 @@ namespace TitanOrbit.NetCode
 
         static bool TryAcceptBrowsableDedicatedLobby(LobbySummary l, out string rejectReason)
         {
+            // --- Attempt resolution ---
             rejectReason = null;
             if (l == null)
             {
@@ -151,6 +153,7 @@ namespace TitanOrbit.NetCode
 
         static void LogBrowsableFilterRejections(List<LobbySummary> lobbies)
         {
+            // --- LogBrowsableFilterRejections ---
             for (int i = 0; i < lobbies.Count; i++)
             {
                 LobbySummary l = lobbies[i];
@@ -166,6 +169,7 @@ namespace TitanOrbit.NetCode
 
         static void LogQueryDiagnostics(string label, int rawCount, int filteredCount)
         {
+            // --- LogQueryDiagnostics ---
             string detail = LastOpenLobbyQueryKind.ToString();
             if (!string.IsNullOrEmpty(LastOpenLobbyQueryErrorDetail))
                 detail += ": " + LastOpenLobbyQueryErrorDetail;
@@ -206,6 +210,7 @@ namespace TitanOrbit.NetCode
 
         public static List<LobbySummary> FilterToJoinableDedicatedLobbies(List<LobbySummary> lobbies)
         {
+            // --- FilterToJoinableDedicatedLobbies ---
             if (lobbies == null || lobbies.Count == 0)
                 return lobbies ?? new List<LobbySummary>();
 
@@ -223,6 +228,7 @@ namespace TitanOrbit.NetCode
 
         public static bool IsDedicatedLobbyJoinable(Lobby lobby, out string rejectReason)
         {
+            // --- IsDedicatedLobbyJoinable ---
             rejectReason = null;
             if (lobby?.Data == null)
             {
@@ -261,6 +267,7 @@ namespace TitanOrbit.NetCode
 
         public static async Task<bool> RequestDedicatedMatchCreationAsync()
         {
+            // --- RequestDedicatedMatchCreationAsync ---
             try
             {
                 if (!await UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync())
@@ -319,6 +326,7 @@ namespace TitanOrbit.NetCode
 
         public static async Task<Lobby> QuickJoinLatestDedicatedLobbyAsync()
         {
+            // --- QuickJoinLatestDedicatedLobbyAsync ---
             if (!await UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync())
                 return null;
 
@@ -386,6 +394,7 @@ namespace TitanOrbit.NetCode
         /// <summary>Join a dedicated lobby by id; recovers when the player is already a member.</summary>
         public static async Task<Lobby> JoinDedicatedLobbyByIdAsync(string lobbyId, string leavePreviousLobbyId = null)
         {
+            // --- JoinDedicatedLobbyByIdAsync ---
             if (string.IsNullOrWhiteSpace(lobbyId))
                 return null;
 
@@ -442,6 +451,7 @@ namespace TitanOrbit.NetCode
         /// <summary>Leaves every UGS lobby the guest is in (avoids stale relay codes from old memberships).</summary>
         public static async Task TryLeaveAllJoinedLobbiesAsync(string reason)
         {
+            // --- Attempt resolution ---
             if (!await UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync())
                 return;
             if (!AuthenticationService.Instance.IsSignedIn)
@@ -472,6 +482,7 @@ namespace TitanOrbit.NetCode
 
         public static async Task TryRemovePlayerFromLobbyAsync(string lobbyId, string reason)
         {
+            // --- Attempt resolution ---
             if (string.IsNullOrWhiteSpace(lobbyId))
                 return;
             if (UnityServices.State != ServicesInitializationState.Initialized)
@@ -509,6 +520,7 @@ namespace TitanOrbit.NetCode
 
         static JoinLobbyByIdOptions BuildJoinLobbyByIdOptions()
         {
+            // --- Build data ---
             var options = new JoinLobbyByIdOptions();
             string playerId = AuthenticationService.Instance.PlayerId;
             if (!string.IsNullOrEmpty(playerId))
@@ -518,6 +530,7 @@ namespace TitanOrbit.NetCode
 
         static bool IsLobbyJoinAlreadyMemberFailure(LobbyServiceException e)
         {
+            // --- IsLobbyJoinAlreadyMemberFailure ---
             if (e == null)
                 return false;
             if (e.Reason == LobbyExceptionReason.LobbyConflict || e.Reason == LobbyExceptionReason.Conflict)
@@ -529,6 +542,7 @@ namespace TitanOrbit.NetCode
 
         internal static async Task AcquireLobbyApiGateAsync()
         {
+            // --- AcquireLobbyApiGateAsync ---
 #if UNITY_WEBGL && !UNITY_EDITOR
             while (!LobbyApiGate.Wait(0))
                 await Task.Yield();
@@ -542,6 +556,7 @@ namespace TitanOrbit.NetCode
         /// <summary>Registers the player's Relay join allocation with UGS Lobby (required for Relay routing).</summary>
         public static async Task TryUpdatePlayerRelayAllocationAsync(string lobbyId, string allocationId)
         {
+            // --- Attempt resolution ---
             if (string.IsNullOrWhiteSpace(lobbyId) || string.IsNullOrWhiteSpace(allocationId))
                 return;
 
@@ -682,6 +697,7 @@ namespace TitanOrbit.NetCode
 
         static async Task<QueryResponse> QueryLobbiesAsyncUnguarded(QueryLobbiesOptions options)
         {
+            // --- QueryLobbiesAsyncUnguarded ---
             try
             {
                 return await LobbyService.Instance.QueryLobbiesAsync(options);
@@ -694,6 +710,7 @@ namespace TitanOrbit.NetCode
 
         static List<QueryFilter> BuildDedicatedLobbyQueryFilters(bool latestOnly)
         {
+            // --- Build data ---
             var filters = new List<QueryFilter>
             {
                 new QueryFilter(QueryFilter.FieldOptions.S1, LobbyGameNameValue, QueryFilter.OpOptions.EQ),
@@ -706,6 +723,7 @@ namespace TitanOrbit.NetCode
 
         static LobbySummary ToLobbySummary(Lobby lobby)
         {
+            // --- ToLobbySummary ---
             int maxPlayerCapacity = Mathf.Max(1, lobby.MaxPlayers);
             int playersFromMemberList = lobby.Players != null ? lobby.Players.Count : 0;
             int playersFromAvailableSlots = Mathf.Clamp(maxPlayerCapacity - lobby.AvailableSlots, 0, maxPlayerCapacity);
@@ -765,6 +783,7 @@ namespace TitanOrbit.NetCode
 
         static bool IsDedicatedLobbyStale(Lobby lobby)
         {
+            // --- IsDedicatedLobbyStale ---
             if (lobby?.Data == null || !lobby.Data.ContainsKey(LobbyServerListenAddressKey))
                 return false;
             return TryGetDedicatedLobbyHeartbeatAgeSeconds(lobby, out long ageSeconds) &&
@@ -773,6 +792,7 @@ namespace TitanOrbit.NetCode
 
         public static bool TryGetDedicatedLobbyHeartbeatAgeSeconds(Lobby lobby, out long ageSeconds)
         {
+            // --- Attempt resolution ---
             ageSeconds = 0;
             if (lobby?.Data == null)
                 return false;
@@ -788,6 +808,7 @@ namespace TitanOrbit.NetCode
 
         public static bool IsDedicatedLobbyHeartbeatTooOld(Lobby lobby, int maxAgeSeconds, out long ageSeconds)
         {
+            // --- IsDedicatedLobbyHeartbeatTooOld ---
             if (!TryGetDedicatedLobbyHeartbeatAgeSeconds(lobby, out ageSeconds))
                 return true;
             return ageSeconds > maxAgeSeconds;
@@ -795,6 +816,7 @@ namespace TitanOrbit.NetCode
 
         static bool IsDedicatedLobbySummaryStale(LobbySummary summary)
         {
+            // --- IsDedicatedLobbySummaryStale ---
             if (summary == null || !summary.IsDedicatedServer)
                 return false;
 
@@ -808,6 +830,7 @@ namespace TitanOrbit.NetCode
 
         static bool IsLikelyLobbyRateLimitException(Exception e)
         {
+            // --- IsLikelyLobbyRateLimitException ---
             if (e == null) return false;
             if (e is LobbyServiceException lse && lse.Reason == LobbyExceptionReason.RateLimited)
                 return true;

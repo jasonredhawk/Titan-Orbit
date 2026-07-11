@@ -47,6 +47,7 @@ namespace TitanOrbit.Game
 
         public void Show()
         {
+            // --- Show ---
             if (_screenRoot != null && _lobbyScroll == null)
             {
                 Destroy(_screenRoot);
@@ -66,6 +67,7 @@ namespace TitanOrbit.Game
 
         async Task ShowAndRefreshAsync()
         {
+            // --- ShowAndRefreshAsync ---
             SetStatus("Connecting to multiplayer services...");
             bool ugsReady = await UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync();
             if (!ugsReady)
@@ -80,6 +82,7 @@ namespace TitanOrbit.Game
 
         public void Hide()
         {
+            // --- Hide ---
             if (_screenRoot != null)
                 _screenRoot.SetActive(false);
             if (mainMenuPanel != null)
@@ -88,6 +91,7 @@ namespace TitanOrbit.Game
 
         void Update()
         {
+            // --- Per-frame refresh ---
             if (!IsVisible || _refreshInProgress || _joinInProgress)
                 return;
 
@@ -104,6 +108,7 @@ namespace TitanOrbit.Game
 
         void EnsureUi()
         {
+            // --- Ensure setup ---
             if (_screenRoot != null)
                 return;
 
@@ -210,6 +215,7 @@ namespace TitanOrbit.Game
 
         async Task RefreshAsync(bool silent)
         {
+            // --- RefreshAsync ---
             if (_refreshInProgress)
                 return;
 
@@ -290,6 +296,7 @@ namespace TitanOrbit.Game
 
         void ApplySummaries(List<TitanOrbitLobbyService.LobbySummary> fetched, bool silent)
         {
+            // --- Apply changes ---
             _cached.Clear();
             _cached.AddRange(fetched);
             _selectedLobbyId = null;
@@ -313,6 +320,7 @@ namespace TitanOrbit.Game
 
         Transform ResolveUiHost()
         {
+            // --- Resolve value ---
             if (mainMenuPanel != null)
             {
                 var canvas = mainMenuPanel.GetComponentInParent<Canvas>();
@@ -328,6 +336,7 @@ namespace TitanOrbit.Game
 
         void RebuildLobbyListLayout()
         {
+            // --- Rebuild cache ---
             if (_listContainer == null)
                 return;
 
@@ -346,6 +355,7 @@ namespace TitanOrbit.Game
 
         void RenderList()
         {
+            // --- RenderList ---
             if (_listContainer == null)
             {
                 Debug.LogWarning("[JoinGameBrowser] RenderList skipped — list container missing.");
@@ -379,6 +389,7 @@ namespace TitanOrbit.Game
 
         static string FormatRowLabel(TitanOrbitLobbyService.LobbySummary summary)
         {
+            // --- FormatRowLabel ---
             string latest = summary.IsLatest ? " · Latest" : " · Older match";
             string joinable = summary.IsLatest ? "" : " (join via Quick join if latest is full)";
             string duration = FormatDuration(summary.CreatedAtEpochSeconds);
@@ -387,6 +398,7 @@ namespace TitanOrbit.Game
 
         static string FormatDuration(long createdAtEpochSeconds)
         {
+            // --- FormatDuration ---
             if (createdAtEpochSeconds <= 0)
                 return "—";
             long ageSec = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - createdAtEpochSeconds;
@@ -399,6 +411,7 @@ namespace TitanOrbit.Game
 
         void SelectRow(int index)
         {
+            // --- SelectRow ---
             if (index < 0 || index >= _cached.Count)
                 return;
             _selectedRowIndex = index;
@@ -410,6 +423,7 @@ namespace TitanOrbit.Game
 
         void UpdateRequestButton()
         {
+            // --- Per-frame refresh ---
             if (_requestMatchButton == null)
                 return;
             _requestMatchButton.gameObject.SetActive(true);
@@ -418,6 +432,7 @@ namespace TitanOrbit.Game
 
         async Task QuickJoinAsync()
         {
+            // --- QuickJoinAsync ---
             if (_joinInProgress || TitanOrbitSessionManager.Instance == null)
                 return;
             _joinInProgress = true;
@@ -449,6 +464,7 @@ namespace TitanOrbit.Game
 
         async Task JoinSelectedAsync()
         {
+            // --- JoinSelectedAsync ---
             if (_joinInProgress || string.IsNullOrWhiteSpace(_selectedLobbyId) ||
                 TitanOrbitSessionManager.Instance == null)
                 return;
@@ -487,6 +503,7 @@ namespace TitanOrbit.Game
 
         static async Task<bool> WaitForDedicatedConnectionAsync(float timeoutSeconds)
         {
+            // --- WaitForDedicatedConnectionAsync ---
             float deadline = Time.realtimeSinceStartup + timeoutSeconds;
             while (Time.realtimeSinceStartup < deadline)
             {
@@ -510,6 +527,7 @@ namespace TitanOrbit.Game
 
         async Task RequestMatchAsync()
         {
+            // --- RequestMatchAsync ---
             if (_requestInProgress)
                 return;
 
@@ -561,6 +579,7 @@ namespace TitanOrbit.Game
 
         static GameObject CreateChild(string name, Transform parent, params Type[] components)
         {
+            // --- Create instance ---
             var go = new GameObject(name, components);
             go.transform.SetParent(parent, false);
             return go;
@@ -568,6 +587,7 @@ namespace TitanOrbit.Game
 
         static TextMeshProUGUI CreateLabel(string name, string text, Transform parent, float fontSize)
         {
+            // --- Create instance ---
             var go = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI));
             go.transform.SetParent(parent, false);
             var label = go.GetComponent<TextMeshProUGUI>();
@@ -582,6 +602,7 @@ namespace TitanOrbit.Game
 
         static Button CreateButton(string name, string label, Transform parent, Vector2 size, bool primary)
         {
+            // --- Create instance ---
             var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
             go.transform.SetParent(parent, false);
             var rt = go.GetComponent<RectTransform>();

@@ -21,6 +21,7 @@ namespace TitanOrbit.ECS.Editor
 
         public static void SetLocalPlayUiEnabled(bool enabled)
         {
+            // --- SetLocalPlayUiEnabled ---
             var config = EnsureAsset();
             config.showLocalPlayOptions = enabled;
             EditorUtility.SetDirty(config);
@@ -29,8 +30,10 @@ namespace TitanOrbit.ECS.Editor
                       (enabled ? "" : " (production-style menu)."));
         }
 
+        /// <summary>Creates Resources/TitanOrbitMultiplayerConfig.asset if missing.</summary>
         public static TitanOrbitMultiplayerConfig EnsureAsset()
         {
+            // --- Ensure setup ---
             var existing = AssetDatabase.LoadAssetAtPath<TitanOrbitMultiplayerConfig>(AssetPath);
             if (existing != null)
                 return existing;

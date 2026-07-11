@@ -15,8 +15,13 @@ namespace TitanOrbit.Game
 
         public MapGenerationSettings Settings => settings;
 
+        /// <summary>
+        /// [UNITY] Awake — loads <see cref="MapGenerationSettings"/> into static cache for ECS bootstrap.
+        /// Lets designers tweak map asset without rebaking SubScene.
+        /// </summary>
         void Awake()
         {
+            // --- Unity lifecycle ---
             if (settings == null)
                 settings = TryLoadDefaultAsset();
 
@@ -34,6 +39,7 @@ namespace TitanOrbit.Game
 
         static MapGenerationSettings TryLoadDefaultAsset()
         {
+            // --- Attempt resolution ---
 #if UNITY_EDITOR
             return UnityEditor.AssetDatabase.LoadAssetAtPath<MapGenerationSettings>(DefaultAssetPath);
 #else

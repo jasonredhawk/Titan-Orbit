@@ -4,6 +4,11 @@ using TitanOrbit.Data;
 
 namespace TitanOrbit.Editor
 {
+    /// <summary>
+    /// [EDITOR] Menu command to populate <see cref="PlanetMaterialPool"/> from the CW Space Graphics
+    /// Toolkit PLANETS pack. Creates the asset under Assets/Data if missing. Designer runs once
+    /// after importing planet materials — not used at runtime.
+    /// </summary>
     public static class PlanetMaterialPoolEditor
     {
         const string PLANETS_MATERIALS_PATH = "Assets/Plugins/CW/SpaceGraphicsToolkit/Packs/PLANETS/Materials";
@@ -11,6 +16,7 @@ namespace TitanOrbit.Editor
         [MenuItem("Titan Orbit/Populate Planet Material Pool From CW Pack")]
         public static void PopulateFromCWPack()
         {
+            // --- Discover CW planet materials ---
             string[] guids = AssetDatabase.FindAssets("t:Material", new[] { PLANETS_MATERIALS_PATH });
             if (guids.Length == 0)
             {
@@ -18,6 +24,7 @@ namespace TitanOrbit.Editor
                 return;
             }
 
+            // --- Load or create PlanetMaterialPool asset ---
             var pool = AssetDatabase.LoadAssetAtPath<PlanetMaterialPool>("Assets/Data/PlanetMaterialPool.asset");
             if (pool == null)
             {
@@ -27,6 +34,7 @@ namespace TitanOrbit.Editor
                 AssetDatabase.CreateAsset(pool, "Assets/Data/PlanetMaterialPool.asset");
             }
 
+            // --- Fill surface materials from pack ---
             pool.Materials.Clear();
             pool.WaterMaterials.Clear();
 

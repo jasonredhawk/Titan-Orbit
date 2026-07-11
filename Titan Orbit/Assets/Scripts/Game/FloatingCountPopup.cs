@@ -4,7 +4,10 @@ using UnityEngine.Rendering;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Runtime-created world-space popup: rises upward, fades in, then fades out.</summary>
+    /// <summary>
+    /// [HYBRID] Runtime-created world-space popup: rises on the play plane, billboards to camera,
+    /// fades in then out. Spawned by <see cref="WorldFloatingCountManager"/> — cosmetic feedback only.
+    /// </summary>
     public class FloatingCountPopup : MonoBehaviour
     {
         const float MinPopupWorldY = 4f;
@@ -53,6 +56,9 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Configures text/icon, lifetime, rise speed, and optional ship-follow anchor.
+        /// </summary>
         public void Initialize(
             string message,
             Sprite iconSprite,
@@ -80,6 +86,7 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            // --- Motion timing ---
             lifetime = Mathf.Max(0.1f, duration);
             this.riseSpeed = Mathf.Max(0.15f, riseSpeed);
             lateralVelocity = Vector3.zero;

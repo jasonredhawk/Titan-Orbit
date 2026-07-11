@@ -7,14 +7,22 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Re-applies identity and baseline stats when <see cref="CardData"/> assets lost serialized fields
     /// (e.g. empty cardId) but still use generator file names like <c>ae_pf_L1_r1_kinetic</c>.
+    /// Called from <see cref="CardData.OnEnable"/> and editor <c>OnValidate</c>. Formulas mirror
+    /// <see cref="CardDeckBalance"/> and <see cref="CardDeckRuntimeDefaults"/>.
     /// </summary>
     public static class CardDataRuntimeRestore
     {
         private static readonly string[] RarityNames = { "", "Common", "Uncommon", "Rare", "Epic", "Legendary" };
 
+        /// <summary>Matches ae_pf_L3_r2_kinetic style names — level, rarity, kind suffix.</summary>
         private static readonly Regex TieredRarity = new Regex(@"_L(\d+)_r(\d+)_(\w+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        /// <summary>Matches ae_pf_L3_afterburn style names — level and kind only.</summary>
         private static readonly Regex TieredSimple = new Regex(@"_L(\d+)_(\w+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+        /// <summary>
+        /// Parses <paramref name="card"/>.name when cardId or displayName is missing. No-op when both
+        /// fields are already populated.
+        /// </summary>
         public static void TryRestoreFromAssetName(CardData card)
         {
             if (card == null || string.IsNullOrEmpty(card.name)) return;
@@ -24,6 +32,7 @@ namespace TitanOrbit.Data
             if (string.IsNullOrEmpty(card.cardId))
                 card.cardId = assetName;
 
+            // --- Try tiered+rarity pattern first (most generated shop cards) ---
             var tiered = TieredRarity.Match(assetName);
             if (tiered.Success)
             {
@@ -33,6 +42,7 @@ namespace TitanOrbit.Data
                 return;
             }
 
+            // --- Fallback: level + kind without rarity column ---
             var simple = TieredSimple.Match(assetName);
             if (simple.Success)
             {
@@ -47,6 +57,7 @@ namespace TitanOrbit.Data
         private static int ParseRarity(string s, int fallback) =>
             int.TryParse(s, out int r) && r >= 1 && r <= 5 ? r : Mathf.Clamp(fallback, 1, 5);
 
+        /// <summary>Applies one of the eight tiered+rarity card kinds (kinetic, aegis, cargo, …).</summary>
         private static void ApplyTiered(CardData c, int L, int r, string kind)
         {
             c.cardLevel = L;
@@ -117,6 +128,7 @@ namespace TitanOrbit.Data
                 c.gemCost = CardDeckBalance.SuggestedGemCost(L, r);
         }
 
+        /// <summary>Applies single-rarity cards (afterburn, gyro, regen, mine, colony, titanforge).</summary>
         private static void ApplySimple(CardData c, int L, string kind)
         {
             c.cardLevel = L;

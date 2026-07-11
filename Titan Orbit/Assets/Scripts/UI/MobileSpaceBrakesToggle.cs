@@ -4,6 +4,7 @@ using TitanOrbit.Input;
 
 namespace TitanOrbit.UI
 {
+    // --- Type members ---
     /// <summary>
     /// Touch/click control that toggles the same space-brakes mode as Left Ctrl on desktop.
     /// </summary>

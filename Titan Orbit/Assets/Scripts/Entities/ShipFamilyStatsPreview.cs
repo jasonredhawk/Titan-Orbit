@@ -33,6 +33,7 @@ namespace TitanOrbit.Entities
         /// <summary>Re-scans child transforms and refreshes serialized total/matched lists for inspector display.</summary>
         public void RecalculateFromChildren()
         {
+            // --- RecalculateFromChildren ---
             totalStats = default;
             matchedComponentIds.Clear();
             perComponentStats.Clear();

@@ -7,16 +7,19 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Client-side handler for <see cref="RejoinShipResultRpc"/> responses from the server.
+    /// [NETCODE] Client-side handler for <see cref="RejoinShipResultRpc"/> responses from the server.
     /// Updates <see cref="ClientTeamFlowState"/> so UI and input systems know whether the player
-    /// resumed an existing ship or chose to start fresh. Runs on ClientSimulation world only.
+    /// resumed an existing ship or chose to start fresh. World: ClientSimulation.
+    /// Paired with RejoinShipManagementSystem on the server.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct RejoinShipResultClientSystem : ISystem
     {
+        /// <summary>[NETCODE] Consumes RejoinShipResultRpc entities each frame.</summary>
         public void OnUpdate(ref SystemState state)
         {
+            // --- Drain RPC queue ---
             var ecb = new EntityCommandBuffer(Allocator.Temp);
             foreach (var (result, entity) in SystemAPI.Query<RefRO<RejoinShipResultRpc>>().WithEntityAccess())
             {
@@ -28,10 +31,14 @@ namespace TitanOrbit.ECS
             ecb.Dispose();
         }
 
-        /// <summary>Maps RPC result to client team-flow state machine transitions.</summary>
+        /// <summary>
+        /// [HYBRID] Maps RPC result to client team-flow state machine transitions.
+        /// [BurstDiscard] — touches managed Debug and ClientTeamFlowState.
+        /// </summary>
         [BurstDiscard]
         static void ApplyResult(RejoinShipResultRpc rpc)
         {
+            // --- Failure path ---
             if (rpc.Success == 0)
             {
                 UnityEngine.Debug.LogWarning("[RejoinShipResult] Failed: " + rpc.Message);
@@ -40,7 +47,7 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // Choice 1 = resume existing ship on assigned team.
+            // --- Choice 1 = resume existing ship on assigned team ---
             if (rpc.Choice == 1)
             {
                 ClientTeamFlowState.ChooseUseExistingShip();
@@ -49,7 +56,7 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // Choice 2 = abandon saved ship — show team picker for a fresh start.
+            // --- Choice 2 = abandon saved ship — show team picker for a fresh start ---
             if (rpc.Choice == 2)
             {
                 ClientTeamFlowState.ChooseStartFreshShip();

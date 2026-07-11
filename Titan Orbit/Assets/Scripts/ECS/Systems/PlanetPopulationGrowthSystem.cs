@@ -6,7 +6,11 @@ using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Ensures planets have growth state (subscene / runtime spawns).</summary>
+    /// <summary>
+    /// Server bootstrap pass that adds <see cref="PlanetGrowthState"/> to any planet ghost missing it.
+    /// Runs before population growth and gem deposit so fractional population math has storage.
+    /// World: ServerSimulation. Group: SimulationSystemGroup, before PlanetPopulationGrowthSystem.
+    /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateBefore(typeof(PlanetPopulationGrowthSystem))]
     [UpdateBefore(typeof(GemDepositSystem))]
@@ -15,6 +19,7 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
+            // [ECS/DOTS] ECB defers structural changes until after the query loop.
             var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
 
             foreach (var (planet, entity) in SystemAPI.Query<RefRO<PlanetState>>()
@@ -34,8 +39,11 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Grows planet population toward max cap over time (legacy Planet server Update).
-    /// Pauses growth briefly after hostile population events. Writes replicated Population on PlanetState.
+    /// Server-authoritative passive population growth on planets toward level-based caps.
+    /// Uses fractional accumulator in <see cref="PlanetGrowthState"/> for smooth growth; replicates
+    /// integer <see cref="PlanetState.Population"/> to clients. Pauses briefly after hostile
+    /// population events (attacks). Runs after people transport sim updates orbit counts.
+    /// World: ServerSimulation.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -44,6 +52,7 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
+            // --- Timestep ---
             float dt = SystemAPI.Time.DeltaTime;
             float now = (float)SystemAPI.Time.ElapsedTime;
 
@@ -54,12 +63,14 @@ namespace TitanOrbit.ECS
                 ref var planet = ref planetState.ValueRW;
                 ref var growth = ref growthState.ValueRW;
 
+                // [TITAN-ORBIT] Max population scales with planet visual size and upgrade level.
                 float planetSize = math.max(0.5f, transform.ValueRO.Scale);
                 int maxPop = PlanetPopulationMath.GetMaxPopulation(planetSize, planet.PlanetLevel);
                 float maxPopF = maxPop;
 
                 SyncFractionalPopulation(ref planet, ref growth);
 
+                // --- At cap — snap and skip growth ---
                 if (growth.FractionalPopulation >= maxPopF - 0.0001f)
                 {
                     growth.FractionalPopulation = maxPopF;
@@ -67,6 +78,7 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
+                // [TITAN-ORBIT] Growth pauses after attacks for a designer-tuned cooldown window.
                 if (now < growth.LastHostilePopulationImpactServerTime +
                     PlanetPopulationMath.PopulationGrowthPauseAfterAttackSeconds)
                     continue;
@@ -80,6 +92,9 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>
+        /// Reconciles fractional accumulator when replicated integer Population was changed externally.
+        /// </summary>
         static void SyncFractionalPopulation(ref PlanetState planet, ref PlanetGrowthState growth)
         {
             int rounded = PlanetPopulationMath.FractionalToDisplayPopulation(growth.FractionalPopulation, int.MaxValue);

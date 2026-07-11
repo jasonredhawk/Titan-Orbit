@@ -23,6 +23,7 @@ namespace TitanOrbit.Entities
             float startFactor,
             float endFactor)
         {
+            // --- Attach stretch driver and set initial slug length ---
             if (tracerRoot == null || visual == null)
                 return false;
 
@@ -50,6 +51,7 @@ namespace TitanOrbit.Entities
 
         private void ApplyLengthFactor(float lengthFactor)
         {
+            // --- Scale along Z and anchor rear at tracer origin ---
             Vector3 scale = baseUniformScale;
             scale.z *= lengthFactor;
             visualRoot.localScale = scale;

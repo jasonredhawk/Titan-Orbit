@@ -7,7 +7,8 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-side world floating +/- popups with per-channel visibility toggles (Inspector).
+    /// [HYBRID] Client-side world floating +/- popups with per-channel visibility toggles.
+    /// Spawned by EcsFloatingCountPresenter on replicated state deltas. Singleton accessed via Instance.
     /// </summary>
     public class WorldFloatingCountManager : MonoBehaviour
     {
@@ -59,6 +60,7 @@ namespace TitanOrbit.Game
 
         void Awake()
         {
+            // --- Singleton guard for floating count spawner ---
             if (floatingCountVisibility == null)
                 floatingCountVisibility = new FloatingCountChannelVisibility();
 
@@ -102,6 +104,9 @@ namespace TitanOrbit.Game
 #endif
         }
 
+        /// <summary>
+        /// Spawns a single-line popup parented to a ship hull anchor for the given channel delta.
+        /// </summary>
         public void ShowFloatingCount(Transform shipAnchor, FloatingCountChannel channel, float signedAmount, TeamId team)
         {
             if (shipAnchor == null)
@@ -118,6 +123,7 @@ namespace TitanOrbit.Game
             if (abs < 0.01f)
                 return;
 
+            // --- Format label, icon, and team color by channel ---
             int amountInt = Mathf.RoundToInt(abs);
             if (amountInt <= 0)
                 amountInt = 1;

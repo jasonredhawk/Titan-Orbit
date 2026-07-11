@@ -10,19 +10,27 @@ namespace TitanOrbit.ECS
     /// Pure functions — no EntityManager. Called by <see cref="MapGenerationSystem"/> on the server.</summary>
     public static class MapGenerationLogic
     {
+        /// <summary>Minimum teams supported by home-planet polygon placement.</summary>
         public const int MinSupportedTeams = 2;
+
+        /// <summary>Maximum teams supported by home-planet polygon placement.</summary>
         public const int MaxSupportedTeams = 5;
+
+        /// <summary>Home planets use a larger gem-moon influence radius for map spacing math.</summary>
         public const float HomeGemMoonScaleMultiplier = 1.5f;
 
         const float MinAsteroidRadius = 0.35f;
         const float MaxAsteroidRadius = MinAsteroidRadius * 10f;
 
+        /// <summary>One planet's world position and clearance ring for overlap tests during placement.</summary>
         public struct PlanetPlacement
         {
             public float3 Position;
+            /// <summary>World units — orbit rings and neutral placement avoid this radius.</summary>
             public float InfluenceRadius;
         }
 
+        /// <summary>Random draw for one match — produced once in <see cref="RollParameters"/>.</summary>
         public struct RolledParameters
         {
             public uint Seed;
@@ -34,6 +42,7 @@ namespace TitanOrbit.ECS
             public int AsteroidClusterCount;
         }
 
+        /// <summary>Spawn layout for one team's home planet before entity instantiation.</summary>
         public struct HomePlanetLayout
         {
             public float3 Position;
@@ -41,6 +50,7 @@ namespace TitanOrbit.ECS
             public int Level;
         }
 
+        /// <summary>Spawn layout for one neutral planet before entity instantiation.</summary>
         public struct NeutralPlanetLayout
         {
             public float3 Position;
@@ -48,6 +58,7 @@ namespace TitanOrbit.ECS
             public int Level;
         }
 
+        /// <summary>Spawn layout for one asteroid — scale is non-uniform for visual variety.</summary>
         public struct AsteroidLayout
         {
             public float3 Position;
@@ -65,11 +76,17 @@ namespace TitanOrbit.ECS
             return seed == 0 ? 1u : seed;
         }
 
+        /// <summary>
+        /// Rolls map size, team count, neutral planet count, and asteroid counts from config bounds.
+        /// Uses config.Seed when non-zero; otherwise uses the ephemeral fallback from the caller.
+        /// </summary>
         public static RolledParameters RollParameters(in MapGenerationConfig config, uint fallbackSeed)
         {
+            // --- Seed and RNG ---
             uint seed = config.Seed != 0 ? (uint)config.Seed : fallbackSeed;
             var rng = Random.CreateFromIndex(seed);
 
+            // --- Map dimensions (square map — width equals height) ---
             float mapLo = math.min(config.MinMapSize, config.MaxMapSize);
             float mapHi = math.max(config.MinMapSize, config.MaxMapSize);
             float mapSize = rng.NextFloat(mapLo, mapHi);
@@ -103,6 +120,10 @@ namespace TitanOrbit.ECS
             };
         }
 
+        /// <summary>
+        /// Places home planets on a toroidal map as a regular polygon with separation scoring.
+        /// Clears and fills <paramref name="output"/> and seeds <paramref name="planetPlacements"/>.
+        /// </summary>
         public static void BuildHomePlanets(
             in MapGenerationConfig config,
             in RolledParameters rolled,
@@ -140,6 +161,10 @@ namespace TitanOrbit.ECS
             positions.Dispose();
         }
 
+        /// <summary>
+        /// Places neutral planets avoiding existing planet influence rings; randomizes starting level
+        /// when configured. Appends to <paramref name="planetPlacements"/> for asteroid placement.
+        /// </summary>
         public static void BuildNeutralPlanets(
             in MapGenerationConfig config,
             in RolledParameters rolled,
@@ -177,6 +202,10 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>
+        /// Fills asteroid clusters around sector-sampled centers; gem value scales visual size.
+        /// Skips positions that overlap planet rings or other asteroids within min spacing.
+        /// </summary>
         public static void BuildAsteroids(
             in MapGenerationConfig config,
             in RolledParameters rolled,

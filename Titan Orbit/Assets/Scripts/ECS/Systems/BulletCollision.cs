@@ -5,21 +5,26 @@ using Unity.Mathematics;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Pure math helpers for swept bullet segment tests on a toroidal map. Shared by authoritative
-    /// <see cref="BulletSimulationSystem"/> and cosmetic <see cref="BulletTracerUpdateSystem"/>.
-    /// Burst-compatible — no EntityManager access.
+    /// [ECS/DOTS] Pure math helpers for swept bullet segment tests on a toroidal map. Shared by
+    /// authoritative <see cref="BulletSimulationSystem"/> and cosmetic tracer update systems.
+    /// [BurstCompile] target — no EntityManager access.
     /// </summary>
     public static class BulletCollision
     {
-        /// <summary>Logical center repositioned to the map tile nearest <paramref name="unwrapOrigin"/>.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Logical center repositioned to the map tile nearest unwrapOrigin for toroidal accuracy.
+        /// </summary>
         public static float3 UnwrapCenterNear(float3 unwrapOrigin, float3 logicalCenter, float mapW, float mapH)
         {
+            // [TITAN-ORBIT] Shortest toroidal offset places obstacle in the same "tile" as the segment.
             float3 center = unwrapOrigin + ToroidalMapEcs.ShortestOffsetXZ(unwrapOrigin, logicalCenter, mapW, mapH);
             center.y = logicalCenter.y;
             return center;
         }
 
-        /// <summary>Swept segment vs sphere on a torus — unwraps obstacle center near the segment start.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Swept segment vs sphere on a torus — unwraps obstacle center near segment start.
+        /// </summary>
         public static bool SegmentHitsSphereToroidal(
             float3 from,
             float3 to,
@@ -33,18 +38,24 @@ namespace TitanOrbit.ECS
             return SegmentHitsSphere(from, to, center, radius, out hitPoint);
         }
 
-        /// <summary>Swept segment vs sphere — returns the first contact point along [from, to].</summary>
+        /// <summary>
+        /// [STANDARD] Swept segment vs sphere — returns the first contact point along [from, to].
+        /// Uses quadratic ray-sphere intersection with t clamped to [0,1].
+        /// </summary>
         public static bool SegmentHitsSphere(float3 from, float3 to, float3 center, float radius, out float3 hitPoint)
         {
             hitPoint = to;
+            // --- Flatten to XZ plane (top-down shooter) ---
             from.y = center.y;
             to.y = center.y;
 
             float3 delta = to - from;
             float deltaLenSq = math.lengthsq(delta);
+            // --- Degenerate segment: point-in-sphere test ---
             if (deltaLenSq < 1e-8f)
                 return math.distance(from, center) <= radius;
 
+            // --- Quadratic coefficients for ray-sphere ---
             float3 oc = from - center;
             float a = deltaLenSq;
             float b = 2f * math.dot(oc, delta);

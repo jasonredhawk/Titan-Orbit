@@ -40,6 +40,7 @@ namespace TitanOrbit.UI
 
         void Awake()
         {
+            // --- Unity lifecycle ---
             AutoBindReferences();
             CacheRows();
             ApplyLayoutToAllRows();
@@ -48,6 +49,7 @@ namespace TitanOrbit.UI
 
         void OnEnable()
         {
+            // --- Unity lifecycle ---
             AutoBindReferences();
             CacheRows();
             ApplyLayoutToAllRows();
@@ -57,6 +59,7 @@ namespace TitanOrbit.UI
         /// <summary>Finds Bar/Value children under Row0..Row3 when serialized fields are unset.</summary>
         void AutoBindReferences()
         {
+            // --- AutoBindReferences ---
             if (barHealth != null)
                 return;
 
@@ -83,6 +86,7 @@ namespace TitanOrbit.UI
 
         void CacheRows()
         {
+            // --- CacheRows ---
             _rows = new[]
             {
                 new StatBarRow { Bar = barHealth, Value = valueHealth },
@@ -95,6 +99,7 @@ namespace TitanOrbit.UI
         /// <summary>Polls ECS each frame and updates four stat rows; zeros bars when local ship is missing.</summary>
         void LateUpdate()
         {
+            // --- Per-frame refresh ---
             if (!_layoutApplied)
                 ApplyLayoutToAllRows();
             if (!_barsStyled)
@@ -117,6 +122,7 @@ namespace TitanOrbit.UI
 
         void UpdateRow(ref StatBarRow row, float current, float max)
         {
+            // --- Per-frame refresh ---
             float displayCurrent = max > 0.0001f ? Mathf.Min(current, max) : current;
             float fill01 = max > 0.0001f ? Mathf.Clamp01(displayCurrent / max) : 0f;
             SetBarFill(row.Bar, fill01);
@@ -131,6 +137,7 @@ namespace TitanOrbit.UI
 
         static void SetBarFill(Slider bar, float fill01)
         {
+            // --- SetBarFill ---
             if (bar == null)
                 return;
 
@@ -149,6 +156,7 @@ namespace TitanOrbit.UI
 
         void ApplyLayoutToAllRows()
         {
+            // --- Apply changes ---
             if (_rows == null)
                 CacheRows();
             for (int i = 0; i < _rows.Length; i++)
@@ -158,6 +166,7 @@ namespace TitanOrbit.UI
 
         void ApplyRowLayout(ref StatBarRow row)
         {
+            // --- Apply changes ---
             if (row.Value != null)
             {
                 var tmp = row.Value;
@@ -198,6 +207,7 @@ namespace TitanOrbit.UI
 
         void ApplySquareBarStyleToAll()
         {
+            // --- Apply changes ---
             if (_rows == null)
                 CacheRows();
             for (int i = 0; i < _rows.Length; i++)
@@ -207,6 +217,7 @@ namespace TitanOrbit.UI
 
         static void ApplySquareBarStyle(Slider slider)
         {
+            // --- Apply changes ---
             if (slider == null)
                 return;
 
@@ -232,6 +243,7 @@ namespace TitanOrbit.UI
 
         static Sprite GetSquareBarSprite()
         {
+            // --- Compute value ---
             if (s_squareBarSprite != null)
                 return s_squareBarSprite;
 

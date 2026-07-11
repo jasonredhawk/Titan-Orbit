@@ -6,11 +6,12 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Client-only: points the connection's CommandTarget at the locally owned ship ghost so NetCode
-    /// packages ShipInput commands for the dedicated-server path. Team spawn is server-side, so the
-    /// client must discover its ship via GhostOwner.NetworkId after the server assigns ownership.
+    /// [NETCODE] Client-only: points the connection's CommandTarget at the locally owned ship ghost so
+    /// NetCode packages ShipInput commands for the dedicated-server path. Team spawn is server-side,
+    /// so the client must discover its ship via GhostOwner.NetworkId after the server assigns ownership.
     /// Runs first in GhostInputSystemGroup, before ShipInputApplySystem. Skipped for local host play
     /// (ShipServerControlSystem writes input directly on the server world).
+    /// World: ClientSimulation.
     /// </summary>
     [UpdateInGroup(typeof(GhostInputSystemGroup), OrderFirst = true)]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
@@ -21,11 +22,16 @@ namespace TitanOrbit.ECS
             state.RequireForUpdate<NetworkStreamInGame>();
         }
 
+        /// <summary>
+        /// [NETCODE] Each GhostInput tick: find local ship ghost and set CommandTarget.targetEntity.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            // --- Skip local host (server writes input directly) ---
             if (IsLocalHostPlay())
                 return;
 
+            // --- Skip during team-pick / rejoin UI ---
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 return;
 

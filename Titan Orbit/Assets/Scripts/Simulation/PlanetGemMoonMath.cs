@@ -3,9 +3,15 @@ using UnityEngine;
 
 namespace TitanOrbit.Simulation
 {
-    /// <summary>Gem-moon orbit and scale helpers ported from legacy Planet.</summary>
+    /// <summary>
+    /// [TITAN-ORBIT] Shared math for gem moons orbiting planets — visual scale, dock/shield radii, orbit offset,
+    /// and combat constants (shield regen, gem drain, enemy repel). Used by server
+    /// <c>PlanetGemMoonCombatLogic</c>, client moon proxies, and map generation placement. Pure static helpers —
+    /// no ECS or Unity lifecycle.
+    /// </summary>
     public static class PlanetGemMoonMath
     {
+        /// <summary>Reference planet diameter for inverse-size moon scaling curve.</summary>
         const float GemMoonReferencePlanetSize = 20f;
         const float GemMoonInversePlanetSizeCap = 10f;
         const float GemMoonDockOrbitZoneRadiusOverBody = 1.95f * 1.2f;
@@ -22,11 +28,16 @@ namespace TitanOrbit.Simulation
         public const float EnemyShieldRepelMinSpeed = 8f;
         public const float EnemyShieldRepelMaxSpeed = 22f;
 
+        /// <summary>[TITAN-ORBIT] Max shield HP scales linearly with planet level.</summary>
         public static float GetMaxShieldForLevel(int planetLevel) =>
             math.max(0.001f, BaseMaxShieldPoints * math.max(1, planetLevel));
 
+        /// <summary>
+        /// Uniform local scale for moon mesh — larger on small planets (inverse size cap), boosted for homeworld.
+        /// </summary>
         public static float ComputeVisualUniformScale(float planetSize, float homeScaleMultiplier = 1f)
         {
+            // --- Compute value ---
             planetSize = Mathf.Max(0.01f, planetSize);
             float baseAtRef = Mathf.Clamp(GemMoonReferencePlanetSize * 0.0035f, 0.02f, 0.1f) * 2.5f;
             float inv = GemMoonReferencePlanetSize / planetSize;
@@ -39,6 +50,7 @@ namespace TitanOrbit.Simulation
 
         public static float EstimateOrbitRadiusWorld(float planetSize, int planetLevel, float homeScaleMultiplier = 1f)
         {
+            // --- EstimateOrbitRadiusWorld ---
             const float moonOrbitOutsideFactor = 1.1f;
             const float clearanceMarginWorld = 0.4f;
 
@@ -60,6 +72,7 @@ namespace TitanOrbit.Simulation
         /// <summary>World-space radius used to keep map spawns outside a planet's orbit ring.</summary>
         public static float ComputeMapPlacementInfluenceRadiusWorld(float planetSize, int planetLevel, float homeScaleMultiplier = 1f)
         {
+            // --- Compute value ---
             const float orbitRingHalfThicknessLocal = 0.055f;
             float moonOrbitWorld = EstimateOrbitRadiusWorld(planetSize, planetLevel, homeScaleMultiplier);
             return moonOrbitWorld + Mathf.Max(0.01f, planetSize) * orbitRingHalfThicknessLocal;
@@ -67,6 +80,7 @@ namespace TitanOrbit.Simulation
 
         public static float GetMoonDockRadiusWorld(float planetSize, bool isHomePlanet)
         {
+            // --- Compute value ---
             float homeMul = isHomePlanet ? 1.5f : 1f;
             float uniform = ComputeVisualUniformScale(Mathf.Max(0.01f, planetSize), homeMul);
             float bodyLocalRadius = 0.5f * uniform;
@@ -76,6 +90,7 @@ namespace TitanOrbit.Simulation
 
         public static float GetMoonBodyRadiusWorld(float planetSize, bool isHomePlanet)
         {
+            // --- Compute value ---
             float homeMul = isHomePlanet ? 1.5f : 1f;
             float uniform = ComputeVisualUniformScale(Mathf.Max(0.01f, planetSize), homeMul);
             return 0.5f * uniform * Mathf.Max(0.01f, planetSize);
@@ -112,6 +127,7 @@ namespace TitanOrbit.Simulation
 
         public static float GetMoonSurfaceLandingRangeWorld(float planetSize, bool isHomePlanet, float shipRadiusEstimate = 0.8f)
         {
+            // --- Compute value ---
             float moonRadius = GetMoonBodyRadiusWorld(planetSize, isHomePlanet);
             const float surfaceStandoffOverMoonRadius = 0.08f;
             return moonRadius + shipRadiusEstimate + moonRadius * surfaceStandoffOverMoonRadius;

@@ -8,6 +8,7 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
+    // --- Type members ---
     /// <summary>
     /// Copies wing tractor-beam authoring from ship visual hull proxies into ShipWingTractorBeamElement
     /// on ship ghosts. Runs on server and client so both worlds have wing local poses and stats.

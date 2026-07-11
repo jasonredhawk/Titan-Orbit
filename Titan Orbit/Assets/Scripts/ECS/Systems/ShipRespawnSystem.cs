@@ -24,6 +24,7 @@ namespace TitanOrbit.ECS
 
         public void OnUpdate(ref SystemState state)
         {
+            // --- System OnUpdate ---
             float now = (float)SystemAPI.Time.ElapsedTime;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
@@ -55,6 +56,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         float3 FindHomeSpawnPosition(ref SystemState state, TeamId team)
         {
+            // --- FindHomeSpawnPosition ---
             float3 homePos = float3.zero;
             bool found = false;
 

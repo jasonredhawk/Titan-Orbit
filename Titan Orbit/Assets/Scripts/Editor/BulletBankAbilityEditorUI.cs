@@ -16,6 +16,7 @@ namespace TitanOrbit.Editor
 
         static BulletBankAbilityEditorUI()
         {
+            // --- BulletBankAbilityEditorUI ---
             var values = new List<BulletBankAbilityType>();
             var labels = new List<string>();
             foreach (BulletBankAbilityType t in Enum.GetValues(typeof(BulletBankAbilityType)))
@@ -36,6 +37,7 @@ namespace TitanOrbit.Editor
 
         public static BulletBankAbilityType ReadType(SerializedProperty abilityProperty)
         {
+            // --- ReadType ---
             var typeProp = abilityProperty.FindPropertyRelative("type");
             var raw = (BulletBankAbilityType)typeProp.intValue;
             if (raw == BulletBankAbilityType.ElectricShockRotationLock)
@@ -45,6 +47,7 @@ namespace TitanOrbit.Editor
 
         public static float GetHeight(SerializedProperty abilityProperty)
         {
+            // --- Compute value ---
             float line = EditorGUIUtility.singleLineHeight;
             float gap = EditorGUIUtility.standardVerticalSpacing + Spacing;
             int rows = 1 + CountVisibleFields(ReadType(abilityProperty));
@@ -53,6 +56,7 @@ namespace TitanOrbit.Editor
 
         public static void Draw(Rect rect, SerializedProperty abilityProperty)
         {
+            // --- Draw ---
             if (abilityProperty == null) return;
 
             float line = EditorGUIUtility.singleLineHeight;
@@ -119,6 +123,7 @@ namespace TitanOrbit.Editor
 
         private static void DrawTypePopup(Rect rect, SerializedProperty typeProp)
         {
+            // --- DrawTypePopup ---
             int current = typeProp.intValue;
             int selected = EditorGUI.IntPopup(rect, "Type", current, TypePopupLabels, GetTypePopupInts());
             if (selected != current)
@@ -127,6 +132,7 @@ namespace TitanOrbit.Editor
 
         private static int[] GetTypePopupInts()
         {
+            // --- Compute value ---
             var ints = new int[TypePopupValues.Length];
             for (int i = 0; i < TypePopupValues.Length; i++)
                 ints[i] = (int)TypePopupValues[i];
@@ -135,6 +141,7 @@ namespace TitanOrbit.Editor
 
         private static int CountVisibleFields(BulletBankAbilityType type)
         {
+            // --- CountVisibleFields ---
             return type switch
             {
                 BulletBankAbilityType.ElectricShockDisable => 1,
@@ -160,6 +167,7 @@ namespace TitanOrbit.Editor
 
         private static void DrawLabeled(Rect rect, SerializedProperty prop, string label)
         {
+            // --- DrawLabeled ---
             float labelW = rect.width * 0.44f;
             EditorGUI.LabelField(new Rect(rect.x, rect.y, labelW, rect.height), label);
             EditorGUI.PropertyField(new Rect(rect.x + labelW, rect.y, rect.width - labelW, rect.height), prop, GUIContent.none);

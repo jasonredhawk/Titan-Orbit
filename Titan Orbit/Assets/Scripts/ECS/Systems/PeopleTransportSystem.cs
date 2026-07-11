@@ -16,10 +16,16 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class PeopleTransportConstants
     {
+        /// <summary>Seconds a ship must dwell in orbit ring before people load/unload begins.</summary>
         public const float OrbitDwellBeforeTransferSeconds = 2f;
+
+        /// <summary>Multiplier on base transfer rate (1 = designer default).</summary>
         public const float TransferSpeedMultiplier = 1f;
+
+        /// <summary>Fallback hull radius when ship collider scale is unavailable.</summary>
         public const float DefaultShipHullRadius = 1f;
 
+        /// <summary>Locks Y to the flat map plane when writing transport transforms.</summary>
         public static void WriteTransform(ref LocalTransform transform, float3 position)
         {
             position.y = 0f;
@@ -45,6 +51,7 @@ namespace TitanOrbit.ECS
 
         public void OnUpdate(ref SystemState state)
         {
+            // --- System OnUpdate ---
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs))
                 return;
 
@@ -216,6 +223,7 @@ namespace TitanOrbit.ECS
 
         static Entity ResolvePeopleTransportPrefab(ref SystemState state, Entity fromRegistry)
         {
+            // --- Resolve value ---
             if (fromRegistry != Entity.Null)
                 return fromRegistry;
 
@@ -234,6 +242,7 @@ namespace TitanOrbit.ECS
         [BurstDiscard]
         static void LogMissingPrefab()
         {
+            // --- LogMissingPrefab ---
             UnityEngine.Debug.LogError(
                 "[PeopleTransport] GamePrefabs.PeopleTransport is missing. " +
                 "Assign PeopleTransportGhost on GamePrefabsRegistry, then re-bake GameplaySubScene " +
@@ -270,6 +279,7 @@ namespace TitanOrbit.ECS
 
         static int GetShipNetworkId(ref SystemState state, Entity shipEntity)
         {
+            // --- Compute value ---
             if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
                 return state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
             return 0;
@@ -384,6 +394,7 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
+            // --- System OnUpdate ---
             float dt = SystemAPI.Time.DeltaTime;
             float now = (float)SystemAPI.Time.ElapsedTime;
             float mapW = 1000f;
@@ -679,6 +690,7 @@ namespace TitanOrbit.ECS
 
         static void DeliverLoad(ref SystemState state, Entity shipEntity, ref ShipState ship, float amount, TeamId team)
         {
+            // --- DeliverLoad ---
             int space = ship.PeopleCapacity - ship.CurrentPeople;
             int toAdd = (int)math.min(amount, space);
             if (toAdd > 0)
@@ -714,6 +726,7 @@ namespace TitanOrbit.ECS
 
         static PeopleUnloadOutcome DeliverUnload(ref PlanetState planet, float amount, TeamId team, LocalTransform planetTransform, float planetSize)
         {
+            // --- DeliverUnload ---
             int maxPop = PlanetPopulationMath.GetMaxPopulation(planetSize, planet.PlanetLevel);
             int moved = (int)amount;
 
@@ -741,6 +754,7 @@ namespace TitanOrbit.ECS
         [BurstDiscard]
         public static void DestroyFromBulletDamage(ref SystemState state, Entity transportEntity, in PeopleTransportState transport)
         {
+            // --- DestroyFromBulletDamage ---
             var em = state.EntityManager;
             if (transport.Amount <= 0f)
             {
@@ -802,6 +816,7 @@ namespace TitanOrbit.ECS
     {
         public void OnCreate(ref SystemState state)
         {
+            // --- System OnCreate ---
             // Disabled: re-simulating transport motion on the client overwrote NetCode's interpolated
             // ghost LocalTransform every presentation frame, causing fast stepped visuals. The server
             // sim is authoritative; clients display the interpolated ghost snapshot only.

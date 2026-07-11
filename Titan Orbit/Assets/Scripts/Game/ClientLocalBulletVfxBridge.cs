@@ -19,12 +19,19 @@ namespace TitanOrbit.Game
     [DefaultExecutionOrder(66100)]
     public class ClientLocalBulletVfxBridge : MonoBehaviour
     {
+        /// <summary>Client-side fire-rate gate so VFX does not spam when input is held.</summary>
         float _fireCooldown;
+
+        /// <summary>Cached reference to scene input — resolved in Start.</summary>
         PlayerInputHandler _input;
 
+        /// <summary>
+        /// [UNITY] Auto-install on dedicated online clients when session manager exists in scene.
+        /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureInstalled()
         {
+            // --- Ensure setup ---
             if (FindAnyObjectByType<ClientLocalBulletVfxBridge>() != null)
                 return;
 
@@ -38,8 +45,13 @@ namespace TitanOrbit.Game
             _input = FindAnyObjectByType<PlayerInputHandler>();
         }
 
+        /// <summary>
+        /// Fires cosmetic tracers on shoot input for dedicated clients only (host uses server presentation events).
+        /// Reads predicted ship weapon config and presentation muzzle pose.
+        /// </summary>
         void LateUpdate()
         {
+            // --- Per-frame refresh ---
             if (_input == null || EcsGameBridge.IsLocalHost() || !TitanOrbitSessionManager.IsDedicatedOnlineClient)
                 return;
 

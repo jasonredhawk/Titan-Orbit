@@ -3,26 +3,30 @@ using Unity.Physics;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Collision layers for the Unity Physics world. Ships bounce off other ships and world bodies
-    /// (planets/asteroids) only. Gems and people-transports are gameplay-scripted movers, so they do
-    /// not physically collide with ships (ships collect gems / pass through transports by design).
-    /// </summary>
-    /// <summary>
-    /// Collision layer bit masks and pre-built CollisionFilter values for Unity Physics.
-    /// Baked onto ghost prefabs in *GhostAuthoring bakers. See ship-simulation rule for matrix.
+    /// Collision layer bit masks and pre-built <see cref="CollisionFilter"/> values for Unity Physics.
+    /// Baked onto ghost prefabs in *GhostAuthoring bakers. Ships bounce off ships and world bodies
+    /// (planets/asteroids) only; gems and people-transports are scripted movers with world collision
+    /// only — see ship-simulation rule for the full matrix.
     /// </summary>
     public static class TitanOrbitPhysicsLayers
     {
+        // --- Type members ---
         /// <summary>Layer bit — player and AI ships (dynamic bodies).</summary>
         public const uint Ships = 1u << 0;
+
         /// <summary>Layer bit — planets and asteroids (static bodies).</summary>
         public const uint World = 1u << 1;
+
         /// <summary>Layer bit — gem pickups (scripted motion, world collision only).</summary>
         public const uint Gems = 1u << 2;
-        /// <summary>Layer bit — people transport projectiles.</summary>
+
+        /// <summary>Layer bit — people transport projectiles (scripted motion, world collision only).</summary>
         public const uint Transports = 1u << 3;
 
-        /// <summary>[TITAN-ORBIT] Ships collide with other ships and world static geometry only.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Ship hull filter — collides with other ships and world static geometry only.
+        /// Used by <c>StarshipGhostAuthoring</c> baker.
+        /// </summary>
         public static readonly CollisionFilter Ship = new CollisionFilter
         {
             BelongsTo = Ships,
@@ -30,6 +34,10 @@ namespace TitanOrbit.ECS
             GroupIndex = 0,
         };
 
+        /// <summary>
+        /// Planet and asteroid static bodies — ships, gems, and transports may collide with world.
+        /// Used by <c>PlanetGhostAuthoring</c> and <c>AsteroidGhostAuthoring</c>.
+        /// </summary>
         public static readonly CollisionFilter WorldStatic = new CollisionFilter
         {
             BelongsTo = World,
@@ -37,6 +45,9 @@ namespace TitanOrbit.ECS
             GroupIndex = 0,
         };
 
+        /// <summary>
+        /// Gem pickup collider — world only so ships collect via proximity logic, not hull bounce.
+        /// </summary>
         public static readonly CollisionFilter Gem = new CollisionFilter
         {
             BelongsTo = Gems,
@@ -44,6 +55,9 @@ namespace TitanOrbit.ECS
             GroupIndex = 0,
         };
 
+        /// <summary>
+        /// People transport projectile — world only; ships pass through by design.
+        /// </summary>
         public static readonly CollisionFilter Transport = new CollisionFilter
         {
             BelongsTo = Transports,

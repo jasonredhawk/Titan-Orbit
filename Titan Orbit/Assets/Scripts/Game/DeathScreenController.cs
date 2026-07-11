@@ -5,7 +5,12 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Overlay while the local ship is destroyed and waiting to respawn.</summary>
+    /// <summary>
+    /// Full-screen overlay while the local ship is destroyed and waiting to respawn. Reads
+    /// <see cref="EcsGameBridge"/> local ship death state each frame; shows countdown from
+    /// server-authoritative respawn timer. Client presentation only — respawn is server-driven.
+    /// Hidden when not in-game or when the ship is alive again.
+    /// </summary>
     public class DeathScreenController : MonoBehaviour
     {
         [SerializeField] GameObject overlayRoot;
@@ -22,6 +27,7 @@ namespace TitanOrbit.Game
 
         void Update()
         {
+            // --- Guard: only show overlay when in-game with a local ship ghost ---
             if (!EcsGameBridge.IsNetworkInGame() || !EcsGameBridge.HasLocalPlayerShip())
             {
                 if (_wasDead)
@@ -38,6 +44,7 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            // --- Alive again: dismiss overlay ---
             if (!ship.IsDead)
             {
                 if (_wasDead)
@@ -53,6 +60,7 @@ namespace TitanOrbit.Game
             _wasDead = true;
             Show();
 
+            // --- Countdown from server RespawnAtTime (authoritative) ---
             float remaining = ShipRespawnSystem.RespawnDelaySeconds;
             if (EcsGameBridge.TryGetLocalShipDeathState(out var death))
             {

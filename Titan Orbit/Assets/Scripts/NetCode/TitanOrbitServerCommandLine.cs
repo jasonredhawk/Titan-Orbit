@@ -3,9 +3,14 @@ using UnityEngine;
 
 namespace TitanOrbit.NetCode
 {
-    /// <summary>Headless dedicated server launch parameters (GCE systemd, local testing).</summary>
+    /// <summary>
+    /// Headless dedicated server launch parameters parsed from command line (GCE systemd, local testing).
+    /// Consumed by <see cref="TitanOrbitDedicatedServerAutoBoot"/> and lobby registration. Defaults
+    /// match production GCE deploy; override via --maxPlayers=, --serverPort=, --relayProtocol=, etc.
+    /// </summary>
     public sealed class TitanOrbitServerCommandLine
     {
+        /// <summary>Default player cap when --maxPlayers is omitted.</summary>
         public const int DefaultMaxPlayers = 60;
         public const ushort DefaultServerPort = 7777;
         public const int DefaultEmptyMatchRecreateSeconds = 15 * 60;
@@ -22,8 +27,12 @@ namespace TitanOrbit.NetCode
         public int BootRetryDelaySeconds { get; private set; } = 5;
         public int WaitNetworkManagerSeconds { get; private set; } = 120;
 
+        /// <summary>
+        /// Parses all supported CLI flags from <see cref="System.Environment.GetCommandLineArgs"/>.
+        /// </summary>
         public static TitanOrbitServerCommandLine Parse()
         {
+            // --- Parse ---
             var config = new TitanOrbitServerCommandLine();
             config.MaxPlayers = Mathf.Max(2, GetArgInt("maxPlayers", DefaultMaxPlayers));
             config.ServerPort = (ushort)Mathf.Clamp(GetArgInt("serverPort", DefaultServerPort), 1, 65535);
@@ -38,8 +47,13 @@ namespace TitanOrbit.NetCode
             return config;
         }
 
+        /// <summary>
+        /// True when launch args include --titanOrbitDedicated or --titanOrbitDedicated=true/1.
+        /// Gates dedicated server auto-boot marker.
+        /// </summary>
         public static bool HasDedicatedFlag()
         {
+            // --- HasDedicatedFlag ---
             foreach (string arg in Environment.GetCommandLineArgs())
             {
                 if (arg == null)
@@ -63,6 +77,7 @@ namespace TitanOrbit.NetCode
         /// </summary>
         public static string SanitizeRelayProtocol(string raw)
         {
+            // --- SanitizeRelayProtocol ---
             if (string.IsNullOrWhiteSpace(raw))
                 return "dtls";
 
@@ -76,6 +91,7 @@ namespace TitanOrbit.NetCode
 
         static int GetArgInt(string name, int defaultValue)
         {
+            // --- Compute value ---
             string prefix = "--" + name + "=";
             foreach (string arg in Environment.GetCommandLineArgs())
             {
@@ -89,6 +105,7 @@ namespace TitanOrbit.NetCode
 
         static string GetArgString(string name, string defaultValue)
         {
+            // --- Compute value ---
             string prefix = "--" + name + "=";
             foreach (string arg in Environment.GetCommandLineArgs())
             {
@@ -101,6 +118,7 @@ namespace TitanOrbit.NetCode
 
         static bool GetArgBool(string name, bool defaultValue)
         {
+            // --- Compute value ---
             string prefix = "--" + name + "=";
             foreach (string arg in Environment.GetCommandLineArgs())
             {

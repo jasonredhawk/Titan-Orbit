@@ -18,6 +18,7 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
+            // --- System OnUpdate ---
             var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
 
             foreach (var (planet, entity) in SystemAPI.Query<RefRO<PlanetState>>()
@@ -51,6 +52,7 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
+            // --- System OnUpdate ---
             float dt = SystemAPI.Time.DeltaTime;
             double now = SystemAPI.Time.ElapsedTime;
 
@@ -96,6 +98,7 @@ namespace TitanOrbit.ECS
 
         public void OnUpdate(ref SystemState state)
         {
+            // --- System OnUpdate ---
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Gem == Entity.Null)
                 return;
 

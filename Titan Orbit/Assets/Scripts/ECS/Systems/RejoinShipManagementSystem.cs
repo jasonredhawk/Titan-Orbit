@@ -18,14 +18,17 @@ namespace TitanOrbit.ECS
     {
         public void OnCreate(ref SystemState state)
         {
+            // [ECS/DOTS] Team counts must exist before abandon can decrement roster slots.
             state.RequireForUpdate<TeamStateSingleton>();
         }
 
         public void OnUpdate(ref SystemState state)
         {
             var em = state.EntityManager;
+            // [ECS/DOTS] ECB — RPC entities are destroyed; CommandTarget updates are deferred safely.
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
+            // --- Resume existing ship RPC ---
             // [NETCODE] ReceiveRpcCommandRequest — incoming RPC entity; destroy after handling.
             foreach (var (req, entity) in SystemAPI.Query<RefRO<ReceiveRpcCommandRequest>>()
                          .WithAll<ResumeExistingShipCommand>().WithEntityAccess())
@@ -34,6 +37,7 @@ namespace TitanOrbit.ECS
                 HandleResume(ref state, em, ecb, req.ValueRO.SourceConnection);
             }
 
+            // --- Abandon ship and re-pick team RPC ---
             foreach (var (req, entity) in SystemAPI.Query<RefRO<ReceiveRpcCommandRequest>>()
                          .WithAll<AbandonShipForRejoinCommand>().WithEntityAccess())
             {
@@ -50,6 +54,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         void HandleResume(ref SystemState state, EntityManager em, EntityCommandBuffer ecb, Entity connection)
         {
+            // --- Resolve sender and saved ship ---
             if (!TryGetNetworkId(em, connection, out int networkId))
             {
                 SendResult(ecb, connection, success: false, choice: 1, team: TeamId.None, "Missing network id.");
@@ -84,6 +89,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         void HandleAbandon(ref SystemState state, EntityManager em, EntityCommandBuffer ecb, Entity connection)
         {
+            // --- Resolve sender; no ship is still a successful abandon (fresh team pick) ---
             if (!TryGetNetworkId(em, connection, out int networkId))
             {
                 SendResult(ecb, connection, success: false, choice: 2, team: TeamId.None, "Missing network id.");
@@ -109,6 +115,7 @@ namespace TitanOrbit.ECS
             LogAbandon(networkId, shipState.Team);
         }
 
+        /// <summary>Reads <see cref="NetworkId"/> from the NetCode connection entity that sent the RPC.</summary>
         static bool TryGetNetworkId(EntityManager em, Entity connection, out int networkId)
         {
             networkId = 0;
@@ -136,6 +143,7 @@ namespace TitanOrbit.ECS
             return false;
         }
 
+        /// <summary>Clears <see cref="CommandTarget"/> so team-pick UI can assign a new ship ghost later.</summary>
         static void ClearCommandTarget(EntityManager em, EntityCommandBuffer ecb, Entity connection)
         {
             if (connection == Entity.Null || !em.Exists(connection) || !em.HasComponent<CommandTarget>(connection))
@@ -143,8 +151,10 @@ namespace TitanOrbit.ECS
             ecb.SetComponent(connection, new CommandTarget { targetEntity = Entity.Null });
         }
 
+        /// <summary>Decrements one roster slot when a player abandons their ship mid-match.</summary>
         static void DecrementTeamCount(ref TeamStateSingleton team, TeamId teamId)
         {
+            // [TITAN-ORBIT] Clamp at zero — avoids negative counts if state was already adjusted.
             switch (teamId)
             {
                 case TeamId.TeamA: team.TeamACount = Unity.Mathematics.math.max(0, team.TeamACount - 1); break;

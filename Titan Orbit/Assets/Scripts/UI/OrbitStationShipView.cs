@@ -38,6 +38,7 @@ namespace TitanOrbit.Entities
         /// <summary>Singleton accessor — finds existing view or creates the DontDestroyOnLoad adapter.</summary>
         public static Starship GetOrCreate()
         {
+            // --- Compute value ---
             var existing = FindFirstObjectByType<Starship>();
             if (existing != null)
                 return existing;
@@ -53,6 +54,7 @@ namespace TitanOrbit.Entities
         /// </summary>
         public void SyncFromEcs(int storePlanetId)
         {
+            // --- SyncFromEcs ---
             if (!EcsGameBridge.TryGetLocalShipState(out var ship))
                 return;
 
@@ -80,6 +82,7 @@ namespace TitanOrbit.Entities
         /// <summary>Resolves <see cref="CurrentChassisId"/> from planet family config and upgrade-tree ladder slot.</summary>
         void ResolveChassisId(int storePlanetId)
         {
+            // --- Resolve value ---
             CurrentChassisId = null;
             var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
             if (config == null)
@@ -106,6 +109,7 @@ namespace TitanOrbit.Entities
         /// <summary>Copies equipped equipment buffer from visualization ECS world into legacy lists.</summary>
         void SyncLoadoutBuffers()
         {
+            // --- SyncLoadoutBuffers ---
             EquippedCards.Clear();
             EquippedEquipment.Clear();
 
@@ -136,6 +140,7 @@ namespace TitanOrbit.Entities
         /// <summary>Returns true when a ship component id is already in the equipped equipment buffer.</summary>
         public bool HasComponentEquipped(string componentId)
         {
+            // --- HasComponentEquipped ---
             if (string.IsNullOrWhiteSpace(componentId))
                 return false;
 

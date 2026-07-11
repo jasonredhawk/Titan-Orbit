@@ -14,6 +14,7 @@ namespace TitanOrbit.Game
 
         public static bool ShouldSkipRenderer(Renderer renderer)
         {
+            // --- ShouldSkipRenderer ---
             if (renderer == null)
                 return true;
 
@@ -44,6 +45,7 @@ namespace TitanOrbit.Game
 
         static bool IsWorldStatsLabelRenderer(Transform rendererTransform)
         {
+            // --- IsWorldStatsLabelRenderer ---
             Transform t = rendererTransform;
             while (t != null)
             {
@@ -60,6 +62,7 @@ namespace TitanOrbit.Game
 
         static bool IsUnderMoonVisual(Transform rendererTransform, Transform planetRoot)
         {
+            // --- IsUnderMoonVisual ---
             if (rendererTransform == null || planetRoot == null)
                 return false;
 
@@ -70,6 +73,7 @@ namespace TitanOrbit.Game
         /// <summary>Top of planet body geometry in planet-root local space (excludes orbiting moon).</summary>
         public static float GetPlanetSurfaceYLocal(Transform planetRoot)
         {
+            // --- Compute value ---
             if (planetRoot == null)
                 return 0.5f;
 
@@ -107,6 +111,7 @@ namespace TitanOrbit.Game
         /// <summary>Top of moon body geometry in moon-root local space.</summary>
         public static float GetMoonSurfaceYLocal(Transform moonRoot, float fallbackMoonRadius = 0.25f)
         {
+            // --- Compute value ---
             if (moonRoot == null)
                 return fallbackMoonRadius;
 
@@ -130,6 +135,7 @@ namespace TitanOrbit.Game
 
         public static float GetMoonLabelAnchorYLocal(float surfaceY, float fallbackSurfaceRadius = 0.25f)
         {
+            // --- Compute value ---
             if (surfaceY <= 0.001f)
                 surfaceY = fallbackSurfaceRadius;
             return surfaceY + MoonPaddingAboveSurfaceLocal;
@@ -137,6 +143,7 @@ namespace TitanOrbit.Game
 
         public static float GetPlanetLabelAnchorYLocal(float surfaceY, float fallbackSurfaceRadius = 0.5f)
         {
+            // --- Compute value ---
             if (surfaceY <= 0.001f)
                 surfaceY = fallbackSurfaceRadius;
             return surfaceY + PlanetPaddingAboveSurfaceLocal + surfaceY * PlanetTerrainClearanceOverRadius;
@@ -144,6 +151,7 @@ namespace TitanOrbit.Game
 
         public static void ApplySnugPlanetLabel(TextMeshPro label, Transform planetRoot)
         {
+            // --- Apply changes ---
             if (label == null || planetRoot == null)
                 return;
 
@@ -155,6 +163,7 @@ namespace TitanOrbit.Game
 
         public static void ApplySnugPlanetLabel(Transform labelRoot, Transform planetRoot)
         {
+            // --- Apply changes ---
             if (labelRoot == null || planetRoot == null)
                 return;
 
@@ -165,6 +174,7 @@ namespace TitanOrbit.Game
 
         public static void ApplySnugMoonLabel(TextMeshPro label, Transform moonRoot, float fallbackMoonRadius = 0.25f)
         {
+            // --- Apply changes ---
             if (label == null || moonRoot == null)
                 return;
 
@@ -175,6 +185,7 @@ namespace TitanOrbit.Game
 
         public static void ApplySnugMoonLabel(Transform labelRoot, Transform moonRoot, float fallbackMoonRadius = 0.25f)
         {
+            // --- Apply changes ---
             if (labelRoot == null || moonRoot == null)
                 return;
 

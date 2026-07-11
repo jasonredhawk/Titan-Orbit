@@ -1,8 +1,14 @@
 namespace TitanOrbit.Core
 {
-    /// <summary>Client-side team pick and dedicated rejoin ship-resume flow.</summary>
+    /// <summary>
+    /// Client-only state machine for team pick and dedicated-server rejoin ship-resume flow.
+    /// Written by <see cref="RejoinShipResultClientSystem"/>, team UI, and
+    /// <see cref="ClientCommandTargetSystem"/> gating. Prevents local ship control before the
+    /// player confirms team or rejoin choice. Not replicated — server uses ShipState flags.
+    /// </summary>
     public static class ClientTeamFlowState
     {
+        /// <summary>Player decision when reconnecting to a match with a saved ship.</summary>
         public enum RejoinShipChoice
         {
             NotApplicable,
@@ -23,12 +29,14 @@ namespace TitanOrbit.Core
 
         public static void ConfirmTeamChoice()
         {
+            // --- Server acknowledged team — unlock normal play ---
             TeamChoiceConfirmed = true;
             LockRejoinEligibility();
         }
 
         public static void Reset()
         {
+            // --- Full session reset (disconnect, return to menu) ---
             TeamChoiceConfirmed = false;
             RejoinChoice = RejoinShipChoice.NotApplicable;
             _teamPickRequested = false;
@@ -38,6 +46,7 @@ namespace TitanOrbit.Core
         /// <summary>Call when the player clicks a team button (before server ack).</summary>
         public static void NotifyTeamPickRequested()
         {
+            // --- Optimistic team pick — block late rejoin prompts ---
             _teamPickRequested = true;
             LockRejoinEligibility();
         }
@@ -45,6 +54,7 @@ namespace TitanOrbit.Core
         /// <summary>Allow retry after a failed team RPC without treating the spawned ship as a rejoin.</summary>
         public static void ClearTeamPickRequest()
         {
+            // --- RPC failed before confirm — allow another team click ---
             if (TeamChoiceConfirmed)
                 return;
             _teamPickRequested = false;
@@ -58,6 +68,7 @@ namespace TitanOrbit.Core
         /// </summary>
         public static void TryNotifyRejoinableShip(bool hasRejoinableShip)
         {
+            // --- Guard: only promote to Pending during valid rejoin window ---
             if (!hasRejoinableShip || _rejoinEligibilityLocked || TeamChoiceConfirmed || IsRejoinChoiceResolved)
                 return;
             if (RejoinChoice == RejoinShipChoice.NotApplicable)
@@ -74,6 +85,7 @@ namespace TitanOrbit.Core
 
         public static void ChooseStartFreshShip()
         {
+            // --- Fresh spawn path — player must pick team again ---
             RejoinChoice = RejoinShipChoice.StartFresh;
             TeamChoiceConfirmed = false;
         }
@@ -87,6 +99,7 @@ namespace TitanOrbit.Core
         /// <summary>Block command target / local ship tagging until the player finishes rejoin UI.</summary>
         public static bool ShouldSuppressLocalPlayerControl()
         {
+            // --- Block input until rejoin UI or fresh-team flow completes ---
             if (RejoinChoice == RejoinShipChoice.Pending)
                 return true;
             if (RejoinChoice == RejoinShipChoice.StartFresh && !TeamChoiceConfirmed)

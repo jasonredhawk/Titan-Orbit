@@ -2,7 +2,10 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Deterministic gentle tumble for asteroid presentation proxies.</summary>
+    /// <summary>
+    /// [HYBRID] Deterministic gentle tumble for asteroid presentation proxies. Position-hash seeds
+    /// axis and speed so each asteroid looks unique but stable across frames. Render only.
+    /// </summary>
     public class AsteroidSpinVisualProxy : MonoBehaviour
     {
         Vector3 _rotationAxis;
@@ -11,6 +14,7 @@ namespace TitanOrbit.Game
 
         public void Configure(Vector3 worldPosition)
         {
+            // --- Seed RNG from world XZ for stable per-asteroid spin ---
             int hash = (int)(worldPosition.x * 1000f + worldPosition.z * 1000f);
             var rng = new System.Random(hash);
             _rotationAxis = new Vector3(
@@ -28,6 +32,7 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
+            // --- Cosmetic world-space rotation ---
             if (!_configured || _rotationAxis.sqrMagnitude < 0.01f)
                 return;
 

@@ -88,6 +88,7 @@ namespace TitanOrbit.Audio
 
         private void Awake()
         {
+            // --- Unity lifecycle ---
             if (Instance == null)
             {
                 Instance = this;
@@ -101,6 +102,7 @@ namespace TitanOrbit.Audio
 
         private void Start()
         {
+            // --- Unity lifecycle ---
             if (musicSource == null)
             {
                 musicSource = gameObject.AddComponent<AudioSource>();
@@ -126,6 +128,7 @@ namespace TitanOrbit.Audio
 
         public void PlayBackgroundMusic()
         {
+            // --- PlayBackgroundMusic ---
             if (musicSource != null && backgroundMusic != null)
             {
                 musicSource.clip = backgroundMusic;
@@ -147,6 +150,7 @@ namespace TitanOrbit.Audio
         /// <param name="pitch">Pitch multiplier. Clamped to 0.5–2.5. Higher = higher tone and shorter length.</param>
         public void PlayWeaponShootSound(float pitch)
         {
+            // --- PlayWeaponShootSound ---
             if (shootSound == null) return;
             EnsureWeaponSoundPool();
             if (weaponSoundSources == null || weaponSoundSources.Length == 0) { PlaySFX(shootSound); return; }
@@ -162,6 +166,7 @@ namespace TitanOrbit.Audio
 
         private void EnsureWeaponSoundPool()
         {
+            // --- Ensure setup ---
             if (weaponSoundSources != null && weaponSoundSources.Length > 0) return;
             weaponSoundSources = new AudioSource[WEAPON_SOUND_POOL_SIZE];
             for (int i = 0; i < WEAPON_SOUND_POOL_SIZE; i++)
@@ -207,6 +212,7 @@ namespace TitanOrbit.Audio
 
         private void PlayPooledImpactSound(AudioClip clip, float clipVolumeMultiplier, float pitch)
         {
+            // --- PlayPooledImpactSound ---
             if (clip == null) return;
             EnsureImpactSoundPool();
             if (impactSoundSources == null || impactSoundSources.Length == 0)
@@ -282,6 +288,7 @@ namespace TitanOrbit.Audio
 
         private void PlaySFX(AudioClip clip, float clipVolumeMultiplier)
         {
+            // --- PlaySFX ---
             if (sfxSource != null && clip != null)
             {
                 sfxSource.PlayOneShot(clip, GetSFXVolume(clipVolumeMultiplier));
@@ -290,6 +297,7 @@ namespace TitanOrbit.Audio
 
         private void PlayGemValueScaledSFX(AudioClip clip, float amount, float clipVolumeMultiplier)
         {
+            // --- PlayGemValueScaledSFX ---
             if (clip == null) return;
             EnsureGemSoundPool();
             if (gemSoundSources == null || gemSoundSources.Length == 0)
@@ -318,6 +326,7 @@ namespace TitanOrbit.Audio
 
         private void PlayPeopleTransferSound(float amount, bool isLoad)
         {
+            // --- PlayPeopleTransferSound ---
             if (peopleTransferSound == null) return;
             EnsureGemSoundPool();
             if (gemSoundSources == null || gemSoundSources.Length == 0)
@@ -347,6 +356,7 @@ namespace TitanOrbit.Audio
 
         private void EnsureGemSoundPool()
         {
+            // --- Ensure setup ---
             if (gemSoundSources != null && gemSoundSources.Length > 0) return;
             gemSoundSources = new AudioSource[GEM_SOUND_POOL_SIZE];
             for (int i = 0; i < GEM_SOUND_POOL_SIZE; i++)
@@ -360,6 +370,7 @@ namespace TitanOrbit.Audio
 
         private void EnsureImpactSoundPool()
         {
+            // --- Ensure setup ---
             if (impactSoundSources != null && impactSoundSources.Length > 0) return;
             impactSoundSources = new AudioSource[IMPACT_SOUND_POOL_SIZE];
             for (int i = 0; i < IMPACT_SOUND_POOL_SIZE; i++)
@@ -373,6 +384,7 @@ namespace TitanOrbit.Audio
 
         public void SetMusicVolume(float volume)
         {
+            // --- SetMusicVolume ---
             musicVolume = Mathf.Clamp01(volume);
             if (musicSource != null)
             {
@@ -388,6 +400,7 @@ namespace TitanOrbit.Audio
         // Mobile optimization: reduce audio quality on mobile
         private void OnEnable()
         {
+            // --- Unity lifecycle ---
             if (Application.isMobilePlatform)
             {
                 // Reduce audio quality for mobile

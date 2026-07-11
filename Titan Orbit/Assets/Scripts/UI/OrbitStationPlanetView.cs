@@ -4,6 +4,7 @@ using UnityEngine;
 
 namespace TitanOrbit.Entities
 {
+    // --- Type members ---
     /// <summary>ECS-backed planet view for OrbitStationUI (legacy Planet API).</summary>
     public class Planet : MonoBehaviour
     {

@@ -46,6 +46,7 @@ namespace TitanOrbit.Game
 
         void Update()
         {
+            // --- Per-frame refresh ---
             if (!IsVisible)
                 return;
 
@@ -69,6 +70,7 @@ namespace TitanOrbit.Game
 
         public void Show()
         {
+            // --- Show ---
             BuildUi();
             ApplyProgress(0f);
             if (_statusText != null)
@@ -88,6 +90,7 @@ namespace TitanOrbit.Game
 
         void UpdateStatusForSteps(int completedSteps, int totalSteps)
         {
+            // --- Per-frame refresh ---
             if (_statusText == null || totalSteps <= 0)
                 return;
 
@@ -105,6 +108,7 @@ namespace TitanOrbit.Game
 
         void ApplyProgress(float progress)
         {
+            // --- Apply changes ---
             progress = Mathf.Clamp01(progress);
 
             if (_fillImage != null)
@@ -116,6 +120,7 @@ namespace TitanOrbit.Game
 
         void BuildUi()
         {
+            // --- Build data ---
             if (_uiBuilt)
                 return;
 
@@ -199,6 +204,7 @@ namespace TitanOrbit.Game
 
         static RectTransform CreateRect(string name, Transform parent)
         {
+            // --- Create instance ---
             var go = new GameObject(name, typeof(RectTransform));
             var rect = go.GetComponent<RectTransform>();
             rect.SetParent(parent, false);
@@ -207,6 +213,7 @@ namespace TitanOrbit.Game
 
         static void StretchFill(RectTransform rect, float left = 0f, float bottom = 0f, float right = 0f, float top = 0f)
         {
+            // --- StretchFill ---
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
             rect.offsetMin = new Vector2(left, bottom);
@@ -215,6 +222,7 @@ namespace TitanOrbit.Game
 
         static TextMeshProUGUI CreateText(RectTransform parent, string name, string text, float fontSize, FontStyles style)
         {
+            // --- Create instance ---
             var label = CreateRect(name, parent);
             var tmp = label.gameObject.AddComponent<TextMeshProUGUI>();
             tmp.text = text;

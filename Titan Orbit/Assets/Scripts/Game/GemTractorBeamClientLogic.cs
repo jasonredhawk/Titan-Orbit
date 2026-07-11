@@ -10,9 +10,14 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Client-side assignment + eligibility for tractor beam visuals.</summary>
+    /// <summary>
+    /// [HYBRID] Client-side wing-to-gem assignment and eligibility for tractor beam <em>visuals</em> only.
+    /// Mirrors server pull rules closely enough for VFX but does not move gems — authoritative pull is
+    /// <c>GemTractorBeamSystem</c>. Rebuilds a per-frame cache keyed by ship/gem entity indices.
+    /// </summary>
     public static class GemTractorBeamClientLogic
     {
+        /// <summary>One gem candidate for a wing during assignment sort (distance + in-flight priority).</summary>
         struct PullCandidate
         {
             public int GemIndex;
@@ -26,8 +31,13 @@ namespace TitanOrbit.Game
         static readonly Dictionary<int, HashSet<int>> AssignedGemsByShip = new Dictionary<int, HashSet<int>>(32);
         static readonly List<PullCandidate> CandidateScratch = new List<PullCandidate>(64);
 
+        /// <summary>
+        /// Rebuilds wing→gem assignment once per Unity frame. Called from visibility tracker and beam drawer.
+        /// </summary>
         public static void RebuildAssignmentCache()
         {
+            // --- Rebuild cache ---
+            // [STANDARD] Frame cache — assignment is O(ships×gems×wings); avoid rebuilding per beam draw.
             if (Time.frameCount == _cacheFrame)
                 return;
             _cacheFrame = Time.frameCount;
@@ -371,6 +381,7 @@ namespace TitanOrbit.Game
 
         public static bool IsShipEligibleForBeam(in ShipState ship)
         {
+            // --- IsShipEligibleForBeam ---
             if (ship.IsDead || ship.AwaitingTeamSelection)
                 return false;
             if (ship.CurrentGems >= ship.GemCapacity)
@@ -383,6 +394,7 @@ namespace TitanOrbit.Game
 
         static float GetTowardShipSpeed(float3 gemPos, float3 velocity, float3 shipPos, float mapW, float mapH)
         {
+            // --- Compute value ---
             float3 toShip = GemTractorBeamMath.ToroidalDirection(gemPos, shipPos, mapW, mapH);
             velocity.y = 0f;
             return math.dot(velocity, toShip);
@@ -394,6 +406,7 @@ namespace TitanOrbit.Game
 
         public static void Clear()
         {
+            // --- Clear state ---
             WingByShipAndGem.Clear();
             AssignedGemsByShip.Clear();
             _cacheFrame = -1;

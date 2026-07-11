@@ -51,6 +51,7 @@ namespace TitanOrbit.UI
 
         private void Start()
         {
+            // --- Unity lifecycle ---
             bool showMobileHud = Application.isMobilePlatform || forceMobileControls;
 
             GameObject mobileRoot = mobileTouchCanvas != null ? mobileTouchCanvas.gameObject : mobileControlsPanel;
@@ -67,6 +68,7 @@ namespace TitanOrbit.UI
 
         private void TryWireMobileControls()
         {
+            // --- Attempt resolution ---
             if (wired) return;
 
             RectTransform panelRect = mobileControlsPanel != null
@@ -107,6 +109,7 @@ namespace TitanOrbit.UI
 
         private static void EnsureSteerVisualLayer(Transform canvasTransform)
         {
+            // --- Ensure setup ---
             if (canvasTransform == null)
                 return;
 
@@ -131,6 +134,7 @@ namespace TitanOrbit.UI
 
         private static void EnsureEventSystemExists()
         {
+            // --- Ensure setup ---
             if (EventSystem.current != null)
                 return;
             if (Object.FindFirstObjectByType<EventSystem>(FindObjectsInactive.Include) != null)

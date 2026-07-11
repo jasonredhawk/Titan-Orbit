@@ -12,12 +12,16 @@ namespace TitanOrbit.Data
     /// </summary>
     public static class ShipComponentStoreData
     {
+        /// <summary>Gems charged per power point when pricing moon-dock components.</summary>
         public const float GemCostPerPowerPoint = 1.75f;
+        /// <summary>Price multiplier per ship level above 1 (12% per level).</summary>
         public const float LevelPriceScalePerLevel = 0.12f;
+        /// <summary>Floor gem price so zero-stat placeholder parts still cost something.</summary>
         public const int MinimumComponentGemPrice = 8;
 
         /// <summary>
         /// Applies per-level growth to every stat field, including mobility penalty on move/turn at higher levels.
+        /// <paramref name="shipLevel"/> 1 = base stats only; level 7 adds six steps of *PerLevel fields.
         /// </summary>
         public static ShipComponentAbilityStats GetEffectiveStatsAtShipLevel(ShipComponentAbilityStats stats, int shipLevel)
         {
@@ -25,6 +29,7 @@ namespace TitanOrbit.Data
             float moveAtLevel = stats.moveSpeed + stats.moveSpeedPerLevel * perLvl;
             float turnAtLevel = stats.turnSpeed + stats.turnSpeedPerLevel * perLvl;
 
+            // --- Linear growth on most stats; move/turn also pass through mobility penalty curve ---
             return new ShipComponentAbilityStats
             {
                 firePower = stats.firePower + stats.firePowerPerLevel * perLvl,
@@ -79,6 +84,7 @@ namespace TitanOrbit.Data
             return ShipFamilyPowerScoreBreakdown.FromSummedShipStats(effective);
         }
 
+        /// <summary>Level-scaled stats plus optional bullet-bank profile overlay (currently no-op stub).</summary>
         public static ShipComponentAbilityStats GetEffectiveStatsForDisplay(
             ShipFamilyComponentEntry entry,
             int shipLevel,
@@ -100,6 +106,7 @@ namespace TitanOrbit.Data
             return Mathf.Max(MinimumComponentGemPrice, Mathf.RoundToInt(power * GemCostPerPowerPoint * levelMult));
         }
 
+        /// <summary>Resolves player-facing title with displayName → formatted componentId fallback.</summary>
         public static string GetDisplayName(ShipFamilyComponentEntry entry)
         {
             if (entry == null)
@@ -117,12 +124,14 @@ namespace TitanOrbit.Data
             return id;
         }
 
+        /// <summary>Unicode glyph for compact list rows when no sprite is available.</summary>
         public static string GetIconGlyph(ShipFamilyComponentEntry entry)
         {
             if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
                 return "?";
             entry.EnsureStatCategories();
             string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(entry.componentId);
+            // [TITAN-ORBIT] Emoji-like glyphs map USC part families to quick-scan icons.
             switch (partType)
             {
                 case "Weapon": return "\u2694";
@@ -145,6 +154,7 @@ namespace TitanOrbit.Data
             return null;
         }
 
+        /// <summary>Index into orbit-station ability color palette (offense=0, health=2, …).</summary>
         public static int GetAbilityColorStatIndex(ShipFamilyComponentEntry entry)
         {
             if (entry == null)
@@ -152,6 +162,7 @@ namespace TitanOrbit.Data
             entry.EnsureStatCategories();
             if (entry.statCategories != null)
             {
+                // [TITAN-ORBIT] First matching category wins — designers list primary role first.
                 if (entry.statCategories.Contains(ShipComponentStatCategory.Offense))
                     return 0;
                 if (entry.statCategories.Contains(ShipComponentStatCategory.Health))
@@ -174,6 +185,7 @@ namespace TitanOrbit.Data
 
             ShipComponentAbilityStats s = GetEffectiveStatsForDisplay(entry, shipLevel, family);
             var lines = new List<string>(maxLines);
+            // --- Pick top non-zero stats in fixed priority order ---
             TryAddLine(lines, "Fire", s.firePower, maxLines);
             TryAddLine(lines, "Bullet", s.bulletSpeed, maxLines);
             TryAddLine(lines, "Fire rate", s.fireRate, maxLines);

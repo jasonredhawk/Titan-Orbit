@@ -9,10 +9,12 @@ namespace TitanOrbit.ECS
     /// <see cref="IInputComponentData"/> — NetCode serializes this from client to server each tick
     /// and applies it to predicted ghosts on the client during <see cref="GhostInputSystemGroup"/>.
     /// Filled by <see cref="Game.ShipInputBridge"/> (client) or
-    /// <see cref="Game.ShipServerControlSystem"/> (local host server path).
+    /// <see cref="Game.ShipServerControlSystem"/> (local host server path). Paired with
+    /// <see cref="ShipInputApplySystem"/> which copies pending input onto the local ghost.
     /// </summary>
     public struct ShipInput : IInputComponentData
     {
+        // --- Type members ---
         /// <summary>Normalized aim direction on the XZ plane (mouse relative to ship).</summary>
         [GhostField(Quantization = 1000)]
         public float2 AimPlanarDir;
@@ -26,7 +28,7 @@ namespace TitanOrbit.ECS
         public bool Thrust;
 
         /// <summary>
-        /// InputEvent — NetCode type that tracks "pressed this tick" for one-shot actions like firing.
+        /// [NETCODE] InputEvent — tracks "pressed this tick" for one-shot actions like firing.
         /// </summary>
         [GhostField]
         public InputEvent Fire;

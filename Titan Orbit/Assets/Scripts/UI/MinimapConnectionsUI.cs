@@ -3,14 +3,22 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.UI
 {
+    // --- Type members ---
     /// <summary>
-    /// Minimap territory overlay. Triangle drawing is disabled until planet connections are ported to ECS.
+    /// UGUI RawImage placeholder for minimap territory connection triangles. OnPopulateMesh is
+    /// intentionally empty until planet adjacency is exposed from ECS for overlay drawing.
+    /// Parent <see cref="MinimapController"/> toggles visibility. Client presentation only —
+    /// does not affect sim or NetCode state.
     /// </summary>
     [RequireComponent(typeof(RectTransform))]
     public class MinimapConnectionsUI : RawImage
     {
+        // [UNITY] Shared 1×1 white texture for invisible mesh placeholder.
         static Texture2D _whiteTex;
 
+        /// <summary>
+        /// [UNITY] Awake — disable raycasts and assign dummy texture so layout does not warn.
+        /// </summary>
         protected override void Awake()
         {
             base.Awake();
@@ -26,6 +34,9 @@ namespace TitanOrbit.UI
             color = Color.white;
         }
 
+        /// <summary>
+        /// [UNITY] Suppress default quad — connections will be drawn when ECS graph data exists.
+        /// </summary>
         protected override void OnPopulateMesh(VertexHelper vh)
         {
             vh.Clear();

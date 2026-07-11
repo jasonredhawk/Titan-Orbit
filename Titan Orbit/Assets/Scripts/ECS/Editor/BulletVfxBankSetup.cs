@@ -18,8 +18,12 @@ namespace TitanOrbit.ECS.Editor
         const string FallbackImpactPath = "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Red Impact.prefab";
         const string LaserboltFolder = "Assets/Archanor/Sci-Fi Arsenal/InteractiveDemo/Demo Prefabs/Laserbolt";
 
+        /// <summary>
+        /// Loads or creates <see cref="BulletVfxBank"/> at Assets/Data and mirrors to Resources for runtime load.
+        /// </summary>
         public static BulletVfxBank EnsureAsset()
         {
+            // --- Ensure setup ---
             var existing = AssetDatabase.LoadAssetAtPath<BulletVfxBank>(AssetPath);
             if (existing != null)
             {
@@ -51,6 +55,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void ApplyLegacyVisualScale(BulletVfxBank bank)
         {
+            // --- Apply changes ---
             if (bank == null) return;
             var so = new SerializedObject(bank);
             so.FindProperty("visualScaleMultiplier").floatValue = 0.5f;
@@ -60,6 +65,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void SyncResourcesCopy()
         {
+            // --- SyncResourcesCopy ---
             if (!File.Exists(AssetPath)) return;
             if (!Directory.Exists("Assets/Resources"))
                 Directory.CreateDirectory("Assets/Resources");
@@ -69,6 +75,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void PopulateIfEmpty(BulletVfxBank bank)
         {
+            // --- PopulateIfEmpty ---
             var so = new SerializedObject(bank);
             var categories = so.FindProperty("categories");
             if (categories != null && categories.arraySize > 0)
@@ -103,6 +110,7 @@ namespace TitanOrbit.ECS.Editor
 
         static List<GameObject> LoadLaserboltPrefabs()
         {
+            // --- LoadLaserboltPrefabs ---
             var list = new List<GameObject>();
             string[] colors = { "Red", "Blue", "Green", "Yellow", "Purple" };
             foreach (string color in colors)

@@ -22,6 +22,7 @@ namespace TitanOrbit.ECS
 
         public void OnUpdate(ref SystemState state)
         {
+            // --- System OnUpdate ---
             if (!ShipPendingInput.HasValue)
                 return;
 

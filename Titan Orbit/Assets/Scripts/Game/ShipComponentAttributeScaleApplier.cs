@@ -31,6 +31,7 @@ namespace TitanOrbit.Game
         /// <summary>Links to ship entity, caches chassis transform groups, applies initial scale.</summary>
         public void Bind(Entity shipEntity, string familyPrefix, ShipFamilyDefinition family)
         {
+            // --- Bind ---
             _shipEntity = shipEntity;
             if (!string.IsNullOrWhiteSpace(familyPrefix))
                 _familyPrefix = familyPrefix.Trim();
@@ -42,6 +43,7 @@ namespace TitanOrbit.Game
         /// <summary>Scans hull hierarchy for component transforms and stores base scales/positions.</summary>
         void RebuildCache()
         {
+            // --- Rebuild cache ---
             var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix);
 
             _cockpit = ShipComponentAttributeScaleLogic.BuildGroup(stats.cockpitTransforms);
@@ -71,6 +73,7 @@ namespace TitanOrbit.Game
 
         void TryApplyAttributeScale(bool force = false)
         {
+            // --- Attempt resolution ---
             if (!_initialized || _shipEntity == Entity.Null)
                 return;
 

@@ -11,11 +11,16 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Draws wing tractor beams: thin extending line, width expansion at the gem, then a filled cone while pulling.
+    /// [HYBRID] Client-only Shapes drawer for wing tractor beams: extend line → widen at gem → filled cone while pulling.
+    /// Reads ECS visualization world (not authoritative sim) and pairs with
+    /// <see cref="GemTractorBeamClientLogic"/>, <see cref="GemTractorBeamDeployTracker"/>,
+    /// and <see cref="GemTractorBeamVisibilityTracker"/>. Cosmetic VFX only — pull physics live in
+    /// <c>GemTractorBeamSystem</c> on the server.
     /// </summary>
     [ExecuteAlways]
     public class GemTractorBeamVisual : ImmediateModeShapeDrawer
     {
+        /// <summary>Singleton drawer instance — auto-created on <see cref="RuntimeInitializeOnLoadMethod"/>.</summary>
         static GemTractorBeamVisual _instance;
 
         [Header("Beam")]
@@ -32,19 +37,25 @@ namespace TitanOrbit.Game
         [SerializeField] [Range(0f, 1f)] float beamRoundness = 0.08f;
         [SerializeField] float gemEndWidthScale = 1.05f;
 
+        /// <summary>Per-gem smoothed visual diameter so beam width does not pop when proxy scale updates.</summary>
         static readonly Dictionary<int, float> SmoothedGemDiameterById = new Dictionary<int, float>(64);
         const float GemDiameterSmoothing = 10f;
 
+        /// <summary>
+        /// [UNITY] Ensures a scene drawer exists after load — beams are global, not per-ship prefab.
+        /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureInstanceExists()
         {
             if (_instance != null)
                 return;
 
+            // --- Reuse existing instance if designer placed one ---
             _instance = FindAnyObjectByType<GemTractorBeamVisual>();
             if (_instance != null)
                 return;
 
+            // --- Attach to shared planet-connection root when present ---
             var go = GameObject.Find("PlanetConnectionSystems");
             if (go == null)
                 go = new GameObject("PlanetConnectionSystems");
@@ -68,6 +79,7 @@ namespace TitanOrbit.Game
             base.OnDisable();
         }
 
+        /// <summary>[UNITY] Advances fade/deploy trackers once per frame before Shapes draws.</summary>
         void LateUpdate()
         {
             if (!Application.isPlaying)
@@ -75,13 +87,18 @@ namespace TitanOrbit.Game
             GemTractorBeamVisibilityTracker.LateUpdateTick();
         }
 
+        /// <summary>
+        /// [HYBRID] Per-camera immediate-mode draw pass — queries ships/gems and renders eligible beam pairs.
+        /// </summary>
         public override void DrawShapes(Camera cam)
         {
+            // --- Camera filter ---
             if (cam == null)
                 return;
             if (gameplayCamerasOnly && !IsGameplayCamera(cam))
                 return;
 
+            // --- Visualization ECS world (client presentation) ---
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return;
@@ -108,12 +125,14 @@ namespace TitanOrbit.Game
             float pulsedAlphaAtShip = Mathf.Clamp01(alphaAtShip + (pulseWave * 2f - 1f) * pulseAlphaAmplitude);
             float widthPulse = 1f + (pulseWave * 2f - 1f) * pulseWidthAmplitude;
 
+            // --- Shapes draw scope for this camera ---
             using (Draw.Command(cam))
             {
                 Draw.ResetAllDrawStates();
                 Draw.ThicknessSpace = ThicknessSpace.Meters;
                 Draw.BlendMode = ShapesBlendMode.Transparent;
 
+                // --- Ship × gem pairs: eligibility, range, visibility, deploy phase ---
                 for (int si = 0; si < ships.Length; si++)
                 {
                     if (!GemTractorBeamClientLogic.IsShipEligibleForBeam(shipStates[si]))

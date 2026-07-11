@@ -5,11 +5,16 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Converts editor <see cref="MapGenerationSettings"/> ScriptableObject into ECS
-    /// <see cref="MapGenerationConfig"/> for server map generation. Used by bake and bootstrap.
+    /// <see cref="MapGenerationConfig"/> for server map generation. Used by scene bake,
+    /// <see cref="MapGenerationSettingsCache"/> runtime loader, and <see cref="MapGenerationSystem"/>.
     /// </summary>
     public static class MapGenerationConfigUtility
     {
-        /// <summary>Maps all fields from designer-facing settings to the ECS config struct.</summary>
+        // --- Type members ---
+        /// <summary>
+        /// Maps every designer-tunable field from the asset into the ECS struct consumed by
+        /// <see cref="MapGenerationLogic"/>. No gameplay logic here — pure data copy.
+        /// </summary>
         public static MapGenerationConfig FromSettings(MapGenerationSettings s) => new MapGenerationConfig
         {
             Seed = s.seed,
@@ -39,7 +44,10 @@ namespace TitanOrbit.ECS
             MinAsteroidSpacing = s.minAsteroidSpacing,
         };
 
-        /// <summary>Fallback config when no ScriptableObject is assigned in the scene.</summary>
+        /// <summary>
+        /// Fallback config when no ScriptableObject is assigned in the scene or Resources cache.
+        /// Creates a throwaway <see cref="MapGenerationSettings"/> with Unity default field values.
+        /// </summary>
         public static MapGenerationConfig Default() =>
             FromSettings(ScriptableObject.CreateInstance<MapGenerationSettings>());
     }

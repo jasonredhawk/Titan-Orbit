@@ -8,7 +8,10 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Reliable Play click handler independent of NceGameFlowController wiring.</summary>
+    /// <summary>
+    /// Reliable Play click handler independent of NceGameFlowController wiring. [UNITY] MonoBehaviour
+    /// on the main menu Play button — validates NetCode worlds exist before starting local or dedicated join.
+    /// </summary>
     [RequireComponent(typeof(Button))]
     public class MainMenuPlayButton : MonoBehaviour, IPointerClickHandler
     {
@@ -16,6 +19,7 @@ namespace TitanOrbit.Game
 
         void Awake()
         {
+            // --- Cache button and fix child raycast stealing clicks ---
             _button = GetComponent<Button>();
             DisableChildRaycasts();
         }
@@ -27,18 +31,21 @@ namespace TitanOrbit.Game
 
         public void OnPointerClick(PointerEventData eventData)
         {
+            // --- Guard disabled button ---
             if (_button != null && !_button.interactable)
                 return;
 
             Debug.Log("[MainMenuPlayButton] Play clicked.");
 
 #if UNITY_SERVER
+            // --- [NETCODE] Dedicated server window cannot host client UI play ---
             Debug.LogError(
                 "[MainMenuPlayButton] Wrong window: this is the SERVER play instance. " +
                 "In the Game view, click the 'Main Editor' tab (not Server / Player 2), then press Play.");
             return;
 #endif
 
+            // --- Validate NetCode worlds before session start ---
             if (!HasPlayableClientWorld())
             {
                 Debug.LogError(
@@ -63,6 +70,7 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            // --- Start local host/client or quick-join dedicated ---
             if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
             {
                 if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
@@ -76,6 +84,7 @@ namespace TitanOrbit.Game
 
         static bool HasPlayableClientWorld()
         {
+            // --- [NETCODE] ClientWorld must exist with NetworkStreamDriver ---
             var client = ClientServerBootstrap.ClientWorld;
             if (client == null || !client.IsCreated)
                 return false;
@@ -84,6 +93,7 @@ namespace TitanOrbit.Game
 
         static bool HasPlayableServerWorld()
         {
+            // --- [NETCODE] ServerWorld required for local Client+Server play ---
             var server = ClientServerBootstrap.ServerWorld;
             if (server == null || !server.IsCreated)
                 return false;
@@ -92,6 +102,7 @@ namespace TitanOrbit.Game
 
         void DisableChildRaycasts()
         {
+            // --- [UNITY] Label graphics must not block Button raycasts ---
             foreach (var graphic in GetComponentsInChildren<Graphic>(true))
             {
                 if (graphic.gameObject != gameObject)

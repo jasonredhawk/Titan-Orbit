@@ -5,6 +5,7 @@ using UnityEngine;
 
 namespace TitanOrbit.Entities
 {
+    /// <summary>Procedural bullet mesh shape when bank prefab is unavailable.</summary>
     public enum BulletShape
     {
         Sphere,
@@ -13,7 +14,9 @@ namespace TitanOrbit.Entities
 
     /// <summary>
     /// Builds bullet visuals (bank prefab particle, optional procedural core + trail) and spawns
-    /// muzzle/impact VFX for ECS client tracers.
+    /// muzzle/impact VFX for ECS client tracers. Consumes <see cref="BulletVfxBank"/> team-colored
+    /// prefabs and <see cref="Simulation.BulletVisualScale"/> for per-shot sizing. Presentation
+    /// only — hit detection stays in server <see cref="ECS.Systems.BulletSimulationSystem"/>.
     /// </summary>
     public static class BulletVisualFactory
     {
@@ -160,6 +163,7 @@ namespace TitanOrbit.Entities
 
         public static void ApplyColorToVisual(GameObject root, Color color)
         {
+            // --- Apply changes ---
             foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
             {
                 if (r.sharedMaterials == null) continue;
@@ -184,6 +188,7 @@ namespace TitanOrbit.Entities
 
         public static void SetAudioPitchInHierarchy(GameObject root, float pitch)
         {
+            // --- SetAudioPitchInHierarchy ---
             if (root == null) return;
             AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
             for (int i = 0; i < sources.Length; i++)
@@ -195,6 +200,7 @@ namespace TitanOrbit.Entities
 
         public static float GetProjectileSoundPitchBySpeed(float projectileSpeed)
         {
+            // --- Compute value ---
             float s = Mathf.Max(0.01f, projectileSpeed);
             const float minSpeed = 1f;
             const float maxSpeed = 30f;
@@ -212,6 +218,7 @@ namespace TitanOrbit.Entities
 
         public static float GetImpactSoundPitch(float damage)
         {
+            // --- Compute value ---
             float d = Mathf.Max(0.01f, damage);
             const float minDamage = 1f;
             const float maxDamage = 40f;
@@ -223,6 +230,7 @@ namespace TitanOrbit.Entities
 
         public static void SpawnImpactAt(Vector3 position, GameObject prefab, float pitch, float scale, float duration)
         {
+            // --- SpawnImpactAt ---
             if (prefab == null) return;
             GameObject go = Object.Instantiate(prefab, position, Quaternion.identity);
             VfxUrpCompat.ApplyImpactVisualScale(go, scale);
@@ -233,6 +241,7 @@ namespace TitanOrbit.Entities
 
         static GameObject CreateCustomizableVfxStyle(BulletShape shape, float scale, float bulletSpeed, bool noTrailVisual, Color color)
         {
+            // --- Create instance ---
             Material baseMat = CreateDefaultBulletMaterial();
             Material instanced = new Material(baseMat);
             instanced.color = color;
@@ -283,6 +292,7 @@ namespace TitanOrbit.Entities
 
         static Material GetTrailMaterial()
         {
+            // --- Compute value ---
             if (trailMat != null) return trailMat;
             Shader s = Shader.Find("Universal Render Pipeline/Particles/Unlit")
                 ?? Shader.Find("Particles/Standard Unlit")
@@ -296,6 +306,7 @@ namespace TitanOrbit.Entities
 
         static Material CreateDefaultBulletMaterial()
         {
+            // --- Create instance ---
             if (defaultBulletMat != null) return defaultBulletMat;
             defaultBulletMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
             defaultBulletMat.color = new Color(0.75f, 0.88f, 1f);

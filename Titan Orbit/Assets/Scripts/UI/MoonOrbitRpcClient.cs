@@ -14,6 +14,7 @@ namespace TitanOrbit.UI
     {
         public static void RequestContributedGems(int homePlanetId)
         {
+            // --- RequestContributedGems ---
             if (homePlanetId <= 0)
                 return;
 
@@ -37,6 +38,7 @@ namespace TitanOrbit.UI
 
         public static void SetWantDepositGems(bool wantDeposit)
         {
+            // --- SetWantDepositGems ---
             MoonOrbitClientState.SetWantDepositGems(wantDeposit);
             ApplyWantDepositOnServer(wantDeposit);
 
@@ -55,6 +57,7 @@ namespace TitanOrbit.UI
 
         static void ApplyWantDepositOnServer(bool wantDeposit)
         {
+            // --- Apply changes ---
             if (TitanOrbit.NetCode.TitanOrbitSessionManager.IsDedicatedOnlineClient)
                 return;
 
@@ -82,6 +85,7 @@ namespace TitanOrbit.UI
 
         public static void PurchaseShipUpgrade(int storePlanetId, int targetLevel, int targetBranchIndex)
         {
+            // --- PurchaseShipUpgrade ---
             var world = EcsGameBridge.ServerWorld ?? EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
                 return;
@@ -99,6 +103,7 @@ namespace TitanOrbit.UI
 
         public static void PurchaseAttributeUpgrade(int attributeIndex)
         {
+            // --- PurchaseAttributeUpgrade ---
             if (attributeIndex < 0 || attributeIndex > 9)
                 return;
 
@@ -126,6 +131,7 @@ namespace TitanOrbit.UI
 
         public static void PurchaseStoreItem(int homePlanetId, StoreItemType itemType)
         {
+            // --- PurchaseStoreItem ---
             var world = EcsGameBridge.ServerWorld ?? EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
                 return;

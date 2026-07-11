@@ -6,6 +6,7 @@ using UnityEngine.Rendering;
 
 namespace TitanOrbit.Game
 {
+    /// <summary>One colored line in a stacked asteroid-hit popup (damage, HP, gems, force).</summary>
     public readonly struct FloatingCountStackLine
     {
         public readonly string Text;
@@ -18,7 +19,10 @@ namespace TitanOrbit.Game
         }
     }
 
-    /// <summary>World-space popup with multiple colored lines stacked vertically; rises and fades as one unit.</summary>
+    /// <summary>
+    /// [HYBRID] Multi-line world-space popup (rich-text TMP) for asteroid mining feedback.
+    /// Same motion/fade model as <see cref="FloatingCountPopup"/> but stacks colored lines vertically.
+    /// </summary>
     public class FloatingCountStackPopup : MonoBehaviour
     {
         const float MinPopupWorldY = 4f;
@@ -105,6 +109,7 @@ namespace TitanOrbit.Game
 
         void EnsureText()
         {
+            // --- Ensure setup ---
             if (tmpText != null)
                 return;
 
@@ -121,6 +126,7 @@ namespace TitanOrbit.Game
 
         static string BuildRichText(FloatingCountStackLine[] lines)
         {
+            // --- Build data ---
             var sb = new StringBuilder(lines.Length * 24);
             for (int i = 0; i < lines.Length; i++)
             {
@@ -137,6 +143,7 @@ namespace TitanOrbit.Game
 
         static void ApplyReadableTextMaterial(TMP_Text text)
         {
+            // --- Apply changes ---
             if (text == null)
                 return;
 
@@ -160,6 +167,7 @@ namespace TitanOrbit.Game
 
         static Vector3 GetRiseDirectionOnPlayPlane(Camera cam)
         {
+            // --- Compute value ---
             if (cam == null)
                 return Vector3.forward;
 
@@ -174,6 +182,7 @@ namespace TitanOrbit.Game
 
         void Update()
         {
+            // --- Per-frame refresh ---
             if (lifetime <= 0f)
             {
                 Destroy(gameObject);
@@ -215,6 +224,7 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
+            // --- Per-frame refresh ---
             if (followAnchor != null)
             {
                 ApplyFollowPosition();
@@ -231,6 +241,7 @@ namespace TitanOrbit.Game
 
         void ApplyFollowPosition()
         {
+            // --- Apply changes ---
             if (followAnchor == null)
                 return;
 

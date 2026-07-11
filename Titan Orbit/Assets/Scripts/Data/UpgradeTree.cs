@@ -5,7 +5,9 @@ using TitanOrbit.Data;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// ScriptableObject that defines ship data per tree slot. Levels 1–6: L ships; level 7 has 3 MEGA ships with custom 6→7 edges.
+    /// ScriptableObject defining the ship upgrade DAG (directed acyclic graph). Levels 1–6: L ships per level;
+    /// level 7 has 3 MEGA boss hulls with custom 6→7 edges. Each node references legacy <see cref="ShipData"/>.
+    /// Branch routing lives in static helpers so UI and server validate the same paths.
     /// </summary>
     [CreateAssetMenu(fileName = "New Upgrade Tree", menuName = "Titan Orbit/Upgrade Tree")]
     public class UpgradeTree : ScriptableObject
@@ -16,15 +18,17 @@ namespace TitanOrbit.Data
         [SerializeField] private List<ShipUpgradeNode> level4Ships = new List<ShipUpgradeNode>();
         [SerializeField] private List<ShipUpgradeNode> level5Ships = new List<ShipUpgradeNode>();
         [SerializeField] private List<ShipUpgradeNode> level6Ships = new List<ShipUpgradeNode>();
-        [SerializeField] private List<ShipUpgradeNode> level7Ships = new List<ShipUpgradeNode>(); // 3 MEGA boss ships (not 7)
+        /// <summary>Three MEGA boss ships at tier 7 (not seven nodes).</summary>
+        [SerializeField] private List<ShipUpgradeNode> level7Ships = new List<ShipUpgradeNode>();
 
         [Header("Upgrade Requirements")]
         [Tooltip("Legacy serialized costs (unused). Runtime ship purchase cost = 2× gem cap (L1→L6 gradient) per chassis.")]
-        [SerializeField] private float[] gemCostsPerLevel = { 0f, 100f, 100f, 250f, 500f, 1000f, 2000f, 15000f }; // Level 1-7
+        [SerializeField] private float[] gemCostsPerLevel = { 0f, 100f, 100f, 250f, 500f, 1000f, 2000f, 15000f };
 
         /// <summary>Number of ship slots at this level (level 1 = 1 ship, … level 6 = 6, level 7 = 3 MEGA).</summary>
         public static int GetShipCountForLevel(int level)
         {
+            // --- Compute value ---
             if (level < 1 || level > 7) return 0;
             if (level == 7) return 3;
             return level;
@@ -36,6 +40,7 @@ namespace TitanOrbit.Data
         /// </summary>
         public static void GetNextLevelBranchTargets(int fromLevel, int fromBranch, List<int> outBranches)
         {
+            // --- Compute value ---
             outBranches.Clear();
             if (fromLevel < 1 || fromLevel > 6) return;
             int nextLevel = fromLevel + 1;
@@ -66,6 +71,7 @@ namespace TitanOrbit.Data
         /// <summary>True if one upgrade step from (fromLevel, fromBranch) to (toLevel, toBranch) is allowed.</summary>
         public static bool IsValidUpgradeStep(int fromLevel, int fromBranch, int toLevel, int toBranch)
         {
+            // --- IsValidUpgradeStep ---
             if (toLevel != fromLevel + 1) return false;
             if (toBranch < 0 || toBranch >= GetShipCountForLevel(toLevel)) return false;
 
@@ -87,8 +93,10 @@ namespace TitanOrbit.Data
             return toBranch == fromBranch || toBranch == fromBranch + 1;
         }
 
+        /// <summary>Returns the serialized node list for levels 2–7; empty list for level 1 or out of range.</summary>
         public List<ShipUpgradeNode> GetShipsForLevel(int level)
         {
+            // --- Compute value ---
             switch (level)
             {
                 case 2: return level2Ships;
@@ -110,6 +118,7 @@ namespace TitanOrbit.Data
         /// <summary>Resolve the upgrade node for slot (level, branchIndex). Branch index is 0-based within that level.</summary>
         public ShipUpgradeNode GetNodeForBranch(int level, int branchIndex)
         {
+            // --- Compute value ---
             var list = GetShipsForLevel(level);
             if (list == null || branchIndex < 0 || branchIndex >= GetShipCountForLevel(level)) return null;
             for (int i = 0; i < list.Count; i++)
@@ -126,6 +135,7 @@ namespace TitanOrbit.Data
         /// <summary>Next-tier choices from (currentLevel, currentBranchIndex), including custom level 6 → 7 routing.</summary>
         public List<ShipUpgradeNode> GetAvailableUpgrades(int currentLevel, int currentBranchIndex)
         {
+            // --- Compute value ---
             int nextLevel = currentLevel + 1;
             if (nextLevel > 7) return new List<ShipUpgradeNode>();
 
@@ -142,18 +152,25 @@ namespace TitanOrbit.Data
         }
     }
 
+    /// <summary>
+    /// One node in the upgrade tree — links to <see cref="ShipData"/>, optional name override, and
+    /// per-stat multipliers applied on top of family totals when this hull is purchased.
+    /// </summary>
     [System.Serializable]
     public class ShipUpgradeNode
     {
         [Header("Ship Identity")]
+        /// <summary>Legacy hull stats and branch index for this slot.</summary>
         public ShipData shipData;
         public string shipName;
         public ShipFocusType focusType;
 
         [Header("Upgrade Restrictions (branch indices from previous level that can upgrade to this node)")]
+        /// <summary>Explicit allow-list; empty means routing uses <see cref="UpgradeTree.GetNextLevelBranchTargets"/> only.</summary>
         public List<int> canUpgradeFromBranchIndices = new List<int>();
 
         [Header("Stats Multipliers")]
+        /// <summary>Applied to movement after family + card totals.</summary>
         public float movementSpeedMultiplier = 1f;
         public float fireRateMultiplier = 1f;
         public float firePowerMultiplier = 1f;
@@ -162,6 +179,7 @@ namespace TitanOrbit.Data
         public float peopleCapacityMultiplier = 1f;
         public float miningRateMultiplier = 1f;
 
+        /// <summary>True when <paramref name="previousLevelBranchIndex"/> is listed in canUpgradeFromBranchIndices.</summary>
         public bool CanUpgradeFromBranch(int previousLevelBranchIndex)
         {
             if (canUpgradeFromBranchIndices == null || canUpgradeFromBranchIndices.Count == 0) return false;

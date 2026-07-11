@@ -10,9 +10,14 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Client-side deploy timing for tractor beam extend / widen before pull.</summary>
+    /// <summary>
+    /// [HYBRID] Client-side deploy animation timing for tractor beams: extend line, then widen at gem,
+    /// before <see cref="IsPullPhysicsActive"/> reports the server pull phase. Pairs with
+    /// <see cref="GemTractorBeamMath"/> durations. Cosmetic only — does not affect gem velocity.
+    /// </summary>
     public static class GemTractorBeamDeployTracker
     {
+        /// <summary>Per ship-gem pair: when lock started and how long extend phase lasts.</summary>
         struct DeployState
         {
             public float LockStartTime;
@@ -26,6 +31,7 @@ namespace TitanOrbit.Game
 
         public static void LateUpdateTick()
         {
+            // --- Per-frame refresh ---
             if (Time.frameCount == _lastUpdateFrame)
                 return;
             _lastUpdateFrame = Time.frameCount;
@@ -114,6 +120,7 @@ namespace TitanOrbit.Game
 
         public static float GetExtensionProgress(int shipIndex, int gemIndex)
         {
+            // --- Compute value ---
             if (!StateByPair.TryGetValue(PairKey(shipIndex, gemIndex), out DeployState state))
                 return 0f;
 
@@ -127,6 +134,7 @@ namespace TitanOrbit.Game
 
         public static float GetWidthExpandProgress(int shipIndex, int gemIndex)
         {
+            // --- Compute value ---
             if (!StateByPair.TryGetValue(PairKey(shipIndex, gemIndex), out DeployState state))
                 return 0f;
 
@@ -142,6 +150,7 @@ namespace TitanOrbit.Game
 
         public static bool IsPullPhysicsActive(int shipIndex, int gemIndex)
         {
+            // --- IsPullPhysicsActive ---
             if (!StateByPair.TryGetValue(PairKey(shipIndex, gemIndex), out DeployState state))
                 return false;
 

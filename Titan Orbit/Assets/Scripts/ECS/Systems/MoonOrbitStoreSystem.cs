@@ -7,8 +7,12 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
-    /// <summary>Server RPC handlers for moon orbit store: contributed gems, deposits, purchases.
-    /// Validates team, planet id, and gem balances before mutating ship/planet state.</summary>
+    /// <summary>
+    /// Server RPC handlers for moon orbit store: contributed gem balance queries, deposit intent,
+    /// ship level upgrades, and equipment purchases. Validates team, planet id, and contributed
+    /// gem balances before mutating ship/planet state. Paired with
+    /// <see cref="MoonOrbitRpcClientSystem"/> on the client.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct MoonOrbitStoreSystem : ISystem
@@ -28,6 +32,7 @@ namespace TitanOrbit.ECS
                 ecb.DestroyEntity(entity);
             }
 
+            // --- Deposit toggle RPC (orbit station UI) ---
             foreach (var (cmd, req, entity) in SystemAPI
                          .Query<RefRO<SetWantDepositGemsCommand>, RefRO<ReceiveRpcCommandRequest>>()
                          .WithEntityAccess())
@@ -58,6 +63,7 @@ namespace TitanOrbit.ECS
                 ecb.DestroyEntity(entity);
             }
 
+            // --- Ship level / branch upgrade purchase ---
             foreach (var (cmd, req, entity) in SystemAPI
                          .Query<RefRO<PurchaseShipUpgradeCommand>, RefRO<ReceiveRpcCommandRequest>>()
                          .WithEntityAccess())
@@ -74,6 +80,7 @@ namespace TitanOrbit.ECS
                 ecb.DestroyEntity(entity);
             }
 
+            // --- Equipment / consumable store purchase ---
             foreach (var (cmd, req, entity) in SystemAPI
                          .Query<RefRO<PurchaseStoreItemCommand>, RefRO<ReceiveRpcCommandRequest>>()
                          .WithEntityAccess())
@@ -93,6 +100,7 @@ namespace TitanOrbit.ECS
             ecb.Dispose();
         }
 
+        /// <summary>Reads <see cref="NetworkId"/> from the NetCode connection that sent the store RPC.</summary>
         static int GetSenderNetworkId(EntityManager em, Entity connection)
         {
             if (connection == Entity.Null || !em.HasComponent<NetworkId>(connection))
@@ -100,6 +108,7 @@ namespace TitanOrbit.ECS
             return em.GetComponentData<NetworkId>(connection).Value;
         }
 
+        /// <summary>Finds the ship ghost owned by this client's <see cref="GhostOwner.NetworkId"/>.</summary>
         static bool TryGetOwnedShip(EntityManager em, int networkId, out Entity shipEntity)
         {
             shipEntity = Entity.Null;
@@ -120,6 +129,7 @@ namespace TitanOrbit.ECS
             return false;
         }
 
+        /// <summary>Locates the home planet entity for a team (store purchases debit its contributed gems).</summary>
         static bool TryFindHomePlanet(EntityManager em, TeamId team, out Entity homeEntity, out PlanetState homeState)
         {
             homeEntity = Entity.Null;

@@ -16,14 +16,17 @@ namespace TitanOrbit.Core
         /// <summary>Swap GrabPass AllIn1 materials for SRP batch or particle unlit fallbacks; disable screen distortion.</summary>
         public static void FixAllIn1MaterialsForUrp(GameObject root)
         {
+            // --- Guard null root ---
             if (root == null) return;
 
+            // --- Lazy-resolve fallback shaders ---
             if (s_urpParticlesUnlit == null) s_urpParticlesUnlit = Shader.Find("Universal Render Pipeline/Particles/Unlit");
             if (s_legacyParticlesUnlit == null) s_legacyParticlesUnlit = Shader.Find("Particles/Standard Unlit");
             // Desktop only: AllIn1 SRP batch can upset mobile builds if referenced; mobile uses particle unlit only.
             if (!Application.isMobilePlatform && s_allIn1SrpBatch == null)
                 s_allIn1SrpBatch = Shader.Find("AllIn1Vfx/AllIn1VfxSRPBatch");
 
+            // --- Walk renderers and swap GrabPass materials ---
             foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
             {
                 if (r.sharedMaterials == null) continue;
@@ -73,10 +76,12 @@ namespace TitanOrbit.Core
         /// </summary>
         public static void ApplyImpactVisualScale(GameObject root, float scale)
         {
+            // --- Root transform scale (hierarchy-mode particles) ---
             if (root == null) return;
             float s = Mathf.Max(0.05f, scale);
             root.transform.localScale = Vector3.one * s;
 
+            // --- Per-system module scaling (world/local space prefabs) ---
             ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
             for (int i = 0; i < systems.Length; i++)
             {
@@ -104,6 +109,7 @@ namespace TitanOrbit.Core
                     sizeOverLifetime.sizeMultiplier *= s;
             }
 
+            // --- Scale attached point lights with impact size ---
             Light[] lights = root.GetComponentsInChildren<Light>(true);
             for (int i = 0; i < lights.Length; i++)
             {

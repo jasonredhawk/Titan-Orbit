@@ -12,20 +12,36 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>UI and MonoBehaviour access point for ECS game state.</summary>
+    /// <summary>
+    /// MonoBehaviour-safe read API for UI, camera, and GameObject bridges. Resolves the correct
+    /// NetCode world (client vs host server), finds the local player's ship ghost through several
+    /// fallbacks, and exposes match/map/planet state without leaking EntityManager into every HUD script.
+    /// [HYBRID] Presentation reads should prefer <see cref="GhostPresentationTransformCache"/> for poses.
+    /// </summary>
     public static class EcsGameBridge
     {
+        /// <summary>NetCode client simulation world — prediction and local input run here.</summary>
         public static World ClientWorld => ClientServerBootstrap.ClientWorld;
+
+        /// <summary>NetCode server simulation world — authoritative on dedicated server and local host.</summary>
         public static World ServerWorld => ClientServerBootstrap.ServerWorld;
 
-        /// <summary>ECS world used for rendering and local-player camera follow.</summary>
+        // --- World selection ---
+
+        /// <summary>
+        /// ECS world used for rendering, camera follow, and GameObject proxy sync.
+        /// Dedicated clients read ClientWorld; local host prefers ServerWorld when both exist.
+        /// </summary>
         public static World GetVisualizationWorld()
         {
+            // [NETCODE] Dedicated online clients only have a live ClientWorld for ghost presentation.
             if (TitanOrbitSessionManager.IsDedicatedOnlineClient &&
                 ClientWorld != null &&
                 ClientWorld.IsCreated)
                 return ClientWorld;
 
+            // [NETCODE] Local host runs authoritative sim on ServerWorld — ghosts still replicate to ClientWorld,
+            // but host camera/proxies may read server transforms when both worlds are active.
             if (IsLocalHost() &&
                 ServerWorld != null &&
                 ServerWorld.IsCreated)
@@ -47,6 +63,11 @@ namespace TitanOrbit.Game
             return GetVisualizationWorld();
         }
 
+        // --- Local ship queries ---
+
+        /// <summary>
+        /// World position of the local ship — prefers moon-dock cinematic follow when landing.
+        /// </summary>
         public static bool TryGetLocalShipPosition(out Vector3 position)
         {
             if (ShipMoonDockVisualApplier.TryGetLocalFollowPosition(out position))
@@ -61,17 +82,22 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>Local ship <see cref="LocalTransform"/> from <see cref="GetLocalPlayerShipWorld"/>.</summary>
         public static bool TryGetLocalShipTransform(out LocalTransform transform) =>
             TryGetLocalShipTransformFromWorld(GetLocalPlayerShipWorld(), out transform);
 
+        /// <summary>
+        /// Resolves local ship pose from a specific ECS world using tag, ownership, CommandTarget, and NetworkId fallbacks.
+        /// </summary>
         public static bool TryGetLocalShipTransformFromWorld(World world, out LocalTransform transform)
         {
             transform = default;
 
+            // [TITAN-ORBIT] Team picker / rejoin screens hide ship control until player commits to a team.
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 return false;
 
-            // No local ship camera/control until the galaxy build finishes.
+            // [TITAN-ORBIT] No local ship camera/control until the galaxy build finishes.
             if (IsNetworkInGame() && !IsMapLoadingComplete())
                 return false;
 
@@ -79,6 +105,8 @@ namespace TitanOrbit.Game
                 return false;
 
             var em = world.EntityManager;
+
+            // --- Fallback chain: explicit tag → NetCode local owner → command target → network id ---
             if (TryGetShipTransform(em, ComponentType.ReadOnly<LocalPlayerShipTag>(), out transform))
                 return true;
 
@@ -95,6 +123,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Gameplay velocity mirror from <see cref="ShipKinematics"/> on the local ship entity.</summary>
         public static bool TryGetLocalShipVelocity(out Vector3 velocity)
         {
             velocity = default;
@@ -112,6 +141,7 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>True when map is loaded, team flow allows control, and a local ship position resolves.</summary>
         public static bool HasLocalPlayerShip() =>
             IsMapLoadingComplete() &&
             !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() &&
@@ -137,6 +167,9 @@ namespace TitanOrbit.Game
             return shipState.Team != TeamId.None && !shipState.AwaitingTeamSelection;
         }
 
+        /// <summary>
+        /// Full <see cref="ShipState"/> for HUD and UI — tries LocalPlayerShipTag, ownership, CommandTarget, NetworkId.
+        /// </summary>
         public static bool TryGetLocalShipState(out ShipState state)
         {
             state = default;
@@ -169,6 +202,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Bottom-bar attribute upgrade levels for the local ship (zeros when component missing).</summary>
         public static bool TryGetLocalShipAttributeUpgrades(out ShipAttributeUpgradeState attributes)
         {
             attributes = default;
@@ -187,6 +221,7 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>Match timer and started flag from <see cref="MatchStateSingleton"/>.</summary>
         public static bool TryGetMatchState(out MatchStateSingleton match)
         {
             match = default;
@@ -198,6 +233,7 @@ namespace TitanOrbit.Game
             return query.TryGetSingleton(out match);
         }
 
+        /// <summary>Death / respawn timer state for the local ship — drives death screen UI.</summary>
         public static bool TryGetLocalShipDeathState(out ShipDeathState death)
         {
             death = default;
@@ -216,6 +252,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Planet orbit slot state for moon-orbit station UI and camera.</summary>
         public static bool TryGetLocalShipOrbitState(out ShipOrbitState orbitState)
         {
             orbitState = default;
@@ -245,6 +282,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Moon landing cinematic progress — used by dock visual applier and camera follow.</summary>
         public static bool TryGetLocalShipMoonDockState(out ShipMoonDockState moonDock)
         {
             moonDock = default;
@@ -263,6 +301,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Resolves local ship <see cref="Entity"/> in an arbitrary world (host diagnostics).</summary>
         public static bool TryGetLocalShipEntityOnWorld(World world, out Entity shipEntity)
         {
             shipEntity = Entity.Null;
@@ -272,6 +311,7 @@ namespace TitanOrbit.Game
             return TryGetLocalShipEntity(world.EntityManager, out shipEntity);
         }
 
+        /// <summary>Last applied <see cref="ShipInput"/> on the local ship ghost (client prediction world).</summary>
         public static bool TryGetLocalShipInput(out ShipInput input)
         {
             input = default;
@@ -290,6 +330,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Whether the player is holding deposit — gem economy HUD indicator.</summary>
         public static bool TryGetLocalShipDepositIntent(out bool wantDepositGems)
         {
             wantDepositGems = false;
@@ -308,6 +349,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Equipped component slots for orbit-station and upgrade UI.</summary>
         public static bool TryGetLocalShipLoadout(out ShipLoadoutState loadout)
         {
             loadout = default;
@@ -326,6 +368,11 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        // --- Session / network readiness ---
+
+        /// <summary>
+        /// True when NetCode reports gameplay-ready connection (in-game, not just connected to lobby).
+        /// </summary>
         public static bool IsNetworkInGame()
         {
             if (ClientWorld != null && ClientWorld.IsCreated &&
@@ -333,6 +380,7 @@ namespace TitanOrbit.Game
                 return true;
 
 #if UNITY_SERVER
+            // [NETCODE] Headless dedicated server may have ServerWorld only — treat in-game when connection ready.
             if ((ClientWorld == null || !ClientWorld.IsCreated) &&
                 ServerWorld != null && ServerWorld.IsCreated &&
                 TitanOrbitSessionManager.IsClientConnectionReady(ServerWorld))
@@ -341,6 +389,9 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>
+        /// True when this machine runs both client and server worlds in one process (editor host / MPPM host).
+        /// </summary>
         public static bool IsLocalHost()
         {
             if (TitanOrbitSessionManager.IsDedicatedOnlineClient)
@@ -351,11 +402,15 @@ namespace TitanOrbit.Game
                    TitanOrbitSessionManager.IsClientConnectionReady(ServerWorld);
         }
 
+        /// <summary>NetCode <see cref="NetworkId"/> for this client's connection entity.</summary>
         public static int GetLocalNetworkId()
         {
             return GetLocalNetworkId(ClientWorld);
         }
 
+        /// <summary>
+        /// Map generation finished — host reads <see cref="MapStateSingleton"/>; remote clients infer from ghost stream.
+        /// </summary>
         public static bool IsMapLoadingComplete()
         {
             if (!IsNetworkInGame())
@@ -364,7 +419,7 @@ namespace TitanOrbit.Game
                 return false;
             }
 
-            // Local host: ServerWorld owns map generation and MapStateSingleton.
+            // --- Local host: ServerWorld owns map generation and MapStateSingleton ---
             if (IsLocalHost() &&
                 ServerWorld != null && ServerWorld.IsCreated &&
                 TryGetMapLoadingComplete(ServerWorld, out var serverComplete))
@@ -374,13 +429,14 @@ namespace TitanOrbit.Game
                 TryGetMapLoadingComplete(ClientWorld, out var clientComplete))
                 return clientComplete;
 
-            // MPPM / dedicated clients: MapStateSingleton is not ghosted — infer from replicated bodies.
+            // [NETCODE] MPPM / dedicated clients: MapStateSingleton is not ghosted — infer from replicated bodies.
             if (IsRemoteMapObserverClient() && ClientWorld != null && ClientWorld.IsCreated)
                 return TryGetReplicatedMapLoadComplete(ClientWorld);
 
             return false;
         }
 
+        /// <summary>0–1 loading bar progress for loading screen UI.</summary>
         public static bool TryGetMapLoadingProgress(out float progress)
         {
             progress = 0f;
@@ -399,6 +455,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Completed vs total spawn steps for loading screen step counter.</summary>
         public static bool TryGetMapLoadingStepCounts(out int completedSteps, out int totalSteps)
         {
             completedSteps = 0;
@@ -441,6 +498,9 @@ namespace TitanOrbit.Game
             return totalSteps > 0;
         }
 
+        // --- Map loading helpers (private) ---
+
+        /// <summary>Counts server-side home planets for remote loading denominator refinement.</summary>
         static int CountServerHomePlanets(World server)
         {
             if (server == null || !server.IsCreated)
@@ -450,6 +510,7 @@ namespace TitanOrbit.Game
             return homes.CalculateEntityCount();
         }
 
+        /// <summary>Aggregates map loading from host server, client singleton, or replicated body heuristics.</summary>
         static bool TryGetMapLoadingState(
             out int completedSteps,
             out int totalSteps,
@@ -491,6 +552,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Reads authoritative <see cref="MapStateSingleton"/> progress fields from a world.</summary>
         static bool TryReadMapLoadingState(
             World world,
             out int completedSteps,
@@ -521,6 +583,7 @@ namespace TitanOrbit.Game
             return totalSteps > 0 || map.LoadingProgress > 0f || loadingComplete;
         }
 
+        /// <summary>Fallback progress when singleton exists but ghosts are the visible numerator.</summary>
         static bool TryReadSpawnedBodyProgress(
             World world,
             out int completedSteps,
@@ -555,6 +618,7 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>Client-side map progress estimate when singleton is missing or incomplete.</summary>
         static float EstimateClientMapLoadProgress(World client, out int completedSteps, out int totalSteps)
         {
             completedSteps = 0;
@@ -601,6 +665,9 @@ namespace TitanOrbit.Game
             return Mathf.Clamp01((float)completedSteps / totalSteps);
         }
 
+        // --- Local ship entity resolution (private) ---
+
+        /// <summary>Finds ship transform via NetCode <see cref="CommandTarget"/> on in-game connections.</summary>
         static bool TryGetShipFromCommandTarget(EntityManager em, out LocalTransform transform)
         {
             transform = default;
@@ -621,6 +688,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>First ship with <see cref="GhostOwnerIsLocal"/> enableable flag set.</summary>
         static bool TryGetLocalOwnedShipEntity(EntityManager em, out Entity shipEntity)
         {
             shipEntity = Entity.Null;
@@ -637,6 +705,9 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>
+        /// Central local-ship lookup: NetworkId match, GhostOwnerIsLocal, LocalPlayerShipTag, then CommandTarget.
+        /// </summary>
         static bool TryGetLocalShipEntity(EntityManager em, out Entity shipEntity)
         {
             shipEntity = Entity.Null;
@@ -685,6 +756,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Reads <see cref="ShipState"/> from the ship pointed at by <see cref="CommandTarget"/>.</summary>
         static bool TryGetShipStateFromCommandTarget(EntityManager em, out ShipState state)
         {
             state = default;
@@ -705,6 +777,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>First ship matching marker component (tag or GhostOwnerIsLocal).</summary>
         static bool TryGetShipTransform(EntityManager em, ComponentType marker, out LocalTransform transform)
         {
             transform = default;
@@ -724,6 +797,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Ship pose lookup by replicated <see cref="GhostOwner.NetworkId"/>.</summary>
         static bool TryGetShipTransformByNetworkId(EntityManager em, int networkId, out LocalTransform transform)
         {
             transform = default;
@@ -741,6 +815,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary><see cref="ShipState"/> lookup by <see cref="GhostOwner.NetworkId"/>.</summary>
         static bool TryGetShipStateByNetworkId(EntityManager em, int networkId, out ShipState state)
         {
             state = default;
@@ -758,6 +833,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary><see cref="ShipOrbitState"/> lookup by <see cref="GhostOwner.NetworkId"/>.</summary>
         static bool TryGetShipOrbitStateByNetworkId(EntityManager em, int networkId, out ShipOrbitState orbitState)
         {
             orbitState = default;
@@ -775,6 +851,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>First in-game connection's <see cref="NetworkId"/> on the client world.</summary>
         static int GetLocalNetworkId(World clientWorld)
         {
             if (clientWorld == null || !clientWorld.IsCreated)
@@ -787,12 +864,14 @@ namespace TitanOrbit.Game
             return ids.Length > 0 ? ids[0].Value : -1;
         }
 
+        /// <summary>Whether any connection entity has <see cref="NetworkStreamInGame"/>.</summary>
         static bool HasNetworkStreamInGame(World world)
         {
             if (world == null || !world.IsCreated) return false;
             return world.EntityManager.CreateEntityQuery(typeof(NetworkStreamInGame)).CalculateEntityCount() > 0;
         }
 
+        /// <summary>Reads <see cref="MapStateSingleton.LoadingComplete"/> from a world.</summary>
         static bool TryGetMapLoadingComplete(World world, out bool loadingComplete)
         {
             loadingComplete = false;
@@ -821,11 +900,17 @@ namespace TitanOrbit.Game
 
         const float RemoteMapStableSeconds = 0.5f;
         const int RemoteMapMinAsteroids = 32;
+
+        /// <summary>Cached expected spawn total for remote loading bar denominator.</summary>
         static int s_RemoteMapExpectedTotal = -1;
+        /// <summary>Last observed replicated planet count — stability detection.</summary>
         static int s_RemoteMapPlanetCount = -1;
+        /// <summary>Last observed replicated asteroid count — stability detection.</summary>
         static int s_RemoteMapAsteroidCount = -1;
+        /// <summary>realtimeSinceStartup when body counts last changed — settle window before "complete".</summary>
         static float s_RemoteMapStableSince = -1f;
 
+        /// <summary>Clears remote map heuristics when disconnecting or leaving in-game state.</summary>
         static void ResetRemoteMapLoadTracking()
         {
             s_RemoteMapExpectedTotal = -1;
@@ -849,6 +934,7 @@ namespace TitanOrbit.Game
             return s_RemoteMapExpectedTotal > 0 ? s_RemoteMapExpectedTotal : EstimateMapSpawnStepsFromSettings(0);
         }
 
+        /// <summary>Reads neutral + asteroid midpoint from <see cref="MapGenerationSettingsCache"/>.</summary>
         static int EstimateMapSpawnStepsFromSettings(int homeCount)
         {
             if (MapGenerationSettingsCache.Settings != null)
@@ -866,6 +952,7 @@ namespace TitanOrbit.Game
             return homeCount > 0 ? homeCount + 12 + 666 : 678;
         }
 
+        /// <summary>Counts replicated home/planet/asteroid ghosts on the client world.</summary>
         static bool TryGetReplicatedMapBodyCounts(World client, out int homeCount, out int planetCount, out int asteroidCount)
         {
             homeCount = 0;
@@ -883,6 +970,7 @@ namespace TitanOrbit.Game
             return homeCount > 0 || planetCount > 0 || asteroidCount > 0;
         }
 
+        /// <summary>Expected total bodies from layout buffer or map settings given home planet count.</summary>
         static int EstimateExpectedRemoteMapBodies(int homeCount)
         {
             if (homeCount <= 0)
@@ -897,6 +985,7 @@ namespace TitanOrbit.Game
             return EstimateMapSpawnStepsFromSettings(homeCount);
         }
 
+        /// <summary>Remote client loading progress from replicated planet + asteroid ghost counts.</summary>
         static bool TryReadReplicatedMapLoadProgress(
             World client,
             out int completedSteps,
@@ -955,6 +1044,7 @@ namespace TitanOrbit.Game
             return ClientWorld != null && ClientWorld.IsCreated && HasReplicatedMapWorldContent(ClientWorld);
         }
 
+        /// <summary>True when enough planet/asteroid ghosts have streamed and counts stabilized.</summary>
         static bool HasReplicatedMapWorldContent(World client)
         {
             var em = client.EntityManager;
@@ -967,6 +1057,9 @@ namespace TitanOrbit.Game
             return ships.CalculateEntityCount() > 0;
         }
 
+        // --- Team / match queries ---
+
+        /// <summary>Team roster singleton — prefers ServerWorld on host, else ClientWorld.</summary>
         public static TeamStateSingleton GetTeamState()
         {
             if (ServerWorld != null && ServerWorld.IsCreated)
@@ -1034,6 +1127,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Counts home planets with <see cref="PlanetState.IsHomePlanet"/> in replicated state.</summary>
         static int CountReplicatedHomePlanets(EntityManager em)
         {
             using var query = em.CreateEntityQuery(typeof(PlanetState), typeof(PlanetTag));
@@ -1048,6 +1142,9 @@ namespace TitanOrbit.Game
             return count;
         }
 
+        // --- Planet queries ---
+
+        /// <summary><see cref="PlanetState"/> by stable <see cref="PlanetState.PlanetId"/> across host/client worlds.</summary>
         public static bool TryGetPlanetStateByPlanetId(int planetId, out PlanetState state)
         {
             state = default;
@@ -1063,6 +1160,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Gem-moon combat state for a planet — shield, orbit zone, contributed gems UI.</summary>
         public static bool TryGetPlanetGemMoonStateByPlanetId(int planetId, out PlanetGemMoonState moonState)
         {
             moonState = default;
@@ -1109,6 +1207,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Linear search for <see cref="PlanetState"/> by planet id in a world.</summary>
         static bool TryFindPlanetState(World world, int planetId, out PlanetState state)
         {
             state = default;
@@ -1129,6 +1228,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Linear search for <see cref="PlanetGemMoonState"/> by parent planet id.</summary>
         static bool TryFindPlanetGemMoonState(World world, int planetId, out PlanetGemMoonState moonState)
         {
             moonState = default;
@@ -1150,6 +1250,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Planet world position, scale, and state by <see cref="PlanetState.PlanetId"/>.</summary>
         public static bool TryGetPlanetPoseByPlanetId(int planetId, out float3 position, out float scale, out PlanetState state)
         {
             position = default;
@@ -1167,6 +1268,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Planet visual spin rotation for minimap and world labels.</summary>
         public static bool TryGetPlanetRotationByPlanetId(int planetId, out quaternion rotation)
         {
             rotation = quaternion.identity;
@@ -1179,6 +1281,7 @@ namespace TitanOrbit.Game
             return TryFindPlanetRotation(ClientWorld, planetId, out rotation);
         }
 
+        /// <summary>Planet pose (position, scale, state) linear search by planet id.</summary>
         static bool TryFindPlanetPose(World world, int planetId, out float3 position, out float scale, out PlanetState state)
         {
             position = default;
@@ -1204,6 +1307,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>Planet <see cref="LocalTransform.Rotation"/> linear search by planet id.</summary>
         static bool TryFindPlanetRotation(World world, int planetId, out quaternion rotation)
         {
             rotation = quaternion.identity;

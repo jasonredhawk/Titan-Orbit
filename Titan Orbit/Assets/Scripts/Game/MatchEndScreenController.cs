@@ -24,6 +24,7 @@ namespace TitanOrbit.Game
 
         void Update()
         {
+            // --- Per-frame refresh ---
             if (!EcsGameBridge.TryGetMatchState(out var match))
             {
                 if (_shownWinner != TeamId.None)
@@ -47,6 +48,7 @@ namespace TitanOrbit.Game
 
         void ShowWinner(TeamId team, float matchSeconds)
         {
+            // --- ShowWinner ---
             EnsureUi();
             if (overlayRoot != null)
                 overlayRoot.SetActive(true);
@@ -69,6 +71,7 @@ namespace TitanOrbit.Game
 
         void Hide()
         {
+            // --- Hide ---
             _shownWinner = TeamId.None;
             if (overlayRoot != null)
                 overlayRoot.SetActive(false);
@@ -87,6 +90,7 @@ namespace TitanOrbit.Game
 
         void EnsureUi()
         {
+            // --- Ensure setup ---
             if (overlayRoot != null && titleText != null)
                 return;
 
@@ -137,6 +141,7 @@ namespace TitanOrbit.Game
 
         static TextMeshProUGUI CreateLabel(Transform parent, string name, Vector2 anchoredPos, float fontSize, FontStyles style)
         {
+            // --- Create instance ---
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             var rt = go.AddComponent<RectTransform>();

@@ -4,20 +4,28 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// ScriptableObject describing a single upgrade card that can be purchased and equipped into a ship's grids.
-    /// Cards can either represent a concrete visual part (USC module) or a pure stat modifier.
+    /// ScriptableObject describing a single upgrade card that can be purchased and equipped into a ship's
+    /// Tetris-style grids (ship, weapon, cargo). Cards either reference a USC visual part via
+    /// <see cref="componentKey"/> or apply pure stat modifiers. Serialized on disk; stable id from
+    /// <see cref="GetStableCardId"/> is used for save/load. Shop draws filter by level, rarity, and
+    /// <see cref="minHomePlanetLevel"/>.
     /// </summary>
     [CreateAssetMenu(fileName = "New Card", menuName = "Titan Orbit/Card")]
     public class CardData : ScriptableObject
     {
         [Header("Identity")]
-        public string cardId;              // Stable ID for save/load and networking (e.g. "AstroEagle_Engine_2_L")
+        /// <summary>Stable ID for save/load and networking (e.g. AstroEagle_Engine_2_L).</summary>
+        public string cardId;
+        /// <summary>Shop and loadout UI title.</summary>
         public string displayName;
         [TextArea]
+        /// <summary>Tooltip body describing stat effects.</summary>
         public string description;
+        /// <summary>Icon in card shop grid.</summary>
         public Sprite icon;
 
         [Header("Sloting")]
+        /// <summary>Which equipment grid accepts this card.</summary>
         public SlotType slotType;
 
         [Tooltip("Grid footprint for this card in squares (Tetris-like shape). Width/height define the bounding box; shapeMask defines which cells are filled.")]
@@ -92,12 +100,14 @@ namespace TitanOrbit.Data
 
         private void OnEnable()
         {
+            // [TITAN-ORBIT] Heal empty cardId/displayName from asset file name (generator convention).
             CardDataRuntimeRestore.TryRestoreFromAssetName(this);
         }
 
 #if UNITY_EDITOR
         private void OnValidate()
         {
+            // --- OnValidate ---
             if (string.IsNullOrEmpty(cardId) && !string.IsNullOrEmpty(name))
                 cardId = name;
             CardDataRuntimeRestore.TryRestoreFromAssetName(this);
@@ -114,6 +124,7 @@ namespace TitanOrbit.Data
         /// <summary>Player-facing title; uses <see cref="displayName"/> or a name derived from the asset file.</summary>
         public string GetDisplayNameOrDefault()
         {
+            // --- Compute value ---
             if (!string.IsNullOrEmpty(displayName)) return displayName;
             CardDataRuntimeRestore.TryRestoreFromAssetName(this);
             return string.IsNullOrEmpty(displayName) ? name : displayName;
@@ -122,6 +133,7 @@ namespace TitanOrbit.Data
         /// <summary>Card body text for shop UI.</summary>
         public string GetDescriptionOrDefault()
         {
+            // --- Compute value ---
             if (!string.IsNullOrEmpty(description)) return description;
             CardDataRuntimeRestore.TryRestoreFromAssetName(this);
             return description ?? string.Empty;

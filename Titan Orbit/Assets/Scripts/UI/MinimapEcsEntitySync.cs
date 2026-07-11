@@ -13,12 +13,18 @@ using UnityEngine;
 
 namespace TitanOrbit.UI
 {
-    /// <summary>Syncs ECS ghost entities into hidden MinimapBlipAnchor transforms for the minimap UI.</summary>
+    /// <summary>
+    /// [HYBRID] Syncs ECS ghost entities into hidden MinimapBlipAnchor transforms for minimap UI.
+    /// Rebuilds anchor cache periodically; updates positions every LateUpdate.
+    /// World: visualization world via EcsGameBridge. Paired with MinimapController.
+    /// </summary>
     [DefaultExecutionOrder(-50)]
     public sealed class MinimapEcsEntitySync : MonoBehaviour
     {
+        /// <summary>Singleton for MinimapController and marker managers.</summary>
         public static MinimapEcsEntitySync Instance { get; private set; }
 
+        /// <summary>Seconds between full entity→anchor rebuild (new ghosts, despawns).</summary>
         const float EntityCacheRefreshInterval = 6f;
 
         readonly Dictionary<Entity, MinimapBlipAnchor> _anchors = new Dictionary<Entity, MinimapBlipAnchor>();
@@ -41,8 +47,10 @@ namespace TitanOrbit.UI
         public IReadOnlyList<MinimapBlipAnchor> Asteroids => _asteroids;
         public IReadOnlyList<MinimapBlipAnchor> GemMoons => _gemMoons;
 
+        /// <summary>[UNITY] Creates hidden root for blip anchor GameObjects.</summary>
         void Awake()
         {
+            // --- Unity lifecycle ---
             if (Instance != null && Instance != this)
             {
                 Destroy(this);
@@ -57,6 +65,7 @@ namespace TitanOrbit.UI
 
         void OnDestroy()
         {
+            // --- Unity lifecycle ---
             if (Instance == this)
                 Instance = null;
 
@@ -64,8 +73,10 @@ namespace TitanOrbit.UI
                 Destroy(_root.gameObject);
         }
 
+        /// <summary>Per-frame minimap blip sync — rebuild or position-only update.</summary>
         void LateUpdate()
         {
+            // --- Per-frame refresh ---
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return;
@@ -83,14 +94,17 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>Local player blip for minimap centering and team tint.</summary>
         public bool TryGetLocalPlayer(out MinimapBlipAnchor anchor)
         {
             anchor = _localPlayer;
             return anchor != null;
         }
 
+        /// <summary>Reads toroidal map dimensions from MapStateSingleton when available.</summary>
         void SyncMapSize(EntityManager em)
         {
+            // --- SyncMapSize ---
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
             using var mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
@@ -110,6 +124,7 @@ namespace TitanOrbit.UI
 
         void RebuildAnchors(EntityManager em)
         {
+            // --- Rebuild cache ---
             var alive = new HashSet<Entity>();
             _localPlayer = null;
 
@@ -158,6 +173,7 @@ namespace TitanOrbit.UI
 
         void UpdateAnchorPositions(EntityManager em)
         {
+            // --- Per-frame refresh ---
             double elapsed = Time.timeAsDouble;
             foreach (var kv in _anchors)
             {
@@ -200,6 +216,7 @@ namespace TitanOrbit.UI
                 }
                 else if (anchor.Kind == MinimapBlipKind.Asteroid && em.HasComponent<AsteroidState>(entity))
                 {
+                    // --- if ---
                     var asteroid = em.GetComponentData<AsteroidState>(entity);
                     anchor.IsDestroyed = asteroid.IsDestroyed;
                     anchor.BodySize = math.max(0.25f, lt.Scale);
@@ -212,6 +229,7 @@ namespace TitanOrbit.UI
 
         void TryResolveLocalPlayerByNetworkId(EntityManager em)
         {
+            // --- Attempt resolution ---
             int localId = EcsGameBridge.GetLocalNetworkId();
             if (localId <= 0)
                 return;
@@ -235,6 +253,7 @@ namespace TitanOrbit.UI
 
         void SyncShips(EntityManager em, HashSet<Entity> alive)
         {
+            // --- SyncShips ---
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(ShipState), typeof(LocalTransform));
             using var entities = query.ToEntityArray(Allocator.Temp);
             using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
@@ -262,6 +281,7 @@ namespace TitanOrbit.UI
 
         void SyncPlanets(EntityManager em, HashSet<Entity> alive)
         {
+            // --- SyncPlanets ---
             using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState), typeof(LocalTransform));
             using var entities = query.ToEntityArray(Allocator.Temp);
             using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
@@ -289,6 +309,7 @@ namespace TitanOrbit.UI
 
         void UpdateGemMoonAnchor(MinimapBlipAnchor planetAnchor, LocalTransform lt, PlanetState state, double elapsed)
         {
+            // --- Per-frame refresh ---
             if (!_gemMoonsByPlanetId.TryGetValue(state.PlanetId, out var moonAnchor) || moonAnchor == null)
             {
                 var go = new GameObject($"MinimapAnchor_GemMoon_{state.PlanetId}");
@@ -320,6 +341,7 @@ namespace TitanOrbit.UI
 
         void SyncAsteroids(EntityManager em, HashSet<Entity> alive)
         {
+            // --- SyncAsteroids ---
             using var query = em.CreateEntityQuery(typeof(AsteroidTag), typeof(AsteroidState), typeof(LocalTransform));
             using var entities = query.ToEntityArray(Allocator.Temp);
             using var states = query.ToComponentDataArray<AsteroidState>(Allocator.Temp);
@@ -341,6 +363,7 @@ namespace TitanOrbit.UI
 
         MinimapBlipAnchor GetOrCreateAnchor(Entity entity, MinimapBlipKind kind)
         {
+            // --- Compute value ---
             if (_anchors.TryGetValue(entity, out var existing) && existing != null)
             {
                 existing.Kind = kind;
@@ -359,6 +382,7 @@ namespace TitanOrbit.UI
 
         void DestroyAnchor(Entity entity)
         {
+            // --- DestroyAnchor ---
             if (!_anchors.TryGetValue(entity, out var anchor))
                 return;
 
@@ -372,6 +396,7 @@ namespace TitanOrbit.UI
 
         void RebuildLists()
         {
+            // --- Rebuild cache ---
             _ships.Clear();
             _planets.Clear();
             _homePlanets.Clear();

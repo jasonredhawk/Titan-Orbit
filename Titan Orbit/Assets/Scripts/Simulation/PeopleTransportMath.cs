@@ -3,9 +3,16 @@ using Unity.Mathematics;
 
 namespace TitanOrbit.Simulation
 {
-    /// <summary>Magnet-steered people transport motion ported from legacy PeopleTransportProjectile.</summary>
+    /// <summary>
+    /// Magnet-steered people transport motion ported from legacy PeopleTransportProjectile.
+    /// Server <see cref="ECS.Systems.PeopleTransportSystem"/> and client
+    /// <see cref="Game.PeopleTransportVisualApplier"/> share these constants and steering math
+    /// so visuals match authoritative delivery timing. Uses toroidal helpers from
+    /// <see cref="Shared.ToroidalMapEcs"/> for wrap-aware paths.
+    /// </summary>
     public static class PeopleTransportMath
     {
+        /// <summary>[TITAN-ORBIT] Target one-way visual travel time before duration multipliers.</summary>
         public const float TargetVisualTravelSeconds = 3f;
         public const float VisualTravelDurationMultiplier = 5f;
         public const float VisualTravelSpeedBonus = 2.4f;
@@ -33,6 +40,7 @@ namespace TitanOrbit.Simulation
 
         public static float ComputeCruiseSpeed(float3 fromPos, float3 toPos, bool isLoad, float mapW, float mapH)
         {
+            // --- Compute value ---
             float travelDist = ToroidalMapEcs.ToroidalDistance(fromPos, toPos, mapW, mapH);
             float cruiseSpeed = math.max(0.08f, travelDist / EffectiveVisualTravelSeconds);
             if (isLoad)
@@ -61,6 +69,7 @@ namespace TitanOrbit.Simulation
 
         public static float GetVisualScaleMultiplier(float peopleAmount)
         {
+            // --- Compute value ---
             float clamped = math.clamp(math.max(0.001f, peopleAmount), PeopleAmountScaleMin, PeopleAmountScaleMax);
             float normalized = math.unlerp(PeopleAmountScaleMin, PeopleAmountScaleMax, clamped);
             return math.lerp(VisualScaleMinMultiplier, VisualScaleMaxMultiplier, normalized);
@@ -79,6 +88,7 @@ namespace TitanOrbit.Simulation
 
         public static float3 GetPlanetSurfaceToward(float3 planetCenter, float planetSize, float3 fromWorldPos, float mapW, float mapH)
         {
+            // --- Compute value ---
             float3 fromPos = fromWorldPos;
             fromPos.y = 0f;
             float3 toCore = ToroidalMapEcs.ToroidalDirection(fromPos, planetCenter, mapW, mapH);
@@ -90,6 +100,7 @@ namespace TitanOrbit.Simulation
 
         public static float3 GetPlanetSurfaceSpawnToward(float3 planetCenter, float planetSize, float3 towardWorldPos, float mapW, float mapH)
         {
+            // --- Compute value ---
             float3 surface = GetPlanetSurfaceToward(planetCenter, planetSize, towardWorldPos, mapW, mapH);
             float3 outward = ToroidalMapEcs.ToroidalDirection(planetCenter, surface, mapW, mapH);
             float nudge = math.max(SurfaceSpawnOutwardNudge, planetSize * 0.045f);
@@ -100,6 +111,7 @@ namespace TitanOrbit.Simulation
 
         public static float3 GetShipMagnetTarget(float3 shipCenter, float shipRadius, float3 fromWorldPos, float mapW, float mapH)
         {
+            // --- Compute value ---
             float3 fromPos = fromWorldPos;
             fromPos.y = 0f;
             float3 toCenter = ToroidalMapEcs.ToroidalDirection(fromPos, shipCenter, mapW, mapH);
@@ -112,6 +124,7 @@ namespace TitanOrbit.Simulation
 
         public static float GetShipHullRadius(float shipTransformScale)
         {
+            // --- Compute value ---
             if (shipTransformScale > 0.01f)
                 return math.max(0.2f, shipTransformScale);
             return 1f;
@@ -119,6 +132,7 @@ namespace TitanOrbit.Simulation
 
         public static float3 GetShipUnloadSpawnToward(float3 shipCenter, float shipRadius, float3 towardWorldPos, float mapW, float mapH)
         {
+            // --- Compute value ---
             float3 outward = ToroidalMapEcs.ToroidalDirection(shipCenter, towardWorldPos, mapW, mapH);
             float hullRadius = math.max(0.2f, shipRadius);
             float nudge = math.max(0.08f, hullRadius * 0.06f);
@@ -129,6 +143,7 @@ namespace TitanOrbit.Simulation
 
         public static bool CanDeliverLoadToShip(float3 projectilePos, float3 shipCenter, float shipRadius, float mapW, float mapH)
         {
+            // --- CanDeliverLoadToShip ---
             float3 hullPoint = GetShipMagnetTarget(shipCenter, shipRadius, projectilePos, mapW, mapH);
             float collectDist = math.max(ShipLoadCollectMinDistance, TransportRadius + ShipLoadCollectPadding);
             return ToroidalMapEcs.ToroidalDistance(projectilePos, hullPoint, mapW, mapH) <= collectDist;
@@ -136,6 +151,7 @@ namespace TitanOrbit.Simulation
 
         public static bool HasBriefTravelBeforeLoad(float3 projectilePos, float3 spawnPosition, float elapsed, float mapW, float mapH)
         {
+            // --- HasBriefTravelBeforeLoad ---
             if (elapsed < LoadDeliveryMinSeconds)
                 return false;
             return ToroidalMapEcs.ToroidalDistance(projectilePos, spawnPosition, mapW, mapH) >= LoadDeliveryMinSpawnDistance;
@@ -143,6 +159,7 @@ namespace TitanOrbit.Simulation
 
         public static bool CanCompleteUnloadDelivery(float3 projectilePos, float3 spawnPosition, float3 planetCenter, float planetSize, float elapsed, float mapW, float mapH)
         {
+            // --- CanCompleteUnloadDelivery ---
             if (elapsed < UnloadDeliveryMinSeconds)
                 return false;
             if (ToroidalMapEcs.ToroidalDistance(projectilePos, spawnPosition, mapW, mapH) < UnloadDeliveryMinTravelDistance)

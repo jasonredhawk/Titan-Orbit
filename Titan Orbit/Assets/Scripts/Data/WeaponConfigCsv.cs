@@ -7,14 +7,18 @@ using UnityEngine;
 
 namespace TitanOrbit.Data
 {
-    /// <summary>Import/export WeaponConfig to CSV for editing in a spreadsheet.</summary>
+    /// <summary>
+    /// [EDITOR] Import/export <see cref="WeaponConfig"/> cannon rows to CSV for spreadsheet editing.
+    /// Uses invariant culture for floats so Excel locales do not break parsing. Default path:
+    /// Assets/Data/WeaponConfigs.csv.
+    /// </summary>
     public static class WeaponConfigCsv
     {
         public const string DefaultCsvPath = "Assets/Data/WeaponConfigs.csv";
 
         private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
 
-        /// <summary>Export a single WeaponConfig to CSV. If file exists, appends a new block with configName.</summary>
+        /// <summary>Export a single WeaponConfig to CSV. Overwrites file with one config block.</summary>
         public static void ExportToCsv(WeaponConfig config, string filePath = null)
         {
             if (config == null || config.cannons == null) return;
@@ -88,7 +92,7 @@ namespace TitanOrbit.Data
             Debug.Log($"Exported {configs.Count} weapon configs to {filePath}");
         }
 
-        /// <summary>Import from CSV. Parses ConfigName and creates one WeaponConfig per unique name (or updates existing if passed).</summary>
+        /// <summary>Import from CSV. One <see cref="WeaponConfig"/> per unique ConfigName column value.</summary>
         public static List<WeaponConfig> ImportFromCsv(string filePath = null)
         {
             filePath ??= DefaultCsvPath;
@@ -102,6 +106,7 @@ namespace TitanOrbit.Data
 
             var configsByName = new Dictionary<string, WeaponConfig>();
             string[] headers = ParseCsvLine(lines[0]);
+            // --- Column indices from header row (case-insensitive) ---
             int idxConfigName = IndexOf(headers, "ConfigName");
             int idxFireRate = IndexOf(headers, "FireRate");
             int idxEnergyCost = IndexOf(headers, "EnergyCostPerShot");

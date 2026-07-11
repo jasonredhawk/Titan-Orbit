@@ -51,6 +51,7 @@ namespace TitanOrbit.Services
         /// </summary>
         static bool WebGlUnityPlayerAccountGestureSafePrerequisitesMet()
         {
+            // --- WebGlUnityPlayerAccountGestureSafePrerequisitesMet ---
 #if UNITY_WEBGL && !UNITY_EDITOR
             return UnityServices.State == ServicesInitializationState.Initialized &&
                    AuthenticationService.Instance.IsSignedIn &&
@@ -63,6 +64,7 @@ namespace TitanOrbit.Services
         /// <summary>Shortened player id for UI (full id is still used by services).</summary>
         public static string GetDisplayPlayerId()
         {
+            // --- Compute value ---
             string id = PlayerId;
             if (string.IsNullOrEmpty(id))
                 return "—";
@@ -73,6 +75,7 @@ namespace TitanOrbit.Services
 
         public static async Task InitializeUnityServicesAsync()
         {
+            // --- InitializeUnityServicesAsync ---
             if (UnityServices.State == ServicesInitializationState.Initialized)
                 return;
             await UnityServices.InitializeAsync();
@@ -85,6 +88,7 @@ namespace TitanOrbit.Services
         /// </summary>
         static async Task EnsureAuthenticationSessionRestoredAsync()
         {
+            // --- Ensure setup ---
             var auth = AuthenticationService.Instance;
             if (auth.IsAuthorized)
                 return;
@@ -123,6 +127,7 @@ namespace TitanOrbit.Services
         /// </summary>
         static async Task AcquireGuestSessionGateAsync()
         {
+            // --- AcquireGuestSessionGateAsync ---
 #if UNITY_WEBGL && !UNITY_EDITOR
             while (!EnsureGuestSessionGate.Wait(0))
                 await Task.Yield();
@@ -134,6 +139,7 @@ namespace TitanOrbit.Services
         /// <summary>Initializes core UGS and anonymous auth; serialized so callers do not hit "already signing in".</summary>
         static async Task EnsureUnityServicesAndAnonymousAuthLockedAsync()
         {
+            // --- Ensure setup ---
             await AcquireGuestSessionGateAsync();
             try
             {
@@ -152,6 +158,7 @@ namespace TitanOrbit.Services
         /// <summary>Initializes UGS and ensures an anonymous or existing session for online multiplayer APIs.</summary>
         public static async Task<bool> EnsureGuestSessionForOnlineAsync()
         {
+            // --- Ensure setup ---
             try
             {
                 if (UnityServices.State == ServicesInitializationState.Initialized &&
@@ -189,6 +196,7 @@ namespace TitanOrbit.Services
         /// </param>
         public static async Task TryFetchPlayerInfoForUiAsync(bool allowReplacePlayerInfo = true)
         {
+            // --- Attempt resolution ---
             if (UnityServices.State != ServicesInitializationState.Initialized)
                 return;
             if (!AuthenticationService.Instance.IsSignedIn)
@@ -209,6 +217,7 @@ namespace TitanOrbit.Services
         /// <summary>True when this Authentication player is linked to a Unity (Player Account) identity.</summary>
         public static bool HasUnityPlayerAccountLinked()
         {
+            // --- HasUnityPlayerAccountLinked ---
             if (UnityServices.State != ServicesInitializationState.Initialized || !AuthenticationService.Instance.IsSignedIn)
                 return false;
             var info = AuthenticationService.Instance.PlayerInfo;
@@ -231,6 +240,7 @@ namespace TitanOrbit.Services
         /// </summary>
         public static bool IsUnityAccountActiveForUi()
         {
+            // --- IsUnityAccountActiveForUi ---
             if (HasUnityPlayerAccountLinked())
                 return true;
             if (UnityServicesNotReadyYet() || !IsAuthorizedSession())
@@ -252,6 +262,7 @@ namespace TitanOrbit.Services
         /// </summary>
         public static async Task<bool> SignInOrLinkUnityPlayerAccountUsingBrowserAsync()
         {
+            // --- SignInOrLinkUnityPlayerAccountUsingBrowserAsync ---
 #if UNITY_WEBGL && !UNITY_EDITOR
             if (!WebGlUnityPlayerAccountGestureSafePrerequisitesMet())
             {
@@ -285,6 +296,7 @@ namespace TitanOrbit.Services
         /// <summary>Opens the Unity Player Accounts browser flow, then signs into Authentication with the returned token.</summary>
         public static async Task<bool> SignInWithUnityPlayerAccountUsingBrowserAsync()
         {
+            // --- SignInWithUnityPlayerAccountUsingBrowserAsync ---
             await InitializeUnityServicesAsync();
             RegisterPlayerAccountHooksOnce();
             _pendingLinkInsteadOfSignIn = false;
@@ -329,6 +341,7 @@ namespace TitanOrbit.Services
         /// <summary>Links the current Authentication session (e.g. anonymous) to Unity Player Accounts after browser sign-in.</summary>
         public static async Task<bool> LinkUnityPlayerAccountUsingBrowserAsync()
         {
+            // --- LinkUnityPlayerAccountUsingBrowserAsync ---
             if (!AuthenticationService.Instance.IsSignedIn)
             {
                 Debug.LogWarning("[UnityGameServicesBootstrap] Must be signed in before linking.");
@@ -372,6 +385,7 @@ namespace TitanOrbit.Services
 
         static async Task<bool> WaitForPendingAuthAsync(TimeSpan timeout)
         {
+            // --- WaitForPendingAuthAsync ---
             if (_pendingUnityAuthCompletion == null)
                 return false;
             Task completed = await Task.WhenAny(_pendingUnityAuthCompletion.Task, Task.Delay(timeout));
@@ -387,6 +401,7 @@ namespace TitanOrbit.Services
         /// <summary>Signs out of Unity Authentication and Unity Player Accounts.</summary>
         public static void SignOutAllSessions(bool clearAuthenticationSession = true)
         {
+            // --- SignOutAllSessions ---
 #if UNITY_WEBGL && !UNITY_EDITOR
             WebGlUnityPlayerAccountBrowser.ClearPendingOAuthState();
 #endif
@@ -401,6 +416,7 @@ namespace TitanOrbit.Services
 
         public static string GetAuthStatusSummary()
         {
+            // --- Compute value ---
             if (UnityServices.State != ServicesInitializationState.Initialized)
                 return "Connecting…";
 
@@ -415,6 +431,7 @@ namespace TitanOrbit.Services
 
         static void RegisterCoreAuthEventsOnce()
         {
+            // --- RegisterCoreAuthEventsOnce ---
             if (_authEventsHooked)
                 return;
             _authEventsHooked = true;
@@ -431,6 +448,7 @@ namespace TitanOrbit.Services
 
         static void RegisterPlayerAccountHooksOnce()
         {
+            // --- RegisterPlayerAccountHooksOnce ---
             if (_playerAccountHooksHooked)
                 return;
             _playerAccountHooksHooked = true;
@@ -450,6 +468,7 @@ namespace TitanOrbit.Services
 
         static void OnAuthenticationExpired()
         {
+            // --- OnAuthenticationExpired ---
             TitanOrbitFriendsCoordinator.ResetAfterAuthChange();
             AuthStateChanged?.Invoke();
             TrySilentSessionRefreshFromExpiredAsync();
@@ -457,6 +476,7 @@ namespace TitanOrbit.Services
 
         static async void TrySilentSessionRefreshFromExpiredAsync()
         {
+            // --- Attempt resolution ---
             try
             {
                 if (UnityServices.State != ServicesInitializationState.Initialized)
@@ -478,6 +498,7 @@ namespace TitanOrbit.Services
 
         static async void OnPlayerAccountSignedIn()
         {
+            // --- OnPlayerAccountSignedIn ---
             try
             {
                 string token = PlayerAccountService.Instance.AccessToken;

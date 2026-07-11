@@ -16,25 +16,52 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class GemEconomyConstants
     {
+        /// <summary>World units — ship must be within this toroidal distance to mine an asteroid.</summary>
         public const float MiningRange = 6f;
+
+        /// <summary>Gem value mined per second while in range.</summary>
         public const float MiningRate = 5f;
+
+        /// <summary>Hull-center pickup radius when ship has no wing tractor buffers.</summary>
         public const float GemPickupRange = 2.5f;
+
         /// <summary>Collect gems at the wing when tractor-pulled (legacy Gem.collectRadius ~0.6).</summary>
         public const float GemWingCollectRadius = 0.65f;
+
+        /// <summary>Legacy planet interaction radius (deposit uses moon dock instead).</summary>
         public const float PlanetInteractionRange = 20f;
+
+        /// <summary>Multiplier on moon dock zone relative to moon visual size.</summary>
         public const float MoonDockRangeMultiplier = 2.2f;
+
+        /// <summary>Landing progress threshold — 1.0 means fully docked on the gem moon.</summary>
         public const float MoonLandingCompleteThreshold = 0.999f;
+
         /// <summary>Stillness time required before moon landing progress begins or resumes.</summary>
         public const float MoonLandingApproachDelaySeconds = 0.5f;
+
+        /// <summary>Gems deposited per second scales with ship level × this factor.</summary>
         public const float DepositRatePerShipLevel = 2f;
+
+        /// <summary>Smallest gem chunk worth spawning as an entity.</summary>
         public const float MinGemSpawnValue = 0.25f;
+
+        /// <summary>Initial outward speed when asteroid destruction bursts gems.</summary>
         public const float AsteroidExplosionSpeed = 2.2f;
+
+        /// <summary>Random offset radius for gem burst spawn positions.</summary>
         public const float AsteroidExplosionRadius = 1.4f;
+
+        /// <summary>Per-second velocity damping on free-floating gems.</summary>
         public const float GemDragPerSecond = 1.25f;
+
         /// <summary>SgtPlanet base radius on <c>Asteroid.prefab</c>.</summary>
         public const float AsteroidMeshBaseRadius = 0.5f;
+
         /// <summary>Padding over mesh radius for displacement and slight aim forgiveness.</summary>
         public const float AsteroidHitRadiusScale = 1.1f;
+
+        /// <summary>Floor for bullet segment tests against small asteroids.</summary>
         public const float MinAsteroidHitRadius = 0.15f;
     }
 
@@ -67,6 +94,7 @@ namespace TitanOrbit.ECS
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
+            // --- Each ship mines every asteroid in range this tick ---
             foreach (var (shipTransform, shipState, shipEntity) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRO<ShipState>>()
                          .WithAll<ShipTag>()
@@ -125,6 +153,7 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             float dt = SystemAPI.Time.DeltaTime;
+            // [TITAN-ORBIT] Gems slow down over time so bursts from mining settle near asteroids.
             float drag = math.saturate(GemEconomyConstants.GemDragPerSecond * dt);
 
             foreach (var (kinematics, transform) in SystemAPI
@@ -394,8 +423,12 @@ namespace TitanOrbit.ECS
         }
     }
 
+    /// <summary>Shared gem entity spawn helper for mining and asteroid destruction bursts.</summary>
     static class GemSpawning
     {
+        /// <summary>
+        /// Instantiates a gem prefab with value, optional burst velocity, and toroidal-safe offset.
+        /// </summary>
         public static void Spawn(EntityCommandBuffer ecb, Entity gemPrefab, float3 position, float value, uint salt, bool burst)
         {
             if (value <= 0f)

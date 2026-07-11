@@ -110,6 +110,7 @@ namespace TitanOrbit.UI
 
         void Awake()
         {
+            // --- Unity lifecycle ---
             if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
@@ -125,6 +126,7 @@ namespace TitanOrbit.UI
 
         void OnDestroy()
         {
+            // --- Unity lifecycle ---
             if (Instance == this)
             {
                 Instance = null;
@@ -134,6 +136,7 @@ namespace TitanOrbit.UI
 
         void Update()
         {
+            // --- Per-frame refresh ---
             if (MoonOrbitClientState.TryConsumeContributedGems(out float gems))
                 OnContributedGemsReceived(gems);
 

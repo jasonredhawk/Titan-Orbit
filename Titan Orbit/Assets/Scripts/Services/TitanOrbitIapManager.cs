@@ -35,6 +35,7 @@ namespace TitanOrbit.Services
 
         void Reset()
         {
+            // --- Reset ---
             removeAdsProductId = "remove_ads";
             catalog = new[]
             {
@@ -50,6 +51,7 @@ namespace TitanOrbit.Services
 
         async void Start()
         {
+            // --- Unity lifecycle ---
             if (!initializeOnAwake || _controller != null)
                 return;
             try
@@ -66,6 +68,7 @@ namespace TitanOrbit.Services
 
         void EnsureCatalogDefaults()
         {
+            // --- Ensure setup ---
             if (catalog == null || catalog.Length == 0)
             {
                 catalog = new[]
@@ -81,6 +84,7 @@ namespace TitanOrbit.Services
         /// <summary>Safe to call multiple times; second call is a no-op after success.</summary>
         public void InitializePurchasing()
         {
+            // --- InitializePurchasing ---
             if (!enabled)
                 return;
             if (_controller != null)
@@ -105,6 +109,7 @@ namespace TitanOrbit.Services
 
         public void InitiatePurchase(string productId)
         {
+            // --- InitiatePurchase ---
             if (_controller == null)
             {
                 Debug.LogWarning("[TitanOrbitIapManager] InitiatePurchase ignored (store not ready).");
@@ -118,6 +123,7 @@ namespace TitanOrbit.Services
 
         public string GetLocalizedPriceString(string productId)
         {
+            // --- Compute value ---
             if (_controller == null || string.IsNullOrWhiteSpace(productId))
                 return "";
             Product p = _controller.products.WithID(productId.Trim());
@@ -127,6 +133,7 @@ namespace TitanOrbit.Services
         /// <summary>On iOS triggers Apple restore; on other platforms re-reads non-consumable receipts.</summary>
         public void RestorePurchases(Action<bool, string> onFinished = null)
         {
+            // --- RestorePurchases ---
             if (_controller == null || _extensions == null)
             {
                 Debug.LogWarning("[TitanOrbitIapManager] RestorePurchases ignored (store not ready).");
@@ -153,6 +160,7 @@ namespace TitanOrbit.Services
 
         public void OnInitialized(IStoreController controller, IExtensionProvider extensions)
         {
+            // --- OnInitialized ---
             _controller = controller;
             _extensions = extensions;
             Debug.Log("[TitanOrbitIapManager] Store initialized. PlayerId=" +
@@ -172,6 +180,7 @@ namespace TitanOrbit.Services
 
         public PurchaseProcessingResult ProcessPurchase(PurchaseEventArgs args)
         {
+            // --- ProcessPurchase ---
             string pid = args.purchasedProduct?.definition?.id ?? "";
             string tid = args.purchasedProduct?.transactionID ?? "";
             TitanOrbitEntitlements.NotifyPurchaseCompleted(pid, tid);
@@ -191,6 +200,7 @@ namespace TitanOrbit.Services
 
         void ReconcileNonConsumableEntitlements()
         {
+            // --- ReconcileNonConsumableEntitlements ---
             if (_controller == null || catalog == null)
                 return;
             foreach (TitanOrbitIapCatalogEntry entry in catalog)
@@ -215,6 +225,7 @@ namespace TitanOrbit.Services
 
         public bool TryGetStoreProduct(string productId, out Product product)
         {
+            // --- Attempt resolution ---
             product = null;
             if (_controller == null || string.IsNullOrWhiteSpace(productId))
                 return false;
@@ -224,6 +235,7 @@ namespace TitanOrbit.Services
 
         public string GetProductLocalizedTitle(string productId)
         {
+            // --- Compute value ---
             if (!TryGetStoreProduct(productId, out var p))
                 return productId ?? "";
             string t = p.metadata?.localizedTitle;
@@ -233,6 +245,7 @@ namespace TitanOrbit.Services
         /// <summary>Short status for store rows: Purchased / Available / Store not ready, etc.</summary>
         public string GetUiOwnershipLabel(string productId)
         {
+            // --- Compute value ---
             if (_controller == null)
                 return "Store not ready";
             if (!TryGetStoreProduct(productId, out var p))
@@ -253,6 +266,7 @@ namespace TitanOrbit.Services
 
         public bool IsPurchasedOrHasReceipt(string productId)
         {
+            // --- IsPurchasedOrHasReceipt ---
             if (string.IsNullOrWhiteSpace(productId))
                 return false;
             string id = productId.Trim();
@@ -269,6 +283,7 @@ namespace TitanOrbit.Services
 
         public bool CanInitiatePurchase(string productId)
         {
+            // --- CanInitiatePurchase ---
             if (_controller == null || string.IsNullOrWhiteSpace(productId))
                 return false;
             if (!TryGetStoreProduct(productId.Trim(), out var p))

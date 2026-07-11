@@ -11,6 +11,7 @@ namespace TitanOrbit.Services
 
         public static bool TryBeginInterstitial(string placementId, out string skipReason)
         {
+            // --- Attempt resolution ---
             skipReason = null;
             if (string.IsNullOrEmpty(placementId))
             {
@@ -29,6 +30,7 @@ namespace TitanOrbit.Services
 
         public static bool TryShowInterstitial(string placementId)
         {
+            // --- Attempt resolution ---
             if (!TryBeginInterstitial(placementId, out _))
             {
                 return false;

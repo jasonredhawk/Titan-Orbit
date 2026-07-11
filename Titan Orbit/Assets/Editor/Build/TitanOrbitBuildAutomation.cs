@@ -6,6 +6,11 @@ using UnityEngine;
 
 namespace TitanOrbit.Editor.Build
 {
+    /// <summary>
+    /// [EDITOR] Unity menu items for Titan Orbit production builds — WebGL (Cloudflare), Windows
+    /// headless server, Linux GCE server, and Android APK. Centralizes output paths under
+    /// BuildOutput/ so tools/gce upload scripts match folder names. Not included in player builds.
+    /// </summary>
     public static class TitanOrbitBuildAutomation
     {
         private const string WebBuildFolder = "BuildOutput/WebGL/production";
@@ -18,6 +23,7 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/WebGL Production")]
         public static void BuildWebGLProduction()
         {
+            // --- Build data ---
             BuildTarget previousTarget = EditorUserBuildSettings.activeBuildTarget;
 
             var options = new BuildPlayerOptions
@@ -44,6 +50,7 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/Headless Server (Windows)")]
         public static void BuildHeadlessServer()
         {
+            // --- Build data ---
             BuildPipeline.BuildPlayer(
                 new BuildPlayerOptions
                 {
@@ -59,6 +66,7 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/Headless Server (Linux — Google Cloud)")]
         public static void BuildHeadlessServerLinux()
         {
+            // --- Build data ---
             string outputBasePath = GetLinuxServerOutputBasePath();
 
             // GCE Debian images often fail to load MonoBleedingEdge native libs ("Unable to load mono library" / exit 1).
@@ -91,6 +99,7 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/Android APK")]
         public static void BuildAndroidApk()
         {
+            // --- Build data ---
             if (!BuildPipeline.IsBuildTargetSupported(BuildTargetGroup.Android, BuildTarget.Android))
             {
                 Debug.LogError("[TitanOrbitBuild] Android build target is not available. Install Android Build Support via Unity Hub for this editor version.");
@@ -126,6 +135,7 @@ namespace TitanOrbit.Editor.Build
 
         private static string[] GetEnabledScenes()
         {
+            // --- Compute value ---
             var scenes = new System.Collections.Generic.List<string>();
             foreach (var s in EditorBuildSettings.scenes)
             {
@@ -143,6 +153,7 @@ namespace TitanOrbit.Editor.Build
 
         private static string GetWindowsServerOutputPath()
         {
+            // --- Compute value ---
             string root = Path.GetDirectoryName(Application.dataPath) ?? Directory.GetCurrentDirectory();
             string dir = Path.Combine(root, ServerWindowsBuildFolder);
             Directory.CreateDirectory(dir);
@@ -153,6 +164,7 @@ namespace TitanOrbit.Editor.Build
         /// <summary>Path without extension; build produces <c>TitanOrbitServer.x86_64</c> and <c>TitanOrbitServer_Data</c>.</summary>
         private static string GetLinuxServerOutputBasePath()
         {
+            // --- Compute value ---
             string root = Path.GetDirectoryName(Application.dataPath) ?? Directory.GetCurrentDirectory();
             string dir = Path.Combine(root, ServerLinuxBuildFolder);
             Directory.CreateDirectory(dir);
@@ -161,6 +173,7 @@ namespace TitanOrbit.Editor.Build
 
         private static string GetAndroidApkOutputPath()
         {
+            // --- Compute value ---
             string root = Path.GetDirectoryName(Application.dataPath) ?? Directory.GetCurrentDirectory();
             string dir = Path.Combine(root, AndroidApkFolder);
             Directory.CreateDirectory(dir);

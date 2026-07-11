@@ -23,37 +23,66 @@ using UnityEngine;
 
 namespace TitanOrbit.NetCode
 {
-    /// <summary>Session orchestration replacing NGO NetworkGameManager + DedicatedMatchServerBootstrap.</summary>
+    /// <summary>
+    /// [NETCODE] Session orchestration MonoBehaviour — replaces legacy NGO NetworkGameManager and
+    /// DedicatedMatchServerBootstrap. Owns client/server world lifecycle: local LAN play, MPPM
+    /// multi-editor testing, Unity Relay + Lobby dedicated join, headless dedicated boot, and
+    /// gameplay RPC helpers (team pick, rejoin). DontDestroyOnLoad singleton accessed via Instance.
+    /// Paired with TitanOrbitBootstrap, TitanOrbitDedicatedServerAutoBoot, and lobby services.
+    /// </summary>
     public class TitanOrbitSessionManager : MonoBehaviour
     {
+        /// <summary>[STANDARD] Global singleton for UI and bootstrap to reach session APIs.</summary>
         public static TitanOrbitSessionManager Instance { get; private set; }
 
+        /// <summary>[NETCODE] Set by external boot when a non-editor build should auto-start LAN host.</summary>
         public static bool PendingLanHost { get; set; }
 
         const ushort DefaultServerPort = 7777;
 
+        /// <summary>[TITAN-ORBIT] Max players advertised for lobby and server capacity.</summary>
         [SerializeField] int maxPlayers = 60;
+
+        /// <summary>[NETCODE] UDP port for local LAN listen and MPPM host.</summary>
         [SerializeField] ushort serverPort = DefaultServerPort;
 
+        /// <summary>[NETCODE] Active Unity Lobby id after dedicated join (empty when local only).</summary>
         string _activeLobbyId;
+
+        /// <summary>[UNITY] Coroutine watching client connect to dedicated Relay host.</summary>
         Coroutine _connectWatch;
+
+        /// <summary>[UNITY] MPPM additional editor instance LAN connect coroutine.</summary>
         Coroutine _mppmLanConnectCoroutine;
+
+        /// <summary>[NETCODE] Parsed dedicated server command-line config when headless.</summary>
         TitanOrbitServerCommandLine _serverConfig;
+
+        /// <summary>[TITAN-ORBIT] Guard against overlapping RecreateDedicatedMatchAsync calls.</summary>
         bool _recreateDedicatedMatchInProgress;
 
+        /// <summary>[NETCODE] True after client reaches NetworkStreamInGame (playable).</summary>
         public bool IsInGame { get; private set; }
+
+        /// <summary>[HYBRID] Last user-facing status string for lobby/menu UI.</summary>
         public string LastStatusMessage { get; private set; }
+
+        /// <summary>[NETCODE] Active lobby id for leave/refresh operations.</summary>
         public string CurrentLobbyId => _activeLobbyId;
 
-        /// <summary>True while the editor/client is connected (or connecting) to a remote dedicated host via Relay.</summary>
+        /// <summary>[NETCODE] True while editor/client is connected (or connecting) to remote dedicated host via Relay.</summary>
         public static bool IsDedicatedOnlineClient { get; private set; }
 
-        /// <summary>Dedicated Relay join started but NetCode has not reached in-game yet.</summary>
+        /// <summary>[NETCODE] Dedicated Relay join started but NetCode has not reached in-game yet.</summary>
         public static bool IsDedicatedJoinConnecting =>
             IsDedicatedOnlineClient && Instance != null && !Instance.IsInGame;
 
+        /// <summary>[UNITY] Editor-only: local ServerWorld sim suspended while joining dedicated online.</summary>
         static bool s_EditorLocalServerSuspendedForOnline;
 
+        /// <summary>
+        /// [UNITY] Registers singleton, DontDestroyOnLoad. Destroys duplicate instances.
+        /// </summary>
         void Awake()
         {
             if (Instance != null && Instance != this)
@@ -65,6 +94,10 @@ namespace TitanOrbit.NetCode
             DontDestroyOnLoad(gameObject);
         }
 
+        /// <summary>
+        /// [UNITY] Entry point: headless dedicated boot, MPPM player idle, or editor client ready.
+        /// Suspends local ServerWorld on editor menu to avoid sim finishing before Local play.
+        /// </summary>
         void Start()
         {
             if (ShouldRunHeadlessServerBoot())
@@ -169,6 +202,9 @@ namespace TitanOrbit.NetCode
             TitanOrbitRelayState.Clear();
         }
 
+        /// <summary>
+        /// [NETCODE] Clears in-game flags and connections on client/server worlds before LAN reconnect.
+        /// </summary>
         IEnumerator PrepareWorldsForLocalLanConnect(bool resetTeamFlow, bool resetNetworkDrivers)
         {
             BeginLocalLanSession(resetTeamFlow);
@@ -195,6 +231,7 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>[UNITY_SERVER] True when this process should run headless dedicated boot (no client UI).</summary>
         static bool ShouldRunHeadlessServerBoot()
         {
 #if UNITY_EDITOR
@@ -208,8 +245,10 @@ namespace TitanOrbit.NetCode
 #endif
         }
 
+        /// <summary>CLI --dedicated or equivalent flag present.</summary>
         static bool HasExplicitDedicatedServerArg() => TitanOrbitServerCommandLine.HasDedicatedFlag();
 
+        /// <summary>Whether headless build should auto-create Relay allocation on boot.</summary>
         static bool ShouldAutoBootDedicatedRelay()
         {
 #if UNITY_EDITOR
@@ -246,6 +285,7 @@ namespace TitanOrbit.NetCode
             StartCoroutine(BootDedicatedServer());
         }
 
+        /// <summary>[NETCODE] MPPM server virtual player — listen on bootstrap port and mark in-game.</summary>
         IEnumerator BootMppmLanServer()
         {
             float readyDeadline = Time.realtimeSinceStartup + 15f;
@@ -274,6 +314,7 @@ namespace TitanOrbit.NetCode
 
         bool _localBootRunning;
 
+        /// <summary>Polls client world until NetworkStreamInGame or timeout — LAN host/client bootstrap.</summary>
         IEnumerator MaintainClientSession()
         {
             float deadline = Time.realtimeSinceStartup + 45f;
@@ -313,6 +354,9 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>
+        /// [HYBRID] Menu "Local play" — boots LAN host + local client in one coroutine (editor/MPPM).
+        /// </summary>
         public void StartLocalPlay()
         {
             LastStatusMessage = "Starting local play...";
@@ -460,6 +504,10 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>
+        /// [NETCODE] Quick-join latest browsable dedicated lobby via Unity Lobby + Relay.
+        /// </summary>
+        /// <returns>True if join coroutine started successfully.</returns>
         public async Task<bool> QuickJoinDedicatedAsync()
         {
             LastStatusMessage = "Finding a dedicated match...";
@@ -1032,10 +1080,16 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>
+        /// [NETCODE] Join a specific dedicated lobby by id: validate heartbeat, fetch Relay join code,
+        /// reset client driver, connect via Relay, start ClientConnectWatch coroutine.
+        /// </summary>
+        /// <param name="lobbyId">Unity Lobby id from browse UI.</param>
         public async Task<bool> JoinDedicatedLobbyAsync(string lobbyId)
         {
             try
             {
+                // --- Validate lobby id and guest auth ---
                 if (string.IsNullOrWhiteSpace(lobbyId))
                     return false;
                 if (!await UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync())
@@ -1193,6 +1247,7 @@ namespace TitanOrbit.NetCode
             TitanOrbitRelayState.Clear();
         }
 
+        /// <summary>Stops MPPM LAN auto-connect coroutine when user switches to dedicated join.</summary>
         void StopMppmLanAutoConnect()
         {
             if (_mppmLanConnectCoroutine == null)
@@ -1306,6 +1361,7 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>[NETCODE] Periodic Unity Lobby heartbeat while dedicated server hosts a match.</summary>
         IEnumerator LobbyHeartbeatLoop()
         {
             if (!string.IsNullOrEmpty(_activeLobbyId))
@@ -1363,6 +1419,7 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>Closes older dedicated lobbies when a new server boot supersedes them.</summary>
         IEnumerator CloseSupersededDedicatedLobbies(string keepLobbyId)
         {
             Task<List<TitanOrbitLobbyService.LobbySummary>> queryTask =
@@ -1386,6 +1443,7 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>Headless server: marks NetworkStreamConnection entities in-game after Relay listen.</summary>
         IEnumerator MaintainDedicatedServerGoInGame()
         {
             int lastConnectionCount = -1;
@@ -1431,6 +1489,7 @@ namespace TitanOrbit.NetCode
             return connections > 0 && withNetworkId == 0;
         }
 
+        /// <summary>Polls client until in-game or timeout — dedicated Relay join watchdog.</summary>
         IEnumerator ClientConnectWatch(float timeoutSeconds, bool dedicatedJoin = false)
         {
             float started = Time.realtimeSinceStartup;
@@ -1506,6 +1565,7 @@ namespace TitanOrbit.NetCode
                       " relay=" + TitanOrbitRelayState.TryGetClientRelay(out _));
         }
 
+        /// <summary>Resets client worlds and UI after dedicated connect timeout.</summary>
         IEnumerator ResetDedicatedClientSessionAfterTimeoutCoroutine()
         {
             Task resetTask = ResetDedicatedClientSessionAsync(LastStatusMessage);
@@ -1681,18 +1741,27 @@ namespace TitanOrbit.NetCode
             driver.ResetDriverStore(world.Unmanaged, ref store);
         }
 
+        /// <summary>
+        /// [NETCODE] Client rejoin flow: resume control of persisted ship from prior session.
+        /// Sends <see cref="ResumeExistingShipCommand"/> RPC to server.
+        /// </summary>
         public void RequestResumeExistingShip()
         {
             if (!SendRejoinShipRpc<ResumeExistingShipCommand>())
                 LastStatusMessage = "Could not resume your ship.";
         }
 
+        /// <summary>
+        /// [NETCODE] Client rejoin flow: destroy persisted ship and return to team picker.
+        /// Sends <see cref="AbandonShipForRejoinCommand"/> RPC to server.
+        /// </summary>
         public void RequestAbandonShipForRejoin()
         {
             if (!SendRejoinShipRpc<AbandonShipForRejoinCommand>())
                 LastStatusMessage = "Could not abandon your saved ship.";
         }
 
+        /// <summary>[NETCODE] Sends rejoin resume/abandon RPC from local connection entity.</summary>
         bool SendRejoinShipRpc<T>() where T : unmanaged, IRpcCommand
         {
             var world = ClientServerBootstrap.ClientWorld;
@@ -1716,6 +1785,11 @@ namespace TitanOrbit.NetCode
             return true;
         }
 
+        /// <summary>
+        /// [NETCODE] Team picker UI calls this to send <see cref="RequestTeamCommand"/> RPC.
+        /// Requires client in-game with active network connection.
+        /// </summary>
+        /// <param name="team">Requested team assignment.</param>
         public void RequestTeam(TitanOrbit.Core.TeamId team)
         {
             var world = ClientServerBootstrap.ClientWorld;
@@ -1737,6 +1811,7 @@ namespace TitanOrbit.NetCode
                 return;
             }
 
+            // --- Build and send team-pick RPC ---
             // Block late-arriving ship ghosts from opening the rejoin screen after a normal team pick.
             ClientTeamFlowState.NotifyTeamPickRequested();
 

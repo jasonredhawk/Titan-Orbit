@@ -9,6 +9,7 @@ namespace TitanOrbit.Systems
     /// </summary>
     public static class AsteroidRammingBehavior
     {
+        // --- Type members ---
         /// <summary>
         /// Maps a stat (ramming power, mass ratio, etc.) to a coefficient of restitution between
         /// <paramref name="maxRestitution"/> (bouncy) and <paramref name="minRestitution"/> (inelastic).

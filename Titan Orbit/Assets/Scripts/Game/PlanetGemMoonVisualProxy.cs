@@ -9,9 +9,14 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Orbiting gem-moon visual parented to a planet proxy.</summary>
+    /// <summary>
+    /// [HYBRID] Gem-moon visual child of a planet GameObject proxy. Positions moon from
+    /// <see cref="PlanetOrbitMath"/> / ECS planet pose, spins mesh cosmetically, and wires orbit zone,
+    /// matrix shield, and stats label children. Render only — moon combat/shield sim is server ECS.
+    /// </summary>
     public class PlanetGemMoonVisualProxy : MonoBehaviour
     {
+        /// <summary>Cosmetic spin rate for moon mesh (degrees per second).</summary>
         const float SpinSpeed = 9f;
         const float HomeScaleMultiplier = 1.5f;
         const string MoonRootName = "GemMoonVisual";
@@ -85,6 +90,9 @@ namespace TitanOrbit.Game
 
         void OnDisable() => PlanetGemMoonVisualRegistry.Unregister(this);
 
+        /// <summary>
+        /// [UNITY] Called from planet visual applier when proxy spawns — sets size, level, team, material.
+        /// </summary>
         public void Configure(float planetSize, int planetLevel, bool isHome, int planetId, Material moonMaterial, TeamId team = TeamId.None)
         {
             _planetSize = Mathf.Max(0.01f, planetSize);
@@ -93,6 +101,7 @@ namespace TitanOrbit.Game
             _isHome = isHome;
             _team = team;
             _moonMaterial = moonMaterial;
+            // --- Build hierarchy once, then refresh scale/material/children ---
             EnsureMoonVisual();
             ApplyMoonScale();
             ApplyMoonMaterial();
@@ -225,15 +234,20 @@ namespace TitanOrbit.Game
             _statsLabel.Configure(_planetId, moonLocalRadius);
         }
 
+        /// <summary>
+        /// [UNITY] LateUpdate — moon orbit position from sim time + toroidal nearest copy; mesh spin cosmetic.
+        /// </summary>
         void LateUpdate()
         {
             if (_moonRoot == null || _moonSpinVisual == null)
                 return;
 
+            // --- Prefer NetCode world elapsed time for orbit phase; fall back to Time ---
             double elapsed = TryGetSimulationElapsedTime(out double simElapsed)
                 ? simElapsed
                 : Time.timeAsDouble;
 
+            // --- Moon world position: ECS pose when available, else analytic offset ---
             if (TryResolveMoonWorldPosition(elapsed, out float3 moonPos))
                 _moonRoot.position = new Vector3(moonPos.x, moonPos.y, moonPos.z);
             else

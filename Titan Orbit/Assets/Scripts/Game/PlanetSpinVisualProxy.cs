@@ -6,13 +6,19 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Spins the planet body and level rings around the level-band ring axis.</summary>
+    /// <summary>
+    /// [HYBRID] Cosmetic spin for planet body and level rings around the level-band tilt axis from
+    /// <see cref="PlanetOrbitMath.GetLevelBandsSpinAxisLocal"/>. Gem moon and UI labels stay parented
+    /// outside the spin pivot so they do not rotate with the mesh. Render only — no sim impact.
+    /// </summary>
     public class PlanetSpinVisualProxy : MonoBehaviour
     {
+        /// <summary>Slow decorative rotation rate (degrees per second).</summary>
         const float SpinDegreesPerSecond = 2f;
         const string SpinPivotName = "PlanetSpinPivot";
         const string PlanetBodyName = "PlanetBody";
 
+        /// <summary>Children that must not be reparented under the spin pivot (moon, labels).</summary>
         static readonly HashSet<string> NonSpinningChildNames = new HashSet<string>
         {
             "GemMoonVisual",
@@ -25,8 +31,10 @@ namespace TitanOrbit.Game
 
         void Awake() => EnsureHierarchy();
 
+        /// <summary>Creates spin pivot, migrates PlanetBody, and reparents ring meshes once at load.</summary>
         void EnsureHierarchy()
         {
+            // --- Ensure setup ---
             if (_spinPivot != null)
                 return;
 
@@ -43,8 +51,10 @@ namespace TitanOrbit.Game
             _spinAxisLocal = PlanetOrbitMath.GetLevelBandsSpinAxisLocal();
         }
 
+        /// <summary>Moves existing PlanetBody child under the spin pivot if not already there.</summary>
         void MigratePlanetBodyToPivot()
         {
+            // --- MigratePlanetBodyToPivot ---
             if (_spinPivot.Find(PlanetBodyName) != null)
                 return;
 
@@ -78,6 +88,7 @@ namespace TitanOrbit.Game
 
         static void CopySgtPlanet(SgtPlanet source, SgtPlanet destination)
         {
+            // --- CopySgtPlanet ---
             destination.Mesh = source.Mesh;
             destination.MeshCollider = source.MeshCollider;
             destination.Radius = source.Radius;
@@ -93,6 +104,7 @@ namespace TitanOrbit.Game
 
         static void CopyWaterGradient(SgtPlanetWaterGradient source, SgtPlanetWaterGradient destination)
         {
+            // --- CopyWaterGradient ---
             destination.Shallow = source.Shallow;
             destination.Deep = source.Deep;
             destination.Ease = source.Ease;
@@ -102,6 +114,7 @@ namespace TitanOrbit.Game
 
         static void CopyWaterTexture(SgtPlanetWaterTexture source, SgtPlanetWaterTexture destination)
         {
+            // --- CopyWaterTexture ---
             destination.BaseTexture = source.BaseTexture;
             destination.Strength = source.Strength;
             destination.Speed = source.Speed;
@@ -109,6 +122,7 @@ namespace TitanOrbit.Game
 
         void ReparentSpinningChildren()
         {
+            // --- ReparentSpinningChildren ---
             for (int i = transform.childCount - 1; i >= 0; i--)
             {
                 Transform child = transform.GetChild(i);
@@ -125,6 +139,7 @@ namespace TitanOrbit.Game
 
         public void KeepOnPlanetRoot(Transform child)
         {
+            // --- KeepOnPlanetRoot ---
             if (child == null || child.parent == transform)
                 return;
 
@@ -133,6 +148,7 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
+            // --- Per-frame refresh ---
             if (_spinPivot == null)
                 return;
 

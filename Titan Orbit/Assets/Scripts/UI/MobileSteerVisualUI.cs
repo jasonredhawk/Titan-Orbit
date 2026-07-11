@@ -46,6 +46,7 @@ namespace TitanOrbit.UI
 
         private void Awake()
         {
+            // --- Unity lifecycle ---
             _rootRt = transform as RectTransform;
             _canvasGroup = gameObject.GetComponent<CanvasGroup>();
             if (_canvasGroup == null)
@@ -83,6 +84,7 @@ namespace TitanOrbit.UI
 
         private static RectTransform CreateUiChild(string name, Transform parent)
         {
+            // --- Create instance ---
             GameObject go = new GameObject(name);
             go.transform.SetParent(parent, false);
             RectTransform rt = go.AddComponent<RectTransform>();
@@ -94,6 +96,7 @@ namespace TitanOrbit.UI
 
         private static void EnsureWhiteSprite()
         {
+            // --- Ensure setup ---
             if (s_whiteSprite != null) return;
             Texture2D t = new Texture2D(1, 1, TextureFormat.RGBA32, false);
             t.SetPixel(0, 0, Color.white);
@@ -103,6 +106,7 @@ namespace TitanOrbit.UI
 
         private void EnsureRingSprite()
         {
+            // --- Ensure setup ---
             if (s_ringSprite != null) return;
             int n = Mathf.Clamp(ringTextureSize, 32, 512);
             float cx = n * 0.5f;
@@ -130,6 +134,7 @@ namespace TitanOrbit.UI
 
         private void LateUpdate()
         {
+            // --- Per-frame refresh ---
             if (_ringRt == null || _lineRt == null || _dotRt == null || _canvasGroup == null)
                 return;
 

@@ -22,6 +22,7 @@ namespace TitanOrbit.Core
 
         private void ConfigurePlatform()
         {
+            // --- ConfigurePlatform ---
             // Set target frame rate
             if (Application.isMobilePlatform)
             {

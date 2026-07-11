@@ -24,6 +24,7 @@ namespace TitanOrbit.Game
 
         public static GameObject LoadDefaultPrefab()
         {
+            // --- LoadDefaultPrefab ---
 #if UNITY_EDITOR
             return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(DefaultPrefabPath);
 #else
@@ -33,6 +34,7 @@ namespace TitanOrbit.Game
 
         public static GameObject CreateVisual(GameObject prefab, float peopleAmount, TeamId team)
         {
+            // --- Create instance ---
             if (prefab == null)
             {
                 var fallback = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -60,6 +62,7 @@ namespace TitanOrbit.Game
 
         public static void StripForProxy(GameObject root)
         {
+            // --- Strip components ---
             ShipVisualApplier.StripPhysicsAndNetworking(root);
 
             var components = root.GetComponentsInChildren<Component>(true);
@@ -83,6 +86,7 @@ namespace TitanOrbit.Game
 
         static void ApplyTeamTint(GameObject root, TeamId team)
         {
+            // --- Apply changes ---
             var color = team.ToColor();
             foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
             {

@@ -30,10 +30,16 @@ namespace TitanOrbit.Game
         const string DefaultGemPath = "Assets/Prefabs/Gem.prefab";
         const string DefaultPeopleTransportPath = "Assets/Prefabs/PeopleTransport.prefab";
 
+        // --- Inspector references (designer-tunable visual prefabs) ---
+
         [Header("Ships")]
+        /// <summary>Ship family ScriptableObject — chassis prefabs per level and team materials.</summary>
         [SerializeField] ShipFamilyDefinition shipFamily;
+        /// <summary>Optional single prefab override when shipFamily is unset.</summary>
         [SerializeField] GameObject shipVisualPrefab;
+        /// <summary>Uniform scale multiplier applied on top of ECS <see cref="LocalTransform.Scale"/>.</summary>
         [SerializeField] float shipVisualScale = BodyCollisionMath.ShipPresentationScale;
+        /// <summary>Fallback muzzle offset when ship entity lacks <see cref="ShipWeaponConfig"/>.</summary>
         [SerializeField] float defaultMuzzleOffset = 2f;
 
         [Header("Planets & Bodies")]
@@ -42,6 +48,7 @@ namespace TitanOrbit.Game
         [SerializeField] GameObject asteroidVisualPrefab;
         [SerializeField] GameObject gemVisualPrefab;
         [SerializeField] GameObject peopleTransportVisualPrefab;
+        /// <summary>Team-tinted planet materials — shared with WorldBodyVisualApplier.</summary>
         [SerializeField] PlanetMaterialPool planetMaterialPool;
 
         [Header("Combat VFX")]
@@ -52,19 +59,30 @@ namespace TitanOrbit.Game
         [Header("Ship Propulsion VFX")]
         [SerializeField] ShipPropulsionVisualApplier.Settings propulsionVfxSettings;
 
+        // --- Runtime proxy registries (entity → GameObject) ---
+
+        /// <summary>All active ECS entity → visual proxy instances.</summary>
         readonly Dictionary<Entity, GameObject> _proxies = new Dictionary<Entity, GameObject>();
+        /// <summary>Bullet entities with stretch-trail cosmetic component attached.</summary>
         readonly Dictionary<Entity, ClientBulletStretchVisual> _bulletStretchVisuals = new Dictionary<Entity, ClientBulletStretchVisual>();
+        /// <summary>Ship network id for <see cref="ShipWeaponProxyRegistry"/> weapon mount lookup.</summary>
         readonly Dictionary<Entity, int> _proxyNetworkIds = new Dictionary<Entity, int>();
+        /// <summary>Last applied ship level — triggers proxy rebuild on upgrade.</summary>
         readonly Dictionary<Entity, int> _proxyShipLevels = new Dictionary<Entity, int>();
+        /// <summary>Last applied team — triggers material swap on capture.</summary>
         readonly Dictionary<Entity, TeamId> _proxyTeams = new Dictionary<Entity, TeamId>();
+        /// <summary>Planet visual identity — rebuild when home/team/level/id changes.</summary>
         readonly Dictionary<Entity, PlanetVisualKey> _proxyPlanetVisuals = new Dictionary<Entity, PlanetVisualKey>();
 
+        /// <summary>Cached local ship entity for dedicated-client weapon VFX (avoids per-frame query).</summary>
         Entity _cachedDedicatedLocalShipEntity;
+        /// <summary>Cached local ship entity for transform sync and camera pose feed.</summary>
         Entity _cachedLocalPlayerShipEntity;
 
         /// <summary>Local-player ship proxy on dedicated clients.</summary>
         public GameObject LocalPlayerShipProxy { get; private set; }
 
+        /// <summary>Composite key for planet proxy rebuild — any field change forces new visual.</summary>
         struct PlanetVisualKey : System.IEquatable<PlanetVisualKey>
         {
             public bool IsHome;
@@ -76,8 +94,13 @@ namespace TitanOrbit.Game
                 IsHome == other.IsHome && Team == other.Team && PlanetLevel == other.PlanetLevel && PlanetId == other.PlanetId;
         }
 
+        /// <summary>
+        /// [UNITY] Loads default prefabs and ScriptableObjects when inspector references are empty.
+        /// Runs once at scene start before any LateUpdate proxy sync.
+        /// </summary>
         void Awake()
         {
+            // --- Resolve designer assets (editor paths; player builds use serialized refs) ---
             if (shipFamily == null)
                 shipFamily = LoadDefaultShipFamily();
             if (planetMaterialPool == null)
@@ -103,6 +126,10 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// [HYBRID] Per-frame proxy sync — reads presentation transforms, spawns/destroys GameObjects, applies VFX.
+        /// Runs after ShipVisualSyncSystem publishes GhostPresentationTransformCache (execution order 66000).
+        /// </summary>
         void LateUpdate()
         {
             var world = PickVisualizationWorld();
@@ -110,20 +137,26 @@ namespace TitanOrbit.Game
                 return;
 
             var em = world.EntityManager;
+
+            // --- Ship proxies (spawn + team/level rebuild) ---
             EnsureShipProxies(em);
 
             var alive = new HashSet<Entity>();
 
             SyncShipProxyTransforms(em, alive);
 
+            // --- World body proxies ---
             DrawPlanets(em, alive);
             DrawAsteroids(em, alive);
             DrawGems(em, alive);
             GemVisualDiameterRegistry.RemoveStale(alive);
             DrawPeopleTransports(em, alive);
+
+            // --- Combat presentation ---
             ProcessBulletHitEvents(em);
             DrawBullets(em, alive);
 
+            // --- Tear down ghosts that despawned this frame ---
             var remove = new List<Entity>();
             foreach (var kv in _proxies)
             {
@@ -135,8 +168,12 @@ namespace TitanOrbit.Game
                 DestroyProxy(entity);
         }
 
+        /// <summary>Delegates world pick to <see cref="EcsGameBridge.GetVisualizationWorld"/>.</summary>
         static World PickVisualizationWorld() => EcsGameBridge.GetVisualizationWorld();
 
+        /// <summary>
+        /// [HYBRID] Prefer presentation cache from ShipVisualSyncSystem; fall back to raw LocalTransform.
+        /// </summary>
         static bool TryGetPresentationTransform(Entity entity, EntityManager em, out LocalTransform lt)
         {
             lt = default;
@@ -154,6 +191,7 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>Presentation pose for people-transport ghosts (separate cache slot from ships).</summary>
         static bool TryGetPeopleTransportPresentationTransform(Entity entity, EntityManager em, out LocalTransform lt)
         {
             lt = default;
@@ -171,6 +209,7 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>Applies position, rotation, and uniform scale to a generic body proxy.</summary>
         static void ApplyProxyTransform(Vector3 target, Quaternion targetRot, Transform go, float scale)
         {
             go.SetPositionAndRotation(target, targetRot);
@@ -192,6 +231,9 @@ namespace TitanOrbit.Game
                 ShipDisplayPose.SetLocalPose(pos, rot);
         }
 
+        /// <summary>
+        /// Resolves and caches local player ship entity — LocalPlayerShipTag first, then GhostOwner NetworkId.
+        /// </summary>
         bool TryResolveLocalPlayerShipEntityCached(EntityManager em, out Entity localShipEntity)
         {
             localShipEntity = Entity.Null;
@@ -234,13 +276,19 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>True when entity matches cached local ship — feeds ShipDisplayPose and weapon VFX.</summary>
         static bool IsLocalPlayerShip(Entity entity, Entity localShipEntity) =>
             localShipEntity != Entity.Null && entity == localShipEntity;
 
+        /// <summary>[TITAN-ORBIT] Toroidal wrap disabled for visuals — logical position equals visual position.</summary>
         Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos) => logicalPos;
 
         Vector3 GetVisualPosition(Entity entity, float3 logicalPos) => logicalPos;
 
+        /// <summary>
+        /// Spawns missing ship proxies and rebuilds when team or ship level changes.
+        /// Does not move transforms — SyncShipProxyTransforms handles per-frame pose.
+        /// </summary>
         void EnsureShipProxies(EntityManager em)
         {
             TryResolveLocalPlayerShipEntityCached(em, out var localShipEntity);
@@ -291,6 +339,10 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Per-frame ship proxy pose sync from presentation cache. Skips transform during moon-dock cinematic.
+        /// Registers weapon mounts with ShipWeaponProxyRegistry by network id.
+        /// </summary>
         void SyncShipProxyTransforms(EntityManager em, HashSet<Entity> alive)
         {
             TryResolveLocalPlayerShipEntityCached(em, out var localShipEntity);
@@ -364,6 +416,9 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Instantiates ship visual hierarchy with bank, moon-dock, propulsion, and attribute-scale appliers bound to ECS entity.
+        /// </summary>
         GameObject CreateShipProxy(Entity entity, int networkId, TeamId team, int shipLevel, float scale, float muzzleOffset)
         {
             GameObject go;
@@ -422,6 +477,7 @@ namespace TitanOrbit.Game
             return go;
         }
 
+        /// <summary>[EDITOR] Default ship family asset when inspector field is empty.</summary>
         static ShipFamilyDefinition LoadDefaultShipFamily()
         {
 #if UNITY_EDITOR
@@ -431,6 +487,7 @@ namespace TitanOrbit.Game
 #endif
         }
 
+        /// <summary>[EDITOR] Loads a GameObject prefab from project path for Awake defaults.</summary>
         static GameObject LoadDefaultPrefab(string assetPath)
         {
 #if UNITY_EDITOR
@@ -440,6 +497,7 @@ namespace TitanOrbit.Game
 #endif
         }
 
+        /// <summary>Tears down proxy GameObject and clears all per-entity registry entries.</summary>
         void DestroyProxy(Entity entity)
         {
             if (entity == _cachedDedicatedLocalShipEntity)
@@ -460,6 +518,10 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Consumes server-authoritative <see cref="BulletHitEventElement"/> buffer and spawns impact VFX.
+        /// Clears buffer after processing — events are one-shot per sim tick batch.
+        /// </summary>
         void ProcessBulletHitEvents(EntityManager em)
         {
             using var query = em.CreateEntityQuery(ComponentType.ReadOnly<ActiveBulletsTag>());
@@ -490,6 +552,7 @@ namespace TitanOrbit.Game
             hits.Clear();
         }
 
+        /// <summary>People-transport gem-style proxies — scale by carried amount, tint by team.</summary>
         void DrawPeopleTransports(EntityManager em, HashSet<Entity> alive)
         {
             using var query = em.CreateEntityQuery(
@@ -520,6 +583,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Applies team color materials to primitive fallback visuals.</summary>
         static void ApplyTeamColorToVisual(GameObject go, TeamId team)
         {
             var color = TeamColor(team);
@@ -530,10 +594,14 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Bullet tracer world position — toroidal wrap not applied on presentation path.</summary>
         Vector3 GetBulletVisualPosition(Entity entity, EntityManager em, float3 logicalPos) => logicalPos;
 
         Vector3 GetBulletVisualPosition(float3 logicalPos) => logicalPos;
 
+        /// <summary>
+        /// Spawns bullet tracer GameObjects, muzzle VFX on first sighting, and stretch-trail progress each frame.
+        /// </summary>
         void DrawBullets(EntityManager em, HashSet<Entity> alive)
         {
             using var query = em.CreateEntityQuery(
@@ -606,6 +674,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Planet proxies — rebuild when home/team/level/id key changes; else position-only update.</summary>
         void DrawPlanets(EntityManager em, HashSet<Entity> alive)
         {
             using var query = em.CreateEntityQuery(
@@ -672,6 +741,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Asteroid proxies — prefab or primitive sphere with spin visual helper.</summary>
         void DrawAsteroids(EntityManager em, HashSet<Entity> alive)
         {
             using var query = em.CreateEntityQuery(
@@ -716,6 +786,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Gem proxies — value-scaled via <see cref="GemVisualApplier"/>; registers diameter for tractor beam.</summary>
         void DrawGems(EntityManager em, HashSet<Entity> alive)
         {
             using var query = em.CreateEntityQuery(
@@ -757,6 +828,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Colored primitive sphere fallback when planet prefab pipeline fails.</summary>
         static GameObject CreatePrimitivePlanetProxy(TeamId ownership)
         {
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -775,6 +847,7 @@ namespace TitanOrbit.Game
             return go;
         }
 
+        /// <summary>Generic tagged-entity primitive drawer — legacy helper for simple debug proxies.</summary>
         void DrawTagged<T>(EntityManager em, HashSet<Entity> alive, PrimitiveType primitive, Color color, float scaleMul)
             where T : unmanaged, IComponentData
         {
@@ -810,6 +883,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Hard-coded team palette for primitive fallback renderers.</summary>
         static Color TeamColor(TeamId team)
         {
             switch (team)
@@ -821,6 +895,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>[UNITY] Unregisters weapon mounts and destroys all proxies on scene teardown.</summary>
         void OnDestroy()
         {
             foreach (var kv in _proxies)

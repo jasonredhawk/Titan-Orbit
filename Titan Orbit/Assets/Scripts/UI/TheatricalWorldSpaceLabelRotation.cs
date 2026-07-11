@@ -20,6 +20,7 @@ namespace TitanOrbit.UI
             float gameplayLocalY,
             float gameplaySurfacePaddingWorld)
         {
+            // --- Gameplay top-down vs theatrical camera-facing ---
             if (panel == null || body == null) return;
 
             if (!IsTheatricalEngaged())

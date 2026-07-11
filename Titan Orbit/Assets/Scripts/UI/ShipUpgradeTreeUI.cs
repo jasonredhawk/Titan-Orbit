@@ -77,6 +77,7 @@ namespace TitanOrbit.UI
         /// <summary>Creates a title row on older prefabs that only had a dynamic hint line.</summary>
         public void EnsurePanelHeader()
         {
+            // --- Ensure setup ---
             if (titleText == null)
             {
                 var existing = transform.Find("Title");
@@ -116,6 +117,7 @@ namespace TitanOrbit.UI
         /// </summary>
         public void RebuildIfNeeded(bool moonHorizontal, string structureKey)
         {
+            // --- Rebuild cache ---
             int widthBucket = -1;
             if (moonHorizontal)
             {
@@ -148,6 +150,7 @@ namespace TitanOrbit.UI
 
         public void Clear()
         {
+            // --- Clear state ---
             DestroyCurrentShipDisplayNode();
             ClearNodesCanvasChildren();
             _visuals.Clear();
@@ -156,6 +159,7 @@ namespace TitanOrbit.UI
 
         private void DestroyCurrentShipDisplayNode()
         {
+            // --- DestroyCurrentShipDisplayNode ---
             if (_currentShipNode == null)
                 return;
 
@@ -170,6 +174,7 @@ namespace TitanOrbit.UI
 
         private bool HasOrphanNodesCanvasChildren()
         {
+            // --- HasOrphanNodesCanvasChildren ---
             if (nodesCanvas == null)
                 return false;
             return nodesCanvas.childCount > _nodes.Count;
@@ -178,6 +183,7 @@ namespace TitanOrbit.UI
         /// <summary>Removes all dynamic/baked children under the nodes canvas (fixes duplicate overlapping nodes).</summary>
         private void ClearNodesCanvasChildren()
         {
+            // --- Clear state ---
             if (nodesCanvas == null)
                 return;
 
@@ -198,6 +204,7 @@ namespace TitanOrbit.UI
         /// <summary>Updates node colors, prices, and power bars without destroying/recreating widgets.</summary>
         public void RefreshVisualState()
         {
+            // --- RefreshVisualState ---
             if (_station == null)
                 return;
             if (_nodes.Count == 0 && _currentShipNode == null)
@@ -210,6 +217,7 @@ namespace TitanOrbit.UI
         /// <summary>Editor: populate all tier slots and connectors. Uses <paramref name="family"/> when assigned.</summary>
         public void EditorPreviewFromFamily(ShipFamilyDefinition family)
         {
+            // --- EditorPreviewFromFamily ---
             previewFamily = family;
             Clear();
             if (nodesCanvas == null || nodePrefab == null)
@@ -288,6 +296,7 @@ namespace TitanOrbit.UI
 
         private ShipUpgradeTreeNodeUI InstantiateNodeForPreview()
         {
+            // --- InstantiateNodeForPreview ---
 #if UNITY_EDITOR
             if (!Application.isPlaying && nodePrefab != null)
             {
@@ -303,6 +312,7 @@ namespace TitanOrbit.UI
 
         private void BuildHorizontal()
         {
+            // --- Build data ---
             UpgradeTree tree = _station != null ? _station.UpgradeTree : null;
             if (tree == null || _station == null || !_station.IsTreeDataAvailable())
             {
@@ -346,6 +356,7 @@ namespace TitanOrbit.UI
 
         private void BuildVertical()
         {
+            // --- Build data ---
             UpgradeTree tree = _station != null ? _station.UpgradeTree : null;
             if (tree == null || _station == null || !_station.IsTreeDataAvailable())
             {
@@ -417,6 +428,7 @@ namespace TitanOrbit.UI
 
         private void ForceLayoutBeforeConnectors()
         {
+            // --- ForceLayoutBeforeConnectors ---
             Canvas.ForceUpdateCanvases();
             if (nodesCanvas != null)
                 LayoutRebuilder.ForceRebuildLayoutImmediate(nodesCanvas);
@@ -429,6 +441,7 @@ namespace TitanOrbit.UI
 
         private void EnforceUniformNodeSizes(float nodeW, float nodeH, float trackW)
         {
+            // --- EnforceUniformNodeSizes ---
             for (int i = 0; i < _nodes.Count; i++)
             {
                 var node = _nodes[i];
@@ -440,6 +453,7 @@ namespace TitanOrbit.UI
 
         private ShipUpgradeTreeNodeUI SpawnNode(int level, int branch, ShipUpgradeNode node, float w, float h, float trackW)
         {
+            // --- SpawnNode ---
             var view = Instantiate(nodePrefab, nodesCanvas);
             view.gameObject.SetActive(true);
             if (nodeBackgroundSprite != null)
@@ -494,6 +508,7 @@ namespace TitanOrbit.UI
 
         private void GetMoonContainerSize(out float width, out float height)
         {
+            // --- Compute value ---
             var treeRt = transform as RectTransform;
             if (treeRt != null && treeRt.rect.width > 8f)
                 width = treeRt.rect.width;
@@ -513,6 +528,7 @@ namespace TitanOrbit.UI
 
         private void PrepareHorizontalContainerLayout()
         {
+            // --- PrepareHorizontalContainerLayout ---
             SyncTreeRootLayout();
             var treeRt = transform as RectTransform;
             if (treeRt == null)
@@ -524,6 +540,7 @@ namespace TitanOrbit.UI
 
         private void SyncTreeRootLayout()
         {
+            // --- SyncTreeRootLayout ---
             var treeRt = transform as RectTransform;
             if (treeRt == null || centerRow == null)
                 return;
@@ -547,6 +564,7 @@ namespace TitanOrbit.UI
         /// <summary>Vertical space for the tree row from the parent panel ΓÇö not from centerRow (which we resize).</summary>
         private float GetMoonRowAvailableHeight()
         {
+            // --- Compute value ---
             var treeRt = transform as RectTransform;
             if (treeRt == null || treeRt.rect.height < 16f)
                 return 420f;
@@ -559,6 +577,7 @@ namespace TitanOrbit.UI
 
         private static float ComputeMaxColumnStackHeight(float nodeH)
         {
+            // --- Compute value ---
             int maxStack = 1;
             for (int level = 1; level <= 7; level++)
                 maxStack = Mathf.Max(maxStack, UpgradeTree.GetShipCountForLevel(level));
@@ -570,6 +589,7 @@ namespace TitanOrbit.UI
         /// </summary>
         private void ComputeMoonHorizontalGeometry(out float nodeW, out float nodeH, out float canvasW, out float canvasH)
         {
+            // --- Compute value ---
             const int maxLevel = 7;
             float margin = CanvasInnerMargin;
             GetMoonContainerSize(out float containerW, out float containerH);
@@ -604,6 +624,7 @@ namespace TitanOrbit.UI
             }
             else if (canvasH < maxCanvasH - 8f)
             {
+                // --- if ---
                 float targetStackH = maxCanvasH - margin * 2f;
                 nodeH = Mathf.Max(72f, Mathf.Round(nodeH * (targetStackH / maxColStackH)));
                 maxColStackH = ComputeMaxColumnStackHeight(nodeH);
@@ -613,6 +634,7 @@ namespace TitanOrbit.UI
 
         private void ApplyHorizontalTreeCanvasLayout(float canvasW, float canvasH)
         {
+            // --- Apply changes ---
             float maxRowH = GetMoonRowAvailableHeight();
             canvasH = Mathf.Min(canvasH, maxRowH);
 
@@ -654,6 +676,7 @@ namespace TitanOrbit.UI
         /// <summary>Edge midpoint in <paramref name="rt"/> parent local space (nodes canvas).</summary>
         private static Vector2 GetRectEdgeMidpoint(RectTransform rt, bool rightEdge, bool verticalOut = false, bool verticalIn = false)
         {
+            // --- Compute value ---
             rt.GetLocalCorners(ConnectorCornerBuffer);
             if (verticalOut)
                 return new Vector2((ConnectorCornerBuffer[0].x + ConnectorCornerBuffer[3].x) * 0.5f, ConnectorCornerBuffer[0].y);
@@ -666,6 +689,7 @@ namespace TitanOrbit.UI
 
         private void DrawConnector(Vector2 from, Vector2 to, Color color, float thickness)
         {
+            // --- DrawConnector ---
             var go = new GameObject("ShipTreeConnector");
             go.transform.SetParent(nodesCanvas, false);
             var rect = go.AddComponent<RectTransform>();
@@ -691,6 +715,7 @@ namespace TitanOrbit.UI
 
         private void ApplyCenterRowHeight(float h)
         {
+            // --- Apply changes ---
             if (centerRow == null) return;
             h = GetMoonRowAvailableHeight();
             centerRow.sizeDelta = new Vector2(0f, h);
@@ -705,6 +730,7 @@ namespace TitanOrbit.UI
 
         private float ComputeMaxDisplayPower()
         {
+            // --- Compute value ---
             float max = 0f;
             if (_station != null)
             {

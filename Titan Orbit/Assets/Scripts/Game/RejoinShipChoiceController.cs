@@ -32,6 +32,7 @@ namespace TitanOrbit.Game
         /// <summary>Displays rejoin screen with ghost-serialized ShipState summary from saved ship.</summary>
         public void Show(ShipState shipState)
         {
+            // --- Show ---
             EnsureUi();
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(false);
@@ -55,6 +56,7 @@ namespace TitanOrbit.Game
 
         public void Hide()
         {
+            // --- Hide ---
             if (_screenRoot != null)
                 _screenRoot.SetActive(false);
             _choiceInProgress = false;
@@ -63,6 +65,7 @@ namespace TitanOrbit.Game
         /// <summary>[NETCODE] Resume RPC — reattach client to persisted ship entity on server.</summary>
         void OnResumeClicked()
         {
+            // --- OnResumeClicked ---
             if (_choiceInProgress || TitanOrbitSessionManager.Instance == null)
                 return;
 
@@ -74,6 +77,7 @@ namespace TitanOrbit.Game
         /// <summary>Abandon saved ship and return to team selection flow.</summary>
         void OnStartFreshClicked()
         {
+            // --- OnStartFreshClicked ---
             if (_choiceInProgress || TitanOrbitSessionManager.Instance == null)
                 return;
 
@@ -90,6 +94,7 @@ namespace TitanOrbit.Game
 
         void EnsureUi()
         {
+            // --- Ensure setup ---
             if (_screenRoot != null)
                 return;
 
@@ -132,6 +137,7 @@ namespace TitanOrbit.Game
 
         static TextMeshProUGUI CreateLabel(Transform parent, string name, string text, float size, FontStyles style)
         {
+            // --- Create instance ---
             var go = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI));
             go.transform.SetParent(parent, false);
             var label = go.GetComponent<TextMeshProUGUI>();
@@ -148,6 +154,7 @@ namespace TitanOrbit.Game
 
         static Button CreateButton(Transform parent, string name, string label, bool primary)
         {
+            // --- Create instance ---
             var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
             go.transform.SetParent(parent, false);
             go.GetComponent<Image>().color = primary
@@ -177,6 +184,7 @@ namespace TitanOrbit.Game
 
         Transform ResolveUiHost()
         {
+            // --- Resolve value ---
             if (mainMenuPanel != null)
             {
                 var canvas = mainMenuPanel.GetComponentInParent<Canvas>();

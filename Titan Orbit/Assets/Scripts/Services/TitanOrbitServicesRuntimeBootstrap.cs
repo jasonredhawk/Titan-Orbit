@@ -13,6 +13,7 @@ namespace TitanOrbit.Services
         /// <summary>Idempotent; safe from <see cref="TitanOrbit.UI.MainMenu"/> or other early boot code.</summary>
         public static void EnsureHostIfNeeded()
         {
+            // --- Ensure setup ---
             if (Object.FindFirstObjectByType<TitanOrbitIapManager>() != null)
                 return;
 

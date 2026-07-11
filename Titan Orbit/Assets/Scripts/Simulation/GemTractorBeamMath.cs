@@ -2,9 +2,15 @@ using Unity.Mathematics;
 
 namespace TitanOrbit.Simulation
 {
-    /// <summary>Shared reach and pull strength for gem tractor beams (server physics + client visuals).</summary>
+    /// <summary>
+    /// Shared reach and pull strength for gem tractor beams. Server physics and client
+    /// <see cref="Game.GemTractorBeamVisual"/> read the same formulas so beam length and pull
+    /// feel match. Wing-mounted beams use <see cref="ShipWingTractorBeamParams"/>; legacy
+    /// max-gems fallback remains for ships without explicit tractor stats.
+    /// </summary>
     public static class GemTractorBeamMath
     {
+        /// <summary>[TITAN-ORBIT] Gem search radius in world units when not in orbit zone.</summary>
         public const float SearchRadiusNormal = 3f;
         public const float SearchRadiusOrbit = 4.5f;
         public const float BasePullSpeedNormal = 5f;
@@ -23,6 +29,7 @@ namespace TitanOrbit.Simulation
 
         public static void GetTractorBeamFromMaxGems(float effectiveMaxGems, bool inOrbitZone, out float searchRadius, out float attractionSpeed)
         {
+            // --- Compute value ---
             float gems = math.max(0f, effectiveMaxGems);
             searchRadius = gems * MaxGemsToSearchRadius;
             ApplyOrbitSearchRadiusMultiplier(inOrbitZone, ref searchRadius);
@@ -35,6 +42,7 @@ namespace TitanOrbit.Simulation
 
         public static float ResolveGemSizeForPull(float gemValue, float gemSize)
         {
+            // --- Resolve value ---
             if (gemSize > 0.001f)
                 return gemSize;
 
@@ -43,6 +51,7 @@ namespace TitanOrbit.Simulation
 
         public static float ComputeGemMassPullFactor(float gemSize)
         {
+            // --- Compute value ---
             float size = math.max(MinGemSizeForPull, gemSize);
             float factor = ReferenceGemSizeForPull / size;
             return math.clamp(factor, MinGemMassPullFactor, MaxGemMassPullFactor);
@@ -53,6 +62,7 @@ namespace TitanOrbit.Simulation
 
         public static void ApplyOrbitSearchRadiusMultiplier(bool inOrbitZone, ref float searchRadius)
         {
+            // --- Apply changes ---
             if (!inOrbitZone)
                 return;
             searchRadius *= SearchRadiusOrbit / SearchRadiusNormal;
@@ -119,6 +129,7 @@ namespace TitanOrbit.Simulation
         // Flat world: plain Euclidean XZ (map dimensions ignored, kept for signature compatibility).
         public static float ToroidalDistance(float3 a, float3 b, float mapW, float mapH)
         {
+            // --- ToroidalDistance ---
             float dx = b.x - a.x;
             float dz = b.z - a.z;
             return math.sqrt(dx * dx + dz * dz);
@@ -129,6 +140,7 @@ namespace TitanOrbit.Simulation
 
         public static float3 ToroidalDirection(float3 from, float3 to, float mapW, float mapH)
         {
+            // --- ToroidalDirection ---
             float3 offset = new float3(to.x - from.x, 0f, to.z - from.z);
             if (math.lengthsq(offset) < 0.0001f)
                 return new float3(0f, 0f, 1f);
@@ -137,12 +149,17 @@ namespace TitanOrbit.Simulation
 
         public static float3 ResolveWingWorldPosition(float3 shipPos, quaternion shipRot, float3 localPosition)
         {
+            // --- Resolve value ---
             float3 pos = shipPos + math.rotate(shipRot, localPosition);
             pos.y = shipPos.y;
             return pos;
         }
     }
 
+    /// <summary>
+    /// Per-wing tractor beam tuning baked from ship components. Passed to
+    /// <see cref="GemTractorBeamMath.GetWingTractorParams"/> at runtime.
+    /// </summary>
     public struct ShipWingTractorBeamParams
     {
         public float3 LocalPosition;

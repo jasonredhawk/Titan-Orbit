@@ -169,6 +169,7 @@ namespace TitanOrbit.ECS
 
         bool BeginGeneration(ref SystemState state)
         {
+            // --- Reset world and roll procedural parameters ---
             var em = state.EntityManager;
             DestroyExistingPlayerShips(ref state);
             _mapEntity = SystemAPI.GetSingletonEntity<MapStateSingleton>();
@@ -213,6 +214,7 @@ namespace TitanOrbit.ECS
             var asteroidLayouts = new NativeList<MapGenerationLogic.AsteroidLayout>(_rolled.AsteroidCount, Allocator.Temp);
             var planetPlacements = new NativeList<MapGenerationLogic.PlanetPlacement>(estimatedEntries, Allocator.Temp);
 
+            // --- Queue home planets, neutrals, then asteroids ---
             MapGenerationLogic.BuildHomePlanets(_config, _rolled, ref _rng, homeLayouts, planetPlacements);
             for (int i = 0; i < homeLayouts.Length; i++)
             {
@@ -270,6 +272,7 @@ namespace TitanOrbit.ECS
             if (!_spawnQueue.IsCreated || _spawnIndex >= _spawnQueue.Length)
                 return true;
 
+            // --- Instantiate one prefab from the pending queue ---
             var pending = _spawnQueue[_spawnIndex];
             switch (pending.Kind)
             {
@@ -316,6 +319,7 @@ namespace TitanOrbit.ECS
 
         void FinalizeGeneration(ref SystemState state)
         {
+            // --- Publish layout buffer and mark loading complete for clients ---
             var em = state.EntityManager;
             var layout = em.GetBuffer<MapLayoutEntryElement>(_mapEntity);
             for (int i = 0; i < _layoutEntries.Length; i++)

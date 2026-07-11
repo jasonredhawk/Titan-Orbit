@@ -44,6 +44,7 @@ namespace TitanOrbit.Data
         /// <summary>Stat value for one bar segment (0–9); falls back to half-category split when display stats are unset.</summary>
         public float GetDisplayStatValue(int statIndex)
         {
+            // --- Compute value ---
             if (HasDisplayStats)
             {
                 switch (statIndex)
@@ -86,6 +87,7 @@ namespace TitanOrbit.Data
         /// </summary>
         public static int GetPurchaseGemCost(ShipFamilyChassisTierEntry tier, int shipLevel)
         {
+            // --- Compute value ---
             if (tier == null)
                 return 0;
             float baseCap = tier.powerScoreBreakdown.gemCap > 0.01f
@@ -97,6 +99,7 @@ namespace TitanOrbit.Data
         /// <summary>Builds a breakdown struct from summed <see cref="ShipComponentAbilityStats"/>.</summary>
         public static ShipFamilyPowerScoreBreakdown FromSummedShipStats(ShipComponentAbilityStats s)
         {
+            // --- FromSummedShipStats ---
             return new ShipFamilyPowerScoreBreakdown
             {
                 firePower = s.firePower,

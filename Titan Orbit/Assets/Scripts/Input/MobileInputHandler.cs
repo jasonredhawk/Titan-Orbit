@@ -6,8 +6,10 @@ using UnityEngine.InputSystem;
 namespace TitanOrbit.Input
 {
     /// <summary>
-    /// Mobile: left-half anchor steering (rotate / thrust zones) + fire on the right screen half (or optional shoot rect).
-    /// Legacy on-screen joystick visuals are optional (editor / fallback).
+    /// Mobile touch input: left-half anchor steering (rotate / thrust zones) + fire on the right
+    /// screen half (or optional shoot rect). Feeds <see cref="PlayerInputHandler"/> and
+    /// <see cref="Game.ShipInputBridge"/> with joystick vector and shoot hold. Legacy on-screen
+    /// joystick visuals are optional (editor / fallback). Client-only — not used on dedicated server.
     /// </summary>
     [DefaultExecutionOrder(-200)]
     public class MobileInputHandler : MonoBehaviour, IPointerDownHandler, IPointerUpHandler, IDragHandler
@@ -78,6 +80,7 @@ namespace TitanOrbit.Input
 
         public static MobileInputHandler Resolve()
         {
+            // --- Resolve value ---
             if (Instance != null && Instance.isActiveAndEnabled && Instance.touchUiActive)
                 return Instance;
             var handlers = Object.FindObjectsByType<MobileInputHandler>(FindObjectsInactive.Include, FindObjectsSortMode.None);
@@ -104,6 +107,7 @@ namespace TitanOrbit.Input
         /// <summary>Wire from <see cref="TitanOrbit.UI.MobileControls"/>. Shoot rect optional when using right-half firing.</summary>
         public void Initialize(RectTransform shootRect, RectTransform joyBackground, RectTransform joyHandle, float legacyJoystickRadius, RectTransform[] shootExclusions = null)
         {
+            // --- Initialize ---
             shootButtonArea = shootRect;
             if (shootExclusions != null)
                 shootZoneExclusions = shootExclusions;
@@ -128,6 +132,7 @@ namespace TitanOrbit.Input
 
         private void RegisterSingleton()
         {
+            // --- RegisterSingleton ---
             if (Instance != null && Instance != this)
             {
                 Destroy(this);
@@ -140,6 +145,7 @@ namespace TitanOrbit.Input
 
         private UnityEngine.Camera GetUiEventCamera(PointerEventData eventData)
         {
+            // --- Compute value ---
             if (eventData != null && eventData.pressEventCamera != null)
                 return eventData.pressEventCamera;
             if (eventData != null && eventData.enterEventCamera != null)
@@ -149,6 +155,7 @@ namespace TitanOrbit.Input
 
         private UnityEngine.Camera GetUiCameraForRectTests()
         {
+            // --- Compute value ---
             if (rootCanvas == null && shootButtonArea != null)
                 rootCanvas = shootButtonArea.GetComponentInParent<Canvas>();
             if (rootCanvas == null && joystickBackground != null)
@@ -165,6 +172,7 @@ namespace TitanOrbit.Input
 
         private bool ScreenPointInRect(RectTransform rect, Vector2 screenPoint)
         {
+            // --- ScreenPointInRect ---
             if (rect == null) return false;
             UnityEngine.Camera cam = GetUiCameraForRectTests();
             if (RectTransformUtility.RectangleContainsScreenPoint(rect, screenPoint, null))
@@ -176,6 +184,7 @@ namespace TitanOrbit.Input
 
         private bool IsInShootExclusion(Vector2 screenPoint)
         {
+            // --- IsInShootExclusion ---
             if (shootZoneExclusions == null) return false;
             for (int i = 0; i < shootZoneExclusions.Length; i++)
             {
@@ -188,6 +197,7 @@ namespace TitanOrbit.Input
         /// <summary>True when this screen position should count as hold-to-fire (right half or optional shoot rect).</summary>
         private bool IsInShootFireZone(Vector2 screenPoint)
         {
+            // --- IsInShootFireZone ---
             if (IsInShootExclusion(screenPoint))
                 return false;
             if (shootButtonArea != null)
@@ -197,6 +207,7 @@ namespace TitanOrbit.Input
 
         public void OnPointerDown(PointerEventData eventData)
         {
+            // --- OnPointerDown ---
             if (joystickBackground == null) return;
             isJoystickActive = true;
             UpdateJoystick(eventData);
@@ -210,6 +221,7 @@ namespace TitanOrbit.Input
 
         public void OnPointerUp(PointerEventData eventData)
         {
+            // --- OnPointerUp ---
             if (!isJoystickActive) return;
             isJoystickActive = false;
             if (!Application.isMobilePlatform && !ForceTouchSteer)
@@ -218,6 +230,7 @@ namespace TitanOrbit.Input
 
         private void Update()
         {
+            // --- Per-frame refresh ---
             if (!touchUiActive)
                 return;
             if (!(Application.isMobilePlatform || ForceTouchSteer))
@@ -242,6 +255,7 @@ namespace TitanOrbit.Input
 
         private void GatherActiveTouchesDetailed()
         {
+            // --- GatherActiveTouchesDetailed ---
             s_touches.Clear();
             int legacy = UnityEngine.Input.touchCount;
             for (int i = 0; i < legacy; i++)
@@ -402,6 +416,7 @@ namespace TitanOrbit.Input
 
         private void ClearLeftAnchor()
         {
+            // --- Clear state ---
             anchorFingerId = -1;
             leftAnchorActive = false;
             leftDragDeltaScreen = Vector2.zero;
@@ -412,6 +427,7 @@ namespace TitanOrbit.Input
 
         private void UpdateLegacyJoystickVisualFromDelta()
         {
+            // --- Per-frame refresh ---
             if (joystickHandle == null)
                 return;
             float r = Mathf.Min(leftDragDistancePixels, joystickRadius);
@@ -421,6 +437,7 @@ namespace TitanOrbit.Input
 
         private void ProcessLegacyJoystickFromScratchPoints()
         {
+            // --- ProcessLegacyJoystickFromScratchPoints ---
             UnityEngine.Camera uiCam = GetUiCameraForRectTests();
             bool joy = false;
             Vector2 joyNorm = Vector2.zero;
@@ -458,6 +475,7 @@ namespace TitanOrbit.Input
             }
             else if (!leftAnchorActive)
             {
+                // --- if ---
                 joystickInput = Vector2.zero;
                 if (joystickHandle != null)
                     joystickHandle.anchoredPosition = Vector2.zero;
@@ -466,6 +484,7 @@ namespace TitanOrbit.Input
 
         private void ClearJoystickVisual()
         {
+            // --- Clear state ---
             joystickInput = Vector2.zero;
             if (joystickHandle != null)
                 joystickHandle.anchoredPosition = Vector2.zero;
@@ -473,6 +492,7 @@ namespace TitanOrbit.Input
 
         private void UpdateJoystick(PointerEventData eventData)
         {
+            // --- Per-frame refresh ---
             if (joystickBackground == null || joystickHandle == null) return;
 
             UnityEngine.Camera uiCam = GetUiEventCamera(eventData);
@@ -492,6 +512,7 @@ namespace TitanOrbit.Input
         /// <summary>World point used to aim the ship from left drag (camera-relative on XZ).</summary>
         public bool TryGetLeftDragAimWorldPoint(UnityEngine.Camera cam, Transform ship, out Vector3 worldPoint)
         {
+            // --- Attempt resolution ---
             worldPoint = ship != null ? ship.position : Vector3.zero;
             if (!LeftRotationFromAnchor || cam == null || ship == null)
                 return false;
@@ -514,6 +535,7 @@ namespace TitanOrbit.Input
 
         public bool TryGetAimScreenPosition(UnityEngine.Camera gameCamera, out Vector2 screenPosition)
         {
+            // --- Attempt resolution ---
             screenPosition = default;
             if (!touchUiActive)
                 return false;
@@ -527,6 +549,7 @@ namespace TitanOrbit.Input
 
         private bool TryPickAimFromLegacyTouches(UnityEngine.Camera uiCam, out Vector2 screenPosition)
         {
+            // --- Attempt resolution ---
             screenPosition = default;
             int count = UnityEngine.Input.touchCount;
             for (int i = 0; i < count; i++)
@@ -552,6 +575,7 @@ namespace TitanOrbit.Input
 
         private bool TryPickAimFromInputSystemTouches(UnityEngine.Camera uiCam, out Vector2 screenPosition)
         {
+            // --- Attempt resolution ---
             screenPosition = default;
             Touchscreen ts = Touchscreen.current;
             if (ts == null)
@@ -590,6 +614,7 @@ namespace TitanOrbit.Input
 
         public bool JoystickDeflectedBeyondDeadZone()
         {
+            // --- JoystickDeflectedBeyondDeadZone ---
             if (leftAnchorActive && LeftRotationFromAnchor)
                 return true;
             float dz = 0.12f;
@@ -603,6 +628,7 @@ namespace TitanOrbit.Input
 
         private bool RectHitFlexible(RectTransform rect, Vector2 screenPos, UnityEngine.Camera uiCam)
         {
+            // --- RectHitFlexible ---
             if (RectTransformUtility.RectangleContainsScreenPoint(rect, screenPos, null))
                 return true;
             if (uiCam != null && RectTransformUtility.RectangleContainsScreenPoint(rect, screenPos, uiCam))

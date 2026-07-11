@@ -353,6 +353,7 @@ namespace TitanOrbit.UI
 
         private void Awake()
         {
+            // --- Unity lifecycle ---
             OnOrbitStationEcsAwake();
             EnsurePanelExists();
             if (rootPanel != null) rootPanel.SetActive(false);
@@ -462,6 +463,7 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
+            // --- Per-frame refresh ---
             OnOrbitStationEcsUpdate();
             HandleMoonDockDismissInput();
             if (currentShip == null || currentPlanet == null) return;

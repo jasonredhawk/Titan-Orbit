@@ -2,8 +2,12 @@ using UnityEngine;
 
 namespace TitanOrbit.Data
 {
+    // --- Type members ---
     /// <summary>
-    /// Inspector-tunable bounds for procedural map generation. Each match rolls random values within these ranges.
+    /// Inspector-tunable bounds for procedural map generation. Each match rolls random values within
+    /// these ranges on the server via <see cref="ECS.MapGenerationLogic"/>. ScriptableObject loaded
+    /// through <see cref="MapGenerationSettingsCache"/> at boot. Pair with
+    /// <see cref="Game.MapGenerationSettingsLoader"/> for runtime assignment.
     /// </summary>
     [CreateAssetMenu(fileName = "MapGenerationSettings", menuName = "Titan Orbit/Map Generation Settings")]
     public class MapGenerationSettings : ScriptableObject

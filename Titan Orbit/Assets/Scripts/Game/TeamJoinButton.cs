@@ -5,7 +5,10 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Handles team join clicks on the JoinButton itself (not label children).</summary>
+    /// <summary>
+    /// Handles team join clicks on the JoinButton itself (not label children). [NETCODE] Sends
+    /// team request via TitanOrbitSessionManager after disabling the button to prevent double-submit.
+    /// </summary>
     [RequireComponent(typeof(Button))]
     public class TeamJoinButton : MonoBehaviour
     {
@@ -31,6 +34,7 @@ namespace TitanOrbit.Game
 
         public void JoinTeam()
         {
+            // --- Guard and send team RPC ---
             if (_button != null && !_button.interactable)
                 return;
 
@@ -41,6 +45,7 @@ namespace TitanOrbit.Game
                 return;
             }
 
+            // --- Optimistic disable until server responds ---
             if (_button != null)
                 _button.interactable = false;
 

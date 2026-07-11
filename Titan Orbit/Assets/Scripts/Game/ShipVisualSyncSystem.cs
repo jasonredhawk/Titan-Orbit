@@ -6,6 +6,7 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
+    // --- Type members ---
     // [TITAN-ORBIT] Pipeline order: NetCode presentation → ShipVisualSyncSystem (last) → EcsWorldVisualizer LateUpdate
     /// <summary>
     /// Captures ghost <see cref="LocalTransform"/> after NetCode presentation interpolation so

@@ -17,6 +17,7 @@ namespace TitanOrbit.Editor
         /// <summary>Adds mobile touch UI as its own canvas (sibling-friendly). Wire <see cref="MobileControls.classicHudCanvas"/> in the inspector if you use a separate desktop-only HUD to hide on phones.</summary>
         public static GameObject AddMobileTouchCanvas(Transform parent, bool destroyExistingRoot)
         {
+            // --- AddMobileTouchCanvas ---
             if (parent == null)
                 return null;
 
@@ -95,6 +96,7 @@ namespace TitanOrbit.Editor
         /// <summary>Legacy entry: adds mobile touch canvas under the same transform as your main UI (sibling of content).</summary>
         public static GameObject AddMobileControlsToCanvas(Transform canvasTransform, CanvasScaler canvasScaler, bool destroyExistingRoot)
         {
+            // --- AddMobileControlsToCanvas ---
             if (canvasTransform == null)
                 return null;
             Transform parent = canvasTransform.parent != null ? canvasTransform.parent : canvasTransform;
@@ -103,6 +105,7 @@ namespace TitanOrbit.Editor
 
         private static Sprite CreateWhiteSprite()
         {
+            // --- Create instance ---
             Texture2D tex = new Texture2D(1, 1);
             tex.SetPixel(0, 0, Color.white);
             tex.Apply();
@@ -111,6 +114,7 @@ namespace TitanOrbit.Editor
 
         private static GameObject CreateShiftButton(Transform parent, string name, string label, Sprite sprite, Color? buttonColor = null)
         {
+            // --- Create instance ---
             Color color = buttonColor ?? new Color(0.25f, 0.55f, 0.9f, 0.95f);
             GameObject btnObj = new GameObject(name);
             btnObj.transform.SetParent(parent, false);

@@ -22,6 +22,7 @@ namespace TitanOrbit.Game
 
         public void Configure(PlanetGemMoonVisualProxy moon, TeamId team)
         {
+            // --- Configure ---
             _moon = moon;
             if (_team != team)
             {
@@ -32,6 +33,7 @@ namespace TitanOrbit.Game
 
         public static GemMoonMatrixShieldVisual EnsureOnMoonRoot(Transform moonRoot, PlanetGemMoonVisualProxy moon, TeamId team)
         {
+            // --- Ensure setup ---
             Transform existing = moonRoot.Find(ShieldRootName);
             GameObject shieldGo;
             if (existing != null)
@@ -56,6 +58,7 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
+            // --- Per-frame refresh ---
             if (_moon == null)
                 return;
 
@@ -64,6 +67,7 @@ namespace TitanOrbit.Game
 
         void EnsureShieldInstance()
         {
+            // --- Ensure setup ---
             if (_shieldInstance != null)
                 return;
 
@@ -84,6 +88,7 @@ namespace TitanOrbit.Game
 
         void UpdateShieldVisual(float shieldRatio)
         {
+            // --- Per-frame refresh ---
             EnsureShieldInstance();
             if (_shieldInstance == null)
                 return;
@@ -126,6 +131,7 @@ namespace TitanOrbit.Game
 
         void DestroyShieldInstance()
         {
+            // --- DestroyShieldInstance ---
             if (_shieldInstance != null)
             {
                 if (Application.isPlaying)

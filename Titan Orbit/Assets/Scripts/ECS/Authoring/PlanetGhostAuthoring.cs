@@ -8,16 +8,23 @@ using UnityEngine;
 namespace TitanOrbit.ECS.Authoring
 {
     /// <summary>
-    /// Baker for planet ghost prefabs. Converts GameObject prefab into ECS entity with
-    /// <see cref="PlanetState"/>, growth/moon components, and a static sphere physics collider
-    /// on <see cref="TitanOrbitPhysicsLayers.WorldStatic"/>. Ships collide with planets via Unity Physics.
+    /// [UNITY] MonoBehaviour authoring on planet ghost prefabs. Baker converts GameObject prefab into
+    /// ECS entity with <see cref="PlanetTag"/>, <see cref="PlanetState"/>, growth/moon components,
+    /// and a static sphere physics collider on <see cref="TitanOrbitPhysicsLayers.WorldStatic"/>.
+    /// [PHYSICS] Ships collide with planets via Unity Physics; planets do not move. Baked into SubScenes
+    /// for NetCode ghost replication.
     /// </summary>
     public class PlanetGhostAuthoring : MonoBehaviour
     {
+        /// <summary>[ECS/DOTS] Nested Baker for planet ghost entity components.</summary>
         class Baker : Baker<PlanetGhostAuthoring>
         {
+            /// <summary>
+            /// [ECS/DOTS] Registers planet tag, state, growth/moon components, and static collider.
+            /// </summary>
             public override void Bake(PlanetGhostAuthoring authoring)
             {
+                // --- Core planet components ---
                 var entity = GetEntity(TransformUsageFlags.Dynamic);
                 AddComponent(entity, new PlanetTag());
                 AddComponent(entity, new PlanetState());
@@ -26,7 +33,8 @@ namespace TitanOrbit.ECS.Authoring
 
                 // --- Static physics collider ---
                 // [UNITY] Geometry radius is unscaled mesh radius; LocalTransform.Scale scales world size.
-                // [TITAN-ORBIT] Planets are static bodies — ships bounce, planets do not move.
+                // [PHYSICS] WorldStatic layer — ships bounce, planets never integrate position.
+                // [TITAN-ORBIT] Restitution ~0.5 for ship bounce off planet hulls.
                 var material = Unity.Physics.Material.Default;
                 material.Restitution = 0.5f;
                 var collider = Unity.Physics.SphereCollider.Create(

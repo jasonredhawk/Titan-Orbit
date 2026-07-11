@@ -39,6 +39,7 @@ namespace TitanOrbit.Game
 
         public void Configure(Transform planetRoot, float planetSize, int planetLevel, TeamId team, bool isHome, int planetId)
         {
+            // --- Configure ---
             _planetRoot = planetRoot;
             _planetSize = Mathf.Max(0.25f, planetSize);
             _planetLevel = ClampLevel(planetLevel);

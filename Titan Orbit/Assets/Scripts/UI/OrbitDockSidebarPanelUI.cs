@@ -69,6 +69,7 @@ namespace TitanOrbit.UI
 
         public void ConfigureVisuals(Sprite panelBg, Sprite btnSprite, TMP_FontAsset font)
         {
+            // --- ConfigureVisuals ---
             panelBackgroundSprite = panelBg;
             buttonSprite = btnSprite;
             fontAsset = font;
@@ -92,6 +93,7 @@ namespace TitanOrbit.UI
 
         public void EnsureBuilt()
         {
+            // --- Ensure setup ---
             if (_built)
             {
                 if (_autoDepositToggle == null)
@@ -192,6 +194,7 @@ namespace TitanOrbit.UI
 
         private void BuildNavStrip()
         {
+            // --- Build data ---
             var navGo = new GameObject("NavStrip");
             navGo.transform.SetParent(transform, false);
             var navRt = navGo.AddComponent<RectTransform>();
@@ -215,6 +218,7 @@ namespace TitanOrbit.UI
 
         private Button CreateNavButton(Transform parent, string label, NavTarget target, out Image bg)
         {
+            // --- Create instance ---
             var go = new GameObject("Nav_" + label);
             go.transform.SetParent(parent, false);
             bg = go.AddComponent<Image>();
@@ -253,6 +257,7 @@ namespace TitanOrbit.UI
 
         private void ApplyNavVisuals()
         {
+            // --- Apply changes ---
             if (_navUpgradesBg == null || _navStoreBg == null)
                 return;
 
@@ -267,6 +272,7 @@ namespace TitanOrbit.UI
 
         public void EnsureCurrentShipNode(ShipUpgradeTreeNodeUI nodePrefab, Sprite nodeBackgroundSprite)
         {
+            // --- Ensure setup ---
             EnsureBuilt();
             if (_currentShipNode != null || nodePrefab == null || _currentShipHost == null)
                 return;
@@ -312,6 +318,7 @@ namespace TitanOrbit.UI
 
         public void RefreshDepositStatus(float shipGems, float bankBalance, float planetGems, int planetLevel)
         {
+            // --- RefreshDepositStatus ---
             EnsureBuilt();
             if (_shipGemsValueText != null)
                 _shipGemsValueText.text = shipGems.ToString("F0");
@@ -334,6 +341,7 @@ namespace TitanOrbit.UI
 
         public void RefreshCurrentShip(Action<ShipUpgradeTreeNodeUI, float> populateNode, float maxPower)
         {
+            // --- RefreshCurrentShip ---
             if (_currentShipNode == null || populateNode == null)
                 return;
             populateNode(_currentShipNode, maxPower);
@@ -422,6 +430,7 @@ namespace TitanOrbit.UI
 
         private void CreateBankBalanceBanner(Transform parent)
         {
+            // --- Create instance ---
             var bannerGo = new GameObject("BankBalance");
             bannerGo.transform.SetParent(parent, false);
             var bannerLe = bannerGo.AddComponent<LayoutElement>();
@@ -522,6 +531,7 @@ namespace TitanOrbit.UI
 
         TextMeshProUGUI CreateGemFlowColumn(Transform parent, string label, string value, Color valueColor)
         {
+            // --- Create instance ---
             var colGo = new GameObject(label + "Column");
             colGo.transform.SetParent(parent, false);
             var colLe = colGo.AddComponent<LayoutElement>();
@@ -571,6 +581,7 @@ namespace TitanOrbit.UI
 
         void CreateGemFlowArrow(Transform parent)
         {
+            // --- Create instance ---
             var arrowGo = new GameObject("Arrow");
             arrowGo.transform.SetParent(parent, false);
             var arrowLe = arrowGo.AddComponent<LayoutElement>();
@@ -590,6 +601,7 @@ namespace TitanOrbit.UI
 
         private void CreateAutoDepositToggle(Transform parent)
         {
+            // --- Create instance ---
             var rowGo = new GameObject("AutoDepositToggle");
             rowGo.transform.SetParent(parent, false);
             var rowLe = rowGo.AddComponent<LayoutElement>();
@@ -673,6 +685,7 @@ namespace TitanOrbit.UI
 
         private void SetAutoDepositToggleVisual(bool enabled, bool notify)
         {
+            // --- SetAutoDepositToggleVisual ---
             _autoDepositEnabled = enabled;
             if (_autoDepositToggleBg != null)
             {
@@ -694,6 +707,7 @@ namespace TitanOrbit.UI
 
         private TextMeshProUGUI CreateBodyLabel(Transform parent, string name, string text, float height)
         {
+            // --- Create instance ---
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             var le = go.AddComponent<LayoutElement>();
@@ -712,6 +726,7 @@ namespace TitanOrbit.UI
 
         private static RectTransform CreateStretchHost(Transform parent, string name, float preferredHeight)
         {
+            // --- Create instance ---
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             var rt = go.AddComponent<RectTransform>();

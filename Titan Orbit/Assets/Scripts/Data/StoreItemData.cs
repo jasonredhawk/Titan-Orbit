@@ -3,12 +3,17 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Static store item definitions: price, display name, pack size for consumables.
+    /// Static store item definitions: gem prices, display names, pack sizes, UI glyphs, and
+    /// drone HP for moon-dock / home-planet store rows. Consumed by
+    /// <see cref="Systems.HomePlanetStoreSystem"/> and orbit station equipment UI. Prices are
+    /// code constants today — not ScriptableObject tunables.
     /// </summary>
     public static class StoreItemData
     {
+        /// <summary>Returns gem price for a store item type.</summary>
         public static float GetPrice(StoreItemType item)
         {
+            // --- Compute value ---
             switch (item)
             {
                 case StoreItemType.FighterDrone: return 80f;
@@ -22,8 +27,10 @@ namespace TitanOrbit.Data
             }
         }
 
+        /// <summary>Long display name for store cards and purchase confirmation.</summary>
         public static string GetDisplayName(StoreItemType item)
         {
+            // --- Compute value ---
             switch (item)
             {
                 case StoreItemType.FighterDrone: return "Fighter Drone";
@@ -40,6 +47,7 @@ namespace TitanOrbit.Data
         /// <summary>Pack size for rockets/mines; drones are 1 per purchase.</summary>
         public static int GetPackSize(StoreItemType item)
         {
+            // --- Compute value ---
             switch (item)
             {
                 case StoreItemType.SmallRockets:
@@ -50,9 +58,10 @@ namespace TitanOrbit.Data
             }
         }
 
-        /// <summary>Compact card title for moon dock store row.</summary>
+        /// <summary>Short title for compact moon-dock store rows.</summary>
         public static string GetShortDisplayName(StoreItemType item)
         {
+            // --- Compute value ---
             switch (item)
             {
                 case StoreItemType.FighterDrone: return "Fighter";
@@ -72,6 +81,7 @@ namespace TitanOrbit.Data
         /// </summary>
         public static int GetAbilityColorStatIndex(StoreItemType item)
         {
+            // --- Compute value ---
             switch (item)
             {
                 case StoreItemType.FighterDrone: return 0; // Fire Power
@@ -85,8 +95,10 @@ namespace TitanOrbit.Data
             }
         }
 
+        /// <summary>True for autonomous drone items (fighter, shield, mining).</summary>
         public static bool IsDrone(StoreItemType item)
         {
+            // --- IsDrone ---
             return item == StoreItemType.FighterDrone
                 || item == StoreItemType.ShieldDrone
                 || item == StoreItemType.MiningDrone;
@@ -99,13 +111,16 @@ namespace TitanOrbit.Data
             return 30;
         }
 
+        /// <summary>True when item is an authored ship-family component row.</summary>
         public static bool IsShipComponent(StoreItemType item) => item == StoreItemType.ShipComponent;
 
+        /// <summary>True for drones, rockets, and mines (non-chassis gear).</summary>
         public static bool IsSupportItem(StoreItemType item) => !IsShipComponent(item);
 
         /// <summary>Short description for equipment slot UI.</summary>
         public static string GetDescription(StoreItemType item)
         {
+            // --- Compute value ---
             switch (item)
             {
                 case StoreItemType.FighterDrone: return "Attacks enemy ships.";
@@ -122,6 +137,7 @@ namespace TitanOrbit.Data
         /// <summary>Large glyph shown in the card icon area when no sprite is assigned.</summary>
         public static string GetIconGlyph(StoreItemType item)
         {
+            // --- Compute value ---
             switch (item)
             {
                 case StoreItemType.FighterDrone: return "\u2694"; // crossed swords

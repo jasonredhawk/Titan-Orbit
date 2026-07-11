@@ -26,6 +26,7 @@ namespace TitanOrbit.Game
 
         void Update()
         {
+            // --- Per-frame refresh ---
             if (_input == null)
                 return;
 
@@ -40,6 +41,7 @@ namespace TitanOrbit.Game
         /// </summary>
         ShipInput BuildInput()
         {
+            // --- Build data ---
             var cam = UnityEngine.Camera.main;
             float2 aimDir = float2.zero;
             if (cam != null)

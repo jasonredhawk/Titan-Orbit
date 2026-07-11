@@ -6,11 +6,16 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Instantiates legacy planet/asteroid prefabs as ECS presentation proxies.</summary>
+    /// <summary>
+    /// [HYBRID] Instantiates legacy planet and asteroid prefabs as ECS presentation proxies for
+    /// <see cref="EcsWorldVisualizer"/>. Strips NGO/legacy gameplay components, applies team materials,
+    /// attaches spin/moon/orbit-ring children, and scales by ECS world diameter. Render only.
+    /// </summary>
     public static class WorldBodyVisualApplier
     {
         const string DefaultPlanetPoolPath = "Assets/Data/PlanetMaterialPool.asset";
 
+        /// <summary>MonoBehaviour types removed so proxies never run legacy planet sim.</summary>
         static readonly HashSet<string> StripComponentNames = new HashSet<string>
         {
             "NetworkObject",
@@ -70,6 +75,7 @@ namespace TitanOrbit.Game
 
         static void EnsurePlanetSpin(GameObject planetRoot)
         {
+            // --- Ensure setup ---
             if (planetRoot == null)
                 return;
 
@@ -138,6 +144,7 @@ namespace TitanOrbit.Game
 
         static Material TryGetPlanetSurfaceMaterial(GameObject planetRoot)
         {
+            // --- Attempt resolution ---
             if (planetRoot == null)
                 return null;
 
@@ -160,6 +167,7 @@ namespace TitanOrbit.Game
 
         public static void StripWaterFromGemMoonMaterial(Material material)
         {
+            // --- Strip components ---
             if (material == null)
                 return;
             if (material.HasProperty("_HasWater"))
@@ -170,6 +178,7 @@ namespace TitanOrbit.Game
 
         static Color GetMaterialColor(Material material)
         {
+            // --- Compute value ---
             if (material == null)
                 return Color.white;
             if (material.HasProperty("_BaseColor"))
@@ -218,6 +227,7 @@ namespace TitanOrbit.Game
 
         public static void EnsureAsteroidSpin(GameObject root, Vector3 worldPosition)
         {
+            // --- Ensure setup ---
             if (root == null)
                 return;
 
@@ -230,6 +240,7 @@ namespace TitanOrbit.Game
         /// <summary>Same Barren asteroid texture for every rock; vary UV scale, normals, and displacement per instance.</summary>
         static void ApplyAsteroidSurfaceVariation(GameObject root, Vector3 worldPosition, float rawSize)
         {
+            // --- Apply changes ---
             if (rawSize < 0.01f)
                 return;
 
@@ -264,6 +275,7 @@ namespace TitanOrbit.Game
 
         public static void ApplyPlanetMaterial(GameObject root, PlanetMaterialPool pool, bool isHome, TeamId team, int planetId)
         {
+            // --- Apply changes ---
             Material mat = ResolvePlanetMaterial(pool, isHome, team, planetId);
             if (mat == null)
                 return;
@@ -272,6 +284,7 @@ namespace TitanOrbit.Game
 
         static Material ResolvePlanetMaterial(PlanetMaterialPool pool, bool isHome, TeamId team, int planetId)
         {
+            // --- Resolve value ---
             if (pool == null)
                 return null;
 
@@ -285,6 +298,7 @@ namespace TitanOrbit.Game
 
         static int TeamToTropicalIndex(TeamId team)
         {
+            // --- TeamToTropicalIndex ---
             switch (team)
             {
                 case TeamId.TeamA: return 0;
@@ -296,6 +310,7 @@ namespace TitanOrbit.Game
 
         static void ApplyMaterialToSgtPlanets(GameObject root, Material mat)
         {
+            // --- Apply changes ---
             if (mat == null)
                 return;
 
@@ -322,6 +337,7 @@ namespace TitanOrbit.Game
 
         public static Material CreateLitMaterial(Color color)
         {
+            // --- Create instance ---
             var shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
             var mat = new Material(shader);
             mat.color = color;
@@ -332,6 +348,7 @@ namespace TitanOrbit.Game
 
         public static void StripForProxy(GameObject root)
         {
+            // --- Strip components ---
             ShipVisualApplier.StripPhysicsAndNetworking(root);
 
             var components = root.GetComponentsInChildren<Component>(true);
@@ -351,6 +368,7 @@ namespace TitanOrbit.Game
 
         static void RemoveUiChildren(GameObject root)
         {
+            // --- RemoveUiChildren ---
             for (int i = root.transform.childCount - 1; i >= 0; i--)
             {
                 Transform child = root.transform.GetChild(i);
@@ -363,6 +381,7 @@ namespace TitanOrbit.Game
 
         public static PlanetMaterialPool LoadDefaultMaterialPool()
         {
+            // --- LoadDefaultMaterialPool ---
 #if UNITY_EDITOR
             return UnityEditor.AssetDatabase.LoadAssetAtPath<PlanetMaterialPool>(DefaultPlanetPoolPath);
 #else

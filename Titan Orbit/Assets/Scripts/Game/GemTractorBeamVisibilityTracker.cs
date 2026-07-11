@@ -3,9 +3,14 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Client-side fade/hold for tractor-beam visuals so assignment jitter does not pop beams on/off.</summary>
+    /// <summary>
+    /// [HYBRID] Client-side fade in/out for tractor beam visuals so wing reassignment does not pop beams.
+    /// Orchestrates <see cref="GemTractorBeamDeployTracker"/> and <see cref="GemTractorBeamClientLogic"/>
+    /// each LateUpdate. Visibility 0–1 multiplied into Shapes alpha in <see cref="GemTractorBeamVisual"/>.
+    /// </summary>
     public static class GemTractorBeamVisibilityTracker
     {
+        /// <summary>0 = hidden, 1 = fully visible — keyed by packed shipIndex|gemIndex.</summary>
         static readonly Dictionary<long, float> VisibilityByPair = new Dictionary<long, float>(128);
         static int _lastUpdateFrame = -1;
 
@@ -14,6 +19,7 @@ namespace TitanOrbit.Game
 
         public static void LateUpdateTick()
         {
+            // --- Per-frame refresh ---
             if (Time.frameCount == _lastUpdateFrame)
                 return;
             _lastUpdateFrame = Time.frameCount;
@@ -111,6 +117,7 @@ namespace TitanOrbit.Game
 
         public static void Clear()
         {
+            // --- Clear state ---
             VisibilityByPair.Clear();
             _lastUpdateFrame = -1;
             GemTractorBeamDeployTracker.Clear();

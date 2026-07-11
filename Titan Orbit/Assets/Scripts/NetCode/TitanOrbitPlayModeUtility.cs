@@ -4,7 +4,10 @@ using UnityEngine;
 
 namespace TitanOrbit.NetCode
 {
-    /// <summary>Helpers for Unity Multiplayer Play Mode (MPPM) additional editor instances.</summary>
+    /// <summary>
+    /// [EDITOR] Helpers for Unity Multiplayer Play Mode (MPPM) additional editor instances.
+    /// Detects virtual-project clones and warns when server build subtarget mismatches host.
+    /// </summary>
     public static class TitanOrbitPlayModeUtility
     {
         const string ServerBuildSubtargetWarning =
@@ -13,9 +16,11 @@ namespace TitanOrbit.NetCode
             "Fix: In Window > Play Mode > Scenarios, set the additional instance Multiplayer Role to Client " +
             "(not Server). Then Play from the Main Editor only.";
 
+        /// <summary>True when launched via MPPM --virtual-project-clone (not main editor).</summary>
         public static bool IsMppmAdditionalEditorInstance()
         {
 #if UNITY_EDITOR
+            // --- MPPM passes --virtual-project-clone to additional editors ---
             foreach (var arg in Environment.GetCommandLineArgs())
             {
                 if (arg == "--virtual-project-clone")
@@ -28,6 +33,7 @@ namespace TitanOrbit.NetCode
         /// <summary>True when MPPM launched this clone with a Dedicated Server build subtarget.</summary>
         public static bool UsesServerBuildSubtarget()
         {
+            // --- Parse Unity command line for standalone build role ---
             var args = Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length - 1; i++)
             {
@@ -39,6 +45,7 @@ namespace TitanOrbit.NetCode
             return false;
         }
 
+        /// <summary>Logs error when MPPM clone uses Dedicated Server build (ghost schema mismatch).</summary>
         public static void WarnIfMppmServerBuildClone()
         {
 #if UNITY_EDITOR
@@ -81,6 +88,7 @@ namespace TitanOrbit.NetCode
 
         public static TeamId GetSuggestedTeamForMppmPlayer()
         {
+            // --- Round-robin TeamA/B/C across MPPM Player 2, 3, … ---
             int playerNumber = GetMppmPlayerNumber();
             int teamIndex = (playerNumber - 1) % 3;
             return teamIndex switch

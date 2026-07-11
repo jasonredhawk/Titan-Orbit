@@ -8,20 +8,34 @@ using UnityEngine;
 namespace TitanOrbit.ECS.Authoring
 {
     /// <summary>
-    /// Baker for asteroid ghost prefabs. Adds mineable <see cref="AsteroidState"/> and a static
-    /// sphere collider on the World physics layer. Asteroids block ship movement but gems do not.
+    /// [UNITY] MonoBehaviour authoring on asteroid ghost prefabs. The nested Baker converts this
+    /// GameObject into an ECS entity with <see cref="AsteroidTag"/>, <see cref="AsteroidState"/>,
+    /// and a static sphere physics collider on <see cref="TitanOrbitPhysicsLayers.WorldStatic"/>.
+    /// [PHYSICS] Asteroids block ship movement; gems do not collide with ships. Baked into SubScenes
+    /// for NetCode ghost replication. Server map generation instantiates from <see cref="GamePrefabs.Asteroid"/>.
     /// </summary>
     public class AsteroidGhostAuthoring : MonoBehaviour
     {
+        /// <summary>
+        /// [ECS/DOTS] Nested Baker — Unity DOTS converts this MonoBehaviour hierarchy into entity
+        /// components at SubScene bake time (not at runtime).
+        /// </summary>
         class Baker : Baker<AsteroidGhostAuthoring>
         {
+            /// <summary>
+            /// [ECS/DOTS] Registers asteroid tag, mineable state, and static physics hull collider.
+            /// </summary>
             public override void Bake(AsteroidGhostAuthoring authoring)
             {
+                // --- Entity registration ---
+                // [ECS/DOTS] Dynamic transform — position set at spawn by map generation ECB.
                 var entity = GetEntity(TransformUsageFlags.Dynamic);
                 AddComponent(entity, new AsteroidTag());
                 AddComponent(entity, new AsteroidState());
 
-                // --- Static physics collider (see PlanetGhostAuthoring for layer notes) ---
+                // --- Static physics collider ---
+                // [PHYSICS] WorldStatic layer — collides with Ship layer only (see TitanOrbitPhysicsLayers).
+                // [TITAN-ORBIT] Restitution ~0.5 for bounce off asteroid clusters.
                 var material = Unity.Physics.Material.Default;
                 material.Restitution = 0.5f;
                 var collider = Unity.Physics.SphereCollider.Create(

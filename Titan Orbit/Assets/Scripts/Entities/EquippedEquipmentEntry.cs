@@ -3,12 +3,18 @@ using UnityEngine;
 
 namespace TitanOrbit.Entities
 {
-    /// <summary>Serialized equipped slot state for store components and drones.</summary>
+    /// <summary>
+    /// Serialized equipped slot state for store components and drones. Stored on ship loadout
+    /// and mirrored to visual placement. [TITAN-ORBIT] Flat floats for JSON/ghost-friendly layout.
+    /// </summary>
     public struct EquippedEquipmentEntry
     {
+        // --- Identity ---
         public int itemType;
         public string componentId;
         public int remainingCharges;
+
+        // --- Local transform (ship hull space) ---
         public float localPosX;
         public float localPosY;
         public float localPosZ;
@@ -25,6 +31,7 @@ namespace TitanOrbit.Entities
             get => new Vector3(localPosX, localPosY, localPosZ);
             set
             {
+                // --- Flatten Vector3 into serialized floats ---
                 localPosX = value.x;
                 localPosY = value.y;
                 localPosZ = value.z;
@@ -36,6 +43,7 @@ namespace TitanOrbit.Entities
             get => new Vector3(localRotX, localRotY, localRotZ);
             set
             {
+                // --- Flatten euler into serialized floats ---
                 localRotX = value.x;
                 localRotY = value.y;
                 localRotZ = value.z;

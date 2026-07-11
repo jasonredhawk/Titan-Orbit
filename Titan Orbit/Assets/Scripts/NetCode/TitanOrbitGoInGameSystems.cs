@@ -5,14 +5,23 @@ using UnityEngine;
 
 namespace TitanOrbit.NetCode
 {
-    /// <summary>Client → server handshake so both worlds mark the connection in-game (required for dedicated Relay).</summary>
+    /// <summary>
+    /// [NETCODE] Empty RPC payload — client tells server "I am ready to receive ghosts and sim."
+    /// Required for dedicated Relay joins where connection must be explicitly marked in-game on both sides.
+    /// </summary>
     public struct GoInGameRequest : IRpcCommand { }
 
-    /// <summary>When a client connection has a <see cref="NetworkId"/>, go in-game and notify the server.</summary>
+    /// <summary>
+    /// [NETCODE] Client-side go-in-game handshake. When a connection has <see cref="NetworkId"/> but
+    /// not yet <see cref="NetworkStreamInGame"/>, adds InGame and sends <see cref="GoInGameRequest"/>
+    /// to the server. World: ClientSimulation (and ThinClient). Runs each frame until all connections
+    /// are in-game. Paired with <see cref="TitanOrbitGoInGameServerSystem"/>.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct TitanOrbitGoInGameClientSystem : ISystem
     {
+        /// <summary>Require network driver and at least one connection waiting to go in-game.</summary>
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<NetworkStreamDriver>();
@@ -25,10 +34,15 @@ namespace TitanOrbit.NetCode
         public void OnUpdate(ref SystemState state)
         {
             var commandBuffer = new EntityCommandBuffer(Allocator.Temp);
+
+            // --- Connections not yet in-game ---
+            // [NETCODE] NetworkStreamInGame — NetCode tag that enables ghost spawn/replication on this connection.
             foreach (var (id, entity) in SystemAPI.Query<RefRO<NetworkId>>().WithEntityAccess()
                          .WithNone<NetworkStreamInGame>())
             {
                 commandBuffer.AddComponent<NetworkStreamInGame>(entity);
+
+                // --- RPC to server ---
                 var req = commandBuffer.CreateEntity();
                 commandBuffer.AddComponent<GoInGameRequest>(req);
                 commandBuffer.AddComponent(req, new SendRpcCommandRequest { TargetConnection = entity });
@@ -39,7 +53,10 @@ namespace TitanOrbit.NetCode
         }
     }
 
-    /// <summary>Marks the remote connection in-game on the server when the client requests it.</summary>
+    /// <summary>
+    /// [NETCODE] Server accepts <see cref="GoInGameRequest"/> and marks the source connection in-game.
+    /// World: ServerSimulation. Without this, dedicated server may not replicate ghosts to the client.
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct TitanOrbitGoInGameServerSystem : ISystem
@@ -56,9 +73,11 @@ namespace TitanOrbit.NetCode
         public void OnUpdate(ref SystemState state)
         {
             var commandBuffer = new EntityCommandBuffer(Allocator.Temp);
+
             foreach (var (reqSrc, reqEntity) in SystemAPI.Query<RefRO<ReceiveRpcCommandRequest>>()
                          .WithAll<GoInGameRequest>().WithEntityAccess())
             {
+                // [NETCODE] SourceConnection — entity for the client that sent this RPC.
                 Entity connection = reqSrc.ValueRO.SourceConnection;
                 if (!state.EntityManager.HasComponent<NetworkStreamInGame>(connection))
                     commandBuffer.AddComponent<NetworkStreamInGame>(connection);

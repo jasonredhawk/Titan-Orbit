@@ -15,16 +15,24 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Drives the NCE vertical-slice UI flow: local connect → team pick → gameplay.
+    /// [HYBRID] Drives the NCE (NetCode Entities) vertical-slice UI flow: main menu → local connect →
+    /// team pick → loading → gameplay HUD. Wires buttons to <see cref="TitanOrbitSessionManager"/> and
+    /// listens for team-choice / rejoin RPC results. Client only — dedicated server has no canvas.
     /// </summary>
     public class NceGameFlowController : MonoBehaviour
     {
         [Header("UI Panels")]
+        /// <summary>Root panel with Play button and connection status.</summary>
         [SerializeField] GameObject mainMenuPanel;
+        /// <summary>Optional intermediate lobby (browser / relay) before team select.</summary>
         [SerializeField] GameObject lobbyPanel;
+        /// <summary>Five-team picker shown after successful connect.</summary>
         [SerializeField] GameObject teamSelectionPanel;
+        /// <summary>Full-screen blocker while worlds and ghosts stream in.</summary>
         [SerializeField] GameObject loadingRoot;
+        /// <summary>HUD root enabled after local ship spawns.</summary>
         [SerializeField] GameObject gameplayRoot;
+        /// <summary>Optional ship stat readout panel during gameplay.</summary>
         [SerializeField] GameObject shipStatsPanel;
 
         [Header("Main Menu")]
@@ -45,6 +53,7 @@ namespace TitanOrbit.Game
         [SerializeField] GameObject teamDPanel;
         [SerializeField] GameObject teamEPanel;
 
+        /// <summary>Fixed team order for wiring parallel button/panel arrays.</summary>
         static readonly TeamId[] TeamOrder =
         {
             TeamId.TeamA, TeamId.TeamB, TeamId.TeamC, TeamId.TeamD, TeamId.TeamE,
@@ -76,6 +85,7 @@ namespace TitanOrbit.Game
 
         void Awake()
         {
+            // --- Unity lifecycle ---
             ClientTeamFlowState.Reset();
             _teamButtons = new[] { teamAButton, teamBButton, teamCButton, teamDButton, teamEButton };
             _teamPanels = new[] { teamAPanel, teamBPanel, teamCPanel, teamDPanel, teamEPanel };
@@ -296,6 +306,7 @@ namespace TitanOrbit.Game
 
         void Start()
         {
+            // --- Unity lifecycle ---
             WirePlayButton();
             if (_teamButtons[0] == null || _teamButtons[1] == null || _teamButtons[2] == null)
                 Debug.LogWarning("[NceGameFlow] One or more team Join buttons were not found. Expected TeamAPanel/Content/JoinButton etc.");
@@ -401,6 +412,7 @@ namespace TitanOrbit.Game
 
         void Update()
         {
+            // --- Per-frame refresh ---
             UpdateStatusFromSession();
             RefreshUi();
             TryAutoPickTeamInEditor();

@@ -16,6 +16,7 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
+            // --- System OnUpdate ---
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             // [NETCODE] Each RPC arrives as a short-lived entity with command + request components.
@@ -39,6 +40,7 @@ namespace TitanOrbit.ECS
         /// <summary>Reads NetworkId from the connection entity that sent this RPC.</summary>
         static int GetSenderNetworkId(EntityManager em, Entity connection)
         {
+            // --- Compute value ---
             if (connection == Entity.Null || !em.HasComponent<NetworkId>(connection))
                 return -1;
             return em.GetComponentData<NetworkId>(connection).Value;

@@ -32,6 +32,7 @@ namespace TitanOrbit.UI
 
         void LateUpdate()
         {
+            // --- Toggle hide when orbit station opens/closes ---
             bool shouldHide = OrbitStationUI.Instance != null
                 ? OrbitStationUI.Instance.IsMoonDockMenuOpen
                 : MoonOrbitClientState.IsOrbitMenuVisible;
@@ -49,6 +50,7 @@ namespace TitanOrbit.UI
 
         void HideGameplayHud()
         {
+            // --- Alpha-zero all gameplay canvases except orbit station ---
             RestoreGameplayHud();
 
             Transform keepVisible = OrbitStationUI.Instance != null
@@ -113,6 +115,7 @@ namespace TitanOrbit.UI
 
         void RestoreGameplayHud()
         {
+            // --- Restore saved CanvasGroup state ---
             for (int i = 0; i < _hidden.Count; i++)
             {
                 HiddenUiState state = _hidden[i];

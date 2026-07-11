@@ -5,91 +5,147 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server-authoritative bullet simulation state stored in a singleton buffer on the entity tagged
-    /// with <see cref="ActiveBulletsTag"/>. Each element is one live projectile advanced by
-    /// <see cref="BulletSimulationSystem"/>. Not ghost-replicated — clients see tracers from spawn events.
+    /// [ECS/DOTS] Server-authoritative bullet simulation state stored in a singleton buffer on the
+    /// entity tagged with <see cref="ActiveBulletsTag"/>. Each element is one live projectile advanced
+    /// by <see cref="BulletSimulationSystem"/>. Not ghost-replicated — clients see tracers from
+    /// <see cref="BulletSpawnEventElement"/> spawn events.
     /// </summary>
     public struct BulletElement : IBufferElementData
     {
-        /// <summary>Logical toroidal position this tick (ECS sim space).</summary>
+        // --- Type members ---
+        /// <summary>[ECS/DOTS] Logical toroidal position this tick (ECS sim space).</summary>
         public float3 Position;
-        /// <summary>World-units-per-second velocity vector.</summary>
+
+        /// <summary>[ECS/DOTS] World-units-per-second velocity vector on the XZ plane.</summary>
         public float3 Velocity;
-        /// <summary>Maximum travel distance before despawn.</summary>
+
+        /// <summary>[TITAN-ORBIT] Maximum travel distance before despawn (toroidal segment sum).</summary>
         public float MaxDistance;
-        /// <summary>Seconds until automatic despawn.</summary>
+
+        /// <summary>[UNITY] Seconds until automatic despawn.</summary>
         public float Lifetime;
-        /// <summary>Damage applied on hit (ships, moons, asteroids).</summary>
+
+        /// <summary>[TITAN-ORBIT] Damage applied on hit (ships, moons, asteroids).</summary>
         public float Damage;
-        /// <summary>Shooter's NetCode network id for attribution.</summary>
+
+        /// <summary>[NETCODE] Shooter's network id for kill attribution and friendly-fire rules.</summary>
         public int OwnerNetworkId;
-        /// <summary>Shooter team as byte (cast to <c>TeamId</c>).</summary>
+
+        /// <summary>[TITAN-ORBIT] Shooter team as byte (cast to <see cref="Core.TeamId"/>).</summary>
         public byte OwnerTeam;
-        /// <summary>Monotonic shot id for client VFX deduplication.</summary>
+
+        /// <summary>[TITAN-ORBIT] Monotonic shot id for client VFX deduplication.</summary>
         public uint Sequence;
-        /// <summary>Distance traveled since spawn (toroidal segment sum).</summary>
+
+        /// <summary>[TITAN-ORBIT] Distance traveled since spawn (toroidal segment sum).</summary>
         public float Traveled;
-        /// <summary>Seconds since spawn.</summary>
+
+        /// <summary>[UNITY] Seconds since spawn.</summary>
         public float Age;
     }
 
     /// <summary>
-    /// One-shot spawn notification written by <see cref="BulletSimulationSystem"/> and consumed by
-    /// <see cref="BulletPresentationSystem"/> to create cosmetic tracer entities.
+    /// [ECS/DOTS] One-shot spawn notification written by <see cref="BulletSimulationSystem"/> and
+    /// consumed by <see cref="BulletPresentationSystem"/> to create cosmetic tracer entities.
     /// </summary>
     public struct BulletSpawnEventElement : IBufferElementData
     {
+        /// <summary>[ECS/DOTS] Muzzle world position at fire time.</summary>
         public float3 SpawnPosition;
+
+        /// <summary>[ECS/DOTS] Initial bullet velocity.</summary>
         public float3 Velocity;
+
+        /// <summary>[UNITY] Tracer lifetime in seconds.</summary>
         public float Lifetime;
+
+        /// <summary>[TITAN-ORBIT] Max travel distance for cosmetic tracer.</summary>
         public float MaxDistance;
+
+        /// <summary>[TITAN-ORBIT] Display damage value (cosmetic; server sim owns real damage).</summary>
         public float Damage;
+
+        /// <summary>[TITAN-ORBIT] Shooter team for tracer color.</summary>
         public byte OwnerTeam;
+
+        /// <summary>[TITAN-ORBIT] Shot sequence for VFX deduplication.</summary>
         public uint Sequence;
+
+        /// <summary>[TITAN-ORBIT] Index into weapon VFX bank for muzzle/tracer style.</summary>
         public int BankIndex;
+
+        /// <summary>[TITAN-ORBIT] Authored scale multiplier for tracer mesh.</summary>
         public float ScaleMultiplier;
     }
 
     /// <summary>
-    /// Hit notification for client VFX (impact sparks). Written by <see cref="BulletTracerUpdateSystem"/>
-    /// when a cosmetic tracer intersects geometry.
+    /// [ECS/DOTS] Hit notification for client VFX (impact sparks). Written when a cosmetic tracer
+    /// intersects geometry in presentation systems.
     /// </summary>
     public struct BulletHitEventElement : IBufferElementData
     {
+        /// <summary>[ECS/DOTS] World position of impact.</summary>
         public float3 HitPosition;
+
+        /// <summary>[TITAN-ORBIT] Damage value for impact VFX intensity.</summary>
         public float Damage;
+
+        /// <summary>[TITAN-ORBIT] Shooter team for impact color.</summary>
         public byte OwnerTeam;
-        /// <summary>Index into weapon VFX bank for muzzle/tracer style.</summary>
+
+        /// <summary>[TITAN-ORBIT] Index into weapon VFX bank for impact style.</summary>
         public int BankIndex;
+
+        /// <summary>[TITAN-ORBIT] Authored scale multiplier for impact VFX.</summary>
         public float ScaleMultiplier;
     }
 
     /// <summary>
-    /// Tag on the singleton entity that owns all bullet buffers. Required by bullet sim and presentation systems.
+    /// [ECS/DOTS] Tag on the singleton entity that owns all bullet buffers. Required by bullet sim
+    /// and presentation systems to find the active bullet collection.
     /// </summary>
     public struct ActiveBulletsTag : IComponentData { }
 
     /// <summary>
-    /// Marks a tracer entity whose positions are already in client display/world space
+    /// [HYBRID] Marks a tracer entity whose positions are already in client display/world space
     /// (not logical ECS toroidal space). Used by hybrid VFX bridges.
     /// </summary>
     public struct BulletTracerDisplaySpace : IComponentData { }
 
     /// <summary>
-    /// Cosmetic bullet tracer — presentation-only entity advanced by <see cref="BulletTracerUpdateSystem"/>.
+    /// [ECS/DOTS] Cosmetic bullet tracer — presentation-only entity advanced by tracer update systems.
     /// Does not deal authoritative damage; server sim uses <see cref="BulletElement"/>.
     /// </summary>
     public struct BulletTracerState : IComponentData
     {
+        /// <summary>[ECS/DOTS] Current tracer position.</summary>
         public float3 Position;
+
+        /// <summary>[ECS/DOTS] Spawn position for trail rendering.</summary>
         public float3 SpawnPosition;
+
+        /// <summary>[ECS/DOTS] Tracer velocity.</summary>
         public float3 Velocity;
+
+        /// <summary>[UNITY] Seconds until tracer despawns.</summary>
         public float RemainingLifetime;
+
+        /// <summary>[TITAN-ORBIT] Max distance before tracer despawn.</summary>
         public float MaxDistance;
+
+        /// <summary>[UNITY] Base tracer mesh scale.</summary>
         public float Scale;
+
+        /// <summary>[TITAN-ORBIT] Authored scale multiplier from weapon config.</summary>
         public float ScaleMultiplier;
+
+        /// <summary>[TITAN-ORBIT] Display damage for VFX sizing.</summary>
         public float Damage;
+
+        /// <summary>[TITAN-ORBIT] Shooter team for color.</summary>
         public byte OwnerTeam;
+
+        /// <summary>[TITAN-ORBIT] VFX bank index for tracer style.</summary>
         public int BankIndex;
     }
 }

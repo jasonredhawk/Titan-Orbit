@@ -23,6 +23,7 @@ namespace TitanOrbit.ECS
             int localNetworkId = GetLocalNetworkId(ref state);
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
+            // --- Path 1: CommandTarget on the in-game connection ---
             // [NETCODE] CommandTarget on the connection points at the controlled ship ghost.
             foreach (var (cmd, entity) in SystemAPI.Query<RefRO<CommandTarget>>().WithAll<NetworkStreamInGame>().WithEntityAccess())
             {
@@ -35,6 +36,7 @@ namespace TitanOrbit.ECS
                     ecb.AddComponent<LocalPlayerShipTag>(target);
             }
 
+            // --- Path 2: GhostOwner.NetworkId matches local client ---
             // [NETCODE] GhostOwner.NetworkId matches the local client's network id.
             foreach (var (owner, entity) in SystemAPI.Query<RefRO<GhostOwner>>().WithAll<ShipTag>().WithEntityAccess())
             {
@@ -45,6 +47,7 @@ namespace TitanOrbit.ECS
                     ecb.RemoveComponent<LocalPlayerShipTag>(entity);
             }
 
+            // --- Path 3: NetCode GhostOwnerIsLocal tag (fallback) ---
             foreach (var (_, entity) in SystemAPI.Query<RefRO<GhostOwnerIsLocal>>().WithAll<ShipTag>().WithEntityAccess())
             {
                 if (!state.EntityManager.HasComponent<LocalPlayerShipTag>(entity))

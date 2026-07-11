@@ -3,6 +3,7 @@ using Shapes;
 
 namespace TitanOrbit.UI
 {
+    // --- Type members ---
     /// <summary>
     /// Enables Shapes ImmediateModePanel drawing on the main game canvas.
     /// Add this to the same GameObject as the Canvas; then any child with an

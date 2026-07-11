@@ -15,6 +15,7 @@ namespace TitanOrbit.ECS.Editor
         [MenuItem("Titan Orbit/Create MPPM Client Build Profile")]
         public static void CreateMppmClientBuildProfile()
         {
+            // --- Create instance ---
             var profile = AssetDatabase.LoadAssetAtPath<BuildProfile>(ClientProfilePath);
             if (profile == null)
             {
@@ -31,8 +32,10 @@ namespace TitanOrbit.ECS.Editor
             ShowAssignProfileDialog(profile);
         }
 
+        /// <summary>Opens MPPM scenarios window with step-by-step two-player instructions.</summary>
         internal static void ShowAssignProfileDialog(BuildProfile profile)
         {
+            // --- ShowAssignProfileDialog ---
             EditorUtility.DisplayDialog(
                 "Titan Orbit — MPPM two-player setup",
                 "1. Stop Play on ALL instances.\n" +

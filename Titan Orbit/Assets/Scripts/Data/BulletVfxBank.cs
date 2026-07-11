@@ -7,14 +7,17 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Projectile bank for client bullet VFX (Sci-Fi Arsenal demo prefabs). Team color picks the variant
-    /// (e.g. LaserBoltBlueOBJ for TeamB).
+    /// [HYBRID] Projectile bank for client bullet VFX (Sci-Fi Arsenal demo prefabs). Each category maps
+    /// to a <see cref="BulletBankProfile"/> for gameplay modifiers and a list of team-colored prefabs.
+    /// Team color picks the variant (e.g. LaserBoltBlueOBJ for TeamB). Loaded by
+    /// <see cref="ClientLocalBulletVfxBridge"/> — does not affect server hit detection.
     /// </summary>
     [CreateAssetMenu(fileName = "BulletVfxBank", menuName = "Titan Orbit/Bullet VFX Bank")]
     public class BulletVfxBank : ScriptableObject
     {
         const string DefaultAssetPath = "Assets/Data/BulletVfxBank.asset";
 
+        /// <summary>One row in the bank — name, prefab variants, and paired gameplay profile.</summary>
         [Serializable]
         public class Category
         {
@@ -27,11 +30,14 @@ namespace TitanOrbit.Data
         [SerializeField] GameObject fallbackImpactPrefab;
         [SerializeField] float visualScaleMultiplier = 0.5f;
 
+        /// <summary>Global scale on spawned VFX instances (designer tuning).</summary>
         public float VisualScaleMultiplier => Mathf.Max(0.05f, visualScaleMultiplier);
         public int CategoryCount => categories != null ? categories.Count : 0;
 
+        /// <summary>Loads Resources/BulletVfxBank or editor default path — whichever exists first.</summary>
         public static BulletVfxBank LoadDefault()
         {
+            // --- LoadDefault ---
             var fromResources = Resources.Load<BulletVfxBank>("BulletVfxBank");
             if (fromResources != null)
                 return fromResources;
@@ -44,8 +50,13 @@ namespace TitanOrbit.Data
             return null;
         }
 
+        /// <summary>
+        /// Picks a prefab from category <paramref name="index"/> whose name contains the team color token.
+        /// Falls back to first non-null prefab in the category.
+        /// </summary>
         public GameObject GetBankPrefab(int index, TeamId team)
         {
+            // --- Compute value ---
             if (categories == null || index < 0 || index >= categories.Count)
                 return null;
 
@@ -69,27 +80,33 @@ namespace TitanOrbit.Data
             return null;
         }
 
+        /// <summary>Sci-Fi Arsenal projectile particle child prefab for in-flight tracer.</summary>
         public GameObject GetProjectileVisualPrefab(int index, TeamId team)
         {
             GameObject bankPrefab = GetBankPrefab(index, team);
             return TryGetSciFiParticlePrefab(bankPrefab, "projectileParticle");
         }
 
+        /// <summary>Muzzle flash prefab at fire time.</summary>
         public GameObject GetMuzzlePrefab(int index, TeamId team)
         {
             GameObject bankPrefab = GetBankPrefab(index, team);
             return TryGetSciFiParticlePrefab(bankPrefab, "muzzleParticle");
         }
 
+        /// <summary>Impact burst prefab on hit; uses <see cref="fallbackImpactPrefab"/> when bank has none.</summary>
         public GameObject GetImpactPrefab(int index, TeamId team)
         {
+            // --- Compute value ---
             GameObject bankPrefab = GetBankPrefab(index, team);
             GameObject impact = TryGetSciFiParticlePrefab(bankPrefab, "impactParticle");
             return impact != null ? impact : fallbackImpactPrefab;
         }
 
+        /// <summary>Gameplay profile paired with VFX category index (damage multipliers, burn, etc.).</summary>
         public bool TryGetProfile(int index, out BulletBankProfile profile)
         {
+            // --- Attempt resolution ---
             profile = null;
             if (categories == null || index < 0 || index >= categories.Count)
                 return false;
@@ -102,8 +119,10 @@ namespace TitanOrbit.Data
             return true;
         }
 
+        /// <summary>[TITAN-ORBIT] Maps <see cref="TeamId"/> to Sci-Fi Arsenal color token in prefab names.</summary>
         static string GetColorNameForTeam(TeamId team)
         {
+            // --- Compute value ---
             switch (team)
             {
                 case TeamId.TeamA: return "Red";
@@ -121,6 +140,7 @@ namespace TitanOrbit.Data
         /// </summary>
         static GameObject TryGetSciFiParticlePrefab(GameObject bankPrefab, string fieldName)
         {
+            // --- Attempt resolution ---
             if (bankPrefab == null || string.IsNullOrEmpty(fieldName))
                 return null;
 

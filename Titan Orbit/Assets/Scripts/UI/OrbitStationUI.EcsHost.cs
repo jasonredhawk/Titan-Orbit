@@ -8,8 +8,14 @@ using UnityEngine;
 
 namespace TitanOrbit.UI
 {
+    /// <summary>
+    /// Partial <see cref="OrbitStationUI"/> — implements <see cref="IOrbitStationHost"/> and wires
+    /// ECS-backed planet/ship views for the orbit dock sidebar. [HYBRID] bridges legacy Planet/Starship
+    /// MonoBehaviour views with NetCode ghost state via <see cref="OrbitStationEcsContext"/>.
+    /// </summary>
     public partial class OrbitStationUI
     {
+        // --- Singleton and ECS store context ---
         public static OrbitStationUI Instance { get; private set; }
 
         int _ecsStorePlanetId;
@@ -65,6 +71,7 @@ namespace TitanOrbit.UI
 
         public void ShowFromEcs(int storePlanetId, int homePlanetId)
         {
+            // --- Cache planet ids and sync legacy views from ECS ---
             _ecsStorePlanetId = storePlanetId;
             _ecsHomePlanetId = homePlanetId;
 
@@ -97,6 +104,7 @@ namespace TitanOrbit.UI
 
         static T GetOrCreatePlanetView<T>(string objectName) where T : Planet
         {
+            // --- Reuse existing view or create DontDestroyOnLoad shell ---
             var existing = Object.FindFirstObjectByType<T>();
             if (existing != null)
                 return existing;
@@ -108,6 +116,7 @@ namespace TitanOrbit.UI
 
         static void SyncPlanetView(Planet view, int planetId, bool isHome)
         {
+            // --- Mirror planet ghost state into legacy Planet view ---
             if (view == null || planetId <= 0)
                 return;
 
@@ -124,6 +133,7 @@ namespace TitanOrbit.UI
 
         partial void OnOrbitStationEcsUpdate()
         {
+            // --- Consume RPC scratch state and refresh ship view ---
             if (MoonOrbitClientState.TryConsumeContributedGems(out float gems))
                 OnContributedGemsReceived(gems);
 
@@ -136,6 +146,7 @@ namespace TitanOrbit.UI
 
         partial void OnOrbitStationEcsHide()
         {
+            // --- Clear orbit menu visibility and ECS context ---
             MoonOrbitClientState.SetOrbitMenuVisible(false);
             // Keep deposit intent while still moon-docked; MoonOrbitStationController clears on undock.
             OrbitStationEcsContext.Clear();

@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 namespace TitanOrbit.Data
 {
-    /// <summary>Spread behavior for a cannon.</summary>
+    /// <summary>[TITAN-ORBIT] Spread behavior for a single cannon in <see cref="WeaponConfig"/>.</summary>
     public enum CannonSpreadType
     {
         Straight,       // Shoots straight (directionAngle only)
@@ -12,7 +12,10 @@ namespace TitanOrbit.Data
         RandomSpread    // Random angle within [spreadAngleMin, spreadAngleMax] each shot
     }
 
-    /// <summary>Configuration for a single cannon (rate, energy, damage, direction, spread).</summary>
+    /// <summary>
+    /// One cannon's fire rate, energy, damage, direction, spread, and bullet bank index. Serialized
+    /// inside <see cref="WeaponConfig"/> and legacy <see cref="ShipData"/> assets.
+    /// </summary>
     [Serializable]
     public class CannonConfig
     {
@@ -44,6 +47,7 @@ namespace TitanOrbit.Data
 
         public CannonConfig Clone()
         {
+            // --- Clone ---
             return new CannonConfig
             {
                 fireRate = fireRate,
@@ -63,7 +67,11 @@ namespace TitanOrbit.Data
         }
     }
 
-    /// <summary>Weapon configuration: multiple cannons, same bullet skin. Used by ShipData.</summary>
+    /// <summary>
+    /// Weapon configuration: multiple cannons sharing bullet VFX bank skin. Used by
+    /// <see cref="ShipData"/> and family stat preview. Designer asset — combat numbers also
+    /// flow into ECS <see cref="ECS.Components.ShipWeaponState"/> at bake/spawn time.
+    /// </summary>
     [CreateAssetMenu(fileName = "WeaponConfig", menuName = "Titan Orbit/Weapon Config")]
     public class WeaponConfig : ScriptableObject
     {

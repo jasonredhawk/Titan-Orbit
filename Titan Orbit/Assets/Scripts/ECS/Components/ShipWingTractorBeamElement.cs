@@ -6,21 +6,38 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// One wing-mounted gem tractor beam on a ship — local position and per-level stat scaling.
-    /// Stored in a DynamicBuffer; multiple wings can collect gems in parallel.
-    /// Baked from ShipWingTractorBeamAuthoring children in StarshipGhostAuthoring.
+    /// [ECS/DOTS] One wing-mounted gem tractor beam on a ship — local position and per-level stat
+    /// scaling. Stored in a DynamicBuffer; multiple wings can collect gems in parallel. Baked from
+    /// <see cref="Authoring.ShipWingTractorBeamAuthoring"/> children in StarshipGhostAuthoring.
     /// </summary>
     public struct ShipWingTractorBeamElement : IBufferElementData
     {
+        // --- Type members ---
+        /// <summary>[UNITY] Local offset from ship hull origin (authored on wing child transform).</summary>
         public float3 LocalPosition;
+
+        /// <summary>[TITAN-ORBIT] Base tractor search radius at ship level 1.</summary>
         public float TractorBeamDistance;
+
+        /// <summary>[TITAN-ORBIT] Additional search radius per ship level above 1.</summary>
         public float TractorBeamDistancePerLevel;
+
+        /// <summary>[TITAN-ORBIT] Base gem attraction speed at ship level 1.</summary>
         public float TractorBeamPower;
+
+        /// <summary>[TITAN-ORBIT] Additional attraction speed per ship level above 1.</summary>
         public float TractorBeamPowerPerLevel;
+
+        /// <summary>[TITAN-ORBIT] Base max gems this wing can hold at ship level 1.</summary>
         public float MaxGems;
+
+        /// <summary>[TITAN-ORBIT] Additional gem capacity per ship level above 1.</summary>
         public float MaxGemsPerLevel;
 
-        /// <summary>Converts buffer element to simulation params struct for GemTractorBeamMath.</summary>
+        /// <summary>
+        /// [STANDARD] Converts buffer element to simulation params struct for GemTractorBeamMath.
+        /// </summary>
+        /// <returns>Blittable params struct for shared tractor beam math.</returns>
         public ShipWingTractorBeamParams ToParams() => new ShipWingTractorBeamParams
         {
             LocalPosition = LocalPosition,
@@ -34,14 +51,29 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Helper to resolve wing world positions and tractor beam reach/power from ship transform + level.
-    /// Used by GemTractorBeamSystem and client VFX trackers.
+    /// [ECS/DOTS] Helper to resolve wing world positions and tractor beam reach/power from ship
+    /// transform + level. Used by <see cref="GemTractorBeamSystem"/> and client VFX trackers.
     /// </summary>
     public static class ShipWingTractorBeamPose
     {
+        /// <summary>
+        /// [ECS/DOTS] Resolves wing attachment point in world space from ship hull transform.
+        /// </summary>
+        /// <param name="shipTransform">Ship hull LocalTransform (position + rotation).</param>
+        /// <param name="wing">Baked wing element with local offset.</param>
+        /// <returns>World-space wing position on the XZ plane.</returns>
         public static float3 GetWorldPosition(in LocalTransform shipTransform, in ShipWingTractorBeamElement wing) =>
             GemTractorBeamMath.ResolveWingWorldPosition(shipTransform.Position, shipTransform.Rotation, wing.LocalPosition);
 
+        /// <summary>
+        /// [TITAN-ORBIT] Computes effective search radius and attraction speed for one wing at the
+        /// given ship level, with orbit-zone bonus when applicable.
+        /// </summary>
+        /// <param name="wing">Baked wing stats.</param>
+        /// <param name="shipLevel">Current ship upgrade level.</param>
+        /// <param name="inOrbitZone">True when ship is inside a friendly orbit ring (range bonus).</param>
+        /// <param name="searchRadius">Output effective pickup radius.</param>
+        /// <param name="attractionSpeed">Output gem pull speed toward wing.</param>
         public static void GetTractorParams(
             in ShipWingTractorBeamElement wing,
             int shipLevel,

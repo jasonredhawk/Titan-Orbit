@@ -19,6 +19,7 @@ namespace TitanOrbit.Game
 
         public static GameObject GetPrefab(TeamId team)
         {
+            // --- Compute value ---
             EnsureLoaded();
             switch (team)
             {
@@ -31,6 +32,7 @@ namespace TitanOrbit.Game
 
         static void EnsureLoaded()
         {
+            // --- Ensure setup ---
             if (_loaded)
                 return;
             _loaded = true;

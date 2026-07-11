@@ -6,16 +6,24 @@ using TitanOrbit.Data;
 
 namespace TitanOrbit.Editor
 {
+    /// <summary>
+    /// [EDITOR] Custom Inspector drawer for <see cref="BulletBankProfile"/> — foldout for stat
+    /// modifiers plus reorderable abilities list. Cached per property path; cleared on assembly reload.
+    /// Used on <see cref="BulletVfxBank"/> category rows and any serialized profile field.
+    /// </summary>
     [CustomPropertyDrawer(typeof(BulletBankProfile))]
     public class BulletBankProfileDrawer : PropertyDrawer
     {
+        /// <summary>One ReorderableList per serialized property path (supports multiple profiles on one asset).</summary>
         private static readonly Dictionary<string, ReorderableList> AbilityLists = new();
 
         static BulletBankProfileDrawer()
         {
+            // [UNITY] Domain reload would leave stale SerializedProperty refs in the cache.
             AssemblyReloadEvents.beforeAssemblyReload += ClearAbilityListCache;
         }
 
+        /// <summary>Clears cached reorderable lists before script recompile.</summary>
         private static void ClearAbilityListCache()
         {
             AbilityLists.Clear();
@@ -68,6 +76,7 @@ namespace TitanOrbit.Editor
 
         private static ReorderableList GetAbilityList(SerializedProperty profileProperty)
         {
+            // --- Compute value ---
             if (profileProperty == null || profileProperty.serializedObject == null)
                 return null;
 
@@ -128,6 +137,7 @@ namespace TitanOrbit.Editor
 
         private static bool IsAbilityListValid(ReorderableList list, SerializedProperty profileProperty)
         {
+            // --- IsAbilityListValid ---
             if (list?.serializedProperty == null || profileProperty == null)
                 return false;
 
@@ -139,6 +149,7 @@ namespace TitanOrbit.Editor
 
         private static bool IsSerializedPropertyAlive(SerializedProperty property)
         {
+            // --- IsSerializedPropertyAlive ---
             if (property == null)
                 return false;
 

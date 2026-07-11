@@ -16,6 +16,7 @@ namespace TitanOrbit.Game
         /// </summary>
         public static void EnsureWeaponMountsOnHierarchy(Transform hullRoot, float muzzleOffset)
         {
+            // --- Ensure setup ---
             if (hullRoot == null)
                 return;
 
@@ -42,6 +43,7 @@ namespace TitanOrbit.Game
         /// </summary>
         public static void EnsureDefaultWeaponMount(Transform hullRoot, float muzzleOffset)
         {
+            // --- Ensure setup ---
             if (hullRoot == null)
                 return;
 
@@ -57,6 +59,7 @@ namespace TitanOrbit.Game
 
         static bool LooksLikeWeaponTransform(Transform t)
         {
+            // --- LooksLikeWeaponTransform ---
             string name = t.name;
             if (string.IsNullOrEmpty(name))
                 return false;

@@ -8,6 +8,7 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
+    // --- Type members ---
     /// <summary>
     /// Server-only: copies weapon mount transforms from ship visual hull proxies into the ship ghost's
     /// ShipWeaponMountElement buffer each frame. Hull proxies are registered by network id in

@@ -4,19 +4,31 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Component transforms parsed from a chassis prefab hierarchy
-    /// (e.g. AstroEagle_Weapon, AstroEagle_Engine_2). Used for propulsion VFX and attribute-upgrade scaling.
+    /// [HYBRID] Parsed component transforms and scale totals from a USC chassis prefab hierarchy
+    /// (e.g. AstroEagle_Weapon, AstroEagle_Engine_2). Used by <see cref="ShipPropulsionVisualApplier"/>
+    /// for engine VFX placement and <see cref="ShipComponentAttributeScaleApplier"/> for upgrade-driven
+    /// mesh scaling. Not ECS data — built once from GameObject hierarchy at load or in editor.
     /// </summary>
     public class ChassisComponentStats
     {
+        /// <summary>Count of direct or nested Engine_* transforms discovered.</summary>
         public int engineCount;
+        /// <summary>Count of Thruster_* transforms (often smaller maneuver jets).</summary>
         public int thrusterCount;
+        /// <summary>Count of Wing_* transforms.</summary>
         public int wingCount;
+        /// <summary>Count of Tail_* decorative transforms.</summary>
         public int tailCount;
+        /// <summary>Count of Fin_* decorative transforms.</summary>
         public int finCount;
+        /// <summary>Count of Cockpit_* transforms (may double as forward cannons).</summary>
         public int cockpitCount;
+        /// <summary>Count of generic Part_* filler modules.</summary>
         public int partCount;
+
+        /// <summary>World-space weapon mount transforms (name contains "Weapon").</summary>
         public List<Transform> weaponTransforms = new List<Transform>();
+        /// <summary>Cockpit transforms treated as forward-firing cannons for VFX.</summary>
         public List<Transform> cockpitCannonTransforms = new List<Transform>();
         public List<Transform> engineTransforms = new List<Transform>();
         public List<Transform> thrusterTransforms = new List<Transform>();
@@ -24,7 +36,9 @@ namespace TitanOrbit.Data
         public List<Transform> wingTransforms = new List<Transform>();
         public List<Transform> partTransforms = new List<Transform>();
 
+        /// <summary>Sum of average local-scale factors across all engines — drives thrust VFX intensity.</summary>
         public float engineScaleTotal;
+        /// <summary>Largest single engine scale — caps particle size on the biggest nozzle.</summary>
         public float engineScaleMax;
         public float thrusterScaleTotal;
         public float wingScaleTotal;
@@ -33,12 +47,20 @@ namespace TitanOrbit.Data
         public float cockpitScaleTotal;
         public float partScaleTotal;
         public float cockpitCannonScaleTotal;
+        /// <summary>Per-weapon average scale factors parallel to <see cref="weaponTransforms"/>.</summary>
         public List<float> weaponScales = new List<float>();
 
+        /// <summary>True when at least one cockpit is counted as a forward cannon.</summary>
         public bool HasCannons => cockpitCannonCount > 0;
+        /// <summary>Cockpits that also register as cannon origins.</summary>
         public int cockpitCannonCount;
+        /// <summary>True when dedicated Weapon_* mounts exist on the prefab.</summary>
         public bool HasWeapons => weaponTransforms != null && weaponTransforms.Count > 0;
 
+        /// <summary>
+        /// Average of localScale x/y/z — proxy for visual "size" when modules are uniformly scaled.
+        /// Returns 1 when the transform is null.
+        /// </summary>
         public static float GetScaleFactor(Transform t)
         {
             if (t == null) return 1f;
@@ -46,18 +68,30 @@ namespace TitanOrbit.Data
             return (s.x + s.y + s.z) / 3f;
         }
 
+        /// <summary>
+        /// Scans <paramref name="root"/> prefab hierarchy for USC-named children. Two-pass collection:
+        /// direct children contribute to counts/totals; recursive pass fills transform lists for VFX.
+        /// </summary>
+        /// <param name="familyPrefix">Leading token before underscore, e.g. AstroEagle in AstroEagle_Engine_2.</param>
         public static ChassisComponentStats FromTransform(Transform root, string familyPrefix = "AstroEagle")
         {
             var stats = new ChassisComponentStats();
             if (root == null)
                 return stats;
 
+            // --- Pass 1: direct children only → authoritative counts and scale totals ---
             CollectComponentTransformsDirectOnly(root, stats, familyPrefix);
+            // --- Pass 2: all descendants → transform lists without double-counting direct children ---
             CollectComponentTransformsRecursive(root, stats, familyPrefix, addToTotals: false, rootForSkip: root);
+            // --- Pass 3: any transform whose name contains "Weapon" ---
             CollectWeaponTransformsRecursive(root, stats.weaponTransforms, stats.weaponScales);
             return stats;
         }
 
+        /// <summary>
+        /// [TITAN-ORBIT] Heuristic mass from summed module scales. Floored at 0.5 so empty scans
+        /// still produce a playable default.
+        /// </summary>
         public float ComputeComponentMass()
         {
             float weaponScaleTotal = 0f;
@@ -75,6 +109,7 @@ namespace TitanOrbit.Data
             return Mathf.Max(0.5f, mass);
         }
 
+        /// <summary>Convenience wrapper: scan prefab root then return <see cref="ComputeComponentMass"/>.</summary>
         public static float ComputeComponentMassFromTransform(Transform prefabRoot, string familyPrefix = "AstroEagle")
         {
             if (prefabRoot == null)
@@ -82,6 +117,7 @@ namespace TitanOrbit.Data
             return FromTransform(prefabRoot, familyPrefix).ComputeComponentMass();
         }
 
+        /// <summary>Inspects only immediate children of <paramref name="root"/> — populates counts and scale totals.</summary>
         static void CollectComponentTransformsDirectOnly(Transform root, ChassisComponentStats stats, string familyPrefix)
         {
             if (root == null || stats == null)
@@ -143,6 +179,10 @@ namespace TitanOrbit.Data
             }
         }
 
+        /// <summary>
+        /// Depth-first walk. When <paramref name="addToTotals"/> is false, only fills transform lists
+        /// (used after direct-only pass). Skips re-adding direct children of <paramref name="rootForSkip"/>.
+        /// </summary>
         static void CollectComponentTransformsRecursive(
             Transform parent,
             ChassisComponentStats stats,
@@ -153,6 +193,7 @@ namespace TitanOrbit.Data
             if (parent == null || stats == null)
                 return;
 
+            // [TITAN-ORBIT] Direct chassis children were already counted in CollectComponentTransformsDirectOnly.
             bool isDirectChildOfRoot = rootForSkip != null && parent == rootForSkip;
 
             for (int i = 0; i < parent.childCount; i++)
@@ -238,6 +279,7 @@ namespace TitanOrbit.Data
             }
         }
 
+        /// <summary>Finds transforms whose name contains "Weapon" (case-insensitive) at any depth.</summary>
         static void CollectWeaponTransformsRecursive(
             Transform parent,
             List<Transform> weaponTransforms,
@@ -263,6 +305,7 @@ namespace TitanOrbit.Data
             }
         }
 
+        /// <summary>Parses USC convention Family_Type_Index → returns Type (e.g. Engine from AstroEagle_Engine_2).</summary>
         static string ParseComponentType(string name, string familyPrefix)
         {
             if (string.IsNullOrEmpty(familyPrefix) || !name.StartsWith(familyPrefix + "_"))
@@ -273,6 +316,7 @@ namespace TitanOrbit.Data
             return idx < 0 ? rest : rest.Substring(0, idx);
         }
 
+        /// <summary>Fallback when family prefix does not match — searches for _engine, _wing, etc.</summary>
         static string ParseComponentTypeBySubstring(string name)
         {
             if (string.IsNullOrEmpty(name))

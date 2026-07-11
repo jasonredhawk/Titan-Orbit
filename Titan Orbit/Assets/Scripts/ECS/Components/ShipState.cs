@@ -6,122 +6,169 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Core replicated ship vitals and economy state. Ghost — a networked entity copy replicated
-    /// to all clients (NetCode term). Fields marked [GhostField] serialize over the network.
-    /// Read by movement, combat, HUD, and orbit systems; written by server sim and RPC handlers.
+    /// [NETCODE] Core replicated ship vitals and economy state. Ghost — a networked entity copy
+    /// replicated to all clients. Fields marked [GhostField] serialize over the network. Read by
+    /// movement, combat, HUD, and orbit systems; written by server sim and RPC handlers.
     /// </summary>
     public struct ShipState : IComponentData
     {
-        /// <summary>Current hull points; lethal at zero (server sets IsDead).</summary>
+        // --- Type members ---
+        /// <summary>[TITAN-ORBIT] Current hull points; lethal at zero (server sets IsDead).</summary>
         [GhostField] public float Health;
-        /// <summary>Maximum hull from chassis stats + upgrades.</summary>
+
+        /// <summary>[TITAN-ORBIT] Maximum hull from chassis stats + attribute upgrades.</summary>
         [GhostField] public float MaxHealth;
-        /// <summary>Team assignment; None until player picks a team at spawn.</summary>
+
+        /// <summary>[TITAN-ORBIT] Team assignment; None until player picks a team at spawn.</summary>
         [GhostField] public TeamId Team;
-        /// <summary>Upgrade ladder level (1 = starter chassis).</summary>
+
+        /// <summary>[TITAN-ORBIT] Upgrade ladder level (1 = starter chassis).</summary>
         [GhostField] public int ShipLevel;
-        /// <summary>Gems currently stored in the ship cargo hold.</summary>
+
+        /// <summary>[TITAN-ORBIT] Gems currently stored in the ship cargo hold.</summary>
         [GhostField] public float CurrentGems;
-        /// <summary>Maximum gem cargo from chassis + wing tractor stats.</summary>
+
+        /// <summary>[TITAN-ORBIT] Maximum gem cargo from chassis + wing tractor stats.</summary>
         [GhostField] public float GemCapacity;
-        /// <summary>Weapon energy pool; shots consume this (regen in ShipVitalsRegenSystem).</summary>
+
+        /// <summary>[TITAN-ORBIT] Weapon energy pool; shots consume this (regen in ShipVitalsRegenSystem).</summary>
         [GhostField] public float CurrentEnergy;
+
+        /// <summary>[TITAN-ORBIT] Maximum energy from chassis stats.</summary>
         [GhostField] public float MaxEnergy;
-        /// <summary>Population units aboard (people transport gameplay).</summary>
+
+        /// <summary>[TITAN-ORBIT] Population units aboard (people transport gameplay).</summary>
         [GhostField] public int CurrentPeople;
+
+        /// <summary>[TITAN-ORBIT] Maximum population cargo capacity.</summary>
         [GhostField] public int PeopleCapacity;
-        /// <summary>True after lethal damage; movement and weapons disabled until respawn.</summary>
+
+        /// <summary>[TITAN-ORBIT] True after lethal damage; movement and weapons disabled until respawn.</summary>
         [GhostField] public bool IsDead;
-        /// <summary>True at spawn until RequestTeamCommand assigns a team.</summary>
+
+        /// <summary>[TITAN-ORBIT] True at spawn until RequestTeamCommand assigns a team.</summary>
         [GhostField] public bool AwaitingTeamSelection;
     }
 
     /// <summary>
-    /// Motor tuning derived from chassis stats. Not ghost-serialized — recomputed server-side
+    /// [ECS/DOTS] Motor tuning derived from chassis stats. Not ghost-serialized — recomputed server-side
     /// by <see cref="ShipStatApplyLogic"/> when level or branch changes. Read by movement job.
     /// </summary>
     public struct ShipMotorConfig : IComponentData
     {
-        /// <summary>Engine force in Newtons (acceleration = thrust / mass).</summary>
+        /// <summary>[PHYSICS] Engine force in Newtons (acceleration = thrust / mass).</summary>
         public float EngineThrust;
-        /// <summary>Top speed cap in world units per second.</summary>
+
+        /// <summary>[TITAN-ORBIT] Top speed cap in world units per second.</summary>
         public float MaxSpeed;
-        /// <summary>Turn rate in degrees per second toward aim point.</summary>
+
+        /// <summary>[TITAN-ORBIT] Turn rate in degrees per second toward aim point.</summary>
         public float RotationSpeed;
-        /// <summary>Space-brake deceleration magnitude.</summary>
+
+        /// <summary>[TITAN-ORBIT] Space-brake deceleration magnitude.</summary>
         public float BrakeDeceleration;
-        /// <summary>Fallback hull mass when <see cref="HullMassReference"/> is unset (legacy baseMass).</summary>
+
+        /// <summary>[PHYSICS] Fallback hull mass when HullMassReference is unset.</summary>
         public float Mass;
-        /// <summary>How fast excess speed (recoil) bleeds off per second.</summary>
+
+        /// <summary>[TITAN-ORBIT] How fast excess speed (recoil) bleeds off per second.</summary>
         public float RecoilDecayPerSecond;
-        /// <summary>Chassis component mass × hull mass scale (excludes HP bulk and gems).</summary>
+
+        /// <summary>[PHYSICS] Chassis component mass × hull mass scale (excludes HP bulk and gems).</summary>
         public float HullMassReference;
-        /// <summary>Level-1 max health used to soften movement mass at higher ship levels.</summary>
+
+        /// <summary>[TITAN-ORBIT] Level-1 max health used to soften movement mass at higher ship levels.</summary>
         public float ChassisReferenceHealth;
     }
 
     /// <summary>
-    /// Cannon stats for <see cref="BulletSimulationSystem"/>. Applied from chassis data;
+    /// [ECS/DOTS] Cannon stats for <see cref="BulletSimulationSystem"/>. Applied from chassis data;
     /// not individually ghost-serialized (clients infer from replicated ship level).
     /// </summary>
     public struct ShipWeaponConfig : IComponentData
     {
+        /// <summary>[TITAN-ORBIT] Minimum seconds between shots.</summary>
         public float FireRate;
+
+        /// <summary>[TITAN-ORBIT] Bullet speed in world units per second.</summary>
         public float BulletSpeed;
+
+        /// <summary>[TITAN-ORBIT] Damage per bullet on hit.</summary>
         public float BulletDamage;
-        /// <summary>Energy spent per shot (legacy: equals fire power / bullet damage).</summary>
+
+        /// <summary>[TITAN-ORBIT] Energy spent per shot.</summary>
         public float EnergyCostPerShot;
+
+        /// <summary>[UNITY] Bullet lifetime in seconds.</summary>
         public float BulletLifetime;
+
+        /// <summary>[TITAN-ORBIT] Maximum bullet travel distance.</summary>
         public float BulletMaxDistance;
-        /// <summary>Fallback muzzle offset when no weapon mount buffer exists.</summary>
+
+        /// <summary>[TITAN-ORBIT] Fallback muzzle offset when no weapon mount buffer exists.</summary>
         public float MuzzleOffset;
-        /// <summary>Authored cannon bullet scale (WeaponConfig.cannons[].bulletScale).</summary>
+
+        /// <summary>[TITAN-ORBIT] Authored cannon bullet scale from WeaponConfig.</summary>
         public float BulletScale;
-        /// <summary>Level-1 baseline used to derive upgrade VFX growth from current damage/speed.</summary>
+
+        /// <summary>[TITAN-ORBIT] Level-1 baseline damage for upgrade VFX growth.</summary>
         public float ReferenceBulletDamage;
+
+        /// <summary>[TITAN-ORBIT] Level-1 baseline speed for upgrade VFX growth.</summary>
         public float ReferenceBulletSpeed;
     }
 
     /// <summary>
-    /// Regen rates from ship-family stats; applied server-side each tick by
+    /// [ECS/DOTS] Regen rates from ship-family stats; applied server-side each tick by
     /// <see cref="ShipVitalsRegenSystem"/>.
     /// </summary>
     public struct ShipVitalsConfig : IComponentData
     {
+        /// <summary>[TITAN-ORBIT] Hull regen per second when not in damage delay.</summary>
         public float HealthRegenPerSecond;
+
+        /// <summary>[TITAN-ORBIT] Energy regen per second.</summary>
         public float EnergyRegenPerSecond;
-        /// <summary>Seconds after hull damage before health regen resumes.</summary>
+
+        /// <summary>[TITAN-ORBIT] Seconds after hull damage before health regen resumes.</summary>
         public float HealthRegenDelayAfterDamage;
     }
 
-    /// <summary>Server-only timestamp for health regen delay tracking.</summary>
+    /// <summary>
+    /// [ECS/DOTS] Server-only timestamp for health regen delay tracking.
+    /// </summary>
     public struct ShipVitalsState : IComponentData
     {
+        /// <summary>[UNITY] Server world ElapsedTime of last hull damage.</summary>
         public double LastHullDamageTime;
     }
 
-    /// <summary>Per-ship weapon cooldown and round-robin mount index (server sim).</summary>
+    /// <summary>[ECS/DOTS] Per-ship weapon cooldown and round-robin mount index (server sim).</summary>
     public struct ShipWeaponState : IComponentData
     {
+        /// <summary>[UNITY] Seconds until next shot is allowed.</summary>
         public float FireCooldown;
+
+        /// <summary>[TITAN-ORBIT] Next mount index for multi-cannon round-robin firing.</summary>
         public int NextMountIndex;
     }
 
     /// <summary>
-    /// Gameplay-readable velocity mirror of physics linear velocity. Ghost-serialized for
-    /// remote interpolation and HUD. Kept in sync by <see cref="ShipMovementBurstLogic"/>.
+    /// [NETCODE] Gameplay-readable velocity mirror of physics linear velocity. Ghost-serialized for
+    /// remote interpolation and HUD. Kept in sync by ship movement logic each motor tick.
     /// </summary>
     public struct ShipKinematics : IComponentData
     {
+        /// <summary>[ECS/DOTS] Linear velocity; quantized for network bandwidth.</summary>
         [GhostField(Quantization = 1000)]
         public float3 Velocity;
     }
 
-    /// <summary>Marker — entity is a player or AI starship (used in queries across all ship systems).</summary>
+    /// <summary>[ECS/DOTS] Marker — entity is a player or AI starship (used in queries across all ship systems).</summary>
     public struct ShipTag : IComponentData { }
 
     /// <summary>
-    /// Client-only tag on the connection-owned ship. Used by input and presentation systems
+    /// [NETCODE] Client-only tag on the connection-owned ship. Used by input and presentation systems
     /// to find "my ship" without scanning GhostOwner every frame in MonoBehaviour code.
     /// </summary>
     public struct LocalPlayerShipTag : IComponentData { }

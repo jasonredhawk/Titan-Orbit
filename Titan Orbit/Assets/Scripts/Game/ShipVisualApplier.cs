@@ -24,6 +24,7 @@ namespace TitanOrbit.Game
             int shipLevel,
             out GameObject instance)
         {
+            // --- Resolve prefab ---
             instance = null;
             GameObject prefab = prefabOverride;
             if (prefab == null && family != null)
@@ -31,6 +32,7 @@ namespace TitanOrbit.Game
             if (prefab == null)
                 return false;
 
+            // --- Instantiate proxy ---
             instance = Object.Instantiate(prefab);
             instance.name = prefab.name + "Proxy";
             StripPhysicsAndNetworking(instance);
@@ -41,6 +43,7 @@ namespace TitanOrbit.Game
         /// <summary>Swaps renderer sharedMaterials with team palette from ShipFamilyDefinition.</summary>
         public static void ApplyTeamMaterials(ShipFamilyDefinition family, GameObject root, TeamId team)
         {
+            // --- Apply changes ---
             if (family == null || root == null || team == TeamId.None)
                 return;
 
@@ -75,6 +78,7 @@ namespace TitanOrbit.Game
         /// </summary>
         public static void StripPhysicsAndNetworking(GameObject root)
         {
+            // --- Strip components ---
             foreach (var col in root.GetComponentsInChildren<Collider>(true))
                 Object.Destroy(col);
             foreach (var rb in root.GetComponentsInChildren<Rigidbody>(true))

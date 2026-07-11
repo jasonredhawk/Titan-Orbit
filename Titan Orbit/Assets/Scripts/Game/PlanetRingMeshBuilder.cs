@@ -105,6 +105,7 @@ namespace TitanOrbit.Game
 
         internal static void DrawShapesOrbitRing(Camera cam, Matrix4x4 matrix, float inner, float outer, Color tint, float peakAlpha)
         {
+            // --- DrawShapesOrbitRing ---
             float band = outer - inner;
             if (band < 0.001f) return;
             float step = band / OrbitRingShapeGradientSteps;

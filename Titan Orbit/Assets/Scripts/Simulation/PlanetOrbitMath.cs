@@ -3,10 +3,17 @@ using Unity.Mathematics;
 
 namespace TitanOrbit.Simulation
 {
-    /// <summary>Planet orbit ring geometry and motor helpers ported from legacy Planet/Starship.</summary>
+    /// <summary>
+    /// Planet orbit ring geometry and ship-orbit motor helpers ported from legacy Planet/Starship.
+    /// Shared by server sim (<see cref="ShipMovementLogic"/> orbit capture), gem-moon visuals, and
+    /// decorative level bands. Uses burst-friendly <c>float3</c> math; toroidal unwrap for moon
+    /// display is in <see cref="GetMoonWorldPositionNear"/>.
+    /// </summary>
     public static class PlanetOrbitMath
     {
+        /// <summary>Tilt of decorative Saturn-style level bands around local X (degrees).</summary>
         public const float LevelBandsTiltDegrees = -26.7f;
+        /// <summary>Inner radius of first level band in planet local space (before world scale).</summary>
         public const float LevelBandsInnerRadiusLocal = 0.68f;
         public const float LevelBandThicknessLocal = 0.06f;
         public const float LevelBandGapLocal = 0.022f;
@@ -14,8 +21,11 @@ namespace TitanOrbit.Simulation
         const float OrbitRingHalfThicknessLocal = 0.11f * 0.7f;
         /// <summary>Gap between the outermost level band and the inner edge of the ship orbit ring.</summary>
         const float OrbitRingClearanceFromLevelBandsLocal = LevelBandGapLocal * 2f;
+        /// <summary>Radial pull strength when ship drifts off orbit ring centerline.</summary>
         const float OrbitRadiusPullStrength = 2.5f;
+        /// <summary>How quickly ship velocity aligns to tangential orbit speed.</summary>
         const float OrbitCaptureResponsiveness = 3.5f;
+        /// <summary>Base tangential speed factor before planet size and radius modifiers.</summary>
         const float BaseOrbitSpeed = 0.8f;
 
         /// <summary>
@@ -50,7 +60,7 @@ namespace TitanOrbit.Simulation
 
         public static void GetRingRadiiWorld(float planetSize, int planetLevel, out float innerWorld, out float outerWorld, out float centerWorld)
         {
-            // Orbit ring size is fixed: always sits outside where all MaxPlanetLevel decorative bands would reach.
+            // [TITAN-ORBIT] Orbit ring size is fixed for all levels — sits outside max-level decorative bands.
             _ = planetLevel;
             float centerLocal = GetOrbitRingCenterRadiusLocal();
             float innerLocal = math.max(0.52f, centerLocal - OrbitRingHalfThicknessLocal);
@@ -60,11 +70,16 @@ namespace TitanOrbit.Simulation
             outerWorld = planetSize * outerLocal;
         }
 
+        /// <summary>True when <paramref name="dist"/> from planet center lies inside the orbit annulus.</summary>
         public static bool IsInOrbitRing(float dist, float innerWorld, float outerWorld)
         {
             return dist >= innerWorld && dist <= outerWorld;
         }
 
+        /// <summary>
+        /// Tangential orbit speed at <paramref name="radius"/>. Larger planets and centerline radius
+        /// increase speed; edge of band slows slightly for readable capture feel.
+        /// </summary>
         public static float GetTargetSpeed(float planetSize, float radius, float innerWorld, float outerWorld, float centerWorld)
         {
             float clampedRadius = math.clamp(radius, innerWorld, outerWorld);
@@ -94,12 +109,14 @@ namespace TitanOrbit.Simulation
             return new float3(math.cos(theta), 0f, math.sin(theta)) * centerWorld;
         }
 
+        /// <summary>Deterministic phase offset per planet so moons do not stack on the same angle.</summary>
         public static float GetShipOrbitPhaseOffset(int planetId)
         {
             uint seed = planetId != 0 ? (uint)planetId : 17u;
             return (seed % 6283u) * 0.001f;
         }
 
+        /// <summary>Gem moon world position orbiting planet center (no toroidal unwrap).</summary>
         public static float3 GetMoonWorldPosition(
             float3 planetPosition,
             float planetSize,
@@ -135,6 +152,7 @@ namespace TitanOrbit.Simulation
             return moon;
         }
 
+        /// <summary>Stronger pull near ring center and on large planets — used for align rate scaling.</summary>
         public static float GetGravityFactor(float planetSize, float radius, float innerWorld, float outerWorld, float centerWorld)
         {
             float clampedRadius = math.clamp(radius, innerWorld, outerWorld);
@@ -148,6 +166,10 @@ namespace TitanOrbit.Simulation
             return 1f + 0.7f * sizeNorm + 1.0f * radiusFactor;
         }
 
+        /// <summary>
+        /// Builds desired tangential velocity and alignment rate for ship orbit motor when the hull is
+        /// inside the orbit ring. Called from shared movement logic before physics integration.
+        /// </summary>
         public static void BuildOrbitMotorParams(
             float3 shipPos,
             float3 planetPos,
@@ -170,6 +192,7 @@ namespace TitanOrbit.Simulation
             if (!IsInOrbitRing(dist, innerWorld, outerWorld))
                 return;
 
+            // --- Tangent direction (clockwise) + radial correction toward ring center ---
             float3 toShip = Generation.ToroidalMapEcs.ShortestOffsetXZ(planetPos, shipPos, mapWidth, mapHeight);
             float3 radial = math.normalize(new float3(toShip.x, 0f, toShip.z));
             float3 tangent = new float3(radial.z, 0f, -radial.x);

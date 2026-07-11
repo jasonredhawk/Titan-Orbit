@@ -38,6 +38,7 @@ namespace TitanOrbit.Game
 
         public void Configure(int id)
         {
+            // --- Configure ---
             planetId = id;
             EnsureLabel();
             Refresh();
@@ -46,6 +47,7 @@ namespace TitanOrbit.Game
 
         void EnsureLabel()
         {
+            // --- Ensure setup ---
             if (TryRecoverExistingLabel())
                 return;
 
@@ -60,6 +62,7 @@ namespace TitanOrbit.Game
 
         bool TryRecoverExistingLabel()
         {
+            // --- Attempt resolution ---
             if (_labelRoot == null)
             {
                 Transform existing = transform.Find("PlanetStatsLabel");
@@ -97,6 +100,7 @@ namespace TitanOrbit.Game
 
         void CleanupLegacyLabels()
         {
+            // --- CleanupLegacyLabels ---
             var legacy = transform.Find("PopulationText");
             if (legacy != null)
                 Destroy(legacy.gameObject);
@@ -112,6 +116,7 @@ namespace TitanOrbit.Game
 
         void KeepLabelOnPlanetRoot()
         {
+            // --- KeepLabelOnPlanetRoot ---
             if (_labelRoot == null)
                 return;
 
@@ -122,6 +127,7 @@ namespace TitanOrbit.Game
 
         static Transform CreateLabelRoot(string name, Transform parent)
         {
+            // --- Create instance ---
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
@@ -135,6 +141,7 @@ namespace TitanOrbit.Game
 
         static void RemoveLegacyPopulationIcon(Transform populationRow)
         {
+            // --- RemoveLegacyPopulationIcon ---
             if (populationRow == null)
                 return;
 
@@ -145,6 +152,7 @@ namespace TitanOrbit.Game
 
         StatRow CreatePopulationRow(Transform parent, string rowName)
         {
+            // --- Create instance ---
             var rowGo = new GameObject(rowName);
             rowGo.transform.SetParent(parent, false);
 
@@ -161,6 +169,7 @@ namespace TitanOrbit.Game
 
         static TextMeshPro CreateValueText(Transform parent, string name, float fontSize, Color color)
         {
+            // --- Create instance ---
             var textGo = new GameObject(name);
             textGo.transform.SetParent(parent, false);
             var tmp = textGo.AddComponent<TextMeshPro>();
@@ -178,6 +187,7 @@ namespace TitanOrbit.Game
 
         void ApplyLayout()
         {
+            // --- Apply changes ---
             if (_labelRoot == null)
                 return;
 
@@ -187,6 +197,7 @@ namespace TitanOrbit.Game
 
         static void LayoutStatRow(ref StatRow row)
         {
+            // --- LayoutStatRow ---
             if (row.CurrentText == null || row.MaxText == null)
                 return;
 
@@ -214,6 +225,7 @@ namespace TitanOrbit.Game
 
         static float GetStatRowHeight(StatRow row)
         {
+            // --- Compute value ---
             if (row.CurrentText == null || row.MaxText == null)
                 return 0f;
 
@@ -222,6 +234,7 @@ namespace TitanOrbit.Game
 
         void LayoutLabelBlock(bool showTitle)
         {
+            // --- LayoutLabelBlock ---
             if (_titleText == null)
                 return;
 
@@ -256,6 +269,7 @@ namespace TitanOrbit.Game
 
         static TMP_FontAsset ResolveFont()
         {
+            // --- Resolve value ---
             if (TMP_Settings.defaultFontAsset != null)
                 return TMP_Settings.defaultFontAsset;
 
@@ -273,6 +287,7 @@ namespace TitanOrbit.Game
 
         static void ApplyReadableTextMaterial(TMP_Text text)
         {
+            // --- Apply changes ---
             if (text == null)
                 return;
 
@@ -318,6 +333,7 @@ namespace TitanOrbit.Game
 
         static string ResolveShipFamilyTitle(in PlanetState state)
         {
+            // --- Resolve value ---
             var config = ShipFamilyConfig;
             if (config == null)
                 return string.Empty;
@@ -341,6 +357,7 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
+            // --- Per-frame refresh ---
             if (planetId == 0)
                 return;
 
@@ -350,6 +367,7 @@ namespace TitanOrbit.Game
 
         void Refresh()
         {
+            // --- Refresh ---
             if (planetId == 0)
                 return;
 

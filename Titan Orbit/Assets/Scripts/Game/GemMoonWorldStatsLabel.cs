@@ -43,6 +43,7 @@ namespace TitanOrbit.Game
 
         public void Configure(int id, float moonLocalRadius)
         {
+            // --- Configure ---
             planetId = id;
             _moonLocalRadius = Mathf.Max(0.02f, moonLocalRadius);
             EnsureLabel();
@@ -52,6 +53,7 @@ namespace TitanOrbit.Game
 
         void EnsureLabel()
         {
+            // --- Ensure setup ---
             if (_labelRoot != null)
                 return;
 
@@ -78,6 +80,7 @@ namespace TitanOrbit.Game
 
         static Transform CreateLabelRoot(string name, Transform parent)
         {
+            // --- Create instance ---
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
@@ -88,6 +91,7 @@ namespace TitanOrbit.Game
 
         StatRow CreateStatRow(Transform parent, string rowName, Sprite iconSprite, Color iconColor)
         {
+            // --- Create instance ---
             var rowGo = new GameObject(rowName);
             rowGo.transform.SetParent(parent, false);
 
@@ -116,6 +120,7 @@ namespace TitanOrbit.Game
 
         static TextMeshPro CreateValueText(Transform parent, string name, float fontSize, Color color)
         {
+            // --- Create instance ---
             var textGo = new GameObject(name);
             textGo.transform.SetParent(parent, false);
             var tmp = textGo.AddComponent<TextMeshPro>();
@@ -132,6 +137,7 @@ namespace TitanOrbit.Game
 
         void ApplyLayout()
         {
+            // --- Apply changes ---
             if (_labelRoot == null)
                 return;
 
@@ -140,6 +146,7 @@ namespace TitanOrbit.Game
 
         static void ApplyIconScale(SpriteRenderer iconRenderer, Sprite iconSprite, float fontSize)
         {
+            // --- Apply changes ---
             if (iconRenderer == null || iconSprite == null)
                 return;
 
@@ -150,6 +157,7 @@ namespace TitanOrbit.Game
 
         static void LayoutStatRow(ref StatRow row)
         {
+            // --- LayoutStatRow ---
             if (row.CurrentText == null || row.MaxText == null)
                 return;
 
@@ -192,6 +200,7 @@ namespace TitanOrbit.Game
 
         static float GetStatRowHeight(StatRow row)
         {
+            // --- Compute value ---
             if (row.CurrentText == null || row.MaxText == null)
                 return 0f;
 
@@ -200,6 +209,7 @@ namespace TitanOrbit.Game
 
         static void LayoutLabelBlock(ref StatRow gemRow, ref StatRow shieldRow)
         {
+            // --- LayoutLabelBlock ---
             LayoutStatRow(ref gemRow);
             LayoutStatRow(ref shieldRow);
 
@@ -213,6 +223,7 @@ namespace TitanOrbit.Game
 
         static TMP_FontAsset ResolveFont()
         {
+            // --- Resolve value ---
             if (TMP_Settings.defaultFontAsset != null)
                 return TMP_Settings.defaultFontAsset;
 
@@ -230,6 +241,7 @@ namespace TitanOrbit.Game
 
         static void ApplyReadableTextMaterial(TMP_Text text)
         {
+            // --- Apply changes ---
             if (text == null)
                 return;
 
@@ -264,6 +276,7 @@ namespace TitanOrbit.Game
 
         void Refresh()
         {
+            // --- Refresh ---
             if (planetId == 0)
                 return;
 
@@ -318,6 +331,7 @@ namespace TitanOrbit.Game
 
             static Sprite Load(ref Sprite cache, string assetPath)
             {
+                // --- Load ---
                 if (cache != null)
                     return cache;
 

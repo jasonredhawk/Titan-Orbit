@@ -54,6 +54,7 @@ namespace TitanOrbit.Editor.Build
         /// <summary>Unity 6 stores <c>m_BuildTarget</c> as a string in ProjectSettings; older assets use the enum int.</summary>
         static bool IsWebGlBuildTargetProperty(SerializedProperty buildTarget)
         {
+            // --- IsWebGlBuildTargetProperty ---
             if (buildTarget == null)
                 return false;
 
@@ -73,6 +74,7 @@ namespace TitanOrbit.Editor.Build
 
         static WebGLTextureImportBuildFix()
         {
+            // --- WebGLTextureImportBuildFix ---
             ApplyWebGlTextureSubtarget();
             EnsureWebGlBuildProfilesUseDxt(log: false);
             EnsureWebGlPlayerDefaultTextureCompression(log: false);
@@ -84,6 +86,7 @@ namespace TitanOrbit.Editor.Build
 
         static void OnActiveBuildTargetChanged()
         {
+            // --- OnActiveBuildTargetChanged ---
             if (EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL)
             {
                 ApplyWebGlTextureSubtarget();
@@ -93,6 +96,7 @@ namespace TitanOrbit.Editor.Build
 
         static void OnPlayModeStateChanged(PlayModeStateChange state)
         {
+            // --- OnPlayModeStateChanged ---
             // Editor Play Mode uses desktop graphics; next WebGL build must rebuild WebGL texture variants.
             if (state == PlayModeStateChange.ExitingEditMode)
                 ApplyWebGlTextureSubtarget();
@@ -100,6 +104,7 @@ namespace TitanOrbit.Editor.Build
 
         public void OnPreprocessBuild(BuildReport report)
         {
+            // --- OnPreprocessBuild ---
             if (report.summary.platform != BuildTarget.WebGL)
                 return;
 
@@ -108,6 +113,7 @@ namespace TitanOrbit.Editor.Build
 
         public void OnPostprocessBuild(BuildReport report)
         {
+            // --- OnPostprocessBuild ---
             if (report.summary.platform != BuildTarget.WebGL)
                 return;
 
@@ -120,6 +126,7 @@ namespace TitanOrbit.Editor.Build
         /// </summary>
         static void OnBuildPlayerFromWindow(BuildPlayerOptions options)
         {
+            // --- OnBuildPlayerFromWindow ---
             BuildTarget? previousTarget = null;
             if (options.target == BuildTarget.WebGL)
             {
@@ -141,6 +148,7 @@ namespace TitanOrbit.Editor.Build
 
         internal static void PrepareWebGlBuild(bool log, bool restoreBuildTargetAfter = false)
         {
+            // --- PrepareWebGlBuild ---
             ApplyWebGlTextureSubtarget();
             EnsureWebGlBuildProfilesUseDxt(log);
             EnsureWebGlPlayerDefaultTextureCompression(log);
@@ -177,6 +185,7 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/Fix WebGL Texture Import (disable Crunch)")]
         public static void FixFromMenu()
         {
+            // --- FixFromMenu ---
             BuildTarget previous = EditorUserBuildSettings.activeBuildTarget;
             try
             {
@@ -201,6 +210,7 @@ namespace TitanOrbit.Editor.Build
 
         static void EnsureActiveBuildTargetIsWebGl()
         {
+            // --- Ensure setup ---
             if (EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL)
                 return;
 
@@ -214,6 +224,7 @@ namespace TitanOrbit.Editor.Build
 
         static void RestoreBuildTargetIfNeeded(BuildTarget? explicitPrevious = null)
         {
+            // --- RestoreBuildTargetIfNeeded ---
             BuildTarget restore = explicitPrevious ?? s_buildTargetToRestore ?? EditorUserBuildSettings.activeBuildTarget;
             if (!explicitPrevious.HasValue && !s_buildTargetToRestore.HasValue)
                 return;
@@ -237,6 +248,7 @@ namespace TitanOrbit.Editor.Build
 
         internal static bool IsGameplayTexturePath(string assetPath)
         {
+            // --- IsGameplayTexturePath ---
             if (string.IsNullOrEmpty(assetPath))
                 return false;
 
@@ -255,6 +267,7 @@ namespace TitanOrbit.Editor.Build
 
         internal static int GetGameplayTextureMaxSize(string path)
         {
+            // --- Compute value ---
             if (path.StartsWith(
                     "Assets/Plugins/CW/SpaceGraphicsToolkit/Packs/PLANETS/Textures",
                     System.StringComparison.OrdinalIgnoreCase))
@@ -285,6 +298,7 @@ namespace TitanOrbit.Editor.Build
         /// </summary>
         internal static bool NeedsAlphaPreservingWebGlImport(TextureImporter importer, string path)
         {
+            // --- NeedsAlphaPreservingWebGlImport ---
             if (importer == null)
                 return false;
 
@@ -308,6 +322,7 @@ namespace TitanOrbit.Editor.Build
         /// </summary>
         internal static bool ApplyWebGlSettingsToImporter(TextureImporter importer, string path)
         {
+            // --- Apply changes ---
             if (importer == null)
                 return false;
 
@@ -376,6 +391,7 @@ namespace TitanOrbit.Editor.Build
         /// </summary>
         internal static TextureImporterFormat GetWebGlUncompressedFormat(TextureImporter importer, string path = null)
         {
+            // --- Compute value ---
             if (NeedsAlphaPreservingWebGlImport(importer, path))
                 return TextureImporterFormat.RGBA32;
 
@@ -399,6 +415,7 @@ namespace TitanOrbit.Editor.Build
 
         static bool HasValidWebGlUncompressedSettings(TextureImporter importer, string path)
         {
+            // --- HasValidWebGlUncompressedSettings ---
             TextureImporterPlatformSettings webgl = importer.GetPlatformTextureSettings("WebGL");
             if (webgl == null || !webgl.overridden || webgl.crunchedCompression)
                 return false;
@@ -417,6 +434,7 @@ namespace TitanOrbit.Editor.Build
 
         static HashSet<string> CollectGameplayTexturePaths()
         {
+            // --- CollectGameplayTexturePaths ---
             var paths = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
 
             string[] folderGuids = AssetDatabase.FindAssets("t:Texture2D", TextureRootFolders);
@@ -463,6 +481,7 @@ namespace TitanOrbit.Editor.Build
 
         static bool IsTextureAssetPath(string path)
         {
+            // --- IsTextureAssetPath ---
             if (string.IsNullOrEmpty(path))
                 return false;
 
@@ -480,6 +499,7 @@ namespace TitanOrbit.Editor.Build
         /// <summary>Project gameplay textures only — excludes Package/editor gizmo assets pulled in via deep prefab deps.</summary>
         static bool IsManagedGameplayTexturePath(string path)
         {
+            // --- IsManagedGameplayTexturePath ---
             if (!IsTextureAssetPath(path))
                 return false;
 
@@ -507,6 +527,7 @@ namespace TitanOrbit.Editor.Build
 
         static void ValidateGameplayTextureWebGlImports()
         {
+            // --- ValidateGameplayTextureWebGlImports ---
             var invalid = new List<string>();
             foreach (string path in CollectGameplayTexturePaths())
             {
@@ -536,6 +557,7 @@ namespace TitanOrbit.Editor.Build
         /// </summary>
         internal static void EnsureWebGlBuildProfilesUseDxt(bool log)
         {
+            // --- Ensure setup ---
             if (!AssetDatabase.IsValidFolder(BuildProfilesFolder))
                 return;
 
@@ -606,6 +628,7 @@ namespace TitanOrbit.Editor.Build
         /// </summary>
         internal static void EnsureWebGlPlayerDefaultTextureCompression(bool log)
         {
+            // --- Ensure setup ---
             const string projectSettingsPath = "ProjectSettings/ProjectSettings.asset";
             Object[] assets = AssetDatabase.LoadAllAssetsAtPath(projectSettingsPath);
             if (assets == null || assets.Length == 0)
@@ -653,6 +676,7 @@ namespace TitanOrbit.Editor.Build
 
         internal static int ApplyWebGlGameplayTextureImports(bool log, bool forceReimport = false)
         {
+            // --- Apply changes ---
             ApplyWebGlTextureSubtarget();
 
             var pathsToReimport = new List<string>();
@@ -697,6 +721,7 @@ namespace TitanOrbit.Editor.Build
 
         static void EnsureSgtPlanetShaderIncluded()
         {
+            // --- Ensure setup ---
             var shader = AssetDatabase.LoadAssetAtPath<Shader>(SgtPlanetShaderPath);
             if (shader == null)
             {
@@ -728,6 +753,7 @@ namespace TitanOrbit.Editor.Build
 
         static void DisableSrpBatcherOnWebGlPipelineAsset()
         {
+            // --- DisableSrpBatcherOnWebGlPipelineAsset ---
             const string webGlPipelinePath = "Assets/Settings/Mobile_RPAsset.asset";
             var pipeline = AssetDatabase.LoadAssetAtPath<RenderPipelineAsset>(webGlPipelinePath);
             if (pipeline == null)
@@ -758,6 +784,7 @@ namespace TitanOrbit.Editor.Build
     {
         void OnPreprocessTexture()
         {
+            // --- OnPreprocessTexture ---
             if (!WebGLTextureImportBuildFix.IsGameplayTexturePath(assetPath))
                 return;
 

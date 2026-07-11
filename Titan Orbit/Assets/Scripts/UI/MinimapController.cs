@@ -278,6 +278,7 @@ namespace TitanOrbit.UI
 
         private void Start()
         {
+            // --- Unity lifecycle ---
             if (MinimapEcsEntitySync.Instance == null)
                 gameObject.AddComponent<MinimapEcsEntitySync>();
 
@@ -1181,6 +1182,7 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
+            // --- Per-frame refresh ---
             // Update display size if minimap size changed
             if (minimapRect != null)
             {

@@ -15,6 +15,7 @@ namespace TitanOrbit.Core
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void Apply()
         {
+            // --- Apply changes ---
             try
             {
                 var config = ShapesConfig.Instance;

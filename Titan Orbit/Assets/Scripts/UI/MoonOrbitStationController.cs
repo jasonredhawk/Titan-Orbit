@@ -15,6 +15,7 @@ namespace TitanOrbit.UI
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureExists()
         {
+            // --- Ensure setup ---
             if (FindFirstObjectByType<MoonOrbitStationController>() != null)
                 return;
             var go = new GameObject("MoonOrbitStationController");
@@ -28,6 +29,7 @@ namespace TitanOrbit.UI
 
         void Update()
         {
+            // --- Per-frame refresh ---
             if (!EcsGameBridge.IsNetworkInGame())
             {
                 HideMenu();
@@ -91,6 +93,7 @@ namespace TitanOrbit.UI
 
         void HideMenu()
         {
+            // --- HideMenu ---
             MoonOrbitRpcClient.SetWantDepositGems(false);
             _landingCompleteTime = -1f;
             if (!_menuVisible)
@@ -102,6 +105,7 @@ namespace TitanOrbit.UI
 
         OrbitStationUI GetOrCreateUi()
         {
+            // --- Compute value ---
             if (_ui == null)
                 _ui = OrbitStationUI.GetOrCreate();
             return _ui;
@@ -109,6 +113,7 @@ namespace TitanOrbit.UI
 
         static int FindHomePlanetId(TeamId team)
         {
+            // --- FindHomePlanetId ---
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return 0;

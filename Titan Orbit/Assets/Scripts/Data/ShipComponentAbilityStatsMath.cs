@@ -14,6 +14,7 @@ namespace TitanOrbit.Data
         /// <summary>Field-wise sum of two stat blocks.</summary>
         public static ShipComponentAbilityStats Add(ShipComponentAbilityStats a, ShipComponentAbilityStats b)
         {
+            // --- Add ---
             return new ShipComponentAbilityStats
             {
                 firePower = a.firePower + b.firePower,
@@ -57,6 +58,7 @@ namespace TitanOrbit.Data
         /// <summary>True when every base and per-level field is exactly zero.</summary>
         public static bool IsAllZero(in ShipComponentAbilityStats s)
         {
+            // --- IsAllZero ---
             return s.firePower == 0f && s.firePowerPerLevel == 0f &&
                    s.bulletSpeed == 0f && s.bulletSpeedPerLevel == 0f &&
                    s.fireRate == 0f && s.fireRatePerLevel == 0f &&
@@ -119,6 +121,7 @@ namespace TitanOrbit.Data
         /// <summary>Average of localScale axes — used as generic size multiplier for non-weapon parts.</summary>
         public static float GetNormalizedScaleFromTransform(Transform t)
         {
+            // --- Compute value ---
             if (t == null) return 1f;
             Vector3 s = t.localScale;
             return (s.x + s.y + s.z) / 3f;
@@ -126,6 +129,7 @@ namespace TitanOrbit.Data
 
         public static bool IsWeaponComponent(string componentId)
         {
+            // --- IsWeaponComponent ---
             if (string.IsNullOrEmpty(componentId)) return false;
             string id = componentId.TrimStart();
             if (id.StartsWith("Weapon", StringComparison.OrdinalIgnoreCase)) return true;
@@ -134,6 +138,7 @@ namespace TitanOrbit.Data
 
         public static bool IsThrusterComponent(string componentId)
         {
+            // --- IsThrusterComponent ---
             if (string.IsNullOrEmpty(componentId)) return false;
             string id = componentId.TrimStart();
             if (id.StartsWith("Thruster", StringComparison.OrdinalIgnoreCase)) return true;
@@ -142,6 +147,7 @@ namespace TitanOrbit.Data
 
         public static bool IsEngineComponent(string componentId)
         {
+            // --- IsEngineComponent ---
             if (string.IsNullOrEmpty(componentId)) return false;
             string id = componentId.TrimStart();
             if (IsThrusterComponent(id)) return false;
@@ -151,6 +157,7 @@ namespace TitanOrbit.Data
 
         public static bool IsPropulsionComponent(string componentId)
         {
+            // --- IsPropulsionComponent ---
             if (IsThrusterComponent(componentId) || IsEngineComponent(componentId))
                 return true;
             string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
@@ -160,6 +167,7 @@ namespace TitanOrbit.Data
 
         static bool ContainsIsolatedKeyword(string s, string keyword)
         {
+            // --- ContainsIsolatedKeyword ---
             if (string.IsNullOrEmpty(s) || string.IsNullOrEmpty(keyword)) return false;
             int idx = 0;
             while ((idx = s.IndexOf(keyword, idx, StringComparison.OrdinalIgnoreCase)) >= 0)
@@ -247,6 +255,7 @@ namespace TitanOrbit.Data
         /// <summary>Multiplies every stat field by <paramref name="factor"/>.</summary>
         public static ShipComponentAbilityStats Multiply(ShipComponentAbilityStats s, float factor)
         {
+            // --- Multiply ---
             return new ShipComponentAbilityStats
             {
                 firePower = s.firePower * factor,

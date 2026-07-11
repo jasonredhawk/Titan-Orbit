@@ -2,6 +2,7 @@ using UnityEngine;
 
 namespace TitanOrbit.Data
 {
+    // --- Type members ---
     /// <summary>
     /// Shared ramming-damage tuning constants and helpers. Used by HUD damage estimates and should stay
     /// aligned with future collision parity. Mass scaling uses power-law exponents so heavier hulls hit harder

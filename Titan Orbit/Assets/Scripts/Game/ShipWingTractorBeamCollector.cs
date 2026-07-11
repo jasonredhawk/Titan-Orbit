@@ -16,6 +16,7 @@ namespace TitanOrbit.Game
         /// </summary>
         public static void EnsureWingTractorBeamsOnHierarchy(Transform hullRoot)
         {
+            // --- Ensure setup ---
             if (hullRoot == null)
                 return;
 
@@ -33,6 +34,7 @@ namespace TitanOrbit.Game
 
         static bool LooksLikeWingTransform(Transform t)
         {
+            // --- LooksLikeWingTransform ---
             string name = t.name;
             if (string.IsNullOrEmpty(name))
                 return false;

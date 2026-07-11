@@ -6,8 +6,10 @@ namespace TitanOrbit.Camera
 {
     /// <summary>
     /// Renders a tiled space background that scrolls as the camera (player ship) moves.
-    /// Uses the DinV Dynamic Space Background Lite textures - assign any of the nebula/star
-    /// textures for a seamless parallax effect.
+    /// Uses DinV Dynamic Space Background Lite textures — assign nebula/star textures for
+    /// seamless parallax. [HYBRID] Follows <see cref="ShipDisplayPose.LocalPosition"/> when
+    /// available, else camera position. WebGL/Android: uses TitanOrbit/SpaceBackgroundUnlit
+    /// and _UVScroll on instance material (no MaterialPropertyBlock) for GLES compatibility.
     /// </summary>
     /// <remarks>
     /// WebGL and Android GLES often fail to animate URP Unlit UVs when mixing MaterialPropertyBlock
@@ -57,6 +59,7 @@ namespace TitanOrbit.Camera
 
         private void Awake()
         {
+            // --- Unity lifecycle ---
             ResolveTargetCamera();
             if (targetCamera == null)
             {
@@ -69,6 +72,7 @@ namespace TitanOrbit.Camera
 
         private void OnEnable()
         {
+            // --- Unity lifecycle ---
             if (targetCamera == null)
                 ResolveTargetCamera();
             if (meshRenderer == null && targetCamera != null)
@@ -83,6 +87,7 @@ namespace TitanOrbit.Camera
 
         private void EnsureBackgroundQuad()
         {
+            // --- Ensure setup ---
             if (meshRenderer != null) return;
 
             if (spaceTexture == null)
@@ -145,6 +150,7 @@ namespace TitanOrbit.Camera
 
         private void LateUpdate()
         {
+            // --- Per-frame refresh ---
             ResolveTargetCamera();
             if (targetCamera == null) return;
 
@@ -182,6 +188,7 @@ namespace TitanOrbit.Camera
 
         private void ResizeQuadToCoverView()
         {
+            // --- ResizeQuadToCoverView ---
             if (targetCamera == null || backgroundQuadTransform == null)
                 return;
 
@@ -209,6 +216,7 @@ namespace TitanOrbit.Camera
 
         private static void ApplyMainTexture(Material m, Texture2D tex)
         {
+            // --- Apply changes ---
             if (m == null || tex == null) return;
             m.mainTexture = tex;
             if (m.HasProperty(MainTex))
@@ -223,6 +231,7 @@ namespace TitanOrbit.Camera
 
         private static void TrySetTextureRepeatWrap(Texture2D tex)
         {
+            // --- Attempt resolution ---
             if (tex == null) return;
             try
             {
@@ -242,6 +251,7 @@ namespace TitanOrbit.Camera
         /// </summary>
         public void SetTemporarilyHidden(bool hidden)
         {
+            // --- SetTemporarilyHidden ---
             if (meshRenderer == null)
                 EnsureBackgroundQuad();
 

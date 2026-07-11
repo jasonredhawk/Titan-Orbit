@@ -4,9 +4,14 @@ using UnityEngine;
 
 namespace TitanOrbit.UI
 {
-    /// <summary>Host API for ship upgrade tree and orbit dock sidebar (ECS-backed).</summary>
+    /// <summary>
+    /// Host API implemented by <see cref="OrbitStationUI"/> for ship upgrade tree and orbit dock
+    /// sidebar. Decouples tree node views from the 5k-line station controller. Reads replicated
+    /// ECS ghost state and contributed gems via orbit context — purchases go through RPCs.
+    /// </summary>
     public interface IOrbitStationHost
     {
+        // --- Tree / store context (read from ECS + RPC) ---
         UpgradeTree UpgradeTree { get; }
         float ContributedGems { get; }
         int StorePlanetId { get; }
@@ -15,6 +20,7 @@ namespace TitanOrbit.UI
         int ShipLevel { get; }
         int BranchIndex { get; }
 
+        // --- Tree layout and node population ---
         bool IsTreeDataAvailable();
         float GetShipTreeLayoutBasisWidthPublic();
         bool TryGetPlayerUpgradePathEdges(out HashSet<(int fL, int fB, int tL, int tB)> edges);
@@ -22,6 +28,8 @@ namespace TitanOrbit.UI
         void PopulateTreeNode(ShipUpgradeTreeNodeUI view, float maxPower);
         void OnUpgradeTreeNodeClicked(int nodeLevel, int targetBranchIndex);
         void OnCurrentShipDisplayNodeClicked();
+
+        // --- Power score breakdown for tooltips ---
         ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown();
         ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex);
     }

@@ -12,8 +12,13 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct PlanetMotorSnapshot
     {
+        /// <summary>Ownership, level, and planet id for orbit and team checks.</summary>
         public PlanetState Planet;
+
+        /// <summary>Gem-moon shield and reservoir — used by shield repel and combat.</summary>
         public PlanetGemMoonState Moon;
+
+        /// <summary>World pose at collect time — position and uniform scale.</summary>
         public LocalTransform Transform;
         /// <summary>Precomputed at collect time — avoids Mathf in Burst shield repel.</summary>
         public float ShieldOuterRadiusWorld;

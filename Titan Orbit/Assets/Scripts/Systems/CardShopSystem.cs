@@ -24,6 +24,7 @@ namespace TitanOrbit.Systems
 
         void Awake()
         {
+            // --- Unity lifecycle ---
             if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
@@ -42,6 +43,7 @@ namespace TitanOrbit.Systems
 
         static PlanetShipFamilyConfig LoadPlanetShipFamilyConfig()
         {
+            // --- LoadPlanetShipFamilyConfig ---
             var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
             if (config != null)
                 return config;
@@ -52,6 +54,7 @@ namespace TitanOrbit.Systems
 
         public ShipFamilyDefinition GetShipFamilyForShip(Starship ship)
         {
+            // --- Compute value ---
             if (Config == null || ship == null)
                 return null;
             string cid = ship.CurrentChassisId;
@@ -62,6 +65,7 @@ namespace TitanOrbit.Systems
 
         public string GetStarterChassisId()
         {
+            // --- Compute value ---
             if (Config?.families != null && Config.families.Count > 0)
             {
                 string id = Config.GetChassisIdForPlanetAndIndex(0, 0);
@@ -74,6 +78,7 @@ namespace TitanOrbit.Systems
 
         public string GetChassisIdForUpgradeLadderSlot(Starship ship, int storePlanetId, int level, int branchIndex)
         {
+            // --- Compute value ---
             if (Config == null || ship == null)
                 return null;
 
@@ -83,6 +88,7 @@ namespace TitanOrbit.Systems
 
         public ShipFamilyDefinition GetShipFamilyForStorePlanet(int storePlanetId, Starship ship = null)
         {
+            // --- Compute value ---
             if (Config == null || storePlanetId <= 0)
                 return null;
 
@@ -92,6 +98,7 @@ namespace TitanOrbit.Systems
 
         static void ResolveStorePlanetFamily(int storePlanetId, Starship ship, out bool isHomePlanet, out int configIndex)
         {
+            // --- Resolve value ---
             isHomePlanet = false;
             configIndex = -1;
 
@@ -172,6 +179,7 @@ namespace TitanOrbit.Systems
 
         public bool CanPurchaseShipLevelUpgrade(Starship ship, Planet storePlanet, out int nextLevel, out float cost, out string chassisId)
         {
+            // --- CanPurchaseShipLevelUpgrade ---
             nextLevel = 0;
             cost = 0f;
             chassisId = null;
@@ -246,6 +254,7 @@ namespace TitanOrbit.Systems
 
         public void PurchaseShipLevelUpgradeServerRpc(ulong planetNetworkId, ulong shipNetworkId, int targetBranchIndex)
         {
+            // --- PurchaseShipLevelUpgradeServerRpc ---
             int storePlanetId = OrbitStationEcsContext.StorePlanetId;
             if (storePlanetId <= 0)
                 return;
@@ -272,6 +281,7 @@ namespace TitanOrbit.Systems
 
         public static int GetSpinCardTier(int shipLevel, int homePlanetLevel)
         {
+            // --- Compute value ---
             int s = Mathf.Max(1, shipLevel);
             int h = Mathf.Max(1, homePlanetLevel);
             return Mathf.Min(s, h);
@@ -328,6 +338,7 @@ namespace TitanOrbit.Systems
 
         static HomePlanet FindHomePlanetForTeam(TeamManager.Team team)
         {
+            // --- FindHomePlanetForTeam ---
             foreach (var home in HomePlanet.AllHomePlanets)
             {
                 if (home != null && home.AssignedTeam == team)

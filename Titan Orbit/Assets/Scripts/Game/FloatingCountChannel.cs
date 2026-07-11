@@ -10,17 +10,28 @@ namespace TitanOrbit.Game
     /// </summary>
     public enum FloatingCountChannel
     {
+        // --- Economy ---
+        /// <summary>Loose gem collected into ship cargo.</summary>
         GemPickup = 0,
+        /// <summary>Gems credited to planet or moon while docked.</summary>
         GemDeposit = 1,
+
+        // --- Combat damage ---
         DamageAsteroid = 2,
         DamageShipOrDrone = 3,
         DamageMoon = 4,
+
+        // --- Ship vitals and crew ---
+        /// <summary>Hull damage or repair delta on ships.</summary>
         HealthChange = 5,
         PeopleLoad = 6,
         PeopleUnload = 7,
         Healing = 8,
         HealthRegen = 9,
         Energy = 10,
+
+        // --- Progression ---
+        /// <summary>Card purchase, component install, hull upgrade.</summary>
         Upgrades = 11,
     }
 
@@ -88,8 +99,10 @@ namespace TitanOrbit.Game
         [Tooltip("People beaming from your ship to a planet.")]
         public bool peopleUnload = true;
 
+        /// <summary>Whether floating popups are enabled for a given gameplay channel.</summary>
         public bool IsEnabled(FloatingCountChannel channel)
         {
+            // --- Map gameplay channel to Inspector toggle ---
             switch (channel)
             {
                 case FloatingCountChannel.GemPickup: return gemPickup;

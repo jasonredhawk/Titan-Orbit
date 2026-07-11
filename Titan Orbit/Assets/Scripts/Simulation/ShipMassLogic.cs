@@ -28,6 +28,7 @@ namespace TitanOrbit.Simulation
         /// </summary>
         public static float GetMovementBulkScale(float maxHealth, float chassisReferenceHealth)
         {
+            // --- Compute value ---
             float bulk = maxHealth / math.max(1f, chassisReferenceHealth);
             if (bulk <= 1f || MovementHullBulkExponent >= 0.999f)
                 return bulk;

@@ -18,6 +18,8 @@ namespace TitanOrbit.ECS
 
         public void OnUpdate(ref SystemState state)
         {
+            // --- System OnUpdate ---
+            // [STANDARD] One-shot bootstrap — gravity and lag compensation history for physics prediction.
             if (_applied)
                 return;
 

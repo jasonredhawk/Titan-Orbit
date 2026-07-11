@@ -4,6 +4,7 @@ using TitanOrbit.Data;
 
 namespace TitanOrbit.Editor
 {
+    // --- Type members ---
     /// <summary>Fallback drawer when a <see cref="BulletBankAbility"/> is shown outside <see cref="BulletBankProfileDrawer"/>.</summary>
     [CustomPropertyDrawer(typeof(BulletBankAbility))]
     public class BulletBankAbilityDrawer : PropertyDrawer

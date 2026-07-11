@@ -9,6 +9,7 @@ namespace TitanOrbit.Services
     [DefaultExecutionOrder(-100)]
     public class TitanOrbitServiceHub : MonoBehaviour
     {
+        // --- Type members ---
         [SerializeField] bool dontDestroyOnLoad = true;
 
         void Awake()

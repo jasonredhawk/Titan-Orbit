@@ -12,12 +12,16 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-side floating +/- popups driven by replicated ECS state deltas (gems, people, health, asteroid hits).
+    /// [HYBRID] Client-side floating +/- popups driven by replicated ECS state deltas.
+    /// Compares per-frame snapshots of ship gems/people/health, planet gems, and asteroid damage;
+    /// delegates display to <see cref="WorldFloatingCountManager"/>. Runs on main thread in Update.
     /// </summary>
     public class EcsFloatingCountPresenter : MonoBehaviour
     {
+        /// <summary>Minimum seconds between gem-deposit sound bursts during continuous deposit.</summary>
         const float DepositGemSoundInterval = 0.5f;
 
+        /// <summary>Per-ship last-known values for delta detection — keyed by <see cref="GhostOwner.NetworkId"/>.</summary>
         struct ShipSnapshot
         {
             public int People;
@@ -25,6 +29,7 @@ namespace TitanOrbit.Game
             public float Health;
             public bool IsDead;
             public int ShipLevel;
+            /// <summary>Accumulated gem value since last deposit sound — throttles SFX.</summary>
             public float DepositSoundAccumulator;
             public float LastDepositSoundTime;
         }
@@ -32,8 +37,12 @@ namespace TitanOrbit.Game
         readonly Dictionary<int, ShipSnapshot> _ships = new Dictionary<int, ShipSnapshot>();
         readonly Dictionary<int, float> _planetGems = new Dictionary<int, float>();
         readonly Dictionary<Entity, float> _asteroidHealth = new Dictionary<Entity, float>();
+        /// <summary>Skip delta popups on first frame after connect — avoids spurious +N from baseline.</summary>
         bool _primed;
 
+        /// <summary>
+        /// [UNITY] Polls visualization world each frame when in-game; primes snapshots once on join.
+        /// </summary>
         void Update()
         {
             if (!EcsGameBridge.IsNetworkInGame())
@@ -50,6 +59,8 @@ namespace TitanOrbit.Game
                 return;
 
             var em = world.EntityManager;
+
+            // --- First frame: record baseline without showing popups ---
             if (!_primed)
             {
                 PrimeSnapshots(em);
@@ -62,6 +73,7 @@ namespace TitanOrbit.Game
             PollAsteroids(em);
         }
 
+        /// <summary>Captures initial ship/planet/asteroid state into snapshot dictionaries.</summary>
         void PrimeSnapshots(EntityManager em)
         {
             _ships.Clear();
@@ -107,6 +119,7 @@ namespace TitanOrbit.Game
                 _asteroidHealth[asteroidEntities[i]] = asteroidStates[i].Health;
         }
 
+        /// <summary>Detects ship people/gem/health deltas and shows floating popups at hull proxy anchor.</summary>
         void PollShips(EntityManager em)
         {
             using var shipQuery = em.CreateEntityQuery(
@@ -203,6 +216,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Tracks planet gem totals — reserved for future planet deposit popups.</summary>
         void PollPlanetGems(EntityManager em)
         {
             using var planetQuery = em.CreateEntityQuery(
@@ -217,6 +231,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Local-player asteroid mining feedback — damage and remaining gems near local ship.</summary>
         void PollAsteroids(EntityManager em)
         {
             if (!TryGetLocalShipAnchor(out Transform localAnchor))
@@ -270,6 +285,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Throttles gem-deposit SFX and popup by ship level gem value and time interval.</summary>
         static void ProcessGemDepositFeedback(
             Transform anchor,
             ref ShipSnapshot snap,
@@ -297,6 +313,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Single deposit feedback burst — sound + floating count at anchor.</summary>
         static void EmitGemDepositFeedback(Transform anchor, float amount, TeamId team)
         {
             AudioManager.Instance?.PlayGemDepositSound(amount);
@@ -307,9 +324,11 @@ namespace TitanOrbit.Game
                 team);
         }
 
+        /// <summary>[HYBRID] Popup anchor is ship hull proxy transform from ShipWeaponProxyRegistry.</summary>
         static bool TryGetShipAnchor(int networkId, out Transform anchor) =>
             ShipWeaponProxyRegistry.TryGetHull(networkId, out anchor);
 
+        /// <summary>Local player hull proxy — asteroid feedback attaches near own ship.</summary>
         static bool TryGetLocalShipAnchor(out Transform anchor)
         {
             anchor = null;

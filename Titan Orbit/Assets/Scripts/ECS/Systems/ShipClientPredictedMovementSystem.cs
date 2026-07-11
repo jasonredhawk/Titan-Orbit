@@ -19,6 +19,7 @@ namespace TitanOrbit.ECS
     {
         public void OnCreate(ref SystemState state)
         {
+            // [STANDARD] Skip OnUpdate until at least one ship with motor config exists.
             state.RequireForUpdate<ShipMotorConfig>();
         }
 

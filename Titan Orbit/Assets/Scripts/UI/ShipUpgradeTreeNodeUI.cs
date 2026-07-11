@@ -106,6 +106,7 @@ namespace TitanOrbit.UI
         /// <summary>Binds a ladder slot (level + branch) with fixed pixel size for tree overlay layout.</summary>
         public void BindSlot(int level, int branchIndex, ShipUpgradeNode node, float width, float height, float powerTrackWidth)
         {
+            // --- BindSlot ---
             IsCurrentShipDisplay = false;
             Level = level;
             BranchIndex = branchIndex;
@@ -118,6 +119,7 @@ namespace TitanOrbit.UI
 
         public void BindAsCurrentShipDisplay(float width, float height, float powerTrackWidth)
         {
+            // --- BindAsCurrentShipDisplay ---
             IsCurrentShipDisplay = true;
             _sidebarLayoutMember = false;
             Level = 0;
@@ -132,6 +134,7 @@ namespace TitanOrbit.UI
         /// <summary>Current-ship node in sidebar with a large hero preview on top.</summary>
         public void ApplySidebarHeroPreviewLayout(float width, float height, float powerTrackWidth)
         {
+            // --- Apply changes ---
             IsCurrentShipDisplay = true;
             _sidebarLayoutMember = true;
             _sidebarHeroLayout = true;
@@ -148,6 +151,7 @@ namespace TitanOrbit.UI
         /// <summary>Current-ship node stacked in <see cref="OrbitDockSidebarPanelUI"/> (uses layout group, not tree overlay).</summary>
         public void ApplySidebarPanelLayout(float width, float height, float powerTrackWidth)
         {
+            // --- Apply changes ---
             IsCurrentShipDisplay = true;
             _sidebarLayoutMember = true;
             _sidebarHeroLayout = false;
@@ -164,6 +168,7 @@ namespace TitanOrbit.UI
         /// <summary>Re-applies slot size after child layout or power-bar updates.</summary>
         public void EnforceLayoutSize(float width, float height, float powerTrackWidth)
         {
+            // --- EnforceLayoutSize ---
             NodeButtonWidth = width;
             PowerBarTrackWidth = powerTrackWidth;
             _boundHeight = height;
@@ -173,6 +178,7 @@ namespace TitanOrbit.UI
         /// <summary>Moon panel overlay: top-left of <see cref="ShipUpgradeTreeUI"/> center row (does not consume tree width).</summary>
         public void ApplyPanelOverlayTopLeft(float margin)
         {
+            // --- Apply changes ---
             _panelOverlayMargin = margin;
             if (Rect == null)
                 return;
@@ -185,6 +191,7 @@ namespace TitanOrbit.UI
 
         private void ApplyFixedLayoutSize(float width, float height)
         {
+            // --- Apply changes ---
             if (Rect == null)
                 return;
 
@@ -249,6 +256,7 @@ namespace TitanOrbit.UI
 
         private void EnsureSidebarHeroLayout()
         {
+            // --- Ensure setup ---
             if (!_sidebarHeroLayout || _sidebarHeroLayoutConfigured)
                 return;
 
@@ -291,6 +299,7 @@ namespace TitanOrbit.UI
 
         private void EnsureLayoutCached()
         {
+            // --- Ensure setup ---
             if (_layoutCached)
                 return;
 
@@ -336,6 +345,7 @@ namespace TitanOrbit.UI
 
         private void ApplyScaledChildLayout(float width, float height)
         {
+            // --- Apply changes ---
             if (layoutWidth < 1f || layoutHeight < 1f)
                 return;
 
@@ -452,6 +462,7 @@ namespace TitanOrbit.UI
 #if UNITY_EDITOR
         private void OnValidate()
         {
+            // --- OnValidate ---
             if (NodeButtonWidth > 0.01f)
                 return;
             if (Rect == null || layoutWidth < 1f || layoutHeight < 1f)
@@ -464,6 +475,7 @@ namespace TitanOrbit.UI
         /// <summary>Feeds power breakdown into the child bar, normalized against strongest ship on the tree.</summary>
         public void ApplyPowerBreakdown(ShipFamilyPowerScoreBreakdown breakdown, float strongestShipTotal)
         {
+            // --- Apply changes ---
             if (powerBar == null)
                 return;
 
@@ -486,6 +498,7 @@ namespace TitanOrbit.UI
 
         private void EnsurePriceButton()
         {
+            // --- Ensure setup ---
             Transform priceRoot = ResolvePriceRootTransform();
             if (priceRoot == null)
                 return;
@@ -530,6 +543,7 @@ namespace TitanOrbit.UI
 
         private void MigratePriceTextOffRoot(Transform priceRoot)
         {
+            // --- MigratePriceTextOffRoot ---
             var rootTmp = priceRoot.GetComponent<TextMeshProUGUI>();
             if (rootTmp == null)
                 return;
@@ -566,6 +580,7 @@ namespace TitanOrbit.UI
 
         private static void CopyTextMeshSettings(TextMeshProUGUI from, TextMeshProUGUI to)
         {
+            // --- CopyTextMeshSettings ---
             to.font = from.font;
             to.fontSize = from.fontSize;
             to.fontStyle = FontStyles.Bold;
@@ -578,6 +593,7 @@ namespace TitanOrbit.UI
 
         private void EnsurePriceLabelOnTop(Transform priceRoot)
         {
+            // --- Ensure setup ---
             Transform label = priceRoot.Find("Label");
             if (label != null)
                 label.SetAsLastSibling();
@@ -585,6 +601,7 @@ namespace TitanOrbit.UI
 
         private static Image FindOrCreatePriceBorderImage(Transform priceRoot)
         {
+            // --- FindOrCreatePriceBorderImage ---
             const string borderName = "Border";
             Transform border = priceRoot.Find(borderName);
             if (border == null)
@@ -608,6 +625,7 @@ namespace TitanOrbit.UI
 
         private Transform ResolvePriceRootTransform()
         {
+            // --- Resolve value ---
             if (priceButton != null)
                 return priceButton.transform;
 
@@ -627,6 +645,7 @@ namespace TitanOrbit.UI
 
         private void ResolvePriceTextReference(Transform priceRoot)
         {
+            // --- Resolve value ---
             if (priceText != null)
                 return;
 
@@ -645,6 +664,7 @@ namespace TitanOrbit.UI
         /// </summary>
         private static Image FindOrCreatePriceBackgroundImage(Transform priceRoot)
         {
+            // --- FindOrCreatePriceBackgroundImage ---
             if (priceRoot.TryGetComponent(out Image legacyRootImage))
             {
                 if (Application.isPlaying)
@@ -688,6 +708,7 @@ namespace TitanOrbit.UI
 
         private static void StretchRectToFill(RectTransform rt)
         {
+            // --- StretchRectToFill ---
             if (rt == null)
                 return;
 
@@ -699,6 +720,7 @@ namespace TitanOrbit.UI
 
         public void EnsureStableButtonRendering()
         {
+            // --- Ensure setup ---
             if (button != null)
             {
                 button.transition = Selectable.Transition.None;
@@ -715,6 +737,7 @@ namespace TitanOrbit.UI
 
         public void SetButtonBackgroundColor(Color color)
         {
+            // --- SetButtonBackgroundColor ---
             if (button == null)
                 return;
             var graphic = button.targetGraphic;
@@ -727,6 +750,7 @@ namespace TitanOrbit.UI
         public void SetShipName(string text) { if (shipNameText != null) shipNameText.text = text; }
         public void SetPrice(string text)
         {
+            // --- SetPrice ---
             EnsurePriceButton();
             if (priceText != null)
                 priceText.text = text;
@@ -734,6 +758,7 @@ namespace TitanOrbit.UI
 
         public void SetPriceButtonStyle(bool clickable)
         {
+            // --- SetPriceButtonStyle ---
             EnsurePriceButton();
             Color fill = clickable ? PriceEnabledFill : PriceDisabledFill;
             Color border = clickable ? PriceEnabledBorder : PriceDisabledBorder;
@@ -748,6 +773,7 @@ namespace TitanOrbit.UI
         }
         public void SetPreview(Sprite sprite)
         {
+            // --- SetPreview ---
             if (previewImage == null) return;
             previewImage.sprite = sprite;
             previewImage.preserveAspect = sprite != null;
@@ -757,6 +783,7 @@ namespace TitanOrbit.UI
         public void SetButtonColors(Color normal) => SetButtonBackgroundColor(normal);
         public void SetInteractable(bool on)
         {
+            // --- SetInteractable ---
             EnsurePriceButton();
             if (priceButton != null)
                 priceButton.interactable = on;
@@ -765,6 +792,7 @@ namespace TitanOrbit.UI
 
         public void SetClickHandler(UnityEngine.Events.UnityAction handler)
         {
+            // --- SetClickHandler ---
             if (button == null) return;
             button.onClick.RemoveAllListeners();
             if (handler != null)
@@ -773,6 +801,7 @@ namespace TitanOrbit.UI
 
         public void SetPriceClickHandler(UnityEngine.Events.UnityAction handler)
         {
+            // --- SetPriceClickHandler ---
             EnsurePriceButton();
             if (priceButton == null) return;
             priceButton.onClick.RemoveAllListeners();

@@ -18,6 +18,7 @@ namespace TitanOrbit.ECS
         /// <summary>True when attacker cannot damage this moon (same team or neutral attacker).</summary>
         public static bool IsTeamFriendlyToMoon(TeamId moonOwner, TeamId team)
         {
+            // --- IsTeamFriendlyToMoon ---
             if (moonOwner == TeamId.None)
                 return false;
             if (team == TeamId.None)
@@ -28,6 +29,7 @@ namespace TitanOrbit.ECS
         /// <summary>Sets moon gem reservoir to default max on planet spawn.</summary>
         public static void InitMoonGems(ref PlanetGemMoonState moon)
         {
+            // --- InitMoonGems ---
             moon.MaxMoonGems = PlanetGemMoonMath.BaseMaxMoonGemPoints;
             moon.CurrentMoonGems = moon.MaxMoonGems;
             moon.GemDrainAccumulator = 0f;

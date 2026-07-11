@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Threading.Tasks;
 using TitanOrbit.Diagnostics;
 using Unity.Services.Lobbies;
@@ -14,9 +15,18 @@ namespace TitanOrbit.NetCode
     /// <summary>
     /// Keeps dedicated NetCode matches available: heartbeats, rotation, empty-lobby recreate, match requests.
     /// Started by <see cref="TitanOrbitSessionManager"/> after the first Relay lobby is live.
+    /// Rotation handoff keeps the current UGS lobby open and heartbeating until a successor process publishes
+    /// a joinable lobby — avoids browse gaps when <c>SpawnNextMatch</c> or successor boot is slow.
     /// </summary>
     public class TitanOrbitDedicatedServerHost : MonoBehaviour
     {
+        const int SuccessorWaitSecondsPerSpawnAttempt = 120;
+        const int MaxSpawnAttemptsPerHandoff = 5;
+        const float SpawnRetryDelaySeconds = 10f;
+        const float SuccessorPollIntervalSeconds = 3f;
+        /// <summary>After a full handoff fails, wait before starting another (avoids spawn spam every 3s).</summary>
+        const float HandoffFailureCooldownSeconds = 300f;
+
         static TitanOrbitDedicatedServerHost s_Instance;
 
         readonly HashSet<string> _processedMatchRequestLobbyIds = new HashSet<string>(StringComparer.Ordinal);
@@ -27,14 +37,18 @@ namespace TitanOrbit.NetCode
         bool _matchIsLatest;
         bool _spawnedFromAge;
         bool _spawnedFromFull;
+        bool _handoffInProgress;
+        DateTime? _rotationHandoffRetryAfterUtc;
         DateTime? _emptySinceUtc;
         Coroutine _rotationCoroutine;
         Coroutine _presenceCoroutine;
         Coroutine _matchRequestCoroutine;
         Coroutine _netcodeHealthCoroutine;
+        Coroutine _handoffCoroutine;
 
         public static void Begin(TitanOrbitServerCommandLine config, string lobbyId, long createdAtEpochSeconds, bool isLatest)
         {
+            // --- Begin ---
             if (s_Instance == null)
             {
                 var session = TitanOrbitSessionManager.Instance;
@@ -54,6 +68,7 @@ namespace TitanOrbit.NetCode
 
         void StartHosting(TitanOrbitServerCommandLine config, string lobbyId, long createdAtEpochSeconds, bool isLatest)
         {
+            // --- Unity lifecycle ---
             _config = config ?? TitanOrbitServerCommandLine.Parse();
             _activeLobbyId = lobbyId;
             _createdAtEpochSeconds = createdAtEpochSeconds;
@@ -76,6 +91,7 @@ namespace TitanOrbit.NetCode
 
         public void NotifyLobbyReplaced(string newLobbyId, long createdAtEpochSeconds, bool isLatest)
         {
+            // --- NotifyLobbyReplaced ---
             _activeLobbyId = newLobbyId;
             _createdAtEpochSeconds = createdAtEpochSeconds;
             _matchIsLatest = isLatest;
@@ -86,50 +102,47 @@ namespace TitanOrbit.NetCode
 
         IEnumerator RotationLoop()
         {
+            // --- RotationLoop ---
             var wait = new WaitForSeconds(3f);
             while (true)
             {
                 bool pendingEmptyRecreate = false;
                 try
                 {
-                    string lobbyId = _activeLobbyId;
-                    int playerCount = TitanOrbitSessionManager.Instance != null
-                        ? TitanOrbitSessionManager.Instance.GetServerConnectedPlayerCount()
-                        : 0;
-                    TrackEmptyMatchTime(playerCount);
-
-                    bool isFull = playerCount >= _config.MaxPlayers;
-                    long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                    long ageSeconds = nowEpoch - _createdAtEpochSeconds;
-
-                    if (!IsRecreateInProgress() && playerCount == 0 && _emptySinceUtc.HasValue &&
-                        !string.IsNullOrWhiteSpace(lobbyId))
+                    if (!_handoffInProgress)
                     {
-                        double emptySeconds = (DateTime.UtcNow - _emptySinceUtc.Value).TotalSeconds;
-                        if (emptySeconds >= _config.EmptyMatchRecreateSeconds)
-                            pendingEmptyRecreate = true;
-                    }
+                        string lobbyId = _activeLobbyId;
+                        int playerCount = TitanOrbitSessionManager.Instance != null
+                            ? TitanOrbitSessionManager.Instance.GetServerConnectedPlayerCount()
+                            : 0;
+                        TrackEmptyMatchTime(playerCount);
 
-                    if (_matchIsLatest && !_spawnedFromAge && playerCount > 0 &&
-                        ageSeconds >= _config.AgeThresholdSeconds && !isFull)
-                    {
-                        _spawnedFromAge = true;
-                        _matchIsLatest = false;
-                        string closingLobbyId = lobbyId;
-                        Debug.Log("[TitanOrbitDedicatedServerHost] Age rotation: spawning successor for " + closingLobbyId);
-                        SpawnNextMatch(nextIsLatest: true);
-                        _ = HandoffAndCloseLobbyAsync(closingLobbyId, "age_rotation");
-                    }
+                        bool isFull = playerCount >= _config.MaxPlayers;
+                        long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                        long ageSeconds = nowEpoch - _createdAtEpochSeconds;
 
-                    if (!_spawnedFromFull && isFull)
-                    {
-                        _spawnedFromFull = true;
-                        bool nextIsLatest = _matchIsLatest;
-                        _matchIsLatest = false;
-                        string closingLobbyId = lobbyId;
-                        Debug.Log("[TitanOrbitDedicatedServerHost] Full rotation for " + closingLobbyId);
-                        SpawnNextMatch(nextIsLatest);
-                        _ = HandoffAndCloseLobbyAsync(closingLobbyId, "full_rotation");
+                        if (!IsRecreateInProgress() && playerCount == 0 && _emptySinceUtc.HasValue &&
+                            !string.IsNullOrWhiteSpace(lobbyId))
+                        {
+                            double emptySeconds = (DateTime.UtcNow - _emptySinceUtc.Value).TotalSeconds;
+                            if (emptySeconds >= _config.EmptyMatchRecreateSeconds)
+                                pendingEmptyRecreate = true;
+                        }
+
+                        // [TITAN-ORBIT] Age rotation — spawn successor; handoff coroutine closes this lobby only after successor is live.
+                        if (_matchIsLatest && !_spawnedFromAge && playerCount > 0 &&
+                            ageSeconds >= _config.AgeThresholdSeconds && !isFull)
+                        {
+                            Debug.Log("[TitanOrbitDedicatedServerHost] Age rotation: starting handoff for " + lobbyId);
+                            BeginRotationHandoff(lobbyId, "age_rotation", nextIsLatest: true);
+                        }
+                        else if (!_spawnedFromFull && isFull)
+                        {
+                            // --- if ---
+                            bool nextIsLatest = _matchIsLatest;
+                            Debug.Log("[TitanOrbitDedicatedServerHost] Full rotation: starting handoff for " + lobbyId);
+                            BeginRotationHandoff(lobbyId, "full_rotation", nextIsLatest);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -137,7 +150,8 @@ namespace TitanOrbit.NetCode
                     Debug.LogWarning("[TitanOrbitDedicatedServerHost] Rotation error: " + ex.Message);
                 }
 
-                if (pendingEmptyRecreate && TitanOrbitSessionManager.Instance != null)
+                // In-process empty recreate — skip while a process handoff is in flight (Relay churn).
+                if (pendingEmptyRecreate && !_handoffInProgress && TitanOrbitSessionManager.Instance != null)
                 {
                     Task<TitanOrbitSessionManager.DedicatedMatchRecreateResult> recreateTask =
                         TitanOrbitSessionManager.Instance.RecreateDedicatedMatchAsync(_config);
@@ -155,8 +169,97 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>Starts a single handoff coroutine; keeps <c>_matchIsLatest</c> until successor is confirmed.</summary>
+        void BeginRotationHandoff(string closingLobbyId, string reason, bool nextIsLatest)
+        {
+            // --- BeginRotationHandoff ---
+            if (_handoffInProgress || string.IsNullOrWhiteSpace(closingLobbyId))
+                return;
+
+            if (_rotationHandoffRetryAfterUtc.HasValue && DateTime.UtcNow < _rotationHandoffRetryAfterUtc.Value)
+                return;
+
+            if (_handoffCoroutine != null)
+                StopCoroutine(_handoffCoroutine);
+
+            _handoffCoroutine = StartCoroutine(RunRotationHandoff(closingLobbyId, reason, nextIsLatest));
+        }
+
+        /// <summary>
+        /// Spawn successor with retries, wait for its UGS lobby, then close the old lobby.
+        /// On failure the old lobby stays open and heartbeating so browse never goes empty.
+        /// </summary>
+        IEnumerator RunRotationHandoff(string closingLobbyId, string reason, bool nextIsLatest)
+        {
+            // --- RunRotationHandoff ---
+            _handoffInProgress = true;
+            DedicatedServerFileLog.Append("rotation", "Handoff started reason=" + reason + " closing=" + closingLobbyId +
+                                                  " nextIsLatest=" + nextIsLatest);
+
+            bool handoffComplete = false;
+            for (int attempt = 1; attempt <= MaxSpawnAttemptsPerHandoff && !handoffComplete; attempt++)
+            {
+                if (!TrySpawnNextMatch(nextIsLatest))
+                {
+                    Debug.LogWarning("[TitanOrbitDedicatedServerHost] SpawnNextMatch failed (attempt " + attempt + "/" +
+                                     MaxSpawnAttemptsPerHandoff + ") for " + reason + ".");
+                    DedicatedServerFileLog.Append("rotation", "SpawnNextMatch failed attempt=" + attempt + " " + reason);
+                    yield return new WaitForSeconds(SpawnRetryDelaySeconds);
+                    continue;
+                }
+
+                // [TITAN-ORBIT] Heartbeat loop keeps updating closingLobbyId via _activeLobbyId during this wait.
+                Task<bool> waitTask = WaitForSuccessorLobbyAsync(
+                    closingLobbyId,
+                    requireLatest: nextIsLatest,
+                    TimeSpan.FromSeconds(SuccessorWaitSecondsPerSpawnAttempt));
+                while (!waitTask.IsCompleted)
+                    yield return null;
+
+                bool successorReady = !waitTask.IsFaulted && waitTask.Result;
+                if (!successorReady)
+                {
+                    Debug.LogWarning("[TitanOrbitDedicatedServerHost] Successor not detected (attempt " + attempt + "/" +
+                                     MaxSpawnAttemptsPerHandoff + ") for " + reason + "; will retry spawn.");
+                    DedicatedServerFileLog.Append("rotation", "Successor wait failed attempt=" + attempt + " " + reason);
+                    yield return new WaitForSeconds(SpawnRetryDelaySeconds);
+                    continue;
+                }
+
+                Task closeTask = TitanOrbitSessionManager.Instance.CloseLobbyForNewJoinersAsync(closingLobbyId, reason);
+                while (!closeTask.IsCompleted)
+                    yield return null;
+
+                if (string.Equals(reason, "age_rotation", StringComparison.Ordinal))
+                    _spawnedFromAge = true;
+                else if (string.Equals(reason, "full_rotation", StringComparison.Ordinal))
+                    _spawnedFromFull = true;
+
+                _matchIsLatest = false;
+                _rotationHandoffRetryAfterUtc = null;
+                handoffComplete = true;
+                DedicatedServerFileLog.Append("rotation", "Handoff complete reason=" + reason + " closed=" + closingLobbyId);
+                Debug.Log("[TitanOrbitDedicatedServerHost] Handoff complete (" + reason + "); closed lobby " + closingLobbyId);
+            }
+
+            if (!handoffComplete)
+            {
+                _rotationHandoffRetryAfterUtc = DateTime.UtcNow.AddSeconds(HandoffFailureCooldownSeconds);
+                Debug.LogError("[TitanOrbitDedicatedServerHost] Handoff failed after " + MaxSpawnAttemptsPerHandoff +
+                               " attempts; keeping lobby open so browse stays populated. reason=" + reason +
+                               " lobby=" + closingLobbyId + " nextRetryAfter=" +
+                               HandoffFailureCooldownSeconds + "s");
+                DedicatedServerFileLog.Append("rotation", "Handoff aborted — lobby kept open reason=" + reason +
+                                                      " lobby=" + closingLobbyId);
+            }
+
+            _handoffInProgress = false;
+            _handoffCoroutine = null;
+        }
+
         IEnumerator LobbyPresenceWatchdogLoop()
         {
+            // --- LobbyPresenceWatchdogLoop ---
             int consecutiveFailures = 0;
             const int threshold = 4;
             var wait = new WaitForSeconds(45f);
@@ -200,6 +303,7 @@ namespace TitanOrbit.NetCode
 
         IEnumerator MatchRequestWatchdogLoop()
         {
+            // --- MatchRequestWatchdogLoop ---
             var wait = new WaitForSeconds(20f);
             while (true)
             {
@@ -215,6 +319,7 @@ namespace TitanOrbit.NetCode
 
         async Task ProcessMatchRequestsAsync()
         {
+            // --- ProcessMatchRequestsAsync ---
             try
             {
                 QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
@@ -265,11 +370,12 @@ namespace TitanOrbit.NetCode
 
         IEnumerator NetcodeHealthLoop()
         {
+            // --- NetcodeHealthLoop ---
             var wait = new WaitForSeconds(30f);
             while (true)
             {
                 yield return wait;
-                if (IsRecreateInProgress())
+                if (IsRecreateInProgress() || _handoffInProgress)
                     continue;
 
                 if (!TitanOrbitSessionManager.Instance.IsServerListening())
@@ -289,6 +395,7 @@ namespace TitanOrbit.NetCode
 
         void TrackEmptyMatchTime(int playerCount)
         {
+            // --- TrackEmptyMatchTime ---
             if (playerCount > 0)
             {
                 _emptySinceUtc = null;
@@ -299,21 +406,25 @@ namespace TitanOrbit.NetCode
                 _emptySinceUtc = DateTime.UtcNow;
         }
 
-        void SpawnNextMatch(bool nextIsLatest)
+        /// <summary>
+        /// Launches a sibling headless process for rotation. Returns false when the executable cannot be resolved
+        /// or <see cref="Process.Start"/> throws (logged for GCE diagnosis).
+        /// </summary>
+        bool TrySpawnNextMatch(bool nextIsLatest)
         {
+            // --- Attempt resolution ---
             try
             {
+                if (!TryResolveServerExecutable(out string exePath))
+                {
+                    Debug.LogError("[TitanOrbitDedicatedServerHost] Cannot determine server executable path.");
+                    return false;
+                }
+
                 int pid = Process.GetCurrentProcess().Id;
                 int derivedPort = _config.ServerPort + (pid % 2000) + UnityEngine.Random.Range(0, 2000);
                 if (derivedPort > 65000)
                     derivedPort = 65000;
-
-                string exePath = Process.GetCurrentProcess().MainModule?.FileName;
-                if (string.IsNullOrWhiteSpace(exePath))
-                {
-                    Debug.LogError("[TitanOrbitDedicatedServerHost] Cannot determine server executable path.");
-                    return;
-                }
 
                 string args =
 #if !UNITY_SERVER
@@ -325,6 +436,8 @@ namespace TitanOrbit.NetCode
                     $"--relayProtocol={_config.RelayProtocol} " +
                     $"--serverListenAddress={_config.ServerListenAddress} " +
                     $"--emptyMatchRecreateSeconds={_config.EmptyMatchRecreateSeconds} " +
+                    $"--ageThresholdSeconds={_config.AgeThresholdSeconds} " +
+                    $"--waitNetworkManagerSeconds={_config.WaitNetworkManagerSeconds} " +
                     $"--isLatest={(nextIsLatest ? 1 : 0)}";
 
                 Process.Start(new ProcessStartInfo(exePath, args)
@@ -333,42 +446,83 @@ namespace TitanOrbit.NetCode
                     UseShellExecute = false,
                     WorkingDirectory = Environment.CurrentDirectory
                 });
+
+                DedicatedServerFileLog.Append("rotation", "SpawnNextMatch ok exe=" + exePath + " isLatest=" + nextIsLatest);
+                Debug.Log("[TitanOrbitDedicatedServerHost] SpawnNextMatch started isLatest=" + nextIsLatest +
+                          " port=" + derivedPort);
+                return true;
             }
             catch (Exception e)
             {
                 Debug.LogWarning("[TitanOrbitDedicatedServerHost] SpawnNextMatch failed: " + e.Message);
+                DedicatedServerFileLog.Append("rotation", "SpawnNextMatch exception", e);
+                return false;
             }
         }
 
-        static async Task HandoffAndCloseLobbyAsync(string lobbyId, string reason)
+        /// <summary>
+        /// Resolves the player binary for rotation spawns. On Linux GCE, <c>MainModule</c> can be empty;
+        /// fall back to siblings of <c>Application.dataPath</c> (deploy root).
+        /// </summary>
+        static bool TryResolveServerExecutable(out string exePath)
         {
-            bool successorReady = await WaitForSuccessorLatestLobbyAsync(lobbyId, TimeSpan.FromSeconds(120));
-            if (!successorReady)
+            // --- Attempt resolution ---
+            exePath = null;
+            try
             {
-                Debug.LogWarning("[TitanOrbitDedicatedServerHost] Successor lobby not detected before closing " +
-                                 lobbyId + " (" + reason + ").");
+                exePath = Process.GetCurrentProcess().MainModule?.FileName;
+                if (!string.IsNullOrWhiteSpace(exePath) && File.Exists(exePath))
+                    return true;
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[TitanOrbitDedicatedServerHost] MainModule lookup failed: " + e.Message);
             }
 
-            await TitanOrbitSessionManager.Instance.CloseLobbyForNewJoinersAsync(lobbyId, reason);
+            string baseDir = Application.dataPath != null ? Path.GetDirectoryName(Application.dataPath) : null;
+            if (string.IsNullOrEmpty(baseDir))
+                return false;
+
+            string[] candidates = { "TitanOrbitServer.x86_64", "TitanOrbitServer" };
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                string candidate = Path.Combine(baseDir, candidates[i]);
+                if (File.Exists(candidate))
+                {
+                    exePath = candidate;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
-        static async Task<bool> WaitForSuccessorLatestLobbyAsync(string excludeLobbyId, TimeSpan timeout)
+        /// <summary>
+        /// Polls UGS until a joinable dedicated successor lobby appears (optionally <c>IsLatest=1</c>).
+        /// </summary>
+        static async Task<bool> WaitForSuccessorLobbyAsync(string excludeLobbyId, bool requireLatest, TimeSpan timeout)
         {
+            // --- WaitForSuccessorLobbyAsync ---
             DateTime deadline = DateTime.UtcNow.Add(timeout);
             while (DateTime.UtcNow < deadline)
             {
                 try
                 {
+                    var filters = new List<QueryFilter>
+                    {
+                        new QueryFilter(QueryFilter.FieldOptions.S1, TitanOrbitLobbyService.LobbyGameNameValue,
+                            QueryFilter.OpOptions.EQ),
+                        new QueryFilter(QueryFilter.FieldOptions.N1, "1", QueryFilter.OpOptions.EQ),
+                    };
+                    if (requireLatest)
+                    {
+                        filters.Add(new QueryFilter(QueryFilter.FieldOptions.N2, "1", QueryFilter.OpOptions.EQ));
+                    }
+
                     QueryResponse response = await LobbyService.Instance.QueryLobbiesAsync(new QueryLobbiesOptions
                     {
                         Count = 10,
-                        Filters = new List<QueryFilter>
-                        {
-                            new QueryFilter(QueryFilter.FieldOptions.S1, TitanOrbitLobbyService.LobbyGameNameValue,
-                                QueryFilter.OpOptions.EQ),
-                            new QueryFilter(QueryFilter.FieldOptions.N1, "1", QueryFilter.OpOptions.EQ),
-                            new QueryFilter(QueryFilter.FieldOptions.N2, "1", QueryFilter.OpOptions.EQ),
-                        }
+                        Filters = filters
                     });
 
                     if (response?.Results != null)
@@ -390,7 +544,7 @@ namespace TitanOrbit.NetCode
                     Debug.LogWarning("[TitanOrbitDedicatedServerHost] WaitForSuccessor query failed: " + e.Message);
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(3));
+                await Task.Delay(TimeSpan.FromSeconds(SuccessorPollIntervalSeconds));
             }
 
             return false;
@@ -398,6 +552,7 @@ namespace TitanOrbit.NetCode
 
         static async Task CloseLobbyAndExitAsync(string lobbyId, string reason)
         {
+            // --- CloseLobbyAndExitAsync ---
             if (TitanOrbitSessionManager.Instance != null)
                 await TitanOrbitSessionManager.Instance.CloseLobbyForNewJoinersAsync(lobbyId, reason);
             DedicatedServerFileLog.Append("watchdog", reason + "; exiting process.");

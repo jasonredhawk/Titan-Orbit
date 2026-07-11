@@ -126,6 +126,7 @@ namespace TitanOrbit.UI
         /// <summary>Gameplay gate only — does not require the bar to already exist.</summary>
         private bool CanShowUpgradeBar()
         {
+            // --- CanShowUpgradeBar ---
             if (!upgradeBarEnabled)
                 return false;
             if (!EcsGameBridge.HasLocalPlayerShip())
@@ -143,6 +144,7 @@ namespace TitanOrbit.UI
 
         private bool TryResolveLayoutCanvas()
         {
+            // --- Attempt resolution ---
             if (_layoutCanvasRect != null)
                 return true;
 
@@ -159,6 +161,7 @@ namespace TitanOrbit.UI
 
         private static bool TryGetMinimapLeftLocalX(RectTransform layoutSpace, out float minimapLeftLocalX)
         {
+            // --- Attempt resolution ---
             minimapLeftLocalX = 0f;
             if (layoutSpace == null) return false;
             var minimap = Object.FindFirstObjectByType<MinimapController>();
@@ -172,6 +175,7 @@ namespace TitanOrbit.UI
 
         private bool TryComputeStripMetrics(out float insetL, out float insetB, out float availableWidth, out float barH, out float buttonW, out float spacing)
         {
+            // --- Attempt resolution ---
             insetL = insetB = availableWidth = barH = buttonW = spacing = 0f;
             if (!TryResolveLayoutCanvas())
                 return false;
@@ -222,6 +226,7 @@ namespace TitanOrbit.UI
 
         private void RefreshUpgradeStripLayout(bool force)
         {
+            // --- RefreshUpgradeStripLayout ---
             if (!_uiBuilt || _stripRootRect == null)
                 return;
             if (!TryComputeStripMetrics(out float insetL, out float insetB, out float availableWidth, out float barH, out float buttonW, out float spacing))
@@ -264,6 +269,7 @@ namespace TitanOrbit.UI
 
         private void EnsureUiBuilt()
         {
+            // --- Ensure setup ---
             if (_uiBuilt || !upgradeBarEnabled || !CanShowUpgradeBar())
                 return;
             BuildUI();
@@ -271,6 +277,7 @@ namespace TitanOrbit.UI
 
         private void BuildUI()
         {
+            // --- Build data ---
             if (_uiBuilt || !TryResolveLayoutCanvas())
                 return;
 
@@ -469,6 +476,7 @@ namespace TitanOrbit.UI
 
         private void CreateTickMarks(GameObject container, int maxCount)
         {
+            // --- Create instance ---
             maxCount = Mathf.Clamp(maxCount, 0, 7);
             for (int i = 0; i < maxCount; i++)
             {
@@ -485,6 +493,7 @@ namespace TitanOrbit.UI
 
         private void UpdateTickMarks(int index, int currentLevel, int maxLevel)
         {
+            // --- Per-frame refresh ---
             if (tickContainers == null || index < 0 || index >= tickContainers.Length || tickContainers[index] == null) return;
             maxLevel = Mathf.Clamp(maxLevel, 0, 7);
             Transform container = tickContainers[index].transform;
@@ -508,6 +517,7 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
+            // --- Per-frame refresh ---
             if (!upgradeBarEnabled)
                 return;
 
@@ -556,6 +566,7 @@ namespace TitanOrbit.UI
 
         private void LateUpdate()
         {
+            // --- Per-frame refresh ---
             if (!upgradeBarEnabled)
                 return;
 
@@ -589,6 +600,7 @@ namespace TitanOrbit.UI
         /// </summary>
         private void TryUpgrade(int index)
         {
+            // --- Attempt resolution ---
             if (!CanShowUpgradeBar())
                 return;
             if (index < 0 || index > 9)

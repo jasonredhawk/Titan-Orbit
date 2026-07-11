@@ -6,17 +6,22 @@ using UnityEngine;
 namespace TitanOrbit.NetCode
 {
     /// <summary>
-    /// Ensures dedicated-server boot runs after the scene and NetCode worlds are live.
-    /// Mirrors legacy <c>DedicatedMatchServerBootstrap.Init</c> timing without relying on scene object order.
+    /// [NETCODE] Ensures dedicated-server boot runs after scene load and NetCode worlds exist.
+    /// Creates <see cref="TitanOrbitSessionManager"/> if missing and calls
+    /// <see cref="TitanOrbitSessionManager.EnsureDedicatedBootStarted"/>. GCE/Linux headless entry path.
     /// </summary>
     [DefaultExecutionOrder(-10000)]
     public sealed class TitanOrbitDedicatedServerBootRunner : MonoBehaviour
     {
         static bool s_Created;
 
+        /// <summary>
+        /// [UNITY] AfterSceneLoad — spawns persistent boot runner on dedicated server processes only.
+        /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AfterSceneLoad()
         {
+            // --- AfterSceneLoad ---
             if (!TitanOrbitDedicatedServerAutoBoot.IsDedicatedServerProcess())
                 return;
 
@@ -31,8 +36,10 @@ namespace TitanOrbit.NetCode
             Debug.Log("[TitanOrbitDedicatedServerBootRunner] Scheduled dedicated boot runner.");
         }
 
+        /// <summary>Start — ensure session manager exists, then kick dedicated Relay + lobby boot.</summary>
         void Start()
         {
+            // --- Unity lifecycle ---
             DontDestroyOnLoad(gameObject);
             DedicatedServerFileLog.Append("boot", "BootRunner Start — ensuring session manager + boot.");
             Debug.Log("[TitanOrbitDedicatedServerBootRunner] Start — triggering dedicated boot.");
@@ -53,6 +60,7 @@ namespace TitanOrbit.NetCode
 
         void OnApplicationQuit()
         {
+            // --- OnApplicationQuit ---
             if (TitanOrbitSessionManager.Instance != null &&
                 !string.IsNullOrWhiteSpace(TitanOrbitSessionManager.Instance.CurrentLobbyId))
             {

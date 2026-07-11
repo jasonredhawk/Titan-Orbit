@@ -12,6 +12,9 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.UI
 {
+    /// <summary>
+    /// Screen corner placement for the local-player speedometer panel. BottomLeft avoids minimap overlap.
+    /// </summary>
     public enum SpeedometerPlacement
     {
         [Tooltip("Clear of bottom-right minimap; pair with attribute bar on wide layouts.")]
@@ -88,9 +91,11 @@ namespace TitanOrbit.UI
 
         void BuildUIIfNeeded()
         {
+            // --- One-time procedural HUD build ---
             if (uiBuilt || !speedometerEnabled)
                 return;
 
+            // --- Resolve parent canvas ---
             Canvas canvas = GetComponentInParent<Canvas>();
             if (canvas == null)
                 canvas = Object.FindFirstObjectByType<Canvas>();
@@ -314,6 +319,7 @@ namespace TitanOrbit.UI
 
         void ApplyPlacement(RectTransform rootRect)
         {
+            // --- Corner anchor + margin (stack above upgrade bar when bottom-left) ---
             float h = horizontalMargin;
             float v = verticalMargin + GetBottomLeftStackYBoost();
             switch (placement)
@@ -477,6 +483,7 @@ namespace TitanOrbit.UI
 
         void LateUpdate()
         {
+            // --- Early out when disabled or UI not built ---
             if (!speedometerEnabled)
             {
                 if (rootPanel != null)
@@ -506,6 +513,7 @@ namespace TitanOrbit.UI
             if (HUDController.ShipUpgradeTreeObscuresHud)
                 show = false;
 
+            // --- Visibility and layout refresh ---
             rootPanel.SetActive(show);
             if (placement == SpeedometerPlacement.BottomLeft)
                 ApplyPlacement(rootPanel.GetComponent<RectTransform>());
@@ -607,6 +615,8 @@ namespace TitanOrbit.UI
                 out float ramRating,
                 out float ramMass,
                 out float massFactor);
+
+            // --- Compose multi-line HUD text ---
             string line3 = $"RAM {ramRating:0.##}×m{massFactor:0.##} →ast {ramAst:0.#}  ·  hull {ramSelf:0.#}  <color=#888888>(mass {ramMass:0.#})</color>";
 
             string line4;

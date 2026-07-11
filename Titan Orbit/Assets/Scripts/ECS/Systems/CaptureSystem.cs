@@ -5,17 +5,24 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server win-condition check: if one team owns every planet, declare match won.
-    /// Runs after people transport sim so capture from population transfer is visible first.
-    /// Writes <see cref="MatchStateSingleton.WinningTeam"/> — replicated to clients.
+    /// [ECS/DOTS] Server win-condition check: if one team owns every planet, declare match won.
+    /// [TITAN-ORBIT] Domination victory — neutral planets block a win. Runs after people transport
+    /// sim so capture from population transfer is visible first. Writes
+    /// <see cref="MatchStateSingleton.WinningTeam"/> — [NETCODE] ghost-replicated to clients.
+    /// World: ServerSimulation. Group: SimulationSystemGroup, after PeopleTransportSimulationSystem.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PeopleTransportSimulationSystem))]
     public partial struct CaptureSystem : ISystem
     {
+        /// <summary>
+        /// [ECS/DOTS] Each server tick: scan all planets; if one team owns every non-neutral planet,
+        /// set WinningTeam and GameState = 2 (won).
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            // --- Singleton guards ---
             if (!SystemAPI.TryGetSingletonRW<MatchStateSingleton>(out var match))
                 return;
             // [STANDARD] Early exit — winner already decided this match.

@@ -4,11 +4,14 @@ using UnityEngine.InputSystem;
 namespace TitanOrbit.Input
 {
     /// <summary>
-    /// Handles player input abstraction for cross-platform support
+    /// [UNITY] Cross-platform player input — New Input System actions plus keyboard/mouse fallbacks.
+    /// Feeds ShipInputBridge with move, shoot, aim world position, and toggle flags (space brakes, gem expel).
+    /// Client only — server has no player input handler.
     /// </summary>
     public class PlayerInputHandler : MonoBehaviour
     {
         [Header("Input Settings")]
+        /// <summary>InputActionAsset reference — gameplay action map bound in Awake.</summary>
         [SerializeField] private InputActionAsset inputActions;
         
         private InputActionMap gameplayMap;
@@ -76,6 +79,7 @@ namespace TitanOrbit.Input
         /// <summary>WASD / Move action planar direction (x = world X, y = world Z).</summary>
         public Vector2 GetMoveInput()
         {
+            // --- Compute value ---
             Vector2 move = Vector2.zero;
             if (moveAction != null)
                 move = moveAction.ReadValue<Vector2>();
@@ -94,8 +98,10 @@ namespace TitanOrbit.Input
             return move;
         }
 
+        /// <summary>[UNITY] Enables gameplay action map and caches Move/Shoot/Look actions.</summary>
         private void Awake()
         {
+            // --- Unity lifecycle ---
             if (inputActions != null)
             {
                 gameplayMap = inputActions.FindActionMap("Gameplay");
@@ -114,6 +120,7 @@ namespace TitanOrbit.Input
 
         private void OnEnable()
         {
+            // --- Unity lifecycle ---
             if (moveAction != null) moveAction.Enable();
             if (shootAction != null) shootAction.Enable();
             if (lookAction != null) lookAction.Enable();
@@ -124,6 +131,7 @@ namespace TitanOrbit.Input
 
         private void OnDisable()
         {
+            // --- Unity lifecycle ---
             if (moveAction != null) moveAction.Disable();
             if (shootAction != null) shootAction.Disable();
             if (lookAction != null) lookAction.Disable();
@@ -134,6 +142,7 @@ namespace TitanOrbit.Input
 
         private void Update()
         {
+            // --- Per-frame refresh ---
             MobileInputHandler mobile = MobileInputHandler.Resolve();
             bool useTouchUi = mobile != null && mobile.TouchUiActive;
 
@@ -182,6 +191,7 @@ namespace TitanOrbit.Input
         /// </summary>
         public Vector3 GetMouseWorldPosition(UnityEngine.Camera cam)
         {
+            // --- Compute value ---
             if (cam == null) return transform.position;
 
             MobileInputHandler mobile = MobileInputHandler.Resolve();

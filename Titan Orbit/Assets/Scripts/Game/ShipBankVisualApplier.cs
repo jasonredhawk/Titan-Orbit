@@ -35,6 +35,7 @@ namespace TitanOrbit.Game
         /// <summary>Links to ship entity and ensures BankPivot hierarchy exists under the proxy root.</summary>
         public void Bind(Entity shipEntity, float maxBankDegrees = -1f, float bankSmooth = -1f)
         {
+            // --- Bind ---
             _shipEntity = shipEntity;
             if (maxBankDegrees > 0f)
                 maxBankAngle = maxBankDegrees;
@@ -50,6 +51,7 @@ namespace TitanOrbit.Game
         /// </summary>
         void EnsureBankPivotHierarchy()
         {
+            // --- Ensure setup ---
             Transform existing = transform.Find(BankPivotName);
             if (existing != null)
             {
@@ -87,6 +89,7 @@ namespace TitanOrbit.Game
 
         void ResetBankingState()
         {
+            // --- ResetBankingState ---
             _prevBankYawDeg = GetPlanarYawDegrees(transform.rotation);
             _bankYawInitialized = true;
             _cachedBankAngularVelDegPerSec = 0f;
@@ -98,6 +101,7 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
+            // --- Per-frame refresh ---
             if (_shipEntity == Entity.Null || _bankPivot == null)
                 return;
 
@@ -136,6 +140,7 @@ namespace TitanOrbit.Game
         /// <summary>Smooths yaw rate from proxy root rotation (presentation pose).</summary>
         void SampleBankAngularVelocity(float dt)
         {
+            // --- SampleBankAngularVelocity ---
             float yawDeg = GetPlanarYawDegrees(transform.rotation);
             if (!_bankYawInitialized)
             {
@@ -155,6 +160,7 @@ namespace TitanOrbit.Game
 
         void ApplyVisualBanking(float dt)
         {
+            // --- Apply changes ---
             if (!_bankingInitialized)
             {
                 _currentBankAngle = 0f;
@@ -191,6 +197,7 @@ namespace TitanOrbit.Game
 
         static float GetPlanarYawDegrees(Quaternion rotation)
         {
+            // --- Compute value ---
             Vector3 fwd = rotation * Vector3.forward;
             fwd.y = 0f;
             if (fwd.sqrMagnitude < 1e-8f)

@@ -46,6 +46,7 @@ namespace TitanOrbit.Data
         /// </summary>
         public static SumResult SumFromPrefabHierarchy(GameObject prefab, ShipFamilyDefinition family, int shipLevel = 1)
         {
+            // --- SumFromPrefabHierarchy ---
             var result = new SumResult
             {
                 TotalStats = default,
@@ -120,6 +121,7 @@ namespace TitanOrbit.Data
         /// <summary>Maps a baked <see cref="ShipFamilyPowerScoreBreakdown"/> back into ability-stat fields.</summary>
         public static ShipComponentAbilityStats BreakdownToBaseStats(ShipFamilyPowerScoreBreakdown breakdown)
         {
+            // --- BreakdownToBaseStats ---
             return new ShipComponentAbilityStats
             {
                 firePower = breakdown.firePower,

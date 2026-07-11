@@ -41,6 +41,7 @@ namespace TitanOrbit.Services
         /// <summary>Begins Unity Player Accounts OAuth (same-tab redirect). Returns after the browser navigation is requested.</summary>
         public static Task<bool> BeginOAuthInBrowserAsync(bool linkWithExistingAuthSession)
         {
+            // --- BeginOAuthInBrowserAsync ---
             if (!TryLoadUnityPlayerAccountOAuthSettings(out string clientId, out string scope))
             {
                 Debug.LogWarning("[WebGlUnityPlayerAccountBrowser] Missing Unity Player Accounts Client ID (Resources/UnityPlayerAccountSettings).");
@@ -78,6 +79,7 @@ namespace TitanOrbit.Services
 
         public static void ClearPendingOAuthState()
         {
+            // --- Clear state ---
             PlayerPrefs.DeleteKey(PrefPending);
             PlayerPrefs.DeleteKey(PrefVerifier);
             PlayerPrefs.DeleteKey(PrefState);
@@ -89,6 +91,7 @@ namespace TitanOrbit.Services
         /// <summary>Call after UGS init and guest session restore when the page may contain an OAuth <c>code</c> query parameter.</summary>
         public static async Task TryResumeOAuthRedirectIfPresentAsync()
         {
+            // --- Attempt resolution ---
             if (PlayerPrefs.GetInt(PrefPending, 0) == 0)
                 return;
 
@@ -205,6 +208,7 @@ namespace TitanOrbit.Services
 
         static void TryStripOAuthQueryFromBrowserUrl()
         {
+            // --- Attempt resolution ---
             try
             {
                 string clean = BuildRedirectUriFromAbsolute(Application.absoluteURL);
@@ -219,6 +223,7 @@ namespace TitanOrbit.Services
 
         internal static string BuildRedirectUriFromAbsolute(string absoluteUrl)
         {
+            // --- Build data ---
             if (string.IsNullOrEmpty(absoluteUrl))
                 return null;
             try
@@ -234,6 +239,7 @@ namespace TitanOrbit.Services
 
         static string BuildAuthorizationUrl(string clientId, string redirectUri, string scope, string codeChallenge, string state, bool isSigningUp)
         {
+            // --- Build data ---
             var sb = new StringBuilder(512);
             sb.Append(AuthUrl);
             sb.Append("?response_type=code&redirect_uri=").Append(Uri.EscapeDataString(redirectUri));
@@ -250,6 +256,7 @@ namespace TitanOrbit.Services
 
         static bool TryParseOAuthQuery(string absoluteUrl, out string code, out string state, out string error)
         {
+            // --- Attempt resolution ---
             code = null;
             state = null;
             error = null;
@@ -284,6 +291,7 @@ namespace TitanOrbit.Services
 
         static bool TryExtractJsonStringField(string json, string fieldName, out string value)
         {
+            // --- Attempt resolution ---
             value = null;
             if (string.IsNullOrEmpty(json))
                 return false;
@@ -303,6 +311,7 @@ namespace TitanOrbit.Services
 
         static string GenerateCodeVerifier()
         {
+            // --- GenerateCodeVerifier ---
             const int length = 128;
             var bytes = new byte[length];
             using (var rng = RandomNumberGenerator.Create())
@@ -315,6 +324,7 @@ namespace TitanOrbit.Services
 
         static string S256UrlSafeChallenge(string verifier)
         {
+            // --- S256UrlSafeChallenge ---
             byte[] data = Encoding.UTF8.GetBytes(verifier);
             byte[] hash;
             using (var sha = SHA256.Create())
@@ -332,6 +342,7 @@ namespace TitanOrbit.Services
         /// </summary>
         static bool TryLoadUnityPlayerAccountOAuthSettings(out string clientId, out string scope)
         {
+            // --- Attempt resolution ---
             clientId = null;
             scope = null;
             var asset = Resources.Load("UnityPlayerAccountSettings");

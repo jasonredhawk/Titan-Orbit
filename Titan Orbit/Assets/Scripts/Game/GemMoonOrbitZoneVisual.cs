@@ -4,7 +4,11 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Orbit-zone fill around the orbiting gem moon (legacy GemMoonOrbitZoneVisual).</summary>
+    /// <summary>
+    /// [HYBRID] Shapes-based filled disc under the gem moon showing the ship orbit capture zone
+    /// (legacy GemMoonOrbitZoneVisual). Reads radii from <see cref="PlanetGemMoonVisualProxy"/> and
+    /// <see cref="PlanetOrbitMath"/>. ExecuteAlways so zone appears in editor scene view.
+    /// </summary>
     [ExecuteAlways]
     public class GemMoonOrbitZoneVisual : ImmediateModeShapeDrawer
     {
@@ -19,11 +23,13 @@ namespace TitanOrbit.Game
 
         PlanetGemMoonVisualProxy _moon;
 
+        /// <summary>Called when moon proxy spawns — supplies planet size/level for ring radii.</summary>
         public void Configure(PlanetGemMoonVisualProxy moon)
         {
             _moon = moon;
         }
 
+        /// <summary>Idempotent attach of orbit zone child on moon visual root.</summary>
         public static GemMoonOrbitZoneVisual EnsureOnMoonRoot(Transform moonRoot, PlanetGemMoonVisualProxy moon)
         {
             Transform existing = moonRoot.Find(MoonOrbitZoneName);
@@ -56,11 +62,15 @@ namespace TitanOrbit.Game
             base.OnEnable();
         }
 
+        /// <summary>
+        /// [HYBRID] Shapes draw pass — filled annulus under moon showing ship orbit capture shell.
+        /// </summary>
         public override void DrawShapes(Camera cam)
         {
             if (!drawOrbitZoneFill || _moon == null)
                 return;
 
+            // --- Radii from moon proxy (local space) ---
             float outerLocal = _moon.MoonVisualShellOuterRadiusLocal;
             if (outerLocal <= 0.0001f)
                 return;

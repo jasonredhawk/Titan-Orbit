@@ -25,6 +25,7 @@ namespace TitanOrbit.UI
         
         private void Start()
         {
+            // --- Unity lifecycle ---
             if (attackButton != null)
             {
                 attackButton.onClick.RemoveAllListeners(); // Clear any existing listeners
@@ -57,6 +58,7 @@ namespace TitanOrbit.UI
         
         public void Show(Vector2 screenPosition, System.Action<MinimapMarkerKind> callback)
         {
+            // --- Show ---
             Debug.Log($"MarkerPlacementMenu.Show called at screen pos: {screenPosition}");
             
             onMarkerSelected = callback;
@@ -218,6 +220,7 @@ namespace TitanOrbit.UI
         
         private void OnMarkerSelected(MinimapMarkerKind markerType)
         {
+            // --- OnMarkerSelected ---
             Debug.Log($"OnMarkerSelected called with type: {markerType}");
             if (onMarkerSelected != null)
             {
@@ -233,6 +236,7 @@ namespace TitanOrbit.UI
         
         private void Update()
         {
+            // --- Per-frame refresh ---
             if (!gameObject.activeSelf) return; // Don't process if menu is hidden
             
             // Don't hide immediately after showing (prevent immediate dismissal from the click that opened it)
@@ -261,6 +265,7 @@ namespace TitanOrbit.UI
             // Touch input (mobile) - new Input System
             else if (Touchscreen.current != null && Touchscreen.current.touches.Count > 0)
             {
+                // --- if ---
                 var touch = Touchscreen.current.touches[0];
                 if (touch.press.wasPressedThisFrame)
                 {

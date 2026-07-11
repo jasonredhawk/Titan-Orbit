@@ -9,9 +9,11 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server-only team assignment and player ship spawn. Handles <see cref="RequestTeamCommand"/>
-    /// RPCs from clients: validates roster caps, spawns ship ghost, replies with
-    /// <see cref="TeamChoiceResultRpc"/>. Paired with <see cref="TeamChoiceResultClientSystem"/>.
+    /// [NETCODE] Server-only team assignment and player ship spawn. Handles
+    /// <see cref="RequestTeamCommand"/> RPCs from clients: validates roster caps, spawns ship ghost,
+    /// replies with <see cref="TeamChoiceResultRpc"/>. Sets CommandTarget on the connection so NetCode
+    /// routes input to the new ship. Paired with <see cref="TeamChoiceResultClientSystem"/>.
+    /// World: ServerSimulation. Group: SimulationSystemGroup.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -22,11 +24,15 @@ namespace TitanOrbit.ECS
             state.RequireForUpdate<TeamStateSingleton>();
         }
 
+        /// <summary>
+        /// [NETCODE] Processes pending RequestTeamCommand RPCs: assign team, spawn ship, send result RPC.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             var em = state.EntityManager;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
+            // --- Drain team-pick RPC queue ---
             // [NETCODE] ReceiveRpcCommandRequest pairs each RPC entity with its source connection.
             foreach (var (cmd, req, entity) in SystemAPI.Query<RefRO<RequestTeamCommand>, RefRO<ReceiveRpcCommandRequest>>().WithEntityAccess())
             {
@@ -71,6 +77,7 @@ namespace TitanOrbit.ECS
             ecb.Dispose();
         }
 
+        /// <summary>[NETCODE] True if this network id already owns a ship ghost (prevents double spawn).</summary>
         bool HasShipForNetworkId(ref SystemState state, int networkId)
         {
             if (networkId == 0)
@@ -85,6 +92,9 @@ namespace TitanOrbit.ECS
             return false;
         }
 
+        /// <summary>
+        /// [TITAN-ORBIT] Validates team choice against ActiveTeamCount and MaxPlayersPerTeam cap.
+        /// </summary>
         static bool TryAssignTeam(ref TeamStateSingleton team, TeamId requested, out FixedString128Bytes message)
         {
             message = default;
@@ -105,6 +115,7 @@ namespace TitanOrbit.ECS
             return true;
         }
 
+        /// <summary>[TITAN-ORBIT] Reads per-team player count from TeamStateSingleton.</summary>
         static int GetTeamCount(TeamStateSingleton team, TeamId t)
         {
             switch (t)
@@ -118,6 +129,7 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>[TITAN-ORBIT] Writes per-team player count after successful assignment.</summary>
         static void SetTeamCount(ref TeamStateSingleton team, TeamId t, int value)
         {
             switch (t)
@@ -130,11 +142,15 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>
+        /// [NETCODE] Instantiates ship prefab, sets team/state, assigns GhostOwner and CommandTarget.
+        /// </summary>
         bool TrySpawnPlayerShip(ref SystemState state, EntityManager em, EntityCommandBuffer ecb, Entity connection, int networkId, TeamId team)
         {
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Ship == Entity.Null)
                 return false;
 
+            // --- Resolve spawn position near home planet from map layout ---
             float3 spawnPos = float3.zero;
             if (SystemAPI.TryGetSingletonBuffer<MapLayoutEntryElement>(out var layout))
             {

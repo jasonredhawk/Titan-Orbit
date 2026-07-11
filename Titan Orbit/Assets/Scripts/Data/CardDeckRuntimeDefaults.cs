@@ -5,17 +5,24 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Procedural <see cref="CardData"/> used when a <see cref="ShipFamilyDefinition"/> has no <see cref="CardDeckDefinition"/> assigned.
-    /// Card IDs are prefixed by family so different families do not collide.
+    /// Procedural <see cref="CardData"/> factory when a <see cref="ShipFamilyDefinition"/> has no
+    /// <see cref="CardDeckDefinition"/> assigned. Card IDs are prefixed by family so different families
+    /// do not collide in save data. Numbers come from <see cref="CardDeckBalance"/> — same formulas as
+    /// editor-generated assets and <see cref="CardDataRuntimeRestore"/>.
     /// </summary>
     public static class CardDeckRuntimeDefaults
     {
+        /// <summary>
+        /// Builds the full Astro Eagle-style deck (7 levels × tiered rarities + single-rarity uniques).
+        /// Instances are runtime-only ScriptableObjects — not saved to disk.
+        /// </summary>
         public static List<CardData> CreateProceduralDeck(string familyIdForCardPrefix)
         {
             string prefix = SanitizeCardIdPrefix(familyIdForCardPrefix);
             var list = new List<CardData>();
             int id = 0;
 
+            // Local helper — configures one procedural card row and appends to list.
             CardData Add(string name, string desc, int level, int rar, SlotType slotType, float dmgMul = 1f, float gemAdd = 0f, float energyRegenAdd = 0f, float energyCapAdd = 0f, float healthAdd = 0f, float healthRegenAdd = 0f, float moveAdd = 0f, float rotAdd = 0f, float bulletSpeedMul = 1f, float miningAdd = 0f, float peopleAdd = 0f, float gemDepositSpeedMul = 1f, float peopleTransferSpeedMul = 1f)
             {
                 var c = ScriptableObject.CreateInstance<CardData>();
@@ -47,6 +54,7 @@ namespace TitanOrbit.Data
 
             string[] rn = { "", "Common", "Uncommon", "Rare", "Epic", "Legendary" };
 
+            // --- Tiered cards: levels 1–7, rarities 1–4 (Common through Epic) ---
             for (int L = 1; L <= 7; L++)
             {
                 for (int r = 1; r <= 4; r++)
@@ -68,6 +76,7 @@ namespace TitanOrbit.Data
                     Add($"Transit Uplink {L} ({rn[r]})", $"+{(qolMul - 1f) * 100f:F1}% people transfer speed.", L, r, SlotType.Cargo, peopleTransferSpeedMul: qolMul);
                 }
 
+                // --- Single-rarity uniques per level (Afterburner, Gyro, etc.) ---
                 Add($"Afterburner {L}", $"+{CardDeckBalance.AfterburnerMoveAdd(L):F2} thrust.", L, 3, SlotType.Ship, moveAdd: CardDeckBalance.AfterburnerMoveAdd(L));
                 Add($"Gyro Stabilizer {L}", $"+{CardDeckBalance.GyroRotationAdd(L):F0} turn rate.", L, 2, SlotType.Ship, rotAdd: CardDeckBalance.GyroRotationAdd(L));
                 Add($"Regen Gel {L}", $"+{CardDeckBalance.RegenGelHealthRegenAdd(L):F3} hull/sec.", L, 2, SlotType.Ship, healthRegenAdd: CardDeckBalance.RegenGelHealthRegenAdd(L));
@@ -82,6 +91,7 @@ namespace TitanOrbit.Data
             return list;
         }
 
+        /// <summary>Strips non-alphanumeric characters from family id for safe cardId prefix.</summary>
         private static string SanitizeCardIdPrefix(string familyId)
         {
             if (string.IsNullOrWhiteSpace(familyId)) return "Card";

@@ -18,8 +18,10 @@ namespace TitanOrbit.ECS.Editor
             EditorApplication.delayCall += TryPromptSetup;
         }
 
+        /// <summary>Shows one-time setup dialog on SampleScene when SubScene is missing.</summary>
         static void TryPromptSetup()
         {
+            // --- One-time gate: prefs, scene name, existing SubScene ---
             if (EditorPrefs.GetBool(PrefKey, false))
                 return;
             if (EditorSceneManager.GetActiveScene().name != "SampleScene")

@@ -18,6 +18,7 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
+            // --- System OnUpdate ---
             var em = state.EntityManager;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 

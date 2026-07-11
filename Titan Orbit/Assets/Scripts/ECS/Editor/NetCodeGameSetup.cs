@@ -39,6 +39,7 @@ namespace TitanOrbit.ECS.Editor
         [MenuItem("Titan Orbit/Create Bullet VFX Bank")]
         public static void CreateBulletVfxBankMenu()
         {
+            // --- Create instance ---
             var bank = BulletVfxBankSetup.EnsureAsset();
             if (bank != null)
                 Debug.Log($"[BulletVfxBankSetup] Bullet VFX bank ready at {DefaultBulletVfxBankPath}");
@@ -47,6 +48,7 @@ namespace TitanOrbit.ECS.Editor
         [MenuItem("Titan Orbit/Setup NetCode Game (Full)")]
         public static void SetupActiveScene()
         {
+            // --- SetupActiveScene ---
             EnsureGhostPrefabs();
             var subSceneAsset = EnsureGameplaySubScene();
             DisableLegacyNgoObjects();
@@ -65,6 +67,7 @@ namespace TitanOrbit.ECS.Editor
         [MenuItem("Titan Orbit/Configure Multiplayer For Local Play")]
         public static void ConfigureMultiplayerForLocalPlay()
         {
+            // --- ConfigureMultiplayerForLocalPlay ---
             ApplyLocalPlayNetCodePrefs();
             TitanOrbitMultiplayerConfigEditor.SetLocalPlayUiEnabled(true);
 
@@ -85,6 +88,7 @@ namespace TitanOrbit.ECS.Editor
         [MenuItem("Titan Orbit/Configure Multiplayer For Dedicated Server")]
         public static void ConfigureMultiplayerForDedicatedServer()
         {
+            // --- ConfigureMultiplayerForDedicatedServer ---
             ApplyDedicatedJoinNetCodePrefs();
             TitanOrbitMultiplayerConfigEditor.SetLocalPlayUiEnabled(false);
 
@@ -111,6 +115,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void ApplyLocalPlayNetCodePrefs()
         {
+            // --- Apply changes ---
             MultiplayerPlayModePreferences.RequestedPlayType = ClientServerBootstrap.PlayType.ClientAndServer;
             MultiplayerPlayModePreferences.SimulateDedicatedServer = false;
             MultiplayerPlayModePreferences.RequestedNumThinClients = 0;
@@ -122,6 +127,7 @@ namespace TitanOrbit.ECS.Editor
         /// <summary>Editor client-only: join remote dedicated matches via UGS + Relay (no local ServerWorld).</summary>
         public static void ApplyDedicatedJoinNetCodePrefs()
         {
+            // --- Apply changes ---
             MultiplayerPlayModePreferences.RequestedPlayType = ClientServerBootstrap.PlayType.Client;
             MultiplayerPlayModePreferences.SimulateDedicatedServer = false;
             MultiplayerPlayModePreferences.RequestedNumThinClients = 0;
@@ -132,6 +138,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void EnsureGhostPrefabs()
         {
+            // --- Ensure setup ---
             if (!File.Exists(Path.Combine(Application.dataPath, "Prefabs/ECS/StarshipGhost.prefab")) ||
                 !File.Exists(Path.Combine(Application.dataPath, "Prefabs/ECS/PeopleTransportGhost.prefab")))
                 GhostPrefabCreator.CreateGhostPrefabs();
@@ -139,6 +146,7 @@ namespace TitanOrbit.ECS.Editor
 
         static SceneAsset EnsureGameplaySubScene()
         {
+            // --- Ensure setup ---
             GhostPrefabCreator.EnsureMapGenerationSettingsAsset();
 
             if (!File.Exists(SubScenePath))
@@ -158,6 +166,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void EnsureGameplaySubSceneReference(SceneAsset subSceneAsset)
         {
+            // --- Ensure setup ---
             var existing = Object.FindAnyObjectByType<SubScene>();
             GameObject go;
             if (existing != null)
@@ -177,6 +186,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void EnsureBootstrapObjects()
         {
+            // --- Ensure setup ---
             var root = GameObject.Find("NceGameRoot") ?? new GameObject("NceGameRoot");
 
             if (root.GetComponent<TitanOrbitSessionManager>() == null)
@@ -237,6 +247,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void DisableLegacyNgoObjects()
         {
+            // --- DisableLegacyNgoObjects ---
             DisableIfExists("NetworkManager");
             DisableIfExists("MapGenerator");
 
@@ -275,6 +286,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void DisableIfExists(string objectName)
         {
+            // --- DisableIfExists ---
             var go = GameObject.Find(objectName);
             if (go != null)
                 go.SetActive(false);
@@ -282,6 +294,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void WireEcsWorldVisualizer(GameObject root)
         {
+            // --- WireEcsWorldVisualizer ---
             var visualizer = root.GetComponent<EcsWorldVisualizer>();
             if (visualizer == null)
                 return;
@@ -342,6 +355,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void WireMapGenerationSettingsLoader(GameObject root)
         {
+            // --- WireMapGenerationSettingsLoader ---
             var loader = root.GetComponent<MapGenerationSettingsLoader>();
             if (loader == null)
                 loader = root.AddComponent<MapGenerationSettingsLoader>();
@@ -360,6 +374,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void WireCamera()
         {
+            // --- WireCamera ---
             var cam = UnityEngine.Camera.main;
             if (cam == null)
             {
@@ -381,6 +396,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void WireUiFlow()
         {
+            // --- WireUiFlow ---
             var flow = Object.FindAnyObjectByType<NceGameFlowController>();
             if (flow == null)
             {
@@ -435,6 +451,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void AssignPanel(SerializedObject so, string property, string objectName)
         {
+            // --- AssignPanel ---
             var go = GameObject.Find(objectName);
             if (go == null && objectName == "LobbyPanel")
                 go = FindLobbyPanelRoot();
@@ -452,6 +469,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void AssignButton(SerializedObject so, string property, Button button)
         {
+            // --- AssignButton ---
             if (button == null) return;
             var prop = so.FindProperty(property);
             if (prop != null)
@@ -466,6 +484,7 @@ namespace TitanOrbit.ECS.Editor
 
         static Button FindJoinButtonForTeam(string letter)
         {
+            // --- FindJoinButtonForTeam ---
             var panels = Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
             foreach (var t in panels)
             {

@@ -16,9 +16,11 @@ namespace TitanOrbit.ECS.Editor
     {
         const string MapGenerationSettingsPath = "Assets/Data/MapGenerationSettings.asset";
 
+        /// <summary>Menu entry — creates all ECS ghost prefabs and the registry asset.</summary>
         [MenuItem("Titan Orbit/Create Ghost Prefabs")]
         public static void CreateGhostPrefabs()
         {
+            // --- Create instance ---
             EnsureDirectory("Assets/Prefabs/ECS");
             EnsureDirectory("Assets/Data");
             EnsureMapGenerationSettingsAsset();
@@ -33,8 +35,10 @@ namespace TitanOrbit.ECS.Editor
             Debug.Log("[GhostPrefabCreator] Created ECS ghost prefabs under Assets/Prefabs/ECS/");
         }
 
+        /// <summary>Creates nested AssetDatabase folders if missing.</summary>
         static void EnsureDirectory(string path)
         {
+            // --- Ensure setup ---
             if (!AssetDatabase.IsValidFolder(path))
             {
                 var parts = path.Split('/');
@@ -51,6 +55,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void AddGhostRootComponents(GameObject go, bool hasOwner = true)
         {
+            // --- AddGhostRootComponents ---
             if (go.GetComponent<LinkedEntityGroupAuthoring>() == null)
                 go.AddComponent<LinkedEntityGroupAuthoring>();
             var ghost = go.AddComponent<GhostAuthoringComponent>();
@@ -59,6 +64,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void CreatePeopleTransportPrefab()
         {
+            // --- Create instance ---
             var go = new GameObject("PeopleTransportGhost");
             AddGhostRootComponents(go, hasOwner: false);
             go.AddComponent<TitanOrbit.ECS.Authoring.PeopleTransportGhostAuthoring>();
@@ -68,6 +74,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void CreateShipPrefab()
         {
+            // --- Create instance ---
             var go = new GameObject("StarshipGhost");
             AddGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.StarshipGhostAuthoring>();
@@ -77,6 +84,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void CreatePlanetPrefab()
         {
+            // --- Create instance ---
             var go = new GameObject("PlanetGhost");
             AddGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.PlanetGhostAuthoring>();
@@ -86,6 +94,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void CreateAsteroidPrefab()
         {
+            // --- Create instance ---
             var go = new GameObject("AsteroidGhost");
             AddGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.AsteroidGhostAuthoring>();
@@ -95,6 +104,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void CreateGemPrefab()
         {
+            // --- Create instance ---
             var go = new GameObject("GemGhost");
             AddGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.GemGhostAuthoring>();
@@ -104,6 +114,7 @@ namespace TitanOrbit.ECS.Editor
 
         static void CreateRegistryPrefab()
         {
+            // --- Create instance ---
             var ship = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/StarshipGhost.prefab");
             var planet = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/PlanetGhost.prefab");
             var asteroid = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/AsteroidGhost.prefab");
@@ -124,6 +135,7 @@ namespace TitanOrbit.ECS.Editor
         [MenuItem("Titan Orbit/Select Map Generation Settings Asset")]
         public static void SelectMapGenerationSettingsAsset()
         {
+            // --- SelectMapGenerationSettingsAsset ---
             var asset = EnsureMapGenerationSettingsAsset();
             Selection.activeObject = asset;
             EditorGUIUtility.PingObject(asset);
@@ -132,6 +144,7 @@ namespace TitanOrbit.ECS.Editor
         [MenuItem("Titan Orbit/Create Map Generation Settings Asset")]
         public static void CreateMapGenerationSettingsMenuItem()
         {
+            // --- Create instance ---
             EnsureDirectory("Assets/Data");
             var asset = EnsureMapGenerationSettingsAsset();
             Selection.activeObject = asset;
@@ -141,6 +154,7 @@ namespace TitanOrbit.ECS.Editor
 
         public static MapGenerationSettings EnsureMapGenerationSettingsAsset()
         {
+            // --- Ensure setup ---
             var existing = AssetDatabase.LoadAssetAtPath<MapGenerationSettings>(MapGenerationSettingsPath);
             if (existing != null)
                 return existing;
