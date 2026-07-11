@@ -10,19 +10,31 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Join Game screen: lists dedicated UGS lobbies and connects via Relay.</summary>
+    /// <summary>
+    /// [HYBRID] Join Game screen — programmatic UGUI overlay listing Unity Gaming Services (UGS) dedicated
+    /// lobbies and connecting the client via Relay. Opened from <see cref="NceGameFlowController"/> main menu.
+    /// Client only; dedicated server builds have no canvas. Visual layout mirrors the pre-ECS lobby browser panel.
+    /// </summary>
     public class JoinGameBrowserController : MonoBehaviour
     {
         const float ContentWidth = 540f;
-        const float RowHeight = 72f;
+        const float RowHeight = 60f;
         const float AutoRefreshIntervalSeconds = 45f;
         const float CacheGraceSeconds = 180f;
+        const float RowDurationRefreshSeconds = 1f;
         const int RequestMatchPollAttempts = 18;
         const int RequestMatchPollIntervalMs = 5000;
+
+        static readonly Color RowNormalColor = new Color(0.11f, 0.17f, 0.28f, 0.98f);
+        static readonly Color RowSelectedColor = new Color(0.18f, 0.38f, 0.62f, 0.98f);
+        static readonly Color MutedLabelColor = new Color(0.68f, 0.78f, 0.9f, 0.92f);
+        static readonly Color DurationLabelColor = new Color(0.62f, 0.74f, 0.86f, 0.88f);
 
         [SerializeField] GameObject mainMenuPanel;
 
         GameObject _screenRoot;
+        GameObject _lobbyBrowserRoot;
+        GameObject _lobbyRowPrefab;
         Transform _listContainer;
         TextMeshProUGUI _statusText;
         Button _joinButton;
@@ -31,13 +43,17 @@ namespace TitanOrbit.Game
 
         readonly List<TitanOrbitLobbyService.LobbySummary> _cached = new List<TitanOrbitLobbyService.LobbySummary>();
         readonly List<GameObject> _rowObjects = new List<GameObject>();
+        readonly List<Image> _rowBackgrounds = new List<Image>();
+        readonly List<TextMeshProUGUI> _rowDurationLabels = new List<TextMeshProUGUI>();
         string _selectedLobbyId;
         int _selectedRowIndex = -1;
         bool _refreshInProgress;
         bool _joinInProgress;
         bool _requestInProgress;
+        bool _autoRequestMatchSent;
         float _lastSuccessfulFetch = -1f;
         float _autoRefreshTimer;
+        float _durationRefreshTimer;
 
         ScrollRect _lobbyScroll;
 
@@ -61,6 +77,7 @@ namespace TitanOrbit.Game
             _screenRoot.SetActive(true);
             _screenRoot.transform.SetAsLastSibling();
             _autoRefreshTimer = 0f;
+            _autoRequestMatchSent = false;
             Debug.Log("[JoinGameBrowser] Opening join browser — refreshing lobby list.");
             _ = ShowAndRefreshAsync();
         }
@@ -284,6 +301,16 @@ namespace TitanOrbit.Game
                 }
 
                 ApplySummaries(fetched, silent);
+
+                if (fetched.Count == 0 &&
+                    kind == TitanOrbitLobbyService.OpenLobbyQueryResultKind.Ok &&
+                    !_autoRequestMatchSent &&
+                    !_requestInProgress)
+                {
+                    _autoRequestMatchSent = true;
+                    Debug.Log("[JoinGameBrowser] No lobbies listed — auto-requesting dedicated match.");
+                    _ = AutoRequestMatchOnceAsync();
+                }
             }
             finally
             {
@@ -523,6 +550,47 @@ namespace TitanOrbit.Game
             return TitanOrbitSessionManager.Instance != null &&
                    TitanOrbitSessionManager.Instance.IsInGame &&
                    EcsGameBridge.IsNetworkInGame();
+        }
+
+        async Task AutoRequestMatchOnceAsync()
+        {
+            // --- AutoRequestMatchOnceAsync ---
+            if (_requestInProgress)
+                return;
+
+            _requestInProgress = true;
+            UpdateRequestButton();
+            SetStatus("No matches listed — asking the dedicated server to publish one…");
+            try
+            {
+                bool ok = await TitanOrbitLobbyService.RequestDedicatedMatchCreationAsync();
+                if (!ok)
+                {
+                    SetStatus("Could not request a match. Tap Request match or Refresh.");
+                    return;
+                }
+
+                for (int attempt = 0; attempt < RequestMatchPollAttempts; attempt++)
+                {
+                    await Task.Delay(RequestMatchPollIntervalMs);
+                    if (!IsVisible)
+                        return;
+
+                    await RefreshAsync(silent: true);
+                    if (_cached.Count > 0)
+                    {
+                        SetStatus("A dedicated match is ready. Select it and tap Join selected.");
+                        return;
+                    }
+                }
+
+                SetStatus("Still waiting for a dedicated match. Tap Request match or Refresh.");
+            }
+            finally
+            {
+                _requestInProgress = false;
+                UpdateRequestButton();
+            }
         }
 
         async Task RequestMatchAsync()

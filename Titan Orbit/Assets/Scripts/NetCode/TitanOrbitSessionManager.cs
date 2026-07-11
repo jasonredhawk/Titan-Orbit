@@ -61,6 +61,11 @@ namespace TitanOrbit.NetCode
         /// <summary>[TITAN-ORBIT] Guard against overlapping RecreateDedicatedMatchAsync calls.</summary>
         bool _recreateDedicatedMatchInProgress;
 
+        /// <summary>[NETCODE] Consecutive UGS heartbeat failures; triggers lobby recreate when empty.</summary>
+        int _consecutiveHeartbeatFailures;
+
+        const int HeartbeatFailureRecreateThreshold = 3;
+
         /// <summary>[NETCODE] True after client reaches NetworkStreamInGame (playable).</summary>
         public bool IsInGame { get; private set; }
 
@@ -907,7 +912,9 @@ namespace TitanOrbit.NetCode
             }
         }
 
-        public async Task<DedicatedMatchRecreateResult> RecreateDedicatedMatchAsync(TitanOrbitServerCommandLine config)
+        public async Task<DedicatedMatchRecreateResult> RecreateDedicatedMatchAsync(
+            TitanOrbitServerCommandLine config,
+            bool forceIsLatest = false)
         {
             if (_recreateDedicatedMatchInProgress)
                 return null;
@@ -916,11 +923,14 @@ namespace TitanOrbit.NetCode
 
             _recreateDedicatedMatchInProgress = true;
             string oldLobbyId = _activeLobbyId;
+            bool publishAsLatest = forceIsLatest || config.IsLatest;
             try
             {
                 var prep = await PrepareDedicatedRelayAsync(config);
                 if (prep == null)
                     return null;
+
+                prep.IsLatest = publishAsLatest;
 
                 var serverWorld = ClientServerBootstrap.ServerWorld;
                 if (serverWorld == null || !serverWorld.IsCreated)
@@ -948,12 +958,13 @@ namespace TitanOrbit.NetCode
                     prep.CreatedAtEpochSeconds,
                     prep.MaxPlayers,
                     prep.ServerListenAddress,
-                    prep.IsLatest,
+                    publishAsLatest,
                     prep.HostAllocationId);
                 if (prep.Lobby == null)
                     return null;
 
                 _activeLobbyId = prep.Lobby.Id;
+                _consecutiveHeartbeatFailures = 0;
                 await CloseLobbyForNewJoinersAsync(oldLobbyId, "empty_match_recreate");
                 try
                 {
@@ -964,12 +975,12 @@ namespace TitanOrbit.NetCode
                     Debug.LogWarning("[TitanOrbitSessionManager] Could not delete old lobby: " + deleteEx.Message);
                 }
 
-                Debug.Log("[TitanOrbitSessionManager] Empty match recreated: " + prep.Lobby.Id);
+                Debug.Log("[TitanOrbitSessionManager] Match recreated: " + prep.Lobby.Id + " isLatest=" + publishAsLatest);
                 return new DedicatedMatchRecreateResult
                 {
                     LobbyId = prep.Lobby.Id,
                     CreatedAtEpochSeconds = prep.CreatedAtEpochSeconds,
-                    IsLatest = prep.IsLatest,
+                    IsLatest = publishAsLatest,
                 };
             }
             finally
@@ -1366,9 +1377,11 @@ namespace TitanOrbit.NetCode
         {
             if (!string.IsNullOrEmpty(_activeLobbyId))
             {
-                Task first = SendHeartbeatAsync();
+                Task<bool> first = SendHeartbeatAsync();
                 while (!first.IsCompleted)
                     yield return null;
+                if (!first.IsFaulted && first.Result)
+                    _consecutiveHeartbeatFailures = 0;
             }
 
             var wait = new WaitForSeconds(15f);
@@ -1376,14 +1389,46 @@ namespace TitanOrbit.NetCode
             {
                 if (!string.IsNullOrEmpty(_activeLobbyId))
                 {
-                    Task heartbeat = SendHeartbeatAsync();
-                    while (!heartbeat.IsCompleted) yield return null;
+                    Task<bool> heartbeat = SendHeartbeatAsync();
+                    while (!heartbeat.IsCompleted)
+                        yield return null;
+
+                    bool heartbeatOk = !heartbeat.IsFaulted && heartbeat.Result;
+                    if (heartbeatOk)
+                    {
+                        _consecutiveHeartbeatFailures = 0;
+                    }
+                    else
+                    {
+                        _consecutiveHeartbeatFailures++;
+                        if (_consecutiveHeartbeatFailures >= HeartbeatFailureRecreateThreshold &&
+                            GetServerConnectedPlayerCount() == 0 &&
+                            !_recreateDedicatedMatchInProgress &&
+                            _serverConfig != null)
+                        {
+                            Debug.LogWarning("[TitanOrbitSessionManager] Heartbeat failed " +
+                                             _consecutiveHeartbeatFailures + " times; recreating lobby.");
+                            DedicatedServerFileLog.Append("heartbeat",
+                                "Recreate after " + _consecutiveHeartbeatFailures + " consecutive failures.");
+                            Task<TitanOrbitSessionManager.DedicatedMatchRecreateResult> recreateTask =
+                                RecreateDedicatedMatchAsync(_serverConfig, forceIsLatest: true);
+                            while (!recreateTask.IsCompleted)
+                                yield return null;
+                            if (!recreateTask.IsFaulted && recreateTask.Result != null)
+                            {
+                                var result = recreateTask.Result;
+                                TitanOrbitDedicatedServerHost.NotifyLobbyReplacedFromSession(
+                                    result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
+                            }
+                        }
+                    }
                 }
+
                 yield return wait;
             }
         }
 
-        async Task SendHeartbeatAsync()
+        async Task<bool> SendHeartbeatAsync()
         {
             try
             {
@@ -1412,10 +1457,13 @@ namespace TitanOrbit.NetCode
                 {
                     TitanOrbitLobbyService.ReleaseLobbyApiGate();
                 }
+
+                return true;
             }
             catch (Exception ex)
             {
                 Debug.LogWarning("[TitanOrbitSessionManager] Heartbeat failed: " + ex.Message);
+                return false;
             }
         }
 

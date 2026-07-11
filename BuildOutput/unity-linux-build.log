@@ -1,0 +1,48 @@
+[Licensing::Module] Trying to connect to existing licensing client channel...
+Built from '6000.4/staging' branch; Version is '6000.4.8f1 (f8b72d3d7343) revision 16299821'; Using compiler version '194234433'; Build Type 'Release'
+OS: 'Windows 11  (10.0.26200) Core' Language: 'en' Physical Memory: 32468 MB
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-jason" at "2026-07-11T12:14:21.1556819Z"
+BatchMode: 1, IsHumanControllingUs: 0, StartBugReporterOnCrash: 0, Is64bit: 1
+System  architecture: x64
+Process architecture: x64
+Date: 2026-07-11T12:14:21Z
+[Licensing::Client] Error: HandshakeResponse reported an error:
+	ResponseCode: 505
+	ResponseStatus: Unsupported protocol version '1.18.1'.
+[Licensing::Module] Error: Failed to handshake to channel: "LicenseClient-jason"
+[Licensing::IpcConnector] LicenseClient-jason channel disconnected successfully.
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-jason-6000.4.8" at "2026-07-11T12:14:22.6524996Z"
+[Licensing::Client] Code 10 while verifying Licensing Client signature (process Id: 61996, path: "C:/Program Files/Unity/Hub/Editor/6000.4.8f1/Editor/Data/Resources/Licensing/Client/Unity.Licensing.Client.exe")
+[Licensing::Module] LicensingClient has failed validation; ignoring
+[Licensing::Client] Handshaking with LicensingClient:
+  Version:                 1.18.1+9fbee8e
+  Session Id:              eb73cc3ea5fc420ab64f0fa9b543b4c4
+  Correlation Id:          69b76f252bdec2440220c968bb022bd0
+  External correlation Id: 7567063553858699095
+  Machine Id:              FlKao7f/1eKuWrUbVjrCaNF9rYc=
+[Licensing::Module] Successfully connected to LicensingClient on channel: "LicenseClient-jason-6000.4.8" (connect: 0.00s, validation: 0.00s, handshake: 0.01s)
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-jason-6000.4.8-notifications" at "2026-07-11T12:14:22.6654873Z"
+[Licensing::Module] Error: Access token is unavailable; failed to update
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] License group:
+  Id: 3573541871960-UnityPersXXXX
+  Product: Unity Personal
+  Type: Assigned
+  Expiration: Unlimited
+[Licensing::Client] Successfully updated license, isAsync: True, time: 0.00
+[Licensing::Client] Successfully resolved entitlement details
+[Licensing::Module] Licensing Background thread has ended after 1.52s
+
+COMMAND LINE ARGUMENTS:
+C:\Program Files\Unity\Hub\Editor\6000.4.8f1\Editor\Unity.exe
+-batchmode
+-quit
+-projectPath
+c:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
+-executeMethod
+TitanOrbit.Editor.Build.TitanOrbitBuildAutomation.BuildHeadlessServerLinux
+-logFile
+c:\Users\jason\Documents\repo\Titan-Orbit\BuildOutput\unity-linux-build.log
+Successfully changed project path to: c:\Users\jason\Documents\repo\Titan-Orbit\Titan Orbit
+C:/Users/jason/Documents/repo/Titan-Orbit/Titan Orbit
+Exiting without the bug reporter. Application will terminate with return code 1

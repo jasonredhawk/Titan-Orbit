@@ -226,6 +226,53 @@ namespace TitanOrbit.NetCode
             return joinable;
         }
 
+        /// <summary>
+        /// [NETCODE] True when UGS lists at least one open, latest, fresh dedicated lobby clients can join.
+        /// Used by dedicated server self-heal and match-request watchdog.
+        /// </summary>
+        public static async Task<bool> QueryAnyJoinableLatestDedicatedLobbyExistsAsync()
+        {
+            // --- QueryAnyJoinableLatestDedicatedLobbyExistsAsync ---
+            var summaries = await QueryOpenLobbiesAsync(
+                latestOnly: true,
+                count: 20,
+                emptyStabilizationAttempt: 0,
+                maxEmptyStabilizationAttemptsOverride: 0);
+            return FilterToJoinableDedicatedLobbies(summaries).Count > 0;
+        }
+
+        /// <summary>
+        /// [NETCODE] Fetches a lobby by id and returns whether <see cref="IsDedicatedLobbyJoinable"/> accepts it.
+        /// </summary>
+        public static async Task<bool> TryIsLobbyJoinableByIdAsync(string lobbyId)
+        {
+            // --- TryIsLobbyJoinableByIdAsync ---
+            if (string.IsNullOrWhiteSpace(lobbyId))
+                return false;
+
+            try
+            {
+                await AcquireLobbyApiGateAsync();
+                try
+                {
+                    Lobby lobby = await WithLobbyApiTimeoutAsync(
+                        LobbyService.Instance.GetLobbyAsync(lobbyId.Trim()),
+                        TimeSpan.FromSeconds(20),
+                        "LobbyService.GetLobbyAsync(self_heal)");
+                    return lobby != null && IsDedicatedLobbyJoinable(lobby, out _);
+                }
+                finally
+                {
+                    ReleaseLobbyApiGate();
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[TitanOrbitLobbyService] TryIsLobbyJoinableByIdAsync failed: " + e.Message);
+                return false;
+            }
+        }
+
         public static bool IsDedicatedLobbyJoinable(Lobby lobby, out string rejectReason)
         {
             // --- IsDedicatedLobbyJoinable ---

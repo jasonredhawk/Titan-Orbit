@@ -21,7 +21,7 @@ ExecStartPre=+/bin/bash -c 'BASE=/home/jason/titanorbit-server/TitanOrbitLinux1;
 ExecStartPre=+/bin/bash -c 'W=/home/jason/titanorbit-server/TitanOrbitLinux1/run_titanorbit_server.sh; [ -x "$W" ] || { echo "FATAL: missing $W — reinstall unit (install_unit_remote.ps1) or redeploy with upload_linux_build_to_gce_openssh.ps1" >&2; exit 1; }'
 # Logs: journalctl -u titanorbit-server -f  (Unity -logFile /dev/stdout via wrapper)
 #   tail -f .../Player.log  (may be empty when using stdout wrapper)
-ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/run_titanorbit_server.sh -batchmode -nographics --titanOrbitDedicated=1 --maxPlayers=60 --serverPort=7777 --relayProtocol=udp --serverListenAddress=0.0.0.0 --isLatest=1 --emptyMatchRecreateSeconds=900 --waitNetworkManagerSeconds=180
+ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/run_titanorbit_server.sh -batchmode -nographics --titanOrbitDedicated=1 --maxPlayers=60 --serverPort=7777 --relayProtocol=udp --serverListenAddress=0.0.0.0 --isLatest=1 --emptyMatchRecreateSeconds=900 --staleLobbyRecreateSeconds=120 --waitNetworkManagerSeconds=180 --serverExecutablePath=/home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer
 Restart=on-failure
 RestartSec=10
 KillSignal=SIGINT

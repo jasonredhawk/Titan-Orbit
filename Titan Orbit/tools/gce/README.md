@@ -116,6 +116,23 @@ command -v ldd >/dev/null && ldd ./TitanOrbitServer 2>/dev/null | head -n 40
 command -v ldd >/dev/null && ldd ./TitanOrbitServer.x86_64 2>/dev/null | head -n 40
 ```
 
+### Dedicated match availability (UGS lobbies)
+
+The headless server publishes **Unity Gaming Services (UGS) lobbies** so clients can browse and join. **`TitanOrbitDedicatedServerHost`** keeps matches available:
+
+| Trigger | When | Action |
+|---------|------|--------|
+| Boot | systemd starts | Relay + lobby (`IsLatest=1`, `IsOpen=1`) + heartbeat every 15s |
+| Empty recreate | 0 players for `--emptyMatchRecreateSeconds` (900s on GCE) | In-process new Relay + lobby |
+| Stale lobby | Our lobby closed or heartbeat-stale while empty (`--staleLobbyRecreateSeconds=120`) | In-process recreate as latest |
+| Self-heal | No joinable `IsLatest` lobby in UGS while this server is empty | Immediate in-process recreate |
+| Age / full rotation | Match age ≥ 30 min with players, or lobby full | **`SpawnNextMatch`** — sibling OS process (not managed by systemd) |
+| Match request | Client publishes wake lobby when browse is empty | Idle server recreates immediately |
+
+**Rotation spawns sibling processes** (`SpawnNextMatch`) using `--serverExecutablePath` from **`titanorbit-server.service`**. Those children are **not** restarted by systemd; if a successor dies after handoff, the **self-heal** and **heartbeat-failure** paths recreate a joinable lobby from the main process when it is empty.
+
+**If Join Game shows no matches:** check `journalctl -u titanorbit-server -f` for `Dedicated host loops started`, `Heartbeat failed`, `Self-heal`, or `SpawnNextMatch`. Stale ghost lobbies in UGS are filtered client-side after **45s** without heartbeat.
+
 **Run the same command as `ExecStart` in the foreground** (after install, **`systemctl cat titanorbit-server`** should show **`run_titanorbit_server.sh`** as the entry point). You should see the same exit code and often a clearer last line on the terminal.
 
 **Interpretation:** If **`Player.log`** ends with a **managed** exception or **`DedicatedMatchServerBootstrap`** / **`Application.Quit`**, fix that path in the game or configuration (UGS keys, scene list, prefabs). If the log stops right after engine lines or mentions **missing `.so`**, **`SIGSEGV`**, or **Burst / native plugin** load errors, treat it as a **Linux build / deploy / `glibc`** issue (`ldd`, full tarball redeploy, VM image compatibility).

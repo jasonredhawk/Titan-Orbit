@@ -15,6 +15,8 @@ namespace TitanOrbit.NetCode
         public const ushort DefaultServerPort = 7777;
         public const int DefaultEmptyMatchRecreateSeconds = 15 * 60;
         public const int DefaultAgeThresholdSeconds = 30 * 60;
+        /// <summary>When our lobby is closed or heartbeat-stale and empty, recreate after this many seconds (faster than empty idle refresh).</summary>
+        public const int DefaultStaleLobbyRecreateSeconds = 120;
 
         public int MaxPlayers { get; private set; } = DefaultMaxPlayers;
         public ushort ServerPort { get; private set; } = DefaultServerPort;
@@ -23,6 +25,10 @@ namespace TitanOrbit.NetCode
         public bool IsLatest { get; private set; } = true;
         public int EmptyMatchRecreateSeconds { get; private set; } = DefaultEmptyMatchRecreateSeconds;
         public long AgeThresholdSeconds { get; private set; } = DefaultAgeThresholdSeconds;
+        /// <summary>Fast recreate when our published lobby is closed or heartbeat-stale while the server is empty.</summary>
+        public int StaleLobbyRecreateSeconds { get; private set; } = DefaultStaleLobbyRecreateSeconds;
+        /// <summary>Optional absolute path to headless binary for <c>SpawnNextMatch</c> (GCE when auto-resolve fails).</summary>
+        public string ServerExecutablePath { get; private set; }
         public int BootMaxAttempts { get; private set; } = 15;
         public int BootRetryDelaySeconds { get; private set; } = 5;
         public int WaitNetworkManagerSeconds { get; private set; } = 120;
@@ -41,6 +47,9 @@ namespace TitanOrbit.NetCode
             config.IsLatest = GetArgBool("isLatest", true);
             config.EmptyMatchRecreateSeconds = Mathf.Max(60, GetArgInt("emptyMatchRecreateSeconds", DefaultEmptyMatchRecreateSeconds));
             config.AgeThresholdSeconds = Mathf.Max(60, GetArgInt("ageThresholdSeconds", DefaultAgeThresholdSeconds));
+            config.StaleLobbyRecreateSeconds = Mathf.Max(30, GetArgInt("staleLobbyRecreateSeconds", DefaultStaleLobbyRecreateSeconds));
+            string exePath = GetArgString("serverExecutablePath", null);
+            config.ServerExecutablePath = string.IsNullOrWhiteSpace(exePath) ? null : exePath.Trim();
             config.BootMaxAttempts = Mathf.Max(1, GetArgInt("bootMaxAttempts", 15));
             config.BootRetryDelaySeconds = Mathf.Max(1, GetArgInt("bootRetryDelaySeconds", 5));
             config.WaitNetworkManagerSeconds = Mathf.Max(10, GetArgInt("waitNetworkManagerSeconds", 120));

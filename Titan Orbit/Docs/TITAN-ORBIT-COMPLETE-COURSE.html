@@ -1,0 +1,2755 @@
+<!DOCTYPE html><html><head>
+      <title>TITAN-ORBIT-COMPLETE-COURSE</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      
+      <link rel="stylesheet" href="file:///c:\Users\jason\.vscode\extensions\shd101wyy.markdown-preview-enhanced-0.8.30\crossnote\dependencies\katex\katex.min.css">
+      
+      
+      
+      <script type="text/javascript" src="file:///c:\Users\jason\.vscode\extensions\shd101wyy.markdown-preview-enhanced-0.8.30\crossnote\dependencies\mermaid\mermaid.min.js" charset="UTF-8"></script>
+      
+      
+      
+      <style>
+      code[class*=language-],pre[class*=language-]{color:#333;background:0 0;font-family:Consolas,"Liberation Mono",Menlo,Courier,monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.4;-moz-tab-size:8;-o-tab-size:8;tab-size:8;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none}pre[class*=language-]{padding:.8em;overflow:auto;border-radius:3px;background:#f5f5f5}:not(pre)>code[class*=language-]{padding:.1em;border-radius:.3em;white-space:normal;background:#f5f5f5}.token.blockquote,.token.comment{color:#969896}.token.cdata{color:#183691}.token.doctype,.token.macro.property,.token.punctuation,.token.variable{color:#333}.token.builtin,.token.important,.token.keyword,.token.operator,.token.rule{color:#a71d5d}.token.attr-value,.token.regex,.token.string,.token.url{color:#183691}.token.atrule,.token.boolean,.token.code,.token.command,.token.constant,.token.entity,.token.number,.token.property,.token.symbol{color:#0086b3}.token.prolog,.token.selector,.token.tag{color:#63a35c}.token.attr-name,.token.class,.token.class-name,.token.function,.token.id,.token.namespace,.token.pseudo-class,.token.pseudo-element,.token.url-reference .token.variable{color:#795da3}.token.entity{cursor:help}.token.title,.token.title .token.punctuation{font-weight:700;color:#1d3e81}.token.list{color:#ed6a43}.token.inserted{background-color:#eaffea;color:#55a532}.token.deleted{background-color:#ffecec;color:#bd2c00}.token.bold{font-weight:700}.token.italic{font-style:italic}.language-json .token.property{color:#183691}.language-markup .token.tag .token.punctuation{color:#333}.language-css .token.function,code.language-css{color:#0086b3}.language-yaml .token.atrule{color:#63a35c}code.language-yaml{color:#183691}.language-ruby .token.function{color:#333}.language-markdown .token.url{color:#795da3}.language-makefile .token.symbol{color:#795da3}.language-makefile .token.variable{color:#183691}.language-makefile .token.builtin{color:#0086b3}.language-bash .token.keyword{color:#0086b3}pre[data-line]{position:relative;padding:1em 0 1em 3em}pre[data-line] .line-highlight-wrapper{position:absolute;top:0;left:0;background-color:transparent;display:block;width:100%}pre[data-line] .line-highlight{position:absolute;left:0;right:0;padding:inherit 0;margin-top:1em;background:hsla(24,20%,50%,.08);background:linear-gradient(to right,hsla(24,20%,50%,.1) 70%,hsla(24,20%,50%,0));pointer-events:none;line-height:inherit;white-space:pre}pre[data-line] .line-highlight:before,pre[data-line] .line-highlight[data-end]:after{content:attr(data-start);position:absolute;top:.4em;left:.6em;min-width:1em;padding:0 .5em;background-color:hsla(24,20%,50%,.4);color:#f4f1ef;font:bold 65%/1.5 sans-serif;text-align:center;vertical-align:.3em;border-radius:999px;text-shadow:none;box-shadow:0 1px #fff}pre[data-line] .line-highlight[data-end]:after{content:attr(data-end);top:auto;bottom:.4em}html body{font-family:'Helvetica Neue',Helvetica,'Segoe UI',Arial,freesans,sans-serif;font-size:16px;line-height:1.6;color:#333;background-color:#fff;overflow:initial;box-sizing:border-box;word-wrap:break-word}html body>:first-child{margin-top:0}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{line-height:1.2;margin-top:1em;margin-bottom:16px;color:#000}html body h1{font-size:2.25em;font-weight:300;padding-bottom:.3em}html body h2{font-size:1.75em;font-weight:400;padding-bottom:.3em}html body h3{font-size:1.5em;font-weight:500}html body h4{font-size:1.25em;font-weight:600}html body h5{font-size:1.1em;font-weight:600}html body h6{font-size:1em;font-weight:600}html body h1,html body h2,html body h3,html body h4,html body h5{font-weight:600}html body h5{font-size:1em}html body h6{color:#5c5c5c}html body strong{color:#000}html body del{color:#5c5c5c}html body a:not([href]){color:inherit;text-decoration:none}html body a{color:#08c;text-decoration:none}html body a:hover{color:#00a3f5;text-decoration:none}html body img{max-width:100%}html body>p{margin-top:0;margin-bottom:16px;word-wrap:break-word}html body>ol,html body>ul{margin-bottom:16px}html body ol,html body ul{padding-left:2em}html body ol.no-list,html body ul.no-list{padding:0;list-style-type:none}html body ol ol,html body ol ul,html body ul ol,html body ul ul{margin-top:0;margin-bottom:0}html body li{margin-bottom:0}html body li.task-list-item{list-style:none}html body li>p{margin-top:0;margin-bottom:0}html body .task-list-item-checkbox{margin:0 .2em .25em -1.8em;vertical-align:middle}html body .task-list-item-checkbox:hover{cursor:pointer}html body blockquote{margin:16px 0;font-size:inherit;padding:0 15px;color:#5c5c5c;background-color:#f0f0f0;border-left:4px solid #d6d6d6}html body blockquote>:first-child{margin-top:0}html body blockquote>:last-child{margin-bottom:0}html body hr{height:4px;margin:32px 0;background-color:#d6d6d6;border:0 none}html body table{margin:10px 0 15px 0;border-collapse:collapse;border-spacing:0;display:block;width:100%;overflow:auto;word-break:normal;word-break:keep-all}html body table th{font-weight:700;color:#000}html body table td,html body table th{border:1px solid #d6d6d6;padding:6px 13px}html body dl{padding:0}html body dl dt{padding:0;margin-top:16px;font-size:1em;font-style:italic;font-weight:700}html body dl dd{padding:0 16px;margin-bottom:16px}html body code{font-family:Menlo,Monaco,Consolas,'Courier New',monospace;font-size:.85em;color:#000;background-color:#f0f0f0;border-radius:3px;padding:.2em 0}html body code::after,html body code::before{letter-spacing:-.2em;content:'\00a0'}html body pre>code{padding:0;margin:0;word-break:normal;white-space:pre;background:0 0;border:0}html body .highlight{margin-bottom:16px}html body .highlight pre,html body pre{padding:1em;overflow:auto;line-height:1.45;border:#d6d6d6;border-radius:3px}html body .highlight pre{margin-bottom:0;word-break:normal}html body pre code,html body pre tt{display:inline;max-width:initial;padding:0;margin:0;overflow:initial;line-height:inherit;word-wrap:normal;background-color:transparent;border:0}html body pre code:after,html body pre code:before,html body pre tt:after,html body pre tt:before{content:normal}html body blockquote,html body dl,html body ol,html body p,html body pre,html body ul{margin-top:0;margin-bottom:16px}html body kbd{color:#000;border:1px solid #d6d6d6;border-bottom:2px solid #c7c7c7;padding:2px 4px;background-color:#f0f0f0;border-radius:3px}@media print{html body{background-color:#fff}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{color:#000;page-break-after:avoid}html body blockquote{color:#5c5c5c}html body pre{page-break-inside:avoid}html body table{display:table}html body img{display:block;max-width:100%;max-height:100%}html body code,html body pre{word-wrap:break-word;white-space:pre}}.markdown-preview{width:100%;height:100%;box-sizing:border-box}.markdown-preview ul{list-style:disc}.markdown-preview ul ul{list-style:circle}.markdown-preview ul ul ul{list-style:square}.markdown-preview ol{list-style:decimal}.markdown-preview ol ol,.markdown-preview ul ol{list-style-type:lower-roman}.markdown-preview ol ol ol,.markdown-preview ol ul ol,.markdown-preview ul ol ol,.markdown-preview ul ul ol{list-style-type:lower-alpha}.markdown-preview .newpage,.markdown-preview .pagebreak{page-break-before:always}.markdown-preview pre.line-numbers{position:relative;padding-left:3.8em;counter-reset:linenumber}.markdown-preview pre.line-numbers>code{position:relative}.markdown-preview pre.line-numbers .line-numbers-rows{position:absolute;pointer-events:none;top:1em;font-size:100%;left:0;width:3em;letter-spacing:-1px;border-right:1px solid #999;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}.markdown-preview pre.line-numbers .line-numbers-rows>span{pointer-events:none;display:block;counter-increment:linenumber}.markdown-preview pre.line-numbers .line-numbers-rows>span:before{content:counter(linenumber);color:#999;display:block;padding-right:.8em;text-align:right}.markdown-preview .mathjax-exps .MathJax_Display{text-align:center!important}.markdown-preview:not([data-for=preview]) .code-chunk .code-chunk-btn-group{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .status{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .output-div{margin-bottom:16px}.markdown-preview .md-toc{padding:0}.markdown-preview .md-toc .md-toc-details{margin:0;padding:0;border:none}.markdown-preview .md-toc summary.md-toc-link-wrapper{cursor:pointer;list-style-position:outside}.markdown-preview .md-toc summary.md-toc-link-wrapper::marker{font-size:.85em}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link div,.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}.markdown-preview .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}.markdown-preview .md-toc .md-toc-link-wrapper[data-level='0']{margin-left:12px}.markdown-preview .md-toc .md-toc-link-wrapper[data-level='1']{margin-left:28px}.markdown-preview .md-toc .md-toc-link-wrapper[data-level='2']{margin-left:44px}.markdown-preview .md-toc .md-toc-link-wrapper[data-level='3']{margin-left:60px}.markdown-preview .md-toc .md-toc-link-wrapper[data-level='4']{margin-left:76px}.markdown-preview .md-toc .md-toc-link-wrapper[data-level='5']{margin-left:80px}.markdown-preview a.tag,.markdown-preview a.tag:active,.markdown-preview a.tag:link,.markdown-preview a.tag:visited,.markdown-preview span.tag:not(.token){display:inline-block;background-color:var(--vscode-badge-background,rgba(127,127,127,.18));color:var(--vscode-badge-foreground,currentColor);border-radius:2em;font-size:.85em;font-weight:500;padding:.05em .55em;line-height:1.5;white-space:nowrap;text-decoration:none;text-shadow:none;box-shadow:none;transition:background-color .12s ease,opacity .12s ease}.markdown-preview a.tag{cursor:pointer}.markdown-preview a.tag:focus,.markdown-preview a.tag:hover{background-color:var(--vscode-badge-background,rgba(127,127,127,.32));color:var(--vscode-badge-foreground,currentColor);opacity:.85;text-decoration:none;outline:0}.markdown-preview .wikilink-embed-content{border-left:3px solid var(--vscode-textBlockQuote-border,rgba(128,128,128,.3));background:var(--vscode-textBlockQuote-background,rgba(128,128,128,.05));margin:.5em 0;padding:.5em .75em;border-radius:0 3px 3px 0}.markdown-preview .wikilink-embed-content.wikilink-embed-error{border-left-color:var(--vscode-errorForeground,#cf222e);color:var(--vscode-errorForeground,#cf222e);font-style:italic;opacity:.8}.markdown-preview .wikilink-embed-content h1:first-child,.markdown-preview .wikilink-embed-content h2:first-child,.markdown-preview .wikilink-embed-content h3:first-child,.markdown-preview .wikilink-embed-content h4:first-child,.markdown-preview .wikilink-embed-content h5:first-child,.markdown-preview .wikilink-embed-content h6:first-child{margin-top:.25em}.markdown-preview .wikilink-embed-content .wikilink-embed-content{margin:.25em 0;padding:.25em .5em}.markdown-preview .block-id{display:none}.scrollbar-style::-webkit-scrollbar{width:8px}.scrollbar-style::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}.scrollbar-style::-webkit-scrollbar-thumb{border-radius:5px;background-color:var(--vscode-scrollbarSlider-background,rgba(150,150,150,.66));border:4px solid var(--vscode-scrollbarSlider-background,rgba(150,150,150,.66));background-clip:content-box}.scrollbar-style::-webkit-scrollbar-thumb:hover{background-color:var(--vscode-scrollbarSlider-hoverBackground,rgba(120,120,120,.66))}html body[for=html-export]:not([data-presentation-mode]){position:relative;width:100%;height:100%;top:0;left:0;margin:0;padding:0;overflow:auto}html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{position:relative;top:0;min-height:100vh}@media screen and (min-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em calc(50% - 457px + 2em)}}@media screen and (max-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{font-size:14px!important;padding:1em}}@media print{html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{display:none}}html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{position:fixed;bottom:8px;left:8px;font-size:28px;cursor:pointer;color:inherit;z-index:99;width:32px;text-align:center;opacity:.4}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] #sidebar-toc-btn{opacity:1}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc{position:fixed;top:0;left:0;width:300px;height:100%;padding:32px 0 48px 0;font-size:14px;box-shadow:0 0 4px rgba(150,150,150,.33);box-sizing:border-box;overflow:auto;background-color:inherit}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar{width:8px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-thumb{border-radius:5px;background-color:var(--vscode-scrollbarSlider-background,rgba(150,150,150,.66));border:4px solid var(--vscode-scrollbarSlider-background,rgba(150,150,150,.66));background-clip:content-box}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-thumb:hover{background-color:var(--vscode-scrollbarSlider-hoverBackground,rgba(120,120,120,.66))}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc a{text-decoration:none}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc{padding:0 16px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-details{margin:0;padding:0;border:none}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link div,html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper[data-level='0']{padding-left:0}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper[data-level='1']{padding-left:16px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper[data-level='2']{padding-left:32px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper[data-level='3']{padding-left:48px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper[data-level='4']{padding-left:64px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper[data-level='5']{padding-left:80px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{left:300px;width:calc(100% - 300px);padding:2em calc(50% - 457px - 300px / 2);margin:0;box-sizing:border-box}@media screen and (max-width:1274px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{width:100%}}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .markdown-preview{left:50%;transform:translateX(-50%)}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .md-sidebar-toc{display:none}
+/* Please visit the URL below for more information: */
+/*   https://shd101wyy.github.io/markdown-preview-enhanced/#/customize-css */
+
+      </style>
+      <!-- The content below will be included at the end of the <head> element. -->
+<script type="text/javascript">
+  document.addEventListener("DOMContentLoaded", function () {
+    // your code here
+  });
+</script>
+    </head>
+    <body for="html-export">
+      <div class="crossnote markdown-preview  ">
+      
+<h1 id="titan-orbit--complete-course">Titan Orbit — Complete Course </h1>
+<p><strong>A full instructor-led curriculum for understanding every major system in the game</strong></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Companion doc</strong></td>
+<td><a href="TITAN-ORBIT-MASTER-GUIDE.md"><code>TITAN-ORBIT-MASTER-GUIDE.md</code></a> — quick overview / map</td>
+</tr>
+<tr>
+<td><strong>This doc</strong></td>
+<td>Deep teaching — read like a textbook chapter by chapter</td>
+</tr>
+<tr>
+<td><strong>Audience</strong></td>
+<td>You know C#; Unity multiplayer and ECS are new</td>
+</tr>
+<tr>
+<td><strong>How to study</strong></td>
+<td>One volume per sitting; do exercises at end of each volume</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="table-of-contents">Table of contents </h2>
+<h3 id="volume-0--how-to-learn-this-codebase">Volume 0 — How to learn this codebase </h3>
+<ul>
+<li><a href="#01-why-this-course-exists">0.1 Why this course exists</a></li>
+<li><a href="#02-how-to-read-code-with-the-comments">0.2 How to read code with the comments</a></li>
+<li><a href="#03-study-schedule-8-weeks">0.3 Study schedule (8 weeks)</a></li>
+</ul>
+<h3 id="volume-1--foundations-before-titan-orbit">Volume 1 — Foundations before Titan Orbit </h3>
+<ul>
+<li><a href="#11-what-kind-of-game-this-is">1.1 What kind of game this is</a></li>
+<li><a href="#12-unity-concepts-you-must-know">1.2 Unity concepts you must know</a></li>
+<li><a href="#13-multiplayer-concepts-in-plain-language">1.3 Multiplayer concepts in plain language</a></li>
+<li><a href="#14-ecs-entity-component-system-in-plain-language">1.4 ECS (Entity Component System) in plain language</a></li>
+<li><a href="#15-acronym-reference-always-spelled-out">1.5 Acronym reference (always spelled out)</a></li>
+</ul>
+<h3 id="volume-2--project-anatomy">Volume 2 — Project anatomy </h3>
+<ul>
+<li><a href="#21-repository-and-unity-project-layout">2.1 Repository and Unity project layout</a></li>
+<li><a href="#22-assemblies-and-why-code-is-split">2.2 Assemblies and why code is split</a></li>
+<li><a href="#23-scenes-subscenes-and-prefabs">2.3 Scenes, SubScenes, and prefabs</a></li>
+<li><a href="#24-third-party-vs-first-party-code">2.4 Third-party vs first-party code</a></li>
+</ul>
+<h3 id="volume-3--boot-worlds-and-session">Volume 3 — Boot, worlds, and session </h3>
+<ul>
+<li><a href="#31-the-first-second-of-the-game">3.1 The first second of the game</a></li>
+<li><a href="#32-titanorbitbootstrap--world-creation">3.2 TitanOrbitBootstrap — world creation</a></li>
+<li><a href="#33-clientworld-vs-serverworld">3.3 ClientWorld vs ServerWorld</a></li>
+<li><a href="#34-titanorbitsessionmanager--the-real-orchestrator">3.4 TitanOrbitSessionManager — the real orchestrator</a></li>
+<li><a href="#35-go-in-game-handshake">3.5 Go-in-game handshake</a></li>
+<li><a href="#36-unity-relay-and-lobby">3.6 Unity Relay and Lobby</a></li>
+<li><a href="#37-dedicated-server-boot-chain">3.7 Dedicated server boot chain</a></li>
+<li><a href="#38-tick-rate-and-fixed-timestep">3.8 Tick rate and fixed timestep</a></li>
+</ul>
+<h3 id="volume-4--ecs-simulation-core">Volume 4 — ECS simulation core </h3>
+<ul>
+<li><a href="#41-components-entities-systems-queries">4.1 Components, entities, systems, queries</a></li>
+<li><a href="#42-world-filters-and-system-groups">4.2 World filters and system groups</a></li>
+<li><a href="#43-gamebootstrap-and-match-singletons">4.3 GameBootstrap and match singletons</a></li>
+<li><a href="#44-physics-bootstrap-and-layers">4.4 Physics bootstrap and layers</a></li>
+<li><a href="#45-ship-components-explained-field-by-field">4.5 Ship components explained field by field</a></li>
+<li><a href="#46-ghost-authoring-and-baking">4.6 Ghost authoring and baking</a></li>
+<li><a href="#47-rpcs-vs-ghost-replication">4.7 RPCs vs ghost replication</a></li>
+</ul>
+<h3 id="volume-5--input-and-local-player-discovery">Volume 5 — Input and local player discovery </h3>
+<ul>
+<li><a href="#51-from-keyboard-to-shipinput">5.1 From keyboard to ShipInput</a></li>
+<li><a href="#52-shipinputbridge-and-the-frame-rate-bridge">5.2 ShipInputBridge and the frame-rate bridge</a></li>
+<li><a href="#53-clientcommandtargetsystem">5.3 ClientCommandTargetSystem</a></li>
+<li><a href="#54-localplayertagsystem">5.4 LocalPlayerTagSystem</a></li>
+<li><a href="#55-host-input-shipservercontrolsystem">5.5 Host input: ShipServerControlSystem</a></li>
+<li><a href="#56-mobile-input">5.6 Mobile input</a></li>
+</ul>
+<h3 id="volume-6--ship-movement-masterclass">Volume 6 — Ship movement masterclass </h3>
+<ul>
+<li><a href="#61-the-contract-motor-vs-physics">6.1 The contract: motor vs physics</a></li>
+<li><a href="#62-shipmotorsimulator-algorithm-step-by-step">6.2 ShipMotorSimulator algorithm step by step</a></li>
+<li><a href="#63-shipmovementburstlogic-overlays">6.3 ShipMovementBurstLogic overlays</a></li>
+<li><a href="#64-shipmovementjob-and-burst">6.4 ShipMovementJob and Burst</a></li>
+<li><a href="#65-server-vs-client-movement-systems">6.5 Server vs client movement systems</a></li>
+<li><a href="#66-orbit-ring-motor">6.6 Orbit ring motor</a></li>
+<li><a href="#67-moon-dock-motor-interaction">6.7 Moon dock motor interaction</a></li>
+<li><a href="#68-shield-repel-overlay">6.8 Shield repel overlay</a></li>
+</ul>
+<h3 id="volume-7--choppy-movement-a-full-thesis">Volume 7 — Choppy movement: a full thesis </h3>
+<ul>
+<li><a href="#71-three-clocks-render-sim-network">7.1 Three clocks: render, sim, network</a></li>
+<li><a href="#72-where-stepping-is-introduced">7.2 Where stepping is introduced</a></li>
+<li><a href="#73-prediction-and-rollback">7.3 Prediction and rollback</a></li>
+<li><a href="#74-presentation-phase-discipline">7.4 Presentation phase discipline</a></li>
+<li><a href="#75-host-vs-dedicated-client-differences">7.5 Host vs dedicated client differences</a></li>
+<li><a href="#76-what-we-refuse-to-do-and-why">7.6 What we refuse to do (and why)</a></li>
+<li><a href="#77-debugging-movement-feel">7.7 Debugging movement feel</a></li>
+</ul>
+<h3 id="volume-8--hybrid-presentation-layer">Volume 8 — Hybrid presentation layer </h3>
+<ul>
+<li><a href="#81-why-gameobject-proxies-exist">8.1 Why GameObject proxies exist</a></li>
+<li><a href="#82-shipvisualsyncsystem-and-the-cache">8.2 ShipVisualSyncSystem and the cache</a></li>
+<li><a href="#83-ecsworldvisualizer-lifecycle">8.3 EcsWorldVisualizer lifecycle</a></li>
+<li><a href="#84-ecsgamebridge-api-philosophy">8.4 EcsGameBridge API philosophy</a></li>
+<li><a href="#85-camera-and-shipdisplaypose">8.5 Camera and ShipDisplayPose</a></li>
+<li><a href="#86-weapon-mount-reverse-bridge">8.6 Weapon mount reverse bridge</a></li>
+<li><a href="#87-moon-dock-cinematic-override">8.7 Moon dock cinematic override</a></li>
+</ul>
+<h3 id="volume-9--combat-and-bullets">Volume 9 — Combat and bullets </h3>
+<ul>
+<li><a href="#91-server-authority-for-damage">9.1 Server authority for damage</a></li>
+<li><a href="#92-bulletsimulationsystem-phases">9.2 BulletSimulationSystem phases</a></li>
+<li><a href="#93-presentation-tracers-and-vfx">9.3 Presentation tracers and VFX</a></li>
+<li><a href="#94-clientlocalbulletvfxbridge">9.4 ClientLocalBulletVfxBridge</a></li>
+</ul>
+<h3 id="volume-10--economy-planets-moons">Volume 10 — Economy, planets, moons </h3>
+<ul>
+<li><a href="#101-gem-lifecycle">10.1 Gem lifecycle</a></li>
+<li><a href="#102-planet-economy-and-leveling">10.2 Planet economy and leveling</a></li>
+<li><a href="#103-moon-orbit-store">10.3 Moon orbit store</a></li>
+<li><a href="#104-capture-win-condition">10.4 Capture win condition</a></li>
+<li><a href="#105-people-transports">10.5 People transports</a></li>
+</ul>
+<h3 id="volume-11--teams-spawn-map">Volume 11 — Teams, spawn, map </h3>
+<ul>
+<li><a href="#111-teammanagementsystem">11.1 TeamManagementSystem</a></li>
+<li><a href="#112-rejoin-flow">11.2 Rejoin flow</a></li>
+<li><a href="#113-map-generation-algorithm">11.3 Map generation algorithm</a></li>
+<li><a href="#114-toroidal-map-naming-vs-reality">11.4 Toroidal map naming vs reality</a></li>
+</ul>
+<h3 id="volume-12--ui-and-player-flow">Volume 12 — UI and player flow </h3>
+<ul>
+<li><a href="#121-ncegameflowcontroller-state-machine">12.1 NceGameFlowController state machine</a></li>
+<li><a href="#122-orbit-station-ui">12.2 Orbit station UI</a></li>
+<li><a href="#123-hud-and-minimap">12.3 HUD and minimap</a></li>
+</ul>
+<h3 id="volume-13--data-and-content-pipeline">Volume 13 — Data and content pipeline </h3>
+<ul>
+<li><a href="#131-scriptableobject-workflow">13.1 ScriptableObject workflow</a></li>
+<li><a href="#132-ship-families-and-cards">13.2 Ship families and cards</a></li>
+<li><a href="#133-weapon-config-and-bullet-banks">13.3 Weapon config and bullet banks</a></li>
+<li><a href="#134-runtime-stat-apply">13.4 Runtime stat apply</a></li>
+</ul>
+<h3 id="volume-14--platform-build-services">Volume 14 — Platform, build, services </h3>
+<ul>
+<li><a href="#141-webgl-constraints">14.1 WebGL constraints</a></li>
+<li><a href="#142-headless-server-builds">14.2 Headless server builds</a></li>
+<li><a href="#143-unity-gaming-services">14.3 Unity Gaming Services</a></li>
+</ul>
+<h3 id="volume-15--hard-problems-and-roadmap">Volume 15 — Hard problems and roadmap </h3>
+<ul>
+<li><a href="#151-ranked-difficulty-list">15.1 Ranked difficulty list</a></li>
+<li><a href="#152-migration-targets">15.2 Migration targets</a></li>
+<li><a href="#153-rules-files-as-law">15.3 Rules files as law</a></li>
+</ul>
+<h3 id="volume-16--exercises-and-self-tests">Volume 16 — Exercises and self-tests </h3>
+<ul>
+<li><a href="#161-volume-quizzes">16.1 Volume quizzes</a></li>
+<li><a href="#162-trace-exercises">16.2 Trace exercises</a></li>
+<li><a href="#163-suggested-experiments">16.3 Suggested experiments</a></li>
+</ul>
+<h3 id="appendices">Appendices </h3>
+<ul>
+<li><a href="#appendix-a--key-file-index">Appendix A — Key file index</a></li>
+<li><a href="#appendix-b--rpc-catalog">Appendix B — RPC catalog</a></li>
+<li><a href="#appendix-c--system-order-cheat-sheet">Appendix C — System order cheat sheet</a></li>
+</ul>
+<h3 id="part-ii--encyclopedia-file-by-file">Part II — Encyclopedia (file-by-file) </h3>
+<ul>
+<li><a href="#chapter-17--every-ecssystems-file">Chapter 17 — Every ECS/Systems file</a></li>
+<li><a href="#chapter-18--every-game-bridge-file-grouped-by-role">Chapter 18 — Every Game/ bridge file</a></li>
+<li><a href="#chapter-19--concept-essays-read-slowly">Chapter 19 — Concept essays</a></li>
+<li><a href="#chapter-20--scenario-walkthroughs-stories">Chapter 20 — Scenario walkthroughs</a></li>
+<li><a href="#chapter-21--shipstatapply-deep-lesson">Chapter 21 — ShipStatApply deep lesson</a></li>
+<li><a href="#chapter-22--audio-diagnostics-editor-supporting-cast">Chapter 22 — Audio, diagnostics, editor</a></li>
+<li><a href="#chapter-23--ui-folder-highlights">Chapter 23 — UI folder highlights</a></li>
+<li><a href="#chapter-24--shared-and-simulation-math-reference">Chapter 24 — Shared and Simulation math</a></li>
+<li><a href="#chapter-25--self-test-answer-key-volume-16">Chapter 25 — Self-test answer key</a></li>
+<li><a href="#chapter-26--what-to-read-next-ongoing-curriculum">Chapter 26 — Ongoing curriculum</a></li>
+<li><a href="#chapter-27--netcode-folder-file-by-file">Chapter 27 — NetCode folder file-by-file</a></li>
+<li><a href="#chapter-28--movement-case-studies-extended">Chapter 28 — Movement case studies</a></li>
+</ul>
+<hr>
+<h1 id="volume-0--how-to-learn-this-codebase-1">Volume 0 — How to learn this codebase </h1>
+<h2 id="01-why-this-course-exists">0.1 Why this course exists </h2>
+<p>You asked for more than a map of the project — you asked to be <strong>taught</strong>. That is a different goal. A map tells you <em>where</em> things are. A course tells you <em>how to think</em> when you open a file, <em>why</em> a design choice was made, and <em>what breaks</em> when you change it.</p>
+<p>Titan Orbit is not a small indie prototype. It is a <strong>Unity DOTS (Data-Oriented Technology Stack) multiplayer game</strong> using <strong>NetCode for Entities (NCE)</strong> — meaning the simulation runs in an <strong>ECS (Entity Component System)</strong> world, networked entities are called <strong>ghosts</strong>, and your ship's visuals are still <strong>GameObjects</strong> because art pipelines demand it. That hybrid stack is powerful but easy to misunderstand. The most common misunderstanding — and the one that causes the most pain — is thinking the <strong>mesh you see</strong> is what moves the ship. It is not. The <strong>ECS entity's physics and transform</strong> move the ship. The mesh follows.</p>
+<p>This course is long on purpose. Short docs optimize for scanning. Learning optimizes for <strong>repetition, analogy, and progression</strong>. We will go from "what is a World?" to "why does fixed timestep plus prediction plus presentation produce stepped motion unless every reader agrees on phase." You can read the companion <a href="TITAN-ORBIT-MASTER-GUIDE.md"><code>TITAN-ORBIT-MASTER-GUIDE.md</code></a> first for a glimpse; return here when you want to actually understand.</p>
+<p><strong>How I will teach you:</strong> Every major topic gets (1) a plain-language analogy, (2) the real technical mechanism, (3) the exact files involved, (4) pitfalls students hit, and (5) how it connects to the next topic. When I use an acronym, I spell it out the first time in that section.</p>
+<h2 id="02-how-to-read-code-with-the-comments">0.2 How to read code with the comments </h2>
+<p>We added <strong>educational comments</strong> across the codebase. They are not decoration — they are part of the curriculum. Comments use tags:</p>
+<table>
+<thead>
+<tr>
+<th>Tag</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>[STANDARD]</code></td>
+<td>Normal software pattern</td>
+</tr>
+<tr>
+<td><code>[UNITY]</code></td>
+<td>Unity engine behavior</td>
+</tr>
+<tr>
+<td><code>[ECS/DOTS]</code></td>
+<td>Entities, components, systems</td>
+</tr>
+<tr>
+<td><code>[NETCODE]</code></td>
+<td>Ghosts, prediction, RPCs</td>
+</tr>
+<tr>
+<td><code>[PHYSICS]</code></td>
+<td>Unity Physics package</td>
+</tr>
+<tr>
+<td><code>[TITAN-ORBIT]</code></td>
+<td>Custom game design choice</td>
+</tr>
+<tr>
+<td><code>[HYBRID]</code></td>
+<td>ECS sim ↔ GameObject presentation bridge</td>
+</tr>
+</tbody>
+</table>
+<p>When you open a file, read the <strong>file summary</strong> at the top first. It tells you which world (client/server) the code runs in and which paired file to open next. Then read method summaries before the body. The body has <code>// --- Section ---</code> headers — skim those to navigate.</p>
+<p><strong>Student habit:</strong> Keep this course doc open in one pane and the <code>.cs</code> file in another. When the course names a file, open it and read the comments there too. The course explains <em>concepts</em>; the code comments explain <em>this line in this project</em>.</p>
+<h2 id="03-study-schedule-8-weeks">0.3 Study schedule (8 weeks) </h2>
+<table>
+<thead>
+<tr>
+<th>Week</th>
+<th>Volumes</th>
+<th>Outcome</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0–2</td>
+<td>You can navigate the repo and explain assemblies</td>
+</tr>
+<tr>
+<td>2</td>
+<td>3–4</td>
+<td>You understand worlds, boot, ECS basics</td>
+</tr>
+<tr>
+<td>3</td>
+<td>5–6</td>
+<td>You can trace input → motor → physics</td>
+</tr>
+<tr>
+<td>4</td>
+<td>7</td>
+<td>You understand choppy movement deeply</td>
+</tr>
+<tr>
+<td>5</td>
+<td>8</td>
+<td>You understand hybrid presentation</td>
+</tr>
+<tr>
+<td>6</td>
+<td>9–11</td>
+<td>Combat, economy, teams, map</td>
+</tr>
+<tr>
+<td>7</td>
+<td>12–14</td>
+<td>UI, data, build, WebGL</td>
+</tr>
+<tr>
+<td>8</td>
+<td>15–16 + exercises</td>
+<td>You can debug without me</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Daily habit (45–90 min):</strong> Read one section, open cited files, answer the section's check questions (end of volumes), optionally run Editor Play Mode and watch the behavior described.</p>
+<hr>
+<h1 id="volume-1--foundations-before-titan-orbit-1">Volume 1 — Foundations before Titan Orbit </h1>
+<h2 id="11-what-kind-of-game-this-is">1.1 What kind of game this is </h2>
+<p>Titan Orbit is a <strong>team-based top-down space action game</strong> played online. You fly a ship, shoot enemies, mine gems from asteroids, deposit gems on friendly moons orbiting planets, upgrade your ship through a card/loadout station, capture planets, and eventually eliminate other teams by owning the entire map.</p>
+<p>The design loop is intentionally <strong>arcade-fast</strong> (responsive thrust, frequent combat) layered on <strong>strategy</strong> (planet ownership, economy, team coordination). That combination is why networking is hard: players expect <strong>instant</strong> ship response, but the server must be <strong>fair</strong> — only one machine can decide who died.</p>
+<p>So the architecture optimizes for:</p>
+<ol>
+<li><strong>Responsive local control</strong> — client prediction on your ship</li>
+<li><strong>Authoritative outcomes</strong> — server bullets and damage</li>
+<li><strong>Rich visuals</strong> — prefab ships, particles, UI</li>
+<li><strong>Browser play</strong> — WebGL client + cloud headless server</li>
+</ol>
+<p>None of those four goals is optional. The code is organized around reconciling them.</p>
+<h2 id="12-unity-concepts-you-must-know">1.2 Unity concepts you must know </h2>
+<p><strong>MonoBehaviour</strong> — A C# class that Unity attaches to GameObjects. It gets <code>Update()</code>, <code>Start()</code>, etc. Most UI, camera, and input in Titan Orbit is still MonoBehaviour because it is easy and familiar.</p>
+<p><strong>GameObject</strong> — A scene object with components. Your ship <em>visual</em> is a GameObject hierarchy (meshes, particles). It is a <strong>render shell</strong>.</p>
+<p><strong>ScriptableObject (SO)</strong> — A data asset file (<code>.asset</code>) holding design numbers: ship stats, card definitions, map settings. Edited in Inspector, loaded at runtime. Lives in <code>Assets/Scripts/Data/</code>.</p>
+<p><strong>Scene</strong> — A level file. Titan Orbit builds with one main scene: <code>SampleScene.unity</code>.</p>
+<p><strong>SubScene</strong> — An ECS baking chunk (<code>GameplaySubScene.unity</code>). Ghost prefabs bake here into entities.</p>
+<p><strong>Prefab</strong> — Reusable template. Ship families, planets, and <code>StarshipGhost</code> are prefabs.</p>
+<p><strong>Fixed timestep</strong> — Simulation advances in fixed slices (1/60 second), not every render frame. Critical for networked games.</p>
+<p><strong>Assembly (.asmdef)</strong> — Compilation unit. Titan Orbit splits code into ~14 assemblies so dependencies stay clean.</p>
+<p>If any of these still feel abstract, revisit them when we hit the matching volume — repetition is intentional.</p>
+<h2 id="13-multiplayer-concepts-in-plain-language">1.3 Multiplayer concepts in plain language </h2>
+<p><strong>Client</strong> — The program on the player's machine that draws the game and reads input.</p>
+<p><strong>Server</strong> — The program that runs authoritative simulation. In Titan Orbit, even "host" runs a server world locally.</p>
+<p><strong>Dedicated server</strong> — A server build with <strong>no graphics and no local player</strong> — only simulation and networking. Runs on Google Cloud for production matches.</p>
+<p><strong>Latency</strong> — Delay between your input and the server seeing it. Measured in milliseconds.</p>
+<p><strong>Prediction (client-side prediction)</strong> — Your client <strong>simulates your ship immediately</strong> using the same motor code as the server, so you do not wait for the network round trip to feel thrust. When the server disagrees, the client <strong>rolls back</strong> and corrects.</p>
+<p><strong>Interpolation</strong> — For <strong>other players'</strong> ships, your client smoothly blends between past snapshots because you do not predict them.</p>
+<p><strong>Replication</strong> — Sending component state over the network (position, health, team).</p>
+<p><strong>RPC (Remote Procedure Call)</strong> — A one-shot message: "I want team B", "buy this upgrade". Server validates before acting.</p>
+<p><strong>Authority</strong> — Who is allowed to decide truth. Server is authoritative for damage, gems deposited, planet ownership. Client is authoritative only for <strong>feel</strong> on your ship via prediction — and even that must converge to server truth.</p>
+<p><strong>Analogy — restaurant kitchen:</strong> You (client) start plating food when you <em>think</em> the order is ready (prediction). The head chef (server) sends the ticket back if you were wrong (rollback). Other tables' plates (remote players) you only see when the pass window updates (interpolation). The menu prices (RPCs) require chef approval.</p>
+<h2 id="14-ecs-entity-component-system-in-plain-language">1.4 ECS (Entity Component System) in plain language </h2>
+<p>Old Unity style: one big <code>Ship.cs</code> MonoBehaviour with health, speed, mesh, input mixed together.</p>
+<p>ECS style: a ship is an <strong>entity</strong> (an ID) with <strong>components</strong> (small data structs):</p>
+<ul>
+<li><code>ShipState</code> — health, team, gems</li>
+<li><code>LocalTransform</code> — position, rotation</li>
+<li><code>PhysicsVelocity</code> — linear velocity for physics</li>
+<li><code>ShipInput</code> — what the player wants this tick</li>
+</ul>
+<p><strong>Systems</strong> are functions that run every tick: "for every entity with <code>ShipTag</code> and <code>ShipInput</code>, run motor."</p>
+<p><strong>Why ECS for Titan Orbit?</strong> Many ships, bullets, gems, planets — ECS + Burst jobs scale better than thousands of MonoBehaviours. NetCode for Entities is built on ECS.</p>
+<p><strong>What ECS is NOT in this project:</strong> It is not the rendering layer. We do not draw ships with Entities Graphics. We use <strong>hybrid</strong> proxies (Volume 8).</p>
+<h2 id="15-acronym-reference-always-spelled-out">1.5 Acronym reference (always spelled out) </h2>
+<p>See the master guide glossary for the full table. In this course, the first use in each volume spells out:</p>
+<ul>
+<li><strong>ECS</strong> — Entity Component System</li>
+<li><strong>DOTS</strong> — Data-Oriented Technology Stack (Unity's ECS + Jobs + Burst bundle)</li>
+<li><strong>NCE / NetCode</strong> — NetCode for Entities</li>
+<li><strong>RPC</strong> — Remote Procedure Call</li>
+<li><strong>SO</strong> — ScriptableObject</li>
+<li><strong>UGS</strong> — Unity Gaming Services (Relay, Lobby, Auth)</li>
+<li><strong>URP</strong> — Universal Render Pipeline</li>
+<li><strong>WebGL</strong> — Web Graphics Library (browser builds)</li>
+<li><strong>Burst</strong> — Unity Burst Compiler (fast native code from C# jobs)</li>
+<li><strong>MPPM</strong> — Multiplayer Play Mode (multi-editor testing)</li>
+<li><strong>HUD</strong> — Heads-Up Display</li>
+<li><strong>VFX</strong> — Visual Effects</li>
+<li><strong>GCE</strong> — Google Compute Engine</li>
+</ul>
+<hr>
+<h1 id="volume-2--project-anatomy-1">Volume 2 — Project anatomy </h1>
+<h2 id="21-repository-and-unity-project-layout">2.1 Repository and Unity project layout </h2>
+<p>The git repo root is <code>Titan-Orbit/</code>. The Unity editor project lives in <code>Titan Orbit/</code> (note the space). Day-to-day code is under <code>Titan Orbit/Assets/Scripts/</code>.</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>Titan-Orbit/
+├── .cursor/rules/           ← Architecture law (ship sim, comments, rebuild)
+├── tools/gce/               ← Deploy scripts for Linux server
+└── Titan Orbit/             ← Open THIS folder in Unity Hub
+    ├── Assets/
+    │   ├── Scripts/         ← All first-party C#
+    │   ├── Scenes/
+    │   ├── Prefabs/
+    │   ├── Data/            ← ScriptableObject instances
+    │   ├── Editor/Build/
+    │   └── Resources/
+    ├── Docs/                ← You are here
+    └── BuildOutput/         ← After builds
+</code></pre><p><strong>Teaching point:</strong> <code>.cursor/rules/</code> is not runtime code — it is <strong>documentation we enforce in development</strong>. When an AI agent or you edit sim code, those rules say what is forbidden (e.g. no extra proxy lerp on local owner). Treat them like a textbook supplement.</p>
+<h2 id="22-assemblies-and-why-code-is-split">2.2 Assemblies and why code is split </h2>
+<p><strong>File pattern:</strong> <code>Assets/Scripts/&lt;Area&gt;/&lt;Name&gt;.asmdef</code></p>
+<p>Assemblies prevent "UI accidentally references server-only code" and keep compile times manageable.</p>
+<p><strong>Dependency direction (simplified):</strong></p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>Shared → Data → Simulation → ECS → NetCode
+                              ↘
+Core, Input, Entities → Game → UI
+Services → Game
+</code></pre><table>
+<thead>
+<tr>
+<th>Assembly</th>
+<th>You open it when…</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TitanOrbit.Simulation</code></td>
+<td>Learning motor math, planet formulas — <strong>no Unity scene</strong></td>
+</tr>
+<tr>
+<td><code>TitanOrbit.ECS</code></td>
+<td>Learning systems, components, combat, economy</td>
+</tr>
+<tr>
+<td><code>TitanOrbit.NetCode</code></td>
+<td>Learning connect, Relay, bootstrap</td>
+</tr>
+<tr>
+<td><code>TitanOrbit.Game</code></td>
+<td>Learning proxies, bridges, flow UI</td>
+</tr>
+<tr>
+<td><code>TitanOrbit.Data</code></td>
+<td>Learning designer assets</td>
+</tr>
+<tr>
+<td><code>TitanOrbit.UI</code></td>
+<td>Learning orbit station, minimap</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Student mistake:</strong> Putting GameObject code inside <code>TitanOrbit.ECS</code>. ECS assembly should not depend on UI. Bridges live in <code>Game</code>.</p>
+<h2 id="23-scenes-subscenes-and-prefabs">2.3 Scenes, SubScenes, and prefabs </h2>
+<p><strong><code>SampleScene.unity</code></strong> — The only scene in the player build. Contains menu roots, camera, <code>NceGameFlowController</code>, session manager hooks.</p>
+<p><strong><code>GameplaySubScene.unity</code></strong> — ECS subscene with baked ghosts (ships, planets, registry). Loaded as part of netcode setup (<code>NetCodeGameSetup</code> editor menu).</p>
+<p><strong>Ghost prefabs</strong> (<code>Assets/Prefabs/ECS/</code>) — <code>StarshipGhost</code>, <code>PlanetGhost</code>, etc. Each has:</p>
+<ul>
+<li><code>GhostAuthoringComponent</code> (NetCode replication config)</li>
+<li><code>*GhostAuthoring</code> MonoBehaviour (baker writes ECS components)</li>
+</ul>
+<p><strong>Baking</strong> converts GameObject authoring data into <strong>entity component data</strong> at build/load time. When you change a ghost prefab field, you may need to <strong>rebake</strong> the subscene.</p>
+<h2 id="24-third-party-vs-first-party-code">2.4 Third-party vs first-party code </h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Examples</th>
+<th>Touch for learning?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>First-party</td>
+<td><code>Assets/Scripts/**</code></td>
+<td><strong>Yes — primary</strong></td>
+</tr>
+<tr>
+<td>Shapes</td>
+<td>Vector HUD drawing</td>
+<td>Use, rarely modify</td>
+</tr>
+<tr>
+<td>Shift Sci-Fi UI</td>
+<td>Menu widgets</td>
+<td>Skin only</td>
+</tr>
+<tr>
+<td>Space Graphics Toolkit</td>
+<td>Planets/nebula</td>
+<td>Visuals</td>
+</tr>
+<tr>
+<td>Ultimate Spaceship Creator</td>
+<td>Ship meshes</td>
+<td>Art source</td>
+</tr>
+</tbody>
+</table>
+<p>When debugging movement, <strong>do not start in Plugins/</strong>. Start in <code>ECS/Systems/ShipMovementLogic.cs</code> and <code>Game/EcsWorldVisualizer.cs</code>.</p>
+<hr>
+<h1 id="volume-3--boot-worlds-and-session-1">Volume 3 — Boot, worlds, and session </h1>
+<h2 id="31-the-first-second-of-the-game">3.1 The first second of the game </h2>
+<p>When Unity launches <code>SampleScene</code>, several things race to initialize. Order matters.</p>
+<ol>
+<li><strong>Unity engine</strong> loads scene objects (MonoBehaviours <code>Awake</code>/<code>Start</code>).</li>
+<li><strong>NetCode bootstrap</strong> (<code>TitanOrbitBootstrap.Initialize</code>) creates <code>ClientWorld</code> and/or <code>ServerWorld</code>.</li>
+<li><strong><code>TitanOrbitSessionManager</code></strong> becomes singleton (<code>DontDestroyOnLoad</code>).</li>
+<li><strong><code>NceGameFlowController</code></strong> shows main menu.</li>
+<li>On server: <strong><code>GameBootstrapSystem.OnCreate</code></strong> creates match singletons.</li>
+<li>On dedicated: <strong><code>TitanOrbitDedicatedServerBootRunner</code></strong> ensures boot starts.</li>
+</ol>
+<p>You, the player, only see the menu. Underneath, an entire invisible ECS universe may already exist — suspended in editor until you click Local Play.</p>
+<p><strong>Check question:</strong> Why does the editor suspend server simulation at menu? <em>Answer in §3.4.</em></p>
+<h2 id="32-titanorbitbootstrap--world-creation">3.2 TitanOrbitBootstrap — world creation </h2>
+<p><strong>File:</strong> <code>Assets/Scripts/NetCode/TitanOrbitBootstrap.cs</code></p>
+<p>This class extends NetCode's <code>ClientServerBootstrap</code>. Its <code>Initialize</code> method is the <strong>branching router</strong> for which ECS worlds exist.</p>
+<p><strong>Always runs:</strong></p>
+<ul>
+<li><code>Application.runInBackground = true</code> — sim keeps going when window unfocused (important for host testing).</li>
+<li>On <code>UNITY_SERVER</code> builds: <code>Application.targetFrameRate = 60</code> — aligns with 60 Hz sim.</li>
+<li>Sets <code>NetworkStreamReceiveSystem.DriverConstructor = new TitanOrbitRelayDriverConstructor()</code> — all network drivers go through Relay-aware factory.</li>
+<li>Sets <code>AutoConnectPort</code>:
+<ul>
+<li>Editor: <strong>0</strong> (do not auto-listen; menu chooses LAN/Relay)</li>
+<li>Player build: <strong>7777</strong> unless dedicated</li>
+<li>Dedicated: <strong>0</strong> (Relay binds later in session manager)</li>
+</ul>
+</li>
+</ul>
+<p><strong>Editor branches:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Worlds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CLI <code>--titanOrbitDedicated</code></td>
+<td>Server only</td>
+</tr>
+<tr>
+<td>MPPM clone (<code>--virtual-project-clone</code>)</td>
+<td>Client only</td>
+</tr>
+<tr>
+<td>Default</td>
+<td>Client + Server</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Player build branches:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Worlds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>UNITY_SERVER</code> or dedicated CLI</td>
+<td>Server only</td>
+</tr>
+<tr>
+<td><code>PendingLanHost</code> flag</td>
+<td>Client + Server</td>
+</tr>
+<tr>
+<td>Default</td>
+<td>Client + Server</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Teaching analogy:</strong> Bootstrap is the <strong>building architect</strong>. It decides how many simulation "floors" exist (client floor, server floor) before anyone moves furniture in (spawns ships).</p>
+<h2 id="33-clientworld-vs-serverworld">3.3 ClientWorld vs ServerWorld </h2>
+<p>A <strong>World</strong> in DOTS is a container: entities, components, systems. NetCode typically gives you:</p>
+<ul>
+<li><strong>ClientWorld</strong> — runs prediction, presentation, client RPC send/receive</li>
+<li><strong>ServerWorld</strong> — runs authoritative sim for all connected players</li>
+</ul>
+<p>They are <strong>not</strong> the same data. They are two parallel simulations kept in sync by networking.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>ClientWorld</th>
+<th>ServerWorld</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Your ship</td>
+<td>Predicted locally</td>
+<td>Authoritative</td>
+</tr>
+<tr>
+<td>Enemy ship</td>
+<td>Interpolated from snapshots</td>
+<td>Simulated</td>
+</tr>
+<tr>
+<td>Bullets damaging</td>
+<td>Cosmetic tracers</td>
+<td>Real hit detection</td>
+</tr>
+<tr>
+<td>Runs on dedicated client?</td>
+<td>Yes</td>
+<td>No (or suspended)</td>
+</tr>
+<tr>
+<td>Runs on dedicated server?</td>
+<td>No</td>
+<td>Yes</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Local host twist:</strong> Both worlds run on one PC. Your client predicts; your server authoritative copy must agree often because latency is ~0. Visualization code often reads <strong>ServerWorld</strong> on host (<code>EcsGameBridge.GetVisualizationWorld</code>) while input prediction uses <strong>ClientWorld</strong>.</p>
+<h2 id="34-titanorbitsessionmanager--the-real-orchestrator">3.4 TitanOrbitSessionManager — the real orchestrator </h2>
+<p><strong>File:</strong> <code>Assets/Scripts/NetCode/TitanOrbitSessionManager.cs</code> (~1800 lines)</p>
+<p>If <code>GameManager</code> is a small debug helper, <strong><code>TitanOrbitSessionManager</code> is the multiplayer brain</strong>. It is a MonoBehaviour singleton surviving scene loads.</p>
+<p><strong>Responsibilities:</strong></p>
+<ul>
+<li>Start local LAN host / client (editor dev)</li>
+<li>Join dedicated match via UGS Lobby + Relay</li>
+<li>Boot headless server (Relay allocation, lobby publish, listen)</li>
+<li>Track <code>IsInGame</code>, <code>IsDedicatedOnlineClient</code>, status messages for UI</li>
+<li>Send team/rejoin RPC helpers</li>
+<li><strong><code>TickServerWorld()</code> on <code>UNITY_SERVER</code></strong> — manual ECS pump</li>
+</ul>
+<h3 id="editor-menu-idle-behavior">Editor menu idle behavior </h3>
+<p><code>SuspendEditorLocalServerUntilLocalPlay()</code> disables <code>SimulationSystemGroup</code> on ServerWorld while at main menu. <strong>Why?</strong> Map generation could finish before you click Play, leaving you a stale world. Students see "map already loaded" bugs if this is removed.</p>
+<p>When you click <strong>Local Play</strong>, <code>ResumeEditorLocalServerForLocalPlay()</code> re-enables sim and runs <code>BootLanHost()</code>.</p>
+<h3 id="lan-host-flow-startlocalplay">LAN host flow (<code>StartLocalPlay</code>) </h3>
+<ol>
+<li>Prepare worlds (clear stale connections, relay state)</li>
+<li>Server listens on port 7777 (loopback)</li>
+<li>Client connects to <code>127.0.0.1:7777</code></li>
+<li>Manual <code>RequestGoInGame</code> on both sides (LAN shortcut — no RPC handshake)</li>
+</ol>
+<h3 id="dedicated-join-flow-joindedicatedlobbyasync">Dedicated join flow (<code>JoinDedicatedLobbyAsync</code>) </h3>
+<ol>
+<li>UGS guest authentication</li>
+<li>Leave old lobbies (stale relay codes are a real bug class)</li>
+<li>Join lobby by id → read member-only <code>RelayJoinCode</code></li>
+<li><code>JoinAllocationAsync</code> → <code>TitanOrbitRelayState.SetClientRelay</code></li>
+<li>Reset client driver, connect via Relay</li>
+<li><code>ClientConnectWatch</code> waits for <code>NetworkStreamInGame</code> + valid <code>NetworkId</code></li>
+<li><strong>Go-in-game RPC</strong> (not manual) via <code>TitanOrbitGoInGameClientSystem</code></li>
+</ol>
+<h3 id="tickserverworld--why-headless-needs-it">TickServerWorld — why headless needs it </h3>
+<pre data-role="codeBlock" data-info="csharp" class="language-csharp csharp"><code><span class="token comment">// Simplified concept from TitanOrbitSessionManager</span>
+<span class="token keyword keyword-static">static</span> <span class="token return-type class-name"><span class="token keyword keyword-void">void</span></span> <span class="token function">TickServerWorld</span><span class="token punctuation">(</span><span class="token class-name">World</span> world<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token keyword keyword-if">if</span> <span class="token punctuation">(</span>Time<span class="token punctuation">.</span>frameCount <span class="token operator">==</span> s_LastServerTickFrame<span class="token punctuation">)</span> <span class="token keyword keyword-return">return</span><span class="token punctuation">;</span> <span class="token comment">// once per Unity frame</span>
+    s_LastServerTickFrame <span class="token operator">=</span> Time<span class="token punctuation">.</span>frameCount<span class="token punctuation">;</span>
+    world<span class="token punctuation">.</span><span class="token function">Update</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre><p>Headless Linux builds do not behave like the editor player loop. Without <code>world.Update()</code>, <strong>Relay packets stall</strong>, clients connect but never get <code>NetworkId</code> — "zombie connection." This is production-critical, not optimization.</p>
+<p><strong>Check question answer:</strong> Editor suspends server sim so map/match does not advance while you are still in menu.</p>
+<h2 id="35-go-in-game-handshake">3.5 Go-in-game handshake </h2>
+<p><strong>File:</strong> <code>Assets/Scripts/NetCode/TitanOrbitGoInGameSystems.cs</code></p>
+<p>NetCode uses <code>NetworkStreamInGame</code> component on connection entities to mean: <strong>ready for ghost replication</strong>.</p>
+<p><strong>Dedicated clients:</strong></p>
+<ol>
+<li><code>TitanOrbitGoInGameClientSystem</code> sees connection with <code>NetworkId</code> but not <code>InGame</code></li>
+<li>Adds <code>NetworkStreamInGame</code> locally and sends <code>GoInGameRequest</code> RPC</li>
+<li><code>TitanOrbitGoInGameServerSystem</code> receives RPC, adds <code>NetworkStreamInGame</code> on server connection</li>
+</ol>
+<p><strong>LAN local play:</strong> Session manager calls <code>RequestGoInGame</code> directly — skips RPC.</p>
+<p><strong>Student mistake:</strong> Connecting to Relay but never reaching in-game → no ships spawn. Debug <code>NetworkStreamInGame</code> on connection entity.</p>
+<h2 id="36-unity-relay-and-lobby">3.6 Unity Relay and Lobby </h2>
+<h3 id="relay-packet-routing">Relay (packet routing) </h3>
+<p>Players rarely have public IPs suitable for hosting. <strong>Unity Relay (UTP — Unity Transport Protocol)</strong> routes encrypted packets through Unity's servers.</p>
+<p><strong>Files:</strong></p>
+<ul>
+<li><code>TitanOrbitRelayUtility.cs</code> — allocation → <code>RelayServerData</code>, timeouts, <code>wss</code> vs <code>dtls</code></li>
+<li><code>TitanOrbitRelayDriverConstructor.cs</code> — creates drivers with relay parameters</li>
+<li><code>TitanOrbitRelayState</code> — static slot holding current relay config</li>
+</ul>
+<p><strong>Server dedicated:</strong> Relay UDP only on headless (no IPC) — comment notes IPC + Relay caused missed remote connections.</p>
+<p><strong>WebGL clients:</strong> Often need <code>wss</code> (WebSocket secure) path.</p>
+<h3 id="lobby-match-browser-metadata">Lobby (match browser metadata) </h3>
+<p><strong>File:</strong> <code>TitanOrbitLobbyService.cs</code></p>
+<p>UGS Lobby stores:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RelayJoinCode</code></td>
+<td>How clients join relay (member-visible)</td>
+</tr>
+<tr>
+<td><code>IsOpen</code></td>
+<td>Accepting players</td>
+</tr>
+<tr>
+<td><code>IsLatest</code></td>
+<td>Quick-join target</td>
+</tr>
+<tr>
+<td><code>ServerAliveAt</code></td>
+<td>Heartbeat — stale lobbies rejected</td>
+</tr>
+<tr>
+<td><code>GameName</code></td>
+<td>Filter <code>TitanOrbit</code></td>
+</tr>
+</tbody>
+</table>
+<p>Server boot creates lobby after listen succeeds. Heartbeat updates while match runs. Join browser queries joinable lobbies.</p>
+<p><strong>Teaching analogy:</strong> Lobby is the <strong>match listing on a website</strong>. Relay is the <strong>phone line</strong> once you join.</p>
+<h2 id="37-dedicated-server-boot-chain">3.7 Dedicated server boot chain </h2>
+<p>Sequence on Google Cloud:</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>TitanOrbitBootstrap → ServerWorld only, port 0
+TitanOrbitDedicatedServerBootRunner.AfterSceneLoad
+  → create session manager if missing
+  → EnsureDedicatedBootStarted()
+BootDedicatedServer coroutine:
+  → wait for NetworkStreamDriver
+  → Relay CreateAllocation + join code
+  → ListenServer (AnyIpv4 for relay)
+  → GoInGame on server connections
+  → Create UGS Lobby (IsLatest, IsOpen, heartbeat)
+TitanOrbitSessionManager.Update → TickServerWorld every frame
+TitanOrbitDedicatedServerHost → match rotation (20 min / full lobby)
+</code></pre><p>See <code>Docs/server-hosting-24_7.md</code> for systemd unit example.</p>
+<h2 id="38-tick-rate-and-fixed-timestep">3.8 Tick rate and fixed timestep </h2>
+<p><strong>File:</strong> <code>TitanOrbitServerTickRateSystem.cs</code></p>
+<p>Server sets singleton <code>ClientServerTickRate</code>:</p>
+<ul>
+<li>SimulationTickRate = <strong>60</strong></li>
+<li>NetworkTickRate = <strong>60</strong></li>
+<li>MaxSimulationStepsPerFrame = <strong>4</strong></li>
+</ul>
+<p><strong>Critical teaching point:</strong> Ship speed is in <strong>units per second</strong>. 60 Hz does not make ships faster — it means <strong>60 small steps per second</strong>. If your monitor renders 144 FPS, most frames either do zero sim steps or occasionally do 2–4 catch-up steps after a hitch.</p>
+<p>This is a <strong>major source of perceived stepping</strong> (Volume 7).</p>
+<p><code>TitanOrbitClientTickRateSystem</code> is intentionally empty today — clients inherit server rate on connect.</p>
+<hr>
+<h1 id="volume-4--ecs-simulation-core-1">Volume 4 — ECS simulation core </h1>
+<h2 id="41-components-entities-systems-queries">4.1 Components, entities, systems, queries </h2>
+<p><strong>Entity</strong> — Integer ID. No behavior attached to the ID itself.</p>
+<p><strong>Component</strong> — <code>struct</code> implementing <code>IComponentData</code> (or buffer interfaces). Plain data.</p>
+<p>Example: <code>ShipState</code> holds <code>Health</code>, <code>Team</code>, <code>CurrentGems</code>, <code>IsDead</code>.</p>
+<p><strong>System</strong> — Code that iterates matching entities each tick.</p>
+<p>Example: <code>ShipMovementSystem</code> runs <code>ShipMovementJob</code> over entities with <code>ShipTag</code> + <code>Simulate</code>.</p>
+<p><strong>Query</strong> — Filter defining which entities a system sees:</p>
+<pre data-role="codeBlock" data-info="csharp" class="language-csharp csharp"><code><span class="token comment">// Conceptual</span>
+<span class="token keyword keyword-foreach">foreach</span> <span class="token punctuation">(</span>ship with ShipTag <span class="token operator">+</span> Simulate <span class="token operator">+</span> ShipMotorConfig<span class="token punctuation">)</span> <span class="token punctuation">{</span> <span class="token range operator">..</span><span class="token punctuation">.</span> <span class="token punctuation">}</span>
+</code></pre><p><strong>Student skill:</strong> When you open any <code>*System.cs</code>, find:</p>
+<ol>
+<li><code>[WorldSystemFilter]</code> — client, server, or both?</li>
+<li><code>[UpdateInGroup]</code> / <code>[UpdateBefore]</code> — when in frame?</li>
+<li><code>.WithAll</code> / <code>.WithNone</code> — who is in the query?</li>
+</ol>
+<h2 id="42-world-filters-and-system-groups">4.2 World filters and system groups </h2>
+<p><strong>WorldSystemFilterFlags:</strong></p>
+<ul>
+<li><code>ClientSimulation</code> — owner prediction, input apply, client RPC receivers</li>
+<li><code>ServerSimulation</code> — damage, spawning, economy</li>
+<li>Combined — shared setup (physics bootstrap, presentation cache)</li>
+</ul>
+<p><strong>Major groups (simplified frame):</strong></p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>InitializationSystemGroup     ← once: physics gravity, tick rate, match singletons
+GhostInputSystemGroup         ← client input onto ghosts
+PredictedFixedStepSimulationSystemGroup
+  └── ShipMovement*           ← BEFORE physics
+PhysicsSystemGroup            ← integrates position, collisions
+SimulationSystemGroup         ← bullets, gems, teams, capture
+PresentationSystemGroup       ← interpolation, ShipVisualSyncSystem last
+</code></pre><p><strong>Why order is law:</strong> Motor sets velocity <strong>before</strong> physics integrates position. Bullets read positions <strong>after</strong> movement. Breaking <code>[UpdateBefore(typeof(PhysicsSystemGroup))]</code> on movement causes one-frame lag bugs.</p>
+<h2 id="43-gamebootstrap-and-match-singletons">4.3 GameBootstrap and match singletons </h2>
+<p><strong>File:</strong> <code>ECS/Systems/GameBootstrapSystem.cs</code></p>
+<p><strong><code>GameBootstrapSystem.OnCreate</code> (server):</strong> Creates one entity holding:</p>
+<table>
+<thead>
+<tr>
+<th>Singleton / buffer</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TeamStateSingleton</code></td>
+<td>Per-team player counts, elimination</td>
+</tr>
+<tr>
+<td><code>MatchStateSingleton</code></td>
+<td>Timer, win team, game state byte</td>
+</tr>
+<tr>
+<td><code>MapStateSingleton</code></td>
+<td>Width, height, seed, loading progress</td>
+</tr>
+<tr>
+<td><code>BulletElement</code> buffer</td>
+<td>Active bullets (server sim list)</td>
+</tr>
+<tr>
+<td><code>BulletSpawnEventElement</code></td>
+<td>Cosmetic spawn events for presentation</td>
+</tr>
+<tr>
+<td><code>BulletHitEventElement</code></td>
+<td>Hit events for impact VFX</td>
+</tr>
+<tr>
+<td><code>MapLayoutEntryElement</code></td>
+<td>Minimap / spawn layout</td>
+</tr>
+<tr>
+<td><code>PlayerNameElement</code></td>
+<td>Scoreboard names</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>MapGenerationSystem</code>:</strong> Phased procedural spawn — one entity per tick from queue until done, updates <code>LoadingComplete</code>.</p>
+<p><strong><code>MatchTimerSystem</code>:</strong> Increments match timer after first tick.</p>
+<p><strong>Teaching point:</strong> Singletons are "global variables done right in ECS" — one entity, one component, queried everywhere.</p>
+<h2 id="44-physics-bootstrap-and-layers">4.4 Physics bootstrap and layers </h2>
+<p><strong>File:</strong> <code>ECS/Systems/TitanOrbitPhysicsBootstrapSystem.cs</code></p>
+<p>On both client and server:</p>
+<ul>
+<li>Sets <strong>gravity to zero</strong> (top-down space)</li>
+<li>Creates <strong><code>LagCompensationConfig</code></strong> with history size 16 — enables prediction rewind for physics</li>
+</ul>
+<p><strong>File:</strong> <code>ECS/TitanOrbitPhysicsLayers.cs</code></p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Who</th>
+<th>Collides with</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ship</td>
+<td>Dynamic sphere</td>
+<td>Ships, WorldStatic</td>
+</tr>
+<tr>
+<td>WorldStatic</td>
+<td>Planets, asteroids</td>
+<td>Ships, gems, transports</td>
+</tr>
+<tr>
+<td>Gem</td>
+<td>Gems (scripted motion)</td>
+<td>World only</td>
+</tr>
+<tr>
+<td>Transport</td>
+<td>People transports</td>
+<td>World only</td>
+</tr>
+</tbody>
+</table>
+<p>Ships <strong>do not</strong> physics-collide with gems — pickup is distance-based in <code>GemPickupSystem</code>.</p>
+<p><strong>Baked on ship:</strong> <code>InverseInertia = 0</code> — contacts won't spin hull. Rotation comes from motor only.</p>
+<h2 id="45-ship-components-explained-field-by-field">4.5 Ship components explained field by field </h2>
+<h3 id="shipinput-ecscomponentsshipinputcs"><code>ShipInput</code> (<code>ECS/Components/ShipInput.cs</code>) </h3>
+<p>NetCode <strong>input component</strong> — sent from owner client to server each tick.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>AimPlanarDir</code></td>
+<td>Normalized XZ aim (mouse direction)</td>
+</tr>
+<tr>
+<td><code>Thrust</code></td>
+<td>Hold forward thrust</td>
+</tr>
+<tr>
+<td><code>Fire</code></td>
+<td><code>InputEvent</code> — fire pressed this tick</td>
+</tr>
+<tr>
+<td><code>SpaceBrakes</code></td>
+<td>Brake toggle</td>
+</tr>
+<tr>
+<td><code>WantDepositGems</code></td>
+<td>Deposit while docked</td>
+</tr>
+</tbody>
+</table>
+<h3 id="shipstate"><code>ShipState</code> </h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Health</code> / <code>MaxHealth</code></td>
+<td>Hull</td>
+</tr>
+<tr>
+<td><code>Team</code></td>
+<td><code>TeamId</code> — <code>None</code> until team pick</td>
+</tr>
+<tr>
+<td><code>ShipLevel</code></td>
+<td>Upgrade tier</td>
+</tr>
+<tr>
+<td><code>CurrentGems</code> / <code>GemCapacity</code></td>
+<td>Cargo</td>
+</tr>
+<tr>
+<td><code>CurrentEnergy</code> / <code>MaxEnergy</code></td>
+<td>Weapon fuel</td>
+</tr>
+<tr>
+<td><code>IsDead</code></td>
+<td>Awaiting respawn</td>
+</tr>
+<tr>
+<td><code>AwaitingTeamSelection</code></td>
+<td>Spawn gate</td>
+</tr>
+</tbody>
+</table>
+<p>Ghost-replicated — other players' HUD/minimap can read your team and rough state.</p>
+<h3 id="shipmotorconfig-not-ghost--recomputed"><code>ShipMotorConfig</code> (not ghost — recomputed) </h3>
+<p><code>EngineThrust</code>, <code>MaxSpeed</code>, <code>RotationSpeed</code>, <code>BrakeDeceleration</code>, mass references — from chassis + loadout via <code>ShipStatApplySystem</code>.</p>
+<h3 id="shipmoondockstate"><code>ShipMoonDockState</code> </h3>
+<p><code>MoonPlanetId</code>, <code>LandingProgress</code>, approach delay — server <code>ShipMoonDockSystem</code> writes; motor reads to pin ship when landed.</p>
+<h3 id="shipdepositintent"><code>ShipDepositIntent</code> </h3>
+<p>Separate from input — survives prediction rollback. Server sets via <code>SetWantDepositGemsCommand</code> RPC.</p>
+<h2 id="46-ghost-authoring-and-baking">4.6 Ghost authoring and baking </h2>
+<p><strong>File:</strong> <code>ECS/Authoring/StarshipGhostAuthoring.cs</code></p>
+<p>Designer places MonoBehaviour on prefab → <strong>Baker</strong> runs at bake time:</p>
+<p><strong>Components stamped:</strong></p>
+<ul>
+<li>Tags: <code>ShipTag</code></li>
+<li>State: <code>ShipState</code> defaults (100 HP, awaiting team)</li>
+<li>Motor/weapon/vitals configs</li>
+<li><code>ShipInput</code>, <code>ShipKinematics</code></li>
+<li>Orbit/dock/deposit defaults</li>
+</ul>
+<p><strong>Buffers:</strong></p>
+<ul>
+<li><code>ShipWeaponMountElement</code> — from child <code>ShipWeaponMountAuthoring</code> or "Weapon" transforms</li>
+<li><code>ShipWingTractorBeamElement</code> — wing gem tractor positions</li>
+</ul>
+<p><strong>Physics body:</strong></p>
+<ul>
+<li>Sphere collider, dynamic mass, restitution 0.5, friction 0.05</li>
+<li><code>PhysicsGravityFactor = 0</code></li>
+<li><code>PhysicsMassOverride</code> for kinematic moon dock</li>
+</ul>
+<p><strong>Teaching analogy:</strong> Baking is a <strong>factory stamp</strong> — the prefab is the blueprint; the subscene holds the stamped ECS entities ready for runtime instantiation.</p>
+<h2 id="47-rpcs-vs-ghost-replication">4.7 RPCs vs ghost replication </h2>
+<p><strong>Ghosts</strong> continuously replicate component fields (health, transform, team). Good for <strong>state that changes every tick or often</strong>.</p>
+<p><strong>RPCs</strong> are discrete messages. Good for <strong>actions with validation</strong>:</p>
+<ul>
+<li>Pick team (can't pick twice)</li>
+<li>Buy upgrade (server checks gems)</li>
+<li>Rejoin choice</li>
+</ul>
+<p><strong>File:</strong> <code>ECS/Components/NetworkCommands.cs</code> — full catalog in Appendix B.</p>
+<p><strong>Rule of thumb:</strong> If cheating would matter and it's not already on a server-only system, use RPC + server validation.</p>
+<hr>
+<h1 id="volume-5--input-and-local-player-discovery-1">Volume 5 — Input and local player discovery </h1>
+<h2 id="51-from-keyboard-to-shipinput">5.1 From keyboard to ShipInput </h2>
+<p>Input is the <strong>first domino</strong> in the movement pipeline. If you misunderstand input timing, everything downstream looks "laggy" or "stepped" even when motor and physics are correct.</p>
+<p><strong>Files involved:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>File</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Device reading</td>
+<td><code>Input/PlayerInputHandler.cs</code>, <code>Input/MobileInputHandler.cs</code></td>
+</tr>
+<tr>
+<td>Bridge</td>
+<td><code>Game/ShipInputBridge.cs</code></td>
+</tr>
+<tr>
+<td>Staging</td>
+<td><code>ECS/Components/ShipPendingInput.cs</code> (static latest)</td>
+</tr>
+<tr>
+<td>Apply</td>
+<td><code>ECS/Systems/ShipInputApplySystem.cs</code></td>
+</tr>
+<tr>
+<td>Component</td>
+<td><code>ECS/Components/ShipInput.cs</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>PlayerInputHandler</code> uses Unity's <strong>New Input System</strong> (<code>InputSystem_Actions.inputactions</code>) with keyboard/mouse fallbacks. It answers questions like: is W held, is left mouse down, where is the mouse on the XZ plane?</p>
+<p>None of this touches ECS directly. That separation is intentional — MonoBehaviour <code>Update</code> runs at <strong>render rate</strong> (variable: 60–144+ FPS). ECS sim runs at <strong>fixed 60 Hz</strong>. Mixing them without a buffer causes input to be missed or doubled.</p>
+<p><code>ShipInputBridge</code> (execution order <strong>-10000</strong>, very early in the frame) reads handlers and builds a <code>ShipInput</code> struct:</p>
+<ul>
+<li><strong>AimPlanarDir</strong> — from mouse world position minus ship position, or mobile drag direction</li>
+<li><strong>Thrust</strong> — forward thrust held</li>
+<li><strong>Fire</strong> — <code>InputEvent</code> one-shot when shoot pressed (NetCode pattern for "pressed this tick")</li>
+<li><strong>SpaceBrakes</strong> — from Ctrl toggle</li>
+<li><strong>WantDepositGems</strong> — from moon orbit client state</li>
+</ul>
+<p>It writes to <code>ShipPendingInput.Set(...)</code>.</p>
+<p><strong>Teaching moment:</strong> Notice <code>Fire</code> uses <code>InputEvent</code>. Buttons that should fire once per press in networked games must not be a bool "is held" on the sim boundary — otherwise prediction resim might shoot twice or zero times. NetCode's input events are designed for this.</p>
+<h2 id="52-shipinputbridge-and-the-frame-rate-bridge">5.2 ShipInputBridge and the frame-rate bridge </h2>
+<p>Why not write <code>ShipInput</code> directly in <code>ShipInputBridge</code>?</p>
+<p>Because <strong><code>ShipInputApplySystem</code> runs in <code>GhostInputSystemGroup</code></strong>, tied to the <strong>client simulation tick</strong>, not <code>Update</code>. The pending buffer is the <strong>mailbox</strong> between render frames and sim ticks.</p>
+<p><strong>Scenario:</strong> Monitor 144 FPS, sim 60 Hz.</p>
+<ul>
+<li>Some render frames: two Updates, zero sim steps → pending holds latest intent</li>
+<li>Some frames: zero Updates, one sim step → apply reads last pending (good)</li>
+<li>Hitch frame: four sim catch-up steps → apply may run four times; input should be consistent per step</li>
+</ul>
+<p><strong>Pitfall:</strong> If <code>ShipInputBridge</code> is disabled or <code>PlayerInputHandler</code> missing, pending never updates — ship drifts with zero thrust but no error spam. Always verify input chain when movement "does nothing."</p>
+<p><strong>Orbit menu guard:</strong> Fire is blocked when moon orbit menu visible — UX choice so you don't shoot while shopping.</p>
+<h2 id="53-clientcommandtargetsystem">5.3 ClientCommandTargetSystem </h2>
+<p><strong>File:</strong> <code>ECS/Systems/ClientCommandTargetSystem.cs</code><br>
+<strong>World:</strong> Client only<br>
+<strong>Group:</strong> <code>GhostInputSystemGroup</code>, <strong>OrderFirst</strong></p>
+<p>When you join a dedicated server, this sequence happens:</p>
+<ol>
+<li>You connect (connection entity exists)</li>
+<li>You pick a team (RPC)</li>
+<li>Server spawns your ship with <code>GhostOwner.NetworkId</code></li>
+<li>Client must attach input commands to <strong>that</strong> ship entity</li>
+</ol>
+<p>NetCode uses <code>CommandTarget</code> component on the connection: <code>targetEntity = your ship</code>.</p>
+<p>This system:</p>
+<ol>
+<li>Skips if local host (server uses <code>ShipServerControlSystem</code> instead) or team UI suppresses control</li>
+<li>Finds local <code>NetworkId</code> from in-game connection</li>
+<li>Queries ship with matching <code>GhostOwner</code></li>
+<li>Sets <code>CommandTarget.targetEntity</code></li>
+</ol>
+<p><strong>Analogy:</strong> At an arcade, you swipe your card (connection), choose a game (team RPC), get assigned machine #3 (spawn), then the cab routes the joystick to machine #3 (<code>CommandTarget</code>). Without step 4, you'd be pressing buttons with no effect.</p>
+<h2 id="54-localplayertagsystem">5.4 LocalPlayerTagSystem </h2>
+<p><strong>File:</strong> <code>ECS/Systems/LocalPlayerTagSystem.cs</code></p>
+<p>Adds <strong><code>LocalPlayerShipTag</code></strong> to your ship for fast queries — camera, HUD, visualizer, input fallbacks.</p>
+<p>Resolution paths (in order of strategy):</p>
+<ol>
+<li><code>CommandTarget</code> on connection → target entity</li>
+<li><code>GhostOwner.NetworkId</code> match</li>
+<li><code>GhostOwnerIsLocal</code> enableable flag (NetCode fallback)</li>
+</ol>
+<p>Uses <code>EntityCommandBuffer</code> for structural changes (add/remove tag).</p>
+<p><strong>Why a tag instead of querying <code>GhostOwnerIsLocal</code> everywhere?</strong> Historical hybrid paths and host edge cases — multiple ways to identify "my ship" after team spawn timing. <code>EcsGameBridge</code> duplicates similar fallback chains for transforms.</p>
+<p><strong>UI suppression:</strong> <code>ClientTeamFlowState.ShouldSuppressLocalPlayerControl()</code> blocks tagging during team pick / rejoin — prevents you flying a ship before design allows.</p>
+<h2 id="55-host-input-shipservercontrolsystem">5.5 Host input: ShipServerControlSystem </h2>
+<p><strong>File:</strong> <code>Game/ShipServerControlSystem.cs</code></p>
+<p>On <strong>local host</strong>, the server world cannot rely on NetCode command round-trip for the host player's ship — latency is zero but worlds are separate.</p>
+<p>This system (server world, after <code>GhostInputSystemGroup</code>, before movement) reads keyboard/mouse similarly to <code>PlayerInputHandler</code> and writes <strong><code>ShipInput</code> directly on the server ghost</strong>.</p>
+<p>Meanwhile client world still runs:</p>
+<p><code>ShipInputBridge</code> → <code>ShipInputApplySystem</code> → <strong>prediction</strong></p>
+<p>So host uses <strong>dual input paths</strong> converging on the same motor math in different worlds. They should match closely. If they diverge, host feels "weird" compared to dedicated client.</p>
+<h2 id="56-mobile-input">5.6 Mobile input </h2>
+<p><strong>File:</strong> <code>Input/MobileInputHandler.cs</code></p>
+<p>Touch model:</p>
+<ul>
+<li><strong>Left half:</strong> anchor steering — drag sets aim; drag distance &gt; threshold enables thrust</li>
+<li><strong>Right half:</strong> hold to shoot</li>
+<li>Exclusion rects prevent shooting through UI buttons</li>
+</ul>
+<p><code>PlayerInputHandler</code> delegates when <code>TouchUiActive</code>.</p>
+<p><strong>Cosmetic smoothing:</strong> <code>MobileSteerVisualUI</code> may smooth stick display — <strong>allowed</strong> per architecture rules (UI only, not hull sim).</p>
+<p><strong>CrossPlatformManager</strong> sets mobile 30 FPS vs desktop 60 — affects render, not sim Hz. Mobile can feel different because of frame pacing, not because motor changed.</p>
+<hr>
+<h1 id="volume-6--ship-movement-masterclass-1">Volume 6 — Ship movement masterclass </h1>
+<p>This volume is the technical heart of the game. Read it twice.</p>
+<h2 id="61-the-contract-motor-vs-physics">6.1 The contract: motor vs physics </h2>
+<p><strong>Motor</strong> (<code>ShipMotorSimulator</code> + <code>ShipMovementBurstLogic</code>):</p>
+<ul>
+<li>Reads <code>ShipInput</code>, planet context, dock state</li>
+<li>Writes <strong><code>PhysicsVelocity.Linear</code></strong></li>
+<li>Writes <strong><code>LocalTransform.Rotation</code></strong></li>
+<li>Writes <strong><code>ShipKinematics.Velocity</code></strong> mirror</li>
+<li>Does <strong>NOT</strong> write <strong><code>LocalTransform.Position</code></strong></li>
+</ul>
+<p><strong>Unity Physics</strong> (<code>PhysicsSystemGroup</code>):</p>
+<ul>
+<li>Integrates <strong>position</strong> from velocity</li>
+<li>Resolves sphere collisions (ships, planets, asteroids)</li>
+<li>May alter velocity on bounce (restitution)</li>
+</ul>
+<p><strong>Why split?</strong> Collisions must be consistent and shared with Unity's solver. If motor manually integrated position <em>and</em> physics ran, you'd double-move or fight the solver.</p>
+<p><strong>Student experiment (mental):</strong> Imagine motor teleports position when hitting a planet. Physics also pushes back. Ship vibrates or tunnels. Centralizing position in physics avoids that war.</p>
+<h2 id="62-shipmotorsimulator-algorithm-step-by-step">6.2 ShipMotorSimulator algorithm step by step </h2>
+<p><strong>File:</strong> <code>Simulation/ShipMotorSimulator.cs</code></p>
+<p><code>Step(ref state, in p, aimWorldXZ, thrust, spaceBrakes, integratePosition)</code>:</p>
+<h3 id="step-0--guard-dt">Step 0 — Guard dt </h3>
+<p>If <code>dt &lt;= 0</code>, return. Protects against bad clock.</p>
+<h3 id="step-1--electric-shock-if-enabled">Step 1 — Electric shock (if enabled) </h3>
+<p>Hard brake, no rotation/thrust. Status effect path.</p>
+<h3 id="step-2--rotate-toward-aim">Step 2 — Rotate toward aim </h3>
+<p><code>TryRotateTowardAim</code>:</p>
+<ul>
+<li>Aim point on XZ plane from <code>aimWorldXZ</code></li>
+<li><code>LookRotationSafe</code> toward aim</li>
+<li>Clamp turn by <code>rotationSpeedDeg × dt</code> using slerp fraction</li>
+</ul>
+<p><strong>Teaching:</strong> Rotation is <strong>frame-rate independent</strong> because turn cap scales with <code>dt</code>.</p>
+<h3 id="step-3--velocity">Step 3 — Velocity </h3>
+<p><strong>Orbit branch</strong> if <code>p.UseOrbit</code>:</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>blended = lerp(currentVel, OrbitDesiredVelocity, saturate(OrbitAlignRate × dt))
+</code></pre><p><strong>Thrust branch</strong> else <code>ApplyThrustAndBrakes</code>:</p>
+<ul>
+<li>Thrust along ship forward <code>(0,0,1)</code> rotated</li>
+<li>Acceleration <code>EngineThrust / mass</code> (F = ma)</li>
+<li>Below max speed: add accel along forward</li>
+<li>At/above max speed: thrust <strong>perpendicular component</strong> only (steer without speeding up — strafe cap behavior)</li>
+<li>Space brakes: decelerate along velocity when not thrusting</li>
+<li>Recoil decay: if <code>|v| &gt; MaxSpeed</code>, bleed excess at <code>RecoilDecayPerSecond / mass</code></li>
+</ul>
+<h3 id="step-4--position-integration">Step 4 — Position integration </h3>
+<p>Only if <code>integratePosition == true</code>. <strong>Ships pass false.</strong></p>
+<hr>
+<p><strong>Mass</strong> comes from <code>ShipMassLogic.ComputeMovementMass</code> — heavier (more HP, more gems) → slower acceleration, same top speed cap.</p>
+<h2 id="63-shipmovementburstlogic-overlays">6.3 ShipMovementBurstLogic overlays </h2>
+<p><strong>File:</strong> <code>ECS/Systems/ShipMovementLogic.cs</code> — class <code>ShipMovementBurstLogic</code></p>
+<p>Before motor:</p>
+<table>
+<thead>
+<tr>
+<th>Check</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IsDead</code> or <code>AwaitingTeamSelection</code></td>
+<td>Zero velocity, return</td>
+</tr>
+<tr>
+<td>Landed on moon, no thrust</td>
+<td>Pin, zero velocity, clear orbit</td>
+</tr>
+</tbody>
+</table>
+<p>Before motor — orbit detection:</p>
+<ul>
+<li>Scan <code>PlanetMotorSnapshot</code> array</li>
+<li>Toroidal distance to planet center (see Volume 11.4 — name legacy, math is Euclidean XZ)</li>
+<li><code>PlanetOrbitMath.IsInOrbitRing</code></li>
+<li>If in ring and not thrusting/firing → <code>UseOrbit</code></li>
+</ul>
+<p>After motor — shield repel:</p>
+<ul>
+<li><code>PlanetGemMoonCombatLogic.ApplyShieldRepelIfNeeded</code> — enemy moon shields push velocity outward deterministically</li>
+</ul>
+<p>After motor — handoff:</p>
+<pre data-role="codeBlock" data-info="csharp" class="language-csharp csharp"><code>physicsVelocity<span class="token punctuation">.</span>Linear <span class="token operator">=</span> vel<span class="token punctuation">;</span>
+transform<span class="token punctuation">.</span>Rotation <span class="token operator">=</span> motorState<span class="token punctuation">.</span>Rotation<span class="token punctuation">;</span>
+kinematics<span class="token punctuation">.</span>Velocity <span class="token operator">=</span> vel<span class="token punctuation">;</span>
+<span class="token comment">// Position untouched</span>
+</code></pre><h2 id="64-shipmovementjob-and-burst">6.4 ShipMovementJob and Burst </h2>
+<p><strong>File:</strong> <code>ECS/Systems/ShipMovementJob.cs</code></p>
+<p><code>[BurstCompile] IJobEntity</code> with <code>[WithAll(typeof(ShipTag), typeof(Simulate))]</code>.</p>
+<p><strong>Why <code>Simulate</code>?</strong> NetCode tag marking entities participating in <strong>prediction loop</strong> on client. Server uses same query shape for consistency.</p>
+<p>Calls <code>ShipMovementBurstLogic.Step</code> per entity.</p>
+<p><strong>Why Burst logic in separate static class?</strong> Comment notes per-method <code>[BurstCompile]</code> on helpers caused BC1064 AOT failures. Inlining in one class avoids that.</p>
+<p><strong>Managed part:</strong> <code>ShipMovementLogic.GetMapSize</code> reads <code>MapStateSingleton</code> on main thread before job — map width/height for orbit math.</p>
+<h2 id="65-server-vs-client-movement-systems">6.5 Server vs client movement systems </h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>ShipMovementSystem</code></th>
+<th><code>ShipClientPredictedMovementSystem</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>World</td>
+<td>Server</td>
+<td>Client</td>
+</tr>
+<tr>
+<td>Group</td>
+<td>PredictedFixedStep</td>
+<td>PredictedFixedStep</td>
+</tr>
+<tr>
+<td>Before</td>
+<td>PhysicsSystemGroup</td>
+<td>PhysicsSystemGroup</td>
+</tr>
+<tr>
+<td>Job</td>
+<td>Same <code>ShipMovementJob</code></td>
+<td>Same</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Determinism requirement:</strong> Same inputs + same planet snapshots + same dt → same velocity/rotation out. If you fork motor "for client feel," prediction breaks and rollback increases — feels worse, not better.</p>
+<h2 id="66-orbit-ring-motor">6.6 Orbit ring motor </h2>
+<p><strong>File:</strong> <code>Simulation/PlanetOrbitMath.cs</code></p>
+<p>Planets have decorative level bands; gameplay <strong>ship orbit ring</strong> is an annulus around the planet. When you coast inside without thrust:</p>
+<p><code>BuildOrbitMotorParams</code> computes:</p>
+<ul>
+<li>Tangential direction (clockwise around planet)</li>
+<li>Target speed from planet size and radius within band</li>
+<li>Radial correction if off centerline</li>
+<li><code>alignRate</code> scaled by <code>1/sqrt(mass)</code> — heavy ships settle into orbit slower</li>
+</ul>
+<p>Motor lerps velocity toward desired orbit velocity.</p>
+<p><strong>Cancel orbit:</strong> Thrust or <code>Fire</code> input — player intent overrides passive orbit.</p>
+<p><strong>HUD:</strong> <code>ShipOrbitState</code> replicated — UI can show orbit icon.</p>
+<h2 id="67-moon-dock-motor-interaction">6.7 Moon dock motor interaction </h2>
+<p><strong>File:</strong> <code>ECS/Systems/ShipMoonDockSystem.cs</code> (server)</p>
+<p>When <code>ShipMoonDockState</code> shows landed (<code>LandingProgress</code> ≥ threshold) and no thrust:</p>
+<p>Motor early-outs: zero velocity, clear orbit.</p>
+<p>Server may set <strong><code>PhysicsMassOverride</code> kinematic</strong> — physics stops dynamic response while docked.</p>
+<p><strong>Client visual:</strong> <code>ShipMoonDockVisualApplier</code> cinematic may <strong>override proxy transform</strong> — see Volume 8.7. Sim position on server still authoritative for deposits/combat range.</p>
+<h2 id="68-shield-repel-overlay">6.8 Shield repel overlay </h2>
+<p>Enemy gem moons have shields without physics colliders. Repel is <strong>gameplay math</strong> inside motor step:</p>
+<ul>
+<li>If ship penetrates enemy shield shell, nudge velocity outward</li>
+<li>Must run on <strong>both</strong> client prediction and server authority</li>
+<li>Deterministic from planet snapshots + elapsed time</li>
+</ul>
+<p><strong>Do not</strong> implement repel as client-only GameObject push — desyncs prediction.</p>
+<hr>
+<h1 id="volume-7--choppy-movement-a-full-thesis-1">Volume 7 — Choppy movement: a full thesis </h1>
+<p>You asked specifically about <strong>choppy / stepped movement</strong>. This volume answers at the depth you deserve.</p>
+<h2 id="71-three-clocks-render-sim-network">7.1 Three clocks: render, sim, network </h2>
+<p>Your game runs on three clocks that are <strong>related but not identical</strong>:</p>
+<div class="mermaid">flowchart TB
+    R["Render clock\nMonitor refresh rate\n60–144+ Hz variable"]
+    S["Simulation clock\nFixed 60 Hz\n16.67 ms per tick"]
+    N["Network clock\n60 Hz snapshots\n+ latency jitter"]
+    
+    R --&gt;|"reads pose for drawing"| P[Presentation]
+    S --&gt;|"motor + physics"| P
+    N --&gt;|"corrects prediction"| S
+</div><p><strong>Render clock</strong> — Unity <code>Update</code>/<code>LateUpdate</code>, <code>Time.deltaTime</code> varies.</p>
+<p><strong>Simulation clock</strong> — <code>PredictedFixedStepSimulationSystemGroup</code>, <code>Time.DeltaTime</code> in systems is <strong>fixed</strong> (1/60).</p>
+<p><strong>Network clock</strong> — Snapshots sent at <code>NetworkTickRate</code> 60 Hz; arrival jitters with ping.</p>
+<p><strong>Perceived choppiness</strong> often means: your eyes integrate at render rate, but position updates arrive on sim/network boundaries <strong>without</strong> smooth interpolation at the exact phase you read.</p>
+<h2 id="72-where-stepping-is-introduced">7.2 Where stepping is introduced </h2>
+<h3 id="source-a--fixed-timestep-fundamental">Source A — Fixed timestep (fundamental) </h3>
+<p>Motor and physics advance <strong>once per sim tick</strong>. True continuous motion is approximated by 60 discrete steps per second.</p>
+<p>Between ticks, <strong>correct</strong> behavior is:</p>
+<ul>
+<li>NetCode <strong>presentation</strong> interpolates / smooths for display</li>
+<li>You read <strong>presentation cache</strong>, not raw sim</li>
+</ul>
+<p>If presentation is bypassed, you see 60 Hz stair-steps on a 144 Hz monitor.</p>
+<h3 id="source-b--input-sampling-vs-sim-apply">Source B — Input sampling vs sim apply </h3>
+<p>Input sampled every render frame, applied on sim ticks. Up to ~one tick input latency — normal for networked games.</p>
+<p>Feels like slight mush, not always like visual stutter.</p>
+<h3 id="source-c--physics-collision-impulses">Source C — Physics collision impulses </h3>
+<p>Restitution ~0.5 on ships — bumps add velocity discontinuities. Correct physically; can feel "kicky" in dense traffic.</p>
+<h3 id="source-d--catch-up-steps-after-hitch">Source D — Catch-up steps after hitch </h3>
+<p><code>MaxSimulationStepsPerFrame = 4</code> — if frame stalls, up to 4 sim steps in one render frame. Burst of motion then pause — <strong>visible stutter</strong>.</p>
+<p>WebGL and thermal throttling on laptops exacerbate this.</p>
+<h3 id="source-e--remote-ships">Source E — Remote ships </h3>
+<p>Not choppy in the same way — they're <strong>interpolated</strong> but <strong>lag behind</strong>. Different symptom.</p>
+<h2 id="73-prediction-and-rollback">7.3 Prediction and rollback </h2>
+<p><strong>Client prediction</strong> runs <code>ShipClientPredictedMovementSystem</code> on your ship before server confirms.</p>
+<p>When server snapshot differs:</p>
+<ol>
+<li>Roll back local state to server history point</li>
+<li>Re-simulate forward with corrected data</li>
+<li><code>GhostPredictionSmoothing</code> eases visual error</li>
+</ol>
+<p><strong>Feels like:</strong> micro rubber band or snap — worse on high latency or if motor isn't deterministic.</p>
+<p><strong>Known related bug class:</strong> <code>ShipInput.WantDepositGems</code> lost on rollback → separate <code>ShipDepositIntent</code> + RPC.</p>
+<p><strong>Incomplete hardening:</strong> <code>ShipMotorState.LastSimTick</code> documented for stale rollback detection but not enforced in motor yet.</p>
+<h2 id="74-presentation-phase-discipline">7.4 Presentation phase discipline </h2>
+<p><strong>Correct ship pose chain:</strong></p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>Sim LocalTransform
+  → NetCode presentation / prediction smoothing
+  → ShipVisualSyncSystem (OrderLast in PresentationSystemGroup)
+  → GhostPresentationTransformCache
+  → EcsWorldVisualizer.ApplyShipProxyTransform (no extra owner lerp)
+  → ShipDisplayPose
+  → CameraFollowEcs
+</code></pre><p><strong>Violation symptoms:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Mistake</th>
+<th>Symptom</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Camera reads raw sim on owner</td>
+<td>Jitter on predicted ship</td>
+</tr>
+<tr>
+<td>Extra proxy Lerp on owner</td>
+<td>Laggy, mushy, fights rollback</td>
+</tr>
+<tr>
+<td>LateUpdate ECS sim query for aim/move</td>
+<td>One-frame oscillation</td>
+</tr>
+</tbody>
+</table>
+<p><code>EcsWorldVisualizer</code> comment is explicit: <strong>"No extra lerp on the local owner."</strong></p>
+<h2 id="75-host-vs-dedicated-client-differences">7.5 Host vs dedicated client differences </h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Local host</th>
+<th>Dedicated online client</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Visualization world</td>
+<td>Often <strong>ServerWorld</strong></td>
+<td><strong>ClientWorld</strong></td>
+</tr>
+<tr>
+<td>Input to server</td>
+<td><code>ShipServerControlSystem</code> + client prediction</td>
+<td>NetCode commands only</td>
+</tr>
+<tr>
+<td>Bullet tracers</td>
+<td>Server spawn events + replication</td>
+<td>+ <code>ClientLocalBulletVfxBridge</code> cosmetic</td>
+</tr>
+</tbody>
+</table>
+<p>Host testing can feel subtly different from production client — always verify on dedicated join before tuning "feel."</p>
+<h2 id="76-what-we-refuse-to-do-and-why">7.6 What we refuse to do (and why) </h2>
+<p>From <code>titan-orbit-ship-simulation.mdc</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Forbidden fix</th>
+<th>Why wrong</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Remove client prediction</td>
+<td>Adds input lag equal to ping</td>
+</tr>
+<tr>
+<td>Smooth local owner proxy</td>
+<td>Hides errors, adds lag, desyncs camera</td>
+</tr>
+<tr>
+<td>Motor integrates position</td>
+<td>Fights physics solver</td>
+</tr>
+<tr>
+<td>Client-only motor fork</td>
+<td>Breaks prediction determinism</td>
+</tr>
+<tr>
+<td>Custom non-physics ship collision</td>
+<td>Duplicates authority</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Approved tuning:</strong> tick rate, <code>GhostPredictionSmoothing</code>, physics solver settings, input buffer — not removing architecture.</p>
+<h2 id="77-debugging-movement-feel">7.7 Debugging movement feel </h2>
+<p><strong>Checklist:</strong></p>
+<ol>
+<li>✅ Local ship has <code>Simulate</code> tag on client</li>
+<li>✅ <code>ShipClientPredictedMovementSystem</code> runs (breakpoint)</li>
+<li>✅ Proxy uses <code>GhostPresentationTransformCache</code> same frame</li>
+<li>✅ <code>CameraFollowEcs</code> reads <code>ShipDisplayPose</code>, not sim</li>
+<li>✅ Compare host vs <code>JoinDedicatedLobbyAsync</code> client</li>
+<li>✅ Log <code>Time.deltaTime</code> spikes + sim step count per frame</li>
+<li>✅ NetCode prediction stats (editor tools)</li>
+</ol>
+<p><strong>Questions to ask when reporting a bug:</strong></p>
+<ul>
+<li>Local owner, remote ship, or both?</li>
+<li>Host, dedicated client, or WebGL?</li>
+<li>During dock cinematic, combat bump, or straight thrust?</li>
+<li>After packet loss / high ping?</li>
+</ul>
+<hr>
+<h1 id="volume-8--hybrid-presentation-layer-1">Volume 8 — Hybrid presentation layer </h1>
+<h2 id="81-why-gameobject-proxies-exist">8.1 Why GameObject proxies exist </h2>
+<p><strong>Historical/practical reason:</strong> Ultimate Spaceship Creator ships are rich hierarchies of meshes, materials, particle children — built for GameObjects.</p>
+<p><strong>Entities Graphics</strong> could render ECS directly — migration cost is large.</p>
+<p><strong>Architecture compromise:</strong></p>
+<ul>
+<li>ECS entity = <strong>truth</strong> (sim + net)</li>
+<li>GameObject proxy = <strong>picture</strong> (render only)</li>
+</ul>
+<p>Rule: proxies <strong>never</strong> write back to sim (except controlled server bridges like weapon mounts).</p>
+<h2 id="82-shipvisualsyncsystem-and-the-cache">8.2 ShipVisualSyncSystem and the cache </h2>
+<p><strong><code>ShipVisualSyncSystem</code></strong> — ECS system, <code>PresentationSystemGroup</code>, <strong>OrderLast</strong>.</p>
+<p>Each frame:</p>
+<ol>
+<li><code>GhostPresentationTransformCache.BeginPublish(frameCount)</code> — clear dicts</li>
+<li>Query all <code>ShipTag</code> + <code>LocalTransform</code> (and people transports)</li>
+<li>Store position/rotation/scale snapshots</li>
+</ol>
+<p><strong><code>GhostPresentationTransformCache</code></strong> — static managed dictionaries. Marked <strong>temporary bridge</strong> in comments.</p>
+<p>Readers check <code>PublishFrame == Time.frameCount</code> before trust.</p>
+<p><strong>Why not query presentation transforms from MonoBehaviour directly?</strong> NetCode presentation API is ECS-phase — cache is the sanctioned handoff.</p>
+<h2 id="83-ecsworldvisualizer-lifecycle">8.3 EcsWorldVisualizer lifecycle </h2>
+<p><strong>File:</strong> <code>Game/EcsWorldVisualizer.cs</code> — execution order <strong>66000</strong>, <code>LateUpdate</code>.</p>
+<p>Per entity type:</p>
+<table>
+<thead>
+<tr>
+<th>Type</th>
+<th>Spawn trigger</th>
+<th>Sync source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ships</td>
+<td><code>ShipTag</code> query</td>
+<td>Presentation cache</td>
+</tr>
+<tr>
+<td>Planets</td>
+<td><code>PlanetTag</code></td>
+<td>Sim <code>LocalTransform</code></td>
+</tr>
+<tr>
+<td>Asteroids</td>
+<td><code>AsteroidTag</code></td>
+<td>Sim transform</td>
+</tr>
+<tr>
+<td>Gems</td>
+<td><code>GemTag</code></td>
+<td>Sim transform</td>
+</tr>
+<tr>
+<td>People transports</td>
+<td><code>PeopleTransportTag</code></td>
+<td>Presentation cache</td>
+</tr>
+<tr>
+<td>Bullets</td>
+<td><code>BulletTracerState</code></td>
+<td>Sim + VFX factory</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Ship lifecycle:</strong></p>
+<ol>
+<li><code>EnsureShipProxies</code> — create/rebuild if team or level changed</li>
+<li><code>ShipVisualApplier.TryCreateShipVisual</code> — family prefab + team materials</li>
+<li>Attach visual appliers (bank, propulsion, moon dock, component scale)</li>
+<li>Register hull in <code>ShipWeaponProxyRegistry</code> by <code>NetworkId</code></li>
+<li><code>SyncShipProxyTransforms</code> each frame — cache pose, no owner lerp</li>
+<li>Local ship → <code>ShipDisplayPose.SetLocalPose</code></li>
+<li>Dead → <code>SetActive(false)</code> on proxy</li>
+</ol>
+<p><strong>Moon dock skip:</strong> If <code>ShipMoonDockVisualApplier.ShouldSkipTransformSync</code>, visualizer doesn't overwrite proxy position — cinematic owns it.</p>
+<h2 id="84-ecsgamebridge-api-philosophy">8.4 EcsGameBridge API philosophy </h2>
+<p><strong>File:</strong> <code>Game/EcsGameBridge.cs</code> (~1300 lines)</p>
+<p><strong>Problem it solves:</strong> UI/camera shouldn't each hold <code>World</code> references and duplicate query logic.</p>
+<p><strong>Patterns:</strong></p>
+<ul>
+<li><code>GetVisualizationWorld()</code> — host vs client rule</li>
+<li><code>GetLocalPlayerShipWorld()</code> — always client world for prediction reads when available</li>
+<li><code>TryGetLocalShipTransform</code> — fallback chain + UI suppression guards</li>
+<li>Map loading heuristics for remote clients (replicated body counts + stability timer)</li>
+</ul>
+<p><strong>When call returns false:</strong> Often <strong>by design</strong> — team pick, map loading, suppress control. Don't treat as bug without checking <code>ClientTeamFlowState</code>.</p>
+<h2 id="85-camera-and-shipdisplaypose">8.5 Camera and ShipDisplayPose </h2>
+<p><strong><code>ShipDisplayPose</code></strong> — static cache written by visualizer from <strong>presentation</strong> pose.</p>
+<p><strong><code>CameraFollowEcs</code></strong> — <code>LateUpdate</code> order 67001, reads <code>ShipDisplayPose</code>, fallback <code>EcsGameBridge.TryGetLocalShipPosition</code> (includes moon dock follow override).</p>
+<p><strong>No smoothing</strong> — camera hard-locks. Smoothing here would be double-smoothing with prediction.</p>
+<p><strong><code>ScrollingSpaceBackground</code></strong> — parallax from <code>ShipDisplayPose.LocalPosition</code> — world appears to move under ship.</p>
+<h2 id="86-weapon-mount-reverse-bridge">8.6 Weapon mount reverse bridge </h2>
+<p><strong><code>ShipWeaponMountSyncSystem</code></strong> — server only, after movement, before bullets.</p>
+<ol>
+<li>Lookup hull <code>Transform</code> from <code>ShipWeaponProxyRegistry</code> by <code>GhostOwner.NetworkId</code></li>
+<li>Find <code>ShipWeaponMountAuthoring</code> children on <strong>visual</strong> hierarchy</li>
+<li>Refill <code>ShipWeaponMountElement</code> buffer</li>
+</ol>
+<p><strong>Why:</strong> Artists place muzzles on visual prefabs. Sim needs ECS buffer for <code>ShipWeaponPose.TryResolve</code> and <code>BulletSimulationSystem</code>.</p>
+<p><strong>Pitfall:</strong> If proxy not spawned yet, buffer empty — shots use fallback forward offset.</p>
+<h2 id="87-moon-dock-cinematic-override">8.7 Moon dock cinematic override </h2>
+<p><strong><code>ShipMoonDockVisualApplier</code></strong> — client only, order 100.</p>
+<p>Landing: lerp proxy pos/rot/scale toward moon contact, spin with moon, shrink scale at surface.</p>
+<p>Takeoff: reverse lerp back to flight pose.</p>
+<p><strong><code>TryGetLocalFollowPosition</code></strong> — camera follows cinematic, not raw ECS hull during skip.</p>
+<p><strong>Server truth</strong> remains <code>ShipMoonDockSystem</code> — deposits/combat use server transform.</p>
+<p><strong>Pitfall:</strong> Any other system writing proxy transform during dock fights cinematic.</p>
+<hr>
+<h1 id="volume-9--combat-and-bullets-1">Volume 9 — Combat and bullets </h1>
+<h2 id="91-server-authority-for-damage">9.1 Server authority for damage </h2>
+<p>Only <strong><code>BulletSimulationSystem</code></strong> on <strong>server</strong> applies damage. Clients may draw tracers and play sounds — never trust client raycasts for HP.</p>
+<p>Cheating attempt: modify client to say "I hit" — server ignores unless server sim confirms intersection.</p>
+<h2 id="92-bulletsimulationsystem-phases">9.2 BulletSimulationSystem phases </h2>
+<p><strong>File:</strong> <code>ECS/Systems/BulletSimulationSystem.cs</code> — Burst <code>ISystem</code></p>
+<p><strong>Phase A — Advance bullets</strong> (reverse loop, swap-remove):</p>
+<ul>
+<li>Move segment, age, distance</li>
+<li>Toroidal segment collision tests (<code>BulletCollision</code> helpers)</li>
+<li>Hit targets: planets (hull/shield), enemy ships, asteroids, enemy transports</li>
+<li>On hit: damage, death flags, remove bullet</li>
+</ul>
+<p><strong>Phase B — Fire new shots:</strong></p>
+<ul>
+<li>Query ships with <code>Fire</code> input set</li>
+<li>Cooldown + energy checks</li>
+<li>Muzzle from <code>ShipWeaponMountElement</code> + <code>ShipWeaponPose.TryResolve</code></li>
+<li>Append <code>BulletElement</code> + <code>BulletSpawnEventElement</code></li>
+</ul>
+<h2 id="93-presentation-tracers-and-vfx">9.3 Presentation tracers and VFX </h2>
+<p><strong><code>BulletPresentationSystem</code></strong> — consumes spawn events, creates <code>BulletTracerState</code> entities.</p>
+<p><strong><code>EcsWorldVisualizer.DrawBullets</code></strong> — GameObjects from <code>BulletVisualFactory</code>, muzzle SFX, stretch trails.</p>
+<p><strong><code>ProcessBulletHitEvents</code></strong> — impact VFX from hit buffer.</p>
+<h2 id="94-clientlocalbulletvfxbridge">9.4 ClientLocalBulletVfxBridge </h2>
+<p><strong>Dedicated online clients only</strong> — host sees server tracers via normal path.</p>
+<p>Spawns <strong>client-side</strong> tracer entities for instant feedback when prediction doesn't replicate bullets the same way.</p>
+<p><strong>Cosmetic only</strong> — no damage. Cooldown mirrors weapon config approximately.</p>
+<p>Runs <code>LateUpdate</code> 66100 — reads presentation muzzle pose.</p>
+<p><strong>Migration note:</strong> Architecture rules prefer moving this off LateUpdate sim reads to presentation events.</p>
+<hr>
+<h1 id="volume-10--economy-planets-moons-1">Volume 10 — Economy, planets, moons </h1>
+<h2 id="101-gem-lifecycle">10.1 Gem lifecycle </h2>
+<div class="mermaid">flowchart LR
+    A[MiningSystem] --&gt; B[Gem entities spawn]
+    B --&gt; C[GemMotionSystem]
+    C --&gt; D[GemPickupSystem]
+    D --&gt; E[Ship cargo]
+    E --&gt; F[GemTractorBeamSystem]
+    E --&gt; G[ShipMoonDockSystem]
+    G --&gt; H[GemDepositSystem]
+    H --&gt; I[Planet gems + level]
+    I --&gt; J[ContributedGemsLogic]
+    J --&gt; K[MoonOrbitStoreSystem]
+</div><p>All <strong>server</strong> systems in <code>GemEconomySystems.cs</code>, <code>ShipMoonDockSystem</code>, etc.</p>
+<p>Gems use <strong>scripted motion</strong> on <code>Gem</code> layer — not ship physics collisions.</p>
+<h2 id="102-planet-economy-and-leveling">10.2 Planet economy and leveling </h2>
+<p><strong><code>PlanetEconomyMath</code>:</strong></p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>maxGems(level) = 100 × 2^(level - 1)
+</code></pre><p>Deposit until level threshold → level up, gems reset. Caps planet at level 6.</p>
+<p><strong><code>PlanetPopulationGrowthSystem</code></strong> — passive population toward caps.</p>
+<h2 id="103-moon-orbit-store">10.3 Moon orbit store </h2>
+<p><strong><code>MoonOrbitStoreSystem</code></strong> drains RPCs:</p>
+<ul>
+<li>Query contributed gems balance</li>
+<li>Toggle deposit intent</li>
+<li>Purchase ship upgrades / store items</li>
+</ul>
+<p>Spends <strong>personal contributed gems</strong> at home moon — not shared planet treasury directly.</p>
+<h2 id="104-capture-win-condition">10.4 Capture win condition </h2>
+<p><strong><code>CaptureSystem</code></strong> — if <strong>all</strong> non-neutral planets share one team → set <code>WinningTeam</code>. Any neutral planet blocks victory.</p>
+<h2 id="105-people-transports">10.5 People transports </h2>
+<p><strong><code>PeopleTransportSystem</code></strong> — magnet steering toward targets, capture influence on planets. Presentation motion on client via <code>PeopleTransportPresentationMotionSystem</code>.</p>
+<hr>
+<h1 id="volume-11--teams-spawn-map-1">Volume 11 — Teams, spawn, map </h1>
+<h2 id="111-teammanagementsystem">11.1 TeamManagementSystem </h2>
+<p>Drains <code>RequestTeamCommand</code> RPCs:</p>
+<ol>
+<li>Validate no existing ship for connection</li>
+<li>Assign team if roster cap allows (<code>MaxPlayersPerTeam</code>)</li>
+<li>Spawn ship prefab near team home planet from <code>MapLayoutEntryElement</code></li>
+<li>Set <code>GhostOwner</code>, wire <code>CommandTarget</code></li>
+<li>Send <code>TeamChoiceResultRpc</code></li>
+</ol>
+<h2 id="112-rejoin-flow">11.2 Rejoin flow </h2>
+<p>Returning players may have existing ship on server:</p>
+<ul>
+<li><code>ResumeExistingShipCommand</code> / <code>AbandonShipForRejoinCommand</code></li>
+<li><code>RejoinShipResultRpc</code> → <code>RejoinShipResultClientSystem</code></li>
+<li>UI: <code>RejoinShipChoiceController</code> + <code>ClientTeamFlowState</code></li>
+</ul>
+<h2 id="113-map-generation-algorithm">11.3 Map generation algorithm </h2>
+<p><strong><code>MapGenerationLogic.cs</code></strong> — pure functions:</p>
+<ul>
+<li>Place home planets in polygon pattern</li>
+<li>Scatter neutral planets</li>
+<li>Asteroid clusters with gem values</li>
+</ul>
+<p><strong><code>MapGenerationSystem</code></strong> — one spawn per tick until queue empty, updates loading progress on <code>MapStateSingleton</code>.</p>
+<h2 id="114-toroidal-map-naming-vs-reality">11.4 Toroidal map naming vs reality </h2>
+<p><strong><code>ToroidalMapEcs</code></strong> — name says toroidal; <strong>current implementation is flat XZ Euclidean</strong> (no edge wrap). <code>ToroidalDistance</code> = ordinary distance. <code>Wrap</code> is no-op.</p>
+<p>Don't assume Pac-Man wrap when reasoning about movement at map edges — behavior may be boundary clamp elsewhere.</p>
+<hr>
+<h1 id="volume-12--ui-and-player-flow-1">Volume 12 — UI and player flow </h1>
+<h2 id="121-ncegameflowcontroller-state-machine">12.1 NceGameFlowController state machine </h2>
+<p><strong>File:</strong> <code>Game/NceGameFlowController.cs</code></p>
+<p>Polls every <code>Update</code> — computes booleans:</p>
+<ul>
+<li><code>connected</code>, <code>mapReady</code>, <code>hasShip</code>, <code>teamConfirmed</code>, <code>showRejoinChoice</code>, <code>showTeam</code>, <code>showGameplayHud</code>, etc.</li>
+</ul>
+<p>Shows/hides: main menu, loading, team panel, lobby backdrop, HUD.</p>
+<p><strong>Entry points:</strong></p>
+<ul>
+<li>Play → quick join dedicated or local play (config flag)</li>
+<li>Join game → <code>JoinGameBrowserController</code></li>
+<li>Local host / local client (dev)</li>
+</ul>
+<p><strong>Not event-driven</strong> — order of boolean evaluation matters when adding states.</p>
+<h2 id="122-orbit-station-ui">12.2 Orbit station UI </h2>
+<p><strong><code>UI/OrbitStationUI.cs</code></strong> — largest UI surface: loadout grids, card shop, upgrades.</p>
+<ul>
+<li><code>OrbitStationEcsContext</code> — reads planet/ship ECS state</li>
+<li>RPCs for purchases</li>
+<li>Legacy NGO stubs still bridged — confusing but functional</li>
+</ul>
+<h2 id="123-hud-and-minimap">12.3 HUD and minimap </h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>HudControllerNce.cs</code></td>
+<td>HP, gems, timer</td>
+</tr>
+<tr>
+<td><code>ShipSpeedometerHUD.cs</code></td>
+<td>Speed, mass, DPS</td>
+</tr>
+<tr>
+<td><code>MinimapController.cs</code></td>
+<td>Radar</td>
+</tr>
+<tr>
+<td><code>MinimapEcsEntitySync.cs</code></td>
+<td>ECS positions → blips</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h1 id="volume-13--data-and-content-pipeline-1">Volume 13 — Data and content pipeline </h1>
+<h2 id="131-scriptableobject-workflow">13.1 ScriptableObject workflow </h2>
+<ol>
+<li>Designer edits SO in Inspector</li>
+<li>Runtime load or reference from prefabs</li>
+<li>Bake defaults onto ghosts (level 1 stats)</li>
+<li>Server <code>ShipStatApplyLogic</code> recomputes on level/loadout change</li>
+</ol>
+<p><strong>Assembly <code>TitanOrbit.Data</code></strong> — no ECS references — safe design workspace.</p>
+<h2 id="132-ship-families-and-cards">13.2 Ship families and cards </h2>
+<p><strong><code>ShipFamilyDefinition</code></strong> — chassis per level, component stat table, team materials, upgrade tree.</p>
+<p><strong><code>CardData</code></strong> — tetris grid footprint, stat modifiers, <code>componentKey</code> linking to <code>ShipPartCatalog</code>.</p>
+<p>Cards equip into buffers on ship — not full SO over network.</p>
+<h2 id="133-weapon-config-and-bullet-banks">13.3 Weapon config and bullet banks </h2>
+<p><strong><code>WeaponConfig</code></strong> — designer cannons (spread, fire rate, bank index).</p>
+<p>Runtime combat uses <strong><code>ShipWeaponConfig</code></strong> on entity after stat sum — authoritative at fire time.</p>
+<p><strong><code>BulletVfxBank</code></strong> — visual profiles for tracers.</p>
+<h2 id="134-runtime-stat-apply">13.4 Runtime stat apply </h2>
+<p>When ship levels or equips change, server runs stat apply:</p>
+<ul>
+<li>Sum chassis + cards + upgrades</li>
+<li>Write <code>ShipMotorConfig</code>, <code>ShipWeaponConfig</code>, <code>ShipState</code> maxima, etc.</li>
+</ul>
+<p>Client sees results via ghost replication.</p>
+<hr>
+<h1 id="volume-14--platform-build-services-1">Volume 14 — Platform, build, services </h1>
+<h2 id="141-webgl-constraints">14.1 WebGL constraints </h2>
+<ul>
+<li><code>CrossPlatformManager</code> — 60 FPS target</li>
+<li><code>WebGLGameplayRenderCompat</code> — disable SRP batcher (MPB bug)</li>
+<li><code>ShapesWebGLImmediateModeFix</code> — orbit ring drawing</li>
+<li><code>CloudflarePagesPostBuild</code> — COOP/COEP headers</li>
+<li>Relay <code>wss</code> path</li>
+</ul>
+<p>Browser <strong>frame pacing</strong> affects catch-up sim steps — movement feel.</p>
+<h2 id="142-headless-server-builds">14.2 Headless server builds </h2>
+<p>Menu: <strong>TitanOrbit → Build → Headless Server (Linux — Google Cloud)</strong></p>
+<p>Output: <code>BuildOutput/Server/TitanOrbitLinux1</code></p>
+<p>Deploy via <code>tools/gce/</code>. Quit Editor before packing IL2CPP artifacts.</p>
+<p>Rebuild required after <strong>any</strong> server sim, NetCode, shared motor, ghost, RPC change — see <code>titan-orbit-headless-server-rebuild.mdc</code>.</p>
+<h2 id="143-unity-gaming-services">14.3 Unity Gaming Services </h2>
+<p><strong><code>Services/UnityGameServicesBootstrap.cs</code></strong> — guest auth.</p>
+<p><strong><code>TitanOrbitLobbyService</code></strong> — match listing.</p>
+<p><strong><code>TitanOrbitIapManager</code></strong>, ads, friends — meta features around core game.</p>
+<hr>
+<h1 id="volume-15--hard-problems-and-roadmap-1">Volume 15 — Hard problems and roadmap </h1>
+<h2 id="151-ranked-difficulty-list">15.1 Ranked difficulty list </h2>
+<table>
+<thead>
+<tr>
+<th>Rank</th>
+<th>Problem</th>
+<th>Why hard</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Ship feel under net+physics+hybrid</td>
+<td>Three clocks, prediction, presentation phase</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Weapon mount GameObject→ECS</td>
+<td>Artist hierarchy vs sim entity</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Moon dock dual path</td>
+<td>Server kinematic vs client cinematic</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Gem economy chain length</td>
+<td>Many systems, RPCs, buffers</td>
+</tr>
+<tr>
+<td>5</td>
+<td>WebGL rendering + pacing</td>
+<td>Platform limits</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Legacy NGO UI stubs</td>
+<td>Mental overhead</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Burst migration incomplete</td>
+<td>Mixed SystemBase + ISystem</td>
+</tr>
+</tbody>
+</table>
+<h2 id="152-migration-targets">15.2 Migration targets </h2>
+<ul>
+<li>Full Burst movement/input systems</li>
+<li>Replace <code>GhostPresentationTransformCache</code> long-term</li>
+<li><code>ClientLocalBulletVfxBridge</code> → presentation events</li>
+<li>Remove NGO stubs from orbit station</li>
+<li>Enforce <code>LastSimTick</code> rollback guards in motor</li>
+</ul>
+<h2 id="153-rules-files-as-law">15.3 Rules files as law </h2>
+<table>
+<thead>
+<tr>
+<th>Rule file</th>
+<th>Governs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>titan-orbit-ship-simulation.mdc</code></td>
+<td>Movement, prediction, physics, presentation</td>
+</tr>
+<tr>
+<td><code>titan-orbit-educational-comments.mdc</code></td>
+<td>Comment style when editing</td>
+</tr>
+<tr>
+<td><code>titan-orbit-headless-server-rebuild.mdc</code></td>
+<td>Deploy workflow</td>
+</tr>
+</tbody>
+</table>
+<p>Read ship-simulation rule <strong>before</strong> any movement "fix."</p>
+<hr>
+<h1 id="volume-16--exercises-and-self-tests-1">Volume 16 — Exercises and self-tests </h1>
+<h2 id="161-volume-quizzes">16.1 Volume quizzes </h2>
+<p><strong>After Volume 3:</strong> Explain why dedicated server calls <code>world.Update()</code> manually.</p>
+<p><strong>After Volume 5:</strong> Trace input from mouse click to <code>ShipInput.Fire</code>.</p>
+<p><strong>After Volume 6:</strong> List what motor writes vs what physics writes.</p>
+<p><strong>After Volume 7:</strong> Name three sources of stepped motion and one forbidden fix.</p>
+<p><strong>After Volume 8:</strong> Why is extra owner proxy lerp forbidden?</p>
+<h2 id="162-trace-exercises">16.2 Trace exercises </h2>
+<ol>
+<li>
+<p>Set breakpoint in <code>ShipInputBridge.Update</code> → <code>ShipInputApplySystem</code> → <code>ShipMovementBurstLogic.Step</code> → <code>PhysicsSystemGroup</code> (step) → <code>ShipVisualSyncSystem</code> → <code>EcsWorldVisualizer.LateUpdate</code> → <code>CameraFollowEcs.LateUpdate</code>. Note world (client/server) at each step.</p>
+</li>
+<li>
+<p>Spawn two clients in MPPM — verify remote ship uses interpolation not prediction.</p>
+</li>
+<li>
+<p>Join dedicated server from WebGL build — compare feel to editor host.</p>
+</li>
+</ol>
+<h2 id="163-suggested-experiments">16.3 Suggested experiments </h2>
+<table>
+<thead>
+<tr>
+<th>Experiment</th>
+<th>Learn</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Log <code>PublishFrame</code> vs proxy apply frame</td>
+<td>Presentation phase timing</td>
+</tr>
+<tr>
+<td>Temporarily read sim transform for camera</td>
+<td>See jitter return (then revert!)</td>
+</tr>
+<tr>
+<td>Watch <code>ClientTeamFlowState</code> during team pick</td>
+<td>Why input suppressed</td>
+</tr>
+<tr>
+<td>Grep <code>Simulate</code> in movement job</td>
+<td>Prediction entity filter</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h1 id="appendix-a--key-file-index">Appendix A — Key file index </h1>
+<h2 id="boot--session">Boot / session </h2>
+<ul>
+<li><code>NetCode/TitanOrbitBootstrap.cs</code></li>
+<li><code>NetCode/TitanOrbitSessionManager.cs</code></li>
+<li><code>NetCode/TitanOrbitDedicatedServerBootRunner.cs</code></li>
+<li><code>NetCode/TitanOrbitGoInGameSystems.cs</code></li>
+<li><code>NetCode/TitanOrbitServerTickRateSystem.cs</code></li>
+</ul>
+<h2 id="movement">Movement </h2>
+<ul>
+<li><code>Simulation/ShipMotorSimulator.cs</code></li>
+<li><code>ECS/Systems/ShipMovementLogic.cs</code></li>
+<li><code>ECS/Systems/ShipMovementJob.cs</code></li>
+<li><code>ECS/Systems/ShipMovementSystem.cs</code></li>
+<li><code>ECS/Systems/ShipClientPredictedMovementSystem.cs</code></li>
+<li><code>ECS/Systems/TitanOrbitPhysicsBootstrapSystem.cs</code></li>
+</ul>
+<h2 id="input">Input </h2>
+<ul>
+<li><code>Input/PlayerInputHandler.cs</code></li>
+<li><code>Game/ShipInputBridge.cs</code></li>
+<li><code>ECS/Systems/ShipInputApplySystem.cs</code></li>
+<li><code>ECS/Systems/ClientCommandTargetSystem.cs</code></li>
+</ul>
+<h2 id="presentation">Presentation </h2>
+<ul>
+<li><code>Game/ShipVisualSyncSystem.cs</code></li>
+<li><code>Game/GhostPresentationTransformCache.cs</code></li>
+<li><code>Game/EcsWorldVisualizer.cs</code></li>
+<li><code>Game/EcsGameBridge.cs</code></li>
+<li><code>Game/CameraFollowEcs.cs</code></li>
+<li><code>Shared/ShipDisplayPose.cs</code></li>
+</ul>
+<h2 id="combat--economy">Combat / economy </h2>
+<ul>
+<li><code>ECS/Systems/BulletSimulationSystem.cs</code></li>
+<li><code>ECS/Systems/GemEconomySystems.cs</code></li>
+<li><code>ECS/Systems/TeamManagementSystem.cs</code></li>
+<li><code>ECS/Systems/CaptureSystem.cs</code></li>
+</ul>
+<h2 id="ui--flow">UI / flow </h2>
+<ul>
+<li><code>Game/NceGameFlowController.cs</code></li>
+<li><code>UI/OrbitStationUI.cs</code></li>
+</ul>
+<h2 id="rules">Rules </h2>
+<ul>
+<li><code>.cursor/rules/titan-orbit-ship-simulation.mdc</code></li>
+</ul>
+<hr>
+<h1 id="appendix-b--rpc-catalog">Appendix B — RPC catalog </h1>
+<table>
+<thead>
+<tr>
+<th>RPC</th>
+<th>Direction</th>
+<th>Handler</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GoInGameRequest</code></td>
+<td>C→S</td>
+<td><code>TitanOrbitGoInGameServerSystem</code></td>
+</tr>
+<tr>
+<td><code>RequestTeamCommand</code></td>
+<td>C→S</td>
+<td><code>TeamManagementSystem</code></td>
+</tr>
+<tr>
+<td><code>TeamChoiceResultRpc</code></td>
+<td>S→C</td>
+<td><code>TeamChoiceResultClientSystem</code></td>
+</tr>
+<tr>
+<td><code>SetPlayerNameCommand</code></td>
+<td>C→S</td>
+<td>Team/bootstrap</td>
+</tr>
+<tr>
+<td><code>RequestContributedGemsCommand</code></td>
+<td>C→S</td>
+<td><code>MoonOrbitStoreSystem</code></td>
+</tr>
+<tr>
+<td><code>ContributedGemsResultRpc</code></td>
+<td>S→C</td>
+<td>Client handler</td>
+</tr>
+<tr>
+<td><code>SetWantDepositGemsCommand</code></td>
+<td>C→S</td>
+<td><code>MoonOrbitStoreSystem</code></td>
+</tr>
+<tr>
+<td><code>PurchaseShipUpgradeCommand</code></td>
+<td>C→S</td>
+<td><code>MoonOrbitStoreSystem</code></td>
+</tr>
+<tr>
+<td><code>PurchaseStoreItemCommand</code></td>
+<td>C→S</td>
+<td><code>MoonOrbitStoreSystem</code></td>
+</tr>
+<tr>
+<td><code>OrbitStoreResultRpc</code></td>
+<td>S→C</td>
+<td>Orbit UI</td>
+</tr>
+<tr>
+<td><code>PurchaseAttributeUpgradeCommand</code></td>
+<td>C→S</td>
+<td><code>ShipAttributeUpgradeSystem</code></td>
+</tr>
+<tr>
+<td><code>ResumeExistingShipCommand</code></td>
+<td>C→S</td>
+<td><code>RejoinShipManagementSystem</code></td>
+</tr>
+<tr>
+<td><code>AbandonShipForRejoinCommand</code></td>
+<td>C→S</td>
+<td><code>RejoinShipManagementSystem</code></td>
+</tr>
+<tr>
+<td><code>RejoinShipResultRpc</code></td>
+<td>S→C</td>
+<td><code>RejoinShipResultClientSystem</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>File:</strong> <code>ECS/Components/NetworkCommands.cs</code></p>
+<hr>
+<h1 id="appendix-c--system-order-cheat-sheet">Appendix C — System order cheat sheet </h1>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>Initialization:
+  TitanOrbitServerTickRateSystem (server, first)
+  TitanOrbitPhysicsBootstrapSystem
+  GameBootstrapSystem (server)
+
+Per frame (client input):
+  GhostInputSystemGroup:
+    ClientCommandTargetSystem (first)
+    ShipInputApplySystem
+
+Predicted fixed step:
+  ShipEnsureComponentsSystem (before movement)
+  ShipClientPredictedMovementSystem (client) /
+  ShipMovementSystem (server)
+  PhysicsSystemGroup
+
+Simulation (server highlights):
+  ShipWeaponMountSyncSystem (after movement, before bullets)
+  BulletSimulationSystem
+  ShipRespawnSystem (after bullets)
+  Mining → GemMotion → GemPickup
+  ShipMoonDockSystem → GemDepositSystem
+  PeopleTransport → CaptureSystem
+  TeamManagementSystem / MoonOrbitStoreSystem (RPC drains)
+
+Presentation:
+  NetCode interpolation
+  ShipVisualSyncSystem (OrderLast)
+
+MonoBehaviour LateUpdate:
+  EcsWorldVisualizer (66000)
+  ClientLocalBulletVfxBridge (66100, dedicated client)
+  CameraFollowEcs (67001)
+</code></pre><hr>
+<hr>
+<h1 id="part-ii--file-by-file-encyclopedia-and-extended-lessons">PART II — File-by-file encyclopedia and extended lessons </h1>
+<p>Part I taught <strong>concepts and pipelines</strong>. Part II walks <strong>every major file</strong> so you can open the repo with confidence. Each entry: <strong>what it is</strong>, <strong>when it runs</strong>, <strong>what to learn from it</strong>, <strong>what breaks if you change it wrong</strong>.</p>
+<blockquote>
+<p><strong>Study tip:</strong> Don't read Part II in one sitting. Pick one folder (e.g. <code>ECS/Systems/</code>), read entries, open files, run Editor Play Mode to see the behavior.</p>
+</blockquote>
+<hr>
+<h2 id="chapter-17--every-ecssystems-file">Chapter 17 — Every <code>ECS/Systems/</code> file </h2>
+<h3 id="bulletcollisioncs"><code>BulletCollision.cs</code> </h3>
+<p>Pure math helpers for segment-vs-sphere and toroidal ray tests. No <code>ISystem</code> — called from <code>BulletSimulationSystem</code>. <strong>Teaching point:</strong> keep collision geometry in testable static functions separate from entity iteration. If you change toroidal distance here, bullets and mining may disagree — always use shared <code>ToroidalMapEcs</code> patterns.</p>
+<h3 id="bulletpresentationsystemcs--bullettracerupdatesystem"><code>BulletPresentationSystem.cs</code> (+ <code>BulletTracerUpdateSystem</code>) </h3>
+<p>Runs in <strong>PresentationSystemGroup</strong> on client and server worlds. Consumes <code>BulletSpawnEventElement</code> from server sim buffers and spawns <strong>cosmetic</strong> <code>BulletTracerState</code> entities. Does not apply damage. <strong>Student mistake:</strong> adding hit detection here — belongs only in <code>BulletSimulationSystem</code>.</p>
+<h3 id="bulletsimulationsystemcs"><code>BulletSimulationSystem.cs</code> </h3>
+<p><strong>The combat referee.</strong> Server-only Burst <code>ISystem</code>. Phase 1 advances bullets, toroidal segment collision, damage, removal. Phase 2 reads <code>ShipInput.Fire</code>, energy, cooldown, mount buffer, appends new bullets. <strong>If you change fire rate feel</strong>, trace both <code>ShipWeaponConfig</code> (data) and cooldown logic here — not <code>PlayerInputHandler</code>.</p>
+<h3 id="capturesystemcs"><code>CaptureSystem.cs</code> </h3>
+<p>Win condition: all planets non-neutral and same team. Runs after people transport sim. <strong>Design intent:</strong> domination victory, not kill count. One neutral planet blocks win — UI should communicate that.</p>
+<h3 id="clientcommandtargetsystemcs"><code>ClientCommandTargetSystem.cs</code> </h3>
+<p>See Volume 5.3. <strong>Breakage:</strong> removing OrderFirst may cause input apply before target wired — ship doesn't steer on dedicated join.</p>
+<h3 id="contributedgemslogiccs"><code>ContributedGemsLogic.cs</code> </h3>
+<p>Server math for per-player gem ledger at home planets. Not per-entry ghost replication — queried via RPC. <strong>Why:</strong> gem history could be huge; store aggregates, validate purchases server-side.</p>
+<h3 id="ensurebulletbuffersystemcs"><code>EnsureBulletBufferSystem.cs</code> </h3>
+<p>Ensures bullet event buffers exist on singleton. Safety net like <code>ShipEnsureComponentsSystem</code>. Boring but prevents null buffer crashes when bootstrap order changes.</p>
+<h3 id="gamebootstrapsystemcs"><code>GameBootstrapSystem.cs</code> </h3>
+<p>See Volume 4.3. Also contains <code>MapGenerationSystem</code> and <code>MatchTimerSystem</code>. <strong>First server tick</strong> creates the match "clipboard" entity.</p>
+<h3 id="gemeconomysystemscs"><code>GemEconomySystems.cs</code> </h3>
+<p>Five systems: Mining, GemMotion, AsteroidDestruction, GemPickup, GemDeposit. <strong>Gem motion is NOT physics</strong> — <code>GemMotionSystem</code> integrates velocity with drag. <strong>Teaching chain:</strong> mine → entity spawn → motion → pickup into <code>ShipState.CurrentGems</code> → dock → deposit → <code>PlanetEconomyMath</code>.</p>
+<h3 id="gemtractorbeamsystemcs"><code>GemTractorBeamSystem.cs</code> </h3>
+<p>Wing-mounted tractor pulls gems. Uses managed dictionaries — <strong>not Burst yet</strong> (migration target). Client VFX in <code>GemTractorBeamVisual</code> reads ECS wing beam state. <strong>Pitfall:</strong> client-only pull would desync cargo — server must own pickup.</p>
+<h3 id="localplayertagsystemcs"><code>LocalPlayerTagSystem.cs</code> </h3>
+<p>See Volume 5.4. Adds <code>LocalPlayerShipTag</code> for fast "my ship" queries.</p>
+<h3 id="moonorbitrpcclientsystemcs"><code>MoonOrbitRpcClientSystem.cs</code> </h3>
+<p>Client-side RPC send helpers for orbit store (pairs with server <code>MoonOrbitStoreSystem</code>). Thin glue between UI buttons and ECS RPC entities.</p>
+<h3 id="moonorbitstoresystemcs"><code>MoonOrbitStoreSystem.cs</code> </h3>
+<p>Server store: contributed gems query, deposit toggle, ship upgrade purchase, store item purchase. <strong>Economy authority</strong> — never trust client gem counts.</p>
+<h3 id="peopletransportsystemcs-multiple-systems-in-file"><code>PeopleTransportSystem.cs</code> (multiple systems in file) </h3>
+<p>People transports are magnet-steered entities affecting planet capture/influence. <code>PeopleTransportDispatchSystem</code> fires transports from ships after orbit dwell (<code>PeopleTransportConstants.OrbitDwellBeforeTransferSeconds = 2</code>). <strong>Separate from gems</strong> but shares orbit ring math with <code>PlanetOrbitMath</code>. Presentation: <code>PeopleTransportVisualApplier</code> + presentation cache.</p>
+<h3 id="planetgemmooncombatlogiccs"><code>PlanetGemMoonCombatLogic.cs</code> </h3>
+<p>Shield repel in motor + damage absorption rules. <strong>Must be deterministic</strong> on client and server. Moons lack physics colliders — this is gameplay overlay, not Physics callbacks.</p>
+<h3 id="planetgemmoonshieldsystemcs"><code>PlanetGemMoonShieldSystem.cs</code> </h3>
+<p>Shield regen/absorption server tick. Pairs with combat logic for moon defense.</p>
+<h3 id="planetmotorsnapshotcs--planetmotorsnapshotcollectioncs"><code>PlanetMotorSnapshot.cs</code> / <code>PlanetMotorSnapshotCollection.cs</code> </h3>
+<p>Collects planet state into <code>NativeArray</code> for <code>ShipMovementJob</code>. <strong>Why snapshot:</strong> job can't safely query EntityManager per planet inside Burst loop. Collection happens main thread / system before schedule.</p>
+<h3 id="planetpopulationgrowthsystemcs"><code>PlanetPopulationGrowthSystem.cs</code> </h3>
+<p>Passive population growth toward caps on owned planets. Slow strategic layer — runs server sim, replicates planet state.</p>
+<h3 id="rejoinshipmanagementsystemcs--rejoinshipresultclientsystemcs"><code>RejoinShipManagementSystem.cs</code> / <code>RejoinShipResultClientSystem.cs</code> </h3>
+<p>Returning player ship resume vs fresh spawn. Client UI sets <code>ClientTeamFlowState</code>; server validates ship still exists and team.</p>
+<h3 id="shipattributeupgradelogiccs--shipattributeupgradesystemcs"><code>ShipAttributeUpgradeLogic.cs</code> / <code>ShipAttributeUpgradeSystem.cs</code> </h3>
+<p>In-match HUD attribute upgrades via <code>PurchaseAttributeUpgradeCommand</code> RPC. Logic separates pure stat math from RPC drain.</p>
+<h3 id="shipclientpredictedmovementsystemcs"><code>ShipClientPredictedMovementSystem.cs</code> </h3>
+<p>See Volume 6.5. <strong>Sacred</strong> — do not remove for "simplicity."</p>
+<h3 id="shipdeathrecordingsystemcs"><code>ShipDeathRecordingSystem.cs</code> </h3>
+<p>Records death timestamp for respawn delay. Runs after bullets. Sets <code>ShipDeathState</code> used by <code>ShipRespawnSystem</code>.</p>
+<h3 id="shipensurecomponentssystemcs"><code>ShipEnsureComponentsSystem.cs</code> </h3>
+<p>Preflight adds missing components/buffers on any <code>ShipTag</code> entity. <strong>Migration safety</strong> when ghost prefabs lag behind code.</p>
+<h3 id="shipinputapplysystemcs"><code>ShipInputApplySystem.cs</code> </h3>
+<p>Copies <code>ShipPendingInput</code> → ghost <code>ShipInput</code>. Client only, <code>GhostInputSystemGroup</code>.</p>
+<h3 id="shipmoondocksystemcs"><code>ShipMoonDockSystem.cs</code> </h3>
+<p>Server dock zones, landing timers, kinematic override. <strong>Before</strong> <code>GemDepositSystem</code> — must be docked to deposit.</p>
+<h3 id="shipmovementjobcs"><code>ShipMovementJob.cs</code> </h3>
+<p>Burst <code>IJobEntity</code> calling <code>ShipMovementBurstLogic.Step</code>. Query: <code>ShipTag</code> + <code>Simulate</code>.</p>
+<h3 id="shipmovementlogiccs"><code>ShipMovementLogic.cs</code> </h3>
+<p>Managed <code>GetMapSize</code> + <code>ShipMovementBurstLogic</code> Burst step. See Volume 6.</p>
+<h3 id="shipmovementsystemcs"><code>ShipMovementSystem.cs</code> </h3>
+<p>Server movement scheduling. Identical job to client prediction system.</p>
+<h3 id="shiprespawnsystemcs"><code>ShipRespawnSystem.cs</code> </h3>
+<p>5 second respawn at home planet. Resets vitals, clears death state, zeros physics velocity.</p>
+<h3 id="shipstatapplylogiccs--shipstatapplysystemcs"><code>ShipStatApplyLogic.cs</code> / <code>ShipStatApplySystem.cs</code> </h3>
+<p><strong>The spreadsheet executor.</strong> Resolves chassis id from team + level + branch via <code>PlanetShipFamilyConfig</code>. Sums <code>ShipFamilyDefinition</code> component stats. Writes <code>ShipMotorConfig</code>, <code>ShipWeaponConfig</code>, <code>ShipState</code> maxima, vitals. <strong>Not movement</strong> — numbers only. Runs when level/branch changes, upgrades purchased, respawn. <strong>Designer link:</strong> change family asset → must trigger re-apply on server.</p>
+<h3 id="shipvitalsregensystemcs"><code>ShipVitalsRegenSystem.cs</code> </h3>
+<p>Energy/health regen after combat delay (<code>ShipVitalsState</code> timestamps). Server authority.</p>
+<h3 id="teamchoiceresultclientsystemcs"><code>TeamChoiceResultClientSystem.cs</code> </h3>
+<p>Handles <code>TeamChoiceResultRpc</code> — sets <code>ClientTeamFlowState.TeamChoiceConfirmed</code>, shows errors.</p>
+<h3 id="teammanagementsystemcs"><code>TeamManagementSystem.cs</code> </h3>
+<p>Team pick RPC drain + spawn. See Volume 11.1.</p>
+<h3 id="titanorbitphysicsbootstrapsystemcs"><code>TitanOrbitPhysicsBootstrapSystem.cs</code> </h3>
+<p>Zero gravity + lag compensation config. See Volume 4.4.</p>
+<hr>
+<h2 id="chapter-18--every-game-bridge-file-grouped-by-role">Chapter 18 — Every <code>Game/</code> bridge file (grouped by role) </h2>
+<h3 id="flow-and-session-ui">Flow and session UI </h3>
+<p><strong><code>NceGameFlowController.cs</code></strong> — Master UI state machine (Volume 12.1). Auto-adds visualizer on <code>NceGameRoot</code>. <strong>Start here</strong> when debugging "wrong panel showing."</p>
+<p><strong><code>JoinGameBrowserController.cs</code></strong> — Lists UGS lobbies, calls <code>JoinDedicatedLobbyAsync</code>. Handles empty list, stale heartbeat, refresh rate limits from <code>TitanOrbitLobbyService</code>.</p>
+<p><strong><code>LoadingScreenControllerNce.cs</code></strong> — Progress bar from <code>EcsGameBridge.TryGetMapLoadingProgress</code>. Remote clients use heuristic progress — bar may not be perfectly linear.</p>
+<p><strong><code>MainMenuController.cs</code></strong> — Legacy simpler menu slice (join by lobby id). Coexists with NCE flow.</p>
+<p><strong><code>MainMenuPlayButton.cs</code></strong> — UGUI wiring helper for play button.</p>
+<p><strong><code>TeamSelectionController.cs</code></strong> / <strong><code>TeamJoinButton.cs</code></strong> — Team color buttons → <code>TitanOrbitSessionManager.RequestTeam</code>.</p>
+<p><strong><code>RejoinShipChoiceController.cs</code></strong> — Resume ship overlay; sets <code>ClientTeamFlowState</code> rejoin flags.</p>
+<p><strong><code>DeathScreenController.cs</code></strong> — Respawn countdown when <code>ShipState.IsDead</code>.</p>
+<p><strong><code>MatchEndScreenController.cs</code></strong> — Shows winner from <code>MatchStateSingleton.WinningTeam</code>.</p>
+<p><strong><code>HudControllerNce.cs</code></strong> — Lightweight HP/gems/timer HUD during gameplay.</p>
+<h3 id="core-bridges">Core bridges </h3>
+<p><strong><code>EcsGameBridge.cs</code></strong> — Static ECS read API (Volume 8.4). ~1300 lines — bookmark it.</p>
+<p><strong><code>EcsWorldVisualizer.cs</code></strong> — Central proxy factory (Volume 8.3). Execution order 66000.</p>
+<p><strong><code>ShipInputBridge.cs</code></strong> — Input staging (Volume 5.2). Order -10000.</p>
+<p><strong><code>ShipServerControlSystem.cs</code></strong> — Host server-world input (Volume 5.5).</p>
+<p><strong><code>GhostPresentationTransformCache.cs</code></strong> — Presentation pose dictionary (Volume 8.2).</p>
+<p><strong><code>ShipVisualSyncSystem.cs</code></strong> — Fills cache, OrderLast presentation.</p>
+<p><strong><code>CameraFollowEcs.cs</code></strong> — Top-down follow, no smooth (Volume 8.5).</p>
+<p><strong><code>ClientLocalBulletVfxBridge.cs</code></strong> — Dedicated client cosmetic tracers (Volume 9.4).</p>
+<p><strong><code>ShipWeaponMountSyncSystem.cs</code></strong> — Server visual→ECS mounts (Volume 8.6).</p>
+<p><strong><code>ShipWingTractorBeamSyncSystem.cs</code></strong> — Similar to weapon mounts for wing beam transforms.</p>
+<h3 id="visual-appliers-spawn--cosmetic">Visual appliers (spawn + cosmetic) </h3>
+<p><strong><code>ShipVisualApplier.cs</code></strong> — Instantiates family prefab, strips colliders/network components from proxy.</p>
+<p><strong><code>WorldBodyVisualApplier.cs</code></strong> — Planets/asteroids; strips legacy <code>Planet</code> MonoBehaviours.</p>
+<p><strong><code>GemVisualApplier.cs</code></strong> — Gem mesh scale by value.</p>
+<p><strong><code>PeopleTransportVisualApplier.cs</code></strong> — Transport gem-like visuals.</p>
+<p><strong><code>ShipPropulsionVisualApplier.cs</code></strong> — Engine glow from thrust input (cosmetic).</p>
+<p><strong><code>ShipBankVisualApplier.cs</code></strong> — Ship roll visual from turn; zeros at rest to avoid jitter.</p>
+<p><strong><code>ShipComponentAttributeScaleApplier.cs</code></strong> — Scales submodules from equipped card stats.</p>
+<p><strong><code>ShipMoonDockVisualApplier.cs</code></strong> — Dock cinematic (Volume 8.7).</p>
+<h3 id="registries-and-collectors">Registries and collectors </h3>
+<p><strong><code>ShipWeaponProxyRegistry.cs</code></strong> — Maps <code>NetworkId</code> → hull Transform for mount sync.</p>
+<p><strong><code>ShipWeaponMountCollector.cs</code></strong> / <strong><code>ShipWingTractorBeamCollector.cs</code></strong> — On proxy spawn, gather mount transforms.</p>
+<p><strong><code>PlanetGemMoonVisualRegistry.cs</code></strong> — Moon visual proxies for dock camera follow.</p>
+<p><strong><code>GemVisualDiameterRegistry.cs</code></strong> — Gem size for pickup radius presentation.</p>
+<h3 id="world-cosmetics">World cosmetics </h3>
+<p><strong><code>PlanetSpinVisualProxy.cs</code></strong> / <strong><code>AsteroidSpinVisualProxy.cs</code></strong> — Slow spin on proxies.</p>
+<p><strong><code>PlanetGemMoonVisualProxy.cs</code></strong> — Positions moon mesh from ECS + <code>PlanetOrbitMath</code>.</p>
+<p><strong><code>GemMoonMatrixShieldVisual.cs</code></strong> / <strong><code>GemMoonOrbitZoneVisual.cs</code></strong> — Team shields and orbit zones (Shapes).</p>
+<p><strong><code>PlanetOrbitRingVisual.cs</code></strong> / <strong><code>PlanetRingMeshBuilder.cs</code></strong> — Orbit ring meshes.</p>
+<p><strong><code>PlanetWorldStatsLabel.cs</code></strong> / <strong><code>GemMoonWorldStatsLabel.cs</code></strong> — Floating stats text.</p>
+<h3 id="gem-tractor-presentation">Gem tractor presentation </h3>
+<p><strong><code>GemTractorBeamVisual.cs</code></strong> — Beam line VFX.</p>
+<p><strong><code>GemTractorBeamClientLogic.cs</code></strong> — Client read of wing beam state.</p>
+<p><strong><code>GemTractorBeamDeployTracker.cs</code></strong> / <strong><code>GemTractorBeamVisibilityTracker.cs</code></strong> — When beam visible.</p>
+<h3 id="floating-combat-text">Floating combat text </h3>
+<p><strong><code>FloatingCountChannel.cs</code></strong> — Settings ScriptableObject for popups.</p>
+<p><strong><code>FloatingCountPopup.cs</code></strong> / <strong><code>FloatingCountStackPopup.cs</code></strong> — Individual/stacked floaters.</p>
+<p><strong><code>EcsFloatingCountPresenter.cs</code></strong> / <strong><code>WorldFloatingCountManager.cs</code></strong> — Spawns floaters from ECS events.</p>
+<h3 id="map-settings-loaders">Map settings loaders </h3>
+<p><strong><code>MapGenerationSettingsBootstrap.cs</code></strong> / <strong><code>MapGenerationSettingsLoader.cs</code></strong> — Client/editor load map SO into runtime cache for UI estimates.</p>
+<h3 id="misc">Misc </h3>
+<p><strong><code>ShipComponentAttributeScaleLogic.cs</code></strong> — Math for component scale from stats.</p>
+<p><strong><code>WorldBodyLabelLayout.cs</code></strong> — Label placement around planets.</p>
+<p><strong><code>GemMoonShieldPrefabLibrary.cs</code></strong> — Shield prefab variants by team.</p>
+<hr>
+<h2 id="chapter-19--concept-essays-read-slowly">Chapter 19 — Concept essays (read slowly) </h2>
+<h3 id="essay-what-deterministic-means-for-your-motor">Essay: What "deterministic" means for your motor </h3>
+<p>Two simulations (client + server) are <strong>deterministic</strong> if given the <strong>same</strong> <code>ShipInput</code>, <strong>same</strong> <code>dt</code>, <strong>same</strong> planet snapshots, <strong>same</strong> prior physics velocity, they produce the <strong>same</strong> outgoing velocity and rotation. Not "same position forever" — physics contacts may diverge if order differs. Titan Orbit minimizes divergence by:</p>
+<ul>
+<li>One shared <code>ShipMovementBurstLogic</code></li>
+<li>Shield repel as math, not GameObject</li>
+<li>No <code>UnityEngine.Random</code> in motor path without synced seed</li>
+</ul>
+<p>When determinism breaks, prediction rollback increases → <strong>rubber band feel</strong>.</p>
+<h3 id="essay-lag-compensation-vs-prediction">Essay: Lag compensation vs prediction </h3>
+<p><strong>Prediction</strong> = client runs ahead on your ship.<br>
+<strong>Lag compensation</strong> = server rewinds physics history when validating hits against past poses.</p>
+<p><code>LagCompensationConfig</code> history size 16 on <strong>both</strong> worlds supports physics rewind. Bullets use toroidal segment tests in server sim — not full physics raycast for every bullet.</p>
+<h3 id="essay-why-ghosts-use-ghostfield">Essay: Why ghosts use <code>[GhostField]</code> </h3>
+<p>Not every component field replicates — bandwidth. Designers choose what clients need for HUD/interpolation. <code>ShipMotorConfig</code> not ghosted because clients can recompute or don't need exact thrust for remote ships the same way. <code>ShipState.Health</code> ghosted because everyone sees damage.</p>
+<h3 id="essay-baking-vs-runtime-spawn">Essay: Baking vs runtime spawn </h3>
+<p><strong>Bake time:</strong> SubScene converts prefabs to entity blueprints.<br>
+<strong>Runtime:</strong> <code>TeamManagementSystem</code> instantiates ship ghost prefab entity for each player.</p>
+<p>Changing <code>StarshipGhostAuthoring</code> without rebaking subscene → old collider layers may persist until rebake.</p>
+<h3 id="essay-why-rpc-for-store-purchases">Essay: Why RPC for store purchases </h3>
+<p>Client could hack <code>ShipState.CurrentGems</code> if server trusted ghost writes from client. Store RPCs carry <strong>intent</strong>; server recomputes affordability from <strong>server</strong> <code>ContributedGemsLogic</code> and planet state.</p>
+<h3 id="essay-execution-order-on-monobehaviour">Essay: Execution order on MonoBehaviour </h3>
+<p>Unity invokes <code>LateUpdate</code> in ascending execution order number. <code>EcsWorldVisualizer</code> 66000 before <code>CameraFollowEcs</code> 67001 <strong>on purpose</strong>. Inserting a script at 66500 that moves the ship proxy from sim reads will break presentation discipline.</p>
+<h3 id="essay-mppm-testing-mental-model">Essay: MPPM testing mental model </h3>
+<p>Main editor = host (client+server). Clone players = client only. <strong>Server build subtarget on clone</strong> breaks ghost schema — <code>TitanOrbitPlayModeUtility.WarnIfMppmServerBuildClone</code> screams about this. Always use Editor subtarget for clones.</p>
+<h3 id="essay-webgl-as-a-second-class-citizen-honestly">Essay: WebGL as a second-class citizen (honestly) </h3>
+<p>Browser tab throttling, no threads, download size, WebSocket relay, COOP/COEP headers — WebGL clients hit <strong>catch-up sim steps</strong> more often. Tune feel on WebGL before declaring movement "done."</p>
+<hr>
+<h2 id="chapter-20--scenario-walkthroughs-stories">Chapter 20 — Scenario walkthroughs (stories) </h2>
+<h3 id="scenario-a-i-press-play-on-main-menu-production-config">Scenario A: "I press Play on main menu (production config)" </h3>
+<ol>
+<li><code>NceGameFlowController</code> hides menu, shows connecting/loading.</li>
+<li><code>TitanOrbitSessionManager.QuickJoinDedicatedAsync</code> or browse join.</li>
+<li>UGS auth → lobby query → relay join code → <code>SetClientRelay</code> → connect.</li>
+<li><code>TitanOrbitGoInGameClientSystem</code> RPC → <code>NetworkStreamInGame</code>.</li>
+<li><code>EcsGameBridge.IsNetworkInGame</code> true → loading until map heuristic complete.</li>
+<li>Team panel → <code>RequestTeamCommand</code> RPC → server spawns ship → <code>TeamChoiceResultRpc</code>.</li>
+<li><code>ClientTeamFlowState.TeamChoiceConfirmed</code> → spawn wait → <code>HasLocalPlayerShip</code>.</li>
+<li>HUD on, <code>EcsWorldVisualizer</code> spawns proxy, <code>ClientCommandTargetSystem</code> wires input.</li>
+<li>You thrust — prediction runs before you receive confirming snapshot.</li>
+</ol>
+<p><strong>Feel lesson:</strong> Steps 1–8 can take seconds; step 9 should feel instant if prediction works.</p>
+<h3 id="scenario-b-i-fire-one-shot-at-an-enemy">Scenario B: "I fire one shot at an enemy" </h3>
+<ol>
+<li>Mouse down → <code>PlayerInputHandler</code> → <code>ShipInputBridge</code> sets <code>Fire</code> InputEvent.</li>
+<li>Client prediction may animate locally; server <code>BulletSimulationSystem</code> validates fire rate + energy.</li>
+<li>Server appends bullet + spawn event.</li>
+<li><code>BulletPresentationSystem</code> creates tracer entity.</li>
+<li><code>EcsWorldVisualizer.DrawBullets</code> spawns particles; <code>AudioManager</code> plays shoot pool sound.</li>
+<li>Server segment hit → damage <code>ShipState</code> → ghost replicates health down.</li>
+<li>Hit event buffer → impact VFX on clients.</li>
+</ol>
+<p><strong>Authority lesson:</strong> Only step 6 changes HP. Client tracers are lies until server agrees.</p>
+<h3 id="scenario-c-i-mine-dock-deposit">Scenario C: "I mine, dock, deposit" </h3>
+<ol>
+<li>Fly near asteroid → <code>MiningSystem</code> spawns gems over time.</li>
+<li><code>GemPickupSystem</code> adds to <code>CurrentGems</code> when within radius (or tractor pulls).</li>
+<li>Fly to friendly moon dock zone → <code>ShipMoonDockSystem</code> landing progress.</li>
+<li>Client <code>ShipMoonDockVisualApplier</code> cinematic; server pins kinematics.</li>
+<li>Hold deposit intent → <code>SetWantDepositGemsCommand</code> / <code>ShipDepositIntent</code> (rollback-safe).</li>
+<li><code>GemDepositSystem</code> transfers gems → <code>PlanetEconomyMath.DepositGems</code> → maybe level up.</li>
+<li><code>ContributedGemsLogic</code> credits your personal ledger for store.</li>
+</ol>
+<h3 id="scenario-d-match-ends">Scenario D: "Match ends" </h3>
+<ol>
+<li><code>CaptureSystem</code> sets <code>WinningTeam</code> when all planets owned by one team.</li>
+<li><code>MatchStateSingleton</code> replicates to clients.</li>
+<li><code>NceGameFlowController</code> hides gameplay HUD (<code>WinningTeam != None</code>).</li>
+<li><code>MatchEndScreenController</code> shows winner.</li>
+</ol>
+<hr>
+<h2 id="chapter-21--shipstatapply-deep-lesson">Chapter 21 — <code>ShipStatApply</code> deep lesson </h2>
+<p>When you upgrade ship level at orbit station:</p>
+<ol>
+<li>UI sends <code>PurchaseShipUpgradeCommand</code> RPC.</li>
+<li><code>MoonOrbitStoreSystem</code> validates gems + planet ownership + level cap.</li>
+<li>Server increments <code>ShipState.ShipLevel</code> (and branch if applicable).</li>
+<li><code>ShipStatApplyLogic.ApplyStatsForShip</code> resolves new chassis id from <code>PlanetShipFamilyConfig</code> ladder.</li>
+<li>Loads <code>ShipFamilyDefinition</code> from catalog, sums component stats (weapon, engine, hull…).</li>
+<li>Applies attribute upgrade multipliers from <code>ShipAttributeUpgradeState</code>.</li>
+<li>Writes <code>ShipMotorConfig.MaxSpeed</code>, <code>EngineThrust</code>, <code>ShipWeaponConfig</code> damage/fire rate, <code>MaxHealth</code>, etc.</li>
+<li>Ghost replication updates clients.</li>
+<li><code>EcsWorldVisualizer</code> may <strong>rebuild</strong> proxy if level changed (new prefab tier).</li>
+<li>Next movement tick uses new motor config — <strong>same motor code</strong>, different numbers.</li>
+</ol>
+<p><strong>Teaching point:</strong> Gameplay "I upgraded engine" = <strong>numeric component rewrite</strong>, not a different movement system.</p>
+<hr>
+<h2 id="chapter-22--audio-diagnostics-editor-supporting-cast">Chapter 22 — Audio, diagnostics, editor (supporting cast) </h2>
+<h3 id="audioaudiomanagercs"><code>Audio/AudioManager.cs</code> </h3>
+<p>Singleton with music + pooled SFX (weapon, gem, impact, explosion, death, capture, mining). <strong>Pooled</strong> <code>AudioSource</code> arrays for rapid fire without cut-off. Pitch scales with gem value / impact strength. Triggered from presentation (<code>EcsWorldVisualizer</code> muzzle/hit), not from server sim — <strong>SFX are cosmetic</strong>. Server doesn't play audio in headless build.</p>
+<h3 id="diagnosticsdedicatedserverfilelogcs"><code>Diagnostics/DedicatedServerFileLog.cs</code> </h3>
+<p>File logging on dedicated server — critical for debugging GCE without screen. Check when clients report "can't join" — zombie connections, relay failures.</p>
+<h3 id="ecseditornetcodegamesetupcs"><code>ECS/Editor/NetCodeGameSetup.cs</code> </h3>
+<p>Menu <strong>Titan Orbit → Setup NetCode Game (Full)</strong> — wires subscene, registry, default assets. <strong>Run after</strong> ghost prefab structural changes.</p>
+<h3 id="ecseditorghostprefabcreatorcs"><code>ECS/Editor/GhostPrefabCreator.cs</code> </h3>
+<p>Creates ghost prefab variants from visual prefabs.</p>
+<h3 id="editorbuildtitanorbitbuildautomationcs"><code>Editor/Build/TitanOrbitBuildAutomation.cs</code> </h3>
+<p>WebGL production, headless Linux/Windows builds. Output paths documented in Volume 14.</p>
+<hr>
+<h2 id="chapter-23--ui-folder-highlights">Chapter 23 — UI folder highlights </h2>
+<p><strong><code>OrbitStationUI.cs</code></strong> (+ partials <code>EcsHost</code>, <code>ShipTreeHelpers</code>) — Largest UI: card grid, shop, loadout, ship tree. Uses <code>OrbitStationEcsContext</code> to read planet/ship ECS state. Still references <code>LegacyNetcodeStubs</code> types — when reading, map mentally to ECS RPCs.</p>
+<p><strong><code>MinimapController.cs</code></strong> + <strong><code>MinimapEcsEntitySync.cs</code></strong> — Second camera or overlay blips synced from ECS positions.</p>
+<p><strong><code>ShipSpeedometerHUD.cs</code></strong> — Reads motor config + kinematics from visualization world; acceleration bar uses <strong>cosmetic smoothing</strong> (allowed — HUD only).</p>
+<p><strong><code>OrbitStationBootstrap.cs</code></strong> — Initializes station UI when docking.</p>
+<p><strong><code>MobileControls.cs</code></strong> — Wires touch canvas; can force mobile in editor.</p>
+<hr>
+<h2 id="chapter-24--shared-and-simulation-math-reference">Chapter 24 — Shared and Simulation math reference </h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Shared/TeamId.cs</code></td>
+<td>Five teams + colors + mask bits</td>
+</tr>
+<tr>
+<td><code>Shared/ToroidalMapEcs.cs</code></td>
+<td>XZ distance (name legacy)</td>
+</tr>
+<tr>
+<td><code>Shared/ShipDisplayPose.cs</code></td>
+<td>Camera pose cache</td>
+</tr>
+<tr>
+<td><code>Shared/ClientTeamFlowState.cs</code></td>
+<td>UI gating for input/team</td>
+</tr>
+<tr>
+<td><code>Shared/MoonOrbitClientState.cs</code></td>
+<td>Orbit menu, deposit UI flags</td>
+</tr>
+<tr>
+<td><code>Simulation/PlanetOrbitMath.cs</code></td>
+<td>Ring radii, orbit speed, motor params</td>
+</tr>
+<tr>
+<td><code>Simulation/PlanetGemMoonMath.cs</code></td>
+<td>Moon scale, dock, shield radii</td>
+</tr>
+<tr>
+<td><code>Simulation/PlanetEconomyMath.cs</code></td>
+<td>Planet level gem thresholds</td>
+</tr>
+<tr>
+<td><code>Simulation/BodyCollisionMath.cs</code></td>
+<td>Logical radii for gameplay tests</td>
+</tr>
+<tr>
+<td><code>Simulation/GemTractorBeamMath.cs</code></td>
+<td>Tractor reach and pull strength</td>
+</tr>
+<tr>
+<td><code>Simulation/PeopleTransportMath.cs</code></td>
+<td>Transport steering</td>
+</tr>
+<tr>
+<td><code>Simulation/BulletVisualScale.cs</code></td>
+<td>Tracer size from weapon stats</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Habit:</strong> When balancing, change <strong>Data assets</strong> or <strong>Simulation math</strong>, not scattered magic numbers in systems.</p>
+<hr>
+<h2 id="chapter-25--self-test-answer-key-volume-16">Chapter 25 — Self-test answer key (Volume 16) </h2>
+<p><strong>Q: Why manual <code>world.Update()</code> on dedicated server?</strong><br>
+Headless builds don't pump ECS automatically; Relay packets stall; clients get connections without <code>NetworkId</code>.</p>
+<p><strong>Q: Trace fire input.</strong><br>
+<code>PlayerInputHandler</code> → <code>ShipInputBridge</code> → <code>ShipPendingInput</code> → <code>ShipInputApplySystem</code> → <code>ShipInput.Fire</code> → <code>BulletSimulationSystem</code> (server).</p>
+<p><strong>Q: Motor vs physics writes.</strong><br>
+Motor: <code>PhysicsVelocity.Linear</code>, <code>Rotation</code>, <code>ShipKinematics.Velocity</code>. Physics: <code>LocalTransform.Position</code> + contact velocity changes.</p>
+<p><strong>Q: Three stepping sources.</strong><br>
+Fixed 60 Hz sim; physics discrete integration; prediction rollback corrections. Forbidden: owner proxy lerp.</p>
+<p><strong>Q: Why no owner proxy lerp?</strong><br>
+Fights NetCode prediction smoothing; adds lag; camera desync.</p>
+<hr>
+<h2 id="chapter-26--what-to-read-next-ongoing-curriculum">Chapter 26 — What to read next (ongoing curriculum) </h2>
+<p>This course is <strong>not exhaustive</strong> — no single document captures 100% of a living codebase. After Part I + II:</p>
+<ol>
+<li>Read <strong><code>.cursor/rules/titan-orbit-ship-simulation.mdc</code></strong> once per month.</li>
+<li>When touching a file, upgrade comments per <strong>educational-comments</strong> rule.</li>
+<li>Trace <strong>one bug</strong> end-to-end using scenarios in Chapter 20.</li>
+<li>Ask for <strong>Volume III</strong> topics: full <code>OrbitStationUI</code> RPC map, <code>BulletSimulationSystem</code> collision cases, <code>MapGenerationLogic</code> placement proofs, <code>TitanOrbitDedicatedServerHost</code> match rotation.</li>
+</ol>
+<hr>
+<h2 id="chapter-27--netcode-folder-file-by-file">Chapter 27 — NetCode folder file-by-file </h2>
+<p>Each file in <code>Assets/Scripts/NetCode/</code> participates in <strong>getting players connected and keeping time synchronized</strong>. Read this chapter when debugging "can't join," "no ships spawn," or "host works but WebGL doesn't."</p>
+<h3 id="titanorbitbootstrapcs"><code>TitanOrbitBootstrap.cs</code> </h3>
+<p><strong>Role:</strong> World factory + driver assignment.<br>
+<strong>Student summary:</strong> Decides ClientWorld/ServerWorld count before gameplay. Editor defaults to both worlds with port 0 (menu-driven connect). Dedicated builds server-only.<br>
+<strong>Critical lines:</strong> <code>DriverConstructor = TitanOrbitRelayDriverConstructor</code>, <code>AutoConnectPort</code> branching, <code>Application.targetFrameRate = 60</code> on server.</p>
+<h3 id="titanorbitsessionmanagercs"><code>TitanOrbitSessionManager.cs</code> </h3>
+<p><strong>Role:</strong> Session orchestrator (~1800 lines — don't fear, skim by method).<br>
+<strong>Key methods:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>StartLocalPlay</code></td>
+<td>Editor local host+client</td>
+</tr>
+<tr>
+<td><code>JoinDedicatedLobbyAsync</code></td>
+<td>Production join</td>
+</tr>
+<tr>
+<td><code>EnsureDedicatedBootStarted</code></td>
+<td>Headless boot once</td>
+</tr>
+<tr>
+<td><code>TickServerWorld</code></td>
+<td>Every frame on UNITY_SERVER</td>
+</tr>
+<tr>
+<td><code>RequestTeam</code></td>
+<td>UI → RPC helper</td>
+</tr>
+<tr>
+<td><code>SuspendEditorLocalServerUntilLocalPlay</code></td>
+<td>Menu idle</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Story:</strong> This file is why you can test LAN in editor <strong>and</strong> ship Linux headless <strong>and</strong> join from WebGL — three modes, one class.</p>
+<h3 id="titanorbitgoingamesystemscs"><code>TitanOrbitGoInGameSystems.cs</code> </h3>
+<p><strong>Role:</strong> RPC handshake for dedicated <code>NetworkStreamInGame</code>.<br>
+<strong>Without it:</strong> Relay connect succeeds but ghosts never replicate.</p>
+<h3 id="titanorbitrelayutilitycs--titanorbitrelaystate"><code>TitanOrbitRelayUtility.cs</code> / <code>TitanOrbitRelayState</code> </h3>
+<p><strong>Role:</strong> Convert UGS allocations to UTP relay params; store active relay config.<br>
+<strong>Teaching:</strong> <code>ApplyRelayFriendlyNetworkSettings</code> increases timeouts/queues — default UTP too aggressive for Relay.</p>
+<h3 id="titanorbitrelaydriverconstructorcs"><code>TitanOrbitRelayDriverConstructor.cs</code> </h3>
+<p><strong>Role:</strong> Creates network drivers with or without relay parameters.<br>
+<strong>Headless quirk:</strong> Relay UDP only (no IPC) on dedicated — IPC caused missed remote connections.</p>
+<h3 id="titanorbitlobbyservicecs"><code>TitanOrbitLobbyService.cs</code> </h3>
+<p><strong>Role:</strong> All lobby query/join/heartbeat/staleness logic.<br>
+<strong>Teaching:</strong> <code>IsLatest</code> + <code>IsOpen</code> + heartbeat age filter joinable matches. Rate limit gates prevent API spam.</p>
+<h3 id="titanorbitdedicatedserverbootrunnercs"><code>TitanOrbitDedicatedServerBootRunner.cs</code> </h3>
+<p><strong>Role:</strong> Safety net <code>[RuntimeInitializeOnLoadMethod]</code> — creates session manager, starts boot on GCE even if scene order wrong.<br>
+<strong>On quit:</strong> Closes lobby so players don't join dead process.</p>
+<h3 id="titanorbitdedicatedserverautobootcs"><code>TitanOrbitDedicatedServerAutoBoot.cs</code> </h3>
+<p><strong>Role:</strong> <code>IsDedicatedServerProcess()</code> predicate — UNITY_SERVER, batch mode, or CLI flag.</p>
+<h3 id="titanorbitdedicatedserverhostcs"><code>TitanOrbitDedicatedServerHost.cs</code> </h3>
+<p><strong>Role:</strong> Match rotation — 20 minute age spawn next match, full lobby close and spawn next. See <code>Docs/server-hosting-24_7.md</code>.</p>
+<h3 id="titanorbitservertickratesystemcs"><code>TitanOrbitServerTickRateSystem.cs</code> </h3>
+<p><strong>Role:</strong> 60/60 sim/network Hz singleton on server.<br>
+<strong>Teaching:</strong> Speeds are units/sec; Hz affects step count not max speed.</p>
+<h3 id="titanorbitclienttickratesystemcs"><code>TitanOrbitClientTickRateSystem.cs</code> </h3>
+<p><strong>Role:</strong> Empty placeholder — clients inherit server rate today.</p>
+<h3 id="titanorbitplaymodeutilitycs"><code>TitanOrbitPlayModeUtility.cs</code> </h3>
+<p><strong>Role:</strong> MPPM clone detection, suggested team per player number, server subtarget warning.</p>
+<h3 id="titanorbitservercommandlinecs"><code>TitanOrbitServerCommandLine.cs</code> </h3>
+<p><strong>Role:</strong> Parses <code>--maxPlayers</code>, port, relay protocol, dedicated flags for headless.</p>
+<h3 id="titanorbitlobbyservice-consumers"><code>TitanOrbitLobbyService</code> consumers </h3>
+<p><strong><code>JoinGameBrowserController</code></strong> — UI refresh join list.<br>
+<strong><code>UnityGameServicesBootstrap</code></strong> — auth before lobby API.</p>
+<hr>
+<h2 id="chapter-28--movement-case-studies-extended">Chapter 28 — Movement case studies (extended) </h2>
+<p>These are <strong>fictionalized debugging stories</strong> based on real architecture constraints. Read like case law.</p>
+<h3 id="case-1-ship-stutters-every-frame-on-144-hz-monitor">Case 1: "Ship stutters every frame on 144 Hz monitor" </h3>
+<p><strong>Symptoms:</strong> Local owner jerky; FPS high; dedicated server fine.<br>
+<strong>Investigation:</strong></p>
+<ol>
+<li>Log presentation cache frame vs visualizer frame — mismatch?</li>
+<li>Is camera reading <code>ShipDisplayPose</code> or raw ECS?</li>
+<li>Is someone lerping owner proxy "to help"?</li>
+</ol>
+<p><strong>Likely cause:</strong> Reading sim transform in <code>LateUpdate</code> or extra proxy lerp.<br>
+<strong>Fix class:</strong> Presentation discipline — not motor change.</p>
+<h3 id="case-2-rubber-band-when-mining-near-asteroid">Case 2: "Rubber band when mining near asteroid" </h3>
+<p><strong>Symptoms:</strong> Correction when changing direction near collision.<br>
+<strong>Investigation:</strong></p>
+<ol>
+<li>Physics bounce altering velocity — expected micro-kicks.</li>
+<li>Prediction mismatch on contact — check determinism of motor start velocity (<code>physicsVelocity.Linear</code> seed).</li>
+<li>Server and client both run shield repel? (should)</li>
+</ol>
+<p><strong>Likely cause:</strong> Physics contact + rollback visible on high latency.<br>
+<strong>Fix class:</strong> Tune prediction smoothing / ensure identical motor inputs — not disable physics.</p>
+<h3 id="case-3-host-feels-fine-webgl-feels-stepped">Case 3: "Host feels fine, WebGL feels stepped" </h3>
+<p><strong>Symptoms:</strong> Browser client choppy; editor host smooth.<br>
+<strong>Investigation:</strong></p>
+<ol>
+<li>WebGL frame drops → 2–4 sim catch-up steps (<code>MaxSimulationStepsPerFrame</code>).</li>
+<li><code>CrossPlatformManager</code> 60 FPS cap vs monitor.</li>
+<li>Relay <code>wss</code> latency jitter.</li>
+</ol>
+<p><strong>Likely cause:</strong> Catch-up bursts + network jitter.<br>
+<strong>Fix class:</strong> Profile WebGL frame time; reduce GPU load; tune catch-up limits carefully (side effects).</p>
+<h3 id="case-4-remote-ships-smooth-i-feel-delayed">Case 4: "Remote ships smooth, I feel delayed" </h3>
+<p><strong>Symptoms:</strong> Others glide; you feel mushy.<br>
+<strong>Investigation:</strong></p>
+<ol>
+<li>Is prediction running? (<code>Simulate</code> tag, <code>ShipClientPredictedMovementSystem</code>)</li>
+<li>Input apply only on fixed step — one tick input latency normal.</li>
+<li>Accidentally removed client prediction?</li>
+</ol>
+<p><strong>Likely cause:</strong> Prediction disabled or input not reaching ghost.<br>
+<strong>Fix class:</strong> Restore prediction path — never "fix" by smoothing proxy.</p>
+<h3 id="case-5-moon-dock-camera-jitters">Case 5: "Moon dock camera jitters" </h3>
+<p><strong>Symptoms:</strong> During landing cinematic only.<br>
+<strong>Investigation:</strong></p>
+<ol>
+<li><code>ShipMoonDockVisualApplier.ShouldSkipTransformSync</code> true?</li>
+<li><code>EcsGameBridge.TryGetLocalShipPosition</code> using dock follow override?</li>
+<li>Visualizer fighting applier by overwriting proxy?</li>
+</ol>
+<p><strong>Likely cause:</strong> Uncoordinated proxy writes.<br>
+<strong>Fix class:</strong> Respect skip flag; camera reads follow override.</p>
+<h3 id="case-6-zombie-connection--connected-but-no-ship">Case 6: "Zombie connection — connected but no ship" </h3>
+<p><strong>Symptoms:</strong> <code>connections=1</code>, <code>NetworkId=0</code>, dedicated server.<br>
+<strong>Investigation:</strong></p>
+<ol>
+<li>Is <code>TickServerWorld</code> running on headless?</li>
+<li>Relay listen succeeded?</li>
+<li>Go-in-game completed?</li>
+</ol>
+<p><strong>Likely cause:</strong> Server ECS not ticking or go-in-game incomplete.<br>
+<strong>Fix class:</strong> Session manager server pump + RPC handshake.</p>
+<hr>
+<h2 id="chapter-29--data-assets-field-guide-designer--programmer">Chapter 29 — Data assets field guide (designer + programmer) </h2>
+<h3 id="shipfamilydefinition"><code>ShipFamilyDefinition</code> </h3>
+<p><strong>You edit:</strong> Component stat table per USC module name, upgrade tree nodes, team tint materials, chassis prefab per level.<br>
+<strong>Runtime:</strong> <code>ShipFamilyStatsCalculator</code> sums power score; <code>ShipStatApplyLogic</code> applies to ECS.<br>
+<strong>Mistake:</strong> Editing prefab only without updating <code>components</code> table — stats won't match visuals.</p>
+<h3 id="carddata"><code>CardData</code> </h3>
+<p><strong>You edit:</strong> Grid shape (<code>shapeMask</code> bitmask), slot type, rarity, gem cost, stat adds/multipliers, <code>componentKey</code>.<br>
+<strong>Runtime:</strong> Equipped into buffers; keys resolve via <code>ShipPartCatalog</code>.<br>
+<strong>Mistake:</strong> Duplicate <code>GetStableCardId()</code> — breaks saves/network identity.</p>
+<h3 id="weaponconfig--bulletvfxbank"><code>WeaponConfig</code> / <code>BulletVfxBank</code> </h3>
+<p><strong>You edit:</strong> Cannon spread, fire rate, bullet bank index, VFX profile.<br>
+<strong>Runtime:</strong> Summed into <code>ShipWeaponConfig</code>; visuals via <code>BulletVisualFactory</code>.<br>
+<strong>Mistake:</strong> Tuning SO expecting instant combat change without server stat re-apply.</p>
+<h3 id="mapgenerationsettings"><code>MapGenerationSettings</code> </h3>
+<p><strong>You edit:</strong> Map size range, team count, planet/asteroid densities.<br>
+<strong>Runtime:</strong> Server <code>MapGenerationLogic</code> roll → <code>MapStateSingleton</code>.<br>
+<strong>Mistake:</strong> Assuming client knows exact spawn count before replication completes — loading UI uses heuristics.</p>
+<h3 id="planetshipfamilyconfig"><code>PlanetShipFamilyConfig</code> </h3>
+<p><strong>You edit:</strong> Which ship family ladder attaches to which home planet slot.<br>
+<strong>Runtime:</strong> <code>ShipStatApplyLogic.TryResolveChassisId</code> — <strong>which chassis you spawn as</strong> per team/level.</p>
+<h3 id="titanorbitmultiplayerconfig"><code>TitanOrbitMultiplayerConfig</code> </h3>
+<p><strong>You edit:</strong> <code>showLocalPlayOptions</code> bool in Resources.<br>
+<strong>Runtime:</strong> Shows/hides Local Host buttons in main menu. Production builds typically false.</p>
+<hr>
+<h2 id="chapter-30--building-your-mental-model-capstone">Chapter 30 — Building your mental model (capstone) </h2>
+<p>Draw this from memory after finishing the course:</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>[Input devices]
+     ↓ (render rate)
+ShipInputBridge → ShipPendingInput
+     ↓ (fixed 60 Hz, client)
+ShipInputApplySystem → ShipInput ghost
+     ↓
+ShipClientPredictedMovementSystem (owner)  ||  ShipMovementSystem (all ships, server)
+     ↓
+ShipMovementBurstLogic → ShipMotorSimulator
+     writes velocity + rotation
+     ↓
+PhysicsSystemGroup → position + collisions
+     ↓
+NetCode replicate + presentation interpolate
+     ↓
+ShipVisualSyncSystem → cache
+     ↓
+EcsWorldVisualizer → GameObject proxy (no owner lerp)
+     ↓
+ShipDisplayPose → CameraFollowEcs
+</code></pre><p>Parallel server-only: <code>BulletSimulationSystem</code>, <code>GemEconomySystems</code>, <code>TeamManagementSystem</code>, <code>CaptureSystem</code>.</p>
+<p>Parallel infrastructure: <code>TitanOrbitBootstrap</code> → <code>TitanOrbitSessionManager</code> → Relay/Lobby → <code>TickServerWorld</code> on headless.</p>
+<p><strong>If you can explain each arrow in one sentence, you understand Titan Orbit.</strong></p>
+<hr>
+<h2 id="chapter-31--ecs-components-encyclopedia-ecscomponents">Chapter 31 — ECS Components encyclopedia (<code>ECS/Components/</code>) </h2>
+<p>Components are <strong>columns of data</strong> attached to entities. In Titan Orbit, whether a field has <code>[GhostField]</code> determines if it <strong>replicates over the network</strong>. As a student, always ask: <em>Who writes this? Who reads this? Is it ghosted?</em></p>
+<h3 id="shipinputcs"><code>ShipInput.cs</code> </h3>
+<p>The <strong>flight stick packet</strong> for each tick. Implements NetCode's <code>IInputComponentData</code> — special serialization path from owning client to server. Fields: aim direction (XZ), thrust bool, fire <code>InputEvent</code>, space brakes, want deposit gems. <strong>Written by:</strong> <code>ShipInputApplySystem</code> (client) or <code>ShipServerControlSystem</code> (host server). <strong>Read by:</strong> movement, bullets, deposit systems. <strong>Not a ghost in the normal sense</strong> — uses command stream. <strong>Student note:</strong> fire as <code>InputEvent</code> prevents "held button shoots every resim tick" bugs.</p>
+<h3 id="shippendinginputcs"><code>ShipPendingInput.cs</code> </h3>
+<p><strong>Staging mailbox</strong> between <code>ShipInputBridge.Update</code> (render rate) and <code>ShipInputApplySystem</code> (sim rate). Static <code>Latest</code> struct. Not on entities. <strong>Why exist:</strong> classic decoupling pattern for networked input.</p>
+<h3 id="shipstatecs-and-nested-motorweaponvitals-structs-in-same-file"><code>ShipState.cs</code> (and nested motor/weapon/vitals structs in same file) </h3>
+<p>The <strong>ship's RPG + combat sheet</strong> on the entity:</p>
+<ul>
+<li><code>ShipState</code> — health, team, level, gems, energy, people, death flags, awaiting team ([GhostField] on key fields)</li>
+<li><code>ShipMotorConfig</code> — thrust, max speed, rotation, brakes, mass refs — <strong>recomputed server-side</strong>, not ghosted as source of truth</li>
+<li><code>ShipWeaponConfig</code> / <code>ShipWeaponState</code> — damage, fire rate, cooldown timer, energy cost</li>
+<li><code>ShipVitalsConfig</code> / <code>ShipVitalsState</code> — regen rates, last damage time</li>
+<li><code>ShipKinematics</code> — velocity mirror ([GhostField]) for HUD/gameplay reads</li>
+<li><code>ShipTag</code> — query marker</li>
+<li><code>LocalPlayerShipTag</code> — client-only convenience tag</li>
+</ul>
+<p><strong>Teaching:</strong> Separating <em>replicated state</em> from <em>derived config</em> saves bandwidth — clients don't need exact thrust numbers for remote ships' motors to display them; they interpolate transforms.</p>
+<h3 id="shiporbitstatecs"><code>ShipOrbitState.cs</code> </h3>
+<p>Tracks passive orbit context: which planet id, in ring bool, using orbit motor bool. <strong>Written by:</strong> <code>ShipMovementBurstLogic</code>. <strong>Read by:</strong> HUD indicators. Helps UI show "you are orbiting" without recomputing ring tests.</p>
+<h3 id="shipmoondockstatecs"><code>ShipMoonDockState.cs</code> </h3>
+<p>Moon landing progress: <code>MoonPlanetId</code>, <code>LandingProgress</code>, approach delay timers. <strong>Written by:</strong> <code>ShipMoonDockSystem</code> (server). <strong>Read by:</strong> motor early-out, deposit system, client dock visual applier. <strong>Ghosted</strong> so clients know dock phase.</p>
+<h3 id="shipdepositintentcs"><code>ShipDepositIntent.cs</code> </h3>
+<p><strong>Rollback-safe deposit toggle.</strong> Problem: <code>ShipInput.WantDepositGems</code> can be lost when NetCode resimulates input history. Solution: separate replicated intent + <code>SetWantDepositGemsCommand</code> RPC. <strong>Lesson:</strong> prediction affects <em>how</em> you store persistent player intent — not just movement.</p>
+<h3 id="shipdeathstatecs"><code>ShipDeathState.cs</code> </h3>
+<p>Respawn timer anchor — when ship died, when respawn allowed. Consumed by <code>ShipRespawnSystem</code>. Enables death screen countdown on client via replicated death state.</p>
+<h3 id="shipattributeupgradestatecs"><code>ShipAttributeUpgradeState.cs</code> </h3>
+<p>In-match HUD upgrade purchases (separate from orbit station ship level). Pairs with <code>PurchaseAttributeUpgradeCommand</code> RPC.</p>
+<h3 id="shiploadoutcomponentscs"><code>ShipLoadoutComponents.cs</code> </h3>
+<p>Buffers for equipped cards, equipment entries, rockets, mines. <strong>Design:</strong> stable card ids in buffers, not full ScriptableObject references over net. Server validates equip from catalog.</p>
+<h3 id="shipweaponmountelementcs-buffer"><code>ShipWeaponMountElement.cs</code> (buffer) </h3>
+<p>Per-cannon local position, rotation, direction angle, index. <strong>Filled by:</strong> bake + <code>ShipWeaponMountSyncSystem</code> (server, from visual hull). <strong>Read by:</strong> <code>BulletSimulationSystem</code>, <code>ShipWeaponPose</code>, client VFX bridges.</p>
+<h3 id="shipwingtractorbeamelementcs-buffer"><code>ShipWingTractorBeamElement.cs</code> (buffer) </h3>
+<p>Wing attachment transforms for gem tractor beams. Similar pipeline to weapon mounts.</p>
+<h3 id="shippeopletransferstatecs"><code>ShipPeopleTransferState.cs</code> </h3>
+<p>Orbit dwell timers and people load/unload state for colonist transport gameplay. Works with <code>PeopleTransportSystem</code>.</p>
+<h3 id="worldentitycomponentscs"><code>WorldEntityComponents.cs</code> </h3>
+<p><strong>PlanetState</strong> — ownership team, population, level, gems, planet id, home flag, ship family index. Core strategic state.<br>
+<strong>AsteroidState</strong> — remaining gems, health, destroyed flag, territory team.<br>
+<strong>GemState</strong> — value, size, deposit team for loose gems.<br>
+<strong>Tags:</strong> <code>PlanetTag</code>, <code>AsteroidTag</code>, <code>GemTag</code>, <code>HomePlanetTag</code>.<br>
+<strong>PlanetGemMoonState</strong> — moon shield HP, regen, gem drain — moon combat economy.</p>
+<h3 id="bulletcomponentscs"><code>BulletComponents.cs</code> </h3>
+<p><strong>BulletElement</strong> — server sim bullet list (not ghosted — clients don't sim bullets).<br>
+<strong>BulletSpawnEventElement</strong> — one-shot cosmetic spawn for presentation.<br>
+<strong>BulletHitEventElement</strong> — impact position for VFX.<br>
+<strong>BulletTracerState</strong> — presentation-phase tracer entity for <code>EcsWorldVisualizer</code>.<br>
+<strong>ActiveBulletsTag</strong> — singleton marker entity for bullet buffers.</p>
+<p><strong>Teaching moment:</strong> three representations of "a bullet" — sim element, spawn event, tracer entity — because <strong>server truth ≠ client picture</strong>.</p>
+<h3 id="gamestatecomponentscs"><code>GameStateComponents.cs</code> </h3>
+<p><strong>TeamStateSingleton</strong> — active team count, per-team player counts, elimination mask.<br>
+<strong>MatchStateSingleton</strong> — timer, winning team, match started flag.<br>
+<strong>MapStateSingleton</strong> — dimensions, seed, loading progress, complete flag.<br>
+<strong>MapLayoutEntryElement</strong> — buffer of spawned layout for minimap/spawn.<br>
+<strong>PlayerNameElement</strong> — scoreboard names by network id.</p>
+<p>These replicate so <strong>loading screen, win screen, and team UI</strong> work on clients without scanning all entities.</p>
+<h3 id="networkcommandscs"><code>NetworkCommands.cs</code> </h3>
+<p>All RPC struct definitions — see Appendix B. <strong>Pattern:</strong> <code>IRpcCommand</code> structs + handler systems that query <code>ReceiveRpcCommandRequest</code>.</p>
+<h3 id="contributedgemscomponentscs"><code>ContributedGemsComponents.cs</code> </h3>
+<p>Server-side contributed gem ledger components — personal bank at home moon for store purchases.</p>
+<h3 id="connectioncomponentscs"><code>ConnectionComponents.cs</code> </h3>
+<p>Custom connection-related markers if present for team/spawn flow (read file when debugging connection edge cases).</p>
+<h3 id="gameprefabscs"><code>GamePrefabs.cs</code> </h3>
+<p><strong>Registry singleton</strong> — entity references to ship/planet/asteroid/gem/transport prefabs for spawning. Baked from <code>GamePrefabsRegistryAuthoring</code>.</p>
+<h3 id="mapgenerationconfigcs"><code>MapGenerationConfig.cs</code> </h3>
+<p>Baked map generation parameters from <code>MapGenerationSettings</code> SO.</p>
+<h3 id="gemkinematicscs"><code>GemKinematics.cs</code> </h3>
+<p>Velocity/drag for loose gems — <code>GemMotionSystem</code> integrates.</p>
+<h3 id="peopletransportcomponentscs"><code>PeopleTransportComponents.cs</code> </h3>
+<p>Transport entity state — team, target planet, magnet steering, population counts.</p>
+<hr>
+<h2 id="chapter-32--ghost-authoring-encyclopedia-ecsauthoring">Chapter 32 — Ghost Authoring encyclopedia (<code>ECS/Authoring/</code>) </h2>
+<p>Authoring MonoBehaviours exist <strong>only at edit/bake time</strong>. They translate designer-friendly prefabs into ECS component data.</p>
+<h3 id="starshipghostauthoringcs"><code>StarshipGhostAuthoring.cs</code> </h3>
+<p><strong>The ship blueprint baker.</strong> Adds all ship components, weapon/wing buffers, physics sphere on Ship layer, <code>InverseInertia = 0</code>, ghost config. <strong>When you add a new ship stat field:</strong> add component here + <code>ShipStatApplyLogic</code> + possibly ghost serialization.</p>
+<h3 id="planetghostauthoringcs"><code>PlanetGhostAuthoring.cs</code> </h3>
+<p>Static physics sphere on WorldStatic layer. Bakes <code>PlanetState</code> defaults, home/neutral tags, scale.</p>
+<h3 id="asteroidghostauthoringcs"><code>AsteroidGhostAuthoring.cs</code> </h3>
+<p>Mineable body with <code>AsteroidState</code> — gem remaining, health.</p>
+<h3 id="gemghostauthoringcs"><code>GemGhostAuthoring.cs</code> </h3>
+<p>Loose gem pickup — <code>GemState</code>, Gem layer, scripted motion (no ship collision).</p>
+<h3 id="peopletransportghostauthoringcs"><code>PeopleTransportGhostAuthoring.cs</code> </h3>
+<p>Colonist transport projectile entity — team, population payload.</p>
+<h3 id="gameprefabsregistryauthoringcs"><code>GamePrefabsRegistryAuthoring.cs</code> </h3>
+<p>Central list of entity prefabs for runtime spawn (ship by team, planet variants, etc.).</p>
+<h3 id="mapgenerationsettingsauthoringcs"><code>MapGenerationSettingsAuthoring.cs</code> </h3>
+<p>Links <code>MapGenerationSettings</code> SO into <code>MapGenerationConfig</code> component.</p>
+<h3 id="shipweaponmountauthoringcs--shipwingtractorbeamauthoringcs"><code>ShipWeaponMountAuthoring.cs</code> / <code>ShipWingTractorBeamAuthoring.cs</code> </h3>
+<p>Child markers on visual prefab hierarchy → baked into dynamic buffers on ship root.</p>
+<p><strong>Student exercise:</strong> Open <code>StarshipGhost</code> prefab in editor, expand hierarchy, find mount authoring children, then open baked entity in Entities Hierarchy (play mode + ECS window) and confirm buffer contents.</p>
+<hr>
+<h2 id="chapter-33--instructor-sidebars-extra-depth-on-part-i-volumes">Chapter 33 — Instructor sidebars (extra depth on Part I volumes) </h2>
+<h3 id="sidebar-volume-3--connection-failure-modes">Sidebar: Volume 3 — Connection failure modes </h3>
+<table>
+<thead>
+<tr>
+<th>Symptom</th>
+<th>Check</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Timeout joining</td>
+<td>Relay code stale? Lobby heartbeat?</td>
+</tr>
+<tr>
+<td>In game, no ships</td>
+<td><code>NetworkStreamInGame</code>? Team RPC sent?</td>
+</tr>
+<tr>
+<td>Host works, WebGL not</td>
+<td><code>wss</code>, COOP/COEP headers, CSP</td>
+</tr>
+<tr>
+<td>Zombie NetworkId=0</td>
+<td>Server <code>TickServerWorld</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="sidebar-volume-6--mass-and-acceleration">Sidebar: Volume 6 — Mass and acceleration </h3>
+<p>Effective mass increases with HP and gems. <strong>Same max speed</strong>, lower acceleration. Players perceive "heavier ship" as slower <strong>ramp-up</strong>, not lower top speed. Tuning <code>EngineThrust</code> in data affects both light and heavy but heavy lags more — by design in <code>ShipMassLogic</code>.</p>
+<h3 id="sidebar-volume-7--interpolation-vs-extrapolation">Sidebar: Volume 7 — Interpolation vs extrapolation </h3>
+<p><strong>Your ship:</strong> prediction (extrapolation with rollback).<br>
+<strong>Remote ships:</strong> interpolation between snapshots.<br>
+They will <strong>never feel identical</strong> — comparing remote smoothness to local snappiness is apples to oranges.</p>
+<h3 id="sidebar-volume-10--gem-value-and-audio-pitch">Sidebar: Volume 10 — Gem value and audio pitch </h3>
+<p><code>AudioManager</code> pitches gem sounds by value — presentation feedback only. Server gem math uses floats in <code>GemState.Value</code> — no audio on server.</p>
+<h3 id="sidebar-volume-12--boolean-order-in-ncegameflowcontroller">Sidebar: Volume 12 — Boolean order in NceGameFlowController </h3>
+<p>Because UI is polling booleans not explicit FSM enum, adding a new state requires checking <strong>all</strong> mutually exclusive conditions. Draw a truth table when adding <code>showMyNewPanel</code> or risk overlapping panels.</p>
+<h3 id="sidebar-volume-14--il2cpp-and-headless">Sidebar: Volume 14 — IL2CPP and headless </h3>
+<p>Dedicated server uses IL2CPP. Burst AOT issues (BC1064) drove motor code structure. If you split Burst helpers wrong, <strong>Linux server build fails</strong> even if Editor works — always test headless build after motor changes.</p>
+<hr>
+<h2 id="chapter-34--glossary-extended-game-design-terms">Chapter 34 — Glossary extended (game design terms) </h2>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Home planet</strong></td>
+<td>Team spawn world with ship family ladder and orbit store</td>
+</tr>
+<tr>
+<td><strong>Neutral planet</strong></td>
+<td>Capturable, no starting team</td>
+</tr>
+<tr>
+<td><strong>Contributed gems</strong></td>
+<td>Personal gem bank at your moon from deposits — spent at store</td>
+</tr>
+<tr>
+<td><strong>Orbit ring</strong></td>
+<td>Annulus around planet where passive orbit motor engages</td>
+</tr>
+<tr>
+<td><strong>Chassis</strong></td>
+<td>Specific ship prefab tier in a family upgrade tree</td>
+</tr>
+<tr>
+<td><strong>Card</strong></td>
+<td>Tetris-shaped upgrade module with stat modifiers</td>
+</tr>
+<tr>
+<td><strong>Bank index</strong></td>
+<td>Which bullet VFX profile from <code>BulletVfxBank</code></td>
+</tr>
+<tr>
+<td><strong>Thin client</strong></td>
+<td>NetCode term for non-simulating client (not used same as WebGL thin)</td>
+</tr>
+<tr>
+<td><strong>Ghost owner</strong></td>
+<td><code>GhostOwner.NetworkId</code> ties ship to player connection</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h1 id="final-words-from-your-instructor">Final words from your instructor </h1>
+<p>You now have two documents:</p>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th>Use when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="TITAN-ORBIT-MASTER-GUIDE.md"><code>TITAN-ORBIT-MASTER-GUIDE.md</code></a></td>
+<td>Quick orientation, diagrams at a glance</td>
+</tr>
+<tr>
+<td><strong>This course</strong></td>
+<td>Actually learning — read sequentially, do exercises</td>
+</tr>
+</tbody>
+</table>
+<p>Titan Orbit's complexity is <strong>honest</strong> — fast multiplayer with physics, prediction, hybrid rendering, and browser deployment is genuinely hard. The codebase encodes years of tradeoffs in comments and rules.</p>
+<p>When stuck, ask four questions:</p>
+<ol>
+<li><strong>Which world am I in?</strong> (Client vs server)</li>
+<li><strong>Which phase am I in?</strong> (Sim vs presentation)</li>
+<li><strong>Who is authoritative?</strong> (Server for damage/economy)</li>
+<li><strong>Is this my ship or remote?</strong> (Prediction vs interpolation)</li>
+</ol>
+<p>Master those four, and the files stop looking like magic.</p>
+<p><em>End of Titan Orbit Complete Course — July 2026</em></p>
+
+      </div>
+      
+      
+    
+    
+    <script type="module">
+// TODO: If ZenUML gets integrated into mermaid in the future,
+//      we can remove the following lines.
+
+
+var MERMAID_CONFIG = ({"startOnLoad":false});
+if (typeof MERMAID_CONFIG !== 'undefined') {
+  MERMAID_CONFIG.startOnLoad = false
+  MERMAID_CONFIG.cloneCssStyles = false
+  MERMAID_CONFIG.theme = "default"
+}
+
+mermaid.initialize(MERMAID_CONFIG || {})
+if (typeof(window['Reveal']) !== 'undefined') {
+  function mermaidRevealHelper(event) {
+    var currentSlide = event.currentSlide
+    var diagrams = currentSlide.querySelectorAll('div.mermaid')
+    for (var i = 0; i < diagrams.length; i++) {
+      var diagram = diagrams[i]
+      if (!diagram.hasAttribute('data-processed')) {
+        mermaid.init(null, diagram, ()=> {
+          Reveal.slide(event.indexh, event.indexv)
+        })
+      }
+    }
+  }
+  Reveal.addEventListener('slidetransitionend', mermaidRevealHelper)
+  Reveal.addEventListener('ready', mermaidRevealHelper)
+  await mermaid.run({
+    nodes: document.querySelectorAll('div.mermaid')
+  })
+} else {
+  await mermaid.run({
+    nodes: document.querySelectorAll('div.mermaid')
+  })
+}
+</script>
+    
+    
+    
+  
+    </body></html>
