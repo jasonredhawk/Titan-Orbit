@@ -24,6 +24,12 @@ namespace TitanOrbit.Game
         static readonly Dictionary<Entity, Snapshot> Ships = new Dictionary<Entity, Snapshot>();
         static readonly Dictionary<Entity, Snapshot> PeopleTransports = new Dictionary<Entity, Snapshot>();
 
+        /// <summary>
+        /// Last published ship pose per entity — used when this frame's publish has not run yet so
+        /// MonoBehaviour readers never fall back to raw sim <see cref="LocalTransform"/> (pose fighting).
+        /// </summary>
+        static readonly Dictionary<Entity, Snapshot> LastShipSnapshots = new Dictionary<Entity, Snapshot>();
+
         /// <summary>Unity frame index when BeginPublish last ran — detects stale reads.</summary>
         static int _publishFrame = -1;
 
@@ -46,6 +52,7 @@ namespace TitanOrbit.Game
         internal static void PublishShip(Entity entity, in Snapshot snapshot)
         {
             Ships[entity] = snapshot;
+            LastShipSnapshots[entity] = snapshot;
         }
 
         /// <summary>Stores one people-transport ghost's presentation pose for visual proxies.</summary>
@@ -57,8 +64,14 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Lookup ship presentation pose by entity. Returns false if not published this frame.
         /// </summary>
-        internal static bool TryGetShip(Entity entity, out Snapshot snapshot) =>
-            Ships.TryGetValue(entity, out snapshot);
+        internal static bool TryGetShip(Entity entity, out Snapshot snapshot)
+        {
+            if (Ships.TryGetValue(entity, out snapshot))
+                return true;
+
+            // [NETCODE] Stale presentation beats fresh sim — avoids camera/proxy oscillation one frame early.
+            return LastShipSnapshots.TryGetValue(entity, out snapshot);
+        }
 
         /// <summary>
         /// Lookup people-transport presentation pose by entity.

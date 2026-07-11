@@ -79,6 +79,9 @@ namespace TitanOrbit.Game
         /// <summary>Cached local ship entity for transform sync and camera pose feed.</summary>
         Entity _cachedLocalPlayerShipEntity;
 
+        /// <summary>Guards VR / multi-camera double onBeforeRender in the same frame.</summary>
+        int _lastVisualSyncFrame = -1;
+
         /// <summary>Local-player ship proxy on dedicated clients.</summary>
         public GameObject LocalPlayerShipProxy { get; private set; }
 
@@ -127,11 +130,34 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [HYBRID] Per-frame proxy sync — reads presentation transforms, spawns/destroys GameObjects, applies VFX.
-        /// Runs after ShipVisualSyncSystem publishes GhostPresentationTransformCache (execution order 66000).
+        /// [HYBRID] Subscribe to render-phase sync — runs after NetCode PresentationSystemGroup
+        /// and after LateUpdate, so GhostPresentationTransformCache is populated for this frame.
         /// </summary>
-        void LateUpdate()
+        void OnEnable()
         {
+            Application.onBeforeRender += OnBeforeRenderSync;
+        }
+
+        /// <summary>[UNITY] Unsubscribe to avoid leaks when the visualizer is destroyed.</summary>
+        void OnDisable()
+        {
+            Application.onBeforeRender -= OnBeforeRenderSync;
+        }
+
+        /// <summary>
+        /// [HYBRID] Per-frame proxy sync — reads presentation transforms, spawns/destroys GameObjects, applies VFX.
+        /// Invoked from Application.onBeforeRender (not LateUpdate) so presentation cache is ready.
+        /// </summary>
+        void OnBeforeRenderSync() => SyncAllProxies();
+
+        /// <summary>Fallback when onBeforeRender does not fire (some batch/headless paths).</summary>
+        void LateUpdate() => SyncAllProxies();
+
+        void SyncAllProxies()
+        {
+            if (_lastVisualSyncFrame == Time.frameCount)
+                return;
+            _lastVisualSyncFrame = Time.frameCount;
             var world = PickVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return;

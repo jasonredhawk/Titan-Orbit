@@ -8,8 +8,8 @@ namespace TitanOrbit.Editor.Build
 {
     /// <summary>
     /// [EDITOR] Unity menu items for Titan Orbit production builds — WebGL (Cloudflare), Windows
-    /// headless server, Linux GCE server, and Android APK. Centralizes output paths under
-    /// BuildOutput/ so tools/gce upload scripts match folder names. Not included in player builds.
+    /// headless server, Linux GCE server, Linux Edgegap server, and Android APK. Centralizes output
+    /// paths under BuildOutput/ (GCE) and Builds/EdgegapServer (Edgegap plugin). Not in player builds.
     /// </summary>
     public static class TitanOrbitBuildAutomation
     {
@@ -17,6 +17,8 @@ namespace TitanOrbit.Editor.Build
         private const string ServerWindowsBuildFolder = "BuildOutput/Server/headless-windows";
         /// <summary>Folder name must stay <c>TitanOrbitLinux1</c> so <c>tools/gce/*.bat</c> defaults and VM <c>REMOTE_DIR</c> match after upload.</summary>
         private const string ServerLinuxBuildFolder = "BuildOutput/Server/TitanOrbitLinux1";
+        /// <summary>Edgegap plugin default build folder; binary name <c>ServerBuild</c> matches their Dockerfile.</summary>
+        private const string ServerEdgegapBuildFolder = "Builds/EdgegapServer";
         private const string AndroidApkFolder = "BuildOutput/Android";
         private const string AndroidApkFileName = "TitanOrbit.apk";
 
@@ -66,13 +68,26 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/Headless Server (Linux — Google Cloud)")]
         public static void BuildHeadlessServerLinux()
         {
-            // --- Build data ---
-            string outputBasePath = GetLinuxServerOutputBasePath();
+            BuildLinuxDedicatedServer(GetLinuxServerOutputBasePath(), "GCE", "tools\\gce\\deploy_server_gce.bat");
+        }
 
+        /// <summary>
+        /// Linux dedicated server for Edgegap Docker (output: <c>ServerBuild.x86_64</c> under <see cref="ServerEdgegapBuildFolder"/>).
+        /// Use with Tools → Edgegap Hosting or <c>tools/edgegap/Dockerfile</c>.
+        /// </summary>
+        [MenuItem("TitanOrbit/Build/Headless Server (Linux — Edgegap)")]
+        public static void BuildHeadlessServerLinuxEdgegap()
+        {
+            BuildLinuxDedicatedServer(GetEdgegapServerOutputBasePath(), "Edgegap", "tools\\edgegap\\README.md");
+        }
+
+        /// <summary>Shared IL2CPP Linux Dedicated Server build used by GCE and Edgegap menu items.</summary>
+        static void BuildLinuxDedicatedServer(string outputBasePath, string label, string nextStepDocPath)
+        {
             // GCE Debian images often fail to load MonoBleedingEdge native libs ("Unable to load mono library" / exit 1).
-            // Dedicated Server player target supports IL2CPP — no Mono .so chain on the VM (see Player.log on failure).
+            // Dedicated Server player target supports IL2CPP — no Mono .so chain on the VM/container.
             PlayerSettings.SetScriptingBackend(NamedBuildTarget.Server, ScriptingImplementation.IL2CPP);
-            Debug.Log("[TitanOrbitBuild] Dedicated Server scripting backend set to IL2CPP for this Linux server build.");
+            Debug.Log("[TitanOrbitBuild] Dedicated Server scripting backend set to IL2CPP for this Linux server build (" + label + ").");
 
             var options = new BuildPlayerOptions
             {
@@ -87,11 +102,11 @@ namespace TitanOrbit.Editor.Build
             if (report.summary.result == BuildResult.Succeeded)
             {
                 string folder = Path.GetDirectoryName(outputBasePath) ?? outputBasePath;
-                Debug.Log($"[TitanOrbitBuild] Linux server build OK. Deploy: tools\\gce\\deploy_server_gce.bat\nOutput folder: {folder}");
+                Debug.Log($"[TitanOrbitBuild] Linux server build OK ({label}). Next: {nextStepDocPath}\nOutput folder: {folder}");
             }
             else
             {
-                Debug.LogError($"[TitanOrbitBuild] Linux server build failed: {report.summary.result} — {report.summary.totalErrors} error(s). See Console / Build steps.");
+                Debug.LogError($"[TitanOrbitBuild] Linux server build failed ({label}): {report.summary.result} — {report.summary.totalErrors} error(s). See Console / Build steps.");
             }
         }
 
@@ -164,11 +179,21 @@ namespace TitanOrbit.Editor.Build
         /// <summary>Path without extension; build produces <c>TitanOrbitServer.x86_64</c> and <c>TitanOrbitServer_Data</c>.</summary>
         private static string GetLinuxServerOutputBasePath()
         {
-            // --- Compute value ---
+            return GetLinuxServerOutputBasePath(ServerLinuxBuildFolder, "TitanOrbitServer");
+        }
+
+        /// <summary>Edgegap plugin expects <c>Builds/EdgegapServer/ServerBuild</c> (+ <c>_Data</c>, <c>.x86_64</c>).</summary>
+        private static string GetEdgegapServerOutputBasePath()
+        {
+            return GetLinuxServerOutputBasePath(ServerEdgegapBuildFolder, "ServerBuild");
+        }
+
+        static string GetLinuxServerOutputBasePath(string folderRelativeToProject, string binaryBaseName)
+        {
             string root = Path.GetDirectoryName(Application.dataPath) ?? Directory.GetCurrentDirectory();
-            string dir = Path.Combine(root, ServerLinuxBuildFolder);
+            string dir = Path.Combine(root, folderRelativeToProject);
             Directory.CreateDirectory(dir);
-            return Path.Combine(dir, "TitanOrbitServer");
+            return Path.Combine(dir, binaryBaseName);
         }
 
         private static string GetAndroidApkOutputPath()

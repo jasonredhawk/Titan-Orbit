@@ -44,12 +44,14 @@ namespace TitanOrbit.Game
             // --- Build data ---
             var cam = UnityEngine.Camera.main;
             float2 aimDir = float2.zero;
+            // [HYBRID] Aim from presentation pose when available — matches proxy/camera, reduces rotation micro-jitter.
             if (cam != null)
             {
                 Vector3 aimWorld = _input.GetMouseWorldPosition(cam);
                 Vector3 shipPos = Vector3.zero;
-                if (EcsGameBridge.TryGetLocalShipPosition(out var pos))
-                    shipPos = pos;
+                if (!EcsGameBridge.TryGetLocalShipPresentationPosition(out shipPos) &&
+                    !EcsGameBridge.TryGetLocalShipPosition(out shipPos))
+                    shipPos = Vector3.zero;
                 Vector3 toAim = aimWorld - shipPos;
                 toAim.y = 0f;
                 if (toAim.sqrMagnitude > 0.001f)

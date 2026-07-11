@@ -69,11 +69,15 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server procedural map spawn: rolls layout from <see cref="MapGenerationLogic"/>, instantiates
     /// planets and asteroids incrementally, updates loading progress on <see cref="MapStateSingleton"/>.
+    /// Spawns multiple bodies per sim tick so large asteroid fields (400–800+) do not take minutes on
+    /// dedicated servers or block remote clients waiting for ghost replication.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct MapGenerationSystem : ISystem
     {
+        /// <summary>How many planets/asteroids to instantiate per server sim tick during map build.</summary>
+        const int SpawnsPerSimulationTick = 32;
         enum Phase : byte
         {
             Idle,
@@ -157,7 +161,7 @@ namespace TitanOrbit.ECS
             switch (_phase)
             {
                 case Phase.Spawning:
-                    if (SpawnNextEntity(ref state))
+                    if (SpawnBatch(ref state))
                         _phase = Phase.Finalizing;
                     break;
                 case Phase.Finalizing:
@@ -267,13 +271,27 @@ namespace TitanOrbit.ECS
             return _spawnQueue.IsCreated;
         }
 
-        bool SpawnNextEntity(ref SystemState state)
+        /// <summary>Spawns up to <see cref="SpawnsPerSimulationTick"/> queued bodies this tick.</summary>
+        /// <returns>True when the spawn queue is empty.</returns>
+        bool SpawnBatch(ref SystemState state)
         {
             if (!_spawnQueue.IsCreated || _spawnIndex >= _spawnQueue.Length)
                 return true;
 
-            // --- Instantiate one prefab from the pending queue ---
-            var pending = _spawnQueue[_spawnIndex];
+            int batchEnd = math.min(_spawnQueue.Length, _spawnIndex + SpawnsPerSimulationTick);
+            while (_spawnIndex < batchEnd)
+            {
+                SpawnQueuedEntity(ref state, _spawnQueue[_spawnIndex]);
+                _spawnIndex++;
+            }
+
+            SetLoadingProgress(ref state, _spawnIndex, _totalSpawnSteps);
+            return _spawnIndex >= _spawnQueue.Length;
+        }
+
+        /// <summary>Instantiates one prefab from the pending queue entry.</summary>
+        void SpawnQueuedEntity(ref SystemState state, in PendingSpawn pending)
+        {
             switch (pending.Kind)
             {
                 case SpawnKind.HomePlanet:
@@ -311,10 +329,6 @@ namespace TitanOrbit.ECS
                     break;
                 }
             }
-
-            _spawnIndex++;
-            SetLoadingProgress(ref state, _spawnIndex, _totalSpawnSteps);
-            return _spawnIndex >= _spawnQueue.Length;
         }
 
         void FinalizeGeneration(ref SystemState state)

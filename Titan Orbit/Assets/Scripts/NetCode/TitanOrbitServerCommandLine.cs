@@ -4,9 +4,10 @@ using UnityEngine;
 namespace TitanOrbit.NetCode
 {
     /// <summary>
-    /// Headless dedicated server launch parameters parsed from command line (GCE systemd, local testing).
-    /// Consumed by <see cref="TitanOrbitDedicatedServerAutoBoot"/> and lobby registration. Defaults
-    /// match production GCE deploy; override via --maxPlayers=, --serverPort=, --relayProtocol=, etc.
+    /// Headless dedicated server launch parameters parsed from command line (GCE systemd, Edgegap Docker,
+    /// local testing). Consumed by <see cref="TitanOrbitDedicatedServerAutoBoot"/> and lobby registration.
+    /// Defaults match production deploy; override via --maxPlayers=, --serverPort=, --relayProtocol=, etc.
+    /// When running on Edgegap, <see cref="TitanOrbitEdgegapEnvironment"/> may override port from ARBITRIUM_* env.
     /// </summary>
     public sealed class TitanOrbitServerCommandLine
     {
@@ -53,6 +54,12 @@ namespace TitanOrbit.NetCode
             config.BootMaxAttempts = Mathf.Max(1, GetArgInt("bootMaxAttempts", 15));
             config.BootRetryDelaySeconds = Mathf.Max(1, GetArgInt("bootRetryDelaySeconds", 5));
             config.WaitNetworkManagerSeconds = Mathf.Max(10, GetArgInt("waitNetworkManagerSeconds", 120));
+
+            // [TITAN-ORBIT] Edgegap containers inject ARBITRIUM_* env vars at deploy time (port mapping, deployment id).
+            ushort? edgegapPort = TitanOrbitEdgegapEnvironment.TryGetGameportInternal();
+            if (edgegapPort.HasValue)
+                config.ServerPort = edgegapPort.Value;
+            TitanOrbitEdgegapEnvironment.LogBootIfPresent(config.ServerPort);
             return config;
         }
 

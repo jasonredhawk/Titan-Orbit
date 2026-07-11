@@ -2470,6 +2470,28 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8fb21efed800c5d42b79278f8763248a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipAttributeUpgradeHUD
+  upgradeBarEnabled: 1
+  stripAnchorUseCanvasRectPadding: 1
+  upgradeStripInsetFromLeft: 12
+  upgradeStripInsetFromBottom: 12
+  minimapHorizontalGap: 12
+  fallbackRightReserve: 400
+  minWidthFitScale: 0.55
+  barHeight: 68
+  buttonWidth: 136
+  buttonSpacing: 10
+  mobileHudScale: 1.48
+  titleAreaTopInset: 16
+  tickColumnRightInset: 14
+  tickColumnFromRight: -5
+  ticksCenterYOffset: -3
+  titleFontSize: 12
+  buttonFrameColor: {r: 0.95, g: 0.98, b: 1, a: 0.42}
+  buttonInnerShadeColor: {r: 0, g: 0, b: 0, a: 0.22}
+  buttonAccentColor: {r: 0.75, g: 0.88, b: 1, a: 0.28}
+  buttonShadowColor: {r: 0, g: 0, b: 0, a: 0.45}
+  gemCostIconSprite: {fileID: 0}
+  gemIconSize: 14
 --- !u!114 &505988332
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2494,6 +2516,21 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c4e8a91b2f6d4e4a9b1c3d5e7f901234, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipSpeedometerHUD
+  speedometerEnabled: 1
+  placement: 0
+  panelWidth: 608
+  panelHeight: 220.8
+  accelerationBarSmoothing: 5
+  horizontalMargin: 20
+  verticalMargin: 20
+  stackGapAboveUpgradeBar: 20
+  backgroundColor: {r: 0, g: 0, b: 0, a: 0.45}
+  fillColor: {r: 0.35, g: 0.85, b: 1, a: 0.9}
+  trackColor: {r: 0.15, g: 0.15, b: 0.18, a: 0.85}
+  textColor: {r: 0.92, g: 0.95, b: 1, a: 1}
+  accelPositiveColor: {r: 0.25, g: 0.92, b: 0.45, a: 0.92}
+  accelNegativeColor: {r: 0.95, g: 0.28, b: 0.28, a: 0.92}
+  tickLabelColor: {r: 0.78, g: 0.82, b: 0.9, a: 0.72}
 --- !u!1 &526755990
 GameObject:
   m_ObjectHideFlags: 0
@@ -4106,7 +4143,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.CameraFollowEcs
   offsetAtReferenceLevel: {x: 0, y: 30, z: 0}
-  followSmoothTime: 0
   gameplayFieldOfView: 45
 --- !u!1 &716424125
 GameObject:
@@ -8703,6 +8739,7 @@ MonoBehaviour:
   teamSelectionPanel: {fileID: 376194405}
   loadingRoot: {fileID: 867079292}
   gameplayRoot: {fileID: 505988329}
+  shipStatsPanel: {fileID: 0}
   playButton: {fileID: 1631842815}
   statusText: {fileID: 0}
   teamAButton: {fileID: 1885954939}

@@ -2,6 +2,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.NetCode;
+using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
@@ -63,11 +64,14 @@ namespace TitanOrbit.Game
         // --- Local ship queries ---
 
         /// <summary>
-        /// World position of the local ship — prefers moon-dock cinematic follow when landing.
+        /// World position of the local ship for UI/aim — prefers presentation pose, then moon-dock cinematic.
         /// </summary>
         public static bool TryGetLocalShipPosition(out Vector3 position)
         {
             if (ShipMoonDockVisualApplier.TryGetLocalFollowPosition(out position))
+                return true;
+
+            if (TryGetLocalShipPresentationPosition(out position))
                 return true;
 
             position = default;
@@ -77,6 +81,41 @@ namespace TitanOrbit.Game
 
             position = lt.Position;
             return true;
+        }
+
+        /// <summary>
+        /// Presentation-phase local ship position (ghost presentation cache or ShipDisplayPose).
+        /// Prefer cache when published this frame — ShipDisplayPose may lag until onBeforeRender proxy sync.
+        /// </summary>
+        public static bool TryGetLocalShipPresentationPosition(out Vector3 position)
+        {
+            position = default;
+
+            var world = GetLocalPlayerShipWorld();
+            if (world != null && world.IsCreated &&
+                TryGetLocalShipEntityOnWorld(world, out var shipEntity) &&
+                GhostPresentationTransformCache.TryGetShip(shipEntity, out var snap) &&
+                GhostPresentationTransformCache.PublishFrame == Time.frameCount)
+            {
+                position = snap.Position;
+                return true;
+            }
+
+            if (ShipDisplayPose.HasLocalPose)
+            {
+                position = ShipDisplayPose.LocalPosition;
+                return true;
+            }
+
+            if (world != null && world.IsCreated &&
+                TryGetLocalShipEntityOnWorld(world, out shipEntity) &&
+                GhostPresentationTransformCache.TryGetShip(shipEntity, out snap))
+            {
+                position = snap.Position;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>Local ship <see cref="LocalTransform"/> from <see cref="GetLocalPlayerShipWorld"/>.</summary>
@@ -440,7 +479,7 @@ namespace TitanOrbit.Game
                 TryGetMapLoadingComplete(ClientWorld, out var clientComplete))
                 return clientComplete;
 
-            // [NETCODE] MPPM / dedicated clients: MapStateSingleton is not ghosted — infer from replicated bodies.
+            // [NETCODE] Dedicated clients: prefer ghost MapStateSingleton when present; else layout + body heuristics.
             if (IsRemoteMapObserverClient() && ClientWorld != null && ClientWorld.IsCreated)
                 return TryGetReplicatedMapLoadComplete(ClientWorld);
 
@@ -504,6 +543,14 @@ namespace TitanOrbit.Game
 
             if (completedSteps <= 0 && !hasReplicatedBodies)
                 return false;
+
+            // Prefer authoritative layout length once replicated (matches server spawn total).
+            if (ClientWorld != null && ClientWorld.IsCreated &&
+                TryGetReplicatedLayoutEntryCount(ClientWorld, out int layoutCount) && layoutCount > 0)
+            {
+                totalSteps = layoutCount;
+                return true;
+            }
 
             totalSteps = ResolveRemoteMapExpectedTotal(homeCount);
             return totalSteps > 0;
@@ -1027,7 +1074,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Remote clients wait for home planets + asteroid field ghosts to finish streaming, then a short settle window.
+        /// Remote clients: dismiss loading once home planets and a playable asteroid sample exist.
+        /// When the ghosted <see cref="MapLayoutEntryElement"/> buffer arrives, the server finished
+        /// spawning — clients must not wait for every asteroid ghost (400–800+) to replicate.
         /// </summary>
         static bool TryGetReplicatedMapLoadComplete(World client)
         {
@@ -1040,6 +1089,11 @@ namespace TitanOrbit.Game
             if (asteroids < RemoteMapMinAsteroids)
                 return false;
 
+            // [NETCODE] Layout buffer is published only after server map gen finishes.
+            if (TryGetReplicatedLayoutEntryCount(client, out int layoutCount) && layoutCount > 0)
+                return true;
+
+            // Fallback: ghost counts stopped changing for a short settle window.
             if (planets != s_RemoteMapPlanetCount || asteroids != s_RemoteMapAsteroidCount)
             {
                 s_RemoteMapPlanetCount = planets;
@@ -1053,6 +1107,21 @@ namespace TitanOrbit.Game
                 return false;
 
             return true;
+        }
+
+        /// <summary>Length of ghost-replicated map layout buffer on the client (0 until finalize).</summary>
+        static bool TryGetReplicatedLayoutEntryCount(World client, out int count)
+        {
+            count = 0;
+            if (client == null || !client.IsCreated)
+                return false;
+
+            if (!client.EntityManager.CreateEntityQuery(typeof(MapLayoutEntryElement))
+                    .TryGetSingletonBuffer<MapLayoutEntryElement>(out var layout))
+                return false;
+
+            count = layout.Length;
+            return count > 0;
         }
 
         /// <summary>True when replicated planet/ship ghosts indicate the client has enough world state for lobby UI.</summary>

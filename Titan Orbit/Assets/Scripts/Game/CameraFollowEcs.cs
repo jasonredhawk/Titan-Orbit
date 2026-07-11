@@ -37,17 +37,14 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [UNITY] LateUpdate — runs after presentation sync. Copies ship XZ into camera position.
+        /// [UNITY] LateUpdate — presentation cache is filled during Update; read via EcsGameBridge helper.
         /// </summary>
         void LateUpdate()
         {
             // --- Resolve follow target ---
             Vector3 targetPos;
-            // [HYBRID] Prefer ShipDisplayPose — already smoothed for display by visual appliers.
-            if (ShipDisplayPose.HasLocalPose)
-                targetPos = ShipDisplayPose.LocalPosition;
-            // [HYBRID] Fallback while ship is spawning — EcsGameBridge reads ECS directly.
-            else if (!EcsGameBridge.TryGetLocalShipPosition(out targetPos))
+            if (!EcsGameBridge.TryGetLocalShipPresentationPosition(out targetPos) &&
+                !EcsGameBridge.TryGetLocalShipPosition(out targetPos))
                 return; // [STANDARD] No local ship yet (loading, dead, or not spawned).
 
             // --- Apply rig ---
