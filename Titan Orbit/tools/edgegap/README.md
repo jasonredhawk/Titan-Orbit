@@ -80,19 +80,20 @@ Our Dockerfile:
 - Runs `tools/edgegap/start-server.sh` with GCE-equivalent CLI flags
 - Sets `SDL_VIDEODRIVER=dummy` for headless Linux
 
-### 4. Test locally (optional but recommended)
+### 4. Test locally (Titan Orbit — read this)
 
-In the Edgegap window, **Deploy local container**:
+Edgegap’s default docs say “connect your client to `localhost` + Docker port.” **That does not apply to Titan Orbit.**  
+We use **UGS Lobby + Unity Relay**. The Docker container is only the **headless server process**.
 
-- **Optional docker run parameters:** `-p 7777/udp` (metadata port; Relay still used for gameplay)
-- Start container, then open **Docker Desktop → Containers** and check logs
+**Full walkthrough:** [LOCAL-DOCKER-TEST.md](./LOCAL-DOCKER-TEST.md)
 
-**Success in logs:**
+Quick version:
 
-- `[TitanOrbitSessionManager] Dedicated server live. Relay=... Lobby=...`
-- `[TitanOrbitEdgegapEnvironment]` line if you passed mock ARBITRIUM env vars
-
-**How to test gameplay:** use your normal client (Editor or WebGL) → **Join Game** → pick the new lobby. Do **not** point the client at `localhost:7777` unless you are doing a LAN test without Relay.
+1. **Deploy local container** in the Edgegap window (`-p 7777/udp` optional).
+2. Confirm Docker logs: `Dedicated server live. Relay=... Lobby=...` and `[MapGeneration] Map generated`.
+3. Unity Editor **Play** → main menu → **Join game** → **Refresh** → join the listed lobby.
+4. After loading, **pick a team** — your ship spawns only after team selection (not on connect).
+5. Do **not** use Local play or direct `127.0.0.1:7777` transport for this test.
 
 Stop/delete the test container when done.
 
@@ -165,7 +166,8 @@ You can keep GCE for a permanent “latest” lobby and use Edgegap for on-deman
 | Container exits immediately | `docker logs <container>` — IL2CPP missing `.so`, wrong binary path, or boot timeout |
 | No lobbies in Join Game | Deployment logs for lobby publish errors; wait after Ready; check UGS project matches client |
 | `Port verification failed` | Ignore for Relay architecture unless you add direct LAN listen; ensure app version UDP 7777 anyway |
-| Docker build huge / slow | `.dockerignore` at project root excludes `Library/`, `BuildOutput/` |
+| Docker build huge / slow | `.dockerignore` excludes `Library/`, `Assets/`, etc. — only `Builds/EdgegapServer` + `tools/edgegap` sent to daemon |
+| `missing script on Asteroid` in Docker logs | Fixed: headless server no longer runs `EcsWorldVisualizer` (rebuild server after pull) |
 | Free tier limits | 2 apps / 2 versions — delete old versions in dashboard |
 
 Edgegap Discord: [Community Discord](https://discord.gg/NgCnkHbsGp)

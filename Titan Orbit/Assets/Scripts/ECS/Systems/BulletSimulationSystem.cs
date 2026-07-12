@@ -11,14 +11,14 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Burst-compiled server-authoritative bullet simulation and ship firing. Runs after
-    /// <see cref="ShipMovementSystem"/> so muzzle positions use current transforms. Advances
+    /// <see cref="ShipPhysicsDriveSystem"/> so muzzle positions use current transforms. Advances
     /// <see cref="BulletElement"/> buffer with toroidal segment tests against planets, moons,
     /// ships, asteroids, and people transports. Spawns cosmetic events for
     /// <see cref="BulletPresentationSystem"/>. Damage and death are server-only.
     /// </summary>
     [BurstCompile]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(ShipMovementSystem))]
+    [UpdateAfter(typeof(ShipPhysicsDriveSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct BulletSimulationSystem : ISystem
     {

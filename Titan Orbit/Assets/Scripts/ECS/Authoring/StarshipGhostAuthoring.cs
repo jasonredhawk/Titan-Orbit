@@ -97,14 +97,14 @@ namespace TitanOrbit.ECS.Authoring
             }
 
             /// <summary>
-            /// Bakes a dynamic Unity Physics sphere collider on the Ship layer. Server and client
-            /// prediction both run PhysicsSystemGroup after the motor sets PhysicsVelocity.
+            /// Bakes a fully dynamic Unity Physics sphere collider. Thrust and brakes are applied by
+            /// <see cref="ShipPhysicsDriveSystem"/> via impulses and <see cref="PhysicsDamping"/>.
             /// </summary>
             void BakeShipPhysicsBody(Entity shipEntity, float mass)
             {
                 float radius = BodyCollisionMath.GetShipHullRadiusWorld(1f);
                 var material = Unity.Physics.Material.Default;
-                material.Restitution = 0.5f; // [TITAN-ORBIT] Bounce off ships, planets, asteroids.
+                material.Restitution = 0.5f;
                 material.Friction = 0.05f;
 
                 var collider = Unity.Physics.SphereCollider.Create(
@@ -117,13 +117,9 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(shipEntity, PhysicsVelocity.Zero);
 
                 var physicsMass = PhysicsMass.CreateDynamic(collider.Value.MassProperties, math.max(0.5f, mass));
-                // [TITAN-ORBIT] InverseInertia = 0 — contacts never spin the ship; motor owns Rotation.
-                physicsMass.InverseInertia = float3.zero;
                 AddComponent(shipEntity, physicsMass);
                 AddComponent(shipEntity, new PhysicsGravityFactor { Value = 0f });
-                AddComponent(shipEntity, new PhysicsDamping { Linear = 0f, Angular = 0f });
-                // [TITAN-ORBIT] Toggled kinematic while docked to a moon (ShipMoonDockSystem).
-                AddComponent(shipEntity, new PhysicsMassOverride { IsKinematic = 0, SetVelocityToZero = 0 });
+                AddComponent(shipEntity, new PhysicsDamping { Linear = 0.15f, Angular = 2f });
             }
 
             /// <summary>

@@ -8685,11 +8685,15 @@ GameObject:
   - component: {fileID: 1418200270}
   - component: {fileID: 1418200269}
   - component: {fileID: 1418200268}
-  - component: {fileID: 1418200273}
   - component: {fileID: 1418200274}
   - component: {fileID: 1418200277}
   - component: {fileID: 1418200276}
   - component: {fileID: 1418200275}
+  - component: {fileID: 1418200282}
+  - component: {fileID: 1418200281}
+  - component: {fileID: 1418200280}
+  - component: {fileID: 1418200279}
+  - component: {fileID: 1418200278}
   m_Layer: 0
   m_Name: NceGameRoot
   m_TagString: Untagged
@@ -8784,50 +8788,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1418200273
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1418200267}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 5980ced20333e7d4eb9d128a0d417c34, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.EcsWorldVisualizer
-  shipFamily: {fileID: 11400000, guid: 31340acc0090ccc4e8c28a584729195f, type: 2}
-  shipVisualPrefab: {fileID: 0}
-  shipVisualScale: 0.155
-  defaultMuzzleOffset: 2
-  homePlanetVisualPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
-  neutralPlanetVisualPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
-  asteroidVisualPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
-  gemVisualPrefab: {fileID: 4800967330874723475, guid: dcd93530a1fb28e4b8d556c55645c7de, type: 3}
-  peopleTransportVisualPrefab: {fileID: 947948255951072253, guid: 857d8f2269fb8df41aa955f4023c6362, type: 3}
-  planetMaterialPool: {fileID: 11400000, guid: 2c144f1300271b94bb6f0dcbe286a441, type: 2}
-  bulletVfxBank: {fileID: 11400000, guid: 2a974d6fe4bb1904b8ce53e2e35cbb6b, type: 2}
-  defaultBulletBankIndex: 0
-  defaultBulletScaleMultiplier: 1
-  propulsionVfxSettings:
-    engineVfxPrefab: {fileID: 0}
-    thrusterVfxPrefab: {fileID: 0}
-    useThrusterVfxForAcceleration: 1
-    thrusterJetFlameBank:
-    - colorName: Blue
-      prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
-    - colorName: Green
-      prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
-    - colorName: Purple
-      prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
-    - colorName: Red
-      prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
-    - colorName: Yellow
-      prefab: {fileID: 102282, guid: 7c08e62c3101ac14690b6d195b05d46d, type: 3}
-    thrusterVfxLocalOffset: {x: 0, y: 0, z: -0.2}
-    thrusterVfxLocalEuler: {x: 0, y: 180, z: 0}
-    thrusterVfxIdleScale: 0.1
-    thrusterVfxTransitionSpeed: 3
 --- !u!114 &1418200274
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -8883,6 +8843,133 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a3615746815c1e44988758254351aae7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.PeopleTransferPopupPresenter
+--- !u!114 &1418200278
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 66c5a066e3fc8e045a7355b6c7d8b8f7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.EcsFloatingCountPresenter
+--- !u!114 &1418200279
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8a3eda19ffc99104195aafaa41678658, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.WorldFloatingCountManager
+  floatingCountFeedbackSettings: {fileID: 0}
+  floatingCountVisibility:
+    gemPickup: 1
+    gemDeposit: 1
+    asteroidDamage: 1
+    asteroidHealthRemaining: 1
+    asteroidGemsRemaining: 1
+    asteroidImpactForce: 1
+    damageShipOrDrone: 1
+    damageMoon: 1
+    healthChange: 1
+    peopleLoad: 1
+    peopleUnload: 1
+  floatingCountFont: {fileID: 0}
+  floatingCountGemIcon: {fileID: 0}
+  floatingCountDamageIcon: {fileID: 0}
+  floatingCountHealthIcon: {fileID: 0}
+  floatingCountPeopleIcon: {fileID: 0}
+  floatingCountPeopleColor: {r: 1, g: 0.9, b: 0.25, a: 1}
+  floatingCountDuration: 1.7
+  floatingCountRiseSpeed: 2.5
+  floatingCountFontSize: 10
+  floatingCountIconScale: 0.1
+  floatingCountIconLocalOffset: {x: -0.35, y: 0, z: 0}
+  floatingCountVerticalOffset: 3.5
+  shipFloatingFontSize: 32
+  shipFloatingVerticalOffset: 1.75
+  shipFloatingOffsetHullRadiusMultiplier: 6
+  shipFloatingOffsetMin: 2
+  shipFloatingOffsetMax: 5
+  shipFloatingIconScale: 0.3
+  shipFloatingStackLineSpacing: 1.25
+  shipFloatingSpawnJitterRadius: 0.05
+  shipFloatingLateralDriftMax: 0
+  floatingCountSpawnJitterRadius: 1.05
+  floatingCountSpawnRingStep: 0.32
+  floatingCountMaxSpreadRadius: 3.75
+  floatingCountSpiralPeriod: 40
+  floatingCountLateralDriftMax: 0.55
+  floatingCountStackLineSpacing: 0.82
+  floatingCountDamageFallbackColor: {r: 1, g: 0.3, b: 0.3, a: 1}
+  floatingCountHealthPositiveColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
+  floatingCountHealthNegativeColor: {r: 0.95, g: 0.25, b: 0.2, a: 1}
+  floatingCountImpactForceColor: {r: 1, g: 0.75, b: 0.2, a: 1}
+--- !u!114 &1418200280
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4fe664b5d97fa214c8414cbf85ccb2c3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.EcsWorldVisualizer
+  shipFamily: {fileID: 11400000, guid: 31340acc0090ccc4e8c28a584729195f, type: 2}
+  shipVisualPrefab: {fileID: 0}
+  shipVisualScale: 0.155
+  defaultMuzzleOffset: 2
+  homePlanetVisualPrefab: {fileID: 1299268116498016925, guid: fe25b03128bf91641939ccc7d7d8dfa1, type: 3}
+  neutralPlanetVisualPrefab: {fileID: 1039601997937951391, guid: dba7c2be7e63d8e47a969efb83855997, type: 3}
+  asteroidVisualPrefab: {fileID: 9035173718333782639, guid: 1732a47ff6b2f984591407720d0ea0a2, type: 3}
+  gemVisualPrefab: {fileID: 4800967330874723475, guid: dcd93530a1fb28e4b8d556c55645c7de, type: 3}
+  peopleTransportVisualPrefab: {fileID: 947948255951072253, guid: 857d8f2269fb8df41aa955f4023c6362, type: 3}
+  planetMaterialPool: {fileID: 11400000, guid: 2c144f1300271b94bb6f0dcbe286a441, type: 2}
+  bulletVfxBank: {fileID: 11400000, guid: 2a974d6fe4bb1904b8ce53e2e35cbb6b, type: 2}
+  defaultBulletBankIndex: 0
+  defaultBulletScaleMultiplier: 1
+  propulsionVfxSettings:
+    engineVfxPrefab: {fileID: 0}
+    thrusterVfxPrefab: {fileID: 0}
+    useThrusterVfxForAcceleration: 0
+    thrusterJetFlameBank: []
+    thrusterVfxLocalOffset: {x: 0, y: 0, z: 0}
+    thrusterVfxLocalEuler: {x: 0, y: 0, z: 0}
+    thrusterVfxIdleScale: 0
+    thrusterVfxTransitionSpeed: 0
+--- !u!114 &1418200281
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dcda2016c8ccfd44284030ccb94460ec, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.ClientLocalBulletVfxBridge
+--- !u!114 &1418200282
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d65675f167cb73e47b14019f66b1ab2c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.JoinGameBrowserController
+  mainMenuPanel: {fileID: 0}
 --- !u!1 &1427633624
 GameObject:
   m_ObjectHideFlags: 0

@@ -3,7 +3,7 @@ using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
-    // [TITAN-ORBIT] Pipeline order: (MonoBehaviour input) → ShipInputApplySystem → ShipClientPredictedMovementSystem → …
+    // Pipeline: ShipInputApplySystem → ShipClientPredictedPhysicsDriveSystem → PhysicsSystemGroup → …
     /// <summary>
     /// Copies the latest player input from <see cref="ShipPendingInput"/> onto the local ship
     /// ghost during <see cref="GhostInputSystemGroup"/>. Runs on the client simulation world only;

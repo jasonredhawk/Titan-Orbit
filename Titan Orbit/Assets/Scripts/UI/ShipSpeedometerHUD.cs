@@ -424,16 +424,12 @@ namespace TitanOrbit.UI
             return math.length(vel);
         }
 
-        /// <summary>[TITAN-ORBIT] Movement mass from hull reference, health, and carried gems.</summary>
+        /// <summary>Physics hull mass from baked motor config (no gem-weight custom mass).</summary>
         static float GetMovementMass(in ShipState ship, in ShipMotorConfig motor)
         {
-            float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
-            return ShipMassLogic.ComputeMovementMass(
-                motor.HullMassReference,
-                ship.MaxHealth,
-                motor.ChassisReferenceHealth,
-                ship.CurrentGems,
-                baseMass);
+            if (motor.HullMassReference > 0f)
+                return motor.HullMassReference;
+            return motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
         }
 
         /// <summary>Estimates asteroid ram damage from current speed and effective ramming stats.</summary>

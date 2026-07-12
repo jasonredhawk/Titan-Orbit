@@ -3,10 +3,8 @@ using UnityEngine;
 namespace TitanOrbit.Shared
 {
     /// <summary>
-    /// Static holder for the local player's ship pose after presentation sync. Written each frame
-    /// by <see cref="Game.EcsWorldVisualizer"/> from <see cref="Game.GhostPresentationTransformCache"/>
-    /// (post-NetCode interpolation). Camera (<see cref="Game.CameraFollowEcs"/>) and parallax
-    /// background read this — not raw sim ECS or double-smoothed proxy copies. Client only.
+    /// Static holder for the local player's ship pose. Updated from ECS presentation transforms.
+    /// Camera (<see cref="Game.CameraFollowEcs"/>) and parallax background may read this. Client only.
     /// </summary>
     public static class ShipDisplayPose
     {
@@ -19,13 +17,9 @@ namespace TitanOrbit.Shared
         /// <summary>World rotation of the local ship visual proxy (presentation phase).</summary>
         public static Quaternion LocalRotation { get; private set; }
 
-        /// <summary>
-        /// Called from EcsWorldVisualizer when the local ship GameObject proxy is synced.
-        /// </summary>
+        /// <summary>Caches presentation pose for camera / parallax readers.</summary>
         public static void SetLocalPose(Vector3 position, Quaternion rotation)
         {
-            // --- Cache presentation pose for camera / parallax ---
-            // [HYBRID] Caller (EcsWorldVisualizer) already read GhostPresentationTransformCache.
             LocalPosition = position;
             LocalRotation = rotation;
             HasLocalPose = true;

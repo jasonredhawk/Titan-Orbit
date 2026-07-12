@@ -1,4 +1,5 @@
 using TitanOrbit.Diagnostics;
+using Unity.NetCode;
 using UnityEngine;
 
 namespace TitanOrbit.NetCode
@@ -30,6 +31,31 @@ namespace TitanOrbit.NetCode
             if (Application.isBatchMode)
                 return true;
             return TitanOrbitServerCommandLine.HasDedicatedFlag();
+#endif
+#endif
+        }
+
+        /// <summary>
+        /// True when GameObject visual proxies, UI flow, and other client presentation should run.
+        /// False on headless dedicated builds — skips client presentation and UI flow.
+        /// </summary>
+        public static bool ShouldRunClientPresentation()
+        {
+#if UNITY_EDITOR
+            // [EDITOR] Always show main menu UI — even when the active build target is Dedicated Server
+            // (Unity defines UNITY_SERVER for that target, which would otherwise strip all client UI).
+            return true;
+#else
+#if UNITY_SERVER
+            // [UNITY] IL2CPP dedicated server build — no ClientWorld, no rendering.
+            return false;
+#else
+            if (IsDedicatedServerProcess())
+                return false;
+
+            // [NETCODE] Player builds need an active client simulation world.
+            var client = ClientServerBootstrap.ClientWorld;
+            return client != null && client.IsCreated;
 #endif
 #endif
         }

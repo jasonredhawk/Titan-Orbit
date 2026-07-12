@@ -237,7 +237,7 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(shipEntity, weapon);
             }
 
-            // --- Motor config (ShipMovementLogic reads these; physics integrates position) ---
+            // --- Physics tuning (ShipPhysicsDriveSystem reads these) ---
             if (em.HasComponent<ShipMotorConfig>(shipEntity))
             {
                 float moveVal = Mathf.Max(0.1f, effective.moveSpeed);

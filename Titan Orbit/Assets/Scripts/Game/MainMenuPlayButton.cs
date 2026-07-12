@@ -9,8 +9,8 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Reliable Play click handler independent of NceGameFlowController wiring. [UNITY] MonoBehaviour
-    /// on the main menu Play button — validates NetCode worlds exist before starting local or dedicated join.
+    /// Reliable Play click handler independent of NceGameFlowController wiring. Validates NetCode
+    /// worlds before starting local play or dedicated quick-join, and surfaces errors on the menu.
     /// </summary>
     [RequireComponent(typeof(Button))]
     public class MainMenuPlayButton : MonoBehaviour, IPointerClickHandler
@@ -19,7 +19,6 @@ namespace TitanOrbit.Game
 
         void Awake()
         {
-            // --- Cache button and fix child raycast stealing clicks ---
             _button = GetComponent<Button>();
             DisableChildRaycasts();
         }
@@ -31,26 +30,22 @@ namespace TitanOrbit.Game
 
         public void OnPointerClick(PointerEventData eventData)
         {
-            // --- Guard disabled button ---
             if (_button != null && !_button.interactable)
                 return;
 
             Debug.Log("[MainMenuPlayButton] Play clicked.");
 
-#if UNITY_SERVER
-            // --- [NETCODE] Dedicated server window cannot host client UI play ---
-            Debug.LogError(
-                "[MainMenuPlayButton] Wrong window: this is the SERVER play instance. " +
-                "In the Game view, click the 'Main Editor' tab (not Server / Player 2), then press Play.");
+#if UNITY_SERVER && !UNITY_EDITOR
+            ReportMenuError(
+                "Wrong window: use the main Editor Game tab, not the Server player window.");
             return;
 #endif
 
-            // --- Validate NetCode worlds before session start ---
             if (!HasPlayableClientWorld())
             {
-                Debug.LogError(
-                    "[MainMenuPlayButton] ClientWorld is missing. " +
-                    "Run Titan Orbit > Configure Multiplayer For Local Play, then press Unity Play using the Main Editor Game tab.");
+                ReportMenuError(
+                    "ClientWorld missing. Run Titan Orbit > Configure Multiplayer For Local Play, " +
+                    "then press Play on the main Editor Game tab.");
                 return;
             }
 
@@ -58,19 +53,18 @@ namespace TitanOrbit.Game
                 TitanOrbitMultiplayerConfig.ShowLocalPlayOptions &&
                 !HasPlayableServerWorld())
             {
-                Debug.LogError(
-                    "[MainMenuPlayButton] ServerWorld is missing for local play. " +
-                    "Run Titan Orbit > Configure Multiplayer For Local Play (Client+Server).");
+                ReportMenuError(
+                    "ServerWorld missing for local play. Run Titan Orbit > Configure Multiplayer " +
+                    "For Local Play (Client+Server).");
                 return;
             }
 
             if (TitanOrbitSessionManager.Instance == null)
             {
-                Debug.LogError("[MainMenuPlayButton] TitanOrbitSessionManager missing on NceGameRoot.");
+                ReportMenuError("TitanOrbitSessionManager missing on NceGameRoot.");
                 return;
             }
 
-            // --- Start local host/client or quick-join dedicated ---
             if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
             {
                 if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
@@ -79,12 +73,27 @@ namespace TitanOrbit.Game
                     TitanOrbitSessionManager.Instance.StartLocalPlay();
             }
             else
+            {
+                ReportMenuStatus("Finding a dedicated match...");
                 _ = TitanOrbitSessionManager.Instance.QuickJoinDedicatedAsync();
+            }
+        }
+
+        static void ReportMenuError(string message)
+        {
+            Debug.LogError("[MainMenuPlayButton] " + message);
+            ReportMenuStatus(message);
+        }
+
+        static void ReportMenuStatus(string message)
+        {
+            var flow = Object.FindAnyObjectByType<NceGameFlowController>();
+            if (flow != null)
+                flow.SetMainMenuStatus(message);
         }
 
         static bool HasPlayableClientWorld()
         {
-            // --- [NETCODE] ClientWorld must exist with NetworkStreamDriver ---
             var client = ClientServerBootstrap.ClientWorld;
             if (client == null || !client.IsCreated)
                 return false;
@@ -93,7 +102,6 @@ namespace TitanOrbit.Game
 
         static bool HasPlayableServerWorld()
         {
-            // --- [NETCODE] ServerWorld required for local Client+Server play ---
             var server = ClientServerBootstrap.ServerWorld;
             if (server == null || !server.IsCreated)
                 return false;
@@ -102,7 +110,6 @@ namespace TitanOrbit.Game
 
         void DisableChildRaycasts()
         {
-            // --- [UNITY] Label graphics must not block Button raycasts ---
             foreach (var graphic in GetComponentsInChildren<Graphic>(true))
             {
                 if (graphic.gameObject != gameObject)

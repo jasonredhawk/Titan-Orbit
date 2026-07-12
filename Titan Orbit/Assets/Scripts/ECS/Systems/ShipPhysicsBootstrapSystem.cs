@@ -6,24 +6,20 @@ using Unity.Physics;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Configures Unity Physics for a top-down space game (zero gravity).
-    /// Server and client both need <see cref="LagCompensationConfig"/> so the physics step runs
-    /// during prediction (owner ship) and authority (all ships on server).
+    /// One-shot Unity Physics setup for NetCode predicted simulation: zero gravity (top-down space)
+    /// and <see cref="LagCompensationConfig"/> so client physics can rewind during prediction.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup))]
-    public partial struct TitanOrbitPhysicsBootstrapSystem : ISystem
+    public partial struct ShipPhysicsBootstrapSystem : ISystem
     {
         bool _applied;
 
         public void OnUpdate(ref SystemState state)
         {
-            // --- System OnUpdate ---
-            // [STANDARD] One-shot bootstrap — gravity and lag compensation history for physics prediction.
             if (_applied)
                 return;
 
-            // [UNITY] Zero gravity — top-down space; ships use motor thrust, not PhysicsGravityFactor.
             if (SystemAPI.HasSingleton<PhysicsStep>())
             {
                 var step = SystemAPI.GetSingleton<PhysicsStep>();
@@ -38,7 +34,6 @@ namespace TitanOrbit.ECS
                 state.EntityManager.AddComponentData(stepEntity, singleton);
             }
 
-            // [NETCODE] Lag compensation history — required for client prediction physics rewind.
             if (!SystemAPI.HasSingleton<LagCompensationConfig>())
             {
                 var lagEntity = state.EntityManager.CreateEntity();

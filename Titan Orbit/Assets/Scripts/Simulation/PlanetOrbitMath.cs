@@ -4,10 +4,7 @@ using Unity.Mathematics;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Planet orbit ring geometry and ship-orbit motor helpers ported from legacy Planet/Starship.
-    /// Shared by server sim (<see cref="ShipMovementLogic"/> orbit capture), gem-moon visuals, and
-    /// decorative level bands. Uses burst-friendly <c>float3</c> math; toroidal unwrap for moon
-    /// display is in <see cref="GetMoonWorldPositionNear"/>.
+    /// Planet orbit ring geometry for gem-moon visuals and decorative level bands.
     /// </summary>
     public static class PlanetOrbitMath
     {
@@ -164,50 +161,6 @@ namespace TitanOrbit.Simulation
             const float maxSize = 18f;
             float sizeNorm = math.clamp((planetSize - minSize) / (maxSize - minSize), 0f, 1f);
             return 1f + 0.7f * sizeNorm + 1.0f * radiusFactor;
-        }
-
-        /// <summary>
-        /// Builds desired tangential velocity and alignment rate for ship orbit motor when the hull is
-        /// inside the orbit ring. Called from shared movement logic before physics integration.
-        /// </summary>
-        public static void BuildOrbitMotorParams(
-            float3 shipPos,
-            float3 planetPos,
-            float planetSize,
-            int planetLevel,
-            float shipMass,
-            float mapWidth,
-            float mapHeight,
-            out float3 desiredVelocity,
-            out float alignRate)
-        {
-            desiredVelocity = float3.zero;
-            alignRate = 0f;
-
-            float dist = Generation.ToroidalMapEcs.ToroidalDistance(shipPos, planetPos, mapWidth, mapHeight);
-            if (dist < 0.01f)
-                return;
-
-            GetRingRadiiWorld(planetSize, planetLevel, out float innerWorld, out float outerWorld, out float centerWorld);
-            if (!IsInOrbitRing(dist, innerWorld, outerWorld))
-                return;
-
-            // --- Tangent direction (clockwise) + radial correction toward ring center ---
-            float3 toShip = Generation.ToroidalMapEcs.ShortestOffsetXZ(planetPos, shipPos, mapWidth, mapHeight);
-            float3 radial = math.normalize(new float3(toShip.x, 0f, toShip.z));
-            float3 tangent = new float3(radial.z, 0f, -radial.x);
-
-            float targetSpeed = GetTargetSpeed(planetSize, dist, innerWorld, outerWorld, centerWorld);
-            float radiusError = dist - centerWorld;
-            float3 radialCorrection = float3.zero;
-            if (math.abs(radiusError) > 0.02f)
-                radialCorrection = -radial * radiusError * OrbitRadiusPullStrength;
-
-            desiredVelocity = tangent * targetSpeed + radialCorrection;
-
-            float gravityFactor = GetGravityFactor(planetSize, dist, innerWorld, outerWorld, centerWorld);
-            float massFactor = math.sqrt(math.max(0.5f, shipMass));
-            alignRate = (OrbitCaptureResponsiveness * gravityFactor) / massFactor;
         }
     }
 }

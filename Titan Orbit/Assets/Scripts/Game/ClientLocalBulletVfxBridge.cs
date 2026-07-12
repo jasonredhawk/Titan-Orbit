@@ -157,11 +157,7 @@ namespace TitanOrbit.Game
             fireForward = Vector3.forward;
 
             LocalTransform shipTransform;
-            if (GhostPresentationTransformCache.TryGetShip(shipEntity, out var snap))
-            {
-                shipTransform = LocalTransform.FromPositionRotationScale(snap.Position, snap.Rotation, snap.Scale);
-            }
-            else if (em.HasComponent<LocalTransform>(shipEntity))
+            if (em.HasComponent<LocalTransform>(shipEntity))
             {
                 shipTransform = em.GetComponentData<LocalTransform>(shipEntity);
             }

@@ -11,8 +11,6 @@ namespace TitanOrbit.Game
     /// MonoBehaviour bridge from Unity's Update loop to ECS input. Captures keyboard/mouse via
     /// PlayerInputHandler and writes into <see cref="ShipPendingInput"/>, which
     /// <see cref="ShipInputApplySystem"/> reads during GhostInputSystemGroup on the client world.
-    /// Local host also uses <see cref="ShipServerControlSystem"/> on ServerWorld for authority.
-    /// DefaultExecutionOrder(-10000) ensures input is captured before most other Update calls.
     /// </summary>
     [DefaultExecutionOrder(-10000)]
     public class ShipInputBridge : MonoBehaviour
@@ -30,8 +28,6 @@ namespace TitanOrbit.Game
             if (_input == null)
                 return;
 
-            // [TITAN-ORBIT] Local host still needs client-world ShipInput for owner prediction.
-            // Server authority is handled separately by ShipServerControlSystem.
             ShipPendingInput.Set(BuildInput(), localHostMode: false);
         }
 
@@ -44,13 +40,12 @@ namespace TitanOrbit.Game
             // --- Build data ---
             var cam = UnityEngine.Camera.main;
             float2 aimDir = float2.zero;
-            // [HYBRID] Aim from presentation pose when available — matches proxy/camera, reduces rotation micro-jitter.
+            // [HYBRID] Aim from the same ECS pose the motor uses — avoids presentation/sim mismatch jitter.
             if (cam != null)
             {
                 Vector3 aimWorld = _input.GetMouseWorldPosition(cam);
                 Vector3 shipPos = Vector3.zero;
-                if (!EcsGameBridge.TryGetLocalShipPresentationPosition(out shipPos) &&
-                    !EcsGameBridge.TryGetLocalShipPosition(out shipPos))
+                if (!EcsGameBridge.TryGetLocalShipPosition(out shipPos))
                     shipPos = Vector3.zero;
                 Vector3 toAim = aimWorld - shipPos;
                 toAim.y = 0f;

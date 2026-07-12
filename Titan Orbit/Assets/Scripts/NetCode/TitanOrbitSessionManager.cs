@@ -49,6 +49,9 @@ namespace TitanOrbit.NetCode
         /// <summary>[NETCODE] Active Unity Lobby id after dedicated join (empty when local only).</summary>
         string _activeLobbyId;
 
+        /// <summary>[NETCODE] Last Relay join code attempted — compare with Docker "Dedicated server live. Relay=" log.</summary>
+        string _lastRelayJoinCodeAttempt;
+
         /// <summary>[UNITY] Coroutine watching client connect to dedicated Relay host.</summary>
         Coroutine _connectWatch;
 
@@ -1154,6 +1157,7 @@ namespace TitanOrbit.NetCode
                 }
 
                 string joinCode = relayData.Value;
+                _lastRelayJoinCodeAttempt = joinCode;
                 string hostProtocol = lobby.Data.TryGetValue(TitanOrbitLobbyService.LobbyRelayProtocolKey, out var proto)
                     ? TitanOrbitRelayUtility.SanitizeRelayProtocolForRelaySdk(proto.Value)
                     : TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
@@ -1565,8 +1569,12 @@ namespace TitanOrbit.NetCode
                         HasZombieRelayConnection(client))
                     {
                         LastStatusMessage =
-                            "Could not reach dedicated server — tap Refresh (server may have restarted), then join again.";
-                        Debug.LogError("[TitanOrbitSessionManager] Client stuck on pending Relay connection (no NetworkId).");
+                            "Could not reach dedicated server — tap Refresh, join the Latest lobby only, " +
+                            "and confirm Docker logs show the same Relay code.";
+                        Debug.LogError("[TitanOrbitSessionManager] Client stuck on pending Relay connection (no NetworkId). " +
+                                       "Relay join code=" + (_lastRelayJoinCodeAttempt ?? "(none)") +
+                                       " lobby=" + (_activeLobbyId ?? "(none)") +
+                                       ". Compare Relay= in Docker logs; stop stale containers/GCE servers.");
                         LogClientConnectDiagnostics(client);
                         StartCoroutine(ResetDedicatedClientSessionAfterTimeoutCoroutine());
                         yield break;

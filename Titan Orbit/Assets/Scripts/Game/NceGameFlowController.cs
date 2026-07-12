@@ -80,25 +80,112 @@ namespace TitanOrbit.Game
         LoadingScreenControllerNce _loadingScreen;
         JoinGameBrowserController _joinBrowser;
         RejoinShipChoiceController _rejoinChoice;
-        string _statusMessage = "Join a dedicated match or enable local play in TitanOrbitMultiplayerConfig.";
+        string _statusMessage = "For Docker/dedicated server: click Join game. For local dev: Local host or Local play.";
         bool _mainMenuButtonsBuilt;
+        bool _initialized;
 
         void Awake()
         {
-            // --- Unity lifecycle ---
+            Debug.Log("[NceGameFlow] Awake on " + gameObject.name + " enabled=" + enabled);
+        }
+
+        void OnEnable()
+        {
+            Debug.Log("[NceGameFlow] OnEnable");
+        }
+
+        void Start()
+        {
+            Debug.Log("[NceGameFlow] Start");
+#if !UNITY_EDITOR
+#if UNITY_SERVER
+            enabled = false;
+            return;
+#endif
+            if (TitanOrbitDedicatedServerAutoBoot.IsDedicatedServerProcess())
+            {
+                enabled = false;
+                return;
+            }
+#endif
+
+            InitializeMenuFlow();
+            MainMenuUiBootstrap.EnsureButtonsCreated();
+        }
+
+        /// <summary>Runs once after NetCode worlds exist — builds menu buttons and wires panels.</summary>
+        void InitializeMenuFlow()
+        {
+            if (_initialized)
+                return;
+            _initialized = true;
+
+            Debug.Log("[NceGameFlow] Initializing main menu flow.");
+
             ClientTeamFlowState.Reset();
             _teamButtons = new[] { teamAButton, teamBButton, teamCButton, teamDButton, teamEButton };
             _teamPanels = new[] { teamAPanel, teamBPanel, teamCPanel, teamDPanel, teamEPanel };
             ResolveMissingReferences();
             EnsureLoadingScreen();
-            if (GetComponent<EcsWorldVisualizer>() == null)
-                gameObject.AddComponent<EcsWorldVisualizer>();
+            EnsureEcsWorldVisualizer();
             EnsureMatchFlowControllers();
             WireTeamButtons();
             EnsureMainMenuPlayButton();
             EnsureJoinGameBrowser();
             EnsureRejoinShipChoice();
             BuildMainMenuButtons();
+            WireExistingMainMenuButtons();
+
+            WirePlayButton();
+            if (_teamButtons[0] == null || _teamButtons[1] == null || _teamButtons[2] == null)
+                Debug.LogWarning("[NceGameFlow] One or more team Join buttons were not found. Expected TeamAPanel/Content/JoinButton etc.");
+            else
+                Debug.Log("[NceGameFlow] Team Join buttons wired.");
+
+            LogNetCodeWorldState();
+
+            if (mainMenuPanel != null) mainMenuPanel.SetActive(true);
+            if (lobbyPanel != null) lobbyPanel.SetActive(false);
+            if (teamSelectionPanel != null) teamSelectionPanel.SetActive(false);
+            if (loadingRoot != null) loadingRoot.SetActive(false);
+            if (gameplayRoot != null) gameplayRoot.SetActive(false);
+            if (shipStatsPanel != null) shipStatsPanel.SetActive(false);
+
+            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+            {
+                _statusMessage = TitanOrbitMultiplayerConfig.ShowLocalPlayOptions
+                    ? "Player " + TitanOrbitPlayModeUtility.GetMppmPlayerNumber() +
+                      " — click Local client after the host starts Local play."
+                    : "Player " + TitanOrbitPlayModeUtility.GetMppmPlayerNumber() +
+                      " — use Join game for a dedicated match.";
+            }
+
+            WireTeamButtons();
+            CleanupJoinTeamScreenUi();
+            RefreshUi();
+            PushStatusToUi();
+            _ = PrimeGuestSessionAndPrefetchLobbiesAsync();
+
+            if (autoStartLocalPlayInEditor && TitanOrbitMultiplayerConfig.ShowLocalPlayOptions &&
+                Application.isEditor &&
+                !TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
+                StartCoroutine(WaitAndStartLocalPlay());
+
+            StartCoroutine(RetryBuildMainMenuButtons());
+        }
+
+        IEnumerator RetryBuildMainMenuButtons()
+        {
+            for (int i = 0; i < 5 && !_mainMenuButtonsBuilt; i++)
+            {
+                yield return null;
+                ResolveMissingReferences();
+                BuildMainMenuButtons();
+                WireExistingMainMenuButtons();
+            }
+
+            if (!_mainMenuButtonsBuilt)
+                Debug.LogError("[NceGameFlow] Failed to create Join game / host buttons after retries.");
         }
 
         void EnsureRejoinShipChoice()
@@ -119,13 +206,27 @@ namespace TitanOrbit.Game
 
         void BuildMainMenuButtons()
         {
-            if (_mainMenuButtonsBuilt || mainMenuPanel == null)
+            if (mainMenuPanel == null)
+            {
+                ResolveMissingReferences();
+                if (mainMenuPanel == null)
+                {
+                    Debug.LogError("[NceGameFlow] MainMenuPanel not found — Join game / host buttons cannot be created.");
+                    return;
+                }
+            }
+
+            if (_mainMenuButtonsBuilt)
                 return;
-            _mainMenuButtonsBuilt = true;
 
             var panelRt = mainMenuPanel.GetComponent<RectTransform>();
             if (panelRt == null)
+            {
+                Debug.LogError("[NceGameFlow] MainMenuPanel has no RectTransform — menu buttons skipped.");
                 return;
+            }
+
+            EnsureMainMenuStatusText();
 
             if (playButton != null)
             {
@@ -141,7 +242,10 @@ namespace TitanOrbit.Game
                 }
             }
 
-            float y = -120f;
+            float y = playButton != null
+                ? playButton.GetComponent<RectTransform>().anchoredPosition.y - 56f
+                : -170f;
+
             CreateMainMenuButton("BrowseGamesButton", "Join game", y, OnBrowseGamesClicked);
             y -= 56f;
 
@@ -153,6 +257,47 @@ namespace TitanOrbit.Game
                     y -= 48f;
                 CreateMainMenuButton("LocalClientButton", "Local client", y, OnLocalClientClicked);
             }
+
+            _mainMenuButtonsBuilt = true;
+            Debug.Log("[NceGameFlow] Main menu buttons built (Join game" +
+                      (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions ? ", Local host, Local client" : "") + ").");
+        }
+
+        void EnsureMainMenuStatusText()
+        {
+            if (statusText != null || mainMenuPanel == null)
+                return;
+
+            var statusGo = mainMenuPanel.transform.Find("MainMenuStatus");
+            if (statusGo != null)
+            {
+                statusText = statusGo.GetComponent<TextMeshProUGUI>();
+                if (statusText != null)
+                    return;
+            }
+
+            var go = new GameObject("MainMenuStatus", typeof(RectTransform), typeof(TextMeshProUGUI));
+            go.transform.SetParent(mainMenuPanel.transform, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0.5f, 0.2f);
+            rt.anchorMax = new Vector2(0.5f, 0.2f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.sizeDelta = new Vector2(680f, 80f);
+            rt.anchoredPosition = new Vector2(0f, 0f);
+
+            statusText = go.GetComponent<TextMeshProUGUI>();
+            statusText.fontSize = 16f;
+            statusText.alignment = TextAlignmentOptions.Center;
+            statusText.color = new Color(0.75f, 0.85f, 0.95f, 0.95f);
+            statusText.raycastTarget = false;
+            statusText.text = _statusMessage;
+        }
+
+        /// <summary>Shows connection errors on the main menu status line (not only the console).</summary>
+        public void SetMainMenuStatus(string message)
+        {
+            _statusMessage = message ?? string.Empty;
+            PushStatusToUi();
         }
 
         void CreateMainMenuButton(string name, string label, float y, UnityEngine.Events.UnityAction onClick)
@@ -172,8 +317,12 @@ namespace TitanOrbit.Game
         void WireMainMenuButton(GameObject go, string label, float y, UnityEngine.Events.UnityAction onClick)
         {
             var rt = go.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f, 0.5f);
-            rt.anchorMax = new Vector2(0.5f, 0.5f);
+            rt.anchorMin = playButton != null
+                ? playButton.GetComponent<RectTransform>().anchorMin
+                : new Vector2(0.5f, 0.5f);
+            rt.anchorMax = playButton != null
+                ? playButton.GetComponent<RectTransform>().anchorMax
+                : new Vector2(0.5f, 0.5f);
             rt.pivot = new Vector2(0.5f, 0.5f);
             rt.sizeDelta = new Vector2(320f, 44f);
             rt.anchoredPosition = new Vector2(0f, y);
@@ -212,7 +361,9 @@ namespace TitanOrbit.Game
             if (mainMenuPanel == null)
                 return;
 
-            float y = -120f;
+            float y = playButton != null
+                ? playButton.GetComponent<RectTransform>().anchoredPosition.y - 56f
+                : -170f;
             WireExistingMainMenuButton("BrowseGamesButton", "Join game", y, OnBrowseGamesClicked);
             y -= 56f;
 
@@ -292,8 +443,23 @@ namespace TitanOrbit.Game
             TitanOrbitSessionManager.Instance.StartLocalClientForLanTest();
         }
 
+        void EnsureEcsWorldVisualizer()
+        {
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+                return;
+
+            if (GetComponent<EcsWorldVisualizer>() == null)
+            {
+                gameObject.AddComponent<EcsWorldVisualizer>();
+                Debug.Log("[NceGameFlow] EcsWorldVisualizer added — GameObject proxies for ships, planets, gems.");
+            }
+        }
+
         void EnsureMatchFlowControllers()
         {
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+                return;
+
             if (GetComponent<WorldFloatingCountManager>() == null)
                 gameObject.AddComponent<WorldFloatingCountManager>();
             if (GetComponent<EcsFloatingCountPresenter>() == null)
@@ -302,47 +468,6 @@ namespace TitanOrbit.Game
                 gameObject.AddComponent<MatchEndScreenController>();
             if (GetComponent<DeathScreenController>() == null)
                 gameObject.AddComponent<DeathScreenController>();
-        }
-
-        void Start()
-        {
-            // --- Unity lifecycle ---
-            WirePlayButton();
-            if (_teamButtons[0] == null || _teamButtons[1] == null || _teamButtons[2] == null)
-                Debug.LogWarning("[NceGameFlow] One or more team Join buttons were not found. Expected TeamAPanel/Content/JoinButton etc.");
-            else
-                Debug.Log("[NceGameFlow] Team Join buttons wired.");
-
-            LogNetCodeWorldState();
-
-            // Always begin at the main menu until the player connects.
-            if (mainMenuPanel != null) mainMenuPanel.SetActive(true);
-            if (lobbyPanel != null) lobbyPanel.SetActive(false);
-            if (teamSelectionPanel != null) teamSelectionPanel.SetActive(false);
-            if (loadingRoot != null) loadingRoot.SetActive(false);
-            if (gameplayRoot != null) gameplayRoot.SetActive(false);
-            if (shipStatsPanel != null) shipStatsPanel.SetActive(false);
-
-            if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
-            {
-                _statusMessage = TitanOrbitMultiplayerConfig.ShowLocalPlayOptions
-                    ? "Player " + TitanOrbitPlayModeUtility.GetMppmPlayerNumber() +
-                      " — click Local client after the host starts Local play."
-                    : "Player " + TitanOrbitPlayModeUtility.GetMppmPlayerNumber() +
-                      " — use Join game for a dedicated match.";
-            }
-
-            WireTeamButtons();
-            CleanupJoinTeamScreenUi();
-            BuildMainMenuButtons();
-            WireExistingMainMenuButtons();
-            RefreshUi();
-            _ = PrimeGuestSessionAndPrefetchLobbiesAsync();
-
-            if (autoStartLocalPlayInEditor && TitanOrbitMultiplayerConfig.ShowLocalPlayOptions &&
-                Application.isEditor &&
-                !TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
-                StartCoroutine(WaitAndStartLocalPlay());
         }
 
         async System.Threading.Tasks.Task PrimeGuestSessionAndPrefetchLobbiesAsync()
@@ -632,6 +757,7 @@ namespace TitanOrbit.Game
             if (TitanOrbitSessionManager.Instance == null)
             {
                 _statusMessage = "Session manager missing. Run Titan Orbit → Setup NetCode Game (Full).";
+                PushStatusToUi();
                 Debug.LogError("[NceGameFlow] TitanOrbitSessionManager not found on NceGameRoot.");
                 return;
             }
@@ -648,6 +774,7 @@ namespace TitanOrbit.Game
             if (!HasPlayableClientWorld())
             {
                 _statusMessage = "No ClientWorld. Run Titan Orbit > Configure Multiplayer For Local Play, then use the main Editor Game tab.";
+                PushStatusToUi();
                 Debug.LogError("[NceGameFlow] ClientWorld missing. client=" + DescribeWorld(ClientServerBootstrap.ClientWorld) +
                                " server=" + DescribeWorld(ClientServerBootstrap.ServerWorld) +
                                ". Run menu: Titan Orbit > Configure Multiplayer For Local Play. " +
@@ -821,27 +948,30 @@ namespace TitanOrbit.Game
             if (!connected && !connectingDedicated)
                 _dedicatedConnectedAt = -1f;
 
-            bool mapReadyForFlow = connected && IsMapReadyForTeamSelection();
+            bool mapLoaded = connected && IsMapReadyForTeamSelection();
 
             ShipState rejoinShipState = default;
             bool hasRejoinableShip = connected &&
                                      EcsGameBridge.TryGetRejoinableShipForLocalPlayer(out rejoinShipState);
             // Only evaluate rejoin once basic map readiness is met — stale ships during galaxy build must not block flow.
-            if (mapReadyForFlow)
+            if (mapLoaded)
                 ClientTeamFlowState.TryNotifyRejoinableShip(hasRejoinableShip);
+
+            int activeTeamsForUi = 0;
+            // [TITAN-ORBIT] Team count from replicated home planets / TeamStateSingleton — required before team picker.
+            bool knowsTeamCount = connected && mapLoaded &&
+                                  EcsGameBridge.TryGetActiveTeamCount(out activeTeamsForUi) &&
+                                  activeTeamsForUi > 0;
 
             // Full map sync only while the rejoin prompt is actually pending (returning player resume).
             bool requireFullMapLoad = ClientTeamFlowState.IsRejoinChoicePending;
+            // [NETCODE] Dedicated Docker/cloud joins: keep loading until team count replicates — avoids empty galaxy with no picker.
             bool mapReady = connected && (requireFullMapLoad
                 ? EcsGameBridge.IsMapLoadingComplete()
-                : mapReadyForFlow);
+                : mapLoaded && (!TitanOrbitSessionManager.IsDedicatedOnlineClient || knowsTeamCount));
             bool hasShip = connected && EcsGameBridge.HasLocalPlayerShip();
             bool teamConfirmed = ClientTeamFlowState.TeamChoiceConfirmed;
             bool teamPickInFlight = ClientTeamFlowState.HasRequestedTeamPick && !teamConfirmed;
-            int activeTeamsForUi = 0;
-            bool knowsTeamCount = connected && mapReady &&
-                                  EcsGameBridge.TryGetActiveTeamCount(out activeTeamsForUi) &&
-                                  activeTeamsForUi > 0;
             bool showRejoinChoice = connected && mapReady && hasRejoinableShip &&
                                     ClientTeamFlowState.IsRejoinChoicePending &&
                                     !teamConfirmed && !ClientTeamFlowState.HasRequestedTeamPick;
@@ -901,6 +1031,8 @@ namespace TitanOrbit.Game
                                 ? "You have a ship in this match."
                             : showTeamCountWait
                                 ? "Preparing teams..."
+                            : showTeam
+                                ? "Choose a team to spawn your ship."
                             : showSpawnWait
                                 ? "Spawning your ship..."
                                 : "Choose a team.";

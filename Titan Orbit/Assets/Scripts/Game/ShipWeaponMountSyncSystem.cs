@@ -12,11 +12,11 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Server-only: copies weapon mount transforms from ship visual hull proxies into the ship ghost's
     /// ShipWeaponMountElement buffer each frame. Hull proxies are registered by network id in
-    /// ShipWeaponProxyRegistry (EcsWorldVisualizer). Runs after ShipMovementSystem, before
+    /// Reads weapon mount transforms from ship entity buffers. Runs after ShipPhysicsDriveSystem, before
     /// BulletSimulationSystem so muzzle poses are current for shooting.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(ShipMovementSystem))]
+    [UpdateAfter(typeof(ShipPhysicsDriveSystem))]
     [UpdateBefore(typeof(BulletSimulationSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial class ShipWeaponMountSyncSystem : SystemBase

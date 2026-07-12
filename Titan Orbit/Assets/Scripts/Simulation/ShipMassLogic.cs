@@ -4,10 +4,7 @@ using UnityEngine;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Movement and ramming mass rules ported from legacy Starship MonoBehaviour.
-    /// Hull component mass and gem cargo increase effective mass; HP bulk is softened for
-    /// movement via <see cref="MovementHullBulkExponent"/> so higher-level ships don't feel
-    /// sluggish. Called from <see cref="TitanOrbit.ECS.ShipMovementBurstLogic"/> each motor tick.
+    /// Ramming mass helpers for HUD and combat estimates. Ship movement uses baked <see cref="Unity.Physics.PhysicsMass"/> only.
     /// </summary>
     public static class ShipMassLogic
     {

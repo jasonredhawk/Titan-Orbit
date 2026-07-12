@@ -8,8 +8,7 @@ namespace TitanOrbit.ECS
     /// Owner client input for predicted ship movement and combat. Implements
     /// <see cref="IInputComponentData"/> — NetCode serializes this from client to server each tick
     /// and applies it to predicted ghosts on the client during <see cref="GhostInputSystemGroup"/>.
-    /// Filled by <see cref="Game.ShipInputBridge"/> (client) or
-    /// <see cref="Game.ShipServerControlSystem"/> (local host server path). Paired with
+    /// Filled by <see cref="Game.ShipInputBridge"/> on the client. Paired with
     /// <see cref="ShipInputApplySystem"/> which copies pending input onto the local ghost.
     /// </summary>
     public struct ShipInput : IInputComponentData

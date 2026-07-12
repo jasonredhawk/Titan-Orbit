@@ -2,6 +2,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
 
 namespace TitanOrbit.ECS
 {
@@ -9,12 +10,12 @@ namespace TitanOrbit.ECS
     /// Safety net that adds missing runtime ship components at load time. Authoring should bake
     /// everything via <see cref="Authoring.StarshipGhostAuthoring"/>, but this system ensures
     /// older prefabs and runtime-spawned ships never hit null-component errors in motor hot paths.
-    /// Runs before <see cref="ShipMovementSystem"/> and <see cref="ShipClientPredictedMovementSystem"/>.
+    /// Runs before <see cref="ShipPhysicsDriveSystem"/> and <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
     /// Uses EntityCommandBuffer so structural changes don't invalidate parallel queries mid-frame.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateBefore(typeof(ShipMovementSystem))]
-    [UpdateBefore(typeof(ShipClientPredictedMovementSystem))]
+    [UpdateBefore(typeof(ShipPhysicsDriveSystem))]
+    [UpdateBefore(typeof(ShipClientPredictedPhysicsDriveSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipEnsureComponentsSystem : ISystem
     {
@@ -27,6 +28,11 @@ namespace TitanOrbit.ECS
                          .WithNone<ShipKinematics>()
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipKinematics());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<PhysicsDamping>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new PhysicsDamping { Linear = 0.15f, Angular = 2f });
 
             // --- Weapon defaults (overwritten by ShipStatApplyLogic when chassis applies) ---
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()

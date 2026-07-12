@@ -154,8 +154,8 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Gameplay-readable velocity mirror of physics linear velocity. Ghost-serialized for
-    /// remote interpolation and HUD. Kept in sync by ship movement logic each motor tick.
+    /// Gameplay-readable velocity mirror of physics linear velocity. Ghost-serialized for
+    /// remote interpolation and HUD. Synced by <see cref="ShipKinematicsSyncSystem"/> after physics.
     /// </summary>
     public struct ShipKinematics : IComponentData
     {

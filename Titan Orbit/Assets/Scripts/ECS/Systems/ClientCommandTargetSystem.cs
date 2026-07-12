@@ -10,7 +10,7 @@ namespace TitanOrbit.ECS
     /// NetCode packages ShipInput commands for the dedicated-server path. Team spawn is server-side,
     /// so the client must discover its ship via GhostOwner.NetworkId after the server assigns ownership.
     /// Runs first in GhostInputSystemGroup, before ShipInputApplySystem. Skipped for local host play
-    /// (ShipServerControlSystem writes input directly on the server world).
+    /// Skipped on local host — client ghost commands replicate input to the server world.
     /// World: ClientSimulation.
     /// </summary>
     [UpdateInGroup(typeof(GhostInputSystemGroup), OrderFirst = true)]

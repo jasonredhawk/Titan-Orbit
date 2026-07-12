@@ -44,7 +44,7 @@ namespace TitanOrbit.ECS
     /// <summary>Accumulates orbit dwell and dispatches people-transport projectiles (incremental, not instant).</summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(ShipMovementSystem))]
+    [UpdateAfter(typeof(ShipPhysicsDriveSystem))]
     public partial struct PeopleTransportDispatchSystem : ISystem
     {
         bool _loggedMissingPrefab;

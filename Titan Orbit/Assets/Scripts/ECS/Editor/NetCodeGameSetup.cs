@@ -204,6 +204,9 @@ namespace TitanOrbit.ECS.Editor
             if (root.GetComponent<ClientLocalBulletVfxBridge>() == null)
                 root.AddComponent<ClientLocalBulletVfxBridge>();
 
+            if (root.GetComponent<EcsWorldVisualizer>() == null)
+                root.AddComponent<EcsWorldVisualizer>();
+
             var input = root.GetComponent<PlayerInputHandler>();
             if (input == null)
                 input = root.AddComponent<PlayerInputHandler>();
@@ -215,9 +218,6 @@ namespace TitanOrbit.ECS.Editor
                 so.FindProperty("inputActions").objectReferenceValue = inputAsset;
                 so.ApplyModifiedPropertiesWithoutUndo();
             }
-
-            if (root.GetComponent<EcsWorldVisualizer>() == null)
-                root.AddComponent<EcsWorldVisualizer>();
 
             if (root.GetComponent<WorldFloatingCountManager>() == null)
                 root.AddComponent<WorldFloatingCountManager>();

@@ -116,6 +116,13 @@ namespace TitanOrbit.NetCode
                     return b.IsLatest.CompareTo(a.IsLatest);
                 return b.CreatedAtEpochSeconds.CompareTo(a.CreatedAtEpochSeconds);
             });
+
+            // [TITAN-ORBIT] When any "Latest" dedicated lobby exists, hide older listings — they often
+            // share a stale Relay allocation and cause connections=1 withNetworkId=0 on the client.
+            var latestOnly = list.FindAll(l => l.IsLatest);
+            if (latestOnly.Count > 0)
+                list = latestOnly;
+
             return list;
         }
 

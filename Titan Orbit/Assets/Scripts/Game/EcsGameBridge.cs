@@ -14,10 +14,8 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// MonoBehaviour-safe read API for UI, camera, and GameObject bridges. Resolves the correct
-    /// NetCode world (client vs host server), finds the local player's ship ghost through several
-    /// fallbacks, and exposes match/map/planet state without leaking EntityManager into every HUD script.
-    /// [HYBRID] Presentation reads should prefer <see cref="GhostPresentationTransformCache"/> for poses.
+    /// MonoBehaviour-safe read API for UI, camera, and bridges. Resolves the correct
+    /// NetCode world (client vs host server) and exposes match/map/planet state.
     /// </summary>
     public static class EcsGameBridge
     {
@@ -41,7 +39,11 @@ namespace TitanOrbit.Game
                 TitanOrbitSessionManager.IsClientGameplayReady(ClientWorld))
                 return ClientWorld;
 
-            // [NETCODE] Pre-connection bootstrap or server-only tools — fall back to authoritative world.
+            // [TITAN-ORBIT] Headless dedicated — never drive GameObject proxies from ServerWorld.
+            if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+                return null;
+
+            // [NETCODE] Pre-connection bootstrap or LAN host before in-game — fall back to authoritative world.
             if (ServerWorld != null && ServerWorld.IsCreated)
                 return ServerWorld;
 
@@ -64,58 +66,35 @@ namespace TitanOrbit.Game
         // --- Local ship queries ---
 
         /// <summary>
-        /// World position of the local ship for UI/aim — prefers presentation pose, then moon-dock cinematic.
+        /// World position of the local ship for UI/aim — moon-dock cinematic, then client-world ECS pose.
         /// </summary>
         public static bool TryGetLocalShipPosition(out Vector3 position)
         {
             if (ShipMoonDockVisualApplier.TryGetLocalFollowPosition(out position))
                 return true;
 
-            if (TryGetLocalShipPresentationPosition(out position))
-                return true;
-
-            position = default;
-
-            if (!TryGetLocalShipTransform(out var lt))
-                return false;
-
-            position = lt.Position;
-            return true;
-        }
-
-        /// <summary>
-        /// Presentation-phase local ship position (ghost presentation cache or ShipDisplayPose).
-        /// Prefer cache when published this frame — ShipDisplayPose may lag until onBeforeRender proxy sync.
-        /// </summary>
-        public static bool TryGetLocalShipPresentationPosition(out Vector3 position)
-        {
-            position = default;
-
-            var world = GetLocalPlayerShipWorld();
-            if (world != null && world.IsCreated &&
-                TryGetLocalShipEntityOnWorld(world, out var shipEntity) &&
-                GhostPresentationTransformCache.TryGetShip(shipEntity, out var snap) &&
-                GhostPresentationTransformCache.PublishFrame == Time.frameCount)
+            if (TryGetLocalShipTransform(out var lt))
             {
-                position = snap.Position;
+                position = lt.Position;
                 return true;
             }
 
+            position = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Visual proxy pose when available (onBeforeRender sync); otherwise same ECS pose as <see cref="TryGetLocalShipPosition"/>.
+        /// </summary>
+        public static bool TryGetLocalShipPresentationPosition(out Vector3 position)
+        {
             if (ShipDisplayPose.HasLocalPose)
             {
                 position = ShipDisplayPose.LocalPosition;
                 return true;
             }
 
-            if (world != null && world.IsCreated &&
-                TryGetLocalShipEntityOnWorld(world, out shipEntity) &&
-                GhostPresentationTransformCache.TryGetShip(shipEntity, out snap))
-            {
-                position = snap.Position;
-                return true;
-            }
-
-            return false;
+            return TryGetLocalShipPosition(out position);
         }
 
         /// <summary>Local ship <see cref="LocalTransform"/> from <see cref="GetLocalPlayerShipWorld"/>.</summary>
