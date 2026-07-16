@@ -5,8 +5,10 @@ using Unity.Physics.Systems;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Client-side prediction for the local owner's ship. Runs the same <see cref="ShipPhysicsDriveJob"/>
-    /// as the server before physics so input feels instant while the server stays authoritative.
+    /// Client owner prediction — runs the same <see cref="ShipPhysicsDriveJob"/> as the server
+    /// before physics so local input feels instant (Starblast pillar 1). Does not wait for RTT.
+    /// [NETCODE] Only entities with <see cref="Simulate"/> participate; remotes interpolate.
+    /// Input is already on the ghost from <see cref="ShipInputApplySystem"/> in GhostInputSystemGroup.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
     [UpdateBefore(typeof(PhysicsSystemGroup))]

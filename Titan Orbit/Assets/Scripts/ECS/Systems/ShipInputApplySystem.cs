@@ -6,9 +6,12 @@ namespace TitanOrbit.ECS
     // Pipeline: ShipInputApplySystem → ShipClientPredictedPhysicsDriveSystem → PhysicsSystemGroup → …
     /// <summary>
     /// Copies the latest player input from <see cref="ShipPendingInput"/> onto the local ship
-    /// ghost during <see cref="GhostInputSystemGroup"/>. Runs on the client simulation world only;
-    /// the dedicated server reads replicated <see cref="ShipInput"/> from NetCode ghost commands.
-    /// Paired with <see cref="Game.ShipInputBridge"/> which fills ShipPendingInput each frame.
+    /// ghost during <see cref="GhostInputSystemGroup"/> — before prediction runs this tick.
+    /// [NETCODE] Client-side instancy (Starblast pillar 1): the local ship executes
+    /// <see cref="ShipClientPredictedPhysicsDriveSystem"/> on the current tick immediately;
+    /// server reconciliation is silent via NetCode rollback/resim. Dedicated server reads
+    /// replicated <see cref="ShipInput"/> ghost commands instead. Paired with
+    /// <see cref="Game.ShipInputBridge"/>.
     /// </summary>
     [UpdateInGroup(typeof(GhostInputSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]

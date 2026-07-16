@@ -6,17 +6,22 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// [NETCODE] Client-only: points the connection's CommandTarget at the locally owned ship ghost so
-    /// NetCode packages ShipInput commands for the dedicated-server path. Team spawn is server-side,
-    /// so the client must discover its ship via GhostOwner.NetworkId after the server assigns ownership.
-    /// Runs first in GhostInputSystemGroup, before ShipInputApplySystem. Skipped for local host play
-    /// Skipped on local host — client ghost commands replicate input to the server world.
-    /// World: ClientSimulation.
+    /// [NETCODE] Client-only: points the connection's <see cref="CommandTarget"/> at the locally
+    /// owned ship ghost so NetCode packages <see cref="ShipInput"/> commands every tick.
+    /// Required for both dedicated clients and Local Host (Client+Server in one process) —
+    /// skipping Local Host left the server ship without input while the client predicted thrust,
+    /// which showed up as cmdAge≈24 and forward-then-snap-back. Runs first in
+    /// GhostInputSystemGroup, before ShipInputApplySystem. World: ClientSimulation.
     /// </summary>
     [UpdateInGroup(typeof(GhostInputSystemGroup), OrderFirst = true)]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ClientCommandTargetSystem : ISystem
     {
+        // #region agent log
+        bool _loggedBind;
+        // #endregion
+
+        /// <summary>Requires an in-game client connection before binding the command target.</summary>
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<NetworkStreamInGame>();
@@ -27,10 +32,6 @@ namespace TitanOrbit.ECS
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            // --- Skip local host (server writes input directly) ---
-            if (IsLocalHostPlay())
-                return;
-
             // --- Skip during team-pick / rejoin UI ---
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 return;
@@ -52,26 +53,42 @@ namespace TitanOrbit.ECS
             if (shipEntity == Entity.Null)
                 return;
 
-            // [NETCODE] CommandTarget.targetEntity — NetCode sends input to this ghost each tick.
+            // [NETCODE] CommandTarget on the client connection — without this, IInputComponentData
+            // is never sent and the server ship coasts while the client predicts motion.
             foreach (var cmd in SystemAPI.Query<RefRW<CommandTarget>>().WithAll<NetworkStreamConnection, NetworkStreamInGame>())
             {
-                if (cmd.ValueRO.targetEntity == shipEntity)
-                    continue;
-                cmd.ValueRW = new CommandTarget { targetEntity = shipEntity };
+                bool changed = cmd.ValueRO.targetEntity != shipEntity;
+                if (changed)
+                    cmd.ValueRW = new CommandTarget { targetEntity = shipEntity };
+
+                // #region agent log
+                if (!_loggedBind || changed)
+                {
+                    _loggedBind = true;
+                    try
+                    {
+                        string path = System.IO.Path.GetFullPath(
+                            System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "..", "debug-6b87b4.log"));
+                        long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        bool hasServer = ClientServerBootstrap.HasServerWorld;
+                        string line =
+                            "{\"sessionId\":\"6b87b4\",\"runId\":\"basics2\",\"hypothesisId\":\"H10\"," +
+                            "\"location\":\"ClientCommandTargetSystem.OnUpdate\"," +
+                            "\"message\":\"CommandTarget bound to local ship\"," +
+                            "\"data\":{\"networkId\":" + localNetworkId +
+                            ",\"shipIndex\":" + shipEntity.Index +
+                            ",\"changed\":" + (changed ? "true" : "false") +
+                            ",\"hasServer\":" + (hasServer ? "true" : "false") + "}," +
+                            "\"timestamp\":" + ts + "}\n";
+                        System.IO.File.AppendAllText(path, line);
+                    }
+                    catch { /* debug I/O only */ }
+                }
+                // #endregion
             }
         }
 
-        /// <summary>True when client and server worlds both have an in-game connection (MPPM / host).</summary>
-        static bool IsLocalHostPlay()
-        {
-            var server = ClientServerBootstrap.ServerWorld;
-            if (server == null || !server.IsCreated)
-                return false;
-
-            using var query = server.EntityManager.CreateEntityQuery(typeof(NetworkStreamInGame));
-            return query.CalculateEntityCount() > 0;
-        }
-
+        /// <summary>Reads this client's NetworkId from the in-game connection.</summary>
         int GetLocalNetworkId(ref SystemState state)
         {
             foreach (var netId in SystemAPI.Query<RefRO<NetworkId>>().WithAll<NetworkStreamInGame>())

@@ -1,0 +1,59 @@
+using Unity.Entities;
+using Unity.Mathematics;
+using Unity.NetCode;
+using Unity.Physics;
+using Unity.Physics.Systems;
+using Unity.Transforms;
+
+namespace TitanOrbit.ECS
+{
+    /// <summary>
+    /// Top-down constraint after Unity Physics resolves collisions. Hull impacts can impart
+    /// pitch/roll; this re-locks yaw-only rotation and planar velocity. Bounce linear velocity
+    /// is preserved for <see cref="ShipKinematicsSyncSystem"/>. Pipeline:
+    /// Drive → Physics → Planar (this) → KinematicsSync.
+    /// </summary>
+    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
+    [UpdateAfter(typeof(PhysicsSystemGroup))]
+    [UpdateBefore(typeof(ShipKinematicsSyncSystem))]
+    [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
+    public partial struct ShipPlanarPhysicsConstraintSystem : ISystem
+    {
+        public void OnUpdate(ref SystemState state)
+        {
+            foreach (var (transform, velocity, shipState) in SystemAPI
+                         .Query<RefRW<LocalTransform>, RefRW<PhysicsVelocity>, RefRO<ShipState>>()
+                         .WithAll<ShipTag, Simulate>())
+            {
+                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                    continue;
+
+                // --- Yaw-only orientation (flatten forward onto XZ) ---
+                // [TITAN-ORBIT] Only snap when collisions tilt the hull — avoids per-tick rotation
+                // rewrites when the body is already planar (reduces visible stepping on the client).
+                float3 forward = math.mul(transform.ValueRO.Rotation, new float3(0f, 0f, 1f));
+                forward.y = 0f;
+                if (math.lengthsq(forward) < 1e-8f)
+                    forward = new float3(0f, 0f, 1f);
+                else
+                    forward = math.normalize(forward);
+
+                quaternion planarRotation = quaternion.LookRotationSafe(forward, math.up());
+                float tiltDegrees = math.degrees(math.angle(transform.ValueRO.Rotation, planarRotation));
+                if (tiltDegrees > 0.35f)
+                    transform.ValueRW.Rotation = planarRotation;
+
+                // --- Planar linear + yaw angular only ---
+                float3 linear = velocity.ValueRO.Linear;
+                linear.y = 0f;
+
+                float yawRate = velocity.ValueRO.Angular.y;
+                velocity.ValueRW = new PhysicsVelocity
+                {
+                    Linear = linear,
+                    Angular = new float3(0f, yawRate, 0f),
+                };
+            }
+        }
+    }
+}

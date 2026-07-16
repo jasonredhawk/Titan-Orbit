@@ -4,7 +4,9 @@ using UnityEngine;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Ramming mass helpers for HUD and combat estimates. Ship movement uses baked <see cref="Unity.Physics.PhysicsMass"/> only.
+    /// Ramming mass helpers for HUD and combat estimates. Movement acceleration uses
+    /// <see cref="ComputeMovementMass"/> synced onto Unity Physics <c>PhysicsMass</c>
+    /// each fixed step before thrust runs.
     /// </summary>
     public static class ShipMassLogic
     {

@@ -120,4 +120,31 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Timer until next gem spawn from moon drain.</summary>
         public float GemSpawnTimer;
     }
+
+    /// <summary>
+    /// [ECS/DOTS] Back-link from a planet entity to its runtime gem-moon physics body.
+    /// Moon colliders are not ghost-replicated — each simulation world builds its own kinematic body.
+    /// Written by <see cref="PlanetGemMoonColliderEnsureSystem"/>.
+    /// </summary>
+    public struct PlanetGemMoonColliderEntity : IComponentData
+    {
+        /// <summary>Kinematic moon hull entity with <see cref="PhysicsCollider"/> for ship bounce.</summary>
+        public Entity MoonColliderEntity;
+    }
+
+    /// <summary>
+    /// [ECS/DOTS] Query filter — kinematic sphere that blocks ships on the gem-moon orbit ring.
+    /// Paired with <see cref="PlanetGemMoonColliderPlanetRef"/>.
+    /// </summary>
+    public struct PlanetGemMoonColliderTag : IComponentData { }
+
+    /// <summary>
+    /// [ECS/DOTS] Parent planet for a gem-moon kinematic collider. Used by
+    /// <see cref="PlanetGemMoonColliderSyncSystem"/> to copy orbit pose each physics step.
+    /// </summary>
+    public struct PlanetGemMoonColliderPlanetRef : IComponentData
+    {
+        /// <summary>Planet ghost that owns this moon's shield, gems, and orbit phase.</summary>
+        public Entity PlanetEntity;
+    }
 }

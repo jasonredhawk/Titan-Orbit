@@ -5,9 +5,11 @@ using Unity.Physics.Systems;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server-authoritative ship physics input. Applies thrust impulses and damping before
-    /// <see cref="PhysicsSystemGroup"/> integrates position and resolves hull collisions.
-    /// Paired with <see cref="ShipClientPredictedPhysicsDriveSystem"/> on the client.
+    /// Server-authoritative ship motor. Schedules shared <see cref="ShipPhysicsDriveJob"/> before
+    /// <see cref="PhysicsSystemGroup"/> so thrust/turn write <see cref="Unity.Physics.PhysicsVelocity"/>,
+    /// then Unity Physics integrates position and resolves hull collisions.
+    /// Paired with <see cref="ShipClientPredictedPhysicsDriveSystem"/> (same job, client owner).
+    /// Pipeline: Input → MassSync → Drive → Physics → Planar → KinematicsSync.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
     [UpdateBefore(typeof(PhysicsSystemGroup))]
@@ -21,6 +23,7 @@ namespace TitanOrbit.ECS
 
         public void OnUpdate(ref SystemState state)
         {
+            // [NETCODE] Fixed-step dt from PredictedFixedStepSimulationSystemGroup — not frame delta.
             var job = new ShipPhysicsDriveJob
             {
                 Dt = SystemAPI.Time.DeltaTime,

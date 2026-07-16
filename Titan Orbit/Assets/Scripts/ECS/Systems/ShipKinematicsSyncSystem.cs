@@ -7,18 +7,23 @@ using Unity.Physics.Systems;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// After Unity Physics integrates hull motion, mirrors linear velocity into <see cref="ShipKinematics"/>
-    /// for ghosts, HUD, and combat. Clamps speed to <see cref="ShipMotorConfig.MaxSpeed"/>.
+    /// After Unity Physics integrates hull motion and resolves collisions, mirrors linear velocity
+    /// into ghost <see cref="ShipKinematics"/> for HUD, bullets, and VFX.
+    /// [PHYSICS] Runs after <see cref="PhysicsSystemGroup"/> and
+    /// <see cref="ShipPlanarPhysicsConstraintSystem"/> so asteroid bounce velocity is captured —
+    /// we do <b>not</b> hard-clamp to MaxSpeed here (that would erase collision impulse).
+    /// Overspeed bleeds in the next drive tick via <see cref="ShipPhysicsDriveLogic"/>.
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
     [UpdateAfter(typeof(PhysicsSystemGroup))]
+    [UpdateAfter(typeof(ShipPlanarPhysicsConstraintSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipKinematicsSyncSystem : ISystem
     {
         public void OnUpdate(ref SystemState state)
         {
-            foreach (var (motor, velocity, kinematics, shipState) in SystemAPI
-                         .Query<RefRO<ShipMotorConfig>, RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>>()
+            foreach (var (velocity, kinematics, shipState) in SystemAPI
+                         .Query<RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>>()
                          .WithAll<ShipTag, Simulate>())
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
@@ -28,18 +33,15 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
+                // --- Capture post-collision planar velocity (including bounce) ---
                 float3 linear = velocity.ValueRO.Linear;
                 linear.y = 0f;
 
-                float maxSpeed = math.max(0.1f, motor.ValueRO.MaxSpeed);
-                float speed = math.length(linear);
-                if (speed > maxSpeed)
-                    linear = linear * (maxSpeed / speed);
-
+                float yawRate = velocity.ValueRO.Angular.y;
                 velocity.ValueRW = new PhysicsVelocity
                 {
                     Linear = linear,
-                    Angular = velocity.ValueRO.Angular,
+                    Angular = new float3(0f, yawRate, 0f),
                 };
 
                 kinematics.ValueRW = new ShipKinematics { Velocity = linear };

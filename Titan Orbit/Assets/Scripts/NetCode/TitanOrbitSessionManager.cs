@@ -576,7 +576,12 @@ namespace TitanOrbit.NetCode
             }
 
             LastStatusMessage = "Starting local host...";
+            // --- Listen, then rebuild client drivers for IPC, then Connect ---
+            // [NETCODE] RegisterClientDriver prefers IPC only when ServerWorld exists. Rebuild after
+            // Listen so the client driver matches the in-process server (not stale UDP from earlier).
+            // Connect must use server GetLocalEndPoint(IPC) — see ConnectLocalClient.
             ListenLocalLanServer(server, serverPort);
+            ResetClientDriverIfNeeded();
             ConnectLocalClient(serverPort);
 
             float deadline = Time.realtimeSinceStartup + 20f;
@@ -1749,6 +1754,12 @@ namespace TitanOrbit.NetCode
             Debug.Log("[TitanOrbitSessionManager] " + line);
         }
 
+        /// <summary>
+        /// Connects the in-process client to the local server. Prefers the server's IPC
+        /// <see cref="NetworkStreamDriver.GetLocalEndPoint"/> so Client+Server Local Host uses
+        /// NetCode's zero-latency IPC path (not UDP loopback). UDP Loopback:port is the fallback
+        /// when no IPC driver is listening (e.g. remote-only server layout).
+        /// </summary>
         static void ConnectLocalClient(ushort port)
         {
             var clientWorld = ClientServerBootstrap.ClientWorld;
@@ -1756,8 +1767,55 @@ namespace TitanOrbit.NetCode
             var em = clientWorld.EntityManager;
             if (em.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount() > 0)
                 return;
+
+            // --- Prefer IPC endpoint from the in-process server (Client+Server Local Host) ---
+            // [NETCODE] IPC: NetworkTimeSystem uses TargetCommandSlack=0 and 1-tick RTT. UDP loopback
+            // was leaving ServerCommandAge ≈ +24 and metronomic 12-tick prediction snaps.
+            NetworkEndpoint endpoint = NetworkEndpoint.LoopbackIpv4.WithPort(port);
+            string connectVia = "UDP-loopback";
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server != null && server.IsCreated)
+            {
+                using var serverQ = server.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver));
+                if (serverQ.TryGetSingleton(out NetworkStreamDriver serverDriver))
+                {
+                    ref var store = ref serverDriver.DriverStore;
+                    for (int i = store.FirstDriver; i < store.LastDriver; ++i)
+                    {
+                        if (store.GetDriverType(i) != TransportType.IPC)
+                            continue;
+                        NetworkEndpoint ipcEp = serverDriver.GetLocalEndPoint(i);
+                        if (ipcEp.IsValid)
+                        {
+                            endpoint = ipcEp;
+                            connectVia = "IPC";
+                        }
+                        break;
+                    }
+                }
+            }
+
             var driver = em.CreateEntityQuery(typeof(NetworkStreamDriver)).GetSingletonRW<NetworkStreamDriver>();
-            driver.ValueRW.Connect(em, NetworkEndpoint.LoopbackIpv4.WithPort(port));
+            driver.ValueRW.Connect(em, endpoint);
+
+            // #region agent log
+            try
+            {
+                string path = System.IO.Path.GetFullPath(
+                    System.IO.Path.Combine(Application.dataPath, "..", "..", "debug-6b87b4.log"));
+                long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                string line =
+                    "{\"sessionId\":\"6b87b4\",\"runId\":\"basics6\",\"hypothesisId\":\"H11\"," +
+                    "\"location\":\"TitanOrbitSessionManager.ConnectLocalClient\"," +
+                    "\"message\":\"local client connect\"," +
+                    "\"data\":{\"via\":\"" + connectVia +
+                    "\",\"port\":" + port +
+                    ",\"endpoint\":\"" + endpoint.ToFixedString() + "\"}," +
+                    "\"timestamp\":" + ts + "}\n";
+                System.IO.File.AppendAllText(path, line);
+            }
+            catch { /* debug I/O only */ }
+            // #endregion
         }
 
         static void ConnectRelayClient(World world)

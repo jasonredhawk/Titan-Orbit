@@ -14,6 +14,7 @@ namespace TitanOrbit.ECS
     /// Uses EntityCommandBuffer so structural changes don't invalidate parallel queries mid-frame.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateBefore(typeof(ShipPhysicsMassSyncSystem))]
     [UpdateBefore(typeof(ShipPhysicsDriveSystem))]
     [UpdateBefore(typeof(ShipClientPredictedPhysicsDriveSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]

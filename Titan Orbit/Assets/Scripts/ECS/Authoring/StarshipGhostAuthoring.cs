@@ -11,7 +11,8 @@ namespace TitanOrbit.ECS.Authoring
     /// <summary>
     /// MonoBehaviour authoring component on ship ghost prefabs. The Baker converts this GameObject
     /// hierarchy into an ECS entity with ShipTag, motor/weapon/vitals components, weapon mount buffers,
-    /// wing tractor beam buffers, and a Unity Physics dynamic sphere collider. Baked into SubScenes
+    /// wing tractor beam buffers, and a placeholder Unity Physics sphere collider replaced at runtime
+    /// by <see cref="ShipHullColliderLogic"/> from the chassis visual prefab. Baked into SubScenes
     /// for NetCode ghost replication. Paired with StarshipGhost prefab variants under Assets/Prefabs/Ships/.
     /// </summary>
     public class StarshipGhostAuthoring : MonoBehaviour
@@ -104,7 +105,7 @@ namespace TitanOrbit.ECS.Authoring
             {
                 float radius = BodyCollisionMath.GetShipHullRadiusWorld(1f);
                 var material = Unity.Physics.Material.Default;
-                material.Restitution = 0.5f;
+                material.Restitution = 0.15f;
                 material.Friction = 0.05f;
 
                 var collider = Unity.Physics.SphereCollider.Create(

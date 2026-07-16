@@ -9,7 +9,8 @@ namespace TitanOrbit.Game
     /// Instantiates ship-family chassis prefabs as render-only GameObject proxies and applies
     /// team-colored materials. Called by EcsWorldVisualizer when spawning or respawning ship visuals.
     /// Strips physics colliders, Rigidbodies, and NetCode MonoBehaviour components so the proxy
-    /// cannot affect simulation — ECS ghosts and Unity Physics own authoritative state.
+    /// cannot affect simulation — authoritative hull colliders are built on the ECS ghost by
+    /// <see cref="ShipHullColliderLogic"/> from the same chassis prefab.
     /// </summary>
     public static class ShipVisualApplier
     {

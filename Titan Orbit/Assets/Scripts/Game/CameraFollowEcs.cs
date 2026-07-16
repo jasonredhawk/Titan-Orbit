@@ -1,29 +1,33 @@
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Shared;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Top-down camera rig that hard-locks to the local ship each LateUpdate. Reads
-    /// <see cref="ShipDisplayPose"/> (presentation-phase pose) — not raw sim transforms —
-    /// so the view matches what the player sees without extra smoothing on predicted movement.
-    /// Client only; dedicated server has no camera. Paired with <see cref="ShipVisualSyncSystem"/>
-    /// which fills presentation pose before this runs (execution order 67001).
+    /// Top-down camera hard-locks to <see cref="ShipDisplayPose"/> (NetCode presentation pose).
+    /// [TITAN-ORBIT] No SmoothDamp chase — NetCode is the only smoothing owner for flight feel.
+    /// Moon-dock cinematic still overrides with a hard lock. Client only; order 67001 after
+    /// <see cref="ShipVisualSyncSystem"/> fills the pose.
     /// </summary>
     [DefaultExecutionOrder(67001)]
     public class CameraFollowEcs : MonoBehaviour
     {
-        // [UNITY] World-space offset from ship position at reference ship level (Y lift for top-down view).
+        /// <summary>[UNITY] World-space offset from ship (Y lift for top-down view).</summary>
         [SerializeField] Vector3 offsetAtReferenceLevel = new Vector3(0f, 40f, 0f);
 
-        // [UNITY] Perspective FOV — gameplay uses perspective, not orthographic minimap camera.
+        /// <summary>[UNITY] Perspective FOV for gameplay camera.</summary>
         [SerializeField] float gameplayFieldOfView = 45f;
 
         UnityEngine.Camera cam;
 
-        /// <summary>
-        /// [UNITY] Awake — cache camera and lock to top-down euler (90° pitch).
-        /// </summary>
+        // #region agent log
+        Vector3 _dbgLastCam;
+        bool _dbgHasCam;
+        int _dbgCamLogBudget;
+        // #endregion
+
+        /// <summary>[UNITY] Awake — cache camera and lock to top-down euler (90° pitch).</summary>
         void Awake()
         {
             cam = GetComponent<UnityEngine.Camera>();
@@ -37,20 +41,59 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [UNITY] LateUpdate — presentation cache is filled during Update; read via EcsGameBridge helper.
+        /// [UNITY] LateUpdate — presentation pose is published during ECS Update on this frame.
         /// </summary>
         void LateUpdate()
         {
-            // --- Resolve follow target ---
-            Vector3 targetPos;
-            if (!EcsGameBridge.TryGetLocalShipPresentationPosition(out targetPos) &&
-                !EcsGameBridge.TryGetLocalShipPosition(out targetPos))
-                return; // [STANDARD] No local ship yet (loading, dead, or not spawned).
+            if (!TryResolveFollowTarget(out var targetPos))
+                return;
 
-            // --- Apply rig ---
-            // [TITAN-ORBIT] Y comes from ship + fixed camera lift; rotation stays locked top-down.
-            transform.position = new Vector3(targetPos.x, targetPos.y, targetPos.z) + offsetAtReferenceLevel;
+            // --- Hard-lock to presentation pose (one smoothing owner: NetCode) ---
+            Vector3 next = targetPos + offsetAtReferenceLevel;
+
+            // #region agent log
+            if (_dbgCamLogBudget <= 0)
+                _dbgCamLogBudget = 60;
+            float camDelta = _dbgHasCam ? Vector3.Distance(next, _dbgLastCam) : 0f;
+            float displayDelta = ShipDisplayPose.HasLocalPose
+                ? Vector3.Distance(targetPos, _dbgHasCam ? (_dbgLastCam - offsetAtReferenceLevel) : targetPos)
+                : -1f;
+            if (_dbgHasCam && camDelta > 0.0001f && _dbgCamLogBudget-- > 0)
+            {
+                string data =
+                    "{\"camDelta\":" + camDelta.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) +
+                    ",\"displayDelta\":" + displayDelta.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) +
+                    ",\"frame\":" + Time.frameCount + "}";
+                ShipFlightSmoothDebugLog.Write("H4", "CameraFollowEcs.LateUpdate", "camera hard-lock step", data);
+            }
+            _dbgLastCam = next;
+            _dbgHasCam = true;
+            // #endregion
+
+            transform.position = next;
             transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+        }
+
+        /// <summary>
+        /// Resolves world follow position. Moon-dock cinematic overrides presentation when active.
+        /// </summary>
+        static bool TryResolveFollowTarget(out Vector3 targetPos)
+        {
+            // [HYBRID] Moon dock GameObject applier may override during landing/takeoff.
+            if (ShipMoonDockVisualApplier.TryGetLocalFollowPosition(out targetPos))
+                return true;
+
+            // [NETCODE] Presentation pose from ShipVisualSyncSystem — not raw sim.
+            if (ShipDisplayPose.HasLocalPose)
+            {
+                targetPos = ShipDisplayPose.LocalPosition;
+                return true;
+            }
+
+            if (EcsGameBridge.TryGetLocalShipPresentationPosition(out targetPos))
+                return true;
+
+            return EcsGameBridge.TryGetLocalShipPosition(out targetPos);
         }
     }
 }

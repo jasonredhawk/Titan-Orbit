@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.NetCode;
@@ -164,12 +165,14 @@ namespace TitanOrbit.Game
 
             var em = world.EntityManager;
 
-            // --- Ship proxies (spawn + team/level rebuild) ---
-            EnsureShipProxies(em);
-
             var alive = new HashSet<Entity>();
 
-            SyncShipProxyTransforms(em, alive);
+            // --- Ship proxies (hybrid path only — Entities Graphics owns ship visuals when enabled) ---
+            if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+            {
+                EnsureShipProxies(em);
+                SyncShipProxyTransforms(em, alive);
+            }
 
             // --- World body proxies ---
             DrawPlanets(em, alive);

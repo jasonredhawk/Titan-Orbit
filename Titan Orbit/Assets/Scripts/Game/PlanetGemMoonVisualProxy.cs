@@ -162,7 +162,7 @@ namespace TitanOrbit.Game
             vis.name = MoonSpinMeshName;
             var col = vis.GetComponent<Collider>();
             if (col != null)
-                Destroy(col);
+                Destroy(col); // [HYBRID] Hull collision is ECS kinematic sphere — see PlanetGemMoonColliderSystems.
             vis.transform.SetParent(parent, false);
             return vis.transform;
         }

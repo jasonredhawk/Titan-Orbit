@@ -1,0 +1,331 @@
+using System;
+using System.Collections.Generic;
+using TitanOrbit.Core;
+using TitanOrbit.Data;
+using Unity.Collections;
+using Unity.Entities;
+using Unity.Mathematics;
+using Unity.Rendering;
+using Unity.Transforms;
+using UnityEngine;
+using UnityEngine.Rendering;
+
+namespace TitanOrbit.ECS
+{
+    /// <summary>
+    /// Client-only Entities Graphics presentation for ships. Spawns local child entities with
+    /// <see cref="MaterialMeshInfo"/> parented to the ship ghost (bank pivot → mesh parts).
+    /// [TITAN-ORBIT] No intermediate smooth-anchor — NetCode owns presentation pose; we only render.
+    /// Runs in <see cref="PresentationSystemGroup"/>.
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+    [UpdateInGroup(typeof(PresentationSystemGroup))]
+    public partial class ShipEntitiesGraphicsPresentationSystem : SystemBase
+    {
+        readonly List<Entity> _partsToDestroy = new List<Entity>(64);
+        readonly HashSet<Entity> _aliveShips = new HashSet<Entity>();
+        readonly List<Entity> _shipsToClearVisuals = new List<Entity>(16);
+        readonly List<PendingVisualResync> _shipsToResync = new List<PendingVisualResync>(16);
+
+        EntityQuery _visualPartsQuery;
+        EntityQuery _bankPivotQuery;
+
+        struct PendingVisualResync
+        {
+            public Entity ShipEntity;
+            public int BranchIndex;
+        }
+
+        protected override void OnCreate()
+        {
+            _visualPartsQuery = GetEntityQuery(ComponentType.ReadOnly<ShipVisualPartTag>());
+            _bankPivotQuery = GetEntityQuery(ComponentType.ReadOnly<ShipVisualBankPivotTag>());
+        }
+
+        protected override void OnUpdate()
+        {
+            if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+                return;
+
+            var catalog = ShipChassisVisualCatalog.Instance;
+            if (catalog == null)
+                return;
+
+            _aliveShips.Clear();
+            _shipsToClearVisuals.Clear();
+            _shipsToResync.Clear();
+
+            // --- Pass 1: decide which ships need visual work ---
+            foreach (var (ship, loadout, entity) in SystemAPI
+                         .Query<RefRO<ShipState>, RefRO<ShipLoadoutState>>()
+                         .WithAll<ShipTag, LocalTransform>()
+                         .WithEntityAccess())
+            {
+                CollectShipVisualWork(entity, ship.ValueRO, loadout.ValueRO.BranchIndex, catalog);
+            }
+
+            foreach (var (ship, entity) in SystemAPI
+                         .Query<RefRO<ShipState>>()
+                         .WithAll<ShipTag, LocalTransform>()
+                         .WithNone<ShipLoadoutState>()
+                         .WithEntityAccess())
+            {
+                CollectShipVisualWork(entity, ship.ValueRO, branchIndex: 0, catalog);
+            }
+
+            // --- Pass 2: structural changes outside entity queries ---
+            for (int i = 0; i < _shipsToClearVisuals.Count; i++)
+                DestroyVisualPartsForShip(_shipsToClearVisuals[i]);
+
+            for (int i = 0; i < _shipsToResync.Count; i++)
+            {
+                var work = _shipsToResync[i];
+                if (!EntityManager.Exists(work.ShipEntity) || !EntityManager.HasComponent<ShipState>(work.ShipEntity))
+                    continue;
+
+                var ship = EntityManager.GetComponentData<ShipState>(work.ShipEntity);
+                ApplyShipVisualResync(work.ShipEntity, ship, work.BranchIndex, catalog);
+            }
+
+            CleanupOrphanVisualParts();
+        }
+
+        void CollectShipVisualWork(
+            Entity shipEntity,
+            in ShipState ship,
+            int branchIndex,
+            ShipChassisVisualCatalog catalog)
+        {
+            _aliveShips.Add(shipEntity);
+
+            if (ship.IsDead || ship.AwaitingTeamSelection)
+            {
+                _shipsToClearVisuals.Add(shipEntity);
+                return;
+            }
+
+            if (!ShipStatApplyLogic.TryResolveChassisId(ship.Team, ship.ShipLevel, branchIndex, out string chassisId))
+                return;
+
+            if (!catalog.TryGetEntry(chassisId, out var entry) || entry.RenderParts == null || entry.RenderParts.Count == 0)
+                return;
+
+            if (EntityManager.HasComponent<ShipClientVisualState>(shipEntity))
+            {
+                var applied = EntityManager.GetComponentData<ShipClientVisualState>(shipEntity);
+                var chassisKey = new FixedString64Bytes(chassisId);
+                if (applied.ChassisId.Equals(chassisKey)
+                    && applied.AppliedShipLevel == ship.ShipLevel
+                    && applied.AppliedBranchIndex == branchIndex
+                    && applied.AppliedTeam == ship.Team)
+                {
+                    return;
+                }
+            }
+
+            _shipsToResync.Add(new PendingVisualResync
+            {
+                ShipEntity = shipEntity,
+                BranchIndex = branchIndex,
+            });
+        }
+
+        void ApplyShipVisualResync(
+            Entity shipEntity,
+            in ShipState ship,
+            int branchIndex,
+            ShipChassisVisualCatalog catalog)
+        {
+            if (!ShipStatApplyLogic.TryResolveChassisId(ship.Team, ship.ShipLevel, branchIndex, out string chassisId))
+                return;
+
+            if (!catalog.TryGetEntry(chassisId, out var entry) || entry.RenderParts == null || entry.RenderParts.Count == 0)
+                return;
+
+            DestroyVisualPartsForShip(shipEntity);
+            Entity bankPivot = CreateBankPivot(shipEntity);
+            SpawnVisualParts(bankPivot, shipEntity, entry);
+
+            var visualState = new ShipClientVisualState
+            {
+                ChassisId = new FixedString64Bytes(chassisId),
+                AppliedShipLevel = ship.ShipLevel,
+                AppliedBranchIndex = branchIndex,
+                AppliedTeam = ship.Team,
+            };
+
+            if (EntityManager.HasComponent<ShipClientVisualState>(shipEntity))
+                EntityManager.SetComponentData(shipEntity, visualState);
+            else
+                EntityManager.AddComponentData(shipEntity, visualState);
+        }
+
+        /// <summary>
+        /// Bank pivot parented directly to the ship ghost. Mesh parts parent to this pivot.
+        /// </summary>
+        Entity CreateBankPivot(Entity shipEntity)
+        {
+            EnsureShipHasLocalToWorld(shipEntity);
+
+            var pivot = EntityManager.CreateEntity();
+            EntityManager.AddComponentData(pivot, new Parent { Value = shipEntity });
+            AddHierarchyTransform(pivot, LocalTransform.FromPositionRotation(float3.zero, quaternion.identity));
+            EntityManager.AddComponentData(pivot, new ShipVisualBankPivotTag { ShipEntity = shipEntity });
+            EntityManager.AddComponentData(pivot, new ShipVisualBankState());
+            return pivot;
+        }
+
+        void EnsureShipHasLocalToWorld(Entity shipEntity)
+        {
+            if (!EntityManager.HasComponent<LocalTransform>(shipEntity))
+                return;
+
+            if (EntityManager.HasComponent<LocalToWorld>(shipEntity))
+                return;
+
+            var shipTransform = EntityManager.GetComponentData<LocalTransform>(shipEntity);
+            EntityManager.AddComponentData(shipEntity, new LocalToWorld { Value = shipTransform.ToMatrix() });
+        }
+
+        void AddHierarchyTransform(Entity entity, in LocalTransform localTransform)
+        {
+            EntityManager.AddComponentData(entity, localTransform);
+            EntityManager.AddComponentData(entity, new LocalToWorld { Value = localTransform.ToMatrix() });
+        }
+
+        void SpawnVisualParts(Entity parentEntity, Entity shipEntity, ShipChassisVisualEntry entry)
+        {
+            var renderDescription = new RenderMeshDescription(
+                ShadowCastingMode.On,
+                receiveShadows: true);
+
+            for (int i = 0; i < entry.RenderParts.Count; i++)
+            {
+                var part = entry.RenderParts[i];
+                if (part.Mesh == null || part.Material == null)
+                    continue;
+
+                var child = EntityManager.CreateEntity();
+                EntityManager.AddComponentData(child, new Parent { Value = parentEntity });
+                AddPartLocalTransform(child, part);
+                EntityManager.AddComponentData(child, new ShipVisualPartTag { ShipEntity = shipEntity });
+
+                var renderMeshArray = new RenderMeshArray(new[] { part.Material }, new[] { part.Mesh });
+                var materialMeshInfo = MaterialMeshInfo.FromRenderMeshArrayIndices(0, 0);
+                RenderMeshUtility.AddComponents(
+                    child,
+                    EntityManager,
+                    in renderDescription,
+                    renderMeshArray,
+                    materialMeshInfo);
+            }
+        }
+
+        void AddPartLocalTransform(Entity child, ShipChassisRenderPart part)
+        {
+            float3 scale = part.LocalScale;
+            bool isUniformScale = math.abs(scale.x - scale.y) < 1e-4f && math.abs(scale.y - scale.z) < 1e-4f;
+
+            if (isUniformScale)
+            {
+                var localTransform = LocalTransform.FromPositionRotationScale(
+                    part.LocalPosition,
+                    part.LocalRotation,
+                    scale.x);
+                AddHierarchyTransform(child, localTransform);
+                return;
+            }
+
+            var transform = LocalTransform.FromPositionRotation(
+                part.LocalPosition,
+                part.LocalRotation);
+            AddHierarchyTransform(child, transform);
+            EntityManager.AddComponentData(child, new PostTransformMatrix
+            {
+                Value = float4x4.Scale(scale),
+            });
+
+            if (EntityManager.HasComponent<LocalToWorld>(child))
+            {
+                var localToWorld = EntityManager.GetComponentData<LocalToWorld>(child);
+                localToWorld.Value = math.mul(transform.ToMatrix(), float4x4.Scale(scale));
+                EntityManager.SetComponentData(child, localToWorld);
+            }
+        }
+
+        void CollectVisualPartsToDestroy(Func<ShipVisualPartTag, bool> predicate)
+        {
+            _partsToDestroy.Clear();
+            using var entities = _visualPartsQuery.ToEntityArray(Allocator.Temp);
+            using var tags = _visualPartsQuery.ToComponentDataArray<ShipVisualPartTag>(Allocator.Temp);
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (predicate(tags[i]))
+                    _partsToDestroy.Add(entities[i]);
+            }
+        }
+
+        void DestroyVisualPartsForShip(Entity shipEntity)
+        {
+            DestroyBankPivotForShip(shipEntity);
+
+            CollectVisualPartsToDestroy(tag => tag.ShipEntity == shipEntity);
+            for (int i = 0; i < _partsToDestroy.Count; i++)
+                EntityManager.DestroyEntity(_partsToDestroy[i]);
+
+            if (EntityManager.HasComponent<ShipClientVisualState>(shipEntity))
+                EntityManager.RemoveComponent<ShipClientVisualState>(shipEntity);
+        }
+
+        void DestroyBankPivotForShip(Entity shipEntity)
+        {
+            using var pivots = _bankPivotQuery.ToEntityArray(Allocator.Temp);
+            using var tags = _bankPivotQuery.ToComponentDataArray<ShipVisualBankPivotTag>(Allocator.Temp);
+
+            for (int i = 0; i < pivots.Length; i++)
+            {
+                if (tags[i].ShipEntity != shipEntity)
+                    continue;
+
+                DestroyEntityHierarchy(pivots[i]);
+            }
+        }
+
+        void DestroyEntityHierarchy(Entity root)
+        {
+            if (!EntityManager.Exists(root))
+                return;
+
+            if (EntityManager.HasBuffer<Child>(root))
+            {
+                var children = EntityManager.GetBuffer<Child>(root);
+                for (int i = children.Length - 1; i >= 0; i--)
+                    DestroyEntityHierarchy(children[i].Value);
+            }
+
+            EntityManager.DestroyEntity(root);
+        }
+
+        void CleanupOrphanVisualParts()
+        {
+            CollectVisualPartsToDestroy(tag =>
+            {
+                var ship = tag.ShipEntity;
+                return !EntityManager.Exists(ship) || !_aliveShips.Contains(ship);
+            });
+
+            for (int i = 0; i < _partsToDestroy.Count; i++)
+                EntityManager.DestroyEntity(_partsToDestroy[i]);
+
+            using var pivots = _bankPivotQuery.ToEntityArray(Allocator.Temp);
+            using var pivotTags = _bankPivotQuery.ToComponentDataArray<ShipVisualBankPivotTag>(Allocator.Temp);
+            for (int i = 0; i < pivots.Length; i++)
+            {
+                var ship = pivotTags[i].ShipEntity;
+                if (!EntityManager.Exists(ship) || !_aliveShips.Contains(ship))
+                    DestroyEntityHierarchy(pivots[i]);
+            }
+        }
+    }
+}

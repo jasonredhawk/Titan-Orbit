@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.ECS.Authoring;
 using Unity.Entities;
@@ -23,6 +24,9 @@ namespace TitanOrbit.Game
     {
         protected override void OnUpdate()
         {
+            if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+                return;
+
             foreach (var (owner, entity) in SystemAPI.Query<RefRO<GhostOwner>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())

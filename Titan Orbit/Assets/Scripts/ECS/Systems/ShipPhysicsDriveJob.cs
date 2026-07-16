@@ -7,9 +7,9 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Burst parallel job — applies standard physics input for each predicted ship before the solver.
-    /// Scheduled by <see cref="ShipPhysicsDriveSystem"/> (server) and
-    /// <see cref="ShipClientPredictedPhysicsDriveSystem"/> (client owner).
+    /// Burst parallel job — applies shared <see cref="ShipPhysicsDriveLogic"/> for each predicted
+    /// ship before the Unity Physics solver. [NETCODE] <see cref="Simulate"/> limits client work to
+    /// owner-predicted ghosts; server runs all simulated ships.
     /// </summary>
     [BurstCompile]
     [WithAll(typeof(ShipTag), typeof(Simulate))]
@@ -21,8 +21,8 @@ namespace TitanOrbit.ECS
         void Execute(
             RefRO<ShipInput> input,
             RefRO<ShipMotorConfig> motor,
+            RefRO<ShipMoonDockState> moonDock,
             RefRO<ShipState> shipState,
-            RefRO<PhysicsMass> physicsMass,
             RefRW<PhysicsVelocity> physicsVelocity,
             RefRW<PhysicsDamping> physicsDamping,
             RefRW<LocalTransform> transform)
@@ -30,11 +30,11 @@ namespace TitanOrbit.ECS
             ShipPhysicsDriveLogic.Step(
                 input.ValueRO,
                 motor.ValueRO,
+                moonDock.ValueRO,
                 shipState.ValueRO,
                 ref physicsVelocity.ValueRW,
                 ref physicsDamping.ValueRW,
                 ref transform.ValueRW,
-                physicsMass.ValueRO,
                 Dt);
         }
     }

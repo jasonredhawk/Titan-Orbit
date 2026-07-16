@@ -3944,10 +3944,8 @@ GameObject:
   m_Component:
   - component: {fileID: 711795282}
   - component: {fileID: 711795281}
-  - component: {fileID: 711795280}
   - component: {fileID: 711795279}
   - component: {fileID: 711795278}
-  - component: {fileID: 711795277}
   - component: {fileID: 711795283}
   - component: {fileID: 711795284}
   m_Layer: 0
@@ -3957,18 +3955,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &711795277
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 711795276}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1840c4a258449244eb10769c3a19c6a9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.LocalPlayerSetup
 --- !u!81 &711795278
 AudioListener:
   m_ObjectHideFlags: 0
@@ -4008,18 +3994,6 @@ MonoBehaviour:
     e31: 0
     e32: 0
     e33: 1
---- !u!114 &711795280
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 711795276}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d87509b1f11fc5441bc67e1f952ac487, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Camera.CameraController
 --- !u!20 &711795281
 Camera:
   m_ObjectHideFlags: 0
@@ -4144,6 +4118,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.CameraFollowEcs
   offsetAtReferenceLevel: {x: 0, y: 30, z: 0}
   gameplayFieldOfView: 45
+  positionSmoothTime: 0.05
+  maxFollowLagDistance: 5
 --- !u!1 &716424125
 GameObject:
   m_ObjectHideFlags: 0

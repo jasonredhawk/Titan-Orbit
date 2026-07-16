@@ -24,6 +24,8 @@ namespace TitanOrbit.ECS
             {
                 var step = SystemAPI.GetSingleton<PhysicsStep>();
                 step.Gravity = float3.zero;
+                // [PHYSICS] Extra solver iterations help fast ships hit static asteroid colliders.
+                step.SolverIterationCount = math.max(step.SolverIterationCount, 8);
                 SystemAPI.SetSingleton(step);
             }
             else
