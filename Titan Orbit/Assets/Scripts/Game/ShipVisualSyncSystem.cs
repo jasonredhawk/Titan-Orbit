@@ -24,10 +24,13 @@ namespace TitanOrbit.Game
         bool _dbgHasDisplayPos;
         float2 _dbgLastMoveXz;
         bool _dbgHasMoveXz;
-        uint _dbgLastServerTick;
-        float3 _dbgPosAtTickBoundary;
-        bool _dbgHasTickPos;
-        int _dbgFrameLogBudget;
+        int _dbgMicroReverseWindow;
+        int _dbgMicroReverseCount;
+        float _dbgDeltaSum;
+        float _dbgDeltaMax;
+        int _dbgDeltaSamples;
+        int _dbgSimBatchMax;
+        double _dbgNextAggLog;
         // #endregion
 
         protected override void OnUpdate()
@@ -62,7 +65,9 @@ namespace TitanOrbit.Game
         }
 
         // #region agent log
-        /// <summary>Debug NDJSON: display frame steps vs sim tick steps (session 6b87b4).</summary>
+        /// <summary>
+        /// 1 Hz only — basics28 dense AppendAllText made Local Host choppy (FPS collapsed to ~1).
+        /// </summary>
         void AgentLogLocalShipPresentation()
         {
             if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(World, out var localShip))
@@ -74,17 +79,16 @@ namespace TitanOrbit.Game
             float3 pos = lt.Position;
 
             float displayDelta = 0f;
-            float2 moveXz = float2.zero;
-            bool reversed = false;
+            bool microReverse = false;
             if (_dbgHasDisplayPos)
             {
                 float3 delta3 = pos - _dbgLastDisplayPos;
                 displayDelta = math.length(delta3);
-                moveXz = new float2(delta3.x, delta3.z);
-                // H9: consecutive planar moves pointing opposite = rubber-band (forward then back).
-                if (_dbgHasMoveXz && math.lengthsq(moveXz) > 0.01f && math.lengthsq(_dbgLastMoveXz) > 0.01f)
-                    reversed = math.dot(math.normalize(moveXz), math.normalize(_dbgLastMoveXz)) < -0.3f;
-                if (math.lengthsq(moveXz) > 0.0001f)
+                float2 moveXz = new float2(delta3.x, delta3.z);
+                // H32: tiny opposing frame deltas — "blurry" jitter (not stepped).
+                if (_dbgHasMoveXz && math.lengthsq(moveXz) > 1e-6f && math.lengthsq(_dbgLastMoveXz) > 1e-6f)
+                    microReverse = math.dot(math.normalize(moveXz), math.normalize(_dbgLastMoveXz)) < -0.2f;
+                if (math.lengthsq(moveXz) > 1e-6f)
                 {
                     _dbgLastMoveXz = moveXz;
                     _dbgHasMoveXz = true;
@@ -93,82 +97,80 @@ namespace TitanOrbit.Game
             _dbgLastDisplayPos = pos;
             _dbgHasDisplayPos = true;
 
-            uint serverTick = 0;
-            float tickFrac = 1f;
-            bool isPartial = false;
             int batchSize = 0;
-            int maxBatch = 0;
-            int maxSteps = 0;
             float speed = 0f;
             float commandAge = 0f;
             float estimatedRtt = 0f;
             int numPredicted = 0;
+            uint targetSlack = 0;
+            uint lastSnapLocal = 0;
+            uint predictTarget = 0;
             bool hasServer = ClientServerBootstrap.HasServerWorld;
             if (SystemAPI.TryGetSingleton<NetworkTime>(out var nt))
             {
-                serverTick = nt.ServerTick.IsValid ? nt.ServerTick.TickIndexForValidTick : 0u;
-                tickFrac = nt.ServerTickFraction;
-                isPartial = nt.IsPartialTick;
                 batchSize = nt.SimulationStepBatchSize;
                 numPredicted = nt.NumPredictedTicksExpected;
             }
 
-            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var csr))
-            {
-                maxBatch = csr.MaxSimulationStepBatchSize;
-                maxSteps = csr.MaxSimulationStepsPerFrame;
-            }
+            if (SystemAPI.TryGetSingleton<ClientTickRate>(out var ctr))
+                targetSlack = ctr.TargetCommandSlack;
 
             if (SystemAPI.TryGetSingleton<NetworkSnapshotAck>(out var ack))
             {
                 commandAge = ack.ServerCommandAge / 256f;
                 estimatedRtt = ack.EstimatedRTT;
+                if (ack.LastReceivedSnapshotByLocal.IsValid)
+                    lastSnapLocal = ack.LastReceivedSnapshotByLocal.TickIndexForValidTick;
             }
+
+            if (SystemAPI.TryGetSingleton<NetworkTimeSystemData>(out var ntsd) && ntsd.predictTargetTick.IsValid)
+                predictTarget = ntsd.predictTargetTick.TickIndexForValidTick;
 
             if (EntityManager.HasComponent<ShipKinematics>(localShip))
                 speed = math.length(EntityManager.GetComponentData<ShipKinematics>(localShip).Velocity);
 
-            float simStepDelta = -1f;
-            if (_dbgHasTickPos && serverTick != 0 && serverTick != _dbgLastServerTick)
-            {
-                simStepDelta = math.distance(pos, _dbgPosAtTickBoundary);
-                _dbgPosAtTickBoundary = pos;
-                _dbgLastServerTick = serverTick;
-            }
-            else if (!_dbgHasTickPos && serverTick != 0)
-            {
-                _dbgPosAtTickBoundary = pos;
-                _dbgLastServerTick = serverTick;
-                _dbgHasTickPos = true;
-            }
+            _dbgMicroReverseWindow++;
+            _dbgDeltaSum += displayDelta;
+            if (displayDelta > _dbgDeltaMax)
+                _dbgDeltaMax = displayDelta;
+            _dbgDeltaSamples++;
+            if (batchSize > _dbgSimBatchMax)
+                _dbgSimBatchMax = batchSize;
+            if (microReverse)
+                _dbgMicroReverseCount++;
 
-            if (_dbgFrameLogBudget <= 0)
-                _dbgFrameLogBudget = 120;
-            bool interesting = reversed || displayDelta > 0.5f || simStepDelta > 0.5f ||
-                               (speed > 1f && displayDelta > 0.0001f);
-            if (!interesting || _dbgFrameLogBudget-- <= 0)
+            double now = UnityEngine.Time.realtimeSinceStartupAsDouble;
+            if (now < _dbgNextAggLog || _dbgDeltaSamples <= 0)
                 return;
 
-            string data =
-                "{\"displayDelta\":" + displayDelta.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) +
-                ",\"simStepDelta\":" + simStepDelta.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) +
-                ",\"speed\":" + speed.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
-                ",\"reversed\":" + (reversed ? "true" : "false") +
-                ",\"serverTick\":" + serverTick +
-                ",\"tickFrac\":" + tickFrac.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
-                ",\"isPartial\":" + (isPartial ? "true" : "false") +
-                ",\"simBatch\":" + batchSize +
-                ",\"maxBatch\":" + maxBatch +
-                ",\"maxSteps\":" + maxSteps +
+            _dbgNextAggLog = now + 1.0;
+            float avgDelta = _dbgDeltaSum / _dbgDeltaSamples;
+            float fps = UnityEngine.Time.unscaledDeltaTime > 1e-6f
+                ? 1f / UnityEngine.Time.unscaledDeltaTime
+                : 0f;
+            string agg =
+                "{\"hasServer\":" + (hasServer ? "true" : "false") +
+                ",\"microRev\":" + _dbgMicroReverseCount +
+                ",\"frames\":" + _dbgMicroReverseWindow +
+                ",\"avgDelta\":" + avgDelta.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) +
+                ",\"maxDelta\":" + _dbgDeltaMax.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) +
                 ",\"cmdAge\":" + commandAge.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
+                ",\"targetSlack\":" + targetSlack +
+                ",\"predictLead\":" + (predictTarget > 0 && lastSnapLocal > 0
+                    ? ((int)predictTarget - (int)lastSnapLocal).ToString()
+                    : "na") +
                 ",\"rttMs\":" + estimatedRtt.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
                 ",\"numPred\":" + numPredicted +
-                ",\"hasServer\":" + (hasServer ? "true" : "false") +
-                ",\"frame\":" + UnityEngine.Time.frameCount +
-                ",\"dt\":" + UnityEngine.Time.deltaTime.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) + "}";
-
-            string hyp = reversed ? "H9" : (simStepDelta > 1.0f ? "H6" : "H5");
-            ShipFlightSmoothDebugLog.Write(hyp, "ShipVisualSyncSystem.OnUpdate", "local ship presentation sample", data);
+                ",\"simBatchMax\":" + _dbgSimBatchMax +
+                ",\"speed\":" + speed.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
+                ",\"fps\":" + fps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) + "}";
+            ShipFlightSmoothDebugLog.Write("H32", "ShipVisualSyncSystem.agg", "1s presentation jitter aggregate", agg);
+            _dbgMicroReverseWindow = 0;
+            _dbgMicroReverseCount = 0;
+            _dbgDeltaSum = 0f;
+            _dbgDeltaMax = 0f;
+            _dbgDeltaSamples = 0;
+            _dbgSimBatchMax = 0;
         }
         // #endregion
 

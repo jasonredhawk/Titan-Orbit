@@ -144,10 +144,22 @@ namespace TitanOrbit.NetCode
         }
 
 #if UNITY_SERVER
+        /// <summary>
+        /// Manual ServerWorld tick for true headless dedicated builds only.
+        /// </summary>
+        /// <remarks>
+        /// When the Active Build Target is Dedicated Server, <c>UNITY_SERVER</c> is also defined in
+        /// the Editor. Local Host then has a ClientWorld <b>and</b> the Entities player loop already
+        /// updates ServerWorld — calling <see cref="TickServerWorld"/> here double-updates sim
+        /// (NetDiagnostics ~50% catch-up / STRUGGLING). Skip when a ClientWorld exists.
+        /// </remarks>
         void Update()
         {
-            // Headless dedicated builds do not auto-tick ECS worlds; without this the server never
-            // processes Relay packets and clients stay at connections=1 withNetworkId=0.
+            // [UNITY] Editor Client+Server play: player loop owns ServerWorld.Update.
+            if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
+                return;
+
+            // [UNITY_SERVER] True headless: no ClientWorld — we must tick or Relay never progresses.
             TickServerWorld();
         }
 #endif

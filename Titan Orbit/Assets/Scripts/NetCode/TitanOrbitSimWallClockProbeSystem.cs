@@ -77,42 +77,15 @@ namespace TitanOrbit.NetCode
                 return;
             nextRealtimeLog = realtime + 1.0;
 
-            double wallDt = realtime - lastRealtime;
-            double simDt = elapsed - lastElapsed;
-            int tickDelta = tick >= lastTick ? (int)(tick - lastTick) : 0;
-            float ratio = wallDt > 1e-6 ? (float)(simDt / wallDt) : 0f;
-            float tickHz = wallDt > 1e-6 ? (float)(tickDelta / wallDt) : 0f;
-
+            // Advance baseline only — disk I/O muted (basics30: MPPM + Editor file contention).
             lastRealtime = realtime;
             lastElapsed = elapsed;
             lastTick = tick;
-
-            try
-            {
-                string path = System.IO.Path.GetFullPath(
-                    System.IO.Path.Combine(Application.dataPath, "..", "..", "debug-6b87b4.log"));
-                long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                string line =
-                    "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H29\"," +
-                    "\"location\":\"TitanOrbitSimWallClockProbe." + worldName + "\"," +
-                    "\"message\":\"sim vs wall clock\"," +
-                    "\"data\":{\"world\":\"" + worldName + "\"" +
-                    ",\"wallDt\":" + wallDt.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"simDt\":" + simDt.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"ratio\":" + ratio.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"tickDelta\":" + tickDelta +
-                    ",\"tickHz\":" + tickHz.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"dt\":" + dt.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"simBatch\":" + simBatch +
-                    ",\"simHz\":" + simHz +
-                    ",\"maxSteps\":" + maxSteps +
-                    ",\"fps\":" + (Time.unscaledDeltaTime > 1e-6f
-                        ? (1f / Time.unscaledDeltaTime).ToString("F1", System.Globalization.CultureInfo.InvariantCulture)
-                        : "0") +
-                    "},\"timestamp\":" + ts + "}\n";
-                System.IO.File.AppendAllText(path, line);
-            }
-            catch { /* debug I/O only */ }
+            _ = dt;
+            _ = simBatch;
+            _ = maxSteps;
+            _ = simHz;
+            _ = worldName;
         }
         // #endregion
     }

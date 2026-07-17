@@ -22,9 +22,6 @@ namespace TitanOrbit.NetCode
     [UpdateAfter(typeof(NetworkTimeSystem))]
     public partial struct TitanOrbitIpcLocalHostTimeSyncSystem : ISystem
     {
-        /// <summary>Throttle NDJSON logs to once per second.</summary>
-        double _nextLogTime;
-
         /// <summary>Requires an in-game connection before correcting the timeline.</summary>
         public void OnCreate(ref SystemState state)
         {
@@ -95,32 +92,9 @@ namespace TitanOrbit.NetCode
             // spikes 13.5%. Force a full tick fraction on Local Host IPC (basics11 best).
             netTimeData.subPredictTargetTick = 1f;
 
-            // #region agent log
-            double now = SystemAPI.Time.ElapsedTime;
-            if (now >= _nextLogTime)
-            {
-                _nextLogTime = now + 1.0;
-                try
-                {
-                    string path = System.IO.Path.GetFullPath(
-                        System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "..", "debug-6b87b4.log"));
-                    long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    string line =
-                        "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H21\"," +
-                        "\"location\":\"TitanOrbitIpcLocalHostTimeSyncSystem.OnUpdate\"," +
-                        "\"message\":\"IPC tandem + full tick fraction\"," +
-                        "\"data\":{\"snap\":" + snap.TickIndexForValidTick +
-                        ",\"idealPredict\":" + idealPredict.TickIndexForValidTick +
-                        ",\"estimateBehindBefore\":" + estimateBehindSnap +
-                        ",\"predictDeltaBefore\":" + predictDeltaFromIdeal +
-                        ",\"subPredict\":" + netTimeData.subPredictTargetTick.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
-                        ",\"targetFrameRate\":" + UnityEngine.Application.targetFrameRate +
-                        "},\"timestamp\":" + ts + "}\n";
-                    System.IO.File.AppendAllText(path, line);
-                }
-                catch { /* debug I/O only */ }
-            }
-            // #endregion
+            // estimateBehindSnap / predictDeltaFromIdeal kept for easy probe re-enable.
+            _ = estimateBehindSnap;
+            _ = predictDeltaFromIdeal;
         }
     }
 }

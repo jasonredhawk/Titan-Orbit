@@ -7,6 +7,7 @@ namespace TitanOrbit.NetCode
     /// <summary>
     /// Debug probe: logs client/server tick alignment and transport type once per second.
     /// Used to verify Local Host uses IPC and that command age tracks InputTargetTick vs server tick.
+    /// Safe with 2+ server connections (MPPM Player 2) — does not call GetSingleton on acks.
     /// World: ClientSimulation. Temporary — session 6b87b4.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
@@ -100,55 +101,63 @@ namespace TitanOrbit.NetCode
                 if (timeQ.TryGetSingleton(out NetworkTime snt) && snt.ServerTick.IsValid)
                     serverTick = snt.ServerTick.TickIndexForValidTick;
 
-                // [NETCODE] Public ack fields on the server connection entity (not a world singleton).
+                // [NETCODE] Ack lives on each connection entity — with MPPM Player 2 there are 2+.
+                // GetSingleton throws InvalidOperationException when count != 1 (console spam on join).
                 using var ackQ = serverWorld.EntityManager.CreateEntityQuery(
                     ComponentType.ReadOnly<NetworkSnapshotAck>(),
                     ComponentType.ReadOnly<NetworkStreamConnection>());
-                if (ackQ.CalculateEntityCount() > 0)
+                int connectionCount = ackQ.CalculateEntityCount();
+                if (connectionCount == 1)
                 {
                     var sack = ackQ.GetSingleton<NetworkSnapshotAck>();
                     if (sack.LastReceivedSnapshotByRemote.IsValid)
                         lastSnapByRemote = sack.LastReceivedSnapshotByRemote.TickIndexForValidTick;
                 }
+                else if (connectionCount > 1)
+                {
+                    using var acks = ackQ.ToComponentDataArray<NetworkSnapshotAck>(Unity.Collections.Allocator.Temp);
+                    for (int i = 0; i < acks.Length; i++)
+                    {
+                        if (!acks[i].LastReceivedSnapshotByRemote.IsValid)
+                            continue;
+                        lastSnapByRemote = acks[i].LastReceivedSnapshotByRemote.TickIndexForValidTick;
+                        break;
+                    }
+                }
             }
 
             // #region agent log
-            try
-            {
-                string path = System.IO.Path.GetFullPath(
-                    System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "..", "debug-6b87b4.log"));
-                long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                string line =
-                    "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H29\"," +
-                    "\"location\":\"TitanOrbitTickAlignmentProbeSystem.OnUpdate\"," +
-                    "\"message\":\"tick alignment probe\"," +
-                    "\"data\":{\"transport\":\"" + transport +
-                    "\",\"clientTick\":" + clientTick +
-                    ",\"inputTick\":" + inputTick +
-                    ",\"serverTick\":" + serverTick +
-                    ",\"lastSnapByRemote\":" + lastSnapByRemote +
-                    ",\"lastSnapLocal\":" + lastSnapLocal +
-                    ",\"latestSnap\":" + latestSnap +
-                    ",\"latestSnapEst\":" + latestSnapEst +
-                    ",\"predictTarget\":" + predictTarget +
-                    ",\"snapAge\":" + snapAge.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"targetSlack\":" + targetSlack +
-                    ",\"cmdAge\":" + cmdAge.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"rttMs\":" + rtt.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"simBatch\":" + simBatch +
-                    ",\"tickFrac\":" + tickFrac.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"netSim\":" + (netSim ? "true" : "false") +
-                    ",\"clientBehindServer\":" + (serverTick > 0 && clientTick > 0 ? ((int)serverTick - (int)clientTick).ToString() : "na") +
-                    ",\"clientBehindSnap\":" + (lastSnapLocal > 0 && clientTick > 0 ? ((int)lastSnapLocal - (int)clientTick).ToString() : "na") +
-                    ",\"fps\":" + (UnityEngine.Time.unscaledDeltaTime > 1e-6f
-                        ? (1f / UnityEngine.Time.unscaledDeltaTime).ToString("F1", System.Globalization.CultureInfo.InvariantCulture)
-                        : "0") +
-                    ",\"targetFrameRate\":" + UnityEngine.Application.targetFrameRate +
-                    ",\"vSync\":" + UnityEngine.QualitySettings.vSyncCount +
-                    "},\"timestamp\":" + ts + "}\n";
-                System.IO.File.AppendAllText(path, line);
-            }
-            catch { /* debug I/O only */ }
+            // Shared FileShare writer (basics30) — one line/sec/client, no exclusive AppendAllText.
+            string data =
+                "{\"transport\":\"" + transport +
+                "\",\"hasServer\":" + (ClientServerBootstrap.HasServerWorld ? "true" : "false") +
+                ",\"clientTick\":" + clientTick +
+                ",\"inputTick\":" + inputTick +
+                ",\"serverTick\":" + serverTick +
+                ",\"lastSnapByRemote\":" + lastSnapByRemote +
+                ",\"lastSnapLocal\":" + lastSnapLocal +
+                ",\"latestSnap\":" + latestSnap +
+                ",\"latestSnapEst\":" + latestSnapEst +
+                ",\"predictTarget\":" + predictTarget +
+                ",\"predictLead\":" + (predictTarget > 0 && lastSnapLocal > 0
+                    ? ((int)predictTarget - (int)lastSnapLocal).ToString()
+                    : "na") +
+                ",\"snapAge\":" + snapAge.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
+                ",\"targetSlack\":" + targetSlack +
+                ",\"cmdAge\":" + cmdAge.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
+                ",\"rttMs\":" + rtt.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
+                ",\"simBatch\":" + simBatch +
+                ",\"tickFrac\":" + tickFrac.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
+                ",\"netSim\":" + (netSim ? "true" : "false") +
+                ",\"clientBehindServer\":" + (serverTick > 0 && clientTick > 0 ? ((int)serverTick - (int)clientTick).ToString() : "na") +
+                ",\"clientBehindSnap\":" + (lastSnapLocal > 0 && clientTick > 0 ? ((int)lastSnapLocal - (int)clientTick).ToString() : "na") +
+                ",\"fps\":" + (UnityEngine.Time.unscaledDeltaTime > 1e-6f
+                    ? (1f / UnityEngine.Time.unscaledDeltaTime).ToString("F1", System.Globalization.CultureInfo.InvariantCulture)
+                    : "0") +
+                ",\"targetFrameRate\":" + UnityEngine.Application.targetFrameRate +
+                ",\"vSync\":" + UnityEngine.QualitySettings.vSyncCount + "}";
+            TitanOrbit.Diagnostics.ShipFlightSmoothDebugLog.Write(
+                "H30", "TitanOrbitTickAlignmentProbeSystem.OnUpdate", "tick alignment probe", data);
             // #endregion
         }
     }

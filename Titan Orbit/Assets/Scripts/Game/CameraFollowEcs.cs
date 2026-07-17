@@ -1,4 +1,3 @@
-using TitanOrbit.Diagnostics;
 using TitanOrbit.Shared;
 using UnityEngine;
 
@@ -20,12 +19,6 @@ namespace TitanOrbit.Game
         [SerializeField] float gameplayFieldOfView = 45f;
 
         UnityEngine.Camera cam;
-
-        // #region agent log
-        Vector3 _dbgLastCam;
-        bool _dbgHasCam;
-        int _dbgCamLogBudget;
-        // #endregion
 
         /// <summary>[UNITY] Awake — cache camera and lock to top-down euler (90° pitch).</summary>
         void Awake()
@@ -50,26 +43,6 @@ namespace TitanOrbit.Game
 
             // --- Hard-lock to presentation pose (one smoothing owner: NetCode) ---
             Vector3 next = targetPos + offsetAtReferenceLevel;
-
-            // #region agent log
-            if (_dbgCamLogBudget <= 0)
-                _dbgCamLogBudget = 60;
-            float camDelta = _dbgHasCam ? Vector3.Distance(next, _dbgLastCam) : 0f;
-            float displayDelta = ShipDisplayPose.HasLocalPose
-                ? Vector3.Distance(targetPos, _dbgHasCam ? (_dbgLastCam - offsetAtReferenceLevel) : targetPos)
-                : -1f;
-            if (_dbgHasCam && camDelta > 0.0001f && _dbgCamLogBudget-- > 0)
-            {
-                string data =
-                    "{\"camDelta\":" + camDelta.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"displayDelta\":" + displayDelta.ToString("F4", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"frame\":" + Time.frameCount + "}";
-                ShipFlightSmoothDebugLog.Write("H4", "CameraFollowEcs.LateUpdate", "camera hard-lock step", data);
-            }
-            _dbgLastCam = next;
-            _dbgHasCam = true;
-            // #endregion
-
             transform.position = next;
             transform.rotation = Quaternion.Euler(90f, 0f, 0f);
         }
