@@ -83,6 +83,11 @@ namespace TitanOrbit.Game
         /// <summary>Guards VR / multi-camera double onBeforeRender in the same frame.</summary>
         int _lastVisualSyncFrame = -1;
 
+        // #region agent log
+        /// <summary>Next wall-clock time we may emit H27 hybrid-cost NDJSON (session 6b87b4).</summary>
+        float _dbgNextHybridCostLogTime;
+        // #endregion
+
         /// <summary>Local-player ship proxy on dedicated clients.</summary>
         public GameObject LocalPlayerShipProxy { get; private set; }
 
@@ -167,23 +172,48 @@ namespace TitanOrbit.Game
 
             var alive = new HashSet<Entity>();
 
+            // #region agent log
+            // H27: measure hybrid proxy cost — Editor Local Host stuck ~26–28 FPS (basics14);
+            // multi-tick stepping tracks that FPS, so we need the real CPU sink.
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            long t0 = 0, tShips = 0, tPlanets = 0, tAsteroids = 0, tGems = 0, tTransports = 0, tBullets = 0, tCleanup = 0;
+            // #endregion
+
             // --- Ship proxies (hybrid path only — Entities Graphics owns ship visuals when enabled) ---
             if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
             {
                 EnsureShipProxies(em);
                 SyncShipProxyTransforms(em, alive);
             }
+            // #region agent log
+            tShips = sw.ElapsedTicks;
+            // #endregion
 
             // --- World body proxies ---
             DrawPlanets(em, alive);
+            // #region agent log
+            tPlanets = sw.ElapsedTicks;
+            // #endregion
             DrawAsteroids(em, alive);
+            // #region agent log
+            tAsteroids = sw.ElapsedTicks;
+            // #endregion
             DrawGems(em, alive);
             GemVisualDiameterRegistry.RemoveStale(alive);
+            // #region agent log
+            tGems = sw.ElapsedTicks;
+            // #endregion
             DrawPeopleTransports(em, alive);
+            // #region agent log
+            tTransports = sw.ElapsedTicks;
+            // #endregion
 
             // --- Combat presentation ---
             ProcessBulletHitEvents(em);
             DrawBullets(em, alive);
+            // #region agent log
+            tBullets = sw.ElapsedTicks;
+            // #endregion
 
             // --- Tear down ghosts that despawned this frame ---
             var remove = new List<Entity>();
@@ -195,6 +225,42 @@ namespace TitanOrbit.Game
 
             foreach (var entity in remove)
                 DestroyProxy(entity);
+
+            // #region agent log
+            tCleanup = sw.ElapsedTicks;
+            sw.Stop();
+            if (Time.unscaledTime >= _dbgNextHybridCostLogTime)
+            {
+                _dbgNextHybridCostLogTime = Time.unscaledTime + 1f;
+                double tickToMs = 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                try
+                {
+                    string path = System.IO.Path.GetFullPath(
+                        System.IO.Path.Combine(Application.dataPath, "..", "..", "debug-6b87b4.log"));
+                    long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    float fps = Time.unscaledDeltaTime > 1e-6f ? 1f / Time.unscaledDeltaTime : 0f;
+                    string line =
+                        "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H29\"," +
+                        "\"location\":\"EcsWorldVisualizer.SyncAllProxies\"," +
+                        "\"message\":\"hybrid proxy cost\"," +
+                        "\"data\":{\"totalMs\":" + (tCleanup * tickToMs).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"shipsMs\":" + ((tShips - t0) * tickToMs).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"planetsMs\":" + ((tPlanets - tShips) * tickToMs).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"asteroidsMs\":" + ((tAsteroids - tPlanets) * tickToMs).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"gemsMs\":" + ((tGems - tAsteroids) * tickToMs).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"transportsMs\":" + ((tTransports - tGems) * tickToMs).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"bulletsMs\":" + ((tBullets - tTransports) * tickToMs).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"cleanupMs\":" + ((tCleanup - tBullets) * tickToMs).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"proxyCount\":" + _proxies.Count +
+                        ",\"useEgShips\":" + (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips ? "true" : "false") +
+                        ",\"world\":\"" + (world.Name ?? "?") + "\"" +
+                        ",\"fps\":" + fps.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
+                        "},\"timestamp\":" + ts + "}\n";
+                    System.IO.File.AppendAllText(path, line);
+                }
+                catch { /* debug I/O only */ }
+            }
+            // #endregion
         }
 
         /// <summary>Delegates world pick to <see cref="EcsGameBridge.GetVisualizationWorld"/>.</summary>

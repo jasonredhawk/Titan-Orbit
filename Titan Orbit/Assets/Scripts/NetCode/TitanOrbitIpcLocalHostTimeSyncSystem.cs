@@ -5,15 +5,14 @@ using Unity.Networking.Transport;
 namespace TitanOrbit.NetCode
 {
     /// <summary>
-    /// Local Host IPC time-sync: overwrite NetCode's predicted timeline every frame to
-    /// <c>lastReceivedSnapshot + 1</c>, matching <see cref="NetworkTimeSystem"/>'s documented IPC intent.
+    /// Local Host IPC tandem time-sync (proven by basics4–8).
     /// <para>
-    /// basics4: <see cref="NetworkTimeSystemData.latestSnapshotEstimate"/> lagged ~20 ticks behind
-    /// received snapshots → <c>cmdAge~24</c> and 12–15 tick hard snaps.
-    /// basics5: thresholded correction fixed the estimate lag (<c>cmdAge~7</c>, no 12+ batches) but
-    /// still fought NetworkTimeSystem with 3–4 tick jumps (<c>simBatch</c> stuck at 5–6).
-    /// This revision always applies the IPC tandem timeline after NetworkTimeSystem so the rate
-    /// manager never sees the drifted target.
+    /// Glues the snapshot estimate to <c>LastReceivedSnapshotByLocal</c> and forces
+    /// <c>predictTargetTick = lastSnapshot + 1</c> after <see cref="NetworkTimeSystem"/>.
+    /// basics8 (estimate-only) let <c>cmdAge</c> climb back to ~16 and restored 12–16 tick dumps.
+    /// basics6 (this overwrite) kept <c>bigBatch&gt;=10</c> at zero and <c>cmdAge~6.5</c>.
+    /// Forces <c>subPredictTargetTick = 1</c> on IPC (basics11); basics13 natural partials
+    /// raised spikes to 13.5% and simBatch~5 via the partial +1 pad — rejected.
     /// </para>
     /// World: ClientSimulation. Group: InitializationSystemGroup, after NetworkTimeSystem.
     /// Remote Socket clients: no-op.
@@ -35,13 +34,12 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Every Local Host IPC frame: force estimate + predict target to snapshot+1, and keep
-        /// <see cref="ClientTickRate.TargetCommandSlack"/> at 0.
+        /// IPC Local Host: estimate = snap, predictTarget = snap+1, TargetCommandSlack = 0,
+        /// EstimatedRTT = one simulation tick, and <c>subPredictTargetTick = 1</c> (full ticks).
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             // --- Local Host IPC only ---
-            // [NETCODE] Remote Socket clients must keep RTT / command-age feedback.
             if (!ClientServerBootstrap.HasServerWorld)
                 return;
 
@@ -54,23 +52,32 @@ namespace TitanOrbit.NetCode
                 !ack.LastReceivedSnapshotByLocal.IsValid)
                 return;
 
-            // --- Persist IPC ClientTickRate (NetCode only overrides a stack copy) ---
+            // --- Persist IPC ClientTickRate / RTT ---
             if (SystemAPI.TryGetSingletonRW<ClientTickRate>(out var clientTickRate))
             {
                 if (clientTickRate.ValueRO.TargetCommandSlack != 0)
                     clientTickRate.ValueRW.TargetCommandSlack = 0;
             }
 
-            ref var netTimeData = ref SystemAPI.GetSingletonRW<NetworkTimeSystemData>().ValueRW;
+            float oneTickMs = 1000f / TitanOrbitServerTickRateSystem.SimulationHz;
+            if (SystemAPI.TryGetSingletonRW<NetworkSnapshotAck>(out var ackRw))
+            {
+                if (ackRw.ValueRO.EstimatedRTT > oneTickMs * 1.5f || ackRw.ValueRO.DeviationRTT > 0.01f)
+                {
+                    ackRw.ValueRW.EstimatedRTT = oneTickMs;
+                    ackRw.ValueRW.DeviationRTT = 0f;
+                }
+            }
 
+            ref var netTimeData = ref SystemAPI.GetSingletonRW<NetworkTimeSystemData>().ValueRW;
             NetworkTick snap = ack.LastReceivedSnapshotByLocal;
 
-            // Diagnostics: how wrong NetworkTimeSystem was before we overwrite.
             int estimateBehindSnap = 0;
             if (netTimeData.latestSnapshotEstimate.IsValid)
                 estimateBehindSnap = snap.TicksSince(netTimeData.latestSnapshotEstimate);
 
-            // [NETCODE] IPC ideal: predictTargetTick = latestSnapshot + 1 (zero RTT tandem).
+            // [NETCODE] Documented IPC tandem: predictTarget = latestSnapshot + 1.
+            // Do not use ServerWorld tick lead — basics7 showed that increased pull size / spikes.
             NetworkTick idealPredict = snap;
             idealPredict.Add(1);
 
@@ -78,14 +85,15 @@ namespace TitanOrbit.NetCode
             if (netTimeData.predictTargetTick.IsValid)
                 predictDeltaFromIdeal = idealPredict.TicksSince(netTimeData.predictTargetTick);
 
-            // --- Always overwrite (basics5: thresholded snaps fought NetworkTimeSystem) ---
-            // NetcodeClientRateManager reads predictTargetTick after InitializationSystemGroup.
-            // Advancing only as fast as LastReceivedSnapshotByLocal avoids artificial 3–4 tick jumps.
+            // --- Tandem overwrite (basics6 — only approach that kept bigBatch at 0) ---
             netTimeData.latestSnapshot = snap;
             netTimeData.latestSnapshotEstimate = snap;
             netTimeData.latestSnapshotAge = 0;
             netTimeData.predictTargetTick = idealPredict;
-            netTimeData.subPredictTargetTick = 0f;
+            // [NETCODE] NetcodeClientRateManager does ++SimulationStepBatchSize when the previous
+            // frame's ServerTickFraction < 1. basics13 (package partials) confirmed: simBatch~5,
+            // spikes 13.5%. Force a full tick fraction on Local Host IPC (basics11 best).
+            netTimeData.subPredictTargetTick = 1f;
 
             // #region agent log
             double now = SystemAPI.Time.ElapsedTime;
@@ -98,13 +106,15 @@ namespace TitanOrbit.NetCode
                         System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "..", "debug-6b87b4.log"));
                     long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     string line =
-                        "{\"sessionId\":\"6b87b4\",\"runId\":\"basics6\",\"hypothesisId\":\"H14\"," +
+                        "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H21\"," +
                         "\"location\":\"TitanOrbitIpcLocalHostTimeSyncSystem.OnUpdate\"," +
-                        "\"message\":\"IPC tandem overwrite\"," +
+                        "\"message\":\"IPC tandem + full tick fraction\"," +
                         "\"data\":{\"snap\":" + snap.TickIndexForValidTick +
+                        ",\"idealPredict\":" + idealPredict.TickIndexForValidTick +
                         ",\"estimateBehindBefore\":" + estimateBehindSnap +
                         ",\"predictDeltaBefore\":" + predictDeltaFromIdeal +
-                        ",\"idealPredict\":" + idealPredict.TickIndexForValidTick +
+                        ",\"subPredict\":" + netTimeData.subPredictTargetTick.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
+                        ",\"targetFrameRate\":" + UnityEngine.Application.targetFrameRate +
                         "},\"timestamp\":" + ts + "}\n";
                     System.IO.File.AppendAllText(path, line);
                 }

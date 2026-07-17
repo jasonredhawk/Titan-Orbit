@@ -13,6 +13,7 @@ namespace TitanOrbit.NetCode
     [UpdateInGroup(typeof(SimulationSystemGroup), OrderLast = true)]
     public partial struct TitanOrbitTickAlignmentProbeSystem : ISystem
     {
+        /// <summary>Next realtimeSinceStartup deadline for a probe line (wall clock, not ElapsedTime).</summary>
         double _nextLogTime;
 
         /// <summary>Requires an in-game connection before probing.</summary>
@@ -21,10 +22,12 @@ namespace TitanOrbit.NetCode
             state.RequireForUpdate<NetworkStreamInGame>();
         }
 
-        /// <summary>Appends one NDJSON line per second with tick / RTT / transport fields.</summary>
+        /// <summary>Appends one NDJSON line per wall-clock second with tick / RTT / transport fields.</summary>
         public void OnUpdate(ref SystemState state)
         {
-            double now = SystemAPI.Time.ElapsedTime;
+            // [TITAN-ORBIT] Throttle on wall clock — ElapsedTime runs fast when sim is hot (basics17),
+            // which made probe intervals ~0.5s and confused H29 ratio math.
+            double now = UnityEngine.Time.realtimeSinceStartupAsDouble;
             if (now < _nextLogTime)
                 return;
             _nextLogTime = now + 1.0;
@@ -116,7 +119,7 @@ namespace TitanOrbit.NetCode
                     System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "..", "debug-6b87b4.log"));
                 long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 string line =
-                    "{\"sessionId\":\"6b87b4\",\"runId\":\"basics6\",\"hypothesisId\":\"H12\"," +
+                    "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H29\"," +
                     "\"location\":\"TitanOrbitTickAlignmentProbeSystem.OnUpdate\"," +
                     "\"message\":\"tick alignment probe\"," +
                     "\"data\":{\"transport\":\"" + transport +
@@ -137,6 +140,11 @@ namespace TitanOrbit.NetCode
                     ",\"netSim\":" + (netSim ? "true" : "false") +
                     ",\"clientBehindServer\":" + (serverTick > 0 && clientTick > 0 ? ((int)serverTick - (int)clientTick).ToString() : "na") +
                     ",\"clientBehindSnap\":" + (lastSnapLocal > 0 && clientTick > 0 ? ((int)lastSnapLocal - (int)clientTick).ToString() : "na") +
+                    ",\"fps\":" + (UnityEngine.Time.unscaledDeltaTime > 1e-6f
+                        ? (1f / UnityEngine.Time.unscaledDeltaTime).ToString("F1", System.Globalization.CultureInfo.InvariantCulture)
+                        : "0") +
+                    ",\"targetFrameRate\":" + UnityEngine.Application.targetFrameRate +
+                    ",\"vSync\":" + UnityEngine.QualitySettings.vSyncCount +
                     "},\"timestamp\":" + ts + "}\n";
                 System.IO.File.AppendAllText(path, line);
             }

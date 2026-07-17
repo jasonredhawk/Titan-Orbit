@@ -1,14 +1,13 @@
 using Unity.Entities;
 using Unity.NetCode;
+using UnityEngine;
 
 namespace TitanOrbit.NetCode
 {
     /// <summary>
     /// Minimal client tick tuning for predicted ship physics.
-    /// Only forces prediction / simulation step batch size = 1 so Unity Physics never runs with a
-    /// merged N×dt (a known chicken-head source). Leaves NetCode's default command-age / RTT
-    /// feedback alone — no patchwork latency inflation. World: ClientSimulation.
-    /// Group: InitializationSystemGroup (first).
+    /// Forces prediction step batch size = 1 (no merged N×dt physics) and matches server
+    /// 60 Hz / catch-up caps. World: ClientSimulation. Group: InitializationSystemGroup (first).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup), OrderFirst = true)]
@@ -42,7 +41,7 @@ namespace TitanOrbit.NetCode
             clientTickRate.MaxPredictionStepBatchSizeRepeatedTick = 1;
             state.EntityManager.SetComponentData(clientTickEntity, clientTickRate);
 
-            // --- ClientServerTickRate: same batch rule + enough steps to hold 60 Hz at ~30 FPS ---
+            // --- ClientServerTickRate: match server Hz + no tick batching ---
             ClientServerTickRate sharedTickRate;
             Entity sharedTickEntity;
             using (var query = state.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>()))
@@ -62,10 +61,11 @@ namespace TitanOrbit.NetCode
 
             sharedTickRate.SimulationTickRate = TitanOrbitServerTickRateSystem.SimulationHz;
             sharedTickRate.NetworkTickRate = TitanOrbitServerTickRateSystem.NetworkHz;
-            // [NETCODE] Discrete catch-up only — never merge ticks into one large physics dt.
-            // H13 (steps=16) did not reduce cmdAge/spikes on Local Host; keep 4 for ~15 FPS floor.
+            // [TITAN-ORBIT] Match server — MaxSteps=2 (basics17: 4 → ~120 Hz / 2× speed at ~30 FPS).
             sharedTickRate.MaxSimulationStepsPerFrame = TitanOrbitServerTickRateSystem.MaxStepsPerFrame;
             sharedTickRate.MaxSimulationStepBatchSize = 1;
+            sharedTickRate.PredictedFixedStepSimulationTickRatio = 1;
+            sharedTickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.Sleep;
             state.EntityManager.SetComponentData(sharedTickEntity, sharedTickRate);
 
             // #region agent log
@@ -75,14 +75,15 @@ namespace TitanOrbit.NetCode
                 try
                 {
                     string path = System.IO.Path.GetFullPath(
-                        System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "..", "debug-6b87b4.log"));
+                        System.IO.Path.Combine(Application.dataPath, "..", "..", "debug-6b87b4.log"));
                     long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                     string line =
-                        "{\"sessionId\":\"6b87b4\",\"runId\":\"basics6\",\"hypothesisId\":\"H13\"," +
+                        "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H29\"," +
                         "\"location\":\"TitanOrbitClientTickRateSystem.OnUpdate\"," +
-                        "\"message\":\"minimal tick rates (batch=1, steps=4)\"," +
+                        "\"message\":\"client tick rates\"," +
                         "\"data\":{\"predBatch\":1,\"maxBatch\":" + sharedTickRate.MaxSimulationStepBatchSize +
                         ",\"maxSteps\":" + sharedTickRate.MaxSimulationStepsPerFrame +
+                        ",\"simHz\":" + sharedTickRate.SimulationTickRate +
                         ",\"hasServer\":" + (ClientServerBootstrap.HasServerWorld ? "true" : "false") + "}," +
                         "\"timestamp\":" + ts + "}\n";
                     System.IO.File.AppendAllText(path, line);

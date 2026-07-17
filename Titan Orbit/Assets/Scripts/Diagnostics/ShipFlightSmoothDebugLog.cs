@@ -27,7 +27,7 @@ namespace TitanOrbit.Diagnostics
                 long ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 var sb = new StringBuilder(384);
                 sb.Append("{\"sessionId\":\"").Append(SessionId).Append("\",");
-                sb.Append("\"runId\":\"basics6\",");
+                sb.Append("\"runId\":\"basics18\",");
                 sb.Append("\"hypothesisId\":\"").Append(Escape(hypothesisId)).Append("\",");
                 sb.Append("\"location\":\"").Append(Escape(location)).Append("\",");
                 sb.Append("\"message\":\"").Append(Escape(message)).Append("\",");

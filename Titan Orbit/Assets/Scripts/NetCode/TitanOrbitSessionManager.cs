@@ -576,6 +576,12 @@ namespace TitanOrbit.NetCode
             }
 
             LastStatusMessage = "Starting local host...";
+            // --- Display rate vs sim rate ---
+            // [UNITY] Ask for 60 FPS (matched to sim Hz). basics14 (uncapped + vSync off) did not
+            // raise Editor Local Host FPS (~26) and worsened spikes — CPU-bound dual-world load.
+            if (Application.targetFrameRate != TitanOrbitServerTickRateSystem.SimulationHz)
+                Application.targetFrameRate = TitanOrbitServerTickRateSystem.SimulationHz;
+
             // --- Listen, then rebuild client drivers for IPC, then Connect ---
             // [NETCODE] RegisterClientDriver prefers IPC only when ServerWorld exists. Rebuild after
             // Listen so the client driver matches the in-process server (not stale UDP from earlier).
@@ -1805,7 +1811,7 @@ namespace TitanOrbit.NetCode
                     System.IO.Path.Combine(Application.dataPath, "..", "..", "debug-6b87b4.log"));
                 long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 string line =
-                    "{\"sessionId\":\"6b87b4\",\"runId\":\"basics6\",\"hypothesisId\":\"H11\"," +
+                    "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H11\"," +
                     "\"location\":\"TitanOrbitSessionManager.ConnectLocalClient\"," +
                     "\"message\":\"local client connect\"," +
                     "\"data\":{\"via\":\"" + connectVia +
