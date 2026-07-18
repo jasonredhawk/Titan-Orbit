@@ -23,6 +23,8 @@ namespace TitanOrbit.Game
     /// stayed ~58 because capped pull could not close a steady &gt;0.08u lag, so the spring ran
     /// every frame. H73 snaps when close (no shimmer) and only coasts on real pops.
     /// </para>
+    /// People-transport float poses are published afterward by
+    /// <see cref="PeopleTransportVisualSyncSystem"/> (not from raw ghost LT).
     /// World: ClientSimulation. Group: PresentationSystemGroup (OrderLast).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
@@ -96,14 +98,10 @@ namespace TitanOrbit.Game
                 PublishShip(entity, lt.ValueRO);
             }
 
-            // --- People transports (same presentation phase) ---
-            foreach (var (lt, entity) in SystemAPI
-                         .Query<RefRO<LocalTransform>>()
-                         .WithAll<PeopleTransportTag>()
-                         .WithEntityAccess())
-            {
-                GhostPresentationTransformCache.PublishPeopleTransport(entity, ToSnapshot(lt.ValueRO));
-            }
+            // --- People transports ---
+            // [TITAN-ORBIT] Owned by PeopleTransportVisualSyncSystem (UpdateAfter this): client magnet
+            // into the presentation cache. Publishing raw ghost LocalTransform here left proxies stuck
+            // at spawn when the transport ghost was Static/low-importance under MaxSendChunks.
 
             // --- Local owner: storm soft-track or raw sim follow ---
             PublishLocalShipDisplayPose(localShip);

@@ -12,8 +12,9 @@ namespace TitanOrbit.ECS.Editor
     /// Editor menu utility that creates ECS ghost prefabs (ship, planet, asteroid, gem, transport)
     /// and the GamePrefabsRegistry asset under Assets/Prefabs/ECS/. Run once per project setup.
     /// <para>
-    /// Map bodies must be interpolated-only with <c>HasOwner = false</c>. Authoring them like
-    /// owned predicted ships is incorrect and worsens join-time spawn cost on Windows clients.
+    /// Map bodies must be interpolated-only with <c>HasOwner = false</c> and Static optimize.
+    /// Short-lived movers (people transports) use Dynamic + higher Importance instead —
+    /// Static + Importance 1 starves mid-flight pose updates under MaxSendChunks.
     /// </para>
     /// </summary>
     public static class GhostPrefabCreator
@@ -98,11 +99,35 @@ namespace TitanOrbit.ECS.Editor
             ghost.MaxSendRate = 2;
         }
 
-        /// <summary>Creates PeopleTransportGhost (interpolated map ghost, no owner).</summary>
+        /// <summary>
+        /// Adds LinkedEntityGroup + GhostAuthoring for short-lived moving projectiles (people transports).
+        /// Dynamic + high importance so mid-flight LocalTransform keeps updating under MaxSendChunks caps.
+        /// Do NOT use <see cref="AddMapGhostRootComponents"/> — Static + Importance 1 starves pose updates.
+        /// </summary>
+        /// <param name="go">Root GameObject that will become the prefab.</param>
+        static void AddProjectileGhostRootComponents(GameObject go)
+        {
+            if (go.GetComponent<LinkedEntityGroupAuthoring>() == null)
+                go.AddComponent<LinkedEntityGroupAuthoring>();
+
+            // [NETCODE] Interpolated projectile — no owner, changes every tick (Dynamic).
+            var ghost = go.AddComponent<GhostAuthoringComponent>();
+            ghost.HasOwner = false;
+            ghost.SupportAutoCommandTarget = false;
+            ghost.DefaultGhostMode = GhostMode.Interpolated;
+            ghost.SupportedGhostModes = GhostModeMask.Interpolated;
+            ghost.OptimizationMode = GhostOptimizationMode.Dynamic;
+            ghost.RollbackPredictionOnStructuralChanges = false;
+            // Below ships (100), far above asteroids/planets (1) so flight poses win snapshot budget.
+            ghost.Importance = 60;
+            ghost.MaxSendRate = 0;
+        }
+
+        /// <summary>Creates PeopleTransportGhost (interpolated Dynamic projectile, no owner).</summary>
         static void CreatePeopleTransportPrefab()
         {
             var go = new GameObject("PeopleTransportGhost");
-            AddMapGhostRootComponents(go);
+            AddProjectileGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.PeopleTransportGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/PeopleTransportGhost.prefab");
             Object.DestroyImmediate(go);

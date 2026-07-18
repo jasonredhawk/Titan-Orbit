@@ -368,7 +368,8 @@ namespace TitanOrbit.ECS
         {
             float3 dir = ToroidalMapEcs.ToroidalDirection(spawnPos, targetPos, mapW, mapH);
             float cruise = PeopleTransportMath.ComputeCruiseSpeed(spawnPos, targetPos, isLoad, mapW, mapH);
-            float initialMul = isLoad ? 0.55f : 0.3f;
+            // [TITAN-ORBIT] Start near cruise — old 0.3–0.55× crawl made launches hard to see.
+            float initialMul = isLoad ? 0.92f : 0.85f;
             float3 velocity = dir * cruise * initialMul;
             float scale = PeopleTransportMath.GetVisualScaleMultiplier(amount) * 0.25f;
 
@@ -821,20 +822,23 @@ namespace TitanOrbit.ECS
         }
     }
 
-    /// <summary>Client-side magnet motion for people transport ghosts (server sim is authoritative).</summary>
+    /// <summary>
+    /// Legacy placeholder — do not re-enable.
+    /// Client float VFX is owned by <c>TitanOrbit.Game.PeopleTransportVisualSyncSystem</c>, which
+    /// magnet-steers into <c>GhostPresentationTransformCache</c> only and never writes ghost
+    /// <see cref="LocalTransform"/> (writing LT caused stepped/fighting visuals).
+    /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(PresentationSystemGroup))]
     public partial struct PeopleTransportPresentationMotionSystem : ISystem
     {
+        /// <summary>Keeps this legacy system permanently off — see class summary.</summary>
         public void OnCreate(ref SystemState state)
         {
-            // --- System OnCreate ---
-            // Disabled: re-simulating transport motion on the client overwrote NetCode's interpolated
-            // ghost LocalTransform every presentation frame, causing fast stepped visuals. The server
-            // sim is authoritative; clients display the interpolated ghost snapshot only.
             state.Enabled = false;
         }
 
+        /// <summary>No-op — presentation lives in PeopleTransportVisualSyncSystem.</summary>
         public void OnUpdate(ref SystemState state) { }
     }
 }

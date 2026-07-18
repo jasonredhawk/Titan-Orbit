@@ -21,7 +21,8 @@ namespace TitanOrbit.ECS
 
         protected override void OnUpdate()
         {
-            if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+            if (ClientJoinSettleCache.TransformQuarantine ||
+                !TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
                 return;
 
             float dt = SystemAPI.Time.DeltaTime;

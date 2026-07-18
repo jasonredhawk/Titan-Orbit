@@ -2,28 +2,21 @@
 
 ## Build check
 
-After **TitanOrbit → Build → Windows Client**:
-
 ```powershell
 $nc = [System.IO.File]::ReadAllText("BuildOutput/Client/windows/TitanOrbit_Data/Managed/Unity.NetCode.dll")
-"v9=$($nc.Contains('TO_GhostSpawn_v9_transformsAlwaysOn'))"
+"v10=$($nc.Contains('TO_GhostSpawn_v10_placeholderCap1'))"
 ```
 
-Must print `v9=True`.
+Must print `v10=True`.
 
 ## Player.log success path
 
 1. `[JoinSettle] Settling ON (hybrid/UI gate; TransformSystemGroup stays enabled).`
 2. `[MapSessionMeta] Client latched totals…`
-3. Optional: `[TO_GhostSpawn] Created N placeholders this frame…`
-4. `[JoinSettle] Settling OFF (Instantiates backlog idle).`
+3. `[TO_GhostSpawn] Placeholder cap: created 1/frame, re-queued N…` (throttled log)
+4. `[JoinSettle] Settling OFF…`
 5. **No** `Crash!!!`
-6. **No** `TransformSystemGroup RE-ENABLED` / `DISABLED` (those messages are obsolete and bad)
 
-## Failure signatures (regressions)
+## About "silent" crashes
 
-| Log | Meaning |
-|-----|---------|
-| `TransformSystemGroup RE-ENABLED` then `Crash!!!` | Someone reintroduced LTW disable during settle |
-| `MarkFromQuery` / `DrawAsteroids` / `MinimapEcsEntitySync` + `Crash!!!` | Map-body `ToEntityArray` during settle |
-| `baseline for a ghost we do not have` | Placeholder defer without ghost-map registration |
+`Crash!!!` is a native fault in Burst/`UnityPlayer`. It cannot be turned into a managed exception or soft disconnect after the fact. Prevention only (caps + settle gates + server tile size).

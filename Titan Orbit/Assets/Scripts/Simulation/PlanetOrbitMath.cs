@@ -4,7 +4,9 @@ using Unity.Mathematics;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Planet orbit ring geometry for gem-moon visuals and decorative level bands.
+    /// Planet orbit ring geometry for ship passive orbit, gem-moon placement, and decorative level bands.
+    /// Ring membership and <see cref="BuildOrbitMotorParams"/> use toroidal distance/offset so
+    /// wraparound seams stay correct while ships fly unbounded (see titan-orbit-toroidal-map rule).
     /// </summary>
     public static class PlanetOrbitMath
     {
@@ -161,6 +163,68 @@ namespace TitanOrbit.Simulation
             const float maxSize = 18f;
             float sizeNorm = math.clamp((planetSize - minSize) / (maxSize - minSize), 0f, 1f);
             return 1f + 0.7f * sizeNorm + 1.0f * radiusFactor;
+        }
+
+        /// <summary>
+        /// Builds desired tangential velocity and alignment rate for the passive ship orbit motor
+        /// when the hull is inside a planet orbit ring. Called from shared
+        /// <see cref="TitanOrbit.ECS.ShipPhysicsDriveLogic"/> before Unity Physics integrates position.
+        /// </summary>
+        /// <param name="shipPos">Ship world position (may be unbounded — do not Wrap).</param>
+        /// <param name="planetPos">Planet logical world position.</param>
+        /// <param name="planetSize">Planet uniform scale (world radius proxy).</param>
+        /// <param name="planetLevel">Planet level (ring radii currently ignore level; kept for API stability).</param>
+        /// <param name="shipMass">Movement mass — heavier ships settle into orbit slower.</param>
+        /// <param name="mapWidth">Toroidal map width from <c>MapStateSingleton</c>.</param>
+        /// <param name="mapHeight">Toroidal map height from <c>MapStateSingleton</c>.</param>
+        /// <param name="desiredVelocity">Clockwise tangential velocity plus radial correction toward ring centerline.</param>
+        /// <param name="alignRate">Lerp rate toward desired velocity (1/s), scaled by gravity / sqrt(mass).</param>
+        public static void BuildOrbitMotorParams(
+            float3 shipPos,
+            float3 planetPos,
+            float planetSize,
+            int planetLevel,
+            float shipMass,
+            float mapWidth,
+            float mapHeight,
+            out float3 desiredVelocity,
+            out float alignRate)
+        {
+            desiredVelocity = float3.zero;
+            alignRate = 0f;
+
+            // --- Toroidal distance into the annulus ---
+            // [TITAN-ORBIT] Never use Euclidean distance here — ships fly unbounded; planets stay in
+            // canonical tiles; seams must use shortest path (see titan-orbit-toroidal-map rule).
+            float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetPos, mapWidth, mapHeight);
+            if (dist < 0.01f)
+                return;
+
+            GetRingRadiiWorld(planetSize, planetLevel, out float innerWorld, out float outerWorld, out float centerWorld);
+            if (!IsInOrbitRing(dist, innerWorld, outerWorld))
+                return;
+
+            // --- Clockwise tangent from shortest planet→ship offset ---
+            // [TITAN-ORBIT] ShortestOffsetXZ(planet, ship) is the radial vector on the torus.
+            float3 toShip = ToroidalMapEcs.ShortestOffsetXZ(planetPos, shipPos, mapWidth, mapHeight);
+            float3 radial = math.normalize(new float3(toShip.x, 0f, toShip.z));
+            // Perpendicular on XZ: (x,z) → (z, -x) is clockwise when looking down +Y.
+            float3 tangent = new float3(radial.z, 0f, -radial.x);
+
+            float targetSpeed = GetTargetSpeed(planetSize, dist, innerWorld, outerWorld, centerWorld);
+
+            // --- Soft radial pull toward ring centerline (keeps ships from drifting out of band) ---
+            float radiusError = dist - centerWorld;
+            float3 radialCorrection = float3.zero;
+            if (math.abs(radiusError) > 0.02f)
+                radialCorrection = -radial * radiusError * OrbitRadiusPullStrength;
+
+            desiredVelocity = tangent * targetSpeed + radialCorrection;
+
+            // --- Align rate: stronger near centerline / large planets; slower for heavy hulls ---
+            float gravityFactor = GetGravityFactor(planetSize, dist, innerWorld, outerWorld, centerWorld);
+            float massFactor = math.sqrt(math.max(0.5f, shipMass));
+            alignRate = (OrbitCaptureResponsiveness * gravityFactor) / massFactor;
         }
     }
 }

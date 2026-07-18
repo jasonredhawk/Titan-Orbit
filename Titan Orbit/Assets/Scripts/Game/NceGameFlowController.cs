@@ -497,13 +497,8 @@ namespace TitanOrbit.Game
                     return;
                 }
 
+                // --- Empty list: show query failure or "no matches yet" ---
                 var kind = TitanOrbitLobbyService.LastOpenLobbyQueryKind;
-                if (kind == TitanOrbitLobbyService.OpenLobbyQueryResultKind.RateLimitBackoff)
-                {
-                    _statusMessage = "Lobby list rate-limited — wait a moment, then tap Join game → Refresh.";
-                    return;
-                }
-
                 if (kind != TitanOrbitLobbyService.OpenLobbyQueryResultKind.Ok)
                 {
                     string detail = TitanOrbitLobbyService.LastOpenLobbyQueryErrorDetail;

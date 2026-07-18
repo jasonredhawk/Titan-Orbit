@@ -124,20 +124,20 @@ namespace TitanOrbit.Game
         void Update()
         {
             // --- Per-frame refresh ---
+            // [UNITY] Runs every frame while the Join Game overlay is visible.
             if (!IsVisible || _refreshInProgress || _joinInProgress)
                 return;
 
+            // --- Auto-refresh lobby list ---
+            // [TITAN-ORBIT] Quiet background poll so new dedicated matches appear without tapping Refresh.
             _autoRefreshTimer += Time.unscaledDeltaTime;
-            if (TitanOrbitLobbyService.LobbyRateLimitRemainingSeconds > 0f)
-                return;
-
             if (_autoRefreshTimer >= AutoRefreshIntervalSeconds)
             {
                 _autoRefreshTimer = 0f;
                 _ = RefreshAsync(silent: true);
             }
 
-            // Live-update "5m" / "2h" labels without re-querying UGS.
+            // --- Live-update "5m" / "2h" age labels without re-querying UGS ---
             if (_cached.Count > 0)
             {
                 _durationRefreshTimer += Time.unscaledDeltaTime;
@@ -387,17 +387,7 @@ namespace TitanOrbit.Game
                     return;
                 }
 
-                if (kind == TitanOrbitLobbyService.OpenLobbyQueryResultKind.RateLimitBackoff)
-                {
-                    int waitSec = Mathf.Max(1, Mathf.CeilToInt(TitanOrbitLobbyService.LobbyRateLimitRemainingSeconds));
-                    if (!silent)
-                        SetStatus(_cached.Count > 0
-                            ? $"Rate-limited. Showing previous list. Retry in ~{waitSec}s."
-                            : $"Rate-limited. Wait ~{waitSec}s and tap Refresh.");
-                    RenderList();
-                    return;
-                }
-
+                // --- Empty list: branch on last query kind ---
                 if (kind == TitanOrbitLobbyService.OpenLobbyQueryResultKind.UnityServicesNotReady)
                 {
                     if (!silent)

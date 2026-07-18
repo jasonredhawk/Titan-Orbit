@@ -5,19 +5,30 @@ namespace TitanOrbit.Simulation
 {
     /// <summary>
     /// Magnet-steered people transport motion ported from legacy PeopleTransportProjectile.
-    /// Server <see cref="ECS.Systems.PeopleTransportSystem"/> and client
-    /// <see cref="Game.PeopleTransportVisualApplier"/> share these constants and steering math
-    /// so visuals match authoritative delivery timing. Uses toroidal helpers from
-    /// <see cref="Shared.ToroidalMapEcs"/> for wrap-aware paths.
+    /// Server people-transport systems and client <c>PeopleTransportVisualSyncSystem</c> share these
+    /// constants and steering math so cosmetic flight matches delivery timing. Uses toroidal helpers
+    /// from <see cref="ToroidalMapEcs"/> for wrap-aware paths.
     /// </summary>
     public static class PeopleTransportMath
     {
-        /// <summary>[TITAN-ORBIT] Target one-way visual travel time before duration multipliers.</summary>
-        public const float TargetVisualTravelSeconds = 3f;
-        public const float VisualTravelDurationMultiplier = 5f;
-        public const float VisualTravelSpeedBonus = 2.4f;
-        public const float SurfaceSpawnOutwardNudge = 0.45f;
-        public const float LoadMagnetSpeedMultiplier = 1.5f;
+        /// <summary>
+        /// [TITAN-ORBIT] Target one-way travel time (seconds) across the orbit-ring gap.
+        /// Kept short so spheres stay readable for the whole flight (old 3×5/2.4 ≈ 6.25s crawl
+        /// looked invisible until the close-range speed-up near the ship).
+        /// </summary>
+        public const float TargetVisualTravelSeconds = 1.35f;
+
+        /// <summary>Legacy multiplier — kept at 1 so EffectiveVisualTravelSeconds ≈ TargetVisualTravelSeconds.</summary>
+        public const float VisualTravelDurationMultiplier = 1f;
+
+        /// <summary>Legacy speed bonus — kept at 1 (paired with DurationMultiplier).</summary>
+        public const float VisualTravelSpeedBonus = 1f;
+
+        /// <summary>Outward nudge from planet surface when spawning a load transport (world units).</summary>
+        public const float SurfaceSpawnOutwardNudge = 1.1f;
+
+        /// <summary>Load flights cruise a bit faster than unload (toward the moving ship).</summary>
+        public const float LoadMagnetSpeedMultiplier = 1.35f;
         public const float MagnetCloseRangeWorld = 5f;
         public const float MagnetCloseRangeSpeedRatio = 18f / 11f;
         public const float ShipLoadCollectPadding = 0.22f;

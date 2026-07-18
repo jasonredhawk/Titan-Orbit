@@ -14,15 +14,15 @@ Canonical copy used by the Editor menu / pre-build guard:
 
 `tools/netcode-patches/GhostSpawnSystem.cs`
 
-## Current patch (`TO_GhostSpawn_v9_transformsAlwaysOn`)
+## Current patch (`TO_GhostSpawn_v10_placeholderCap1`)
 
 1. **Safe snapshot copy** — rebuild buffers instead of resize-in-place (`TryCopySnapshotBufferSafe`).
 2. **No Burst on `OnUpdate`** — managed Instantiates.
 3. **1 Instantiates/frame** from delayed queues.
-4. **Placeholders drain stock-style** (all GhostSpawnBuffer entries → placeholders same frame) so `SpawnedGhostEntityMap` stays valid. v7's placeholder defer+requeue caused `baseline for a ghost we do not have` + Windows crash.
-5. **Predicted join path** — delayed Instantiates via placeholders (still registered same frame).
-6. **Player.log** when creating ≥16 placeholders: `[TO_GhostSpawn] Created N placeholders…`
-7. **v9 companion rule:** project code must **never** disable `TransformSystemGroup` during join (re-enable after Instantiates ~700 asteroids = Burst LTW `Crash!!!`).
+4. **1 CreateEntity placeholder/frame** — requeue leftovers via `RequeueDeferredGhostSpawns`; each CreateEntity is still registered in `SpawnedGhostEntityMap` (v7 forgot that).
+5. **Predicted join path** — delayed Instantiates via placeholders.
+6. **Never disable TransformSystemGroup** for join (disable→re-enable = LTW flood Crash!!!).
+7. **Server companion:** distance `TileSize` must be ≪ map size (see `TitanOrbitGhostDistanceImportanceBootstrapSystem`).
 
 ## Companion project systems (not in this file)
 
@@ -36,4 +36,4 @@ Unity menu: **Titan Orbit → NetCode → Re-apply GhostSpawnSystem patch**
 
 After Windows client build, `Unity.NetCode.dll` must contain:
 
-`TO_GhostSpawn_v9_transformsAlwaysOn`
+`TO_GhostSpawn_v10_placeholderCap1`

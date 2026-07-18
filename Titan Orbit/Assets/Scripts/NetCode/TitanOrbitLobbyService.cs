@@ -50,19 +50,25 @@ namespace TitanOrbit.NetCode
 
         static readonly SemaphoreSlim LobbyApiGate = new SemaphoreSlim(1, 1);
         static readonly SemaphoreSlim OpenLobbyRefreshGate = new SemaphoreSlim(1, 1);
-        static DateTime s_NextLobbyQueryAllowedUtc = DateTime.MinValue;
 
+        /// <summary>
+        /// Result of the most recent open-lobby query.
+        /// Join Game / main-menu UI reads this when the returned list is empty to decide which status string to show.
+        /// </summary>
         public enum OpenLobbyQueryResultKind
         {
+            /// <summary>Query completed; list may still be empty if no dedicated matches are listed.</summary>
             Ok,
-            RateLimitBackoff,
+            /// <summary>UGS guest session or LobbyService.Instance was not ready yet.</summary>
             UnityServicesNotReady,
+            /// <summary>UGS threw or returned an unusable response; see <see cref="LastOpenLobbyQueryErrorDetail"/>.</summary>
             Error
         }
 
+        /// <summary>[TITAN-ORBIT] Kind of the last <see cref="QueryOpenLobbiesInternalAsync"/> outcome.</summary>
         public static OpenLobbyQueryResultKind LastOpenLobbyQueryKind { get; private set; }
+        /// <summary>[TITAN-ORBIT] Exception / failure detail for the last Error result (null when Ok / not ready).</summary>
         public static string LastOpenLobbyQueryErrorDetail { get; private set; }
-        public static float LobbyRateLimitRemainingSeconds { get; private set; }
 
         [Serializable]
         public class LobbySummary
@@ -700,10 +706,11 @@ namespace TitanOrbit.NetCode
             int emptyStabilizationAttempt,
             int maxEmptyStabilizationAttemptsOverride)
         {
+            // --- Reset last-query status for this attempt ---
+            // [TITAN-ORBIT] UI (Join Game / main menu) reads these when the list comes back empty.
             var results = new List<LobbySummary>();
             LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.Ok;
             LastOpenLobbyQueryErrorDetail = null;
-            LobbyRateLimitRemainingSeconds = 0f;
 
             if (emptyStabilizationAttempt == 0)
             {
@@ -711,15 +718,9 @@ namespace TitanOrbit.NetCode
                           " project=" + (Application.cloudProjectId ?? "(none)"));
             }
 
-            if (DateTime.UtcNow < s_NextLobbyQueryAllowedUtc)
-            {
-                LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.RateLimitBackoff;
-                LobbyRateLimitRemainingSeconds = (float)(s_NextLobbyQueryAllowedUtc - DateTime.UtcNow).TotalSeconds;
-                return results;
-            }
-
             try
             {
+                // --- Ensure UGS guest session + Lobby API ---
                 if (!await UnityGameServicesBootstrap.EnsureGuestSessionForOnlineAsync())
                 {
                     LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.UnityServicesNotReady;
@@ -732,6 +733,9 @@ namespace TitanOrbit.NetCode
                     return results;
                 }
 
+                // --- One UGS QueryLobbies call (serialized by LobbyApiGate) ---
+                // [STANDARD] Semaphore prevents overlapping Lobby API calls from menu + Join Game.
+                // Intentional: no client-side rate-limit lockout — Refresh may retry immediately.
                 await AcquireLobbyApiGateAsync();
                 QueryResponse response;
                 try
@@ -751,7 +755,6 @@ namespace TitanOrbit.NetCode
                     LobbyApiGate.Release();
                 }
 
-                s_NextLobbyQueryAllowedUtc = DateTime.MinValue;
                 if (response?.Results == null)
                 {
                     LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.Error;
@@ -767,18 +770,9 @@ namespace TitanOrbit.NetCode
             }
             catch (Exception e)
             {
-                if (IsLikelyLobbyRateLimitException(e))
-                {
-                    s_NextLobbyQueryAllowedUtc = DateTime.UtcNow.AddSeconds(12);
-                    LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.RateLimitBackoff;
-                    LobbyRateLimitRemainingSeconds = 12f;
-                }
-                else
-                {
-                    LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.Error;
-                    LastOpenLobbyQueryErrorDetail = e.Message ?? e.GetType().Name;
-                }
-
+                // --- Surface failure for UI; do not block subsequent Refresh ---
+                LastOpenLobbyQueryKind = OpenLobbyQueryResultKind.Error;
+                LastOpenLobbyQueryErrorDetail = e.Message ?? e.GetType().Name;
                 Debug.LogWarning("[TitanOrbitLobbyService] QueryOpenLobbiesAsync failed: " + e.Message);
             }
 
@@ -999,18 +993,6 @@ namespace TitanOrbit.NetCode
             }
 
             return values;
-        }
-
-        static bool IsLikelyLobbyRateLimitException(Exception e)
-        {
-            // --- IsLikelyLobbyRateLimitException ---
-            if (e == null) return false;
-            if (e is LobbyServiceException lse && lse.Reason == LobbyExceptionReason.RateLimited)
-                return true;
-            string m = e.Message ?? string.Empty;
-            return string.Equals(m, "Too Many Requests", StringComparison.OrdinalIgnoreCase) ||
-                   m.IndexOf("429", StringComparison.Ordinal) >= 0 ||
-                   m.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         static async Task<T> WithLobbyApiTimeoutAsync<T>(Task<T> task, TimeSpan timeout, string operationName)

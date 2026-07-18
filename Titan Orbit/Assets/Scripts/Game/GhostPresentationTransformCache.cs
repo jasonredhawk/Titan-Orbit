@@ -30,6 +30,12 @@ namespace TitanOrbit.Game
         /// </summary>
         static readonly Dictionary<Entity, Snapshot> LastShipSnapshots = new Dictionary<Entity, Snapshot>();
 
+        /// <summary>
+        /// Last people-transport pose — LateUpdate / onBeforeRender can read one frame late without
+        /// falling back to a stuck spawn LocalTransform (which hid mid-flight spheres).
+        /// </summary>
+        static readonly Dictionary<Entity, Snapshot> LastPeopleTransportSnapshots = new Dictionary<Entity, Snapshot>();
+
         /// <summary>Unity frame index when BeginPublish last ran — detects stale reads.</summary>
         static int _publishFrame = -1;
 
@@ -42,7 +48,7 @@ namespace TitanOrbit.Game
         /// </summary>
         internal static void BeginPublish(int frame)
         {
-            // --- Reset dictionaries each presentation frame ---
+            // --- Reset this-frame dictionaries; keep Last* so mid-flight poses survive a missed publish ---
             _publishFrame = frame;
             Ships.Clear();
             PeopleTransports.Clear();
@@ -59,6 +65,14 @@ namespace TitanOrbit.Game
         internal static void PublishPeopleTransport(Entity entity, in Snapshot snapshot)
         {
             PeopleTransports[entity] = snapshot;
+            LastPeopleTransportSnapshots[entity] = snapshot;
+        }
+
+        /// <summary>Drops last-known pose when a transport despawns (stops unbounded Last* growth).</summary>
+        internal static void ForgetPeopleTransport(Entity entity)
+        {
+            PeopleTransports.Remove(entity);
+            LastPeopleTransportSnapshots.Remove(entity);
         }
 
         /// <summary>
@@ -74,9 +88,13 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Lookup people-transport presentation pose by entity.
+        /// Lookup people-transport presentation pose by entity (this frame, else last published).
         /// </summary>
-        internal static bool TryGetPeopleTransport(Entity entity, out Snapshot snapshot) =>
-            PeopleTransports.TryGetValue(entity, out snapshot);
+        internal static bool TryGetPeopleTransport(Entity entity, out Snapshot snapshot)
+        {
+            if (PeopleTransports.TryGetValue(entity, out snapshot))
+                return true;
+            return LastPeopleTransportSnapshots.TryGetValue(entity, out snapshot);
+        }
     }
 }

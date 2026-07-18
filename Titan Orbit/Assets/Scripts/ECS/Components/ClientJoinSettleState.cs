@@ -5,17 +5,14 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// [TITAN-ORBIT] Client singleton that tracks late-join Instantiates settle.
     /// While <see cref="Settling"/> is non-zero, hybrid/UI code must skip full map-body
-    /// <c>ToEntityArray</c> scans (minimap, MarkFromQuery, DrawAsteroids). GameObject Instantiates
-    /// stay rate-limited via the Pending drain.
+    /// <c>ToEntityArray</c> scans. GameObject Instantiates stay rate-limited via Pending drain.
     /// <para>
-    /// Do NOT disable <c>TransformSystemGroup</c> from this flag — re-enabling after Instantiates
-    /// hundreds of asteroids hard-crashes Burst LocalToWorld on Windows (Player.log 2026-07-18).
-    /// Instantiates safety is GhostSpawn Instantiates=1/frame with transforms always on.
+    /// Player.log proved <see cref="Unity.Transforms.TransformSystemGroup"/> RE-ENABLED after
+    /// Instantiates hundreds of asteroids → immediate Burst <c>Crash!!!</c>. So while in-game the
+    /// transform group stays off (<see cref="ClientJoinSettleCache.TransformQuarantine"/>) and
+    /// ships render as hybrid GameObject proxies instead of Entities Graphics.
     /// </para>
-    /// <para>
     /// Written by <see cref="TitanOrbitClientJoinTransformGateSystem"/>.
-    /// Read by moon collider ensure and <c>EcsWorldVisualizer</c> (via <see cref="ClientJoinSettleCache"/>).
-    /// </para>
     /// </summary>
     public struct ClientJoinSettleState : IComponentData
     {
@@ -33,32 +30,35 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [HYBRID] Managed mirror of <see cref="ClientJoinSettleState.Settling"/> for MonoBehaviours
-    /// that should not query ECS every draw path. Updated each frame by the settle system.
+    /// [HYBRID] Managed mirror of settle / transform quarantine for MonoBehaviours.
     /// </summary>
     public static class ClientJoinSettleCache
     {
-        /// <summary>True while GhostSpawn Instantiates backlog is active — gate hybrid/UI map scans.</summary>
+        /// <summary>True while GhostSpawn Instantiates backlog is active.</summary>
         public static bool Settling { get; private set; }
 
-        /// <summary>Frames in-game this settle session (diagnostic).</summary>
+        /// <summary>
+        /// True while in-game with TransformSystemGroup forced off (Windows late-join safety).
+        /// When true, ships must use hybrid GO proxies — Entities Graphics needs Parent/LTW.
+        /// </summary>
+        public static bool TransformQuarantine { get; private set; }
+
+        /// <summary>Frames in-game this session (diagnostic).</summary>
         public static int InGameFrames { get; private set; }
 
-        /// <summary>
-        /// Called by <see cref="TitanOrbitClientJoinTransformGateSystem"/> after updating the singleton.
-        /// </summary>
-        /// <param name="settling">Whether join settle is active.</param>
-        /// <param name="inGameFrames">In-game frame counter.</param>
-        public static void Set(bool settling, int inGameFrames)
+        /// <summary>Updates settle + quarantine flags from the join gate system.</summary>
+        public static void Set(bool settling, bool transformQuarantine, int inGameFrames)
         {
             Settling = settling;
+            TransformQuarantine = transformQuarantine;
             InGameFrames = inGameFrames;
         }
 
-        /// <summary>Clears the cache when leaving a session / not in-game.</summary>
+        /// <summary>Clears when leaving a session / not in-game.</summary>
         public static void Clear()
         {
             Settling = false;
+            TransformQuarantine = false;
             InGameFrames = 0;
         }
     }

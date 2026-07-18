@@ -24,9 +24,11 @@ namespace TitanOrbit.NetCode
     {
         /// <summary>
         /// Tile size in world units for <see cref="GhostDistanceData"/>.
-        /// Large enough for space flight; small enough to split dense asteroid fields.
+        /// Must be much smaller than the map: with TileSize 512 and a ~340 map, the entire
+        /// asteroid field was ONE chunk — MaxSendChunks=1 still delivered ~56 CreateEntity
+        /// placeholders in a single client frame (Windows Burst Crash!!! 2026-07-18).
         /// </summary>
-        public const int TileSizeWorld = 512;
+        public const int TileSizeWorld = 48;
 
         /// <summary>True after GhostImportance + GhostDistanceData singletons exist.</summary>
         bool _bootstrapped;

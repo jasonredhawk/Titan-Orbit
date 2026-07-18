@@ -47,6 +47,11 @@ namespace TitanOrbit.ECS
 
         protected override void OnUpdate()
         {
+            // [TITAN-ORBIT] Quarantine: TransformSystemGroup off — EG ship meshes stay invisible;
+            // EcsWorldVisualizer hybrid proxies own the hull instead.
+            if (ClientJoinSettleCache.TransformQuarantine)
+                return;
+
             if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
                 return;
 

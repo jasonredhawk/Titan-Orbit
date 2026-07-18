@@ -23,7 +23,9 @@ namespace TitanOrbit.Game
     {
         protected override void OnUpdate()
         {
-            if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+            // Hybrid mounts when EG is off, or when transform quarantine forces GO ship proxies.
+            if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips &&
+                !ClientJoinSettleCache.TransformQuarantine)
                 return;
 
             foreach (var (owner, entity) in SystemAPI.Query<RefRO<GhostOwner>>()

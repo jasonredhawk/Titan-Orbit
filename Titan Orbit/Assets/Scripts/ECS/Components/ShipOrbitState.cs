@@ -4,9 +4,11 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// [NETCODE] Replicated orbit context for HUD indicators and gameplay queries. Updated each motor
-    /// tick by ship movement logic when the ship is inside a planet's orbit ring. Ghost-serialized so
-    /// clients show orbit UI and tractor-beam range bonuses without reading raw sim in MonoBehaviour.
+    /// [NETCODE] Replicated orbit context for HUD indicators and gameplay queries. Updated each
+    /// predicted motor tick by <see cref="ShipPhysicsDriveLogic"/> when the ship is inside a
+    /// planet's orbit ring (toroidal distance). Ghost-serialized so clients show orbit UI,
+    /// tractor-beam range bonuses, and so server <see cref="PeopleTransportDispatchSystem"/> can
+    /// dwell before load/unload — without MonoBehaviour reading raw sim.
     /// Paired with <see cref="ShipMoonDockState"/> for moon-specific actions inside the ring.
     /// </summary>
     public struct ShipOrbitState : IComponentData

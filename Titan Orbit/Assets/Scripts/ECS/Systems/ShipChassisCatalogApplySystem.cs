@@ -24,7 +24,8 @@ namespace TitanOrbit.ECS
 
         public void OnUpdate(ref SystemState state)
         {
-            if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+            if (ClientJoinSettleCache.TransformQuarantine ||
+                !TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
                 return;
 
             var catalog = ShipChassisVisualCatalog.Instance;

@@ -211,27 +211,23 @@ namespace TitanOrbit.Game
             ToroidalDisplay.SyncMapSize(em);
             _hasToroidalReference = ToroidalDisplay.TryGetReferencePosition(out _toroidalReference);
 
-            // --- Integrated join load path ---
-            // [TITAN-ORBIT] Never ToEntityArray-all asteroids during settle (Crash!!!).
-            // Pending is baked on client map ghosts; we Instantiates GOs from that small queue.
-            // MapBodyHybridVisualRequestSystem only marks orphans AFTER settle.
-            // Loading progress = MapLoadingProxyCount (planet/asteroid GOs / server meta N).
+            // --- Map bodies: Pending drain ONLY (never ToEntityArray-all asteroids) ---
             SyncExistingWorldBodyProxyTransforms(em, alive);
             DrainPendingWorldBodyProxies(em, alive);
 
+            // --- Ships ---
+            // [TITAN-ORBIT] TransformQuarantine: TransformSystemGroup stays OFF (RE-ENABLE Crash!!!).
+            // Entities Graphics needs Parent/LTW — use hybrid ship GO proxies instead.
+            bool hybridShips = ClientJoinSettleCache.TransformQuarantine ||
+                               !TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips;
+            if (hybridShips)
+            {
+                EnsureShipProxies(em);
+                SyncShipProxyTransforms(em, alive);
+            }
+
             if (!settling)
             {
-                // --- Full sync after settle (orphans / people transports / combat) ---
-                if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
-                {
-                    EnsureShipProxies(em);
-                    SyncShipProxyTransforms(em, alive);
-                }
-
-                DrawPlanets(em, alive);
-                DrawAsteroids(em, alive);
-                DrawGems(em, alive);
-                GemVisualDiameterRegistry.RemoveStale(alive);
                 DrawPeopleTransports(em, alive);
                 ProcessBulletHitEvents(em);
                 DrawBullets(em, alive);
@@ -239,14 +235,13 @@ namespace TitanOrbit.Game
                 var remove = new List<Entity>();
                 foreach (var kv in _proxies)
                 {
-                    if (!alive.Contains(kv.Key))
+                    if (kv.Value == null || !em.Exists(kv.Key))
                         remove.Add(kv.Key);
                 }
 
                 foreach (var entity in remove)
                     DestroyProxy(entity);
 
-                // --- Drop hysteresis for entities no longer proxied ---
                 ToroidalDisplay.PruneStale(alive);
             }
 

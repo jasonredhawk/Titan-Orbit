@@ -1,4 +1,6 @@
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
+using Unity.Collections;
 using Unity.Mathematics;
 using Unity.Physics;
 using Unity.Transforms;
@@ -11,13 +13,16 @@ namespace TitanOrbit.ECS
     /// same inputs must produce the same velocity/yaw so reconciliation stays quiet.
     /// [PHYSICS] Drive writes <see cref="PhysicsVelocity"/> and yaw only; Unity Physics integrates
     /// position and resolves hull collisions afterward. The next tick <b>reads</b> post-collision
-    /// velocity (bounce is not overwritten blindly). Paired with <see cref="ShipPhysicsDriveSystem"/>
+    /// velocity (bounce is not overwritten blindly).
+    /// [TITAN-ORBIT] Also detects planet orbit rings (toroidal distance), blends passive orbit
+    /// velocity when coasting, writes <see cref="ShipOrbitState"/> for people-transport dwell /
+    /// HUD, and applies enemy moon shield repel. Paired with <see cref="ShipPhysicsDriveSystem"/>
     /// and <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
     /// </summary>
     public static class ShipPhysicsDriveLogic
     {
         /// <summary>
-        /// Soft coast drag when not thrusting or braking (high friction / low agility).
+        /// Soft coast drag when not thrusting, braking, or in passive orbit (high friction / low agility).
         /// Units: deceleration in world-units/s² applied against velocity.
         /// </summary>
         const float CoastFriction = 4.5f;
@@ -26,6 +31,19 @@ namespace TitanOrbit.ECS
         /// Applies player input before <see cref="Unity.Physics.Systems.PhysicsSystemGroup"/>.
         /// Starts from the previous physics step's linear velocity so asteroid bounces carry forward.
         /// </summary>
+        /// <param name="input">Predicted ship input for this tick.</param>
+        /// <param name="motor">Designer motor caps (thrust, max speed, turn rate).</param>
+        /// <param name="moonDock">Moon landing progress — pins hull when fully landed without thrust.</param>
+        /// <param name="shipState">Death / team-select / mass contributors (HP, gems).</param>
+        /// <param name="physicsVelocity">Read/write linear velocity handed to Unity Physics.</param>
+        /// <param name="physicsDamping">Cleared so package damping cannot fight motor curves.</param>
+        /// <param name="transform">Position (read) and yaw (write); position integration is physics-owned.</param>
+        /// <param name="orbitState">Replicated orbit ring context for HUD and people transports.</param>
+        /// <param name="planets">Main-thread planet snapshots shared by all ships this tick.</param>
+        /// <param name="dt">Fixed prediction step delta time.</param>
+        /// <param name="mapW">Toroidal map width.</param>
+        /// <param name="mapH">Toroidal map height.</param>
+        /// <param name="elapsedSeconds">Simulation elapsed time for moon phase / shield repel.</param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
@@ -34,7 +52,12 @@ namespace TitanOrbit.ECS
             ref PhysicsVelocity physicsVelocity,
             ref PhysicsDamping physicsDamping,
             ref LocalTransform transform,
-            float dt)
+            ref ShipOrbitState orbitState,
+            in NativeArray<PlanetMotorSnapshot> planets,
+            float dt,
+            float mapW,
+            float mapH,
+            double elapsedSeconds)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -45,16 +68,19 @@ namespace TitanOrbit.ECS
             {
                 physicsVelocity = PhysicsVelocity.Zero;
                 physicsDamping = default;
+                orbitState = default;
                 return;
             }
 
             // --- Landed moon dock — hold still until thrust undocks ---
+            // [TITAN-ORBIT] ShipMoonDockSystem owns landing progress; motor yields and clears orbit.
             if (moonDock.MoonPlanetId != 0 &&
                 moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold &&
                 !input.Thrust)
             {
                 physicsVelocity = PhysicsVelocity.Zero;
                 physicsDamping = default;
+                orbitState = default;
                 return;
             }
 
@@ -71,22 +97,64 @@ namespace TitanOrbit.ECS
             AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
             TryRotateTowardAim(ref transform, in aimWorldXz, motor.RotationSpeed, dt);
 
+            // --- Orbit ring detection (toroidal) ---
+            // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,
+            // load/unload never starts. Thrust or fire cancels passive orbit motor only — ring flag
+            // stays true while still inside the annulus (tractor / HUD / dwell can still see it).
+            bool inOrbitRing = TryFindOrbitPlanet(
+                transform.Position, mapW, mapH, in planets,
+                out PlanetState orbitPlanetState, out LocalTransform orbitPlanetTransform);
+            bool useOrbit = inOrbitRing && !input.Thrust && !input.Fire.IsSet;
+
             // --- Start from post-collision velocity (Unity Physics may have bounced us last tick) ---
             float3 vel = physicsVelocity.Linear;
             vel.y = 0f;
 
-            ApplyThrustCoastAndBrakes(
-                ref vel,
-                in transform.Rotation,
-                motor.EngineThrust,
-                motor.MaxSpeed,
-                motor.BrakeDeceleration,
-                movementMass,
-                input.Thrust,
-                input.SpaceBrakes,
-                dt);
+            if (useOrbit)
+            {
+                // --- Passive orbit blend (replaces thrust/coast this tick) ---
+                // [TITAN-ORBIT] Continuous lerp toward tangential velocity — Starblast pillar 3.
+                PlanetOrbitMath.BuildOrbitMotorParams(
+                    transform.Position,
+                    orbitPlanetTransform.Position,
+                    orbitPlanetTransform.Scale,
+                    orbitPlanetState.PlanetLevel,
+                    movementMass,
+                    mapW,
+                    mapH,
+                    out float3 desiredVel,
+                    out float alignRate);
+                desiredVel.y = 0f;
+                float t = math.saturate(alignRate * dt);
+                vel = math.lerp(vel, desiredVel, t);
+                vel.y = 0f;
+            }
+            else
+            {
+                ApplyThrustCoastAndBrakes(
+                    ref vel,
+                    in transform.Rotation,
+                    motor.EngineThrust,
+                    motor.MaxSpeed,
+                    motor.BrakeDeceleration,
+                    movementMass,
+                    input.Thrust,
+                    input.SpaceBrakes,
+                    dt);
 
-            ApplyRecoilDecay(ref vel, motor.MaxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
+                ApplyRecoilDecay(ref vel, motor.MaxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
+            }
+
+            // --- Enemy moon shield repel (deterministic; moons have no physics colliders) ---
+            // [TITAN-ORBIT] Must run on client prediction + server — never client-only VFX push.
+            PlanetGemMoonCombatLogic.ApplyShieldRepelIfNeeded(
+                transform.Position,
+                ref vel,
+                shipState.Team,
+                in planets,
+                mapW,
+                mapH,
+                elapsedSeconds);
 
             vel.y = 0f;
             physicsVelocity = new PhysicsVelocity
@@ -97,6 +165,57 @@ namespace TitanOrbit.ECS
 
             // [PHYSICS] Motor owns cruise feel — clear package damping so it cannot fight our curves.
             physicsDamping = default;
+
+            // --- Replicate orbit context for HUD, tractor beam, people transports ---
+            orbitState = new ShipOrbitState
+            {
+                OrbitPlanetId = inOrbitRing ? orbitPlanetState.PlanetId : 0,
+                InOrbitRing = inOrbitRing,
+                UsingOrbitMotor = useOrbit,
+            };
+        }
+
+        /// <summary>
+        /// Finds the nearest planet whose orbit ring contains the ship (toroidal distance).
+        /// When multiple rings overlap, the closer planet wins.
+        /// </summary>
+        static bool TryFindOrbitPlanet(
+            in float3 shipPos,
+            float mapW,
+            float mapH,
+            in NativeArray<PlanetMotorSnapshot> planets,
+            out PlanetState planetState,
+            out LocalTransform planetTransform)
+        {
+            planetState = default;
+            planetTransform = default;
+
+            float bestDist = float.MaxValue;
+            bool found = false;
+
+            for (int i = 0; i < planets.Length; i++)
+            {
+                var snapshot = planets[i];
+                var state = snapshot.Planet;
+                var planetXform = snapshot.Transform;
+                float planetSize = math.max(0.5f, planetXform.Scale);
+                PlanetOrbitMath.GetRingRadiiWorld(planetSize, state.PlanetLevel, out float inner, out float outer, out _);
+
+                // [TITAN-ORBIT] Toroidal distance — Euclidean would fail across map seams.
+                float dist = ToroidalMapEcs.ToroidalDistance(shipPos, planetXform.Position, mapW, mapH);
+                if (!PlanetOrbitMath.IsInOrbitRing(dist, inner, outer))
+                    continue;
+
+                if (dist >= bestDist)
+                    continue;
+
+                bestDist = dist;
+                planetState = state;
+                planetTransform = planetXform;
+                found = true;
+            }
+
+            return found;
         }
 
         /// <summary>
@@ -127,6 +246,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Continuous thrust, coast friction, and space-brake deceleration on the XZ plane.
+        /// Skipped entirely on ticks where passive orbit motor owns velocity.
         /// </summary>
         static void ApplyThrustCoastAndBrakes(
             ref float3 vel,

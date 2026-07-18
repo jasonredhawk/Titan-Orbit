@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Simulation;
 using Unity.Mathematics;
@@ -6,99 +5,95 @@ using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Instantiates legacy PeopleTransport prefab visuals for ECS ghost proxies.</summary>
+    /// <summary>
+    /// Lightweight people-transport GameObject proxies for ECS ghosts.
+    /// Uses a shared primitive + shared materials (not the heavy legacy PeopleTransport prefab)
+    /// so spawning many load/unload spheres does not hitch the main thread.
+    /// </summary>
     public static class PeopleTransportVisualApplier
     {
-        const string DefaultPrefabPath = "Assets/Prefabs/PeopleTransport.prefab";
-        const float BasePrefabScale = 0.25f;
+        /// <summary>Base world scale before amount multiplier (matches prior ~0.25 prefab root).</summary>
+        const float BasePrefabScale = 0.28f;
 
-        static readonly HashSet<string> StripComponentNames = new HashSet<string>
-        {
-            "NetworkObject",
-            "NetworkBehaviour",
-            "NetworkTransform",
-            "NetworkRigidbody",
-            "ToroidalRenderer",
-            "PeopleTransportProjectile",
-        };
+        /// <summary>Hidden template sphere — cloned with Instantiate (cheap vs prefab + Strip).</summary>
+        static GameObject s_Template;
 
+        /// <summary>Shared materials per <see cref="TeamId"/> — avoids renderer.material instancing per spawn.</summary>
+        static readonly Material[] s_TeamMaterials = new Material[6];
+
+        /// <summary>
+        /// Legacy loader kept for EcsWorldVisualizer serialized field fallback — prefer CreateVisual
+        /// which ignores the heavy prefab and uses the lightweight template.
+        /// </summary>
         public static GameObject LoadDefaultPrefab()
         {
-            // --- LoadDefaultPrefab ---
 #if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(DefaultPrefabPath);
+            return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/PeopleTransport.prefab");
 #else
             return Resources.Load<GameObject>("PeopleTransport");
 #endif
         }
 
+        /// <summary>
+        /// Creates a cheap sphere proxy tinted by team. Prefab argument is ignored (kept for call-site
+        /// compatibility) — Instantiating + stripping the legacy prefab caused load/unload hitches.
+        /// </summary>
         public static GameObject CreateVisual(GameObject prefab, float peopleAmount, TeamId team)
         {
-            // --- Create instance ---
-            if (prefab == null)
-            {
-                var fallback = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                fallback.name = "PeopleTransportProxy";
-                var col = fallback.GetComponent<Collider>();
-                if (col != null)
-                    Object.Destroy(col);
-                ApplyTeamTint(fallback, team);
-                fallback.transform.localScale = Vector3.one * ComputeWorldScale(peopleAmount);
-                return fallback;
-            }
+            _ = prefab;
+            EnsureTemplate();
 
-            var instance = Object.Instantiate(prefab);
+            var instance = Object.Instantiate(s_Template);
             instance.name = "PeopleTransportProxy";
-            StripForProxy(instance);
+            instance.SetActive(true);
             ApplyTeamTint(instance, team);
             instance.transform.localScale = Vector3.one * ComputeWorldScale(peopleAmount);
             return instance;
         }
 
+        /// <summary>World uniform scale from carried population amount.</summary>
         public static float ComputeWorldScale(float peopleAmount)
         {
             return BasePrefabScale * PeopleTransportMath.GetVisualScaleMultiplier(math.max(1f, peopleAmount));
         }
 
-        public static void StripForProxy(GameObject root)
+        /// <summary>Builds the hidden template once (primitive sphere, no collider).</summary>
+        static void EnsureTemplate()
         {
-            // --- Strip components ---
-            ShipVisualApplier.StripPhysicsAndNetworking(root);
+            if (s_Template != null)
+                return;
 
-            var components = root.GetComponentsInChildren<Component>(true);
-            for (int i = 0; i < components.Length; i++)
-            {
-                var component = components[i];
-                if (component == null)
-                    continue;
-
-                var typeName = component.GetType().Name;
-                if (StripComponentNames.Contains(typeName))
-                    Object.Destroy(component);
-            }
-
-            foreach (var col in root.GetComponentsInChildren<Collider>(true))
-            {
-                if (col != null)
-                    Object.Destroy(col);
-            }
+            s_Template = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            s_Template.name = "PeopleTransportProxyTemplate";
+            s_Template.hideFlags = HideFlags.HideAndDontSave;
+            var col = s_Template.GetComponent<Collider>();
+            if (col != null)
+                Object.Destroy(col);
+            s_Template.SetActive(false);
+            Object.DontDestroyOnLoad(s_Template);
         }
 
+        /// <summary>Assigns a shared team-tinted material (no per-instance material alloc).</summary>
         static void ApplyTeamTint(GameObject root, TeamId team)
         {
-            // --- Apply changes ---
-            var color = team.ToColor();
-            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
-            {
-                if (renderer == null)
-                    continue;
+            var renderer = root.GetComponent<Renderer>();
+            if (renderer == null)
+                return;
 
-                var material = renderer.material;
-                if (material.HasProperty("_BaseColor"))
-                    material.SetColor("_BaseColor", color);
-                if (material.HasProperty("_Color"))
-                    material.SetColor("_Color", color);
-            }
+            renderer.sharedMaterial = GetSharedMaterial(team);
+        }
+
+        /// <summary>Lazy shared materials indexed by team byte.</summary>
+        static Material GetSharedMaterial(TeamId team)
+        {
+            int index = (int)team;
+            if (index < 0 || index >= s_TeamMaterials.Length)
+                index = 0;
+
+            if (s_TeamMaterials[index] == null)
+                s_TeamMaterials[index] = WorldBodyVisualApplier.CreateLitMaterial(team.ToColor());
+
+            return s_TeamMaterials[index];
         }
     }
 }

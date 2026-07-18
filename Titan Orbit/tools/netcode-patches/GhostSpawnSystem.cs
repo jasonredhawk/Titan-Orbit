@@ -46,11 +46,11 @@ namespace Unity.NetCode
     {
         // TITAN-ORBIT: static readonly (not const) so the marker string survives in player DLLs
         // for build verification.
-        // v9 = same as v8 Instantiates/map rules; join settle must NOT disable TransformSystemGroup
-        // (re-enable after Instantiates ~700 asteroids = Burst LocalToWorld Crash!!! 2026-07-18).
-        // v8 = safe snapshot copy + 1 Instantiates/frame; placeholders drain stock-style (NO defer).
-        // v7 placeholder-cap+requeue broke SpawnedGhostEntityMap → "baseline for a ghost we do not have".
-        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v9_transformsAlwaysOn";
+        // v11 = CreateEntity-all (ghost map safe) + Instantiates 1/frame. Companion: client uses
+        // managed LocalToWorld (Burst LTW disabled) — see TitanOrbitClientSafeLocalToWorldSystem.
+        // v10 CreateEntity-cap+requeue → "baseline for a ghost we do not have" + Burst Crash!!! (2026-07-18).
+        // v7 requeue without map registration had the same baseline failure mode.
+        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v11_createAll_managedLtw";
 
         // Touched in OnCreate so the linker cannot strip the marker.
         static char s_PatchIdTouch;
@@ -158,11 +158,11 @@ namespace Unity.NetCode
             var nonSpawnedGhosts = new NativeList<NonSpawnedGhostMapping>(16, Allocator.Temp);
             var ghostCollectionSingleton = SystemAPI.GetSingletonEntity<GhostCollection>();
 
-            // TITAN-ORBIT: Drain GhostSpawnBuffer into placeholders stock-style (all entries this frame).
-            // v7 capped CreateEntity + re-queued leftovers WITHOUT registering them in
-            // SpawnedGhostEntityMap. GhostReceive then logged "baseline for a ghost we do not have".
-            // Instantiates stay capped at 1/frame below. TransformSystemGroup must stay ENABLED
-            // (ClientJoinSettle only gates hybrid/UI — never disable-then-reenable LTW).
+            // TITAN-ORBIT v11: CreateEntity ALL placeholders this frame (stock / ghost-map safe).
+            // Deferring CreateEntity left GhostIDs out of SpawnedGhostEntityMap → GhostReceive
+            // "baseline for a ghost we do not have" → Burst Crash!!! (Player.log 2026-07-18 13:06).
+            // Instantiates stay capped at 1/frame below. Burst LocalToWorld is disabled on clients
+            // (TitanOrbitClientSafeLocalToWorldSystem) so CreateEntity/Instantiates floods do not AV.
             int placeholdersThisFrame = 0;
 
             for (int i = 0; i < ghostSpawnBuffer.Length; ++i)
@@ -191,7 +191,7 @@ namespace Unity.NetCode
                 else if (ghost.SpawnType == GhostSpawnBuffer.Type.Predicted)
                 {
                     // TITAN-ORBIT: Always delay predicted Instantiates (placeholder + delayed Instantiates).
-                    // Still create the placeholder THIS frame so the ghost id is in SpawnedGhostEntityMap.
+                    // CreateEntity the placeholder THIS frame so the ghost id is in SpawnedGhostEntityMap.
                     entity = AddToDelayedSpawnQueue(ref stateEntityManager, m_DelayedPredictedGhostSpawnQueue, ghost, ref snapshotDataBuffer, ghostTypeCollection);
                     placeholdersThisFrame++;
                     nonSpawnedGhosts.Add(new NonSpawnedGhostMapping { ghostId = ghost.GhostID, entity = entity });
@@ -202,7 +202,7 @@ namespace Unity.NetCode
             {
                 UnityEngine.Debug.Log(
                     "[TO_GhostSpawn] Created " + placeholdersThisFrame +
-                    " placeholders this frame (Instantiates still capped at 1/frame).");
+                    " placeholders this frame (Instantiates capped at 1/frame; client uses managed LTW).");
             }
 
             var netDebug = SystemAPI.GetSingleton<NetDebug>();
