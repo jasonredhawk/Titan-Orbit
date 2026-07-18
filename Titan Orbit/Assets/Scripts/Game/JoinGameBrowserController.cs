@@ -14,23 +14,28 @@ namespace TitanOrbit.Game
     /// <summary>
     /// [HYBRID] Join Game screen — programmatic UGUI overlay listing Unity Gaming Services (UGS) dedicated
     /// lobbies and connecting the client via Relay. Opened from <see cref="NceGameFlowController"/> main menu.
-    /// Client only; dedicated server builds have no canvas. Visual layout mirrors the pre-ECS lobby browser panel.
+    /// Client only; dedicated server builds have no canvas.
+    /// Each lobby row shows a small card per team (color, owned worlds, players/cap) plus match extras
+    /// (neutrals, asteroids) and a capacity line derived from map meta — not a fixed 60-slot label.
     /// </summary>
     public class JoinGameBrowserController : MonoBehaviour
     {
         const float ContentWidth = 680f;
-        // Tall enough for title row + colored team/planet meta strip.
-        const float RowHeight = 112f;
+        /// <summary>Default row height for title + team cards + footer (2–3 teams). Taller when 4–5 teams.</summary>
+        const float RowHeight = 168f;
         const float AutoRefreshIntervalSeconds = 45f;
         const float CacheGraceSeconds = 180f;
         const float RowDurationRefreshSeconds = 1f;
         const int RequestMatchPollAttempts = 18;
         const int RequestMatchPollIntervalMs = 5000;
+        /// <summary>[TITAN-ORBIT] Max team slots (TeamA–TeamE); matches map generation and TeamId range.</summary>
+        const int MaxTeamSlots = 5;
 
         static readonly Color RowNormalColor = new Color(0.11f, 0.17f, 0.28f, 0.98f);
         static readonly Color RowSelectedColor = new Color(0.18f, 0.38f, 0.62f, 0.98f);
         static readonly Color MutedLabelColor = new Color(0.68f, 0.78f, 0.9f, 0.92f);
         static readonly Color DurationLabelColor = new Color(0.62f, 0.74f, 0.86f, 0.88f);
+        static readonly Color TeamCardBgColor = new Color(0.07f, 0.11f, 0.18f, 0.96f);
 
         [SerializeField] GameObject mainMenuPanel;
 
@@ -66,12 +71,12 @@ namespace TitanOrbit.Game
         public void Show()
         {
             // --- Show ---
-            // Rebuild if an older layout is still cached (missing bordered panel or meta strip).
+            // Rebuild if an older layout is still cached (missing bordered panel or per-team cards).
             bool needsRebuild = _screenRoot != null &&
                                 (_lobbyScroll == null ||
                                  _lobbyBrowserRoot == null ||
                                  _lobbyRowPrefab == null ||
-                                 _lobbyRowPrefab.transform.Find("LobbyRowMeta") == null);
+                                 _lobbyRowPrefab.transform.Find("LobbyRowMain/LobbyRowTeams") == null);
             if (needsRebuild)
             {
                 Destroy(_screenRoot);
@@ -279,8 +284,9 @@ namespace TitanOrbit.Game
                 typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(LayoutElement));
             scrollRoot.GetComponent<Image>().color = new Color(0.04f, 0.065f, 0.1f, 0.98f);
             var scrollLe = scrollRoot.GetComponent<LayoutElement>();
-            scrollLe.minHeight = 160f;
-            scrollLe.preferredHeight = 260f;
+            // Taller viewport — each lobby row now holds per-team cards (~168px).
+            scrollLe.minHeight = 200f;
+            scrollLe.preferredHeight = 320f;
             scrollLe.flexibleHeight = 1f;
             ApplyContentColumnLayout(scrollLe);
 
@@ -541,7 +547,9 @@ namespace TitanOrbit.Game
 
                 _rowObjects.Add(row);
                 _rowBackgrounds.Add(row.GetComponent<Image>());
-                var durationLabel = row.transform.Find("LobbyRowDuration")?.GetComponent<TextMeshProUGUI>();
+                var durationLabel = row.transform.Find("LobbyRowMain/LobbyRowHeader/LobbyRowDuration")
+                                        ?.GetComponent<TextMeshProUGUI>()
+                                    ?? row.transform.Find("LobbyRowDuration")?.GetComponent<TextMeshProUGUI>();
                 if (durationLabel != null)
                     _rowDurationLabels.Add(durationLabel);
             }
@@ -562,12 +570,19 @@ namespace TitanOrbit.Game
             row.name = "LobbyRow" + index;
             row.SetActive(true);
 
-            var nameLabel = row.transform.Find("LobbyRowMain/LobbyRowName")?.GetComponent<TextMeshProUGUI>()
-                            ?? row.transform.Find("LobbyRowName")?.GetComponent<TextMeshProUGUI>();
-            var metaLabel = row.transform.Find("LobbyRowMain/LobbyRowMeta")?.GetComponent<TextMeshProUGUI>()
-                            ?? row.transform.Find("LobbyRowMeta")?.GetComponent<TextMeshProUGUI>();
-            var durationLabel = row.transform.Find("LobbyRowDuration")?.GetComponent<TextMeshProUGUI>();
-            var playersLabel = row.transform.Find("LobbyRowPlayers")?.GetComponent<TextMeshProUGUI>();
+            // --- Resolve row widgets ---
+            // Prefab paths are fixed in CreateLobbyRowPrefab; Find keeps Instantiation resilient.
+            var nameLabel = row.transform.Find("LobbyRowMain/LobbyRowHeader/LobbyRowName")
+                                ?.GetComponent<TextMeshProUGUI>();
+            var durationLabel = row.transform.Find("LobbyRowMain/LobbyRowHeader/LobbyRowDuration")
+                                    ?.GetComponent<TextMeshProUGUI>();
+            var teamsRoot = row.transform.Find("LobbyRowMain/LobbyRowTeams");
+            var pendingLabel = row.transform.Find("LobbyRowMain/LobbyRowTeamsPending")
+                                   ?.GetComponent<TextMeshProUGUI>();
+            var extrasLabel = row.transform.Find("LobbyRowMain/LobbyRowFooter/LobbyRowExtras")
+                                  ?.GetComponent<TextMeshProUGUI>();
+            var playersLabel = row.transform.Find("LobbyRowMain/LobbyRowFooter/LobbyRowPlayers")
+                                   ?.GetComponent<TextMeshProUGUI>();
 
             // --- Title + freshness ---
             // [TITAN-ORBIT] "Latest" is the dedicated lobby the server is currently advertising as joinable.
@@ -577,84 +592,198 @@ namespace TitanOrbit.Game
             if (nameLabel != null)
                 nameLabel.text = $"<b>{summary.Name}</b>{latestTag}";
 
-            // --- Map meta strip (colored team chips + neutrals / asteroids) ---
-            if (metaLabel != null)
-            {
-                string mapMetaLine = FormatLobbyMapMeta(summary);
-                metaLabel.text = string.IsNullOrEmpty(mapMetaLine)
-                    ? "<color=#6f8499>Map stats pending…</color>"
-                    : mapMetaLine;
-                metaLabel.gameObject.SetActive(true);
-            }
-
             if (durationLabel != null)
                 durationLabel.text = FormatLobbyActiveDuration(summary.CreatedAtEpochSeconds);
+
+            // --- Per-team cards (worlds + roster) ---
+            int teamSlots = ResolveActiveTeamSlotCount(summary);
+            bool filledTeams = ApplyTeamCards(teamsRoot, summary, teamSlots);
+            if (pendingLabel != null)
+            {
+                pendingLabel.gameObject.SetActive(!filledTeams);
+                if (!filledTeams)
+                    pendingLabel.text = "<color=#6f8499>Map stats pending…</color>";
+            }
+
+            if (teamsRoot != null)
+                teamsRoot.gameObject.SetActive(filledTeams);
+
+            // --- Footer: neutrals / asteroids + match capacity from map meta ---
+            if (extrasLabel != null)
+                extrasLabel.text = FormatLobbyExtrasLine(summary);
+
             if (playersLabel != null)
-                playersLabel.text = $"{summary.CurrentPlayers}/{summary.MaxPlayers}";
+            {
+                // Footer total uses map-driven capacity (teams × max-per-team) when meta is published.
+                int capacity = ResolveMatchPlayerCapacity(summary);
+                playersLabel.text = $"{summary.CurrentPlayers}/{capacity}";
+            }
+
+            // --- Row height grows with team count so 4–5 cards stay readable ---
+            var rowLe = row.GetComponent<LayoutElement>();
+            if (rowLe != null)
+            {
+                float height = teamSlots >= 4 ? 188f : RowHeight;
+                rowLe.minHeight = height - 16f;
+                rowLe.preferredHeight = height;
+            }
 
             return row;
         }
 
         /// <summary>
-        /// Builds a rich-text map-stats strip for a lobby row from UGS lobby Data.
-        /// Team planet counts use the same colors as <see cref="TeamIdExtensions.ToColor"/>.
+        /// Fills the pre-built TeamCard0…TeamCard4 slots for this lobby.
+        /// Shows only active teams; each card lists display name, owned worlds, and players/cap.
         /// </summary>
-        static string FormatLobbyMapMeta(TitanOrbitLobbyService.LobbySummary summary)
+        /// <returns>True when at least one team card was shown.</returns>
+        static bool ApplyTeamCards(
+            Transform teamsRoot,
+            TitanOrbitLobbyService.LobbySummary summary,
+            int teamSlots)
         {
             // --- Guard ---
+            if (teamsRoot == null || summary == null || teamSlots <= 0)
+                return false;
+
+            bool showedAny = false;
+            int maxPerTeam = summary.MapMaxPlayersPerTeam > 0 ? summary.MapMaxPlayersPerTeam : -1;
+
+            for (int i = 0; i < MaxTeamSlots; i++)
+            {
+                Transform card = teamsRoot.Find("TeamCard" + i);
+                if (card == null)
+                    continue;
+
+                bool active = i < teamSlots;
+                card.gameObject.SetActive(active);
+                if (!active)
+                    continue;
+
+                showedAny = true;
+                TeamId team = (TeamId)(i + 1);
+                Color teamColor = team.ToColor();
+                string hex = ColorUtility.ToHtmlStringRGB(teamColor);
+
+                // --- Accent bar matches in-game team color (minimap / ships) ---
+                var accent = card.Find("TeamAccent")?.GetComponent<Image>();
+                if (accent != null)
+                    accent.color = teamColor;
+
+                // --- Title: colored bullet + "Team A" ---
+                var title = card.Find("TeamCardBody/TeamTitle")?.GetComponent<TextMeshProUGUI>();
+                if (title != null)
+                {
+                    title.text = "<color=#" + hex + ">●</color> <b>" + team.ToDisplayName() + "</b>";
+                }
+
+                // --- Worlds occupied by this team ---
+                int worlds = 0;
+                bool hasWorlds = summary.MapTeamPlanetCounts != null && i < summary.MapTeamPlanetCounts.Length;
+                if (hasWorlds)
+                    worlds = summary.MapTeamPlanetCounts[i];
+
+                var worldsLabel = card.Find("TeamCardBody/TeamWorlds")?.GetComponent<TextMeshProUGUI>();
+                if (worldsLabel != null)
+                {
+                    worldsLabel.text = hasWorlds
+                        ? (worlds == 1 ? "1 world" : worlds + " worlds")
+                        : "— worlds";
+                }
+
+                // --- Players on this team vs per-team cap ---
+                int players = 0;
+                bool hasPlayers = summary.MapTeamPlayerCounts != null && i < summary.MapTeamPlayerCounts.Length;
+                if (hasPlayers)
+                    players = summary.MapTeamPlayerCounts[i];
+
+                var playersOnTeam = card.Find("TeamCardBody/TeamPlayers")?.GetComponent<TextMeshProUGUI>();
+                if (playersOnTeam != null)
+                {
+                    if (hasPlayers && maxPerTeam > 0)
+                        playersOnTeam.text = players + " / " + maxPerTeam + " players";
+                    else if (hasPlayers)
+                        playersOnTeam.text = players + " players";
+                    else if (maxPerTeam > 0)
+                        playersOnTeam.text = "0 / " + maxPerTeam + " players";
+                    else
+                        playersOnTeam.text = "— players";
+                }
+            }
+
+            return showedAny;
+        }
+
+        /// <summary>
+        /// How many team slots this match rolled. Prefers planet/player CSV length, then MapTeams.
+        /// </summary>
+        static int ResolveActiveTeamSlotCount(TitanOrbitLobbyService.LobbySummary summary)
+        {
+            if (summary == null)
+                return 0;
+
+            // --- Prefer published per-team arrays (authoritative once map heartbeat runs) ---
+            if (summary.MapTeamPlanetCounts != null && summary.MapTeamPlanetCounts.Length > 0)
+                return Mathf.Clamp(summary.MapTeamPlanetCounts.Length, 0, MaxTeamSlots);
+            if (summary.MapTeamPlayerCounts != null && summary.MapTeamPlayerCounts.Length > 0)
+                return Mathf.Clamp(summary.MapTeamPlayerCounts.Length, 0, MaxTeamSlots);
+            if (summary.MapTeamCount > 0)
+                return Mathf.Clamp(summary.MapTeamCount, 0, MaxTeamSlots);
+            return 0;
+        }
+
+        /// <summary>
+        /// Match-wide player capacity for the footer.
+        /// Uses map meta (teams × max-per-team) when published; otherwise UGS lobby MaxPlayers.
+        /// </summary>
+        static int ResolveMatchPlayerCapacity(TitanOrbitLobbyService.LobbySummary summary)
+        {
+            // --- Map-driven capacity ---
+            // [TITAN-ORBIT] Bootstrap sets MaxPlayersPerTeam (e.g. 20); map roll sets team count (2–5).
+            // Product is the real joinable roster size — not the hard server ceiling often set to 60.
+            if (summary != null && summary.MapTeamCount > 0 && summary.MapMaxPlayersPerTeam > 0)
+                return summary.MapTeamCount * summary.MapMaxPlayersPerTeam;
+
+            int slots = ResolveActiveTeamSlotCount(summary);
+            if (summary != null && slots > 0 && summary.MapMaxPlayersPerTeam > 0)
+                return slots * summary.MapMaxPlayersPerTeam;
+
+            return summary != null ? Mathf.Max(1, summary.MaxPlayers) : 1;
+        }
+
+        /// <summary>
+        /// Footer line for neutrals and asteroids (shared map features, not per-team).
+        /// </summary>
+        static string FormatLobbyExtrasLine(TitanOrbitLobbyService.LobbySummary summary)
+        {
             if (summary == null)
                 return string.Empty;
 
-            bool hasTeamPlanets = summary.MapTeamPlanetCounts != null && summary.MapTeamPlanetCounts.Length > 0;
-            bool hasAny =
-                summary.MapTeamCount >= 0 ||
-                summary.MapNeutralPlanetCount >= 0 ||
-                summary.MapAsteroidCount >= 0 ||
-                hasTeamPlanets;
-            if (!hasAny)
-                return string.Empty;
+            var sb = new StringBuilder(80);
+            sb.Append("<size=14>");
 
-            // --- Fancy strip ---
-            // [TITAN-ORBIT] TMP rich text — colored dots match in-game team colors (minimap / ships).
-            var sb = new StringBuilder(160);
-            sb.Append("<size=15>");
-
-            if (hasTeamPlanets)
-            {
-                sb.Append("<color=#b8c9dc>Worlds</color>  ");
-                for (int i = 0; i < summary.MapTeamPlanetCounts.Length; i++)
-                {
-                    if (i > 0)
-                        sb.Append("  ");
-                    TeamId team = (TeamId)(i + 1);
-                    string hex = ColorUtility.ToHtmlStringRGB(team.ToColor());
-                    int count = summary.MapTeamPlanetCounts[i];
-                    // Pill-like chip: colored bullet + count.
-                    sb.Append("<color=#").Append(hex).Append(">●</color><b>").Append(count).Append("</b>");
-                }
-            }
-            else if (summary.MapTeamCount >= 0)
-            {
-                sb.Append("<color=#b8c9dc>").Append(summary.MapTeamCount).Append(" teams</color>");
-            }
-
+            // --- Plain labels only ---
+            // [UNITY] TMP default fonts often lack decorative Unicode (◇ / ✦) and draw □ tofu boxes.
+            bool wrote = false;
             if (summary.MapNeutralPlanetCount >= 0)
             {
-                if (sb.Length > "<size=15>".Length)
-                    sb.Append("   <color=#5f738a>|</color>   ");
-                sb.Append("<color=#9eb6cc>◇</color> <b>")
+                sb.Append("<color=#9eb6cc><b>")
                     .Append(summary.MapNeutralPlanetCount)
-                    .Append("</b><color=#9eb6cc> free</color>");
+                    .Append("</b> free worlds</color>");
+                wrote = true;
             }
 
             if (summary.MapAsteroidCount >= 0)
             {
-                if (sb.Length > "<size=15>".Length)
+                if (wrote)
                     sb.Append("   <color=#5f738a>|</color>   ");
-                sb.Append("<color=#d4b06a>✦</color> <b>")
+                sb.Append("<color=#d4b06a><b>")
                     .Append(summary.MapAsteroidCount)
-                    .Append("</b><color=#d4b06a> asteroids</color>");
+                    .Append("</b> asteroids</color>");
+                wrote = true;
             }
+
+            if (!wrote)
+                sb.Append("<color=#6f8499>Waiting for map…</color>");
 
             sb.Append("</size>");
             return sb.ToString();
@@ -922,10 +1051,15 @@ namespace TitanOrbit.Game
             layoutElement.flexibleWidth = 0f;
         }
 
+        /// <summary>
+        /// Builds the inactive lobby-row template: header, up to five team cards, and a footer.
+        /// Instantiated once per listed lobby in <see cref="InstantiateLobbyRow"/>.
+        /// </summary>
         GameObject CreateLobbyRowPrefab()
         {
+            // --- Row shell (clickable) ---
             var rowObj = new GameObject("LobbyListRowPrefab",
-                typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement), typeof(HorizontalLayoutGroup));
+                typeof(RectTransform), typeof(Image), typeof(Button), typeof(LayoutElement), typeof(VerticalLayoutGroup));
             var rect = rowObj.GetComponent<RectTransform>();
             rect.sizeDelta = new Vector2(ContentWidth - 32f, RowHeight);
 
@@ -943,29 +1077,28 @@ namespace TitanOrbit.Game
             btn.colors = colors;
             btn.transition = Selectable.Transition.ColorTint;
 
-            var rowHlg = rowObj.GetComponent<HorizontalLayoutGroup>();
-            rowHlg.padding = new RectOffset(16, 16, 12, 12);
-            rowHlg.spacing = 14f;
-            rowHlg.childAlignment = TextAnchor.MiddleLeft;
-            rowHlg.childControlWidth = true;
-            rowHlg.childControlHeight = true;
-            rowHlg.childForceExpandWidth = false;
-            rowHlg.childForceExpandHeight = true;
+            var rowVlg = rowObj.GetComponent<VerticalLayoutGroup>();
+            rowVlg.padding = new RectOffset(14, 14, 10, 10);
+            rowVlg.spacing = 8f;
+            rowVlg.childAlignment = TextAnchor.UpperLeft;
+            rowVlg.childControlWidth = true;
+            rowVlg.childControlHeight = true;
+            rowVlg.childForceExpandWidth = true;
+            rowVlg.childForceExpandHeight = false;
 
             var layoutElement = rowObj.GetComponent<LayoutElement>();
-            layoutElement.minHeight = 96f;
+            layoutElement.minHeight = 140f;
             layoutElement.preferredHeight = RowHeight;
             layoutElement.preferredWidth = ContentWidth - 32f;
             layoutElement.flexibleWidth = 0f;
 
-            // --- Left column: lobby title + colored map meta strip ---
-            // [TITAN-ORBIT] Vertical stack keeps meta readable without crowding duration/players.
+            // --- Main column: header → team cards → footer ---
             var mainCol = CreateChild("LobbyRowMain", rowObj.transform,
                 typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
             var mainVlg = mainCol.GetComponent<VerticalLayoutGroup>();
             mainVlg.padding = new RectOffset(0, 0, 0, 0);
-            mainVlg.spacing = 6f;
-            mainVlg.childAlignment = TextAnchor.MiddleLeft;
+            mainVlg.spacing = 8f;
+            mainVlg.childAlignment = TextAnchor.UpperLeft;
             mainVlg.childControlWidth = true;
             mainVlg.childControlHeight = true;
             mainVlg.childForceExpandWidth = true;
@@ -973,48 +1106,185 @@ namespace TitanOrbit.Game
             var mainLe = mainCol.GetComponent<LayoutElement>();
             mainLe.flexibleWidth = 1f;
             mainLe.minWidth = 220f;
-            mainLe.preferredHeight = 84f;
 
-            var nameLabel = CreateStyledLabel("LobbyRowName", "Lobby", mainCol.transform, 21f,
+            // --- Header: lobby name (left) + age (right) ---
+            var header = CreateChild("LobbyRowHeader", mainCol.transform,
+                typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+            var headerH = header.GetComponent<HorizontalLayoutGroup>();
+            headerH.spacing = 10f;
+            headerH.childAlignment = TextAnchor.MiddleLeft;
+            headerH.childControlWidth = true;
+            headerH.childControlHeight = true;
+            headerH.childForceExpandWidth = false;
+            headerH.childForceExpandHeight = false;
+            var headerLe = header.GetComponent<LayoutElement>();
+            headerLe.minHeight = 26f;
+            headerLe.preferredHeight = 28f;
+            headerLe.flexibleWidth = 1f;
+
+            var nameLabel = CreateStyledLabel("LobbyRowName", "Lobby", header.transform, 20f,
                 FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
             nameLabel.enableWordWrapping = false;
             nameLabel.richText = true;
             nameLabel.overflowMode = TextOverflowModes.Ellipsis;
             var nameLe = nameLabel.gameObject.AddComponent<LayoutElement>();
             nameLe.flexibleWidth = 1f;
-            nameLe.minHeight = 26f;
+            nameLe.minHeight = 24f;
             nameLe.preferredHeight = 28f;
 
-            var metaLabel = CreateStyledLabel("LobbyRowMeta", "Map stats…", mainCol.transform, 15f,
-                FontStyles.Normal, TextAlignmentOptions.TopLeft);
-            metaLabel.enableWordWrapping = true;
-            metaLabel.richText = true;
-            metaLabel.overflowMode = TextOverflowModes.Ellipsis;
-            metaLabel.color = new Color(0.78f, 0.86f, 0.94f, 1f);
-            var metaLe = metaLabel.gameObject.AddComponent<LayoutElement>();
-            metaLe.flexibleWidth = 1f;
-            metaLe.minHeight = 36f;
-            metaLe.preferredHeight = 44f;
-
-            var durationLabel = CreateStyledLabel("LobbyRowDuration", "—", rowObj.transform, 16f,
+            var durationLabel = CreateStyledLabel("LobbyRowDuration", "—", header.transform, 15f,
                 FontStyles.Normal, TextAlignmentOptions.MidlineRight);
             durationLabel.color = DurationLabelColor;
             var durationLe = durationLabel.gameObject.AddComponent<LayoutElement>();
-            durationLe.preferredWidth = 78f;
-            durationLe.minWidth = 64f;
+            durationLe.preferredWidth = 72f;
+            durationLe.minWidth = 56f;
             durationLe.flexibleWidth = 0f;
-            durationLe.preferredHeight = 44f;
 
-            var playersLabel = CreateStyledLabel("LobbyRowPlayers", "0/0", rowObj.transform, 20f,
+            // --- Team cards row (one small panel per active team) ---
+            // [TITAN-ORBIT] Colors match TeamIdExtensions.ToColor — same palette as minimap / ships.
+            var teamsRow = CreateChild("LobbyRowTeams", mainCol.transform,
+                typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+            var teamsH = teamsRow.GetComponent<HorizontalLayoutGroup>();
+            teamsH.spacing = 8f;
+            teamsH.childAlignment = TextAnchor.MiddleLeft;
+            teamsH.childControlWidth = true;
+            teamsH.childControlHeight = true;
+            teamsH.childForceExpandWidth = true;
+            teamsH.childForceExpandHeight = false;
+            var teamsLe = teamsRow.GetComponent<LayoutElement>();
+            teamsLe.minHeight = 78f;
+            teamsLe.preferredHeight = 86f;
+            teamsLe.flexibleWidth = 1f;
+
+            for (int i = 0; i < MaxTeamSlots; i++)
+                CreateTeamCardPrefab("TeamCard" + i, teamsRow.transform);
+
+            // Shown when map heartbeat has not published team meta yet.
+            var pendingLabel = CreateStyledLabel("LobbyRowTeamsPending", "Map stats pending…", mainCol.transform,
+                15f, FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+            pendingLabel.richText = true;
+            pendingLabel.color = MutedLabelColor;
+            var pendingLe = pendingLabel.gameObject.AddComponent<LayoutElement>();
+            pendingLe.minHeight = 24f;
+            pendingLe.preferredHeight = 28f;
+            pendingLe.flexibleWidth = 1f;
+
+            // --- Footer: shared map extras + match-wide player total ---
+            var footer = CreateChild("LobbyRowFooter", mainCol.transform,
+                typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+            var footerH = footer.GetComponent<HorizontalLayoutGroup>();
+            footerH.spacing = 10f;
+            footerH.childAlignment = TextAnchor.MiddleLeft;
+            footerH.childControlWidth = true;
+            footerH.childControlHeight = true;
+            footerH.childForceExpandWidth = false;
+            footerH.childForceExpandHeight = false;
+            var footerLe = footer.GetComponent<LayoutElement>();
+            footerLe.minHeight = 22f;
+            footerLe.preferredHeight = 24f;
+            footerLe.flexibleWidth = 1f;
+
+            var extrasLabel = CreateStyledLabel("LobbyRowExtras", "— free worlds", footer.transform, 14f,
+                FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+            extrasLabel.richText = true;
+            extrasLabel.color = new Color(0.78f, 0.86f, 0.94f, 1f);
+            var extrasLe = extrasLabel.gameObject.AddComponent<LayoutElement>();
+            extrasLe.flexibleWidth = 1f;
+            extrasLe.minWidth = 160f;
+
+            var playersLabel = CreateStyledLabel("LobbyRowPlayers", "0/0", footer.transform, 16f,
                 FontStyles.Bold, TextAlignmentOptions.MidlineRight);
             playersLabel.color = new Color(0.82f, 0.9f, 0.98f, 1f);
             var playersLe = playersLabel.gameObject.AddComponent<LayoutElement>();
-            playersLe.preferredWidth = 64f;
-            playersLe.minWidth = 52f;
+            playersLe.preferredWidth = 72f;
+            playersLe.minWidth = 56f;
             playersLe.flexibleWidth = 0f;
-            playersLe.preferredHeight = 44f;
 
             return rowObj;
+        }
+
+        /// <summary>
+        /// Creates one inactive team info card (accent bar + title + worlds + players).
+        /// Filled later by <see cref="ApplyTeamCards"/>.
+        /// </summary>
+        static void CreateTeamCardPrefab(string name, Transform parent)
+        {
+            // --- Card shell ---
+            var card = CreateChild(name, parent,
+                typeof(RectTransform), typeof(Image), typeof(HorizontalLayoutGroup), typeof(LayoutElement), typeof(Outline));
+            var cardImage = card.GetComponent<Image>();
+            cardImage.color = TeamCardBgColor;
+            cardImage.raycastTarget = false;
+
+            var outline = card.GetComponent<Outline>();
+            outline.effectColor = new Color(0.35f, 0.48f, 0.65f, 0.35f);
+            outline.effectDistance = new Vector2(1f, -1f);
+
+            var cardH = card.GetComponent<HorizontalLayoutGroup>();
+            cardH.padding = new RectOffset(0, 8, 6, 6);
+            cardH.spacing = 8f;
+            cardH.childAlignment = TextAnchor.MiddleLeft;
+            cardH.childControlWidth = true;
+            cardH.childControlHeight = true;
+            cardH.childForceExpandWidth = false;
+            cardH.childForceExpandHeight = true;
+
+            var cardLe = card.GetComponent<LayoutElement>();
+            cardLe.flexibleWidth = 1f;
+            cardLe.minWidth = 96f;
+            cardLe.preferredWidth = 118f;
+            cardLe.minHeight = 72f;
+            cardLe.preferredHeight = 82f;
+
+            // --- Colored accent strip (team identity at a glance) ---
+            var accent = CreateChild("TeamAccent", card.transform,
+                typeof(RectTransform), typeof(Image), typeof(LayoutElement));
+            accent.GetComponent<Image>().color = Color.white;
+            accent.GetComponent<Image>().raycastTarget = false;
+            var accentLe = accent.GetComponent<LayoutElement>();
+            accentLe.preferredWidth = 5f;
+            accentLe.minWidth = 5f;
+            accentLe.flexibleWidth = 0f;
+            accentLe.flexibleHeight = 1f;
+
+            // --- Text column ---
+            var body = CreateChild("TeamCardBody", card.transform,
+                typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
+            var bodyV = body.GetComponent<VerticalLayoutGroup>();
+            bodyV.spacing = 2f;
+            bodyV.childAlignment = TextAnchor.MiddleLeft;
+            bodyV.childControlWidth = true;
+            bodyV.childControlHeight = true;
+            bodyV.childForceExpandWidth = true;
+            bodyV.childForceExpandHeight = false;
+            var bodyLe = body.GetComponent<LayoutElement>();
+            bodyLe.flexibleWidth = 1f;
+            bodyLe.minWidth = 72f;
+
+            var title = CreateStyledLabel("TeamTitle", "Team A", body.transform, 14f,
+                FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+            title.richText = true;
+            title.enableWordWrapping = false;
+            title.overflowMode = TextOverflowModes.Ellipsis;
+            var titleLe = title.gameObject.AddComponent<LayoutElement>();
+            titleLe.minHeight = 18f;
+            titleLe.preferredHeight = 20f;
+
+            var worlds = CreateStyledLabel("TeamWorlds", "— worlds", body.transform, 13f,
+                FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+            worlds.color = new Color(0.78f, 0.86f, 0.94f, 0.95f);
+            var worldsLe = worlds.gameObject.AddComponent<LayoutElement>();
+            worldsLe.minHeight = 16f;
+            worldsLe.preferredHeight = 18f;
+
+            var players = CreateStyledLabel("TeamPlayers", "— players", body.transform, 13f,
+                FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
+            players.color = new Color(0.72f, 0.82f, 0.92f, 0.95f);
+            var playersLe = players.gameObject.AddComponent<LayoutElement>();
+            playersLe.minHeight = 16f;
+            playersLe.preferredHeight = 18f;
+
+            card.SetActive(false);
         }
 
         static GameObject CreateChild(string name, Transform parent, params Type[] components)

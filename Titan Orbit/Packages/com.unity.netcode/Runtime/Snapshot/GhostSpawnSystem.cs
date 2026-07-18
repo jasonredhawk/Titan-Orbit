@@ -45,8 +45,10 @@ namespace Unity.NetCode
     public partial struct GhostSpawnSystem : ISystem
     {
         // TITAN-ORBIT: static readonly (not const) so the marker string survives in player DLLs
-        // for build verification. v4 = safe SnapshotDataBuffer rebuild (fixes FreeTracked crash).
-        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v4_safeSnapshotCopy";
+        // for build verification.
+        // v8 = safe snapshot copy + 1 Instantiates/frame; placeholders drain stock-style (NO defer).
+        // v7 placeholder-cap+requeue broke SpawnedGhostEntityMap → "baseline for a ghost we do not have".
+        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v8_ghostMapSafe";
 
         // Touched in OnCreate so the linker cannot strip the marker.
         static char s_PatchIdTouch;
@@ -153,16 +155,22 @@ namespace Unity.NetCode
             var spawnedGhosts = new NativeList<SpawnedGhostMapping>(16, Allocator.Temp);
             var nonSpawnedGhosts = new NativeList<NonSpawnedGhostMapping>(16, Allocator.Temp);
             var ghostCollectionSingleton = SystemAPI.GetSingletonEntity<GhostCollection>();
+
+            // TITAN-ORBIT: Drain GhostSpawnBuffer into placeholders stock-style (all entries this frame).
+            // v7 capped CreateEntity + re-queued leftovers WITHOUT registering them in
+            // SpawnedGhostEntityMap. GhostReceive then logged "baseline for a ghost we do not have"
+            // and the Windows player hard-crashed in EcsWorldVisualizer.DrawAsteroids (ToEntityArray).
+            // Instantiates stay capped below; TransformSystemGroup is gated by ClientJoinSettle.
+            int placeholdersThisFrame = 0;
+
             for (int i = 0; i < ghostSpawnBuffer.Length; ++i)
             {
                 var ghost = ghostSpawnBuffer[i];
                 Entity entity = Entity.Null;
-                byte* snapshotData = null;
 
                 // TITAN-ORBIT / stock NetCode: Instantiate + CreateEntity invalidate DynamicBuffer
                 // handles. Re-fetch every iteration — caching GhostCollectionPrefabSerializer across
-                // Instantiates throws ObjectDisposedException and can corrupt the spawned-ghost map
-                // ("Ghost ID already added", "baseline for a ghost we do not have").
+                // Instantiates throws ObjectDisposedException and can corrupt the spawned-ghost map.
                 var ghostTypeCollection = stateEntityManager.GetBuffer<GhostCollectionPrefabSerializer>(ghostCollectionSingleton);
 
                 // TITAN-ORBIT: guard invalid GhostType (hash mismatch / stale collection).
@@ -172,86 +180,29 @@ namespace Unity.NetCode
                     continue;
                 }
 
-                var snapshotSize = ghostTypeCollection[ghost.GhostType].SnapshotSize;
-                bool hasBuffers = ghostTypeCollection[ghost.GhostType].NumBuffers > 0;
-
                 if (ghost.SpawnType == GhostSpawnBuffer.Type.Interpolated)
                 {
                     entity = AddToDelayedSpawnQueue(ref stateEntityManager, m_DelayedInterpolatedGhostSpawnQueue, ghost, ref snapshotDataBuffer, ghostTypeCollection);
-
+                    placeholdersThisFrame++;
                     nonSpawnedGhosts.Add(new NonSpawnedGhostMapping { ghostId = ghost.GhostID, entity = entity });
                 }
                 else if (ghost.SpawnType == GhostSpawnBuffer.Type.Predicted)
                 {
-                    // can it be spawned immediately?
-                    if (!ghost.ClientSpawnTick.IsNewerThan(predictionTargetTick))
-                    {
-                        // TODO: this could allow some time for the prefab to load before giving an error
-                        if (prefabs[ghost.GhostType].GhostPrefab == Entity.Null)
-                        {
-                            ReportMissingPrefab(ref stateEntityManager);
-                            continue;
-                        }
-                        // Spawn directly
-                        entity = SpawnGhost(ref state, ghost.PredictedSpawnEntity, ghost.GhostType, prefabs);
-                        if(stateEntityManager.HasComponent<PredictedGhostSpawnRequest>(entity))
-                            stateEntityManager.RemoveComponent<PredictedGhostSpawnRequest>(entity);
-                        if (stateEntityManager.HasComponent<GhostPrefabMetaData>(entity))
-                        {
-                            ref var toRemove = ref stateEntityManager.GetComponentData<GhostPrefabMetaData>(entity).Value.Value.DisableOnPredictedClient;
-                            //Need copy because removing component will invalidate the buffer pointer, since introduce structural changes
-                            var linkedEntityGroup = stateEntityManager.GetBuffer<LinkedEntityGroup>(entity).ToNativeArray(Allocator.Temp);
-                            for (int rm = 0; rm < toRemove.Length; ++rm)
-                            {
-                                var compType = ComponentType.ReadWrite(TypeManager.GetTypeIndexFromStableTypeHash(toRemove[rm].StableHash));
-                                stateEntityManager.RemoveComponent(linkedEntityGroup[toRemove[rm].EntityIndex].Value, compType);
-                            }
-                        }
-                        stateEntityManager.SetComponentData(entity, new GhostInstance {ghostId = ghost.GhostID, ghostType = ghost.GhostType, spawnTick = ghost.ServerSpawnTick});
-                        if (PrespawnHelper.IsPrespawnGhostId(ghost.GhostID))
-                            ConfigurePrespawnGhost(ref stateEntityManager, entity, ghost);
-                        // TITAN-ORBIT: Rebuild SnapshotDataBuffer instead of ResizeUninitialized on Instantiated prefab header.
-                        int snapshotBytes = snapshotSize * GhostSystemConstants.SnapshotHistorySize;
-                        if (stateEntityManager.HasBuffer<SnapshotDataBuffer>(entity))
-                            stateEntityManager.RemoveComponent<SnapshotDataBuffer>(entity);
-                        var newBuffer = stateEntityManager.AddBuffer<SnapshotDataBuffer>(entity);
-                        newBuffer.ResizeUninitialized(snapshotBytes);
-                        snapshotData = (byte*)newBuffer.GetUnsafePtr();
-                        stateEntityManager.SetComponentData(entity, new SnapshotData{SnapshotSize = snapshotSize, LatestIndex = 0});
-                        spawnedGhosts.Add(new SpawnedGhostMapping{ghost = new SpawnedGhost{ghostId = ghost.GhostID, spawnTick = ghost.ServerSpawnTick}, entity = entity});
-
-                        UnsafeUtility.MemClear(snapshotData, snapshotBytes);
-                        UnsafeUtility.MemCpy(snapshotData, (byte*)snapshotDataBuffer.GetUnsafeReadOnlyPtr() + ghost.DataOffset, snapshotSize);
-                        if (hasBuffers)
-                        {
-                            //Resize and copy the associated dynamic buffer snapshot data
-                            if (stateEntityManager.HasBuffer<SnapshotDynamicDataBuffer>(entity))
-                                stateEntityManager.RemoveComponent<SnapshotDynamicDataBuffer>(entity);
-                            var snapshotDynamicBuffer = stateEntityManager.AddBuffer<SnapshotDynamicDataBuffer>(entity);
-                            var dynamicDataCapacity= SnapshotDynamicBuffersHelper.CalculateBufferCapacity(ghost.DynamicDataSize, out var _);
-                            snapshotDynamicBuffer.ResizeUninitialized((int)dynamicDataCapacity);
-                            var dynamicSnapshotData = (byte*)snapshotDynamicBuffer.GetUnsafePtr();
-                            if(dynamicSnapshotData == null)
-                                throw new InvalidOperationException("snapshot dynamic data buffer not initialized but ghost has dynamic buffer contents");
-
-                            // Update the dynamic data header (uint[GhostSystemConstants.SnapshotHistorySize)]) by writing the used size for the current slot
-                            // (for new spawned entity is 0). Is un-necessary to initialize all the header slots to 0 since that information is only used
-                            // for sake of delta compression and, because that depend on the acked tick, only initialized and relevant slots are accessed in general.
-                            // For more information about the layout, see SnapshotData.cs.
-                            ((uint*)dynamicSnapshotData)[0] = ghost.DynamicDataSize;
-                            var headerSize = SnapshotDynamicBuffersHelper.GetHeaderSize();
-                            UnsafeUtility.MemCpy(dynamicSnapshotData + headerSize, (byte*)snapshotDataBuffer.GetUnsafeReadOnlyPtr() + ghost.DataOffset + snapshotSize, ghost.DynamicDataSize);
-                        }
-                    }
-                    else
-                    {
-                        // Add to delayed spawning queue
-                        entity = AddToDelayedSpawnQueue(ref stateEntityManager, m_DelayedPredictedGhostSpawnQueue, ghost, ref snapshotDataBuffer, ghostTypeCollection);
-
-                        nonSpawnedGhosts.Add(new NonSpawnedGhostMapping { ghostId = ghost.GhostID, entity = entity });
-                    }
+                    // TITAN-ORBIT: Always delay predicted Instantiates (placeholder + delayed Instantiates).
+                    // Still create the placeholder THIS frame so the ghost id is in SpawnedGhostEntityMap.
+                    entity = AddToDelayedSpawnQueue(ref stateEntityManager, m_DelayedPredictedGhostSpawnQueue, ghost, ref snapshotDataBuffer, ghostTypeCollection);
+                    placeholdersThisFrame++;
+                    nonSpawnedGhosts.Add(new NonSpawnedGhostMapping { ghostId = ghost.GhostID, entity = entity });
                 }
             }
+
+            if (placeholdersThisFrame >= 16)
+            {
+                UnityEngine.Debug.Log(
+                    "[TO_GhostSpawn] Created " + placeholdersThisFrame +
+                    " placeholders this frame (Instantiates still capped at 1/frame).");
+            }
+
             var netDebug = SystemAPI.GetSingleton<NetDebug>();
             ref var ghostEntityMap = ref SystemAPI.GetSingletonRW<SpawnedGhostEntityMap>().ValueRW;
             ghostEntityMap.AddClientNonSpawnedGhosts(nonSpawnedGhosts.AsArray(), netDebug);
@@ -264,9 +215,9 @@ namespace Unity.NetCode
             // ONE frame. That Instantiates flood hard-crashes the Windows player (Crash!!! in
             // TrySpawnFromDelayedQueue). Placeholders stay valid and keep receiving snapshots — we
             // only defer the real Instantiate. Break without Dequeue so nothing is dropped.
-            // Keep this low: Instantiates of physics ghosts (asteroids) are expensive and have
-            // hard-crashed the Windows player when hundreds run in one frame after late-join.
-            const int k_MaxDelayedInstantiatesPerFrame = 4;
+            // Keep this at 1: even 4 Instantiates/frame still tripped Burst LocalToWorldSystem
+            // (ComputeWorldSpaceLocalToWorldJob) on Windows late-join with ~500 asteroids.
+            const int k_MaxDelayedInstantiatesPerFrame = 1;
             int delayedInstantiatesThisFrame = 0;
 
             while (delayedInstantiatesThisFrame < k_MaxDelayedInstantiatesPerFrame &&
@@ -294,6 +245,59 @@ namespace Unity.NetCode
             ghostEntityMap.UpdateClientSpawnedGhosts(spawnedGhosts.AsArray(), netDebug);
 
             ghostCount.m_GhostCompletionCount[2] = m_InstanceCount.CalculateEntityCountWithoutFiltering();
+        }
+
+        /// <summary>
+        /// TITAN-ORBIT: Write unprocessed GhostSpawnBuffer entries (and their snapshot bytes) back
+        /// onto the GhostSpawnQueue singleton so the next frame can continue at the placeholder cap.
+        /// GhostReceive appends new spawns; we remap <see cref="GhostSpawnBuffer.DataOffset"/> to
+        /// the compacted byte layout we write here.
+        /// </summary>
+        static unsafe void RequeueDeferredGhostSpawns(
+            ref EntityManager entityManager,
+            Entity ghostSpawnEntity,
+            NativeArray<GhostSpawnBuffer> ghostSpawnBuffer,
+            NativeArray<SnapshotDataBuffer> snapshotDataBuffer,
+            int deferFromIndex,
+            Entity ghostCollectionSingleton)
+        {
+            // --- Guards ---
+            if (deferFromIndex < 0 || deferFromIndex >= ghostSpawnBuffer.Length)
+                return;
+
+            var ghostTypeCollection = entityManager.GetBuffer<GhostCollectionPrefabSerializer>(ghostCollectionSingleton);
+            var outSpawns = entityManager.GetBuffer<GhostSpawnBuffer>(ghostSpawnEntity);
+            var outSnapshots = entityManager.GetBuffer<SnapshotDataBuffer>(ghostSpawnEntity);
+
+            // OnUpdate cleared both buffers before the spawn loop; we refill only deferred leftovers.
+            // GhostReceive will Append more entries later this frame or next.
+            byte* srcBase = (byte*)snapshotDataBuffer.GetUnsafeReadOnlyPtr();
+            int srcBytes = snapshotDataBuffer.Length;
+
+            for (int i = deferFromIndex; i < ghostSpawnBuffer.Length; ++i)
+            {
+                var ghost = ghostSpawnBuffer[i];
+
+                // Skip corrupt GhostType — same as the main loop ReportMissingPrefab path.
+                if (ghost.GhostType < 0 || ghost.GhostType >= ghostTypeCollection.Length)
+                    continue;
+
+                int snapshotSize = ghostTypeCollection[ghost.GhostType].SnapshotSize;
+                // GhostReceive packs: SnapshotSize bytes + DynamicDataSize bytes at DataOffset.
+                int byteCount = snapshotSize + (int)ghost.DynamicDataSize;
+                if (byteCount < 0 || ghost.DataOffset < 0 || ghost.DataOffset + byteCount > srcBytes)
+                    continue;
+
+                int newOffset = outSnapshots.Length;
+                outSnapshots.ResizeUninitialized(newOffset + byteCount);
+                UnsafeUtility.MemCpy(
+                    (byte*)outSnapshots.GetUnsafePtr() + newOffset,
+                    srcBase + ghost.DataOffset,
+                    byteCount);
+
+                ghost.DataOffset = newOffset;
+                outSpawns.Add(ghost);
+            }
         }
 
         void ConfigurePrespawnGhost(ref EntityManager entityManager, Entity entity, in GhostSpawnBuffer ghost)

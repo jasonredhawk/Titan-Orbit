@@ -569,12 +569,6 @@ namespace TitanOrbit.Game
             if (homeCount <= 0 && IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
                 homeCount = CountServerHomePlanets(ServerWorld);
 
-            if (hasReplicatedBodies)
-                completedSteps = planets + asteroids;
-            else if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated &&
-                     TryReadMapLoadingState(ServerWorld, out int serverCompleted, out _, out _, out _))
-                completedSteps = serverCompleted;
-
             // --- Denominator (latched) ---
             // [TITAN-ORBIT] Prefer MapSessionMetaRpc (server authoritative, one-shot) so "/ N" is
             // stable from the first loading frame. Fallbacks: layout buffer, then settings midpoint.
@@ -600,9 +594,24 @@ namespace TitanOrbit.Game
             }
 
             totalSteps = s_LatchedLoadingTotalSteps > 0 ? s_LatchedLoadingTotalSteps : candidateTotal;
-            // [TITAN-ORBIT] With authoritative meta we can show "0 / N" before any ghosts arrive.
+
+            // --- Numerator: one integrated load metric ---
+            // [TITAN-ORBIT] Progress = hybrid GameObject proxies created (Instantates + visual are
+            // one pipeline via MapBodyHybridVisualPending). Not a separate "spawn then build" bar.
+            if (IsRemoteMapObserverClient() || !IsLocalHost())
+            {
+                completedSteps = EcsWorldVisualizer.WorldBodyProxyCount;
+            }
+            else if (hasReplicatedBodies)
+                completedSteps = planets + asteroids;
+            else if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated &&
+                     TryReadMapLoadingState(ServerWorld, out int serverCompleted, out _, out _, out _))
+                completedSteps = serverCompleted;
+
+            // [TITAN-ORBIT] With authoritative meta we can show "0 / N" before any proxies arrive.
             bool hasAuthoritativeTotal = MapSessionMetaCache.HasMeta && MapSessionMetaCache.LoadingTotalSteps > 0;
-            if (completedSteps <= 0 && !hasReplicatedBodies && !hasAuthoritativeTotal)
+            if (completedSteps <= 0 && !hasReplicatedBodies && !hasAuthoritativeTotal &&
+                EcsWorldVisualizer.WorldBodyProxyCount <= 0)
                 return false;
 
             // Numerator cannot exceed the latched total (placeholders / double counts).
@@ -1032,6 +1041,11 @@ namespace TitanOrbit.Game
         /// </summary>
         static int s_LatchedLoadingTotalSteps;
 
+        /// <summary>
+        /// realtimeSinceStartup when Instantiates hit ~92% after settle — proxy catch-up timeout.
+        /// </summary>
+        static float s_ProxyCatchupWaitSince = -1f;
+
         /// <summary>Clears remote map heuristics when disconnecting or leaving in-game state.</summary>
         static void ResetRemoteMapLoadTracking()
         {
@@ -1042,6 +1056,7 @@ namespace TitanOrbit.Game
             s_MapLoadingLatchedComplete = false;
             s_LatchedActiveTeamCount = 0;
             s_LatchedLoadingTotalSteps = 0;
+            s_ProxyCatchupWaitSince = -1f;
             // [TITAN-ORBIT] Drop latched MapSessionMetaRpc so the next join does not reuse old totals.
             MapSessionMetaCache.Clear();
         }
@@ -1090,8 +1105,16 @@ namespace TitanOrbit.Game
 
             var em = client.EntityManager;
             homeCount = CountReplicatedHomePlanets(em);
-            using var planets = em.CreateEntityQuery(typeof(PlanetState), typeof(PlanetTag));
-            using var asteroids = em.CreateEntityQuery(typeof(AsteroidState));
+            // --- Instantiated ghosts only ---
+            // [NETCODE] Exclude PendingSpawnPlaceholder so the loading bar tracks real Instantiates
+            // (1/frame), not CreateEntity placeholders that have no hull / visuals yet.
+            using var planets = em.CreateEntityQuery(
+                ComponentType.ReadOnly<PlanetState>(),
+                ComponentType.ReadOnly<PlanetTag>(),
+                ComponentType.Exclude<PendingSpawnPlaceholder>());
+            using var asteroids = em.CreateEntityQuery(
+                ComponentType.ReadOnly<AsteroidState>(),
+                ComponentType.Exclude<PendingSpawnPlaceholder>());
             planetCount = planets.CalculateEntityCount();
             asteroidCount = asteroids.CalculateEntityCount();
             return homeCount > 0 || planetCount > 0 || asteroidCount > 0;
@@ -1137,12 +1160,21 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Remote clients: dismiss loading once home planets and a playable asteroid sample exist.
-        /// When the ghosted <see cref="MapLayoutEntryElement"/> buffer arrives, the server finished
-        /// spawning — clients must not wait for every asteroid ghost (400–800+) to replicate.
+        /// Remote clients: dismiss loading only when real Instantiated map ghosts are mostly present
+        /// and join settle has finished (Instantiates backlog drained + hybrid proxies allowed).
+        /// <para>
+        /// Previously we returned true as soon as the layout buffer arrived (+ 32 asteroids). That
+        /// dismissed the loading screen while GhostSpawn was still Instantiating at 1/frame and
+        /// <see cref="ClientJoinSettleCache"/> was skipping GO proxies — join-team showed an empty map.
+        /// </para>
         /// </summary>
         static bool TryGetReplicatedMapLoadComplete(World client)
         {
+            // --- Still Instantiating / transform-gated ---
+            // [TITAN-ORBIT] Loading UI must cover ClientJoinSettle, not only "first ghosts arrived".
+            if (ClientJoinSettleCache.Settling)
+                return false;
+
             if (!TryGetReplicatedMapBodyCounts(client, out int homes, out int planets, out int asteroids))
                 return false;
 
@@ -1152,11 +1184,34 @@ namespace TitanOrbit.Game
             if (asteroids < RemoteMapMinAsteroids)
                 return false;
 
-            // [NETCODE] Layout buffer is published only after server map gen finishes.
-            if (TryGetReplicatedLayoutEntryCount(client, out int layoutCount) && layoutCount > 0)
-                return true;
+            int expectedTotal = 0;
+            if (MapSessionMetaCache.HasMeta && MapSessionMetaCache.LoadingTotalSteps > 0)
+                expectedTotal = MapSessionMetaCache.LoadingTotalSteps;
+            else if (s_LatchedLoadingTotalSteps > 0)
+                expectedTotal = s_LatchedLoadingTotalSteps;
 
-            // Fallback: ghost counts stopped changing for a short settle window.
+            // --- Authoritative meta: one bar = hybrid proxies / expected map bodies ---
+            if (expectedTotal > 0)
+            {
+                int proxies = EcsWorldVisualizer.WorldBodyProxyCount;
+                float ratio = (float)proxies / expectedTotal;
+
+                if (ratio >= 0.92f)
+                {
+                    if (s_ProxyCatchupWaitSince < 0f)
+                        s_ProxyCatchupWaitSince = Time.realtimeSinceStartup;
+                }
+                else
+                    s_ProxyCatchupWaitSince = -1f;
+
+                // Soft timeout if Instantiates finished (settle clear) but proxy count stalls.
+                bool proxyTimeout = !ClientJoinSettleCache.Settling &&
+                                    s_ProxyCatchupWaitSince >= 0f &&
+                                    Time.realtimeSinceStartup - s_ProxyCatchupWaitSince >= 25f;
+                return ratio >= 0.92f || proxyTimeout;
+            }
+
+            // Fallback without meta: ghost counts stable for a short window (no layout early-out).
             if (planets != s_RemoteMapPlanetCount || asteroids != s_RemoteMapAsteroidCount)
             {
                 s_RemoteMapPlanetCount = planets;

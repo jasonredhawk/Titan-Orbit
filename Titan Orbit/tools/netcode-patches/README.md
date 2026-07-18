@@ -2,22 +2,37 @@
 
 ## Problem
 
-On dedicated Relay late-join, Burst-compiled `GhostSpawnSystem.OnUpdate` Instantiates the entire delayed map-ghost backlog in one frame and hard-crashed the Windows player (`Crash!!!` in `lib_burst_generated`).
+On dedicated Relay late-join with hundreds of map ghosts, the Windows player hard-crashed from Instantiates floods (Burst LocalToWorld, then UnityPlayer) even after Instantiates-per-frame caps.
 
-An earlier Instantiates-per-frame rate limit stopped the crash but **broke NetCode spawn protocol** (Editor errors: `ObjectDisposedException`, `Ghost ID already been added`, `Received baseline for a ghost we do not have`).
+## Durable location
 
-## Current patch
+Embedded package (git-tracked via `file:com.unity.netcode`):
 
-File: `Library/PackageCache/com.unity.netcode@6437771c174a/Runtime/Snapshot/GhostSpawnSystem.cs`
+`Packages/com.unity.netcode/Runtime/Snapshot/GhostSpawnSystem.cs`
 
-1. **Remove `[BurstCompile]` from `OnUpdate`** — Instantiates run managed (stock drain timing preserved).
-2. **Bounds-check `GhostType`** before indexing prefab / serializer buffers.
+Canonical copy used by the Editor menu / pre-build guard:
 
-Canonical copy: `tools/netcode-patches/GhostSpawnSystem.cs`
+`tools/netcode-patches/GhostSpawnSystem.cs`
 
-## Re-apply after PackageCache restore
+## Current patch (`TO_GhostSpawn_v8_ghostMapSafe`)
 
-Unity menu: **Titan Orbit → NetCode → Re-apply GhostSpawnSystem rate-limit patch**  
-(menu name kept; patch is now “no Burst on OnUpdate + bounds checks”).
+1. **Safe snapshot copy** — rebuild buffers instead of resize-in-place (`TryCopySnapshotBufferSafe`).
+2. **No Burst on `OnUpdate`** — managed Instantiates.
+3. **1 Instantiates/frame** from delayed queues.
+4. **Placeholders drain stock-style** (all GhostSpawnBuffer entries → placeholders same frame) so `SpawnedGhostEntityMap` stays valid. v7's placeholder defer+requeue caused `baseline for a ghost we do not have` + Windows crash.
+5. **Predicted join path** — delayed Instantiates via placeholders (still registered same frame).
+6. **Player.log** when creating ≥16 placeholders: `[TO_GhostSpawn] Created N placeholders…`
 
-Then rebuild the **Windows client** (this system is client-only).
+## Companion project systems (not in this file)
+
+- Server: `TitanOrbitGhostSendTuneSystem` + `TitanOrbitGhostDistanceImportanceSystem` (stream map ghosts).
+- Client: `TitanOrbitClientJoinTransformGateSystem` + `ClientJoinSettleState` (backlog-gated TransformSystemGroup).
+- Hybrid: `EcsWorldVisualizer` rate-limits GO Instantiates while `ClientJoinSettleCache.Settling`.
+
+## Re-apply / verify
+
+Unity menu: **Titan Orbit → NetCode → Re-apply GhostSpawnSystem patch**
+
+After Windows client build, `Unity.NetCode.dll` must contain:
+
+`TO_GhostSpawn_v8_ghostMapSafe`

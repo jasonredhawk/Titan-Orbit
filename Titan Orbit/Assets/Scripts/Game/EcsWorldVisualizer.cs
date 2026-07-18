@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
-using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.NetCode;
@@ -20,10 +19,21 @@ namespace TitanOrbit.Game
     /// GameObject proxies for ghost entities. Transforms come from <see cref="GhostPresentationTransformCache"/>
     /// (published in NetCode PresentationSystemGroup by <see cref="ShipVisualSyncSystem"/>), not raw sim ECS.
     /// Proxies are render shells only — no extra movement smoothing on the local owner.
+    /// <para>
+    /// [TITAN-ORBIT] Join load is one pipeline: GhostSpawn Instantiates →
+    /// <see cref="MapBodyHybridVisualPending"/> → GameObject proxy (few per frame). Loading UI
+    /// progress is <see cref="WorldBodyProxyCount"/> — not a separate spawn-then-build phase.
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(66000)]
     public class EcsWorldVisualizer : MonoBehaviour
     {
+        /// <summary>
+        /// Max new world-body GameObject Instantiates per frame from the Pending queue.
+        /// Matches GhostSpawn (~1 Instantiates/frame) with small headroom so loading is one phase:
+        /// Instantiates → Pending tag → GO proxy → progress bar advances.
+        /// </summary>
+        const int MaxNewWorldBodyProxiesPerFrame = 2;
         const string DefaultShipFamilyAssetPath = "Assets/Prefabs/Ships/AstroEagle/AstroEagleShipFamily.asset";
         const string DefaultHomePlanetPath = "Assets/Prefabs/HomePlanet.prefab";
         const string DefaultNeutralPlanetPath = "Assets/Prefabs/Planet.prefab";
@@ -83,8 +93,20 @@ namespace TitanOrbit.Game
         /// <summary>Guards VR / multi-camera double onBeforeRender in the same frame.</summary>
         int _lastVisualSyncFrame = -1;
 
+        /// <summary>
+        /// New planet/asteroid/gem proxies created this frame (reset in SyncAllProxies).
+        /// Used with <see cref="ClientJoinSettleCache.Settling"/> to rate-limit Instantiates.
+        /// </summary>
+        int _newWorldBodyProxiesThisFrame;
+
         /// <summary>Local-player ship proxy on dedicated clients.</summary>
         public GameObject LocalPlayerShipProxy { get; private set; }
+
+        /// <summary>
+        /// Planet + asteroid + gem GameObject proxies currently alive.
+        /// Loading UI waits for this to approach Instantiated ghost counts after join settle.
+        /// </summary>
+        public static int WorldBodyProxyCount { get; private set; }
 
         /// <summary>Composite key for planet proxy rebuild — any field change forces new visual.</summary>
         struct PlanetVisualKey : System.IEquatable<PlanetVisualKey>
@@ -164,37 +186,239 @@ namespace TitanOrbit.Game
                 return;
 
             var em = world.EntityManager;
-
+            _newWorldBodyProxiesThisFrame = 0;
             var alive = new HashSet<Entity>();
+            bool settling = ClientJoinSettleCache.Settling;
 
-            // --- Ship proxies (hybrid path only — Entities Graphics owns ship visuals when enabled) ---
-            if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+            // --- Integrated join load path ---
+            // [TITAN-ORBIT] Never ToEntityArray-all asteroids during GhostSpawn Instantiates (Crash!!!).
+            // MapBodyHybridVisualRequestSystem tags Instantiated bodies; we Instantiates GOs from that
+            // small Pending queue. Loading progress = WorldBodyProxyCount (one bar, one phase).
+            SyncExistingWorldBodyProxyTransforms(em, alive);
+            DrainPendingWorldBodyProxies(em, alive);
+
+            if (!settling)
             {
-                EnsureShipProxies(em);
-                SyncShipProxyTransforms(em, alive);
+                // --- Full sync after settle (orphans / people transports / combat) ---
+                if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+                {
+                    EnsureShipProxies(em);
+                    SyncShipProxyTransforms(em, alive);
+                }
+
+                DrawPlanets(em, alive);
+                DrawAsteroids(em, alive);
+                DrawGems(em, alive);
+                GemVisualDiameterRegistry.RemoveStale(alive);
+                DrawPeopleTransports(em, alive);
+                ProcessBulletHitEvents(em);
+                DrawBullets(em, alive);
+
+                var remove = new List<Entity>();
+                foreach (var kv in _proxies)
+                {
+                    if (!alive.Contains(kv.Key))
+                        remove.Add(kv.Key);
+                }
+
+                foreach (var entity in remove)
+                    DestroyProxy(entity);
             }
 
-            // --- World body proxies ---
-            DrawPlanets(em, alive);
-            DrawAsteroids(em, alive);
-            DrawGems(em, alive);
-            GemVisualDiameterRegistry.RemoveStale(alive);
-            DrawPeopleTransports(em, alive);
+            WorldBodyProxyCount = CountWorldBodyProxies();
+        }
 
-            // --- Combat presentation ---
-            ProcessBulletHitEvents(em);
-            DrawBullets(em, alive);
-
-            // --- Tear down ghosts that despawned this frame ---
-            var remove = new List<Entity>();
+        /// <summary>
+        /// Updates poses for world-body proxies already in <see cref="_proxies"/> without scanning
+        /// every asteroid entity (safe during GhostSpawn Instantiates).
+        /// </summary>
+        void SyncExistingWorldBodyProxyTransforms(EntityManager em, HashSet<Entity> alive)
+        {
             foreach (var kv in _proxies)
             {
-                if (!alive.Contains(kv.Key))
-                    remove.Add(kv.Key);
+                Entity entity = kv.Key;
+                GameObject go = kv.Value;
+                if (go == null || !em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                    continue;
+
+                // Ships/bullets have their own sync paths after settle.
+                bool isWorldBody = _proxyPlanetVisuals.ContainsKey(entity) ||
+                                   go.name.IndexOf("Asteroid", System.StringComparison.Ordinal) >= 0 ||
+                                   go.name.IndexOf("Gem", System.StringComparison.Ordinal) >= 0 ||
+                                   go.name.IndexOf("Planet", System.StringComparison.Ordinal) >= 0;
+                if (!isWorldBody)
+                    continue;
+
+                var lt = em.GetComponentData<LocalTransform>(entity);
+                float scale = math.max(0.25f, lt.Scale);
+                alive.Add(entity);
+                go.transform.position = GetVisualPosition(entity, lt.Position);
+                go.transform.rotation = lt.Rotation;
+                go.transform.localScale = Vector3.one * scale;
+            }
+        }
+
+        /// <summary>
+        /// Instantiates GameObject proxies for entities tagged <see cref="MapBodyHybridVisualPending"/>.
+        /// Small query only — does not gather all map ghosts.
+        /// </summary>
+        /// <returns>Number of new proxies created this call.</returns>
+        int DrainPendingWorldBodyProxies(EntityManager em, HashSet<Entity> alive)
+        {
+            using var query = em.CreateEntityQuery(
+                ComponentType.ReadOnly<MapBodyHybridVisualPending>(),
+                ComponentType.ReadOnly<LocalTransform>(),
+                ComponentType.Exclude<PendingSpawnPlaceholder>());
+            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
+            int created = 0;
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (!TryConsumeWorldBodyProxyBudget())
+                    break;
+
+                Entity entity = entities[i];
+                if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                {
+                    if (em.Exists(entity) && em.HasComponent<MapBodyHybridVisualPending>(entity))
+                        em.RemoveComponent<MapBodyHybridVisualPending>(entity);
+                    continue;
+                }
+
+                if (_proxies.TryGetValue(entity, out var existing) && existing != null)
+                {
+                    // Already have a proxy — just mark linked.
+                    if (em.HasComponent<MapBodyHybridVisualPending>(entity))
+                        em.RemoveComponent<MapBodyHybridVisualPending>(entity);
+                    if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
+                        em.AddComponentData(entity, new MapBodyHybridVisualLinked());
+                    alive.Add(entity);
+                    continue;
+                }
+
+                var lt = em.GetComponentData<LocalTransform>(entity);
+                if (!TryCreateWorldBodyProxyForEntity(em, entity, lt, out _))
+                {
+                    // Leave Pending for next frame.
+                    continue;
+                }
+
+                if (em.HasComponent<MapBodyHybridVisualPending>(entity))
+                    em.RemoveComponent<MapBodyHybridVisualPending>(entity);
+                if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
+                    em.AddComponentData(entity, new MapBodyHybridVisualLinked());
+
+                alive.Add(entity);
+                created++;
             }
 
-            foreach (var entity in remove)
-                DestroyProxy(entity);
+            return created;
+        }
+
+        /// <summary>
+        /// Creates the correct planet/asteroid/gem proxy for an Instantiated map entity.
+        /// </summary>
+        bool TryCreateWorldBodyProxyForEntity(EntityManager em, Entity entity, LocalTransform lt, out GameObject go)
+        {
+            go = null;
+            float scale = math.max(0.25f, lt.Scale);
+
+            if (em.HasComponent<PlanetState>(entity) && em.HasComponent<PlanetTag>(entity))
+            {
+                var state = em.GetComponentData<PlanetState>(entity);
+                var key = new PlanetVisualKey
+                {
+                    IsHome = state.IsHomePlanet,
+                    Team = state.Ownership,
+                    PlanetLevel = state.PlanetLevel,
+                    PlanetId = state.PlanetId,
+                };
+
+                if (!WorldBodyVisualApplier.TryCreatePlanetVisual(
+                        homePlanetVisualPrefab,
+                        neutralPlanetVisualPrefab,
+                        planetMaterialPool,
+                        state.IsHomePlanet,
+                        state.Ownership,
+                        state.PlanetLevel,
+                        state.PlanetId,
+                        scale,
+                        out go))
+                {
+                    go = CreatePrimitivePlanetProxy(state.Ownership);
+                }
+
+                _proxies[entity] = go;
+                _proxyPlanetVisuals[entity] = key;
+                go.transform.SetPositionAndRotation(GetVisualPosition(entity, lt.Position), lt.Rotation);
+                go.transform.localScale = Vector3.one * scale;
+                return true;
+            }
+
+            if (em.HasComponent<AsteroidState>(entity) || em.HasComponent<AsteroidTag>(entity))
+            {
+                if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(
+                        asteroidVisualPrefab, lt.Position, scale, out go))
+                {
+                    go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    go.name = "AsteroidTagProxy";
+                    var col = go.GetComponent<Collider>();
+                    if (col != null) Destroy(col);
+                    var renderer = go.GetComponent<Renderer>();
+                    if (renderer != null)
+                        renderer.material = WorldBodyVisualApplier.CreateLitMaterial(new Color(0.55f, 0.45f, 0.35f));
+                    WorldBodyVisualApplier.EnsureAsteroidSpin(go, lt.Position);
+                }
+
+                _proxies[entity] = go;
+                go.transform.position = GetVisualPosition(entity, lt.Position);
+                go.transform.localScale = Vector3.one * scale;
+                return true;
+            }
+
+            if (em.HasComponent<GemState>(entity) && em.HasComponent<GemTag>(entity))
+            {
+                var state = em.GetComponentData<GemState>(entity);
+                scale = GemVisualApplier.ComputeVisualScale(math.max(0.25f, state.Value));
+                if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, state.Value, out go))
+                {
+                    go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    go.name = "GemTagProxy";
+                    var col = go.GetComponent<Collider>();
+                    if (col != null) Destroy(col);
+                    var renderer = go.GetComponent<Renderer>();
+                    if (renderer != null)
+                        renderer.material = WorldBodyVisualApplier.CreateLitMaterial(Color.yellow);
+                }
+
+                _proxies[entity] = go;
+                go.transform.SetPositionAndRotation(GetVisualPosition(entity, lt.Position), lt.Rotation);
+                go.transform.localScale = Vector3.one * scale;
+                GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, state.Value));
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Counts planet/asteroid/gem proxies (excludes ships/bullets).</summary>
+        int CountWorldBodyProxies()
+        {
+            int n = 0;
+            foreach (var kv in _proxies)
+            {
+                if (kv.Value == null)
+                    continue;
+                // Ship proxies are also in _proxies; world bodies use TagProxy names or planet keys.
+                if (_proxyPlanetVisuals.ContainsKey(kv.Key) ||
+                    kv.Value.name.IndexOf("Asteroid", System.StringComparison.Ordinal) >= 0 ||
+                    kv.Value.name.IndexOf("Gem", System.StringComparison.Ordinal) >= 0 ||
+                    kv.Value.name.IndexOf("Planet", System.StringComparison.Ordinal) >= 0 ||
+                    kv.Value.name.IndexOf("PeopleTransport", System.StringComparison.Ordinal) >= 0)
+                    n++;
+            }
+
+            return n;
         }
 
         /// <summary>Delegates world pick to <see cref="EcsGameBridge.GetVisualizationWorld"/>.</summary>
@@ -718,7 +942,6 @@ namespace TitanOrbit.Game
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];
-                alive.Add(entity);
                 var state = states[i];
                 var lt = transforms[i];
                 float scale = math.max(0.25f, lt.Scale);
@@ -736,6 +959,8 @@ namespace TitanOrbit.Game
                     _proxyPlanetVisuals.TryGetValue(entity, out var existingKey);
                     if (existingKey.Equals(key))
                     {
+                        // Existing proxy — always keep alive and update pose.
+                        alive.Add(entity);
                         go.transform.position = GetVisualPosition(entity, lt.Position);
                         go.transform.rotation = lt.Rotation;
                         go.transform.localScale = Vector3.one * scale;
@@ -744,6 +969,12 @@ namespace TitanOrbit.Game
 
                     DestroyProxy(entity);
                 }
+
+                // --- Rate-limit new Instantiates during join settle ---
+                // [TITAN-ORBIT] Skip create this frame; entity stays without a proxy until budget allows.
+                // Do NOT add to alive until a proxy exists (teardown only destroys existing proxies).
+                if (!TryConsumeWorldBodyProxyBudget())
+                    continue;
 
                 if (!WorldBodyVisualApplier.TryCreatePlanetVisual(
                         homePlanetVisualPrefab,
@@ -764,6 +995,7 @@ namespace TitanOrbit.Game
                     _proxies[entity] = go;
                 }
 
+                alive.Add(entity);
                 _proxyPlanetVisuals[entity] = key;
                 go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.rotation = lt.Rotation;
@@ -783,34 +1015,42 @@ namespace TitanOrbit.Game
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];
-                alive.Add(entity);
                 var lt = transforms[i];
                 float scale = math.max(0.25f, lt.Scale);
 
-                if (!_proxies.TryGetValue(entity, out var go) || go == null)
+                if (_proxies.TryGetValue(entity, out var go) && go != null)
                 {
-                    if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(
-                            asteroidVisualPrefab,
-                            lt.Position,
-                            scale,
-                            out go))
-                    {
-                        go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                        go.name = "AsteroidTagProxy";
-                        var col = go.GetComponent<Collider>();
-                        if (col != null) Destroy(col);
-                        var renderer = go.GetComponent<Renderer>();
-                        if (renderer != null)
-                        {
-                            renderer.material = WorldBodyVisualApplier.CreateLitMaterial(new Color(0.55f, 0.45f, 0.35f));
-                        }
-
-                        WorldBodyVisualApplier.EnsureAsteroidSpin(go, lt.Position);
-                    }
-
-                    _proxies[entity] = go;
+                    alive.Add(entity);
+                    go.transform.position = GetVisualPosition(entity, lt.Position);
+                    go.transform.localScale = Vector3.one * scale;
+                    continue;
                 }
 
+                // --- Rate-limit new Instantiates during join settle ---
+                if (!TryConsumeWorldBodyProxyBudget())
+                    continue;
+
+                if (!WorldBodyVisualApplier.TryCreateAsteroidVisual(
+                        asteroidVisualPrefab,
+                        lt.Position,
+                        scale,
+                        out go))
+                {
+                    go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    go.name = "AsteroidTagProxy";
+                    var col = go.GetComponent<Collider>();
+                    if (col != null) Destroy(col);
+                    var renderer = go.GetComponent<Renderer>();
+                    if (renderer != null)
+                    {
+                        renderer.material = WorldBodyVisualApplier.CreateLitMaterial(new Color(0.55f, 0.45f, 0.35f));
+                    }
+
+                    WorldBodyVisualApplier.EnsureAsteroidSpin(go, lt.Position);
+                }
+
+                _proxies[entity] = go;
+                alive.Add(entity);
                 go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.localScale = Vector3.one * scale;
             }
@@ -830,32 +1070,55 @@ namespace TitanOrbit.Game
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];
-                alive.Add(entity);
                 var state = states[i];
                 var lt = transforms[i];
                 float scale = GemVisualApplier.ComputeVisualScale(math.max(0.25f, state.Value));
 
-                if (!_proxies.TryGetValue(entity, out var go) || go == null)
+                if (_proxies.TryGetValue(entity, out var go) && go != null)
                 {
-                    if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, state.Value, out go))
-                    {
-                        go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                        go.name = "GemTagProxy";
-                        var col = go.GetComponent<Collider>();
-                        if (col != null) Destroy(col);
-                        var renderer = go.GetComponent<Renderer>();
-                        if (renderer != null)
-                            renderer.material = WorldBodyVisualApplier.CreateLitMaterial(Color.yellow);
-                    }
-
-                    _proxies[entity] = go;
+                    alive.Add(entity);
+                    go.transform.position = GetVisualPosition(entity, lt.Position);
+                    go.transform.rotation = lt.Rotation;
+                    go.transform.localScale = Vector3.one * scale;
+                    GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, state.Value));
+                    continue;
                 }
 
+                // --- Rate-limit new Instantiates during join settle ---
+                if (!TryConsumeWorldBodyProxyBudget())
+                    continue;
+
+                if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, state.Value, out go))
+                {
+                    go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    go.name = "GemTagProxy";
+                    var col = go.GetComponent<Collider>();
+                    if (col != null) Destroy(col);
+                    var renderer = go.GetComponent<Renderer>();
+                    if (renderer != null)
+                        renderer.material = WorldBodyVisualApplier.CreateLitMaterial(Color.yellow);
+                }
+
+                _proxies[entity] = go;
+                alive.Add(entity);
                 go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
                 GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, state.Value));
             }
+        }
+
+        /// <summary>
+        /// Returns true when a new world-body proxy Instantiates is allowed this frame
+        /// (shared Pending drain + post-settle Draw* catch-up).
+        /// </summary>
+        bool TryConsumeWorldBodyProxyBudget()
+        {
+            if (_newWorldBodyProxiesThisFrame >= MaxNewWorldBodyProxiesPerFrame)
+                return false;
+
+            _newWorldBodyProxiesThisFrame++;
+            return true;
         }
 
         /// <summary>Colored primitive sphere fallback when planet prefab pipeline fails.</summary>

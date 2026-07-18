@@ -1167,13 +1167,31 @@ namespace TitanOrbit.NetCode
                 meta.AsteroidCount.ToString(CultureInfo.InvariantCulture));
 
             // --- Per-team owned planet counts (live; updates each heartbeat as captures happen) ---
-            // [TITAN-ORBIT] Join Game shows e.g. "planets 1/1/2" from MapTeamPlanets CSV.
+            // [TITAN-ORBIT] Join Game team cards show worlds from MapTeamPlanets CSV.
             if (MapSessionMetaCache.TryBuildTeamPlanetCountsCsv(server, meta.TeamCount, out string teamPlanetsCsv) &&
                 !string.IsNullOrEmpty(teamPlanetsCsv))
             {
                 data[TitanOrbitLobbyService.LobbyMapTeamPlanetsKey] = new DataObject(
                     DataObject.VisibilityOptions.Public,
                     teamPlanetsCsv);
+            }
+
+            // --- Per-team roster sizes + per-team cap (Join Game player lines) ---
+            // [TITAN-ORBIT] Match capacity for the browser is teamCount × maxPerTeam, not the
+            // UGS lobby MaxPlayers ceiling (often 60). Publish both so the UI can show e.g. 1/20.
+            if (MapSessionMetaCache.TryBuildTeamPlayerCountsCsv(server, meta.TeamCount, out string teamPlayersCsv) &&
+                !string.IsNullOrEmpty(teamPlayersCsv))
+            {
+                data[TitanOrbitLobbyService.LobbyMapTeamPlayersKey] = new DataObject(
+                    DataObject.VisibilityOptions.Public,
+                    teamPlayersCsv);
+            }
+
+            if (MapSessionMetaCache.TryReadMaxPlayersPerTeam(server, out int maxPerTeam))
+            {
+                data[TitanOrbitLobbyService.LobbyMapMaxPlayersPerTeamKey] = new DataObject(
+                    DataObject.VisibilityOptions.Public,
+                    maxPerTeam.ToString(CultureInfo.InvariantCulture));
             }
         }
 

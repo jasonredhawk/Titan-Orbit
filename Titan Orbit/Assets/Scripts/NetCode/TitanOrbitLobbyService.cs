@@ -35,6 +35,10 @@ namespace TitanOrbit.NetCode
         public const string LobbyMapAsteroidCountKey = "MapAsteroids";
         /// <summary>[TITAN-ORBIT] Per-team owned planet counts as CSV (TeamA,TeamB,…), e.g. "1,2,1".</summary>
         public const string LobbyMapTeamPlanetsKey = "MapTeamPlanets";
+        /// <summary>[TITAN-ORBIT] Per-team roster sizes as CSV (TeamA,TeamB,…), e.g. "2,0,1".</summary>
+        public const string LobbyMapTeamPlayersKey = "MapTeamPlayers";
+        /// <summary>[TITAN-ORBIT] Max players allowed on each team (from TeamStateSingleton).</summary>
+        public const string LobbyMapMaxPlayersPerTeamKey = "MapMaxPerTeam";
         public const string LobbyMatchRequestGameName = "TitanOrbitMatchRequest";
         public const string LobbyMatchRequestEpochKey = "RequestedAt";
         public const int DedicatedLobbyStaleSeconds = 45;
@@ -83,6 +87,18 @@ namespace TitanOrbit.NetCode
             /// Null when the server has not published <see cref="LobbyMapTeamPlanetsKey"/> yet.
             /// </summary>
             public int[] MapTeamPlanetCounts;
+
+            /// <summary>
+            /// [TITAN-ORBIT] Current player count per team in TeamA.. order (e.g. 2,0,1).
+            /// Null when the server has not published <see cref="LobbyMapTeamPlayersKey"/> yet.
+            /// </summary>
+            public int[] MapTeamPlayerCounts;
+
+            /// <summary>
+            /// [TITAN-ORBIT] Cap per team from map/bootstrap meta; -1 if unknown.
+            /// Join Game match capacity = <see cref="MapTeamCount"/> × this value when both are set.
+            /// </summary>
+            public int MapMaxPlayersPerTeam = -1;
         }
 
         public static async Task<List<LobbySummary>> QueryJoinableDedicatedLobbiesAsync(
@@ -837,7 +853,9 @@ namespace TitanOrbit.NetCode
                 MapTeamCount = -1,
                 MapNeutralPlanetCount = -1,
                 MapAsteroidCount = -1,
-                MapTeamPlanetCounts = null
+                MapTeamPlanetCounts = null,
+                MapTeamPlayerCounts = null,
+                MapMaxPlayersPerTeam = -1
             };
 
             if (lobby.Data == null)
@@ -849,6 +867,8 @@ namespace TitanOrbit.NetCode
             summary.MapNeutralPlanetCount = TryParseLobbyInt(lobby.Data, LobbyMapNeutralCountKey, -1);
             summary.MapAsteroidCount = TryParseLobbyInt(lobby.Data, LobbyMapAsteroidCountKey, -1);
             summary.MapTeamPlanetCounts = TryParseLobbyIntCsv(lobby.Data, LobbyMapTeamPlanetsKey);
+            summary.MapTeamPlayerCounts = TryParseLobbyIntCsv(lobby.Data, LobbyMapTeamPlayersKey);
+            summary.MapMaxPlayersPerTeam = TryParseLobbyInt(lobby.Data, LobbyMapMaxPlayersPerTeamKey, -1);
 
             if (lobby.Data.TryGetValue(LobbyIsOpenKey, out DataObject isOpenObj))
                 summary.IsOpen = string.Equals(isOpenObj?.Value, "1", StringComparison.Ordinal);
@@ -941,7 +961,7 @@ namespace TitanOrbit.NetCode
         static int[] TryParseLobbyIntCsv(Dictionary<string, DataObject> data, string key)
         {
             // --- Parse lobby Data CSV ints ---
-            // [TITAN-ORBIT] Used for per-team planet ownership on the Join Game browser.
+            // [TITAN-ORBIT] Used for MapTeamPlanets and MapTeamPlayers on the Join Game browser.
             if (data == null || string.IsNullOrEmpty(key))
                 return null;
             if (!data.TryGetValue(key, out DataObject obj) || obj == null || string.IsNullOrWhiteSpace(obj.Value))

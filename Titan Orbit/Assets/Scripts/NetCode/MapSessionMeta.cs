@@ -36,7 +36,9 @@ namespace TitanOrbit.NetCode
     public struct MapSessionMetaSent : IComponentData { }
 
     /// <summary>
-    /// [TITAN-ORBIT] Managed cache of the last MapSessionMetaRpc received on this client.
+    /// [TITAN-ORBIT] Managed cache of the last MapSessionMetaRpc received on this client,
+    /// plus server-side helpers that publish the same totals (and per-team roster/planet CSVs)
+    /// into UGS lobby Data for the Join Game browser.
     /// Readable from MonoBehaviours (EcsGameBridge, Join Game UI) without querying ECS.
     /// Cleared when leaving a session so a new join does not reuse stale totals.
     /// </summary>
@@ -155,6 +157,82 @@ namespace TitanOrbit.NetCode
 
             csv = BuildCsv(counts);
             return true;
+        }
+
+        /// <summary>
+        /// Builds a CSV of current roster sizes per active team (TeamA.. order) from
+        /// <see cref="TeamStateSingleton"/>. Used by UGS lobby heartbeat so Join Game can show
+        /// "1/20" style player counts before the client connects.
+        /// </summary>
+        /// <param name="serverWorld">Server ECS world.</param>
+        /// <param name="teamCount">Active team slots for this match (2–5).</param>
+        /// <param name="csv">Comma-separated player counts, or empty on failure.</param>
+        /// <returns>True when at least one team slot was written.</returns>
+        public static bool TryBuildTeamPlayerCountsCsv(World serverWorld, int teamCount, out string csv)
+        {
+            csv = string.Empty;
+            if (serverWorld == null || !serverWorld.IsCreated)
+                return false;
+
+            // --- Clamp to playable team slots ---
+            // [TITAN-ORBIT] Same slot order as MapTeamPlanets so Join Game can zip the two CSVs.
+            int slots = Mathf.Clamp(teamCount, 0, 5);
+            if (slots <= 0)
+                return false;
+
+            var em = serverWorld.EntityManager;
+            using var query = em.CreateEntityQuery(ComponentType.ReadOnly<TeamStateSingleton>());
+            if (query.IsEmptyIgnoreFilter)
+                return false;
+
+            // --- Read roster counts ---
+            // [ECS/DOTS] TeamStateSingleton is the server-authoritative roster (also ghosted in-match).
+            var team = query.GetSingleton<TeamStateSingleton>();
+            var counts = new int[slots];
+            for (int i = 0; i < slots; i++)
+                counts[i] = GetTeamPlayerCount(team, (TeamId)(i + 1));
+
+            csv = BuildCsv(counts);
+            return true;
+        }
+
+        /// <summary>
+        /// Reads <see cref="TeamStateSingleton.MaxPlayersPerTeam"/> for lobby Data / Join Game capacity.
+        /// </summary>
+        /// <param name="serverWorld">Server ECS world.</param>
+        /// <param name="maxPlayersPerTeam">Cap written at bootstrap (typically 20).</param>
+        /// <returns>True when the singleton exists and the cap is positive.</returns>
+        public static bool TryReadMaxPlayersPerTeam(World serverWorld, out int maxPlayersPerTeam)
+        {
+            maxPlayersPerTeam = 0;
+            if (serverWorld == null || !serverWorld.IsCreated)
+                return false;
+
+            var em = serverWorld.EntityManager;
+            using var query = em.CreateEntityQuery(ComponentType.ReadOnly<TeamStateSingleton>());
+            if (query.IsEmptyIgnoreFilter)
+                return false;
+
+            // --- Cap from bootstrap ---
+            // [TITAN-ORBIT] Match capacity for Join Game = ActiveTeamCount × MaxPlayersPerTeam
+            // (not the UGS lobby MaxPlayers default of 60, which is a hard server ceiling).
+            maxPlayersPerTeam = query.GetSingleton<TeamStateSingleton>().MaxPlayersPerTeam;
+            return maxPlayersPerTeam > 0;
+        }
+
+        /// <summary>Returns the roster count field for one team id.</summary>
+        static int GetTeamPlayerCount(in TeamStateSingleton team, TeamId id)
+        {
+            // --- Per-team roster switch ---
+            switch (id)
+            {
+                case TeamId.TeamA: return Mathf.Max(0, team.TeamACount);
+                case TeamId.TeamB: return Mathf.Max(0, team.TeamBCount);
+                case TeamId.TeamC: return Mathf.Max(0, team.TeamCCount);
+                case TeamId.TeamD: return Mathf.Max(0, team.TeamDCount);
+                case TeamId.TeamE: return Mathf.Max(0, team.TeamECount);
+                default: return 0;
+            }
         }
 
         /// <summary>Joins ownership counts as "1,1,2" for lobby Data.</summary>

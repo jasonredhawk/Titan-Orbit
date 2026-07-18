@@ -7,9 +7,8 @@ namespace TitanOrbit.NetCode
     /// Caps how many ghost chunks the dedicated / host server packs into each snapshot per connection.
     /// <para>
     /// Without this, a Relay late-join can deliver hundreds of asteroid/planet ghosts in one client
-    /// frame. NetCode's <c>GhostSpawnSystem</c> then Instantiates the entire delayed queue in a
-    /// single Burst update — that path has hard-crashed the Windows player right after go-in-game
-    /// (Burst stack in <c>lib_burst_generated</c> / <c>GhostSpawnSystem</c>).
+    /// frame. Paired with <see cref="TitanOrbitGhostDistanceImportanceBootstrapSystem"/> (spatial
+    /// tiles) and map-ghost <c>MaxSendRate</c> on prefabs so join streams instead of Instantiates floods.
     /// </para>
     /// World: ServerSimulation. Group: InitializationSystemGroup (after tick-rate setup).
     /// </summary>
@@ -22,6 +21,8 @@ namespace TitanOrbit.NetCode
         /// Max chunks written into one snapshot for one connection.
         /// Asteroids share archetypes so one chunk can still hold many entities — keep this at 1
         /// so late-join map floods create placeholders gradually instead of hundreds per tick.
+        /// Paired with <see cref="TitanOrbitGhostDistanceImportanceBootstrapSystem"/> which
+        /// fragments dense fields into spatial tiles (smaller chunks).
         /// </summary>
         public const int MaxSendChunksPerSnapshot = 1;
 
@@ -30,6 +31,13 @@ namespace TitanOrbit.NetCode
         /// NetCode recommends ≥ 2× <see cref="MaxSendChunksPerSnapshot"/>.
         /// </summary>
         public const int MaxIterateChunksPerSnapshot = 4;
+
+        /// <summary>
+        /// After distance scaling, skip chunks whose priority is below this.
+        /// Helps far static map tiles wait while the player's ship / nearby tiles fill the packet.
+        /// 0 = off. Tuned low so join still progresses; raise if join Instantiates stay too bursty.
+        /// </summary>
+        public const int MinDistanceScaledSendImportance = 1;
 
         /// <summary>True after the one-time diagnostic log.</summary>
         bool _loggedOnce;
@@ -55,6 +63,7 @@ namespace TitanOrbit.NetCode
             ref var sendData = ref SystemAPI.GetSingletonRW<GhostSendSystemData>().ValueRW;
             sendData.MaxSendChunks = MaxSendChunksPerSnapshot;
             sendData.MaxIterateChunks = MaxIterateChunksPerSnapshot;
+            sendData.MinDistanceScaledSendImportance = MinDistanceScaledSendImportance;
 
             // --- One-time log ---
             if (_loggedOnce)
@@ -64,6 +73,7 @@ namespace TitanOrbit.NetCode
             UnityEngine.Debug.Log(
                 "[TitanOrbitGhostSend] Snapshot chunk caps applied: MaxSendChunks=" +
                 MaxSendChunksPerSnapshot + ", MaxIterateChunks=" + MaxIterateChunksPerSnapshot +
+                ", MinDistanceScaledSendImportance=" + MinDistanceScaledSendImportance +
                 " (spreads map ghost spawn on join).");
         }
     }

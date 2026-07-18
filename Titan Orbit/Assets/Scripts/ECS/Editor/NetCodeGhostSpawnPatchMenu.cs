@@ -36,10 +36,13 @@ namespace TitanOrbit.ECS.Editor
             "Library/PackageCache/com.unity.netcode@6437771c174a/Runtime/Snapshot/GhostSpawnSystem.cs";
 
         /// <summary>IL-surviving patch id declared on GhostSpawnSystem.</summary>
-        public const string PatchIdMarker = "TO_GhostSpawn_v4_safeSnapshotCopy";
+        public const string PatchIdMarker = "TO_GhostSpawn_v8_ghostMapSafe";
 
         /// <summary>Older markers that must not be the only evidence of a “good” patch.</summary>
         public const string SafeCopyMarker = "TryCopySnapshotBufferSafe";
+
+        /// <summary>v8 keeps Instantiates-per-frame cap (must remain; do not require re-queue).</summary>
+        public const string InstantiatesCapMarker = "delayedInstantiatesThisFrame";
 
         /// <summary>
         /// [EDITOR] On editor load — ensure embedded package has the Titan Orbit GhostSpawn patch.
@@ -151,8 +154,9 @@ namespace TitanOrbit.ECS.Editor
                 return false;
             return text.Contains(PatchIdMarker, StringComparison.Ordinal) &&
                    text.Contains(SafeCopyMarker, StringComparison.Ordinal) &&
-                   text.Contains("delayedInstantiatesThisFrame", StringComparison.Ordinal) &&
-                   text.Contains("Intentionally NOT [BurstCompile]", StringComparison.Ordinal);
+                   text.Contains(InstantiatesCapMarker, StringComparison.Ordinal) &&
+                   text.Contains("Intentionally NOT [BurstCompile]", StringComparison.Ordinal) &&
+                   text.Contains("ghostMapSafe", StringComparison.Ordinal);
         }
 
         static bool TryGetDestPath(out string destPath, out string error)

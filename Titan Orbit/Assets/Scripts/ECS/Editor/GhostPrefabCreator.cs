@@ -92,6 +92,10 @@ namespace TitanOrbit.ECS.Editor
             ghost.SupportedGhostModes = GhostModeMask.Interpolated;
             ghost.OptimizationMode = GhostOptimizationMode.Static;
             ghost.RollbackPredictionOnStructuralChanges = false;
+            // [NETCODE] MaxSendRate (Hz) — 0 = every NetworkTick. Cap map resends so join bandwidth
+            // prefers ships (Importance 100). First send of a new ghost is not deferred by this.
+            ghost.Importance = 1;
+            ghost.MaxSendRate = 2;
         }
 
         /// <summary>Creates PeopleTransportGhost (interpolated map ghost, no owner).</summary>

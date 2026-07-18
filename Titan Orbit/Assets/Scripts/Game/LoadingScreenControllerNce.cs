@@ -53,8 +53,10 @@ namespace TitanOrbit.Game
             if (EcsGameBridge.TryGetMapLoadingStepCounts(out int completedSteps, out int totalSteps) && totalSteps > 0)
             {
                 float fraction = (float)completedSteps / totalSteps;
-                if (completedSteps >= totalSteps && !EcsGameBridge.IsMapLoadingComplete())
+                // Cap at 99% until IsMapLoadingComplete (settle idle + integrated proxy total).
+                if (!EcsGameBridge.IsMapLoadingComplete())
                     fraction = Mathf.Min(fraction, 0.99f);
+                // One phase: completedSteps is hybrid proxy count (Instantates + visual together).
                 UpdateStatusForSteps(completedSteps, totalSteps);
                 ApplyProgress(fraction);
                 return;
@@ -95,6 +97,7 @@ namespace TitanOrbit.Game
                 return;
 
             float fraction = (float)completedSteps / totalSteps;
+            // Phases describe one integrated load (network Instantiates + hybrid visuals).
             string phase = fraction switch
             {
                 < 0.08f => "Rolling galaxy parameters",

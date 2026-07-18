@@ -15,10 +15,9 @@ namespace TitanOrbit.ECS
     /// Unity Physics sphere per planet so ships bounce off the moon hull like planets and asteroids.
     /// Runs on server and client (colliders are local sim geometry, not NetCode ghosts).
     /// <para>
-    /// [TITAN-ORBIT] On clients we wait until <see cref="MapStateSingleton.LoadingComplete"/> (when
-    /// present) and create at most a few moon hulls per frame. Doing structural
-    /// <c>AddComponent</c> on every planet ghost in the same frames as NetCode's
-    /// <c>GhostSpawnSystem</c> Instantiates hundreds of map bodies has contributed to Windows
+    /// [TITAN-ORBIT] On clients we wait until <see cref="ClientJoinSettleCache.Settling"/> is false
+    /// (GhostSpawn Instantiates backlog drained) and create at most one moon hull per frame.
+    /// Creating moon colliders in the same window as NetCode Instantiates contributed to Windows
     /// player hard-crashes right after Relay go-in-game.
     /// </para>
     /// </summary>
@@ -31,7 +30,7 @@ namespace TitanOrbit.ECS
         /// Max moon collider entities to create in one frame on the client.
         /// Server may create more — map gen already batches planet spawns.
         /// </summary>
-        const int MaxClientEnsuresPerFrame = 2;
+        const int MaxClientEnsuresPerFrame = 1;
 
         /// <summary>
         /// Spawns missing kinematic moon hulls for planets that already have <see cref="PlanetGemMoonState"/>.
@@ -41,8 +40,27 @@ namespace TitanOrbit.ECS
             // --- Client vs server ---
             // [NETCODE] ClientWorld is the predicted/interpolated replica; server is authoritative.
             // MapStateSingleton often does NOT replicate to dedicated clients, so we do not gate on
-            // LoadingComplete (that would skip moon hulls forever). We only rate-limit structural work.
+            // LoadingComplete (that would skip moon hulls forever).
             bool isClient = state.World.IsClient();
+            if (isClient)
+            {
+                // --- Join settle gate ---
+                // [TITAN-ORBIT] Do not CreateEntity moon hulls while GhostSpawn Instantiates backlog
+                // is still draining. Shared flag with TransformSystemGroup gate + EcsWorldVisualizer.
+                if (ClientJoinSettleCache.Settling)
+                    return;
+
+                // Also wait until we are actually in-game (settle cache clears when not in-game).
+                bool inGame = false;
+                foreach (var _ in SystemAPI.Query<RefRO<NetworkStreamInGame>>())
+                {
+                    inGame = true;
+                    break;
+                }
+
+                if (!inGame)
+                    return;
+            }
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
             int ensuredThisFrame = 0;
@@ -54,8 +72,7 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 // --- Rate-limit on client ---
-                // [TITAN-ORBIT] Spread AddComponent / CreateEntity across frames after join so we
-                // do not pile structural changes onto the same frames as GhostSpawnSystem.
+                // [TITAN-ORBIT] Spread CreateEntity across frames after the join settle delay.
                 if (isClient && ensuredThisFrame >= MaxClientEnsuresPerFrame)
                     break;
 
@@ -92,7 +109,10 @@ namespace TitanOrbit.ECS
                     elapsed,
                     isHome);
 
-                ecb.AddComponent(moonEntity, LocalTransform.FromPositionRotationScale(moonPos, quaternion.identity, planetScale));
+                // [ECS/DOTS] LocalToWorld required alongside LocalTransform for TransformSystemGroup.
+                var moonLt = LocalTransform.FromPositionRotationScale(moonPos, quaternion.identity, planetScale);
+                ecb.AddComponent(moonEntity, moonLt);
+                ecb.AddComponent(moonEntity, new LocalToWorld { Value = float4x4.TRS(moonPos, quaternion.identity, planetScale) });
                 ecb.AddComponent(entity, new PlanetGemMoonColliderEntity { MoonColliderEntity = moonEntity });
                 ensuredThisFrame++;
             }
