@@ -4,9 +4,14 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// [TITAN-ORBIT] Client singleton that tracks late-join Instantiates settle.
-    /// While <see cref="Settling"/> is non-zero, transform systems stay disabled and hybrid
-    /// GameObject Instantiates are rate-limited so Windows players do not hard-crash during
-    /// map-ghost Instantiates (Relay late-join with hundreds of asteroids).
+    /// While <see cref="Settling"/> is non-zero, hybrid/UI code must skip full map-body
+    /// <c>ToEntityArray</c> scans (minimap, MarkFromQuery, DrawAsteroids). GameObject Instantiates
+    /// stay rate-limited via the Pending drain.
+    /// <para>
+    /// Do NOT disable <c>TransformSystemGroup</c> from this flag — re-enabling after Instantiates
+    /// hundreds of asteroids hard-crashes Burst LocalToWorld on Windows (Player.log 2026-07-18).
+    /// Instantiates safety is GhostSpawn Instantiates=1/frame with transforms always on.
+    /// </para>
     /// <para>
     /// Written by <see cref="TitanOrbitClientJoinTransformGateSystem"/>.
     /// Read by moon collider ensure and <c>EcsWorldVisualizer</c> (via <see cref="ClientJoinSettleCache"/>).
@@ -33,7 +38,7 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class ClientJoinSettleCache
     {
-        /// <summary>True while the client should rate-limit Instantiates / keep transforms gated.</summary>
+        /// <summary>True while GhostSpawn Instantiates backlog is active — gate hybrid/UI map scans.</summary>
         public static bool Settling { get; private set; }
 
         /// <summary>Frames in-game this settle session (diagnostic).</summary>

@@ -120,7 +120,6 @@ namespace TitanOrbit.Game
             if (ships.Length == 0 || gems.Length == 0)
                 return;
 
-            Vector3 camPos = cam.transform.position;
             float pulseWave = Mathf.SmoothStep(0f, 1f, (Mathf.Sin(Time.time * pulseSpeed) + 1f) * 0.5f);
             float pulsedAlphaAtShip = Mathf.Clamp01(alphaAtShip + (pulseWave * 2f - 1f) * pulseAlphaAmplitude);
             float widthPulse = 1f + (pulseWave * 2f - 1f) * pulseWidthAmplitude;
@@ -163,7 +162,11 @@ namespace TitanOrbit.Game
 
                         float3 beamOrigin = GemTractorBeamClientLogic.ResolveBeamOrigin(
                             ships[si], shipTransforms[si], wings, gems[gi]);
-                        Vector3 shipDisplay = GetDisplayPosition(beamOrigin, camPos, mapW, mapH);
+                        // [TITAN-ORBIT] Classic: nearest tile to logical local ship / camera.
+                        Vector3 reference = ToroidalDisplay.TryGetReferencePosition(out var shipRef)
+                            ? shipRef
+                            : cam.transform.position;
+                        Vector3 shipDisplay = ToroidalDisplay.ToDisplayPosition(beamOrigin, reference);
                         float3 gemOff = ToroidalMapEcs.ShortestOffsetXZ(beamOrigin, gemTransforms[gi].Position, mapW, mapH);
                         Vector3 gemDisplay = shipDisplay + new Vector3(gemOff.x, 0f, gemOff.z);
 
@@ -196,15 +199,6 @@ namespace TitanOrbit.Game
                     }
                 }
             }
-        }
-
-        static Vector3 GetDisplayPosition(float3 logicalPos, Vector3 cameraPos, float mapW, float mapH)
-        {
-            float dx = cameraPos.x - logicalPos.x;
-            float dz = cameraPos.z - logicalPos.z;
-            int k = (int)Mathf.Round(dx / mapW);
-            int m = (int)Mathf.Round(dz / mapH);
-            return new Vector3(logicalPos.x + k * mapW, logicalPos.y, logicalPos.z + m * mapH);
         }
 
         static bool IsGameplayCamera(Camera cam)

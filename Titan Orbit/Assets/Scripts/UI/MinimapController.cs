@@ -170,11 +170,19 @@ namespace TitanOrbit.UI
             Bullseye     // Markers (attack/defend)
         }
 
+        /// <summary>
+        /// Shortest XZ delta on the Pac-Man map so blips wrap around the player instead of
+        /// drawing a long Euclidean line across the full map.
+        /// </summary>
         private static void GetToroidalDelta(Vector3 from, Vector3 to, out float dx, out float dz)
         {
-            // Flat world: plain Euclidean delta (no wrapping).
+            // --- Periodic shortest-path delta (matches ToroidalMap / ToroidalMapEcs) ---
+            float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
+            float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
             dx = to.x - from.x;
             dz = to.z - from.z;
+            dx -= mapW * Mathf.Round(dx / mapW);
+            dz -= mapH * Mathf.Round(dz / mapH);
         }
 
         /// <summary>Half-diagonal of the toroidal map — circle radius that fits every world point around the player.</summary>
@@ -221,14 +229,16 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>World-space radius used for expanded minimap zoom (player-centered, fits entire map).</summary>
+        /// <summary>
+        /// World-space radius for expanded minimap: fit the full toroidal map (half-diagonal)
+        /// zoomed to the rolled map size. Does not inflate from blip display positions — those can
+        /// sit many tiles away and made the map look tiny when size was wrong or unbounded.
+        /// </summary>
         private float GetExpandedWorldRadius(Vector3 playerPos)
         {
+            _ = playerPos;
+            // --- Full map fit: half-diagonal of W×H period cell ---
             float radius = GetFullMapToroidalRadius();
-            float entityRadius = GetMaxCachedEntityToroidalDistance(playerPos);
-            if (entityRadius > radius)
-                radius = entityRadius;
-
             return Mathf.Max(1f, radius * expandedMapFitPadding);
         }
 
@@ -1453,6 +1463,7 @@ namespace TitanOrbit.UI
                 return;
             // Normal 6s full refresh. Do NOT force full FindObjects every tick while ghosts exist — that was a major hitch.
             RefreshEntityCache(false);
+            // Player + entity proxies share logical/display space; toroidal delta handles the seam.
             Vector3 playerPos = playerTransform.position;
             if (isExpanded)
                 minimapRadius = GetExpandedWorldRadius(playerPos);

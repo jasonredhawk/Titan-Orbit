@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Collections;
@@ -208,6 +209,8 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
+                // --- Keep unbounded position (ship does not wrap; bullets match that space) ---
+                // Collision still uses toroidal segment tests via ShortestOffset / unwrap helpers.
                 b.Position = newPos;
                 bullets[i] = b;
             }

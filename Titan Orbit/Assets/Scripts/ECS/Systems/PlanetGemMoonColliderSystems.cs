@@ -45,7 +45,7 @@ namespace TitanOrbit.ECS
             {
                 // --- Join settle gate ---
                 // [TITAN-ORBIT] Do not CreateEntity moon hulls while GhostSpawn Instantiates backlog
-                // is still draining. Shared flag with TransformSystemGroup gate + EcsWorldVisualizer.
+                // is still draining. Shared settle flag with EcsWorldVisualizer / minimap.
                 if (ClientJoinSettleCache.Settling)
                     return;
 

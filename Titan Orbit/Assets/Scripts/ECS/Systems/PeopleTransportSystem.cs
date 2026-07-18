@@ -25,11 +25,22 @@ namespace TitanOrbit.ECS
         /// <summary>Fallback hull radius when ship collider scale is unavailable.</summary>
         public const float DefaultShipHullRadius = 1f;
 
-        /// <summary>Locks Y to the flat map plane when writing transport transforms.</summary>
-        public static void WriteTransform(ref LocalTransform transform, float3 position)
+        /// <summary>
+        /// Locks Y to the flat map plane. Positions stay unbounded (ships do not wrap);
+        /// delivery/range still use toroidal distance helpers.
+        /// </summary>
+        public static void WriteTransform(ref LocalTransform transform, float3 position, float mapW, float mapH)
         {
+            _ = mapW;
+            _ = mapH;
             position.y = 0f;
             transform.Position = position;
+        }
+
+        /// <summary>Planar write using current position (map size unused — signature kept for call sites).</summary>
+        public static void WriteTransform(ref LocalTransform transform, float3 position)
+        {
+            WriteTransform(ref transform, position, ToroidalMapEcs.MapWidth, ToroidalMapEcs.MapHeight);
         }
     }
 
@@ -640,7 +651,8 @@ namespace TitanOrbit.ECS
             transport.Velocity = PeopleTransportMath.SteerMagnetVelocity(
                 myPos, target, transport.Velocity, dt, transport.CruiseSpeed, mapW, mapH);
             myPos += transport.Velocity * dt;
-            PeopleTransportConstants.WriteTransform(ref transform, myPos);
+            // [TITAN-ORBIT] Wrap after integrate so transports crossing a seam stay canonical.
+            PeopleTransportConstants.WriteTransform(ref transform, myPos, mapW, mapH);
         }
 
         static bool TryResolvePlanetTransform(

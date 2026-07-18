@@ -3,6 +3,7 @@ using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Generation;
+using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
@@ -17,6 +18,11 @@ namespace TitanOrbit.UI
     /// [HYBRID] Syncs ECS ghost entities into hidden MinimapBlipAnchor transforms for minimap UI.
     /// Rebuilds anchor cache periodically; updates positions every LateUpdate.
     /// World: visualization world via EcsGameBridge. Paired with MinimapController.
+    /// <para>
+    /// [TITAN-ORBIT] While <see cref="ClientJoinSettleCache.Settling"/>, this component does nothing.
+    /// <c>SyncAsteroids</c> → <c>ToEntityArray</c> during GhostSpawn Instantiates hard-crashed Windows
+    /// at ~15% loading (same Burst GatherEntitiesWithoutFilter path as EcsWorldVisualizer).
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(-50)]
     public sealed class MinimapEcsEntitySync : MonoBehaviour
@@ -76,6 +82,13 @@ namespace TitanOrbit.UI
         /// <summary>Per-frame minimap blip sync — rebuild or position-only update.</summary>
         void LateUpdate()
         {
+            // --- Join settle gate ---
+            // [TITAN-ORBIT] RebuildAnchors → SyncAsteroids → ToEntityArray during GhostSpawn
+            // placeholder/Instantiates floods Crash!!! Windows (Player.log ~15% load).
+            // Minimap is useless under the loading screen; resume after settle.
+            if (ClientJoinSettleCache.Settling)
+                return;
+
             // --- Per-frame refresh ---
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
@@ -101,17 +114,27 @@ namespace TitanOrbit.UI
             return anchor != null;
         }
 
-        /// <summary>Reads toroidal map dimensions from MapStateSingleton when available.</summary>
+        /// <summary>
+        /// Keeps <see cref="ToroidalMap"/> and <see cref="ToroidalMapEcs"/> on the rolled match size.
+        /// Prefers MapStateSingleton, then <see cref="MapSessionMetaCache"/> (dedicated clients often
+        /// never receive the singleton ghost — without this, size stays at the 1000 default).
+        /// </summary>
         void SyncMapSize(EntityManager em)
         {
-            // --- SyncMapSize ---
+            // --- Resolve authoritative size ---
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
             using var mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
-            if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map))
+            if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
+                map.MapWidth >= 100f && map.MapHeight >= 100f)
             {
                 mapW = map.MapWidth;
                 mapH = map.MapHeight;
+            }
+            else if (MapSessionMetaCache.HasMapSize)
+            {
+                mapW = MapSessionMetaCache.MapWidth;
+                mapH = MapSessionMetaCache.MapHeight;
             }
 
             if (mapW == _lastMapWidth && mapH == _lastMapHeight)
@@ -119,7 +142,8 @@ namespace TitanOrbit.UI
 
             _lastMapWidth = mapW;
             _lastMapHeight = mapH;
-            ToroidalMap.SetMapSize(mapW, mapH);
+            // [TITAN-ORBIT] Both caches — display wrap used Ecs, minimap used ToroidalMap; they diverged.
+            MapSessionMetaCache.ApplyMapSizeToToroidalHelpers(mapW, mapH);
         }
 
         void RebuildAnchors(EntityManager em)
@@ -198,8 +222,10 @@ namespace TitanOrbit.UI
                     anchor.Team = ship.Team;
                     anchor.IsDead = ship.IsDead;
                     anchor.AwaitingTeamSelection = ship.AwaitingTeamSelection;
-                    anchor.IsLocalPlayer = em.HasComponent<LocalPlayerShipTag>(entity) ||
-                                           em.HasComponent<GhostOwnerIsLocal>(entity);
+                    // [TITAN-ORBIT] No local blip until Join Team / resume confirms.
+                    anchor.IsLocalPlayer = !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() &&
+                                           (em.HasComponent<LocalPlayerShipTag>(entity) ||
+                                            em.HasComponent<GhostOwnerIsLocal>(entity));
                     if (anchor.IsLocalPlayer)
                         _localPlayer = anchor;
                 }
@@ -230,6 +256,10 @@ namespace TitanOrbit.UI
         void TryResolveLocalPlayerByNetworkId(EntityManager em)
         {
             // --- Attempt resolution ---
+            // [TITAN-ORBIT] GhostOwner orphans must not become the minimap center before team pick.
+            if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+                return;
+
             int localId = EcsGameBridge.GetLocalNetworkId();
             if (localId <= 0)
                 return;
@@ -269,8 +299,9 @@ namespace TitanOrbit.UI
                 anchor.Team = state.Team;
                 anchor.IsDead = state.IsDead;
                 anchor.AwaitingTeamSelection = state.AwaitingTeamSelection;
-                anchor.IsLocalPlayer = em.HasComponent<LocalPlayerShipTag>(entity) ||
-                                       em.HasComponent<GhostOwnerIsLocal>(entity);
+                anchor.IsLocalPlayer = !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() &&
+                                       (em.HasComponent<LocalPlayerShipTag>(entity) ||
+                                        em.HasComponent<GhostOwnerIsLocal>(entity));
                 anchor.BodySize = math.max(0.25f, lt.Scale);
                 anchor.transform.position = lt.Position;
                 anchor.transform.localScale = Vector3.one * anchor.BodySize;

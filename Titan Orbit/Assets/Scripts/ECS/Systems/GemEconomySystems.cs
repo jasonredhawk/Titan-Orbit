@@ -143,13 +143,15 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Server: applies drag and integrates gem positions from <see cref="GemKinematics.Velocity"/>.
-    /// Gems are scripted movers — not Unity Physics bodies.
+    /// Gems are scripted movers — not Unity Physics bodies. Positions stay unbounded like ships;
+    /// tractor reach still uses toroidal distance.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(MiningSystem))]
     public partial struct GemMotionSystem : ISystem
     {
+        /// <summary>Integrates velocity with drag (unbounded XZ).</summary>
         public void OnUpdate(ref SystemState state)
         {
             float dt = SystemAPI.Time.DeltaTime;
@@ -165,6 +167,7 @@ namespace TitanOrbit.ECS
                 if (math.lengthsq(vel) < 0.0004f)
                     vel = float3.zero;
 
+                // --- Integrate in unbounded space (same as ships); toroidal math is for reach only ---
                 var lt = transform.ValueRO;
                 lt.Position += vel * dt;
                 transform.ValueRW = lt;

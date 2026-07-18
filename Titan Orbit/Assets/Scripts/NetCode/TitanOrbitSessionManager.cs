@@ -1116,14 +1116,15 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Copies MapStateSingleton totals into UGS lobby Data when the server map is ready.
-        /// Join Game browser reads these keys without connecting to NetCode.
+        /// Copies MapStateSingleton totals (counts + rolled map size) into UGS lobby Data when the
+        /// server map is ready. Join Game browser reads these keys without connecting to NetCode.
         /// </summary>
         /// <param name="data">Lobby Data dictionary being created or heartbeat-updated.</param>
         static void AppendMapSessionMetaLobbyData(Dictionary<string, DataObject> data)
         {
             // --- Resolve authoritative map totals from ServerWorld ---
-            // [TITAN-ORBIT] Same numbers clients get via MapSessionMetaRpc after GoInGame.
+            // [TITAN-ORBIT] Same numbers clients get via MapSessionMetaRpc after GoInGame
+            // (teams, neutrals, asteroids, and MapWidth/MapHeight for the browse footer).
             if (data == null)
                 return;
 
@@ -1143,6 +1144,20 @@ namespace TitanOrbit.NetCode
             data[TitanOrbitLobbyService.LobbyMapAsteroidCountKey] = new DataObject(
                 DataObject.VisibilityOptions.Public,
                 meta.AsteroidCount.ToString(CultureInfo.InvariantCulture));
+
+            // --- Rolled toroidal size (Join Game shows "333×444") ---
+            // [TITAN-ORBIT] Same MapWidth/Height clients get via MapSessionMetaRpc; round for lobby strings.
+            if (meta.MapWidth >= 100f && meta.MapHeight >= 100f)
+            {
+                int mapW = Mathf.RoundToInt(meta.MapWidth);
+                int mapH = Mathf.RoundToInt(meta.MapHeight);
+                data[TitanOrbitLobbyService.LobbyMapWidthKey] = new DataObject(
+                    DataObject.VisibilityOptions.Public,
+                    mapW.ToString(CultureInfo.InvariantCulture));
+                data[TitanOrbitLobbyService.LobbyMapHeightKey] = new DataObject(
+                    DataObject.VisibilityOptions.Public,
+                    mapH.ToString(CultureInfo.InvariantCulture));
+            }
 
             // --- Per-team owned planet counts (live; updates each heartbeat as captures happen) ---
             // [TITAN-ORBIT] Join Game team cards show worlds from MapTeamPlanets CSV.

@@ -608,7 +608,7 @@ namespace TitanOrbit.Game
             if (teamsRoot != null)
                 teamsRoot.gameObject.SetActive(filledTeams);
 
-            // --- Footer: neutrals / asteroids + match capacity from map meta ---
+            // --- Footer: map size / neutrals / asteroids + match capacity from map meta ---
             if (extrasLabel != null)
                 extrasLabel.text = FormatLobbyExtrasLine(summary);
 
@@ -751,21 +751,39 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Footer line for neutrals and asteroids (shared map features, not per-team).
+        /// Footer line for map size, neutrals, and asteroids (shared map features, not per-team).
         /// </summary>
+        /// <param name="summary">Lobby browse row data from UGS public Data.</param>
+        /// <returns>Rich-text TMP string for the lobby footer extras label.</returns>
         static string FormatLobbyExtrasLine(TitanOrbitLobbyService.LobbySummary summary)
         {
             if (summary == null)
                 return string.Empty;
 
-            var sb = new StringBuilder(80);
+            var sb = new StringBuilder(96);
             sb.Append("<size=14>");
 
             // --- Plain labels only ---
             // [UNITY] TMP default fonts often lack decorative Unicode (◇ / ✦) and draw □ tofu boxes.
+            // Prefer the ASCII "x" multiply so every platform font can render the size.
             bool wrote = false;
+
+            // --- Map footprint (toroidal width × height in world units) ---
+            // [TITAN-ORBIT] Published by dedicated-server lobby heartbeat from MapSessionMetaRpc sizes.
+            if (summary.MapWidth >= 100 && summary.MapHeight >= 100)
+            {
+                sb.Append("<color=#a8c4e0><b>")
+                    .Append(summary.MapWidth)
+                    .Append(" x ")
+                    .Append(summary.MapHeight)
+                    .Append("</b> map</color>");
+                wrote = true;
+            }
+
             if (summary.MapNeutralPlanetCount >= 0)
             {
+                if (wrote)
+                    sb.Append("   <color=#5f738a>|</color>   ");
                 sb.Append("<color=#9eb6cc><b>")
                     .Append(summary.MapNeutralPlanetCount)
                     .Append("</b> free worlds</color>");
@@ -1169,7 +1187,8 @@ namespace TitanOrbit.Game
             pendingLe.preferredHeight = 28f;
             pendingLe.flexibleWidth = 1f;
 
-            // --- Footer: shared map extras + match-wide player total ---
+            // --- Footer: map size + shared extras + match-wide player total ---
+            // [TITAN-ORBIT] Extras text can grow to "333 x 444 map | N free worlds | M asteroids".
             var footer = CreateChild("LobbyRowFooter", mainCol.transform,
                 typeof(RectTransform), typeof(HorizontalLayoutGroup), typeof(LayoutElement));
             var footerH = footer.GetComponent<HorizontalLayoutGroup>();
@@ -1180,17 +1199,19 @@ namespace TitanOrbit.Game
             footerH.childForceExpandWidth = false;
             footerH.childForceExpandHeight = false;
             var footerLe = footer.GetComponent<LayoutElement>();
-            footerLe.minHeight = 22f;
-            footerLe.preferredHeight = 24f;
+            footerLe.minHeight = 24f;
+            footerLe.preferredHeight = 26f;
             footerLe.flexibleWidth = 1f;
 
-            var extrasLabel = CreateStyledLabel("LobbyRowExtras", "— free worlds", footer.transform, 14f,
+            var extrasLabel = CreateStyledLabel("LobbyRowExtras", "— map", footer.transform, 14f,
                 FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
             extrasLabel.richText = true;
+            extrasLabel.enableWordWrapping = false;
+            extrasLabel.overflowMode = TextOverflowModes.Ellipsis;
             extrasLabel.color = new Color(0.78f, 0.86f, 0.94f, 1f);
             var extrasLe = extrasLabel.gameObject.AddComponent<LayoutElement>();
             extrasLe.flexibleWidth = 1f;
-            extrasLe.minWidth = 160f;
+            extrasLe.minWidth = 220f;
 
             var playersLabel = CreateStyledLabel("LobbyRowPlayers", "0/0", footer.transform, 16f,
                 FontStyles.Bold, TextAlignmentOptions.MidlineRight);

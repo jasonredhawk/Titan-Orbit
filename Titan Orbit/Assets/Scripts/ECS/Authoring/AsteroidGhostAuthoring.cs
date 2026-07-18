@@ -33,6 +33,12 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new AsteroidTag());
                 AddComponent(entity, new AsteroidState());
 
+                // --- Client hybrid visual queue ---
+                // [NETCODE] MapBodyHybridVisualPending is GhostPrefabType.Client — stripped on server.
+                // [TITAN-ORBIT] Instantiates already carries Pending so join can drain GO proxies
+                // without ToEntityArray-all Instantiated asteroids (Windows Crash!!!).
+                AddComponent(entity, new MapBodyHybridVisualPending());
+
                 // --- Static physics collider ---
                 // [PHYSICS] WorldStatic layer — collides with Ship layer only (see TitanOrbitPhysicsLayers).
                 // [TITAN-ORBIT] Restitution ~0.5 for bounce off asteroid clusters.

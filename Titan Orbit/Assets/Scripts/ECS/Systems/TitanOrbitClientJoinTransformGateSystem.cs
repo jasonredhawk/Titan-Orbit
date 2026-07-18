@@ -5,15 +5,21 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// [TITAN-ORBIT] Client join safety: disables <see cref="TransformSystemGroup"/> while NetCode
-    /// Instantiates the late-join map ghost backlog, then re-enables when the backlog is idle.
+    /// [TITAN-ORBIT] Client join settle tracker. Sets <see cref="ClientJoinSettleCache.Settling"/>
+    /// while GhostSpawn still has a backlog so hybrid/UI code can skip unsafe map-body
+    /// <c>ToEntityArray</c> scans (minimap, MarkFromQuery, full visualizer Draw*).
     /// <para>
-    /// Windows player hard-crashed during Relay late-join with hundreds of asteroids — first in
-    /// Burst LocalToWorld, then in UnityPlayer even with LocalToWorld alone disabled. A fixed
-    /// frame timer was not enough (ghosts can still be Instantiating after 20s). This system
-    /// waits on a real backlog: <see cref="GhostSpawnBuffer"/> + <see cref="PendingSpawnPlaceholder"/>.
+    /// CRITICAL (Player.log 2026-07-18 12:17): This system used to disable
+    /// <see cref="Unity.Transforms.TransformSystemGroup"/> during Instantiates, then re-enable
+    /// after idleClear=60. Re-enabling after Instantiates ~700 asteroids with transforms off
+    /// caused an immediate Burst <c>Crash!!!</c> (LocalToWorld flood). That path is forbidden.
     /// </para>
-    /// World: ClientSimulation. Group: InitializationSystemGroup (before simulation/transform).
+    /// <para>
+    /// Real Instantiates safety = GhostSpawn Instantiates cap at 1/frame with transforms
+    /// <b>always left enabled</b> so LocalToWorld stays warm (one new hull per frame).
+    /// Placeholders must still be CreateEntity'd stock-style for SpawnedGhostEntityMap.
+    /// </para>
+    /// World: ClientSimulation. Group: InitializationSystemGroup.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup))]
@@ -31,7 +37,7 @@ namespace TitanOrbit.ECS
         public const int MinInGameFramesBeforeExit = 120;
 
         /// <summary>
-        /// Hard timeout so a stuck spawn never soft-locks transforms forever (~90s at 60 Hz).
+        /// Hard timeout so settle never soft-locks hybrid/UI gates forever (~90s at 60 Hz).
         /// </summary>
         public const int HardTimeoutFrames = 5400;
 
@@ -41,9 +47,6 @@ namespace TitanOrbit.ECS
         /// <summary>PendingSpawnPlaceholder entities (GhostSpawn delayed Instantiates).</summary>
         EntityQuery _placeholderQuery;
 
-        /// <summary>Last applied TransformSystemGroup enabled flag (-1 unknown, 0 off, 1 on).</summary>
-        int _lastTransformsEnabled;
-
         /// <summary>Builds queries and creates the settle singleton.</summary>
         public void OnCreate(ref SystemState state)
         {
@@ -52,7 +55,6 @@ namespace TitanOrbit.ECS
             _inGameQuery = state.GetEntityQuery(ComponentType.ReadOnly<NetworkStreamInGame>());
             // [NETCODE] PendingSpawnPlaceholder — temp entity holding snapshot until real Instantiates.
             _placeholderQuery = state.GetEntityQuery(ComponentType.ReadOnly<PendingSpawnPlaceholder>());
-            _lastTransformsEnabled = -1;
 
             // --- Singleton ---
             // [ECS/DOTS] One ClientJoinSettleState per client world for hybrid readers + moon ensure.
@@ -69,17 +71,24 @@ namespace TitanOrbit.ECS
             }
 
             state.RequireForUpdate<ClientJoinSettleState>();
+
+            // --- Recover transforms if a previous build left the group disabled ---
+            // [TITAN-ORBIT] Older clients disabled TransformSystemGroup during settle; ensure ON.
+            EnsureTransformGroupEnabled(ref state);
         }
 
         /// <summary>
-        /// Updates settle state from GhostSpawn backlog and toggles TransformSystemGroup.
+        /// Updates settle flags from GhostSpawn backlog. Does NOT disable TransformSystemGroup.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            // Belt-and-suspenders: never leave transforms off across frames.
+            EnsureTransformGroupEnabled(ref state);
+
             ref var settle = ref SystemAPI.GetSingletonRW<ClientJoinSettleState>().ValueRW;
             bool inGame = !_inGameQuery.IsEmptyIgnoreFilter;
 
-            // --- Not in-game: reset and restore transforms ---
+            // --- Not in-game: reset ---
             if (!inGame)
             {
                 settle.Settling = 0;
@@ -87,7 +96,6 @@ namespace TitanOrbit.ECS
                 settle.InGameFrames = 0;
                 settle.SawSpawnActivity = 0;
                 ClientJoinSettleCache.Clear();
-                SetTransformGroupEnabled(ref state, enabled: true);
                 return;
             }
 
@@ -112,16 +120,11 @@ namespace TitanOrbit.ECS
             else
                 settle.IdleClearFrames++;
 
-            // --- Decide settle ---
+            // --- Decide settle (hybrid/UI gate only) ---
             // Stay settling from the first in-game frame until spawn backlog is idle for
             // IdleFramesRequired AND MinInGameFramesBeforeExit has elapsed (or hard timeout).
-            // We intentionally do NOT read MapSessionMetaCache here — that type lives in
-            // TitanOrbit.NetCode and would create an asmdef cycle (NetCode already references ECS).
             bool hardTimeout = settle.InGameFrames >= HardTimeoutFrames;
             bool minTime = settle.InGameFrames >= MinInGameFramesBeforeExit;
-            // If we never saw spawn activity, still wait minTime+idle (empty/thin sessions).
-            // If we saw activity, require a longer idle stretch so mid-stream gaps do not re-enable
-            // TransformSystemGroup while the next GhostReceive wave is still in flight.
             int idleNeeded = settle.SawSpawnActivity != 0
                 ? IdleFramesRequired * 2
                 : IdleFramesRequired;
@@ -133,7 +136,6 @@ namespace TitanOrbit.ECS
             settle.Settling = newSettling;
 
             ClientJoinSettleCache.Set(shouldSettle, settle.InGameFrames);
-            SetTransformGroupEnabled(ref state, enabled: !shouldSettle);
 
             // --- Diagnostics ---
             if (settlingChanged)
@@ -141,13 +143,13 @@ namespace TitanOrbit.ECS
                 if (shouldSettle)
                 {
                     UnityEngine.Debug.Log(
-                        "[JoinSettle] TransformSystemGroup DISABLED (backlog-gated). " +
+                        "[JoinSettle] Settling ON (hybrid/UI gate; TransformSystemGroup stays enabled). " +
                         "spawnBuf=" + spawnBufferLen + " placeholders=" + placeholderCount);
                 }
                 else
                 {
                     UnityEngine.Debug.Log(
-                        "[JoinSettle] TransformSystemGroup RE-ENABLED after join settle. " +
+                        "[JoinSettle] Settling OFF (Instantiates backlog idle). " +
                         "inGameFrames=" + settle.InGameFrames +
                         " idleClear=" + settle.IdleClearFrames +
                         " sawSpawn=" + settle.SawSpawnActivity +
@@ -157,32 +159,22 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Enables or disables Unity's <see cref="TransformSystemGroup"/> on this client world
-        /// (ParentSystem + LocalToWorldSystem and related transform work).
+        /// Forces <see cref="TransformSystemGroup"/> and <see cref="LocalToWorldSystem"/> enabled.
+        /// Disabling them during Instantiates then flipping back on crashes Windows Burst LTW.
         /// </summary>
-        void SetTransformGroupEnabled(ref SystemState state, bool enabled)
+        static void EnsureTransformGroupEnabled(ref SystemState state)
         {
-            int flag = enabled ? 1 : 0;
-            if (_lastTransformsEnabled == flag)
+            var group = state.World.GetExistingSystemManaged<TransformSystemGroup>();
+            if (group != null && !group.Enabled)
+                group.Enabled = true;
+
+            SystemHandle ltwHandle = state.WorldUnmanaged.GetExistingUnmanagedSystem<LocalToWorldSystem>();
+            if (ltwHandle == SystemHandle.Null)
                 return;
 
-            // --- Managed system group ---
-            // [ECS/DOTS] TransformSystemGroup is a ComponentSystemGroup (managed), not an ISystem.
-            var group = state.World.GetExistingSystemManaged<TransformSystemGroup>();
-            if (group != null)
-                group.Enabled = enabled;
-
-            // --- Also toggle LocalToWorld explicitly ---
-            // [TITAN-ORBIT] Belt-and-suspenders: some Entities versions leave child systems running
-            // briefly when the group flag flips; disabling LTW directly matches the prior gate.
-            SystemHandle ltwHandle = state.WorldUnmanaged.GetExistingUnmanagedSystem<LocalToWorldSystem>();
-            if (ltwHandle != SystemHandle.Null)
-            {
-                ref SystemState ltwState = ref state.WorldUnmanaged.ResolveSystemStateRef(ltwHandle);
-                ltwState.Enabled = enabled;
-            }
-
-            _lastTransformsEnabled = flag;
+            ref SystemState ltwState = ref state.WorldUnmanaged.ResolveSystemStateRef(ltwHandle);
+            if (!ltwState.Enabled)
+                ltwState.Enabled = true;
         }
     }
 }

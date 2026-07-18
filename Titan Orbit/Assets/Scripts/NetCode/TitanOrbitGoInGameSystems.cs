@@ -87,7 +87,9 @@ namespace TitanOrbit.NetCode
                     LoadingTotalSteps = mapState.LoadingTotalSteps,
                     TeamCount = mapState.TeamCount,
                     NeutralPlanetCount = mapState.NeutralPlanetCount,
-                    AsteroidCount = mapState.AsteroidCount
+                    AsteroidCount = mapState.AsteroidCount,
+                    MapWidth = mapState.MapWidth,
+                    MapHeight = mapState.MapHeight,
                 };
                 hasMeta = true;
             }

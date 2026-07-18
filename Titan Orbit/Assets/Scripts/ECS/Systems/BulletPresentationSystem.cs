@@ -191,6 +191,7 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
+                // --- Unbounded tracer pose (matches server bullets / non-wrapping ships) ---
                 tracer.ValueRW.Position = newPos;
                 transform.ValueRW.Position = newPos;
             }

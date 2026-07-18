@@ -1443,11 +1443,13 @@ Returning players may have existing ship on server:
 
 **`MapGenerationSystem`** — one spawn per tick until queue empty, updates loading progress on `MapStateSingleton`.
 
-## 11.4 Toroidal map naming vs reality
+## 11.4 Toroidal map (ship flies forever)
 
-**`ToroidalMapEcs`** — name says toroidal; **current implementation is flat XZ Euclidean** (no edge wrap). `ToroidalDistance` = ordinary distance. `Wrap` is no-op.
+**Gameplay math** — `ShortestOffsetXZ` / `ToroidalDistance` / `ToroidalDirection` use the shortest path on the torus (combat, docking, mining, beams). `Wrap` exists but ships do **not** teleport at the edge.
 
-Don't assume Pac-Man wrap when reasoning about movement at map edges — behavior may be boundary clamp elsewhere.
+**Sim movers** — the local ship (and other free movers) keep flying in unbounded world space past the map edge. No post-physics ship wrap.
+
+**Presentation** — `ToroidalDisplay` + `EcsWorldVisualizer.GetVisualPosition`: local ship stays put; each planet/asteroid/remote independently picks its nearest map-tile copy relative to that ship (per-entity hysteresis). Bodies reposition one-by-one — not a global blink. Minimap uses shortest-path delta.
 
 ---
 

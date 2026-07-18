@@ -4,7 +4,10 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>Full-screen map generation overlay with a progress bar.</summary>
+    /// <summary>
+    /// Full-screen map build overlay. Progress tracks local GameObject Instantiates only.
+    /// Server meta gives the stable "/ N"; the bar does not advance on network/ECS Instantiates.
+    /// </summary>
     public class LoadingScreenControllerNce : MonoBehaviour
     {
         const float BarPadding = 2f;
@@ -52,11 +55,11 @@ namespace TitanOrbit.Game
 
             if (EcsGameBridge.TryGetMapLoadingStepCounts(out int completedSteps, out int totalSteps) && totalSteps > 0)
             {
+                // [TITAN-ORBIT] completedSteps = planet/asteroid GameObjects built locally.
+                // totalSteps = MapSessionMetaRpc once from server. Cap 99% until complete.
                 float fraction = (float)completedSteps / totalSteps;
-                // Cap at 99% until IsMapLoadingComplete (settle idle + integrated proxy total).
                 if (!EcsGameBridge.IsMapLoadingComplete())
                     fraction = Mathf.Min(fraction, 0.99f);
-                // One phase: completedSteps is hybrid proxy count (Instantates + visual together).
                 UpdateStatusForSteps(completedSteps, totalSteps);
                 ApplyProgress(fraction);
                 return;
@@ -76,7 +79,7 @@ namespace TitanOrbit.Game
             BuildUi();
             ApplyProgress(0f);
             if (_statusText != null)
-                _statusText.text = "Preparing map layout...";
+                _statusText.text = "Waiting for map totals...";
             if (_panelRoot != null)
             {
                 _panelRoot.SetAsLastSibling();
@@ -97,13 +100,14 @@ namespace TitanOrbit.Game
                 return;
 
             float fraction = (float)completedSteps / totalSteps;
-            // Phases describe one integrated load (network Instantiates + hybrid visuals).
+            // Phases describe local GO build only (server already told us N via meta).
             string phase = fraction switch
             {
-                < 0.08f => "Rolling galaxy parameters",
-                < 0.2f => "Placing home worlds and moons",
-                < 0.45f => "Seeding neutral planets and moons",
-                _ => "Scattering asteroid fields",
+                <= 0f => "Building map visuals",
+                < 0.08f => "Placing home worlds and moons",
+                < 0.2f => "Seeding neutral planets and moons",
+                < 0.45f => "Scattering asteroid fields",
+                _ => "Finishing map visuals",
             };
 
             _statusText.text = $"{phase}... {completedSteps} / {totalSteps}";

@@ -515,74 +515,36 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Loading UI uses replicated ghost counts for the numerator (what players see arrive)
-        /// and a latched denominator so the "/ N" value does not jump mid-load
-        /// (settings midpoint → layout length → refined estimate).
+        /// Loading UI contract (product model):
+        /// <list type="number">
+        /// <item><see cref="MapSessionMetaRpc"/> — server sends map totals once (how many to build).</item>
+        /// <item>Client builds planet/asteroid GameObjects from streamed ghost entities.</item>
+        /// <item>Progress bar = GO Instantiates only — never “packets received” or ECS Instantiates.</item>
+        /// </list>
+        /// Ghost streaming still carries sim bodies; the bar only measures local visual build.
         /// </summary>
         static bool TryGetVisibleMapLoadingStepCounts(out int completedSteps, out int totalSteps)
         {
             completedSteps = 0;
             totalSteps = 0;
 
-            int homes = 0;
-            int planets = 0;
-            int asteroids = 0;
-            bool hasReplicatedBodies = ClientWorld != null && ClientWorld.IsCreated &&
-                                       TryGetReplicatedMapBodyCounts(ClientWorld, out homes, out planets, out asteroids);
-
-            int homeCount = homes;
-            if (homeCount <= 0 && IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
-                homeCount = CountServerHomePlanets(ServerWorld);
-
-            // --- Denominator (latched) ---
-            // [TITAN-ORBIT] Prefer MapSessionMetaRpc (server authoritative, one-shot) so "/ N" is
-            // stable from the first loading frame. Fallbacks: layout buffer, then settings midpoint.
-            int candidateTotal = 0;
+            // --- Denominator: server meta only (latched) ---
+            // [TITAN-ORBIT] Do not use layout-buffer length or settings midpoint as "/ N" —
+            // that looked like “server data arriving” and jumped mid-load. Wait for meta.
             if (MapSessionMetaCache.HasMeta && MapSessionMetaCache.LoadingTotalSteps > 0)
-            {
-                candidateTotal = MapSessionMetaCache.LoadingTotalSteps;
-                s_LatchedLoadingTotalSteps = candidateTotal;
-            }
-            else if (ClientWorld != null && ClientWorld.IsCreated &&
-                TryGetReplicatedLayoutEntryCount(ClientWorld, out int layoutCount) && layoutCount > 0)
-            {
-                candidateTotal = layoutCount;
-                s_LatchedLoadingTotalSteps = layoutCount;
-            }
-            else
-            {
-                candidateTotal = ResolveRemoteMapExpectedTotal(homeCount);
-                if (s_LatchedLoadingTotalSteps <= 0 && candidateTotal > 0)
-                    s_LatchedLoadingTotalSteps = candidateTotal;
-                else if (candidateTotal > s_LatchedLoadingTotalSteps)
-                    s_LatchedLoadingTotalSteps = candidateTotal;
-            }
+                s_LatchedLoadingTotalSteps = MapSessionMetaCache.LoadingTotalSteps;
 
-            totalSteps = s_LatchedLoadingTotalSteps > 0 ? s_LatchedLoadingTotalSteps : candidateTotal;
-
-            // --- Numerator: one integrated load metric ---
-            // [TITAN-ORBIT] Progress = hybrid GameObject proxies created (Instantates + visual are
-            // one pipeline via MapBodyHybridVisualPending). Not a separate "spawn then build" bar.
-            if (IsRemoteMapObserverClient() || !IsLocalHost())
-            {
-                completedSteps = EcsWorldVisualizer.WorldBodyProxyCount;
-            }
-            else if (hasReplicatedBodies)
-                completedSteps = planets + asteroids;
-            else if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated &&
-                     TryReadMapLoadingState(ServerWorld, out int serverCompleted, out _, out _, out _))
-                completedSteps = serverCompleted;
-
-            // [TITAN-ORBIT] With authoritative meta we can show "0 / N" before any proxies arrive.
-            bool hasAuthoritativeTotal = MapSessionMetaCache.HasMeta && MapSessionMetaCache.LoadingTotalSteps > 0;
-            if (completedSteps <= 0 && !hasReplicatedBodies && !hasAuthoritativeTotal &&
-                EcsWorldVisualizer.WorldBodyProxyCount <= 0)
+            totalSteps = s_LatchedLoadingTotalSteps;
+            if (totalSteps <= 0)
                 return false;
 
-            // Numerator cannot exceed the latched total (placeholders / double counts).
+            // --- Numerator: planet/asteroid GameObjects built on this client ---
+            // [TITAN-ORBIT] MapLoadingProxyCount — not ECS Instantiates, not gem proxies.
+            completedSteps = EcsWorldVisualizer.MapLoadingProxyCount;
+
             if (totalSteps > 0 && completedSteps > totalSteps)
                 completedSteps = totalSteps;
-            return totalSteps > 0;
+            return true;
         }
 
         // --- Map loading helpers (private) ---
@@ -794,10 +756,17 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Central local-ship lookup: NetworkId match, GhostOwnerIsLocal, LocalPlayerShipTag, then CommandTarget.
+        /// Returns false while team/rejoin flow suppresses control so presentation cannot latch onto an
+        /// orphan GhostOwner ship during map load.
         /// </summary>
         static bool TryGetLocalShipEntity(EntityManager em, out Entity shipEntity)
         {
             shipEntity = Entity.Null;
+
+            // [TITAN-ORBIT] Same gate as TryGetLocalShipTransformFromWorld — ShipVisualSyncSystem and
+            // camera follow this path; without it, a rejoin orphan drove presentation before Join Team.
+            if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+                return false;
 
             int localId = GetLocalNetworkId(ClientWorld);
             if (localId > 0)
@@ -1155,10 +1124,10 @@ namespace TitanOrbit.Game
             else if (s_LatchedLoadingTotalSteps > 0)
                 expectedTotal = s_LatchedLoadingTotalSteps;
 
-            // --- Authoritative meta: one bar = hybrid proxies / expected map bodies ---
+            // --- Authoritative meta: complete when planet/asteroid GOs ≈ server total ---
             if (expectedTotal > 0)
             {
-                int proxies = EcsWorldVisualizer.WorldBodyProxyCount;
+                int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
                 float ratio = (float)proxies / expectedTotal;
 
                 if (ratio >= 0.92f)

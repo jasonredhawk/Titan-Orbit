@@ -8,7 +8,8 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Client-only: tags the locally owned ship entity with <see cref="LocalPlayerShipTag"/> so
     /// input and presentation code can find "my ship" quickly. Matches ships via CommandTarget,
-    /// GhostOwner network id, or GhostOwnerIsLocal. Suppressed during team-pick / rejoin UI flows.
+    /// GhostOwner network id, or GhostOwnerIsLocal. While team/rejoin flow suppresses control,
+    /// actively strips any existing local tags so map-load orphans cannot keep the tag.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -16,12 +17,27 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
-            // [TITAN-ORBIT] Don't tag a ship as local while team/rejoin UI is blocking control.
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
+
+            // --- Team / rejoin gate ---
+            // [TITAN-ORBIT] Until TeamChoiceConfirmed, strip tags instead of early-return — a prior
+            // frame may have tagged a GhostOwner orphan during join before Pending latched.
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+            {
+                foreach (var (_, entity) in SystemAPI
+                             .Query<RefRO<LocalPlayerShipTag>>()
+                             .WithAll<ShipTag>()
+                             .WithEntityAccess())
+                {
+                    ecb.RemoveComponent<LocalPlayerShipTag>(entity);
+                }
+
+                ecb.Playback(state.EntityManager);
+                ecb.Dispose();
                 return;
+            }
 
             int localNetworkId = GetLocalNetworkId(ref state);
-            var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             // --- Path 1: CommandTarget on the in-game connection ---
             // [NETCODE] CommandTarget on the connection points at the controlled ship ghost.

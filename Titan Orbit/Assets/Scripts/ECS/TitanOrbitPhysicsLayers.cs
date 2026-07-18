@@ -5,8 +5,10 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Collision layer bit masks and pre-built <see cref="CollisionFilter"/> values for Unity Physics.
     /// Baked onto ghost prefabs in *GhostAuthoring bakers. Ships bounce off ships and world bodies
-    /// (planets/asteroids) only; gems and people-transports are scripted movers with world collision
-    /// only — see ship-simulation rule for the full matrix.
+    /// (planets/asteroids) only when they share the same map tile (Euclidean contacts). Across
+    /// toroidal seams, <see cref="ShipToroidalWorldCollisionSystem"/> resolves ship↔world bounce
+    /// with shortest-path math so presentation unwrap and sim contacts stay aligned. Gems and
+    /// people-transports are scripted movers with world collision only — see ship-simulation rule.
     /// </summary>
     public static class TitanOrbitPhysicsLayers
     {

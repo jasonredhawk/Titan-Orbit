@@ -1,0 +1,86 @@
+---
+description: Hard constraints so Windows Relay late-join does not Crash!!! after unrelated agent edits
+alwaysApply: true
+---
+
+# Titan Orbit — Windows late-join crash invariants
+
+Relay late-join with hundreds of map ghosts hard-crashes the **Windows client**. Fixes keep getting undone by unrelated agents. **Do not regress these invariants.**
+
+Paired: `titan-orbit-ship-simulation.mdc`, embedded NetCode (`Packages/com.unity.netcode`), `tools/netcode-patches/`.
+
+---
+
+## Root cause (proven in Player.log)
+
+| Symptom | Cause |
+|---------|--------|
+| `Crash!!!` right after `[JoinSettle] TransformSystemGroup RE-ENABLED` | Disabling LTW during Instantiates of ~700 asteroids, then flipping the group back on → Burst LocalToWorld flood (2026-07-18 12:17) |
+| `Crash!!!` in `DrawAsteroids` / `MarkFromQuery` / `MinimapEcsEntitySync` → `ToEntityArray` | Gathering all asteroids during Instantiates / settle |
+| `baseline for a ghost we do not have` | Deferring placeholders without `SpawnedGhostEntityMap` registration |
+
+**Patterns that must never return:**
+1. Disable → re-enable `TransformSystemGroup` / `LocalToWorldSystem` around join Instantiates.
+2. Any `ToEntityArray` / `WithEntityAccess` over asteroids/planets/gems while `ClientJoinSettleCache.Settling`.
+
+---
+
+## Non-negotiable rules
+
+### 1. Embedded GhostSpawn patch (git)
+
+- NetCode is **`file:com.unity.netcode`** under `Titan Orbit/Packages/com.unity.netcode`.
+- Patch id: `TO_GhostSpawn_v9_transformsAlwaysOn` (or newer).
+- Canonical: `tools/netcode-patches/GhostSpawnSystem.cs` + pre-build guard.
+- **Required:** safe snapshot copy, no Burst on `OnUpdate`, **1 Instantiates/frame**, stock placeholder CreateEntity (ghost-map safe).
+- **Forbidden:** placeholder defer+requeue without map registration; PackageCache-only edits; Instantiates cap removed; Instantiates flood.
+
+### 2. Join settle — hybrid/UI gate ONLY
+
+- `TitanOrbitClientJoinTransformGateSystem` sets `ClientJoinSettleCache.Settling` from GhostSpawn backlog.
+- **`TransformSystemGroup` / `LocalToWorldSystem` must stay ENABLED always.** The settle system must force them on if a bad build left them off.
+- **Forbidden:** disable TransformSystemGroup during settle (causes re-enable Crash!!!).
+- Instantiates safety = Instantiates 1/frame with LTW warm, not “freeze transforms then thaw.”
+- **While `Settling == true`, ALL of these must no-op or use Pending-only small queues:**
+  - `EcsWorldVisualizer` full asteroid/planet `ToEntityArray` creates
+  - `MapBodyHybridVisualRequestSystem` (also no-op if placeholders / spawn buffer non-empty)
+  - **`MinimapEcsEntitySync`** (and any new minimap/radar/UI ECS sync)
+  - Moon collider mass CreateEntity
+  - Any new MonoBehaviour that queries all map ghosts
+
+### 3. Hybrid map visuals + loading bar
+
+- Bake `MapBodyHybridVisualPending` on client planet/asteroid/gem ghosts (`GhostPrefabType.Client`).
+- `MapBodyHybridVisualRequestSystem` = post-settle orphan catcher only.
+- Visualizer drains Pending during settle (budget-capped); full scans only after settle.
+- **Loading:** `MapSessionMetaRpc` = `N`; bar = `MapLoadingProxyCount` (GO Instantiates only).
+- **Forbidden:** Instantiates-only progress; `MarkFromQuery` / map-body `ToEntityArray` during settle.
+
+### 4. UI / other agents — common regression
+
+```csharp
+if (ClientJoinSettleCache.Settling)
+    return;
+```
+
+Never `ToEntityArray` all asteroids during settle.
+
+### 5. Do not “simplify” these away
+
+Verify Windows Relay late-join with 400+ asteroids after every client rebuild.
+
+---
+
+## Agent checklist
+
+- [ ] No map-body `ToEntityArray` / `WithEntityAccess` without settle early-out
+- [ ] Minimap / visualizer / hybrid request still gated during settle
+- [ ] GhostSpawn Instantiates=1 + stock placeholder drain
+- [ ] **TransformSystemGroup never disabled for join**
+- [ ] Loading = `MapLoadingProxyCount` / meta `N`
+- [ ] Windows join: no `Crash!!!` in Player.log
+
+## Verify
+
+`Player.log`: `[JoinSettle] Settling ON` → Instantiates progress → `Settling OFF`, **no** `TransformSystemGroup RE-ENABLED`, **no** `Crash!!!`.  
+DLL / logs may mention `TO_GhostSpawn_v9_transformsAlwaysOn`.

@@ -20,9 +20,9 @@ namespace TitanOrbit.Game
     /// (published in NetCode PresentationSystemGroup by <see cref="ShipVisualSyncSystem"/>), not raw sim ECS.
     /// Proxies are render shells only — no extra movement smoothing on the local owner.
     /// <para>
-    /// [TITAN-ORBIT] Join load is one pipeline: GhostSpawn Instantiates →
-    /// <see cref="MapBodyHybridVisualPending"/> → GameObject proxy (few per frame). Loading UI
-    /// progress is <see cref="WorldBodyProxyCount"/> — not a separate spawn-then-build phase.
+    /// [TITAN-ORBIT] Join load: GhostSpawn Instantiates → baked
+    /// <see cref="MapBodyHybridVisualPending"/> → GameObject proxy (few per frame).
+    /// Loading bar = <see cref="MapLoadingProxyCount"/> / server meta <c>N</c> (GO Instantiates only).
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66000)]
@@ -30,10 +30,11 @@ namespace TitanOrbit.Game
     {
         /// <summary>
         /// Max new world-body GameObject Instantiates per frame from the Pending queue.
-        /// Matches GhostSpawn (~1 Instantiates/frame) with small headroom so loading is one phase:
-        /// Instantiates → Pending tag → GO proxy → progress bar advances.
+        /// Pending tags only appear after GhostSpawn placeholders are empty (see request system);
+        /// keep this ≥ MapBodyHybridVisualRequestSystem.MaxMarksPerFrame so the loading bar
+        /// (WorldBodyProxyCount) advances in lockstep with visible planet/asteroid creation.
         /// </summary>
-        const int MaxNewWorldBodyProxiesPerFrame = 2;
+        const int MaxNewWorldBodyProxiesPerFrame = 48;
         const string DefaultShipFamilyAssetPath = "Assets/Prefabs/Ships/AstroEagle/AstroEagleShipFamily.asset";
         const string DefaultHomePlanetPath = "Assets/Prefabs/HomePlanet.prefab";
         const string DefaultNeutralPlanetPath = "Assets/Prefabs/Planet.prefab";
@@ -94,6 +95,15 @@ namespace TitanOrbit.Game
         int _lastVisualSyncFrame = -1;
 
         /// <summary>
+        /// [TITAN-ORBIT] Local-ship (or camera) XZ used as toroidal display reference this frame.
+        /// Remotes and world bodies unwrap toward this point so seams stay seamless.
+        /// </summary>
+        Vector3 _toroidalReference;
+
+        /// <summary>True when <see cref="_toroidalReference"/> was resolved for the current sync.</summary>
+        bool _hasToroidalReference;
+
+        /// <summary>
         /// New planet/asteroid/gem proxies created this frame (reset in SyncAllProxies).
         /// Used with <see cref="ClientJoinSettleCache.Settling"/> to rate-limit Instantiates.
         /// </summary>
@@ -104,9 +114,15 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Planet + asteroid + gem GameObject proxies currently alive.
-        /// Loading UI waits for this to approach Instantiated ghost counts after join settle.
         /// </summary>
         public static int WorldBodyProxyCount { get; private set; }
+
+        /// <summary>
+        /// Planet + asteroid GameObject proxies only — loading-bar numerator.
+        /// Matches <c>MapSessionMetaCache.LoadingTotalSteps</c> (homes + neutrals + asteroids).
+        /// Do not count gems/transports; those are not part of the map-build total.
+        /// </summary>
+        public static int MapLoadingProxyCount { get; private set; }
 
         /// <summary>Composite key for planet proxy rebuild — any field change forces new visual.</summary>
         struct PlanetVisualKey : System.IEquatable<PlanetVisualKey>
@@ -190,10 +206,16 @@ namespace TitanOrbit.Game
             var alive = new HashSet<Entity>();
             bool settling = ClientJoinSettleCache.Settling;
 
+            // --- Toroidal display: unbounded local ship; each body picks its own tile ---
+            ToroidalDisplay.BeginFrame();
+            ToroidalDisplay.SyncMapSize(em);
+            _hasToroidalReference = ToroidalDisplay.TryGetReferencePosition(out _toroidalReference);
+
             // --- Integrated join load path ---
-            // [TITAN-ORBIT] Never ToEntityArray-all asteroids during GhostSpawn Instantiates (Crash!!!).
-            // MapBodyHybridVisualRequestSystem tags Instantiated bodies; we Instantiates GOs from that
-            // small Pending queue. Loading progress = WorldBodyProxyCount (one bar, one phase).
+            // [TITAN-ORBIT] Never ToEntityArray-all asteroids during settle (Crash!!!).
+            // Pending is baked on client map ghosts; we Instantiates GOs from that small queue.
+            // MapBodyHybridVisualRequestSystem only marks orphans AFTER settle.
+            // Loading progress = MapLoadingProxyCount (planet/asteroid GOs / server meta N).
             SyncExistingWorldBodyProxyTransforms(em, alive);
             DrainPendingWorldBodyProxies(em, alive);
 
@@ -223,9 +245,13 @@ namespace TitanOrbit.Game
 
                 foreach (var entity in remove)
                     DestroyProxy(entity);
+
+                // --- Drop hysteresis for entities no longer proxied ---
+                ToroidalDisplay.PruneStale(alive);
             }
 
             WorldBodyProxyCount = CountWorldBodyProxies();
+            MapLoadingProxyCount = CountMapLoadingProxies();
         }
 
         /// <summary>
@@ -260,7 +286,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Instantiates GameObject proxies for entities tagged <see cref="MapBodyHybridVisualPending"/>.
-        /// Small query only — does not gather all map ghosts.
+        /// Uses chunk iteration and stops at the per-frame budget — never gathers every asteroid.
+        /// Pending is baked on client map ghost prefabs so Instantiates already queues this drain.
         /// </summary>
         /// <returns>Number of new proxies created this call.</returns>
         int DrainPendingWorldBodyProxies(EntityManager em, HashSet<Entity> alive)
@@ -269,15 +296,32 @@ namespace TitanOrbit.Game
                 ComponentType.ReadOnly<MapBodyHybridVisualPending>(),
                 ComponentType.ReadOnly<LocalTransform>(),
                 ComponentType.Exclude<PendingSpawnPlaceholder>());
-            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
-            int created = 0;
+            if (query.IsEmptyIgnoreFilter)
+                return 0;
 
-            for (int i = 0; i < entities.Length; i++)
+            // --- Collect up to budget, then mutate ---
+            // [ECS/DOTS] Do not Add/Remove components while walking chunk native arrays
+            // (structural changes invalidate chunk entity arrays).
+            // [TITAN-ORBIT] Cap collect size so we never gather hundreds of Pending in one shot
+            // (MarkFromQuery ToEntityArray-all Instantiated asteroids = Crash!!!).
+            var entityTypeHandle = em.GetEntityTypeHandle();
+            using var chunks = query.ToArchetypeChunkArray(Unity.Collections.Allocator.Temp);
+            var batch = new List<Entity>(MaxNewWorldBodyProxiesPerFrame);
+
+            for (int c = 0; c < chunks.Length && batch.Count < MaxNewWorldBodyProxiesPerFrame; c++)
+            {
+                var entities = chunks[c].GetNativeArray(entityTypeHandle);
+                for (int i = 0; i < entities.Length && batch.Count < MaxNewWorldBodyProxiesPerFrame; i++)
+                    batch.Add(entities[i]);
+            }
+
+            int created = 0;
+            for (int i = 0; i < batch.Count; i++)
             {
                 if (!TryConsumeWorldBodyProxyBudget())
                     break;
 
-                Entity entity = entities[i];
+                Entity entity = batch[i];
                 if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
                 {
                     if (em.Exists(entity) && em.HasComponent<MapBodyHybridVisualPending>(entity))
@@ -287,7 +331,6 @@ namespace TitanOrbit.Game
 
                 if (_proxies.TryGetValue(entity, out var existing) && existing != null)
                 {
-                    // Already have a proxy — just mark linked.
                     if (em.HasComponent<MapBodyHybridVisualPending>(entity))
                         em.RemoveComponent<MapBodyHybridVisualPending>(entity);
                     if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
@@ -298,10 +341,7 @@ namespace TitanOrbit.Game
 
                 var lt = em.GetComponentData<LocalTransform>(entity);
                 if (!TryCreateWorldBodyProxyForEntity(em, entity, lt, out _))
-                {
-                    // Leave Pending for next frame.
-                    continue;
-                }
+                    continue; // Leave Pending for next frame.
 
                 if (em.HasComponent<MapBodyHybridVisualPending>(entity))
                     em.RemoveComponent<MapBodyHybridVisualPending>(entity);
@@ -421,6 +461,26 @@ namespace TitanOrbit.Game
             return n;
         }
 
+        /// <summary>
+        /// Counts only planet + asteroid GameObjects for the loading bar.
+        /// [TITAN-ORBIT] Progress = local GO Instantiates, not server packet / ECS Instantiates count.
+        /// </summary>
+        int CountMapLoadingProxies()
+        {
+            int n = 0;
+            foreach (var kv in _proxies)
+            {
+                if (kv.Value == null)
+                    continue;
+                if (_proxyPlanetVisuals.ContainsKey(kv.Key) ||
+                    kv.Value.name.IndexOf("Asteroid", System.StringComparison.Ordinal) >= 0 ||
+                    kv.Value.name.IndexOf("Planet", System.StringComparison.Ordinal) >= 0)
+                    n++;
+            }
+
+            return n;
+        }
+
         /// <summary>Delegates world pick to <see cref="EcsGameBridge.GetVisualizationWorld"/>.</summary>
         static World PickVisualizationWorld() => EcsGameBridge.GetVisualizationWorld();
 
@@ -473,10 +533,20 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Applies NetCode presentation pose to the GameObject proxy. No extra lerp on the local owner —
         /// prediction + GhostPredictionSmoothing own sim feel; proxies are render shells only.
+        /// Remotes use toroidal display unwrap so they appear near the local ship across a seam.
         /// </summary>
-        static void ApplyShipProxyTransform(bool isLocalPlayerShip, in LocalTransform lt, Transform go, float scale)
+        void ApplyShipProxyTransform(
+            Entity entity,
+            EntityManager em,
+            bool isLocalPlayerShip,
+            in LocalTransform lt,
+            Transform go,
+            float scale)
         {
-            Vector3 pos = lt.Position;
+            // --- Local = logical wrapped; remote = hysteresis tile near logical ship ---
+            Vector3 pos = isLocalPlayerShip
+                ? (Vector3)lt.Position
+                : GetVisualPosition(entity, em, lt.Position);
             Quaternion rot = lt.Rotation;
             go.SetPositionAndRotation(pos, rot);
             go.localScale = Vector3.one * scale;
@@ -487,10 +557,19 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Resolves and caches local player ship entity — LocalPlayerShipTag first, then GhostOwner NetworkId.
+        /// Returns false while team/rejoin flow suppresses control so map-load orphans do not drive camera.
         /// </summary>
         bool TryResolveLocalPlayerShipEntityCached(EntityManager em, out Entity localShipEntity)
         {
             localShipEntity = Entity.Null;
+
+            // [TITAN-ORBIT] Match EcsGameBridge / ShipVisualSyncSystem — no "my ship" before Join Team.
+            if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+            {
+                _cachedLocalPlayerShipEntity = Entity.Null;
+                LocalPlayerShipProxy = null;
+                return false;
+            }
 
             if (_cachedLocalPlayerShipEntity != Entity.Null &&
                 em.Exists(_cachedLocalPlayerShipEntity) &&
@@ -534,10 +613,33 @@ namespace TitanOrbit.Game
         static bool IsLocalPlayerShip(Entity entity, Entity localShipEntity) =>
             localShipEntity != Entity.Null && entity == localShipEntity;
 
-        /// <summary>[TITAN-ORBIT] Toroidal wrap disabled for visuals — logical position equals visual position.</summary>
-        Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos) => logicalPos;
+        /// <summary>
+        /// [TITAN-ORBIT] Local ship stays at its real (unbounded) pose. Every other body picks its
+        /// own nearest map-tile copy relative to that ship, with per-entity hysteresis so planets
+        /// and asteroids reposition individually — not as one global blink when crossing a seam.
+        /// </summary>
+        /// <param name="forceLogical">When true, skip display unwrap (rare debug / special cases).</param>
+        Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos, bool forceLogical = false)
+        {
+            if (forceLogical || ToroidalDisplay.IsLocalPlayerShip(em, entity))
+                return logicalPos;
 
-        Vector3 GetVisualPosition(Entity entity, float3 logicalPos) => logicalPos;
+            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
+                return logicalPos;
+
+            _hasToroidalReference = true;
+            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+        }
+
+        /// <summary>Per-entity tile unwrap when EntityManager is not needed for local-ship checks.</summary>
+        Vector3 GetVisualPosition(Entity entity, float3 logicalPos)
+        {
+            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
+                return logicalPos;
+
+            _hasToroidalReference = true;
+            return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+        }
 
         /// <summary>
         /// Spawns missing ship proxies and rebuilds when team or ship level changes.
@@ -553,12 +655,27 @@ namespace TitanOrbit.Game
             using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
 
+            int localNetworkId = EcsGameBridge.GetLocalNetworkId();
+            bool suppressOwnedVisuals = ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
+
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];
                 var lt = transforms[i];
                 bool isLocalPlayerShip = IsLocalPlayerShip(entity, localShipEntity);
                 float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
+
+                int networkId = 0;
+                if (em.HasComponent<GhostOwner>(entity))
+                    networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
+
+                // [TITAN-ORBIT] Do not spawn a hybrid hull for the local NetworkId until team confirm.
+                if (suppressOwnedVisuals && localNetworkId > 0 && networkId == localNetworkId)
+                {
+                    if (_proxies.ContainsKey(entity))
+                        DestroyProxy(entity);
+                    continue;
+                }
 
                 TeamId team = TeamId.None;
                 int shipLevel = 1;
@@ -583,13 +700,9 @@ namespace TitanOrbit.Game
                 if (em.HasComponent<ShipWeaponConfig>(entity))
                     muzzleOffset = em.GetComponentData<ShipWeaponConfig>(entity).MuzzleOffset;
 
-                int networkId = 0;
-                if (em.HasComponent<GhostOwner>(entity))
-                    networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
-
                 var go = CreateShipProxy(entity, networkId, team, shipLevel, scale, muzzleOffset);
                 if (TryGetPresentationTransform(entity, em, out var presentLt))
-                    ApplyShipProxyTransform(isLocalPlayerShip, presentLt, go.transform, scale);
+                    ApplyShipProxyTransform(entity, em, isLocalPlayerShip, presentLt, go.transform, scale);
             }
         }
 
@@ -600,6 +713,8 @@ namespace TitanOrbit.Game
         void SyncShipProxyTransforms(EntityManager em, HashSet<Entity> alive)
         {
             TryResolveLocalPlayerShipEntityCached(em, out var localShipEntity);
+            int localNetworkId = EcsGameBridge.GetLocalNetworkId();
+            bool suppressOwnedVisuals = ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
 
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
@@ -610,6 +725,19 @@ namespace TitanOrbit.Game
             {
                 var entity = entities[i];
                 alive.Add(entity);
+
+                int networkId = 0;
+                if (em.HasComponent<GhostOwner>(entity))
+                    networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
+
+                // [TITAN-ORBIT] Tear down leftover owned proxies while Join Team / rejoin is pending.
+                if (suppressOwnedVisuals && localNetworkId > 0 && networkId == localNetworkId)
+                {
+                    if (_proxies.ContainsKey(entity))
+                        DestroyProxy(entity);
+                    continue;
+                }
+
                 if (!_proxies.TryGetValue(entity, out var go) || go == null)
                     continue;
 
@@ -636,7 +764,7 @@ namespace TitanOrbit.Game
                     LocalPlayerShipProxy = go;
 
                 if (!skipTransformSync)
-                    ApplyShipProxyTransform(isLocalPlayerShip, lt, go.transform, scale);
+                    ApplyShipProxyTransform(entity, em, isLocalPlayerShip, lt, go.transform, scale);
                 else if (isLocalPlayerShip)
                 {
                     ShipDisplayPose.SetLocalPose(go.transform.position, go.transform.rotation);
@@ -653,9 +781,6 @@ namespace TitanOrbit.Game
                         go.SetActive(true);
                 }
 
-                int networkId = 0;
-                if (em.HasComponent<GhostOwner>(entity))
-                    networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
                 if (networkId > 0)
                 {
                     _proxyNetworkIds.TryGetValue(entity, out int existingId);
@@ -757,6 +882,9 @@ namespace TitanOrbit.Game
             if (entity == _cachedDedicatedLocalShipEntity)
                 _cachedDedicatedLocalShipEntity = Entity.Null;
 
+            // --- Drop toroidal tile memory for this entity ---
+            ToroidalDisplay.RemoveEntity(entity);
+
             if (_proxies.TryGetValue(entity, out var go))
             {
                 if (_proxyNetworkIds.TryGetValue(entity, out int networkId) && go != null)
@@ -793,7 +921,10 @@ namespace TitanOrbit.Game
                 var team = (TeamId)hit.OwnerTeam;
                 int bankIndex = hit.BankIndex >= 0 ? hit.BankIndex : defaultBulletBankIndex;
                 float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : defaultBulletScaleMultiplier;
+                // --- Impact VFX on nearest tile to local ship (classic display) ---
                 Vector3 hitPos = hit.HitPosition;
+                if (ToroidalDisplay.TryGetReferencePosition(out var reference))
+                    hitPos = ToroidalDisplay.ToDisplayPosition(hitPos, reference);
                 BulletVisualFactory.SpawnBulletImpactVfx(
                     hitPos,
                     bulletVfxBank,
@@ -848,10 +979,20 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Bullet tracer world position — toroidal wrap not applied on presentation path.</summary>
-        Vector3 GetBulletVisualPosition(Entity entity, EntityManager em, float3 logicalPos) => logicalPos;
+        /// <summary>
+        /// Bullet tracer display position — unwrap toward local ship so tracers crossing a seam
+        /// stay near the combat they belong to.
+        /// </summary>
+        Vector3 GetBulletVisualPosition(Entity entity, EntityManager em, float3 logicalPos) =>
+            GetVisualPosition(entity, em, logicalPos);
 
-        Vector3 GetBulletVisualPosition(float3 logicalPos) => logicalPos;
+        Vector3 GetBulletVisualPosition(float3 logicalPos)
+        {
+            if (!_hasToroidalReference && !ToroidalDisplay.TryGetReferencePosition(out _toroidalReference))
+                return logicalPos;
+            _hasToroidalReference = true;
+            return ToroidalDisplay.ToDisplayPosition(logicalPos, _toroidalReference);
+        }
 
         /// <summary>
         /// Spawns bullet tracer GameObjects, muzzle VFX on first sighting, and stretch-trail progress each frame.

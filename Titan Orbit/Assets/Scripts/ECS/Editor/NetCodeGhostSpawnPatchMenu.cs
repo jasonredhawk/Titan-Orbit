@@ -36,7 +36,7 @@ namespace TitanOrbit.ECS.Editor
             "Library/PackageCache/com.unity.netcode@6437771c174a/Runtime/Snapshot/GhostSpawnSystem.cs";
 
         /// <summary>IL-surviving patch id declared on GhostSpawnSystem.</summary>
-        public const string PatchIdMarker = "TO_GhostSpawn_v8_ghostMapSafe";
+        public const string PatchIdMarker = "TO_GhostSpawn_v9_transformsAlwaysOn";
 
         /// <summary>Older markers that must not be the only evidence of a “good” patch.</summary>
         public const string SafeCopyMarker = "TryCopySnapshotBufferSafe";
@@ -147,16 +147,24 @@ namespace TitanOrbit.ECS.Editor
             return true;
         }
 
-        /// <summary>True when source text has the v4 safe-snapshot Titan Orbit patch.</summary>
+        /// <summary>
+        /// True when source text has the current Titan Orbit GhostSpawn patch markers.
+        /// Do not require obsolete id substrings (e.g. v8 <c>ghostMapSafe</c>) — v9+ ids differ.
+        /// </summary>
         public static bool IsPatched(string text)
         {
             if (string.IsNullOrEmpty(text))
                 return false;
+
+            // --- Required markers (must all be present) ---
+            // PatchIdMarker — IL-surviving id (currently TO_GhostSpawn_v9_transformsAlwaysOn).
+            // SafeCopyMarker — TryCopySnapshotBufferSafe (Windows Instantiates crash fix).
+            // InstantiatesCapMarker — 1 Instantiates/frame drain.
+            // Intentionally NOT [BurstCompile] — managed OnUpdate.
             return text.Contains(PatchIdMarker, StringComparison.Ordinal) &&
                    text.Contains(SafeCopyMarker, StringComparison.Ordinal) &&
                    text.Contains(InstantiatesCapMarker, StringComparison.Ordinal) &&
-                   text.Contains("Intentionally NOT [BurstCompile]", StringComparison.Ordinal) &&
-                   text.Contains("ghostMapSafe", StringComparison.Ordinal);
+                   text.Contains("Intentionally NOT [BurstCompile]", StringComparison.Ordinal);
         }
 
         static bool TryGetDestPath(out string destPath, out string error)

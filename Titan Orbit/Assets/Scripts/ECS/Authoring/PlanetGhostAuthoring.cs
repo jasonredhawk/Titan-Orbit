@@ -31,6 +31,11 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new PlanetGrowthState());
                 AddComponent(entity, new PlanetGemMoonState());
 
+                // --- Client hybrid visual queue ---
+                // [NETCODE] Pending is GhostPrefabType.Client only — see MapBodyHybridVisualPending.
+                // [TITAN-ORBIT] Avoids join-time ToEntityArray mark scans (Windows Crash!!!).
+                AddComponent(entity, new MapBodyHybridVisualPending());
+
                 // --- Static physics collider ---
                 // [UNITY] Geometry radius is unscaled mesh radius; LocalTransform.Scale scales world size.
                 // [PHYSICS] WorldStatic layer — ships bounce, planets never integrate position.

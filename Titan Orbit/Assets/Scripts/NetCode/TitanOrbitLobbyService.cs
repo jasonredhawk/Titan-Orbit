@@ -39,6 +39,10 @@ namespace TitanOrbit.NetCode
         public const string LobbyMapTeamPlayersKey = "MapTeamPlayers";
         /// <summary>[TITAN-ORBIT] Max players allowed on each team (from TeamStateSingleton).</summary>
         public const string LobbyMapMaxPlayersPerTeamKey = "MapMaxPerTeam";
+        /// <summary>[TITAN-ORBIT] Rolled toroidal map width in world units (Join Game / browse).</summary>
+        public const string LobbyMapWidthKey = "MapWidth";
+        /// <summary>[TITAN-ORBIT] Rolled toroidal map height in world units (Join Game / browse).</summary>
+        public const string LobbyMapHeightKey = "MapHeight";
         public const string LobbyMatchRequestGameName = "TitanOrbitMatchRequest";
         public const string LobbyMatchRequestEpochKey = "RequestedAt";
         public const int DedicatedLobbyStaleSeconds = 45;
@@ -99,6 +103,16 @@ namespace TitanOrbit.NetCode
             /// Join Game match capacity = <see cref="MapTeamCount"/> × this value when both are set.
             /// </summary>
             public int MapMaxPlayersPerTeam = -1;
+
+            /// <summary>
+            /// [TITAN-ORBIT] Rolled map width (world units), rounded; -1 if server has not published yet.
+            /// </summary>
+            public int MapWidth = -1;
+
+            /// <summary>
+            /// [TITAN-ORBIT] Rolled map height (world units), rounded; -1 if server has not published yet.
+            /// </summary>
+            public int MapHeight = -1;
         }
 
         public static async Task<List<LobbySummary>> QueryJoinableDedicatedLobbiesAsync(
@@ -855,7 +869,9 @@ namespace TitanOrbit.NetCode
                 MapAsteroidCount = -1,
                 MapTeamPlanetCounts = null,
                 MapTeamPlayerCounts = null,
-                MapMaxPlayersPerTeam = -1
+                MapMaxPlayersPerTeam = -1,
+                MapWidth = -1,
+                MapHeight = -1
             };
 
             if (lobby.Data == null)
@@ -869,6 +885,9 @@ namespace TitanOrbit.NetCode
             summary.MapTeamPlanetCounts = TryParseLobbyIntCsv(lobby.Data, LobbyMapTeamPlanetsKey);
             summary.MapTeamPlayerCounts = TryParseLobbyIntCsv(lobby.Data, LobbyMapTeamPlayersKey);
             summary.MapMaxPlayersPerTeam = TryParseLobbyInt(lobby.Data, LobbyMapMaxPlayersPerTeamKey, -1);
+            // [TITAN-ORBIT] Width/height are published as whole numbers (rounded world units).
+            summary.MapWidth = TryParseLobbyInt(lobby.Data, LobbyMapWidthKey, -1);
+            summary.MapHeight = TryParseLobbyInt(lobby.Data, LobbyMapHeightKey, -1);
 
             if (lobby.Data.TryGetValue(LobbyIsOpenKey, out DataObject isOpenObj))
                 summary.IsOpen = string.Equals(isOpenObj?.Value, "1", StringComparison.Ordinal);

@@ -7,10 +7,10 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Top-down constraint after Unity Physics resolves collisions. Hull impacts can impart
-    /// pitch/roll; this re-locks yaw-only rotation and planar velocity. Bounce linear velocity
-    /// is preserved for <see cref="ShipKinematicsSyncSystem"/>. Pipeline:
-    /// Drive → Physics → Planar (this) → KinematicsSync.
+    /// Top-down constraint after Unity Physics and toroidal seam collision resolve. Hull impacts
+    /// can impart pitch/roll; this re-locks yaw-only rotation and planar velocity. Bounce linear
+    /// velocity is preserved for <see cref="ShipKinematicsSyncSystem"/>. Pipeline:
+    /// Drive → Physics → <see cref="ShipToroidalWorldCollisionSystem"/> → Planar (this) → KinematicsSync.
     /// </summary>
     // OrderLast: after default-slot PhysicsSystemGroup. Avoid UpdateAfter(PhysicsSystemGroup) —
     // ClientWorld sorter warns when that group is not a PredictedFixedStep sibling.

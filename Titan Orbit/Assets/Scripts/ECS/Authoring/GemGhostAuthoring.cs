@@ -25,6 +25,10 @@ namespace TitanOrbit.ECS.Authoring
                 var entity = GetEntity(TransformUsageFlags.Dynamic);
                 AddComponent(entity, new GemTag());
 
+                // --- Client hybrid visual queue ---
+                // [NETCODE] Pending is GhostPrefabType.Client only — see MapBodyHybridVisualPending.
+                AddComponent(entity, new MapBodyHybridVisualPending());
+
                 // --- Default gem state (overwritten at spawn with rolled value/size) ---
                 AddComponent(entity, new GemState { Value = 1f, Size = 1f });
 

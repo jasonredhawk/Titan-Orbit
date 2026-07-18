@@ -46,9 +46,11 @@ namespace Unity.NetCode
     {
         // TITAN-ORBIT: static readonly (not const) so the marker string survives in player DLLs
         // for build verification.
+        // v9 = same as v8 Instantiates/map rules; join settle must NOT disable TransformSystemGroup
+        // (re-enable after Instantiates ~700 asteroids = Burst LocalToWorld Crash!!! 2026-07-18).
         // v8 = safe snapshot copy + 1 Instantiates/frame; placeholders drain stock-style (NO defer).
         // v7 placeholder-cap+requeue broke SpawnedGhostEntityMap → "baseline for a ghost we do not have".
-        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v8_ghostMapSafe";
+        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v9_transformsAlwaysOn";
 
         // Touched in OnCreate so the linker cannot strip the marker.
         static char s_PatchIdTouch;
@@ -158,9 +160,9 @@ namespace Unity.NetCode
 
             // TITAN-ORBIT: Drain GhostSpawnBuffer into placeholders stock-style (all entries this frame).
             // v7 capped CreateEntity + re-queued leftovers WITHOUT registering them in
-            // SpawnedGhostEntityMap. GhostReceive then logged "baseline for a ghost we do not have"
-            // and the Windows player hard-crashed in EcsWorldVisualizer.DrawAsteroids (ToEntityArray).
-            // Instantiates stay capped below; TransformSystemGroup is gated by ClientJoinSettle.
+            // SpawnedGhostEntityMap. GhostReceive then logged "baseline for a ghost we do not have".
+            // Instantiates stay capped at 1/frame below. TransformSystemGroup must stay ENABLED
+            // (ClientJoinSettle only gates hybrid/UI — never disable-then-reenable LTW).
             int placeholdersThisFrame = 0;
 
             for (int i = 0; i < ghostSpawnBuffer.Length; ++i)

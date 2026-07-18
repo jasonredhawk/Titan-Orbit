@@ -3,10 +3,15 @@ using Unity.Mathematics;
 namespace TitanOrbit.Generation
 {
     /// <summary>
-    /// Flat-world XZ math helpers used by ECS sim and minimap. The game no longer wraps positions
-    /// at map edges (toroidal play was removed); method names retain "Toroidal" for call-site
-    /// stability but implement plain Euclidean distance. MapWidth/MapHeight define world extent
-    /// for generation and UI scaling only. Updated from <see cref="MapStateSingleton"/> at boot.
+    /// Pac-Man (toroidal) XZ map math for ECS simulation and presentation.
+    /// Logical positions live in a centered rectangle
+    /// <c>[-MapWidth/2, MapWidth/2) × [-MapHeight/2, MapHeight/2)</c>; flying off one edge
+    /// wraps to the opposite edge. Distance and direction use the shortest path on that torus
+    /// so combat, docking, mining, and beams work across seams. Display helpers pick the
+    /// nearest map-tile copy of a logical point relative to a reference (usually the local ship)
+    /// so GameObject proxies do not jump a full map width when the owner wraps.
+    /// Map size is set from <see cref="TitanOrbit.ECS.MapStateSingleton"/> at match bootstrap.
+    /// Burst-safe: pure static math, no managed allocations.
     /// </summary>
     public static class ToroidalMapEcs
     {
@@ -28,46 +33,98 @@ namespace TitanOrbit.Generation
             // --- Clamp designer input to playable minimum ---
             s_MapWidth = math.max(100f, width);
             s_MapHeight = math.max(100f, height);
+
+            // --- Keep Vector3 twin in lockstep (minimap / UI) ---
+            ToroidalMap.SetMapSize(s_MapWidth, s_MapHeight);
         }
 
-        /// <summary>[LEGACY name] Flat world — returns position unchanged (no wrap).</summary>
-        public static float3 Wrap(float3 position, float mapWidth, float mapHeight) => position;
+        /// <summary>
+        /// Wraps a world position into canonical toroidal space using explicit map dimensions.
+        /// Valid range: X in <c>[-halfW, halfW)</c>, Z in <c>[-halfH, halfH)</c>. Y unchanged.
+        /// [TITAN-ORBIT] Prefer this overload inside Burst systems that already read MapStateSingleton.
+        /// </summary>
+        public static float3 Wrap(float3 position, float mapWidth, float mapHeight)
+        {
+            // --- Shift into [0, size), modulo, shift back to centered [-half, half) ---
+            // [STANDARD] fmod can return negative for negative inputs; we re-add size when needed.
+            float halfW = mapWidth * 0.5f;
+            float halfH = mapHeight * 0.5f;
 
-        /// <summary>Overload using cached map dimensions.</summary>
-        public static float3 Wrap(float3 position) => position;
+            position.x = math.fmod(position.x + halfW, mapWidth);
+            if (position.x < 0f)
+                position.x += mapWidth;
+            position.x -= halfW;
 
-        /// <summary>XZ offset from → to on a flat plane (Y ignored).</summary>
-        public static float3 ShortestOffsetXZ(float3 from, float3 to, float mapWidth, float mapHeight) =>
-            new float3(to.x - from.x, 0f, to.z - from.z);
+            position.z = math.fmod(position.z + halfH, mapHeight);
+            if (position.z < 0f)
+                position.z += mapHeight;
+            position.z -= halfH;
 
-        /// <summary>Euclidean distance on the XZ plane between two world positions.</summary>
+            return position;
+        }
+
+        /// <summary>Wrap using cached <see cref="MapWidth"/> / <see cref="MapHeight"/>.</summary>
+        public static float3 Wrap(float3 position) => Wrap(position, s_MapWidth, s_MapHeight);
+
+        /// <summary>
+        /// Shortest XZ offset from <paramref name="from"/> toward <paramref name="to"/> on the torus.
+        /// Result length is at most half a map side on each axis. Y is zeroed.
+        /// </summary>
+        public static float3 ShortestOffsetXZ(float3 from, float3 to, float mapWidth, float mapHeight)
+        {
+            // --- Periodic delta: subtract nearest whole map tile ---
+            // [TITAN-ORBIT] Same formula as minimap / GemTractorBeamVisual neighbor tiles.
+            float dx = to.x - from.x;
+            float dz = to.z - from.z;
+            dx -= math.round(dx / mapWidth) * mapWidth;
+            dz -= math.round(dz / mapHeight) * mapHeight;
+            return new float3(dx, 0f, dz);
+        }
+
+        /// <summary>Shortest distance on the XZ torus between two world positions (Y ignored).</summary>
         public static float ToroidalDistance(float3 a, float3 b, float mapWidth, float mapHeight)
         {
-            // --- Flat XZ Euclidean distance (Y ignored) ---
-            float dx = b.x - a.x;
-            float dz = b.z - a.z;
-            return math.sqrt(dx * dx + dz * dz);
+            // --- Length of shortest offset ---
+            float3 d = ShortestOffsetXZ(a, b, mapWidth, mapHeight);
+            return math.length(new float2(d.x, d.z));
         }
 
-        /// <summary>Normalized direction on XZ from one point toward another; default +Z if coincident.</summary>
+        /// <summary>
+        /// Normalized XZ direction from <paramref name="from"/> toward <paramref name="to"/> along the
+        /// shortest toroidal path. Returns +Z if the points coincide.
+        /// </summary>
         public static float3 ToroidalDirection(float3 from, float3 to, float mapWidth, float mapHeight)
         {
-            // --- XZ direction; default forward if points coincide ---
-            float3 offset = new float3(to.x - from.x, 0f, to.z - from.z);
+            // --- Normalize shortest offset; default forward if zero ---
+            float3 offset = ShortestOffsetXZ(from, to, mapWidth, mapHeight);
             if (math.lengthsq(offset) < 0.0001f)
                 return new float3(0f, 0f, 1f);
             return math.normalize(offset);
         }
 
-        /// <summary>[LEGACY] Display position equals logical position on flat map.</summary>
-        public static float3 GetDisplayPosition(float3 logicalPos, float3 referencePos, float mapWidth, float mapHeight) =>
-            logicalPos;
+        /// <summary>
+        /// Nearest toroidal copy of <paramref name="logicalPos"/> relative to <paramref name="referencePos"/>.
+        /// Uses integer tile indices so the local ship may fly arbitrarily far (many map widths);
+        /// each body independently picks the copy nearest that ship.
+        /// </summary>
+        public static float3 GetDisplayPosition(float3 logicalPos, float3 referencePos, float mapWidth, float mapHeight)
+        {
+            // --- k,m = how many map tiles to shift logical so it sits near the (possibly unbounded) ship ---
+            float dx = referencePos.x - logicalPos.x;
+            float dz = referencePos.z - logicalPos.z;
+            int k = (int)math.round(dx / mapWidth);
+            int m = (int)math.round(dz / mapHeight);
+            return new float3(logicalPos.x + k * mapWidth, logicalPos.y, logicalPos.z + m * mapHeight);
+        }
 
         /// <summary>Overload using cached map size.</summary>
-        public static float3 GetDisplayPosition(float3 logicalPos, float3 referencePos) => logicalPos;
+        public static float3 GetDisplayPosition(float3 logicalPos, float3 referencePos) =>
+            GetDisplayPosition(logicalPos, referencePos, s_MapWidth, s_MapHeight);
 
         /// <summary>
-        /// [LEGACY] Hysteresis tile indices unused on flat map — always returns logical position.
+        /// Like <see cref="GetDisplayPosition"/> but keeps the same map tile until another tile is
+        /// clearly closer. Prevents planets/moons from popping a full map width when the reference
+        /// hovers near a tile boundary. Pass <c>tileK/tileM = int.MinValue</c> to initialize.
         /// </summary>
         public static float3 GetDisplayPositionWithHysteresis(
             float3 logicalPos,
@@ -78,10 +135,45 @@ namespace TitanOrbit.Generation
             float mapHeight,
             float switchMarginFraction = 0.35f)
         {
-            // --- [LEGACY] Hysteresis tiles unused on flat map ---
-            tileK = 0;
-            tileM = 0;
-            return logicalPos;
+            // --- Candidate tile from continuous nearest-copy ---
+            float dx = referencePos.x - logicalPos.x;
+            float dz = referencePos.z - logicalPos.z;
+            int candidateK = (int)math.round(dx / mapWidth);
+            int candidateM = (int)math.round(dz / mapHeight);
+
+            // --- First call: latch candidate ---
+            if (tileK == int.MinValue)
+            {
+                tileK = candidateK;
+                tileM = candidateM;
+            }
+            else if (candidateK != tileK || candidateM != tileM)
+            {
+                // --- Only switch when candidate is clearly closer (margin in world units) ---
+                float3 current = new float3(
+                    logicalPos.x + tileK * mapWidth,
+                    logicalPos.y,
+                    logicalPos.z + tileM * mapHeight);
+                float3 candidate = new float3(
+                    logicalPos.x + candidateK * mapWidth,
+                    logicalPos.y,
+                    logicalPos.z + candidateM * mapHeight);
+                float currentDistSq = (referencePos.x - current.x) * (referencePos.x - current.x)
+                    + (referencePos.z - current.z) * (referencePos.z - current.z);
+                float candidateDistSq = (referencePos.x - candidate.x) * (referencePos.x - candidate.x)
+                    + (referencePos.z - candidate.z) * (referencePos.z - candidate.z);
+                float margin = math.max(1f, switchMarginFraction * math.min(mapWidth, mapHeight));
+                if (candidateDistSq < currentDistSq - margin * margin)
+                {
+                    tileK = candidateK;
+                    tileM = candidateM;
+                }
+            }
+
+            return new float3(
+                logicalPos.x + tileK * mapWidth,
+                logicalPos.y,
+                logicalPos.z + tileM * mapHeight);
         }
 
         /// <summary>Overload using cached map dimensions.</summary>
@@ -90,12 +182,14 @@ namespace TitanOrbit.Generation
             float3 referencePos,
             ref int tileK,
             ref int tileM,
-            float switchMarginFraction = 0.35f)
-        {
-            // --- [LEGACY] Same as flat display — parameters kept for API stability ---
-            tileK = 0;
-            tileM = 0;
-            return logicalPos;
-        }
+            float switchMarginFraction = 0.35f) =>
+            GetDisplayPositionWithHysteresis(
+                logicalPos,
+                referencePos,
+                ref tileK,
+                ref tileM,
+                s_MapWidth,
+                s_MapHeight,
+                switchMarginFraction);
     }
 }

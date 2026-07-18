@@ -13,11 +13,10 @@ namespace TitanOrbit.Game
     /// Publishes NetCode presentation-phase ship poses once per frame for camera, hybrid leftovers,
     /// and parallax. Remotes use NetCode interpolation as-is.
     /// <para>
-    /// [TITAN-ORBIT] Local owner display: raw-follow when within one tick of sim; on larger gaps
-    /// (reconcile pops) use coast + capped correct (H71). Soft-track on NetCode storms.
-    /// Hard-snap when the local ship entity is missing or replaced (rejoin / fresh spawn) so the
-    /// camera does not pan from a previous session pose. GhostPredictionSmoothing is left off so
-    /// this system alone owns local presentation (avoids double-smooth jitter).
+    /// [TITAN-ORBIT] Local ship does <b>not</b> wrap — it flies unbound; camera follows that pose.
+    /// World bodies reposition individually via <see cref="ToroidalDisplay"/> relative to this ship.
+    /// Soft-track on NetCode storms; H73 cruise for reconcile pops. GhostPredictionSmoothing is left
+    /// off so this system alone owns local presentation (avoids double-smooth jitter).
     /// </para>
     /// <para>
     /// Evidence: H71 absorbed pops (maxDelta max 0.25). H72 deadzone rejected — correctFrames
@@ -81,9 +80,11 @@ namespace TitanOrbit.Game
             GhostPresentationTransformCache.BeginPublish(UnityEngine.Time.frameCount);
 
             Entity localShip = Entity.Null;
+            // [TITAN-ORBIT] TryGetLocalShipEntity returns false while team flow suppresses control.
             EcsGameBridge.TryGetLocalShipEntityOnWorld(World, out localShip);
 
             // --- Remotes (and non-local): NetCode presentation LocalTransform as-is ---
+            // While suppressed, every ship is treated as remote for the cache; local pose is cleared below.
             foreach (var (lt, entity) in SystemAPI
                          .Query<RefRO<LocalTransform>>()
                          .WithAll<ShipTag>()
@@ -118,9 +119,8 @@ namespace TitanOrbit.Game
             if (localShip == Entity.Null || !EntityManager.Exists(localShip))
             {
                 // [TITAN-ORBIT] Drop soft-track state on despawn / leave so the next ship hard-snaps.
-                // Keeping _smoothPos caused the camera to slide from the old disconnect location
-                // to the new home spawn (especially when choosing "start fresh" instead of rescue).
                 ResetLocalDisplaySmoothing();
+                ToroidalDisplay.ResetSession();
                 ShipDisplayPose.ClearLocalPose();
                 return;
             }
@@ -129,6 +129,7 @@ namespace TitanOrbit.Game
                 return;
 
             var lt = EntityManager.GetComponentData<LocalTransform>(localShip);
+            // --- Unbounded sim pose — ship never wraps; camera follows this ---
             float3 targetPos = lt.Position;
             quaternion targetRot = lt.Rotation;
 
@@ -144,21 +145,20 @@ namespace TitanOrbit.Game
             if (EntityManager.HasComponent<ShipKinematics>(localShip))
                 simVel = EntityManager.GetComponentData<ShipKinematics>(localShip).Velocity;
 
-            // --- Ship entity changed (rejoin / new spawn): hard-snap display to sim ---
-            // Soft-track across entity changes made camera pan from the previous session's pose.
             bool shipChanged = _smoothInitialized && _smoothShipEntity != Entity.Null && localShip != _smoothShipEntity;
             _smoothShipEntity = localShip;
 
             // --- Step display state ---
             if (!_smoothInitialized || shipChanged)
             {
+                if (shipChanged)
+                    ToroidalDisplay.ResetSession();
                 _smoothPos = targetPos;
                 _smoothRot = targetRot;
                 _smoothInitialized = true;
             }
             else if (catchingUp)
             {
-                // Soft-track during NetCode catch-up storms only (same ship entity).
                 StepDisplayToward(targetPos, targetRot, dt, CatchUpDisplayMaxSpeed);
             }
             else
@@ -175,7 +175,6 @@ namespace TitanOrbit.Game
                 }
                 else
                 {
-                    // --- H73 cruise: raw follow when close; coast+correct only on pops ---
                     StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt);
                 }
             }

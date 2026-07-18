@@ -2,9 +2,9 @@ namespace TitanOrbit.Core
 {
     /// <summary>
     /// Client-only state machine for team pick and dedicated-server rejoin ship-resume flow.
-    /// Written by <see cref="RejoinShipResultClientSystem"/>, team UI, and
-    /// <see cref="ClientCommandTargetSystem"/> gating. Prevents local ship control before the
-    /// player confirms team or rejoin choice. Not replicated — server uses ShipState flags.
+    /// Written by team/rejoin RPC result systems and team UI. Gates local ship control,
+    /// tagging, camera, and owned-hull presentation until <see cref="TeamChoiceConfirmed"/>
+    /// (Join Team or resume). Not replicated — server uses ShipState flags.
     /// </summary>
     public static class ClientTeamFlowState
     {
@@ -96,15 +96,19 @@ namespace TitanOrbit.Core
                 RejoinChoice = RejoinShipChoice.Pending;
         }
 
-        /// <summary>Block command target / local ship tagging until the player finishes rejoin UI.</summary>
+        /// <summary>
+        /// Block command target, local ship tagging, camera, and owned-ship presentation until the
+        /// server confirms team pick or resume. Covers map loading (before rejoin UI latches Pending)
+        /// and the normal Join Team screen — a GhostOwner-matched orphan must not act as "my ship".
+        /// </summary>
         public static bool ShouldSuppressLocalPlayerControl()
         {
-            // --- Block input until rejoin UI or fresh-team flow completes ---
-            if (RejoinChoice == RejoinShipChoice.Pending)
-                return true;
-            if (RejoinChoice == RejoinShipChoice.StartFresh && !TeamChoiceConfirmed)
-                return true;
-            return false;
+            // --- Block until TeamChoiceResultRpc / RejoinShipResultRpc confirms ---
+            // [TITAN-ORBIT] TeamChoiceConfirmed is false from connect through "Building galaxy..."
+            // and team/rejoin UI. Resume and Join Team both call ConfirmTeamChoice on success.
+            // Previous gate only suppressed Rejoin Pending / StartFresh, so a persisted ship for
+            // this NetworkId drove camera + hull visuals during map load before team pick.
+            return !TeamChoiceConfirmed;
         }
 
         public static bool ShouldBindCommandTarget() => !ShouldSuppressLocalPlayerControl();

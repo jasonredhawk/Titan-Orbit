@@ -294,20 +294,22 @@ namespace TitanOrbit.Game
 
             if (world != null && world.IsCreated)
             {
-                using var mapQuery = world.EntityManager.CreateEntityQuery(typeof(MapStateSingleton));
-                if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map))
-                {
-                    mapW = math.max(100f, map.MapWidth);
-                    mapH = math.max(100f, map.MapHeight);
-                }
+                ToroidalDisplay.SyncMapSize(world.EntityManager);
+                mapW = ToroidalMapEcs.MapWidth;
+                mapH = ToroidalMapEcs.MapHeight;
             }
-
-            float3 reference = new float3(transform.position.x, 0f, transform.position.z);
-            if (EcsGameBridge.TryGetLocalShipPosition(out var shipPos))
-                reference = new float3(shipPos.x, 0f, shipPos.z);
 
             if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(_planetId, out float3 logicalPlanet, out float planetScale, out var planetState))
                 return false;
+
+            // --- Classic: moon on tile nearest logical local ship (matches planet proxy tiles) ---
+            float3 reference = default;
+            if (ToroidalDisplay.TryGetReferencePosition(out var refV3))
+                reference = new float3(refV3.x, 0f, refV3.z);
+            else if (EcsGameBridge.TryGetLocalShipPosition(out var shipPos))
+                reference = new float3(shipPos.x, 0f, shipPos.z);
+            else
+                reference = new float3(transform.position.x, 0f, transform.position.z);
 
             moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
                 reference,

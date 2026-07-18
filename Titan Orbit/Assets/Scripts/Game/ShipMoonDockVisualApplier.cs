@@ -262,7 +262,17 @@ namespace TitanOrbit.Game
             return Quaternion.LookRotation(tangent, surfaceNormal);
         }
 
-        Vector3 GetShipVisualPosition(EntityManager em, float3 logicalPos) => logicalPos;
+        /// <summary>Local docked ship = logical; remotes use hysteresis near local ship.</summary>
+        Vector3 GetShipVisualPosition(EntityManager em, float3 logicalPos)
+        {
+            if (ToroidalDisplay.IsLocalPlayerShip(em, _shipEntity))
+                return logicalPos;
+
+            if (!ToroidalDisplay.TryGetReferencePosition(out var reference))
+                return logicalPos;
+
+            return ToroidalDisplay.ToDisplayPositionWithHysteresis(_shipEntity, logicalPos, reference);
+        }
 
         /// <summary>Resolves moon world pose from visual registry or ECS planet + orbit math fallback.</summary>
         static bool TryResolveMoonPose(int planetId, out Vector3 moonPos, out Vector3 spinAxis, out float moonBodyRadius)
@@ -282,7 +292,13 @@ namespace TitanOrbit.Game
             if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out float3 planetPos, out float planetSize, out var planetState))
                 return false;
 
-            // Baseline: moon pose from logical planet position (no toroidal display offset).
+            // --- Classic tile unwrap toward logical local ship ---
+            if (ToroidalDisplay.TryGetReferencePosition(out var reference))
+            {
+                Vector3 displayPlanet = ToroidalDisplay.ToDisplayPositionWithHysteresis(planetId, planetPos, reference);
+                planetPos = new float3(displayPlanet.x, displayPlanet.y, displayPlanet.z);
+            }
+
             double elapsed = TryGetSimulationElapsedTime(out double simElapsed) ? simElapsed : Time.timeAsDouble;
             float3 moonPosF3 = PlanetOrbitMath.GetMoonWorldPosition(
                 planetPos,

@@ -195,6 +195,7 @@ namespace TitanOrbit.ECS
             mapState.LoadingProgress = 0.05f;
             mapState.LoadingComplete = false;
             em.SetComponentData(_mapEntity, mapState);
+            // --- ToroidalMapEcs.SetMapSize also mirrors into ToroidalMap (minimap twin) ---
             Generation.ToroidalMapEcs.SetMapSize(_rolled.MapWidth, _rolled.MapHeight);
 
             var teamState = SystemAPI.GetSingletonRW<TeamStateSingleton>();

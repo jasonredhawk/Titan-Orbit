@@ -1,6 +1,7 @@
 using System.Text;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -9,14 +10,21 @@ using UnityEngine;
 namespace TitanOrbit.NetCode
 {
     /// <summary>
-    /// [NETCODE] One-shot RPC: server sends authoritative map/session totals to a joining client.
-    /// Used for the loading-screen denominator (stable "/ N") and can mirror UGS lobby browse data.
-    /// MapStateSingleton GhostFields often never arrive on dedicated clients because the singleton
-    /// entity is created with CreateEntity and is not a ghost prefab — this RPC fills that gap.
+    /// [NETCODE] One-shot RPC: server sends the map "recipe summary" to a joining client —
+    /// how many planets/asteroids to expect, team count, and rolled map size.
+    /// <para>
+    /// [TITAN-ORBIT] Loading-bar contract: this is the denominator <c>N</c> only. The bar advances
+    /// when the client Instantiates GameObject proxies, not when this RPC (or ghost packets) arrive.
+    /// Sim bodies still stream as NetCode ghosts; this is not a full per-body layout payload yet.
+    /// </para>
+    /// Also used for toroidal size / UGS lobby browse. Fills the gap where MapStateSingleton
+    /// GhostFields never arrive on dedicated clients (singleton is CreateEntity, not a ghost).
     /// </summary>
     public struct MapSessionMetaRpc : IRpcCommand
     {
-        /// <summary>[TITAN-ORBIT] Total map body spawn steps (planets + asteroids + homes, etc.).</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] How many planet+asteroid GameObjects the client should build (loading "/ N").
+        /// </summary>
         public int LoadingTotalSteps;
 
         /// <summary>[TITAN-ORBIT] Team slots / home planets for this match.</summary>
@@ -27,6 +35,12 @@ namespace TitanOrbit.NetCode
 
         /// <summary>[TITAN-ORBIT] Asteroids.</summary>
         public int AsteroidCount;
+
+        /// <summary>[TITAN-ORBIT] Rolled toroidal map width (world units). Required for wrap/minimap.</summary>
+        public float MapWidth;
+
+        /// <summary>[TITAN-ORBIT] Rolled toroidal map height (world units).</summary>
+        public float MapHeight;
     }
 
     /// <summary>
@@ -59,8 +73,19 @@ namespace TitanOrbit.NetCode
         /// <summary>Asteroids for this match.</summary>
         public static int AsteroidCount { get; private set; }
 
+        /// <summary>Rolled map width from the server (0 until meta arrives).</summary>
+        public static float MapWidth { get; private set; }
+
+        /// <summary>Rolled map height from the server (0 until meta arrives).</summary>
+        public static float MapHeight { get; private set; }
+
+        /// <summary>True when MapWidth/Height look like a real rolled map (not missing).</summary>
+        public static bool HasMapSize => MapWidth >= 100f && MapHeight >= 100f;
+
         /// <summary>
         /// Applies RPC payload to the cache. Called from the client receive system.
+        /// Also pushes size into <see cref="ToroidalMapEcs"/> / <see cref="ToroidalMap"/> so display
+        /// and minimap do not keep the 1000×1000 default (which leaves huge empty wrap gaps).
         /// </summary>
         /// <param name="rpc">Server-authored match totals.</param>
         public static void Apply(in MapSessionMetaRpc rpc)
@@ -69,7 +94,24 @@ namespace TitanOrbit.NetCode
             TeamCount = Mathf.Max(0, rpc.TeamCount);
             NeutralPlanetCount = Mathf.Max(0, rpc.NeutralPlanetCount);
             AsteroidCount = Mathf.Max(0, rpc.AsteroidCount);
-            HasMeta = LoadingTotalSteps > 0 || TeamCount > 0 || NeutralPlanetCount > 0 || AsteroidCount > 0;
+            MapWidth = Mathf.Max(0f, rpc.MapWidth);
+            MapHeight = Mathf.Max(0f, rpc.MapHeight);
+            HasMeta = LoadingTotalSteps > 0 || TeamCount > 0 || NeutralPlanetCount > 0 || AsteroidCount > 0 || HasMapSize;
+
+            // --- Keep toroidal helpers aligned with the rolled match ---
+            if (HasMapSize)
+                ApplyMapSizeToToroidalHelpers(MapWidth, MapHeight);
+        }
+
+        /// <summary>
+        /// Writes width/height into both ECS and Vector3 toroidal static caches.
+        /// </summary>
+        public static void ApplyMapSizeToToroidalHelpers(float width, float height)
+        {
+            float w = Mathf.Max(100f, width);
+            float h = Mathf.Max(100f, height);
+            ToroidalMapEcs.SetMapSize(w, h);
+            ToroidalMap.SetMapSize(w, h);
         }
 
         /// <summary>
@@ -82,6 +124,8 @@ namespace TitanOrbit.NetCode
             TeamCount = 0;
             NeutralPlanetCount = 0;
             AsteroidCount = 0;
+            MapWidth = 0f;
+            MapHeight = 0f;
         }
 
         /// <summary>
@@ -108,7 +152,9 @@ namespace TitanOrbit.NetCode
                 LoadingTotalSteps = mapState.LoadingTotalSteps,
                 TeamCount = mapState.TeamCount,
                 NeutralPlanetCount = mapState.NeutralPlanetCount,
-                AsteroidCount = mapState.AsteroidCount
+                AsteroidCount = mapState.AsteroidCount,
+                MapWidth = mapState.MapWidth,
+                MapHeight = mapState.MapHeight,
             };
             return mapState.LoadingComplete || meta.LoadingTotalSteps > 0;
         }
@@ -281,7 +327,9 @@ namespace TitanOrbit.NetCode
                     "[MapSessionMeta] Client latched totals steps=" + MapSessionMetaCache.LoadingTotalSteps +
                     " teams=" + MapSessionMetaCache.TeamCount +
                     " neutrals=" + MapSessionMetaCache.NeutralPlanetCount +
-                    " asteroids=" + MapSessionMetaCache.AsteroidCount);
+                    " asteroids=" + MapSessionMetaCache.AsteroidCount +
+                    " map=" + MapSessionMetaCache.MapWidth.ToString("F0") + "x" +
+                    MapSessionMetaCache.MapHeight.ToString("F0"));
                 commandBuffer.DestroyEntity(reqEntity);
             }
 
@@ -321,7 +369,9 @@ namespace TitanOrbit.NetCode
                 LoadingTotalSteps = mapState.LoadingTotalSteps,
                 TeamCount = mapState.TeamCount,
                 NeutralPlanetCount = mapState.NeutralPlanetCount,
-                AsteroidCount = mapState.AsteroidCount
+                AsteroidCount = mapState.AsteroidCount,
+                MapWidth = mapState.MapWidth,
+                MapHeight = mapState.MapHeight,
             };
 
             var commandBuffer = new EntityCommandBuffer(Allocator.Temp);

@@ -5,6 +5,7 @@ using TitanOrbit.Data;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Rendering;
 using Unity.Transforms;
 using UnityEngine;
@@ -100,7 +101,11 @@ namespace TitanOrbit.ECS
         {
             _aliveShips.Add(shipEntity);
 
-            if (ship.IsDead || ship.AwaitingTeamSelection)
+            // --- Hide owned hull until team/resume confirm ---
+            // [TITAN-ORBIT] Persisted GhostOwner ships replicate during map load. Until
+            // TeamChoiceConfirmed, do not build Entities Graphics parts for "my" NetworkId —
+            // otherwise the player sees their ship before Join Team / rejoin UI.
+            if (ship.IsDead || ship.AwaitingTeamSelection || IsSuppressedLocalOwnedShip(shipEntity))
             {
                 _shipsToClearVisuals.Add(shipEntity);
                 return;
@@ -160,6 +165,39 @@ namespace TitanOrbit.ECS
                 EntityManager.SetComponentData(shipEntity, visualState);
             else
                 EntityManager.AddComponentData(shipEntity, visualState);
+        }
+
+        /// <summary>
+        /// True when this ghost is owned by the local NetworkId (or GhostOwnerIsLocal) and team
+        /// flow has not confirmed Join Team / resume yet.
+        /// </summary>
+        bool IsSuppressedLocalOwnedShip(Entity shipEntity)
+        {
+            if (!ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+                return false;
+
+            // --- GhostOwnerIsLocal (NetCode enableable) ---
+            if (EntityManager.HasComponent<GhostOwnerIsLocal>(shipEntity) &&
+                EntityManager.IsComponentEnabled<GhostOwnerIsLocal>(shipEntity))
+                return true;
+
+            // --- GhostOwner.NetworkId match ---
+            if (!EntityManager.HasComponent<GhostOwner>(shipEntity))
+                return false;
+
+            int localId = GetLocalNetworkId();
+            if (localId <= 0)
+                return false;
+
+            return EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId == localId;
+        }
+
+        /// <summary>Reads this client's NetworkId from the in-game connection.</summary>
+        int GetLocalNetworkId()
+        {
+            foreach (var netId in SystemAPI.Query<RefRO<NetworkId>>().WithAll<NetworkStreamInGame>())
+                return netId.ValueRO.Value;
+            return -1;
         }
 
         /// <summary>
