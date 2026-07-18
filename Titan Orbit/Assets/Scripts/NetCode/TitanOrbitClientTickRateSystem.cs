@@ -1,6 +1,5 @@
 using Unity.Entities;
 using Unity.NetCode;
-using UnityEngine;
 
 namespace TitanOrbit.NetCode
 {
@@ -75,26 +74,6 @@ namespace TitanOrbit.NetCode
             sharedTickRate.PredictedFixedStepSimulationTickRatio = 1;
             sharedTickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.Sleep;
             state.EntityManager.SetComponentData(sharedTickEntity, sharedTickRate);
-
-            // #region agent log
-            if (!_loggedOnce)
-            {
-                _loggedOnce = true;
-                TitanOrbit.Diagnostics.ShipFlightSmoothDebugLog.Write(
-                    "H39",
-                    "TitanOrbitClientTickRateSystem.OnUpdate",
-                    "client tick rates",
-                    "{\"predBatch\":1,\"maxBatch\":" + sharedTickRate.MaxSimulationStepBatchSize +
-                    ",\"maxSteps\":" + sharedTickRate.MaxSimulationStepsPerFrame +
-                    ",\"simHz\":" + sharedTickRate.SimulationTickRate +
-                    ",\"hasServer\":" + (ClientServerBootstrap.HasServerWorld ? "true" : "false") +
-                    ",\"relay\":" + (TitanOrbitRelayState.HasClientRelay ? "true" : "false") + "}");
-            }
-            // #endregion
         }
-
-        // #region agent log
-        bool _loggedOnce;
-        // #endregion
     }
 }

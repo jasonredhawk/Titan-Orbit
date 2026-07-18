@@ -55,12 +55,7 @@ namespace TitanOrbit.Game
                 ClientWorld != null && ClientWorld.IsCreated &&
                 ServerWorld != null && ServerWorld.IsCreated;
             if (dualWorldPresent)
-            {
-                // #region agent log
-                AgentLogVizWorldSkipServerFallback();
-                // #endregion
                 return null;
-            }
 
             // --- Client-only join / single-world edge cases ---
             // [NETCODE] No dual-world wait: allow ServerWorld only when there is no ClientWorld
@@ -73,36 +68,6 @@ namespace TitanOrbit.Game
 
             return null;
         }
-
-        // #region agent log
-        static float s_DbgNextVizSkipLogTime;
-
-        /// <summary>Throttled NDJSON when Local Host skips ServerWorld proxy spawn (session 6b87b4).</summary>
-        static void AgentLogVizWorldSkipServerFallback()
-        {
-            if (Time.unscaledTime < s_DbgNextVizSkipLogTime)
-                return;
-            s_DbgNextVizSkipLogTime = Time.unscaledTime + 1f;
-            try
-            {
-                string path = System.IO.Path.GetFullPath(
-                    System.IO.Path.Combine(Application.dataPath, "..", "..", "debug-6b87b4.log"));
-                long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                bool clientReady = ClientWorld != null && ClientWorld.IsCreated &&
-                                   TitanOrbitSessionManager.IsClientGameplayReady(ClientWorld);
-                string line =
-                    "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H28\"," +
-                    "\"location\":\"EcsGameBridge.GetVisualizationWorld\"," +
-                    "\"message\":\"skip ServerWorld viz until ClientWorld ready\"," +
-                    "\"data\":{\"clientReady\":" + (clientReady ? "true" : "false") +
-                    ",\"hasClient\":" + (ClientWorld != null && ClientWorld.IsCreated ? "true" : "false") +
-                    ",\"hasServer\":" + (ServerWorld != null && ServerWorld.IsCreated ? "true" : "false") +
-                    "},\"timestamp\":" + ts + "}\n";
-                System.IO.File.AppendAllText(path, line);
-            }
-            catch { /* debug I/O only */ }
-        }
-        // #endregion
 
         /// <summary>
         /// World that owns the local player's ship ghost tags and predicted pose.

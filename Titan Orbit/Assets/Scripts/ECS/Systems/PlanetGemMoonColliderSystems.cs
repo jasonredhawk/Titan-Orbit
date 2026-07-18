@@ -4,7 +4,6 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
-using Unity.Physics.Systems;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -21,8 +20,8 @@ namespace TitanOrbit.ECS
     /// player hard-crashes right after Relay go-in-game.
     /// </para>
     /// </summary>
+    // No UpdateAfter(PlanetGemMoonEnsureSystem) — that ensure is server-only; ClientWorld sorter warns.
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(PlanetGemMoonEnsureSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct PlanetGemMoonColliderEnsureSystem : ISystem
     {
@@ -127,8 +126,8 @@ namespace TitanOrbit.ECS
     /// <see cref="PhysicsSystemGroup"/> integrates ships. Same math as moon visuals and bullet hits.
     /// Paired with <see cref="PlanetGemMoonColliderEnsureSystem"/>.
     /// </summary>
-    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
-    [UpdateBefore(typeof(PhysicsSystemGroup))]
+    // OrderFirst: moon hull pose before PhysicsSystemGroup without UpdateBefore(Physics…).
+    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct PlanetGemMoonColliderSyncSystem : ISystem
     {

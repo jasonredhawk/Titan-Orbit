@@ -7,11 +7,10 @@ namespace TitanOrbit.NetCode
     /// <summary>
     /// Socket tick tune for <b>true local loopback only</b> (MPPM Player 2 → 127.0.0.1).
     /// <para>
-    /// basics33 / dedicated GCE evidence: this system used <c>EstimatedRTT &lt; 40ms</c> as a
-    /// "loopback" gate. Relay joins often report ~35–38 ms for a few frames at connect, so we
-    /// forced <c>TargetCommandSlack=0</c> and <c>EstimatedRTT=one tick</c>. Real Relay RTT then
-    /// settled ~70 ms while slack stayed 0 → <c>cmdAge≈20–24</c>, <c>maxDelta≈2.6</c>, both
-    /// players choppy. Local Host never hit this path (IPC tandem).
+    /// An earlier RTT gate used <c>EstimatedRTT &lt; 40ms</c> as "loopback". Relay joins often
+    /// report ~35–38 ms for a few frames at connect, so we forced <c>TargetCommandSlack=0</c>
+    /// and <c>EstimatedRTT=one tick</c>. Real Relay RTT then settled ~70 ms while slack stayed 0 →
+    /// <c>cmdAge≈20–24</c>, choppy flight. Local Host never hit this path (IPC tandem).
     /// </para>
     /// <para>
     /// Fix: never apply loopback overrides when <see cref="TitanOrbitRelayState"/> has a client
@@ -29,9 +28,6 @@ namespace TitanOrbit.NetCode
 
         /// <summary>Package default command slack (NetCode DefaultClientTickRate).</summary>
         const uint DefaultTargetCommandSlack = 2;
-
-        /// <summary>One-shot path log.</summary>
-        bool _loggedPath;
 
         /// <summary>Requires an in-game connection before tuning.</summary>
         public void OnCreate(ref SystemState state)
@@ -52,32 +48,12 @@ namespace TitanOrbit.NetCode
 
             // --- Dedicated / Join game via Unity Relay: FIRST (before HasServerWorld) ---
             // [NETCODE] Local Host may have ServerWorld (SessionManager); player clients are ClientWorld-only.
-            // basics38: HasServerWorld was true during GCE Relay join, so we early-returned here and
-            // never restored Relay slack. Check Relay before any Local Host gate.
+            // Checking Relay before any Local Host gate avoids skipping slack restore when
+            // HasServerWorld is briefly true during a GCE Relay join.
             if (TitanOrbitRelayState.HasClientRelay || TitanOrbitSessionManager.IsDedicatedOnlineClient)
             {
                 if (clientTickRate.ValueRO.TargetCommandSlack != DefaultTargetCommandSlack)
                     clientTickRate.ValueRW.TargetCommandSlack = DefaultTargetCommandSlack;
-
-                // #region agent log
-                if (!_loggedPath)
-                {
-                    _loggedPath = true;
-                    float rtt = 0f;
-                    if (SystemAPI.TryGetSingleton<NetworkSnapshotAck>(out var ack))
-                        rtt = ack.EstimatedRTT;
-                    string data =
-                        "{\"path\":\"relay\",\"targetSlack\":" + DefaultTargetCommandSlack +
-                        ",\"rttMs\":" + rtt.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
-                        ",\"hasServer\":" + (ClientServerBootstrap.HasServerWorld ? "true" : "false") +
-                        ",\"dedicatedOnline\":" + (TitanOrbitSessionManager.IsDedicatedOnlineClient ? "true" : "false") + "}";
-                    TitanOrbit.Diagnostics.ShipFlightSmoothDebugLog.Write(
-                        "H38",
-                        "TitanOrbitSocketLoopbackTickTuneSystem.OnUpdate",
-                        "Relay client — restore slack, skip loopback tune",
-                        data);
-                }
-                // #endregion
                 return;
             }
 
@@ -108,23 +84,6 @@ namespace TitanOrbit.NetCode
 
             if (clientTickRate.ValueRO.TargetCommandSlack != 0)
                 clientTickRate.ValueRW.TargetCommandSlack = 0;
-
-            // #region agent log
-            if (!_loggedPath)
-            {
-                _loggedPath = true;
-                string data =
-                    "{\"path\":\"loopback\",\"measuredRttBefore\":" +
-                    measuredRtt.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"oneTickMs\":" + oneTickMs.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
-                    ",\"targetSlack\":0,\"hasServer\":false}";
-                TitanOrbit.Diagnostics.ShipFlightSmoothDebugLog.Write(
-                    "H38",
-                    "TitanOrbitSocketLoopbackTickTuneSystem.OnUpdate",
-                    "non-Relay Socket loopback tune",
-                    data);
-            }
-            // #endregion
         }
     }
 }

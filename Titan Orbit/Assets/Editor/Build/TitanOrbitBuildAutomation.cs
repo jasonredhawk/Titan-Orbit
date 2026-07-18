@@ -85,8 +85,7 @@ namespace TitanOrbit.Editor.Build
             Debug.Log("[TitanOrbitBuild] Windows client (Player) → " + exePath);
             BuildReport report = BuildPipeline.BuildPlayer(options);
             if (report.summary.result == BuildResult.Succeeded)
-                Debug.Log("[TitanOrbitBuild] Windows client OK. Run TitanOrbit.exe, Join→GCE. Log: " +
-                          Path.Combine(folder, "debug-6b87b4.log"));
+                Debug.Log("[TitanOrbitBuild] Windows client OK. Run TitanOrbit.exe, Join→GCE.");
             else
                 Debug.LogError($"[TitanOrbitBuild] Windows client failed: {report.summary.result} — {report.summary.totalErrors} error(s).");
         }

@@ -10,13 +10,14 @@ namespace TitanOrbit.ECS
     /// Safety net that adds missing runtime ship components at load time. Authoring should bake
     /// everything via <see cref="Authoring.StarshipGhostAuthoring"/>, but this system ensures
     /// older prefabs and runtime-spawned ships never hit null-component errors in motor hot paths.
-    /// Runs before <see cref="ShipPhysicsDriveSystem"/> and <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
+    /// Runs in <see cref="SimulationSystemGroup"/> (variable step) before the predicted fixed-step motor.
     /// Uses EntityCommandBuffer so structural changes don't invalidate parallel queries mid-frame.
+    /// <para>
+    /// [ECS/DOTS] Do not UpdateBefore systems in <see cref="PredictedFixedStepSimulationSystemGroup"/> —
+    /// those are a different group instance and Unity logs invalid-attribute warnings every world create.
+    /// </para>
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateBefore(typeof(ShipPhysicsMassSyncSystem))]
-    [UpdateBefore(typeof(ShipPhysicsDriveSystem))]
-    [UpdateBefore(typeof(ShipClientPredictedPhysicsDriveSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipEnsureComponentsSystem : ISystem
     {

@@ -1,6 +1,5 @@
 using Unity.Entities;
 using Unity.NetCode;
-using UnityEngine;
 
 namespace TitanOrbit.NetCode
 {
@@ -92,26 +91,6 @@ namespace TitanOrbit.NetCode
             tickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.Sleep;
 
             state.EntityManager.SetComponentData(tickEntity, tickRate);
-
-            // #region agent log
-            if (!_loggedOnce)
-            {
-                _loggedOnce = true;
-                TitanOrbit.Diagnostics.ShipFlightSmoothDebugLog.Write(
-                    "H39",
-                    "TitanOrbitServerTickRateSystem.OnUpdate",
-                    "Server ClientServerTickRate forced",
-                    "{\"simHz\":" + tickRate.SimulationTickRate +
-                    ",\"maxBatch\":" + tickRate.MaxSimulationStepBatchSize +
-                    ",\"maxSteps\":" + maxSteps +
-                    ",\"predRatio\":" + tickRate.PredictedFixedStepSimulationTickRatio +
-                    ",\"frameMode\":\"Sleep\"}");
-            }
-            // #endregion
         }
-
-        // #region agent log
-        bool _loggedOnce;
-        // #endregion
     }
 }

@@ -192,9 +192,9 @@ namespace TitanOrbit.ECS
             vel.y = 0f;
 
             // --- H74 hard cruise lock (thrusting, small overspeed band only) ---
-            // [TITAN-ORBIT] basics65: at cruise, SPD hunted ~13.2–13.9 (speedRange ~0.4–0.8) even
-            // when forward thrust was stripped. That variance makes presentation step size wobble
-            // every frame (expected = speed×dt), which reads as chop on a Windows ~60 FPS client.
+            // [TITAN-ORBIT] At cruise, speed can hunt a small band above MaxSpeed even with steady
+            // forward thrust. That variance makes presentation step size wobble every frame
+            // (expected = speed×dt), which reads as chop on a ~60 FPS client.
             // Lock the hunt band to MaxSpeed while thrusting. Larger overspeed (impacts) still
             // uses ApplyRecoilDecay + the soft 1.35× ceiling below — not zeroed here.
             float mag = math.length(vel);

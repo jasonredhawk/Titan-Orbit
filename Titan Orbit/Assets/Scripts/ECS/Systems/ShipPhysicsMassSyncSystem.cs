@@ -11,9 +11,9 @@ namespace TitanOrbit.ECS
     /// before thrust runs. [NETCODE] Server and client must use identical mass during owner prediction.
     /// Paired with <see cref="ShipPhysicsDriveLogic"/> which divides thrust by the same mass value.
     /// </summary>
-    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
-    [UpdateBefore(typeof(ShipPhysicsDriveSystem))]
-    [UpdateBefore(typeof(ShipClientPredictedPhysicsDriveSystem))]
+    // OrderFirst: before drive systems. Do not UpdateBefore server-only or client-only drive types —
+    // the missing peer on the other world spams invalid UpdateBefore warnings at bootstrap.
+    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipPhysicsMassSyncSystem : ISystem
     {

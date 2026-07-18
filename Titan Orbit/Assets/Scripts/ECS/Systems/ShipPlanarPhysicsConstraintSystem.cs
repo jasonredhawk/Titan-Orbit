@@ -2,7 +2,6 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
-using Unity.Physics.Systems;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -13,8 +12,9 @@ namespace TitanOrbit.ECS
     /// is preserved for <see cref="ShipKinematicsSyncSystem"/>. Pipeline:
     /// Drive → Physics → Planar (this) → KinematicsSync.
     /// </summary>
-    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
-    [UpdateAfter(typeof(PhysicsSystemGroup))]
+    // OrderLast: after default-slot PhysicsSystemGroup. Avoid UpdateAfter(PhysicsSystemGroup) —
+    // ClientWorld sorter warns when that group is not a PredictedFixedStep sibling.
+    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderLast = true)]
     [UpdateBefore(typeof(ShipKinematicsSyncSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipPlanarPhysicsConstraintSystem : ISystem

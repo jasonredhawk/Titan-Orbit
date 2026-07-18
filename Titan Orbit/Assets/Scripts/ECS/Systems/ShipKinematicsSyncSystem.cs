@@ -2,7 +2,6 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
-using Unity.Physics.Systems;
 
 namespace TitanOrbit.ECS
 {
@@ -14,8 +13,8 @@ namespace TitanOrbit.ECS
     /// we do <b>not</b> hard-clamp to MaxSpeed here (that would erase collision impulse).
     /// Overspeed bleeds in the next drive tick via <see cref="ShipPhysicsDriveLogic"/>.
     /// </summary>
-    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
-    [UpdateAfter(typeof(PhysicsSystemGroup))]
+    // OrderLast + after Planar: capture post-collision velocity without UpdateAfter(PhysicsSystemGroup).
+    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderLast = true)]
     [UpdateAfter(typeof(ShipPlanarPhysicsConstraintSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipKinematicsSyncSystem : ISystem

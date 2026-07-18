@@ -1,6 +1,5 @@
 using Unity.Entities;
 using Unity.NetCode;
-using Unity.Physics.Systems;
 
 namespace TitanOrbit.ECS
 {
@@ -11,8 +10,9 @@ namespace TitanOrbit.ECS
     /// Paired with <see cref="ShipClientPredictedPhysicsDriveSystem"/> (same job, client owner).
     /// Pipeline: Input → MassSync → Drive → Physics → Planar → KinematicsSync.
     /// </summary>
-    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
-    [UpdateBefore(typeof(PhysicsSystemGroup))]
+    // OrderFirst + after MassSync: thrust before PhysicsSystemGroup without UpdateBefore(Physics…).
+    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
+    [UpdateAfter(typeof(ShipPhysicsMassSyncSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct ShipPhysicsDriveSystem : ISystem
     {

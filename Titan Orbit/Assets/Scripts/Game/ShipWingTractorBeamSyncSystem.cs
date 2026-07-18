@@ -16,8 +16,8 @@ namespace TitanOrbit.Game
     /// GemTractorBeamSystem (server) consumes the buffer for gem pull assignment. Hull lookup
     /// uses ShipWeaponProxyRegistry keyed by GhostOwner.NetworkId.
     /// </summary>
+    // No UpdateAfter(ShipWeaponMountSyncSystem) — mount sync is server-only; ClientWorld sorter warns.
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(ShipWeaponMountSyncSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial class ShipWingTractorBeamSyncSystem : SystemBase
     {

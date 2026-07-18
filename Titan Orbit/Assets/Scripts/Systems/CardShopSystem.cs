@@ -32,7 +32,10 @@ namespace TitanOrbit.Systems
             }
 
             Instance = this;
-            _planetShipFamilyConfig = LoadPlanetShipFamilyConfig();
+            // [UNITY] Do not Resources.Load the family config here. Loading pulls every chassis
+            // prefab reference and spam-logs "referenced script (Unknown)" for any missing
+            // MonoBehaviour on those prefabs — that Console flood hurts Editor frame time.
+            // Config is resolved lazily via ShipStatApplyLogic (same asset, one shared cache).
         }
 
         void OnDestroy()
@@ -41,16 +44,27 @@ namespace TitanOrbit.Systems
                 Instance = null;
         }
 
-        static PlanetShipFamilyConfig LoadPlanetShipFamilyConfig()
+        /// <summary>
+        /// Shared PlanetShipFamilyConfig — same Resources asset ShipStatApplyLogic uses for motor stats.
+        /// </summary>
+        PlanetShipFamilyConfig Config
         {
-            // --- LoadPlanetShipFamilyConfig ---
-            var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
-            if (config != null)
-                return config;
-            return Resources.Load<PlanetShipFamilyConfig>("Data/PlanetShipFamilyConfig");
-        }
+            get
+            {
+                if (_planetShipFamilyConfig != null)
+                    return _planetShipFamilyConfig;
 
-        PlanetShipFamilyConfig Config => _planetShipFamilyConfig != null ? _planetShipFamilyConfig : (_planetShipFamilyConfig = LoadPlanetShipFamilyConfig());
+                // [TITAN-ORBIT] Prefer the ECS apply cache so shop UI and motor MaxSpeed stay aligned.
+                _planetShipFamilyConfig = ShipStatApplyLogic.Config;
+                if (_planetShipFamilyConfig != null)
+                    return _planetShipFamilyConfig;
+
+                _planetShipFamilyConfig = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+                if (_planetShipFamilyConfig == null)
+                    _planetShipFamilyConfig = Resources.Load<PlanetShipFamilyConfig>("Data/PlanetShipFamilyConfig");
+                return _planetShipFamilyConfig;
+            }
+        }
 
         public ShipFamilyDefinition GetShipFamilyForShip(Starship ship)
         {

@@ -220,13 +220,6 @@ namespace TitanOrbit.NetCode
                 return;
 
             Debug.Log("[TitanOrbitSessionManager] Disposing local ServerWorld for dedicated Relay join (client-only).");
-            // #region agent log
-            ShipFlightSmoothDebugLog.Write(
-                "H44",
-                "TitanOrbitSessionManager.DisposeEditorServerWorldForDedicatedJoin",
-                "Disposed Editor ServerWorld for Relay join",
-                "{\"hasServerBefore\":true,\"dedicatedOnline\":true}");
-            // #endregion
 
             // [NETCODE] World.Dispose removes it from the player loop and clears bootstrap ServerWorld.
             server.Dispose();
@@ -246,14 +239,6 @@ namespace TitanOrbit.NetCode
             if (IsDedicatedOnlineClient || TitanOrbitRelayState.HasClientRelay)
             {
                 Debug.LogWarning("[TitanOrbitSessionManager] Skipped ServerWorld recreate — dedicated Relay client active.");
-                // #region agent log
-                ShipFlightSmoothDebugLog.Write(
-                    "H46",
-                    "TitanOrbitSessionManager.ResumeEditorLocalServerForLocalPlay",
-                    "Blocked ServerWorld recreate during Relay",
-                    "{\"dedicatedOnline\":" + (IsDedicatedOnlineClient ? "true" : "false") +
-                    ",\"relay\":" + (TitanOrbitRelayState.HasClientRelay ? "true" : "false") + "}");
-                // #endregion
                 return;
             }
 
@@ -264,13 +249,6 @@ namespace TitanOrbit.NetCode
                 ClientServerBootstrap.CreateServerWorld("ServerWorld");
                 s_EditorLocalServerSuspendedForOnline = false;
                 Debug.Log("[TitanOrbitSessionManager] Recreated local ServerWorld for Local Host play.");
-                // #region agent log
-                ShipFlightSmoothDebugLog.Write(
-                    "H44",
-                    "TitanOrbitSessionManager.ResumeEditorLocalServerForLocalPlay",
-                    "Recreated Editor ServerWorld for Local Host",
-                    "{\"hasServerAfter\":true}");
-                // #endregion
                 return;
             }
 
@@ -2013,8 +1991,8 @@ namespace TitanOrbit.NetCode
             // --- Prefer IPC endpoint from the in-process server (Client+Server Local Host) ---
             // [NETCODE] IPC: NetworkTimeSystem uses TargetCommandSlack=0 and 1-tick RTT. UDP loopback
             // was leaving ServerCommandAge ≈ +24 and metronomic 12-tick prediction snaps.
+            // Prefer IPC when an in-process ServerWorld is listening (Local Host).
             NetworkEndpoint endpoint = NetworkEndpoint.LoopbackIpv4.WithPort(port);
-            string connectVia = "UDP-loopback";
             var server = ClientServerBootstrap.ServerWorld;
             if (server != null && server.IsCreated)
             {
@@ -2028,10 +2006,7 @@ namespace TitanOrbit.NetCode
                             continue;
                         NetworkEndpoint ipcEp = serverDriver.GetLocalEndPoint(i);
                         if (ipcEp.IsValid)
-                        {
                             endpoint = ipcEp;
-                            connectVia = "IPC";
-                        }
                         break;
                     }
                 }
@@ -2039,25 +2014,6 @@ namespace TitanOrbit.NetCode
 
             var driver = em.CreateEntityQuery(typeof(NetworkStreamDriver)).GetSingletonRW<NetworkStreamDriver>();
             driver.ValueRW.Connect(em, endpoint);
-
-            // #region agent log
-            try
-            {
-                string path = System.IO.Path.GetFullPath(
-                    System.IO.Path.Combine(Application.dataPath, "..", "..", "debug-6b87b4.log"));
-                long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                string line =
-                    "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H11\"," +
-                    "\"location\":\"TitanOrbitSessionManager.ConnectLocalClient\"," +
-                    "\"message\":\"local client connect\"," +
-                    "\"data\":{\"via\":\"" + connectVia +
-                    "\",\"port\":" + port +
-                    ",\"endpoint\":\"" + endpoint.ToFixedString() + "\"}," +
-                    "\"timestamp\":" + ts + "}\n";
-                System.IO.File.AppendAllText(path, line);
-            }
-            catch { /* debug I/O only */ }
-            // #endregion
         }
 
         static void ConnectRelayClient(World world)

@@ -1,5 +1,4 @@
 using TitanOrbit.Core;
-using TitanOrbit.Diagnostics;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -15,16 +14,17 @@ namespace TitanOrbit.ECS
     /// StarshipGhostAuthoring bake defaults (MaxSpeed≈35) while the server uses chassis moveSpeed≈13.5 —
     /// that mismatch caused HUD bars scaled to 35 and constant reconcile chop on the local ship.
     /// </para>
-    /// Runs after TeamManagementSystem so team assignment is known before resolving home-planet chassis.
+    /// Team comes from ghosted <see cref="ShipState.Team"/> (client) or TeamManagementSystem (server).
+    /// No UpdateAfter(TeamManagement) — that system is server-only and triggers invalid-attribute
+    /// warnings when sorting the ClientWorld.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(TeamManagementSystem))]
     public partial struct ShipStatApplySystem : ISystem
     {
-        /// <summary>One-shot debug: prove client applied chassis MaxSpeed (not bake 35).</summary>
-        static bool s_loggedClientMotorOnce;
-
+        /// <summary>
+        /// Each sim step: re-apply chassis stats when level, branch, or attribute sum changes.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             // --- System OnUpdate ---
@@ -68,10 +68,6 @@ namespace TitanOrbit.ECS
                     ecb,
                     queueStructuralChanges: true,
                     writeGhostedShipState: writeGhostedShipState);
-
-                // #region agent log
-                LogClientMotorApplyOnce(ref state, em, entity, writeGhostedShipState);
-                // #endregion
             }
 
             // Ships without loadout state (legacy prefabs) — default branch 0.
@@ -105,37 +101,10 @@ namespace TitanOrbit.ECS
                     ecb,
                     queueStructuralChanges: true,
                     writeGhostedShipState: writeGhostedShipState);
-
-                // #region agent log
-                LogClientMotorApplyOnce(ref state, em, entity, writeGhostedShipState);
-                // #endregion
             }
 
             ecb.Playback(em);
             ecb.Dispose();
         }
-
-        // #region agent log
-        /// <summary>H75: log first client motor apply so logs prove MaxSpeed left bake default 35.</summary>
-        static void LogClientMotorApplyOnce(ref SystemState state, EntityManager em, Entity entity, bool writeGhostedShipState)
-        {
-            if (writeGhostedShipState || s_loggedClientMotorOnce)
-                return;
-            if (!em.HasComponent<ShipMotorConfig>(entity))
-                return;
-
-            s_loggedClientMotorOnce = true;
-            var motor = em.GetComponentData<ShipMotorConfig>(entity);
-            var ship = em.GetComponentData<ShipState>(entity);
-            ShipFlightSmoothDebugLog.Write(
-                "H75",
-                "ShipStatApplySystem.OnUpdate",
-                "client motor apply",
-                "{\"maxSpeed\":" + motor.MaxSpeed.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
-                ",\"thrust\":" + motor.EngineThrust.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) +
-                ",\"level\":" + ship.ShipLevel +
-                ",\"world\":\"" + state.WorldUnmanaged.Name.ToString() + "\"}");
-        }
-        // #endregion
     }
 }

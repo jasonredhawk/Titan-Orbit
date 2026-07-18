@@ -1,6 +1,5 @@
 using Unity.Entities;
 using Unity.NetCode;
-using Unity.Physics.Systems;
 
 namespace TitanOrbit.ECS
 {
@@ -10,8 +9,10 @@ namespace TitanOrbit.ECS
     /// [NETCODE] Only entities with <see cref="Simulate"/> participate; remotes interpolate.
     /// Input is already on the ghost from <see cref="ShipInputApplySystem"/> in GhostInputSystemGroup.
     /// </summary>
-    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup))]
-    [UpdateBefore(typeof(PhysicsSystemGroup))]
+    // OrderFirst + after MassSync: runs before default-slot PhysicsSystemGroup without UpdateBefore
+    // (ClientWorld often lacks PhysicsSystemGroup as a PredictedFixedStep sibling → sorter spam).
+    [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderFirst = true)]
+    [UpdateAfter(typeof(ShipPhysicsMassSyncSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipClientPredictedPhysicsDriveSystem : ISystem
     {

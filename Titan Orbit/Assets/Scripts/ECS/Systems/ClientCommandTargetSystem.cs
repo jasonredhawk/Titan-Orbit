@@ -1,5 +1,4 @@
 using TitanOrbit.Core;
-using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
 
@@ -17,10 +16,6 @@ namespace TitanOrbit.ECS
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ClientCommandTargetSystem : ISystem
     {
-        // #region agent log
-        bool _loggedBind;
-        // #endregion
-
         /// <summary>Requires an in-game client connection before binding the command target.</summary>
         public void OnCreate(ref SystemState state)
         {
@@ -57,13 +52,8 @@ namespace TitanOrbit.ECS
             // is never sent and the server ship coasts while the client predicts motion.
             foreach (var cmd in SystemAPI.Query<RefRW<CommandTarget>>().WithAll<NetworkStreamConnection, NetworkStreamInGame>())
             {
-                bool changed = cmd.ValueRO.targetEntity != shipEntity;
-                if (changed)
+                if (cmd.ValueRO.targetEntity != shipEntity)
                     cmd.ValueRW = new CommandTarget { targetEntity = shipEntity };
-
-                // Leftover basics2 per-bind File.AppendAllText removed (H62) — rare, but old
-                // agent logs should not touch disk during gameplay.
-                _ = changed;
             }
         }
 

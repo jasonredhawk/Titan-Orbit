@@ -213,6 +213,9 @@ namespace TitanOrbit.Game
             if (asteroidPrefab == null)
                 return false;
 
+            // Prefab must be visual-only (SgtPlanet). Legacy NGO/Asteroid/ToroidalRenderer slots
+            // on the source prefab log "referenced script is missing" during Instantiate itself —
+            // StripForProxy cannot silence that; keep Assets/Prefabs/Asteroid.prefab clean.
             instance = Object.Instantiate(asteroidPrefab);
             instance.name = "AsteroidTagProxy";
             StripForProxy(instance);

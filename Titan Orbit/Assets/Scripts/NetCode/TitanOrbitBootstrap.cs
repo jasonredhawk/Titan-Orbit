@@ -90,26 +90,6 @@ namespace TitanOrbit.NetCode
                 Debug.Log("[TitanOrbitBootstrap] Player client: ClientWorld only. AutoConnectPort=0 (Join game / Relay).");
             }
 
-            // #region agent log
-            try
-            {
-                Diagnostics.ShipFlightSmoothDebugLog.Write(
-                    "H67",
-                    "TitanOrbitBootstrap.Initialize",
-                    "Player/editor bootstrap world layout",
-                    "{\"dedicated\":" + (ShouldRunDedicatedServer() ? "true" : "false") +
-                    ",\"lanHost\":" + (ShouldRunLanHost() ? "true" : "false") +
-                    ",\"autoConnectPort\":" + AutoConnectPort +
-                    ",\"hasServer\":" + (ClientServerBootstrap.HasServerWorld ? "true" : "false") +
-                    ",\"hasClient\":" + (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated ? "true" : "false") +
-                    ",\"isEditor\":" + (Application.isEditor ? "true" : "false") + "}");
-            }
-            catch
-            {
-                // Debug I/O only.
-            }
-            // #endregion
-
             return true;
         }
 
