@@ -65,10 +65,10 @@ namespace TitanOrbit.ECS
         /// <summary>Padding from map edge when placing neutral planet ring.</summary>
         public float PlanetRingPlacementMargin;
 
-        /// <summary>Asteroid cluster count at minimum map size.</summary>
+        /// <summary>Target asteroid count when map size is at minimum (lerped toward max with map size).</summary>
         public int AsteroidsAtMinMapSize;
 
-        /// <summary>Asteroid cluster count at maximum map size (lerped by map size).</summary>
+        /// <summary>Target asteroid count when map size is at maximum (lerped by map size).</summary>
         public int AsteroidsAtMaxMapSize;
 
         /// <summary>Minimum clusters per asteroid field group.</summary>

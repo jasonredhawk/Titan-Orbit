@@ -1,6 +1,12 @@
 /Titan Orbit/Library
 /Titan Orbit/Logs
-/Titan Orbit/Packages
+# Track Packages/manifest + lock + embedded NetCode (GhostSpawn crash fix).
+# Ignore other local/UPM noise under Packages if Unity adds it later.
+/Titan Orbit/Packages/*
+!/Titan Orbit/Packages/manifest.json
+!/Titan Orbit/Packages/packages-lock.json
+!/Titan Orbit/Packages/com.unity.netcode/
+!/Titan Orbit/Packages/com.unity.netcode/**
 /Titan Orbit/Temp
 Titan Orbit/Assets/UltimateSpaceshipsCreator/SRP/HDRP_Upgrade.unitypackage
 Titan Orbit/Assets/UltimateSpaceshipsCreator/SRP/HDRP_Upgrade.unitypackage.meta

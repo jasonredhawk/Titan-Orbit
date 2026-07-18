@@ -1137,6 +1137,46 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>
+        /// Copies MapStateSingleton totals into UGS lobby Data when the server map is ready.
+        /// Join Game browser reads these keys without connecting to NetCode.
+        /// </summary>
+        /// <param name="data">Lobby Data dictionary being created or heartbeat-updated.</param>
+        static void AppendMapSessionMetaLobbyData(Dictionary<string, DataObject> data)
+        {
+            // --- Resolve authoritative map totals from ServerWorld ---
+            // [TITAN-ORBIT] Same numbers clients get via MapSessionMetaRpc after GoInGame.
+            if (data == null)
+                return;
+
+            var server = ClientServerBootstrap.ServerWorld;
+            if (!MapSessionMetaCache.TryReadFromServerWorld(server, out MapSessionMetaRpc meta))
+                return;
+
+            data[TitanOrbitLobbyService.LobbyMapLoadingStepsKey] = new DataObject(
+                DataObject.VisibilityOptions.Public,
+                meta.LoadingTotalSteps.ToString(CultureInfo.InvariantCulture));
+            data[TitanOrbitLobbyService.LobbyMapTeamCountKey] = new DataObject(
+                DataObject.VisibilityOptions.Public,
+                meta.TeamCount.ToString(CultureInfo.InvariantCulture));
+            data[TitanOrbitLobbyService.LobbyMapNeutralCountKey] = new DataObject(
+                DataObject.VisibilityOptions.Public,
+                meta.NeutralPlanetCount.ToString(CultureInfo.InvariantCulture));
+            data[TitanOrbitLobbyService.LobbyMapAsteroidCountKey] = new DataObject(
+                DataObject.VisibilityOptions.Public,
+                meta.AsteroidCount.ToString(CultureInfo.InvariantCulture));
+
+            // --- Per-team owned planet counts (live; updates each heartbeat as captures happen) ---
+            // [TITAN-ORBIT] Join Game shows e.g. "planets 1/1/2" from MapTeamPlanets CSV.
+            if (MapSessionMetaCache.TryBuildTeamPlanetCountsCsv(server, meta.TeamCount, out string teamPlanetsCsv) &&
+                !string.IsNullOrEmpty(teamPlanetsCsv))
+            {
+                data[TitanOrbitLobbyService.LobbyMapTeamPlanetsKey] = new DataObject(
+                    DataObject.VisibilityOptions.Public,
+                    teamPlanetsCsv);
+            }
+        }
+
         public int GetServerConnectedPlayerCount()
         {
             var server = ClientServerBootstrap.ServerWorld;
@@ -1524,21 +1564,26 @@ namespace TitanOrbit.NetCode
             try
             {
                 string playerId = AuthenticationService.Instance.PlayerId;
+                var lobbyData = new Dictionary<string, DataObject>
+                {
+                    { TitanOrbitLobbyService.LobbyRelayCodeKey, new DataObject(DataObject.VisibilityOptions.Member, joinCode) },
+                    { TitanOrbitLobbyService.LobbyGameNameKey, new DataObject(DataObject.VisibilityOptions.Public, TitanOrbitLobbyService.LobbyGameNameValue, DataObject.IndexOptions.S1) },
+                    { TitanOrbitLobbyService.LobbyIsOpenKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1) },
+                    { TitanOrbitLobbyService.LobbyIsLatestKey, new DataObject(DataObject.VisibilityOptions.Public, isLatest ? "1" : "0", DataObject.IndexOptions.N2) },
+                    { TitanOrbitLobbyService.LobbyCreatedAtEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture), DataObject.IndexOptions.N3) },
+                    { TitanOrbitLobbyService.LobbyServerAliveEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture)) },
+                    { TitanOrbitLobbyService.LobbyRelayProtocolKey, new DataObject(DataObject.VisibilityOptions.Public, protocol) },
+                    { TitanOrbitLobbyService.LobbyServerListenAddressKey, new DataObject(DataObject.VisibilityOptions.Public, serverListenAddress) },
+                    { TitanOrbitLobbyService.LobbyActivePlayersKey, new DataObject(DataObject.VisibilityOptions.Public, "0", DataObject.IndexOptions.N4) },
+                };
+
+                // [TITAN-ORBIT] Publish map totals when generation already finished (often still rolling at create).
+                AppendMapSessionMetaLobbyData(lobbyData);
+
                 var createOptions = new CreateLobbyOptions
                 {
                     IsPrivate = false,
-                    Data = new Dictionary<string, DataObject>
-                    {
-                        { TitanOrbitLobbyService.LobbyRelayCodeKey, new DataObject(DataObject.VisibilityOptions.Member, joinCode) },
-                        { TitanOrbitLobbyService.LobbyGameNameKey, new DataObject(DataObject.VisibilityOptions.Public, TitanOrbitLobbyService.LobbyGameNameValue, DataObject.IndexOptions.S1) },
-                        { TitanOrbitLobbyService.LobbyIsOpenKey, new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1) },
-                        { TitanOrbitLobbyService.LobbyIsLatestKey, new DataObject(DataObject.VisibilityOptions.Public, isLatest ? "1" : "0", DataObject.IndexOptions.N2) },
-                        { TitanOrbitLobbyService.LobbyCreatedAtEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture), DataObject.IndexOptions.N3) },
-                        { TitanOrbitLobbyService.LobbyServerAliveEpochKey, new DataObject(DataObject.VisibilityOptions.Public, createdAt.ToString(CultureInfo.InvariantCulture)) },
-                        { TitanOrbitLobbyService.LobbyRelayProtocolKey, new DataObject(DataObject.VisibilityOptions.Public, protocol) },
-                        { TitanOrbitLobbyService.LobbyServerListenAddressKey, new DataObject(DataObject.VisibilityOptions.Public, serverListenAddress) },
-                        { TitanOrbitLobbyService.LobbyActivePlayersKey, new DataObject(DataObject.VisibilityOptions.Public, "0", DataObject.IndexOptions.N4) },
-                    }
+                    Data = lobbyData
                 };
 
                 if (!string.IsNullOrEmpty(playerId) && !string.IsNullOrWhiteSpace(hostAllocationId))
@@ -1620,20 +1665,25 @@ namespace TitanOrbit.NetCode
                 {
                     long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                     int activePlayers = GetServerConnectedPlayerCount();
+                    var heartbeatData = new Dictionary<string, DataObject>
+                    {
+                        {
+                            TitanOrbitLobbyService.LobbyServerAliveEpochKey,
+                            new DataObject(DataObject.VisibilityOptions.Public, now.ToString(CultureInfo.InvariantCulture))
+                        },
+                        {
+                            TitanOrbitLobbyService.LobbyActivePlayersKey,
+                            new DataObject(DataObject.VisibilityOptions.Public, activePlayers.ToString(CultureInfo.InvariantCulture))
+                        }
+                    };
+
+                    // [TITAN-ORBIT] Keep Join Game browser map stats in sync once the map is ready.
+                    AppendMapSessionMetaLobbyData(heartbeatData);
+
                     await LobbyService.Instance.SendHeartbeatPingAsync(_activeLobbyId);
                     await LobbyService.Instance.UpdateLobbyAsync(_activeLobbyId, new UpdateLobbyOptions
                     {
-                        Data = new Dictionary<string, DataObject>
-                        {
-                            {
-                                TitanOrbitLobbyService.LobbyServerAliveEpochKey,
-                                new DataObject(DataObject.VisibilityOptions.Public, now.ToString(CultureInfo.InvariantCulture))
-                            },
-                            {
-                                TitanOrbitLobbyService.LobbyActivePlayersKey,
-                                new DataObject(DataObject.VisibilityOptions.Public, activePlayers.ToString(CultureInfo.InvariantCulture))
-                            }
-                        }
+                        Data = heartbeatData
                     });
                 }
                 finally

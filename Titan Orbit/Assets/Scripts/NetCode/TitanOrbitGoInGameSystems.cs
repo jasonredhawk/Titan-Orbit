@@ -1,3 +1,4 @@
+using TitanOrbit.ECS;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -74,6 +75,23 @@ namespace TitanOrbit.NetCode
         {
             var commandBuffer = new EntityCommandBuffer(Allocator.Temp);
 
+            // --- Optional map meta for this join ---
+            // [TITAN-ORBIT] MapStateSingleton is often not a replicated ghost; send totals once here.
+            bool hasMeta = false;
+            MapSessionMetaRpc meta = default;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
+                (mapState.LoadingComplete || mapState.LoadingTotalSteps > 0))
+            {
+                meta = new MapSessionMetaRpc
+                {
+                    LoadingTotalSteps = mapState.LoadingTotalSteps,
+                    TeamCount = mapState.TeamCount,
+                    NeutralPlanetCount = mapState.NeutralPlanetCount,
+                    AsteroidCount = mapState.AsteroidCount
+                };
+                hasMeta = true;
+            }
+
             foreach (var (reqSrc, reqEntity) in SystemAPI.Query<RefRO<ReceiveRpcCommandRequest>>()
                          .WithAll<GoInGameRequest>().WithEntityAccess())
             {
@@ -86,6 +104,16 @@ namespace TitanOrbit.NetCode
                 {
                     var networkId = state.EntityManager.GetComponentData<NetworkId>(connection);
                     Debug.Log("[TitanOrbitGoInGame] Server accepted GoInGame networkId=" + networkId.Value);
+                }
+
+                // --- Send match totals before / alongside ghost flood ---
+                // [TITAN-ORBIT] Tag MapSessionMetaSent so catch-up system does not send twice.
+                if (hasMeta && !state.EntityManager.HasComponent<MapSessionMetaSent>(connection))
+                {
+                    Entity metaEntity = commandBuffer.CreateEntity();
+                    commandBuffer.AddComponent(metaEntity, meta);
+                    commandBuffer.AddComponent(metaEntity, new SendRpcCommandRequest { TargetConnection = connection });
+                    commandBuffer.AddComponent<MapSessionMetaSent>(connection);
                 }
 
                 commandBuffer.DestroyEntity(reqEntity);

@@ -204,7 +204,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Fills asteroid clusters around sector-sampled centers; gem value scales visual size.
-        /// Skips positions that overlap planet rings or other asteroids within min spacing.
+        /// Retries placement so we reach the rolled target count even when planet rings are dense.
         /// </summary>
         public static void BuildAsteroids(
             in MapGenerationConfig config,
@@ -225,37 +225,114 @@ namespace TitanOrbit.ECS
             float gemLo = math.min(config.MinAsteroidGemValue, config.MaxAsteroidGemValue);
             float gemHi = math.max(config.MinAsteroidGemValue, config.MaxAsteroidGemValue);
             float gemSpan = math.max(0.001f, gemHi - gemLo);
+            float minSpacing = math.max(0.25f, config.MinAsteroidSpacing);
 
+            // --- Primary pass: place near cluster centers ---
+            // [TITAN-ORBIT] Each slot gets several attempts; a single overlap used to skip the slot
+            // and under-spawn (e.g. ~82 instead of the rolled 444–888 target).
             for (int c = 0; c < rolled.AsteroidClusterCount && output.Length < rolled.AsteroidCount; c++)
             {
                 float3 center = clusterCenters[c];
                 for (int i = 0; i < perCluster && output.Length < rolled.AsteroidCount; i++)
                 {
-                    float3 position = GetPositionInCluster(center, perCluster, ref rng);
-                    if (IsTooCloseToAny(position, config.MinAsteroidSpacing, asteroidPositions))
-                        continue;
-                    if (OverlapsPlanetOrbitRings(config, planetPlacements, rolled.MapWidth, rolled.MapHeight, position, MaxAsteroidRadius))
-                        continue;
-
-                    asteroidPositions.Add(position);
-                    float gemValue = rng.NextFloat(gemLo, gemHi);
-                    float linearScale = math.lerp(MinAsteroidRadius, MaxAsteroidRadius, (gemValue - gemLo) / gemSpan);
-                    float3 scale = new float3(
-                        linearScale * (0.8f + rng.NextFloat() * 0.4f),
-                        linearScale * (0.9f + rng.NextFloat() * 0.2f),
-                        linearScale * (0.85f + rng.NextFloat() * 0.3f));
-
-                    output.Add(new AsteroidLayout
+                    if (!TryPlaceAsteroidNearCenter(
+                            config, rolled, planetPlacements, asteroidPositions, center, perCluster,
+                            minSpacing, gemLo, gemHi, gemSpan, ref rng, output))
                     {
-                        Position = position,
-                        Scale = scale,
-                        GemValue = gemValue,
-                    });
+                        // Keep trying other clusters; fill pass below covers shortfall.
+                    }
                 }
+            }
+
+            // --- Fill pass: any remaining slots anywhere on the map ---
+            // [TITAN-ORBIT] Guarantees we hit RolledParameters.AsteroidCount when space exists.
+            const int fillAttemptsPerSlot = 40;
+            while (output.Length < rolled.AsteroidCount)
+            {
+                bool placed = false;
+                for (int attempt = 0; attempt < fillAttemptsPerSlot; attempt++)
+                {
+                    float3 position = new float3(
+                        rng.NextFloat(-rolled.MapWidth * 0.5f, rolled.MapWidth * 0.5f),
+                        0f,
+                        rng.NextFloat(-rolled.MapHeight * 0.5f, rolled.MapHeight * 0.5f));
+                    if (IsTooCloseToAny(position, minSpacing, asteroidPositions))
+                        continue;
+                    if (OverlapsPlanetOrbitRings(
+                            config, planetPlacements, rolled.MapWidth, rolled.MapHeight, position, MaxAsteroidRadius))
+                        continue;
+
+                    AppendAsteroidLayout(position, gemLo, gemHi, gemSpan, ref rng, asteroidPositions, output);
+                    placed = true;
+                    break;
+                }
+
+                if (!placed)
+                    break; // Map too full — publish whatever we placed.
             }
 
             clusterCenters.Dispose();
             asteroidPositions.Dispose();
+        }
+
+        /// <summary>
+        /// Tries several cluster-local positions until one clears spacing and planet rings.
+        /// </summary>
+        static bool TryPlaceAsteroidNearCenter(
+            in MapGenerationConfig config,
+            in RolledParameters rolled,
+            NativeList<PlanetPlacement> planetPlacements,
+            NativeList<float3> asteroidPositions,
+            float3 center,
+            int perCluster,
+            float minSpacing,
+            float gemLo,
+            float gemHi,
+            float gemSpan,
+            ref Random rng,
+            NativeList<AsteroidLayout> output)
+        {
+            const int attemptsPerSlot = 24;
+            for (int attempt = 0; attempt < attemptsPerSlot; attempt++)
+            {
+                float3 position = GetPositionInCluster(center, perCluster, ref rng);
+                if (IsTooCloseToAny(position, minSpacing, asteroidPositions))
+                    continue;
+                if (OverlapsPlanetOrbitRings(
+                        config, planetPlacements, rolled.MapWidth, rolled.MapHeight, position, MaxAsteroidRadius))
+                    continue;
+
+                AppendAsteroidLayout(position, gemLo, gemHi, gemSpan, ref rng, asteroidPositions, output);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Writes one asteroid layout entry and records its position for spacing tests.</summary>
+        static void AppendAsteroidLayout(
+            float3 position,
+            float gemLo,
+            float gemHi,
+            float gemSpan,
+            ref Random rng,
+            NativeList<float3> asteroidPositions,
+            NativeList<AsteroidLayout> output)
+        {
+            asteroidPositions.Add(position);
+            float gemValue = rng.NextFloat(gemLo, gemHi);
+            float linearScale = math.lerp(MinAsteroidRadius, MaxAsteroidRadius, (gemValue - gemLo) / gemSpan);
+            float3 scale = new float3(
+                linearScale * (0.8f + rng.NextFloat() * 0.4f),
+                linearScale * (0.9f + rng.NextFloat() * 0.2f),
+                linearScale * (0.85f + rng.NextFloat() * 0.3f));
+
+            output.Add(new AsteroidLayout
+            {
+                Position = position,
+                Scale = scale,
+                GemValue = gemValue,
+            });
         }
 
         static int[] BuildNeutralStartingLevels(in MapGenerationConfig config, int count, ref Random rng)

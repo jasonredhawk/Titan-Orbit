@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading.Tasks;
+using TitanOrbit.Core;
 using TitanOrbit.NetCode;
 using TitanOrbit.Services;
 using TMPro;
@@ -16,8 +18,9 @@ namespace TitanOrbit.Game
     /// </summary>
     public class JoinGameBrowserController : MonoBehaviour
     {
-        const float ContentWidth = 540f;
-        const float RowHeight = 60f;
+        const float ContentWidth = 680f;
+        // Tall enough for title row + colored team/planet meta strip.
+        const float RowHeight = 112f;
         const float AutoRefreshIntervalSeconds = 45f;
         const float CacheGraceSeconds = 180f;
         const float RowDurationRefreshSeconds = 1f;
@@ -63,8 +66,13 @@ namespace TitanOrbit.Game
         public void Show()
         {
             // --- Show ---
-            // Rebuild if an older minimal layout is still cached (missing bordered browser panel).
-            if (_screenRoot != null && (_lobbyScroll == null || _lobbyBrowserRoot == null))
+            // Rebuild if an older layout is still cached (missing bordered panel or meta strip).
+            bool needsRebuild = _screenRoot != null &&
+                                (_lobbyScroll == null ||
+                                 _lobbyBrowserRoot == null ||
+                                 _lobbyRowPrefab == null ||
+                                 _lobbyRowPrefab.transform.Find("LobbyRowMeta") == null);
+            if (needsRebuild)
             {
                 Destroy(_screenRoot);
                 _screenRoot = null;
@@ -225,7 +233,7 @@ namespace TitanOrbit.Game
             rootRt.anchorMin = new Vector2(0.5f, 0.5f);
             rootRt.anchorMax = new Vector2(0.5f, 0.5f);
             rootRt.pivot = new Vector2(0.5f, 0.5f);
-            rootRt.sizeDelta = new Vector2(ContentWidth, 380f);
+            rootRt.sizeDelta = new Vector2(ContentWidth, 460f);
 
             var rootImage = _lobbyBrowserRoot.GetComponent<Image>();
             rootImage.color = new Color(0.05f, 0.08f, 0.13f, 0.98f);
@@ -271,8 +279,8 @@ namespace TitanOrbit.Game
                 typeof(RectTransform), typeof(Image), typeof(ScrollRect), typeof(LayoutElement));
             scrollRoot.GetComponent<Image>().color = new Color(0.04f, 0.065f, 0.1f, 0.98f);
             var scrollLe = scrollRoot.GetComponent<LayoutElement>();
-            scrollLe.minHeight = 120f;
-            scrollLe.preferredHeight = 200f;
+            scrollLe.minHeight = 160f;
+            scrollLe.preferredHeight = 260f;
             scrollLe.flexibleHeight = 1f;
             ApplyContentColumnLayout(scrollLe);
 
@@ -293,8 +301,8 @@ namespace TitanOrbit.Game
             contentRt.anchoredPosition = Vector2.zero;
             contentRt.sizeDelta = new Vector2(0f, 0f);
             var vlg = content.GetComponent<VerticalLayoutGroup>();
-            vlg.spacing = 8f;
-            vlg.padding = new RectOffset(4, 4, 4, 4);
+            vlg.spacing = 10f;
+            vlg.padding = new RectOffset(6, 6, 6, 6);
             vlg.childControlWidth = true;
             vlg.childControlHeight = true;
             vlg.childForceExpandWidth = true;
@@ -554,19 +562,102 @@ namespace TitanOrbit.Game
             row.name = "LobbyRow" + index;
             row.SetActive(true);
 
-            var nameLabel = row.transform.Find("LobbyRowName")?.GetComponent<TextMeshProUGUI>();
+            var nameLabel = row.transform.Find("LobbyRowMain/LobbyRowName")?.GetComponent<TextMeshProUGUI>()
+                            ?? row.transform.Find("LobbyRowName")?.GetComponent<TextMeshProUGUI>();
+            var metaLabel = row.transform.Find("LobbyRowMain/LobbyRowMeta")?.GetComponent<TextMeshProUGUI>()
+                            ?? row.transform.Find("LobbyRowMeta")?.GetComponent<TextMeshProUGUI>();
             var durationLabel = row.transform.Find("LobbyRowDuration")?.GetComponent<TextMeshProUGUI>();
             var playersLabel = row.transform.Find("LobbyRowPlayers")?.GetComponent<TextMeshProUGUI>();
 
-            string latestTag = summary.IsLatest ? "  ·  <color=#7ec8ff>Latest</color>" : "  ·  Older";
+            // --- Title + freshness ---
+            // [TITAN-ORBIT] "Latest" is the dedicated lobby the server is currently advertising as joinable.
+            string latestTag = summary.IsLatest
+                ? "  <size=15><color=#7ec8ff>● Latest</color></size>"
+                : "  <size=15><color=#8a9bb0>● Older</color></size>";
             if (nameLabel != null)
                 nameLabel.text = $"<b>{summary.Name}</b>{latestTag}";
+
+            // --- Map meta strip (colored team chips + neutrals / asteroids) ---
+            if (metaLabel != null)
+            {
+                string mapMetaLine = FormatLobbyMapMeta(summary);
+                metaLabel.text = string.IsNullOrEmpty(mapMetaLine)
+                    ? "<color=#6f8499>Map stats pending…</color>"
+                    : mapMetaLine;
+                metaLabel.gameObject.SetActive(true);
+            }
+
             if (durationLabel != null)
                 durationLabel.text = FormatLobbyActiveDuration(summary.CreatedAtEpochSeconds);
             if (playersLabel != null)
                 playersLabel.text = $"{summary.CurrentPlayers}/{summary.MaxPlayers}";
 
             return row;
+        }
+
+        /// <summary>
+        /// Builds a rich-text map-stats strip for a lobby row from UGS lobby Data.
+        /// Team planet counts use the same colors as <see cref="TeamIdExtensions.ToColor"/>.
+        /// </summary>
+        static string FormatLobbyMapMeta(TitanOrbitLobbyService.LobbySummary summary)
+        {
+            // --- Guard ---
+            if (summary == null)
+                return string.Empty;
+
+            bool hasTeamPlanets = summary.MapTeamPlanetCounts != null && summary.MapTeamPlanetCounts.Length > 0;
+            bool hasAny =
+                summary.MapTeamCount >= 0 ||
+                summary.MapNeutralPlanetCount >= 0 ||
+                summary.MapAsteroidCount >= 0 ||
+                hasTeamPlanets;
+            if (!hasAny)
+                return string.Empty;
+
+            // --- Fancy strip ---
+            // [TITAN-ORBIT] TMP rich text — colored dots match in-game team colors (minimap / ships).
+            var sb = new StringBuilder(160);
+            sb.Append("<size=15>");
+
+            if (hasTeamPlanets)
+            {
+                sb.Append("<color=#b8c9dc>Worlds</color>  ");
+                for (int i = 0; i < summary.MapTeamPlanetCounts.Length; i++)
+                {
+                    if (i > 0)
+                        sb.Append("  ");
+                    TeamId team = (TeamId)(i + 1);
+                    string hex = ColorUtility.ToHtmlStringRGB(team.ToColor());
+                    int count = summary.MapTeamPlanetCounts[i];
+                    // Pill-like chip: colored bullet + count.
+                    sb.Append("<color=#").Append(hex).Append(">●</color><b>").Append(count).Append("</b>");
+                }
+            }
+            else if (summary.MapTeamCount >= 0)
+            {
+                sb.Append("<color=#b8c9dc>").Append(summary.MapTeamCount).Append(" teams</color>");
+            }
+
+            if (summary.MapNeutralPlanetCount >= 0)
+            {
+                if (sb.Length > "<size=15>".Length)
+                    sb.Append("   <color=#5f738a>|</color>   ");
+                sb.Append("<color=#9eb6cc>◇</color> <b>")
+                    .Append(summary.MapNeutralPlanetCount)
+                    .Append("</b><color=#9eb6cc> free</color>");
+            }
+
+            if (summary.MapAsteroidCount >= 0)
+            {
+                if (sb.Length > "<size=15>".Length)
+                    sb.Append("   <color=#5f738a>|</color>   ");
+                sb.Append("<color=#d4b06a>✦</color> <b>")
+                    .Append(summary.MapAsteroidCount)
+                    .Append("</b><color=#d4b06a> asteroids</color>");
+            }
+
+            sb.Append("</size>");
+            return sb.ToString();
         }
 
         void ApplyRowSelectionVisuals()
@@ -853,45 +944,73 @@ namespace TitanOrbit.Game
             btn.transition = Selectable.Transition.ColorTint;
 
             var rowHlg = rowObj.GetComponent<HorizontalLayoutGroup>();
-            rowHlg.padding = new RectOffset(14, 14, 8, 8);
-            rowHlg.spacing = 12f;
+            rowHlg.padding = new RectOffset(16, 16, 12, 12);
+            rowHlg.spacing = 14f;
             rowHlg.childAlignment = TextAnchor.MiddleLeft;
             rowHlg.childControlWidth = true;
             rowHlg.childControlHeight = true;
             rowHlg.childForceExpandWidth = false;
-            rowHlg.childForceExpandHeight = false;
+            rowHlg.childForceExpandHeight = true;
 
             var layoutElement = rowObj.GetComponent<LayoutElement>();
-            layoutElement.minHeight = 56f;
+            layoutElement.minHeight = 96f;
             layoutElement.preferredHeight = RowHeight;
             layoutElement.preferredWidth = ContentWidth - 32f;
             layoutElement.flexibleWidth = 0f;
 
-            var nameLabel = CreateStyledLabel("LobbyRowName", "Lobby", rowObj.transform, 20f,
+            // --- Left column: lobby title + colored map meta strip ---
+            // [TITAN-ORBIT] Vertical stack keeps meta readable without crowding duration/players.
+            var mainCol = CreateChild("LobbyRowMain", rowObj.transform,
+                typeof(RectTransform), typeof(VerticalLayoutGroup), typeof(LayoutElement));
+            var mainVlg = mainCol.GetComponent<VerticalLayoutGroup>();
+            mainVlg.padding = new RectOffset(0, 0, 0, 0);
+            mainVlg.spacing = 6f;
+            mainVlg.childAlignment = TextAnchor.MiddleLeft;
+            mainVlg.childControlWidth = true;
+            mainVlg.childControlHeight = true;
+            mainVlg.childForceExpandWidth = true;
+            mainVlg.childForceExpandHeight = false;
+            var mainLe = mainCol.GetComponent<LayoutElement>();
+            mainLe.flexibleWidth = 1f;
+            mainLe.minWidth = 220f;
+            mainLe.preferredHeight = 84f;
+
+            var nameLabel = CreateStyledLabel("LobbyRowName", "Lobby", mainCol.transform, 21f,
                 FontStyles.Normal, TextAlignmentOptions.MidlineLeft);
             nameLabel.enableWordWrapping = false;
             nameLabel.richText = true;
             nameLabel.overflowMode = TextOverflowModes.Ellipsis;
             var nameLe = nameLabel.gameObject.AddComponent<LayoutElement>();
             nameLe.flexibleWidth = 1f;
-            nameLe.minWidth = 120f;
-            nameLe.preferredHeight = 44f;
+            nameLe.minHeight = 26f;
+            nameLe.preferredHeight = 28f;
+
+            var metaLabel = CreateStyledLabel("LobbyRowMeta", "Map stats…", mainCol.transform, 15f,
+                FontStyles.Normal, TextAlignmentOptions.TopLeft);
+            metaLabel.enableWordWrapping = true;
+            metaLabel.richText = true;
+            metaLabel.overflowMode = TextOverflowModes.Ellipsis;
+            metaLabel.color = new Color(0.78f, 0.86f, 0.94f, 1f);
+            var metaLe = metaLabel.gameObject.AddComponent<LayoutElement>();
+            metaLe.flexibleWidth = 1f;
+            metaLe.minHeight = 36f;
+            metaLe.preferredHeight = 44f;
 
             var durationLabel = CreateStyledLabel("LobbyRowDuration", "—", rowObj.transform, 16f,
                 FontStyles.Normal, TextAlignmentOptions.MidlineRight);
             durationLabel.color = DurationLabelColor;
             var durationLe = durationLabel.gameObject.AddComponent<LayoutElement>();
-            durationLe.preferredWidth = 72f;
-            durationLe.minWidth = 56f;
+            durationLe.preferredWidth = 78f;
+            durationLe.minWidth = 64f;
             durationLe.flexibleWidth = 0f;
             durationLe.preferredHeight = 44f;
 
-            var playersLabel = CreateStyledLabel("LobbyRowPlayers", "0/0", rowObj.transform, 18f,
+            var playersLabel = CreateStyledLabel("LobbyRowPlayers", "0/0", rowObj.transform, 20f,
                 FontStyles.Bold, TextAlignmentOptions.MidlineRight);
             playersLabel.color = new Color(0.82f, 0.9f, 0.98f, 1f);
             var playersLe = playersLabel.gameObject.AddComponent<LayoutElement>();
-            playersLe.preferredWidth = 56f;
-            playersLe.minWidth = 48f;
+            playersLe.preferredWidth = 64f;
+            playersLe.minWidth = 52f;
             playersLe.flexibleWidth = 0f;
             playersLe.preferredHeight = 44f;
 

@@ -181,7 +181,8 @@ namespace TitanOrbit.ECS
             UnityEngine.Debug.Log(
                 $"[MapGeneration] Using settings from {DescribeConfigSource()}. " +
                 $"Map {_config.MinMapSize:F0}-{_config.MaxMapSize:F0}, teams {_config.MinTeamsPerMatch}-{_config.MaxTeamsPerMatch}, " +
-                $"neutrals {_config.MinNeutralPlanets}-{_config.MaxNeutralPlanets}.");
+                $"neutrals {_config.MinNeutralPlanets}-{_config.MaxNeutralPlanets}, " +
+                $"asteroids {_config.AsteroidsAtMinMapSize}-{_config.AsteroidsAtMaxMapSize}.");
 
             uint fallbackSeed = MapGenerationLogic.ComputeEphemeralSeed();
             _rolled = MapGenerationLogic.RollParameters(_config, fallbackSeed);
@@ -356,11 +357,18 @@ namespace TitanOrbit.ECS
             SetLoadingProgress(ref state, _totalSpawnSteps, _totalSpawnSteps);
             var mapState = em.GetComponentData<MapStateSingleton>(_mapEntity);
             mapState.LoadingComplete = true;
+            // --- Match metadata (stable for the life of this map) ---
+            // [TITAN-ORBIT] Clients often never see MapStateSingleton as a ghost entity, so these
+            // counts are also sent via MapSessionMetaRpc and written into the UGS lobby for Join Game.
+            mapState.TeamCount = _rolled.TeamCount;
+            mapState.NeutralPlanetCount = neutralCount;
+            mapState.AsteroidCount = asteroidCount;
             em.SetComponentData(_mapEntity, mapState);
 
             UnityEngine.Debug.Log(
                 $"[MapGeneration] Map generated. Size: {_rolled.MapWidth:F0}x{_rolled.MapHeight:F0}, " +
-                $"Teams: {_rolled.TeamCount}, Neutrals: {neutralCount}, Asteroids: {asteroidCount}, Seed: {_rolled.Seed}");
+                $"Teams: {_rolled.TeamCount}, Neutrals: {neutralCount}, Asteroids: {asteroidCount}, " +
+                $"LoadingSteps: {_totalSpawnSteps}, Seed: {_rolled.Seed}");
 
             DisposeNativeCollections();
         }

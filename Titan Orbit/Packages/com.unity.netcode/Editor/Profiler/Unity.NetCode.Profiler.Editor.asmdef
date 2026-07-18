@@ -1,0 +1,26 @@
+{
+    "name": "Unity.NetCode.Profiler.Editor",
+    "rootNamespace": "Unity.NetCode.Editor",
+    "references": [
+        "Unity.NetCode",
+        "Unity.Entities",
+        "Unity.Collections",
+        "Unity.Profiling.Core",
+        "Unity.Entities.Editor",
+        "Unity.NetCode.Editor",
+        "Unity.Networking.Transport"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UNITY_6000_0_OR_NEWER"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

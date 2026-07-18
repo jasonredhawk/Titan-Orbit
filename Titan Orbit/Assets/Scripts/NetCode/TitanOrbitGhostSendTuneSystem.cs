@@ -20,15 +20,16 @@ namespace TitanOrbit.NetCode
     {
         /// <summary>
         /// Max chunks written into one snapshot for one connection.
-        /// Asteroids share archetypes so one chunk can still hold many entities — keep this small.
+        /// Asteroids share archetypes so one chunk can still hold many entities — keep this at 1
+        /// so late-join map floods create placeholders gradually instead of hundreds per tick.
         /// </summary>
-        public const int MaxSendChunksPerSnapshot = 2;
+        public const int MaxSendChunksPerSnapshot = 1;
 
         /// <summary>
         /// How many chunks GhostSend may scan while filling the packet.
         /// NetCode recommends ≥ 2× <see cref="MaxSendChunksPerSnapshot"/>.
         /// </summary>
-        public const int MaxIterateChunksPerSnapshot = 8;
+        public const int MaxIterateChunksPerSnapshot = 4;
 
         /// <summary>True after the one-time diagnostic log.</summary>
         bool _loggedOnce;

@@ -54,9 +54,9 @@ namespace TitanOrbit.Data
 
         [Header("Asteroids")]
         [Tooltip("Asteroid count when map side length equals min map size. Scales up toward max map size.")]
-        public int asteroidsAtMinMapSize = 120;
+        public int asteroidsAtMinMapSize = 444;
         [Tooltip("Asteroid count when map side length equals max map size.")]
-        public int asteroidsAtMaxMapSize = 400;
+        public int asteroidsAtMaxMapSize = 888;
         [Tooltip("Each map rolls a random cluster count in this range (inclusive).")]
         public int minAsteroidClusters = 8;
         [Tooltip("Each map rolls a random cluster count in this range (inclusive).")]

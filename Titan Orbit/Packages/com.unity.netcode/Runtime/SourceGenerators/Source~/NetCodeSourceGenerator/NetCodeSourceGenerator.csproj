@@ -1,0 +1,149 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <PublishDir>..\..</PublishDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference ExcludeAssets="runtime" Include="Microsoft.CodeAnalysis.CSharp" Version="4.3.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="..\..\Templates\CommandDataSerializer.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\CommandDataSerializer.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueByte.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueByte.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueDouble.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueDouble.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueDoubleUnquantized.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueDoubleUnquantized.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueEntity.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueEntity.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFixedString128Bytes.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFixedString128Bytes.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFixedString32Bytes.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFixedString32Bytes.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFixedString4096Bytes.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFixedString4096Bytes.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFixedString512Bytes.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFixedString512Bytes.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFixedString64Bytes.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFixedString64Bytes.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFloat.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFloat.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFloat2.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFloat2.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFloat2Unquantized.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFloat2Unquantized.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFloat3.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFloat3.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFloat3Unquantized.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFloat3Unquantized.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFloat4.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFloat4.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFloat4Unquantized.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFloat4Unquantized.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueFloatUnquantized.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueFloatUnquantized.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueInt.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueInt.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueLong.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueLong.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueNetworkEndpoint.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueNetworkEndpoint.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueNetworkTick.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueNetworkTick.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueQuaternion.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueQuaternion.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueQuaternionUnquantized.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueQuaternionUnquantized.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueSByte.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueSByte.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueShort.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueShort.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueUInt.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueUInt.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueULong.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueULong.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\DefaultTypes\GhostSnapshotValueUShort.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\DefaultTypes\GhostSnapshotValueUShort.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\FixedList\GhostFixedListContainer.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\FixedList\GhostFixedListContainer.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\FixedList\GhostFixedListCommandHelper.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\FixedList\GhostFixedListCommandHelper.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\FixedList\GhostFixedListElement.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\FixedList\GhostFixedListElement.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\FixedList\GhostFixedListSnapshotHelpers.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\FixedList\GhostFixedListSnapshotHelpers.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\FixedList\GhostSnapshotFixedList.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\FixedList\GhostSnapshotFixedList.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\GhostComponentSerializer.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\GhostComponentSerializer.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\GhostComponentSerializerRegistrationSystem.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\GhostComponentSerializerRegistrationSystem.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\InputSynchronization.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\InputSynchronization.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\..\Templates\NEW_TEMPLATE_README.txt">
+      <Link>Templates\NEW_TEMPLATE_README.txt</Link>
+    </Content>
+    <Content Include="..\..\Templates\RpcCommandSerializer.NetCodeSourceGenerator.additionalfile">
+      <Link>Templates\RpcCommandSerializer.NetCodeSourceGenerator.additionalfile</Link>
+    </Content>
+    <Content Include="..\Documentation\code-gen-spec.md">
+      <Link>Documentation\code-gen-spec.md</Link>
+    </Content>
+    <Content Include="..\Documentation\diagram.png">
+      <Link>Documentation\diagram.png</Link>
+    </Content>
+    <Content Include="..\Documentation\README.md">
+      <Link>Documentation\README.md</Link>
+    </Content>
+    <Content Include="..\Documentation\templates-spec.md">
+      <Link>Documentation\templates-spec.md</Link>
+    </Content>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="..\..\Templates\DefaultTypes.NetCodeSourceGenerator.additionalfile\">
+      <Link>Templates\DefaultTypes.NetCodeSourceGenerator.additionalfile</Link>
+    </Folder>
+    <Folder Include="..\..\Templates\FixedList.NetCodeSourceGenerator.additionalfile\">
+      <Link>Templates\FixedList.NetCodeSourceGenerator.additionalfile</Link>
+    </Folder>
+  </ItemGroup>
+</Project>

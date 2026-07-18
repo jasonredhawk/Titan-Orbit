@@ -25,6 +25,16 @@ namespace TitanOrbit.NetCode
         public const string LobbyRelayProtocolKey = "RelayProtocol";
         public const string LobbyServerListenAddressKey = "ServerListenAddress";
         public const string LobbyActivePlayersKey = "ActivePlayers";
+        /// <summary>[TITAN-ORBIT] Authoritative map spawn step count (loading denominator).</summary>
+        public const string LobbyMapLoadingStepsKey = "MapSteps";
+        /// <summary>[TITAN-ORBIT] Team / home planet count for this match.</summary>
+        public const string LobbyMapTeamCountKey = "MapTeams";
+        /// <summary>[TITAN-ORBIT] Neutral planet count.</summary>
+        public const string LobbyMapNeutralCountKey = "MapNeutrals";
+        /// <summary>[TITAN-ORBIT] Asteroid count.</summary>
+        public const string LobbyMapAsteroidCountKey = "MapAsteroids";
+        /// <summary>[TITAN-ORBIT] Per-team owned planet counts as CSV (TeamA,TeamB,…), e.g. "1,2,1".</summary>
+        public const string LobbyMapTeamPlanetsKey = "MapTeamPlanets";
         public const string LobbyMatchRequestGameName = "TitanOrbitMatchRequest";
         public const string LobbyMatchRequestEpochKey = "RequestedAt";
         public const int DedicatedLobbyStaleSeconds = 45;
@@ -59,6 +69,20 @@ namespace TitanOrbit.NetCode
             public bool IsDedicatedServer;
             public long ServerAliveAtEpochSeconds;
             public int ActivePlayers = -1;
+
+            /// <summary>[TITAN-ORBIT] Map spawn steps from lobby Data; -1 if server has not published yet.</summary>
+            public int MapLoadingSteps = -1;
+            /// <summary>[TITAN-ORBIT] Teams / homes; -1 if unknown.</summary>
+            public int MapTeamCount = -1;
+            /// <summary>[TITAN-ORBIT] Neutral planets; -1 if unknown.</summary>
+            public int MapNeutralPlanetCount = -1;
+            /// <summary>[TITAN-ORBIT] Asteroids; -1 if unknown.</summary>
+            public int MapAsteroidCount = -1;
+            /// <summary>
+            /// [TITAN-ORBIT] Owned planet count per team in TeamA.. order (e.g. 1,1,2).
+            /// Null when the server has not published <see cref="LobbyMapTeamPlanetsKey"/> yet.
+            /// </summary>
+            public int[] MapTeamPlanetCounts;
         }
 
         public static async Task<List<LobbySummary>> QueryJoinableDedicatedLobbiesAsync(
@@ -808,11 +832,23 @@ namespace TitanOrbit.NetCode
                 IsLatest = false,
                 IsDedicatedServer = isDedicatedServerLobby,
                 CreatedAtEpochSeconds = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                ActivePlayers = activePlayersFromServer
+                ActivePlayers = activePlayersFromServer,
+                MapLoadingSteps = -1,
+                MapTeamCount = -1,
+                MapNeutralPlanetCount = -1,
+                MapAsteroidCount = -1,
+                MapTeamPlanetCounts = null
             };
 
             if (lobby.Data == null)
                 return summary;
+
+            // --- Map session metadata (public lobby Data from dedicated server heartbeat) ---
+            summary.MapLoadingSteps = TryParseLobbyInt(lobby.Data, LobbyMapLoadingStepsKey, -1);
+            summary.MapTeamCount = TryParseLobbyInt(lobby.Data, LobbyMapTeamCountKey, -1);
+            summary.MapNeutralPlanetCount = TryParseLobbyInt(lobby.Data, LobbyMapNeutralCountKey, -1);
+            summary.MapAsteroidCount = TryParseLobbyInt(lobby.Data, LobbyMapAsteroidCountKey, -1);
+            summary.MapTeamPlanetCounts = TryParseLobbyIntCsv(lobby.Data, LobbyMapTeamPlanetsKey);
 
             if (lobby.Data.TryGetValue(LobbyIsOpenKey, out DataObject isOpenObj))
                 summary.IsOpen = string.Equals(isOpenObj?.Value, "1", StringComparison.Ordinal);
@@ -880,6 +916,50 @@ namespace TitanOrbit.NetCode
 
             long nowEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             return nowEpoch - summary.ServerAliveAtEpochSeconds > DedicatedLobbyStaleSeconds;
+        }
+
+        /// <summary>
+        /// Parses a public lobby Data integer key. Returns <paramref name="fallback"/> when missing or invalid.
+        /// </summary>
+        static int TryParseLobbyInt(Dictionary<string, DataObject> data, string key, int fallback)
+        {
+            // --- Parse lobby Data int ---
+            // [STANDARD] UGS stores all lobby Data values as strings; we convert to int for UI.
+            if (data == null || string.IsNullOrEmpty(key))
+                return fallback;
+            if (!data.TryGetValue(key, out DataObject obj) || obj == null)
+                return fallback;
+            if (!int.TryParse(obj.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+                return fallback;
+            return parsed;
+        }
+
+        /// <summary>
+        /// Parses a comma-separated list of ints from lobby Data (e.g. MapTeamPlanets "1,2,1").
+        /// Returns null when the key is missing or empty.
+        /// </summary>
+        static int[] TryParseLobbyIntCsv(Dictionary<string, DataObject> data, string key)
+        {
+            // --- Parse lobby Data CSV ints ---
+            // [TITAN-ORBIT] Used for per-team planet ownership on the Join Game browser.
+            if (data == null || string.IsNullOrEmpty(key))
+                return null;
+            if (!data.TryGetValue(key, out DataObject obj) || obj == null || string.IsNullOrWhiteSpace(obj.Value))
+                return null;
+
+            string[] parts = obj.Value.Split(',');
+            if (parts.Length == 0)
+                return null;
+
+            var values = new int[parts.Length];
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (!int.TryParse(parts[i].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed))
+                    return null;
+                values[i] = Mathf.Max(0, parsed);
+            }
+
+            return values;
         }
 
         static bool IsLikelyLobbyRateLimitException(Exception e)

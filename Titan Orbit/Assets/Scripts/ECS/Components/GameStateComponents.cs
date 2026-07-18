@@ -86,6 +86,18 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] True when map entities are fully spawned and playable.</summary>
         [GhostField] public bool LoadingComplete;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Team slots rolled for this match (home planets). Set once in FinalizeGeneration.
+        /// Also published via MapSessionMetaRpc and UGS lobby data for Join Game / loading UI.
+        /// </summary>
+        [GhostField] public int TeamCount;
+
+        /// <summary>[TITAN-ORBIT] Neutral (non-home) planets spawned for this match.</summary>
+        [GhostField] public int NeutralPlanetCount;
+
+        /// <summary>[TITAN-ORBIT] Asteroids spawned for this match.</summary>
+        [GhostField] public int AsteroidCount;
     }
 
     /// <summary>

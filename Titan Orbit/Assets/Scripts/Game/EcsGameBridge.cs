@@ -551,7 +551,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Loading UI uses replicated ghost counts for the numerator (what players see arrive)
-        /// and the host's authoritative spawn total for the denominator when available.
+        /// and a latched denominator so the "/ N" value does not jump mid-load
+        /// (settings midpoint → layout length → refined estimate).
         /// </summary>
         static bool TryGetVisibleMapLoadingStepCounts(out int completedSteps, out int totalSteps)
         {
@@ -574,18 +575,39 @@ namespace TitanOrbit.Game
                      TryReadMapLoadingState(ServerWorld, out int serverCompleted, out _, out _, out _))
                 completedSteps = serverCompleted;
 
-            if (completedSteps <= 0 && !hasReplicatedBodies)
-                return false;
-
-            // Prefer authoritative layout length once replicated (matches server spawn total).
-            if (ClientWorld != null && ClientWorld.IsCreated &&
+            // --- Denominator (latched) ---
+            // [TITAN-ORBIT] Prefer MapSessionMetaRpc (server authoritative, one-shot) so "/ N" is
+            // stable from the first loading frame. Fallbacks: layout buffer, then settings midpoint.
+            int candidateTotal = 0;
+            if (MapSessionMetaCache.HasMeta && MapSessionMetaCache.LoadingTotalSteps > 0)
+            {
+                candidateTotal = MapSessionMetaCache.LoadingTotalSteps;
+                s_LatchedLoadingTotalSteps = candidateTotal;
+            }
+            else if (ClientWorld != null && ClientWorld.IsCreated &&
                 TryGetReplicatedLayoutEntryCount(ClientWorld, out int layoutCount) && layoutCount > 0)
             {
-                totalSteps = layoutCount;
-                return true;
+                candidateTotal = layoutCount;
+                s_LatchedLoadingTotalSteps = layoutCount;
+            }
+            else
+            {
+                candidateTotal = ResolveRemoteMapExpectedTotal(homeCount);
+                if (s_LatchedLoadingTotalSteps <= 0 && candidateTotal > 0)
+                    s_LatchedLoadingTotalSteps = candidateTotal;
+                else if (candidateTotal > s_LatchedLoadingTotalSteps)
+                    s_LatchedLoadingTotalSteps = candidateTotal;
             }
 
-            totalSteps = ResolveRemoteMapExpectedTotal(homeCount);
+            totalSteps = s_LatchedLoadingTotalSteps > 0 ? s_LatchedLoadingTotalSteps : candidateTotal;
+            // [TITAN-ORBIT] With authoritative meta we can show "0 / N" before any ghosts arrive.
+            bool hasAuthoritativeTotal = MapSessionMetaCache.HasMeta && MapSessionMetaCache.LoadingTotalSteps > 0;
+            if (completedSteps <= 0 && !hasReplicatedBodies && !hasAuthoritativeTotal)
+                return false;
+
+            // Numerator cannot exceed the latched total (placeholders / double counts).
+            if (totalSteps > 0 && completedSteps > totalSteps)
+                completedSteps = totalSteps;
             return totalSteps > 0;
         }
 
@@ -1004,6 +1026,11 @@ namespace TitanOrbit.Game
         static bool s_MapLoadingLatchedComplete;
         /// <summary>Last known team count for lobby UI — avoids flicker when home ghosts briefly desync.</summary>
         static int s_LatchedActiveTeamCount;
+        /// <summary>
+        /// Loading-screen "/ N" denominator for the current join. Latched so the UI does not jump
+        /// from settings midpoint to layout length mid-stream.
+        /// </summary>
+        static int s_LatchedLoadingTotalSteps;
 
         /// <summary>Clears remote map heuristics when disconnecting or leaving in-game state.</summary>
         static void ResetRemoteMapLoadTracking()
@@ -1014,6 +1041,9 @@ namespace TitanOrbit.Game
             s_RemoteMapStableSince = -1f;
             s_MapLoadingLatchedComplete = false;
             s_LatchedActiveTeamCount = 0;
+            s_LatchedLoadingTotalSteps = 0;
+            // [TITAN-ORBIT] Drop latched MapSessionMetaRpc so the next join does not reuse old totals.
+            MapSessionMetaCache.Clear();
         }
 
         /// <summary>
