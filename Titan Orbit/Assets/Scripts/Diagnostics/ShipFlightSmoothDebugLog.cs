@@ -32,7 +32,7 @@ namespace TitanOrbit.Diagnostics
                 long ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
                 var sb = new StringBuilder(384);
                 sb.Append("{\"sessionId\":\"").Append(SessionId).Append("\",");
-                sb.Append("\"runId\":\"basics30\",");
+                sb.Append("\"runId\":\"basics67\",");
                 sb.Append("\"hypothesisId\":\"").Append(Escape(hypothesisId)).Append("\",");
                 sb.Append("\"location\":\"").Append(Escape(location)).Append("\",");
                 sb.Append("\"message\":\"").Append(Escape(message)).Append("\",");
@@ -63,9 +63,18 @@ namespace TitanOrbit.Diagnostics
         /// <summary>Successful write count (process-local).</summary>
         public static int WriteCount => _writes;
 
-        /// <summary>Walks up from Assets to the folder that contains <c>.git</c> (shared by MPPM VPs).</summary>
+        /// <summary>
+        /// Editor/MPPM: repo-root <c>debug-6b87b4.log</c> (walk up to <c>.git</c>).
+        /// Player builds: sibling of the <c>*_Data</c> folder so H64 Windows-client runs are easy to find.
+        /// </summary>
         static string ResolvePath()
         {
+            // --- Player build: next to the .exe (parent of *_Data) ---
+            // [UNITY] Application.dataPath in a standalone is .../MyGame_Data — not the git repo.
+            if (!Application.isEditor)
+                return Path.GetFullPath(Path.Combine(Application.dataPath, "..", FileName));
+
+            // --- Editor / MPPM: shared repo-root log ---
             string dir = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
             for (int i = 0; i < 8 && !string.IsNullOrEmpty(dir); i++)
             {

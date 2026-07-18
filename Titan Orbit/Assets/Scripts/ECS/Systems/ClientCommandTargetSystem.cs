@@ -61,30 +61,9 @@ namespace TitanOrbit.ECS
                 if (changed)
                     cmd.ValueRW = new CommandTarget { targetEntity = shipEntity };
 
-                // #region agent log
-                if (!_loggedBind || changed)
-                {
-                    _loggedBind = true;
-                    try
-                    {
-                        string path = System.IO.Path.GetFullPath(
-                            System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "..", "debug-6b87b4.log"));
-                        long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                        bool hasServer = ClientServerBootstrap.HasServerWorld;
-                        string line =
-                            "{\"sessionId\":\"6b87b4\",\"runId\":\"basics2\",\"hypothesisId\":\"H10\"," +
-                            "\"location\":\"ClientCommandTargetSystem.OnUpdate\"," +
-                            "\"message\":\"CommandTarget bound to local ship\"," +
-                            "\"data\":{\"networkId\":" + localNetworkId +
-                            ",\"shipIndex\":" + shipEntity.Index +
-                            ",\"changed\":" + (changed ? "true" : "false") +
-                            ",\"hasServer\":" + (hasServer ? "true" : "false") + "}," +
-                            "\"timestamp\":" + ts + "}\n";
-                        System.IO.File.AppendAllText(path, line);
-                    }
-                    catch { /* debug I/O only */ }
-                }
-                // #endregion
+                // Leftover basics2 per-bind File.AppendAllText removed (H62) — rare, but old
+                // agent logs should not touch disk during gameplay.
+                _ = changed;
             }
         }
 

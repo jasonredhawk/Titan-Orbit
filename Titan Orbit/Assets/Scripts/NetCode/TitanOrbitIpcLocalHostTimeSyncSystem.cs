@@ -15,7 +15,7 @@ namespace TitanOrbit.NetCode
     /// raised spikes to 13.5% and simBatch~5 via the partial +1 pad — rejected.
     /// </para>
     /// World: ClientSimulation. Group: InitializationSystemGroup, after NetworkTimeSystem.
-    /// Remote Socket clients: no-op.
+    /// Remote Socket / Relay clients: no-op (also blocked when <see cref="TitanOrbitSessionManager.IsDedicatedOnlineClient"/>).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup))]
@@ -36,8 +36,10 @@ namespace TitanOrbit.NetCode
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            // --- Local Host IPC only ---
+            // --- Local Host IPC only (never while joining/playing dedicated Relay) ---
             if (!ClientServerBootstrap.HasServerWorld)
+                return;
+            if (TitanOrbitSessionManager.IsDedicatedOnlineClient || TitanOrbitRelayState.HasClientRelay)
                 return;
 
             if (!SystemAPI.TryGetSingleton<NetworkStreamDriver>(out var streamDriver))

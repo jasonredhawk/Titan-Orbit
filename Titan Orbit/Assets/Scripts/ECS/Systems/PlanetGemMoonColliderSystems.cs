@@ -14,15 +14,38 @@ namespace TitanOrbit.ECS
     /// colliders (<see cref="Game.PlanetGemMoonVisualProxy"/>). This ensure pass spawns a kinematic
     /// Unity Physics sphere per planet so ships bounce off the moon hull like planets and asteroids.
     /// Runs on server and client (colliders are local sim geometry, not NetCode ghosts).
+    /// <para>
+    /// [TITAN-ORBIT] On clients we wait until <see cref="MapStateSingleton.LoadingComplete"/> (when
+    /// present) and create at most a few moon hulls per frame. Doing structural
+    /// <c>AddComponent</c> on every planet ghost in the same frames as NetCode's
+    /// <c>GhostSpawnSystem</c> Instantiates hundreds of map bodies has contributed to Windows
+    /// player hard-crashes right after Relay go-in-game.
+    /// </para>
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PlanetGemMoonEnsureSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct PlanetGemMoonColliderEnsureSystem : ISystem
     {
+        /// <summary>
+        /// Max moon collider entities to create in one frame on the client.
+        /// Server may create more — map gen already batches planet spawns.
+        /// </summary>
+        const int MaxClientEnsuresPerFrame = 2;
+
+        /// <summary>
+        /// Spawns missing kinematic moon hulls for planets that already have <see cref="PlanetGemMoonState"/>.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            // --- Client vs server ---
+            // [NETCODE] ClientWorld is the predicted/interpolated replica; server is authoritative.
+            // MapStateSingleton often does NOT replicate to dedicated clients, so we do not gate on
+            // LoadingComplete (that would skip moon hulls forever). We only rate-limit structural work.
+            bool isClient = state.World.IsClient();
+
             var ecb = new EntityCommandBuffer(Allocator.Temp);
+            int ensuredThisFrame = 0;
 
             foreach (var (planetState, planetTransform, entity) in SystemAPI
                          .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
@@ -30,6 +53,12 @@ namespace TitanOrbit.ECS
                          .WithNone<PlanetGemMoonColliderEntity>()
                          .WithEntityAccess())
             {
+                // --- Rate-limit on client ---
+                // [TITAN-ORBIT] Spread AddComponent / CreateEntity across frames after join so we
+                // do not pile structural changes onto the same frames as GhostSpawnSystem.
+                if (isClient && ensuredThisFrame >= MaxClientEnsuresPerFrame)
+                    break;
+
                 float planetScale = math.max(0.25f, planetTransform.ValueRO.Scale);
                 bool isHome = planetState.ValueRO.IsHomePlanet;
 
@@ -65,6 +94,7 @@ namespace TitanOrbit.ECS
 
                 ecb.AddComponent(moonEntity, LocalTransform.FromPositionRotationScale(moonPos, quaternion.identity, planetScale));
                 ecb.AddComponent(entity, new PlanetGemMoonColliderEntity { MoonColliderEntity = moonEntity });
+                ensuredThisFrame++;
             }
 
             ecb.Playback(state.EntityManager);

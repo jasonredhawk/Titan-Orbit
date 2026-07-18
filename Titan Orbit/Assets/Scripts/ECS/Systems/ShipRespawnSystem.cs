@@ -40,7 +40,8 @@ namespace TitanOrbit.ECS
                 if (now < deathState.ValueRO.RespawnAtTime)
                     continue;
 
-                float3 spawnPos = FindHomeSpawnPosition(ref state, shipState.ValueRO.Team);
+                // [TITAN-ORBIT] Shared with rejoin resume — always home, never last death position.
+                float3 spawnPos = ShipHomeSpawnLogic.FindHomeSpawnPosition(state.EntityManager, shipState.ValueRO.Team);
                 RespawnShip(ref shipState.ValueRW, ref kinematics.ValueRW, ref orbitState.ValueRW, ref transform.ValueRW, spawnPos);
                 physicsVelocity.ValueRW = PhysicsVelocity.Zero;
                 ecb.RemoveComponent<ShipDeathState>(entity);
@@ -48,50 +49,6 @@ namespace TitanOrbit.ECS
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
-        }
-
-        /// <summary>
-        /// Locates the home planet for the given team, offset slightly so the ship doesn't spawn
-        /// inside the planet collider.
-        /// </summary>
-        float3 FindHomeSpawnPosition(ref SystemState state, TeamId team)
-        {
-            // --- FindHomeSpawnPosition ---
-            float3 homePos = float3.zero;
-            bool found = false;
-
-            // [ECS/DOTS] Prefer live planet entities tagged HomePlanetTag.
-            foreach (var (planet, planetTransform) in SystemAPI
-                         .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
-                         .WithAll<PlanetTag, HomePlanetTag>())
-            {
-                if (planet.ValueRO.Ownership != team)
-                    continue;
-
-                homePos = planetTransform.ValueRO.Position;
-                found = true;
-                break;
-            }
-
-            // [STANDARD] Fallback to baked map layout when planet entities aren't ready yet.
-            if (!found && SystemAPI.TryGetSingletonBuffer<MapLayoutEntryElement>(out var layout))
-            {
-                for (int i = 0; i < layout.Length; i++)
-                {
-                    var entry = layout[i];
-                    if (entry.EntityKind == 1 && entry.Team == team)
-                    {
-                        homePos = entry.Position;
-                        found = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!found)
-                return float3.zero;
-
-            return homePos + new float3(20f, 0f, 0f);
         }
 
         /// <summary>Restores ship to full vitals at spawn position with zero velocity.</summary>

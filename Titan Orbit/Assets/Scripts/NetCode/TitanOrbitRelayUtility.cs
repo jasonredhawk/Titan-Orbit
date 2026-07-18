@@ -49,6 +49,12 @@ namespace TitanOrbit.NetCode
             data = s_ClientRelay;
             return s_HasClientRelay;
         }
+
+        /// <summary>
+        /// True when this process stored a client Relay join allocation.
+        /// Prefer this from Game/UI assemblies — avoids pulling <see cref="RelayServerData"/> / UTP refs.
+        /// </summary>
+        public static bool HasClientRelay => s_HasClientRelay;
     }
 
     /// <summary>

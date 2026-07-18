@@ -28,7 +28,9 @@ namespace TitanOrbit.Shared
         /// <summary>Clears pose when local ship despawns or player disconnects.</summary>
         public static void ClearLocalPose()
         {
-            // --- Invalidate so readers fall back to default camera rig ---
+            // --- Invalidate so camera stops following the stale last-known position ---
+            // [TITAN-ORBIT] Position/rotation left as-is are unused while HasLocalPose is false;
+            // ShipVisualSyncSystem also resets its soft-track so the next ship hard-snaps.
             HasLocalPose = false;
         }
     }

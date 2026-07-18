@@ -9,21 +9,32 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Tracks which chassis stats were last written to a ship entity. ShipStatApplySystem compares
-    /// AppliedShipLevel / AppliedBranchIndex against ShipState to decide when to re-apply.
+    /// AppliedShipLevel / AppliedBranchIndex / AppliedAttributeSum against live state to decide when to re-apply.
+    /// Local-only bookkeeping (not ghosted) — both server and client keep their own copy after ApplyToShip.
     /// </summary>
     public struct ShipChassisState : IComponentData
     {
         public FixedString64Bytes ChassisId;
         public int AppliedShipLevel;
         public int AppliedBranchIndex;
+        /// <summary>
+        /// Sum of ghosted <see cref="ShipAttributeUpgradeState"/> levels at last apply.
+        /// Client re-applies motor when attribute RPCs land without a level change.
+        /// </summary>
+        public int AppliedAttributeSum;
     }
 
     /// <summary>
     /// Shared stat-application pipeline: resolves a chassis id from team + level + branch, sums
     /// ship-family component stats, applies attribute-upgrade multipliers, and writes the result
     /// onto ShipState, ShipWeaponConfig, ShipMotorConfig, and ShipVitalsConfig. Called by
-    /// ShipStatApplySystem (server, level/branch changes), ShipAttributeUpgradeLogic (purchase),
+    /// ShipStatApplySystem (server + client prediction), ShipAttributeUpgradeLogic (purchase),
     /// and respawn/rejoin flows. Does not run movement — only updates numeric caps and motor tuning.
+    /// <para>
+    /// [NETCODE] <see cref="ShipMotorConfig"/> is not ghost-serialized. The client must run the same
+    /// ApplyToShip path (motor/weapon/vitals only) or owner prediction keeps bake defaults
+    /// (MaxSpeed=35) while the server uses chassis ~13 — HUD lies and prediction fights reconcile.
+    /// </para>
     /// </summary>
     public static class ShipStatApplyLogic
     {
@@ -159,14 +170,18 @@ namespace TitanOrbit.ECS
         /// <summary>Convenience overload without EntityCommandBuffer (no structural changes queued).</summary>
         public static void ApplyToShip(EntityManager em, Entity shipEntity, TeamId team, int shipLevel, int branchIndex)
         {
-            ApplyToShip(em, shipEntity, team, shipLevel, branchIndex, default, queueStructuralChanges: false);
+            ApplyToShip(em, shipEntity, team, shipLevel, branchIndex, default, queueStructuralChanges: false, writeGhostedShipState: true);
         }
 
         /// <summary>
-        /// Full stat apply: resolve chassis → sum stats → attribute multipliers → write all ship components.
+        /// Full stat apply: resolve chassis → sum stats → attribute multipliers → write ship components.
         /// When queueStructuralChanges is true, missing vitals/chassis components are added via ECB
         /// (safe during iteration in ShipStatApplySystem).
         /// </summary>
+        /// <param name="writeGhostedShipState">
+        /// Server: true — write Health/MaxHealth/caps on <see cref="ShipState"/>.
+        /// Client: false — those fields are [GhostField]; only motor/weapon/vitals/chassis bookkeeping.
+        /// </param>
         public static void ApplyToShip(
             EntityManager em,
             Entity shipEntity,
@@ -174,7 +189,8 @@ namespace TitanOrbit.ECS
             int shipLevel,
             int branchIndex,
             EntityCommandBuffer ecb,
-            bool queueStructuralChanges)
+            bool queueStructuralChanges,
+            bool writeGhostedShipState = true)
         {
             if (!TryResolveChassisId(team, shipLevel, branchIndex, out string chassisId))
                 return;
@@ -185,15 +201,18 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Level scaling curve applied before attribute multipliers.
             ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, shipLevel);
 
+            int attributeSum = 0;
             // --- Attribute upgrades (+10% per level from bottom HUD) ---
             if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
             {
                 var attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+                attributeSum = SumAttributeLevels(attrs);
                 ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, attrs);
             }
 
-            // --- ShipState caps (health, gems, energy, people) ---
-            if (em.HasComponent<ShipState>(shipEntity))
+            // --- ShipState caps (health, gems, energy, people) — server / authoritative only ---
+            // [NETCODE] Client must not overwrite ghosted ShipState; snapshot owns Health/caps.
+            if (writeGhostedShipState && em.HasComponent<ShipState>(shipEntity))
             {
                 var ship = em.GetComponentData<ShipState>(shipEntity);
                 // [STANDARD] Preserve health ratio on re-apply unless dead or awaiting team pick.
@@ -294,6 +313,7 @@ namespace TitanOrbit.ECS
                 ChassisId = chassisId,
                 AppliedShipLevel = shipLevel,
                 AppliedBranchIndex = branchIndex,
+                AppliedAttributeSum = attributeSum,
             };
             if (em.HasComponent<ShipChassisState>(shipEntity))
                 em.SetComponentData(shipEntity, chassisState);
@@ -301,6 +321,23 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(shipEntity, chassisState);
             else
                 em.AddComponentData(shipEntity, chassisState);
+        }
+
+        /// <summary>
+        /// Fingerprint of attribute upgrade levels so client/server re-apply when HUD purchases land.
+        /// </summary>
+        public static int SumAttributeLevels(in ShipAttributeUpgradeState attrs)
+        {
+            return attrs.FirePower
+                   + attrs.BulletSpeed
+                   + attrs.MaxHealth
+                   + attrs.HealthRegen
+                   + attrs.EnergyCapacity
+                   + attrs.EnergyRegen
+                   + attrs.MovementSpeed
+                   + attrs.RotationSpeed
+                   + attrs.GemCapacity
+                   + attrs.PeopleCapacity;
         }
 
         /// <summary>

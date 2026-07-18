@@ -15,7 +15,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Client-only Entities Graphics presentation for ships. Spawns local child entities with
     /// <see cref="MaterialMeshInfo"/> parented to the ship ghost (bank pivot → mesh parts).
-    /// [TITAN-ORBIT] No intermediate smooth-anchor — NetCode owns presentation pose; we only render.
+    /// [TITAN-ORBIT] Display pose smoothing for the local owner lives in <c>ShipVisualSyncSystem</c>;
+    /// this system only builds/tears down mesh entities. Hierarchy destroy copies <see cref="Child"/>
+    /// ids before <c>DestroyEntity</c> (basics41 hitch from invalidated buffers).
     /// Runs in <see cref="PresentationSystemGroup"/>.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
@@ -292,7 +294,30 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>
+        /// Destroys <paramref name="root"/> and all <see cref="Child"/> descendants.
+        /// Copies the child list first — destroying a child invalidates the parent's
+        /// <see cref="Child"/> buffer (basics41: ObjectDisposedException / hitch spam).
+        /// </summary>
         void DestroyEntityHierarchy(Entity root)
+        {
+            if (!EntityManager.Exists(root))
+                return;
+
+            // --- Collect deepest-first, then destroy (no live buffer iteration across DestroyEntity) ---
+            var destroyOrder = new NativeList<Entity>(16, Allocator.Temp);
+            CollectDestroyOrderDepthFirst(root, ref destroyOrder);
+            for (int i = 0; i < destroyOrder.Length; i++)
+            {
+                if (EntityManager.Exists(destroyOrder[i]))
+                    EntityManager.DestroyEntity(destroyOrder[i]);
+            }
+
+            destroyOrder.Dispose();
+        }
+
+        /// <summary>Walks the Child hierarchy and appends entities leaves-first, then parents.</summary>
+        void CollectDestroyOrderDepthFirst(Entity root, ref NativeList<Entity> destroyOrder)
         {
             if (!EntityManager.Exists(root))
                 return;
@@ -300,11 +325,19 @@ namespace TitanOrbit.ECS
             if (EntityManager.HasBuffer<Child>(root))
             {
                 var children = EntityManager.GetBuffer<Child>(root);
-                for (int i = children.Length - 1; i >= 0; i--)
-                    DestroyEntityHierarchy(children[i].Value);
+                int childCount = children.Length;
+                // Snapshot child entities before any recursive destroy mutates structural data.
+                var childSnapshot = new NativeArray<Entity>(childCount, Allocator.Temp);
+                for (int i = 0; i < childCount; i++)
+                    childSnapshot[i] = children[i].Value;
+
+                for (int i = 0; i < childCount; i++)
+                    CollectDestroyOrderDepthFirst(childSnapshot[i], ref destroyOrder);
+
+                childSnapshot.Dispose();
             }
 
-            EntityManager.DestroyEntity(root);
+            destroyOrder.Add(root);
         }
 
         void CleanupOrphanVisualParts()

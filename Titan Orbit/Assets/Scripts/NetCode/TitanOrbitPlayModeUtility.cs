@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using TitanOrbit.Core;
 using UnityEngine;
 
@@ -49,6 +50,42 @@ namespace TitanOrbit.NetCode
         public static void WarnIfMppmServerBuildClone()
         {
 #if UNITY_EDITOR
+            // #region agent log
+            // H51: prove whether Player 2 still launches with Server subtarget after SystemData Client patch.
+            try
+            {
+                bool clone = IsMppmAdditionalEditorInstance();
+                string sub = GetMppmBuildSubtarget();
+                int player = GetMppmPlayerNumber();
+                string line =
+                    "{\"sessionId\":\"6b87b4\",\"runId\":\"basics65\",\"hypothesisId\":\"H51\"," +
+                    "\"location\":\"TitanOrbitPlayModeUtility.WarnIfMppmServerBuildClone\"," +
+                    "\"message\":\"mppm bootstrap build role\"," +
+                    "\"data\":{\"mppmClone\":" + (clone ? "true" : "false") +
+                    ",\"mppmPlayer\":" + player +
+                    ",\"buildSub\":\"" + sub + "\"" +
+                    ",\"serverSub\":" + (UsesServerBuildSubtarget() ? "true" : "false") + "}," +
+                    "\"timestamp\":" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + "}\n";
+                string dir = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+                for (int i = 0; i < 8 && !string.IsNullOrEmpty(dir); i++)
+                {
+                    if (Directory.Exists(Path.Combine(dir, ".git")))
+                    {
+                        File.AppendAllText(Path.Combine(dir, "debug-6b87b4.log"), line);
+                        break;
+                    }
+                    string parent = Path.GetDirectoryName(dir);
+                    if (string.IsNullOrEmpty(parent) || parent == dir)
+                        break;
+                    dir = parent;
+                }
+            }
+            catch
+            {
+                // ignore debug I/O
+            }
+            // #endregion
+
             if (IsMppmAdditionalEditorInstance() && UsesServerBuildSubtarget())
                 Debug.LogError(ServerBuildSubtargetWarning);
 #endif

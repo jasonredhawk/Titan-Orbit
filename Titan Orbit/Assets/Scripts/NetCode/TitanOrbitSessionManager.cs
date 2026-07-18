@@ -145,22 +145,39 @@ namespace TitanOrbit.NetCode
 
 #if UNITY_SERVER
         /// <summary>
-        /// Manual ServerWorld tick for true headless dedicated builds only.
+        /// Intentionally empty — do <b>not</b> manually tick ServerWorld here.
         /// </summary>
         /// <remarks>
-        /// When the Active Build Target is Dedicated Server, <c>UNITY_SERVER</c> is also defined in
-        /// the Editor. Local Host then has a ClientWorld <b>and</b> the Entities player loop already
-        /// updates ServerWorld — calling <see cref="TickServerWorld"/> here double-updates sim
-        /// (NetDiagnostics ~50% catch-up / STRUGGLING). Skip when a ClientWorld exists.
+        /// [NETCODE] <c>ClientServerBootstrap.CreateServerWorld</c> calls
+        /// <c>ScriptBehaviourUpdateOrder.AppendWorldToCurrentPlayerLoop</c>, so the player loop
+        /// already runs <c>ServerWorld.Update</c> every frame (Editor and headless).
+        /// <para>
+        /// basics35 (GCE Relay): this method used to call <see cref="TickServerWorld"/> whenever
+        /// no ClientWorld existed. That <b>double-updated</b> sim (~2× server ticks vs wall clock).
+        /// Both Relay clients stuck at <c>cmdAge≈18–21</c> / hard snaps even with client MaxSteps=8.
+        /// Boot coroutines may still call <see cref="TickServerWorld"/> (frame-gated).
+        /// </para>
         /// </remarks>
         void Update()
         {
-            // [UNITY] Editor Client+Server play: player loop owns ServerWorld.Update.
-            if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
+            // Player loop owns ServerWorld — no TickServerWorld() here.
+        }
+#else
+        /// <summary>
+        /// Client: keep dedicated Join→GCE at 60 FPS / VSync off after scene platform defaults.
+        /// </summary>
+        void Update()
+        {
+            // --- Dedicated online frame pace ---
+            // [TITAN-ORBIT] CrossPlatformManager may enable VSync at Start after join prepare.
+            // basics55: Editor still sat ~30 FPS with target=60/vSync=0 (CPU-bound); player builds
+            // need this assert so H64 can actually reach ~60 Hz.
+            if (!IsDedicatedOnlineClient)
                 return;
-
-            // [UNITY_SERVER] True headless: no ClientWorld — we must tick or Relay never progresses.
-            TickServerWorld();
+            if (Application.targetFrameRate != 60)
+                Application.targetFrameRate = 60;
+            if (QualitySettings.vSyncCount != 0)
+                QualitySettings.vSyncCount = 0;
         }
 #endif
 
@@ -185,13 +202,77 @@ namespace TitanOrbit.NetCode
 #endif
         }
 
-        /// <summary>Re-enables ServerWorld sim for LAN host/play (also after dedicated-join suspend).</summary>
-        static void ResumeEditorLocalServerForLocalPlay()
+        /// <summary>
+        /// Disposes the Editor's idle local ServerWorld so Join→GCE is truly client-only.
+        /// </summary>
+        /// <remarks>
+        /// basics38: suspending <see cref="SimulationSystemGroup"/> left
+        /// <c>ClientServerBootstrap.HasServerWorld == true</c> during Relay play. Aggregates were
+        /// all <c>hasServer=true,relay=true</c>, with repeated catch-up storms
+        /// (<c>cmdAge</c> 50–212, <c>maxDelta</c> 15–21, <c>fps</c> 1–4) then rubber-band snaps.
+        /// Disposing removes the dual-world player-loop cost and makes HasServerWorld false.
+        /// </remarks>
+        static void DisposeEditorServerWorldForDedicatedJoin()
         {
 #if UNITY_EDITOR
             var server = ClientServerBootstrap.ServerWorld;
             if (server == null || !server.IsCreated)
                 return;
+
+            Debug.Log("[TitanOrbitSessionManager] Disposing local ServerWorld for dedicated Relay join (client-only).");
+            // #region agent log
+            ShipFlightSmoothDebugLog.Write(
+                "H44",
+                "TitanOrbitSessionManager.DisposeEditorServerWorldForDedicatedJoin",
+                "Disposed Editor ServerWorld for Relay join",
+                "{\"hasServerBefore\":true,\"dedicatedOnline\":true}");
+            // #endregion
+
+            // [NETCODE] World.Dispose removes it from the player loop and clears bootstrap ServerWorld.
+            server.Dispose();
+            s_EditorLocalServerSuspendedForOnline = false;
+#endif
+        }
+
+        /// <summary>
+        /// Re-enables or recreates ServerWorld for LAN host/play after menu suspend or dedicated-join dispose.
+        /// </summary>
+        static void ResumeEditorLocalServerForLocalPlay()
+        {
+#if UNITY_EDITOR
+            // basics41: a Local Host recreate ran while Relay join was active (Recreated → Disposed
+            // ~4s later, ServerWorld wall-clock probe during dedicated play). Never rebuild server
+            // while this process is a dedicated online / Relay client.
+            if (IsDedicatedOnlineClient || TitanOrbitRelayState.HasClientRelay)
+            {
+                Debug.LogWarning("[TitanOrbitSessionManager] Skipped ServerWorld recreate — dedicated Relay client active.");
+                // #region agent log
+                ShipFlightSmoothDebugLog.Write(
+                    "H46",
+                    "TitanOrbitSessionManager.ResumeEditorLocalServerForLocalPlay",
+                    "Blocked ServerWorld recreate during Relay",
+                    "{\"dedicatedOnline\":" + (IsDedicatedOnlineClient ? "true" : "false") +
+                    ",\"relay\":" + (TitanOrbitRelayState.HasClientRelay ? "true" : "false") + "}");
+                // #endregion
+                return;
+            }
+
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated)
+            {
+                // [NETCODE] Dedicated Join disposed ServerWorld — Local Host needs it again.
+                ClientServerBootstrap.CreateServerWorld("ServerWorld");
+                s_EditorLocalServerSuspendedForOnline = false;
+                Debug.Log("[TitanOrbitSessionManager] Recreated local ServerWorld for Local Host play.");
+                // #region agent log
+                ShipFlightSmoothDebugLog.Write(
+                    "H44",
+                    "TitanOrbitSessionManager.ResumeEditorLocalServerForLocalPlay",
+                    "Recreated Editor ServerWorld for Local Host",
+                    "{\"hasServerAfter\":true}");
+                // #endregion
+                return;
+            }
 
             var simulation = server.GetExistingSystemManaged<SimulationSystemGroup>();
             if (simulation != null && !simulation.Enabled)
@@ -964,6 +1045,9 @@ namespace TitanOrbit.NetCode
 
                 TitanOrbitRelayState.SetServerRelay(prep.Relay);
                 await ClearNetworkConnectionsAsync(serverWorld);
+                // [TITAN-ORBIT] New lobby on the same ServerWorld must not keep orphan ships —
+                // NetCode reuses low NetworkIds, which falsely offered "rescue my ship" to new joiners.
+                WipeOrphanPlayerShipsAndResetRosters(serverWorld);
                 ResetServerDriverIfNeeded();
                 ListenServer(serverWorld, config.ServerPort);
                 for (int i = 0; i < 90; i++)
@@ -1059,6 +1143,63 @@ namespace TitanOrbit.NetCode
             if (server == null || !server.IsCreated)
                 return 0;
             return server.EntityManager.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount();
+        }
+
+        /// <summary>
+        /// Destroys every player ship ghost on the server world and zeroes team roster counts.
+        /// Call when the match is empty or when an in-process lobby recreate publishes a "new game"
+        /// on the same ServerWorld. Without this, NetCode reassigns NetworkId 1 to the next joiner
+        /// and the client shows the previous player's orphan ship as "rescue."
+        /// Map planets stay; only ships and roster slots are cleared.
+        /// </summary>
+        public void WipeOrphanPlayerShipsAndResetRosters()
+        {
+            WipeOrphanPlayerShipsAndResetRosters(ClientServerBootstrap.ServerWorld);
+        }
+
+        /// <summary>
+        /// See <see cref="WipeOrphanPlayerShipsAndResetRosters()"/> — world overload for recreate path.
+        /// </summary>
+        /// <param name="serverWorld">Dedicated or host ServerWorld; no-op if null/destroyed.</param>
+        static void WipeOrphanPlayerShipsAndResetRosters(World serverWorld)
+        {
+            // --- Guard: no server world yet ---
+            if (serverWorld == null || !serverWorld.IsCreated)
+                return;
+
+            var em = serverWorld.EntityManager;
+
+            // --- Destroy all ship ghosts (orphan reconnect targets) ---
+            // [NETCODE] GhostOwner ships survive disconnect by design for mid-match rejoin;
+            // empty / recreate must cancel that so NetworkId reuse cannot fake a rescue.
+            using (var ships = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner)))
+            using (var entities = ships.ToEntityArray(Allocator.Temp))
+            {
+                int destroyed = entities.Length;
+                for (int i = 0; i < entities.Length; i++)
+                    em.DestroyEntity(entities[i]);
+
+                if (destroyed > 0)
+                {
+                    Debug.Log("[TitanOrbitSessionManager] Wiped " + destroyed +
+                              " orphan player ship(s) for empty/recreate match.");
+                    DedicatedServerFileLog.Append("match", "Wiped orphan ships count=" + destroyed);
+                }
+            }
+
+            // --- Reset roster counts (ActiveTeamCount stays — map still has those teams) ---
+            using var teamQuery = em.CreateEntityQuery(typeof(TeamStateSingleton));
+            if (teamQuery.CalculateEntityCount() == 1)
+            {
+                var teamEntity = teamQuery.GetSingletonEntity();
+                var team = em.GetComponentData<TeamStateSingleton>(teamEntity);
+                team.TeamACount = 0;
+                team.TeamBCount = 0;
+                team.TeamCCount = 0;
+                team.TeamDCount = 0;
+                team.TeamECount = 0;
+                em.SetComponentData(teamEntity, team);
+            }
         }
 
         public bool IsServerListening()
@@ -1280,6 +1421,10 @@ namespace TitanOrbit.NetCode
             ClientTeamFlowState.Reset();
             StopMppmLanAutoConnect();
 
+            // [UNITY] Editor Join often sits ~22 FPS with VSync/uncapped hitching; prefer 60 for catch-up.
+            Application.targetFrameRate = 60;
+            QualitySettings.vSyncCount = 0;
+
             await SuspendLocalServerForDedicatedClientAsync();
             await EnsureClientReadyForRelayDriverResetAsync();
             TitanOrbitRelayState.Clear();
@@ -1325,6 +1470,9 @@ namespace TitanOrbit.NetCode
                                  " NetworkStreamConnection(s) still present before Relay driver reset.");
         }
 
+        /// <summary>
+        /// Clears local connections, then disposes Editor ServerWorld so Relay join is client-only.
+        /// </summary>
         static async Task SuspendLocalServerForDedicatedClientAsync()
         {
             var server = ClientServerBootstrap.ServerWorld;
@@ -1332,11 +1480,21 @@ namespace TitanOrbit.NetCode
 
             if (server != null && server.IsCreated)
             {
+                // Stop sim first so disconnect flush does not advance local match state.
                 SuspendEditorLocalServerUntilLocalPlay();
                 ClearNetworkStreamInGame(server);
                 RequestDisconnectAllConnections(server);
                 ResetServerDriverIfNeeded();
-                TickServerWorld(server);
+
+                // Short flush only — basics38 used 60 ticks here and worsened join hitch.
+                for (int i = 0; i < 5; i++)
+                {
+                    if (server.IsCreated)
+                        TickServerWorld(server);
+                    await Task.Yield();
+                }
+
+                DisposeEditorServerWorldForDedicatedJoin();
             }
 
             if (client != null && client.IsCreated)
@@ -1345,10 +1503,8 @@ namespace TitanOrbit.NetCode
                 RequestDisconnectAllConnections(client);
             }
 
-            for (int i = 0; i < 60; i++)
+            for (int i = 0; i < 10; i++)
             {
-                if (server != null && server.IsCreated)
-                    TickServerWorld(server);
                 if (client != null && client.IsCreated)
                     client.Update();
                 await Task.Yield();
@@ -1528,7 +1684,7 @@ namespace TitanOrbit.NetCode
                 var server = ClientServerBootstrap.ServerWorld;
                 if (server != null && server.IsCreated)
                 {
-                    // Server world is ticked once per frame from Update() on UNITY_SERVER builds.
+                    // Server world is ticked by the Entities player loop (CreateServerWorld appends it).
                     RequestGoInGame(server);
                     var em = server.EntityManager;
                     int connections = em.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount();

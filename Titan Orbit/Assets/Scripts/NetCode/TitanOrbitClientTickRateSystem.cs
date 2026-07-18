@@ -5,9 +5,17 @@ using UnityEngine;
 namespace TitanOrbit.NetCode
 {
     /// <summary>
-    /// Minimal client tick tuning for predicted ship physics.
-    /// Forces prediction step batch size = 1 (no merged N×dt physics) and matches server
-    /// 60 Hz / catch-up caps. World: ClientSimulation. Group: InitializationSystemGroup (first).
+    /// Client tick tuning for predicted ship physics.
+    /// Forces prediction step batch size = 1 (no merged N×dt physics) and uses a higher
+    /// <see cref="ClientServerTickRate.MaxSimulationStepsPerFrame"/> than Editor Local Host server
+    /// so Relay clients can repay command-age debt.
+    /// <para>
+    /// basics34 (dedicated GCE): MaxSteps must stay high (8) for join catch-up.
+    /// basics51 / H59: cruise MaxSteps=2 did <b>not</b> reduce
+    /// <c>NetworkTime.SimulationStepBatchSize</c> — on clients that field is predict-target
+    /// delta (2–3 at ~30 FPS), not MaxSteps. Reverted. Presentation: raw+soft-track; H64 = player FPS test.
+    /// </para>
+    /// World: ClientSimulation. Group: InitializationSystemGroup (first).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup), OrderFirst = true)]
@@ -41,7 +49,7 @@ namespace TitanOrbit.NetCode
             clientTickRate.MaxPredictionStepBatchSizeRepeatedTick = 1;
             state.EntityManager.SetComponentData(clientTickEntity, clientTickRate);
 
-            // --- ClientServerTickRate: match server Hz + no tick batching ---
+            // --- ClientServerTickRate: match Hz, allow Relay catch-up ---
             ClientServerTickRate sharedTickRate;
             Entity sharedTickEntity;
             using (var query = state.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>()))
@@ -61,8 +69,8 @@ namespace TitanOrbit.NetCode
 
             sharedTickRate.SimulationTickRate = TitanOrbitServerTickRateSystem.SimulationHz;
             sharedTickRate.NetworkTickRate = TitanOrbitServerTickRateSystem.NetworkHz;
-            // [TITAN-ORBIT] Match server — MaxSteps=2 (basics17: 4 → ~120 Hz / 2× speed at ~30 FPS).
-            sharedTickRate.MaxSimulationStepsPerFrame = TitanOrbitServerTickRateSystem.MaxStepsPerFrame;
+            // [TITAN-ORBIT] Always allow join catch-up (basics34). Do not cruise-cap MaxSteps (H59 rejected).
+            sharedTickRate.MaxSimulationStepsPerFrame = TitanOrbitServerTickRateSystem.ClientMaxStepsPerFrame;
             sharedTickRate.MaxSimulationStepBatchSize = 1;
             sharedTickRate.PredictedFixedStepSimulationTickRatio = 1;
             sharedTickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.Sleep;
@@ -72,23 +80,15 @@ namespace TitanOrbit.NetCode
             if (!_loggedOnce)
             {
                 _loggedOnce = true;
-                try
-                {
-                    string path = System.IO.Path.GetFullPath(
-                        System.IO.Path.Combine(Application.dataPath, "..", "..", "debug-6b87b4.log"));
-                    long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    string line =
-                        "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H29\"," +
-                        "\"location\":\"TitanOrbitClientTickRateSystem.OnUpdate\"," +
-                        "\"message\":\"client tick rates\"," +
-                        "\"data\":{\"predBatch\":1,\"maxBatch\":" + sharedTickRate.MaxSimulationStepBatchSize +
-                        ",\"maxSteps\":" + sharedTickRate.MaxSimulationStepsPerFrame +
-                        ",\"simHz\":" + sharedTickRate.SimulationTickRate +
-                        ",\"hasServer\":" + (ClientServerBootstrap.HasServerWorld ? "true" : "false") + "}," +
-                        "\"timestamp\":" + ts + "}\n";
-                    System.IO.File.AppendAllText(path, line);
-                }
-                catch { /* debug I/O only */ }
+                TitanOrbit.Diagnostics.ShipFlightSmoothDebugLog.Write(
+                    "H39",
+                    "TitanOrbitClientTickRateSystem.OnUpdate",
+                    "client tick rates",
+                    "{\"predBatch\":1,\"maxBatch\":" + sharedTickRate.MaxSimulationStepBatchSize +
+                    ",\"maxSteps\":" + sharedTickRate.MaxSimulationStepsPerFrame +
+                    ",\"simHz\":" + sharedTickRate.SimulationTickRate +
+                    ",\"hasServer\":" + (ClientServerBootstrap.HasServerWorld ? "true" : "false") +
+                    ",\"relay\":" + (TitanOrbitRelayState.HasClientRelay ? "true" : "false") + "}");
             }
             // #endregion
         }

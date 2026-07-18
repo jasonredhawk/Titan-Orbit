@@ -1,3 +1,4 @@
+using TitanOrbit.Diagnostics;
 using Unity.Entities;
 using Unity.NetCode;
 using Unity.Transforms;
@@ -5,46 +6,50 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Intentionally does <b>not</b> register a custom <see cref="GhostPredictionSmoothing"/> blend.
-    /// [NETCODE] Full server correction + resim is the basic reconciliation path. A 0.45 lerp was
-    /// leaving the hull in a hybrid pose (part predicted, part corrected), which felt like
-    /// jump-forward-then-pull-back while command age was high. When the shared motor is fully
-    /// deterministic we can re-enable soft correction here. World: ClientSimulation.
+    /// One-shot client bootstrap for NetCode <see cref="GhostPredictionSmoothing"/>.
+    /// <para>
+    /// basics42 (H47): do <b>not</b> register LocalTransform smoothing — it fought
+    /// <c>ShipVisualSyncSystem</c> display coast and looked like blurry jitter (worse on P2).
+    /// Display-only velocity chase owns local presentation; remotes keep NetCode interpolation.
+    /// </para>
+    /// World: ClientSimulation. Group: InitializationSystemGroup (last).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup), OrderLast = true)]
     public partial struct TitanOrbitShipPredictionSmoothingBootstrap : ISystem
     {
-        // #region agent log
-        bool _loggedOnce;
-        // #endregion
+        /// <summary>True after we successfully register (or decide we cannot).</summary>
+        bool _done;
 
         /// <summary>
-        /// One-shot log that custom LocalTransform prediction smoothing is disabled for basics.
+        /// Registers LocalTransform smoothing once the NetCode singleton exists.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            // #region agent log
-            if (!_loggedOnce)
+            if (_done)
             {
-                _loggedOnce = true;
-                try
-                {
-                    string path = System.IO.Path.GetFullPath(
-                        System.IO.Path.Combine(UnityEngine.Application.dataPath, "..", "..", "debug-6b87b4.log"));
-                    long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    string line =
-                        "{\"sessionId\":\"6b87b4\",\"runId\":\"basics2\",\"hypothesisId\":\"H9\"," +
-                        "\"location\":\"TitanOrbitShipPredictionSmoothingBootstrap.OnUpdate\"," +
-                        "\"message\":\"GhostPredictionSmoothing NOT registered (full snap reconcile)\"," +
-                        "\"data\":{\"smoothing\":\"disabled\"},\"timestamp\":" + ts + "}\n";
-                    System.IO.File.AppendAllText(path, line);
-                }
-                catch { /* debug I/O only */ }
+                state.Enabled = false;
+                return;
             }
+
+            // basics42 / H47: registering GhostPredictionSmoothing (blend 0.92) while
+            // ShipVisualSyncSystem also smooths display caused blurry micro-jitter on the local
+            // predicted ship (P2 especially). Remotes stay on NetCode interpolation only.
+            // Display-only velocity chase owns presentation; leave LocalTransform unsmoothed.
+            _done = true;
+            state.Enabled = false;
+
+            // #region agent log
+            ShipFlightSmoothDebugLog.Write(
+                "H47",
+                "TitanOrbitShipPredictionSmoothingBootstrap.OnUpdate",
+                "GhostPredictionSmoothing DISABLED (display owns smooth)",
+                "{\"ok\":true,\"blend\":0,\"reason\":\"avoid double-smooth jitter\"}");
             // #endregion
 
-            state.Enabled = false;
+            // Keep singleton lookup so we do not spin if NetCode creates it late.
+            if (!SystemAPI.TryGetSingletonRW<GhostPredictionSmoothing>(out _))
+                return;
         }
     }
 }

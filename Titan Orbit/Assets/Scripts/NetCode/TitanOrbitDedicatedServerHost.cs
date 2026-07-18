@@ -16,8 +16,10 @@ namespace TitanOrbit.NetCode
     /// Keeps dedicated NetCode matches available: heartbeats, rotation, empty-lobby recreate, match requests,
     /// and self-heal when no joinable latest lobby exists in UGS.
     /// Started by <see cref="TitanOrbitSessionManager"/> after the first Relay lobby is live.
-    /// Rotation handoff keeps the current UGS lobby open and heartbeating until a successor process publishes
-    /// a joinable lobby — avoids browse gaps when <c>SpawnNextMatch</c> or successor boot is slow.
+    /// When the last player leaves, orphan ship ghosts are wiped immediately so a new joiner cannot
+    /// be offered a previous player's ship via NetworkId reuse. Rotation handoff keeps the current
+    /// UGS lobby open and heartbeating until a successor process publishes a joinable lobby —
+    /// avoids browse gaps when <c>SpawnNextMatch</c> or successor boot is slow.
     /// </summary>
     public class TitanOrbitDedicatedServerHost : MonoBehaviour
     {
@@ -522,8 +524,15 @@ namespace TitanOrbit.NetCode
                 return;
             }
 
+            // First frame we notice the lobby is empty: wipe orphan ships immediately.
+            // [TITAN-ORBIT] Empty lobbies stay joinable for EmptyMatchRecreateSeconds (often minutes).
+            // Without this wipe, a new joiner gets NetworkId 1 and is offered the previous player's ship.
             if (!_emptySinceUtc.HasValue)
+            {
                 _emptySinceUtc = DateTime.UtcNow;
+                if (TitanOrbitSessionManager.Instance != null)
+                    TitanOrbitSessionManager.Instance.WipeOrphanPlayerShipsAndResetRosters();
+            }
         }
 
         /// <summary>

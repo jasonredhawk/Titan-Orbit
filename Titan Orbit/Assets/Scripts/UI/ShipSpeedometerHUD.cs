@@ -1,3 +1,4 @@
+using System.Globalization;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
@@ -25,16 +26,25 @@ namespace TitanOrbit.UI
     }
 
     /// <summary>
-    /// Local-player speed and mass HUD: reads ShipMotorConfig, ShipKinematics, ShipWeaponConfig, and
-    /// effective stats (via ShipStatApplyLogic + attribute upgrades) from the visualization ECS world.
-    /// Displays speed/accel bars, time-to-max-speed, ram damage estimates (ShipMassLogic), and weapon DPS.
-    /// Presentation-only — mirrors sim numbers for player feedback; does not write ECS components.
-    /// Hidden during team select, death, and when upgrade tree obscures HUD.
+    /// Local-player speed / accel / mass / ram / bullet HUD.
+    /// Reads <see cref="ShipMotorConfig"/> (after client+server <see cref="ShipStatApplySystem"/>),
+    /// <see cref="ShipKinematics"/>, weapon config, and reconstructed chassis stats from the visualization world.
+    /// <para>
+    /// Presentation-only — never writes ECS. Numbers use fixed-width formatting so TMP does not
+    /// reflow when signs / decimals flicker (that "blinking" layout shift).
+    /// </para>
+    /// Hidden during team select, death, and when the upgrade tree obscures HUD.
     /// </summary>
     public class ShipSpeedometerHUD : MonoBehaviour
     {
         const float HudLayoutScale = 1.6f;
         const float AsteroidCollisionNormalSpeedRetention = 0.93f;
+
+        /// <summary>Treat as "at max" when within this fraction of motor MaxSpeed (cruise lock / float noise).</summary>
+        const float AtMaxSpeedFraction = 0.985f;
+
+        /// <summary>Figure space — same advance as a digit in most fonts; pads without visible gaps jumping.</summary>
+        const char FigureSpace = '\u2007';
 
         [Header("Enable")]
         [SerializeField] bool speedometerEnabled = true;
@@ -42,7 +52,7 @@ namespace TitanOrbit.UI
         [Header("Layout")]
         [SerializeField] SpeedometerPlacement placement = SpeedometerPlacement.BottomLeft;
         [SerializeField] float panelWidth = 380f * HudLayoutScale;
-        [SerializeField] float panelHeight = 138f * HudLayoutScale;
+        [SerializeField] float panelHeight = 148f * HudLayoutScale;
         [SerializeField, FormerlySerializedAs("accelerationDisplayResponsiveness")]
         float accelerationBarSmoothing = 5f;
         [SerializeField, FormerlySerializedAs("rightMargin")] float horizontalMargin = 20f;
@@ -70,6 +80,18 @@ namespace TitanOrbit.UI
         float smoothedHorizontalAccel;
         bool hasLastHorizontalSpeed;
         bool uiBuilt;
+
+        /// <summary>Last max-speed used to paint static tick labels (avoid rewriting TMP every frame).</summary>
+        float lastTickMaxSpeed = -1f;
+
+        /// <summary>Last max-accel scale used for accel tick labels.</summary>
+        float lastTickAccelSkew = -1f;
+
+        /// <summary>Throttle rich-text rebuilds — string allocs every LateUpdate show up as GC.Alloc.</summary>
+        float nextTextRebuildTime;
+
+        /// <summary>Cached HUD body text so we can skip TMP writes when unchanged.</summary>
+        string lastHudBodyText = "";
 
         void Start()
         {
@@ -113,15 +135,15 @@ namespace TitanOrbit.UI
             bg.raycastTarget = false;
 
             float pad = 8f * HudLayoutScale;
-            const float labelNormH = 0.44f;
+            const float labelNormH = 0.46f;
             const float speedNormTop = 1f;
-            const float speedNormBottom = 0.73f;
-            const float speedTickNormBottom = 0.635f;
-            const float speedTickNormTop = 0.71f;
-            const float accelNormTop = 0.60f;
-            const float accelNormBottom = 0.455f;
-            const float accelTickNormBottom = 0.37f;
-            const float accelTickNormTop = 0.435f;
+            const float speedNormBottom = 0.74f;
+            const float speedTickNormBottom = 0.645f;
+            const float speedTickNormTop = 0.72f;
+            const float accelNormTop = 0.61f;
+            const float accelNormBottom = 0.465f;
+            const float accelTickNormBottom = 0.38f;
+            const float accelTickNormTop = 0.445f;
 
             GameObject sliderGo = new GameObject("SpeedBar");
             sliderGo.transform.SetParent(rootPanel.transform, false);
@@ -250,8 +272,9 @@ namespace TitanOrbit.UI
             speedLabel = labelGo.AddComponent<TextMeshProUGUI>();
             speedLabel.text = "—";
             speedLabel.fontSize = 12f * HudLayoutScale;
-            speedLabel.lineSpacing = -3f * HudLayoutScale;
+            speedLabel.lineSpacing = -2f * HudLayoutScale;
             speedLabel.richText = true;
+            // [UNITY] Monospace keeps SPD/ACC columns from shifting when digits change.
             if (TMP_Settings.defaultFontAsset != null)
                 speedLabel.font = TMP_Settings.defaultFontAsset;
             speedLabel.color = textColor;
@@ -291,20 +314,28 @@ namespace TitanOrbit.UI
             return labels;
         }
 
-        static string FormatHudNumber(float v, bool preferInteger)
+        /// <summary>Always one decimal, fixed character width (figure-space pad) so layout never jumps.</summary>
+        static string FormatFixed1(float v, int width = 5)
         {
-            if (preferInteger && v >= 10f)
-                return v.ToString("0");
-            if (preferInteger && v < 10f && Mathf.Abs(v - Mathf.Round(v)) < 0.05f)
-                return Mathf.Round(v).ToString("0");
-            return v.ToString("0.#");
+            string s = v.ToString("0.0", CultureInfo.InvariantCulture);
+            return PadFigure(s, width);
         }
 
-        static string FormatHudSignedNumber(float v, bool preferInteger)
+        /// <summary>Always signed (+/-) with one decimal — ACC never drops the sign glyph.</summary>
+        static string FormatFixedSigned1(float v, int width = 6)
         {
-            if (v < 0f)
-                return "-" + FormatHudNumber(-v, preferInteger);
-            return "+" + FormatHudNumber(v, preferInteger);
+            string s = (v >= 0f ? "+" : "-") + Mathf.Abs(v).ToString("0.0", CultureInfo.InvariantCulture);
+            return PadFigure(s, width);
+        }
+
+        /// <summary>Left-pad with figure spaces so digit columns stay aligned.</summary>
+        static string PadFigure(string s, int width)
+        {
+            if (s == null)
+                s = "";
+            if (s.Length >= width)
+                return s;
+            return new string(FigureSpace, width - s.Length) + s;
         }
 
         float GetBottomLeftStackYBoost()
@@ -353,7 +384,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Gathers local ship ECS data for HUD display. Recomputes effective stats the same way
-        /// ShipStatApplyLogic does (chassis sum + level curve + attribute multipliers) for ram rating.
+        /// ShipStatApplyLogic does (chassis sum + level curve + attribute multipliers) for ram rating
+        /// and as a sanity fallback if motor MaxSpeed still looks like bake defaults.
         /// </summary>
         static bool TryGetLocalShipHudData(
             out ShipState ship,
@@ -416,6 +448,22 @@ namespace TitanOrbit.UI
             return true;
         }
 
+        /// <summary>
+        /// Display MaxSpeed: prefer live motor (client ShipStatApply), fall back to chassis moveSpeed
+        /// if motor still looks like StarshipGhostAuthoring bake (35) while chassis is ~13.
+        /// </summary>
+        static float ResolveDisplayMaxSpeed(in ShipMotorConfig motor, in ShipComponentAbilityStats effectiveStats)
+        {
+            float motorMax = Mathf.Max(0.01f, motor.MaxSpeed);
+            float chassisMax = effectiveStats.moveSpeed > 0.1f ? effectiveStats.moveSpeed : 0f;
+
+            // [TITAN-ORBIT] Before client apply runs (first frames), bake MaxSpeed=35 would empty the bar.
+            if (chassisMax > 0.1f && motorMax > chassisMax * 1.35f)
+                return chassisMax;
+
+            return motorMax;
+        }
+
         /// <summary>Planar speed magnitude — top-down game ignores Y velocity.</summary>
         static float GetHorizontalSpeed(in ShipKinematics kinematics)
         {
@@ -424,12 +472,18 @@ namespace TitanOrbit.UI
             return math.length(vel);
         }
 
-        /// <summary>Physics hull mass from baked motor config (no gem-weight custom mass).</summary>
+        /// <summary>
+        /// Same movement mass the motor uses (hull bulk + gems) — not hull-reference alone.
+        /// </summary>
         static float GetMovementMass(in ShipState ship, in ShipMotorConfig motor)
         {
-            if (motor.HullMassReference > 0f)
-                return motor.HullMassReference;
-            return motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
+            float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
+            return ShipMassLogic.ComputeMovementMass(
+                motor.HullMassReference,
+                ship.MaxHealth,
+                motor.ChassisReferenceHealth,
+                ship.CurrentGems,
+                baseMass);
         }
 
         /// <summary>Estimates asteroid ram damage from current speed and effective ramming stats.</summary>
@@ -531,19 +585,43 @@ namespace TitanOrbit.UI
             }
 
             float cur = GetHorizontalSpeed(kinematics);
-            float maxSpd = Mathf.Max(0.01f, motor.MaxSpeed);
+            float chassisMove = effectiveStats.moveSpeed;
+            float maxSpd = ResolveDisplayMaxSpeed(motor, effectiveStats);
+            // Bake default MaxSpeed=35 while chassis is ~13 — motor not applied yet this frame.
+            bool motorLooksBaked = chassisMove > 0.1f && motor.MaxSpeed > chassisMove * 1.35f;
             speedSlider.value = Mathf.Clamp01(cur / maxSpd);
 
             float mass = GetMovementMass(ship, motor);
-            float maxFwd = Mathf.Max(0.01f, motor.EngineThrust / Mathf.Max(0.5f, mass));
+            // [TITAN-ORBIT] F/m — same a = EngineThrust/mass the motor uses below MaxSpeed.
+            float maxFwd = Mathf.Max(0.01f, motor.EngineThrust / Mathf.Max(ShipMassLogic.MinMass, mass));
+            if (motorLooksBaked && effectiveStats.accelerationCap > 0.1f)
+            {
+                maxFwd = Mathf.Max(
+                    0.01f,
+                    effectiveStats.accelerationCap * ShipPropulsionAggregation.EngineThrustVisibility
+                    / Mathf.Max(ShipMassLogic.MinMass, mass));
+            }
+
             float maxBrake = Mathf.Max(0.01f, motor.BrakeDeceleration > 0f
                 ? motor.BrakeDeceleration
                 : ShipMassLogic.DefaultBrakeDeceleration);
 
+            // --- Accel bar from frame-to-frame speed delta ---
+            // [TITAN-ORBIT] Presentation-only. Editor ~30 FPS amplifies sample noise; dead-zone + cruise flatten.
             float sampleDt = Mathf.Max(Time.deltaTime, 0.001f);
-            float rawAccel = hasLastHorizontalSpeed ? (cur - lastHorizontalSpeed) / sampleDt : 0f;
+            float speedDelta = hasLastHorizontalSpeed ? (cur - lastHorizontalSpeed) : 0f;
+            float rawAccel = hasLastHorizontalSpeed ? speedDelta / sampleDt : 0f;
             lastHorizontalSpeed = cur;
             hasLastHorizontalSpeed = true;
+
+            float speedNoiseFloor = maxSpd * 0.015f;
+            if (Mathf.Abs(speedDelta) < speedNoiseFloor)
+                rawAccel = 0f;
+
+            bool atCruise = cur >= maxSpd * AtMaxSpeedFraction;
+            if (atCruise && Mathf.Abs(rawAccel) < maxFwd * 0.35f)
+                rawAccel = 0f;
+
             float k = Mathf.Clamp01(sampleDt * accelerationBarSmoothing);
             smoothedHorizontalAccel = Mathf.Lerp(smoothedHorizontalAccel, rawAccel, k);
 
@@ -561,45 +639,66 @@ namespace TitanOrbit.UI
             accelRedFill.offsetMin = Vector2.zero;
             accelRedFill.offsetMax = Vector2.zero;
 
-            bool preferIntSpeed = maxSpd >= 12f;
-            for (int i = 0; i < speedTickLabels.Length; i++)
+            // --- Tick labels: only when max speed / accel scale changes ---
+            float skew = Mathf.Max(maxFwd, maxBrake, 0.01f);
+            if (!Mathf.Approximately(lastTickMaxSpeed, maxSpd))
             {
-                float t = speedTickLabels.Length <= 1 ? 0f : (float)i / (speedTickLabels.Length - 1);
-                float tickSpd = t * maxSpd;
-                speedTickLabels[i].text = FormatHudNumber(tickSpd, preferIntSpeed);
-                speedTickLabels[i].alignment = i == 0
-                    ? TextAlignmentOptions.MidlineLeft
-                    : (i == speedTickLabels.Length - 1 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.Midline);
+                lastTickMaxSpeed = maxSpd;
+                for (int i = 0; i < speedTickLabels.Length; i++)
+                {
+                    float t = speedTickLabels.Length <= 1 ? 0f : (float)i / (speedTickLabels.Length - 1);
+                    float tickSpd = t * maxSpd;
+                    speedTickLabels[i].text = FormatFixed1(tickSpd, 4);
+                    speedTickLabels[i].alignment = i == 0
+                        ? TextAlignmentOptions.MidlineLeft
+                        : (i == speedTickLabels.Length - 1 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.Midline);
+                }
             }
 
-            float skew = Mathf.Max(maxFwd, maxBrake, 0.01f);
-            bool preferIntAccel = skew >= 12f;
-            for (int i = 0; i < accelTickLabels.Length; i++)
+            if (!Mathf.Approximately(lastTickAccelSkew, skew))
             {
-                float t = accelTickLabels.Length <= 1 ? 0.5f : (float)i / (accelTickLabels.Length - 1);
-                float v = Mathf.Lerp(-skew, skew, t);
-                accelTickLabels[i].text = FormatHudSignedNumber(v, preferIntAccel);
-                accelTickLabels[i].alignment = i == 0
-                    ? TextAlignmentOptions.MidlineLeft
-                    : (i == accelTickLabels.Length - 1 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.Midline);
+                lastTickAccelSkew = skew;
+                for (int i = 0; i < accelTickLabels.Length; i++)
+                {
+                    float t = accelTickLabels.Length <= 1 ? 0.5f : (float)i / (accelTickLabels.Length - 1);
+                    float v = Mathf.Lerp(-skew, skew, t);
+                    accelTickLabels[i].text = FormatFixedSigned1(v, 5);
+                    accelTickLabels[i].alignment = i == 0
+                        ? TextAlignmentOptions.MidlineLeft
+                        : (i == accelTickLabels.Length - 1 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.Midline);
+                }
             }
+
+            // --- Body text at ~10 Hz — bars still update every frame ---
+            if (Time.unscaledTime < nextTextRebuildTime)
+                return;
+            nextTextRebuildTime = Time.unscaledTime + 0.1f;
+
+            // Clamp displayed speed for text so we never show 13.6/13.5 from float noise.
+            float displayCur = Mathf.Min(cur, maxSpd);
+            if (atCruise)
+                displayCur = maxSpd;
 
             string spdLine;
-            if (cur >= maxSpd - 0.02f)
-                spdLine = $"SPD {cur:0.0}/{maxSpd:0.0}  ·  <color=#AAAAAA>at max spd</color>";
+            if (atCruise)
+            {
+                spdLine = $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  ·  <color=#AAAAAA>at max</color>";
+            }
             else
             {
-                float tMax = (maxSpd - cur) / maxFwd;
-                tMax = Mathf.Clamp(tMax, 0f, 999f);
-                spdLine = $"SPD {cur:0.0}/{maxSpd:0.0}  ·  max spd in <color=#AAEEDD>{tMax:0.0}s</color>";
+                float remaining = Mathf.Max(0f, maxSpd - cur);
+                float tMax = remaining / maxFwd;
+                tMax = Mathf.Clamp(tMax, 0f, 99.9f);
+                spdLine =
+                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  ·  max in <color=#AAEEDD>{FormatFixed1(tMax, 4)}s</color>";
             }
 
             string stopPart = cur > 0.35f
-                ? $"  ·  stop in {cur / maxBrake:0.0}s"
-                : string.Empty;
+                ? $"  ·  stop {FormatFixed1(cur / maxBrake, 4)}s"
+                : "  ·  stop  —.−s";
 
-            char accSign = smoothedHorizontalAccel < 0f ? '-' : '+';
-            string line2 = $"ACC {accSign}{Mathf.Abs(smoothedHorizontalAccel):0.0}/{maxFwd:0.0}  ·  brake {maxBrake:0.0}  ·  MASS {mass:0.0}";
+            string line2 =
+                $"ACC {FormatFixedSigned1(smoothedHorizontalAccel)}/{FormatFixed1(maxFwd)}  ·  brake {FormatFixed1(maxBrake)}  ·  MASS {FormatFixed1(mass)}";
 
             GetRamDamageEstimate(
                 ship,
@@ -612,19 +711,27 @@ namespace TitanOrbit.UI
                 out float ramMass,
                 out float massFactor);
 
-            // --- Compose multi-line HUD text ---
-            string line3 = $"RAM {ramRating:0.##}×m{massFactor:0.##} →ast {ramAst:0.#}  ·  hull {ramSelf:0.#}  <color=#888888>(mass {ramMass:0.#})</color>";
+            string line3 =
+                $"RAM {FormatFixed1(ramRating, 4)}×m{FormatFixed1(massFactor, 4)} →ast {FormatFixed1(ramAst)}  ·  hull {FormatFixed1(ramSelf)}  <color=#888888>(m {FormatFixed1(ramMass)})</color>";
 
             string line4;
             if (weapon.FireRate > 0.01f && weapon.BulletDamage > 0.01f)
             {
                 float dps = weapon.BulletDamage * weapon.FireRate;
-                line4 = $"BUL {weapon.BulletDamage:0.#}/hit  ·  {dps:0.#}/s  <color=#888888>({weapon.FireRate:0.#}/s)</color>";
+                line4 =
+                    $"BUL {FormatFixed1(weapon.BulletDamage)}/hit  ·  {FormatFixed1(dps)}/s  <color=#888888>({FormatFixed1(weapon.FireRate)}/s)</color>";
             }
             else
-                line4 = "BUL —";
+                line4 = "BUL  —.−/hit  ·   —.−/s";
 
-            speedLabel.text = spdLine + stopPart + "\n" + line2 + "\n" + line3 + "\n" + line4;
+            // [UNITY] mspace keeps TMP digit columns stable even with proportional fonts.
+            string body =
+                "<mspace=0.55em>" + spdLine + stopPart + "\n" + line2 + "\n" + line3 + "\n" + line4 + "</mspace>";
+            if (body != lastHudBodyText)
+            {
+                lastHudBodyText = body;
+                speedLabel.text = body;
+            }
         }
     }
 }

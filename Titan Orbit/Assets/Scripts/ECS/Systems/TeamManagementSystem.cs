@@ -187,7 +187,7 @@ namespace TitanOrbit.ECS
                     var entry = layout[i];
                     if (entry.EntityKind == 1 && entry.Team == team)
                     {
-                        spawnPos = entry.Position + new float3(20f, 0f, 0f);
+                        spawnPos = entry.Position + new float3(ShipHomeSpawnLogic.HomeSpawnOffsetX, 0f, 0f);
                         break;
                     }
                 }

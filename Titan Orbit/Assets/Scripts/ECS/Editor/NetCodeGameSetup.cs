@@ -91,26 +91,114 @@ namespace TitanOrbit.ECS.Editor
             // --- ConfigureMultiplayerForDedicatedServer ---
             ApplyDedicatedJoinNetCodePrefs();
             TitanOrbitMultiplayerConfigEditor.SetLocalPlayUiEnabled(false);
+            // basics45: MPPM Player 2 Role=Server → ghost schema mismatch / jitter.
+            ForceMppmScenarioClientRoles();
 
             EditorUtility.DisplayDialog(
                 "Titan Orbit — dedicated server join setup",
                 "PlayMode Tools (NetCode) updated:\n\n" +
                 "• PlayMode Type → Client (no local ServerWorld)\n" +
                 "• Auto-connect port → 0 (manual Relay join only)\n" +
-                "• Local play menu buttons → hidden\n\n" +
-                "Press Play, then use Join game to browse UGS lobbies and connect via Relay.\n\n" +
-                "If join fails with \"join code not found\", the GCE server restarted — tap Refresh or Request match.\n\n" +
+                "• Local play menu buttons → hidden\n" +
+                "• MPPM scenario Main + Player 2 → Multiplayer Role Client\n\n" +
+                "Stop Play on ALL instances, then Play from the Main Editor only.\n" +
+                "Player 2 console must show buildSubTarget=Player (not Server).\n\n" +
+                "Then Join game → GCE Relay on both editors.\n\n" +
                 "Switch back to local testing with Titan Orbit > Configure Multiplayer For Local Play.",
                 "OK");
 
-            Debug.Log("[NetCodeGameSetup] Dedicated-server join prefs applied (Client world, AutoConnectPort=0). Restart Play mode if already running.");
+            Debug.Log("[NetCodeGameSetup] Dedicated-server join prefs applied (Client world, MPPM roles Client). Restart Play mode if already running.");
         }
 
         [MenuItem("Titan Orbit/Configure Multiplayer For MPPM (2 Players)")]
         public static void ConfigureMultiplayerForMppmTwoPlayers()
         {
-            ApplyLocalPlayNetCodePrefs();
+            ApplyDedicatedJoinNetCodePrefs();
+            ForceMppmScenarioClientRoles();
             MppmBuildProfileSetup.CreateMppmClientBuildProfile();
+        }
+
+        const string MppmScenarioPath = "Assets/Settings/PlayMode/TitanOrbitServer.asset";
+
+        /// <summary>
+        /// Forces Main Editor + Player 2 Multiplayer Role = Client on the scenario asset AND
+        /// MPPM runtime cache (<c>Library/VP/SystemData.json</c>).
+        /// Server role clones use Dedicated Server buildSubTarget and break NetCode ghost schemas.
+        /// </summary>
+        public static void ForceMppmScenarioClientRoles()
+        {
+            // Runtime evidence (basics45/46): SystemData MultiplayerRole 1 → Player 2
+            // launches with -standaloneBuildSubtarget Server (TitanOrbitDedicatedServer.log).
+            // Role values: Server=1, Client=2, ClientAndServer=3.
+            const int roleClient = 2;
+
+            // --- Scenario asset (source checked into Assets/Settings/PlayMode) ---
+            var asset = AssetDatabase.LoadMainAssetAtPath(MppmScenarioPath);
+            if (asset == null)
+            {
+                Debug.LogWarning("[NetCodeGameSetup] MPPM scenario missing at " + MppmScenarioPath);
+            }
+            else
+            {
+                var so = new SerializedObject(asset);
+                var mainRole = so.FindProperty("m_MainEditorInstance.m_Role");
+                if (mainRole != null)
+                    mainRole.intValue = roleClient;
+
+                var editors = so.FindProperty("m_EditorInstances");
+                if (editors != null && editors.isArray)
+                {
+                    for (int i = 0; i < editors.arraySize; i++)
+                    {
+                        var role = editors.GetArrayElementAtIndex(i).FindPropertyRelative("m_Role");
+                        if (role != null)
+                            role.intValue = roleClient;
+                    }
+                }
+
+                so.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(asset);
+                AssetDatabase.SaveAssets();
+                Debug.Log("[NetCodeGameSetup] MPPM scenario asset roles → Client: " + MppmScenarioPath);
+            }
+
+            // --- Runtime cache (what MPPM actually launches clones with) ---
+            // Editing the .asset alone does NOT update this file; stale Role=1 kept Player 2 on Server.
+            ForceMppmSystemDataClientRoles(roleClient);
+        }
+
+        /// <summary>
+        /// Patches <c>Library/VP/SystemData.json</c> so active Main Editor + Player 2 use Client role.
+        /// </summary>
+        /// <param name="roleClient">Integer for Client (Unity MultiplayerRoleFlags / scenario: 2).</param>
+        static void ForceMppmSystemDataClientRoles(int roleClient)
+        {
+            // Library/VP lives next to Assets (project root), not in the git repo root.
+            string projectRoot = Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
+            string systemDataPath = Path.Combine(projectRoot, "Library", "VP", "SystemData.json");
+            if (!File.Exists(systemDataPath))
+            {
+                Debug.LogWarning("[NetCodeGameSetup] MPPM SystemData.json missing (open Play Mode Scenarios once): " +
+                                 systemDataPath);
+                return;
+            }
+
+            string json = File.ReadAllText(systemDataPath);
+            // [STANDARD] Targeted replace: only Server (1) → Client (2). Leave ClientAndServer (3) alone.
+            string patched = System.Text.RegularExpressions.Regex.Replace(
+                json,
+                "\"MultiplayerRole\"\\s*:\\s*1\\b",
+                "\"MultiplayerRole\": " + roleClient);
+
+            if (patched == json)
+            {
+                Debug.Log("[NetCodeGameSetup] MPPM SystemData.json already has no Server roles (no Role=1).");
+                return;
+            }
+
+            File.WriteAllText(systemDataPath, patched);
+            Debug.Log("[NetCodeGameSetup] MPPM SystemData.json MultiplayerRole Server(1) → Client(" +
+                      roleClient + "): " + systemDataPath);
         }
 
         static void ApplyLocalPlayNetCodePrefs()

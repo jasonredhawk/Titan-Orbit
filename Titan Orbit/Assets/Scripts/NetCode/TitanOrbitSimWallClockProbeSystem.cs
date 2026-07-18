@@ -77,15 +77,52 @@ namespace TitanOrbit.NetCode
                 return;
             nextRealtimeLog = realtime + 1.0;
 
-            // Advance baseline only — disk I/O muted (basics30: MPPM + Editor file contention).
+            double wallDt = realtime - lastRealtime;
+            double simDt = elapsed - lastElapsed;
+            int tickDelta = tick >= lastTick ? (int)(tick - lastTick) : 0;
+            float ratio = wallDt > 1e-6 ? (float)(simDt / wallDt) : 0f;
+            float tickHz = wallDt > 1e-6 ? (float)(tickDelta / wallDt) : 0f;
+
             lastRealtime = realtime;
             lastElapsed = elapsed;
             lastTick = tick;
+
+            // --- Server-only: prove dedicated sim rate vs wall (basics36 double-tick fix) ---
+            // Client probe stays quiet (basics30 multi-process log contention).
+            if (worldName != "ServerWorld")
+            {
+                _ = dt;
+                return;
+            }
+
+            try
+            {
+                string data =
+                    "{\"world\":\"ServerWorld\",\"wallDt\":" +
+                    wallDt.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
+                    ",\"simDt\":" + simDt.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
+                    ",\"ratio\":" + ratio.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
+                    ",\"tickDelta\":" + tickDelta +
+                    ",\"tickHz\":" + tickHz.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
+                    ",\"maxSteps\":" + maxSteps +
+                    ",\"simHz\":" + simHz + "}";
+                TitanOrbit.Diagnostics.ShipFlightSmoothDebugLog.Write(
+                    "H40",
+                    "TitanOrbitSimWallClockProbe.ServerWorld",
+                    "sim vs wall clock",
+                    data);
+#if UNITY_SERVER
+                TitanOrbit.Diagnostics.DedicatedServerFileLog.Append(
+                    "sim-wall",
+                    "ratio=" + ratio.ToString("F3", System.Globalization.CultureInfo.InvariantCulture) +
+                    " tickHz=" + tickHz.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) +
+                    " maxSteps=" + maxSteps);
+#endif
+            }
+            catch { /* debug I/O only */ }
+
             _ = dt;
             _ = simBatch;
-            _ = maxSteps;
-            _ = simHz;
-            _ = worldName;
         }
         // #endregion
     }

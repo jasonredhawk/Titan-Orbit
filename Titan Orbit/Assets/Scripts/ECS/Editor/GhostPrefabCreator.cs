@@ -11,34 +11,42 @@ namespace TitanOrbit.ECS.Editor
     /// <summary>
     /// Editor menu utility that creates ECS ghost prefabs (ship, planet, asteroid, gem, transport)
     /// and the GamePrefabsRegistry asset under Assets/Prefabs/ECS/. Run once per project setup.
+    /// <para>
+    /// Map bodies must be interpolated-only with <c>HasOwner = false</c>. Authoring them like
+    /// owned predicted ships is incorrect and worsens join-time spawn cost on Windows clients.
+    /// </para>
     /// </summary>
     public static class GhostPrefabCreator
     {
+        /// <summary>Project path for the shared map-generation ScriptableObject.</summary>
         const string MapGenerationSettingsPath = "Assets/Data/MapGenerationSettings.asset";
 
         /// <summary>Menu entry — creates all ECS ghost prefabs and the registry asset.</summary>
         [MenuItem("Titan Orbit/Create Ghost Prefabs")]
         public static void CreateGhostPrefabs()
         {
-            // --- Create instance ---
+            // --- Folders + shared data ---
             EnsureDirectory("Assets/Prefabs/ECS");
             EnsureDirectory("Assets/Data");
             EnsureMapGenerationSettingsAsset();
+
+            // --- Prefabs ---
             CreateShipPrefab();
             CreatePlanetPrefab();
             CreateAsteroidPrefab();
             CreateGemPrefab();
             CreatePeopleTransportPrefab();
             CreateRegistryPrefab();
+
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("[GhostPrefabCreator] Created ECS ghost prefabs under Assets/Prefabs/ECS/");
         }
 
         /// <summary>Creates nested AssetDatabase folders if missing.</summary>
+        /// <param name="path">Unity asset path using forward slashes.</param>
         static void EnsureDirectory(string path)
         {
-            // --- Ensure setup ---
             if (!AssetDatabase.IsValidFolder(path))
             {
                 var parts = path.Split('/');
@@ -53,73 +61,98 @@ namespace TitanOrbit.ECS.Editor
             }
         }
 
-        static void AddGhostRootComponents(GameObject go, bool hasOwner = true)
+        /// <summary>Adds LinkedEntityGroup + GhostAuthoring for an owned player ship ghost.</summary>
+        /// <param name="go">Root GameObject that will become the prefab.</param>
+        static void AddOwnedGhostRootComponents(GameObject go)
         {
-            // --- AddGhostRootComponents ---
             if (go.GetComponent<LinkedEntityGroupAuthoring>() == null)
                 go.AddComponent<LinkedEntityGroupAuthoring>();
+
+            // [NETCODE] Ships need ownership for prediction / command targeting.
             var ghost = go.AddComponent<GhostAuthoringComponent>();
-            ghost.HasOwner = hasOwner;
+            ghost.HasOwner = true;
+            ghost.SupportAutoCommandTarget = true;
         }
 
+        /// <summary>
+        /// Adds LinkedEntityGroup + GhostAuthoring for map / world objects (no owner, interpolated).
+        /// </summary>
+        /// <param name="go">Root GameObject that will become the prefab.</param>
+        static void AddMapGhostRootComponents(GameObject go)
+        {
+            if (go.GetComponent<LinkedEntityGroupAuthoring>() == null)
+                go.AddComponent<LinkedEntityGroupAuthoring>();
+
+            // [NETCODE] Map ghosts are world objects — never player-owned.
+            // [TITAN-ORBIT] Interpolated + StaticOptimize reduces join-time GhostSpawn cost.
+            var ghost = go.AddComponent<GhostAuthoringComponent>();
+            ghost.HasOwner = false;
+            ghost.SupportAutoCommandTarget = false;
+            ghost.DefaultGhostMode = GhostMode.Interpolated;
+            ghost.SupportedGhostModes = GhostModeMask.Interpolated;
+            ghost.OptimizationMode = GhostOptimizationMode.Static;
+            ghost.RollbackPredictionOnStructuralChanges = false;
+        }
+
+        /// <summary>Creates PeopleTransportGhost (interpolated map ghost, no owner).</summary>
         static void CreatePeopleTransportPrefab()
         {
-            // --- Create instance ---
             var go = new GameObject("PeopleTransportGhost");
-            AddGhostRootComponents(go, hasOwner: false);
+            AddMapGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.PeopleTransportGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/PeopleTransportGhost.prefab");
             Object.DestroyImmediate(go);
         }
 
+        /// <summary>Creates StarshipGhost (owned / predicted player ship).</summary>
         static void CreateShipPrefab()
         {
-            // --- Create instance ---
             var go = new GameObject("StarshipGhost");
-            AddGhostRootComponents(go);
+            AddOwnedGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.StarshipGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/StarshipGhost.prefab");
             Object.DestroyImmediate(go);
         }
 
+        /// <summary>Creates PlanetGhost (interpolated map ghost, no owner).</summary>
         static void CreatePlanetPrefab()
         {
-            // --- Create instance ---
             var go = new GameObject("PlanetGhost");
-            AddGhostRootComponents(go);
+            AddMapGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.PlanetGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/PlanetGhost.prefab");
             Object.DestroyImmediate(go);
         }
 
+        /// <summary>Creates AsteroidGhost (interpolated map ghost, no owner).</summary>
         static void CreateAsteroidPrefab()
         {
-            // --- Create instance ---
             var go = new GameObject("AsteroidGhost");
-            AddGhostRootComponents(go);
+            AddMapGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.AsteroidGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/AsteroidGhost.prefab");
             Object.DestroyImmediate(go);
         }
 
+        /// <summary>Creates GemGhost (interpolated map ghost, no owner).</summary>
         static void CreateGemPrefab()
         {
-            // --- Create instance ---
             var go = new GameObject("GemGhost");
-            AddGhostRootComponents(go);
+            AddMapGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.GemGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/GemGhost.prefab");
             Object.DestroyImmediate(go);
         }
 
+        /// <summary>Creates GamePrefabsRegistry that points at all ghost prefabs + map settings.</summary>
         static void CreateRegistryPrefab()
         {
-            // --- Create instance ---
             var ship = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/StarshipGhost.prefab");
             var planet = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/PlanetGhost.prefab");
             var asteroid = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/AsteroidGhost.prefab");
             var gem = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/GemGhost.prefab");
             var peopleTransport = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/ECS/PeopleTransportGhost.prefab");
+
             var go = new GameObject("GamePrefabsRegistry");
             var reg = go.AddComponent<TitanOrbit.ECS.Authoring.GamePrefabsRegistryAuthoring>();
             reg.ShipPrefab = ship;
@@ -132,19 +165,19 @@ namespace TitanOrbit.ECS.Editor
             Object.DestroyImmediate(go);
         }
 
+        /// <summary>Selects the MapGenerationSettings asset in the Project window.</summary>
         [MenuItem("Titan Orbit/Select Map Generation Settings Asset")]
         public static void SelectMapGenerationSettingsAsset()
         {
-            // --- SelectMapGenerationSettingsAsset ---
             var asset = EnsureMapGenerationSettingsAsset();
             Selection.activeObject = asset;
             EditorGUIUtility.PingObject(asset);
         }
 
+        /// <summary>Creates MapGenerationSettings if missing, then selects it.</summary>
         [MenuItem("Titan Orbit/Create Map Generation Settings Asset")]
         public static void CreateMapGenerationSettingsMenuItem()
         {
-            // --- Create instance ---
             EnsureDirectory("Assets/Data");
             var asset = EnsureMapGenerationSettingsAsset();
             Selection.activeObject = asset;
@@ -152,9 +185,12 @@ namespace TitanOrbit.ECS.Editor
             Debug.Log($"[GhostPrefabCreator] Map generation settings at {MapGenerationSettingsPath}");
         }
 
+        /// <summary>
+        /// Loads or creates <see cref="MapGenerationSettings"/> at the fixed project path.
+        /// </summary>
+        /// <returns>Existing or newly created settings asset.</returns>
         public static MapGenerationSettings EnsureMapGenerationSettingsAsset()
         {
-            // --- Ensure setup ---
             var existing = AssetDatabase.LoadAssetAtPath<MapGenerationSettings>(MapGenerationSettingsPath);
             if (existing != null)
                 return existing;

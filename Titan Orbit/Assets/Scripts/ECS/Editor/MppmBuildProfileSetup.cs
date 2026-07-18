@@ -41,11 +41,11 @@ namespace TitanOrbit.ECS.Editor
                 "1. Stop Play on ALL instances.\n" +
                 "2. Window > Play Mode > Scenarios.\n" +
                 "3. Enable your scenario with one Additional Editor Instance (Player 2).\n" +
-                "4. Set Player 2 Multiplayer Role → Client.\n" +
+                "4. Confirm Main Editor + Player 2 Multiplayer Role → Client (not Server).\n" +
                 "5. Press Play from the Main Editor only.\n" +
-                "6. Main Editor: click Local play (solo), or Local host then Local client to also play as host.\n" +
-                "7. Player 2: click Local client after the host is listening, then pick a team.\n\n" +
-                "Player 2 console should show buildSubTarget=Player, not Server.",
+                "6. Both: Join game → GCE Relay (or Local host/client for LAN).\n\n" +
+                "Player 2 console MUST show buildSubTarget=Player (or Editor), never Server.\n" +
+                "If you see 'MPPM clone is using a Dedicated SERVER build', fix Role → Client and restart.",
                 "OK");
 
             if (!EditorApplication.ExecuteMenuItem("Window/Play Mode/Scenarios"))

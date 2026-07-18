@@ -1,7 +1,10 @@
 using TitanOrbit.Core;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
@@ -9,7 +12,9 @@ namespace TitanOrbit.ECS
     /// Server-side handler for reconnect / rejoin ship RPCs. When a player reconnects mid-match,
     /// they can resume their existing ship (<see cref="ResumeExistingShipCommand"/>) or abandon
     /// it and pick a fresh team (<see cref="AbandonShipForRejoinCommand"/>). Updates CommandTarget
-    /// so NetCode routes input to the correct ghost. Runs after TeamManagementSystem.
+    /// so NetCode routes input to the correct ghost. On resume, the ship is teleported to the
+    /// team's home planet (same offset as new spawn / death respawn) with cleared velocity so
+    /// reconnect never continues from the disconnect location. Runs after TeamManagementSystem.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -50,7 +55,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Re-links the connection's CommandTarget to their saved ship and confirms team assignment.
+        /// Re-links the connection's CommandTarget to their saved ship, teleports that ship to the
+        /// team home planet, clears motion, and confirms team assignment.
         /// </summary>
         void HandleResume(ref SystemState state, EntityManager em, EntityCommandBuffer ecb, Entity connection)
         {
@@ -73,6 +79,38 @@ namespace TitanOrbit.ECS
                 return;
             }
 
+            // --- Teleport to home (never resume at last disconnect position) ---
+            // [TITAN-ORBIT] Same home offset as TeamManagementSystem / ShipRespawnSystem.
+            float3 homePos = ShipHomeSpawnLogic.FindHomeSpawnPosition(em, shipState.Team);
+            if (em.HasComponent<LocalTransform>(ship))
+            {
+                var transform = em.GetComponentData<LocalTransform>(ship);
+                transform.Position = homePos;
+                transform.Rotation = quaternion.identity;
+                ecb.SetComponent(ship, transform);
+            }
+
+            // [PHYSICS] Zero hull velocity so prediction does not coast from stale motion.
+            if (em.HasComponent<PhysicsVelocity>(ship))
+                ecb.SetComponent(ship, PhysicsVelocity.Zero);
+
+            // [TITAN-ORBIT] Clear gameplay kinematics + leave any orbit ring from before disconnect.
+            if (em.HasComponent<ShipKinematics>(ship))
+            {
+                var kinematics = em.GetComponentData<ShipKinematics>(ship);
+                kinematics.Velocity = float3.zero;
+                ecb.SetComponent(ship, kinematics);
+            }
+
+            if (em.HasComponent<ShipOrbitState>(ship))
+            {
+                var orbit = em.GetComponentData<ShipOrbitState>(ship);
+                orbit.OrbitPlanetId = 0;
+                orbit.InOrbitRing = false;
+                orbit.UsingOrbitMotor = false;
+                ecb.SetComponent(ship, orbit);
+            }
+
             // [NETCODE] CommandTarget tells NetCode which ghost receives this connection's input.
             var commandTarget = new CommandTarget { targetEntity = ship };
             if (em.HasComponent<CommandTarget>(connection))
@@ -81,7 +119,7 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(connection, commandTarget);
 
             SendResult(ecb, connection, success: true, choice: 1, team: shipState.Team, default);
-            LogResume(networkId, shipState.Team);
+            LogResume(networkId, shipState.Team, homePos);
         }
 
         /// <summary>
@@ -186,9 +224,10 @@ namespace TitanOrbit.ECS
         }
 
         [Unity.Burst.BurstDiscard]
-        static void LogResume(int networkId, TeamId team)
+        static void LogResume(int networkId, TeamId team, float3 homePos)
         {
-            UnityEngine.Debug.Log($"[RejoinShipManagement] Resumed ship for networkId={networkId} team={team}.");
+            UnityEngine.Debug.Log(
+                $"[RejoinShipManagement] Resumed ship for networkId={networkId} team={team} at home {homePos}.");
         }
 
         [Unity.Burst.BurstDiscard]

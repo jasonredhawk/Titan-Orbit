@@ -191,8 +191,18 @@ namespace TitanOrbit.ECS
 
             vel.y = 0f;
 
-            // Soft cruise clamp — collision overspeed is allowed until ApplyRecoilDecay bleeds it.
+            // --- H74 hard cruise lock (thrusting, small overspeed band only) ---
+            // [TITAN-ORBIT] basics65: at cruise, SPD hunted ~13.2–13.9 (speedRange ~0.4–0.8) even
+            // when forward thrust was stripped. That variance makes presentation step size wobble
+            // every frame (expected = speed×dt), which reads as chop on a Windows ~60 FPS client.
+            // Lock the hunt band to MaxSpeed while thrusting. Larger overspeed (impacts) still
+            // uses ApplyRecoilDecay + the soft 1.35× ceiling below — not zeroed here.
             float mag = math.length(vel);
+            if (thrust && mag > maxSpeed && mag <= maxSpeed * 1.08f)
+                vel = math.normalize(vel) * maxSpeed;
+
+            // Soft hard ceiling — collision overspeed above this is clipped; mid-band bleeds via recoil.
+            mag = math.length(vel);
             if (mag > maxSpeed * 1.35f)
                 vel = vel * ((maxSpeed * 1.35f) / mag);
         }

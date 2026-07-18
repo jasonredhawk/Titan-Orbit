@@ -9,10 +9,10 @@ namespace TitanOrbit.NetCode
     /// Forces 60 Hz sim + network, never batches ticks into a larger physics dt, and caps catch-up
     /// steps per frame. World: ServerSimulation. Group: InitializationSystemGroup (first).
     /// <para>
-    /// basics17 (H29): with MaxSteps=4 at ~30 FPS Editor Local Host, serverTick advanced at ~120 Hz
-    /// (ratio sim/wall ≈ 2.0) — ships, moon orbits (ElapsedTime), and all fixed-step sim felt ~2×.
-    /// MaxSteps=2 caps catch-up at 60 Hz when the Game view is ~30 FPS. TargetFrameRateMode=Sleep
-    /// avoids BusyWait (Editor Auto default) fighting the frame budget.
+    /// basics17: MaxSteps=4 in Editor Local Host (Client+Server) caused ~2× sim speed when the
+    /// ServerWorld was also double-ticked. Editor dual-world therefore stays at MaxSteps=2.
+    /// basics34 dedicated GCE: clients were stuck at <c>cmdAge≈18–21</c> with <c>simBatchMax≈13</c>
+    /// — headless needs MaxSteps≥4 so the server can hold 60 Hz under hitch without starving.
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -26,10 +26,39 @@ namespace TitanOrbit.NetCode
         public const int NetworkHz = 60;
 
         /// <summary>
-        /// Max discrete fixed steps per Unity frame when catching up.
-        /// [TITAN-ORBIT] 2 — enough for 60 Hz at ≥30 FPS display; 4 caused ~120 Hz (2× speed) in basics17.
+        /// Editor Local Host (ClientWorld present): max discrete steps per frame.
+        /// Keeps dual-world Editor from running sim at ~2× (basics17).
         /// </summary>
-        public const int MaxStepsPerFrame = 2;
+        public const int EditorLocalHostMaxStepsPerFrame = 2;
+
+        /// <summary>
+        /// Headless / dedicated server catch-up budget — enough for 60 Hz after frame hitches.
+        /// </summary>
+        public const int DedicatedMaxStepsPerFrame = 4;
+
+        /// <summary>
+        /// Client prediction catch-up budget (Relay). basics34: MaxSteps=2 left cmdAge≈20 and
+        /// simBatchMax≈13 on GCE joins — client could not climb out of the hard-snap path.
+        /// basics51 H59 cruise MaxSteps=2 rejected — client SimulationStepBatchSize is predict
+        /// delta, not MaxSteps. Presentation tricks (H60–H63) rejected at Editor ~30 FPS.
+        /// </summary>
+        public const int ClientMaxStepsPerFrame = 8;
+
+        /// <summary>
+        /// Server MaxSteps for this process: Editor Local Host → 2; otherwise dedicated → 4.
+        /// </summary>
+        public static int MaxStepsPerFrame => ResolveServerMaxSteps();
+
+        /// <summary>Picks server catch-up cap from world layout (not a single global for clients).</summary>
+        public static int ResolveServerMaxSteps()
+        {
+#if UNITY_EDITOR
+            // [UNITY] Editor Play Mode with Client+Server: dual worlds share one frame budget.
+            if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
+                return EditorLocalHostMaxStepsPerFrame;
+#endif
+            return DedicatedMaxStepsPerFrame;
+        }
 
         /// <summary>
         /// Re-applies every frame so package defaults / refresh RPCs cannot restore tick batching.
@@ -53,14 +82,13 @@ namespace TitanOrbit.NetCode
                 }
             }
 
+            int maxSteps = ResolveServerMaxSteps();
             tickRate.SimulationTickRate = SimulationHz;
             tickRate.NetworkTickRate = NetworkHz;
             // [NETCODE] Catch up after hitches with discrete steps — never merge into one large dt.
-            tickRate.MaxSimulationStepsPerFrame = MaxStepsPerFrame;
+            tickRate.MaxSimulationStepsPerFrame = maxSteps;
             tickRate.MaxSimulationStepBatchSize = 1;
-            // [NETCODE] Predicted physics group at 1× SimulationTickRate (not a higher multiple).
             tickRate.PredictedFixedStepSimulationTickRatio = 1;
-            // [NETCODE] Editor Client+Server Auto defaults to BusyWait; Sleep respects targetFrameRate.
             tickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.Sleep;
 
             state.EntityManager.SetComponentData(tickEntity, tickRate);
@@ -69,24 +97,15 @@ namespace TitanOrbit.NetCode
             if (!_loggedOnce)
             {
                 _loggedOnce = true;
-                try
-                {
-                    string path = System.IO.Path.GetFullPath(
-                        System.IO.Path.Combine(Application.dataPath, "..", "..", "debug-6b87b4.log"));
-                    long ts = System.DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    string line =
-                        "{\"sessionId\":\"6b87b4\",\"runId\":\"basics18\",\"hypothesisId\":\"H29\"," +
-                        "\"location\":\"TitanOrbitServerTickRateSystem.OnUpdate\"," +
-                        "\"message\":\"Server ClientServerTickRate forced\"," +
-                        "\"data\":{\"simHz\":" + tickRate.SimulationTickRate +
-                        ",\"maxBatch\":" + tickRate.MaxSimulationStepBatchSize +
-                        ",\"maxSteps\":" + tickRate.MaxSimulationStepsPerFrame +
-                        ",\"predRatio\":" + tickRate.PredictedFixedStepSimulationTickRatio +
-                        ",\"frameMode\":\"Sleep\"" +
-                        "},\"timestamp\":" + ts + "}\n";
-                    System.IO.File.AppendAllText(path, line);
-                }
-                catch { /* debug I/O only */ }
+                TitanOrbit.Diagnostics.ShipFlightSmoothDebugLog.Write(
+                    "H39",
+                    "TitanOrbitServerTickRateSystem.OnUpdate",
+                    "Server ClientServerTickRate forced",
+                    "{\"simHz\":" + tickRate.SimulationTickRate +
+                    ",\"maxBatch\":" + tickRate.MaxSimulationStepBatchSize +
+                    ",\"maxSteps\":" + maxSteps +
+                    ",\"predRatio\":" + tickRate.PredictedFixedStepSimulationTickRatio +
+                    ",\"frameMode\":\"Sleep\"}");
             }
             // #endregion
         }

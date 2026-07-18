@@ -30,13 +30,13 @@ namespace TitanOrbit.NetCode
 #endif
             // [NETCODE] Custom UDP driver — supports Unity Relay and direct LAN sockets.
             NetworkStreamReceiveSystem.DriverConstructor = new TitanOrbitRelayDriverConstructor();
-#if UNITY_EDITOR
-            // [EDITOR] Port 0 = do not auto-listen; player picks Local / Join from main menu.
+
+            // --- Auto-connect port ---
+            // [NETCODE] Port 0 = do not auto-listen / auto-connect. SessionManager + menu own connect.
+            // Player.log (Windows client basics58): AutoConnectPort=7777 + CreateDefaultClientServerWorlds
+            // IPC-connected immediately, skipped Main Menu / Join, jumped to Team Join, then Burst crash
+            // after local MapGeneration. Match Editor: menu-driven only.
             AutoConnectPort = 0;
-#else
-            // [NETCODE] Dedicated builds must not bind 7777 until Relay/session config is ready.
-            AutoConnectPort = ShouldRunDedicatedServer() ? (ushort)0 : (ushort)7777;
-#endif
 
 #if UNITY_EDITOR
             // --- Editor: dedicated-server test from menu or MPPM multi-client ---
@@ -58,9 +58,12 @@ namespace TitanOrbit.NetCode
                 return true;
             }
 
-            // [EDITOR] Default editor play — host + client worlds per NetCode play mode setting.
-            CreateDefaultClientServerWorlds();
-            Debug.Log("[TitanOrbitBootstrap] Editor play: " + RequestedPlayType + " worlds created. AutoConnectPort=" + AutoConnectPort + ".");
+            // [EDITOR] ClientWorld only by default.
+            // basics40: Play Mode "Client & Server" left an idle ServerWorld in the player loop until
+            // dedicated Join disposed it — join storms (cmdAge hundreds) and ~22–26 FPS local chop.
+            // Play Mode "Client" felt better. Local Host recreates ServerWorld in SessionManager.
+            CreateClientWorld("ClientWorld");
+            Debug.Log("[TitanOrbitBootstrap] Editor play: ClientWorld only (ServerWorld on Local Host). AutoConnectPort=" + AutoConnectPort + ".");
             return true;
 #endif
 
@@ -69,18 +72,43 @@ namespace TitanOrbit.NetCode
             {
                 // [NETCODE] IL2CPP Linux/Windows headless — server world only.
                 CreateServerWorld("ServerWorld");
-                Debug.Log("[TitanOrbitBootstrap] Dedicated server build: ServerWorld created.");
+                Debug.Log("[TitanOrbitBootstrap] Dedicated server build: ServerWorld created. AutoConnectPort=0.");
             }
             else if (ShouldRunLanHost())
             {
                 // [TITAN-ORBIT] Local LAN host — one process runs authoritative server + predicted client.
+                // PendingLanHost is set before scene reload from the main-menu Local host button.
                 CreateServerWorld("ServerWorld");
                 CreateClientWorld("ClientWorld");
+                Debug.Log("[TitanOrbitBootstrap] LAN host player: ClientWorld+ServerWorld. AutoConnectPort=0 (Listen via SessionManager).");
             }
             else
             {
-                CreateDefaultClientServerWorlds();
+                // [TITAN-ORBIT] Standalone client (Windows / WebGL / Android) — ClientWorld only.
+                // Join game → Relay. Do NOT CreateDefaultClientServerWorlds() (that auto-hosts).
+                CreateClientWorld("ClientWorld");
+                Debug.Log("[TitanOrbitBootstrap] Player client: ClientWorld only. AutoConnectPort=0 (Join game / Relay).");
             }
+
+            // #region agent log
+            try
+            {
+                Diagnostics.ShipFlightSmoothDebugLog.Write(
+                    "H67",
+                    "TitanOrbitBootstrap.Initialize",
+                    "Player/editor bootstrap world layout",
+                    "{\"dedicated\":" + (ShouldRunDedicatedServer() ? "true" : "false") +
+                    ",\"lanHost\":" + (ShouldRunLanHost() ? "true" : "false") +
+                    ",\"autoConnectPort\":" + AutoConnectPort +
+                    ",\"hasServer\":" + (ClientServerBootstrap.HasServerWorld ? "true" : "false") +
+                    ",\"hasClient\":" + (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated ? "true" : "false") +
+                    ",\"isEditor\":" + (Application.isEditor ? "true" : "false") + "}");
+            }
+            catch
+            {
+                // Debug I/O only.
+            }
+            // #endregion
 
             return true;
         }
