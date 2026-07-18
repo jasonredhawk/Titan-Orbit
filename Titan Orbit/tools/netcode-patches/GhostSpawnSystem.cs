@@ -12,6 +12,42 @@ using Object = UnityEngine.Object;
 namespace Unity.NetCode
 {
     /// <summary>
+    /// [TITAN-ORBIT] Cheap join-load counters written by <see cref="GhostSpawnSystem"/>.
+    /// Loading UI can show Instantiates progress without scanning asteroid queries
+    /// (<c>ToEntityArray</c> / chunk gathers Crash!!! on Windows late-join).
+    /// Reset when leaving a session via <see cref="Reset"/>.
+    /// </summary>
+    public static class TitanOrbitJoinLoadCounters
+    {
+        /// <summary>CreateEntity placeholders created this join (all ghost types).</summary>
+        public static int PlaceholdersCreatedSession { get; private set; }
+
+        /// <summary>Successful delayed Instantiates this join (1/frame drain).</summary>
+        public static int InstantiatesSession { get; private set; }
+
+        /// <summary>Call when NetworkStreamInGame ends / join gate clears.</summary>
+        public static void Reset()
+        {
+            PlaceholdersCreatedSession = 0;
+            InstantiatesSession = 0;
+        }
+
+        /// <summary>Adds placeholder CreateEntity count for this frame.</summary>
+        public static void AddPlaceholders(int count)
+        {
+            if (count > 0)
+                PlaceholdersCreatedSession += count;
+        }
+
+        /// <summary>Adds successful Instantiates count for this frame.</summary>
+        public static void AddInstantiates(int count)
+        {
+            if (count > 0)
+                InstantiatesSession += count;
+        }
+    }
+
+    /// <summary>
     /// <para>
     /// System responsible for spawning all the ghost entities for the client world.
     /// </para>
@@ -50,7 +86,7 @@ namespace Unity.NetCode
         // managed LocalToWorld (Burst LTW disabled) — see TitanOrbitClientSafeLocalToWorldSystem.
         // v10 CreateEntity-cap+requeue → "baseline for a ghost we do not have" + Burst Crash!!! (2026-07-18).
         // v7 requeue without map registration had the same baseline failure mode.
-        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v11_createAll_managedLtw";
+        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v12_joinLoadCounters";
 
         // Touched in OnCreate so the linker cannot strip the marker.
         static char s_PatchIdTouch;
@@ -198,6 +234,9 @@ namespace Unity.NetCode
                 }
             }
 
+            if (placeholdersThisFrame > 0)
+                TitanOrbitJoinLoadCounters.AddPlaceholders(placeholdersThisFrame);
+
             if (placeholdersThisFrame >= 16)
             {
                 UnityEngine.Debug.Log(
@@ -221,6 +260,7 @@ namespace Unity.NetCode
             // (ComputeWorldSpaceLocalToWorldJob) on Windows late-join with ~500 asteroids.
             const int k_MaxDelayedInstantiatesPerFrame = 1;
             int delayedInstantiatesThisFrame = 0;
+            int successfulInstantiatesThisFrame = 0;
 
             while (delayedInstantiatesThisFrame < k_MaxDelayedInstantiatesPerFrame &&
                    m_DelayedInterpolatedGhostSpawnQueue.Count > 0 &&
@@ -230,6 +270,7 @@ namespace Unity.NetCode
                 if (TrySpawnFromDelayedQueue(ref state, ghost, GhostSpawnBuffer.Type.Interpolated, prefabs, ghostCollectionSingleton, out var entity))
                 {
                     spawnedGhosts.Add(new SpawnedGhostMapping { ghost = new SpawnedGhost { ghostId = ghost.ghostId, spawnTick = ghost.serverSpawnTick }, entity = entity, previousEntity = ghost.oldEntity });
+                    successfulInstantiatesThisFrame++;
                 }
                 delayedInstantiatesThisFrame++;
             }
@@ -241,9 +282,14 @@ namespace Unity.NetCode
                 if (TrySpawnFromDelayedQueue(ref state, ghost, GhostSpawnBuffer.Type.Predicted, prefabs, ghostCollectionSingleton, out var entity))
                 {
                     spawnedGhosts.Add(new SpawnedGhostMapping { ghost = new SpawnedGhost { ghostId = ghost.ghostId, spawnTick = ghost.serverSpawnTick }, entity = entity, previousEntity = ghost.oldEntity });
+                    successfulInstantiatesThisFrame++;
                 }
                 delayedInstantiatesThisFrame++;
             }
+
+            if (successfulInstantiatesThisFrame > 0)
+                TitanOrbitJoinLoadCounters.AddInstantiates(successfulInstantiatesThisFrame);
+
             ghostEntityMap.UpdateClientSpawnedGhosts(spawnedGhosts.AsArray(), netDebug);
 
             ghostCount.m_GhostCompletionCount[2] = m_InstanceCount.CalculateEntityCountWithoutFiltering();

@@ -29,6 +29,12 @@ namespace TitanOrbit.Game
     public class EcsWorldVisualizer : MonoBehaviour
     {
         /// <summary>
+        /// [HYBRID] Live visualizer for UI bridges (minimap) that must not <c>ToEntityArray</c>
+        /// map bodies under <see cref="ClientJoinSettleCache.TransformQuarantine"/>.
+        /// </summary>
+        public static EcsWorldVisualizer Active { get; private set; }
+
+        /// <summary>
         /// Max new world-body GameObject Instantiates per frame from the Pending queue.
         /// Pending tags only appear after GhostSpawn placeholders are empty (see request system);
         /// keep this ≥ MapBodyHybridVisualRequestSystem.MaxMarksPerFrame so the loading bar
@@ -174,6 +180,9 @@ namespace TitanOrbit.Game
         /// </summary>
         void OnEnable()
         {
+            // --- Singleton for quarantine-safe UI ---
+            // [TITAN-ORBIT] Minimap walks this instance's proxy dictionary instead of ECS gathers.
+            Active = this;
             Application.onBeforeRender += OnBeforeRenderSync;
         }
 
@@ -181,6 +190,29 @@ namespace TitanOrbit.Game
         void OnDisable()
         {
             Application.onBeforeRender -= OnBeforeRenderSync;
+            if (Active == this)
+                Active = null;
+        }
+
+        /// <summary>
+        /// Copies entity keys of live hybrid GameObject proxies into <paramref name="dst"/>.
+        /// Walks the managed dictionary only — never runs an ECS <c>ToEntityArray</c> over asteroids/planets.
+        /// Safe under <see cref="ClientJoinSettleCache.TransformQuarantine"/> for minimap rebuilds.
+        /// </summary>
+        /// <param name="dst">Cleared then filled with entities that currently have a non-null proxy.</param>
+        public void CopyLiveProxyEntities(List<Entity> dst)
+        {
+            // --- Managed registry walk (no Burst gather) ---
+            if (dst == null)
+                return;
+
+            dst.Clear();
+            foreach (var kv in _proxies)
+            {
+                // Skip destroyed GameObjects; entity may still exist briefly.
+                if (kv.Value != null)
+                    dst.Add(kv.Key);
+            }
         }
 
         /// <summary>
@@ -226,9 +258,18 @@ namespace TitanOrbit.Game
                 SyncShipProxyTransforms(em, alive);
             }
 
+            // --- People transports (hybrid GO) ---
+            // [TITAN-ORBIT] TransformQuarantine stays ON for the whole in-game session (RE-ENABLE Crash!!!).
+            // Ships already use hybrid proxies under quarantine — transports must too. Gating
+            // DrawPeopleTransports on !TransformQuarantine meant floats never got GameObjects.
+            // Safe: query is only PeopleTransportPresentation* (tiny), never all asteroids.
             if (!settling)
-            {
                 DrawPeopleTransports(em, alive);
+
+            // --- Bullets: still quarantine-gated (broader gathers / hit buffers) ---
+            // [TITAN-ORBIT] Settling OFF used to unlock ToEntityArray paths → Crash!!! (minimap + draws).
+            if (!ClientJoinSettleCache.TransformQuarantine && !settling)
+            {
                 ProcessBulletHitEvents(em);
                 DrawBullets(em, alive);
 
@@ -243,6 +284,20 @@ namespace TitanOrbit.Game
                     DestroyProxy(entity);
 
                 ToroidalDisplay.PruneStale(alive);
+            }
+            else
+            {
+                // Quarantine: prune destroyed proxies without world-wide entity gathers.
+                // Also prune transport proxies whose presentation entities despawned mid-flight.
+                var remove = new List<Entity>();
+                foreach (var kv in _proxies)
+                {
+                    if (kv.Value == null || !em.Exists(kv.Key))
+                        remove.Add(kv.Key);
+                }
+
+                foreach (var entity in remove)
+                    DestroyProxy(entity);
             }
 
             WorldBodyProxyCount = CountWorldBodyProxies();
@@ -932,21 +987,28 @@ namespace TitanOrbit.Game
             hits.Clear();
         }
 
-        /// <summary>People-transport gem-style proxies — scale by carried amount, tint by team.</summary>
+        /// <summary>
+        /// People-transport float proxies — client-local presentation entities (not ghosts).
+        /// Runs under TransformQuarantine (session-long) just like hybrid ships; only skipped while Settling.
+        /// </summary>
         void DrawPeopleTransports(EntityManager em, HashSet<Entity> alive)
         {
-            using var query = em.CreateEntityQuery(
-                ComponentType.ReadOnly<PeopleTransportTag>(),
-                ComponentType.ReadOnly<PeopleTransportState>(),
+            using var presentationQuery = em.CreateEntityQuery(
+                ComponentType.ReadOnly<PeopleTransportPresentationTag>(),
+                ComponentType.ReadOnly<PeopleTransportPresentation>(),
                 ComponentType.ReadOnly<LocalTransform>());
-            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
-            using var states = query.ToComponentDataArray<PeopleTransportState>(Unity.Collections.Allocator.Temp);
+            if (presentationQuery.IsEmptyIgnoreFilter)
+                return;
+
+            using var entities = presentationQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
+            using var presentations = presentationQuery.ToComponentDataArray<PeopleTransportPresentation>(Unity.Collections.Allocator.Temp);
 
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];
                 alive.Add(entity);
-                var state = states[i];
+                var state = presentations[i];
+                // Prefer presentation cache; fall back to entity LocalTransform (spawn frame).
                 if (!TryGetPeopleTransportPresentationTransform(entity, em, out var lt))
                     continue;
                 float scale = PeopleTransportVisualApplier.ComputeWorldScale(math.max(1f, state.Amount));

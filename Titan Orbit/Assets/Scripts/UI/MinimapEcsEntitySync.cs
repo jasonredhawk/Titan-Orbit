@@ -19,9 +19,12 @@ namespace TitanOrbit.UI
     /// Rebuilds anchor cache periodically; updates positions every LateUpdate.
     /// World: visualization world via EcsGameBridge. Paired with MinimapController.
     /// <para>
-    /// [TITAN-ORBIT] While <see cref="ClientJoinSettleCache.Settling"/>, this component does nothing.
-    /// <c>SyncAsteroids</c> → <c>ToEntityArray</c> during GhostSpawn Instantiates hard-crashed Windows
-    /// at ~15% loading (same Burst GatherEntitiesWithoutFilter path as EcsWorldVisualizer).
+    /// [TITAN-ORBIT] While Settling, this component does nothing (loading screen).
+    /// After settle, <see cref="ClientJoinSettleCache.TransformQuarantine"/> stays on for the
+    /// whole Windows in-game session — map-body <c>ToEntityArray</c> still Crash!!! then
+    /// (Player.log 2026-07-18 14:24). Under quarantine we rebuild planet/asteroid blips from
+    /// <see cref="EcsWorldVisualizer"/> hybrid proxies (managed dictionary walk). Ship queries
+    /// stay small and match the visualizer's own ship <c>ToEntityArray</c> path.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(-50)]
@@ -40,6 +43,12 @@ namespace TitanOrbit.UI
         readonly List<MinimapBlipAnchor> _homePlanets = new List<MinimapBlipAnchor>();
         readonly List<MinimapBlipAnchor> _asteroids = new List<MinimapBlipAnchor>();
         readonly List<MinimapBlipAnchor> _gemMoons = new List<MinimapBlipAnchor>();
+
+        /// <summary>
+        /// Scratch list for quarantine-safe proxy entity keys from <see cref="EcsWorldVisualizer"/>.
+        /// Reused to avoid per-rebuild List allocations on the hot path.
+        /// </summary>
+        readonly List<Entity> _proxyEntityScratch = new List<Entity>(256);
 
         Transform _root;
         MinimapBlipAnchor _localPlayer;
@@ -83,9 +92,8 @@ namespace TitanOrbit.UI
         void LateUpdate()
         {
             // --- Join settle gate ---
-            // [TITAN-ORBIT] RebuildAnchors → SyncAsteroids → ToEntityArray during GhostSpawn
-            // placeholder/Instantiates floods Crash!!! Windows (Player.log ~15% load).
-            // Minimap is useless under the loading screen; resume after settle.
+            // [TITAN-ORBIT] During GhostSpawn Instantiates the loading screen owns the UI.
+            // Do not rebuild anchors yet — asteroid ToEntityArray Crash!!! under load.
             if (ClientJoinSettleCache.Settling)
                 return;
 
@@ -98,11 +106,20 @@ namespace TitanOrbit.UI
 
             if (Time.time - _lastCacheRefreshTime >= EntityCacheRefreshInterval)
             {
-                RebuildAnchors(world.EntityManager);
+                // --- Quarantine vs full ECS gather ---
+                // [TITAN-ORBIT] TransformQuarantine stays true all in-game on Windows. Returning
+                // early here hid the minimap forever (no local-player blip). Instead: ships via
+                // small ToEntityArray; planets/asteroids via hybrid proxy registry (no map gather).
+                if (ClientJoinSettleCache.TransformQuarantine)
+                    RebuildAnchorsFromHybridProxies(world.EntityManager);
+                else
+                    RebuildAnchors(world.EntityManager);
+
                 _lastCacheRefreshTime = Time.time;
             }
             else
             {
+                // Position-only: iterates known anchors with Exists/GetComponentData — no gather.
                 UpdateAnchorPositions(world.EntityManager);
             }
         }
@@ -146,9 +163,14 @@ namespace TitanOrbit.UI
             MapSessionMetaCache.ApplyMapSizeToToroidalHelpers(mapW, mapH);
         }
 
+        /// <summary>
+        /// Full rebuild using ECS queries (ships + planets + asteroids).
+        /// Only safe when <see cref="ClientJoinSettleCache.TransformQuarantine"/> is false —
+        /// Editor/MPPM paths without the Windows join quarantine.
+        /// </summary>
         void RebuildAnchors(EntityManager em)
         {
-            // --- Rebuild cache ---
+            // --- Rebuild cache (full ECS gathers) ---
             var alive = new HashSet<Entity>();
             _localPlayer = null;
 
@@ -156,6 +178,60 @@ namespace TitanOrbit.UI
             SyncPlanets(em, alive);
             SyncAsteroids(em, alive);
 
+            PruneDeadAnchors(alive);
+            RebuildLists();
+        }
+
+        /// <summary>
+        /// Quarantine-safe rebuild: ships via small query; planets/asteroids from hybrid proxies.
+        /// [TITAN-ORBIT] Must not call <see cref="SyncPlanets"/> / <see cref="SyncAsteroids"/> —
+        /// those <c>ToEntityArray</c> map bodies and Crash!!! after Settling OFF
+        /// (see titan-orbit-windows-join-crash rule).
+        /// </summary>
+        void RebuildAnchorsFromHybridProxies(EntityManager em)
+        {
+            // --- Rebuild cache (proxy walk) ---
+            var alive = new HashSet<Entity>();
+            _localPlayer = null;
+
+            // Ships stay few; same ToEntityArray shape as EcsWorldVisualizer.SyncShipProxyTransforms.
+            SyncShips(em, alive);
+
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer != null)
+            {
+                visualizer.CopyLiveProxyEntities(_proxyEntityScratch);
+                double elapsed = Time.timeAsDouble;
+
+                for (int i = 0; i < _proxyEntityScratch.Count; i++)
+                {
+                    Entity entity = _proxyEntityScratch[i];
+                    if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                        continue;
+
+                    // Per-entity HasComponent — not GatherEntitiesWithoutFilter over all asteroids.
+                    if (em.HasComponent<PlanetTag>(entity) && em.HasComponent<PlanetState>(entity))
+                    {
+                        SyncOnePlanet(em, entity, alive, elapsed);
+                    }
+                    else if (em.HasComponent<AsteroidTag>(entity) && em.HasComponent<AsteroidState>(entity))
+                    {
+                        SyncOneAsteroid(em, entity, alive);
+                    }
+                    // Gems / transports / bullets: no dedicated minimap blip kinds here.
+                }
+            }
+
+            PruneDeadAnchors(alive);
+            RebuildLists();
+        }
+
+        /// <summary>
+        /// Destroys anchors (and gem-moon helpers) whose entities were not marked alive this rebuild.
+        /// </summary>
+        void PruneDeadAnchors(HashSet<Entity> alive)
+        {
+            // --- Drop despawned blips ---
             var remove = new List<Entity>();
             foreach (var kv in _anchors)
             {
@@ -191,8 +267,6 @@ namespace TitanOrbit.UI
                     Destroy(moon.gameObject);
                 _gemMoonsByPlanetId.Remove(planetId);
             }
-
-            RebuildLists();
         }
 
         void UpdateAnchorPositions(EntityManager em)
@@ -310,9 +384,12 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Full planet gather — forbidden under TransformQuarantine (see rebuild-from-proxies path).
+        /// </summary>
         void SyncPlanets(EntityManager em, HashSet<Entity> alive)
         {
-            // --- SyncPlanets ---
+            // --- SyncPlanets (ECS gather — quarantine OFF only) ---
             using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState), typeof(LocalTransform));
             using var entities = query.ToEntityArray(Allocator.Temp);
             using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
@@ -320,22 +397,36 @@ namespace TitanOrbit.UI
             double elapsed = Time.timeAsDouble;
 
             for (int i = 0; i < entities.Length; i++)
-            {
-                var entity = entities[i];
-                alive.Add(entity);
-                var state = states[i];
-                var lt = transforms[i];
-                var kind = state.IsHomePlanet ? MinimapBlipKind.HomePlanet : MinimapBlipKind.Planet;
-                var anchor = GetOrCreateAnchor(entity, kind);
-                anchor.Team = state.Ownership;
-                anchor.PlanetLevel = state.PlanetLevel;
-                anchor.Population = state.Population;
-                anchor.PlanetId = state.PlanetId;
-                anchor.BodySize = math.max(0.25f, lt.Scale);
-                anchor.transform.position = lt.Position;
-                anchor.transform.localScale = Vector3.one * anchor.BodySize;
-                UpdateGemMoonAnchor(anchor, lt, state, elapsed);
-            }
+                ApplyPlanetAnchor(entities[i], states[i], transforms[i], alive, elapsed);
+        }
+
+        /// <summary>
+        /// Writes one planet blip from known entity components (no query gather).
+        /// Used by the quarantine proxy walk and by <see cref="SyncPlanets"/>.
+        /// </summary>
+        void SyncOnePlanet(EntityManager em, Entity entity, HashSet<Entity> alive, double elapsed)
+        {
+            // --- Single planet from proxy entity ---
+            var state = em.GetComponentData<PlanetState>(entity);
+            var lt = em.GetComponentData<LocalTransform>(entity);
+            ApplyPlanetAnchor(entity, state, lt, alive, elapsed);
+        }
+
+        /// <summary>Applies PlanetState + LocalTransform onto a minimap planet/home blip + gem moon.</summary>
+        void ApplyPlanetAnchor(Entity entity, PlanetState state, LocalTransform lt, HashSet<Entity> alive, double elapsed)
+        {
+            // --- Write planet blip fields ---
+            alive.Add(entity);
+            var kind = state.IsHomePlanet ? MinimapBlipKind.HomePlanet : MinimapBlipKind.Planet;
+            var anchor = GetOrCreateAnchor(entity, kind);
+            anchor.Team = state.Ownership;
+            anchor.PlanetLevel = state.PlanetLevel;
+            anchor.Population = state.Population;
+            anchor.PlanetId = state.PlanetId;
+            anchor.BodySize = math.max(0.25f, lt.Scale);
+            anchor.transform.position = lt.Position;
+            anchor.transform.localScale = Vector3.one * anchor.BodySize;
+            UpdateGemMoonAnchor(anchor, lt, state, elapsed);
         }
 
         void UpdateGemMoonAnchor(MinimapBlipAnchor planetAnchor, LocalTransform lt, PlanetState state, double elapsed)
@@ -370,26 +461,42 @@ namespace TitanOrbit.UI
             moonAnchor.transform.localScale = Vector3.one * moonAnchor.MoonVisualSize;
         }
 
+        /// <summary>
+        /// Full asteroid gather — forbidden under TransformQuarantine (see rebuild-from-proxies path).
+        /// </summary>
         void SyncAsteroids(EntityManager em, HashSet<Entity> alive)
         {
-            // --- SyncAsteroids ---
+            // --- SyncAsteroids (ECS gather — quarantine OFF only) ---
             using var query = em.CreateEntityQuery(typeof(AsteroidTag), typeof(AsteroidState), typeof(LocalTransform));
             using var entities = query.ToEntityArray(Allocator.Temp);
             using var states = query.ToComponentDataArray<AsteroidState>(Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
 
             for (int i = 0; i < entities.Length; i++)
-            {
-                var entity = entities[i];
-                alive.Add(entity);
-                var state = states[i];
-                var lt = transforms[i];
-                var anchor = GetOrCreateAnchor(entity, MinimapBlipKind.Asteroid);
-                anchor.IsDestroyed = state.IsDestroyed;
-                anchor.BodySize = math.max(0.25f, lt.Scale);
-                anchor.transform.position = lt.Position;
-                anchor.transform.localScale = Vector3.one * anchor.BodySize;
-            }
+                ApplyAsteroidAnchor(entities[i], states[i], transforms[i], alive);
+        }
+
+        /// <summary>
+        /// Writes one asteroid blip from known entity components (no query gather).
+        /// </summary>
+        void SyncOneAsteroid(EntityManager em, Entity entity, HashSet<Entity> alive)
+        {
+            // --- Single asteroid from proxy entity ---
+            var state = em.GetComponentData<AsteroidState>(entity);
+            var lt = em.GetComponentData<LocalTransform>(entity);
+            ApplyAsteroidAnchor(entity, state, lt, alive);
+        }
+
+        /// <summary>Applies AsteroidState + LocalTransform onto a minimap asteroid blip.</summary>
+        void ApplyAsteroidAnchor(Entity entity, AsteroidState state, LocalTransform lt, HashSet<Entity> alive)
+        {
+            // --- Write asteroid blip fields ---
+            alive.Add(entity);
+            var anchor = GetOrCreateAnchor(entity, MinimapBlipKind.Asteroid);
+            anchor.IsDestroyed = state.IsDestroyed;
+            anchor.BodySize = math.max(0.25f, lt.Scale);
+            anchor.transform.position = lt.Position;
+            anchor.transform.localScale = Vector3.one * anchor.BodySize;
         }
 
         MinimapBlipAnchor GetOrCreateAnchor(Entity entity, MinimapBlipKind kind)

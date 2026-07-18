@@ -372,7 +372,11 @@ namespace TitanOrbit.ECS
             float initialMul = isLoad ? 0.92f : 0.85f;
             float3 velocity = dir * cruise * initialMul;
             float scale = PeopleTransportMath.GetVisualScaleMultiplier(amount) * 0.25f;
+            byte isLoadByte = (byte)(isLoad ? 1 : 0);
+            byte teamByte = (byte)team;
 
+            // --- Authoritative ghost (combat / delivery) ---
+            // May never Instantiates on clients before despawn under Instantiates=1 + MaxSendChunks=1.
             Entity transport = ecb.Instantiate(transportPrefab);
             ecb.SetComponent(transport, LocalTransform.FromPositionRotationScale(spawnPos, quaternion.identity, scale));
             ecb.SetComponent(transport, new PeopleTransportState
@@ -387,9 +391,44 @@ namespace TitanOrbit.ECS
                 SourcePlanetId = sourcePlanetId,
                 TargetPlanetId = targetPlanetId,
                 SourceShipNetworkId = sourceShipNetworkId,
-                IsLoad = (byte)(isLoad ? 1 : 0),
-                Team = (byte)team,
+                IsLoad = isLoadByte,
+                Team = teamByte,
             });
+
+            // --- Cosmetic VFX path (does not wait on GhostSpawn) ---
+            uint sequence = PeopleTransportVfxBridge.NextSequence();
+            var vfxReq = new PeopleTransportVfxBridge.SpawnRequest
+            {
+                Sequence = sequence,
+                SpawnPosition = spawnPos,
+                Velocity = velocity,
+                CruiseSpeed = cruise,
+                Amount = amount,
+                TargetShipNetworkId = targetShipNetworkId,
+                SourcePlanetId = sourcePlanetId,
+                TargetPlanetId = targetPlanetId,
+                IsLoad = isLoadByte,
+                Team = teamByte,
+            };
+            // Local host ClientWorld drains this immediately (in-process).
+            PeopleTransportVfxBridge.Enqueue(vfxReq);
+
+            // Dedicated / remote clients receive this reliable broadcast.
+            Entity rpcEntity = ecb.CreateEntity();
+            ecb.AddComponent(rpcEntity, new PeopleTransportSpawnRpc
+            {
+                Sequence = sequence,
+                SpawnPosition = spawnPos,
+                Velocity = velocity,
+                CruiseSpeed = cruise,
+                Amount = amount,
+                TargetShipNetworkId = targetShipNetworkId,
+                SourcePlanetId = sourcePlanetId,
+                TargetPlanetId = targetPlanetId,
+                IsLoad = isLoadByte,
+                Team = teamByte,
+            });
+            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
     }
 

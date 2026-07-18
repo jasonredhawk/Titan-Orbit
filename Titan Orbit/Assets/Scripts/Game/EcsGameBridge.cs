@@ -515,13 +515,13 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Loading UI contract (product model):
+        /// Loading UI contract (one bar, two phases — not two bars):
         /// <list type="number">
         /// <item><see cref="MapSessionMetaRpc"/> — server sends map totals once (how many to build).</item>
-        /// <item>Client builds planet/asteroid GameObjects from streamed ghost entities.</item>
-        /// <item>Progress bar = GO Instantiates only — never “packets received” or ECS Instantiates.</item>
+        /// <item>Phase A while Settling: show GhostSpawn Instantiates so the bar is not frozen at 0.</item>
+        /// <item>Phase B: planet/asteroid GameObject proxies (<see cref="EcsWorldVisualizer.MapLoadingProxyCount"/>).</item>
         /// </list>
-        /// Ghost streaming still carries sim bodies; the bar only measures local visual build.
+        /// Two bars would not stop Crash!!! — only safer gates do. This just makes progress honest.
         /// </summary>
         static bool TryGetVisibleMapLoadingStepCounts(out int completedSteps, out int totalSteps)
         {
@@ -538,9 +538,16 @@ namespace TitanOrbit.Game
             if (totalSteps <= 0)
                 return false;
 
-            // --- Numerator: planet/asteroid GameObjects built on this client ---
-            // [TITAN-ORBIT] MapLoadingProxyCount — not ECS Instantiates, not gem proxies.
-            completedSteps = EcsWorldVisualizer.MapLoadingProxyCount;
+            // --- Numerator ---
+            // [TITAN-ORBIT] Prefer GO proxies (real visuals). While Instantiates drain and proxies
+            // are still 0, show InstantiatesSession so the bar moves (1/frame) instead of 0/N → Crash.
+            int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
+            if (proxies > 0)
+                completedSteps = proxies;
+            else if (ClientJoinSettleCache.Settling)
+                completedSteps = TitanOrbitJoinLoadCounters.InstantiatesSession;
+            else
+                completedSteps = proxies;
 
             if (totalSteps > 0 && completedSteps > totalSteps)
                 completedSteps = totalSteps;
@@ -1109,15 +1116,6 @@ namespace TitanOrbit.Game
             if (ClientJoinSettleCache.Settling)
                 return false;
 
-            if (!TryGetReplicatedMapBodyCounts(client, out int homes, out int planets, out int asteroids))
-                return false;
-
-            if (homes < 1 || planets < homes)
-                return false;
-
-            if (asteroids < RemoteMapMinAsteroids)
-                return false;
-
             int expectedTotal = 0;
             if (MapSessionMetaCache.HasMeta && MapSessionMetaCache.LoadingTotalSteps > 0)
                 expectedTotal = MapSessionMetaCache.LoadingTotalSteps;
@@ -1125,6 +1123,8 @@ namespace TitanOrbit.Game
                 expectedTotal = s_LatchedLoadingTotalSteps;
 
             // --- Authoritative meta: complete when planet/asteroid GOs ≈ server total ---
+            // [TITAN-ORBIT] Under TransformQuarantine do NOT CalculateEntityCount asteroids —
+            // Settling OFF + asteroid gather Crash!!! (same path as minimap). Proxies only.
             if (expectedTotal > 0)
             {
                 int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
@@ -1144,6 +1144,19 @@ namespace TitanOrbit.Game
                                     Time.realtimeSinceStartup - s_ProxyCatchupWaitSince >= 25f;
                 return ratio >= 0.92f || proxyTimeout;
             }
+
+            // No meta under quarantine: refuse gather-based completion (avoids Crash!!!).
+            if (ClientJoinSettleCache.TransformQuarantine)
+                return false;
+
+            if (!TryGetReplicatedMapBodyCounts(client, out int homes, out int planets, out int asteroids))
+                return false;
+
+            if (homes < 1 || planets < homes)
+                return false;
+
+            if (asteroids < RemoteMapMinAsteroids)
+                return false;
 
             // Fallback without meta: ghost counts stable for a short window (no layout early-out).
             if (planets != s_RemoteMapPlanetCount || asteroids != s_RemoteMapAsteroidCount)

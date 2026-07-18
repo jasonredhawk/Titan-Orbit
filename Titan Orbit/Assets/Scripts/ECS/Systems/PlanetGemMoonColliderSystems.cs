@@ -14,10 +14,9 @@ namespace TitanOrbit.ECS
     /// Unity Physics sphere per planet so ships bounce off the moon hull like planets and asteroids.
     /// Runs on server and client (colliders are local sim geometry, not NetCode ghosts).
     /// <para>
-    /// [TITAN-ORBIT] On clients we wait until <see cref="ClientJoinSettleCache.Settling"/> is false
-    /// (GhostSpawn Instantiates backlog drained) and create at most one moon hull per frame.
-    /// Creating moon colliders in the same window as NetCode Instantiates contributed to Windows
-    /// player hard-crashes right after Relay go-in-game.
+    /// [TITAN-ORBIT] On clients skip while Settling OR TransformQuarantine (quarantine stays on for
+    /// the whole Windows in-game session — Settling OFF alone still Crash!!! on mass CreateEntity).
+    /// At most one moon hull per frame when those gates eventually allow work.
     /// </para>
     /// </summary>
     // No UpdateAfter(PlanetGemMoonEnsureSystem) — that ensure is server-only; ClientWorld sorter warns.
@@ -43,10 +42,10 @@ namespace TitanOrbit.ECS
             bool isClient = state.World.IsClient();
             if (isClient)
             {
-                // --- Join settle gate ---
-                // [TITAN-ORBIT] Do not CreateEntity moon hulls while GhostSpawn Instantiates backlog
-                // is still draining. Shared settle flag with EcsWorldVisualizer / minimap.
-                if (ClientJoinSettleCache.Settling)
+                // --- Join / quarantine gate ---
+                // [TITAN-ORBIT] Do not CreateEntity moon hulls while Instantiates backlog drains OR
+                // while TransformQuarantine is on (Settling OFF still Crash!!! if we scan/CreateEntity).
+                if (ClientJoinSettleCache.TransformQuarantine || ClientJoinSettleCache.Settling)
                     return;
 
                 // Also wait until we are actually in-game (settle cache clears when not in-game).

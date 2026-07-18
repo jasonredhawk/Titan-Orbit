@@ -1,91 +1,157 @@
 ---
-description: Hard constraints so Windows Relay late-join does not Crash!!! after unrelated agent edits
+description: HARD STOP — Windows Relay late-join Crash!!! invariants; never regress quarantine/GhostSpawn gates
 alwaysApply: true
 ---
 
-# Titan Orbit — Windows late-join crash invariants
+# Titan Orbit — Windows late-join crash invariants (HARD STOP)
 
-Relay late-join with hundreds of map ghosts hard-crashes the **Windows client**. Fixes keep getting undone by unrelated agents. **Do not regress these invariants.**
+**Status (proven working 2026-07-18):** Relay late-join survives when `TransformQuarantine` gates map-body gathers and GhostSpawn stays CreateEntity-all + Instantiates 1/frame. Agents keep undoing this. Treat any “cleanup” that removes these gates as a **regression bug**, not a refactor.
 
 Paired: `titan-orbit-ship-simulation.mdc`, embedded NetCode (`Packages/com.unity.netcode`), `tools/netcode-patches/`.
 
----
-
-## Root cause (proven in Player.log)
-
-| Symptom | Cause |
-|---------|--------|
-| `Crash!!!` right after `[JoinSettle] TransformSystemGroup RE-ENABLED` | Disabling LTW during Instantiates of ~700 asteroids, then flipping the group back on → Burst LocalToWorld flood (2026-07-18 12:17) |
-| `Crash!!!` right after `[TO_GhostSpawn] Created 56 placeholders` | CreateEntity×N in one frame with LTW on (2026-07-18 12:47). Also: distance TileSize 512 ≥ map size → whole field one chunk despite MaxSendChunks=1 |
-| `Crash!!!` in `DrawAsteroids` / `MarkFromQuery` / `MinimapEcsEntitySync` → `ToEntityArray` | Gathering all asteroids — **including after settle** (2026-07-18 13:26 MarkFromQuery) |
-| NRE in `TitanOrbitClientSafeLocalToWorldSystem` foreach | Full query over Instantiated bodies right after TransformSystemGroup RE-ENABLED |
-| `baseline for a ghost we do not have` | Requeue leftovers without registering CreateEntity'd ghosts in `SpawnedGhostEntityMap` |
-
-**Patterns that must never return:**
-1. Disable → re-enable `TransformSystemGroup` / `LocalToWorldSystem` around join Instantiates.
-2. CreateEntity dozens of placeholders in one frame (cap at 1 + requeue; keep Instantiates at 1).
-3. Distance `TileSize` ≥ map size (must fragment asteroid fields).
-4. Any `ToEntityArray` / `WithEntityAccess` over asteroids/planets/gems on the client join path — **settle ending does not make it safe**. Use baked Pending + small drains only.
-
-**Silent crash?** No. `Crash!!!` is a native access violation in Burst/UnityPlayer. C# `try/catch` cannot swallow it. Only prevention (caps / gates) or process death.
+If your task touches **any** file in the ownership list below, read this whole rule first and keep every invariant.
 
 ---
 
-## Non-negotiable rules
+## What actually crashes (not “CPU overload”)
 
-### 1. Embedded GhostSpawn patch (git)
+`Crash!!!` in Player.log is a **native access violation** in Burst / UnityPlayer (often `GatherEntitiesWithoutFilter`, LocalToWorld jobs, or GhostReceive). C# `try/catch` **cannot** catch it. Soft rate-limits and nicer loading UI do **not** fix it.
 
-- NetCode is **`file:com.unity.netcode`** under `Titan Orbit/Packages/com.unity.netcode`.
-- Patch id: `TO_GhostSpawn_v11_createAll_managedLtw` (or newer).
-- Canonical: `tools/netcode-patches/GhostSpawnSystem.cs` + pre-build guard.
-- **Required:** safe snapshot copy, no Burst on `OnUpdate`, **1 Instantiates/frame**, **CreateEntity-all** placeholders (ghost-map safe).
-- **Forbidden:** CreateEntity-cap+requeue (causes `baseline for a ghost we do not have` → Burst Crash!!!); PackageCache-only edits; Instantiates cap removed.
-- **Client:** Burst `LocalToWorldSystem` disabled for the session; `TitanOrbitClientSafeLocalToWorldSystem` writes managed LTW.
+Two progress bars do **not** prevent the crash. They only show phases. Gates + Instantiates caps prevent death.
 
-### 2. Join settle — hybrid/UI gate ONLY
+---
 
-- `TransformSystemGroup` stays **OFF for the whole in-game session** (`TransformQuarantine`). RE-ENABLE after Instantiates Crash!!! even without MarkFromQuery (2026-07-18 13:57).
-- Ships: hybrid GO proxies while quarantined (EG needs Parent/LTW). Map bodies: baked Pending drain only.
-- **Forbidden:** TransformSystemGroup RE-ENABLE after late-join Instantiates; CreateEntity-cap+requeue; map-body ToEntityArray.
-- **Never** full asteroid/planet `ToEntityArray` on client (during **or after** settle):
-  - `MapBodyHybridVisualRequestSystem` disabled
-  - `EcsWorldVisualizer` Pending-drain only for map bodies
-  - **`MinimapEcsEntitySync`** gated while Settling
-  - Moon collider mass CreateEntity gated while Settling
+## Proven Player.log failure modes
 
-### 3. Hybrid map visuals + loading bar
+| Symptom | Cause | Never reintroduce |
+|---------|--------|-------------------|
+| Crash after `[JoinSettle] TransformSystemGroup RE-ENABLED` | LTW/Parent Burst flood after Instantiates ~600–800 asteroids | Re-enable TransformSystemGroup after late-join |
+| Crash after `[TO_GhostSpawn] Created N placeholders` | CreateEntity×N with LTW on; or TileSize ≥ map → one fat chunk | Instantiates >1/frame; TileSize ≥ map size |
+| Crash in minimap / `MarkFromQuery` / `DrawAsteroids` → `ToEntityArray` | Full asteroid/planet gather — **also right after Settling OFF** (2026-07-18 14:24) | Gate on Settling **alone** |
+| `baseline for a ghost we do not have` | CreateEntity-cap+requeue without ghost-map registration | Cap+requeue placeholders |
+| Bar stuck `0 / N` then Crash | Proxies not built yet; Settling OFF unlocks gather → AV before GO phase | Unlock map gathers when Settling clears |
 
-- Bake `MapBodyHybridVisualPending` on client planet/asteroid/gem ghosts (`GhostPrefabType.Client`).
-- `MapBodyHybridVisualRequestSystem` stays **disabled** (MarkFromQuery Crash!!! after settle).
-- Visualizer: Pending drain only for map bodies — **never** DrawAsteroids/DrawPlanets full `ToEntityArray`.
-- **Loading:** `MapSessionMetaRpc` = `N`; bar = `MapLoadingProxyCount` (GO Instantiates only).
-- **Forbidden:** Instantiates-only progress; `MarkFromQuery` / map-body `ToEntityArray` during settle.
+---
 
-### 4. UI / other agents — common regression
+## Absolute forbidden (do not “simplify” or “optimize”)
+
+1. **Re-enable** `TransformSystemGroup` / Burst `LocalToWorldSystem` after late-join Instantiates while in-game.
+2. **CreateEntity-cap + requeue** leftovers in GhostSpawn (ghost-map hole → baseline → Burst Crash!!!).
+3. Raise delayed Instantiates above **1/frame**.
+4. Re-enable `MapBodyHybridVisualRequestSystem` or any `MarkFromQuery` that `ToEntityArray`s all asteroids/planets.
+5. Add or restore client map-body **full scans** (`ToEntityArray` / `WithEntityAccess` / broad `foreach` queries over Asteroid/Planet/Gem) gated only by:
+   ```csharp
+   if (ClientJoinSettleCache.Settling) return; // FORBIDDEN as the only gate
+   ```
+6. Clear or ignore `TransformQuarantine` mid-session to “get Entities Graphics / minimap working.”
+7. Use asteroid `CalculateEntityCount` / `ToEntityArray` to dismiss the loading screen while quarantined.
+8. Edit only Package Cache NetCode — patch lives in **git** `Packages/com.unity.netcode` + `tools/netcode-patches/`.
+9. Distance importance `TileSizeWorld` ≥ map size (use **~48**, not 512).
+
+---
+
+## Required working architecture
+
+### A. GhostSpawn patch (`TO_GhostSpawn_v12_joinLoadCounters` or newer)
+
+- Location: `Packages/com.unity.netcode/Runtime/Snapshot/GhostSpawnSystem.cs`
+- Mirror: `tools/netcode-patches/GhostSpawnSystem.cs` (keep in sync)
+- Guard: `Assets/Scripts/ECS/Editor/NetCodeGhostSpawnPatchMenu.cs` `PatchIdMarker` must match
+- Must keep: safe snapshot copy, **no Burst OnUpdate**, Instantiates **1/frame**, CreateEntity-**all** placeholders, `TitanOrbitJoinLoadCounters`
+
+### B. Transform quarantine (whole in-game session)
+
+- `ClientJoinSettleCache.TransformQuarantine == true` for the **entire** Windows in-game session after join.
+- `TransformSystemGroup` stays **OFF**. Do not add RE-ENABLE paths.
+- Ships: hybrid GameObject proxies (EG needs Parent/LTW).
+- People transports: hybrid GO draws must run under quarantine (tiny `PeopleTransportPresentation*` query only). Do **not** gate them on `!TransformQuarantine` — that hides all float VFX for the session.
+- Map bodies: bake `MapBodyHybridVisualPending` + Pending drain only in `EcsWorldVisualizer`.
+
+### C. Gate pattern (copy this — do not invent a weaker one)
 
 ```csharp
-if (ClientJoinSettleCache.Settling)
+// [TITAN-ORBIT] Windows late-join: Settling OFF is NOT safe for map gathers.
+// TransformQuarantine stays true for the whole in-game session.
+if (ClientJoinSettleCache.TransformQuarantine || ClientJoinSettleCache.Settling)
     return;
 ```
 
-Never `ToEntityArray` all asteroids during settle.
+Use this (or stricter: quarantine alone) before **any** client code that:
+- `ToEntityArray` / `WithEntityAccess` over asteroids, planets, gems, moons
+- Mass `CreateEntity` for map-related hulls
+- Full minimap rebuilds / MarkFromQuery-style scans
+- Loading-complete logic that walks map-body queries
 
-### 5. Do not “simplify” these away
+### D. Loading bar (one bar, two phases — not two bars as a crash fix)
 
-Verify Windows Relay late-join with 400+ asteroids after every client rebuild.
+1. Denominator: `MapSessionMetaRpc` → `N` only.
+2. While Settling and `MapLoadingProxyCount == 0`: numerator = `TitanOrbitJoinLoadCounters.InstantiatesSession`.
+3. Once proxies exist: numerator = `MapLoadingProxyCount`.
+4. Do not treat Instantiates-only as “map looks ready” for dismissing load without proxy catch-up rules already in `EcsGameBridge`.
 
 ---
 
-## Agent checklist
+## File ownership — touch with extreme care
 
-- [ ] No map-body `ToEntityArray` / `WithEntityAccess` without settle early-out
-- [ ] Minimap / visualizer / hybrid request still gated during settle
-- [ ] GhostSpawn Instantiates=1 + stock placeholder drain
-- [ ] **TransformSystemGroup never disabled for join**
-- [ ] Loading = `MapLoadingProxyCount` / meta `N`
-- [ ] Windows join: no `Crash!!!` in Player.log
+| Area | Files | Must preserve |
+|------|--------|----------------|
+| GhostSpawn | `Packages/com.unity.netcode/.../GhostSpawnSystem.cs`, `tools/netcode-patches/*` | v12+ patch id, Instantiates=1, CreateEntity-all, counters |
+| Join gate | `TitanOrbitClientJoinTransformGateSystem.cs`, `ClientJoinSettleState.cs` | Quarantine stays on in-game; no Transform RE-ENABLE |
+| Map visuals | `EcsWorldVisualizer.cs`, `MapBodyHybridVisual*.cs`, `MapBodyHybridVisualRequestSystem.cs` | Request system **disabled**; Pending drain only |
+| Minimap | `MinimapEcsEntitySync.cs` | Settling = skip entirely. Under TransformQuarantine: **no** planet/asteroid `ToEntityArray` — rebuild from `EcsWorldVisualizer` hybrid proxies. Do **not** early-return the whole minimap for quarantine (hides UI forever). |
+| Moon hulls | `PlanetGemMoonColliderSystems.cs` | Quarantine **or** Settling on client |
+| Loading | `EcsGameBridge.cs`, `LoadingScreenControllerNce.cs` | Soft Instantiates then GO count; no gather under quarantine |
+| Server stream | `TitanOrbitGhostDistanceImportanceSystem.cs` (+ send tune) | TileSize ~48 ≪ map |
+| Ships under quarantine | `ShipEntitiesGraphicsPresentationSystem.cs`, ship hybrid paths | Skip EG / use GO when quarantined |
 
-## Verify
+---
 
-`Player.log`: `[JoinSettle] Settling ON` → Instantiates progress → `Settling OFF`, **no** `TransformSystemGroup RE-ENABLED`, **no** `Crash!!!`.  
-DLL / logs may mention `TO_GhostSpawn_v9_transformsAlwaysOn`.
+## Agent pre-edit checklist (mandatory if touching ownership files)
+
+Before finishing:
+
+- [ ] Did I add any map-body `ToEntityArray` / full query on the **client**? If yes → quarantine gate or delete the scan.
+- [ ] Is every new/changed early-out using **`TransformQuarantine`**, not Settling alone?
+- [ ] Did I leave `MapBodyHybridVisualRequestSystem` disabled?
+- [ ] Did I avoid TransformSystemGroup RE-ENABLE?
+- [ ] GhostSpawn still Instantiates=1 and CreateEntity-all? Patch id still matches menu marker + tools copy?
+- [ ] Loading still avoids asteroid gathers under quarantine?
+- [ ] Would a “helpful” agent removing “redundant” `TransformQuarantine` checks break join? If yes, keep the checks and a comment citing this rule.
+
+---
+
+## Common agent traps (refuse these “fixes”)
+
+| Trap | Why it kills join |
+|------|-------------------|
+| “Settling already false — remove quarantine checks” | Settling OFF was the 14:24 crash |
+| “Re-enable TransformSystemGroup so EG/ships work” | Immediate Crash!!! after Instantiates |
+| “Cap CreateEntity to 1/frame like Instantiates” | Ghost map hole → baseline Crash!!! |
+| “Speed join: Instantiates 8–50/frame” | LTW / Instantiates flood Crash!!! |
+| “Re-enable MarkFromQuery so loading bar moves” | ToEntityArray Crash!!! after settle |
+| “Count asteroids for progress — more accurate” | Gather Crash!!!; use JoinLoadCounters + proxies |
+| “Two loading bars to reduce overload” | UI ≠ safety; quarantine is safety |
+| “Minimap needs anchors now that Settling ended” | Full SyncAsteroids gather Crash!!! |
+| “Gate whole MinimapEcsEntitySync on TransformQuarantine” | Quarantine is session-long → minimap never shows; gate map gathers only, use hybrid proxies |
+
+---
+
+## Verify after client changes
+
+`Player.log` must show:
+
+1. `[JoinSettle] Settling ON` (or equivalent) during Instantiates
+2. Instantiates progressing (bar may crawl via counters)
+3. `Settling OFF`
+4. **No** `TransformSystemGroup RE-ENABLED`
+5. **No** `Crash!!!`
+6. Optional: DLL/log contains `TO_GhostSpawn_v12_joinLoadCounters` (or newer)
+
+Manual: Windows client → Relay late-join into a dense map (400+ asteroids) → reach in-game with ship visible (hybrid) and no process death.
+
+---
+
+## Headless note
+
+Client quarantine / GhostSpawn / loading / minimap gates → **client rebuild only**.  
+Server TileSize / GhostSend chunk tuning → **Linux headless rebuild + GCE redeploy** required for stream-side relief.

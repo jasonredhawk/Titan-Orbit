@@ -6,25 +6,25 @@ This folder is a **project-local copy** of `com.unity.netcode` 1.14.0.
 
 ## Patch marker
 
-`GhostSpawnSystem.TitanOrbitGhostSpawnPatchId` → `TO_GhostSpawn_v10_placeholderCap1`
+`GhostSpawnSystem.TitanOrbitGhostSpawnPatchId` → `TO_GhostSpawn_v12_joinLoadCounters`
 
 ## What the patch does
 
 1. No Burst on `OnUpdate` (managed Instantiates).
 2. Safe SnapshotDataBuffer copy (`TryCopySnapshotBufferSafe`).
 3. **1 Instantiates/frame** from delayed queues.
-4. **1 CreateEntity placeholder/frame** — requeue leftovers; register each CreateEntity in the ghost map.
-5. Never disable `TransformSystemGroup` during join (project settle code).
+4. **CreateEntity-all** placeholders (register every GhostID in `SpawnedGhostEntityMap`).
+5. `TitanOrbitJoinLoadCounters` for loading UI (avoids asteroid `ToEntityArray`).
 
-## Why CreateEntity must be capped
+## Why CreateEntity-cap+requeue is forbidden
 
-With LTW always on, CreateEntity×56 in one frame hard-crashed Windows Burst (`Crash!!!` immediately after the placeholder log). Soft try/catch cannot catch that — native AV.
+Requeue without map registration → `baseline for a ghost we do not have` → Burst Crash!!! (2026-07-18). CreateEntity-all + Instantiates 1/frame is the safe pair; project keeps Burst LTW / TransformSystemGroup off via TransformQuarantine.
 
 ## Server companion (required for dense maps)
 
-`TitanOrbitGhostDistanceImportanceBootstrapSystem.TileSizeWorld` must be ≪ map size. TileSize 512 on a ~340 map made the whole asteroid field one chunk, so `MaxSendChunks=1` still sent dozens of spawns per tick.
+`TitanOrbitGhostDistanceImportanceBootstrapSystem.TileSizeWorld` must be ≪ map size (~48). TileSize 512 on a ~340 map made the whole asteroid field one chunk, so `MaxSendChunks=1` still sent dozens of spawns per tick.
 
 ## Verify
 
-Windows client `Unity.NetCode.dll` must contain `TO_GhostSpawn_v10_placeholderCap1`.  
-`Player.log`: `[TO_GhostSpawn] Placeholder cap: created 1/frame, re-queued N…` then join completes with **no** `Crash!!!`.
+Windows client `Unity.NetCode.dll` must contain `TO_GhostSpawn_v12_joinLoadCounters`.  
+`Player.log`: placeholders + Instantiates 1/frame, Settling OFF, **no** `TransformSystemGroup RE-ENABLED`, **no** `Crash!!!`.

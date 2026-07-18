@@ -1,4 +1,5 @@
 using Unity.Entities;
+using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
@@ -60,6 +61,8 @@ namespace TitanOrbit.ECS
             Settling = false;
             TransformQuarantine = false;
             InGameFrames = 0;
+            // [NETCODE] GhostSpawn join counters — next Relay join starts from zero.
+            TitanOrbitJoinLoadCounters.Reset();
         }
     }
 }

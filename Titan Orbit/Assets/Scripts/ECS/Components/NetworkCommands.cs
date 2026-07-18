@@ -1,4 +1,5 @@
 using Unity.Collections;
+using Unity.Mathematics;
 using Unity.NetCode;
 
 namespace TitanOrbit.ECS
@@ -153,5 +154,43 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Status message for rejoin dialog UI.</summary>
         public FixedString128Bytes Message;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: spawn a cosmetic people-transport float.
+    /// Ghost Instantiates are too slow under MaxSendChunks/Instantiates caps for ~1s flights;
+    /// clients create local presentation entities from this RPC (see PeopleTransportSpawnRpcClientSystem).
+    /// </summary>
+    public struct PeopleTransportSpawnRpc : IRpcCommand
+    {
+        /// <summary>Monotonic id for host queue + RPC dedupe.</summary>
+        public uint Sequence;
+
+        /// <summary>World spawn position (XZ plane).</summary>
+        public float3 SpawnPosition;
+
+        /// <summary>Initial planar velocity.</summary>
+        public float3 Velocity;
+
+        /// <summary>Cruise speed for magnet steering.</summary>
+        public float CruiseSpeed;
+
+        /// <summary>Population amount (drives visual scale).</summary>
+        public float Amount;
+
+        /// <summary>Load destination ship network id (0 for unload).</summary>
+        public int TargetShipNetworkId;
+
+        /// <summary>Source planet id (load / fallback).</summary>
+        public int SourcePlanetId;
+
+        /// <summary>Unload destination planet id.</summary>
+        public int TargetPlanetId;
+
+        /// <summary>1 = planet→ship load, 0 = ship→planet unload.</summary>
+        public byte IsLoad;
+
+        /// <summary>Owning team as byte.</summary>
+        public byte Team;
     }
 }
