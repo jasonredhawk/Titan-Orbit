@@ -114,11 +114,26 @@ namespace TitanOrbit.Game
 
         public void Hide()
         {
-            // --- Hide ---
+            // --- Hide (Back / leave join flow) ---
+            // [UNITY] Deactivates this overlay and returns the player to the main menu panel.
             if (_screenRoot != null)
                 _screenRoot.SetActive(false);
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(true);
+        }
+
+        /// <summary>
+        /// Hides the Join Game overlay when the Loading Map screen takes over — without
+        /// re-enabling the main menu. <see cref="NceGameFlowController.RefreshUi"/> already
+        /// keeps the main menu off while dedicated connect / map load is in progress.
+        /// </summary>
+        public void DismissForLoading()
+        {
+            // --- Dismiss for loading ---
+            // [TITAN-ORBIT] Do NOT call Hide() here: Hide() turns mainMenuPanel back on, which
+            // would flash the Play menu under the loading screen for a frame.
+            if (_screenRoot != null)
+                _screenRoot.SetActive(false);
         }
 
         void Update()
@@ -878,15 +893,20 @@ namespace TitanOrbit.Game
                     return;
                 }
 
+                // --- Hand off to Loading Map ---
+                // [TITAN-ORBIT] Leave Join Game before Relay connect finishes so the lobby list
+                // is not visible under the loading overlay (RefreshUi also dismisses as backup).
+                DismissForLoading();
                 SetStatus("Connecting to match...");
                 if (!await WaitForDedicatedConnectionAsync(65f))
                 {
+                    // Connection failed — bring the browser back so the player can retry.
                     SetStatus(TitanOrbitSessionManager.Instance.LastStatusMessage ??
                               "Connection timed out. Tap Refresh — the server may be offline.");
+                    if (!IsVisible)
+                        Show();
                     return;
                 }
-
-                Hide();
             }
             finally
             {
@@ -915,15 +935,20 @@ namespace TitanOrbit.Game
                     return;
                 }
 
+                // --- Hand off to Loading Map ---
+                // [TITAN-ORBIT] Dismiss Join Game immediately so the lobby list is gone before
+                // LoadingScreenControllerNce covers the canvas (not after WaitForDedicatedConnection).
+                DismissForLoading();
                 SetStatus("Connecting to match...");
                 if (!await WaitForDedicatedConnectionAsync(65f))
                 {
+                    // Connection failed — restore the browser with the error status for retry.
                     SetStatus(TitanOrbitSessionManager.Instance.LastStatusMessage ??
                               "Connection timed out. Tap Refresh — the server may be offline.");
+                    if (!IsVisible)
+                        Show();
                     return;
                 }
-
-                Hide();
             }
             finally
             {

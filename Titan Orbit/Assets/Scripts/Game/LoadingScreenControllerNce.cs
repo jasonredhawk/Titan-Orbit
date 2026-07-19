@@ -125,6 +125,9 @@ namespace TitanOrbit.Game
             _panelRoot = CreateRect("LoadingPanel", canvasRect);
             StretchFill(_panelRoot);
 
+            // [TITAN-ORBIT] Slightly transparent so players can watch asteroids/planets Instantiates
+            // during join. Join Game is dismissed before this shows — so the lobby list does not
+            // bleed through (see JoinGameBrowserController.DismissForLoading).
             var backdrop = _panelRoot.gameObject.AddComponent<Image>();
             backdrop.color = new Color(0.02f, 0.04f, 0.1f, 0.97f);
             backdrop.raycastTarget = true;

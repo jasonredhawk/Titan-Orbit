@@ -1039,11 +1039,19 @@ namespace TitanOrbit.Game
             if (teamSelectionPanel != null)
                 teamSelectionPanel.SetActive(showTeam);
 
+            // --- Loading Map owns the screen ---
+            // [TITAN-ORBIT] Show loading while Relay connect is in flight OR while the map is
+            // still streaming. Join Game must be dismissed first — otherwise the lobby list stays
+            // active under a semi-transparent loading panel.
+            bool showLoadingOverlay = showLoading || (connectingDedicated && !connected);
+            if (showLoadingOverlay && _joinBrowser != null && _joinBrowser.IsVisible)
+                _joinBrowser.DismissForLoading();
+
             if (loadingRoot != null)
-                loadingRoot.SetActive(showLoading || (connectingDedicated && !connected));
+                loadingRoot.SetActive(showLoadingOverlay);
             if (_loadingScreen != null)
             {
-                if (showLoading || (connectingDedicated && !connected))
+                if (showLoadingOverlay)
                     _loadingScreen.Show();
                 else
                     _loadingScreen.Hide();
