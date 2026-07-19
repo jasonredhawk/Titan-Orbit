@@ -125,23 +125,26 @@ namespace TitanOrbit.ECS.Authoring
 
             /// <summary>
             /// Collects child ShipWeaponMountAuthoring transforms into a DynamicBuffer for
-            /// multi-cannon ships. Falls back to "Weapon" named children or a forward offset.
+            /// multi-cannon ships. Falls back to "Weapon" named children. Empty buffer = unarmed
+            /// (no synthetic centerline muzzle).
             /// </summary>
             void BakeWeaponMounts(StarshipGhostAuthoring authoring, Entity shipEntity)
             {
                 var mounts = AddBuffer<ShipWeaponMountElement>(shipEntity);
+                Transform hullRoot = authoring.transform;
                 var mountAuthorings = authoring.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
                 for (int i = 0; i < mountAuthorings.Length; i++)
                 {
                     var mount = mountAuthorings[i];
-                    if (mount == null || mount.transform == authoring.transform)
+                    if (mount == null || mount.transform == hullRoot)
                         continue;
 
-                    var t = mount.transform;
+                    ShipChassisPrefabBakeUtility.GetHullRootLocalPose(
+                        hullRoot, mount.transform, out float3 localPos, out quaternion localRot);
                     mounts.Add(new ShipWeaponMountElement
                     {
-                        LocalPosition = t.localPosition,
-                        LocalRotation = t.localRotation,
+                        LocalPosition = localPos,
+                        LocalRotation = localRot,
                         DirectionAngleDeg = mount.DirectionAngleDeg,
                         CannonIndex = mount.CannonIndex,
                     });
@@ -151,29 +154,21 @@ namespace TitanOrbit.ECS.Authoring
                 {
                     foreach (var t in authoring.GetComponentsInChildren<Transform>(true))
                     {
-                        if (t == authoring.transform || !t.name.Contains("Weapon"))
+                        if (t == hullRoot || !t.name.Contains("Weapon"))
                             continue;
 
+                        ShipChassisPrefabBakeUtility.GetHullRootLocalPose(
+                            hullRoot, t, out float3 localPos, out quaternion localRot);
                         mounts.Add(new ShipWeaponMountElement
                         {
-                            LocalPosition = t.localPosition,
-                            LocalRotation = t.localRotation,
+                            LocalPosition = localPos,
+                            LocalRotation = localRot,
                             DirectionAngleDeg = 0f,
                             CannonIndex = mounts.Length,
                         });
                     }
                 }
-
-                if (mounts.Length == 0)
-                {
-                    mounts.Add(new ShipWeaponMountElement
-                    {
-                        LocalPosition = new float3(0f, 0f, authoring.MuzzleOffset),
-                        LocalRotation = quaternion.identity,
-                        DirectionAngleDeg = 0f,
-                        CannonIndex = 0,
-                    });
-                }
+                // [TITAN-ORBIT] Intentionally no MuzzleOffset fallback — unarmed ships stay empty.
             }
 
             /// <summary>

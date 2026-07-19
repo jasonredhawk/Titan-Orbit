@@ -1,20 +1,14 @@
-using TitanOrbit.Core;
-using TitanOrbit.Generation;
-using TitanOrbit.Simulation;
 using Unity.Entities;
-using Unity.Mathematics;
-using Unity.NetCode;
-using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Client/server presentation: spawns cosmetic bullet tracer entities from server spawn events.
-    /// Runs in PresentationSystemGroup — does not affect authoritative sim. Paired with
-    /// <see cref="BulletTracerUpdateSystem"/> which advances tracers and emits hit VFX events.
+    /// [LEGACY] Server-world only: clears <see cref="BulletSpawnEventElement"/> after sim writes them.
+    /// Client cosmetic tracers are owned by <see cref="Game.BulletVfxDriver"/> via
+    /// <see cref="BulletSpawnRpc"/> / <see cref="BulletVfxBridge"/> — not ECS tracer entities.
     /// </summary>
     [UpdateInGroup(typeof(PresentationSystemGroup))]
-    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ServerSimulation)]
+    [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct BulletPresentationSystem : ISystem
     {
         public void OnCreate(ref SystemState state)
@@ -24,180 +18,33 @@ namespace TitanOrbit.ECS
 
         public void OnUpdate(ref SystemState state)
         {
+            // --- Drain spawn events so the server buffer does not grow unbounded ---
+            // [LEGACY] Formerly created BulletTracerState entities; VFX is now bridge/RPC driven.
             if (!SystemAPI.TryGetSingletonEntity<ActiveBulletsTag>(out var bulletEntity))
                 return;
 
-            var events = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
-            if (events.Length == 0)
+            if (!state.EntityManager.HasBuffer<BulletSpawnEventElement>(bulletEntity))
                 return;
 
-            // [ECS/DOTS] ECB defers entity creation until Playback — safe during buffer iteration.
-            var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
-            foreach (var evt in events)
-            {
-                var tracer = ecb.CreateEntity();
-                ecb.AddComponent(tracer, LocalTransform.FromPositionRotationScale(evt.SpawnPosition, quaternion.identity, 0.3f));
-                ecb.AddComponent(tracer, new BulletTracerState
-                {
-                    Position = evt.SpawnPosition,
-                    SpawnPosition = evt.SpawnPosition,
-                    Velocity = evt.Velocity,
-                    RemainingLifetime = evt.Lifetime,
-                    MaxDistance = math.max(0.5f, evt.MaxDistance),
-                    Scale = 0.3f,
-                    ScaleMultiplier = evt.ScaleMultiplier > 0f ? evt.ScaleMultiplier : 1f,
-                    Damage = evt.Damage,
-                    OwnerTeam = evt.OwnerTeam,
-                    BankIndex = evt.BankIndex,
-                });
-            }
-            events.Clear();
-            ecb.Playback(state.EntityManager);
-            ecb.Dispose();
+            var events = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
+            if (events.Length > 0)
+                events.Clear();
         }
     }
 
     /// <summary>
-    /// Advances cosmetic bullet tracers each frame and detects visual hits for VFX.
-    /// Mirrors server collision layers (planets, moons, ships, asteroids) but does not apply damage.
+    /// [LEGACY] Disabled on clients — map-body tracer hit gathers were quarantine-unsafe.
+    /// Impact VFX comes from server <see cref="BulletHitRpc"/> via <see cref="BulletVfxDriver"/>.
+    /// Kept as an empty server stub so asmdef / type references stay stable.
     /// </summary>
     [UpdateInGroup(typeof(PresentationSystemGroup))]
     [UpdateAfter(typeof(BulletPresentationSystem))]
-    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ServerSimulation)]
+    [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct BulletTracerUpdateSystem : ISystem
     {
         public void OnUpdate(ref SystemState state)
         {
-            float dt = SystemAPI.Time.DeltaTime;
-            double elapsed = SystemAPI.Time.ElapsedTime;
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
-            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
-            {
-                mapW = mapState.MapWidth;
-                mapH = mapState.MapHeight;
-            }
-
-            var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
-            DynamicBuffer<BulletHitEventElement> hitEvents = default;
-            bool hasHitEvents = SystemAPI.TryGetSingletonEntity<ActiveBulletsTag>(out var bulletEntity)
-                                && state.EntityManager.HasBuffer<BulletHitEventElement>(bulletEntity);
-            if (hasHitEvents)
-                hitEvents = state.EntityManager.GetBuffer<BulletHitEventElement>(bulletEntity);
-
-            foreach (var (tracer, transform, entity) in SystemAPI
-                         .Query<RefRW<BulletTracerState>, RefRW<LocalTransform>>()
-                         .WithEntityAccess())
-            {
-                tracer.ValueRW.RemainingLifetime -= dt;
-                if (tracer.ValueRW.RemainingLifetime <= 0f)
-                {
-                    ecb.DestroyEntity(entity);
-                    continue;
-                }
-
-                float3 prevPos = tracer.ValueRO.Position;
-                float3 newPos = prevPos + tracer.ValueRO.Velocity * dt;
-                bool hit = false;
-                float3 hitPoint = newPos;
-
-                // --- World collision (same order as BulletSimulationSystem) ---
-                foreach (var (planetState, planetTransform, moonState) in SystemAPI
-                             .Query<RefRO<PlanetState>, RefRO<LocalTransform>, RefRO<PlanetGemMoonState>>()
-                             .WithAll<PlanetTag>())
-                {
-                    float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
-                    float3 planetPos = planetTransform.ValueRO.Position;
-
-                    if (BulletCollision.SegmentHitsPlanetToroidal(
-                            prevPos, newPos, planetPos, planetSize, mapW, mapH, out hitPoint))
-                    {
-                        hit = true;
-                        break;
-                    }
-
-                    var ownerTeam = (TeamId)tracer.ValueRO.OwnerTeam;
-                    if (PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.ValueRO.Ownership, ownerTeam))
-                        continue;
-
-                    float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
-                        planetSize,
-                        planetState.ValueRO.IsHomePlanet,
-                        moonState.ValueRO.CurrentShield);
-
-                    if (BulletCollision.SegmentHitsMoonNear(
-                            prevPos, newPos, planetPos, planetSize,
-                            planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, elapsed,
-                            planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out hitPoint))
-                    {
-                        hit = true;
-                        break;
-                    }
-                }
-
-                if (!hit)
-                {
-                    foreach (var (shipState, shipTransform) in SystemAPI
-                             .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
-                             .WithAll<ShipTag>())
-                    {
-                        if (shipState.ValueRO.IsDead) continue;
-                        if (shipState.ValueRO.Team == (TeamId)tracer.ValueRO.OwnerTeam) continue;
-
-                        if (BulletCollision.SegmentHitsSphereToroidal(
-                                prevPos, newPos, shipTransform.ValueRO.Position, 2f, mapW, mapH, out hitPoint))
-                        {
-                            hit = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (!hit)
-                {
-                    foreach (var (asteroidState, asteroidTransform) in SystemAPI
-                                 .Query<RefRO<AsteroidState>, RefRO<LocalTransform>>()
-                                 .WithAll<AsteroidTag>())
-                    {
-                        if (asteroidState.ValueRO.IsDestroyed)
-                            continue;
-
-                        float hitRadius = BulletCollision.AsteroidHitRadius(asteroidTransform.ValueRO.Scale);
-                        if (BulletCollision.SegmentHitsSphereToroidal(
-                                prevPos, newPos, asteroidTransform.ValueRO.Position, hitRadius, mapW, mapH, out hitPoint))
-                        {
-                            hit = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (hit)
-                {
-                    tracer.ValueRW.Position = hitPoint;
-                    transform.ValueRW.Position = hitPoint;
-                    if (hasHitEvents)
-                    {
-                        hitEvents.Add(new BulletHitEventElement
-                        {
-                            HitPosition = hitPoint,
-                            Damage = tracer.ValueRO.Damage,
-                            OwnerTeam = tracer.ValueRO.OwnerTeam,
-                            BankIndex = tracer.ValueRO.BankIndex,
-                            ScaleMultiplier = tracer.ValueRO.ScaleMultiplier > 0f ? tracer.ValueRO.ScaleMultiplier : 1f,
-                        });
-                    }
-                    ecb.DestroyEntity(entity);
-                    continue;
-                }
-
-                // --- Unbounded tracer pose (matches server bullets / non-wrapping ships) ---
-                tracer.ValueRW.Position = newPos;
-                transform.ValueRW.Position = newPos;
-            }
-
-            ecb.Playback(state.EntityManager);
-            ecb.Dispose();
+            // Intentionally empty — see type summary.
         }
     }
 }

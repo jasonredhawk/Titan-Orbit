@@ -109,6 +109,36 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Resolves <see cref="ShipFamilyDefinition"/> from chassis id prefix
+        /// (e.g. <c>AstroEagle_T2</c> → familyId <c>AstroEagle</c>).
+        /// </summary>
+        public static bool TryResolveFamilyForChassisId(string chassisId, out ShipFamilyDefinition family)
+        {
+            family = null;
+            var config = Config;
+            if (config?.families == null || string.IsNullOrEmpty(chassisId))
+                return false;
+
+            int underscore = chassisId.IndexOf('_');
+            if (underscore <= 0)
+                return false;
+
+            string prefix = chassisId.Substring(0, underscore);
+            for (int i = 0; i < config.families.Count; i++)
+            {
+                var entry = config.families[i];
+                if (entry?.shipFamilyDefinition != null &&
+                    string.Equals(entry.shipFamilyDefinition.familyId, prefix, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    family = entry.shipFamilyDefinition;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Sums component stats from the chassis prefab (or tier breakdown / family fallback)
         /// at the given ship level. Output is base stats before attribute-upgrade multipliers.
         /// </summary>
@@ -124,25 +154,7 @@ namespace TitanOrbit.ECS
                 return false;
 
             // --- Resolve ship family from chassis id prefix (e.g. "AstroEagle_T2" → AstroEagle) ---
-            ShipFamilyDefinition family = null;
-            if (config.families != null)
-            {
-                int underscore = chassisId.IndexOf('_');
-                if (underscore > 0)
-                {
-                    string prefix = chassisId.Substring(0, underscore);
-                    for (int i = 0; i < config.families.Count; i++)
-                    {
-                        var entry = config.families[i];
-                        if (entry?.shipFamilyDefinition != null &&
-                            string.Equals(entry.shipFamilyDefinition.familyId, prefix, System.StringComparison.OrdinalIgnoreCase))
-                        {
-                            family = entry.shipFamilyDefinition;
-                            break;
-                        }
-                    }
-                }
-            }
+            TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family);
 
             // [TITAN-ORBIT] Prefer summing stats from the baked chassis prefab hierarchy.
             if (tier.prefab != null && family != null &&
@@ -254,6 +266,17 @@ namespace TitanOrbit.ECS
                 if (weapon.ReferenceBulletSpeed <= 0.01f)
                     weapon.ReferenceBulletSpeed = bulletSpeed;
                 em.SetComponentData(shipEntity, weapon);
+            }
+
+            // --- Bullet VFX bank from ShipFamilyDefinition.bulletPrefabIndex ---
+            // [NETCODE] RuntimeBulletIndex is ghosted — server only; clients read replica for anticipation.
+            if (writeGhostedShipState &&
+                em.HasComponent<ShipLoadoutState>(shipEntity) &&
+                TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition bankFamily))
+            {
+                var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
+                loadout.RuntimeBulletIndex = BulletBankProfileUtility.ResolveBankIndexForFamily(bankFamily);
+                em.SetComponentData(shipEntity, loadout);
             }
 
             // --- Physics tuning (ShipPhysicsDriveSystem reads these) ---

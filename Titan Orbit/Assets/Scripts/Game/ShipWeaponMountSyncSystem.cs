@@ -51,11 +51,13 @@ namespace TitanOrbit.Game
                     if (mountAuth == null || mountAuth.transform == hullRoot)
                         continue;
 
-                    var wt = mountAuth.transform;
+                    // [TITAN-ORBIT] Hull-root-local (nested Weapon children) — same as catalog bake.
+                    ShipChassisPrefabBakeUtility.GetHullRootLocalPose(
+                        hullRoot, mountAuth.transform, out var localPos, out var localRot);
                     buffer.Add(new ShipWeaponMountElement
                     {
-                        LocalPosition = wt.localPosition,
-                        LocalRotation = wt.localRotation,
+                        LocalPosition = localPos,
+                        LocalRotation = localRot,
                         DirectionAngleDeg = mountAuth.DirectionAngleDeg,
                         CannonIndex = mountAuth.CannonIndex,
                     });

@@ -350,13 +350,13 @@ namespace TitanOrbit.Game
             // Owned by PeopleTransportVfxDriver (MonoBehaviour Instantiates from VFX bridge).
             // Do not DrawPeopleTransports here — ECS presentation path was unreliable under quarantine.
 
-            // --- Bullets: still quarantine-gated (broader gathers / hit buffers) ---
-            // [TITAN-ORBIT] Settling OFF used to unlock ToEntityArray paths → Crash!!! (minimap + draws).
-            if (!ClientJoinSettleCache.TransformQuarantine && !settling)
-            {
-                ProcessBulletHitEvents(em);
-                DrawBullets(em, alive);
+            // --- Bullets ---
+            // [LEGACY] DrawBullets / ProcessBulletHitEvents retired — owned by BulletVfxDriver
+            // (BulletSpawnRpc / BulletHitRpc + BulletVfxBridge). Do not re-enable ECS tracer draws
+            // under TransformQuarantine (map gathers / Instantiates risk).
 
+            // --- Proxy prune (quarantine-safe: dictionary only, no map-body ToEntityArray) ---
+            {
                 var remove = new List<Entity>();
                 foreach (var kv in _proxies)
                 {
@@ -367,21 +367,8 @@ namespace TitanOrbit.Game
                 foreach (var entity in remove)
                     DestroyProxy(entity);
 
-                ToroidalDisplay.PruneStale(alive);
-            }
-            else
-            {
-                // Quarantine: prune destroyed proxies without world-wide entity gathers.
-                // Also prune transport proxies whose presentation entities despawned mid-flight.
-                var remove = new List<Entity>();
-                foreach (var kv in _proxies)
-                {
-                    if (kv.Value == null || !em.Exists(kv.Key))
-                        remove.Add(kv.Key);
-                }
-
-                foreach (var entity in remove)
-                    DestroyProxy(entity);
+                if (!ClientJoinSettleCache.TransformQuarantine && !settling)
+                    ToroidalDisplay.PruneStale(alive);
             }
 
             WorldBodyProxyCount = CountWorldBodyProxies();
@@ -1051,8 +1038,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Consumes server-authoritative <see cref="BulletHitEventElement"/> buffer and spawns impact VFX.
-        /// Clears buffer after processing — events are one-shot per sim tick batch.
+        /// [LEGACY] Formerly consumed <see cref="BulletHitEventElement"/>. Impact VFX is now owned by
+        /// <see cref="BulletVfxDriver"/> via <see cref="BulletHitRpc"/>. Kept for reference; not called.
         /// </summary>
         void ProcessBulletHitEvents(EntityManager em)
         {
@@ -1152,7 +1139,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Spawns bullet tracer GameObjects, muzzle VFX on first sighting, and stretch-trail progress each frame.
+        /// [LEGACY] Formerly drew ECS <see cref="BulletTracerState"/> proxies. Muzzle/tracer/impact
+        /// are now owned by <see cref="BulletVfxDriver"/>. Kept for reference; not called.
         /// </summary>
         void DrawBullets(EntityManager em, HashSet<Entity> alive)
         {

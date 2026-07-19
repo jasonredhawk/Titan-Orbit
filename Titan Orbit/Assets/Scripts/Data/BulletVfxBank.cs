@@ -10,7 +10,7 @@ namespace TitanOrbit.Data
     /// [HYBRID] Projectile bank for client bullet VFX (Sci-Fi Arsenal demo prefabs). Each category maps
     /// to a <see cref="BulletBankProfile"/> for gameplay modifiers and a list of team-colored prefabs.
     /// Team color picks the variant (e.g. LaserBoltBlueOBJ for TeamB). Loaded by
-    /// <see cref="ClientLocalBulletVfxBridge"/> — does not affect server hit detection.
+    /// <see cref="Game.BulletVfxDriver"/> — does not affect server hit detection.
     /// </summary>
     [CreateAssetMenu(fileName = "BulletVfxBank", menuName = "Titan Orbit/Bullet VFX Bank")]
     public class BulletVfxBank : ScriptableObject

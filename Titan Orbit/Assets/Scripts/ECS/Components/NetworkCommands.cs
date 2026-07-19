@@ -225,4 +225,67 @@ namespace TitanOrbit.ECS
         /// </summary>
         public byte Status;
     }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: spawn a cosmetic bullet tracer (muzzle + in-flight).
+    /// Bullets are not ghosts — <see cref="BulletSimulationSystem"/> owns damage; clients draw via
+    /// <see cref="BulletVfxBridge"/> / <c>BulletVfxDriver</c>. Wire layout must match Linux headless.
+    /// </summary>
+    public struct BulletSpawnRpc : IRpcCommand
+    {
+        /// <summary>Monotonic shot id (host bridge + RPC dedupe).</summary>
+        public uint Sequence;
+
+        /// <summary>Muzzle world position at fire time (logical / unbounded XZ).</summary>
+        public float3 SpawnPosition;
+
+        /// <summary>Initial planar velocity (includes ship velocity).</summary>
+        public float3 Velocity;
+
+        /// <summary>Tracer lifetime in seconds.</summary>
+        public float Lifetime;
+
+        /// <summary>Max travel distance before cosmetic despawn.</summary>
+        public float MaxDistance;
+
+        /// <summary>Display damage (impact VFX intensity; server owns real damage).</summary>
+        public float Damage;
+
+        /// <summary>Shooter team as byte.</summary>
+        public byte OwnerTeam;
+
+        /// <summary>Shooter network id (anticipation adopt / local mute).</summary>
+        public int OwnerNetworkId;
+
+        /// <summary>Index into <c>BulletVfxBank</c> categories.</summary>
+        public int BankIndex;
+
+        /// <summary>Per-shot visual scale multiplier.</summary>
+        public float ScaleMultiplier;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: impact VFX when an authoritative bullet hits.
+    /// Wire layout must match Linux headless.
+    /// </summary>
+    public struct BulletHitRpc : IRpcCommand
+    {
+        /// <summary>Same id as <see cref="BulletSpawnRpc.Sequence"/>.</summary>
+        public uint Sequence;
+
+        /// <summary>World hit position (logical / unbounded XZ).</summary>
+        public float3 HitPosition;
+
+        /// <summary>Damage for impact VFX intensity.</summary>
+        public float Damage;
+
+        /// <summary>Shooter team as byte.</summary>
+        public byte OwnerTeam;
+
+        /// <summary>Index into <c>BulletVfxBank</c> categories.</summary>
+        public int BankIndex;
+
+        /// <summary>Per-shot visual scale multiplier.</summary>
+        public float ScaleMultiplier;
+    }
 }

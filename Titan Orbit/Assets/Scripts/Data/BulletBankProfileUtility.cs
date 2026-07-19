@@ -4,10 +4,9 @@ namespace TitanOrbit.Data
 {
     // --- Type members ---
     /// <summary>
-    /// [LEGACY] Stub for applying active <see cref="BulletBankProfile"/> modifiers to ship component
-    /// stats and power-score breakdowns. Full bullet-bank switching was deferred — every method returns
-    /// inputs unchanged. Reserved for when runtime bullet index drives per-bank power bars in the
-    /// upgrade tree and moon-dock UI. Paired with <see cref="BulletVfxBank"/> category profiles.
+    /// Helpers for <see cref="BulletVfxBank"/> category selection and (future) bank combat modifiers.
+    /// <see cref="ResolveBankIndexForFamily"/> is live — used by <c>ShipStatApplyLogic</c> to set
+    /// <c>ShipLoadoutState.RuntimeBulletIndex</c>. Profile ability multipliers on damage remain deferred.
     /// </summary>
     public static class BulletBankProfileUtility
     {
@@ -26,9 +25,16 @@ namespace TitanOrbit.Data
             int bankIndex) => breakdown;
 
         /// <summary>
-        /// Always -1 until family→bank index mapping is implemented on <see cref="ShipFamilyDefinition"/>.
-        /// Callers should treat -1 as "use default bank 0".
+        /// Family default bank category from <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>.
+        /// Negative authored values clamp to 0 (Laserbolt / first bank category).
         /// </summary>
-        public static int ResolveBankIndexForFamily(ShipFamilyDefinition family) => -1;
+        public static int ResolveBankIndexForFamily(ShipFamilyDefinition family)
+        {
+            // --- Family → bank ---
+            // [TITAN-ORBIT] Wired into ShipLoadoutState.RuntimeBulletIndex by ShipStatApplyLogic.
+            if (family == null)
+                return 0;
+            return family.bulletPrefabIndex < 0 ? 0 : family.bulletPrefabIndex;
+        }
     }
 }

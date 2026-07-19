@@ -8,7 +8,7 @@ namespace TitanOrbit.ECS
     /// [ECS/DOTS] Server-authoritative bullet simulation state stored in a singleton buffer on the
     /// entity tagged with <see cref="ActiveBulletsTag"/>. Each element is one live projectile advanced
     /// by <see cref="BulletSimulationSystem"/>. Not ghost-replicated — clients see tracers from
-    /// <see cref="BulletSpawnEventElement"/> spawn events.
+    /// <see cref="BulletSpawnRpc"/> / <see cref="BulletVfxBridge"/> (see <c>BulletVfxDriver</c>).
     /// </summary>
     public struct BulletElement : IBufferElementData
     {
@@ -19,7 +19,7 @@ namespace TitanOrbit.ECS
         /// <summary>[ECS/DOTS] World-units-per-second velocity vector on the XZ plane.</summary>
         public float3 Velocity;
 
-        /// <summary>[TITAN-ORBIT] Maximum travel distance before despawn (toroidal segment sum).</summary>
+        /// <summary>[TITAN-ORBIT] Maximum travel distance before despawn (Euclidean step sum).</summary>
         public float MaxDistance;
 
         /// <summary>[UNITY] Seconds until automatic despawn.</summary>
@@ -37,11 +37,17 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Monotonic shot id for client VFX deduplication.</summary>
         public uint Sequence;
 
-        /// <summary>[TITAN-ORBIT] Distance traveled since spawn (toroidal segment sum).</summary>
+        /// <summary>[TITAN-ORBIT] Distance traveled since spawn (Euclidean step sum on unbounded flight).</summary>
         public float Traveled;
 
         /// <summary>[UNITY] Seconds since spawn.</summary>
         public float Age;
+
+        /// <summary>[TITAN-ORBIT] <see cref="BulletVfxBank"/> category for spawn/hit VFX (from loadout).</summary>
+        public int BankIndex;
+
+        /// <summary>[TITAN-ORBIT] Per-shot visual scale carried to impact VFX.</summary>
+        public float ScaleMultiplier;
     }
 
     /// <summary>

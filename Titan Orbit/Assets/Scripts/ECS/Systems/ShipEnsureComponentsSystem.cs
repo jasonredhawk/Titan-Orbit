@@ -79,20 +79,11 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(entity, new ShipWeaponState());
 
             // --- Weapon mounts and wing tractor beams (DynamicBuffer for multi-mount ships) ---
+            // [TITAN-ORBIT] Empty mount buffer = intentional unarmed ship — never inject a fake muzzle.
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>().WithEntityAccess())
             {
                 if (!state.EntityManager.HasBuffer<ShipWeaponMountElement>(entity))
-                {
                     ecb.AddBuffer<ShipWeaponMountElement>(entity);
-                    // [TITAN-ORBIT] Single forward muzzle fallback when prefab has no mount children.
-                    ecb.AppendToBuffer(entity, new ShipWeaponMountElement
-                    {
-                        LocalPosition = new float3(0f, 0f, 2f),
-                        LocalRotation = quaternion.identity,
-                        DirectionAngleDeg = 0f,
-                        CannonIndex = 0,
-                    });
-                }
 
                 if (!state.EntityManager.HasBuffer<ShipWingTractorBeamElement>(entity))
                     ecb.AddBuffer<ShipWingTractorBeamElement>(entity);

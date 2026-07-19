@@ -1,7 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -11,26 +10,28 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Burst-compiled server-authoritative bullet simulation and ship firing. Runs after
+    /// Server-authoritative bullet simulation and ship firing. Runs after
     /// <see cref="ShipPhysicsDriveSystem"/> so muzzle positions use current transforms. Advances
     /// <see cref="BulletElement"/> buffer with toroidal segment tests against planets, moons,
-    /// ships, asteroids, and people transports. Spawns cosmetic events for
-    /// <see cref="BulletPresentationSystem"/>. Damage and death are server-only.
+    /// ships, asteroids, and people transports. Broadcasts <see cref="BulletSpawnRpc"/> /
+    /// <see cref="BulletHitRpc"/> for client VFX via <see cref="BulletNetNotify"/>.
+    /// Damage and death are server-only. Not Burst-compiled — managed RPC/bridge notify.
     /// </summary>
-    [BurstCompile]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ShipPhysicsDriveSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct BulletSimulationSystem : ISystem
     {
-        [BurstCompile]
+        /// <summary>Require bullet singleton before ticking.</summary>
         public void OnCreate(ref SystemState state)
         {
             // [ECS/DOTS] RequireForUpdate — system skips OnUpdate until a bullet singleton exists.
             state.RequireForUpdate<ActiveBulletsTag>();
         }
 
-        [BurstCompile]
+        /// <summary>
+        /// Advance live bullets (hits + expiry), then spawn from Fire input on armed ships.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             // --- Singleton bullet buffers ---
@@ -46,6 +47,9 @@ namespace TitanOrbit.ECS
             float dt = SystemAPI.Time.DeltaTime;
             // [UNITY] World elapsed — shield hit timestamps / regen cooldowns (not moon orbit phase).
             double serverElapsed = SystemAPI.Time.ElapsedTime;
+
+            // [NETCODE] ECB for spawn/hit RPCs — playback after buffer mutations.
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             // --- Shared orbit clock for moon hit tests ---
             // [TITAN-ORBIT] Bullet vs moon must use ServerTick seconds (same as collider / visuals).
@@ -71,12 +75,13 @@ namespace TitanOrbit.ECS
                 var b = bullets[i];
                 float3 prevPos = b.Position;
                 float3 newPos = prevPos + b.Velocity * dt;
+                // [TITAN-ORBIT] Euclidean step on unbounded flight (not a wrapped-torus path sum).
                 float stepDistance = math.distance(prevPos, newPos);
 
                 b.Age += dt;
                 b.Traveled += stepDistance;
 
-                // Lifetime / range expiry — no hit, just despawn.
+                // Lifetime / range expiry — no hit VFX, just despawn.
                 if (b.Age >= b.Lifetime || b.Traveled >= b.MaxDistance)
                 {
                     bullets.RemoveAtSwapBack(i);
@@ -84,6 +89,7 @@ namespace TitanOrbit.ECS
                 }
 
                 bool hit = false;
+                float3 hitPoint = newPos;
 
                 // [TITAN-ORBIT] Planet hull and gem-moon shield hits (friendly moons skip damage).
                 foreach (var (planetState, planetTransform, moonState) in SystemAPI
@@ -94,7 +100,7 @@ namespace TitanOrbit.ECS
                     float3 planetPos = planetTransform.ValueRO.Position;
 
                     if (BulletCollision.SegmentHitsPlanetToroidal(
-                            prevPos, newPos, planetPos, planetSize, mapW, mapH, out _))
+                            prevPos, newPos, planetPos, planetSize, mapW, mapH, out hitPoint))
                     {
                         hit = true;
                         break;
@@ -112,7 +118,7 @@ namespace TitanOrbit.ECS
                     if (BulletCollision.SegmentHitsMoonNear(
                             prevPos, newPos, planetPos, planetSize,
                             planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, moonElapsed,
-                            planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out _))
+                            planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out hitPoint))
                     {
                         PlanetGemMoonCombatLogic.ApplyBulletDamage(
                             ref moonState.ValueRW,
@@ -129,45 +135,45 @@ namespace TitanOrbit.ECS
                 {
                     // Enemy ships only — friendly fire disabled.
                     foreach (var (shipState, shipTransform, shipEntity) in SystemAPI
-                             .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
-                             .WithAll<ShipTag>()
-                             .WithEntityAccess())
-                {
-                    if (shipState.ValueRO.IsDead) continue;
-                    if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam) continue;
-
-                    if (!BulletCollision.SegmentHitsSphereToroidal(
-                            prevPos, newPos, shipTransform.ValueRO.Position, 2f, mapW, mapH, out float3 hitPoint))
-                        continue;
-
-                    var writable = SystemAPI.GetComponentRW<ShipState>(shipEntity);
-                    writable.ValueRW.Health -= b.Damage;
-                    if (writable.ValueRW.Health <= 0f)
-                        writable.ValueRW.IsDead = true;
-                    if (state.EntityManager.HasComponent<ShipVitalsState>(shipEntity))
+                                 .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
+                                 .WithAll<ShipTag>()
+                                 .WithEntityAccess())
                     {
-                        var vitals = state.EntityManager.GetComponentData<ShipVitalsState>(shipEntity);
-                        vitals.LastHullDamageTime = SystemAPI.Time.ElapsedTime;
-                        state.EntityManager.SetComponentData(shipEntity, vitals);
+                        if (shipState.ValueRO.IsDead) continue;
+                        if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam) continue;
+
+                        float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
+                        if (!BulletCollision.SegmentHitsSphereToroidal(
+                                prevPos, newPos, shipTransform.ValueRO.Position, shipRadius, mapW, mapH, out hitPoint))
+                            continue;
+
+                        var writable = SystemAPI.GetComponentRW<ShipState>(shipEntity);
+                        writable.ValueRW.Health -= b.Damage;
+                        if (writable.ValueRW.Health <= 0f)
+                            writable.ValueRW.IsDead = true;
+                        if (state.EntityManager.HasComponent<ShipVitalsState>(shipEntity))
+                        {
+                            var vitals = state.EntityManager.GetComponentData<ShipVitalsState>(shipEntity);
+                            vitals.LastHullDamageTime = SystemAPI.Time.ElapsedTime;
+                            state.EntityManager.SetComponentData(shipEntity, vitals);
+                        }
+                        hit = true;
+                        break;
                     }
-                    hit = true;
-                    break;
-                }
                 }
 
                 if (!hit)
                 {
-                    foreach (var (asteroidState, asteroidTransform, asteroidEntity) in SystemAPI
+                    foreach (var (asteroidState, asteroidTransform) in SystemAPI
                                  .Query<RefRW<AsteroidState>, RefRO<LocalTransform>>()
-                                 .WithAll<AsteroidTag>()
-                                 .WithEntityAccess())
+                                 .WithAll<AsteroidTag>())
                     {
                         if (asteroidState.ValueRO.IsDestroyed)
                             continue;
 
                         float hitRadius = BulletCollision.AsteroidHitRadius(asteroidTransform.ValueRO.Scale);
                         if (!BulletCollision.SegmentHitsSphereToroidal(
-                                prevPos, newPos, asteroidTransform.ValueRO.Position, hitRadius, mapW, mapH, out _))
+                                prevPos, newPos, asteroidTransform.ValueRO.Position, hitRadius, mapW, mapH, out hitPoint))
                             continue;
 
                         var asteroid = asteroidState.ValueRO;
@@ -202,7 +208,7 @@ namespace TitanOrbit.ECS
 
                         float hitRadius = PeopleTransportMath.GetBulletHitRadius(transform.ValueRO.Scale);
                         if (!BulletCollision.SegmentHitsSphereToroidal(
-                                prevPos, newPos, transform.ValueRO.Position, hitRadius, mapW, mapH, out _))
+                                prevPos, newPos, transform.ValueRO.Position, hitRadius, mapW, mapH, out hitPoint))
                             continue;
 
                         t.Health -= b.Damage;
@@ -216,6 +222,8 @@ namespace TitanOrbit.ECS
 
                 if (hit)
                 {
+                    // [NETCODE] Server owns impact timing — clients play VFX from BulletHitRpc.
+                    BulletNetNotify.SendHit(ref ecb, b, hitPoint);
                     bullets.RemoveAtSwapBack(i);
                     continue;
                 }
@@ -255,6 +263,7 @@ namespace TitanOrbit.ECS
                 if (shipState.ValueRO.CurrentEnergy < energyCost)
                     continue;
 
+                // [TITAN-ORBIT] Empty mounts = intentional unarmed — no fire, no default muzzle.
                 if (!SystemAPI.HasBuffer<ShipWeaponMountElement>(entity))
                     continue;
 
@@ -288,6 +297,11 @@ namespace TitanOrbit.ECS
                     fireOrigin.y = transform.ValueRO.Position.y;
                 }
 
+                // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
+                int bankIndex = 0;
+                if (SystemAPI.HasComponent<ShipLoadoutState>(entity))
+                    bankIndex = math.max(0, SystemAPI.GetComponentRO<ShipLoadoutState>(entity).ValueRO.RuntimeBulletIndex);
+
                 float3 shipVel = kinematics.ValueRO.Velocity;
                 shipVel.y = 0f;
                 float3 bulletVel = fireForward * math.max(1f, weaponCfg.ValueRO.BulletSpeed) + shipVel;
@@ -301,6 +315,8 @@ namespace TitanOrbit.ECS
                     weaponCfg.ValueRO.ReferenceBulletSpeed > 0f
                         ? weaponCfg.ValueRO.ReferenceBulletSpeed
                         : BulletVisualScale.DefaultReferenceBulletSpeed);
+
+                uint sequence = BulletVfxBridge.NextSequence();
                 var spawn = new BulletElement
                 {
                     Position = fireOrigin,
@@ -310,7 +326,9 @@ namespace TitanOrbit.ECS
                     Damage = math.max(1f, weaponCfg.ValueRO.BulletDamage),
                     OwnerNetworkId = ghostOwner.ValueRO.NetworkId,
                     OwnerTeam = (byte)shipState.ValueRO.Team,
-                    Sequence = (uint)state.WorldUnmanaged.Time.ElapsedTime,
+                    Sequence = sequence,
+                    BankIndex = bankIndex,
+                    ScaleMultiplier = visualScale,
                 };
                 bullets.Add(spawn);
                 spawnEvents.Add(new BulletSpawnEventElement
@@ -322,15 +340,21 @@ namespace TitanOrbit.ECS
                     Damage = spawn.Damage,
                     OwnerTeam = spawn.OwnerTeam,
                     Sequence = spawn.Sequence,
-                    BankIndex = 0,
+                    BankIndex = bankIndex,
                     ScaleMultiplier = visualScale,
                 });
+
+                // [NETCODE] Cosmetic path for all clients (host bridge + broadcast RPC).
+                BulletNetNotify.SendSpawn(ref ecb, spawn);
 
                 shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - energyCost);
 
                 weaponState.ValueRW.FireCooldown = 1f / fireRate;
                 weaponState.ValueRW.NextMountIndex = (mountIdx + 1) % mounts.Length;
             }
+
+            ecb.Playback(state.EntityManager);
+            ecb.Dispose();
         }
     }
 }

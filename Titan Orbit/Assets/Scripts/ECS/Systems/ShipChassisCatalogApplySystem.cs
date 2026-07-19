@@ -24,8 +24,11 @@ namespace TitanOrbit.ECS
 
         public void OnUpdate(ref SystemState state)
         {
-            if (ClientJoinSettleCache.TransformQuarantine ||
-                !TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+            // [TITAN-ORBIT] Server must always apply mounts for fire origin. Client under
+            // session-long TransformQuarantine skips (uses ghost-baked mounts for anticipation).
+            if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+                return;
+            if (state.World.IsClient() && ClientJoinSettleCache.TransformQuarantine)
                 return;
 
             var catalog = ShipChassisVisualCatalog.Instance;

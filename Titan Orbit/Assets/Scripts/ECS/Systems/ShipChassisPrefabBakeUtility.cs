@@ -117,8 +117,14 @@ namespace TitanOrbit.ECS
             return chosen != null ? chosen : current[0];
         }
 
+        /// <summary>
+        /// Collects weapon mount children into the catalog entry.
+        /// Positions/rotations are <b>hull-root-local</b> so nested Weapon children line up with
+        /// ship <c>LocalTransform</c> at fire time. Empty list = intentional unarmed chassis.
+        /// </summary>
         static void BakeWeaponMounts(Transform root, ShipChassisVisualEntry entry)
         {
+            // --- Authoring markers first ---
             var mountAuthorings = root.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
             for (int i = 0; i < mountAuthorings.Length; i++)
             {
@@ -126,11 +132,11 @@ namespace TitanOrbit.ECS
                 if (mountAuth == null || mountAuth.transform == root)
                     continue;
 
-                var t = mountAuth.transform;
+                GetHullRootLocalPose(root, mountAuth.transform, out float3 localPos, out quaternion localRot);
                 entry.WeaponMounts.Add(new ShipWeaponMountBakeData
                 {
-                    LocalPosition = t.localPosition,
-                    LocalRotation = t.localRotation,
+                    LocalPosition = localPos,
+                    LocalRotation = localRot,
                     DirectionAngleDeg = mountAuth.DirectionAngleDeg,
                     CannonIndex = mountAuth.CannonIndex,
                 });
@@ -139,19 +145,42 @@ namespace TitanOrbit.ECS
             if (entry.WeaponMounts.Count > 0)
                 return;
 
+            // --- Legacy name scan: child name contains "Weapon" ---
             foreach (var t in root.GetComponentsInChildren<Transform>(true))
             {
                 if (t == root || !t.name.Contains("Weapon"))
                     continue;
 
+                GetHullRootLocalPose(root, t, out float3 localPos, out quaternion localRot);
                 entry.WeaponMounts.Add(new ShipWeaponMountBakeData
                 {
-                    LocalPosition = t.localPosition,
-                    LocalRotation = t.localRotation,
+                    LocalPosition = localPos,
+                    LocalRotation = localRot,
                     DirectionAngleDeg = 0f,
                     CannonIndex = entry.WeaponMounts.Count,
                 });
             }
+
+            // [TITAN-ORBIT] Zero mounts is valid (unarmed). Do not invent a centerline muzzle.
+            if (entry.WeaponMounts.Count == 0 && !string.IsNullOrEmpty(entry.ChassisId))
+                Debug.Log($"[ChassisBake] Chassis '{entry.ChassisId}' has no Weapon mounts — unarmed.");
+        }
+
+        /// <summary>
+        /// Converts a child world pose into hull-root local space (handles nested Weapon children).
+        /// </summary>
+        public static void GetHullRootLocalPose(
+            Transform hullRoot,
+            Transform mount,
+            out float3 localPosition,
+            out quaternion localRotation)
+        {
+            // --- Hull-root local ---
+            // [UNITY] InverseTransformPoint / relative rotation — not immediate-parent localPosition.
+            Vector3 lp = hullRoot.InverseTransformPoint(mount.position);
+            Quaternion lr = Quaternion.Inverse(hullRoot.rotation) * mount.rotation;
+            localPosition = lp;
+            localRotation = lr;
         }
 
         static void BakeWingTractorBeams(Transform root, ShipChassisVisualEntry entry)
