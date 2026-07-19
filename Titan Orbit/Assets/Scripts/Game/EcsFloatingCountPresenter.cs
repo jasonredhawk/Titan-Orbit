@@ -69,10 +69,12 @@ namespace TitanOrbit.Game
             }
 
             PollShips(em);
-            PollPlanetGems(em);
-            // [TITAN-ORBIT] Asteroid ToEntityArray is unsafe under Windows TransformQuarantine.
+            // [TITAN-ORBIT] Planet/asteroid ToComponentDataArray is unsafe under Windows TransformQuarantine.
             if (!ClientJoinSettleCache.Settling && !ClientJoinSettleCache.TransformQuarantine)
+            {
+                PollPlanetGems(em);
                 PollAsteroids(em);
+            }
         }
 
         /// <summary>Captures initial ship/planet/asteroid state into snapshot dictionaries.</summary>
@@ -105,6 +107,10 @@ namespace TitanOrbit.Game
                 };
             }
 
+            // Skip planet/asteroid baseline under TransformQuarantine (same Crash!!! pattern as minimap).
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
+                return;
+
             using var planetQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<PlanetTag>(),
                 ComponentType.ReadOnly<PlanetState>());
@@ -112,9 +118,6 @@ namespace TitanOrbit.Game
             for (int i = 0; i < planetStates.Length; i++)
                 _planetGems[planetStates[i].PlanetId] = planetStates[i].CurrentGems;
 
-            // Skip asteroid baseline under TransformQuarantine (same Crash!!! pattern as minimap).
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
-                return;
 
             using var asteroidQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<AsteroidTag>(),
@@ -125,7 +128,10 @@ namespace TitanOrbit.Game
                 _asteroidHealth[asteroidEntities[i]] = asteroidStates[i].Health;
         }
 
-        /// <summary>Detects ship people/gem/health deltas and shows floating popups at hull proxy anchor.</summary>
+        /// <summary>
+        /// Detects ship gem/health deltas and shows floating popups at hull proxy anchor.
+        /// People load/unload popups are driven by <see cref="PeopleTransportVfxDriver"/> instead.
+        /// </summary>
         void PollShips(EntityManager em)
         {
             using var shipQuery = em.CreateEntityQuery(
@@ -169,12 +175,8 @@ namespace TitanOrbit.Game
 
                 if (!state.IsDead && !justDied && !justRespawned)
                 {
-                    int peopleDelta = state.CurrentPeople - last.People;
-                    if (peopleDelta != 0)
-                    {
-                        var channel = peopleDelta > 0 ? FloatingCountChannel.PeopleLoad : FloatingCountChannel.PeopleUnload;
-                        WorldFloatingCountManager.Instance.ShowFloatingCount(anchor, channel, peopleDelta, state.Team);
-                    }
+                    // [TITAN-ORBIT] People ±N floats are owned by PeopleTransportVfxDriver at the
+                    // transport sphere (leave / consume) — not by CurrentPeople deltas on the hull.
 
                     float gemsDelta = state.CurrentGems - last.Gems;
                     if (gemsDelta > 0.01f)

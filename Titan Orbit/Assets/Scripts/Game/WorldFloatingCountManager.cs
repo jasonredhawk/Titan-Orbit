@@ -112,24 +112,71 @@ namespace TitanOrbit.Game
             if (shipAnchor == null)
                 return;
 
-            if (!IsFloatingCountChannelVisible(channel))
+            if (!TryBuildFloatingCountVisual(channel, signedAmount, team, out string message, out Sprite icon, out Color color,
+                    out TMP_FontAsset fontToUse))
                 return;
 
-            TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
-            if (fontToUse == null)
+            SpawnPopupAttached(message, icon, color, $"FloatingCountPopup_{channel}", shipAnchor, fontToUse);
+        }
+
+        /// <summary>
+        /// Spawns a floating ±N popup at a fixed world position (does not follow a ship hull).
+        /// Used by people transports so −1/+1 appear at the sphere leave/consume points.
+        /// Matches ship-attached popup scale (<see cref="BodyCollisionMath.ShipPresentationScale"/>).
+        /// When <paramref name="avoidRadius"/> &gt; 0, parks the popup outside that sphere so planet
+        /// meshes do not clip the text.
+        /// </summary>
+        public void ShowFloatingCountAtWorldPosition(
+            Vector3 worldPosition,
+            FloatingCountChannel channel,
+            float signedAmount,
+            TeamId team,
+            Vector3 avoidCenter = default,
+            float avoidRadius = 0f)
+        {
+            if (!TryBuildFloatingCountVisual(channel, signedAmount, team, out string message, out Sprite icon, out Color color,
+                    out TMP_FontAsset fontToUse))
                 return;
+
+            SpawnPopupAtWorldPosition(
+                message, icon, color, $"FloatingCountPopup_{channel}", worldPosition, fontToUse,
+                avoidCenter, avoidRadius);
+        }
+
+        /// <summary>
+        /// Shared label/icon/color formatting for ship-attached and world-position popups.
+        /// </summary>
+        bool TryBuildFloatingCountVisual(
+            FloatingCountChannel channel,
+            float signedAmount,
+            TeamId team,
+            out string message,
+            out Sprite icon,
+            out Color color,
+            out TMP_FontAsset fontToUse)
+        {
+            message = null;
+            icon = null;
+            color = Color.white;
+            fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
+
+            if (!IsFloatingCountChannelVisible(channel))
+                return false;
+            if (fontToUse == null)
+                return false;
 
             float abs = Mathf.Abs(signedAmount);
             if (abs < 0.01f)
-                return;
+                return false;
 
-            // --- Format label, icon, and team color by channel ---
             int amountInt = Mathf.RoundToInt(abs);
             if (amountInt <= 0)
                 amountInt = 1;
 
             char sign = signedAmount >= 0f ? '+' : '-';
             bool compactGemLabel = channel == FloatingCountChannel.GemPickup || channel == FloatingCountChannel.GemDeposit;
+            // People transports use compact ±N so the popup reads at the sphere, not a long "People" label.
+            bool compactPeopleLabel = channel == FloatingCountChannel.PeopleLoad || channel == FloatingCountChannel.PeopleUnload;
             string label = channel switch
             {
                 FloatingCountChannel.GemPickup => "Gems",
@@ -147,10 +194,7 @@ namespace TitanOrbit.Game
                 _ => "Value"
             };
 
-            string message = compactGemLabel ? $"{sign}{amountInt}" : $"{sign}{amountInt} {label}";
-
-            Sprite icon = null;
-            Color color = Color.white;
+            message = compactGemLabel || compactPeopleLabel ? $"{sign}{amountInt}" : $"{sign}{amountInt} {label}";
 
             switch (channel)
             {
@@ -195,7 +239,7 @@ namespace TitanOrbit.Game
                     break;
             }
 
-            SpawnPopupAttached(message, icon, color, $"FloatingCountPopup_{channel}", shipAnchor, fontToUse);
+            return true;
         }
 
         public void ShowAsteroidFeedback(Transform shipAnchor, AsteroidFloatingFeedback feedback)
@@ -368,6 +412,100 @@ namespace TitanOrbit.Game
                 followAnchor: shipAnchor,
                 followScreenUpOffset: screenUpOffset,
                 initialWorldMotionOffset: initialMotionOffset);
+        }
+
+        /// <summary>
+        /// World-space popup that rises in place (no hull follow) — people transport leave/consume.
+        /// Uses ship presentation scale so font size matches hull-attached popups.
+        /// </summary>
+        void SpawnPopupAtWorldPosition(
+            string message,
+            Sprite icon,
+            Color color,
+            string popupName,
+            Vector3 worldPosition,
+            TMP_FontAsset fontToUse,
+            Vector3 avoidCenter,
+            float avoidRadius)
+        {
+            if (string.IsNullOrEmpty(message))
+                return;
+            if (Camera.main == null)
+                return;
+
+            // --- Place outside planet (or other body) when needed ---
+            Vector3 spawnPos = worldPosition;
+            Vector3 outwardBias = Vector3.zero;
+            if (avoidRadius > 0.01f)
+                spawnPos = PlaceOutsideAvoidSphere(worldPosition, avoidCenter, avoidRadius, out outwardBias);
+
+            var go = new GameObject(popupName);
+            go.transform.position = spawnPos;
+            // [TITAN-ORBIT] Ship-attached popups inherit hull lossyScale (~ShipPresentationScale).
+            // World popups must match that scale or TMP at shipFloatingFontSize looks huge.
+            go.transform.localScale = Vector3.one * BodyCollisionMath.ShipPresentationScale;
+
+            var popup = go.AddComponent<FloatingCountPopup>();
+            popup.Initialize(
+                message,
+                icon,
+                color,
+                fontToUse,
+                shipFloatingFontSize,
+                floatingCountDuration,
+                floatingCountRiseSpeed,
+                shipFloatingIconScale,
+                floatingCountIconLocalOffset,
+                Mathf.Max(0f, shipFloatingLateralDriftMax),
+                followAnchor: null,
+                followScreenUpOffset: 0f,
+                // Bias the first rise frame away from the planet so fade-up stays in empty space.
+                initialWorldMotionOffset: outwardBias);
+        }
+
+        /// <summary>
+        /// Parks a world popup just outside a planet/body sphere, then nudges along screen-up
+        /// so the label sits in empty space beside the mesh rather than rising through it.
+        /// </summary>
+        Vector3 PlaceOutsideAvoidSphere(
+            Vector3 hintPosition,
+            Vector3 avoidCenter,
+            float avoidRadius,
+            out Vector3 outwardBias)
+        {
+            const float ClearanceMargin = 1.75f;
+            const float ScreenUpNudge = 1.1f;
+
+            Vector3 flatHint = hintPosition;
+            flatHint.y = 0f;
+            Vector3 flatCenter = avoidCenter;
+            flatCenter.y = 0f;
+
+            Vector3 radial = flatHint - flatCenter;
+            if (radial.sqrMagnitude < 1e-6f)
+            {
+                // Degenerate: tip is at the center — push along camera play-plane right.
+                var cam = Camera.main;
+                Vector3 playUp = GetPlayPlaneUp(cam);
+                Vector3 playRight = Vector3.Cross(Vector3.up, playUp);
+                if (playRight.sqrMagnitude < 1e-8f)
+                    playRight = Vector3.right;
+                radial = playRight.normalized;
+            }
+            else
+            {
+                radial.Normalize();
+            }
+
+            float standOff = avoidRadius + ClearanceMargin;
+            Vector3 pos = flatCenter + radial * standOff;
+            Vector3 playUpNudge = GetPlayPlaneUp(Camera.main) * ScreenUpNudge;
+            pos += playUpNudge;
+            pos.y = Mathf.Max(hintPosition.y, 4f);
+
+            // Small outward seed so FloatingCountPopup rise stays clear of the shell.
+            outwardBias = radial * 0.35f + playUpNudge * 0.15f;
+            return pos;
         }
     }
 }

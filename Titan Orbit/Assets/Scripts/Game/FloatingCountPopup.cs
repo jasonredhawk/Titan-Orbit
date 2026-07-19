@@ -105,10 +105,13 @@ namespace TitanOrbit.Game
             elapsed = 0f;
             if (followAnchor == null)
             {
-                lockedY = Mathf.Max(transform.position.y, MinPopupWorldY);
-                Vector3 initPos = transform.position;
+                // World-space popups (people transports): apply optional spawn bias then lock Y.
+                // [TITAN-ORBIT] Bias parks labels outside planet shells before the rise begins.
+                Vector3 initPos = transform.position + worldMotionOffset;
+                lockedY = Mathf.Max(initPos.y, MinPopupWorldY);
                 initPos.y = lockedY;
                 transform.position = initPos;
+                worldMotionOffset = Vector3.zero;
             }
             else
             {

@@ -59,13 +59,27 @@ namespace TitanOrbit.ECS
         /// </summary>
         public static bool JoinSettleCompleted { get; private set; }
 
+        /// <summary>
+        /// True while GhostSpawnBuffer or PendingSpawnPlaceholder is non-empty — including the
+        /// brief ship Instantiates window after Join Team when Settling stays OFF.
+        /// Ship WithEntityAccess / EnsureShipProxies must skip while this is true
+        /// (Player.log 2026-07-19 TeamChoiceResult → Crash!!!).
+        /// </summary>
+        public static bool GhostSpawnBacklog { get; private set; }
+
         /// <summary>Updates settle + quarantine flags from the join gate system.</summary>
-        public static void Set(bool settling, bool transformQuarantine, int inGameFrames, bool joinSettleCompleted)
+        public static void Set(
+            bool settling,
+            bool transformQuarantine,
+            int inGameFrames,
+            bool joinSettleCompleted,
+            bool ghostSpawnBacklog)
         {
             Settling = settling;
             TransformQuarantine = transformQuarantine;
             InGameFrames = inGameFrames;
             JoinSettleCompleted = joinSettleCompleted;
+            GhostSpawnBacklog = ghostSpawnBacklog;
         }
 
         /// <summary>Clears when leaving a session / not in-game.</summary>
@@ -75,6 +89,7 @@ namespace TitanOrbit.ECS
             TransformQuarantine = false;
             InGameFrames = 0;
             JoinSettleCompleted = false;
+            GhostSpawnBacklog = false;
             // [NETCODE] GhostSpawn join counters — next Relay join starts from zero.
             TitanOrbitJoinLoadCounters.Reset();
         }

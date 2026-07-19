@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Titan Orbit — Windows late-join crash invariants (HARD STOP)
 
-**Status (proven working 2026-07-18):** Relay late-join survives when `TransformQuarantine` gates map-body gathers and GhostSpawn stays CreateEntity-all + Instantiates 1/frame. Agents keep undoing this. Treat any “cleanup” that removes these gates as a **regression bug**, not a refactor.
+**Status (proven 2026-07-18 / updated 2026-07-19):** Relay late-join survives when `TransformQuarantine` gates map-body gathers, GhostSpawn stays CreateEntity-all + Instantiates 1/frame, hybrid map GOs queue via Instantiates hook (not asteroid scans), and ship presentation skips `GhostSpawnBacklog` after Join Team. Agents keep undoing this. Treat any “cleanup” that removes these gates as a **regression bug**, not a refactor.
 
 Paired: `titan-orbit-ship-simulation.mdc`, embedded NetCode (`Packages/com.unity.netcode`), `tools/netcode-patches/`.
 
@@ -17,7 +17,9 @@ If your task touches **any** file in the ownership list below, read this whole r
 
 `Crash!!!` in Player.log is a **native access violation** in Burst / UnityPlayer (often `GatherEntitiesWithoutFilter`, LocalToWorld jobs, or GhostReceive). C# `try/catch` **cannot** catch it. Soft rate-limits and nicer loading UI do **not** fix it.
 
-Two progress bars do **not** prevent the crash. They only show phases. Gates + Instantiates caps prevent death.
+Two progress bars do **not** prevent the crash. They only show phases. Gates + Instantiates caps + real GO proxies prevent death.
+
+**Editor ≠ Windows client.** Local host / Editor Play Mode can load the map fine while the Windows player dies. Always treat Windows Relay late-join Player.log as the source of truth for join safety.
 
 ---
 
@@ -29,7 +31,9 @@ Two progress bars do **not** prevent the crash. They only show phases. Gates + I
 | Crash after `[TO_GhostSpawn] Created N placeholders` | CreateEntity×N with LTW on; or TileSize ≥ map → one fat chunk | Instantiates >1/frame; TileSize ≥ map size |
 | Crash in minimap / `MarkFromQuery` / `DrawAsteroids` → `ToEntityArray` | Full asteroid/planet gather — **also right after Settling OFF** (2026-07-18 14:24) | Gate on Settling **alone** |
 | `baseline for a ghost we do not have` | CreateEntity-cap+requeue without ghost-map registration | Cap+requeue placeholders |
-| Bar stuck `0 / N` then Crash | Proxies not built yet; Settling OFF unlocks gather → AV before GO phase | Unlock map gathers when Settling clears |
+| Bar stuck `0 / N` then Crash | Proxies not built; Settling OFF unlocks gather → AV | Unlock map gathers when Settling clears; or dismiss loading with 0 GOs |
+| Bar `0/N` → `[MapLoad] Proxy count plateaued` → Join Team → Crash after `TeamChoiceResult` | Starve-escape dismissed loading with **zero** hybrid GOs; then ship Instantiates while Settling OFF ran ship `WithEntityAccess` (2026-07-19) | Starve-escape to Join Team at 0 proxies; ship queries gated only on Settling |
+| Loading never climbs above `0/N` on Windows (Editor OK) | Player EntityScenes lack baked `MapBodyHybridVisualPending`; drain finds nothing | Assume Editor bake = player bake; scan asteroids to mark visuals |
 
 ---
 
@@ -38,8 +42,8 @@ Two progress bars do **not** prevent the crash. They only show phases. Gates + I
 1. **Re-enable** `TransformSystemGroup` / Burst `LocalToWorldSystem` after late-join Instantiates while in-game.
 2. **CreateEntity-cap + requeue** leftovers in GhostSpawn (ghost-map hole → baseline → Burst Crash!!!).
 3. Raise delayed Instantiates above **1/frame**.
-4. Re-enable any `MarkFromQuery` that **`ToEntityArray`s all** asteroids/planets. Chunk-budget Pending backfill (`MaxMarksPerFrame`, no `ToEntityArray`) is required when player EntityScenes lack baked Pending.
-5. Add or restore client map-body **full scans** (`ToEntityArray` / `WithEntityAccess` / broad `foreach` queries over Asteroid/Planet/Gem) gated only by:
+4. Re-enable any `MarkFromQuery` / visualizer mark that **`ToEntityArray`s all** asteroids/planets. Windows visuals come from baked Pending **or** the Instantiates hook SpawnRequest — never a full asteroid scan.
+5. Add or restore client map-body **full scans** (`ToEntityArray` / `WithEntityAccess` / broad `foreach` / `ToComponentDataArray` over Asteroid/Planet/Gem) gated only by:
    ```csharp
    if (ClientJoinSettleCache.Settling) return; // FORBIDDEN as the only gate
    ```
@@ -47,29 +51,35 @@ Two progress bars do **not** prevent the crash. They only show phases. Gates + I
 7. Use asteroid `CalculateEntityCount` / `ToEntityArray` to dismiss the loading screen while quarantined.
 8. Edit only Package Cache NetCode — patch lives in **git** `Packages/com.unity.netcode` + `tools/netcode-patches/`.
 9. Distance importance `TileSizeWorld` ≥ map size (use **~48**, not 512).
+10. **Starve-escape / early-complete loading when `MapLoadingProxyCount == 0`** (or ≪ meta N). That opens Join Team with no map GOs → TeamChoice Crash!!! (2026-07-19).
+11. Ship `WithEntityAccess` / `EnsureShipProxies` / local-ship tagging while `GhostSpawnBacklog` is true — Settling stays OFF after `JoinSettleCompleted`, but ship Instantiates still Crash!!! (2026-07-19).
 
 ---
 
 ## Required working architecture
 
-### A. GhostSpawn patch (`TO_GhostSpawn_v12_joinLoadCounters` or newer)
+### A. GhostSpawn patch (`TO_GhostSpawn_v13_mapBodyVisualHook` or newer)
 
 - Location: `Packages/com.unity.netcode/Runtime/Snapshot/GhostSpawnSystem.cs`
 - Mirror: `tools/netcode-patches/GhostSpawnSystem.cs` (keep in sync)
 - Guard: `Assets/Scripts/ECS/Editor/NetCodeGhostSpawnPatchMenu.cs` `PatchIdMarker` must match
 - Must keep: safe snapshot copy, **no Burst OnUpdate**, Instantiates **1/frame**, CreateEntity-**all** placeholders, `TitanOrbitJoinLoadCounters`
+- Must keep: `OnDelayedGhostInstantiate` → `MapBodyHybridVisualInstantiateHook` queues `MapBodyHybridVisualSpawnRequest` **per Instantiates entity** (Windows EntityScenes often lack baked Pending). Flush + drain in `EcsWorldVisualizer` — **never** scan all asteroids.
 
 ### B. Transform quarantine (whole in-game session)
 
 - `ClientJoinSettleCache.TransformQuarantine == true` for the **entire** Windows in-game session after join.
 - `TransformSystemGroup` stays **OFF**. Do not add RE-ENABLE paths.
 - After the first Settling exit (`JoinSettleCompleted`), **do not re-enter Settling** for post-team ship Instantiates (TeamChoice → Settling ON → Crash!!!).
+- **`GhostSpawnBacklog`** stays true while `GhostSpawnBuffer` or `PendingSpawnPlaceholder` is non-empty — including the brief ship Instantiates window after Join Team when Settling is latched off. Ship presentation must skip that window.
 - `MapBodyHybridVisualRequestSystem` stays **disabled** (asteroid WithEntityAccess Crash!!! even with Settling gate).
 - Ships: hybrid GameObject proxies (EG needs Parent/LTW).
-- People transports: hybrid GO draws must run under quarantine (tiny `PeopleTransportPresentation*` query only). Do **not** gate them on `!TransformQuarantine` — that hides all float VFX for the session.
-- Map bodies: bake `MapBodyHybridVisualPending` when possible. Runtime backfill must use non-ghost `MapBodyHybridVisualSpawnRequest` — **never** `AddComponent` GhostComponent Pending on Instantiated ghosts. Visualizer drains both tags (never full map `ToEntityArray`).
+- People transports: hybrid GO draws / VFX driver must run under quarantine (tiny queries or bridge queue only). Do **not** gate them on `!TransformQuarantine` — that hides all float VFX for the session. Do **not** add planet/asteroid full gathers for transport magnets during Settling / `GhostSpawnBacklog`.
+- Map bodies: bake `MapBodyHybridVisualPending` when possible. Runtime backfill = Instantiates hook → non-ghost `MapBodyHybridVisualSpawnRequest`. **Never** `AddComponent` GhostComponent Pending on Instantiated ghosts. Visualizer drains Pending **and** SpawnRequest (never full map `ToEntityArray`).
 
-### C. Gate pattern (copy this — do not invent a weaker one)
+### C. Gate patterns (copy these — do not invent weaker ones)
+
+**Map-body gathers** (asteroids / planets / gems / moons / full minimap ECS rebuilds):
 
 ```csharp
 // [TITAN-ORBIT] Windows late-join: Settling OFF is NOT safe for map gathers.
@@ -78,19 +88,43 @@ if (ClientJoinSettleCache.TransformQuarantine || ClientJoinSettleCache.Settling)
     return;
 ```
 
-Use this (or stricter: quarantine alone) before **any** client code that:
-- `ToEntityArray` / `WithEntityAccess` over asteroids, planets, gems, moons
+**Ship presentation / local-ship tagging / EnsureShipProxies** (tiny ship queries, but unsafe during Instantiates):
+
+```csharp
+// [TITAN-ORBIT] After Join Team, Settling stays OFF (JoinSettleCompleted) but ship
+// Instantiates still set GhostSpawnBacklog — WithEntityAccess then Crash!!! (2026-07-19).
+if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+    return;
+```
+
+Use the map-body gate before **any** client code that:
+- `ToEntityArray` / `WithEntityAccess` / `ToComponentDataArray` over asteroids, planets, gems, moons
 - Mass `CreateEntity` for map-related hulls
 - Full minimap rebuilds / MarkFromQuery-style scans
 - Loading-complete logic that walks map-body queries
 
+Use the ship/backlog gate before ship `WithEntityAccess`, `EnsureShipProxies`, and local-player ship tag systems.
+
 ### D. Loading bar (covers GameObject map build)
 
 1. **Display:** `TryGetJoinLoadProgress` = `MapLoadingProxyCount` / `MapSessionMetaCache.LoadingTotalSteps` (safe Dictionary count — not ECS asteroid gathers). Soft crawl only until meta arrives. Status may show `done / total`.
-2. **Complete (100% / dismiss):** Settling OFF (+ `JoinSettleCompleted`) **and** proxies ≥ ~92% of meta N. Host also waits for that after server `LoadingComplete`. Latch once true. Starve escape only if Instantiates finished but proxies never climb (Pending bake missing).
-3. **Do not** complete on settle+meta alone (that dumped GO Instantiates lag after Join Team). **Do not** use asteroid `ToEntityArray` / mark scans for progress.
-4. Drain baked `MapBodyHybridVisualPending` in `EcsWorldVisualizer` **during Settling** (budgeted, e.g. 8/frame) so GO Instantiates run under the loading screen. **Never** scan all asteroids to AddComponent SpawnRequest (mark Crash!!! 2026-07-18 21:18).
-5. Dedicated client UI: `mapReady` = map complete only. Team count uses `MapSessionMetaCache.TeamCount`. Never require `knowsTeamCount` to hide loading.
+2. **Complete (100% / dismiss):** Settling OFF (+ `JoinSettleCompleted`) **and** proxies ≥ ~92% of meta N. Host also waits for that after server `LoadingComplete`. Latch once true.
+3. **If proxies stay 0:** keep the loading screen and log a warning. **Do not** starve-escape to Join Team. Fix the Instantiates → SpawnRequest → drain path instead.
+4. **Do not** complete on settle+meta alone (dumps GO Instantiates lag after Join Team). **Do not** use asteroid `ToEntityArray` / mark scans for progress.
+5. Drain Pending/SpawnRequest in `EcsWorldVisualizer` **during Settling** (budgeted, e.g. 8/frame) so GO Instantiates run under the loading screen. Call `MapBodyHybridVisualInstantiateHook.FlushPending` before drain.
+6. Dedicated client UI: `mapReady` = map complete only. Team count uses `MapSessionMetaCache.TeamCount`. Never require `knowsTeamCount` to hide loading.
+7. **Session statics:** `s_MapLoadingLatchedComplete` / `MapSessionMetaCache` / `ClientJoinSettleCache` must reset on Play Mode enter (`SubsystemRegistration`) and when leaving `NetworkStreamInGame`. Never complete host loading on “server LoadingComplete + 0 proxies + no denominator yet” — that skipped the loading screen on second Editor Play.
+
+### E. Join Team / post-TeamChoice (second Instantiates storm)
+
+After the player picks a team, the server spawns a ship ghost → GhostSpawn Instantiates **again** while `JoinSettleCompleted` keeps Settling **OFF**.
+
+| Must stay true | Why |
+|----------------|-----|
+| Settling does **not** re-enter | TeamChoice → Settling ON → Crash!!! (2026-07-18) |
+| `GhostSpawnBacklog` **does** go true | Ship presentation must pause Instantiates window (2026-07-19) |
+| Loading already completed with proxies ≈ N | Join Team with 0 map GOs → Crash!!! soon after TeamChoice |
+| No new map-body full scans “now that we’re in game” | Quarantine still on for the whole session |
 
 ---
 
@@ -98,12 +132,16 @@ Use this (or stricter: quarantine alone) before **any** client code that:
 
 | Area | Files | Must preserve |
 |------|--------|----------------|
-| GhostSpawn | `Packages/com.unity.netcode/.../GhostSpawnSystem.cs`, `tools/netcode-patches/*` | v12+ patch id, Instantiates=1, CreateEntity-all, counters |
-| Join gate | `TitanOrbitClientJoinTransformGateSystem.cs`, `ClientJoinSettleState.cs` | Quarantine stays on in-game; no Transform RE-ENABLE |
-| Map visuals | `EcsWorldVisualizer.cs`, `MapBodyHybridVisual*.cs`, `MapBodyHybridVisualRequestSystem.cs` | Chunk-budget mark + Pending drain; never full `ToEntityArray` |
+| GhostSpawn | `Packages/com.unity.netcode/.../GhostSpawnSystem.cs`, `tools/netcode-patches/*` | v13+ patch id, Instantiates=1, CreateEntity-all, counters, `OnDelayedGhostInstantiate` |
+| Instantiates→visual queue | `MapBodyHybridVisualInstantiateHook.cs` | Per-entity SpawnRequest queue; Flush before drain; no asteroid scan |
+| Join gate | `TitanOrbitClientJoinTransformGateSystem.cs`, `ClientJoinSettleState.cs` | Quarantine session-long; no Transform RE-ENABLE; publish `GhostSpawnBacklog` |
+| Map visuals | `EcsWorldVisualizer.cs`, `MapBodyHybridVisual*.cs`, `MapBodyHybridVisualRequestSystem.cs` | Flush+Pending/SpawnRequest drain (incl. during Settling); system **disabled**; never full `ToEntityArray` |
+| Ship presentation | `ShipVisualSyncSystem.cs`, `LocalPlayerTagSystem.cs`, visualizer `EnsureShipProxies` | Gate Settling **or** `GhostSpawnBacklog` |
 | Minimap | `MinimapEcsEntitySync.cs` | Settling = skip entirely. Under TransformQuarantine: **no** planet/asteroid `ToEntityArray` — rebuild from `EcsWorldVisualizer` hybrid proxies. Do **not** early-return the whole minimap for quarantine (hides UI forever). |
 | Moon hulls | `PlanetGemMoonColliderSystems.cs` | Quarantine **or** Settling on client |
-| Loading | `EcsGameBridge.cs`, `LoadingScreenControllerNce.cs` | Proxy/meta progress; complete = settle + proxies≈N; drain during Settling; no map gathers |
+| Loading | `EcsGameBridge.cs`, `LoadingScreenControllerNce.cs` | Proxy/meta progress; complete = settle + proxies≈N; **no** 0-proxy dismiss; drain during Settling |
+| Floating counts | `EcsFloatingCountPresenter.cs` | No planet/asteroid gathers under TransformQuarantine |
+| People transports | `PeopleTransportVfxDriver.cs`, transport bridges | No map-body full scans; ships-only / bridge queue; OK under quarantine after settle |
 | Server stream | `TitanOrbitGhostDistanceImportanceSystem.cs` (+ send tune) | TileSize ~48 ≪ map |
 | Ships under quarantine | `ShipEntitiesGraphicsPresentationSystem.cs`, ship hybrid paths | Skip EG / use GO when quarantined |
 
@@ -113,13 +151,16 @@ Use this (or stricter: quarantine alone) before **any** client code that:
 
 Before finishing:
 
-- [ ] Did I add any map-body `ToEntityArray` / full query on the **client**? If yes → quarantine gate or delete the scan.
-- [ ] Is every new/changed early-out using **`TransformQuarantine`**, not Settling alone?
-- [ ] Is Pending mark still chunk-budget only (no full `ToEntityArray`)?
+- [ ] Did I add any map-body `ToEntityArray` / `ToComponentDataArray` / full query on the **client**? If yes → quarantine gate or delete the scan.
+- [ ] Is every new/changed map-body early-out using **`TransformQuarantine`**, not Settling alone?
+- [ ] Do ship presentation / EnsureShipProxies / local-ship tag paths also skip **`GhostSpawnBacklog`**?
+- [ ] Is map visual queue still Instantiates-hook SpawnRequest and/or baked Pending only (no full asteroid mark)?
 - [ ] Did I avoid TransformSystemGroup RE-ENABLE?
-- [ ] GhostSpawn still Instantiates=1 and CreateEntity-all? Patch id still matches menu marker + tools copy?
-- [ ] Loading still avoids asteroid gathers under quarantine?
-- [ ] Would a “helpful” agent removing “redundant” `TransformQuarantine` checks break join? If yes, keep the checks and a comment citing this rule.
+- [ ] GhostSpawn still Instantiates=1 and CreateEntity-all? Patch id still matches menu marker + tools copy (`v13+`)?
+- [ ] Loading still requires proxies ≈ N — and **never** dismisses at 0 proxies?
+- [ ] Pending/SpawnRequest drain still runs during Settling (budgeted)?
+- [ ] Would a “helpful” agent removing “redundant” `TransformQuarantine` / `GhostSpawnBacklog` checks break join? If yes, keep the checks and a comment citing this rule.
+- [ ] Did I verify against **Windows client** Player.log assumptions, not Editor-only success?
 
 ---
 
@@ -128,23 +169,30 @@ Before finishing:
 | Trap | Why it kills join |
 |------|-------------------|
 | “Settling already false — remove quarantine checks” | Settling OFF was the 14:24 crash |
+| “Settling already false — ship WithEntityAccess is fine” | TeamChoice Instantiates with Settling OFF → Crash!!! (2026-07-19); need `GhostSpawnBacklog` |
 | “Re-enable TransformSystemGroup so EG/ships work” | Immediate Crash!!! after Instantiates |
 | “Cap CreateEntity to 1/frame like Instantiates” | Ghost map hole → baseline Crash!!! |
 | “Speed join: Instantiates 8–50/frame” | LTW / Instantiates flood Crash!!! |
-| “Re-enable MarkFromQuery ToEntityArray so loading bar moves” | Full gather Crash!!! — use chunk-budget mark only |
-| “Complete loading on settle + meta only (skip GO wait)” | GO Instantiates lag dumps after 100% / Join Team — bar exists to absorb that |
-| “Skip Pending drain while Settling” | Same — all proxy Instantiates pile up after Settling OFF |
+| “Re-enable MarkFromQuery ToEntityArray so loading bar moves” | Full gather Crash!!! |
+| “Complete loading on settle + meta only (skip GO wait)” | GO Instantiates lag after 100% / Join Team |
+| “Starve-escape Join Team at 0 proxies” | 2026-07-19: 0/N dismiss → TeamChoice → Crash!!! — keep loading; fix SpawnRequest hook |
+| “Editor works so Windows bake/Pending must be fine” | Windows EntityScenes often lack Pending — need Instantiates hook |
+| “Skip Pending drain while Settling” | All proxy Instantiates pile up after Settling OFF |
 | “Keep loading until dedicated team count replicates” | mapReady∧knowsTeamCount deadlock → loading forever |
-| “Mark asteroids so the bar can move” | MarkSpawnRequest / ToEntityArray Crash!!! — bake Pending; drain during Settling |
+| “Mark asteroids so the bar can move” | MarkSpawnRequest Crash!!! — use Instantiates hook SpawnRequest |
 | “AddComponent MapBodyHybridVisualPending at runtime” | GhostComponent — add fails; use SpawnRequest |
-| “Mark map visuals while Settling / scan asteroids to queue” | MarkChunkBudget → Crash!!! (2026-07-18 16:53 / 21:18). Budgeted Pending <b>drain</b> during Settling is required for the loading bar |
-| Re-enable MapBodyHybridVisualRequestSystem WithEntityAccess over asteroids | Still Crash!!! 2026-07-18 17:06 even with Settling gate — keep system **disabled** |
-| Visualizer MarkSpawnRequestQuery over unqueued asteroids | Same EntityTypeHandle Crash!!! 2026-07-18 21:18 — bake Pending instead |
+| “Mark map visuals while Settling / scan asteroids to queue” | MarkChunkBudget Crash!!! (2026-07-18 16:53 / 21:18). Budgeted **drain** during Settling is required |
+| Re-enable MapBodyHybridVisualRequestSystem WithEntityAccess over asteroids | Still Crash!!! 2026-07-18 17:06 — keep system **disabled** |
+| Visualizer MarkSpawnRequestQuery over unqueued asteroids | EntityTypeHandle Crash!!! 2026-07-18 21:18 |
 | `EntityManager.GetEntityTypeHandle()` + chunk walk in ISystem | Stale handle NRE — do not mark map bodies this way |
-| “Count asteroids for progress — more accurate” | Gather Crash!!!; use smoothed `TryGetJoinLoadProgress` + settle/meta complete |
+| “Count asteroids for progress — more accurate” | Gather Crash!!!; use `MapLoadingProxyCount` / meta N |
 | “Two loading bars to reduce overload” | UI ≠ safety; quarantine is safety |
 | “Minimap needs anchors now that Settling ended” | Full SyncAsteroids gather Crash!!! |
 | “Gate whole MinimapEcsEntitySync on TransformQuarantine” | Quarantine is session-long → minimap never shows; gate map gathers only, use hybrid proxies |
+| “Planet ToComponentDataArray is small so quarantine gates are optional” | Still crash-adjacent during Instantiates; gate Settling / `GhostSpawnBacklog` at minimum |
+| “Transport magnet needs live planet pose during join Instantiates” | Do not add map gathers; use baked RPC target / ships-only / wait until backlog clears |
+| “Host: server LoadingComplete with 0 proxies is fine” | Second Editor Play / no Domain Reload skipped loading → Join Team before map GOs |
+| “Keep map-complete latch across Play Mode” | Statics survive without Domain Reload — reset on SubsystemRegistration + leave in-game |
 
 ---
 
@@ -153,18 +201,19 @@ Before finishing:
 `Player.log` must show:
 
 1. `[JoinSettle] Settling ON` (or equivalent) during Instantiates
-2. Instantiates + Pending drain during Settling; bar climbs with `MapLoadingProxyCount` / meta N
-3. `Settling OFF` then proxies ≈ N → 100% → Join Team (not settle+meta alone)
-4. **No** `TransformSystemGroup RE-ENABLED`
-5. **No** `Crash!!!`
-6. Optional: DLL/log contains `TO_GhostSpawn_v12_joinLoadCounters` (or newer)
-7. If proxies stay 0 after Instantiates: check baked `MapBodyHybridVisualPending` (starve escape may dismiss)
+2. Instantiates + Pending/SpawnRequest drain during Settling; bar climbs with `MapLoadingProxyCount` / meta N (**not stuck at 0/N**)
+3. `Settling OFF` then proxies ≈ N → 100% → Join Team (not settle+meta alone, not 0-proxy dismiss)
+4. After Join Team: no Crash!!! on `TeamChoiceResult` (ship Instantiates under `GhostSpawnBacklog` gates)
+5. **No** `TransformSystemGroup RE-ENABLED`
+6. **No** `Crash!!!`
+7. DLL/log contains `TO_GhostSpawn_v13_mapBodyVisualHook` (or newer)
+8. If proxies stay 0: loading screen stays up — check Instantiates hook registration + `FlushPending` + drain; **do not** “fix” by dismissing
 
-Manual: Windows client → Relay late-join into a dense map (400+ asteroids) → reach in-game with ship visible (hybrid) and no process death.
+Manual: Windows client → Relay late-join into a dense map (400+ asteroids) → bar progresses → Join Team → ship visible (hybrid) → no process death.
 
 ---
 
 ## Headless note
 
-Client quarantine / GhostSpawn / loading / minimap gates → **client rebuild only**.  
+Client quarantine / GhostSpawn / loading / minimap / ship backlog gates → **client rebuild only**.  
 Server TileSize / GhostSend chunk tuning → **Linux headless rebuild + GCE redeploy** required for stream-side relief.

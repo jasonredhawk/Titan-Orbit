@@ -59,7 +59,9 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Player.log 2026-07-18 20:51: TeamChoiceResult → Crash!!! in ship
             // WithEntityAccess while Settling stays OFF (JoinSettleCompleted). Skip while GhostSpawn
             // still has Instantiates backlog; use ToEntityArray on the tiny ship set afterward.
-            if (ClientJoinSettleCache.Settling || HasGhostSpawnBacklog(ref state))
+            // Prefer cache flag (same backlog the join gate publishes every frame).
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog ||
+                HasGhostSpawnBacklog(ref state))
             {
                 ecb.Dispose();
                 return;

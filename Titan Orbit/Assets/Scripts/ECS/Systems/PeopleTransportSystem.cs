@@ -166,7 +166,8 @@ namespace TitanOrbit.ECS
                     if (planetState.Population < halfCap)
                     {
                         transfer.UnloadAccumulator += unloadStep;
-                        int availablePeople = shipState.ValueRO.CurrentPeople - (int)transfer.PeopleInTransit;
+                        // [TITAN-ORBIT] Unload debits CurrentPeople at spawn — no PeopleInTransit reserve.
+                        int availablePeople = shipState.ValueRO.CurrentPeople;
                         if (transfer.UnloadAccumulator >= unloadChunk && availablePeople > 0)
                         {
                             int room = halfCap - planetState.Population;
@@ -206,7 +207,8 @@ namespace TitanOrbit.ECS
                 else
                 {
                     transfer.UnloadAccumulator += unloadStep;
-                    int availablePeople = shipState.ValueRO.CurrentPeople - (int)transfer.PeopleInTransit;
+                    // Hostile/neutral: drain / capture — same debit-at-leave accounting as friendly unload.
+                    int availablePeople = shipState.ValueRO.CurrentPeople;
                     if (transfer.UnloadAccumulator >= unloadChunk && availablePeople > 0)
                     {
                         int send = (int)math.min(unloadChunk, availablePeople);
@@ -286,15 +288,16 @@ namespace TitanOrbit.ECS
             spawnPos += loadDir * 0.2f;
             SpawnTransport(ref ecb, spawnPos, targetPos, amount, shipNetworkId, planetId, 0,
                 shipNetworkId, true, team, now, mapW, mapH);
+            // [TITAN-ORBIT] Planet pays immediately; ship gains only on DeliverLoad (transitory vessel).
             planet.Population -= amount;
             transfer.PeopleInTransit += amount;
             return true;
         }
 
         /// <summary>
-        /// Spawns an unload transport. Does NOT change <see cref="ShipState.CurrentPeople"/> yet —
-        /// people stay reserved in <see cref="ShipPeopleTransferState.PeopleInTransit"/> until the
-        /// sphere reaches the planet (or is shot down). That keeps floating −1 in sync with arrival.
+        /// Spawns an unload transport and immediately removes crew from the ship.
+        /// Planet population rises only when the sphere lands (<see cref="DeliverUnload"/>).
+        /// Floating −N is shown by client VFX at the transport spawn position, not from this delta alone.
         /// </summary>
         static bool TryDispatchUnload(
             ref EntityCommandBuffer ecb,
@@ -313,16 +316,18 @@ namespace TitanOrbit.ECS
             float mapH,
             float now)
         {
-            _ = ship;
             _ = planet;
+            _ = transfer;
             // Target = planet surface; spawn = planet-facing ship flank (not ship forward / nose).
             float3 targetPos = PeopleTransportMath.GetPlanetSurfaceToward(planetPos, planetSize, shipPos, mapW, mapH);
             float3 spawnPos = PeopleTransportMath.GetShipUnloadSpawnToward(
                 shipPos, shipHullRadius, planetPos, mapW, mapH);
             SpawnTransport(ref ecb, spawnPos, targetPos, amount, 0, planetId,
                 planetId, shipNetworkId, false, team, now, mapW, mapH);
-            // Reserve only — CurrentPeople drops on delivery / destruction (floating text timing).
-            transfer.PeopleInTransit += amount;
+            // [TITAN-ORBIT] Debit ship now — people are in the temporary vessel, not aboard.
+            int remove = math.min(amount, ship.CurrentPeople);
+            if (remove > 0)
+                ship.CurrentPeople -= remove;
             return true;
         }
 
@@ -388,6 +393,8 @@ namespace TitanOrbit.ECS
                 CruiseSpeed = cruise,
                 Amount = amount,
                 TargetShipNetworkId = targetShipNetworkId,
+                SourcePlanetId = sourcePlanetId,
+                TargetPlanetId = targetPlanetId,
                 IsLoad = isLoadByte,
                 Team = teamByte,
             };
@@ -511,6 +518,7 @@ namespace TitanOrbit.ECS
                         !shipStateByNetworkId.TryGetValue(t.TargetShipNetworkId, out var shipState) ||
                         !shipTransformByNetworkId.TryGetValue(t.TargetShipNetworkId, out var shipTransform))
                     {
+                        // Destination ship gone — refund planet and free inbound capacity reservation.
                         var sourcePlanetOnly = planetStateById[t.SourcePlanetId];
                         var sourceTransformOnly = planetTransformById[t.SourcePlanetId];
                         float sourceSizeOnly = math.max(0.5f, sourceTransformOnly.Scale);
@@ -519,6 +527,7 @@ namespace TitanOrbit.ECS
                             PlanetPopulationMath.GetMaxPopulation(sourceSizeOnly, sourcePlanetOnly.PlanetLevel));
                         planetStateById[t.SourcePlanetId] = sourcePlanetOnly;
                         ecb.SetComponent(planetById[t.SourcePlanetId], sourcePlanetOnly);
+                        ClearInboundPeopleInTransit(ref state, t.TargetShipNetworkId, t.Amount, shipByNetworkId);
                         ecb.DestroyEntity(entity);
                         continue;
                     }
@@ -564,15 +573,13 @@ namespace TitanOrbit.ECS
                     if (!planetStateById.TryGetValue(t.TargetPlanetId, out var planetState) ||
                         !planetTransformById.TryGetValue(t.TargetPlanetId, out var planetTransform))
                     {
-                        // Planet gone — release reserved outbound crew back to the ship.
+                        // Planet gone — crew already left the ship at dispatch; refund them aboard.
                         if (shipByNetworkId.TryGetValue(t.SourceShipNetworkId, out var orphanShipEntity) &&
-                            shipStateByNetworkId.TryGetValue(t.SourceShipNetworkId, out var orphanShipState) &&
-                            state.EntityManager.HasComponent<ShipPeopleTransferState>(orphanShipEntity))
+                            shipStateByNetworkId.TryGetValue(t.SourceShipNetworkId, out var orphanShipState))
                         {
-                            var transfer = state.EntityManager.GetComponentData<ShipPeopleTransferState>(orphanShipEntity);
-                            transfer.PeopleInTransit = math.max(0f, transfer.PeopleInTransit - t.Amount);
-                            state.EntityManager.SetComponentData(orphanShipEntity, transfer);
-                            _ = orphanShipState;
+                            RefundUnloadToShip(ref orphanShipState, t.Amount);
+                            shipStateByNetworkId[t.SourceShipNetworkId] = orphanShipState;
+                            ecb.SetComponent(orphanShipEntity, orphanShipState);
                         }
 
                         ecb.DestroyEntity(entity);
@@ -584,15 +591,7 @@ namespace TitanOrbit.ECS
                     if (PeopleTransportMath.CanCompleteUnloadDelivery(
                             myPos, t.SpawnPosition, planetTransform.Position, planetSize, elapsed, mapW, mapH))
                     {
-                        // Ship inventory drops here (not at dispatch) so floating −1 matches surface arrival.
-                        if (shipByNetworkId.TryGetValue(t.SourceShipNetworkId, out var unloadShipEntity) &&
-                            shipStateByNetworkId.TryGetValue(t.SourceShipNetworkId, out var unloadShipState))
-                        {
-                            CommitOutboundPeople(ref state, unloadShipEntity, ref unloadShipState, t.Amount);
-                            shipStateByNetworkId[t.SourceShipNetworkId] = unloadShipState;
-                            ecb.SetComponent(unloadShipEntity, unloadShipState);
-                        }
-
+                        // Ship already debited at dispatch — only apply planet-side outcome here.
                         var planetEntity = planetById[t.TargetPlanetId];
                         var unloadOutcome = DeliverUnload(ref planetState, t.Amount, team, planetTransform, planetSize);
                         planetStateById[t.TargetPlanetId] = planetState;
@@ -715,7 +714,11 @@ namespace TitanOrbit.ECS
             return false;
         }
 
-        internal static bool IsShipEligibleForLoad(
+        /// <summary>
+        /// Whether a load transport should keep chasing this ship (orbit ring + idle + same planet).
+        /// Shared by server magnet steering and client VFX retarget / return-to-planet.
+        /// </summary>
+        public static bool IsShipEligibleForLoad(
             in ShipState ship,
             in ShipInput input,
             in ShipOrbitState orbit,
@@ -745,40 +748,20 @@ namespace TitanOrbit.ECS
         static void DeliverLoad(ref SystemState state, Entity shipEntity, ref ShipState ship, float amount, TeamId team)
         {
             // --- DeliverLoad (arrival) ---
-            // CurrentPeople rises here → EcsFloatingCountPresenter shows +N when the sphere is consumed.
+            // CurrentPeople rises here; client VFX shows +N at the transport consume position.
             int space = ship.PeopleCapacity - ship.CurrentPeople;
             int toAdd = (int)math.min(amount, space);
             if (toAdd > 0)
                 ship.CurrentPeople += toAdd;
 
-            if (state.EntityManager.HasComponent<ShipPeopleTransferState>(shipEntity))
-            {
-                var transfer = state.EntityManager.GetComponentData<ShipPeopleTransferState>(shipEntity);
-                transfer.PeopleInTransit = math.max(0f, transfer.PeopleInTransit - amount);
-                state.EntityManager.SetComponentData(shipEntity, transfer);
-            }
-
+            ClearPeopleInTransitOnShip(ref state, shipEntity, amount);
             LogPeopleEvent("Load", toAdd, team);
         }
 
         /// <summary>
-        /// Removes reserved outbound crew from the ship when an unload arrives or is shot down.
-        /// Triggers floating −N via <see cref="ShipState.CurrentPeople"/> delta.
+        /// Returns inbound crew to the planet when the ship left the orbit ring (or became ineligible).
+        /// Client VFX retargets the same sphere home and shows +N on surface consume.
         /// </summary>
-        static void CommitOutboundPeople(ref SystemState state, Entity shipEntity, ref ShipState ship, float amount)
-        {
-            int remove = (int)math.min(amount, ship.CurrentPeople);
-            if (remove > 0)
-                ship.CurrentPeople -= remove;
-
-            if (state.EntityManager.HasComponent<ShipPeopleTransferState>(shipEntity))
-            {
-                var transfer = state.EntityManager.GetComponentData<ShipPeopleTransferState>(shipEntity);
-                transfer.PeopleInTransit = math.max(0f, transfer.PeopleInTransit - amount);
-                state.EntityManager.SetComponentData(shipEntity, transfer);
-            }
-        }
-
         static void ReturnLoadToPlanet(
             ref SystemState state,
             ref PlanetState planet,
@@ -788,13 +771,44 @@ namespace TitanOrbit.ECS
         {
             int maxPop = PlanetPopulationMath.GetMaxPopulation(planetSize, planet.PlanetLevel);
             planet.Population = math.min(planet.Population + (int)amount, maxPop);
+            ClearPeopleInTransitOnShip(ref state, shipEntity, amount);
+        }
 
-            if (state.EntityManager.HasComponent<ShipPeopleTransferState>(shipEntity))
-            {
-                var transfer = state.EntityManager.GetComponentData<ShipPeopleTransferState>(shipEntity);
-                transfer.PeopleInTransit = math.max(0f, transfer.PeopleInTransit - amount);
-                state.EntityManager.SetComponentData(shipEntity, transfer);
-            }
+        /// <summary>
+        /// Puts unload crew back on the ship when the destination planet entity disappears mid-flight.
+        /// </summary>
+        static void RefundUnloadToShip(ref ShipState ship, float amount)
+        {
+            int add = (int)math.max(0f, amount);
+            if (add <= 0)
+                return;
+            ship.CurrentPeople = math.min(ship.PeopleCapacity, ship.CurrentPeople + add);
+        }
+
+        /// <summary>Decrements inbound <see cref="ShipPeopleTransferState.PeopleInTransit"/> on a ship entity.</summary>
+        static void ClearPeopleInTransitOnShip(ref SystemState state, Entity shipEntity, float amount)
+        {
+            if (!state.EntityManager.HasComponent<ShipPeopleTransferState>(shipEntity))
+                return;
+
+            var transfer = state.EntityManager.GetComponentData<ShipPeopleTransferState>(shipEntity);
+            transfer.PeopleInTransit = math.max(0f, transfer.PeopleInTransit - amount);
+            state.EntityManager.SetComponentData(shipEntity, transfer);
+        }
+
+        /// <summary>
+        /// Clears inbound reservation when the destination ship entity is already missing from maps
+        /// (lookup by network id if the entity still exists).
+        /// </summary>
+        static void ClearInboundPeopleInTransit(
+            ref SystemState state,
+            int shipNetworkId,
+            float amount,
+            NativeHashMap<int, Entity> shipByNetworkId)
+        {
+            if (shipNetworkId == 0 || !shipByNetworkId.TryGetValue(shipNetworkId, out var shipEntity))
+                return;
+            ClearPeopleInTransitOnShip(ref state, shipEntity, amount);
         }
 
         static PeopleUnloadOutcome DeliverUnload(ref PlanetState planet, float amount, TeamId team, LocalTransform planetTransform, float planetSize)
@@ -824,8 +838,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Shot down in flight. Load: release inbound reservation only (planet already paid).
-        /// Unload: crew are casualties — drop CurrentPeople now (never reach the planet).
+        /// Shot down in flight.
+        /// Load: free inbound capacity reservation (planet already paid at spawn — people lost).
+        /// Unload: ship already debited at dispatch — no further ship change (casualties in space).
         /// </summary>
         [BurstDiscard]
         public static void DestroyFromBulletDamage(ref SystemState state, Entity transportEntity, in PeopleTransportState transport)
@@ -838,42 +853,21 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            int shipNetworkId = transport.IsLoad != 0
-                ? transport.TargetShipNetworkId
-                : transport.SourceShipNetworkId;
-
-            if (shipNetworkId != 0)
+            // Only load transports still hold a PeopleInTransit reservation on the destination ship.
+            if (transport.IsLoad != 0 && transport.TargetShipNetworkId != 0)
             {
                 using var shipQuery = em.CreateEntityQuery(
                     ComponentType.ReadOnly<ShipTag>(),
                     ComponentType.ReadOnly<GhostOwner>(),
-                    ComponentType.ReadWrite<ShipState>());
+                    ComponentType.ReadWrite<ShipPeopleTransferState>());
                 using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
                 using var ships = shipQuery.ToEntityArray(Allocator.Temp);
                 for (int i = 0; i < ships.Length; i++)
                 {
-                    if (owners[i].NetworkId != shipNetworkId)
+                    if (owners[i].NetworkId != transport.TargetShipNetworkId)
                         continue;
 
-                    var shipEntity = ships[i];
-                    if (transport.IsLoad != 0)
-                    {
-                        // Load destroyed: free inbound reservation (never boarded).
-                        if (em.HasComponent<ShipPeopleTransferState>(shipEntity))
-                        {
-                            var transfer = em.GetComponentData<ShipPeopleTransferState>(shipEntity);
-                            transfer.PeopleInTransit = math.max(0f, transfer.PeopleInTransit - transport.Amount);
-                            em.SetComponentData(shipEntity, transfer);
-                        }
-                    }
-                    else
-                    {
-                        // Unload destroyed: people die — commit the reserved drop from the ship.
-                        var ship = em.GetComponentData<ShipState>(shipEntity);
-                        CommitOutboundPeople(ref state, shipEntity, ref ship, transport.Amount);
-                        em.SetComponentData(shipEntity, ship);
-                    }
-
+                    ClearPeopleInTransitOnShip(ref state, ships[i], transport.Amount);
                     break;
                 }
             }

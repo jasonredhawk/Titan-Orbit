@@ -3,6 +3,7 @@ using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
+using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -15,9 +16,12 @@ namespace TitanOrbit.Game
     /// <para>
     /// Instantiates proxies from <see cref="PeopleTransportVfxBridge"/> and magnet-steers them with
     /// toroidal display unwrap. Load flights re-resolve the destination ship every frame from live
-    /// ECS <see cref="LocalTransform"/> (not the spawn-time baked target) so floats follow a moving
-    /// hull. Windows-safe: no map-body <c>ToEntityArray</c>, no <c>Application.onBeforeRender</c>
-    /// Instantiates.
+    /// ECS pose; when the ship leaves the orbit ring (or thrusts/fires), the same sphere flies home
+    /// to the source planet and can retarget the ship again if the player re-enters. Floating ±N
+    /// popups spawn at the sphere leave and consume positions (not on the ship hull).
+    /// </para>
+    /// <para>
+    /// Windows-safe: no map-body <c>ToEntityArray</c>, no <c>Application.onBeforeRender</c> Instantiates.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66200)]
@@ -33,6 +37,10 @@ namespace TitanOrbit.Game
             public float Cruise;
             public byte IsLoad;
             public int TargetShipNetworkId;
+            public int SourcePlanetId;
+            public int TargetPlanetId;
+            public float Amount;
+            public byte Team;
             public float3 SpawnPos;
             public float RemainingLifetime;
             public int TileK;
@@ -84,7 +92,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// LateUpdate only — never <c>onBeforeRender</c> (Instantiates during render crashed Windows).
-        /// Drains spawn queue, live-retargets load magnets to current ship pose, steers, and places GO.
+        /// Drains spawn queue, live-retargets load magnets (ship ↔ home planet), steers, and places GO.
         /// </summary>
         void LateUpdate()
         {
@@ -128,21 +136,20 @@ namespace TitanOrbit.Game
                 f.RemainingLifetime -= dt;
                 if (f.RemainingLifetime <= 0f)
                 {
-                    DestroyFlightAt(i);
+                    DestroyFlightAt(i, showArrivePopup: false);
                     continue;
                 }
 
                 // --- Magnet target ---
-                // Load: chase live ship hull (server StepTransportMotion does the same).
-                // Unload: keep baked planet-surface TargetPos from spawn RPC.
+                // Load: chase ship while eligible; otherwise fly home to source planet surface.
+                // Unload: keep / refresh planet-surface TargetPos.
                 float3 target = f.TargetPos;
-                if (f.IsLoad != 0 &&
-                    f.TargetShipNetworkId != 0 &&
-                    TryGetLoadMagnetTarget(f.TargetShipNetworkId, f.LogicalPos, mapW, mapH, out float3 liveTarget))
-                {
-                    target = liveTarget;
-                    f.TargetPos = target;
-                }
+                if (f.IsLoad != 0)
+                    ResolveLoadMagnetTarget(ref f, mapW, mapH, out target);
+                else
+                    ResolveUnloadMagnetTarget(ref f, mapW, mapH, out target);
+
+                f.TargetPos = target;
 
                 // --- Steer + integrate (logical / unbounded XZ) ---
                 float cruise = math.max(0.08f, f.Cruise);
@@ -153,15 +160,6 @@ namespace TitanOrbit.Game
 
                 f.LogicalPos += f.Velocity * dt;
                 f.LogicalPos.y = 0f;
-
-                // --- Arrive ---
-                float traveled = ToroidalMapEcs.ToroidalDistance(f.LogicalPos, f.SpawnPos, mapW, mapH);
-                float dist = ToroidalMapEcs.ToroidalDistance(f.LogicalPos, target, mapW, mapH);
-                if (traveled >= MinTravelBeforeArrive && dist <= ArriveDistance)
-                {
-                    DestroyFlightAt(i);
-                    continue;
-                }
 
                 // --- Display unwrap (cosmetic only — sim stays logical) ---
                 int k = f.TileK;
@@ -182,21 +180,76 @@ namespace TitanOrbit.Game
                         new Vector3(forward.x, 0f, forward.z), Vector3.up);
                 }
 
+                // --- Arrive (consume / land / return home) ---
+                float traveled = ToroidalMapEcs.ToroidalDistance(f.LogicalPos, f.SpawnPos, mapW, mapH);
+                float dist = ToroidalMapEcs.ToroidalDistance(f.LogicalPos, target, mapW, mapH);
+                if (traveled >= MinTravelBeforeArrive && dist <= ArriveDistance)
+                {
+                    _flights[i] = f;
+                    DestroyFlightAt(i, showArrivePopup: true);
+                    continue;
+                }
+
                 _flights[i] = f;
             }
         }
 
         /// <summary>
-        /// Resolves the current magnet point on the destination ship hull.
-        /// Prefers predicted local-ship <see cref="LocalTransform"/> when this flight targets us;
-        /// otherwise looks up any ship ghost by network id (tiny query, cached per frame).
+        /// Load magnet: ship hull while eligible; source planet surface when the ship leaves orbit
+        /// (or thrusts/fires). Same sphere can flip destination again if the ship returns.
         /// </summary>
-        /// <param name="targetShipNetworkId">Load destination from spawn RPC / bridge.</param>
-        /// <param name="fromLogicalPos">Transport logical position (for hull inset direction).</param>
-        /// <param name="mapW">Toroidal map width.</param>
-        /// <param name="mapH">Toroidal map height.</param>
-        /// <param name="magnetTarget">Hull point to steer toward.</param>
-        /// <returns>False when the ship ghost is missing — caller keeps baked TargetPos.</returns>
+        void ResolveLoadMagnetTarget(ref Flight f, float mapW, float mapH, out float3 target)
+        {
+            target = f.TargetPos;
+
+            bool shipEligible = false;
+            bool knowEligibility = f.TargetShipNetworkId != 0 &&
+                                   f.SourcePlanetId != 0 &&
+                                   EcsGameBridge.TryIsShipEligibleForPeopleLoad(
+                                       f.TargetShipNetworkId, f.SourcePlanetId, out shipEligible);
+
+            float3 liveShipTarget = default;
+            bool haveShipMagnet = f.TargetShipNetworkId != 0 &&
+                                  TryGetLoadMagnetTarget(f.TargetShipNetworkId, f.LogicalPos, mapW, mapH,
+                                      out liveShipTarget);
+
+            // Known eligible → chase ship. Unknown (lookup miss) → keep chasing if we can see the hull
+            // so a single failed query does not falsely send every sphere home.
+            if (haveShipMagnet && (!knowEligibility || shipEligible))
+            {
+                target = liveShipTarget;
+                return;
+            }
+
+            // Known ineligible (left ring / thrusting / firing) — steer home; can retarget later.
+            if (f.SourcePlanetId != 0 &&
+                EcsGameBridge.TryGetPlanetPoseByPlanetId(f.SourcePlanetId, out float3 planetPos, out float planetScale, out _))
+            {
+                float planetSize = math.max(0.5f, planetScale);
+                target = PeopleTransportMath.GetPlanetSurfaceToward(
+                    planetPos, planetSize, f.LogicalPos, mapW, mapH);
+            }
+        }
+
+        /// <summary>Unload magnet: live planet surface toward the sphere (baked TargetPos as fallback).</summary>
+        void ResolveUnloadMagnetTarget(ref Flight f, float mapW, float mapH, out float3 target)
+        {
+            target = f.TargetPos;
+            int planetId = f.TargetPlanetId != 0 ? f.TargetPlanetId : f.SourcePlanetId;
+            if (planetId == 0)
+                return;
+
+            if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out float3 planetPos, out float planetScale, out _))
+                return;
+
+            float planetSize = math.max(0.5f, planetScale);
+            target = PeopleTransportMath.GetPlanetSurfaceToward(
+                planetPos, planetSize, f.LogicalPos, mapW, mapH);
+        }
+
+        /// <summary>
+        /// Resolves the current magnet point on the destination ship hull.
+        /// </summary>
         bool TryGetLoadMagnetTarget(
             int targetShipNetworkId,
             float3 fromLogicalPos,
@@ -206,7 +259,6 @@ namespace TitanOrbit.Game
         {
             magnetTarget = default;
 
-            // --- Resolve live ship pose (cached) ---
             if (!TryGetCachedShipTransform(targetShipNetworkId, out LocalTransform shipLt))
                 return false;
 
@@ -219,27 +271,68 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Returns a ship <see cref="LocalTransform"/> for <paramref name="networkId"/>, filling
+        /// Returns a ship pose for <paramref name="networkId"/>, filling
         /// <see cref="_shipPoseByNetworkId"/> on first use this LateUpdate.
+        /// <para>
+        /// [TITAN-ORBIT] Local owner prefers <see cref="ShipDisplayPose"/> / hybrid hull — the same
+        /// presentation pose the Windows client renders. Raw predicted <see cref="LocalTransform"/>
+        /// can lag behind <see cref="ShipVisualSyncSystem"/> coast during NetCode reconcile, which
+        /// made load spheres chase an old point on the orbit ring in player builds (Editor host
+        /// rarely shows it because RTT/reconcile is tiny).
+        /// </para>
+        /// Remotes stay on ECS <see cref="LocalTransform"/> (logical); their hybrid hulls are
+        /// toroidal display copies and must not feed magnet math.
         /// </summary>
         bool TryGetCachedShipTransform(int networkId, out LocalTransform shipLt)
         {
             if (_shipPoseByNetworkId.TryGetValue(networkId, out shipLt))
                 return true;
 
-            // --- Local owner: predicted ClientWorld pose (freshest; matches delivery) ---
-            // [TITAN-ORBIT] Do not use ShipDisplayPose here — soft-track / sticky HasLocalPose can
-            // leave the magnet aimed at where the hull was, while the proxy has already moved.
             int localNetworkId = EcsGameBridge.GetLocalNetworkId();
-            if (localNetworkId > 0 &&
-                networkId == localNetworkId &&
-                EcsGameBridge.TryGetLocalShipTransform(out shipLt))
+            if (localNetworkId > 0 && networkId == localNetworkId)
             {
-                _shipPoseByNetworkId[networkId] = shipLt;
-                return true;
+                // --- Local owner: presentation pose first (matches camera / hybrid hull) ---
+                float scale = 1f;
+                bool haveSimScale = EcsGameBridge.TryGetLocalShipTransform(out var simLt);
+                if (haveSimScale)
+                    scale = simLt.Scale;
+
+                if (ShipDisplayPose.HasLocalPose)
+                {
+                    shipLt = LocalTransform.FromPositionRotationScale(
+                        (float3)ShipDisplayPose.LocalPosition,
+                        ShipDisplayPose.LocalRotation,
+                        math.max(0.25f, scale));
+                    _shipPoseByNetworkId[networkId] = shipLt;
+                    return true;
+                }
+
+                // Hull registry is also presentation space for the local ship (unbounded logical).
+                if (ShipWeaponProxyRegistry.TryGetHull(networkId, out Transform hull) && hull != null)
+                {
+                    if (!haveSimScale)
+                    {
+                        float presentationScale = math.max(0.0001f, hull.lossyScale.x);
+                        scale = presentationScale / BodyCollisionMath.ShipPresentationScale;
+                    }
+
+                    shipLt = LocalTransform.FromPositionRotationScale(
+                        (float3)hull.position,
+                        hull.rotation,
+                        math.max(0.25f, scale));
+                    _shipPoseByNetworkId[networkId] = shipLt;
+                    return true;
+                }
+
+                if (haveSimScale)
+                {
+                    shipLt = simLt;
+                    _shipPoseByNetworkId[networkId] = shipLt;
+                    return true;
+                }
             }
 
-            // --- Any ship (local fallback or remote): GhostOwner scan — ships only, not map bodies ---
+            // --- Remotes / fallback: GhostOwner scan — ships only, not map bodies ---
             if (EcsGameBridge.TryGetShipSimTransformByNetworkId(networkId, out shipLt))
             {
                 _shipPoseByNetworkId[networkId] = shipLt;
@@ -250,7 +343,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
-        /// <summary>Budgeted Instantiates from the VFX bridge.</summary>
+        /// <summary>Budgeted Instantiates from the VFX bridge; shows leave (−N) at spawn.</summary>
         void DrainSpawns()
         {
             int spawnedThisFrame = 0;
@@ -272,6 +365,7 @@ namespace TitanOrbit.Game
                 go.name = req.IsLoad != 0 ? "PeopleTransportProxy_Load" : "PeopleTransportProxy_Unload";
                 spawnedThisFrame++;
 
+                Vector3 displayPos;
                 if (ToroidalDisplay.TryGetReferencePosition(out Vector3 reference))
                 {
                     int k = int.MinValue;
@@ -279,11 +373,13 @@ namespace TitanOrbit.Game
                     float3 display = ToroidalMapEcs.GetDisplayPositionWithHysteresis(
                         spawn, (float3)reference, ref k, ref m);
                     display.y = LiftY;
-                    go.transform.position = display;
+                    displayPos = display;
+                    go.transform.position = displayPos;
                 }
                 else
                 {
-                    go.transform.position = new Vector3(spawn.x, LiftY, spawn.z);
+                    displayPos = new Vector3(spawn.x, LiftY, spawn.z);
+                    go.transform.position = displayPos;
                 }
 
                 float cruise = req.CruiseSpeed > 0.01f
@@ -293,7 +389,7 @@ namespace TitanOrbit.Game
                         ToroidalMapEcs.MapWidth, ToroidalMapEcs.MapHeight);
                 cruise = math.max(0.08f, cruise);
 
-                _flights.Add(new Flight
+                var flight = new Flight
                 {
                     Go = go,
                     LogicalPos = spawn,
@@ -302,21 +398,102 @@ namespace TitanOrbit.Game
                     Cruise = cruise,
                     IsLoad = req.IsLoad,
                     TargetShipNetworkId = req.TargetShipNetworkId,
+                    SourcePlanetId = req.SourcePlanetId,
+                    TargetPlanetId = req.TargetPlanetId,
+                    Amount = math.max(1f, req.Amount),
+                    Team = req.Team,
                     SpawnPos = spawn,
                     RemainingLifetime = PeopleTransportMath.EffectiveVisualTravelSeconds + 4f,
                     TileK = int.MinValue,
                     TileM = int.MinValue,
-                });
+                };
+
+                // Leave popup: planet lost people (load) or ship lost people (unload).
+                ShowPeoplePopupAt(displayPos, -math.max(1f, req.Amount), (TeamId)req.Team, in flight);
+                _flights.Add(flight);
             }
         }
 
-        /// <summary>Destroys one flight GameObject and removes it from the active list.</summary>
-        void DestroyFlightAt(int index)
+        /// <summary>
+        /// Destroys one flight GameObject. When <paramref name="showArrivePopup"/> is true, shows +N
+        /// at the sphere (ship consume, planet land, or return-home refund).
+        /// </summary>
+        void DestroyFlightAt(int index, bool showArrivePopup)
         {
             var f = _flights[index];
+            if (showArrivePopup && f.Go != null)
+            {
+                Vector3 pos = f.Go.transform.position;
+                ShowPeoplePopupAt(pos, f.Amount, (TeamId)f.Team, in f);
+            }
+
             if (f.Go != null)
                 Destroy(f.Go);
             _flights.RemoveAt(index);
+        }
+
+        /// <summary>
+        /// Shows a compact ±N people popup near the transport. When the sphere is close to a planet,
+        /// nudges the popup outside the planet body so the mesh does not clip the text.
+        /// </summary>
+        void ShowPeoplePopupAt(Vector3 worldPosition, float signedAmount, TeamId team, in Flight flight)
+        {
+            if (WorldFloatingCountManager.Instance == null)
+                return;
+
+            var channel = flight.IsLoad != 0
+                ? FloatingCountChannel.PeopleLoad
+                : FloatingCountChannel.PeopleUnload;
+
+            TryGetNearbyPlanetAvoidance(in flight, worldPosition, out Vector3 avoidCenter, out float avoidRadius);
+            WorldFloatingCountManager.Instance.ShowFloatingCountAtWorldPosition(
+                worldPosition, channel, signedAmount, team, avoidCenter, avoidRadius);
+        }
+
+        /// <summary>
+        /// If the transport display point sits near a planet body, returns that planet's display
+        /// center + radius so the floating-count manager can park the popup in empty space.
+        /// </summary>
+        static void TryGetNearbyPlanetAvoidance(
+            in Flight flight,
+            Vector3 transportDisplayPos,
+            out Vector3 avoidCenter,
+            out float avoidRadius)
+        {
+            avoidCenter = default;
+            avoidRadius = 0f;
+
+            int planetId = flight.IsLoad != 0
+                ? flight.SourcePlanetId
+                : (flight.TargetPlanetId != 0 ? flight.TargetPlanetId : flight.SourcePlanetId);
+            if (planetId == 0)
+                return;
+
+            if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(
+                    planetId, out float3 logicalPlanet, out float planetScale, out _))
+                return;
+
+            // --- Display unwrap (same tile family as the transport GO) ---
+            float3 planetDisplay = logicalPlanet;
+            if (ToroidalDisplay.TryGetReferencePosition(out Vector3 reference))
+            {
+                int k = int.MinValue;
+                int m = int.MinValue;
+                planetDisplay = ToroidalMapEcs.GetDisplayPositionWithHysteresis(
+                    logicalPlanet, (float3)reference, ref k, ref m);
+            }
+
+            float bodyRadius = BodyCollisionMath.GetPlanetBodyRadiusWorld(planetScale);
+            Vector3 planetPos = new Vector3(planetDisplay.x, 0f, planetDisplay.z);
+            Vector3 tip = transportDisplayPos;
+            tip.y = 0f;
+            float dist = Vector3.Distance(tip, planetPos);
+            // Only nudge when the popup would otherwise sit inside / against the planet shell.
+            if (dist > bodyRadius + 4f)
+                return;
+
+            avoidCenter = planetPos;
+            avoidRadius = bodyRadius;
         }
 
         /// <summary>Destroys every active flight (leave match / disable).</summary>

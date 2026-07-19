@@ -24,6 +24,10 @@ namespace TitanOrbit.ECS
             public float CruiseSpeed;
             public float Amount;
             public int TargetShipNetworkId;
+            /// <summary>Load source planet — used when the ship leaves orbit and the sphere flies home.</summary>
+            public int SourcePlanetId;
+            /// <summary>Unload destination planet id (0 for load).</summary>
+            public int TargetPlanetId;
             public byte IsLoad;
             public byte Team;
         }

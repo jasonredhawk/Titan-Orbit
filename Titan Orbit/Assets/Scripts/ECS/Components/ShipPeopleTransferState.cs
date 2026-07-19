@@ -4,9 +4,9 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-only accumulator state for people transport between planets. Tracks orbit dwell time,
-    /// fractional load/unload, and in-flight crew count. Read/written by
-    /// <see cref="PeopleTransportSystem"/>. Not ghost-serialized — clients infer transport from
-    /// replicated <see cref="ShipState.CurrentPeople"/> and transport VFX.
+    /// fractional load/unload progress, and inbound (planet→ship) crew still in flight.
+    /// Unload debits <see cref="ShipState.CurrentPeople"/> at dispatch — this component does not
+    /// reserve outbound crew. Not ghost-serialized; clients show floats via transport VFX.
     /// </summary>
     public struct ShipPeopleTransferState : IComponentData
     {
@@ -18,9 +18,9 @@ namespace TitanOrbit.ECS
         public int LastOrbitPlanetId;
 
         /// <summary>
-        /// Crew currently in flight. Load: left the planet, not yet on the ship.
-        /// Unload: reserved from the ship, not yet applied at the planet (CurrentPeople unchanged
-        /// until delivery or destruction — floating −1 waits for arrival).
+        /// Inbound crew still flying planet→ship (load). Counts against ship capacity until
+        /// <see cref="PeopleTransportSimulationSystem"/> delivers or returns/destroys the transport.
+        /// Unload does not use this — ship <see cref="ShipState.CurrentPeople"/> drops at dispatch.
         /// </summary>
         public float PeopleInTransit;
 

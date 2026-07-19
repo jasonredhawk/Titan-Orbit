@@ -83,8 +83,9 @@ namespace TitanOrbit.Game
 
             // --- Skip ship WithEntityAccess during GhostSpawn Instantiates ---
             // [TITAN-ORBIT] Same EntityTypeHandle NRE class as MapBodyHybrid / ClientCommandTarget
-            // when Settling is on (or briefly after team ship Instantiates).
-            if (ClientJoinSettleCache.Settling)
+            // when Settling is on, and after Join Team when Settling stays OFF but ship Instantiates
+            // still run (Player.log 2026-07-19 TeamChoiceResult → Crash!!!).
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
                 return;
 
             Entity localShip = Entity.Null;

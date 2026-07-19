@@ -258,6 +258,8 @@ namespace TitanOrbit.Game
             //
             // Drain during Settling (budgeted) so GameObject Instantiates run under the loading
             // bar. Skipping drain until Settling OFF dumped all GO lag after 100% / Join Team.
+            // Flush Instantiates-hook SpawnRequest queue first (Windows EntityScenes lack Pending).
+            MapBodyHybridVisualInstantiateHook.FlushPending(em);
             SyncExistingWorldBodyProxyTransforms(em, alive);
             DrainPendingWorldBodyProxies(em, alive);
 
@@ -269,8 +271,9 @@ namespace TitanOrbit.Game
             if (hybridShips)
             {
                 // [TITAN-ORBIT] EnsureShipProxies uses ToEntityArray on ships — fine when idle, but
-                // skip during Settling (ship Instantiates window after Join Team).
-                if (!settling)
+                // skip during Settling and during GhostSpawnBacklog (post–Join Team ship Instantiates
+                // while Settling stays OFF — Player.log 2026-07-19 Crash!!!).
+                if (!settling && !ClientJoinSettleCache.GhostSpawnBacklog)
                     EnsureShipProxies(em);
                 SyncShipProxyTransforms(em, alive);
             }

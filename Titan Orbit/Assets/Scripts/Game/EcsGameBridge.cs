@@ -1,6 +1,7 @@
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
@@ -16,6 +17,11 @@ namespace TitanOrbit.Game
     /// <summary>
     /// MonoBehaviour-safe read API for UI, camera, and bridges. Resolves the correct
     /// NetCode world (client vs host server) and exposes match/map/planet state.
+    /// <para>
+    /// Map-load static latches are cleared on play-mode / assembly reload and whenever
+    /// NetworkStreamInGame drops — otherwise a second Play (especially with Domain Reload
+    /// disabled) can skip the loading screen and jump to Join Team with no map GOs.
+    /// </para>
     /// </summary>
     public static class EcsGameBridge
     {
@@ -24,6 +30,19 @@ namespace TitanOrbit.Game
 
         /// <summary>NetCode server simulation world — authoritative on dedicated server and local host.</summary>
         public static World ServerWorld => ClientServerBootstrap.ServerWorld;
+
+        /// <summary>
+        /// [UNITY] Clears map-load statics when entering Play Mode without Domain Reload
+        /// (Enter Play Mode Options). Without this, <c>s_MapLoadingLatchedComplete</c> from the
+        /// previous Play stays true and Join Team appears before the new map builds.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStaticsForPlayMode()
+        {
+            ResetRemoteMapLoadTracking();
+            s_WasNetworkInGame = false;
+            ClientJoinSettleCache.Clear();
+        }
 
         // --- World selection ---
 
@@ -392,6 +411,45 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>
+        /// Client mirror of server load eligibility: orbit ring + idle + same source planet.
+        /// Used by <see cref="PeopleTransportVfxDriver"/> to retarget load spheres home when the
+        /// ship leaves the friendly orbit ring, then chase the ship again when it returns.
+        /// Ships-only query (safe under TransformQuarantine).
+        /// </summary>
+        /// <param name="shipNetworkId">Destination ship from the load spawn RPC.</param>
+        /// <param name="sourcePlanetId">Planet the transport left.</param>
+        /// <param name="eligible">True when the sphere should keep magnet-steering to the ship.</param>
+        /// <returns>False when ship/planet data is missing (caller should keep last target).</returns>
+        public static bool TryIsShipEligibleForPeopleLoad(int shipNetworkId, int sourcePlanetId, out bool eligible)
+        {
+            eligible = false;
+            if (shipNetworkId <= 0 || sourcePlanetId == 0)
+                return false;
+
+            var world = GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                world = ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (!TryGetShipPeopleLoadContext(em, shipNetworkId, out var shipState, out var shipInput,
+                    out var shipOrbit, out var moonDock, out var shipTransform))
+                return false;
+
+            if (!TryGetPlanetPoseByPlanetId(sourcePlanetId, out float3 planetPos, out float planetScale, out var planetState))
+                return false;
+
+            float mapW = math.max(100f, ToroidalMapEcs.MapWidth);
+            float mapH = math.max(100f, ToroidalMapEcs.MapHeight);
+            float planetSize = math.max(0.5f, planetScale);
+            eligible = PeopleTransportSimulationSystem.IsShipEligibleForLoad(
+                shipState, shipInput, shipOrbit, moonDock, shipTransform.Position, planetPos,
+                planetSize, planetState.PlanetLevel, sourcePlanetId, mapW, mapH);
+            return true;
+        }
+
         /// <summary>Whether the player is holding deposit — gem economy HUD indicator.</summary>
         public static bool TryGetLocalShipDepositIntent(out bool wantDepositGems)
         {
@@ -476,10 +534,31 @@ namespace TitanOrbit.Game
         /// </summary>
         public static bool IsMapLoadingComplete()
         {
-            if (!IsNetworkInGame())
+            // --- Session edge tracking ---
+            // [TITAN-ORBIT] Statics survive "Play twice" when Domain Reload is off. Also, if nothing
+            // called this while on the menu, the previous session's latch could still be true when
+            // the next NetworkStreamInGame arrives — Join Team with no map.
+            bool inGame = IsNetworkInGame();
+            if (!inGame)
             {
+                if (s_WasNetworkInGame)
+                    ResetRemoteMapLoadTracking();
+                s_WasNetworkInGame = false;
                 ResetRemoteMapLoadTracking();
                 return false;
+            }
+
+            // Rising edge of in-game: drop complete-latch / settle-ish load flags for the new join.
+            // Do NOT clear MapSessionMetaCache here — GoInGame meta RPC may already have applied.
+            if (!s_WasNetworkInGame)
+            {
+                s_MapLoadingLatchedComplete = false;
+                s_JoinLoadSmoothStart = -1f;
+                s_ProxyPlateauCount = -1;
+                s_ProxyPlateauSince = -1f;
+                s_LatchedLoadingTotalSteps = 0;
+                s_LatchedActiveTeamCount = 0;
+                s_WasNetworkInGame = true;
             }
 
             // [TITAN-ORBIT] Latch — replicated asteroid/planet counts can tick upward after the first "complete".
@@ -499,20 +578,14 @@ namespace TitanOrbit.Game
         static bool EvaluateMapLoadingComplete()
         {
             // --- Local host: server must finish generation, then wait for local GO proxies ---
-            // [TITAN-ORBIT] Server LoadingComplete alone used to dismiss loading while the client
-            // visualizer still Instantiates hundreds of planet/asteroid GOs (post-100% lag).
+            // [TITAN-ORBIT] Never treat "server LoadingComplete + 0 denominator + 0 proxies" as done.
+            // That skipped the loading screen on second Editor Play when meta/totals were not ready
+            // yet but the server singleton was already LoadingComplete.
             if (IsLocalHost() &&
                 ServerWorld != null && ServerWorld.IsCreated &&
                 TryGetMapLoadingComplete(ServerWorld, out var serverComplete) &&
                 serverComplete)
-            {
-                if (TryGetMapProxyBuildComplete())
-                    return true;
-                // No denominator yet (meta / totals) — keep waiting if visualizer is alive.
-                if (ResolveMapLoadingDenominator() > 0 || EcsWorldVisualizer.MapLoadingProxyCount > 0)
-                    return false;
-                return true;
-            }
+                return TryGetMapProxyBuildComplete();
 
             // --- Remote / dedicated Windows client ---
             // [TITAN-ORBIT] Do NOT treat ClientWorld MapStateSingleton.LoadingComplete alone as done —
@@ -523,7 +596,7 @@ namespace TitanOrbit.Game
             if (ClientWorld != null && ClientWorld.IsCreated &&
                 TryGetMapLoadingComplete(ClientWorld, out var clientComplete) &&
                 clientComplete)
-                return TryGetMapProxyBuildComplete() || ResolveMapLoadingDenominator() <= 0;
+                return TryGetMapProxyBuildComplete();
 
             return false;
         }
@@ -978,6 +1051,54 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>
+        /// Bundles ship components needed for people-load eligibility in one ships-only scan.
+        /// </summary>
+        static bool TryGetShipPeopleLoadContext(
+            EntityManager em,
+            int networkId,
+            out ShipState shipState,
+            out ShipInput shipInput,
+            out ShipOrbitState shipOrbit,
+            out ShipMoonDockState moonDock,
+            out LocalTransform shipTransform)
+        {
+            shipState = default;
+            shipInput = default;
+            shipOrbit = default;
+            moonDock = default;
+            shipTransform = default;
+
+            using var query = em.CreateEntityQuery(
+                typeof(ShipTag),
+                typeof(GhostOwner),
+                typeof(ShipState),
+                typeof(ShipInput),
+                typeof(ShipOrbitState),
+                typeof(ShipMoonDockState),
+                typeof(LocalTransform));
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
+            using var inputs = query.ToComponentDataArray<ShipInput>(Allocator.Temp);
+            using var orbits = query.ToComponentDataArray<ShipOrbitState>(Allocator.Temp);
+            using var docks = query.ToComponentDataArray<ShipMoonDockState>(Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            for (int i = 0; i < owners.Length; i++)
+            {
+                if (owners[i].NetworkId != networkId)
+                    continue;
+
+                shipState = states[i];
+                shipInput = inputs[i];
+                shipOrbit = orbits[i];
+                moonDock = docks[i];
+                shipTransform = transforms[i];
+                return true;
+            }
+
+            return false;
+        }
+
         /// <summary>First in-game connection's <see cref="NetworkId"/> on the client world.</summary>
         static int GetLocalNetworkId(World clientWorld)
         {
@@ -1038,6 +1159,13 @@ namespace TitanOrbit.Game
         static float s_RemoteMapStableSince = -1f;
         /// <summary>Stays true after first successful <see cref="IsMapLoadingComplete"/> until session reset.</summary>
         static bool s_MapLoadingLatchedComplete;
+
+        /// <summary>
+        /// Previous <see cref="IsNetworkInGame"/> sample — detects leave/enter so latches cannot
+        /// survive a second Play or a reconnect without Domain Reload.
+        /// </summary>
+        static bool s_WasNetworkInGame;
+
         /// <summary>Last known team count for lobby UI — avoids flicker when home ghosts briefly desync.</summary>
         static int s_LatchedActiveTeamCount;
         /// <summary>
@@ -1069,7 +1197,10 @@ namespace TitanOrbit.Game
         /// </summary>
         const float MapProxyStarveEscapeSeconds = 12f;
 
-        /// <summary>Clears remote map heuristics when disconnecting or leaving in-game state.</summary>
+        /// <summary>
+        /// Clears remote map heuristics when disconnecting, leaving in-game, or entering Play Mode.
+        /// Also clears join-settle managed cache so <c>JoinSettleCompleted</c> cannot stick across Plays.
+        /// </summary>
         static void ResetRemoteMapLoadTracking()
         {
             s_RemoteMapExpectedTotal = -1;
@@ -1084,6 +1215,9 @@ namespace TitanOrbit.Game
             s_ProxyPlateauSince = -1f;
             // [TITAN-ORBIT] Drop latched MapSessionMetaRpc so the next join does not reuse old totals.
             MapSessionMetaCache.Clear();
+            // JoinSettleCompleted / TransformQuarantine are static — clear on session end so a second
+            // Editor Play does not think Instantiates already finished.
+            ClientJoinSettleCache.Clear();
         }
 
         /// <summary>
@@ -1231,26 +1365,20 @@ namespace TitanOrbit.Game
                 return true;
             }
 
-            // --- Starve escape (Pending bake missing) ---
-            // Instantiates finished but proxies never climb — without this, Join Team hangs forever.
-            // Normal path: drain-during-Settling keeps proxies ≈ Instantiates; escape should be rare.
+            // --- Do NOT starve-escape to Join Team at 0 proxies ---
+            // Player.log 2026-07-19: plateau 0/768 → dismiss → TeamChoice → Crash!!!.
+            // MapBodyHybridVisualInstantiateHook queues SpawnRequest per Instantiates so proxies
+            // should climb. If they stay at 0, keep the loading screen (safer than crashing).
             if (ClientJoinSettleCache.JoinSettleCompleted &&
                 TitanOrbitJoinLoadCounters.InstantiatesSession >= readyAt &&
-                proxies < readyAt)
+                proxies == 0 &&
+                s_ProxyPlateauSince < 0f)
             {
-                if (proxies != s_ProxyPlateauCount)
-                {
-                    s_ProxyPlateauCount = proxies;
-                    s_ProxyPlateauSince = Time.realtimeSinceStartup;
-                }
-                else if (s_ProxyPlateauSince >= 0f &&
-                         Time.realtimeSinceStartup - s_ProxyPlateauSince >= MapProxyStarveEscapeSeconds)
-                {
-                    Debug.LogWarning(
-                        "[MapLoad] Proxy count plateaued at " + proxies + "/" + total +
-                        " after Instantiates settle — dismissing loading (check baked MapBodyHybridVisualPending).");
-                    return true;
-                }
+                s_ProxyPlateauSince = Time.realtimeSinceStartup;
+                Debug.LogWarning(
+                    "[MapLoad] Proxy count still 0/" + total +
+                    " after Instantiates settle — keeping loading screen. " +
+                    "Check TO_GhostSpawn_v13 hook + MapBodyHybridVisualSpawnRequest drain.");
             }
 
             return false;
@@ -1547,6 +1675,11 @@ namespace TitanOrbit.Game
             if (world == null || !world.IsCreated)
                 return false;
 
+            // [TITAN-ORBIT] Skip planet gathers while GhostSpawn Instantiates are active
+            // (join settle or post–Join Team ship Instantiates). Small planet sets are OK after.
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+                return false;
+
             var em = world.EntityManager;
             using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState), typeof(LocalTransform));
             using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
@@ -1569,6 +1702,9 @@ namespace TitanOrbit.Game
         {
             rotation = quaternion.identity;
             if (world == null || !world.IsCreated)
+                return false;
+
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
                 return false;
 
             var em = world.EntityManager;

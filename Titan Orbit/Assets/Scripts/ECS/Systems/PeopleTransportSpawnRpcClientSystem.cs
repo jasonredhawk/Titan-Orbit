@@ -44,6 +44,8 @@ namespace TitanOrbit.ECS
                     CruiseSpeed = r.CruiseSpeed,
                     Amount = r.Amount,
                     TargetShipNetworkId = r.TargetShipNetworkId,
+                    SourcePlanetId = r.SourcePlanetId,
+                    TargetPlanetId = r.TargetPlanetId,
                     IsLoad = r.IsLoad,
                     Team = r.Team,
                 });

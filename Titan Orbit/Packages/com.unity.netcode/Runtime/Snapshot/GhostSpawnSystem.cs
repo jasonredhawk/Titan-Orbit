@@ -16,6 +16,10 @@ namespace Unity.NetCode
     /// Loading UI can show Instantiates progress without scanning asteroid queries
     /// (<c>ToEntityArray</c> / chunk gathers Crash!!! on Windows late-join).
     /// Reset when leaving a session via <see cref="Reset"/>.
+    /// <para>
+    /// Also exposes <see cref="OnDelayedGhostInstantiate"/> so game code can queue hybrid
+    /// map-body visuals one Instantiates at a time (Windows EntityScenes often lack baked Pending).
+    /// </para>
     /// </summary>
     public static class TitanOrbitJoinLoadCounters
     {
@@ -25,11 +29,18 @@ namespace Unity.NetCode
         /// <summary>Successful delayed Instantiates this join (1/frame drain).</summary>
         public static int InstantiatesSession { get; private set; }
 
+        /// <summary>
+        /// Optional game hook after each successful delayed Instantiates (1/frame).
+        /// Used to AddComponent non-ghost <c>MapBodyHybridVisualSpawnRequest</c> without scanning asteroids.
+        /// </summary>
+        public static Action<EntityManager, Entity> OnDelayedGhostInstantiate;
+
         /// <summary>Call when NetworkStreamInGame ends / join gate clears.</summary>
         public static void Reset()
         {
             PlaceholdersCreatedSession = 0;
             InstantiatesSession = 0;
+            // Keep OnDelayedGhostInstantiate — registered once at runtime for the process.
         }
 
         /// <summary>Adds placeholder CreateEntity count for this frame.</summary>
@@ -44,6 +55,23 @@ namespace Unity.NetCode
         {
             if (count > 0)
                 InstantiatesSession += count;
+        }
+
+        /// <summary>Invokes <see cref="OnDelayedGhostInstantiate"/> safely (never throws into GhostSpawn).</summary>
+        public static void NotifyDelayedGhostInstantiate(EntityManager em, Entity entity)
+        {
+            var handler = OnDelayedGhostInstantiate;
+            if (handler == null || entity == Entity.Null)
+                return;
+
+            try
+            {
+                handler(em, entity);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[TO_GhostSpawn] OnDelayedGhostInstantiate failed: " + e.Message);
+            }
         }
     }
 
@@ -86,7 +114,8 @@ namespace Unity.NetCode
         // managed LocalToWorld (Burst LTW disabled) — see TitanOrbitClientSafeLocalToWorldSystem.
         // v10 CreateEntity-cap+requeue → "baseline for a ghost we do not have" + Burst Crash!!! (2026-07-18).
         // v7 requeue without map registration had the same baseline failure mode.
-        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v12_joinLoadCounters";
+        // v13 = v12 + OnDelayedGhostInstantiate hook for map-body hybrid SpawnRequest (no asteroid scan).
+        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v13_mapBodyVisualHook";
 
         // Touched in OnCreate so the linker cannot strip the marker.
         static char s_PatchIdTouch;
@@ -271,6 +300,8 @@ namespace Unity.NetCode
                 {
                     spawnedGhosts.Add(new SpawnedGhostMapping { ghost = new SpawnedGhost { ghostId = ghost.ghostId, spawnTick = ghost.serverSpawnTick }, entity = entity, previousEntity = ghost.oldEntity });
                     successfulInstantiatesThisFrame++;
+                    // TITAN-ORBIT: per-entity hook (map hybrid visuals) — never scan all asteroids.
+                    TitanOrbitJoinLoadCounters.NotifyDelayedGhostInstantiate(state.EntityManager, entity);
                 }
                 delayedInstantiatesThisFrame++;
             }
@@ -283,6 +314,7 @@ namespace Unity.NetCode
                 {
                     spawnedGhosts.Add(new SpawnedGhostMapping { ghost = new SpawnedGhost { ghostId = ghost.ghostId, spawnTick = ghost.serverSpawnTick }, entity = entity, previousEntity = ghost.oldEntity });
                     successfulInstantiatesThisFrame++;
+                    TitanOrbitJoinLoadCounters.NotifyDelayedGhostInstantiate(state.EntityManager, entity);
                 }
                 delayedInstantiatesThisFrame++;
             }

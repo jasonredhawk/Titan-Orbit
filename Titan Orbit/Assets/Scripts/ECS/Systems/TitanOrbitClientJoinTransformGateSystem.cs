@@ -114,11 +114,14 @@ namespace TitanOrbit.ECS
             settle.Settling = newSettling;
 
             // --- Quarantine: never RE-ENABLE TransformSystemGroup while in-game ---
+            // GhostSpawnBacklog stays true during post-team ship Instantiates even when Settling
+            // is latched off — presentation must not WithEntityAccess ships in that window.
             ClientJoinSettleCache.Set(
                 shouldSettle,
                 transformQuarantine: true,
                 settle.InGameFrames,
-                settle.JoinSettleCompleted != 0);
+                settle.JoinSettleCompleted != 0,
+                ghostSpawnBacklog: backlog);
             SetTransformGroupEnabled(ref state, enabled: false);
 
             if (settlingChanged)
