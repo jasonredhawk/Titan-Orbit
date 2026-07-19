@@ -20,9 +20,10 @@ namespace TitanOrbit.Game
     /// (published in NetCode PresentationSystemGroup by <see cref="ShipVisualSyncSystem"/>), not raw sim ECS.
     /// Proxies are render shells only — no extra movement smoothing on the local owner.
     /// <para>
-    /// [TITAN-ORBIT] Join load: GhostSpawn Instantiates →
-    /// <see cref="MapBodyHybridVisualPending"/> (baked or chunk-budget backfill) → GameObject proxy
-    /// (few per frame). Loading bar uses Max(proxies, Instantiates) / server meta <c>N</c>.
+    /// [TITAN-ORBIT] Join load: GhostSpawn Instantiates → Pending drain → GameObject proxies
+    /// (few per frame). Loading bar numerator is <see cref="MapLoadingProxyCount"/> /
+    /// <c>MapSessionMetaCache.LoadingTotalSteps</c> — see <see cref="EcsGameBridge.TryGetJoinLoadProgress"/>.
+    /// Drain runs during Settling too so GO Instantiates happen under the loading screen, not after 100%.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66000)]
@@ -35,12 +36,17 @@ namespace TitanOrbit.Game
         public static EcsWorldVisualizer Active { get; private set; }
 
         /// <summary>
-        /// Max new world-body GameObject Instantiates per frame from the Pending queue.
-        /// Pending tags only appear after GhostSpawn placeholders are empty (see request system);
-        /// keep this ≥ MapBodyHybridVisualRequestSystem.MaxMarksPerFrame so the loading bar
-        /// (WorldBodyProxyCount) advances in lockstep with visible planet/asteroid creation.
+        /// Max new world-body GameObject Instantiates per frame after join settle.
+        /// Loading bar advances when these Instantiates succeed (proxy count / meta N).
         /// </summary>
         const int MaxNewWorldBodyProxiesPerFrame = 48;
+
+        /// <summary>
+        /// Cap while GhostSpawn Instantiates are still draining (Settling).
+        /// Instantiates are 1/frame — keep GO create modest so Instantiates + GO do not flood one frame.
+        /// Still drains every frame so the loading screen absorbs map-build cost.
+        /// </summary>
+        const int MaxNewWorldBodyProxiesWhileSettling = 8;
         const string DefaultShipFamilyAssetPath = "Assets/Prefabs/Ships/AstroEagle/AstroEagleShipFamily.asset";
         const string DefaultHomePlanetPath = "Assets/Prefabs/HomePlanet.prefab";
         const string DefaultNeutralPlanetPath = "Assets/Prefabs/Planet.prefab";
@@ -243,13 +249,17 @@ namespace TitanOrbit.Game
             ToroidalDisplay.SyncMapSize(em);
             _hasToroidalReference = ToroidalDisplay.TryGetReferencePosition(out _toroidalReference);
 
-            // --- Map bodies: Pending / SpawnRequest drain ---
-            // [TITAN-ORBIT] Skip structural GO Instantiates while Settling — GhostSpawn Instantiates
-            // (post-team ship spawn) + chunk drains Crash!!! (Player.log 2026-07-18 16:53).
-            // Existing proxies still get pose updates below.
+            // --- Map bodies: drain baked Pending / existing SpawnRequest only ---
+            // [TITAN-ORBIT] Player.log 2026-07-18 21:18: MarkSpawnRequestQuery over unqueued
+            // asteroids → ArchetypeChunk.GetNativeArray(EntityTypeHandle) NRE → Crash!!!
+            // Same failure as the disabled ECS mark system. Do NOT backfill by scanning all
+            // asteroids. Visuals require baked MapBodyHybridVisualPending on ghost prefabs
+            // (rebake SubScenes / EntityScenes for the Windows player).
+            //
+            // Drain during Settling (budgeted) so GameObject Instantiates run under the loading
+            // bar. Skipping drain until Settling OFF dumped all GO lag after 100% / Join Team.
             SyncExistingWorldBodyProxyTransforms(em, alive);
-            if (!settling)
-                DrainPendingWorldBodyProxies(em, alive);
+            DrainPendingWorldBodyProxies(em, alive);
 
             // --- Ships ---
             // [TITAN-ORBIT] TransformQuarantine: TransformSystemGroup stays OFF (RE-ENABLE Crash!!!).
@@ -342,6 +352,7 @@ namespace TitanOrbit.Game
         /// <see cref="MapBodyHybridVisualPending"/> or runtime
         /// <see cref="MapBodyHybridVisualSpawnRequest"/>.
         /// Chunk iteration + per-frame budget — never gathers every asteroid.
+        /// Runs during Settling (smaller budget) so the loading bar covers GO Instantiates cost.
         /// </summary>
         /// <returns>Number of new proxies created this call.</returns>
         int DrainPendingWorldBodyProxies(EntityManager em, HashSet<Entity> alive)
@@ -362,15 +373,16 @@ namespace TitanOrbit.Game
             if (query.IsEmptyIgnoreFilter)
                 return 0;
 
-            // --- Collect up to budget, then mutate ---
+            // --- Collect up to this frame's budget, then mutate ---
+            int frameBudget = GetWorldBodyProxyBudgetThisFrame();
             var entityTypeHandle = em.GetEntityTypeHandle();
             using var chunks = query.ToArchetypeChunkArray(Unity.Collections.Allocator.Temp);
-            var batch = new List<Entity>(MaxNewWorldBodyProxiesPerFrame);
+            var batch = new List<Entity>(frameBudget);
 
-            for (int c = 0; c < chunks.Length && batch.Count < MaxNewWorldBodyProxiesPerFrame; c++)
+            for (int c = 0; c < chunks.Length && batch.Count < frameBudget; c++)
             {
                 var entities = chunks[c].GetNativeArray(entityTypeHandle);
-                for (int i = 0; i < entities.Length && batch.Count < MaxNewWorldBodyProxiesPerFrame; i++)
+                for (int i = 0; i < entities.Length && batch.Count < frameBudget; i++)
                     batch.Add(entities[i]);
             }
 
@@ -1324,12 +1336,22 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Per-frame GO Instantiates cap — tighter while Settling (GhostSpawn Instantiates 1/frame).
+        /// </summary>
+        static int GetWorldBodyProxyBudgetThisFrame()
+        {
+            return ClientJoinSettleCache.Settling
+                ? MaxNewWorldBodyProxiesWhileSettling
+                : MaxNewWorldBodyProxiesPerFrame;
+        }
+
+        /// <summary>
         /// Returns true when a new world-body proxy Instantiates is allowed this frame
         /// (shared Pending drain + post-settle Draw* catch-up).
         /// </summary>
         bool TryConsumeWorldBodyProxyBudget()
         {
-            if (_newWorldBodyProxiesThisFrame >= MaxNewWorldBodyProxiesPerFrame)
+            if (_newWorldBodyProxiesThisFrame >= GetWorldBodyProxyBudgetThisFrame())
                 return false;
 
             _newWorldBodyProxiesThisFrame++;

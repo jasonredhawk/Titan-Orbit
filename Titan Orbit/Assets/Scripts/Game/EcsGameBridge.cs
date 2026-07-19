@@ -464,54 +464,91 @@ namespace TitanOrbit.Game
             return complete;
         }
 
-        /// <summary>Computes map-ready from server singleton or remote ghost heuristics (no latch).</summary>
+        /// <summary>
+        /// Computes map-ready (no latch). Complete means the local GameObject map build is far
+        /// enough along that Join Team will not hitch on a burst of proxy Instantiates.
+        /// </summary>
         static bool EvaluateMapLoadingComplete()
         {
-            // --- Local host: ServerWorld owns map generation and MapStateSingleton ---
+            // --- Local host: server must finish generation, then wait for local GO proxies ---
+            // [TITAN-ORBIT] Server LoadingComplete alone used to dismiss loading while the client
+            // visualizer still Instantiates hundreds of planet/asteroid GOs (post-100% lag).
             if (IsLocalHost() &&
                 ServerWorld != null && ServerWorld.IsCreated &&
-                TryGetMapLoadingComplete(ServerWorld, out var serverComplete))
-                return serverComplete;
-
-            // --- Remote / dedicated Windows client ---
-            // [TITAN-ORBIT] Do NOT return ClientWorld MapStateSingleton.LoadingComplete==false here.
-            // That short-circuited before proxy heuristics and left the loading bar capped at 99% forever
-            // when the singleton ghost was missing, stale, or never flipped true (common on Relay).
-            if (IsRemoteMapObserverClient() && ClientWorld != null && ClientWorld.IsCreated)
+                TryGetMapLoadingComplete(ServerWorld, out var serverComplete) &&
+                serverComplete)
             {
-                // Trust a positive ghost flag if it arrives; otherwise use proxy / settle heuristics.
-                if (TryGetMapLoadingComplete(ClientWorld, out var ghostComplete) && ghostComplete)
+                if (TryGetMapProxyBuildComplete())
                     return true;
-                return TryGetReplicatedMapLoadComplete(ClientWorld);
+                // No denominator yet (meta / totals) — keep waiting if visualizer is alive.
+                if (ResolveMapLoadingDenominator() > 0 || EcsWorldVisualizer.MapLoadingProxyCount > 0)
+                    return false;
+                return true;
             }
 
+            // --- Remote / dedicated Windows client ---
+            // [TITAN-ORBIT] Do NOT treat ClientWorld MapStateSingleton.LoadingComplete alone as done —
+            // that dismissed the bar before hybrid GO Instantiates. Wait for proxy / meta gate.
+            if (IsRemoteMapObserverClient() && ClientWorld != null && ClientWorld.IsCreated)
+                return TryGetReplicatedMapLoadComplete(ClientWorld);
+
             if (ClientWorld != null && ClientWorld.IsCreated &&
-                TryGetMapLoadingComplete(ClientWorld, out var clientComplete))
-                return clientComplete;
+                TryGetMapLoadingComplete(ClientWorld, out var clientComplete) &&
+                clientComplete)
+                return TryGetMapProxyBuildComplete() || ResolveMapLoadingDenominator() <= 0;
 
             return false;
         }
 
-        /// <summary>0–1 loading bar progress for loading screen UI.</summary>
-        public static bool TryGetMapLoadingProgress(out float progress)
+        /// <summary>
+        /// Loading-bar fill (0–1). Driven by planet/asteroid GameObject proxies vs server meta N
+        /// so the bar covers real map-build cost. Soft crawl only until meta arrives (avoids a
+        /// stuck 0% before the first RPC). Never gathers asteroid entities.
+        /// </summary>
+        public static bool TryGetJoinLoadProgress(out float progress)
         {
             progress = 0f;
             if (!IsNetworkInGame())
                 return false;
 
-            if (TryGetMapLoadingState(out var completedSteps, out var totalSteps, out var loadingComplete, out progress))
-                return true;
-
-            if (ClientWorld != null && ClientWorld.IsCreated)
+            // --- Done ---
+            if (IsMapLoadingComplete())
             {
-                progress = EstimateClientMapLoadProgress(ClientWorld, out completedSteps, out totalSteps);
-                return totalSteps > 0 || progress > 0f;
+                progress = 1f;
+                return true;
             }
 
-            return false;
+            // --- Real progress: hybrid GO Instantiates / meta total ---
+            // [TITAN-ORBIT] MapLoadingProxyCount is a Dictionary count on the visualizer — safe.
+            int total = ResolveMapLoadingDenominator();
+            int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
+            if (total > 0)
+            {
+                s_LatchedLoadingTotalSteps = total;
+                progress = Mathf.Clamp01((float)proxies / total);
+                return true;
+            }
+
+            // --- Meta not yet: gentle crawl so the bar is not frozen at 0% ---
+            if (s_JoinLoadSmoothStart < 0f)
+                s_JoinLoadSmoothStart = Time.realtimeSinceStartup;
+
+            float elapsed = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
+            float t = Mathf.Max(0f, elapsed) / JoinLoadSmoothSeconds;
+            progress = (1f - Mathf.Exp(-2.2f * t)) * 0.12f;
+            return true;
         }
 
-        /// <summary>Completed vs total spawn steps for loading screen step counter.</summary>
+        /// <summary>0–1 loading bar — prefers <see cref="TryGetJoinLoadProgress"/>.</summary>
+        public static bool TryGetMapLoadingProgress(out float progress)
+        {
+            return TryGetJoinLoadProgress(out progress);
+        }
+
+        /// <summary>
+        /// Planet/asteroid GO count vs server meta total for status text (e.g. 120/678).
+        /// Safe — does not scan ECS asteroids.
+        /// </summary>
         public static bool TryGetMapLoadingStepCounts(out int completedSteps, out int totalSteps)
         {
             completedSteps = 0;
@@ -519,46 +556,53 @@ namespace TitanOrbit.Game
             if (!IsNetworkInGame())
                 return false;
 
-            return TryGetVisibleMapLoadingStepCounts(out completedSteps, out totalSteps);
-        }
-
-        /// <summary>
-        /// Loading UI contract (one bar, two phases — not two bars):
-        /// <list type="number">
-        /// <item><see cref="MapSessionMetaRpc"/> — server sends map totals once (how many to build).</item>
-        /// <item>Phase A while Settling: show GhostSpawn Instantiates so the bar is not frozen at 0.</item>
-        /// <item>Phase B: planet/asteroid GameObject proxies (<see cref="EcsWorldVisualizer.MapLoadingProxyCount"/>).</item>
-        /// </list>
-        /// Two bars would not stop Crash!!! — only safer gates do. This just makes progress honest.
-        /// </summary>
-        static bool TryGetVisibleMapLoadingStepCounts(out int completedSteps, out int totalSteps)
-        {
-            completedSteps = 0;
-            totalSteps = 0;
-
-            // --- Denominator: server meta only (latched) ---
-            // [TITAN-ORBIT] Do not use layout-buffer length or settings midpoint as "/ N" —
-            // that looked like “server data arriving” and jumped mid-load. Wait for meta.
-            if (MapSessionMetaCache.HasMeta && MapSessionMetaCache.LoadingTotalSteps > 0)
-                s_LatchedLoadingTotalSteps = MapSessionMetaCache.LoadingTotalSteps;
-
-            totalSteps = s_LatchedLoadingTotalSteps;
+            totalSteps = ResolveMapLoadingDenominator();
             if (totalSteps <= 0)
                 return false;
 
-            // --- Numerator (never regress to 0 when Settling ends) ---
-            // [TITAN-ORBIT] Phase A used InstantiatesSession only while Settling. When Settling OFF
-            // and proxies were still 0 (player bake missing Pending), the bar snapped to 0/N and
-            // stalled on "Building map visuals". Use Max(proxies, Instantiates) so the UI holds
-            // receive progress until GO proxies catch up. MapBodyHybridVisualRequestSystem backfills
-            // Pending when bake omitted it.
-            int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
-            int receive = TitanOrbitJoinLoadCounters.InstantiatesSession;
-            completedSteps = proxies > receive ? proxies : receive;
-
-            if (totalSteps > 0 && completedSteps > totalSteps)
+            completedSteps = Mathf.Clamp(EcsWorldVisualizer.MapLoadingProxyCount, 0, totalSteps);
+            if (IsMapLoadingComplete())
                 completedSteps = totalSteps;
             return true;
+        }
+
+        /// <summary>
+        /// Server meta total for the loading bar denominator. Prefers
+        /// <see cref="MapSessionMetaCache.LoadingTotalSteps"/>, else team+neutral+asteroid sum,
+        /// else host <see cref="MapStateSingleton.LoadingTotalSteps"/>.
+        /// </summary>
+        static int ResolveMapLoadingDenominator()
+        {
+            if (MapSessionMetaCache.LoadingTotalSteps > 0)
+            {
+                s_LatchedLoadingTotalSteps = MapSessionMetaCache.LoadingTotalSteps;
+                return MapSessionMetaCache.LoadingTotalSteps;
+            }
+
+            if (MapSessionMetaCache.HasMeta)
+            {
+                int sum = MapSessionMetaCache.TeamCount +
+                          MapSessionMetaCache.NeutralPlanetCount +
+                          MapSessionMetaCache.AsteroidCount;
+                if (sum > 0)
+                {
+                    s_LatchedLoadingTotalSteps = sum;
+                    return sum;
+                }
+            }
+
+            // --- Local host: meta RPC may not have latched yet — read ServerWorld singleton ---
+            if (IsLocalHost() &&
+                ServerWorld != null && ServerWorld.IsCreated &&
+                ServerWorld.EntityManager.CreateEntityQuery(typeof(MapStateSingleton))
+                    .TryGetSingleton<MapStateSingleton>(out var map) &&
+                map.LoadingTotalSteps > 0)
+            {
+                s_LatchedLoadingTotalSteps = map.LoadingTotalSteps;
+                return map.LoadingTotalSteps;
+            }
+
+            return s_LatchedLoadingTotalSteps > 0 ? s_LatchedLoadingTotalSteps : 0;
         }
 
         // --- Map loading helpers (private) ---
@@ -573,7 +617,10 @@ namespace TitanOrbit.Game
             return homes.CalculateEntityCount();
         }
 
-        /// <summary>Aggregates map loading from host server, client singleton, or replicated body heuristics.</summary>
+        /// <summary>
+        /// Legacy aggregate loader — prefer <see cref="TryGetJoinLoadProgress"/> /
+        /// <see cref="IsMapLoadingComplete"/>. Kept for host singleton diagnostics.
+        /// </summary>
         static bool TryGetMapLoadingState(
             out int completedSteps,
             out int totalSteps,
@@ -586,31 +633,13 @@ namespace TitanOrbit.Game
             progress = 0f;
 
             if (IsLocalHost() &&
-                ServerWorld != null && ServerWorld.IsCreated)
-            {
-                if (TryGetVisibleMapLoadingStepCounts(out completedSteps, out totalSteps))
-                {
-                    TryGetMapLoadingComplete(ServerWorld, out loadingComplete);
-                    progress = totalSteps > 0
-                        ? Mathf.Clamp01((float)completedSteps / totalSteps)
-                        : 0f;
-                    return true;
-                }
-
-                if (TryReadMapLoadingState(ServerWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
-                    return true;
-            }
+                ServerWorld != null && ServerWorld.IsCreated &&
+                TryReadMapLoadingState(ServerWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
+                return true;
 
             if (ClientWorld != null && ClientWorld.IsCreated &&
                 TryReadMapLoadingState(ClientWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
                 return true;
-
-            if (IsRemoteMapObserverClient() && ClientWorld != null && ClientWorld.IsCreated &&
-                TryReadReplicatedMapLoadProgress(ClientWorld, out completedSteps, out totalSteps, out loadingComplete, out progress))
-                return true;
-
-            if (ServerWorld != null && ServerWorld.IsCreated)
-                return TryReadSpawnedBodyProgress(ServerWorld, out completedSteps, out totalSteps, out loadingComplete, out progress);
 
             return false;
         }
@@ -984,18 +1013,33 @@ namespace TitanOrbit.Game
         /// <summary>Last known team count for lobby UI — avoids flicker when home ghosts briefly desync.</summary>
         static int s_LatchedActiveTeamCount;
         /// <summary>
-        /// Loading-screen "/ N" denominator for the current join. Latched so the UI does not jump
-        /// from settings midpoint to layout length mid-stream.
+        /// Loading-screen meta latch (team / diagnostics). Not used as a body-count bar numerator.
         /// </summary>
         static int s_LatchedLoadingTotalSteps;
 
         /// <summary>
-        /// realtimeSinceStartup when proxy count last changed after Settling OFF — plateau timeout.
+        /// realtimeSinceStartup when the soft pre-meta crawl started for this in-game session.
         /// </summary>
-        static float s_ProxyCatchupWaitSince = -1f;
+        static float s_JoinLoadSmoothStart = -1f;
 
-        /// <summary>Last MapLoadingProxyCount while waiting for load complete (detects stalls).</summary>
-        static int s_LastProxyCountForCatchup = -1;
+        /// <summary>Last proxy count while watching for a starve plateau (Pending bake missing).</summary>
+        static int s_ProxyPlateauCount = -1;
+
+        /// <summary>When proxy count last changed during the starve watch.</summary>
+        static float s_ProxyPlateauSince = -1f;
+
+        /// <summary>
+        /// Seconds for the soft crawl before meta arrives (caps at ~12% so real proxy progress owns the bar).
+        /// </summary>
+        const float JoinLoadSmoothSeconds = 12f;
+
+        /// <summary>Fraction of meta N that must exist as GameObject proxies before Join Team.</summary>
+        const float MapProxyReadyRatio = 0.92f;
+
+        /// <summary>
+        /// If Instantiates finished but proxies never reach ready ratio (no Pending bake), dismiss after this.
+        /// </summary>
+        const float MapProxyStarveEscapeSeconds = 12f;
 
         /// <summary>Clears remote map heuristics when disconnecting or leaving in-game state.</summary>
         static void ResetRemoteMapLoadTracking()
@@ -1007,8 +1051,9 @@ namespace TitanOrbit.Game
             s_MapLoadingLatchedComplete = false;
             s_LatchedActiveTeamCount = 0;
             s_LatchedLoadingTotalSteps = 0;
-            s_ProxyCatchupWaitSince = -1f;
-            s_LastProxyCountForCatchup = -1;
+            s_JoinLoadSmoothStart = -1f;
+            s_ProxyPlateauCount = -1;
+            s_ProxyPlateauSince = -1f;
             // [TITAN-ORBIT] Drop latched MapSessionMetaRpc so the next join does not reuse old totals.
             MapSessionMetaCache.Clear();
         }
@@ -1087,7 +1132,11 @@ namespace TitanOrbit.Game
             return EstimateMapSpawnStepsFromSettings(homeCount);
         }
 
-        /// <summary>Remote client loading progress from replicated planet + asteroid ghost counts.</summary>
+        /// <summary>
+        /// [LEGACY] Ghost body-count progress — not used by the loading UI.
+        /// Prefer <see cref="TryGetJoinLoadProgress"/>. Do not call from join UI on Windows
+        /// (asteroid <c>CalculateEntityCount</c> gathers are crash-adjacent).
+        /// </summary>
         static bool TryReadReplicatedMapLoadProgress(
             World client,
             out int completedSteps,
@@ -1112,104 +1161,71 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Remote clients: dismiss loading only when real Instantiated map ghosts are mostly present
-        /// and join settle has finished (Instantiates backlog drained + hybrid proxies allowed).
-        /// <para>
-        /// Previously we returned true as soon as the layout buffer arrived (+ 32 asteroids). That
-        /// dismissed the loading screen while GhostSpawn was still Instantiating at 1/frame and
-        /// <see cref="ClientJoinSettleCache"/> was skipping GO proxies — join-team showed an empty map.
-        /// </para>
+        /// Remote clients: dismiss loading when Instantiates settle is done <b>and</b> enough
+        /// planet/asteroid GameObject proxies exist (meta N). The loading screen exists to absorb
+        /// that GO Instantiates cost — do not open Join Team while the visualizer is still building.
         /// </summary>
-        static bool TryGetReplicatedMapLoadComplete(World client)
+        static bool TryGetReplicatedMapLoadComplete(World _)
         {
-            // --- Still Instantiating / transform-gated ---
-            // [TITAN-ORBIT] Loading UI must cover ClientJoinSettle, not only "first ghosts arrived".
+            // --- Still Instantiating ECS ghosts ---
+            // [TITAN-ORBIT] Cover ClientJoinSettle so Join Team does not open mid Instantiates flood.
             if (ClientJoinSettleCache.Settling)
-            {
-                s_ProxyCatchupWaitSince = -1f;
-                s_LastProxyCountForCatchup = -1;
                 return false;
+
+            // Prefer the latch set after the first Settling exit (blocks post-team re-settle quirks).
+            if (!ClientJoinSettleCache.JoinSettleCompleted &&
+                ClientJoinSettleCache.InGameFrames < TitanOrbitClientJoinTransformGateSystem.MinInGameFramesBeforeExit)
+                return false;
+
+            // --- GO map build (safe Dictionary count — no asteroid ToEntityArray) ---
+            return TryGetMapProxyBuildComplete();
+        }
+
+        /// <summary>
+        /// True when hybrid planet/asteroid proxies are near the server meta total.
+        /// Uses <see cref="EcsWorldVisualizer.MapLoadingProxyCount"/> only — never scans ECS bodies.
+        /// </summary>
+        static bool TryGetMapProxyBuildComplete()
+        {
+            // --- Do not finish while GhostSpawn Instantiates are still draining ---
+            if (ClientJoinSettleCache.Settling)
+                return false;
+
+            int total = ResolveMapLoadingDenominator();
+            if (total <= 0)
+                return false;
+
+            int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
+            int readyAt = Mathf.Max(1, Mathf.CeilToInt(total * MapProxyReadyRatio));
+            if (proxies >= readyAt)
+            {
+                s_ProxyPlateauSince = -1f;
+                return true;
             }
 
-            int expectedTotal = 0;
-            if (MapSessionMetaCache.HasMeta && MapSessionMetaCache.LoadingTotalSteps > 0)
-                expectedTotal = MapSessionMetaCache.LoadingTotalSteps;
-            else if (s_LatchedLoadingTotalSteps > 0)
-                expectedTotal = s_LatchedLoadingTotalSteps;
-
-            // --- Authoritative meta: receive done OR proxies caught up ---
-            // [TITAN-ORBIT] Playability first: once GhostSpawn Instantiates have covered meta N and
-            // Settling is OFF, dismiss the loading screen. GO proxies can finish in the background
-            // (SpawnRequest drain). Waiting on proxies alone pinned Windows clients at N/N forever
-            // when GhostComponent Pending could not be AddComponent'd at runtime.
-            if (expectedTotal > 0)
+            // --- Starve escape (Pending bake missing) ---
+            // Instantiates finished but proxies never climb — without this, Join Team hangs forever.
+            // Normal path: drain-during-Settling keeps proxies ≈ Instantiates; escape should be rare.
+            if (ClientJoinSettleCache.JoinSettleCompleted &&
+                TitanOrbitJoinLoadCounters.InstantiatesSession >= readyAt &&
+                proxies < readyAt)
             {
-                int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
-                int receive = TitanOrbitJoinLoadCounters.InstantiatesSession;
-                float proxyRatio = (float)proxies / expectedTotal;
-
-                if (proxyRatio >= 0.92f)
-                    return true;
-
-                // Instantiates covered the map total — allow a short grace, then play.
-                if (receive >= expectedTotal)
+                if (proxies != s_ProxyPlateauCount)
                 {
-                    if (s_ProxyCatchupWaitSince < 0f)
-                        s_ProxyCatchupWaitSince = Time.realtimeSinceStartup;
-                    if (Time.realtimeSinceStartup - s_ProxyCatchupWaitSince >= 1.5f)
-                        return true;
+                    s_ProxyPlateauCount = proxies;
+                    s_ProxyPlateauSince = Time.realtimeSinceStartup;
                 }
-
-                // --- Plateau clock while proxies still climbing ---
-                if (proxies != s_LastProxyCountForCatchup)
+                else if (s_ProxyPlateauSince >= 0f &&
+                         Time.realtimeSinceStartup - s_ProxyPlateauSince >= MapProxyStarveEscapeSeconds)
                 {
-                    s_LastProxyCountForCatchup = proxies;
-                    if (receive < expectedTotal)
-                        s_ProxyCatchupWaitSince = Time.realtimeSinceStartup;
-                }
-                else if (s_ProxyCatchupWaitSince < 0f)
-                {
-                    s_ProxyCatchupWaitSince = Time.realtimeSinceStartup;
-                }
-
-                float stalledSeconds = Time.realtimeSinceStartup - s_ProxyCatchupWaitSince;
-
-                if (proxies >= RemoteMapMinAsteroids && stalledSeconds >= 4f)
+                    Debug.LogWarning(
+                        "[MapLoad] Proxy count plateaued at " + proxies + "/" + total +
+                        " after Instantiates settle — dismissing loading (check baked MapBodyHybridVisualPending).");
                     return true;
-
-                if (stalledSeconds >= 12f)
-                    return true;
-
-                return false;
+                }
             }
 
-            // No meta under quarantine: refuse gather-based completion (avoids Crash!!!).
-            if (ClientJoinSettleCache.TransformQuarantine)
-                return false;
-
-            if (!TryGetReplicatedMapBodyCounts(client, out int homes, out int planets, out int asteroids))
-                return false;
-
-            if (homes < 1 || planets < homes)
-                return false;
-
-            if (asteroids < RemoteMapMinAsteroids)
-                return false;
-
-            // Fallback without meta: ghost counts stable for a short window (no layout early-out).
-            if (planets != s_RemoteMapPlanetCount || asteroids != s_RemoteMapAsteroidCount)
-            {
-                s_RemoteMapPlanetCount = planets;
-                s_RemoteMapAsteroidCount = asteroids;
-                s_RemoteMapStableSince = Time.realtimeSinceStartup;
-                return false;
-            }
-
-            if (s_RemoteMapStableSince < 0f ||
-                Time.realtimeSinceStartup - s_RemoteMapStableSince < RemoteMapStableSeconds)
-                return false;
-
-            return true;
+            return false;
         }
 
         /// <summary>Length of ghost-replicated map layout buffer on the client (0 until finalize).</summary>

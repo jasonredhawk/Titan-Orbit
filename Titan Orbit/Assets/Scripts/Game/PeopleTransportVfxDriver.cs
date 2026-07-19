@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
-using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
@@ -195,11 +194,6 @@ namespace TitanOrbit.Game
 
                 go.name = req.IsLoad != 0 ? "PeopleTransportProxy_Load" : "PeopleTransportProxy_Unload";
                 spawnedThisFrame++;
-                // #region agent log
-                AgentDebugSessionLog.Write("pre-fix", "C", "PeopleTransportVfxDriver.DrainSpawns",
-                    "vfx_spawned",
-                    "{\"seq\":" + req.Sequence + ",\"isLoad\":" + req.IsLoad + "}");
-                // #endregion
 
                 if (ToroidalDisplay.TryGetReferencePosition(out Vector3 reference))
                 {

@@ -1,5 +1,4 @@
 using TitanOrbit.Core;
-using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Burst;
@@ -396,12 +395,6 @@ namespace TitanOrbit.ECS
                 PeopleTransportVfxBridge.TryEnqueue(vfxReq);
 
             // --- Broadcast spawn RPC (62B layout with TargetPosition — must match headless) ---
-            // #region agent log
-            AgentDebugSessionLog.Write("pre-fix", "A", "PeopleTransportDispatchSystem.SpawnTransport",
-                "server_sending_people_transport_rpc",
-                "{\"seq\":" + sequence + ",\"isLoad\":" + isLoadByte +
-                ",\"shipNetId\":" + targetShipNetworkId + ",\"amount\":" + amount + "}");
-            // #endregion
             Entity rpcEntity = ecb.CreateEntity();
             ecb.AddComponent(rpcEntity, new PeopleTransportSpawnRpc
             {

@@ -1,4 +1,3 @@
-using TitanOrbit.ECS;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -6,9 +5,9 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Full-screen map build overlay. Denominator = server <c>MapSessionMetaRpc</c> N.
-    /// Numerator prefers planet/asteroid GameObject proxies; while those are still 0, shows
-    /// GhostSpawn Instantiates progress so the bar does not freeze or snap back to 0/N.
+    /// Full-screen join overlay. One progress bar that always crawls while the client is
+    /// in-game and map load is not complete, then fills to 100% and yields to Join Team.
+    /// Does not count GameObject proxies or asteroid entities (those paths Crash!!! on Windows).
     /// </summary>
     public class LoadingScreenControllerNce : MonoBehaviour
     {
@@ -41,48 +40,48 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>True when the loading panel GameObject is active.</summary>
         public bool IsVisible => _panelRoot != null && _panelRoot.gameObject.activeSelf;
 
+        /// <summary>[UNITY] Build UI once, start hidden.</summary>
         void Awake()
         {
             BuildUi();
             Hide();
         }
 
+        /// <summary>
+        /// Per-frame: fill from <see cref="EcsGameBridge.TryGetJoinLoadProgress"/>
+        /// (planet/asteroid GameObject proxies vs server meta N).
+        /// </summary>
         void Update()
         {
-            // --- Per-frame refresh ---
             if (!IsVisible)
                 return;
 
-            if (EcsGameBridge.TryGetMapLoadingStepCounts(out int completedSteps, out int totalSteps) && totalSteps > 0)
-            {
-                // [TITAN-ORBIT] Cap 99% until IsMapLoadingComplete — that uses proxy ratio / plateau
-                // after Settling OFF (not Instantiates alone). Instantiates can fill the numerator
-                // early; dismiss waits for GO catch-up or a stall timeout.
-                float fraction = (float)completedSteps / totalSteps;
-                if (!EcsGameBridge.IsMapLoadingComplete())
-                    fraction = Mathf.Min(fraction, 0.99f);
-                UpdateStatusForSteps(completedSteps, totalSteps);
-                ApplyProgress(fraction);
+            // --- Map GO build progress ---
+            // [TITAN-ORBIT] Bar covers hybrid Instantiates cost — complete only when proxies ≈ N.
+            if (!EcsGameBridge.TryGetJoinLoadProgress(out float progress))
                 return;
+
+            if (_statusText != null)
+            {
+                if (EcsGameBridge.TryGetMapLoadingStepCounts(out int done, out int total) && total > 0)
+                    _statusText.text = "Loading map... " + done + " / " + total;
+                else
+                    _statusText.text = "Loading map...";
             }
 
-            if (EcsGameBridge.TryGetMapLoadingProgress(out float progress))
-            {
-                if (progress >= 1f && !EcsGameBridge.IsMapLoadingComplete())
-                    progress = 0.99f;
-                ApplyProgress(progress);
-            }
+            ApplyProgress(progress);
         }
 
+        /// <summary>Shows the overlay and resets the fill to empty.</summary>
         public void Show()
         {
-            // --- Show ---
             BuildUi();
             ApplyProgress(0f);
             if (_statusText != null)
-                _statusText.text = "Waiting for map totals...";
+                _statusText.text = "Loading map...";
             if (_panelRoot != null)
             {
                 _panelRoot.SetAsLastSibling();
@@ -90,47 +89,16 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Hides the overlay without destroying it.</summary>
         public void Hide()
         {
             if (_panelRoot != null)
                 _panelRoot.gameObject.SetActive(false);
         }
 
-        void UpdateStatusForSteps(int completedSteps, int totalSteps)
-        {
-            // --- Per-frame refresh ---
-            if (_statusText == null || totalSteps <= 0)
-                return;
-
-            // --- Status copy ---
-            // [TITAN-ORBIT] Prefer proxy count for phase labels when visuals are actually Instantiating.
-            // If proxies are still 0, say we are receiving / queuing — not "Building" stuck at 0.
-            int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
-            string phase;
-            if (proxies <= 0)
-            {
-                phase = ClientJoinSettleCache.Settling
-                    ? "Receiving map bodies"
-                    : "Queuing map visuals";
-            }
-            else
-            {
-                float fraction = (float)proxies / totalSteps;
-                phase = fraction switch
-                {
-                    < 0.08f => "Placing home worlds and moons",
-                    < 0.2f => "Seeding neutral planets and moons",
-                    < 0.45f => "Scattering asteroid fields",
-                    _ => "Finishing map visuals",
-                };
-            }
-
-            _statusText.text = $"{phase}... {completedSteps} / {totalSteps}";
-        }
-
+        /// <summary>Applies 0–1 fill amount and percent label.</summary>
         void ApplyProgress(float progress)
         {
-            // --- Apply changes ---
             progress = Mathf.Clamp01(progress);
 
             if (_fillImage != null)
@@ -140,9 +108,9 @@ namespace TitanOrbit.Game
                 _percentText.text = Mathf.RoundToInt(progress * 100f) + "%";
         }
 
+        /// <summary>[UNITY] Builds the full-screen panel once under the parent Canvas.</summary>
         void BuildUi()
         {
-            // --- Build data ---
             if (_uiBuilt)
                 return;
 
@@ -177,7 +145,7 @@ namespace TitanOrbit.Game
             _titleText.alignment = TextAlignmentOptions.Center;
             _titleText.color = new Color(0.85f, 0.92f, 1f, 1f);
 
-            _statusText = CreateText(content, "Status", "Preparing map...", 18, FontStyles.Normal);
+            _statusText = CreateText(content, "Status", "Loading map...", 18, FontStyles.Normal);
             var statusRect = _statusText.rectTransform;
             statusRect.anchorMin = new Vector2(0f, 1f);
             statusRect.anchorMax = new Vector2(1f, 1f);
@@ -216,42 +184,41 @@ namespace TitanOrbit.Game
             percentRect.anchorMax = new Vector2(1f, 0f);
             percentRect.pivot = new Vector2(0.5f, 0f);
             percentRect.anchoredPosition = new Vector2(0f, 8f);
-            percentRect.sizeDelta = new Vector2(0f, 24f);
+            percentRect.sizeDelta = new Vector2(0f, 22f);
             _percentText.alignment = TextAlignmentOptions.Center;
-            _percentText.color = new Color(0.75f, 0.85f, 0.98f, 1f);
+            _percentText.color = new Color(0.75f, 0.85f, 1f, 0.95f);
 
-            _panelRoot.gameObject.SetActive(false);
             _uiBuilt = true;
         }
 
+        /// <summary>Creates an empty RectTransform child.</summary>
         static RectTransform CreateRect(string name, Transform parent)
         {
-            // --- Create instance ---
             var go = new GameObject(name, typeof(RectTransform));
-            var rect = go.GetComponent<RectTransform>();
-            rect.SetParent(parent, false);
-            return rect;
+            go.transform.SetParent(parent, false);
+            return go.GetComponent<RectTransform>();
         }
 
-        static void StretchFill(RectTransform rect, float left = 0f, float bottom = 0f, float right = 0f, float top = 0f)
+        /// <summary>Creates a TMP label under <paramref name="parent"/>.</summary>
+        static TextMeshProUGUI CreateText(Transform parent, string name, string text, float size, FontStyles style)
         {
-            // --- StretchFill ---
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var tmp = go.AddComponent<TextMeshProUGUI>();
+            tmp.text = text;
+            tmp.fontSize = size;
+            tmp.fontStyle = style;
+            tmp.raycastTarget = false;
+            return tmp;
+        }
+
+        /// <summary>Stretches a rect to its parent with optional padding.</summary>
+        static void StretchFill(RectTransform rect, float left = 0f, float right = 0f, float top = 0f, float bottom = 0f)
+        {
             rect.anchorMin = Vector2.zero;
             rect.anchorMax = Vector2.one;
             rect.offsetMin = new Vector2(left, bottom);
             rect.offsetMax = new Vector2(-right, -top);
-        }
-
-        static TextMeshProUGUI CreateText(RectTransform parent, string name, string text, float fontSize, FontStyles style)
-        {
-            // --- Create instance ---
-            var label = CreateRect(name, parent);
-            var tmp = label.gameObject.AddComponent<TextMeshProUGUI>();
-            tmp.text = text;
-            tmp.fontSize = fontSize;
-            tmp.fontStyle = style;
-            tmp.raycastTarget = false;
-            return tmp;
         }
     }
 }

@@ -1,6 +1,5 @@
 using TitanOrbit.Core;
 using TitanOrbit.Data;
-using TitanOrbit.Diagnostics;
 using TitanOrbit.Simulation;
 using Unity.Mathematics;
 using UnityEngine;
@@ -36,9 +35,6 @@ namespace TitanOrbit.Game
         /// <summary>Inactive stripped runtime template cloned per spawn.</summary>
         static GameObject s_RuntimeTemplate;
 
-        /// <summary>True when the template is the primitive fallback (prefab missing).</summary>
-        static bool s_RuntimeTemplateIsLightweight;
-
         /// <summary>Cached Resources catalog of GenericSpaceships1-8 team materials.</summary>
         static PeopleTransportTeamMaterials s_TeamMaterials;
 
@@ -47,9 +43,6 @@ namespace TitanOrbit.Game
 
         /// <summary>Shared unlit yellow for the outer sphere (never team-tinted).</summary>
         static Material s_YellowSphereMaterial;
-
-        /// <summary>One-shot debug log flag for visual path.</summary>
-        static bool s_LoggedVisualPath;
 
         /// <summary>
         /// Loads the designer prefab from Resources (player + Editor). Editor can also resolve
@@ -102,21 +95,7 @@ namespace TitanOrbit.Game
             float multiplier = PeopleTransportMath.GetVisualScaleMultiplier(math.max(0.001f, peopleAmount));
             instance.transform.localScale = baseVisualScale * multiplier;
 
-            int shipRenderersTinted = ApplyTeamMaterialToShipChild(instance, team);
-
-            // #region agent log
-            if (!s_LoggedVisualPath)
-            {
-                s_LoggedVisualPath = true;
-                AgentDebugSessionLog.Write("post-fix", "G", "PeopleTransportVisualApplier.CreateVisual",
-                    "transport_visual_path",
-                    "{\"lightweight\":" + (s_RuntimeTemplateIsLightweight ? "true" : "false") +
-                    ",\"team\":" + (int)team +
-                    ",\"shipRenderersTinted\":" + shipRenderersTinted +
-                    ",\"childCount\":" + instance.transform.childCount + "}");
-            }
-            // #endregion
-
+            ApplyTeamMaterialToShipChild(instance, team);
             return instance;
         }
 
@@ -146,7 +125,6 @@ namespace TitanOrbit.Game
                 s_RuntimeTemplate.SetActive(false);
                 StripPhysicsForProxyImmediate(s_RuntimeTemplate);
                 Object.DontDestroyOnLoad(s_RuntimeTemplate);
-                s_RuntimeTemplateIsLightweight = false;
                 return;
             }
 
@@ -155,7 +133,6 @@ namespace TitanOrbit.Game
             s_RuntimeTemplate.name = "PeopleTransportProxyTemplate_Lightweight";
             s_RuntimeTemplate.SetActive(false);
             Object.DontDestroyOnLoad(s_RuntimeTemplate);
-            s_RuntimeTemplateIsLightweight = true;
         }
 
         /// <summary>
@@ -214,19 +191,15 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>
-        /// Team material on child renderers only; root yellow sphere stays yellow.
-        /// Returns how many ship renderers were tinted.
-        /// </summary>
-        static int ApplyTeamMaterialToShipChild(GameObject root, TeamId team)
+        /// <summary>Team material on child renderers only; root yellow sphere stays yellow.</summary>
+        static void ApplyTeamMaterialToShipChild(GameObject root, TeamId team)
         {
             Material material = GetTeamShipMaterial(team);
             if (material == null)
-                return 0;
+                return;
 
             var rootRenderer = root.GetComponent<Renderer>();
             var renderers = root.GetComponentsInChildren<Renderer>(true);
-            int tinted = 0;
             for (int i = 0; i < renderers.Length; i++)
             {
                 var renderer = renderers[i];
@@ -238,10 +211,7 @@ namespace TitanOrbit.Game
                 renderer.sharedMaterial = material;
                 renderer.shadowCastingMode = ShadowCastingMode.Off;
                 renderer.receiveShadows = false;
-                tinted++;
             }
-
-            return tinted;
         }
 
         static Material GetYellowSphereMaterial()

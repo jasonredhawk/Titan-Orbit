@@ -18,8 +18,9 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// [HYBRID] Non-ghost runtime queue tag — same meaning as <see cref="MapBodyHybridVisualPending"/>.
-    /// Added by <see cref="MapBodyHybridVisualRequestSystem"/> when Instantiates lack baked Pending
-    /// (typical Windows player build). Safe to AddComponent on ghosts; visualizer drains both.
+    /// Reserved for future safe queueing. Do <b>not</b> scan all asteroids to AddComponent this
+    /// (visualizer MarkSpawnRequestQuery Crash!!! 2026-07-18 21:18). Prefer baked Pending.
+    /// Visualizer drains both Pending and SpawnRequest when present.
     /// </summary>
     public struct MapBodyHybridVisualSpawnRequest : IComponentData { }
 

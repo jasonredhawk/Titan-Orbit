@@ -1,4 +1,3 @@
-using TitanOrbit.Diagnostics;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -31,13 +30,6 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 var r = rpc.ValueRO;
-                // #region agent log
-                AgentDebugSessionLog.Write("post-fix", "A", "PeopleTransportSpawnRpcClientSystem.OnUpdate",
-                    "client_received_people_transport_rpc",
-                    "{\"seq\":" + r.Sequence + ",\"isLoad\":" + r.IsLoad +
-                    ",\"shipNetId\":" + r.TargetShipNetworkId + ",\"amount\":" + r.Amount + "}");
-                // #endregion
-
                 float3 spawn = r.SpawnPosition;
                 spawn.y = 0f;
                 float3 target = r.TargetPosition;

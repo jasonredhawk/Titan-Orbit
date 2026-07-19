@@ -395,8 +395,8 @@ namespace Unity.NetCode
                         var rpcSizeBytes = (rpcSizeBits + 7) >> 3;
 
                         // --- TITAN-ORBIT: skip unknown RPC hash (rpcIndex < 0) ---
-                        // Player.log / debug-cdce8b: GCE sent hash 1026046134438292813 (PeopleTransportSpawnRpc
-                        // from an older dedicated build). Stock NetCode RequestDisconnect(InvalidRpc) → Main Menu.
+                        // Player.log: GCE sent hash 1026046134438292813 (PeopleTransportSpawnRpc from an
+                        // older dedicated build). Stock NetCode RequestDisconnect(InvalidRpc) → Main Menu.
                         // Skip the declared payload and keep the session alive across client/server version skew.
                         // DataStreamReader.ReadRawBits only accepts 1..32 bits — chunk large payloads.
                         if (rpcIndex < 0)

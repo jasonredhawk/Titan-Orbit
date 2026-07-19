@@ -84,13 +84,13 @@ Use this (or stricter: quarantine alone) before **any** client code that:
 - Full minimap rebuilds / MarkFromQuery-style scans
 - Loading-complete logic that walks map-body queries
 
-### D. Loading bar (one bar — not two bars as a crash fix)
+### D. Loading bar (covers GameObject map build)
 
-1. Denominator: `MapSessionMetaRpc` → `N` only.
-2. Numerator: `Max(MapLoadingProxyCount, InstantiatesSession)` clamped to `N`.
-3. Dismiss loading when Settling OFF and Instantiates ≥ N (short grace) — do not block play on GO proxies forever.
-4. Dedicated client UI: `mapReady` = map complete only. Team count uses `MapSessionMetaCache.TeamCount`. Never require `knowsTeamCount` to hide the loading screen (that deadlocked at N/N).
-5. Runtime visual queue: `MapBodyHybridVisualSpawnRequest` (non-ghost), not GhostComponent Pending.
+1. **Display:** `TryGetJoinLoadProgress` = `MapLoadingProxyCount` / `MapSessionMetaCache.LoadingTotalSteps` (safe Dictionary count — not ECS asteroid gathers). Soft crawl only until meta arrives. Status may show `done / total`.
+2. **Complete (100% / dismiss):** Settling OFF (+ `JoinSettleCompleted`) **and** proxies ≥ ~92% of meta N. Host also waits for that after server `LoadingComplete`. Latch once true. Starve escape only if Instantiates finished but proxies never climb (Pending bake missing).
+3. **Do not** complete on settle+meta alone (that dumped GO Instantiates lag after Join Team). **Do not** use asteroid `ToEntityArray` / mark scans for progress.
+4. Drain baked `MapBodyHybridVisualPending` in `EcsWorldVisualizer` **during Settling** (budgeted, e.g. 8/frame) so GO Instantiates run under the loading screen. **Never** scan all asteroids to AddComponent SpawnRequest (mark Crash!!! 2026-07-18 21:18).
+5. Dedicated client UI: `mapReady` = map complete only. Team count uses `MapSessionMetaCache.TeamCount`. Never require `knowsTeamCount` to hide loading.
 
 ---
 
@@ -103,7 +103,7 @@ Use this (or stricter: quarantine alone) before **any** client code that:
 | Map visuals | `EcsWorldVisualizer.cs`, `MapBodyHybridVisual*.cs`, `MapBodyHybridVisualRequestSystem.cs` | Chunk-budget mark + Pending drain; never full `ToEntityArray` |
 | Minimap | `MinimapEcsEntitySync.cs` | Settling = skip entirely. Under TransformQuarantine: **no** planet/asteroid `ToEntityArray` — rebuild from `EcsWorldVisualizer` hybrid proxies. Do **not** early-return the whole minimap for quarantine (hides UI forever). |
 | Moon hulls | `PlanetGemMoonColliderSystems.cs` | Quarantine **or** Settling on client |
-| Loading | `EcsGameBridge.cs`, `LoadingScreenControllerNce.cs` | Soft Instantiates then GO count; no gather under quarantine |
+| Loading | `EcsGameBridge.cs`, `LoadingScreenControllerNce.cs` | Proxy/meta progress; complete = settle + proxies≈N; drain during Settling; no map gathers |
 | Server stream | `TitanOrbitGhostDistanceImportanceSystem.cs` (+ send tune) | TileSize ~48 ≪ map |
 | Ships under quarantine | `ShipEntitiesGraphicsPresentationSystem.cs`, ship hybrid paths | Skip EG / use GO when quarantined |
 
@@ -132,13 +132,16 @@ Before finishing:
 | “Cap CreateEntity to 1/frame like Instantiates” | Ghost map hole → baseline Crash!!! |
 | “Speed join: Instantiates 8–50/frame” | LTW / Instantiates flood Crash!!! |
 | “Re-enable MarkFromQuery ToEntityArray so loading bar moves” | Full gather Crash!!! — use chunk-budget mark only |
-| “Show Instantiates only while Settling” | Settling OFF → bar snaps to 0/N when Pending bake missing |
-| “Keep loading until dedicated team count replicates” | mapReady∧knowsTeamCount deadlock → N/N forever |
+| “Complete loading on settle + meta only (skip GO wait)” | GO Instantiates lag dumps after 100% / Join Team — bar exists to absorb that |
+| “Skip Pending drain while Settling” | Same — all proxy Instantiates pile up after Settling OFF |
+| “Keep loading until dedicated team count replicates” | mapReady∧knowsTeamCount deadlock → loading forever |
+| “Mark asteroids so the bar can move” | MarkSpawnRequest / ToEntityArray Crash!!! — bake Pending; drain during Settling |
 | “AddComponent MapBodyHybridVisualPending at runtime” | GhostComponent — add fails; use SpawnRequest |
-| “Mark/drain map visuals while Settling (post-team ship Instantiates)” | MarkChunkBudget / ship query → Crash!!! after TeamChoice (2026-07-18 16:53) |
+| “Mark map visuals while Settling / scan asteroids to queue” | MarkChunkBudget → Crash!!! (2026-07-18 16:53 / 21:18). Budgeted Pending <b>drain</b> during Settling is required for the loading bar |
 | Re-enable MapBodyHybridVisualRequestSystem WithEntityAccess over asteroids | Still Crash!!! 2026-07-18 17:06 even with Settling gate — keep system **disabled** |
+| Visualizer MarkSpawnRequestQuery over unqueued asteroids | Same EntityTypeHandle Crash!!! 2026-07-18 21:18 — bake Pending instead |
 | `EntityManager.GetEntityTypeHandle()` + chunk walk in ISystem | Stale handle NRE — do not mark map bodies this way |
-| “Count asteroids for progress — more accurate” | Gather Crash!!!; use JoinLoadCounters + proxies |
+| “Count asteroids for progress — more accurate” | Gather Crash!!!; use smoothed `TryGetJoinLoadProgress` + settle/meta complete |
 | “Two loading bars to reduce overload” | UI ≠ safety; quarantine is safety |
 | “Minimap needs anchors now that Settling ended” | Full SyncAsteroids gather Crash!!! |
 | “Gate whole MinimapEcsEntitySync on TransformQuarantine” | Quarantine is session-long → minimap never shows; gate map gathers only, use hybrid proxies |
@@ -150,12 +153,12 @@ Before finishing:
 `Player.log` must show:
 
 1. `[JoinSettle] Settling ON` (or equivalent) during Instantiates
-2. Instantiates progressing (bar may crawl via counters)
-3. `Settling OFF`
+2. Instantiates + Pending drain during Settling; bar climbs with `MapLoadingProxyCount` / meta N
+3. `Settling OFF` then proxies ≈ N → 100% → Join Team (not settle+meta alone)
 4. **No** `TransformSystemGroup RE-ENABLED`
 5. **No** `Crash!!!`
 6. Optional: DLL/log contains `TO_GhostSpawn_v12_joinLoadCounters` (or newer)
-7. If player EntityScenes lack baked Pending: one log `[MapBodyHybridVisual] Backfilling...` then proxies climb — loading must dismiss without snapping to `0/N`
+7. If proxies stay 0 after Instantiates: check baked `MapBodyHybridVisualPending` (starve escape may dismiss)
 
 Manual: Windows client → Relay late-join into a dense map (400+ asteroids) → reach in-game with ship visible (hybrid) and no process death.
 

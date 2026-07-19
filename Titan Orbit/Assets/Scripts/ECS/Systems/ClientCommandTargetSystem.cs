@@ -1,5 +1,4 @@
 using TitanOrbit.Core;
-using TitanOrbit.Diagnostics;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -23,9 +22,6 @@ namespace TitanOrbit.ECS
 
         /// <summary>GhostSpawn Instantiates backlog (placeholders).</summary>
         EntityQuery _placeholderQuery;
-
-        /// <summary>Last bound ship — avoids spamming debug NDJSON every GhostInput tick.</summary>
-        Entity _debugLastBoundShip;
 
         /// <summary>Requires an in-game client connection before binding the command target.</summary>
         public void OnCreate(ref SystemState state)
@@ -76,16 +72,6 @@ namespace TitanOrbit.ECS
 
             if (shipEntity == Entity.Null)
                 return;
-
-            // #region agent log
-            if (_debugLastBoundShip != shipEntity)
-            {
-                _debugLastBoundShip = shipEntity;
-                AgentDebugSessionLog.Write("post-fix", "F", "ClientCommandTargetSystem.OnUpdate",
-                    "command_target_bound",
-                    "{\"shipIndex\":" + shipEntity.Index + ",\"netId\":" + localNetworkId + "}");
-            }
-            // #endregion
 
             // [NETCODE] CommandTarget on the client connection — without this, IInputComponentData
             // is never sent and the server ship coasts while the client predicts motion.
