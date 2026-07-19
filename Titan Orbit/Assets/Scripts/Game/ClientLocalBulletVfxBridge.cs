@@ -2,24 +2,23 @@ using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Input;
 using TitanOrbit.NetCode;
-using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
-using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
     /// Local-owner bullet anticipation: enqueues cosmetic tracers into <see cref="BulletVfxBridge"/>
-    /// as soon as the player fires, so muzzle/tracer feel immediate. Server remains authoritative
-    /// for damage (<see cref="BulletSimulationSystem"/>). When the matching <see cref="BulletSpawnRpc"/>
-    /// arrives, <see cref="BulletVfxDriver"/> adopts this anticipation by OwnerNetworkId.
+    /// from the Starblast muzzle (<see cref="BulletMuzzlePresentation"/>) so shots leave the nose
+    /// immediately. Server remains authoritative for damage (<see cref="BulletSimulationSystem"/>).
+    /// When <see cref="BulletSpawnRpc"/> arrives, <see cref="BulletVfxDriver"/> binds Sequence
+    /// without snapping pose back to the lagged server muzzle.
     /// <para>
-    /// Runs on host and dedicated clients. Unarmed ships (empty mount buffer) never anticipate.
-    /// Uses live <see cref="ShipWeaponConfig"/> and ghosted <see cref="ShipLoadoutState.RuntimeBulletIndex"/>.
+    /// [UNITY] LateUpdate after <see cref="EcsWorldVisualizer"/> (66000) so presentation pose
+    /// is published; velocity uses kinematics or hull pose-delta (does not hard-require ShipKinematics).
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66100)]
@@ -52,14 +51,13 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Enqueues anticipation spawns on shoot input for the local ship (host + dedicated client).
+        /// Enqueues anticipation spawns for the local ship (host + dedicated client).
+        /// Prefers ECS <see cref="ShipInput.Fire"/>; falls back to <see cref="PlayerInputHandler.ShootPressed"/>.
         /// </summary>
         void LateUpdate()
         {
             // --- Per-frame refresh ---
-            if (_input == null)
-                return;
-
+            // [UNITY] _input is optional — ECS ShipInput.Fire can arm anticipation without it.
             if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
                 return;
 
@@ -72,7 +70,7 @@ namespace TitanOrbit.Game
             if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
                 return;
 
-            if (!_input.ShootPressed || MoonOrbitClientState.IsOrbitMenuVisible)
+            if (MoonOrbitClientState.IsOrbitMenuVisible)
                 return;
 
             float dt = Time.deltaTime;
@@ -83,7 +81,10 @@ namespace TitanOrbit.Game
                 return;
 
             if (!TryGetLocalShipCombatState(world.EntityManager, out Entity shipEntity, out ShipWeaponConfig weaponCfg,
-                    out ShipState shipState, out ShipKinematics kinematics, out int ownerNetworkId, out int bankIndex))
+                    out ShipState shipState, out int ownerNetworkId, out int bankIndex, out bool fireHeld))
+                return;
+
+            if (!fireHeld)
                 return;
 
             if (shipState.IsDead || shipState.AwaitingTeamSelection)
@@ -96,12 +97,24 @@ namespace TitanOrbit.Game
             if (shipState.CurrentEnergy < energyCost)
                 return;
 
-            if (!TryResolveMuzzlePose(world.EntityManager, shipEntity, out Vector3 fireOrigin, out Vector3 fireForward))
+            // --- Starblast muzzle (predicted when soft-track lags; velocity includes shipVel) ---
+            if (!BulletMuzzlePresentation.TryResolveMuzzle(
+                    world.EntityManager, shipEntity, _nextMountIndex,
+                    out float3 fireOrigin, out float3 fireForward, out bool displaySpace, out float3 shipVel))
                 return;
 
-            Vector3 shipVel = kinematics.Velocity;
-            shipVel.y = 0f;
-            Vector3 bulletVel = fireForward * Mathf.Max(1f, weaponCfg.BulletSpeed) + shipVel;
+            // Advance round-robin only after a successful resolve (armed ships only).
+            if (world.EntityManager.HasBuffer<ShipWeaponMountElement>(shipEntity))
+            {
+                int mountCount = world.EntityManager.GetBuffer<ShipWeaponMountElement>(shipEntity).Length;
+                if (mountCount > 0)
+                    _nextMountIndex = (_nextMountIndex + 1) % mountCount;
+            }
+
+            // Shared helper: kinematics or pose-delta — never leave shipVel=0 while hull moves.
+            float3 bulletVel = BulletMuzzlePresentation.BuildBulletWorldVelocity(
+                fireForward, weaponCfg.BulletSpeed, shipVel);
+
             float visualScale = BulletVisualScale.ComputePerShotScale(
                 weaponCfg.BulletScale,
                 weaponCfg.BulletDamage,
@@ -113,17 +126,14 @@ namespace TitanOrbit.Game
                     ? weaponCfg.ReferenceBulletSpeed
                     : BulletVisualScale.DefaultReferenceBulletSpeed);
 
-            // Prefer presentation-space muzzle when ShipDisplayPose is available (display-space flag).
-            bool displaySpace = ShipDisplayPose.HasLocalPose;
-
             BulletVfxBridge.TryEnqueueSpawn(new BulletVfxBridge.SpawnRequest
             {
                 Sequence = 0,
                 SpawnPosition = fireOrigin,
                 Velocity = bulletVel,
-                Lifetime = Mathf.Max(0.1f, weaponCfg.BulletLifetime),
-                MaxDistance = Mathf.Max(10f, weaponCfg.BulletMaxDistance),
-                Damage = Mathf.Max(1f, weaponCfg.BulletDamage),
+                Lifetime = math.max(0.1f, weaponCfg.BulletLifetime),
+                MaxDistance = math.max(10f, weaponCfg.BulletMaxDistance),
+                Damage = math.max(1f, weaponCfg.BulletDamage),
                 OwnerTeam = (byte)shipState.Team,
                 OwnerNetworkId = ownerNetworkId,
                 BankIndex = bankIndex,
@@ -132,96 +142,54 @@ namespace TitanOrbit.Game
                 IsDisplaySpace = displaySpace,
             });
 
-            _fireCooldown = 1f / Mathf.Max(0.1f, weaponCfg.FireRate);
+            _fireCooldown = 1f / math.max(0.1f, weaponCfg.FireRate);
         }
 
-        static bool TryGetLocalShipCombatState(
+        /// <summary>
+        /// Reads local ship combat components and whether fire is held this frame.
+        /// Does not require <see cref="ShipKinematics"/> — velocity falls back in the muzzle helper.
+        /// </summary>
+        bool TryGetLocalShipCombatState(
             EntityManager em,
             out Entity shipEntity,
             out ShipWeaponConfig weaponCfg,
             out ShipState shipState,
-            out ShipKinematics kinematics,
             out int ownerNetworkId,
-            out int bankIndex)
+            out int bankIndex,
+            out bool fireHeld)
         {
             shipEntity = Entity.Null;
             weaponCfg = default;
             shipState = default;
-            kinematics = default;
             ownerNetworkId = 0;
             bankIndex = 0;
+            fireHeld = false;
 
-            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(EcsGameBridge.ClientWorld, out shipEntity) ||
+            if (!BulletMuzzlePresentation.TryGetLocalShipEntity(em, out shipEntity) ||
                 !em.Exists(shipEntity))
                 return false;
 
             if (!em.HasComponent<ShipWeaponConfig>(shipEntity) ||
-                !em.HasComponent<ShipState>(shipEntity) ||
-                !em.HasComponent<ShipKinematics>(shipEntity))
+                !em.HasComponent<ShipState>(shipEntity))
                 return false;
 
             weaponCfg = em.GetComponentData<ShipWeaponConfig>(shipEntity);
             shipState = em.GetComponentData<ShipState>(shipEntity);
-            kinematics = em.GetComponentData<ShipKinematics>(shipEntity);
 
             if (em.HasComponent<GhostOwner>(shipEntity))
                 ownerNetworkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+            if (ownerNetworkId <= 0)
+                ownerNetworkId = EcsGameBridge.GetLocalNetworkId();
 
             if (em.HasComponent<ShipLoadoutState>(shipEntity))
                 bankIndex = math.max(0, em.GetComponentData<ShipLoadoutState>(shipEntity).RuntimeBulletIndex);
 
-            return true;
-        }
+            // --- Fire gate: ECS Fire InputEvent when present, else raw input ---
+            if (em.HasComponent<ShipInput>(shipEntity) && em.GetComponentData<ShipInput>(shipEntity).Fire.IsSet)
+                fireHeld = true;
+            else if (_input != null && _input.ShootPressed)
+                fireHeld = true;
 
-        /// <summary>
-        /// Resolves muzzle from mount buffer + presentation pose when available.
-        /// Returns false when the ship has no mounts (intentional unarmed).
-        /// </summary>
-        bool TryResolveMuzzlePose(
-            EntityManager em,
-            Entity shipEntity,
-            out Vector3 fireOrigin,
-            out Vector3 fireForward)
-        {
-            fireOrigin = default;
-            fireForward = Vector3.forward;
-
-            if (!em.HasBuffer<ShipWeaponMountElement>(shipEntity))
-                return false;
-
-            var mounts = em.GetBuffer<ShipWeaponMountElement>(shipEntity);
-            if (mounts.Length == 0)
-                return false;
-
-            int mountIdx = _nextMountIndex % mounts.Length;
-            if (mountIdx < 0)
-                mountIdx = 0;
-            var mount = mounts[mountIdx];
-            _nextMountIndex = (mountIdx + 1) % mounts.Length;
-
-            LocalTransform shipTransform;
-            if (ShipDisplayPose.HasLocalPose)
-            {
-                // [HYBRID] Presentation pose — same space as the rendered hull.
-                shipTransform = LocalTransform.FromPositionRotationScale(
-                    ShipDisplayPose.LocalPosition,
-                    ShipDisplayPose.LocalRotation,
-                    em.HasComponent<LocalTransform>(shipEntity)
-                        ? em.GetComponentData<LocalTransform>(shipEntity).Scale
-                        : 1f);
-            }
-            else if (em.HasComponent<LocalTransform>(shipEntity))
-            {
-                shipTransform = em.GetComponentData<LocalTransform>(shipEntity);
-            }
-            else
-                return false;
-
-            if (!ShipWeaponPose.TryResolve(shipTransform, mount, out float3 origin, out float3 forward))
-                return false;
-
-            fireOrigin = origin;
-            fireForward = forward;
             return true;
         }
     }

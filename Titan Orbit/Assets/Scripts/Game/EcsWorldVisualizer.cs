@@ -121,8 +121,14 @@ namespace TitanOrbit.Game
         /// </summary>
         int _newWorldBodyProxiesThisFrame;
 
-        /// <summary>Local-player ship proxy on dedicated clients.</summary>
+        /// <summary>Local-player ship proxy on dedicated clients / host ClientWorld viz.</summary>
         public GameObject LocalPlayerShipProxy { get; private set; }
+
+        /// <summary>
+        /// [HYBRID] Live visual hull Transform for local muzzle VFX (updated in LateUpdate before
+        /// <see cref="ClientLocalBulletVfxBridge"/> / <see cref="BulletVfxDriver"/>).
+        /// </summary>
+        public static Transform LocalPlayerShipVisualRoot { get; private set; }
 
         /// <summary>
         /// Planet + asteroid + gem GameObject proxies currently alive.
@@ -705,6 +711,7 @@ namespace TitanOrbit.Game
             {
                 _cachedLocalPlayerShipEntity = Entity.Null;
                 LocalPlayerShipProxy = null;
+                LocalPlayerShipVisualRoot = null;
                 return false;
             }
 
@@ -898,7 +905,10 @@ namespace TitanOrbit.Game
 
                 bool isLocalPlayerShip = IsLocalPlayerShip(entity, localShipEntity);
                 if (isLocalPlayerShip)
+                {
                     LocalPlayerShipProxy = go;
+                    LocalPlayerShipVisualRoot = go != null ? go.transform : null;
+                }
 
                 if (!skipTransformSync)
                     ApplyShipProxyTransform(entity, em, isLocalPlayerShip, lt, go.transform, scale);

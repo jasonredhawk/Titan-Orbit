@@ -20,6 +20,12 @@ namespace TitanOrbit.Game
     /// <c>ToEntityArray</c>; Instantiates gated while Settling / GhostSpawnBacklog.
     /// TransformQuarantine is OK (session-long) — same pattern as <see cref="PeopleTransportVfxDriver"/>.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Starblast local fire: anticipation + reproject use predicted/presentation muzzle
+    /// and <c>shipVel + aim * BulletSpeed</c>. Reproject is best-effort — if it fails (empty client
+    /// mounts), server SpawnPosition/Velocity still Instantiates so the player never sees silent fire.
+    /// Remotes keep server SpawnPosition.
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(66150)]
     public class BulletVfxDriver : MonoBehaviour
@@ -45,8 +51,11 @@ namespace TitanOrbit.Game
             public ClientBulletStretchVisual Stretch;
         }
 
-        /// <summary>Windows: Instantiates 1/frame — same discipline as GhostSpawn Instantiates cap.</summary>
-        const int MaxSpawnsPerFrame = 1;
+        /// <summary>
+        /// Cosmetic Instantiates per frame (not GhostSpawn). Allow a few so high fire-rate
+        /// anticipation does not sit in the queue with stale muzzle poses while flying.
+        /// </summary>
+        const int MaxSpawnsPerFrame = 8;
 
         readonly List<Tracer> _tracers = new List<Tracer>(64);
         readonly Dictionary<uint, int> _indexBySequence = new Dictionary<uint, int>(64);
@@ -82,6 +91,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// LateUpdate: drain spawns/hits, dead-reckon, place GOs. Never Instantiates in onBeforeRender.
+        /// Runs after <see cref="ClientLocalBulletVfxBridge"/> (66100) so anticipation is queued first.
         /// </summary>
         void LateUpdate()
         {
@@ -167,7 +177,7 @@ namespace TitanOrbit.Game
             int spawned = 0;
             while (spawned < MaxSpawnsPerFrame && BulletVfxBridge.TryDequeueSpawn(out var req))
             {
-                // --- Adopt local anticipation when server spawn arrives ---
+                // --- Adopt local anticipation when server spawn arrives (no pose snap) ---
                 if (!req.IsAnticipation && req.Sequence != 0 &&
                     TryAdoptAnticipation(req))
                 {
@@ -175,9 +185,21 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
-                // --- Host: server bridge often wins the race — drop redundant anticipation ---
-                if (req.IsAnticipation && HasFreshServerTracerForOwner(req.OwnerNetworkId))
+                // --- Local owner: drop redundant anticipation if a presentation tracer already flies ---
+                if (req.IsAnticipation &&
+                    BulletMuzzlePresentation.IsLocalOwner(req.OwnerNetworkId) &&
+                    HasFreshLocalPresentationTracer(req.OwnerNetworkId))
                     continue;
+
+                // --- Starblast: reproject local muzzle/velocity at CreateTracer time (best-effort) ---
+                // [TITAN-ORBIT] Never drop a server spawn when reproject fails — client ECS mounts are
+                // often empty under hybrid/TransformQuarantine while the server still fires (energy +
+                // hits work). Falling back to server pose/vel restores visible tracers; reproject
+                // (ECS or GO mounts) still corrects feel when it succeeds.
+                bool localShot = req.IsAnticipation ||
+                                 BulletMuzzlePresentation.IsLocalOwner(req.OwnerNetworkId);
+                if (localShot)
+                    BulletMuzzlePresentation.TryReprojectLocalOwnerSpawn(ref req);
 
                 CreateTracer(req);
                 spawned++;
@@ -185,17 +207,17 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// True when a server-authored tracer for this owner just spawned (Traveled near zero).
-        /// Prevents host double-muzzle when sim enqueue beats LateUpdate anticipation.
+        /// True when a non-anticipation local tracer for this owner just spawned (presentation-locked).
+        /// Used to drop duplicate anticipation after a reprojected server spawn.
         /// </summary>
-        bool HasFreshServerTracerForOwner(int ownerNetworkId)
+        bool HasFreshLocalPresentationTracer(int ownerNetworkId)
         {
             for (int i = 0; i < _tracers.Count; i++)
             {
                 var t = _tracers[i];
                 if (t.IsAnticipation || t.OwnerNetworkId != ownerNetworkId)
                     continue;
-                if (t.Traveled < 2f)
+                if (t.IsDisplaySpace && t.Traveled < 2f)
                     return true;
             }
 
@@ -228,8 +250,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// If local anticipation fired recently for the same owner, bind the server Sequence to it
-        /// instead of spawning a second tracer.
+        /// Binds server Sequence / lifetime / bank onto an existing anticipation tracer.
+        /// [TITAN-ORBIT] Does <b>not</b> relocate to lagged server SpawnPosition — keeps presentation muzzle flight.
         /// </summary>
         bool TryAdoptAnticipation(in BulletVfxBridge.SpawnRequest req)
         {
@@ -241,19 +263,17 @@ namespace TitanOrbit.Game
                 if (t.OwnerNetworkId != req.OwnerNetworkId)
                     continue;
 
+                // --- Bind authority metadata only ---
                 t.Sequence = req.Sequence;
                 t.IsAnticipation = false;
-                t.IsDisplaySpace = false;
+                // Keep IsDisplaySpace / LogicalPos / SpawnPos / Velocity / Traveled / GO pose.
                 t.BankIndex = req.BankIndex;
                 t.ScaleMultiplier = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : t.ScaleMultiplier;
                 t.Damage = req.Damage;
-                // Keep current visual pose; snap logical to server for remaining flight.
-                t.LogicalPos = req.SpawnPosition;
-                t.SpawnPos = req.SpawnPosition;
-                t.Velocity = req.Velocity;
-                t.RemainingLifetime = req.Lifetime;
-                t.MaxDistance = req.MaxDistance;
-                t.Traveled = 0f;
+                t.RemainingLifetime = math.max(0.05f, req.Lifetime);
+                t.MaxDistance = math.max(0.5f, req.MaxDistance);
+                // Do not reset Traveled — stretch/trail continue smoothly.
+
                 _tracers[i] = t;
                 _indexBySequence[req.Sequence] = i;
                 return true;
