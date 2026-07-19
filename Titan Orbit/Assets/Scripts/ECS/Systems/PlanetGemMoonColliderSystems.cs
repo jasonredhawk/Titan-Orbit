@@ -63,6 +63,15 @@ namespace TitanOrbit.ECS
             var ecb = new EntityCommandBuffer(Allocator.Temp);
             int ensuredThisFrame = 0;
 
+            // --- Shared orbit clock (once per frame) ---
+            // [TITAN-ORBIT] ServerTick seconds — not World.Time.ElapsedTime (late-join desync).
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            double elapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
+                : state.World.Time.ElapsedTime;
+
             foreach (var (planetState, planetTransform, entity) in SystemAPI
                          .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
                          .WithAll<PlanetTag, PlanetGemMoonState>()
@@ -98,7 +107,6 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(moonEntity, new PlanetGemMoonColliderPlanetRef { PlanetEntity = entity });
 
                 // --- Initial pose (sync system keeps this updated each physics step) ---
-                double elapsed = state.World.Time.ElapsedTime;
                 float3 moonPos = PlanetOrbitMath.GetMoonWorldPosition(
                     planetTransform.ValueRO.Position,
                     planetScale,
@@ -123,6 +131,7 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// [PHYSICS] Teleports each gem-moon kinematic collider to its analytic orbit position before
     /// <see cref="PhysicsSystemGroup"/> integrates ships. Same math as moon visuals and bullet hits.
+    /// Orbit phase uses <see cref="PlanetGemMoonOrbitClock"/> (ServerTick seconds), not World.ElapsedTime.
     /// Paired with <see cref="PlanetGemMoonColliderEnsureSystem"/>.
     /// </summary>
     // OrderFirst: moon hull pose before PhysicsSystemGroup without UpdateBefore(Physics…).
@@ -130,9 +139,26 @@ namespace TitanOrbit.ECS
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct PlanetGemMoonColliderSyncSystem : ISystem
     {
+        /// <summary>Require NetCode time so moon hulls stay on the shared ServerTick orbit clock.</summary>
+        public void OnCreate(ref SystemState state)
+        {
+            state.RequireForUpdate<NetworkTime>();
+        }
+
+        /// <summary>
+        /// Teleports each moon collider to the analytic orbit pose for the current ServerTick.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            double elapsed = state.World.Time.ElapsedTime;
+            // --- Shared orbit clock ---
+            // [NETCODE] ServerTick → seconds. Client prediction resim uses the tick being predicted.
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            double elapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(
+                SystemAPI.GetSingleton<NetworkTime>(),
+                hz,
+                includeTickFraction: false);
 
             foreach (var (planetRef, moonTransform) in SystemAPI
                          .Query<RefRO<PlanetGemMoonColliderPlanetRef>, RefRW<LocalTransform>>()

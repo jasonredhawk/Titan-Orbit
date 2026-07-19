@@ -121,6 +121,34 @@ namespace TitanOrbit.Game
             TryGetLocalShipTransformFromWorld(GetLocalPlayerShipWorld(), out transform);
 
         /// <summary>
+        /// Live ship <see cref="LocalTransform"/> looked up by <see cref="GhostOwner.NetworkId"/>.
+        /// <para>
+        /// [HYBRID] People-transport VFX magnet uses this every frame so load floats chase the
+        /// current hull instead of the spawn-time baked <c>TargetPosition</c>. Ships are few —
+        /// safe to scan (unlike asteroid/planet <c>ToEntityArray</c>, which Crash!!! on Windows).
+        /// Prefers <see cref="GetLocalPlayerShipWorld"/> (predicted local / interpolated remotes).
+        /// </para>
+        /// </summary>
+        /// <param name="networkId">Ghost owner network id (same id server puts on load transports).</param>
+        /// <param name="transform">Ship pose when found.</param>
+        /// <returns>True when a ship ghost with that owner exists in the client ship world.</returns>
+        public static bool TryGetShipSimTransformByNetworkId(int networkId, out LocalTransform transform)
+        {
+            transform = default;
+            if (networkId <= 0)
+                return false;
+
+            // --- Prefer client ship world (prediction for local owner) ---
+            var world = GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                world = ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            return TryGetShipTransformByNetworkId(world.EntityManager, networkId, out transform);
+        }
+
+        /// <summary>
         /// Resolves local ship pose from a specific ECS world using tag, ownership, CommandTarget, and NetworkId fallbacks.
         /// </summary>
         public static bool TryGetLocalShipTransformFromWorld(World world, out LocalTransform transform)

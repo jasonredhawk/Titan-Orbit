@@ -103,7 +103,16 @@ namespace TitanOrbit.ECS
                 return;
 
             float dt = SystemAPI.Time.DeltaTime;
-            double elapsed = SystemAPI.Time.ElapsedTime;
+
+            // --- Shared orbit clock for gem spawn at moon position ---
+            // [TITAN-ORBIT] Spawn at the same analytic pose clients see (ServerTick, not World.ElapsedTime).
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            double moonElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
+                : SystemAPI.Time.ElapsedTime;
+
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
             if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
@@ -154,7 +163,7 @@ namespace TitanOrbit.ECS
                     planetSize,
                     planetState.PlanetLevel,
                     planetState.PlanetId,
-                    elapsed,
+                    moonElapsed,
                     mapW,
                     mapH);
 

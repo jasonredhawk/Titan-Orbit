@@ -99,7 +99,15 @@ namespace TitanOrbit.Simulation
             return BaseOrbitSpeed * sizeMultiplier * radiusMultiplier;
         }
 
-        /// <summary>World-space offset for a body orbiting at the ship orbit ring center (clockwise, matching the ship motor).</summary>
+        /// <summary>
+        /// World-space offset for a body orbiting at the ship orbit ring center (clockwise, matching the ship motor).
+        /// <para>
+        /// [TITAN-ORBIT] <paramref name="elapsedSeconds"/> must be the shared NetCode ServerTick clock
+        /// (<c>PlanetGemMoonOrbitClock</c> in TitanOrbit.ECS) — not <c>World.Time.ElapsedTime</c>.
+        /// Moons are not ghosted; client and server both evaluate this formula. Divergent clocks put the
+        /// visual moon at one angle and the kinematic collider / shield at another along the same ring.
+        /// </para>
+        /// </summary>
         public static float3 GetShipOrbitRingOffset(
             float planetSize,
             int planetLevel,
@@ -109,6 +117,7 @@ namespace TitanOrbit.Simulation
             GetRingRadiiWorld(planetSize, planetLevel, out float innerWorld, out float outerWorld, out float centerWorld);
             float speed = GetTargetSpeed(planetSize, centerWorld, innerWorld, outerWorld, centerWorld);
             float omega = centerWorld > 0.001f ? speed / centerWorld : 0f;
+            // θ decreases with time → clockwise on XZ when looking down +Y (matches ship orbit motor).
             float theta = phaseOffsetRadians - omega * (float)elapsedSeconds;
             return new float3(math.cos(theta), 0f, math.sin(theta)) * centerWorld;
         }

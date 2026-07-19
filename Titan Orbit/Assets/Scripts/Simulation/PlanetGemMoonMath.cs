@@ -147,7 +147,11 @@ namespace TitanOrbit.Simulation
             return zoneRadius * math.max(0.01f, zoneMultiplier) + math.max(0f, shipRadiusEstimate);
         }
 
-        /// <summary>World-space offset for the gem moon on the planet orbit ring (same radius as people-transfer ring).</summary>
+        /// <summary>
+        /// World-space offset for the gem moon on the planet orbit ring (same radius as people-transfer ring).
+        /// <paramref name="elapsedSeconds"/> must be the shared ServerTick orbit clock
+        /// (<c>PlanetGemMoonOrbitClock</c>), not per-world <c>ElapsedTime</c>.
+        /// </summary>
         public static float3 GetMoonOrbitOffset(
             float planetSize,
             int planetLevel,

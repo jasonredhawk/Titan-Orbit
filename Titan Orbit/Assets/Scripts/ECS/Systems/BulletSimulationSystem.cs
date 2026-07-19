@@ -44,7 +44,18 @@ namespace TitanOrbit.ECS
             var bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
             var spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
             float dt = SystemAPI.Time.DeltaTime;
-            double elapsed = SystemAPI.Time.ElapsedTime;
+            // [UNITY] World elapsed — shield hit timestamps / regen cooldowns (not moon orbit phase).
+            double serverElapsed = SystemAPI.Time.ElapsedTime;
+
+            // --- Shared orbit clock for moon hit tests ---
+            // [TITAN-ORBIT] Bullet vs moon must use ServerTick seconds (same as collider / visuals).
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            double moonElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
+                : serverElapsed;
+
             // [TITAN-ORBIT] Map size for toroidal unwrap during swept collision tests.
             float mapW = 1000f;
             float mapH = 1000f;
@@ -100,7 +111,7 @@ namespace TitanOrbit.ECS
 
                     if (BulletCollision.SegmentHitsMoonNear(
                             prevPos, newPos, planetPos, planetSize,
-                            planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, elapsed,
+                            planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, moonElapsed,
                             planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out _))
                     {
                         PlanetGemMoonCombatLogic.ApplyBulletDamage(
@@ -108,7 +119,7 @@ namespace TitanOrbit.ECS
                             b.Damage,
                             attackerTeam,
                             planetState.ValueRO.Ownership,
-                            elapsed);
+                            serverElapsed);
                         hit = true;
                         break;
                     }

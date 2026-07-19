@@ -299,7 +299,10 @@ namespace TitanOrbit.Game
                 planetPos = new float3(displayPlanet.x, displayPlanet.y, displayPlanet.z);
             }
 
-            double elapsed = TryGetSimulationElapsedTime(out double simElapsed) ? simElapsed : Time.timeAsDouble;
+            // [TITAN-ORBIT] Same ServerTick orbit clock as PlanetGemMoonVisualProxy / colliders.
+            double elapsed = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double orbitElapsed, includeTickFraction: true)
+                ? orbitElapsed
+                : Time.timeAsDouble;
             float3 moonPosF3 = PlanetOrbitMath.GetMoonWorldPosition(
                 planetPos,
                 planetSize,
@@ -319,22 +322,6 @@ namespace TitanOrbit.Game
                 spinAxis = new Vector3(spinAxisLocal.x, spinAxisLocal.y, spinAxisLocal.z).normalized;
 
             moonBodyRadius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(planetSize, planetState.IsHomePlanet);
-            return true;
-        }
-
-        static bool TryGetSimulationElapsedTime(out double elapsedSeconds)
-        {
-            elapsedSeconds = 0d;
-            World world = null;
-            if (ClientServerBootstrap.ServerWorld != null && ClientServerBootstrap.ServerWorld.IsCreated)
-                world = ClientServerBootstrap.ServerWorld;
-            else if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
-                world = ClientServerBootstrap.ClientWorld;
-
-            if (world == null || !world.IsCreated)
-                return false;
-
-            elapsedSeconds = world.Time.ElapsedTime;
             return true;
         }
 

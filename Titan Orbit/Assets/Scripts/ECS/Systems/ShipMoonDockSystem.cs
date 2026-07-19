@@ -26,7 +26,16 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             float dt = SystemAPI.Time.DeltaTime;
-            double elapsed = SystemAPI.Time.ElapsedTime;
+
+            // --- Shared orbit clock for moon dock zone center ---
+            // [TITAN-ORBIT] Dock sphere must sit on the same analytic pose as colliders / visuals.
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            double elapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
+                : SystemAPI.Time.ElapsedTime;
+
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
             float approachDelayRequired = GemEconomyConstants.MoonLandingApproachDelaySeconds;

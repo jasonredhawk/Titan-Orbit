@@ -201,7 +201,10 @@ namespace TitanOrbit.UI
             if (visualizer != null)
             {
                 visualizer.CopyLiveProxyEntities(_proxyEntityScratch);
-                double elapsed = Time.timeAsDouble;
+                // [TITAN-ORBIT] Shared ServerTick moon clock — not Unity Time.timeAsDouble.
+                double elapsed = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double orbitElapsed, includeTickFraction: true)
+                    ? orbitElapsed
+                    : Time.timeAsDouble;
 
                 for (int i = 0; i < _proxyEntityScratch.Count; i++)
                 {
@@ -272,7 +275,10 @@ namespace TitanOrbit.UI
         void UpdateAnchorPositions(EntityManager em)
         {
             // --- Per-frame refresh ---
-            double elapsed = Time.timeAsDouble;
+            // [TITAN-ORBIT] Shared ServerTick moon clock — not Unity Time.timeAsDouble.
+            double elapsed = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double orbitElapsed, includeTickFraction: true)
+                ? orbitElapsed
+                : Time.timeAsDouble;
             foreach (var kv in _anchors)
             {
                 var entity = kv.Key;
@@ -394,7 +400,10 @@ namespace TitanOrbit.UI
             using var entities = query.ToEntityArray(Allocator.Temp);
             using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-            double elapsed = Time.timeAsDouble;
+            // [TITAN-ORBIT] Shared ServerTick moon clock — not Unity Time.timeAsDouble.
+            double elapsed = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double orbitElapsed, includeTickFraction: true)
+                ? orbitElapsed
+                : Time.timeAsDouble;
 
             for (int i = 0; i < entities.Length; i++)
                 ApplyPlanetAnchor(entities[i], states[i], transforms[i], alive, elapsed);

@@ -36,10 +36,19 @@ namespace TitanOrbit.ECS
             // [ECS/DOTS] TempJob planet snapshot — disposed after the parallel job completes.
             var planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
 
+            // --- Moon orbit clock for predicted shield repel ---
+            // [TITAN-ORBIT] Must match server / collider sync — World.ElapsedTime diverges on late-join.
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            double moonElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
+                : SystemAPI.Time.ElapsedTime;
+
             var job = new ShipPhysicsDriveJob
             {
                 Dt = SystemAPI.Time.DeltaTime,
-                Elapsed = SystemAPI.Time.ElapsedTime,
+                Elapsed = moonElapsed,
                 MapW = mapW,
                 MapH = mapH,
                 Planets = planets.AsArray(),

@@ -11,8 +11,11 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// [HYBRID] Gem-moon visual child of a planet GameObject proxy. Positions moon from
-    /// <see cref="PlanetOrbitMath"/> / ECS planet pose, spins mesh cosmetically, and wires orbit zone,
-    /// matrix shield, and stats label children. Render only — moon combat/shield sim is server ECS.
+    /// <see cref="PlanetOrbitMath"/> / ECS planet pose using <see cref="PlanetGemMoonOrbitClock"/>
+    /// (NetCode ServerTick seconds), spins mesh cosmetically, and wires orbit zone, matrix shield,
+    /// and stats label children. Render only — moon combat/shield sim is server ECS.
+    /// Must stay on the same orbit clock as <c>PlanetGemMoonColliderSyncSystem</c> or players hit an
+    /// invisible moon elsewhere on the ring.
     /// </summary>
     public class PlanetGemMoonVisualProxy : MonoBehaviour
     {
@@ -242,9 +245,10 @@ namespace TitanOrbit.Game
             if (_moonRoot == null || _moonSpinVisual == null)
                 return;
 
-            // --- Prefer NetCode world elapsed time for orbit phase; fall back to Time ---
-            double elapsed = TryGetSimulationElapsedTime(out double simElapsed)
-                ? simElapsed
+            // --- Shared ServerTick orbit clock (matches colliders / shield / dock) ---
+            // [TITAN-ORBIT] Never World.Time.ElapsedTime or Time.timeAsDouble — those diverge on late-join.
+            double elapsed = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double orbitElapsed, includeTickFraction: true)
+                ? orbitElapsed
                 : Time.timeAsDouble;
 
             // --- Moon world position: ECS pose when available, else analytic offset ---
@@ -260,22 +264,6 @@ namespace TitanOrbit.Game
             float3 spinAxisLocal = PlanetOrbitMath.GetLevelBandsSpinAxisLocal();
             Vector3 spinAxisWorld = transform.TransformDirection(new Vector3(spinAxisLocal.x, spinAxisLocal.y, spinAxisLocal.z));
             _moonSpinVisual.Rotate(spinAxisWorld, SpinSpeed * Time.deltaTime, Space.World);
-        }
-
-        static bool TryGetSimulationElapsedTime(out double elapsedSeconds)
-        {
-            elapsedSeconds = 0d;
-            World world = null;
-            if (ClientServerBootstrap.ServerWorld != null && ClientServerBootstrap.ServerWorld.IsCreated)
-                world = ClientServerBootstrap.ServerWorld;
-            else if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
-                world = ClientServerBootstrap.ClientWorld;
-
-            if (world == null || !world.IsCreated)
-                return false;
-
-            elapsedSeconds = world.Time.ElapsedTime;
-            return true;
         }
 
         bool TryResolveMoonWorldPosition(double elapsed, out float3 moonPos)

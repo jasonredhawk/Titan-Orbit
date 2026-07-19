@@ -43,7 +43,9 @@ namespace TitanOrbit.ECS
         /// <param name="dt">Fixed prediction step delta time.</param>
         /// <param name="mapW">Toroidal map width.</param>
         /// <param name="mapH">Toroidal map height.</param>
-        /// <param name="elapsedSeconds">Simulation elapsed time for moon phase / shield repel.</param>
+        /// <param name="elapsedSeconds">
+        /// Shared moon orbit clock (<c>PlanetGemMoonOrbitClock</c> / ServerTick seconds) for shield repel phase.
+        /// </param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
