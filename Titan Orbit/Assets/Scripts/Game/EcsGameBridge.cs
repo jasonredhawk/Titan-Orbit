@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
@@ -1515,16 +1516,36 @@ namespace TitanOrbit.Game
         /// <summary>Counts home planets with <see cref="PlanetState.IsHomePlanet"/> in replicated state.</summary>
         static int CountReplicatedHomePlanets(EntityManager em)
         {
+            // [TITAN-ORBIT] Prefer meta / quarantine-safe proxy walk — full planet gather Crash!!! on Windows.
+            if (MapSessionMetaCache.HasMeta && MapSessionMetaCache.TeamCount > 0)
+                return MapSessionMetaCache.TeamCount;
+
+            if (ClientJoinSettleCache.TransformQuarantine ||
+                ClientJoinSettleCache.Settling ||
+                ClientJoinSettleCache.GhostSpawnBacklog)
+            {
+                int count = 0;
+                foreach (var entity in GetScratchProxyEntities())
+                {
+                    if (!em.Exists(entity) || !em.HasComponent<PlanetState>(entity))
+                        continue;
+                    if (em.GetComponentData<PlanetState>(entity).IsHomePlanet)
+                        count++;
+                }
+
+                return count;
+            }
+
             using var query = em.CreateEntityQuery(typeof(PlanetState), typeof(PlanetTag));
             using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
-            int count = 0;
+            int fullCount = 0;
             for (int i = 0; i < states.Length; i++)
             {
                 if (states[i].IsHomePlanet)
-                    count++;
+                    fullCount++;
             }
 
-            return count;
+            return fullCount;
         }
 
         // --- Planet queries ---
@@ -1599,7 +1620,20 @@ namespace TitanOrbit.Game
             if (world == null || !world.IsCreated)
                 return false;
 
+            // [TITAN-ORBIT] Full planet gathers Crash!!! under TransformQuarantine after Settling OFF
+            // (Player.log 2026-07-19 10:29 — Settling OFF → Crash!!!). Use hybrid proxies on Windows.
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+                return false;
+
             var em = world.EntityManager;
+            if (ClientJoinSettleCache.TransformQuarantine)
+            {
+                if (EcsWorldVisualizer.Active != null &&
+                    EcsWorldVisualizer.Active.TryGetPlanetPoseByPlanetId(em, planetId, out _, out _, out state))
+                    return true;
+                return false;
+            }
+
             using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState));
             using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
             for (int i = 0; i < states.Length; i++)
@@ -1620,8 +1654,29 @@ namespace TitanOrbit.Game
             if (world == null || !world.IsCreated)
                 return false;
 
-            var em = world.EntityManager;
-            using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState), typeof(PlanetGemMoonState));
+            if (ClientJoinSettleCache.Settling ||
+                ClientJoinSettleCache.GhostSpawnBacklog ||
+                ClientJoinSettleCache.TransformQuarantine)
+            {
+                // Quarantine: walk hybrid proxies only (no planet archetype gather).
+                var em = world.EntityManager;
+                foreach (var entity in GetScratchProxyEntities())
+                {
+                    if (!em.Exists(entity) ||
+                        !em.HasComponent<PlanetState>(entity) ||
+                        !em.HasComponent<PlanetGemMoonState>(entity))
+                        continue;
+                    if (em.GetComponentData<PlanetState>(entity).PlanetId != planetId)
+                        continue;
+                    moonState = em.GetComponentData<PlanetGemMoonState>(entity);
+                    return true;
+                }
+
+                return false;
+            }
+
+            var emFull = world.EntityManager;
+            using var query = emFull.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState), typeof(PlanetGemMoonState));
             using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
             using var moonStates = query.ToComponentDataArray<PlanetGemMoonState>(Allocator.Temp);
             for (int i = 0; i < states.Length; i++)
@@ -1666,7 +1721,7 @@ namespace TitanOrbit.Game
             return TryFindPlanetRotation(ClientWorld, planetId, out rotation);
         }
 
-        /// <summary>Planet pose (position, scale, state) linear search by planet id.</summary>
+        /// <summary>Planet pose (position, scale, state) — quarantine-safe via hybrid proxies on Windows.</summary>
         static bool TryFindPlanetPose(World world, int planetId, out float3 position, out float scale, out PlanetState state)
         {
             position = default;
@@ -1675,12 +1730,19 @@ namespace TitanOrbit.Game
             if (world == null || !world.IsCreated)
                 return false;
 
-            // [TITAN-ORBIT] Skip planet gathers while GhostSpawn Instantiates are active
-            // (join settle or post–Join Team ship Instantiates). Small planet sets are OK after.
+            // [TITAN-ORBIT] Settling OFF alone is NOT safe — TransformQuarantine stays on all in-game.
+            // Player.log 2026-07-19 10:29: Settling OFF → planet gather → Crash!!!
             if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
                 return false;
 
             var em = world.EntityManager;
+            if (ClientJoinSettleCache.TransformQuarantine)
+            {
+                return EcsWorldVisualizer.Active != null &&
+                       EcsWorldVisualizer.Active.TryGetPlanetPoseByPlanetId(
+                           em, planetId, out position, out scale, out state);
+            }
+
             using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState), typeof(LocalTransform));
             using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
@@ -1697,7 +1759,7 @@ namespace TitanOrbit.Game
             return false;
         }
 
-        /// <summary>Planet <see cref="LocalTransform.Rotation"/> linear search by planet id.</summary>
+        /// <summary>Planet <see cref="LocalTransform.Rotation"/> — quarantine-safe via hybrid proxies.</summary>
         static bool TryFindPlanetRotation(World world, int planetId, out quaternion rotation)
         {
             rotation = quaternion.identity;
@@ -1708,6 +1770,29 @@ namespace TitanOrbit.Game
                 return false;
 
             var em = world.EntityManager;
+            if (ClientJoinSettleCache.TransformQuarantine)
+            {
+                if (EcsWorldVisualizer.Active == null ||
+                    !EcsWorldVisualizer.Active.TryGetPlanetPoseByPlanetId(
+                        em, planetId, out _, out _, out _))
+                    return false;
+
+                // Re-walk for rotation only (pose helper does not return rot — read entity again).
+                foreach (var entity in GetScratchProxyEntities())
+                {
+                    if (!em.Exists(entity) ||
+                        !em.HasComponent<PlanetState>(entity) ||
+                        !em.HasComponent<LocalTransform>(entity))
+                        continue;
+                    if (em.GetComponentData<PlanetState>(entity).PlanetId != planetId)
+                        continue;
+                    rotation = em.GetComponentData<LocalTransform>(entity).Rotation;
+                    return true;
+                }
+
+                return false;
+            }
+
             using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState), typeof(LocalTransform));
             using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
@@ -1720,6 +1805,17 @@ namespace TitanOrbit.Game
             }
 
             return false;
+        }
+
+        static readonly List<Entity> s_ProxyEntityScratch = new List<Entity>(256);
+
+        /// <summary>Fills scratch from <see cref="EcsWorldVisualizer"/> hybrid registry (no ECS gather).</summary>
+        static List<Entity> GetScratchProxyEntities()
+        {
+            s_ProxyEntityScratch.Clear();
+            if (EcsWorldVisualizer.Active != null)
+                EcsWorldVisualizer.Active.CopyLiveProxyEntities(s_ProxyEntityScratch);
+            return s_ProxyEntityScratch;
         }
     }
 }

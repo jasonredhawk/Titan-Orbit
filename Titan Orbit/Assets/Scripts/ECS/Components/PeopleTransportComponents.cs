@@ -1,7 +1,6 @@
 using TitanOrbit.Core;
 using Unity.Entities;
 using Unity.Mathematics;
-using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
@@ -12,50 +11,71 @@ namespace TitanOrbit.ECS
     public struct PeopleTransportTag : IComponentData { }
 
     /// <summary>
-    /// [NETCODE] Ghost-replicated people transport projectile state (server combat / delivery).
-    /// Visual floats do <b>not</b> wait on this ghost — clients spawn
-    /// <see cref="PeopleTransportPresentation"/> from <see cref="PeopleTransportSpawnRpc"/>.
+    /// Server-only in-flight people transport (combat + delivery). Not a ghost — clients mirror
+    /// pose via <see cref="PeopleTransportPoseRpc"/> so Windows GhostSpawn is never flooded.
+    /// Bullet hits use this entity’s <see cref="Unity.Transforms.LocalTransform"/> on the server.
     /// </summary>
     public struct PeopleTransportState : IComponentData
     {
         // --- Type members ---
+        /// <summary>
+        /// Matches <see cref="PeopleTransportSpawnRpc.Sequence"/> so clients can apply pose/end RPCs
+        /// to the correct VFX flight.
+        /// </summary>
+        public uint Sequence;
+
         /// <summary>[TITAN-ORBIT] Population units remaining in this transport capsule.</summary>
-        [GhostField] public float Amount;
+        public float Amount;
 
         /// <summary>[TITAN-ORBIT] Hull points — transport can be shot down mid-flight.</summary>
-        [GhostField] public float Health;
+        public float Health;
 
         /// <summary>[ECS/DOTS] World-units-per-second velocity on the XZ plane.</summary>
-        [GhostField] public float3 Velocity;
+        public float3 Velocity;
 
-        /// <summary>[ECS/DOTS] Toroidal spawn position for trail VFX and interpolation.</summary>
-        [GhostField] public float3 SpawnPosition;
+        /// <summary>[ECS/DOTS] Toroidal spawn position for trail VFX and min-travel checks.</summary>
+        public float3 SpawnPosition;
 
         /// <summary>[UNITY] Server ElapsedTime when this transport was spawned.</summary>
-        [GhostField] public float SpawnTime;
+        public float SpawnTime;
 
         /// <summary>[TITAN-ORBIT] Target cruise speed in world units per second.</summary>
-        [GhostField] public float CruiseSpeed;
+        public float CruiseSpeed;
 
         /// <summary>
-        /// [NETCODE] Destination ship network id; 0 when transport is planet-to-planet only.
+        /// Destination ship network id; 0 when transport is unload (planet-bound).
         /// </summary>
-        [GhostField] public int TargetShipNetworkId;
+        public int TargetShipNetworkId;
 
         /// <summary>[TITAN-ORBIT] Source planet <see cref="PlanetState.PlanetId"/>.</summary>
-        [GhostField] public int SourcePlanetId;
+        public int SourcePlanetId;
 
         /// <summary>[TITAN-ORBIT] Destination planet <see cref="PlanetState.PlanetId"/>.</summary>
-        [GhostField] public int TargetPlanetId;
+        public int TargetPlanetId;
 
-        /// <summary>[NETCODE] Source ship network id when launched from a ship cargo hold.</summary>
-        [GhostField] public int SourceShipNetworkId;
+        /// <summary>Source ship network id when launched from a ship cargo hold.</summary>
+        public int SourceShipNetworkId;
 
         /// <summary>[TITAN-ORBIT] 1 = loading population from planet onto ship; 0 = unloading toward target.</summary>
-        [GhostField] public byte IsLoad;
+        public byte IsLoad;
 
         /// <summary>[TITAN-ORBIT] Owning team as byte (cast to <see cref="TeamId"/>).</summary>
-        [GhostField] public byte Team;
+        public byte Team;
+    }
+
+    /// <summary>
+    /// Status byte on <see cref="PeopleTransportPoseRpc"/> — client VFX lifecycle.
+    /// </summary>
+    public static class PeopleTransportPoseStatus
+    {
+        /// <summary>Server sim pose for this tick — client snaps / dead-reckons the float.</summary>
+        public const byte Active = 0;
+
+        /// <summary>Delivered or returned successfully — client shows +N and despawns.</summary>
+        public const byte Consumed = 1;
+
+        /// <summary>Shot down or aborted — client despawns without +N.</summary>
+        public const byte Destroyed = 2;
     }
 
     /// <summary>

@@ -222,6 +222,74 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Quarantine-safe planet lookup by <see cref="PlanetState.PlanetId"/>.
+        /// Walks hybrid proxy keys only, then per-entity <c>HasComponent</c>/<c>GetComponentData</c> —
+        /// never <c>ToEntityArray</c> / full planet archetype gathers (Crash!!! after Settling OFF).
+        /// </summary>
+        public bool TryGetPlanetPoseByPlanetId(
+            EntityManager em,
+            int planetId,
+            out float3 position,
+            out float scale,
+            out PlanetState state)
+        {
+            position = default;
+            scale = 1f;
+            state = default;
+            if (planetId == 0)
+                return false;
+
+            // Prefer the planet-visual registry (smaller) then fall back to all proxies.
+            foreach (var kv in _proxyPlanetVisuals)
+            {
+                if (kv.Value.PlanetId != planetId)
+                    continue;
+                if (!TryReadPlanetPose(em, kv.Key, planetId, out position, out scale, out state))
+                    continue;
+                return true;
+            }
+
+            foreach (var kv in _proxies)
+            {
+                if (kv.Value == null)
+                    continue;
+                if (!TryReadPlanetPose(em, kv.Key, planetId, out position, out scale, out state))
+                    continue;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Per-entity planet read — safe under TransformQuarantine.</summary>
+        static bool TryReadPlanetPose(
+            EntityManager em,
+            Entity entity,
+            int planetId,
+            out float3 position,
+            out float scale,
+            out PlanetState state)
+        {
+            position = default;
+            scale = 1f;
+            state = default;
+            if (!em.Exists(entity) ||
+                !em.HasComponent<PlanetTag>(entity) ||
+                !em.HasComponent<PlanetState>(entity) ||
+                !em.HasComponent<LocalTransform>(entity))
+                return false;
+
+            state = em.GetComponentData<PlanetState>(entity);
+            if (state.PlanetId != planetId)
+                return false;
+
+            var lt = em.GetComponentData<LocalTransform>(entity);
+            position = lt.Position;
+            scale = math.max(0.25f, lt.Scale);
+            return true;
+        }
+
+        /// <summary>
         /// [HYBRID] Per-frame proxy sync — reads presentation transforms, spawns/destroys GameObjects, applies VFX.
         /// Invoked from Application.onBeforeRender (not LateUpdate) so presentation cache is ready.
         /// </summary>

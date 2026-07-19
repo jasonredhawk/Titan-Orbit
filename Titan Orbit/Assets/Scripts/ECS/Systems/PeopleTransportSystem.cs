@@ -360,12 +360,17 @@ namespace TitanOrbit.ECS
             byte isLoadByte = (byte)(isLoad ? 1 : 0);
             byte teamByte = (byte)team;
 
+            // Sequence ties server sim entity ↔ client VFX ↔ pose RPCs (not a ghost).
+            uint sequence = PeopleTransportVfxBridge.NextSequence();
+
             // --- Server-only sim entity (no GhostAuthoring / no client Instantiates) ---
+            // Bullets / delivery read LocalTransform here. Clients mirror via PeopleTransportPoseRpc.
             Entity transport = ecb.CreateEntity();
             ecb.AddComponent<PeopleTransportTag>(transport);
             ecb.AddComponent(transport, LocalTransform.FromPositionRotationScale(spawnPos, quaternion.identity, scale));
             ecb.AddComponent(transport, new PeopleTransportState
             {
+                Sequence = sequence,
                 Amount = amount,
                 Health = PeopleTransportMath.ComputeMaxHealth(amount),
                 Velocity = velocity,
@@ -380,8 +385,7 @@ namespace TitanOrbit.ECS
                 Team = teamByte,
             });
 
-            // --- Client VFX (PeopleTransportVfxDriver) ---
-            uint sequence = PeopleTransportVfxBridge.NextSequence();
+            // --- Client VFX spawn (PeopleTransportVfxDriver) ---
             float3 bakedTarget = targetPos;
             bakedTarget.y = 0f;
             var vfxReq = new PeopleTransportVfxBridge.SpawnRequest
@@ -510,7 +514,8 @@ namespace TitanOrbit.ECS
                     if (!planetStateById.ContainsKey(t.SourcePlanetId) ||
                         !planetTransformById.ContainsKey(t.SourcePlanetId))
                     {
-                        ecb.DestroyEntity(entity);
+                        PeopleTransportNetNotify.EndAndDestroy(
+                            ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Destroyed);
                         continue;
                     }
 
@@ -528,7 +533,8 @@ namespace TitanOrbit.ECS
                         planetStateById[t.SourcePlanetId] = sourcePlanetOnly;
                         ecb.SetComponent(planetById[t.SourcePlanetId], sourcePlanetOnly);
                         ClearInboundPeopleInTransit(ref state, t.TargetShipNetworkId, t.Amount, shipByNetworkId);
-                        ecb.DestroyEntity(entity);
+                        PeopleTransportNetNotify.EndAndDestroy(
+                            ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Consumed);
                         continue;
                     }
 
@@ -550,7 +556,8 @@ namespace TitanOrbit.ECS
                             ReturnLoadToPlanet(ref state, ref sourcePlanet, shipEntity, t.Amount, sourcePlanetSize);
                             planetStateById[t.SourcePlanetId] = sourcePlanet;
                             ecb.SetComponent(planetById[t.SourcePlanetId], sourcePlanet);
-                            ecb.DestroyEntity(entity);
+                            PeopleTransportNetNotify.EndAndDestroy(
+                                ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Consumed);
                         }
 
                         continue;
@@ -564,7 +571,8 @@ namespace TitanOrbit.ECS
                         DeliverLoad(ref state, shipEntity, ref shipState, t.Amount, team);
                         shipStateByNetworkId[t.TargetShipNetworkId] = shipState;
                         ecb.SetComponent(shipEntity, shipState);
-                        ecb.DestroyEntity(entity);
+                        PeopleTransportNetNotify.EndAndDestroy(
+                            ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Consumed);
                         continue;
                     }
                 }
@@ -582,7 +590,8 @@ namespace TitanOrbit.ECS
                             ecb.SetComponent(orphanShipEntity, orphanShipState);
                         }
 
-                        ecb.DestroyEntity(entity);
+                        PeopleTransportNetNotify.EndAndDestroy(
+                            ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Destroyed);
                         continue;
                     }
 
@@ -607,7 +616,8 @@ namespace TitanOrbit.ECS
                             ecb.SetComponent(planetEntity, growth);
                         }
 
-                        ecb.DestroyEntity(entity);
+                        PeopleTransportNetNotify.EndAndDestroy(
+                            ref ecb, entity, in t, myPos, PeopleTransportPoseStatus.Consumed);
                         continue;
                     }
                 }
@@ -847,9 +857,12 @@ namespace TitanOrbit.ECS
         {
             // --- DestroyFromBulletDamage ---
             var em = state.EntityManager;
+            float3 pos = PeopleTransportNetNotify.ReadPosition(em, transportEntity);
+
             if (transport.Amount <= 0f)
             {
-                em.DestroyEntity(transportEntity);
+                PeopleTransportNetNotify.EndAndDestroyImmediate(
+                    ref state, transportEntity, in transport, pos, PeopleTransportPoseStatus.Destroyed);
                 return;
             }
 
@@ -872,7 +885,8 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            em.DestroyEntity(transportEntity);
+            PeopleTransportNetNotify.EndAndDestroyImmediate(
+                ref state, transportEntity, in transport, pos, PeopleTransportPoseStatus.Destroyed);
             LogDestroyedByBullet((int)transport.Amount, (TeamId)transport.Team);
         }
 
