@@ -17,7 +17,11 @@ namespace TitanOrbit.ECS
         /// <summary>PlanetId where dwell timer is accumulating; 0 when not in a tracked orbit.</summary>
         public int LastOrbitPlanetId;
 
-        /// <summary>Crew units currently animating between ship and planet (not yet in CurrentPeople).</summary>
+        /// <summary>
+        /// Crew currently in flight. Load: left the planet, not yet on the ship.
+        /// Unload: reserved from the ship, not yet applied at the planet (CurrentPeople unchanged
+        /// until delivery or destruction — floating −1 waits for arrival).
+        /// </summary>
         public float PeopleInTransit;
 
         /// <summary>Fractional accumulator toward loading one crew unit onto the ship.</summary>

@@ -41,6 +41,7 @@ namespace TitanOrbit.ECS
                     IdleClearFrames = 0,
                     InGameFrames = 0,
                     SawSpawnActivity = 0,
+                    JoinSettleCompleted = 0,
                 });
                 state.EntityManager.SetName(ent, "ClientJoinSettleState");
             }
@@ -60,6 +61,7 @@ namespace TitanOrbit.ECS
                 settle.IdleClearFrames = 0;
                 settle.InGameFrames = 0;
                 settle.SawSpawnActivity = 0;
+                settle.JoinSettleCompleted = 0;
                 ClientJoinSettleCache.Clear();
                 SetTransformGroupEnabled(ref state, enabled: true);
                 return;
@@ -91,13 +93,32 @@ namespace TitanOrbit.ECS
                 : IdleFramesRequired;
             bool canExit = hardTimeout || (minTime && settle.IdleClearFrames >= idleNeeded);
 
-            bool shouldSettle = !canExit;
+            // --- Settling policy ---
+            // [TITAN-ORBIT] Initial join: Settling while Instantiates backlog drains.
+            // After the first exit, NEVER re-enter Settling for post-team ship Instantiates —
+            // Player.log 2026-07-18: TeamChoice → Settling ON (spawnBuf=1) → Crash!!!.
+            bool shouldSettle;
+            if (settle.JoinSettleCompleted != 0)
+            {
+                shouldSettle = false;
+            }
+            else
+            {
+                shouldSettle = !canExit;
+                if (!shouldSettle && settle.SawSpawnActivity != 0)
+                    settle.JoinSettleCompleted = 1;
+            }
+
             byte newSettling = (byte)(shouldSettle ? 1 : 0);
             bool settlingChanged = settle.Settling != newSettling;
             settle.Settling = newSettling;
 
             // --- Quarantine: never RE-ENABLE TransformSystemGroup while in-game ---
-            ClientJoinSettleCache.Set(shouldSettle, transformQuarantine: true, settle.InGameFrames);
+            ClientJoinSettleCache.Set(
+                shouldSettle,
+                transformQuarantine: true,
+                settle.InGameFrames,
+                settle.JoinSettleCompleted != 0);
             SetTransformGroupEnabled(ref state, enabled: false);
 
             if (settlingChanged)
@@ -115,6 +136,7 @@ namespace TitanOrbit.ECS
                         "[JoinSettle] Settling OFF — TransformSystemGroup stays OFF (quarantine; " +
                         "RE-ENABLE Crash!!!). Hybrid ship proxies remain. inGameFrames=" +
                         settle.InGameFrames + " idleClear=" + settle.IdleClearFrames +
+                        " joinSettleCompleted=1" +
                         (hardTimeout ? " (hard timeout)" : string.Empty));
                 }
             }

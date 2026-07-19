@@ -4,23 +4,28 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// [HYBRID] Client-only flag: this Instantiated map ghost is waiting for
-    /// <c>EcsWorldVisualizer</c> to create its GameObject proxy.
+    /// [HYBRID] Client-only flag baked onto planet/asteroid/gem ghost prefabs:
+    /// this Instantiated map ghost is waiting for <c>EcsWorldVisualizer</c> to create its GameObject.
     /// <para>
-    /// Baked onto planet/asteroid/gem ghost prefabs (<see cref="GhostPrefabType.Client"/>) so
-    /// GhostSpawn Instantiates already carry Pending — the visualizer can drain a small Pending
-    /// queue during join without <see cref="MapBodyHybridVisualRequestSystem"/> scanning every
-    /// Instantiated asteroid via <c>ToEntityArray</c> (that path hard-crashes Windows even when
-    /// placeholders briefly hit zero mid-settle).
+    /// [NETCODE] <see cref="GhostPrefabType.Client"/> — present on client Instantiates from bake.
+    /// Do <b>not</b> <c>AddComponent</c> this at runtime on ghost entities — NetCode rejects / strips
+    /// dynamic adds of ghost component types. Windows player EntityScenes often lack this bake;
+    /// use <see cref="MapBodyHybridVisualSpawnRequest"/> for runtime backfill instead.
     /// </para>
     /// </summary>
     [GhostComponent(PrefabType = GhostPrefabType.Client)]
     public struct MapBodyHybridVisualPending : IComponentData { }
 
     /// <summary>
+    /// [HYBRID] Non-ghost runtime queue tag — same meaning as <see cref="MapBodyHybridVisualPending"/>.
+    /// Added by <see cref="MapBodyHybridVisualRequestSystem"/> when Instantiates lack baked Pending
+    /// (typical Windows player build). Safe to AddComponent on ghosts; visualizer drains both.
+    /// </summary>
+    public struct MapBodyHybridVisualSpawnRequest : IComponentData { }
+
+    /// <summary>
     /// [HYBRID] Client-only flag: a GameObject proxy was created for this map ghost.
-    /// Prevents re-queueing <see cref="MapBodyHybridVisualPending"/>.
-    /// Added at runtime by the visualizer — not baked, not replicated.
+    /// Prevents re-queueing Pending / SpawnRequest. Added at runtime — not baked, not replicated.
     /// </summary>
     public struct MapBodyHybridVisualLinked : IComponentData { }
 }

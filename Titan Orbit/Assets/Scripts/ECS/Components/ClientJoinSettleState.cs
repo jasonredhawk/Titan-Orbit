@@ -28,6 +28,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>1 after we observed any spawn-buffer or placeholder activity this join.</summary>
         public byte SawSpawnActivity;
+
+        /// <summary>
+        /// 1 after Settling has exited once this session. Prevents re-entering Settling for
+        /// post-team ship Instantiates (Player.log Crash!!! after TeamChoice).
+        /// </summary>
+        public byte JoinSettleCompleted;
     }
 
     /// <summary>
@@ -47,12 +53,19 @@ namespace TitanOrbit.ECS
         /// <summary>Frames in-game this session (diagnostic).</summary>
         public static int InGameFrames { get; private set; }
 
+        /// <summary>
+        /// True after the initial join Instantiates settle finished — ship Instantiates after
+        /// Join Team must not flip Settling back on.
+        /// </summary>
+        public static bool JoinSettleCompleted { get; private set; }
+
         /// <summary>Updates settle + quarantine flags from the join gate system.</summary>
-        public static void Set(bool settling, bool transformQuarantine, int inGameFrames)
+        public static void Set(bool settling, bool transformQuarantine, int inGameFrames, bool joinSettleCompleted)
         {
             Settling = settling;
             TransformQuarantine = transformQuarantine;
             InGameFrames = inGameFrames;
+            JoinSettleCompleted = joinSettleCompleted;
         }
 
         /// <summary>Clears when leaving a session / not in-game.</summary>
@@ -61,6 +74,7 @@ namespace TitanOrbit.ECS
             Settling = false;
             TransformQuarantine = false;
             InGameFrames = 0;
+            JoinSettleCompleted = false;
             // [NETCODE] GhostSpawn join counters — next Relay join starts from zero.
             TitanOrbitJoinLoadCounters.Reset();
         }

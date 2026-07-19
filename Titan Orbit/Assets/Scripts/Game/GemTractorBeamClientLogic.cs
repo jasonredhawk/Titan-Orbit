@@ -45,6 +45,12 @@ namespace TitanOrbit.Game
             WingByShipAndGem.Clear();
             AssignedGemsByShip.Clear();
 
+            // [TITAN-ORBIT] Windows: TransformQuarantine stays ON for the whole in-game session.
+            // ToEntityArray over all gems here Crash!!! / kicks to Main Menu when ships enter orbit
+            // (tractor eligibility turns on at the same time as people load). Same rule as minimap.
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
+                return;
+
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return;

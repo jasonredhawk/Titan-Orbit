@@ -4,31 +4,36 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// [HYBRID] Intentionally disabled. Map ghosts bake <see cref="MapBodyHybridVisualPending"/>
-    /// on the client prefab; <c>EcsWorldVisualizer</c> drains that small queue.
+    /// [HYBRID] Intentionally disabled on Windows late-join.
     /// <para>
-    /// Player.log 2026-07-18 13:26: after settle, <c>MarkFromQuery</c> → <c>ToEntityArray</c> →
-    /// Burst <c>GatherEntitiesWithoutFilter</c> → <c>Crash!!!</c>. Gathering Instantiated asteroids
-    /// is never safe on Windows late-join — settle ending does not make it safe.
+    /// Player.log 2026-07-18 17:06: after Join Team (and even before Settling ON),
+    /// any asteroid/planet <c>SystemAPI.Query(...).WithEntityAccess()</c> / chunk walk in this
+    /// system → <c>ArchetypeChunk.GetEntityDataPtrRO(EntityTypeHandle)</c> NRE → <c>Crash!!!</c>.
+    /// Settling gates were not enough — the gather itself is unsafe over Instantiated map bodies.
     /// </para>
-    /// World: ClientSimulation (system kept so asmdef/references stay stable; OnUpdate is a no-op).
+    /// <para>
+    /// Map visuals must come from baked <see cref="MapBodyHybridVisualPending"/> on client ghost
+    /// prefabs (rebake SubScenes / EntityScenes) drained by <c>EcsWorldVisualizer</c>.
+    /// Do not re-enable full-map marking here.
+    /// </para>
+    /// World: ClientSimulation (kept so asmdef stays stable; OnUpdate is a no-op).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(GhostSimulationSystemGroup))]
     public partial struct MapBodyHybridVisualRequestSystem : ISystem
     {
-        /// <summary>No-op — see type summary. Pending must be baked on ghost prefabs.</summary>
+        /// <summary>Disabled — see type summary. Never re-enable asteroid WithEntityAccess marking.</summary>
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<NetworkStreamInGame>();
             state.Enabled = false;
         }
 
-        /// <summary>Disabled — never ToEntityArray map bodies.</summary>
+        /// <summary>No-op. Do not add MarkFromQuery / WithEntityAccess over map bodies.</summary>
         public void OnUpdate(ref SystemState state)
         {
-            // Intentionally empty. Do not re-enable MarkFromQuery.
+            // Intentionally empty.
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit.ECS;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -23,6 +24,13 @@ namespace TitanOrbit.Game
             if (Time.frameCount == _lastUpdateFrame)
                 return;
             _lastUpdateFrame = Time.frameCount;
+
+            // [TITAN-ORBIT] Windows TransformQuarantine: gem ToEntityArray Crash!!! when orbiting.
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
+            {
+                VisibilityByPair.Clear();
+                return;
+            }
 
             GemTractorBeamDeployTracker.LateUpdateTick();
             GemTractorBeamClientLogic.RebuildAssignmentCache();

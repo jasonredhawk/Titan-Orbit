@@ -12,25 +12,26 @@ namespace TitanOrbit.Simulation
     public static class PeopleTransportMath
     {
         /// <summary>
-        /// [TITAN-ORBIT] Target one-way travel time (seconds) across the orbit-ring gap.
-        /// Kept short so spheres stay readable for the whole flight (old 3×5/2.4 ≈ 6.25s crawl
-        /// looked invisible until the close-range speed-up near the ship).
+        /// Base hop time (seconds). Effective travel =
+        /// <c>Target × DurationMultiplier / SpeedBonus</c> → 3 × 5 / 2.4 = 6.25s
+        /// (the slower ECS feel before the 2.75s “visibility” speedup).
         /// </summary>
-        public const float TargetVisualTravelSeconds = 1.35f;
+        public const float TargetVisualTravelSeconds = 3f;
 
-        /// <summary>Legacy multiplier — kept at 1 so EffectiveVisualTravelSeconds ≈ TargetVisualTravelSeconds.</summary>
-        public const float VisualTravelDurationMultiplier = 1f;
+        /// <summary>Stretches hop time — paired with <see cref="VisualTravelSpeedBonus"/>.</summary>
+        public const float VisualTravelDurationMultiplier = 5f;
 
-        /// <summary>Legacy speed bonus — kept at 1 (paired with DurationMultiplier).</summary>
-        public const float VisualTravelSpeedBonus = 1f;
+        /// <summary>Shortens hop time — paired with <see cref="VisualTravelDurationMultiplier"/>.</summary>
+        public const float VisualTravelSpeedBonus = 2.4f;
 
         /// <summary>Outward nudge from planet surface when spawning a load transport (world units).</summary>
-        public const float SurfaceSpawnOutwardNudge = 1.1f;
+        public const float SurfaceSpawnOutwardNudge = 0.45f;
 
         /// <summary>Load flights cruise a bit faster than unload (toward the moving ship).</summary>
-        public const float LoadMagnetSpeedMultiplier = 1.35f;
+        public const float LoadMagnetSpeedMultiplier = 1.15f;
         public const float MagnetCloseRangeWorld = 5f;
-        public const float MagnetCloseRangeSpeedRatio = 18f / 11f;
+        /// <summary>Mild end-of-hop speed-up (legacy 18/11 was too snappy with the slow cruise).</summary>
+        public const float MagnetCloseRangeSpeedRatio = 1.25f;
         public const float ShipLoadCollectPadding = 0.22f;
         public const float ShipLoadCollectMinDistance = 0.4f;
         public const float ShipHullMagnetInset = 0.12f;
@@ -41,10 +42,12 @@ namespace TitanOrbit.Simulation
         public const float TransportRadius = 0.25f;
         /// <summary>HP per person in sphere (legacy PeopleTransportProjectile.HealthPerShipLevel).</summary>
         public const float HealthPerPeopleAmount = 4f;
+        /// <summary>Legacy PeopleTransportProjectile amount → scale curve range.</summary>
         public const float PeopleAmountScaleMin = 1f;
         public const float PeopleAmountScaleMax = 12f;
         public const float VisualScaleMinMultiplier = 0.9f;
-        public const float VisualScaleMaxMultiplier = 2.7f;
+        /// <summary>Legacy max was 2.1 (not 2.7) — keeps floats near the prefab's 0.25 base size.</summary>
+        public const float VisualScaleMaxMultiplier = 2.1f;
 
         public static float EffectiveVisualTravelSeconds =>
             TargetVisualTravelSeconds * VisualTravelDurationMultiplier / VisualTravelSpeedBonus;
@@ -78,9 +81,13 @@ namespace TitanOrbit.Simulation
             return math.lerp(currentVel, targetVel, math.saturate(speed * dt * 4f));
         }
 
+        /// <summary>
+        /// Multiplier on the prefab's authored localScale from carried people amount.
+        /// Dispatch chunk size already encodes ship/planet level and load vs unload, so amount alone
+        /// drives size the way the original <c>PeopleTransportProjectile</c> did.
+        /// </summary>
         public static float GetVisualScaleMultiplier(float peopleAmount)
         {
-            // --- Compute value ---
             float clamped = math.clamp(math.max(0.001f, peopleAmount), PeopleAmountScaleMin, PeopleAmountScaleMax);
             float normalized = math.unlerp(PeopleAmountScaleMin, PeopleAmountScaleMax, clamped);
             return math.lerp(VisualScaleMinMultiplier, VisualScaleMaxMultiplier, normalized);
@@ -133,21 +140,34 @@ namespace TitanOrbit.Simulation
             return hullPoint;
         }
 
-        public static float GetShipHullRadius(float shipTransformScale)
-        {
-            // --- Compute value ---
-            if (shipTransformScale > 0.01f)
-                return math.max(0.2f, shipTransformScale);
-            return 1f;
-        }
+        /// <summary>
+        /// World hull radius from ECS <c>LocalTransform.Scale</c> — matches ship presentation size.
+        /// [TITAN-ORBIT] Do not use Scale raw as radius (that spawned unloads ~1 unit out and looked
+        /// like they left from the nose when the ship faced the planet).
+        /// </summary>
+        public static float GetShipHullRadius(float shipTransformScale) =>
+            BodyCollisionMath.GetShipHullRadiusWorld(shipTransformScale);
 
-        public static float3 GetShipUnloadSpawnToward(float3 shipCenter, float shipRadius, float3 towardWorldPos, float mapW, float mapH)
+        /// <summary>
+        /// Unload spawn on the planet-facing flank of the ship (toroidal), independent of ship yaw.
+        /// </summary>
+        /// <param name="shipCenter">Ship logical position.</param>
+        /// <param name="shipRadius">World hull radius from <see cref="GetShipHullRadius"/>.</param>
+        /// <param name="planetCenter">Planet center — direction ship→planet defines the flank.</param>
+        public static float3 GetShipUnloadSpawnToward(
+            float3 shipCenter,
+            float shipRadius,
+            float3 planetCenter,
+            float mapW,
+            float mapH)
         {
-            // --- Compute value ---
-            float3 outward = ToroidalMapEcs.ToroidalDirection(shipCenter, towardWorldPos, mapW, mapH);
-            float hullRadius = math.max(0.2f, shipRadius);
-            float nudge = math.max(0.08f, hullRadius * 0.06f);
-            float3 spawn = shipCenter + outward * (hullRadius + nudge);
+            // --- Planet-facing flank (ignore ship rotation / nose) ---
+            // [TITAN-ORBIT] ToroidalDirection(ship, planet) is always the side closest to the planet.
+            float3 towardPlanet = ToroidalMapEcs.ToroidalDirection(shipCenter, planetCenter, mapW, mapH);
+            float hullRadius = math.max(BodyCollisionMath.MinShipHullRadiusWorld, shipRadius);
+            // Clear the visual hull so the float reads as leaving the planetward side, not the cockpit.
+            float nudge = math.max(0.2f, hullRadius * 0.55f);
+            float3 spawn = shipCenter + towardPlanet * (hullRadius + nudge);
             spawn.y = 0f;
             return spawn;
         }

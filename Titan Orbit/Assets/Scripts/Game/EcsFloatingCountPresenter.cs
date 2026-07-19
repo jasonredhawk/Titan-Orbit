@@ -70,7 +70,9 @@ namespace TitanOrbit.Game
 
             PollShips(em);
             PollPlanetGems(em);
-            PollAsteroids(em);
+            // [TITAN-ORBIT] Asteroid ToEntityArray is unsafe under Windows TransformQuarantine.
+            if (!ClientJoinSettleCache.Settling && !ClientJoinSettleCache.TransformQuarantine)
+                PollAsteroids(em);
         }
 
         /// <summary>Captures initial ship/planet/asteroid state into snapshot dictionaries.</summary>
@@ -109,6 +111,10 @@ namespace TitanOrbit.Game
             using var planetStates = planetQuery.ToComponentDataArray<PlanetState>(Allocator.Temp);
             for (int i = 0; i < planetStates.Length; i++)
                 _planetGems[planetStates[i].PlanetId] = planetStates[i].CurrentGems;
+
+            // Skip asteroid baseline under TransformQuarantine (same Crash!!! pattern as minimap).
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
+                return;
 
             using var asteroidQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<AsteroidTag>(),

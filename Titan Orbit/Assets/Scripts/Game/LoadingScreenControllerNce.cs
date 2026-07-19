@@ -1,3 +1,4 @@
+using TitanOrbit.ECS;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -5,8 +6,9 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Full-screen map build overlay. Progress tracks local GameObject Instantiates only.
-    /// Server meta gives the stable "/ N"; the bar does not advance on network/ECS Instantiates.
+    /// Full-screen map build overlay. Denominator = server <c>MapSessionMetaRpc</c> N.
+    /// Numerator prefers planet/asteroid GameObject proxies; while those are still 0, shows
+    /// GhostSpawn Instantiates progress so the bar does not freeze or snap back to 0/N.
     /// </summary>
     public class LoadingScreenControllerNce : MonoBehaviour
     {
@@ -55,8 +57,9 @@ namespace TitanOrbit.Game
 
             if (EcsGameBridge.TryGetMapLoadingStepCounts(out int completedSteps, out int totalSteps) && totalSteps > 0)
             {
-                // [TITAN-ORBIT] completedSteps = planet/asteroid GameObjects built locally.
-                // totalSteps = MapSessionMetaRpc once from server. Cap 99% until complete.
+                // [TITAN-ORBIT] Cap 99% until IsMapLoadingComplete — that uses proxy ratio / plateau
+                // after Settling OFF (not Instantiates alone). Instantiates can fill the numerator
+                // early; dismiss waits for GO catch-up or a stall timeout.
                 float fraction = (float)completedSteps / totalSteps;
                 if (!EcsGameBridge.IsMapLoadingComplete())
                     fraction = Mathf.Min(fraction, 0.99f);
@@ -99,16 +102,28 @@ namespace TitanOrbit.Game
             if (_statusText == null || totalSteps <= 0)
                 return;
 
-            float fraction = (float)completedSteps / totalSteps;
-            // Phases describe local GO build only (server already told us N via meta).
-            string phase = fraction switch
+            // --- Status copy ---
+            // [TITAN-ORBIT] Prefer proxy count for phase labels when visuals are actually Instantiating.
+            // If proxies are still 0, say we are receiving / queuing — not "Building" stuck at 0.
+            int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
+            string phase;
+            if (proxies <= 0)
             {
-                <= 0f => "Building map visuals",
-                < 0.08f => "Placing home worlds and moons",
-                < 0.2f => "Seeding neutral planets and moons",
-                < 0.45f => "Scattering asteroid fields",
-                _ => "Finishing map visuals",
-            };
+                phase = ClientJoinSettleCache.Settling
+                    ? "Receiving map bodies"
+                    : "Queuing map visuals";
+            }
+            else
+            {
+                float fraction = (float)proxies / totalSteps;
+                phase = fraction switch
+                {
+                    < 0.08f => "Placing home worlds and moons",
+                    < 0.2f => "Seeding neutral planets and moons",
+                    < 0.45f => "Scattering asteroid fields",
+                    _ => "Finishing map visuals",
+                };
+            }
 
             _statusText.text = $"{phase}... {completedSteps} / {totalSteps}";
         }

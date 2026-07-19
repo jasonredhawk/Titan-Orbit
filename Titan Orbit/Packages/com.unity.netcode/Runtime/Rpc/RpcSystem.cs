@@ -388,11 +388,25 @@ namespace Unity.NetCode
                     int msgHeaderLen = RpcCollection.GetInnerRpcMessageHeaderLength(dynamicAssemblyList == 1);
                     while (parameters.Reader.GetBytesRead() < parameters.Reader.Length)
                     {
-                        if (!ReadRpcIndexOrHash(unfilteredChunkIndex, ref parameters.Reader, conn, connectionEntity, out var rpcIndex, out _))
+                        if (!ReadRpcIndexOrHash(unfilteredChunkIndex, ref parameters.Reader, conn, connectionEntity, out var rpcIndex, out var rpcHash))
                             break;
 
                         var rpcSizeBits = parameters.Reader.ReadUShort();
                         var rpcSizeBytes = (rpcSizeBits + 7) >> 3;
+
+                        // --- TITAN-ORBIT: skip unknown RPC hash (rpcIndex < 0) ---
+                        // Player.log / debug-cdce8b: GCE sent hash 1026046134438292813 (PeopleTransportSpawnRpc
+                        // from an older dedicated build). Stock NetCode RequestDisconnect(InvalidRpc) → Main Menu.
+                        // Skip the declared payload and keep the session alive across client/server version skew.
+                        // DataStreamReader.ReadRawBits only accepts 1..32 bits — chunk large payloads.
+                        if (rpcIndex < 0)
+                        {
+                            netDebug.LogWarning(
+                                $"[{worldName}] RpcSystem SKIPPING unknown rpc hash ({rpcHash}) size={rpcSizeBytes}B from {conn.Value.ToFixedString()} [TitanOrbit: no disconnect]");
+                            SkipReaderBits(ref parameters.Reader, rpcSizeBits);
+                            parameters.Reader.Flush();
+                            continue;
+                        }
 
                         // Normal RPCs are not allowed during the approval connection phase
                         // On clients both ProtocolVersion and NetworkID RPCs should be ok as they are sent by server after approval is done
@@ -413,10 +427,12 @@ namespace Unity.NetCode
                         var rpcBitStart = parameters.Reader.GetBitsRead();
                         if (Hint.Unlikely(rpcIndex >= execute.Length))
                         {
-                            netDebug.LogError($"[{worldName}] RpcSystem received invalid rpc (index {rpcIndex} out of range) from {conn.Value.ToFixedString()}!");
-                            commandBuffer.AddComponent(unfilteredChunkIndex, connectionEntity,
-                                new NetworkStreamRequestDisconnect {Reason = NetworkStreamDisconnectReason.InvalidRpc});
-                            break;
+                            // TITAN-ORBIT: skip out-of-range index instead of disconnecting (same skew case).
+                            netDebug.LogWarning(
+                                $"[{worldName}] RpcSystem SKIPPING rpc index {rpcIndex} out of range from {conn.Value.ToFixedString()} [TitanOrbit: no disconnect]");
+                            SkipReaderBits(ref parameters.Reader, rpcSizeBits);
+                            parameters.Reader.Flush();
+                            continue;
                         }
 
                         execute[rpcIndex].Execute.Ptr.Invoke(ref parameters);
@@ -427,9 +443,22 @@ namespace Unity.NetCode
                         if (parameters.Reader.HasFailedReads || rpcSizeBits != rpcBitsRead)
                         {
                             var rpcBytesRead = (rpcBitsRead + 7) >> 3;
-                            netDebug.LogError($"[{worldName}] RpcSystem failed to deserialize RPC '{execute[rpcIndex].ToFixedString()}', as bits read ({rpcBitsRead} [{rpcBytesRead}B] did not match expected ({rpcSizeBits} [{rpcSizeBytes}B])! Be aware that the incorrectly deserialized RPC may have still executed, but this connection will soon be closed.");
-                            commandBuffer.AddComponent(unfilteredChunkIndex, entities[i], new NetworkStreamRequestDisconnect {Reason = NetworkStreamDisconnectReason.InvalidRpc});
-                            break;
+                            // TITAN-ORBIT: do not close the connection on size skew (PeopleTransportSpawnRpc 50B vs 62B).
+                            // Resync to the wire-declared end when possible; otherwise drop the rest of this buffer.
+                            netDebug.LogWarning(
+                                $"[{worldName}] RpcSystem SKIPPING bad deserialize '{execute[rpcIndex].ToFixedString()}' bits read ({rpcBitsRead} [{rpcBytesRead}B] vs expected {rpcSizeBits} [{rpcSizeBytes}B]) [TitanOrbit: no disconnect]");
+                            if (!parameters.Reader.HasFailedReads)
+                            {
+                                int targetBits = rpcBitStart + rpcSizeBits;
+                                int nowBits = parameters.Reader.GetBitsRead();
+                                if (nowBits < targetBits)
+                                    SkipReaderBits(ref parameters.Reader, targetBits - nowBits);
+                                else if (nowBits > targetBits)
+                                    break; // cannot rewind — drop remainder of receive buffer, stay connected
+                                parameters.Reader.Flush();
+                                continue;
+                            }
+                            break; // failed reads — drop remainder, stay connected
                         }
 
                         parameters.Reader.Flush(); // We have to pad any unused bits,
@@ -550,11 +579,10 @@ namespace Unity.NetCode
                     rpcHash = reader.ReadULong();
                     if (!hashToIndex.TryGetValue(rpcHash, out rpcIndex))
                     {
-                        netDebug.LogError(
-                            $"[{worldName}] RpcSystem processing rpc with invalid hash ({rpcHash}) from {conn.Value.ToFixedString()}");
-                        commandBuffer.AddComponent(unfilteredChunkIndex, connectionEntity,
-                            new NetworkStreamRequestDisconnect {Reason = NetworkStreamDisconnectReason.InvalidRpc});
-                        return false;
+                        // TITAN-ORBIT: signal skip (rpcIndex < 0). Caller consumes payload; no disconnect.
+                        // Proven: invalid hash 1026046134438292813 → Main Menu on Windows dedicated join.
+                        rpcIndex = -1;
+                        return true;
                     }
                 }
                 else
@@ -563,6 +591,21 @@ namespace Unity.NetCode
                     reader.Flush();
                 }
                 return true;
+            }
+
+            /// <summary>
+            /// [TITAN-ORBIT] Advance the reader by <paramref name="bitCount"/> bits.
+            /// <see cref="DataStreamReader.ReadRawBits"/> only allows 1..32 bits per call.
+            /// </summary>
+            static void SkipReaderBits(ref DataStreamReader reader, int bitCount)
+            {
+                int remaining = bitCount;
+                while (remaining > 0)
+                {
+                    int chunk = remaining > 32 ? 32 : remaining;
+                    reader.ReadRawBits(chunk);
+                    remaining -= chunk;
+                }
             }
         }
 

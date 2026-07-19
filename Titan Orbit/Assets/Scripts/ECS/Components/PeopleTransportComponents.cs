@@ -76,20 +76,17 @@ namespace TitanOrbit.ECS
         /// <summary>Current planar velocity.</summary>
         public float3 Velocity;
 
-        /// <summary>Spawn position (for travel checks).</summary>
+        /// <summary>Spawn position (for min-travel before arrive despawn).</summary>
         public float3 SpawnPosition;
+
+        /// <summary>Baked destination from server (always valid for magnet).</summary>
+        public float3 TargetPosition;
 
         /// <summary>Cruise speed for magnet steering.</summary>
         public float CruiseSpeed;
 
-        /// <summary>Load destination ship network id.</summary>
+        /// <summary>Load destination ship network id (optional live retarget).</summary>
         public int TargetShipNetworkId;
-
-        /// <summary>Source planet id.</summary>
-        public int SourcePlanetId;
-
-        /// <summary>Unload destination planet id.</summary>
-        public int TargetPlanetId;
 
         /// <summary>1 = load, 0 = unload.</summary>
         public byte IsLoad;

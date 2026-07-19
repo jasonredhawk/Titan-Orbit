@@ -20,9 +20,9 @@ namespace TitanOrbit.Game
     /// (published in NetCode PresentationSystemGroup by <see cref="ShipVisualSyncSystem"/>), not raw sim ECS.
     /// Proxies are render shells only — no extra movement smoothing on the local owner.
     /// <para>
-    /// [TITAN-ORBIT] Join load: GhostSpawn Instantiates → baked
-    /// <see cref="MapBodyHybridVisualPending"/> → GameObject proxy (few per frame).
-    /// Loading bar = <see cref="MapLoadingProxyCount"/> / server meta <c>N</c> (GO Instantiates only).
+    /// [TITAN-ORBIT] Join load: GhostSpawn Instantiates →
+    /// <see cref="MapBodyHybridVisualPending"/> (baked or chunk-budget backfill) → GameObject proxy
+    /// (few per frame). Loading bar uses Max(proxies, Instantiates) / server meta <c>N</c>.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66000)]
@@ -243,9 +243,13 @@ namespace TitanOrbit.Game
             ToroidalDisplay.SyncMapSize(em);
             _hasToroidalReference = ToroidalDisplay.TryGetReferencePosition(out _toroidalReference);
 
-            // --- Map bodies: Pending drain ONLY (never ToEntityArray-all asteroids) ---
+            // --- Map bodies: Pending / SpawnRequest drain ---
+            // [TITAN-ORBIT] Skip structural GO Instantiates while Settling — GhostSpawn Instantiates
+            // (post-team ship spawn) + chunk drains Crash!!! (Player.log 2026-07-18 16:53).
+            // Existing proxies still get pose updates below.
             SyncExistingWorldBodyProxyTransforms(em, alive);
-            DrainPendingWorldBodyProxies(em, alive);
+            if (!settling)
+                DrainPendingWorldBodyProxies(em, alive);
 
             // --- Ships ---
             // [TITAN-ORBIT] TransformQuarantine: TransformSystemGroup stays OFF (RE-ENABLE Crash!!!).
@@ -254,17 +258,16 @@ namespace TitanOrbit.Game
                                !TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips;
             if (hybridShips)
             {
-                EnsureShipProxies(em);
+                // [TITAN-ORBIT] EnsureShipProxies uses ToEntityArray on ships — fine when idle, but
+                // skip during Settling (ship Instantiates window after Join Team).
+                if (!settling)
+                    EnsureShipProxies(em);
                 SyncShipProxyTransforms(em, alive);
             }
 
-            // --- People transports (hybrid GO) ---
-            // [TITAN-ORBIT] TransformQuarantine stays ON for the whole in-game session (RE-ENABLE Crash!!!).
-            // Ships already use hybrid proxies under quarantine — transports must too. Gating
-            // DrawPeopleTransports on !TransformQuarantine meant floats never got GameObjects.
-            // Safe: query is only PeopleTransportPresentation* (tiny), never all asteroids.
-            if (!settling)
-                DrawPeopleTransports(em, alive);
+            // --- People transports ---
+            // Owned by PeopleTransportVfxDriver (MonoBehaviour Instantiates from VFX bridge).
+            // Do not DrawPeopleTransports here — ECS presentation path was unreliable under quarantine.
 
             // --- Bullets: still quarantine-gated (broader gathers / hit buffers) ---
             // [TITAN-ORBIT] Settling OFF used to unlock ToEntityArray paths → Crash!!! (minimap + draws).
@@ -335,25 +338,31 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Instantiates GameObject proxies for entities tagged <see cref="MapBodyHybridVisualPending"/>.
-        /// Uses chunk iteration and stops at the per-frame budget — never gathers every asteroid.
-        /// Pending is baked on client map ghost prefabs so Instantiates already queues this drain.
+        /// Instantiates GameObject proxies for entities tagged with baked
+        /// <see cref="MapBodyHybridVisualPending"/> or runtime
+        /// <see cref="MapBodyHybridVisualSpawnRequest"/>.
+        /// Chunk iteration + per-frame budget — never gathers every asteroid.
         /// </summary>
         /// <returns>Number of new proxies created this call.</returns>
         int DrainPendingWorldBodyProxies(EntityManager em, HashSet<Entity> alive)
         {
-            using var query = em.CreateEntityQuery(
-                ComponentType.ReadOnly<MapBodyHybridVisualPending>(),
-                ComponentType.ReadOnly<LocalTransform>(),
-                ComponentType.Exclude<PendingSpawnPlaceholder>());
+            // --- Query: baked Pending OR runtime SpawnRequest ---
+            // [TITAN-ORBIT] SpawnRequest is the Windows-player backfill path (non-ghost).
+            var desc = new EntityQueryDesc
+            {
+                Any = new[]
+                {
+                    ComponentType.ReadOnly<MapBodyHybridVisualPending>(),
+                    ComponentType.ReadOnly<MapBodyHybridVisualSpawnRequest>(),
+                },
+                All = new[] { ComponentType.ReadOnly<LocalTransform>() },
+                None = new[] { ComponentType.ReadOnly<PendingSpawnPlaceholder>() },
+            };
+            using var query = em.CreateEntityQuery(desc);
             if (query.IsEmptyIgnoreFilter)
                 return 0;
 
             // --- Collect up to budget, then mutate ---
-            // [ECS/DOTS] Do not Add/Remove components while walking chunk native arrays
-            // (structural changes invalidate chunk entity arrays).
-            // [TITAN-ORBIT] Cap collect size so we never gather hundreds of Pending in one shot
-            // (MarkFromQuery ToEntityArray-all Instantiated asteroids = Crash!!!).
             var entityTypeHandle = em.GetEntityTypeHandle();
             using var chunks = query.ToArchetypeChunkArray(Unity.Collections.Allocator.Temp);
             var batch = new List<Entity>(MaxNewWorldBodyProxiesPerFrame);
@@ -374,15 +383,13 @@ namespace TitanOrbit.Game
                 Entity entity = batch[i];
                 if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
                 {
-                    if (em.Exists(entity) && em.HasComponent<MapBodyHybridVisualPending>(entity))
-                        em.RemoveComponent<MapBodyHybridVisualPending>(entity);
+                    ClearVisualQueueTags(em, entity);
                     continue;
                 }
 
                 if (_proxies.TryGetValue(entity, out var existing) && existing != null)
                 {
-                    if (em.HasComponent<MapBodyHybridVisualPending>(entity))
-                        em.RemoveComponent<MapBodyHybridVisualPending>(entity);
+                    ClearVisualQueueTags(em, entity);
                     if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
                         em.AddComponentData(entity, new MapBodyHybridVisualLinked());
                     alive.Add(entity);
@@ -391,10 +398,9 @@ namespace TitanOrbit.Game
 
                 var lt = em.GetComponentData<LocalTransform>(entity);
                 if (!TryCreateWorldBodyProxyForEntity(em, entity, lt, out _))
-                    continue; // Leave Pending for next frame.
+                    continue; // Leave queue tags for next frame.
 
-                if (em.HasComponent<MapBodyHybridVisualPending>(entity))
-                    em.RemoveComponent<MapBodyHybridVisualPending>(entity);
+                ClearVisualQueueTags(em, entity);
                 if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
                     em.AddComponentData(entity, new MapBodyHybridVisualLinked());
 
@@ -403,6 +409,17 @@ namespace TitanOrbit.Game
             }
 
             return created;
+        }
+
+        /// <summary>Removes baked Pending and/or runtime SpawnRequest after a proxy is handled.</summary>
+        static void ClearVisualQueueTags(EntityManager em, Entity entity)
+        {
+            if (!em.Exists(entity))
+                return;
+            if (em.HasComponent<MapBodyHybridVisualPending>(entity))
+                em.RemoveComponent<MapBodyHybridVisualPending>(entity);
+            if (em.HasComponent<MapBodyHybridVisualSpawnRequest>(entity))
+                em.RemoveComponent<MapBodyHybridVisualSpawnRequest>(entity);
         }
 
         /// <summary>

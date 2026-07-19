@@ -20,11 +20,15 @@ namespace TitanOrbit.Simulation
         const float OrbitRingHalfThicknessLocal = 0.11f * 0.7f;
         /// <summary>Gap between the outermost level band and the inner edge of the ship orbit ring.</summary>
         const float OrbitRingClearanceFromLevelBandsLocal = LevelBandGapLocal * 2f;
-        /// <summary>Radial pull strength when ship drifts off orbit ring centerline.</summary>
+        /// <summary>
+        /// Radial pull when off orbit centerline. Matches legacy Starship.orbitRadiusPullStrength.
+        /// </summary>
         const float OrbitRadiusPullStrength = 2.5f;
-        /// <summary>How quickly ship velocity aligns to tangential orbit speed.</summary>
+        /// <summary>
+        /// How quickly velocity steers toward ideal orbit. Matches legacy orbitCaptureResponsiveness.
+        /// </summary>
         const float OrbitCaptureResponsiveness = 3.5f;
-        /// <summary>Base tangential speed factor before planet size and radius modifiers.</summary>
+        /// <summary>Base tangential speed. Matches legacy Starship.orbitSpeed.</summary>
         const float BaseOrbitSpeed = 0.8f;
 
         /// <summary>
@@ -76,15 +80,16 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Tangential orbit speed at <paramref name="radius"/>. Larger planets and centerline radius
-        /// increase speed; edge of band slows slightly for readable capture feel.
+        /// Tangential orbit speed at <paramref name="radius"/>.
+        /// [LEGACY] Same curve as Starship.GetOrbitTargetSpeed: larger planets and closer (inner)
+        /// orbits move faster — not a centerline peak.
         /// </summary>
         public static float GetTargetSpeed(float planetSize, float radius, float innerWorld, float outerWorld, float centerWorld)
         {
+            _ = centerWorld;
             float clampedRadius = math.clamp(radius, innerWorld, outerWorld);
-            float halfBand = math.max(0.001f, (outerWorld - innerWorld) * 0.5f);
-            float radiusFactor = 1f - math.abs(clampedRadius - centerWorld) / halfBand;
-            radiusFactor = math.clamp(radiusFactor, 0f, 1f);
+            // 0 at outer edge of the band, 1 near the inner edge (toward the planet).
+            float radiusFactor = math.saturate(math.unlerp(outerWorld, innerWorld, clampedRadius));
 
             const float minSize = 9f;
             const float maxSize = 18f;
@@ -151,13 +156,15 @@ namespace TitanOrbit.Simulation
             return moon;
         }
 
-        /// <summary>Stronger pull near ring center and on large planets — used for align rate scaling.</summary>
+        /// <summary>
+        /// Align-rate scale. [LEGACY] Same as Starship.GetOrbitGravityFactor — stronger on large
+        /// planets and closer (inner) orbits.
+        /// </summary>
         public static float GetGravityFactor(float planetSize, float radius, float innerWorld, float outerWorld, float centerWorld)
         {
+            _ = centerWorld;
             float clampedRadius = math.clamp(radius, innerWorld, outerWorld);
-            float halfBand = math.max(0.001f, (outerWorld - innerWorld) * 0.5f);
-            float radiusFactor = 1f - math.abs(clampedRadius - centerWorld) / halfBand;
-            radiusFactor = math.clamp(radiusFactor, 0f, 1f);
+            float radiusFactor = math.saturate(math.unlerp(outerWorld, innerWorld, clampedRadius));
 
             const float minSize = 9f;
             const float maxSize = 18f;
@@ -213,7 +220,7 @@ namespace TitanOrbit.Simulation
 
             float targetSpeed = GetTargetSpeed(planetSize, dist, innerWorld, outerWorld, centerWorld);
 
-            // --- Soft radial pull toward ring centerline (keeps ships from drifting out of band) ---
+            // --- Soft radial pull toward ring centerline (legacy orbitRadiusPullStrength) ---
             float radiusError = dist - centerWorld;
             float3 radialCorrection = float3.zero;
             if (math.abs(radiusError) > 0.02f)

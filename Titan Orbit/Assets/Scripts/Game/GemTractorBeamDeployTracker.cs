@@ -36,6 +36,13 @@ namespace TitanOrbit.Game
                 return;
             _lastUpdateFrame = Time.frameCount;
 
+            // [TITAN-ORBIT] No gem ToEntityArray under join settle / Windows TransformQuarantine.
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
+            {
+                StateByPair.Clear();
+                return;
+            }
+
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
             {

@@ -159,7 +159,11 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// [NETCODE] Server → all clients: spawn a cosmetic people-transport float.
     /// Ghost Instantiates are too slow under MaxSendChunks/Instantiates caps for ~1s flights;
-    /// clients create local presentation entities from this RPC (see PeopleTransportSpawnRpcClientSystem).
+    /// clients create local VFX from this RPC (see PeopleTransportSpawnRpcClientSystem).
+    /// <para>
+    /// Wire size is 62 bytes (includes <see cref="TargetPosition"/>). Client and Linux headless
+    /// must share this layout — hash mismatch triggers RpcSystem skip (TitanOrbit patch) or disconnect.
+    /// </para>
     /// </summary>
     public struct PeopleTransportSpawnRpc : IRpcCommand
     {
@@ -168,6 +172,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>World spawn position (XZ plane).</summary>
         public float3 SpawnPosition;
+
+        /// <summary>
+        /// Baked destination at spawn time (ship hull or planet surface).
+        /// Clients fly toward this even if ship/planet lookups fail — prevents instant despawn.
+        /// </summary>
+        public float3 TargetPosition;
 
         /// <summary>Initial planar velocity.</summary>
         public float3 Velocity;

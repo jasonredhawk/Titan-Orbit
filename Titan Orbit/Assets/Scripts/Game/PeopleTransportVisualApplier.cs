@@ -1,4 +1,6 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Simulation;
 using Unity.Mathematics;
 using UnityEngine;
@@ -7,119 +9,348 @@ using UnityEngine.Rendering;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Lightweight people-transport GameObject proxies for client presentation entities.
-    /// Uses a shared unlit primitive so spheres stay visible against planet meshes and do not
-    /// hitch when many load/unload floats spawn.
+    /// [HYBRID] Instantiates people-transport flight proxies for <see cref="PeopleTransportVfxDriver"/>.
+    /// Clones <c>Resources/PeopleTransport</c> (yellow sphere + nested GenericSpaceship6), strips
+    /// physics/network components, and applies per-team GenericSpaceships1-8 materials to ship
+    /// child renderers only (root yellow sphere stays yellow).
+    /// <para>
+    /// Earlier Windows builds used primitive-only proxies after a misdiagnosed Main Menu kick;
+    /// Player.log proved that kick was RpcSystem hash mismatch, not this Instantiates path.
+    /// </para>
     /// </summary>
     public static class PeopleTransportVisualApplier
     {
-        /// <summary>Base world scale — large enough to read in orbit against planet bodies.</summary>
-        const float BasePrefabScale = 0.85f;
+        /// <summary>Authored PeopleTransport.prefab root scale (legacy projectile).</summary>
+        const float DefaultPrefabBaseUniform = 0.25f;
 
-        /// <summary>Hidden template sphere — cloned with Instantiate.</summary>
-        static GameObject s_Template;
+        /// <summary>Resources key for the flight prefab (Assets/Resources/PeopleTransport.prefab).</summary>
+        const string ResourcesPrefabPath = "PeopleTransport";
 
-        /// <summary>Shared unlit materials per <see cref="TeamId"/>.</summary>
-        static readonly Material[] s_TeamMaterials = new Material[6];
+        /// <summary>Editor / project path to the GenericSpaceships1-8 colour set.</summary>
+        const string PackMaterialFolder =
+            "Assets/UltimateSpaceshipsCreator/Materials/GenericSpaceships/GenericSpaceship1-8/";
+
+        /// <summary>Cached default prefab from Resources (or Editor AssetDatabase).</summary>
+        static GameObject s_DefaultPrefab;
+
+        /// <summary>Inactive stripped runtime template cloned per spawn.</summary>
+        static GameObject s_RuntimeTemplate;
+
+        /// <summary>True when the template is the primitive fallback (prefab missing).</summary>
+        static bool s_RuntimeTemplateIsLightweight;
+
+        /// <summary>Cached Resources catalog of GenericSpaceships1-8 team materials.</summary>
+        static PeopleTransportTeamMaterials s_TeamMaterials;
+
+        /// <summary>Direct material cache indexed by <see cref="TeamId"/> byte.</summary>
+        static readonly Material[] s_DirectTeamMaterials = new Material[6];
+
+        /// <summary>Shared unlit yellow for the outer sphere (never team-tinted).</summary>
+        static Material s_YellowSphereMaterial;
+
+        /// <summary>One-shot debug log flag for visual path.</summary>
+        static bool s_LoggedVisualPath;
 
         /// <summary>
-        /// Legacy loader kept for EcsWorldVisualizer serialized field fallback — CreateVisual
-        /// ignores the heavy prefab and uses the lightweight template.
+        /// Loads the designer prefab from Resources (player + Editor). Editor can also resolve
+        /// via AssetDatabase if Resources is empty during iteration.
         /// </summary>
         public static GameObject LoadDefaultPrefab()
         {
+            if (s_DefaultPrefab != null)
+                return s_DefaultPrefab;
+
+            // [UNITY] Resources.Load — included in player builds when under Assets/Resources/.
+            s_DefaultPrefab = Resources.Load<GameObject>(ResourcesPrefabPath);
+
 #if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/PeopleTransport.prefab");
-#else
-            return Resources.Load<GameObject>("PeopleTransport");
+            if (s_DefaultPrefab == null)
+            {
+                s_DefaultPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(
+                    "Assets/Prefabs/PeopleTransport.prefab");
+            }
 #endif
+            return s_DefaultPrefab;
         }
 
         /// <summary>
-        /// Creates a bright unlit sphere proxy tinted by team. Prefab argument is ignored.
+        /// Instantiates a flight proxy from the PeopleTransport prefab (or lightweight fallback).
         /// </summary>
         public static GameObject CreateVisual(GameObject prefab, float peopleAmount, TeamId team)
         {
-            _ = prefab;
-            EnsureTemplate();
+            EnsureRuntimeTemplate(prefab);
 
-            var instance = Object.Instantiate(s_Template);
+            GameObject instance;
+            Vector3 baseVisualScale;
+
+            if (s_RuntimeTemplate != null)
+            {
+                instance = Object.Instantiate(s_RuntimeTemplate);
+                baseVisualScale = s_RuntimeTemplate.transform.localScale;
+                if (baseVisualScale.sqrMagnitude < 0.0001f)
+                    baseVisualScale = Vector3.one * DefaultPrefabBaseUniform;
+            }
+            else
+            {
+                instance = BuildLightweightRoot();
+                baseVisualScale = Vector3.one * DefaultPrefabBaseUniform;
+            }
+
             instance.name = "PeopleTransportProxy";
             instance.SetActive(true);
-            ApplyTeamTint(instance, team);
-            instance.transform.localScale = Vector3.one * ComputeWorldScale(peopleAmount);
+
+            float multiplier = PeopleTransportMath.GetVisualScaleMultiplier(math.max(0.001f, peopleAmount));
+            instance.transform.localScale = baseVisualScale * multiplier;
+
+            int shipRenderersTinted = ApplyTeamMaterialToShipChild(instance, team);
+
+            // #region agent log
+            if (!s_LoggedVisualPath)
+            {
+                s_LoggedVisualPath = true;
+                AgentDebugSessionLog.Write("post-fix", "G", "PeopleTransportVisualApplier.CreateVisual",
+                    "transport_visual_path",
+                    "{\"lightweight\":" + (s_RuntimeTemplateIsLightweight ? "true" : "false") +
+                    ",\"team\":" + (int)team +
+                    ",\"shipRenderersTinted\":" + shipRenderersTinted +
+                    ",\"childCount\":" + instance.transform.childCount + "}");
+            }
+            // #endregion
+
             return instance;
         }
 
-        /// <summary>World uniform scale from carried population amount.</summary>
+        /// <summary>Uniform world scale estimate for visualizer helpers.</summary>
         public static float ComputeWorldScale(float peopleAmount)
         {
-            return BasePrefabScale * PeopleTransportMath.GetVisualScaleMultiplier(math.max(1f, peopleAmount));
-        }
-
-        /// <summary>Builds the hidden template once (primitive sphere, no collider).</summary>
-        static void EnsureTemplate()
-        {
-            if (s_Template != null)
-                return;
-
-            s_Template = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            s_Template.name = "PeopleTransportProxyTemplate";
-            s_Template.hideFlags = HideFlags.HideAndDontSave;
-            var col = s_Template.GetComponent<Collider>();
-            if (col != null)
-                Object.Destroy(col);
-            s_Template.SetActive(false);
-            Object.DontDestroyOnLoad(s_Template);
-        }
-
-        /// <summary>Assigns a shared bright unlit team material.</summary>
-        static void ApplyTeamTint(GameObject root, TeamId team)
-        {
-            var renderer = root.GetComponent<Renderer>();
-            if (renderer == null)
-                return;
-
-            renderer.sharedMaterial = GetSharedMaterial(team);
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-            renderer.receiveShadows = false;
-        }
-
-        /// <summary>Lazy shared unlit materials indexed by team byte.</summary>
-        static Material GetSharedMaterial(TeamId team)
-        {
-            int index = (int)team;
-            if (index < 0 || index >= s_TeamMaterials.Length)
-                index = 0;
-
-            if (s_TeamMaterials[index] == null)
-                s_TeamMaterials[index] = CreateUnlitMaterial(team.ToColor());
-
-            return s_TeamMaterials[index];
+            return DefaultPrefabBaseUniform *
+                   PeopleTransportMath.GetVisualScaleMultiplier(math.max(0.001f, peopleAmount));
         }
 
         /// <summary>
-        /// Unlit / bright material so transports stay visible against lit planet surfaces.
-        /// URP Lit often reads as nearly black from the top-down camera without a strong fill light.
+        /// Builds the inactive template once from Resources/PeopleTransport (strip physics).
+        /// Falls back to primitives only if the prefab is missing from the build.
         /// </summary>
-        static Material CreateUnlitMaterial(Color color)
+        static void EnsureRuntimeTemplate(GameObject prefab)
         {
-            // Boost saturation/value so team tint pops in space.
-            Color.RGBToHSV(color, out float h, out float s, out float v);
-            color = Color.HSVToRGB(h, math.clamp(s * 1.15f, 0.55f, 1f), math.clamp(math.max(v, 0.75f), 0.75f, 1f));
-            color.a = 1f;
+            if (s_RuntimeTemplate != null)
+                return;
+
+            if (prefab == null)
+                prefab = LoadDefaultPrefab();
+
+            if (prefab != null)
+            {
+                s_RuntimeTemplate = Object.Instantiate(prefab);
+                s_RuntimeTemplate.name = "PeopleTransportProxyTemplate";
+                s_RuntimeTemplate.SetActive(false);
+                StripPhysicsForProxyImmediate(s_RuntimeTemplate);
+                Object.DontDestroyOnLoad(s_RuntimeTemplate);
+                s_RuntimeTemplateIsLightweight = false;
+                return;
+            }
+
+            // --- Fallback only — prefab missing from Resources ---
+            s_RuntimeTemplate = BuildLightweightRoot();
+            s_RuntimeTemplate.name = "PeopleTransportProxyTemplate_Lightweight";
+            s_RuntimeTemplate.SetActive(false);
+            Object.DontDestroyOnLoad(s_RuntimeTemplate);
+            s_RuntimeTemplateIsLightweight = true;
+        }
+
+        /// <summary>
+        /// Yellow outer sphere + smaller child sphere (stands in for GenericSpaceship6).
+        /// Used only when Resources/PeopleTransport is missing.
+        /// </summary>
+        static GameObject BuildLightweightRoot()
+        {
+            var root = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            root.name = "PeopleTransportLightweight";
+            Object.DestroyImmediate(root.GetComponent<Collider>());
+
+            var rootRenderer = root.GetComponent<MeshRenderer>();
+            if (rootRenderer != null)
+            {
+                rootRenderer.sharedMaterial = GetYellowSphereMaterial();
+                rootRenderer.shadowCastingMode = ShadowCastingMode.Off;
+                rootRenderer.receiveShadows = false;
+            }
+
+            root.transform.localScale = Vector3.one * DefaultPrefabBaseUniform;
+
+            var ship = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            ship.name = "PeopleTransportShip";
+            Object.DestroyImmediate(ship.GetComponent<Collider>());
+            ship.transform.SetParent(root.transform, false);
+            ship.transform.localPosition = Vector3.zero;
+            ship.transform.localScale = Vector3.one * 0.55f;
+
+            var shipRenderer = ship.GetComponent<MeshRenderer>();
+            if (shipRenderer != null)
+            {
+                shipRenderer.shadowCastingMode = ShadowCastingMode.Off;
+                shipRenderer.receiveShadows = false;
+            }
+
+            return root;
+        }
+
+        /// <summary>Immediate strip — deferred Destroy left Rigidbodies on clones for a frame.</summary>
+        static void StripPhysicsForProxyImmediate(GameObject root)
+        {
+            foreach (var col in root.GetComponentsInChildren<Collider>(true))
+                Object.DestroyImmediate(col);
+            foreach (var rb in root.GetComponentsInChildren<Rigidbody>(true))
+                Object.DestroyImmediate(rb);
+
+            foreach (var component in root.GetComponentsInChildren<Component>(true))
+            {
+                if (component == null)
+                    continue;
+                string typeName = component.GetType().Name;
+                if (typeName.Contains("Network") || typeName.Contains("Netcode") ||
+                    typeName.Contains("PeopleTransportProjectile"))
+                    Object.DestroyImmediate(component);
+            }
+        }
+
+        /// <summary>
+        /// Team material on child renderers only; root yellow sphere stays yellow.
+        /// Returns how many ship renderers were tinted.
+        /// </summary>
+        static int ApplyTeamMaterialToShipChild(GameObject root, TeamId team)
+        {
+            Material material = GetTeamShipMaterial(team);
+            if (material == null)
+                return 0;
+
+            var rootRenderer = root.GetComponent<Renderer>();
+            var renderers = root.GetComponentsInChildren<Renderer>(true);
+            int tinted = 0;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null || renderer == rootRenderer)
+                    continue;
+                if (!(renderer is MeshRenderer) && !(renderer is SkinnedMeshRenderer))
+                    continue;
+
+                renderer.sharedMaterial = material;
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+                tinted++;
+            }
+
+            return tinted;
+        }
+
+        static Material GetYellowSphereMaterial()
+        {
+            if (s_YellowSphereMaterial != null)
+                return s_YellowSphereMaterial;
 
             var shader = Shader.Find("Universal Render Pipeline/Unlit")
                          ?? Shader.Find("Unlit/Color")
-                         ?? Shader.Find("Universal Render Pipeline/Lit")
+                         ?? Shader.Find("Standard");
+            s_YellowSphereMaterial = new Material(shader);
+            var yellow = new Color(1f, 0.85f, 0.15f, 1f);
+            if (s_YellowSphereMaterial.HasProperty("_BaseColor"))
+                s_YellowSphereMaterial.SetColor("_BaseColor", yellow);
+            if (s_YellowSphereMaterial.HasProperty("_Color"))
+                s_YellowSphereMaterial.SetColor("_Color", yellow);
+            s_YellowSphereMaterial.color = yellow;
+            return s_YellowSphereMaterial;
+        }
+
+        static Material GetTeamShipMaterial(TeamId team)
+        {
+            EnsureTeamMaterialsCatalog();
+
+            Material fromCatalog = s_TeamMaterials != null
+                ? s_TeamMaterials.GetMaterialForTeam(team)
+                : null;
+            if (fromCatalog != null)
+                return fromCatalog;
+
+            return LoadPackMaterialDirect(team) ?? GetFallbackTeamUnlit(team);
+        }
+
+        static void EnsureTeamMaterialsCatalog()
+        {
+            if (s_TeamMaterials != null)
+                return;
+
+            s_TeamMaterials = Resources.Load<PeopleTransportTeamMaterials>(
+                PeopleTransportTeamMaterials.ResourcesPath);
+
+#if UNITY_EDITOR
+            if (s_TeamMaterials == null)
+            {
+                s_TeamMaterials = UnityEditor.AssetDatabase.LoadAssetAtPath<PeopleTransportTeamMaterials>(
+                    "Assets/Resources/PeopleTransportTeamMaterials.asset");
+            }
+#endif
+        }
+
+        static Material LoadPackMaterialDirect(TeamId team)
+        {
+            int index = (int)team;
+            if (index < 0 || index >= s_DirectTeamMaterials.Length)
+                index = 0;
+
+            if (s_DirectTeamMaterials[index] != null)
+                return s_DirectTeamMaterials[index];
+
+            string fileName = ResolvePackMaterialFileName(team);
+            Material mat = null;
+
+#if UNITY_EDITOR
+            mat = UnityEditor.AssetDatabase.LoadAssetAtPath<Material>(PackMaterialFolder + fileName);
+#endif
+            if (mat == null)
+            {
+                string resourceName = "PeopleTransportShip/" + fileName.Replace(".mat", string.Empty);
+                mat = Resources.Load<Material>(resourceName);
+            }
+
+            s_DirectTeamMaterials[index] = mat;
+            return mat;
+        }
+
+        /// <summary>Unlit team colour when pack mats are missing from the player build.</summary>
+        static Material GetFallbackTeamUnlit(TeamId team)
+        {
+            int index = (int)team;
+            if (index < 0 || index >= s_DirectTeamMaterials.Length)
+                index = 0;
+            if (s_DirectTeamMaterials[index] != null)
+                return s_DirectTeamMaterials[index];
+
+            var shader = Shader.Find("Universal Render Pipeline/Unlit")
+                         ?? Shader.Find("Unlit/Color")
                          ?? Shader.Find("Standard");
             var mat = new Material(shader);
+            Color color = team.ToColor();
             if (mat.HasProperty("_BaseColor"))
                 mat.SetColor("_BaseColor", color);
             if (mat.HasProperty("_Color"))
                 mat.SetColor("_Color", color);
             mat.color = color;
+            s_DirectTeamMaterials[index] = mat;
             return mat;
+        }
+
+        static string ResolvePackMaterialFileName(TeamId team)
+        {
+            switch (team)
+            {
+                case TeamId.TeamA: return "GenericSpaceships1-8_Red.mat";
+                case TeamId.TeamB: return "GenericSpaceships1-8_Blue.mat";
+                case TeamId.TeamC: return "GenericSpaceships1-8_Green.mat";
+                case TeamId.TeamD: return "GenericSpaceships1-8_GreenYellow.mat";
+                case TeamId.TeamE: return "GenericSpaceships1-8_Violet.mat";
+                default: return "GenericSpaceships1-8_Grey.mat";
+            }
         }
     }
 }

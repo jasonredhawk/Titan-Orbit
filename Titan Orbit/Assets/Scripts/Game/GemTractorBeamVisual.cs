@@ -98,6 +98,10 @@ namespace TitanOrbit.Game
             if (gameplayCamerasOnly && !IsGameplayCamera(cam))
                 return;
 
+            // [TITAN-ORBIT] Windows TransformQuarantine: gem ToEntityArray Crash!!! (orbit + people load).
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
+                return;
+
             // --- Visualization ECS world (client presentation) ---
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)

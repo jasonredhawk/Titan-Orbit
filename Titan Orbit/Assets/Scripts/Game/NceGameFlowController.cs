@@ -3,6 +3,7 @@ using System.Collections;
 using System.Threading.Tasks;
 using TitanOrbit.Data;
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using TitanOrbit.NetCode;
 using TitanOrbit.Services;
@@ -83,6 +84,8 @@ namespace TitanOrbit.Game
         string _statusMessage = "For Docker/dedicated server: click Join game. For local dev: Local host or Local play.";
         bool _mainMenuButtonsBuilt;
         bool _initialized;
+        /// <summary>[TITAN-ORBIT] Debug: was NetworkInGame last RefreshUi (detect boot-to-menu).</summary>
+        bool _debugWasConnected;
 
         void Awake()
         {
@@ -938,6 +941,16 @@ namespace TitanOrbit.Game
 
             bool connectingDedicated = TitanOrbitSessionManager.IsDedicatedJoinConnecting;
             bool connected = IsInGameFlow();
+            // #region agent log
+            if (_debugWasConnected && !connected && !connectingDedicated)
+            {
+                AgentDebugSessionLog.Write("pre-fix", "A", "NceGameFlowController.RefreshUi",
+                    "lost_connection_show_main_menu",
+                    "{\"isDedicated\":" + (TitanOrbitSessionManager.IsDedicatedOnlineClient ? "true" : "false") +
+                    ",\"sessionInGame\":" + (TitanOrbitSessionManager.Instance != null && TitanOrbitSessionManager.Instance.IsInGame ? "true" : "false") + "}");
+            }
+            _debugWasConnected = connected;
+            // #endregion
             if (TitanOrbitSessionManager.IsDedicatedOnlineClient && connected && _dedicatedConnectedAt < 0f)
                 _dedicatedConnectedAt = Time.time;
             if (!connected && !connectingDedicated)
@@ -953,17 +966,17 @@ namespace TitanOrbit.Game
                 ClientTeamFlowState.TryNotifyRejoinableShip(hasRejoinableShip);
 
             int activeTeamsForUi = 0;
-            // [TITAN-ORBIT] Team count from replicated home planets / TeamStateSingleton — required before team picker.
-            bool knowsTeamCount = connected && mapLoaded &&
+            // [TITAN-ORBIT] Team count from MapSessionMeta / homes — required before team picker UI.
+            bool knowsTeamCount = connected &&
                                   EcsGameBridge.TryGetActiveTeamCount(out activeTeamsForUi) &&
                                   activeTeamsForUi > 0;
 
-            // Full map sync only while the rejoin prompt is actually pending (returning player resume).
-            bool requireFullMapLoad = ClientTeamFlowState.IsRejoinChoicePending;
-            // [NETCODE] Dedicated Docker/cloud joins: keep loading until team count replicates — avoids empty galaxy with no picker.
-            bool mapReady = connected && (requireFullMapLoad
-                ? EcsGameBridge.IsMapLoadingComplete()
-                : mapLoaded && (!TitanOrbitSessionManager.IsDedicatedOnlineClient || knowsTeamCount));
+            // --- Map ready vs team ready (do not conflate) ---
+            // [TITAN-ORBIT] Old dedicated path: mapReady required knowsTeamCount, but knowsTeamCount
+            // also required mapLoaded — and showTeamCountWait required mapReady && !knowsTeamCount
+            // (impossible). Windows clients sat on "Queuing map visuals... N/N" forever even at 100%.
+            // Loading dismisses when the map heuristic completes; "Preparing teams..." covers meta lag.
+            bool mapReady = connected && mapLoaded;
             bool hasShip = connected && EcsGameBridge.HasLocalPlayerShip();
             bool teamConfirmed = ClientTeamFlowState.TeamChoiceConfirmed;
             bool teamPickInFlight = ClientTeamFlowState.HasRequestedTeamPick && !teamConfirmed;

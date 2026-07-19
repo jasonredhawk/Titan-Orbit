@@ -81,6 +81,12 @@ namespace TitanOrbit.Game
             // --- Frame stamp for LateUpdate readers ---
             GhostPresentationTransformCache.BeginPublish(UnityEngine.Time.frameCount);
 
+            // --- Skip ship WithEntityAccess during GhostSpawn Instantiates ---
+            // [TITAN-ORBIT] Same EntityTypeHandle NRE class as MapBodyHybrid / ClientCommandTarget
+            // when Settling is on (or briefly after team ship Instantiates).
+            if (ClientJoinSettleCache.Settling)
+                return;
+
             Entity localShip = Entity.Null;
             // [TITAN-ORBIT] TryGetLocalShipEntity returns false while team flow suppresses control.
             EcsGameBridge.TryGetLocalShipEntityOnWorld(World, out localShip);
