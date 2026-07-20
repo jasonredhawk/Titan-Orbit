@@ -6,6 +6,37 @@ This mirrors the idea of `tools/gcs/deploy_webgl_gcs.bat`: one main script for d
 
 **Build the binary in Unity:** **TitanOrbit → Build → Headless Server (Linux — Google Cloud)** (requires **Linux Dedicated Server** Hub module).
 
+### Fast path: Unity stays open (recommended day-to-day)
+
+Closing Unity and using batchmode is **slower** (full project reopen). When the Editor is already open:
+
+**TitanOrbit → Build → Headless Server (Linux — Google Cloud) + Deploy**
+
+That builds in the open Editor, copies output to `BuildOutput/Server/deploy-staging/TitanOrbitLinux1`, then launches the existing **`deploy_server_gce.bat freeDisk useGcs`** in a console window. Unity stays open.
+
+Build-only (no upload): **TitanOrbit → Build → Headless Server (Linux — Google Cloud)**.
+
+### One-shot from PowerShell (Editor must be closed)
+
+Use **`build_and_deploy_server_gce.bat`** only when Unity is **closed** (CI, or you are not in the Editor). Batchmode cannot open a project the GUI already holds.
+
+From `tools\gce`:
+
+```bat
+build_and_deploy_server_gce.bat
+```
+
+That runs Unity headless (`BuildHeadlessServerLinuxBatchMode`) → `BuildOutput/Server/TitanOrbitLinux1` → then **`deploy_server_gce.bat`** defaults (**`freeDisk useGcs`**).
+
+| Command | Meaning |
+|---------|---------|
+| `build_and_deploy_server_gce.bat` | Build + deploy (`freeDisk useGcs`) |
+| `build_and_deploy_server_gce.bat freeDisk useGcs useIap` | Build + deploy with IAP / VM reset |
+| `build_and_deploy_server_gce.bat buildOnly` | Unity build only |
+| `build_and_deploy_server_gce.bat deployOnly freeDisk useGcs` | Skip build; deploy existing folder |
+
+Optional: set **`TITANORBIT_UNITY_EDITOR`** to a full `Unity.exe` path if Hub auto-detect fails. Build logs land in **`BuildOutput/Logs/`**.
+
 **Stable Windows pipeline (recommended):** Install **OpenSSH Client** (Windows optional feature). **`upload_linux_build_to_gce.bat`** and **`deploy_server_gce.bat`** call **`upload_linux_build_to_gce_openssh.ps1`**, which uses **`ssh.exe` / `scp.exe` + `gcloud compute start-iap-tunnel`** — **not** `gcloud compute ssh` / `scp` (those use PuTTY **plink** and are flaky). **`restart_titanorbit_server_on_gce.bat`** uses **`restart_server_remote.ps1`**, which prefers **OpenSSH** (direct to external IP when present, then IAP tunnel + ssh.exe; plink only as an explicit last resort). If Windows SSH is still unusable, use the **GCS + Cloud Shell** path below (no PC SSH).
 
 ## Recommended: dedicated server without Windows SSH (GCS + Cloud Shell)

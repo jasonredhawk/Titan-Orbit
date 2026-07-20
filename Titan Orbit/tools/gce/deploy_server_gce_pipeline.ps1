@@ -24,6 +24,51 @@ $ErrorActionPreference = "Stop"
 $gceDir = $PSScriptRoot
 $repoRoot = (Resolve-Path (Join-Path $gceDir "..\..")).Path
 
+# Invoke a .bat via one cmd /c string so paths with spaces (project folder "Titan Orbit")
+# survive PowerShell -> cmd. The old pattern (& cmd.exe @('/c','call "bat"','"path with space"'))
+# fails immediately with: The filename, directory name, or volume label syntax is incorrect.
+function Invoke-GceBat {
+    param(
+        [Parameter(Mandatory = $true)][string] $BatPath,
+        [string[]] $BatArgs = @()
+    )
+    if (-not (Test-Path -LiteralPath $BatPath)) {
+        throw "Missing bat: $BatPath"
+    }
+    $parts = New-Object System.Collections.Generic.List[string]
+    $parts.Add('"' + $BatPath + '"') | Out-Null
+    foreach ($a in $BatArgs) {
+        if ($null -eq $a) { continue }
+        $s = [string]$a
+        if ($s.Length -eq 0) { continue }
+        $parts.Add('"' + ($s.Replace('"', '')) + '"') | Out-Null
+    }
+    # One string after /c. Do NOT use Start-Process -ArgumentList @('/c', $cmdLine):
+    # that re-splits on spaces inside "Titan Orbit" and fails before the bat runs.
+    $cmdLine = ($parts -join ' ')
+    Write-Host "cmd /c $cmdLine"
+
+    # Redirect bat stdout/stderr to a temp log inside cmd, then print the log.
+    # Why not `cmd | ForEach-Object { Write-Host }`?
+    #   1) Native stdout would become this function's return value (array of log lines + exit),
+    #      so callers falsely treat a successful upload as failure.
+    #   2) A pipeline can overwrite $LASTEXITCODE with the last pipeline command's code.
+    $logFile = Join-Path $env:TEMP ("titanorbit-gce-bat-" + [guid]::NewGuid().ToString("n") + ".log")
+    try {
+        cmd.exe /c "$cmdLine > `"$logFile`" 2>&1"
+        $code = $LASTEXITCODE
+        if (Test-Path -LiteralPath $logFile) {
+            Get-Content -LiteralPath $logFile | ForEach-Object { Write-Host $_ }
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $logFile -Force -ErrorAction SilentlyContinue
+    }
+
+    if ($null -eq $code) { return 1 }
+    return [int]$code
+}
+
 $flags = @{
     freeDisk   = $false
     useGcs     = $false
@@ -102,18 +147,10 @@ $uploadLabel = if ($flags.freeDisk) { "[2]" } else { "[1]" }
 if ($flags.useGcs) {
     Write-Host "--- $uploadLabel Upload tarball to GCS ---"
     $gcsBat = Join-Path $gceDir "upload_linux_build_to_gcs.bat"
-    $gcsCmdArgs = @()
-    foreach ($t in $withoutIap) {
-        $gcsCmdArgs += $t
-    }
-    $invokeArgs = @("/c", "call `"$gcsBat`"")
-    foreach ($g in $gcsCmdArgs) {
-        $invokeArgs += "`"$g`""
-    }
-    & cmd.exe @invokeArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "upload_linux_build_to_gcs.bat failed (exit $LASTEXITCODE)."
-        exit $LASTEXITCODE
+    $gcsExit = Invoke-GceBat -BatPath $gcsBat -BatArgs @($withoutIap)
+    if ($gcsExit -ne 0) {
+        Write-Error "upload_linux_build_to_gcs.bat failed (exit $gcsExit)."
+        exit $gcsExit
     }
     Write-Host ""
 
@@ -151,14 +188,10 @@ if ($flags.useGcs) {
 else {
     Write-Host "--- $uploadLabel Upload build folder (OpenSSH) ---"
     $upBat = Join-Path $gceDir "upload_linux_build_to_gce.bat"
-    $upParts = @("/c", "call `"$upBat`"")
-    foreach ($p in $positional) {
-        $upParts += "`"$p`""
-    }
-    & cmd.exe @upParts
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "upload_linux_build_to_gce.bat failed (exit $LASTEXITCODE)."
-        exit $LASTEXITCODE
+    $upExit = Invoke-GceBat -BatPath $upBat -BatArgs @($positional)
+    if ($upExit -ne 0) {
+        Write-Error "upload_linux_build_to_gce.bat failed (exit $upExit)."
+        exit $upExit
     }
     Write-Host ""
 }
@@ -170,19 +203,18 @@ $resetBat = Join-Path $gceDir "reset_gce_vm.bat"
 $restartBat = Join-Path $gceDir "restart_titanorbit_server_on_gce.bat"
 
 if ($resetVmAfter) {
+    $resetArgs = @()
     if ($withoutIap.Count -ge 2 -and (Test-Path -LiteralPath $withoutIap[0] -PathType Container)) {
-        & cmd.exe /c "call `"$resetBat`" $instanceDefault `"$($withoutIap[1])`""
+        $resetArgs = @($instanceDefault, $withoutIap[1])
     }
-    else {
-        & cmd.exe /c "call `"$resetBat`""
-    }
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "reset_gce_vm.bat failed (exit $LASTEXITCODE)."
-        exit $LASTEXITCODE
+    $resetExit = Invoke-GceBat -BatPath $resetBat -BatArgs $resetArgs
+    if ($resetExit -ne 0) {
+        Write-Error "reset_gce_vm.bat failed (exit $resetExit)."
+        exit $resetExit
     }
 }
 else {
-    # restart_titanorbit_server_on_gce.bat expects [project-id] [useIap|plainFirst...] — never pass GCS bucket as an arg.
+    # restart_titanorbit_server_on_gce.bat expects [project-id] [useIap|plainFirst...] - never pass GCS bucket as an arg.
     $restartProject = $null
     if ($withoutIap.Count -ge 1 -and (Test-Path -LiteralPath $withoutIap[0] -PathType Container)) {
         if ($withoutIap.Count -ge 2) { $restartProject = $withoutIap[1] }
@@ -190,12 +222,14 @@ else {
     elseif ($withoutIap.Count -ge 1) {
         $restartProject = $withoutIap[0]
     }
-    $rparts = @("/c", "call `"$restartBat`"")
-    if ($null -ne $restartProject -and $restartProject -ne "") { $rparts += "`"$restartProject`"" }
-    & cmd.exe @rparts
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "restart_titanorbit_server_on_gce.bat failed (exit $LASTEXITCODE)."
-        exit $LASTEXITCODE
+    $restartArgs = @()
+    if ($null -ne $restartProject -and $restartProject -ne "") {
+        $restartArgs = @($restartProject)
+    }
+    $restartExit = Invoke-GceBat -BatPath $restartBat -BatArgs $restartArgs
+    if ($restartExit -ne 0) {
+        Write-Error "restart_titanorbit_server_on_gce.bat failed (exit $restartExit)."
+        exit $restartExit
     }
 }
 

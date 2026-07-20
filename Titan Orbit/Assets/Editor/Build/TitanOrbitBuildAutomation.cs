@@ -1,9 +1,11 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 
 namespace TitanOrbit.Editor.Build
 {
@@ -11,8 +13,9 @@ namespace TitanOrbit.Editor.Build
     /// [EDITOR] Unity menu items for Titan Orbit production builds — WebGL (Cloudflare), Windows
     /// client, Windows headless server, Linux GCE server, Linux Edgegap server, and Android APK.
     /// Centralizes output paths under BuildOutput/ (GCE) and Builds/EdgegapServer (Edgegap plugin).
-    /// Also exposes <see cref="BuildHeadlessServerLinuxBatchMode"/> for headless CLI builds used by
-    /// <c>tools/gce/build_and_deploy_server_gce.bat</c> (build + upload in one PowerShell step).
+    /// Day-to-day GCE publish with Unity open: <see cref="BuildHeadlessServerLinuxAndDeploy"/>.
+    /// Closed-Editor / CI: <see cref="BuildHeadlessServerLinuxBatchMode"/> via
+    /// <c>tools/gce/build_and_deploy_server_gce.bat</c>.
     /// Not compiled into player or dedicated-server binaries.
     /// </summary>
     public static class TitanOrbitBuildAutomation
@@ -23,6 +26,11 @@ namespace TitanOrbit.Editor.Build
         private const string ServerWindowsBuildFolder = "BuildOutput/Server/headless-windows";
         /// <summary>Folder name must stay <c>TitanOrbitLinux1</c> so <c>tools/gce/*.bat</c> defaults and VM <c>REMOTE_DIR</c> match after upload.</summary>
         private const string ServerLinuxBuildFolder = "BuildOutput/Server/TitanOrbitLinux1";
+        /// <summary>
+        /// Staging copy used when deploying while the Editor stays open.
+        /// Leaf name stays <c>TitanOrbitLinux1</c> so GCE extract paths / systemd layout match production.
+        /// </summary>
+        private const string ServerLinuxDeployStagingFolder = "BuildOutput/Server/deploy-staging/TitanOrbitLinux1";
         /// <summary>Edgegap plugin default build folder; binary name <c>ServerBuild</c> matches their Dockerfile.</summary>
         private const string ServerEdgegapBuildFolder = "Builds/EdgegapServer";
         private const string AndroidApkFolder = "BuildOutput/Android";
@@ -108,16 +116,40 @@ namespace TitanOrbit.Editor.Build
         }
 
         /// <summary>Linux dedicated server for GCE (output: <c>TitanOrbitServer.x86_64</c> under <see cref="ServerLinuxBuildFolder"/>). Requires Linux Dedicated Server module in Unity Hub.</summary>
-        [MenuItem("TitanOrbit/Build/Headless Server (Linux — Google Cloud)")]
+        [MenuItem("TitanOrbit/Build/Headless Server (Linux — Google Cloud)", false, 50)]
         public static void BuildHeadlessServerLinux()
         {
-            // --- Interactive Editor menu ---
+            // --- Interactive Editor menu (build only) ---
             // [TITAN-ORBIT] Menu path keeps the Editor open after build so you can inspect Console output.
             BuildLinuxDedicatedServer(
                 GetLinuxServerOutputBasePath(),
                 "GCE",
                 "tools\\gce\\deploy_server_gce.bat",
-                exitEditorWhenDone: false);
+                exitEditorWhenDone: false,
+                deployToGceAfterSuccess: false);
+        }
+
+        /// <summary>
+        /// Fast day-to-day path: build the Linux GCE server in the already-open Editor, then launch
+        /// <c>deploy_server_gce.bat freeDisk useGcs</c> against a staging copy of the output.
+        /// Prefer this over <c>build_and_deploy_server_gce.bat</c> when Unity is already open —
+        /// batchmode must close/reopen the project and is much slower.
+        /// </summary>
+        [MenuItem("TitanOrbit/Build/Headless Server (Linux — Google Cloud) + Deploy", false, 51)]
+        public static void BuildHeadlessServerLinuxAndDeploy()
+        {
+            // --- Interactive Editor menu (build + deploy, Unity stays open) ---
+            // [TITAN-ORBIT] Deploy tars a staging copy so upload does not race Editor file locks on
+            // the live BuildOutput folder (truncated IL2CPP metadata was a real failure mode).
+            Debug.Log(
+                "[TitanOrbitBuild] Linux GCE build + deploy starting (Editor stays open). " +
+                "After BuildPlayer succeeds, a console window runs deploy_server_gce.bat freeDisk useGcs.");
+            BuildLinuxDedicatedServer(
+                GetLinuxServerOutputBasePath(),
+                "GCE",
+                "tools\\gce\\deploy_server_gce.bat",
+                exitEditorWhenDone: false,
+                deployToGceAfterSuccess: true);
         }
 
         /// <summary>
@@ -131,31 +163,34 @@ namespace TitanOrbit.Editor.Build
         /// [UNITY] Do not pass <c>-quit</c> on the command line for this method: if the Editor must
         /// switch to Linux Dedicated Server first, <c>-quit</c> would exit before the deferred
         /// <see cref="BuildPipeline.BuildPlayer"/> runs after domain reload.
+        /// Prefer <see cref="BuildHeadlessServerLinuxAndDeploy"/> when the Editor is already open.
         /// </remarks>
         public static void BuildHeadlessServerLinuxBatchMode()
         {
-            // --- Batchmode build (PowerShell / CI) ---
+            // --- Batchmode build (PowerShell / CI when Editor is closed) ---
             // [TITAN-ORBIT] Same output folder as the Google Cloud menu item so deploy scripts find it.
             Debug.Log("[TitanOrbitBuild] Batchmode Linux GCE server build starting (exit Editor when done).");
             BuildLinuxDedicatedServer(
                 GetLinuxServerOutputBasePath(),
                 "GCE",
                 "tools\\gce\\build_and_deploy_server_gce.bat",
-                exitEditorWhenDone: true);
+                exitEditorWhenDone: true,
+                deployToGceAfterSuccess: false);
         }
 
         /// <summary>
         /// Linux dedicated server for Edgegap Docker (output: <c>ServerBuild.x86_64</c> under <see cref="ServerEdgegapBuildFolder"/>).
         /// Use with Tools → Edgegap Hosting or <c>tools/edgegap/Dockerfile</c>.
         /// </summary>
-        [MenuItem("TitanOrbit/Build/Headless Server (Linux — Edgegap)")]
+        [MenuItem("TitanOrbit/Build/Headless Server (Linux — Edgegap)", false, 60)]
         public static void BuildHeadlessServerLinuxEdgegap()
         {
             BuildLinuxDedicatedServer(
                 GetEdgegapServerOutputBasePath(),
                 "Edgegap",
                 "tools\\edgegap\\README.md",
-                exitEditorWhenDone: false);
+                exitEditorWhenDone: false,
+                deployToGceAfterSuccess: false);
         }
 
         /// <summary>
@@ -179,11 +214,16 @@ namespace TitanOrbit.Editor.Build
         /// When true (batchmode CLI), call <see cref="EditorApplication.Exit"/> with 0/1 after the
         /// build finishes — including after a deferred build that resumes post platform-switch.
         /// </param>
+        /// <param name="deployToGceAfterSuccess">
+        /// When true (Editor + Deploy menu), copy the build to staging and launch
+        /// <c>deploy_server_gce.bat freeDisk useGcs</c> without closing Unity.
+        /// </param>
         static void BuildLinuxDedicatedServer(
             string outputBasePath,
             string label,
             string nextStepDocPath,
-            bool exitEditorWhenDone)
+            bool exitEditorWhenDone,
+            bool deployToGceAfterSuccess)
         {
             // --- Guard: Linux module installed in this Editor ---
             // [UNITY] Hub module "Linux Dedicated Server Build Support" / Linux IL2CPP must be present.
@@ -206,12 +246,15 @@ namespace TitanOrbit.Editor.Build
                     outputBasePath,
                     label,
                     nextStepDocPath,
-                    exitEditorWhenDone);
+                    exitEditorWhenDone,
+                    deployToGceAfterSuccess);
                 return;
             }
 
             // --- Already on Linux Dedicated Server: build now ---
             bool ok = ExecuteLinuxDedicatedServerBuild(outputBasePath, label, nextStepDocPath);
+            if (ok && deployToGceAfterSuccess)
+                StartGceDeployFromEditorBuildFolder(Path.GetDirectoryName(outputBasePath) ?? outputBasePath);
             ExitEditorIfRequested(exitEditorWhenDone, exitCode: ok ? 0 : 1);
         }
 
@@ -238,11 +281,15 @@ namespace TitanOrbit.Editor.Build
         /// <param name="exitEditorWhenDone">
         /// Persisted into the pending JSON so the post-reload resume can still exit batchmode Unity.
         /// </param>
+        /// <param name="deployToGceAfterSuccess">
+        /// Persisted so + Deploy still launches <c>deploy_server_gce.bat</c> after a platform-switch resume.
+        /// </param>
         static void QueueLinuxServerBuildAfterPlatformSwitch(
             string outputBasePath,
             string label,
             string nextStepDocPath,
-            bool exitEditorWhenDone)
+            bool exitEditorWhenDone,
+            bool deployToGceAfterSuccess)
         {
             // --- Persist request across domain reload ---
             // [STANDARD] SwitchActiveBuildTarget reloads assemblies; static locals die. Temp JSON survives.
@@ -251,7 +298,8 @@ namespace TitanOrbit.Editor.Build
                 outputBasePath = outputBasePath,
                 label = label,
                 nextStepDocPath = nextStepDocPath,
-                exitEditorWhenDone = exitEditorWhenDone
+                exitEditorWhenDone = exitEditorWhenDone,
+                deployToGceAfterSuccess = deployToGceAfterSuccess
             };
 
             try
@@ -330,6 +378,7 @@ namespace TitanOrbit.Editor.Build
 
             // Clear before BuildPlayer so a failed build cannot loop on every subsequent domain reload.
             bool exitEditorWhenDone = pending != null && pending.exitEditorWhenDone;
+            bool deployToGceAfterSuccess = pending != null && pending.deployToGceAfterSuccess;
             ClearPendingLinuxServerBuild();
 
             if (pending == null || string.IsNullOrEmpty(pending.outputBasePath))
@@ -352,6 +401,8 @@ namespace TitanOrbit.Editor.Build
 
             Debug.Log($"[TitanOrbitBuild] Resuming queued Linux server build ({pending.label}) after platform switch.");
             bool ok = ExecuteLinuxDedicatedServerBuild(pending.outputBasePath, pending.label, pending.nextStepDocPath);
+            if (ok && deployToGceAfterSuccess)
+                StartGceDeployFromEditorBuildFolder(Path.GetDirectoryName(pending.outputBasePath) ?? pending.outputBasePath);
             ExitEditorIfRequested(exitEditorWhenDone, exitCode: ok ? 0 : 1);
         }
 
@@ -422,6 +473,112 @@ namespace TitanOrbit.Editor.Build
 
             Debug.Log($"[TitanOrbitBuild] Batchmode build finished — EditorApplication.Exit({exitCode}).");
             EditorApplication.Exit(exitCode);
+        }
+
+        /// <summary>
+        /// After a successful Editor Linux GCE build, copy the output to a staging folder and start
+        /// the existing <c>deploy_server_gce.bat</c> pipeline in a visible console window.
+        /// Unity stays open — this is the fast day-to-day publish path.
+        /// </summary>
+        /// <param name="buildFolder">
+        /// Live build folder (usually <c>BuildOutput/Server/TitanOrbitLinux1</c>). We do not tar this
+        /// path directly while the Editor is open; we copy first.
+        /// </param>
+        static void StartGceDeployFromEditorBuildFolder(string buildFolder)
+        {
+            // --- Resolve paths ---
+            // [STANDARD] Application.dataPath is …/Assets; parent is the Unity project root.
+            string projectRoot = Path.GetDirectoryName(Application.dataPath) ?? Directory.GetCurrentDirectory();
+            string stagingFolder = Path.GetFullPath(Path.Combine(projectRoot, ServerLinuxDeployStagingFolder));
+            string gceDir = Path.GetFullPath(Path.Combine(projectRoot, "tools", "gce"));
+            string deployBat = Path.Combine(gceDir, "deploy_server_gce.bat");
+
+            if (!Directory.Exists(buildFolder))
+            {
+                Debug.LogError("[TitanOrbitBuild] Cannot deploy: build folder missing: " + buildFolder);
+                return;
+            }
+
+            if (!File.Exists(deployBat))
+            {
+                Debug.LogError("[TitanOrbitBuild] Cannot deploy: missing " + deployBat);
+                return;
+            }
+
+            // --- Staging copy (Editor stays open safely) ---
+            // [TITAN-ORBIT] tar/upload of the live BuildOutput tree while Unity holds the project has
+            // produced 0-byte global-metadata.dat on the VM. Staging isolates deploy from Editor locks.
+            try
+            {
+                Debug.Log($"[TitanOrbitBuild] Copying build to deploy staging:\n  from: {buildFolder}\n  to:   {stagingFolder}");
+                CopyDirectoryReplace(buildFolder, stagingFolder);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError(
+                    "[TitanOrbitBuild] Staging copy failed — deploy aborted. " +
+                    "If files are locked, retry the + Deploy menu after a few seconds.\n" + ex);
+                return;
+            }
+
+            // --- Launch existing deploy bat in cmd so the window stays open on failure ---
+            // [STANDARD] Project path contains a space ("Titan Orbit"). Launch via cmd /c with quoted
+            // paths. Trailing pause keeps the console readable if upload/restart fails.
+            // cmd.exe quoting: cmd /c ""bat" args..."  (leading doubled quote is intentional on Windows).
+            string cmdArgs =
+                "/c \"\"" + deployBat + "\" freeDisk useGcs \"" + stagingFolder +
+                "\" & echo. & echo ===== deploy finished (exit %ERRORLEVEL%) ===== & pause\"";
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = cmdArgs,
+                WorkingDirectory = gceDir,
+                UseShellExecute = true,
+                CreateNoWindow = false
+            };
+
+            try
+            {
+                Process.Start(psi);
+                Debug.Log(
+                    "[TitanOrbitBuild] Started deploy_server_gce.bat freeDisk useGcs (staging copy). " +
+                    "Watch the new console window for upload progress. Unity can stay open. " +
+                    "Window pauses at the end so errors are visible.");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("[TitanOrbitBuild] Failed to start deploy_server_gce.bat:\n" + ex);
+            }
+        }
+
+        /// <summary>
+        /// Deletes <paramref name="destination"/> if it exists, then recursively copies
+        /// <paramref name="source"/> into it. Used for deploy staging only.
+        /// </summary>
+        /// <param name="source">Live build folder to copy from.</param>
+        /// <param name="destination">Staging folder path (created fresh).</param>
+        static void CopyDirectoryReplace(string source, string destination)
+        {
+            // --- Wipe previous staging ---
+            if (Directory.Exists(destination))
+                Directory.Delete(destination, recursive: true);
+
+            Directory.CreateDirectory(destination);
+
+            // --- Copy files ---
+            foreach (string filePath in Directory.GetFiles(source))
+            {
+                string fileName = Path.GetFileName(filePath);
+                File.Copy(filePath, Path.Combine(destination, fileName), overwrite: true);
+            }
+
+            // --- Copy subfolders ---
+            foreach (string dirPath in Directory.GetDirectories(source))
+            {
+                string dirName = Path.GetFileName(dirPath);
+                CopyDirectoryReplace(dirPath, Path.Combine(destination, dirName));
+            }
         }
 
         /// <summary>Absolute path to the Temp JSON that queues a Linux server build across domain reload.</summary>
@@ -568,6 +725,12 @@ namespace TitanOrbit.Editor.Build
             /// (batchmode PowerShell pipeline). Menu builds leave this false.
             /// </summary>
             public bool exitEditorWhenDone;
+
+            /// <summary>
+            /// When true, resume path starts <c>deploy_server_gce.bat</c> after a successful build
+            /// (Editor + Deploy menu). Batchmode leaves this false (the .bat chains deploy itself).
+            /// </summary>
+            public bool deployToGceAfterSuccess;
         }
     }
 }
