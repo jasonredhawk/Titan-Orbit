@@ -13,6 +13,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
 using Unity.Networking.Transport;
+using Unity.Scenes;
 using Unity.Networking.Transport.Relay;
 using Unity.Services.Authentication;
 using Unity.Services.Lobbies;
@@ -246,7 +247,11 @@ namespace TitanOrbit.NetCode
             if (server == null || !server.IsCreated)
             {
                 // [NETCODE] Dedicated Join disposed ServerWorld — Local Host needs it again.
+                // WARNING: late CreateServerWorld does NOT auto-stream scene SubScenes. Prefer
+                // TitanOrbitBootstrap creating ServerWorld at Play enter. If we must recreate,
+                // map gen waits for GamePrefabs; BootLanHost waits for them before Listen.
                 ClientServerBootstrap.CreateServerWorld("ServerWorld");
+                TryLoadGameplaySubScenesIntoWorld(ClientServerBootstrap.ServerWorld);
                 s_EditorLocalServerSuspendedForOnline = false;
                 Debug.Log("[TitanOrbitSessionManager] Recreated local ServerWorld for Local Host play.");
                 return;
@@ -260,6 +265,43 @@ namespace TitanOrbit.NetCode
             }
 
             s_EditorLocalServerSuspendedForOnline = false;
+#endif
+        }
+
+        /// <summary>
+        /// Streams each scene SubScene into a late-created world (AutoLoad only hits worlds that
+        /// existed when the parent scene loaded).
+        /// </summary>
+        static void TryLoadGameplaySubScenesIntoWorld(World world)
+        {
+#if UNITY_EDITOR
+            if (world == null || !world.IsCreated)
+                return;
+
+            var subScenes = UnityEngine.Object.FindObjectsByType<SubScene>(FindObjectsSortMode.None);
+            if (subScenes == null || subScenes.Length == 0)
+            {
+                Debug.LogWarning("[TitanOrbitSessionManager] No SubScene in loaded scenes — ServerWorld may lack GamePrefabs.");
+                return;
+            }
+
+            for (int i = 0; i < subScenes.Length; i++)
+            {
+                var sub = subScenes[i];
+                if (sub == null || !sub.SceneGUID.IsValid)
+                    continue;
+
+                SceneSystem.LoadSceneAsync(
+                    world.Unmanaged,
+                    sub.SceneGUID,
+                    new SceneSystem.LoadParameters
+                    {
+                        Flags = SceneLoadFlags.BlockOnImport | SceneLoadFlags.BlockOnStreamIn,
+                        AutoLoad = true,
+                    });
+                Debug.Log("[TitanOrbitSessionManager] Loading SubScene '" + sub.gameObject.name +
+                          "' into " + world.Name + " for Local Host map/prefabs.");
+            }
 #endif
         }
 
@@ -619,13 +661,20 @@ namespace TitanOrbit.NetCode
             {
             yield return PrepareWorldsForLocalLanConnect(resetTeamFlow: true, resetNetworkDrivers: true);
 
-            LastStatusMessage = "Waiting for NetCode worlds...";
-            float readyDeadline = Time.realtimeSinceStartup + 15f;
+            LastStatusMessage = "Waiting for NetCode worlds + map prefabs...";
+            float readyDeadline = Time.realtimeSinceStartup + 30f;
             while (Time.realtimeSinceStartup < readyDeadline)
             {
                 var clientWorld = ClientServerBootstrap.ClientWorld;
-                if (clientWorld != null && clientWorld.IsCreated &&
-                    clientWorld.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver)).CalculateEntityCount() > 0)
+                var serverWorld = ClientServerBootstrap.ServerWorld;
+                // [NETCODE] Drivers + GamePrefabs (SubScene) before Listen — else map gen never starts.
+                bool clientReady = clientWorld != null && clientWorld.IsCreated &&
+                    clientWorld.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver)).CalculateEntityCount() > 0;
+                bool serverReady = serverWorld != null && serverWorld.IsCreated &&
+                    serverWorld.EntityManager.CreateEntityQuery(typeof(NetworkStreamDriver)).CalculateEntityCount() > 0;
+                bool prefabsReady = serverWorld != null && serverWorld.IsCreated &&
+                    serverWorld.EntityManager.CreateEntityQuery(typeof(GamePrefabs)).CalculateEntityCount() > 0;
+                if (clientReady && serverReady && prefabsReady)
                     break;
                 yield return null;
             }
@@ -641,8 +690,16 @@ namespace TitanOrbit.NetCode
             var server = ClientServerBootstrap.ServerWorld;
             if (server == null || !server.IsCreated)
             {
-                LastStatusMessage = "ServerWorld missing. Run Titan Orbit > Configure Multiplayer For Local Play.";
-                Debug.LogError("[TitanOrbitSessionManager] BootLanHost: ServerWorld missing — PlayMode Type must be Client+Server.");
+                LastStatusMessage = "ServerWorld failed to create for Local Host.";
+                Debug.LogError("[TitanOrbitSessionManager] BootLanHost: ServerWorld missing after ResumeEditorLocalServerForLocalPlay.");
+                yield break;
+            }
+
+            if (server.EntityManager.CreateEntityQuery(typeof(GamePrefabs)).CalculateEntityCount() == 0)
+            {
+                LastStatusMessage = "Server GamePrefabs missing (SubScene not loaded into ServerWorld).";
+                Debug.LogError("[TitanOrbitSessionManager] BootLanHost: GamePrefabs missing on ServerWorld — map cannot generate. " +
+                               "Stop Play, ensure GameplaySubScene AutoLoad, then Play again (bootstrap creates ServerWorld at enter).");
                 yield break;
             }
 

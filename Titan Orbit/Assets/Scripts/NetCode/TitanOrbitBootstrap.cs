@@ -58,12 +58,15 @@ namespace TitanOrbit.NetCode
                 return true;
             }
 
-            // [EDITOR] ClientWorld only by default.
-            // basics40: Play Mode "Client & Server" left an idle ServerWorld in the player loop until
-            // dedicated Join disposed it — join storms (cmdAge hundreds) and ~22–26 FPS local chop.
-            // Play Mode "Client" felt better. Local Host recreates ServerWorld in SessionManager.
+            // [EDITOR] ClientWorld + ServerWorld so GameplaySubScene streams into BOTH at Play enter.
+            // Creating ServerWorld only on Local Host click leaves that world without SubScenes /
+            // GamePrefabs — MapGenerationSystem never runs and the loading bar soft-crawls at ~12%.
+            // SessionManager.Start suspends Server SimulationSystemGroup until Local Host/play so
+            // map gen does not finish on the menu. Dedicated Join still Dispose()s ServerWorld
+            // (basics38/40 dual-world Relay cost).
+            CreateServerWorld("ServerWorld");
             CreateClientWorld("ClientWorld");
-            Debug.Log("[TitanOrbitBootstrap] Editor play: ClientWorld only (ServerWorld on Local Host). AutoConnectPort=" + AutoConnectPort + ".");
+            Debug.Log("[TitanOrbitBootstrap] Editor play: ClientWorld+ServerWorld (server sim suspended until Local Host). AutoConnectPort=" + AutoConnectPort + ".");
             return true;
 #endif
 

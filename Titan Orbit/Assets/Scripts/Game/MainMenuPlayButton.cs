@@ -49,15 +49,7 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            if (!TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() &&
-                TitanOrbitMultiplayerConfig.ShowLocalPlayOptions &&
-                !HasPlayableServerWorld())
-            {
-                ReportMenuError(
-                    "ServerWorld missing for local play. Run Titan Orbit > Configure Multiplayer " +
-                    "For Local Play (Client+Server).");
-                return;
-            }
+            // [TITAN-ORBIT] Editor starts ClientWorld-only; StartLocalPlay recreates ServerWorld.
 
             if (TitanOrbitSessionManager.Instance == null)
             {

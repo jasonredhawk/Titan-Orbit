@@ -27,11 +27,6 @@ namespace TitanOrbit.Game
     public static class BulletMuzzlePresentation
     {
         /// <summary>
-        /// Lead along ship velocity for LateUpdate Instantiates delay (~2 ticks at 60 Hz).
-        /// </summary>
-        public const float MuzzleLeadSeconds = 2f / 60f;
-
-        /// <summary>
         /// If presentation lags predicted sim by more than this × one-tick travel, use predicted pose.
         /// </summary>
         const float PresentationLagTicks = 1.25f;
@@ -50,8 +45,9 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Resolves world muzzle origin/forward for one mount index on the local ship.
-        /// <paramref name="shipVel"/> is planar hull velocity (kinematics or pose-delta), sampled
-        /// from the hull before muzzle lead so Instantiates delay does not inflate speed.
+        /// <paramref name="shipVel"/> is planar hull velocity (kinematics or pose-delta).
+        /// No origin lead — Starblast lock is pose + <c>shipVel</c> in velocity only; inventing a
+        /// future muzzle lets the first tracer visually pierce rocks the server has not hit.
         /// </summary>
         public static bool TryResolveMuzzle(
             EntityManager em,
@@ -79,12 +75,10 @@ namespace TitanOrbit.Game
             if (!ShipWeaponPose.TryResolve(shipTransform, mount, out fireOrigin, out fireForward))
                 return false;
 
-            // Sample velocity on the hull pose (not the lead-adjusted muzzle).
+            // Velocity from hull pose; origin stays on the drawn/predicted barrels (no lead).
+            // Keep fireOrigin.y from the weapon mount — do not slam to 0 / hull Y.
             shipVel = GetLocalShipVelocity(em, shipEntity, shipTransform.Position);
-            float lead = math.max(MuzzleLeadSeconds, Time.deltaTime);
-            fireOrigin += shipVel * lead;
 
-            fireOrigin.y = 0f;
             fireForward.y = 0f;
             if (math.lengthsq(fireForward) < 0.0001f)
                 fireForward = new float3(0f, 0f, 1f);

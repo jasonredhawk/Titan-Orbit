@@ -112,6 +112,15 @@ namespace TitanOrbit.Game
             }
 
             // Shared helper: kinematics or pose-delta — never leave shipVel=0 while hull moves.
+            // --- Cap pending anticipations (MaxLive=1) ---
+            // [TITAN-ORBIT] Replicated CurrentEnergy lags the server spend, so at full RoF this
+            // bridge over-enqueues Sequence=0 tracers that never get a HitRpc and fly through
+            // rocks. When energy drops the visual RoF slows and tunneling stops (player clue).
+            // Cap=1 keeps at most one unadopted cosmetic; server fire is unchanged.
+            // Do not advance _fireCooldown here — retry next frame when adopt frees the slot.
+            if (!BulletVfxBridge.CanEnqueueAnticipation())
+                return;
+
             float3 bulletVel = BulletMuzzlePresentation.BuildBulletWorldVelocity(
                 fireForward, weaponCfg.BulletSpeed, shipVel);
 
@@ -126,7 +135,7 @@ namespace TitanOrbit.Game
                     ? weaponCfg.ReferenceBulletSpeed
                     : BulletVisualScale.DefaultReferenceBulletSpeed);
 
-            BulletVfxBridge.TryEnqueueSpawn(new BulletVfxBridge.SpawnRequest
+            if (!BulletVfxBridge.TryEnqueueSpawn(new BulletVfxBridge.SpawnRequest
             {
                 Sequence = 0,
                 SpawnPosition = fireOrigin,
@@ -140,7 +149,8 @@ namespace TitanOrbit.Game
                 ScaleMultiplier = visualScale,
                 IsAnticipation = true,
                 IsDisplaySpace = displaySpace,
-            });
+            }))
+                return;
 
             _fireCooldown = 1f / math.max(0.1f, weaponCfg.FireRate);
         }

@@ -11,11 +11,15 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative bullet simulation and ship firing. Runs after
-    /// <see cref="ShipPhysicsDriveSystem"/> so muzzle positions use current transforms. Advances
-    /// <see cref="BulletElement"/> buffer with toroidal segment tests against planets, moons,
-    /// ships, asteroids, and people transports. Broadcasts <see cref="BulletSpawnRpc"/> /
-    /// <see cref="BulletHitRpc"/> for client VFX via <see cref="BulletNetNotify"/>.
-    /// Damage and death are server-only. Not Burst-compiled — managed RPC/bridge notify.
+    /// <see cref="ShipPhysicsDriveSystem"/> so muzzle positions use current transforms.
+    /// <para>
+    /// Starblast-style hardening vs asteroid tunneling:
+    /// (1) same-frame spawn collide (point + first <c>vel*dt</c> segment) so the first shot
+    /// does not idle one tick at the muzzle; (2) substep advance when travel is large vs
+    /// <see cref="GemEconomyConstants.MinAsteroidHitRadius"/>; (3) collide before lifetime cull.
+    /// </para>
+    /// Broadcasts <see cref="BulletSpawnRpc"/> / <see cref="BulletHitRpc"/> via
+    /// <see cref="BulletNetNotify"/>. Damage is server-only. Not Burst-compiled — managed notify.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ShipPhysicsDriveSystem))]
@@ -31,6 +35,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Advance live bullets (hits + expiry), then spawn from Fire input on armed ships.
+        /// New spawns run same-frame collide before entering the live buffer.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -69,155 +74,40 @@ namespace TitanOrbit.ECS
                 mapH = math.max(100f, mapState.MapHeight);
             }
 
-            // --- Advance existing bullets (reverse loop for swap-back removal) ---
+            // --- Phase A: advance existing bullets (substepped sweeps) ---
             for (int i = bullets.Length - 1; i >= 0; i--)
             {
                 var b = bullets[i];
-                float3 prevPos = b.Position;
-                float3 newPos = prevPos + b.Velocity * dt;
+                float3 startPos = b.Position;
+                float3 endPos = startPos + b.Velocity * dt;
                 // [TITAN-ORBIT] Euclidean step on unbounded flight (not a wrapped-torus path sum).
-                float stepDistance = math.distance(prevPos, newPos);
+                float stepDistance = math.distance(startPos, endPos);
 
-                b.Age += dt;
-                b.Traveled += stepDistance;
+                // Collide before lifetime/range cull so the final segment still scores hits.
+                bool wouldExpire = (b.Age + dt) >= b.Lifetime ||
+                                   (b.Traveled + stepDistance) >= b.MaxDistance;
 
-                // Lifetime / range expiry — no hit VFX, just despawn.
-                if (b.Age >= b.Lifetime || b.Traveled >= b.MaxDistance)
-                {
-                    bullets.RemoveAtSwapBack(i);
-                    continue;
-                }
-
+                // --- Substep when |vel|*dt is large vs smallest asteroid ---
+                // [TITAN-ORBIT] Starblast continuous feel: split long steps so grazing rocks cannot
+                // fall between discrete samples while flying at shipVel + BulletSpeed.
+                int substeps = BulletCollision.ComputeAdvanceSubstepCount(stepDistance);
+                float3 cursor = startPos;
                 bool hit = false;
-                float3 hitPoint = newPos;
+                float3 hitPoint = endPos;
 
-                // [TITAN-ORBIT] Planet hull and gem-moon shield hits (friendly moons skip damage).
-                foreach (var (planetState, planetTransform, moonState) in SystemAPI
-                             .Query<RefRO<PlanetState>, RefRO<LocalTransform>, RefRW<PlanetGemMoonState>>()
-                             .WithAll<PlanetTag>())
+                for (int s = 0; s < substeps; s++)
                 {
-                    float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
-                    float3 planetPos = planetTransform.ValueRO.Position;
-
-                    if (BulletCollision.SegmentHitsPlanetToroidal(
-                            prevPos, newPos, planetPos, planetSize, mapW, mapH, out hitPoint))
+                    float t1 = (s + 1) / (float)substeps;
+                    float3 next = math.lerp(startPos, endPos, t1);
+                    if (TryResolveBulletHit(
+                            ref state, in b, cursor, next, mapW, mapH, moonElapsed, serverElapsed,
+                            out hitPoint))
                     {
                         hit = true;
                         break;
                     }
 
-                    var attackerTeam = (TeamId)b.OwnerTeam;
-                    if (PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.ValueRO.Ownership, attackerTeam))
-                        continue;
-
-                    float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
-                        planetSize,
-                        planetState.ValueRO.IsHomePlanet,
-                        moonState.ValueRO.CurrentShield);
-
-                    if (BulletCollision.SegmentHitsMoonNear(
-                            prevPos, newPos, planetPos, planetSize,
-                            planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, moonElapsed,
-                            planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out hitPoint))
-                    {
-                        PlanetGemMoonCombatLogic.ApplyBulletDamage(
-                            ref moonState.ValueRW,
-                            b.Damage,
-                            attackerTeam,
-                            planetState.ValueRO.Ownership,
-                            serverElapsed);
-                        hit = true;
-                        break;
-                    }
-                }
-
-                if (!hit)
-                {
-                    // Enemy ships only — friendly fire disabled.
-                    foreach (var (shipState, shipTransform, shipEntity) in SystemAPI
-                                 .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
-                                 .WithAll<ShipTag>()
-                                 .WithEntityAccess())
-                    {
-                        if (shipState.ValueRO.IsDead) continue;
-                        if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam) continue;
-
-                        float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
-                        if (!BulletCollision.SegmentHitsSphereToroidal(
-                                prevPos, newPos, shipTransform.ValueRO.Position, shipRadius, mapW, mapH, out hitPoint))
-                            continue;
-
-                        var writable = SystemAPI.GetComponentRW<ShipState>(shipEntity);
-                        writable.ValueRW.Health -= b.Damage;
-                        if (writable.ValueRW.Health <= 0f)
-                            writable.ValueRW.IsDead = true;
-                        if (state.EntityManager.HasComponent<ShipVitalsState>(shipEntity))
-                        {
-                            var vitals = state.EntityManager.GetComponentData<ShipVitalsState>(shipEntity);
-                            vitals.LastHullDamageTime = SystemAPI.Time.ElapsedTime;
-                            state.EntityManager.SetComponentData(shipEntity, vitals);
-                        }
-                        hit = true;
-                        break;
-                    }
-                }
-
-                if (!hit)
-                {
-                    foreach (var (asteroidState, asteroidTransform) in SystemAPI
-                                 .Query<RefRW<AsteroidState>, RefRO<LocalTransform>>()
-                                 .WithAll<AsteroidTag>())
-                    {
-                        if (asteroidState.ValueRO.IsDestroyed)
-                            continue;
-
-                        float hitRadius = BulletCollision.AsteroidHitRadius(asteroidTransform.ValueRO.Scale);
-                        if (!BulletCollision.SegmentHitsSphereToroidal(
-                                prevPos, newPos, asteroidTransform.ValueRO.Position, hitRadius, mapW, mapH, out hitPoint))
-                            continue;
-
-                        var asteroid = asteroidState.ValueRO;
-                        asteroid.Health -= b.Damage;
-                        if (asteroid.Health <= 0f)
-                        {
-                            asteroid.Health = 0f;
-                            asteroid.IsDestroyed = true;
-                        }
-
-                        asteroidState.ValueRW = asteroid;
-                        hit = true;
-                        break;
-                    }
-                }
-
-                if (!hit)
-                {
-                    foreach (var (transport, transform, transportEntity) in SystemAPI
-                                 .Query<RefRW<PeopleTransportState>, RefRO<LocalTransform>>()
-                                 .WithAll<PeopleTransportTag>()
-                                 .WithEntityAccess())
-                    {
-                        ref var t = ref transport.ValueRW;
-                        if (t.Amount <= 0f || t.Health <= 0f)
-                            continue;
-
-                        var sourceTeam = (TeamId)t.Team;
-                        var ownerTeam = (TeamId)b.OwnerTeam;
-                        if (sourceTeam == TeamId.None || sourceTeam == ownerTeam)
-                            continue;
-
-                        float hitRadius = PeopleTransportMath.GetBulletHitRadius(transform.ValueRO.Scale);
-                        if (!BulletCollision.SegmentHitsSphereToroidal(
-                                prevPos, newPos, transform.ValueRO.Position, hitRadius, mapW, mapH, out hitPoint))
-                            continue;
-
-                        t.Health -= b.Damage;
-                        if (t.Health <= 0f)
-                            PeopleTransportSimulationSystem.DestroyFromBulletDamage(ref state, transportEntity, t);
-
-                        hit = true;
-                        break;
-                    }
+                    cursor = next;
                 }
 
                 if (hit)
@@ -228,13 +118,20 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                // --- Keep unbounded position (ship does not wrap; bullets match that space) ---
-                // Collision still uses toroidal segment tests via ShortestOffset / unwrap helpers.
-                b.Position = newPos;
+                // --- No hit this tick: apply age/travel, then expire or keep flying ---
+                b.Age += dt;
+                b.Traveled += stepDistance;
+                if (wouldExpire)
+                {
+                    bullets.RemoveAtSwapBack(i);
+                    continue;
+                }
+
+                b.Position = endPos;
                 bullets[i] = b;
             }
 
-            // --- Ship firing (spawn new bullets from Fire input) ---
+            // --- Phase B: ship firing + same-frame spawn collide ---
             foreach (var (input, weaponCfg, weaponState, shipState, kinematics, transform, ghostOwner, entity) in SystemAPI
                          .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipWeaponState>, RefRW<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
                          .WithAll<ShipTag>()
@@ -293,8 +190,8 @@ namespace TitanOrbit.ECS
                         fireForward = new float3(0f, 0f, 1f);
                     else
                         fireForward = math.normalize(fireForward);
+                    // Keep mount world Y (same as ShipWeaponPose.TryResolve).
                     fireOrigin = transform.ValueRO.Position + math.rotate(transform.ValueRO.Rotation, mount.LocalPosition);
-                    fireOrigin.y = transform.ValueRO.Position.y;
                 }
 
                 // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
@@ -330,7 +227,7 @@ namespace TitanOrbit.ECS
                     BankIndex = bankIndex,
                     ScaleMultiplier = visualScale,
                 };
-                bullets.Add(spawn);
+
                 spawnEvents.Add(new BulletSpawnEventElement
                 {
                     SpawnPosition = spawn.Position,
@@ -347,6 +244,32 @@ namespace TitanOrbit.ECS
                 // [NETCODE] Cosmetic path for all clients (host bridge + broadcast RPC).
                 BulletNetNotify.SendSpawn(ref ecb, spawn);
 
+                // --- Same-frame spawn collide (first-bullet tunnel fix) ---
+                // [TITAN-ORBIT] Without this, Phase B appends and the bullet idles until next tick —
+                // the first open-fire shot into a nose-touch rock often tunnels. Starblast: collide
+                // as soon as the projectile exists (point + first vel*dt segment).
+                float3 firstEnd = fireOrigin + bulletVel * dt;
+                bool pointHit = TryResolveBulletHit(
+                    ref state, in spawn, fireOrigin, fireOrigin, mapW, mapH, moonElapsed, serverElapsed,
+                    out float3 spawnHitPoint);
+                bool spawnHit = pointHit;
+                if (!spawnHit)
+                {
+                    spawnHit = TryResolveBulletHit(
+                        ref state, in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
+                        out spawnHitPoint);
+                }
+
+                if (spawnHit)
+                {
+                    BulletNetNotify.SendHit(ref ecb, spawn, spawnHitPoint);
+                    // Do not add to the live buffer — bullet resolved this frame.
+                }
+                else
+                {
+                    bullets.Add(spawn);
+                }
+
                 shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - energyCost);
 
                 weaponState.ValueRW.FireCooldown = 1f / fireRate;
@@ -355,6 +278,160 @@ namespace TitanOrbit.ECS
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
+        }
+
+        /// <summary>
+        /// Swept segment hit test + damage for planets, moons, ships, asteroids, transports.
+        /// Shared by advance substeps and same-frame spawn collide.
+        /// </summary>
+        /// <param name="state">Server system state (vitals write / transport destroy).</param>
+        /// <param name="b">Bullet dealing damage (OwnerTeam / Damage).</param>
+        /// <param name="from">Segment start (unbounded XZ).</param>
+        /// <param name="to">Segment end (unbounded XZ). Equal to <paramref name="from"/> = point test.</param>
+        /// <param name="mapW">Toroidal map width.</param>
+        /// <param name="mapH">Toroidal map height.</param>
+        /// <param name="moonElapsed">ServerTick seconds for gem-moon orbit phase.</param>
+        /// <param name="serverElapsed">World elapsed for shield hit timestamps.</param>
+        /// <param name="hitPoint">First contact along the segment when true.</param>
+        /// <returns>True when this segment scored a hit and applied damage.</returns>
+        bool TryResolveBulletHit(
+            ref SystemState state,
+            in BulletElement b,
+            float3 from,
+            float3 to,
+            float mapW,
+            float mapH,
+            double moonElapsed,
+            double serverElapsed,
+            out float3 hitPoint)
+        {
+            hitPoint = to;
+
+            // --- Planets + gem-moon shields ---
+            foreach (var (planetState, planetTransform, moonState) in SystemAPI
+                         .Query<RefRO<PlanetState>, RefRO<LocalTransform>, RefRW<PlanetGemMoonState>>()
+                         .WithAll<PlanetTag>())
+            {
+                float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
+                float3 planetPos = planetTransform.ValueRO.Position;
+
+                if (BulletCollision.SegmentHitsPlanetToroidal(
+                        from, to, planetPos, planetSize, mapW, mapH, out hitPoint))
+                    return true;
+
+                var attackerTeam = (TeamId)b.OwnerTeam;
+                if (PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.ValueRO.Ownership, attackerTeam))
+                    continue;
+
+                float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                    planetSize,
+                    planetState.ValueRO.IsHomePlanet,
+                    moonState.ValueRO.CurrentShield);
+
+                if (BulletCollision.SegmentHitsMoonNear(
+                        from, to, planetPos, planetSize,
+                        planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, moonElapsed,
+                        planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out hitPoint))
+                {
+                    PlanetGemMoonCombatLogic.ApplyBulletDamage(
+                        ref moonState.ValueRW,
+                        b.Damage,
+                        attackerTeam,
+                        planetState.ValueRO.Ownership,
+                        serverElapsed);
+                    return true;
+                }
+            }
+
+            // --- Enemy ships only (pass through self + friendly team) ---
+            // [TITAN-ORBIT] Same-team skip covers allies; OwnerNetworkId covers own hull even if
+            // Team is briefly unset during Join Team / respawn (muzzle sits inside own radius).
+            foreach (var (shipState, shipTransform, shipEntity) in SystemAPI
+                         .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
+                         .WithAll<ShipTag>()
+                         .WithEntityAccess())
+            {
+                if (shipState.ValueRO.IsDead)
+                    continue;
+                if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam)
+                    continue;
+                if (b.OwnerNetworkId > 0 &&
+                    state.EntityManager.HasComponent<GhostOwner>(shipEntity) &&
+                    state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId == b.OwnerNetworkId)
+                    continue;
+
+                float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
+                if (!BulletCollision.SegmentHitsSphereToroidal(
+                        from, to, shipTransform.ValueRO.Position, shipRadius, mapW, mapH, out hitPoint))
+                    continue;
+
+                var writable = SystemAPI.GetComponentRW<ShipState>(shipEntity);
+                writable.ValueRW.Health -= b.Damage;
+                if (writable.ValueRW.Health <= 0f)
+                    writable.ValueRW.IsDead = true;
+                if (state.EntityManager.HasComponent<ShipVitalsState>(shipEntity))
+                {
+                    var vitals = state.EntityManager.GetComponentData<ShipVitalsState>(shipEntity);
+                    vitals.LastHullDamageTime = SystemAPI.Time.ElapsedTime;
+                    state.EntityManager.SetComponentData(shipEntity, vitals);
+                }
+
+                return true;
+            }
+
+            // --- Asteroids ---
+            foreach (var (asteroidState, asteroidTransform) in SystemAPI
+                         .Query<RefRW<AsteroidState>, RefRO<LocalTransform>>()
+                         .WithAll<AsteroidTag>())
+            {
+                if (asteroidState.ValueRO.IsDestroyed)
+                    continue;
+
+                float hitRadius = BulletCollision.AsteroidHitRadius(asteroidTransform.ValueRO.Scale);
+                if (!BulletCollision.SegmentHitsSphereToroidal(
+                        from, to, asteroidTransform.ValueRO.Position, hitRadius, mapW, mapH, out hitPoint))
+                    continue;
+
+                var asteroid = asteroidState.ValueRO;
+                asteroid.Health -= b.Damage;
+                if (asteroid.Health <= 0f)
+                {
+                    asteroid.Health = 0f;
+                    asteroid.IsDestroyed = true;
+                }
+
+                asteroidState.ValueRW = asteroid;
+                return true;
+            }
+
+            // --- Enemy people transports ---
+            foreach (var (transport, transform, transportEntity) in SystemAPI
+                         .Query<RefRW<PeopleTransportState>, RefRO<LocalTransform>>()
+                         .WithAll<PeopleTransportTag>()
+                         .WithEntityAccess())
+            {
+                ref var t = ref transport.ValueRW;
+                if (t.Amount <= 0f || t.Health <= 0f)
+                    continue;
+
+                var sourceTeam = (TeamId)t.Team;
+                var ownerTeam = (TeamId)b.OwnerTeam;
+                if (sourceTeam == TeamId.None || sourceTeam == ownerTeam)
+                    continue;
+
+                float hitRadius = PeopleTransportMath.GetBulletHitRadius(transform.ValueRO.Scale);
+                if (!BulletCollision.SegmentHitsSphereToroidal(
+                        from, to, transform.ValueRO.Position, hitRadius, mapW, mapH, out hitPoint))
+                    continue;
+
+                t.Health -= b.Damage;
+                if (t.Health <= 0f)
+                    PeopleTransportSimulationSystem.DestroyFromBulletDamage(ref state, transportEntity, t);
+
+                return true;
+            }
+
+            return false;
         }
     }
 }

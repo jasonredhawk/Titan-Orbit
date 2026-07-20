@@ -401,25 +401,19 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            if (!HasPlayableServerWorld())
-            {
-                _statusMessage = "No ServerWorld. Run Titan Orbit > Configure Multiplayer For Local Play (Client+Server).";
-                PushStatusToUi();
-                Debug.LogError("[NceGameFlow] Local host requires ServerWorld. server=" +
-                               DescribeWorld(ClientServerBootstrap.ServerWorld));
-                return;
-            }
-
+            // [TITAN-ORBIT] Editor bootstrap creates ClientWorld only (TitanOrbitBootstrap).
+            // ServerWorld is recreated inside SessionManager.StartLocalPlay → ResumeEditorLocalServer…
+            // Do NOT require HasPlayableServerWorld() here — that made Local host always fail with server=null.
             if (!HasPlayableClientWorld())
             {
-                _statusMessage = "No ClientWorld. Run Titan Orbit > Configure Multiplayer For Local Play.";
+                _statusMessage = "No ClientWorld. Press Play on the main Editor Game tab first.";
                 PushStatusToUi();
                 Debug.LogError("[NceGameFlow] Local host requires ClientWorld. client=" +
                                DescribeWorld(ClientServerBootstrap.ClientWorld));
                 return;
             }
 
-            Debug.Log("[NceGameFlow] Local host clicked — starting host + local client.");
+            Debug.Log("[NceGameFlow] Local host clicked — starting host + local client (ServerWorld will be created if missing).");
             _statusMessage = "Starting local host...";
             PushStatusToUi();
             _autoStartSent = true;
@@ -778,13 +772,8 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            if (!TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && !HasPlayableServerWorld())
-            {
-                _statusMessage = "No ServerWorld. Run Titan Orbit > Configure Multiplayer For Local Play (Client+Server).";
-                Debug.LogError("[NceGameFlow] Local play requires ServerWorld. server=" +
-                               DescribeWorld(ClientServerBootstrap.ServerWorld));
-                return;
-            }
+            // [TITAN-ORBIT] Main Editor: ServerWorld is created in StartLocalPlay (not at Play enter).
+            // MPPM additional instances are client-only and join the host.
 
             _statusMessage = TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance()
                 ? "Connecting to host..."

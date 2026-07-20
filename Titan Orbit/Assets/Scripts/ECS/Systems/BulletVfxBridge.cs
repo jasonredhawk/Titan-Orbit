@@ -9,9 +9,9 @@ namespace TitanOrbit.ECS
     /// <para>
     /// Server enqueues on fire / hit (local host). Client RPC handlers enqueue for dedicated
     /// clients. <see cref="Game.BulletVfxDriver"/> is the sole consumer — Instantiates muzzle /
-    /// tracer / impact GameObjects. Sequence dedupe prevents host double-spawn (queue + RPC).
-    /// Local anticipation uses <see cref="SpawnRequest.IsAnticipation"/> with Sequence 0 until
-    /// a server spawn adopts it.
+    /// tracer / impact GameObjects. Sequence dedupe prevents host double-spawn and double-hit
+    /// (in-process bridge + RPC). Local anticipation uses <see cref="SpawnRequest.IsAnticipation"/>
+    /// with Sequence 0 until a server spawn adopts it.
     /// </para>
     /// </summary>
     public static class BulletVfxBridge
@@ -48,21 +48,56 @@ namespace TitanOrbit.ECS
 
         static readonly ConcurrentQueue<SpawnRequest> SpawnQueue = new ConcurrentQueue<SpawnRequest>();
         static readonly ConcurrentQueue<HitRequest> HitQueue = new ConcurrentQueue<HitRequest>();
-        static readonly HashSet<uint> SeenSequences = new HashSet<uint>();
-        static readonly Queue<uint> SeenOrder = new Queue<uint>(128);
+
+        // --- Spawn dedupe (host bridge + BulletSpawnRpc) ---
+        static readonly HashSet<uint> SeenSpawnSequences = new HashSet<uint>();
+        static readonly Queue<uint> SeenSpawnOrder = new Queue<uint>(128);
+
+        // --- Hit dedupe (host bridge + BulletHitRpc) — MUST be separate from spawn ---
+        // [TITAN-ORBIT] Without this, Local Host processes each hit twice: first destroys the
+        // correct tracer by Sequence; second misses the index and nearest-fallback kills a
+        // different flying tracer → looks like bullets "go through" asteroids.
+        static readonly HashSet<uint> SeenHitSequences = new HashSet<uint>();
+        static readonly Queue<uint> SeenHitOrder = new Queue<uint>(128);
+
         static uint s_NextSequence = 1;
         const int MaxSeen = 512;
+
+        /// <summary>
+        /// Max live Sequence=0 anticipation tracers for the local player.
+        /// [TITAN-ORBIT] Cap=1: replicated energy lags, so client LateUpdate over-fires anticipations
+        /// at full RoF; extras fly through rocks. When energy drops / RoF slows, adopt_fail→server
+        /// CreateTracer and hits look correct (player clue + debug 08c82b post-fix-cap).
+        /// </summary>
+        public const int MaxLiveAnticipations = 1;
+
+        /// <summary>Live anticipation tracers (driver maintains; used to gate local enqueue).</summary>
+        public static int LiveAnticipationCount { get; private set; }
 
         /// <summary>Allocates the next shot sequence id (server only).</summary>
         public static uint NextSequence() => s_NextSequence++;
 
+        /// <summary>True when the local client may enqueue another anticipation tracer.</summary>
+        public static bool CanEnqueueAnticipation() =>
+            LiveAnticipationCount < MaxLiveAnticipations;
+
+        /// <summary>Driver: anticipation tracer Instantiated.</summary>
+        public static void NotifyAnticipationCreated() => LiveAnticipationCount++;
+
+        /// <summary>Driver: anticipation adopted (now sequenced) or destroyed while still orphan.</summary>
+        public static void NotifyAnticipationConsumed()
+        {
+            if (LiveAnticipationCount > 0)
+                LiveAnticipationCount--;
+        }
+
         /// <summary>
         /// Enqueues a spawn. Server sequences (non-zero) are deduped against host queue + RPC.
-        /// Anticipation (Sequence 0) always enqueues.
+        /// Anticipation (Sequence 0) always enqueues when the caller already gated the cap.
         /// </summary>
         public static bool TryEnqueueSpawn(in SpawnRequest request)
         {
-            if (request.Sequence != 0 && !RememberSequence(request.Sequence))
+            if (request.Sequence != 0 && !RememberSpawnSequence(request.Sequence))
                 return false;
             SpawnQueue.Enqueue(request);
             return true;
@@ -71,10 +106,14 @@ namespace TitanOrbit.ECS
         /// <summary>Driver: take next pending spawn.</summary>
         public static bool TryDequeueSpawn(out SpawnRequest request) => SpawnQueue.TryDequeue(out request);
 
-        /// <summary>Enqueues an impact (no dedupe — each hit is unique).</summary>
+        /// <summary>
+        /// Enqueues an impact. Dedupes by Sequence so Local Host bridge + HitRpc do not double-apply.
+        /// </summary>
         public static void EnqueueHit(in HitRequest request)
         {
             if (request.Sequence == 0)
+                return;
+            if (!RememberHitSequence(request.Sequence))
                 return;
             HitQueue.Enqueue(request);
         }
@@ -87,17 +126,30 @@ namespace TitanOrbit.ECS
         {
             while (SpawnQueue.TryDequeue(out _)) { }
             while (HitQueue.TryDequeue(out _)) { }
-            SeenSequences.Clear();
-            SeenOrder.Clear();
+            SeenSpawnSequences.Clear();
+            SeenSpawnOrder.Clear();
+            SeenHitSequences.Clear();
+            SeenHitOrder.Clear();
+            LiveAnticipationCount = 0;
         }
 
-        static bool RememberSequence(uint sequence)
+        static bool RememberSpawnSequence(uint sequence)
         {
-            if (!SeenSequences.Add(sequence))
+            if (!SeenSpawnSequences.Add(sequence))
                 return false;
-            SeenOrder.Enqueue(sequence);
-            while (SeenOrder.Count > MaxSeen)
-                SeenSequences.Remove(SeenOrder.Dequeue());
+            SeenSpawnOrder.Enqueue(sequence);
+            while (SeenSpawnOrder.Count > MaxSeen)
+                SeenSpawnSequences.Remove(SeenSpawnOrder.Dequeue());
+            return true;
+        }
+
+        static bool RememberHitSequence(uint sequence)
+        {
+            if (!SeenHitSequences.Add(sequence))
+                return false;
+            SeenHitOrder.Enqueue(sequence);
+            while (SeenHitOrder.Count > MaxSeen)
+                SeenHitSequences.Remove(SeenHitOrder.Dequeue());
             return true;
         }
     }

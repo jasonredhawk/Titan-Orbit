@@ -102,7 +102,7 @@ namespace TitanOrbit.Entities
             float scaleMultiplier,
             float bulletSpeed)
         {
-            position.y = 0f;
+            // Keep authored / mount world Y so the flash sits on the weapon, not the ground plane.
             Vector3 dir = direction;
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.0001f)

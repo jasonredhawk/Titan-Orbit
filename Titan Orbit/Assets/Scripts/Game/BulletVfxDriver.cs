@@ -48,6 +48,8 @@ namespace TitanOrbit.Game
             public float ScaleMultiplier;
             public bool IsDisplaySpace;
             public bool IsAnticipation;
+            /// <summary>Monotonic fire order for FIFO adopt (RemoveAtSwap shuffles list indices).</summary>
+            public int AnticipationOrder;
             public ClientBulletStretchVisual Stretch;
         }
 
@@ -62,6 +64,8 @@ namespace TitanOrbit.Game
 
         BulletVfxBank _bank;
         int _lastTickFrame = -1;
+        /// <summary>Increments per anticipation CreateTracer so FIFO adopt survives RemoveAtSwap.</summary>
+        int _nextAnticipationOrder;
 
         /// <summary>[UNITY] Attach to session manager when the scene loads.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -139,6 +143,8 @@ namespace TitanOrbit.Game
                 }
 
                 // --- Toroidal display unwrap (logical sim → nearest tile to local ship) ---
+                // Keep mount-height Y — ToDisplayPosition helpers are XZ-only; restore after unwrap.
+                float mountY = t.LogicalPos.y;
                 Vector3 displayPos;
                 if (t.IsDisplaySpace)
                     displayPos = t.LogicalPos;
@@ -155,7 +161,7 @@ namespace TitanOrbit.Game
                 else
                     displayPos = t.LogicalPos;
 
-                displayPos.y = 0f;
+                displayPos.y = mountY;
                 t.Go.transform.position = displayPos;
                 if (math.lengthsq(t.Velocity) > 0.0001f)
                     t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)t.Velocity).normalized, Vector3.up);
@@ -178,6 +184,8 @@ namespace TitanOrbit.Game
             while (spawned < MaxSpawnsPerFrame && BulletVfxBridge.TryDequeueSpawn(out var req))
             {
                 // --- Adopt local anticipation when server spawn arrives (no pose snap) ---
+                // Prevents a second tracer: orphan Sequence=0 cosmetics keep flying through rocks
+                // after HitRpc kills only the sequenced server twin.
                 if (!req.IsAnticipation && req.Sequence != 0 &&
                     TryAdoptAnticipation(req))
                 {
@@ -224,7 +232,11 @@ namespace TitanOrbit.Game
             return false;
         }
 
-        /// <summary>Impact VFX + destroy matching tracer by Sequence.</summary>
+        /// <summary>
+        /// Impact VFX + destroy matching tracer by Sequence.
+        /// Falls back to nearest same-team tracer (incl. Sequence=0 anticipation) so orphan
+        /// cosmetics do not keep flying through the rock after a real server hit.
+        /// </summary>
         void DrainHits()
         {
             EnsureBank();
@@ -240,11 +252,26 @@ namespace TitanOrbit.Game
                 float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
                 BulletVisualFactory.SpawnBulletImpactVfx(hitPos, _bank, bankIndex, team, hit.Damage, scaleMul);
 
+                // --- Preferred: exact Sequence from server ---
                 if (_indexBySequence.TryGetValue(hit.Sequence, out int idx) &&
                     idx >= 0 && idx < _tracers.Count)
                 {
                     DestroyTracerGo(_tracers[idx]);
                     RemoveAtSwap(idx);
+                    // [TITAN-ORBIT] Full-RoF leftover anticipations (stale energy) fly through rocks.
+                    // Clearing them forces the next server spawn onto CreateTracer (the path that
+                    // already looks correct when fire rate slows). Cap=1 limits how often this runs.
+                    ClearAnticipationTracers(hit.OwnerTeam);
+                    continue;
+                }
+
+                // --- Fallback: nearest same-team tracer near the impact (orphan anticipation) ---
+                // [TITAN-ORBIT] Adopt can miss when OwnerNetworkId was 0 on enqueue; HitRpc still
+                // has a Sequence the client never bound — without this, the cosmetic tunnels.
+                if (TryFindNearestTracerIndex(hitPos, hit.OwnerTeam, maxDistance: 12f, out int nearIdx))
+                {
+                    DestroyTracerGo(_tracers[nearIdx]);
+                    RemoveAtSwap(nearIdx);
                 }
             }
         }
@@ -252,34 +279,118 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Binds server Sequence / lifetime / bank onto an existing anticipation tracer.
         /// [TITAN-ORBIT] Does <b>not</b> relocate to lagged server SpawnPosition — keeps presentation muzzle flight.
+        /// Owner match is loose so NetworkId=0 anticipation still adopts local server spawns.
         /// </summary>
         bool TryAdoptAnticipation(in BulletVfxBridge.SpawnRequest req)
         {
+            // --- FIFO adopt (oldest AnticipationOrder for this owner) ---
+            // [TITAN-ORBIT] Nearest-to-muzzle adopt was wrong under hold-fire: when SpawnRpc lags,
+            // newer anticipations sit near the nose while older ones are already mid-flight.
+            // Use AnticipationOrder — RemoveAtSwap shuffles list indices, so index≠fire order.
+            int bestIndex = -1;
+            int bestOrder = int.MaxValue;
             for (int i = 0; i < _tracers.Count; i++)
             {
                 var t = _tracers[i];
                 if (!t.IsAnticipation || t.Sequence != 0)
                     continue;
-                if (t.OwnerNetworkId != req.OwnerNetworkId)
+                if (!OwnersMatchForAdopt(t.OwnerNetworkId, req.OwnerNetworkId))
+                    continue;
+                if (t.AnticipationOrder >= bestOrder)
                     continue;
 
-                // --- Bind authority metadata only ---
-                t.Sequence = req.Sequence;
-                t.IsAnticipation = false;
-                // Keep IsDisplaySpace / LogicalPos / SpawnPos / Velocity / Traveled / GO pose.
-                t.BankIndex = req.BankIndex;
-                t.ScaleMultiplier = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : t.ScaleMultiplier;
-                t.Damage = req.Damage;
-                t.RemainingLifetime = math.max(0.05f, req.Lifetime);
-                t.MaxDistance = math.max(0.5f, req.MaxDistance);
-                // Do not reset Traveled — stretch/trail continue smoothly.
-
-                _tracers[i] = t;
-                _indexBySequence[req.Sequence] = i;
-                return true;
+                bestOrder = t.AnticipationOrder;
+                bestIndex = i;
             }
 
-            return false;
+            if (bestIndex < 0)
+                return false;
+
+            var adopted = _tracers[bestIndex];
+            // --- Bind authority metadata + server flight direction ---
+            // [TITAN-ORBIT] Keep presentation position (no muzzle snap) but take server Velocity.
+            adopted.Sequence = req.Sequence;
+            adopted.IsAnticipation = false;
+            adopted.OwnerNetworkId = req.OwnerNetworkId > 0 ? req.OwnerNetworkId : adopted.OwnerNetworkId;
+            adopted.Velocity = req.Velocity;
+            adopted.BankIndex = req.BankIndex;
+            adopted.ScaleMultiplier = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : adopted.ScaleMultiplier;
+            adopted.Damage = req.Damage;
+            adopted.RemainingLifetime = math.max(0.05f, req.Lifetime);
+            adopted.MaxDistance = math.max(0.5f, req.MaxDistance);
+            // Do not reset Traveled / LogicalPos — stretch/trail continue from presentation muzzle.
+
+            _tracers[bestIndex] = adopted;
+            _indexBySequence[req.Sequence] = bestIndex;
+            // Anticipation slot consumed — frees a Cap for ClientLocalBulletVfxBridge.
+            BulletVfxBridge.NotifyAnticipationConsumed();
+            return true;
+        }
+
+        /// <summary>
+        /// Destroys every still-pending anticipation tracer for a team (local-only cosmetics).
+        /// Used after a real hit so stale full-RoF anticipations cannot keep flying through rocks.
+        /// </summary>
+        void ClearAnticipationTracers(byte ownerTeam)
+        {
+            for (int i = _tracers.Count - 1; i >= 0; i--)
+            {
+                var t = _tracers[i];
+                if (!t.IsAnticipation && t.Sequence != 0)
+                    continue;
+                if (t.OwnerTeam != ownerTeam)
+                    continue;
+
+                DestroyTracerGo(t);
+                RemoveAtSwap(i);
+            }
+        }
+
+        /// <summary>
+        /// True when spawn/anticipation owners refer to the same ship (incl. id-not-ready edge cases).
+        /// </summary>
+        static bool OwnersMatchForAdopt(int anticipationOwnerId, int serverOwnerId)
+        {
+            // --- Both ids known ---
+            if (anticipationOwnerId > 0 && serverOwnerId > 0)
+                return anticipationOwnerId == serverOwnerId;
+
+            // --- One id missing: only adopt when the known id is the local player ---
+            // Prevents binding local Sequence=0 cosmetics onto a remote spawn with OwnerNetworkId=0.
+            int known = anticipationOwnerId > 0 ? anticipationOwnerId : serverOwnerId;
+            if (known > 0)
+                return BulletMuzzlePresentation.IsLocalOwner(known);
+
+            // Both missing — anticipation is local-only; allow adopt.
+            return true;
+        }
+
+        /// <summary>
+        /// Finds the tracer GameObject closest to a display-space impact for the firing team.
+        /// Used when HitRpc Sequence was never bound (orphan anticipation).
+        /// </summary>
+        bool TryFindNearestTracerIndex(Vector3 hitDisplayPos, byte ownerTeam, float maxDistance, out int index)
+        {
+            index = -1;
+            float bestDistSq = maxDistance * maxDistance;
+            float3 hit = new float3(hitDisplayPos.x, 0f, hitDisplayPos.z);
+
+            for (int i = 0; i < _tracers.Count; i++)
+            {
+                var t = _tracers[i];
+                if (t.OwnerTeam != ownerTeam || t.Go == null)
+                    continue;
+
+                Vector3 p = t.Go.transform.position;
+                float distSq = math.distancesq(new float3(p.x, 0f, p.z), hit);
+                if (distSq < bestDistSq)
+                {
+                    bestDistSq = distSq;
+                    index = i;
+                }
+            }
+
+            return index >= 0;
         }
 
         void CreateTracer(in BulletVfxBridge.SpawnRequest req)
@@ -291,9 +402,11 @@ namespace TitanOrbit.Game
             float bulletSpeed = math.length(req.Velocity);
 
             Vector3 spawnDisplay = req.SpawnPosition;
+            float mountY = req.SpawnPosition.y;
             if (!req.IsDisplaySpace && ToroidalDisplay.TryGetReferencePosition(out var reference))
                 spawnDisplay = ToroidalDisplay.ToDisplayPosition(req.SpawnPosition, reference);
-            spawnDisplay.y = 0f;
+            // Keep weapon-mount height (display unwrap is XZ-only).
+            spawnDisplay.y = mountY;
 
             // --- Muzzle flash at fire origin ---
             BulletVisualFactory.PlayMuzzleVfx(
@@ -349,12 +462,16 @@ namespace TitanOrbit.Game
                 ScaleMultiplier = scaleMul,
                 IsDisplaySpace = req.IsDisplaySpace,
                 IsAnticipation = req.IsAnticipation,
+                // Only anticipations need order; server-only tracers keep 0.
+                AnticipationOrder = req.IsAnticipation ? _nextAnticipationOrder++ : 0,
                 Stretch = stretch,
             };
 
             _tracers.Add(tracer);
             if (req.Sequence != 0)
                 _indexBySequence[req.Sequence] = _tracers.Count - 1;
+            else if (req.IsAnticipation)
+                BulletVfxBridge.NotifyAnticipationCreated();
         }
 
         void EnsureBank()
@@ -385,6 +502,9 @@ namespace TitanOrbit.Game
             var removed = _tracers[index];
             if (removed.Sequence != 0)
                 _indexBySequence.Remove(removed.Sequence);
+            // Orphan anticipation destroyed without adopt — free the cap slot.
+            else if (removed.IsAnticipation)
+                BulletVfxBridge.NotifyAnticipationConsumed();
 
             int last = _tracers.Count - 1;
             if (index != last)

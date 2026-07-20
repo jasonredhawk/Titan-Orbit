@@ -12,6 +12,30 @@ namespace TitanOrbit.ECS
     public static class BulletCollision
     {
         /// <summary>
+        /// Max Euclidean length of one collision substep. Half of
+        /// <see cref="GemEconomyConstants.MinAsteroidHitRadius"/> so a fast
+        /// <c>shipVel + BulletSpeed</c> step cannot skip the smallest rock in one sample.
+        /// </summary>
+        public static float MaxAdvanceSubstepLength =>
+            math.max(0.05f, GemEconomyConstants.MinAsteroidHitRadius * 0.5f);
+
+        /// <summary>Hard cap on substeps per tick (Starblast-style continuous feel, bounded cost).</summary>
+        public const int MaxAdvanceSubsteps = 4;
+
+        /// <summary>
+        /// How many equal substeps to split a tick travel into. Always at least 1; at most
+        /// <see cref="MaxAdvanceSubsteps"/>.
+        /// </summary>
+        public static int ComputeAdvanceSubstepCount(float stepDistance)
+        {
+            float maxStep = MaxAdvanceSubstepLength;
+            if (stepDistance <= maxStep || maxStep <= 1e-6f)
+                return 1;
+            int n = (int)math.ceil(stepDistance / maxStep);
+            return math.clamp(n, 1, MaxAdvanceSubsteps);
+        }
+
+        /// <summary>
         /// [TITAN-ORBIT] Logical center repositioned to the map tile nearest unwrapOrigin for toroidal accuracy.
         /// </summary>
         public static float3 UnwrapCenterNear(float3 unwrapOrigin, float3 logicalCenter, float mapW, float mapH)

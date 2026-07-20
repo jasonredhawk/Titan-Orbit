@@ -38,7 +38,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         /// <param name="shipTransform">Ship hull LocalTransform at fire time.</param>
         /// <param name="mount">Baked mount element with local pose and yaw offset.</param>
-        /// <param name="fireOrigin">Output muzzle world position (Y flattened to hull height).</param>
+        /// <param name="fireOrigin">Output muzzle world position (keeps mount local Y — barrels often sit below hull origin).</param>
         /// <param name="fireForward">Output normalized fire direction on XZ plane.</param>
         /// <returns>False if the computed forward vector degenerates to zero length.</returns>
         [BurstCompile]
@@ -60,9 +60,10 @@ namespace TitanOrbit.ECS
             else
                 localFwd = math.normalize(localFwd);
 
-            // --- World muzzle origin ---
+            // --- World muzzle origin (full mount offset, including Y) ---
+            // [TITAN-ORBIT] Do not flatten to hull Y — weapon child components are often below
+            // the ship root; forcing hull Y made muzzle flashes float above the barrels.
             fireOrigin = shipTransform.Position + math.rotate(shipTransform.Rotation, mount.LocalPosition);
-            fireOrigin.y = shipTransform.Position.y;
 
             // --- Hull-relative cannon forward ---
             // [TITAN-ORBIT] Legacy Starship convention: hullRot * flatten(Inverse(hullRot) * weaponWorldForward)

@@ -20,8 +20,8 @@ namespace TitanOrbit.ECS
             if (bullet.Sequence == 0)
                 return;
 
+            // Keep muzzle Y from the weapon mount; flatten flight to XZ (top-down).
             float3 spawnPos = bullet.Position;
-            spawnPos.y = 0f;
             float3 velocity = bullet.Velocity;
             velocity.y = 0f;
 

@@ -25,8 +25,8 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 var r = rpc.ValueRO;
+                // Keep mount-height SpawnPosition.y; flatten velocity to XZ flight.
                 float3 spawn = r.SpawnPosition;
-                spawn.y = 0f;
                 float3 vel = r.Velocity;
                 vel.y = 0f;
 
