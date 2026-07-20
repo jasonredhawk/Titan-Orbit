@@ -23,7 +23,10 @@ namespace TitanOrbit.Game
     {
         protected override void OnUpdate()
         {
-            // Hybrid mounts when EG is off, or when transform quarantine forces GO ship proxies.
+            // --- When to sync from GO hull ---
+            // [TITAN-ORBIT] Under TransformQuarantine (session-long on Windows) ships use hybrid GO
+            // proxies — refresh wing local offsets/stats from those hulls. When Entities Graphics
+            // draws ships without quarantine, baked ShipWingTractorBeamElement is enough.
             if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips &&
                 !ClientJoinSettleCache.TransformQuarantine)
                 return;

@@ -88,7 +88,14 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [HYBRID] Per-camera immediate-mode draw pass — queries ships/gems and renders eligible beam pairs.
+        /// Scratch list for quarantine-safe gem proxies (hybrid registry — not ECS ToEntityArray).
+        /// </summary>
+        static readonly List<GemTractorBeamClientLogic.GemProxySnapshot> GemScratch =
+            new List<GemTractorBeamClientLogic.GemProxySnapshot>(64);
+
+        /// <summary>
+        /// [HYBRID] Per-camera immediate-mode draw pass — ships via tiny query; gems via hybrid proxies.
+        /// Renders one Shapes beam per assigned wing→gem pair.
         /// </summary>
         public override void DrawShapes(Camera cam)
         {
@@ -98,8 +105,9 @@ namespace TitanOrbit.Game
             if (gameplayCamerasOnly && !IsGameplayCamera(cam))
                 return;
 
-            // [TITAN-ORBIT] Windows TransformQuarantine: gem ToEntityArray Crash!!! (orbit + people load).
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
+            // [TITAN-ORBIT] Settling only. TransformQuarantine is session-long on Windows — beams
+            // must draw after settle using gem proxies (never full gem ToEntityArray).
+            if (ClientJoinSettleCache.Settling)
                 return;
 
             // --- Visualization ECS world (client presentation) ---
@@ -116,12 +124,9 @@ namespace TitanOrbit.Game
             using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Unity.Collections.Allocator.Temp);
             using var shipTransforms = shipQuery.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
 
-            using var gemQuery = em.CreateEntityQuery(typeof(GemTag), typeof(GemState), typeof(LocalTransform));
-            using var gems = gemQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
-            using var gemStates = gemQuery.ToComponentDataArray<GemState>(Unity.Collections.Allocator.Temp);
-            using var gemTransforms = gemQuery.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
+            GemTractorBeamClientLogic.CollectGemProxies(em, GemScratch);
 
-            if (ships.Length == 0 || gems.Length == 0)
+            if (ships.Length == 0 || GemScratch.Count == 0)
                 return;
 
             float pulseWave = Mathf.SmoothStep(0f, 1f, (Mathf.Sin(Time.time * pulseSpeed) + 1f) * 0.5f);
@@ -149,42 +154,41 @@ namespace TitanOrbit.Game
                         ? em.GetBuffer<ShipWingTractorBeamElement>(ships[si])
                         : default;
 
-                    for (int gi = 0; gi < gems.Length; gi++)
+                    for (int gi = 0; gi < GemScratch.Count; gi++)
                     {
-                        if (!GemTractorBeamClientLogic.IsGemEligibleForBeam(gemStates[gi]))
-                            continue;
-                        if (!GemTractorBeamClientLogic.CanShipMagneticallyPull(ships[si].Index, gems[gi].Index))
+                        var gem = GemScratch[gi];
+                        if (!GemTractorBeamClientLogic.CanShipMagneticallyPull(ships[si].Index, gem.Entity.Index))
                             continue;
                         if (!GemTractorBeamClientLogic.IsWithinMagneticPullRange(
                                 em, ships[si], shipStates[si], shipTransforms[si], wings,
-                                gems[gi], gemTransforms[gi], mapW, mapH))
+                                gem.Entity, gem.Transform, mapW, mapH))
                             continue;
 
-                        float beamVisibility = GemTractorBeamVisibilityTracker.GetVisibility(ships[si].Index, gems[gi].Index);
+                        float beamVisibility = GemTractorBeamVisibilityTracker.GetVisibility(ships[si].Index, gem.Entity.Index);
                         if (beamVisibility <= 0.001f)
                             continue;
 
                         float3 beamOrigin = GemTractorBeamClientLogic.ResolveBeamOrigin(
-                            ships[si], shipTransforms[si], wings, gems[gi]);
+                            ships[si], shipTransforms[si], wings, gem.Entity);
                         // [TITAN-ORBIT] Classic: nearest tile to logical local ship / camera.
                         Vector3 reference = ToroidalDisplay.TryGetReferencePosition(out var shipRef)
                             ? shipRef
                             : cam.transform.position;
                         Vector3 shipDisplay = ToroidalDisplay.ToDisplayPosition(beamOrigin, reference);
-                        float3 gemOff = ToroidalMapEcs.ShortestOffsetXZ(beamOrigin, gemTransforms[gi].Position, mapW, mapH);
+                        float3 gemOff = ToroidalMapEcs.ShortestOffsetXZ(beamOrigin, gem.Transform.Position, mapW, mapH);
                         Vector3 gemDisplay = shipDisplay + new Vector3(gemOff.x, 0f, gemOff.z);
 
-                        float beamY = Mathf.Max(beamOrigin.y, gemTransforms[gi].Position.y) + heightAboveGem;
+                        float beamY = Mathf.Max(beamOrigin.y, gem.Transform.Position.y) + heightAboveGem;
                         shipDisplay.y = beamY;
                         gemDisplay.y = beamY;
 
-                        float extension = GemTractorBeamDeployTracker.GetExtensionProgress(ships[si].Index, gems[gi].Index);
-                        float widthExpand = GemTractorBeamDeployTracker.GetWidthExpandProgress(ships[si].Index, gems[gi].Index);
+                        float extension = GemTractorBeamDeployTracker.GetExtensionProgress(ships[si].Index, gem.Entity.Index);
+                        float widthExpand = GemTractorBeamDeployTracker.GetWidthExpandProgress(ships[si].Index, gem.Entity.Index);
                         Vector3 tipDisplay = Vector3.Lerp(shipDisplay, gemDisplay, extension);
 
                         if (extension < 1f - 0.0001f)
                         {
-                            float extendVis = GemTractorBeamDeployTracker.IsInDeployAnimation(ships[si].Index, gems[gi].Index)
+                            float extendVis = GemTractorBeamDeployTracker.IsInDeployAnimation(ships[si].Index, gem.Entity.Index)
                                 ? 1f
                                 : Mathf.Max(beamVisibility, 0.85f);
                             Color extendColor = new Color(teamBase.r, teamBase.g, teamBase.b, alphaExtendLine * extendVis);
@@ -192,7 +196,7 @@ namespace TitanOrbit.Game
                             continue;
                         }
 
-                        float widthAtGem = GetSmoothedGemVisualDiameter(gems[gi], gemStates[gi]) *
+                        float widthAtGem = GetSmoothedGemVisualDiameter(gem.Entity, gem.State) *
                                            gemEndWidthScale * widthPulse;
                         float thinWidth = Mathf.Max(extendLineThickness, GemTractorBeamDeployTracker.ExtendLineThickness);
                         float currentWidth = Mathf.Lerp(thinWidth, widthAtGem, widthExpand);

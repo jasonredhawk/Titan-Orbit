@@ -43,6 +43,7 @@ namespace TitanOrbit.Game
             ResetRemoteMapLoadTracking();
             s_WasNetworkInGame = false;
             ClientJoinSettleCache.Clear();
+            GemClientEntityRegistry.Clear();
         }
 
         // --- World selection ---
@@ -1219,6 +1220,8 @@ namespace TitanOrbit.Game
             // JoinSettleCompleted / TransformQuarantine are static — clear on session end so a second
             // Editor Play does not think Instantiates already finished.
             ClientJoinSettleCache.Clear();
+            GemClientEntityRegistry.Clear();
+            GemTractorBeamVisibilityTracker.Clear();
         }
 
         /// <summary>

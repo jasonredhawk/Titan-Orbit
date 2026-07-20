@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -46,14 +47,19 @@ namespace TitanOrbit.ECS
         /// <summary>Smallest gem chunk worth spawning as an entity.</summary>
         public const float MinGemSpawnValue = 0.25f;
 
-        /// <summary>Initial outward speed when asteroid destruction bursts gems.</summary>
-        public const float AsteroidExplosionSpeed = 2.2f;
+        /// <summary>
+        /// Fallback explosion speed when <see cref="GemExplosionSettings"/> is missing.
+        /// Prefer the ScriptableObject (Assets/Data/GemExplosionSettings.asset).
+        /// </summary>
+        public const float AsteroidExplosionSpeed = GemExplosionMath.DefaultExplosionSpeed;
 
-        /// <summary>Random offset radius for gem burst spawn positions.</summary>
-        public const float AsteroidExplosionRadius = 1.4f;
+        /// <summary>Fallback spawn offset radius — prefer GemExplosionSettings.</summary>
+        public const float AsteroidExplosionRadius = GemExplosionMath.DefaultExplosionRadius;
 
-        /// <summary>Per-second velocity damping on free-floating gems.</summary>
-        public const float GemDragPerSecond = 1.25f;
+        /// <summary>
+        /// Fallback linear damping — prefer GemExplosionSettings.LinearDamping (original 0.5).
+        /// </summary>
+        public const float GemDragPerSecond = GemExplosionMath.DefaultLinearDamping;
 
         /// <summary>SgtPlanet base radius on <c>Asteroid.prefab</c>.</summary>
         public const float AsteroidMeshBaseRadius = 0.5f;
@@ -142,36 +148,47 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server: applies drag and integrates gem positions from <see cref="GemKinematics.Velocity"/>.
-    /// Gems are scripted movers — not Unity Physics bodies. Positions stay unbounded like ships;
-    /// tractor reach still uses toroidal distance.
+    /// Server: applies original-style linear/angular damping and integrates gem pose from
+    /// <see cref="GemKinematics"/>. Gems are scripted movers — not Unity Physics bodies.
+    /// Tunables: <see cref="GemExplosionSettings"/> (Editor).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(MiningSystem))]
     public partial struct GemMotionSystem : ISystem
     {
-        /// <summary>Integrates velocity with drag (unbounded XZ).</summary>
+        /// <summary>Integrates velocity + tumble with PhysX-like damping (unbounded XZ).</summary>
         public void OnUpdate(ref SystemState state)
         {
             float dt = SystemAPI.Time.DeltaTime;
-            // [TITAN-ORBIT] Gems slow down over time so bursts from mining settle near asteroids.
-            float drag = math.saturate(GemEconomyConstants.GemDragPerSecond * dt);
+            var settings = GemExplosionSettingsCache.ResolveOrDefault();
+            float linearDamping = settings.LinearDamping;
+            float angularDamping = settings.AngularDamping;
+            float stopSpeed = settings.StopSpeedThreshold;
 
             foreach (var (kinematics, transform) in SystemAPI
                          .Query<RefRW<GemKinematics>, RefRW<LocalTransform>>()
                          .WithAll<GemTag>())
             {
-                var vel = kinematics.ValueRO.Velocity;
-                vel *= 1f - drag;
-                if (math.lengthsq(vel) < 0.0004f)
-                    vel = float3.zero;
+                var kin = kinematics.ValueRO;
+                float3 vel = GemExplosionMath.IntegrateLinearVelocity(
+                    kin.Velocity, linearDamping, stopSpeed, dt);
+                float3 ang = GemExplosionMath.IntegrateAngularVelocity(
+                    kin.AngularVelocity, angularDamping, dt);
 
                 // --- Integrate in unbounded space (same as ships); toroidal math is for reach only ---
                 var lt = transform.ValueRO;
                 lt.Position += vel * dt;
+                if (math.lengthsq(ang) > 0.0001f)
+                {
+                    // AngularVelocity is rad/s — quaternion integrate in world space.
+                    float angle = math.length(ang) * dt;
+                    float3 axis = math.normalizesafe(ang, new float3(0f, 1f, 0f));
+                    lt.Rotation = math.mul(quaternion.AxisAngle(axis, angle), lt.Rotation);
+                }
+
                 transform.ValueRW = lt;
-                kinematics.ValueRW = new GemKinematics { Velocity = vel };
+                kinematics.ValueRW = new GemKinematics { Velocity = vel, AngularVelocity = ang };
             }
         }
     }
@@ -376,8 +393,10 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server: when an asteroid is destroyed, spawns a burst of gem entities with explosion velocity.
-    /// Runs after bullets and mining may have marked asteroids IsDestroyed.
+    /// Server: when an asteroid is destroyed, spawns N gem entities (Editor min–max on
+    /// <see cref="GemExplosionSettings"/>) that sum to leftover <see cref="AsteroidState.RemainingGems"/>,
+    /// with original NGO explosion speed, damping, and tumble. Clients also play an immediate
+    /// local burst via <c>ClientGemBurstPresenter</c> so visuals do not wait on GhostSpawn Instantiates.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -395,8 +414,10 @@ namespace TitanOrbit.ECS
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Gem == Entity.Null)
                 return;
 
+            var settings = GemExplosionSettingsCache.ResolveOrDefault();
+            settings.ClampCounts();
+
             var ecb = new EntityCommandBuffer(Allocator.Temp);
-            var rng = Random.CreateFromIndex((uint)(SystemAPI.Time.ElapsedTime * 1000f) + 91u);
 
             foreach (var (asteroidState, asteroidTransform, entity) in SystemAPI
                          .Query<RefRO<AsteroidState>, RefRO<LocalTransform>>()
@@ -410,12 +431,9 @@ namespace TitanOrbit.ECS
                 if (remaining >= GemEconomyConstants.MinGemSpawnValue)
                 {
                     float3 pos = asteroidTransform.ValueRO.Position;
-                    while (remaining >= GemEconomyConstants.MinGemSpawnValue)
-                    {
-                        float chunk = math.min(remaining, rng.NextFloat(6f, 14f));
-                        GemSpawning.Spawn(ecb, prefabs.Gem, pos, chunk, (uint)entity.Index + (uint)(chunk * 100f), burst: true);
-                        remaining -= chunk;
-                    }
+                    // Deterministic seed so client immediate burst can match count/feel closely.
+                    uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
+                    SpawnAsteroidDestructionGems(ecb, prefabs.Gem, pos, remaining, seed, settings);
                 }
 
                 ecb.DestroyEntity(entity);
@@ -424,25 +442,55 @@ namespace TitanOrbit.ECS
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
         }
+
+        /// <summary>
+        /// Spawns min–max gems (clamped by remaining value) whose values sum to <paramref name="remaining"/>.
+        /// </summary>
+        static void SpawnAsteroidDestructionGems(
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
+            float3 pos,
+            float remaining,
+            uint seed,
+            GemExplosionSettings settings)
+        {
+            var rng = Random.CreateFromIndex(seed);
+            int count = GemExplosionMath.ResolveGemCount(
+                remaining, settings.MinGemCount, settings.MaxGemCount, ref rng);
+
+            for (int i = 0; i < count; i++)
+            {
+                float value = GemExplosionMath.ValuePerGem(remaining, count, i);
+                if (value < GemEconomyConstants.MinGemSpawnValue)
+                    continue;
+                GemSpawning.Spawn(ecb, gemPrefab, pos, value, seed + (uint)(i + 1) * 97u, burst: true, settings);
+            }
+        }
     }
 
     /// <summary>Shared gem entity spawn helper for mining and asteroid destruction bursts.</summary>
     static class GemSpawning
     {
         /// <summary>
-        /// Instantiates a gem prefab with value, optional burst velocity, and toroidal-safe offset.
+        /// Instantiates a gem prefab with value, optional burst velocity/tumble, and offset.
         /// </summary>
-        public static void Spawn(EntityCommandBuffer ecb, Entity gemPrefab, float3 position, float value, uint salt, bool burst)
+        public static void Spawn(
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
+            float3 position,
+            float value,
+            uint salt,
+            bool burst,
+            GemExplosionSettings settings = null)
         {
             if (value <= 0f)
                 return;
 
+            settings ??= GemExplosionSettingsCache.ResolveOrDefault();
             var rng = Random.CreateFromIndex(math.hash(position) + salt + 17u);
-            float3 spawnDir = math.normalize(new float3(rng.NextFloat(-1f, 1f), 0f, rng.NextFloat(-1f, 1f)));
-            if (math.lengthsq(spawnDir) < 0.01f)
-                spawnDir = new float3(0f, 0f, 1f);
+            float3 spawnDir = GemExplosionMath.RandomUnitXZ(ref rng);
 
-            float radius = burst ? GemEconomyConstants.AsteroidExplosionRadius : 0.8f;
+            float radius = burst ? settings.AsteroidExplosionRadius : 0.8f;
             float3 offset = spawnDir * radius * rng.NextFloat(0.3f, 1f);
             float scale = math.clamp(math.sqrt(value) * 0.2f, 0.2f, 0.5f);
 
@@ -457,8 +505,22 @@ namespace TitanOrbit.ECS
 
             if (burst)
             {
-                float speed = GemEconomyConstants.AsteroidExplosionSpeed * rng.NextFloat(0.45f, 1f);
-                ecb.SetComponent(gem, new GemKinematics { Velocity = spawnDir * speed });
+                // --- Original NGO GemSpawner launch + tumble ---
+                float3 vel = GemExplosionMath.BurstVelocity(
+                    spawnDir,
+                    settings.AsteroidExplosionSpeed,
+                    settings.SpeedRandomMin,
+                    settings.SpeedRandomMax,
+                    ref rng);
+                float3 ang = GemExplosionMath.BurstAngularVelocity(settings.AngularSpeedMax, ref rng);
+                ecb.SetComponent(gem, new GemKinematics { Velocity = vel, AngularVelocity = ang });
+            }
+            else
+            {
+                // Small outward nudge so mined gems are not stuck inside the asteroid mesh.
+                float speed = rng.NextFloat(settings.MiningNudgeSpeedMin, settings.MiningNudgeSpeedMax);
+                float3 ang = GemExplosionMath.BurstAngularVelocity(settings.AngularSpeedMax * 0.35f, ref rng);
+                ecb.SetComponent(gem, new GemKinematics { Velocity = spawnDir * speed, AngularVelocity = ang });
             }
         }
     }

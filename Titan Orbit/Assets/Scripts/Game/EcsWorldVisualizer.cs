@@ -121,6 +121,24 @@ namespace TitanOrbit.Game
         /// </summary>
         int _newWorldBodyProxiesThisFrame;
 
+        /// <summary>
+        /// Asteroid entities that already fired <see cref="ClientGemBurstPresenter"/> for IsDestroyed.
+        /// Prevents double local bursts while the ghost still exists for a few frames.
+        /// </summary>
+        readonly HashSet<Entity> _asteroidBurstFired = new HashSet<Entity>();
+
+        /// <summary>
+        /// Last known asteroid pose/value so we can burst even if the ghost despawns before
+        /// the client observes <see cref="AsteroidState.IsDestroyed"/>.
+        /// </summary>
+        readonly Dictionary<Entity, AsteroidBurstCache> _asteroidLastKnown = new Dictionary<Entity, AsteroidBurstCache>();
+
+        struct AsteroidBurstCache
+        {
+            public float3 Position;
+            public float RemainingGems;
+        }
+
         /// <summary>Local-player ship proxy on dedicated clients / host ClientWorld viz.</summary>
         public GameObject LocalPlayerShipProxy { get; private set; }
 
@@ -334,6 +352,10 @@ namespace TitanOrbit.Game
             // bar. Skipping drain until Settling OFF dumped all GO lag after 100% / Join Team.
             // Flush Instantiates-hook SpawnRequest queue first (Windows EntityScenes lack Pending).
             MapBodyHybridVisualInstantiateHook.FlushPending(em);
+            // [TITAN-ORBIT] Gems Instantiated this frame — create GO immediately (bypass asteroid budget).
+            DrainUrgentGemProxies(em, alive);
+            // Immediate local gem explosion when client sees IsDestroyed (do not wait Instantiates).
+            DetectAsteroidGemBursts(em);
             SyncExistingWorldBodyProxyTransforms(em, alive);
             DrainPendingWorldBodyProxies(em, alive);
 
@@ -384,6 +406,8 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Updates poses for world-body proxies already in <see cref="_proxies"/> without scanning
         /// every asteroid entity (safe during GhostSpawn Instantiates).
+        /// Gems use ghosted <see cref="GemKinematics"/> for a short presentation extrapolate + lerp
+        /// so glide looks continuous between NetCode snapshot samples.
         /// </summary>
         void SyncExistingWorldBodyProxyTransforms(EntityManager em, HashSet<Entity> alive)
         {
@@ -395,7 +419,9 @@ namespace TitanOrbit.Game
                     continue;
 
                 // Ships/bullets have their own sync paths after settle.
-                bool isWorldBody = _proxyPlanetVisuals.ContainsKey(entity) ||
+                bool isGem = em.HasComponent<GemTag>(entity);
+                bool isWorldBody = isGem ||
+                                   _proxyPlanetVisuals.ContainsKey(entity) ||
                                    go.name.IndexOf("Asteroid", System.StringComparison.Ordinal) >= 0 ||
                                    go.name.IndexOf("Gem", System.StringComparison.Ordinal) >= 0 ||
                                    go.name.IndexOf("Planet", System.StringComparison.Ordinal) >= 0;
@@ -404,10 +430,81 @@ namespace TitanOrbit.Game
 
                 var lt = em.GetComponentData<LocalTransform>(entity);
                 float scale = math.max(0.25f, lt.Scale);
+                float gemValue = 0f;
+                if (isGem && em.HasComponent<GemState>(entity))
+                {
+                    gemValue = em.GetComponentData<GemState>(entity).Value;
+                    scale = GemVisualApplier.ComputeVisualScale(math.max(0.25f, gemValue));
+                }
+
                 alive.Add(entity);
+
+                // --- World-body / gem pose ---
+                // Gems: GemClientMotionApplier owns position (velocity-driven client animation).
+                // Other bodies: snap to toroidal display of LocalTransform.
+                if (isGem)
+                {
+                    // Scale / diameter only — do not overwrite pose (that caused “frozen until ship moves”).
+                    go.transform.localScale = Vector3.one * scale;
+                    if (gemValue > 0f)
+                        GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, gemValue));
+                    continue;
+                }
+
                 go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
+            }
+        }
+
+        /// <summary>
+        /// When a client asteroid ghost reports <see cref="AsteroidState.IsDestroyed"/>, play the
+        /// local burst immediately (original NGO feel). Server gems Instantiates later for pickup.
+        /// Also refreshes <see cref="_asteroidLastKnown"/> for despawn-without-flag cases.
+        /// Per-entity HasComponent only — no full asteroid ToEntityArray.
+        /// </summary>
+        void DetectAsteroidGemBursts(EntityManager em)
+        {
+            if (ClientJoinSettleCache.Settling)
+                return;
+
+            foreach (var kv in _proxies)
+            {
+                Entity entity = kv.Key;
+                if (kv.Value == null || !em.Exists(entity))
+                    continue;
+                if (!em.HasComponent<AsteroidTag>(entity) || !em.HasComponent<AsteroidState>(entity))
+                    continue;
+                if (!em.HasComponent<LocalTransform>(entity))
+                    continue;
+
+                var asteroid = em.GetComponentData<AsteroidState>(entity);
+                var lt = em.GetComponentData<LocalTransform>(entity);
+
+                // Cache only while alive — needed if RemainingGems is zeroed on the destroy frame.
+                if (!asteroid.IsDestroyed)
+                {
+                    _asteroidLastKnown[entity] = new AsteroidBurstCache
+                    {
+                        Position = lt.Position,
+                        RemainingGems = asteroid.RemainingGems,
+                    };
+                    continue;
+                }
+
+                if (!_asteroidBurstFired.Add(entity))
+                    continue;
+
+                float remaining = asteroid.RemainingGems;
+                if (remaining < 0.25f &&
+                    _asteroidLastKnown.TryGetValue(entity, out var cached) &&
+                    cached.RemainingGems >= 0.25f)
+                {
+                    remaining = cached.RemainingGems;
+                }
+
+                uint seed = math.hash(new uint2((uint)entity.Index, math.hash(lt.Position)));
+                ClientGemBurstPresenter.PlayBurst(lt.Position, remaining, seed);
             }
         }
 
@@ -438,16 +535,33 @@ namespace TitanOrbit.Game
                 return 0;
 
             // --- Collect up to this frame's budget, then mutate ---
+            // [TITAN-ORBIT] Prefer GemTag first so destroy/mining pickups appear before leftover
+            // asteroid proxies fill the same budget (Instantiates stays 1/frame — unchanged).
             int frameBudget = GetWorldBodyProxyBudgetThisFrame();
             var entityTypeHandle = em.GetEntityTypeHandle();
             using var chunks = query.ToArchetypeChunkArray(Unity.Collections.Allocator.Temp);
             var batch = new List<Entity>(frameBudget);
 
+            // Pass 1: gems only
             for (int c = 0; c < chunks.Length && batch.Count < frameBudget; c++)
             {
                 var entities = chunks[c].GetNativeArray(entityTypeHandle);
                 for (int i = 0; i < entities.Length && batch.Count < frameBudget; i++)
-                    batch.Add(entities[i]);
+                {
+                    if (em.HasComponent<GemTag>(entities[i]))
+                        batch.Add(entities[i]);
+                }
+            }
+
+            // Pass 2: remaining world bodies
+            for (int c = 0; c < chunks.Length && batch.Count < frameBudget; c++)
+            {
+                var entities = chunks[c].GetNativeArray(entityTypeHandle);
+                for (int i = 0; i < entities.Length && batch.Count < frameBudget; i++)
+                {
+                    if (!em.HasComponent<GemTag>(entities[i]))
+                        batch.Add(entities[i]);
+                }
             }
 
             int created = 0;
@@ -578,6 +692,27 @@ namespace TitanOrbit.Game
                 go.transform.SetPositionAndRotation(GetVisualPosition(entity, lt.Position), lt.Rotation);
                 go.transform.localScale = Vector3.one * scale;
                 GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, state.Value));
+
+                // --- Client velocity animation (server sets GemKinematics; client animates GO) ---
+                var motion = go.GetComponent<GemClientMotionApplier>();
+                if (motion == null)
+                    motion = go.AddComponent<GemClientMotionApplier>();
+                motion.Bind(entity, lt.Position);
+
+                // Prefer motion from the immediate local burst (handoff) so Instantiates lag
+                // does not kill the explosion. Fall back to ghosted kinematics when present.
+                if (ClientGemBurstPresenter.TryClaimNear(go.transform.position, out var handoffVel, out var handoffAng) &&
+                    handoffVel.sqrMagnitude > 0.0001f)
+                {
+                    motion.SeedVelocity(new float3(handoffVel.x, 0f, handoffVel.z),
+                        new float3(handoffAng.x, handoffAng.y, handoffAng.z));
+                }
+                else if (em.HasComponent<GemKinematics>(entity))
+                {
+                    var kin = em.GetComponentData<GemKinematics>(entity);
+                    motion.SeedVelocity(kin.Velocity, kin.AngularVelocity);
+                }
+
                 return true;
             }
 
@@ -1023,6 +1158,46 @@ namespace TitanOrbit.Game
 #endif
         }
 
+        /// <summary>
+        /// Creates GameObject proxies for gems that Instantiated this frame (from
+        /// <see cref="GemClientEntityRegistry"/>). Bypasses the shared world-body budget so
+        /// destroy bursts are not stuck behind asteroid Pending drain.
+        /// </summary>
+        void DrainUrgentGemProxies(EntityManager em, HashSet<Entity> alive)
+        {
+            var urgent = new List<Entity>(8);
+            GemClientEntityRegistry.DrainUrgentVisualQueue(urgent);
+            for (int i = 0; i < urgent.Count; i++)
+            {
+                Entity entity = urgent[i];
+                if (!em.Exists(entity) || !em.HasComponent<LocalTransform>(entity))
+                {
+                    GemClientEntityRegistry.NotifyDestroyed(entity);
+                    continue;
+                }
+
+                if (_proxies.TryGetValue(entity, out var existing) && existing != null)
+                {
+                    ClearVisualQueueTags(em, entity);
+                    if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
+                        em.AddComponentData(entity, new MapBodyHybridVisualLinked());
+                    alive.Add(entity);
+                    continue;
+                }
+
+                var lt = em.GetComponentData<LocalTransform>(entity);
+                if (!TryCreateWorldBodyProxyForEntity(em, entity, lt, out _))
+                    continue;
+
+                ClearVisualQueueTags(em, entity);
+                if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
+                    em.AddComponentData(entity, new MapBodyHybridVisualLinked());
+                alive.Add(entity);
+                // Do not consume world-body budget — gems are gameplay-critical and few.
+                _newWorldBodyProxiesThisFrame++;
+            }
+        }
+
         /// <summary>Tears down proxy GameObject and clears all per-entity registry entries.</summary>
         void DestroyProxy(Entity entity)
         {
@@ -1031,6 +1206,9 @@ namespace TitanOrbit.Game
 
             // --- Drop toroidal tile memory for this entity ---
             ToroidalDisplay.RemoveEntity(entity);
+            GemClientEntityRegistry.NotifyDestroyed(entity);
+            _asteroidBurstFired.Remove(entity);
+            _asteroidLastKnown.Remove(entity);
 
             if (_proxies.TryGetValue(entity, out var go))
             {

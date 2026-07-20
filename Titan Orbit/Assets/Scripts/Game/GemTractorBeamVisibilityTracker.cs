@@ -8,11 +8,14 @@ namespace TitanOrbit.Game
     /// [HYBRID] Client-side fade in/out for tractor beam visuals so wing reassignment does not pop beams.
     /// Orchestrates <see cref="GemTractorBeamDeployTracker"/> and <see cref="GemTractorBeamClientLogic"/>
     /// each LateUpdate. Visibility 0–1 multiplied into Shapes alpha in <see cref="GemTractorBeamVisual"/>.
+    /// [TITAN-ORBIT] Gems from hybrid proxies under TransformQuarantine — never full gem ToEntityArray.
     /// </summary>
     public static class GemTractorBeamVisibilityTracker
     {
         /// <summary>0 = hidden, 1 = fully visible — keyed by packed shipIndex|gemIndex.</summary>
         static readonly Dictionary<long, float> VisibilityByPair = new Dictionary<long, float>(128);
+        static readonly List<GemTractorBeamClientLogic.GemProxySnapshot> GemScratch =
+            new List<GemTractorBeamClientLogic.GemProxySnapshot>(64);
         static int _lastUpdateFrame = -1;
 
         const float FadeInPerSecond = 5f;
@@ -25,8 +28,8 @@ namespace TitanOrbit.Game
                 return;
             _lastUpdateFrame = Time.frameCount;
 
-            // [TITAN-ORBIT] Windows TransformQuarantine: gem ToEntityArray Crash!!! when orbiting.
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
+            // [TITAN-ORBIT] Settling only — quarantine must not hide beams for the whole session.
+            if (ClientJoinSettleCache.Settling)
             {
                 VisibilityByPair.Clear();
                 return;
@@ -56,12 +59,7 @@ namespace TitanOrbit.Game
             using var shipStates = shipQuery.ToComponentDataArray<ECS.ShipState>(Unity.Collections.Allocator.Temp);
             using var shipTransforms = shipQuery.ToComponentDataArray<Unity.Transforms.LocalTransform>(Unity.Collections.Allocator.Temp);
 
-            using var gemQuery = em.CreateEntityQuery(
-                typeof(ECS.GemTag),
-                typeof(ECS.GemState),
-                typeof(Unity.Transforms.LocalTransform));
-            using var gems = gemQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
-            using var gemTransforms = gemQuery.ToComponentDataArray<Unity.Transforms.LocalTransform>(Unity.Collections.Allocator.Temp);
+            GemTractorBeamClientLogic.CollectGemProxies(em, GemScratch);
 
             for (int si = 0; si < ships.Length; si++)
             {
@@ -72,18 +70,19 @@ namespace TitanOrbit.Game
                     ? em.GetBuffer<ECS.ShipWingTractorBeamElement>(ships[si])
                     : default;
 
-                for (int gi = 0; gi < gems.Length; gi++)
+                for (int gi = 0; gi < GemScratch.Count; gi++)
                 {
-                    long key = PairKey(ships[si].Index, gems[gi].Index);
+                    var gem = GemScratch[gi];
+                    long key = PairKey(ships[si].Index, gem.Entity.Index);
                     touched.Add(key);
 
                     bool wantsVisible = GemTractorBeamClientLogic.IsEligibleForBeamVisual(
                         em, ships[si], shipStates[si], shipTransforms[si], wings,
-                        gems[gi], gemTransforms[gi], mapW, mapH);
+                        gem.Entity, gem.Transform, mapW, mapH);
 
                     VisibilityByPair.TryGetValue(key, out float visibility);
 
-                    if (wantsVisible && GemTractorBeamDeployTracker.IsInDeployAnimation(ships[si].Index, gems[gi].Index))
+                    if (wantsVisible && GemTractorBeamDeployTracker.IsInDeployAnimation(ships[si].Index, gem.Entity.Index))
                         visibility = 1f;
                     else
                     {
@@ -127,6 +126,7 @@ namespace TitanOrbit.Game
         {
             // --- Clear state ---
             VisibilityByPair.Clear();
+            GemScratch.Clear();
             _lastUpdateFrame = -1;
             GemTractorBeamDeployTracker.Clear();
             GemTractorBeamClientLogic.Clear();

@@ -14,6 +14,9 @@ namespace TitanOrbit.Game
     /// [HYBRID] Client-side wing-to-gem assignment and eligibility for tractor beam <em>visuals</em> only.
     /// Mirrors server pull rules closely enough for VFX but does not move gems — authoritative pull is
     /// <c>GemTractorBeamSystem</c>. Rebuilds a per-frame cache keyed by ship/gem entity indices.
+    /// [TITAN-ORBIT] Gems come from <see cref="EcsWorldVisualizer"/> hybrid proxies (managed dictionary),
+    /// never a full gem <c>ToEntityArray</c> — required under session-long TransformQuarantine
+    /// (same pattern as minimap). Ships stay a tiny query.
     /// </summary>
     public static class GemTractorBeamClientLogic
     {
@@ -26,10 +29,21 @@ namespace TitanOrbit.Game
             public bool InFlight;
         }
 
+        /// <summary>Per-gem snapshot collected from hybrid proxies (quarantine-safe).</summary>
+        public struct GemProxySnapshot
+        {
+            public Entity Entity;
+            public GemState State;
+            public LocalTransform Transform;
+            public GemKinematics Kinematics;
+        }
+
         static int _cacheFrame = -1;
         static readonly Dictionary<int, Dictionary<int, int>> WingByShipAndGem = new Dictionary<int, Dictionary<int, int>>(32);
         static readonly Dictionary<int, HashSet<int>> AssignedGemsByShip = new Dictionary<int, HashSet<int>>(32);
         static readonly List<PullCandidate> CandidateScratch = new List<PullCandidate>(64);
+        static readonly List<Entity> ProxyEntityScratch = new List<Entity>(256);
+        static readonly List<GemProxySnapshot> GemProxyScratch = new List<GemProxySnapshot>(64);
 
         /// <summary>
         /// Rebuilds wing→gem assignment once per Unity frame. Called from visibility tracker and beam drawer.
@@ -45,10 +59,9 @@ namespace TitanOrbit.Game
             WingByShipAndGem.Clear();
             AssignedGemsByShip.Clear();
 
-            // [TITAN-ORBIT] Windows: TransformQuarantine stays ON for the whole in-game session.
-            // ToEntityArray over all gems here Crash!!! / kicks to Main Menu when ships enter orbit
-            // (tractor eligibility turns on at the same time as people load). Same rule as minimap.
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
+            // [TITAN-ORBIT] Skip only while Settling — TransformQuarantine stays ON all session on Windows
+            // and must NOT suppress beams. Gem data comes from hybrid proxies (no full gem gather).
+            if (ClientJoinSettleCache.Settling)
                 return;
 
             var world = EcsGameBridge.GetVisualizationWorld();
@@ -59,6 +72,7 @@ namespace TitanOrbit.Game
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
 
+            // --- Ships: tiny query (few entities) — safe ---
             using var shipQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),
@@ -69,15 +83,10 @@ namespace TitanOrbit.Game
             using var shipOrbits = shipQuery.ToComponentDataArray<ShipOrbitState>(Unity.Collections.Allocator.Temp);
             using var shipTransforms = shipQuery.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
 
-            using var gemQuery = em.CreateEntityQuery(
-                ComponentType.ReadOnly<GemTag>(),
-                ComponentType.ReadOnly<GemState>(),
-                ComponentType.ReadOnly<LocalTransform>(),
-                ComponentType.ReadOnly<GemKinematics>());
-            using var gems = gemQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
-            using var gemStates = gemQuery.ToComponentDataArray<GemState>(Unity.Collections.Allocator.Temp);
-            using var gemTransforms = gemQuery.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
-            using var gemKinematics = gemQuery.ToComponentDataArray<GemKinematics>(Unity.Collections.Allocator.Temp);
+            // --- Gems: hybrid proxy registry only (never ToEntityArray all gems) ---
+            CollectGemProxies(em, GemProxyScratch);
+            if (GemProxyScratch.Count == 0)
+                return;
 
             for (int si = 0; si < ships.Length; si++)
             {
@@ -94,12 +103,70 @@ namespace TitanOrbit.Game
                     shipOrbits[si].InOrbitRing,
                     shipTransforms[si],
                     wings,
-                    gems,
-                    gemStates,
-                    gemTransforms,
-                    gemKinematics,
+                    GemProxyScratch,
                     mapW,
                     mapH);
+            }
+        }
+
+        /// <summary>
+        /// Fills <paramref name="dst"/> with Instantiated gem entities for tractor VFX.
+        /// Prefers <see cref="GemClientEntityRegistry"/> (Instantiates hook) so beams work before
+        /// the GO proxy finishes; also merges hybrid proxy dictionary entities.
+        /// Per-entity HasComponent only — never a full gem <c>ToEntityArray</c>.
+        /// </summary>
+        public static void CollectGemProxies(EntityManager em, List<GemProxySnapshot> dst)
+        {
+            dst.Clear();
+            var seen = new HashSet<int>();
+
+            // --- Path A: Instantiates registry (available as soon as GhostSpawn Instantiates) ---
+            GemClientEntityRegistry.CopyLive(ProxyEntityScratch);
+            AppendGemSnapshots(em, ProxyEntityScratch, dst, seen);
+
+            // --- Path B: hybrid GO proxies (covers gems that somehow skipped the registry) ---
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer != null)
+            {
+                visualizer.CopyLiveProxyEntities(ProxyEntityScratch);
+                AppendGemSnapshots(em, ProxyEntityScratch, dst, seen);
+            }
+        }
+
+        /// <summary>Appends eligible gem snapshots from a candidate entity list (deduped by index).</summary>
+        static void AppendGemSnapshots(
+            EntityManager em,
+            List<Entity> candidates,
+            List<GemProxySnapshot> dst,
+            HashSet<int> seen)
+        {
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                Entity entity = candidates[i];
+                if (!em.Exists(entity) || seen.Contains(entity.Index))
+                    continue;
+                // Per-entity checks — not GatherEntitiesWithoutFilter over GemTag.
+                if (!em.HasComponent<GemTag>(entity) ||
+                    !em.HasComponent<GemState>(entity) ||
+                    !em.HasComponent<LocalTransform>(entity))
+                    continue;
+
+                var state = em.GetComponentData<GemState>(entity);
+                if (!IsGemEligibleForBeam(state))
+                    continue;
+
+                seen.Add(entity.Index);
+                var kinematics = em.HasComponent<GemKinematics>(entity)
+                    ? em.GetComponentData<GemKinematics>(entity)
+                    : default;
+
+                dst.Add(new GemProxySnapshot
+                {
+                    Entity = entity,
+                    State = state,
+                    Transform = em.GetComponentData<LocalTransform>(entity),
+                    Kinematics = kinematics,
+                });
             }
         }
 
@@ -109,10 +176,7 @@ namespace TitanOrbit.Game
             bool inOrbit,
             in LocalTransform shipTransform,
             DynamicBuffer<ShipWingTractorBeamElement> wings,
-            Unity.Collections.NativeArray<Entity> gems,
-            Unity.Collections.NativeArray<GemState> gemStates,
-            Unity.Collections.NativeArray<LocalTransform> gemTransforms,
-            Unity.Collections.NativeArray<GemKinematics> gemKinematics,
+            List<GemProxySnapshot> gems,
             float mapW,
             float mapH)
         {
@@ -127,23 +191,20 @@ namespace TitanOrbit.Game
                     ShipWingTractorBeamPose.GetTractorParams(wing, shipLevel, inOrbit, out float searchRadius, out _);
                     float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wing);
 
-                    for (int gi = 0; gi < gems.Length; gi++)
+                    for (int gi = 0; gi < gems.Count; gi++)
                     {
-                        if (!IsGemEligibleForBeam(gemStates[gi]))
-                            continue;
-
-                        float3 gemPos = gemTransforms[gi].Position;
+                        float3 gemPos = gems[gi].Transform.Position;
                         float dist = GemTractorBeamMath.ToroidalDistance(gemPos, wingPos, mapW, mapH);
                         if (dist > searchRadius)
                             continue;
 
-                        bool inFlight = GemTractorBeamDeployTracker.IsPullPhysicsActive(shipIndex, gems[gi].Index) &&
-                                        GetTowardShipSpeed(gemPos, gemKinematics[gi].Velocity, shipTransform.Position, mapW, mapH) >=
+                        bool inFlight = GemTractorBeamDeployTracker.IsPullPhysicsActive(shipIndex, gems[gi].Entity.Index) &&
+                                        GetTowardShipSpeed(gemPos, gems[gi].Kinematics.Velocity, shipTransform.Position, mapW, mapH) >=
                                         GemTractorBeamMath.ActivePullTowardSpeedThreshold * 0.5f;
 
                         CandidateScratch.Add(new PullCandidate
                         {
-                            GemIndex = gems[gi].Index,
+                            GemIndex = gems[gi].Entity.Index,
                             WingIndex = wi,
                             Dist = dist,
                             InFlight = inFlight,
@@ -153,17 +214,15 @@ namespace TitanOrbit.Game
             }
             else
             {
+                // --- No wings: single hull-center beam (legacy fallback) ---
                 GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out float searchRadius, out _);
                 float3 origin = shipTransform.Position;
                 int closestGemIndex = -1;
                 float closestDist = float.MaxValue;
 
-                for (int gi = 0; gi < gems.Length; gi++)
+                for (int gi = 0; gi < gems.Count; gi++)
                 {
-                    if (!IsGemEligibleForBeam(gemStates[gi]))
-                        continue;
-
-                    float3 gemPos = gemTransforms[gi].Position;
+                    float3 gemPos = gems[gi].Transform.Position;
                     float dist = GemTractorBeamMath.ToroidalDistance(gemPos, origin, mapW, mapH);
                     if (dist > searchRadius)
                         continue;
@@ -171,7 +230,7 @@ namespace TitanOrbit.Game
                     if (dist < closestDist)
                     {
                         closestDist = dist;
-                        closestGemIndex = gems[gi].Index;
+                        closestGemIndex = gems[gi].Entity.Index;
                     }
                 }
 
@@ -193,6 +252,7 @@ namespace TitanOrbit.Game
             if (CandidateScratch.Count == 0)
                 return;
 
+            // --- Assign: sticky in-flight first, then nearest per wing (one gem per wing) ---
             int wingCount = wings.Length;
             var assignedGemIds = new HashSet<int>();
             var wingHasGem = new bool[wingCount];
@@ -296,7 +356,9 @@ namespace TitanOrbit.Game
             float mapW,
             float mapH)
         {
-            if (!IsShipEligibleForBeam(shipState) || !IsGemEligibleForBeam(em.GetComponentData<GemState>(gemEntity)))
+            if (!IsShipEligibleForBeam(shipState))
+                return false;
+            if (em.HasComponent<GemState>(gemEntity) && !IsGemEligibleForBeam(em.GetComponentData<GemState>(gemEntity)))
                 return false;
 
             int shipLevel = math.max(1, shipState.ShipLevel);
@@ -415,6 +477,8 @@ namespace TitanOrbit.Game
             // --- Clear state ---
             WingByShipAndGem.Clear();
             AssignedGemsByShip.Clear();
+            GemProxyScratch.Clear();
+            ProxyEntityScratch.Clear();
             _cacheFrame = -1;
         }
     }

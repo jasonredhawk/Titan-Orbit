@@ -13,8 +13,10 @@ namespace TitanOrbit.ECS
     /// Server-only gem tractor beam: assigns gems in wing search radii to ship wings, runs deploy
     /// timing (beam extend + width expand), then sets gem velocity toward wing pull targets.
     /// Reads ShipWingTractorBeamElement buffer (synced from prefab by ShipWingTractorBeamSyncSystem).
-    /// Runs after GemMotionSystem, before GemPickupSystem. Ship must have gem capacity and not be
-    /// dead, team-selecting, or moon-docking.
+    /// [TITAN-ORBIT] One gem per wing (parallel collectors). Pull speed uses each wing's
+    /// TractorBeamPower (+ level / orbit), matching original NGO GemTractorBeamSettings — not a
+    /// global gem-mass base speed. Runs after GemMotionSystem, before GemPickupSystem.
+    /// Ship must have gem capacity and not be dead, team-selecting, or moon-docking.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -132,10 +134,11 @@ namespace TitanOrbit.ECS
                     continue;
 
                 int wingIndex = assignment[gemEntity.Index];
-                float pullSpeed = GemTractorBeamMath.ResolvePullSpeed(
-                    gemState.ValueRO.Value,
-                    gemState.ValueRO.Size,
-                    inOrbit);
+                // [TITAN-ORBIT] Pull speed comes from the assigned wing's TractorBeamPower
+                // (original NGO GemTractorBeamSettings), with a mild gem-mass feel factor.
+                float pullSpeed = ResolveWingPullSpeed(
+                    wingIndex, wings, shipLevel, inOrbit,
+                    gemState.ValueRO.Value, gemState.ValueRO.Size);
 
                 float3 gemPos = gemTransform.ValueRO.Position;
                 float3 pullTarget = ResolvePullTarget(shipTransform, wings, wingIndex);
@@ -144,8 +147,37 @@ namespace TitanOrbit.ECS
                 if (math.lengthsq(toWing) < 0.0001f)
                     continue;
 
-                gemKinematics.ValueRW = new GemKinematics { Velocity = toWing * pullSpeed };
+                // Keep any residual tumble; overwrite linear velocity with tractor pull.
+                var kin = gemKinematics.ValueRO;
+                kin.Velocity = toWing * pullSpeed;
+                gemKinematics.ValueRW = kin;
             }
+        }
+
+        /// <summary>
+        /// Resolves gameplay pull speed for the wing assigned to this gem.
+        /// Falls back to default max-gems tier when the ship has no wing buffer.
+        /// </summary>
+        static float ResolveWingPullSpeed(
+            int wingIndex,
+            DynamicBuffer<ShipWingTractorBeamElement> wings,
+            int shipLevel,
+            bool inOrbit,
+            float gemValue,
+            float gemSize)
+        {
+            float wingAttraction;
+            if (wingIndex >= 0 && wingIndex < wings.Length)
+            {
+                ShipWingTractorBeamPose.GetTractorParams(
+                    wings[wingIndex], shipLevel, inOrbit, out _, out wingAttraction);
+            }
+            else
+            {
+                GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out _, out wingAttraction);
+            }
+
+            return GemTractorBeamMath.ResolvePullSpeedFromWing(wingAttraction, gemValue, gemSize);
         }
 
         static float3 ResolvePullTarget(in LocalTransform shipTransform, DynamicBuffer<ShipWingTractorBeamElement> wings, int wingIndex)

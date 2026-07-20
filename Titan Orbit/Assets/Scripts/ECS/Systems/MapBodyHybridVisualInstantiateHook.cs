@@ -31,13 +31,21 @@ namespace TitanOrbit.Game
         static void Register()
         {
             s_PendingQueue.Clear();
+            GemClientEntityRegistry.Clear();
             // --- Replace any prior handler (domain reload / play mode) ---
             TitanOrbitJoinLoadCounters.OnDelayedGhostInstantiate = OnDelayedGhostInstantiate;
+            // Prefer gem Instantiates among ready delayed ghosts (still 1/frame).
+            TitanOrbitJoinLoadCounters.IsPriorityDelayedInstantiate = IsGemPlaceholder;
         }
+
+        /// <summary>True when the delayed-spawn placeholder is a gem ghost (priority Instantiates).</summary>
+        static bool IsGemPlaceholder(EntityManager em, Entity placeholder) =>
+            placeholder != Entity.Null && em.Exists(placeholder) && em.HasComponent<GemTag>(placeholder);
 
         /// <summary>
         /// Called from patched GhostSpawn after each delayed Instantiates success.
         /// Only records map-body entities — AddComponent happens in <see cref="FlushPending"/>.
+        /// Gems are also registered for tractor VFX + urgent proxy create (appear ASAP).
         /// </summary>
         /// <param name="em">Client EntityManager from GhostSpawn.</param>
         /// <param name="entity">The ghost entity that just Instantiated.</param>
@@ -45,6 +53,24 @@ namespace TitanOrbit.Game
         {
             if (entity == Entity.Null || !em.Exists(entity))
                 return;
+
+            // --- Gems: track for tractor beams + force an urgent visual (do not wait on asteroid drain) ---
+            // [TITAN-ORBIT] Gem ghosts often already have baked Pending, so the early-return below
+            // would skip SpawnRequest. They still need registry + urgent GO so destroy bursts
+            // are not stuck behind a long Instantiates/Pending asteroid backlog.
+            if (em.HasComponent<GemTag>(entity))
+            {
+                GemClientEntityRegistry.NotifyInstantiated(entity);
+                if (!em.HasComponent<MapBodyHybridVisualLinked>(entity) &&
+                    !s_PendingQueue.Contains(entity) &&
+                    !em.HasComponent<MapBodyHybridVisualSpawnRequest>(entity))
+                {
+                    // Ensure drain sees this gem even if Pending was already consumed incorrectly.
+                    if (!em.HasComponent<MapBodyHybridVisualPending>(entity))
+                        s_PendingQueue.Add(entity);
+                }
+                return;
+            }
 
             // --- Already queued or already has a GameObject proxy ---
             if (em.HasComponent<MapBodyHybridVisualSpawnRequest>(entity) ||
@@ -55,8 +81,7 @@ namespace TitanOrbit.Game
             // --- Map bodies only (ships/bullets/transports use other presentation paths) ---
             bool isMapBody =
                 em.HasComponent<PlanetTag>(entity) ||
-                em.HasComponent<AsteroidTag>(entity) ||
-                em.HasComponent<GemTag>(entity);
+                em.HasComponent<AsteroidTag>(entity);
             if (!isMapBody)
                 return;
 

@@ -35,12 +35,19 @@ namespace Unity.NetCode
         /// </summary>
         public static Action<EntityManager, Entity> OnDelayedGhostInstantiate;
 
+        /// <summary>
+        /// Optional: return true for placeholders that should Instantiates before other ready ghosts
+        /// (still 1/frame). Titan Orbit registers gem placeholders so destroy bursts are not stuck
+        /// behind a long asteroid Instantiates backlog.
+        /// </summary>
+        public static Func<EntityManager, Entity, bool> IsPriorityDelayedInstantiate;
+
         /// <summary>Call when NetworkStreamInGame ends / join gate clears.</summary>
         public static void Reset()
         {
             PlaceholdersCreatedSession = 0;
             InstantiatesSession = 0;
-            // Keep OnDelayedGhostInstantiate — registered once at runtime for the process.
+            // Keep OnDelayedGhostInstantiate / IsPriorityDelayedInstantiate — registered once at runtime.
         }
 
         /// <summary>Adds placeholder CreateEntity count for this frame.</summary>
@@ -115,7 +122,8 @@ namespace Unity.NetCode
         // v10 CreateEntity-cap+requeue → "baseline for a ghost we do not have" + Burst Crash!!! (2026-07-18).
         // v7 requeue without map registration had the same baseline failure mode.
         // v13 = v12 + OnDelayedGhostInstantiate hook for map-body hybrid SpawnRequest (no asteroid scan).
-        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v13_mapBodyVisualHook";
+        // v14 = v13 + prefer priority Instantiates (gems) among ready delayed ghosts — still 1/frame.
+        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v14_gemPriorityInstantiate";
 
         // Touched in OnCreate so the linker cannot strip the marker.
         static char s_PatchIdTouch;
@@ -287,35 +295,37 @@ namespace Unity.NetCode
             // only defer the real Instantiate. Break without Dequeue so nothing is dropped.
             // Keep this at 1: even 4 Instantiates/frame still tripped Burst LocalToWorldSystem
             // (ComputeWorldSpaceLocalToWorldJob) on Windows late-join with ~500 asteroids.
+            // Keep Instantiates at 1/frame (join Crash!!! if raised). Prefer priority ghosts (gems)
+            // among those already ready so destroy bursts are not stuck behind asteroid Instantiates.
             const int k_MaxDelayedInstantiatesPerFrame = 1;
             int delayedInstantiatesThisFrame = 0;
             int successfulInstantiatesThisFrame = 0;
 
-            while (delayedInstantiatesThisFrame < k_MaxDelayedInstantiatesPerFrame &&
-                   m_DelayedInterpolatedGhostSpawnQueue.Count > 0 &&
-                   !m_DelayedInterpolatedGhostSpawnQueue.Peek().clientSpawnTick.IsNewerThan(interpolationTargetTick))
+            if (delayedInstantiatesThisFrame < k_MaxDelayedInstantiatesPerFrame &&
+                TryInstantiateOnePreferPriority(
+                    ref state,
+                    m_DelayedInterpolatedGhostSpawnQueue,
+                    interpolationTargetTick,
+                    GhostSpawnBuffer.Type.Interpolated,
+                    prefabs,
+                    ghostCollectionSingleton,
+                    spawnedGhosts,
+                    ref successfulInstantiatesThisFrame))
             {
-                var ghost = m_DelayedInterpolatedGhostSpawnQueue.Dequeue();
-                if (TrySpawnFromDelayedQueue(ref state, ghost, GhostSpawnBuffer.Type.Interpolated, prefabs, ghostCollectionSingleton, out var entity))
-                {
-                    spawnedGhosts.Add(new SpawnedGhostMapping { ghost = new SpawnedGhost { ghostId = ghost.ghostId, spawnTick = ghost.serverSpawnTick }, entity = entity, previousEntity = ghost.oldEntity });
-                    successfulInstantiatesThisFrame++;
-                    // TITAN-ORBIT: per-entity hook (map hybrid visuals) — never scan all asteroids.
-                    TitanOrbitJoinLoadCounters.NotifyDelayedGhostInstantiate(state.EntityManager, entity);
-                }
                 delayedInstantiatesThisFrame++;
             }
-            while (delayedInstantiatesThisFrame < k_MaxDelayedInstantiatesPerFrame &&
-                   m_DelayedPredictedGhostSpawnQueue.Count > 0 &&
-                   !m_DelayedPredictedGhostSpawnQueue.Peek().clientSpawnTick.IsNewerThan(predictionTargetTick))
+
+            if (delayedInstantiatesThisFrame < k_MaxDelayedInstantiatesPerFrame &&
+                TryInstantiateOnePreferPriority(
+                    ref state,
+                    m_DelayedPredictedGhostSpawnQueue,
+                    predictionTargetTick,
+                    GhostSpawnBuffer.Type.Predicted,
+                    prefabs,
+                    ghostCollectionSingleton,
+                    spawnedGhosts,
+                    ref successfulInstantiatesThisFrame))
             {
-                var ghost = m_DelayedPredictedGhostSpawnQueue.Dequeue();
-                if (TrySpawnFromDelayedQueue(ref state, ghost, GhostSpawnBuffer.Type.Predicted, prefabs, ghostCollectionSingleton, out var entity))
-                {
-                    spawnedGhosts.Add(new SpawnedGhostMapping { ghost = new SpawnedGhost { ghostId = ghost.ghostId, spawnTick = ghost.serverSpawnTick }, entity = entity, previousEntity = ghost.oldEntity });
-                    successfulInstantiatesThisFrame++;
-                    TitanOrbitJoinLoadCounters.NotifyDelayedGhostInstantiate(state.EntityManager, entity);
-                }
                 delayedInstantiatesThisFrame++;
             }
 
@@ -450,6 +460,85 @@ namespace Unity.NetCode
             }
 
             return entity;
+        }
+
+        /// <summary>
+        /// Instantiates at most one ready ghost from <paramref name="queue"/> this call.
+        /// Prefer placeholders flagged by <see cref="TitanOrbitJoinLoadCounters.IsPriorityDelayedInstantiate"/>
+        /// (gems) so they are not stuck behind a long ready asteroid Instantiates backlog.
+        /// Still only one Instantiates — does not raise the per-frame Instantiates cap.
+        /// Drains the whole queue to a temp list so requeue order stays correct (ready items must
+        /// not be pushed behind not-yet-ready placeholders).
+        /// </summary>
+        bool TryInstantiateOnePreferPriority(
+            ref SystemState state,
+            NativeQueue<DelayedSpawnGhost> queue,
+            NetworkTick targetTick,
+            GhostSpawnBuffer.Type spawnType,
+            NativeArray<GhostCollectionPrefab> prefabs,
+            Entity ghostCollectionSingleton,
+            NativeList<SpawnedGhostMapping> spawnedGhosts,
+            ref int successfulInstantiatesThisFrame)
+        {
+            if (queue.Count == 0)
+                return false;
+
+            // --- Snapshot entire queue (order preserved on requeue) ---
+            var all = new NativeList<DelayedSpawnGhost>(queue.Count, Allocator.Temp);
+            while (queue.Count > 0)
+                all.Add(queue.Dequeue());
+
+            // --- First ready index, and first ready priority (gem) if any ---
+            int firstReady = -1;
+            int priorityReady = -1;
+            var priority = TitanOrbitJoinLoadCounters.IsPriorityDelayedInstantiate;
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i].clientSpawnTick.IsNewerThan(targetTick))
+                    continue;
+                if (firstReady < 0)
+                    firstReady = i;
+                if (priorityReady < 0 && priority != null)
+                {
+                    var oldEntity = all[i].oldEntity;
+                    if (oldEntity != Entity.Null &&
+                        state.EntityManager.Exists(oldEntity) &&
+                        priority(state.EntityManager, oldEntity))
+                    {
+                        priorityReady = i;
+                    }
+                }
+            }
+
+            int pick = priorityReady >= 0 ? priorityReady : firstReady;
+            bool attempted = false;
+            if (pick >= 0)
+            {
+                attempted = true;
+                var chosen = all[pick];
+                if (TrySpawnFromDelayedQueue(ref state, chosen, spawnType, prefabs, ghostCollectionSingleton, out var entity))
+                {
+                    spawnedGhosts.Add(new SpawnedGhostMapping
+                    {
+                        ghost = new SpawnedGhost { ghostId = chosen.ghostId, spawnTick = chosen.serverSpawnTick },
+                        entity = entity,
+                        previousEntity = chosen.oldEntity
+                    });
+                    successfulInstantiatesThisFrame++;
+                    TitanOrbitJoinLoadCounters.NotifyDelayedGhostInstantiate(state.EntityManager, entity);
+                }
+            }
+
+            // --- Requeue everyone except the consumed pick (same relative order) ---
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (attempted && i == pick)
+                    continue;
+                queue.Enqueue(all[i]);
+            }
+
+            all.Dispose();
+            return attempted;
         }
 
         unsafe bool TrySpawnFromDelayedQueue(ref SystemState state, in DelayedSpawnGhost ghost, GhostSpawnBuffer.Type spawnType, in NativeArray<GhostCollectionPrefab> prefabs, Entity ghostCollectionSingleton, out Entity entity)

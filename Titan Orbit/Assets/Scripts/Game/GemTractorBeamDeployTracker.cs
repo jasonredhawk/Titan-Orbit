@@ -14,6 +14,8 @@ namespace TitanOrbit.Game
     /// [HYBRID] Client-side deploy animation timing for tractor beams: extend line, then widen at gem,
     /// before <see cref="IsPullPhysicsActive"/> reports the server pull phase. Pairs with
     /// <see cref="GemTractorBeamMath"/> durations. Cosmetic only — does not affect gem velocity.
+    /// [TITAN-ORBIT] Under TransformQuarantine, gems come from hybrid proxies via
+    /// <see cref="GemTractorBeamClientLogic.CollectGemProxies"/> — never a full gem ToEntityArray.
     /// </summary>
     public static class GemTractorBeamDeployTracker
     {
@@ -25,6 +27,8 @@ namespace TitanOrbit.Game
         }
 
         static readonly Dictionary<long, DeployState> StateByPair = new Dictionary<long, DeployState>(128);
+        static readonly List<GemTractorBeamClientLogic.GemProxySnapshot> GemScratch =
+            new List<GemTractorBeamClientLogic.GemProxySnapshot>(64);
         static int _lastUpdateFrame = -1;
 
         public const float ExtendLineThickness = 0.065f;
@@ -36,8 +40,8 @@ namespace TitanOrbit.Game
                 return;
             _lastUpdateFrame = Time.frameCount;
 
-            // [TITAN-ORBIT] No gem ToEntityArray under join settle / Windows TransformQuarantine.
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
+            // [TITAN-ORBIT] Skip only while Settling. Quarantine stays ON all session — beams must still deploy.
+            if (ClientJoinSettleCache.Settling)
             {
                 StateByPair.Clear();
                 return;
@@ -64,13 +68,8 @@ namespace TitanOrbit.Game
             using var shipOrbits = shipQuery.ToComponentDataArray<ShipOrbitState>(Unity.Collections.Allocator.Temp);
             using var shipTransforms = shipQuery.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
 
-            using var gemQuery = em.CreateEntityQuery(
-                ComponentType.ReadOnly<GemTag>(),
-                ComponentType.ReadOnly<GemState>(),
-                ComponentType.ReadOnly<LocalTransform>());
-            using var gems = gemQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
-            using var gemStates = gemQuery.ToComponentDataArray<GemState>(Unity.Collections.Allocator.Temp);
-            using var gemTransforms = gemQuery.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
+            // Quarantine-safe: hybrid gem proxies only.
+            GemTractorBeamClientLogic.CollectGemProxies(em, GemScratch);
 
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
@@ -84,25 +83,23 @@ namespace TitanOrbit.Game
                     ? em.GetBuffer<ShipWingTractorBeamElement>(ships[si])
                     : default;
 
-                for (int gi = 0; gi < gems.Length; gi++)
+                for (int gi = 0; gi < GemScratch.Count; gi++)
                 {
-                    if (!GemTractorBeamClientLogic.IsGemEligibleForBeam(gemStates[gi]))
-                        continue;
-
+                    var gem = GemScratch[gi];
                     if (!GemTractorBeamClientLogic.IsWithinCandidateRange(
                             em, ships[si], shipStates[si], shipTransforms[si], wings,
-                            gems[gi], gemTransforms[gi], mapW, mapH))
+                            gem.Entity, gem.Transform, mapW, mapH))
                         continue;
 
-                    long key = PairKey(ships[si].Index, gems[gi].Index);
+                    long key = PairKey(ships[si].Index, gem.Entity.Index);
                     active.Add(key);
                     if (StateByPair.ContainsKey(key))
                         continue;
 
                     float3 origin = GemTractorBeamClientLogic.GetDeployBeamOrigin(
-                        shipTransforms[si], wings, gemTransforms[gi],
+                        shipTransforms[si], wings, gem.Transform,
                         math.max(1, shipStates[si].ShipLevel), shipOrbits[si].InOrbitRing, mapW, mapH);
-                    float dist = GemTractorBeamMath.ToroidalDistance(gemTransforms[gi].Position, origin, mapW, mapH);
+                    float dist = GemTractorBeamMath.ToroidalDistance(gem.Transform.Position, origin, mapW, mapH);
                     StateByPair[key] = new DeployState
                     {
                         LockStartTime = now,
@@ -169,6 +166,7 @@ namespace TitanOrbit.Game
         public static void Clear()
         {
             StateByPair.Clear();
+            GemScratch.Clear();
             _lastUpdateFrame = -1;
         }
 

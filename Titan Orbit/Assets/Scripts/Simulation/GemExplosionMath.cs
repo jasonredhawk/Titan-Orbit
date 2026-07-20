@@ -1,0 +1,116 @@
+using Unity.Mathematics;
+
+namespace TitanOrbit.Simulation
+{
+    /// <summary>
+    /// Shared asteroid gem-burst math for server spawn and client immediate presentation.
+    /// Tunables come from <see cref="Data.GemExplosionSettings"/> (Editor ScriptableObject).
+    /// Defaults match mature NGO <c>GemSpawner</c> / <c>Gem</c> (speed 2.2, damping 0.5, tumble ±1.5).
+    /// </summary>
+    public static class GemExplosionMath
+    {
+        public const int AbsoluteMinGemCount = 1;
+        public const int AbsoluteMaxGemCount = 10;
+        public const float DefaultExplosionSpeed = 2.2f;
+        public const float DefaultExplosionRadius = 1.4f;
+        public const float DefaultSpeedRandomMin = 0.45f;
+        public const float DefaultSpeedRandomMax = 1f;
+        public const float DefaultLinearDamping = 0.5f;
+        public const float DefaultStopSpeedThreshold = 0.05f;
+        public const float DefaultAngularSpeedMax = 1.5f;
+        public const float DefaultAngularDamping = 0.05f;
+
+        /// <summary>
+        /// How many gem entities to spawn for leftover asteroid value.
+        /// Count is random in [minCount, maxCount], also capped by floor(remaining) so tiny asteroids
+        /// cannot spawn more gems than whole value units (same spirit as original 1–3 logic).
+        /// </summary>
+        public static int ResolveGemCount(float remaining, int minCount, int maxCount, ref Random rng)
+        {
+            int minC = math.clamp(minCount, AbsoluteMinGemCount, AbsoluteMaxGemCount);
+            int maxC = math.clamp(maxCount, AbsoluteMinGemCount, AbsoluteMaxGemCount);
+            if (maxC < minC)
+                maxC = minC;
+
+            int maxByValue = math.max(1, math.min(maxC, (int)math.floor(remaining)));
+            int lo = math.min(minC, maxByValue);
+            int hi = maxByValue;
+            if (lo >= hi)
+                return hi;
+
+            // NextInt is [inclusive, exclusive)
+            return rng.NextInt(lo, hi + 1);
+        }
+
+        /// <summary>Equal split of remaining value across <paramref name="count"/> gems (sums to remaining).</summary>
+        public static float ValuePerGem(float remaining, int count, int gemIndex)
+        {
+            if (count <= 0)
+                return 0f;
+            if (gemIndex < 0 || gemIndex >= count)
+                return 0f;
+
+            // Give remainder crumbs to the last gem so the sum is exact.
+            float baseValue = remaining / count;
+            if (gemIndex < count - 1)
+                return baseValue;
+            return remaining - baseValue * (count - 1);
+        }
+
+        /// <summary>Random unit XZ direction (or +Z if degenerate).</summary>
+        public static float3 RandomUnitXZ(ref Random rng)
+        {
+            float3 dir = math.normalize(new float3(rng.NextFloat(-1f, 1f), 0f, rng.NextFloat(-1f, 1f)));
+            if (math.lengthsq(dir) < 0.01f)
+                return new float3(0f, 0f, 1f);
+            return dir;
+        }
+
+        /// <summary>Original GemSpawner launch: dir * speed * Random(speedMin, speedMax).</summary>
+        public static float3 BurstVelocity(
+            float3 dir,
+            float explosionSpeed,
+            float speedRandomMin,
+            float speedRandomMax,
+            ref Random rng)
+        {
+            float lo = math.min(speedRandomMin, speedRandomMax);
+            float hi = math.max(speedRandomMin, speedRandomMax);
+            float speed = explosionSpeed * rng.NextFloat(lo, hi);
+            return dir * speed;
+        }
+
+        /// <summary>Original GemSpawner tumble: Random(-max, max) per axis.</summary>
+        public static float3 BurstAngularVelocity(float angularSpeedMax, ref Random rng)
+        {
+            float m = math.max(0f, angularSpeedMax);
+            return new float3(
+                rng.NextFloat(-m, m),
+                rng.NextFloat(-m, m),
+                rng.NextFloat(-m, m));
+        }
+
+        /// <summary>
+        /// PhysX-style linear damping step matching original <c>Rigidbody.linearDamping = 0.5</c> feel:
+        /// <c>v *= 1 / (1 + damping * dt)</c>, then hard-stop below threshold.
+        /// </summary>
+        public static float3 IntegrateLinearVelocity(float3 velocity, float linearDamping, float stopSpeedThreshold, float dt)
+        {
+            float damp = math.max(0f, linearDamping);
+            velocity *= 1f / (1f + damp * dt);
+            if (math.lengthsq(velocity) < stopSpeedThreshold * stopSpeedThreshold)
+                return float3.zero;
+            return velocity;
+        }
+
+        /// <summary>Light angular damping for coasting tumble.</summary>
+        public static float3 IntegrateAngularVelocity(float3 angularVelocity, float angularDamping, float dt)
+        {
+            float damp = math.max(0f, angularDamping);
+            angularVelocity *= 1f / (1f + damp * dt);
+            if (math.lengthsq(angularVelocity) < 0.0001f)
+                return float3.zero;
+            return angularVelocity;
+        }
+    }
+}

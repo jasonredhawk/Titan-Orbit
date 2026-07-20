@@ -32,7 +32,9 @@ namespace TitanOrbit.ECS.Authoring
                 // --- Default gem state (overwritten at spawn with rolled value/size) ---
                 AddComponent(entity, new GemState { Value = 1f, Size = 1f });
 
-                // --- Scripted motion component (no PhysicsVelocity) ---
+                // --- Scripted motion (no PhysicsVelocity) ---
+                // [NETCODE] Velocity + AngularVelocity are GhostFields — client GemClientMotionApplier
+                // animates the hybrid GO from velocity (server still owns authority + pickup).
                 AddComponent(entity, new GemKinematics());
             }
         }

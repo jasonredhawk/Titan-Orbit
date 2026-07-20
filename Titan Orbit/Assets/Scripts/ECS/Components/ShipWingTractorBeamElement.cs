@@ -73,7 +73,7 @@ namespace TitanOrbit.ECS
         /// <param name="shipLevel">Current ship upgrade level.</param>
         /// <param name="inOrbitZone">True when ship is inside a friendly orbit ring (range bonus).</param>
         /// <param name="searchRadius">Output effective pickup radius.</param>
-        /// <param name="attractionSpeed">Output gem pull speed toward wing.</param>
+        /// <param name="attractionSpeed">Output gameplay pull speed toward this wing (power-based).</param>
         public static void GetTractorParams(
             in ShipWingTractorBeamElement wing,
             int shipLevel,
