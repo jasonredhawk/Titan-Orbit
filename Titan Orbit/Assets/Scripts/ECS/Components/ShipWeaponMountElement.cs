@@ -34,11 +34,14 @@ namespace TitanOrbit.ECS
     public static class ShipWeaponPose
     {
         /// <summary>
-        /// [ECS/DOTS] Resolves world-space fire origin and forward direction for one mount.
+        /// [ECS/DOTS] Server / authority muzzle from unbanked catalog-bake locals + yaw-only ship.
+        /// Client cosmetics use live weapon <c>Transform.position</c> instead
+        /// (<c>BulletMuzzlePresentation</c>) so BankPivot banking matches the drawn barrel.
+        /// Do not feed banked GO locals into this path — yaw-only × banked local lifts the muzzle.
         /// </summary>
-        /// <param name="shipTransform">Ship hull LocalTransform at fire time.</param>
-        /// <param name="mount">Baked mount element with local pose and yaw offset.</param>
-        /// <param name="fireOrigin">Output muzzle world position (keeps mount local Y — barrels often sit below hull origin).</param>
+        /// <param name="shipTransform">Ship hull LocalTransform at fire time (yaw-only sim).</param>
+        /// <param name="mount">Unbanked bake/catalog mount (hull-root local).</param>
+        /// <param name="fireOrigin">Output muzzle world position (keeps mount local Y).</param>
         /// <param name="fireForward">Output normalized fire direction on XZ plane.</param>
         /// <returns>False if the computed forward vector degenerates to zero length.</returns>
         [BurstCompile]
@@ -61,8 +64,6 @@ namespace TitanOrbit.ECS
                 localFwd = math.normalize(localFwd);
 
             // --- World muzzle origin (full mount offset, including Y) ---
-            // [TITAN-ORBIT] Do not flatten to hull Y — weapon child components are often below
-            // the ship root; forcing hull Y made muzzle flashes float above the barrels.
             fireOrigin = shipTransform.Position + math.rotate(shipTransform.Rotation, mount.LocalPosition);
 
             // --- Hull-relative cannon forward ---

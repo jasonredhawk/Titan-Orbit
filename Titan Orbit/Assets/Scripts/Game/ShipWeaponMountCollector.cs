@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using TitanOrbit.ECS.Authoring;
 using UnityEngine;
 
@@ -16,7 +17,6 @@ namespace TitanOrbit.Game
         /// </summary>
         public static void EnsureWeaponMountsOnHierarchy(Transform hullRoot, float muzzleOffset)
         {
-            // --- Ensure setup ---
             if (hullRoot == null)
                 return;
 
@@ -43,7 +43,6 @@ namespace TitanOrbit.Game
         /// </summary>
         public static void EnsureDefaultWeaponMount(Transform hullRoot, float muzzleOffset)
         {
-            // --- Ensure setup ---
             if (hullRoot == null)
                 return;
 
@@ -57,18 +56,36 @@ namespace TitanOrbit.Game
             weaponGo.AddComponent<ShipWeaponMountAuthoring>();
         }
 
-        static bool LooksLikeWeaponTransform(Transform t)
+        /// <summary>
+        /// True when this transform is an offensive weapon barrel for mounts / live muzzle resolve.
+        /// Matches family component ids via <see cref="ShipComponentAbilityStatsMath.IsWeaponComponent"/>
+        /// and legacy child names containing "Weapon".
+        /// </summary>
+        public static bool LooksLikeWeaponTransform(Transform t)
         {
-            // --- LooksLikeWeaponTransform ---
+            if (t == null)
+                return false;
+
             string name = t.name;
             if (string.IsNullOrEmpty(name))
                 return false;
 
-            if (name.Contains("Weapon"))
+            // --- Direct authoring already present ---
+            if (t.GetComponent<ShipWeaponMountAuthoring>() != null)
                 return true;
 
-            // Legacy chassis slots use a plain "Weapon" child name from ShipFamilyDefinition.
-            return false;
+            // --- Family / legacy: "Weapon…", "…_Weapon…", isolated "weapon" ---
+            if (name.IndexOf("Weapon", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            // Strip common "FamilyId_" prefix for IsWeaponComponent (ShipFamilyStatsCalculator style).
+            string id = name;
+            int underscore = name.IndexOf('_');
+            if (underscore > 0 && underscore < name.Length - 1)
+                id = name.Substring(underscore + 1);
+
+            return ShipComponentAbilityStatsMath.IsWeaponComponent(id)
+                   || ShipComponentAbilityStatsMath.IsWeaponComponent(name);
         }
     }
 }

@@ -1,20 +1,21 @@
-using TitanOrbit.Data;
 using TitanOrbit.ECS;
-using TitanOrbit.ECS.Authoring;
 using Unity.Entities;
-using Unity.Mathematics;
-using Unity.NetCode;
-using Unity.Transforms;
-using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    // --- Type members ---
     /// <summary>
-    /// Server-only: copies weapon mount transforms from ship visual hull proxies into the ship ghost's
-    /// ShipWeaponMountElement buffer each frame. Hull proxies are registered by network id in
-    /// Reads weapon mount transforms from ship entity buffers. Runs after ShipPhysicsDriveSystem, before
-    /// BulletSimulationSystem so muzzle poses are current for shooting.
+    /// Formerly copied live hull GO weapon transforms into <see cref="ShipWeaponMountElement"/> each
+    /// server frame. That path is intentionally disabled.
+    /// <para>
+    /// [TITAN-ORBIT] Visual bank lives on <c>BankPivot</c> (client cosmetic). ECS ship rotation is
+    /// yaw-only. Syncing banked GO → hull-root locals, then resolving with unbanked
+    /// <see cref="Unity.Transforms.LocalTransform"/> lifted muzzles above the real barrels.
+    /// </para>
+    /// <para>
+    /// Sim mounts stay catalog/bake unbanked locals. Local bullet VFX read live weapon
+    /// <see cref="UnityEngine.Transform"/> poses via <see cref="BulletMuzzlePresentation"/>.
+    /// System kept so update-order attributes and asmdef wiring stay stable.
+    /// </para>
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ShipPhysicsDriveSystem))]
@@ -22,47 +23,12 @@ namespace TitanOrbit.Game
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial class ShipWeaponMountSyncSystem : SystemBase
     {
+        /// <summary>
+        /// No-op: do not overwrite mount buffers from banked hybrid GOs.
+        /// </summary>
         protected override void OnUpdate()
         {
-            if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
-                return;
-
-            foreach (var (owner, entity) in SystemAPI.Query<RefRO<GhostOwner>>()
-                         .WithAll<ShipTag>()
-                         .WithEntityAccess())
-            {
-                // [TITAN-ORBIT] Visual hull is GameObject-only; sim reads baked buffer on ghost.
-                if (!ShipWeaponProxyRegistry.TryGetHull(owner.ValueRO.NetworkId, out var hullRoot))
-                    continue;
-
-                var mountAuthorings = hullRoot.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
-                if (mountAuthorings == null || mountAuthorings.Length == 0)
-                    continue;
-
-                if (!EntityManager.HasBuffer<ShipWeaponMountElement>(entity))
-                    EntityManager.AddBuffer<ShipWeaponMountElement>(entity);
-
-                var buffer = EntityManager.GetBuffer<ShipWeaponMountElement>(entity);
-                buffer.Clear();
-
-                for (int i = 0; i < mountAuthorings.Length; i++)
-                {
-                    var mountAuth = mountAuthorings[i];
-                    if (mountAuth == null || mountAuth.transform == hullRoot)
-                        continue;
-
-                    // [TITAN-ORBIT] Hull-root-local (nested Weapon children) — same as catalog bake.
-                    ShipChassisPrefabBakeUtility.GetHullRootLocalPose(
-                        hullRoot, mountAuth.transform, out var localPos, out var localRot);
-                    buffer.Add(new ShipWeaponMountElement
-                    {
-                        LocalPosition = localPos,
-                        LocalRotation = localRot,
-                        DirectionAngleDeg = mountAuth.DirectionAngleDeg,
-                        CannonIndex = mountAuth.CannonIndex,
-                    });
-                }
-            }
+            // Intentionally empty — see type summary (bank ≠ ECS yaw).
         }
     }
 }

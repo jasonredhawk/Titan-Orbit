@@ -12,13 +12,14 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Local-owner bullet anticipation: enqueues cosmetic tracers into <see cref="BulletVfxBridge"/>
-    /// from the Starblast muzzle (<see cref="BulletMuzzlePresentation"/>) so shots leave the nose
-    /// immediately. Server remains authoritative for damage (<see cref="BulletSimulationSystem"/>).
-    /// When <see cref="BulletSpawnRpc"/> arrives, <see cref="BulletVfxDriver"/> binds Sequence
-    /// without snapping pose back to the lagged server muzzle.
+    /// from live weapon component transforms (<see cref="BulletMuzzlePresentation"/>) so muzzle
+    /// flash matches the drawn barrel (including BankPivot). Server remains authoritative for
+    /// damage (<see cref="BulletSimulationSystem"/>). Round-robin uses the same live mount list
+    /// as resolve. When <see cref="BulletSpawnRpc"/> arrives, <see cref="BulletVfxDriver"/> binds
+    /// Sequence without snapping pose back to the lagged server muzzle.
     /// <para>
-    /// [UNITY] LateUpdate after <see cref="EcsWorldVisualizer"/> (66000) so presentation pose
-    /// is published; velocity uses kinematics or hull pose-delta (does not hard-require ShipKinematics).
+    /// [UNITY] LateUpdate after <see cref="EcsWorldVisualizer"/> (66000) so the hull / bank pose
+    /// is published; velocity uses kinematics or hull pose-delta.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66100)]
@@ -97,19 +98,23 @@ namespace TitanOrbit.Game
             if (shipState.CurrentEnergy < energyCost)
                 return;
 
-            // --- Starblast muzzle (predicted when soft-track lags; velocity includes shipVel) ---
+            // --- Live weapon Transform muzzle (exact component pose, includes bank) ---
             if (!BulletMuzzlePresentation.TryResolveMuzzle(
                     world.EntityManager, shipEntity, _nextMountIndex,
                     out float3 fireOrigin, out float3 fireForward, out bool displaySpace, out float3 shipVel))
                 return;
 
-            // Advance round-robin only after a successful resolve (armed ships only).
-            if (world.EntityManager.HasBuffer<ShipWeaponMountElement>(shipEntity))
+            // --- Round-robin over the same list TryResolveMuzzle used (live GO first) ---
+            int mountCount = BulletMuzzlePresentation.GetLiveWeaponMountCount(
+                world.EntityManager, shipEntity);
+            if (mountCount <= 0 &&
+                world.EntityManager.HasBuffer<ShipWeaponMountElement>(shipEntity))
             {
-                int mountCount = world.EntityManager.GetBuffer<ShipWeaponMountElement>(shipEntity).Length;
-                if (mountCount > 0)
-                    _nextMountIndex = (_nextMountIndex + 1) % mountCount;
+                mountCount = world.EntityManager.GetBuffer<ShipWeaponMountElement>(shipEntity).Length;
             }
+
+            if (mountCount > 0)
+                _nextMountIndex = (_nextMountIndex + 1) % mountCount;
 
             // Shared helper: kinematics or pose-delta — never leave shipVel=0 while hull moves.
             // --- Cap pending anticipations (MaxLive=1) ---

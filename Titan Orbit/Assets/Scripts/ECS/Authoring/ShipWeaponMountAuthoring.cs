@@ -5,8 +5,8 @@ namespace TitanOrbit.ECS.Authoring
     /// <summary>
     /// [UNITY] Marks a weapon barrel transform on the ship visual prefab hierarchy. At bake time,
     /// <see cref="StarshipGhostAuthoring"/> collects these into a <see cref="ShipWeaponMountElement"/>
-    /// DynamicBuffer on the ship ghost. <see cref="ShipWeaponPose"/> and
-    /// <see cref="BulletSimulationSystem"/> use buffer entries for muzzle origin and fire direction.
+    /// DynamicBuffer for server <see cref="ShipWeaponPose"/> / <see cref="BulletSimulationSystem"/>.
+    /// Client cosmetics read this transform live (<c>weapon.position</c>) so BankPivot banking matches.
     /// Place on child transforms under the hull — not on the root.
     /// </summary>
     public class ShipWeaponMountAuthoring : MonoBehaviour

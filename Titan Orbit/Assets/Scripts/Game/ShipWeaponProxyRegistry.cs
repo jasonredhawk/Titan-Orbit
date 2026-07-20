@@ -5,8 +5,8 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Static registry mapping NetCode ship network ids to hull proxy <see cref="Transform"/> roots.
-    /// <see cref="ShipWeaponMountSyncSystem"/> and client bullet VFX read this to find weapon mount children
-    /// on hybrid GameObject proxies. Client presentation only — not authoritative sim state.
+    /// <see cref="BulletMuzzlePresentation"/> reads this for live weapon component muzzle poses
+    /// (including BankPivot). Client presentation only — not authoritative sim state.
     /// </summary>
     public static class ShipWeaponProxyRegistry
     {

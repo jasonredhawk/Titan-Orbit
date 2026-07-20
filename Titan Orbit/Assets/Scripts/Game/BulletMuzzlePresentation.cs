@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.ECS.Authoring;
 using TitanOrbit.Shared;
@@ -11,23 +13,20 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Starblast-style local muzzle resolve for cosmetic bullet VFX.
+    /// Local muzzle resolve for cosmetic bullet VFX.
     /// <para>
-    /// World tracer velocity is always <c>aimDir * BulletSpeed + shipVel</c> (same as server),
-    /// so shots leave the nose at relative muzzle speed while flying. Hull pose prefers predicted
-    /// <see cref="LocalTransform"/> when soft-track lags; otherwise matches the drawn hybrid hull.
-    /// </para>
-    /// <para>
-    /// [TITAN-ORBIT] Under hybrid / TransformQuarantine, client ECS mount buffers are often empty
-    /// while the server fills mounts from the hull GO (<see cref="ShipWeaponMountSyncSystem"/>).
-    /// Cosmetics therefore fall back to <see cref="ShipWeaponMountAuthoring"/> on the visual hull
-    /// so tracers still Instantiates. Damage remains server-side.
+    /// Prefers live weapon component <see cref="Transform"/> poses on the hybrid hull
+    /// (<c>fireOrigin = weapon.position</c>) so flashes follow BankPivot banking and authored Y.
+    /// Falls back to ECS <see cref="ShipWeaponMountElement"/> + <see cref="ShipWeaponPose"/> when
+    /// no GO mounts exist. Velocity is always <c>aim * BulletSpeed + shipVel</c> (planar).
+    /// Damage remains server-side (<see cref="BulletSimulationSystem"/>).
     /// </para>
     /// </summary>
     public static class BulletMuzzlePresentation
     {
         /// <summary>
-        /// If presentation lags predicted sim by more than this × one-tick travel, use predicted pose.
+        /// If presentation lags predicted sim by more than this × one-tick travel, use predicted pose
+        /// for the ECS fallback path only (live GO path uses drawn weapon transforms).
         /// </summary>
         const float PresentationLagTicks = 1.25f;
 
@@ -43,11 +42,20 @@ namespace TitanOrbit.Game
         /// <summary>Realtime of last hull sample (for delta dt).</summary>
         static float s_LastHullSampleTime;
 
+        /// <summary>Scratch list for live weapon discovery (main thread only).</summary>
+        static readonly List<LiveWeaponMount> s_LiveMountScratch = new List<LiveWeaponMount>(8);
+
+        /// <summary>One offensive barrel on the drawn hull (authoring + live Transform).</summary>
+        struct LiveWeaponMount
+        {
+            public Transform Weapon;
+            public float DirectionAngleDeg;
+            public int CannonIndex;
+        }
+
         /// <summary>
         /// Resolves world muzzle origin/forward for one mount index on the local ship.
-        /// <paramref name="shipVel"/> is planar hull velocity (kinematics or pose-delta).
-        /// No origin lead — Starblast lock is pose + <c>shipVel</c> in velocity only; inventing a
-        /// future muzzle lets the first tracer visually pierce rocks the server has not hit.
+        /// Live GO weapons win: exact <c>weapon.position</c> (bank + Y). ECS buffer is fallback only.
         /// </summary>
         public static bool TryResolveMuzzle(
             EntityManager em,
@@ -66,19 +74,26 @@ namespace TitanOrbit.Game
             if (!em.Exists(shipEntity))
                 return false;
 
+            // --- Preferred: live weapon component Transform (includes BankPivot) ---
+            if (TryResolveLiveWeaponMuzzle(em, shipEntity, mountIndex,
+                    out fireOrigin, out fireForward, out float3 hullPosForVel))
+            {
+                isDisplaySpace = true;
+                shipVel = GetLocalShipVelocity(em, shipEntity, hullPosForVel);
+                return true;
+            }
+
+            // --- Fallback: catalog/bake buffer + yaw-only ShipWeaponPose ---
             if (!TryGetLocalHullTransform(em, shipEntity, out LocalTransform shipTransform, out isDisplaySpace))
                 return false;
 
-            if (!TryGetMountElement(em, shipEntity, mountIndex, out ShipWeaponMountElement mount))
+            if (!TryGetMountElementFromBuffer(em, shipEntity, mountIndex, out ShipWeaponMountElement mount))
                 return false;
 
             if (!ShipWeaponPose.TryResolve(shipTransform, mount, out fireOrigin, out fireForward))
                 return false;
 
-            // Velocity from hull pose; origin stays on the drawn/predicted barrels (no lead).
-            // Keep fireOrigin.y from the weapon mount — do not slam to 0 / hull Y.
             shipVel = GetLocalShipVelocity(em, shipEntity, shipTransform.Position);
-
             fireForward.y = 0f;
             if (math.lengthsq(fireForward) < 0.0001f)
                 fireForward = new float3(0f, 0f, 1f);
@@ -86,6 +101,17 @@ namespace TitanOrbit.Game
                 fireForward = math.normalize(fireForward);
 
             return true;
+        }
+
+        /// <summary>
+        /// Count of live weapon barrels on the local hull (GO path). 0 when none / no hull.
+        /// Used by anticipation round-robin so index matches <see cref="TryResolveMuzzle"/>.
+        /// </summary>
+        public static int GetLiveWeaponMountCount(EntityManager em, Entity shipEntity)
+        {
+            if (!TryCollectLiveWeaponMounts(em, shipEntity, s_LiveMountScratch))
+                return 0;
+            return s_LiveMountScratch.Count;
         }
 
         /// <summary>
@@ -107,9 +133,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Rewrites a local-owner spawn onto current predicted/presentation muzzle with correct velocity.
-        /// Returns false when the local muzzle cannot be resolved — caller should keep server pose
-        /// (never leave the player with zero tracers).
+        /// Rewrites a local-owner spawn onto current live/presentation muzzle with correct velocity.
+        /// Returns false when the local muzzle cannot be resolved — caller should keep server pose.
         /// </summary>
         public static bool TryReprojectLocalOwnerSpawn(ref BulletVfxBridge.SpawnRequest req)
         {
@@ -121,13 +146,11 @@ namespace TitanOrbit.Game
             if (!TryGetLocalShipEntity(em, out Entity shipEntity))
                 return false;
 
-            // Ensure OwnerNetworkId is set for adopt / local checks.
             if (req.OwnerNetworkId <= 0 && em.HasComponent<GhostOwner>(shipEntity))
                 req.OwnerNetworkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
             if (req.OwnerNetworkId <= 0)
                 req.OwnerNetworkId = EcsGameBridge.GetLocalNetworkId();
 
-            // Local-only: anticipation always; server packets must match local owner (after id fill).
             if (!req.IsAnticipation && !IsLocalOwner(req.OwnerNetworkId))
                 return false;
 
@@ -139,7 +162,6 @@ namespace TitanOrbit.Game
                 return false;
 
             var weaponCfg = em.GetComponentData<ShipWeaponConfig>(shipEntity);
-            // [TITAN-ORBIT] Same formula as BulletSimulationSystem — never strip shipVel via length hacks.
             req.SpawnPosition = origin;
             req.Velocity = BuildBulletWorldVelocity(forward, weaponCfg.BulletSpeed, shipVel);
             req.IsDisplaySpace = displaySpace;
@@ -148,8 +170,6 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// True when <paramref name="ownerNetworkId"/> is the local player's GhostOwner id.
-        /// Falls back to the local ship entity's <see cref="GhostOwner"/> when
-        /// <see cref="EcsGameBridge.GetLocalNetworkId"/> is not ready yet.
         /// </summary>
         public static bool IsLocalOwner(int ownerNetworkId)
         {
@@ -160,8 +180,6 @@ namespace TitanOrbit.Game
             if (localId > 0)
                 return ownerNetworkId == localId;
 
-            // --- Id edge case (join / host timing) ---
-            // [NETCODE] NetworkId singleton can lag briefly; LocalPlayerShipTag / GhostOwnerIsLocal still resolve.
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
                 return false;
@@ -186,79 +204,149 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// ECS mount buffer first; hybrid GO <see cref="ShipWeaponMountAuthoring"/> when the
-        /// client buffer is empty (common under TransformQuarantine — server sync is server-only).
+        /// Exact live weapon pose: origin = <c>weapon.position</c>, planar aim from weapon forward
+        /// + <see cref="ShipWeaponMountAuthoring.DirectionAngleDeg"/> (legacy Starship).
         /// </summary>
-        static bool TryGetMountElement(
+        static bool TryResolveLiveWeaponMuzzle(
+            EntityManager em,
+            Entity shipEntity,
+            int mountIndex,
+            out float3 fireOrigin,
+            out float3 fireForward,
+            out float3 hullPosForVel)
+        {
+            fireOrigin = default;
+            fireForward = new float3(0f, 0f, 1f);
+            hullPosForVel = float3.zero;
+
+            if (!TryCollectLiveWeaponMounts(em, shipEntity, s_LiveMountScratch))
+                return false;
+
+            int count = s_LiveMountScratch.Count;
+            if (count <= 0)
+                return false;
+
+            int idx = mountIndex % count;
+            if (idx < 0)
+                idx = 0;
+
+            LiveWeaponMount live = s_LiveMountScratch[idx];
+            if (live.Weapon == null)
+                return false;
+
+            // Exact component world pose — no hull-root × yaw-only recomposition.
+            fireOrigin = live.Weapon.position;
+            if (!TryBuildPlanarAimFromWeaponForward(live.Weapon.forward, live.DirectionAngleDeg, out fireForward))
+                return false;
+
+            if (TryGetLocalHullRoot(em, shipEntity, out Transform hullRoot) && hullRoot != null)
+                hullPosForVel = hullRoot.position;
+            else
+                hullPosForVel = fireOrigin;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Planar XZ aim from a world forward, then optional yaw offset (legacy Starship).
+        /// </summary>
+        static bool TryBuildPlanarAimFromWeaponForward(
+            Vector3 weaponForward,
+            float directionAngleDeg,
+            out float3 fireForward)
+        {
+            float3 fwd = weaponForward;
+            fwd.y = 0f;
+            if (math.lengthsq(fwd) < 0.0001f)
+                fwd = new float3(0f, 0f, 1f);
+            else
+                fwd = math.normalize(fwd);
+
+            float angleRad = math.radians(directionAngleDeg);
+            float3 right = math.normalize(math.cross(new float3(0f, 1f, 0f), fwd));
+            fireForward = math.normalize(fwd * math.cos(angleRad) + right * math.sin(angleRad));
+            fireForward.y = 0f;
+            if (math.lengthsq(fireForward) < 0.0001f)
+                return false;
+            fireForward = math.normalize(fireForward);
+            return true;
+        }
+
+        /// <summary>
+        /// Discovers offensive barrels on the drawn hull: authoring markers first, then weapon-named
+        /// children (<see cref="ShipComponentAbilityStatsMath.IsWeaponComponent"/> / "Weapon").
+        /// </summary>
+        static bool TryCollectLiveWeaponMounts(
+            EntityManager em,
+            Entity shipEntity,
+            List<LiveWeaponMount> into)
+        {
+            into.Clear();
+            if (!TryGetLocalHullRoot(em, shipEntity, out Transform hullRoot) || hullRoot == null)
+                return false;
+
+            // --- Authoring markers (preferred) ---
+            var authorings = hullRoot.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
+            if (authorings != null)
+            {
+                for (int i = 0; i < authorings.Length; i++)
+                {
+                    var a = authorings[i];
+                    if (a == null || a.transform == hullRoot)
+                        continue;
+                    into.Add(new LiveWeaponMount
+                    {
+                        Weapon = a.transform,
+                        DirectionAngleDeg = a.DirectionAngleDeg,
+                        CannonIndex = a.CannonIndex,
+                    });
+                }
+            }
+
+            if (into.Count > 0)
+                return true;
+
+            // --- Name / family id scan (same rules as chassis bake) ---
+            var transforms = hullRoot.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                Transform t = transforms[i];
+                if (t == null || t == hullRoot)
+                    continue;
+                if (!ShipWeaponMountCollector.LooksLikeWeaponTransform(t))
+                    continue;
+
+                into.Add(new LiveWeaponMount
+                {
+                    Weapon = t,
+                    DirectionAngleDeg = 0f,
+                    CannonIndex = into.Count,
+                });
+            }
+
+            return into.Count > 0;
+        }
+
+        /// <summary>ECS mount buffer only (no GO recomposition).</summary>
+        static bool TryGetMountElementFromBuffer(
             EntityManager em,
             Entity shipEntity,
             int mountIndex,
             out ShipWeaponMountElement mount)
         {
             mount = default;
-
-            // --- ECS buffer (baked / catalog) ---
-            if (em.HasBuffer<ShipWeaponMountElement>(shipEntity))
-            {
-                var mounts = em.GetBuffer<ShipWeaponMountElement>(shipEntity);
-                if (mounts.Length > 0)
-                {
-                    int idx = mountIndex % mounts.Length;
-                    if (idx < 0)
-                        idx = 0;
-                    mount = mounts[idx];
-                    return true;
-                }
-            }
-
-            // --- Hybrid GO fallback (presentation hull) ---
-            if (!TryGetLocalHullRoot(em, shipEntity, out Transform hullRoot))
+            if (!em.HasBuffer<ShipWeaponMountElement>(shipEntity))
                 return false;
 
-            var authorings = hullRoot.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
-            if (authorings == null || authorings.Length == 0)
+            var mounts = em.GetBuffer<ShipWeaponMountElement>(shipEntity);
+            if (mounts.Length <= 0)
                 return false;
 
-            // Collect valid mounts (skip hull root itself).
-            int validCount = 0;
-            for (int i = 0; i < authorings.Length; i++)
-            {
-                var a = authorings[i];
-                if (a != null && a.transform != hullRoot)
-                    validCount++;
-            }
-
-            if (validCount == 0)
-                return false;
-
-            int target = mountIndex % validCount;
-            if (target < 0)
-                target = 0;
-
-            int seen = 0;
-            for (int i = 0; i < authorings.Length; i++)
-            {
-                var a = authorings[i];
-                if (a == null || a.transform == hullRoot)
-                    continue;
-                if (seen == target)
-                {
-                    ShipChassisPrefabBakeUtility.GetHullRootLocalPose(
-                        hullRoot, a.transform, out float3 localPos, out quaternion localRot);
-                    mount = new ShipWeaponMountElement
-                    {
-                        LocalPosition = localPos,
-                        LocalRotation = localRot,
-                        DirectionAngleDeg = a.DirectionAngleDeg,
-                        CannonIndex = a.CannonIndex,
-                    };
-                    return true;
-                }
-
-                seen++;
-            }
-
-            return false;
+            int idx = mountIndex % mounts.Length;
+            if (idx < 0)
+                idx = 0;
+            mount = mounts[idx];
+            return true;
         }
 
         /// <summary>Hull GO for mount authorings — registry by network id, else local visual root.</summary>
@@ -279,7 +367,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Hull transform: predicted when soft-track lags; else live proxy / ShipDisplayPose.
+        /// Hull transform for ECS fallback path: predicted when soft-track lags; else presentation.
         /// </summary>
         static bool TryGetLocalHullTransform(
             EntityManager em,
@@ -295,7 +383,6 @@ namespace TitanOrbit.Game
                 ? em.GetComponentData<LocalTransform>(shipEntity)
                 : default;
 
-            // --- Presentation candidates (drawn hull / camera) ---
             bool hasPresentation = false;
             LocalTransform presentation = default;
             Transform visualRoot = EcsWorldVisualizer.LocalPlayerShipVisualRoot;
@@ -314,7 +401,6 @@ namespace TitanOrbit.Game
                 hasPresentation = true;
             }
 
-            // --- Starblast lock: when soft-track trails predicted sim, fire from predicted nose ---
             if (hasPredicted && hasPresentation)
             {
                 float3 shipVel = ReadKinematicsOrZero(em, shipEntity);
@@ -361,7 +447,6 @@ namespace TitanOrbit.Game
                 return kin;
             }
 
-            // --- Pose-delta fallback (hull is moving but kinematics missing/stale) ---
             float now = Time.realtimeSinceStartup;
             float3 deltaVel = float3.zero;
             if (s_HasLastHullPos)

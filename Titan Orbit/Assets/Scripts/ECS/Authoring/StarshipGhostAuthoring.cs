@@ -154,7 +154,7 @@ namespace TitanOrbit.ECS.Authoring
                 {
                     foreach (var t in authoring.GetComponentsInChildren<Transform>(true))
                     {
-                        if (t == hullRoot || !t.name.Contains("Weapon"))
+                        if (t == hullRoot || !ShipChassisPrefabBakeUtility.LooksLikeWeaponChildForBake(t))
                             continue;
 
                         ShipChassisPrefabBakeUtility.GetHullRootLocalPose(

@@ -145,10 +145,12 @@ namespace TitanOrbit.ECS
             if (entry.WeaponMounts.Count > 0)
                 return;
 
-            // --- Legacy name scan: child name contains "Weapon" ---
+            // --- Name / family weapon id scan (matches ShipWeaponMountCollector + IsWeaponComponent) ---
             foreach (var t in root.GetComponentsInChildren<Transform>(true))
             {
-                if (t == root || !t.name.Contains("Weapon"))
+                if (t == root)
+                    continue;
+                if (!LooksLikeWeaponChildForBake(t))
                     continue;
 
                 GetHullRootLocalPose(root, t, out float3 localPos, out quaternion localRot);
@@ -181,6 +183,29 @@ namespace TitanOrbit.ECS
             Quaternion lr = Quaternion.Inverse(hullRoot.rotation) * mount.rotation;
             localPosition = lp;
             localRotation = lr;
+        }
+
+        /// <summary>
+        /// True when a child should become a sim mount (family weapon id or "Weapon" in name).
+        /// Shared rule with live client discovery — keep offensive barrels in the buffer.
+        /// </summary>
+        public static bool LooksLikeWeaponChildForBake(Transform t)
+        {
+            if (t == null)
+                return false;
+            string name = t.name;
+            if (string.IsNullOrEmpty(name))
+                return false;
+            if (name.IndexOf("Weapon", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+
+            string id = name;
+            int underscore = name.IndexOf('_');
+            if (underscore > 0 && underscore < name.Length - 1)
+                id = name.Substring(underscore + 1);
+
+            return ShipComponentAbilityStatsMath.IsWeaponComponent(id)
+                   || ShipComponentAbilityStatsMath.IsWeaponComponent(name);
         }
 
         static void BakeWingTractorBeams(Transform root, ShipChassisVisualEntry entry)
