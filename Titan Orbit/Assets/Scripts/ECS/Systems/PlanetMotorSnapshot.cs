@@ -27,6 +27,12 @@ namespace TitanOrbit.ECS
         /// avoids repeating scale math inside Burst shield repel.
         /// </summary>
         public float ShieldOuterRadiusWorld;
+
+        /// <summary>
+        /// Precomputed moon body radius in world units at collect time —
+        /// used by Burst moon-dock attach (surface contact) without calling managed Mathf helpers.
+        /// </summary>
+        public float MoonBodyRadiusWorld;
     }
 
     /// <summary>
@@ -38,6 +44,12 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Scans all planet entities and returns snapshots for orbit + shield math this tick.
         /// Caller must Dispose the list (or Dispose via job dependency).
+        /// <para>
+        /// [TITAN-ORBIT] Uses planet <c>ToEntityArray</c> — safe on the <b>server</b> only.
+        /// On Windows clients under <see cref="ClientJoinSettleCache.TransformQuarantine"/> this
+        /// gather Crash!!! (TeamChoice → predicted drive first Collect). Client prediction must
+        /// pass an empty list instead — see <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
+        /// </para>
         /// </summary>
         /// <param name="state">System state used only for EntityManager access.</param>
         /// <param name="allocator">Usually <see cref="Allocator.TempJob"/> when feeding a parallel job.</param>
@@ -48,6 +60,8 @@ namespace TitanOrbit.ECS
             var em = state.EntityManager;
 
             // [ECS/DOTS] CreateEntityQuery (not state.GetEntityQuery) — caller-owned; safe to dispose.
+            // [TITAN-ORBIT] Full planet ToEntityArray — server motor only. Client must not call this
+            // while TransformQuarantine is on (session-long on Windows late-join).
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<PlanetTag>(),
                 ComponentType.ReadOnly<PlanetState>(),
@@ -65,13 +79,18 @@ namespace TitanOrbit.ECS
                     ? em.GetComponentData<PlanetGemMoonState>(entity)
                     : default;
 
+                float planetSize = math.max(0.25f, transform.Scale);
                 list.Add(new PlanetMotorSnapshot
                 {
                     Planet = planet,
                     Moon = moon,
                     Transform = transform,
                     ShieldOuterRadiusWorld = PlanetGemMoonMath.GetMoonShieldOuterRadiusWorld(
-                        math.max(0.25f, transform.Scale),
+                        planetSize,
+                        planet.IsHomePlanet),
+                    // [TITAN-ORBIT] Collected on main thread — PlanetGemMoonMath uses Mathf (not Burst-safe).
+                    MoonBodyRadiusWorld = PlanetGemMoonMath.GetMoonBodyRadiusWorld(
+                        planetSize,
                         planet.IsHomePlanet),
                 });
             }

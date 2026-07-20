@@ -10,7 +10,9 @@ namespace TitanOrbit.ECS
     /// before physics so local input feels instant (Starblast pillar 1). Does not wait for RTT.
     /// [NETCODE] Only entities with <see cref="Simulate"/> participate; remotes interpolate.
     /// Input is already on the ghost from <see cref="ShipInputApplySystem"/> in GhostInputSystemGroup.
-    /// Planet snapshots match the server so orbit ring membership and shield repel stay deterministic.
+    /// Under Windows <see cref="ClientJoinSettleCache.TransformQuarantine"/> planet snapshots are
+    /// skipped (Collect ToEntityArray Crash!!! after TeamChoice); thrust/turn still predict.
+    /// Server <see cref="ShipPhysicsDriveSystem"/> keeps full orbit/shield Collect.
     /// </summary>
     // OrderFirst + after MassSync: runs before default-slot PhysicsSystemGroup without UpdateBefore
     // (ClientWorld often lacks PhysicsSystemGroup as a PredictedFixedStep sibling → sorter spam).
@@ -33,8 +35,19 @@ namespace TitanOrbit.ECS
             // --- Map size for toroidal orbit / shield math (same source as server) ---
             GetMapSize(ref state, out float mapW, out float mapH);
 
-            // [ECS/DOTS] TempJob planet snapshot — disposed after the parallel job completes.
-            var planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
+            // --- Planet snapshots (orbit ring + moon shield) ---
+            // [ECS/DOTS] TempJob list — disposed after the parallel job completes.
+            // [TITAN-ORBIT] Windows TransformQuarantine: PlanetMotorSnapshotCollection.Collect does
+            // planet ToEntityArray → Crash!!!. RequireForUpdate ShipMotorConfig only becomes true
+            // when the TeamChoice ship Instantiates — so the first Collect is right after
+            // TeamChoiceResult (Player.log 2026-07-20). Skip the gather; drive thrust/turn with an
+            // empty planet list. Server authority still runs full Collect. Do NOT gate Collect
+            // globally — Local Host shares ClientJoinSettleCache with the server world.
+            NativeList<PlanetMotorSnapshot> planets;
+            if (ClientJoinSettleCache.TransformQuarantine || ClientJoinSettleCache.Settling)
+                planets = new NativeList<PlanetMotorSnapshot>(0, Allocator.TempJob);
+            else
+                planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
 
             // --- Moon orbit clock for predicted shield repel ---
             // [TITAN-ORBIT] Must match server / collider sync — World.ElapsedTime diverges on late-join.

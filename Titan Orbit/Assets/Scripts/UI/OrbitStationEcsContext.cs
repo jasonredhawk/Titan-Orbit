@@ -21,7 +21,7 @@ namespace TitanOrbit.UI
         /// <summary>Current ship level from replicated ShipState (minimum 1).</summary>
         public static int ShipLevel { get; private set; } = 1;
 
-        /// <summary>Upgrade tree branch index from ShipLoadoutState.</summary>
+        /// <summary>Upgrade tree branch index from ghosted <c>ShipState.BranchIndex</c>.</summary>
         public static int BranchIndex { get; private set; }
 
         /// <summary>

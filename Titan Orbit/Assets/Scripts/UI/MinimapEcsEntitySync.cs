@@ -91,10 +91,11 @@ namespace TitanOrbit.UI
         /// <summary>Per-frame minimap blip sync — rebuild or position-only update.</summary>
         void LateUpdate()
         {
-            // --- Join settle gate ---
-            // [TITAN-ORBIT] During GhostSpawn Instantiates the loading screen owns the UI.
-            // Do not rebuild anchors yet — asteroid ToEntityArray Crash!!! under load.
-            if (ClientJoinSettleCache.Settling)
+            // --- Join settle / ship Instantiates gate ---
+            // [TITAN-ORBIT] During GhostSpawn Instantiates the loading screen owns the UI
+            // (Settling). After Join Team, Settling stays OFF but GhostSpawnBacklog covers the
+            // ship Instantiates window — SyncShips ToEntityArray then Crash!!! (2026-07-19).
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
                 return;
 
             // --- Per-frame refresh ---

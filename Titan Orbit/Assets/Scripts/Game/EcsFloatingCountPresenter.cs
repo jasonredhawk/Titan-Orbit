@@ -60,6 +60,11 @@ namespace TitanOrbit.Game
 
             var em = world.EntityManager;
 
+            // [TITAN-ORBIT] Ship ToComponentDataArray during GhostSpawn Instantiates Crash!!!
+            // (TeamChoiceResult window — Settling OFF, backlog ON). Wait until ships are idle.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
             // --- First frame: record baseline without showing popups ---
             if (!_primed)
             {
@@ -70,7 +75,7 @@ namespace TitanOrbit.Game
 
             PollShips(em);
             // [TITAN-ORBIT] Planet/asteroid ToComponentDataArray is unsafe under Windows TransformQuarantine.
-            if (!ClientJoinSettleCache.Settling && !ClientJoinSettleCache.TransformQuarantine)
+            if (!ClientJoinSettleCache.TransformQuarantine)
             {
                 PollPlanetGems(em);
                 PollAsteroids(em);

@@ -64,13 +64,16 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Maps team + ship level + branch index to a chassis id string from the home-planet ladder.
-        /// Falls back to planet 0 / index 0 when lookup fails.
+        /// When <paramref name="allowFallback"/> is true and the slot is empty, falls back to the
+        /// starter chassis (index 0). Purchase validation should pass false so missing L7/MEGA
+        /// slots do not silently become Hawk.
         /// </summary>
         public static bool TryResolveChassisId(
             TeamId team,
             int shipLevel,
             int branchIndex,
-            out string chassisId)
+            out string chassisId,
+            bool allowFallback = true)
         {
             chassisId = null;
             var config = Config;
@@ -89,8 +92,8 @@ namespace TitanOrbit.ECS
                 isHomePlanet: true,
                 shipFamilyConfigIndex: PlanetShipFamilyAssignment.HomeFamilyConfigIndex);
 
-            // [STANDARD] Fallback chassis when ladder lookup returns empty.
-            if (string.IsNullOrEmpty(chassisId))
+            // [STANDARD] Starter hull only — never map a missing MEGA/L7 click onto Hawk by accident.
+            if (string.IsNullOrEmpty(chassisId) && allowFallback)
             {
                 chassisId = config.GetChassisIdForPlanetAndIndex(
                     0, 0, isHomePlanet: true, shipFamilyConfigIndex: PlanetShipFamilyAssignment.HomeFamilyConfigIndex);
@@ -166,7 +169,15 @@ namespace TitanOrbit.ECS
             {
                 baseStats = ShipFamilyStatsCalculator.BreakdownToBaseStats(tier.powerScoreBreakdown);
                 if (family != null)
+                {
+                    // [TITAN-ORBIT] Older baked breakdowns summed bulletSpeed across every Weapon
+                    // child (6×12 → 72). Prefab sum now uses max; until the catalog is re-baked,
+                    // force projectile speed back to the family default baseline.
+                    var familyDefaults = family.GetEffectiveDefaultFallbackStats();
+                    if (familyDefaults.bulletSpeed > 0.01f)
+                        baseStats.bulletSpeed = familyDefaults.bulletSpeed;
                     baseStats = family.ApplyStatFallbacks(baseStats);
+                }
                 return true;
             }
 
@@ -211,7 +222,25 @@ namespace TitanOrbit.ECS
                 return;
 
             // [TITAN-ORBIT] Level scaling curve applied before attribute multipliers.
-            ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, shipLevel);
+            // Keep a pre-attribute copy so bullet VFX baselines reset on chassis swap without
+            // baking attribute FirePower boosts into ReferenceBullet* (that made tracers huge).
+            ShipComponentAbilityStats chassisBaseline =
+                ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, shipLevel);
+            ShipComponentAbilityStats effective = chassisBaseline;
+
+            // --- Detect chassis identity change (level / branch / id) before we overwrite bookkeeping ---
+            // [TITAN-ORBIT] Upgrade-tree purchases jump firePower while sticky ReferenceBulletDamage
+            // stayed at starter 8 → BulletVisualScale upgradeMul exploded. Reset references only
+            // when the hull changes; attribute-only applies keep sticky refs so size still grows.
+            bool chassisIdentityChanged = true;
+            if (em.HasComponent<ShipChassisState>(shipEntity))
+            {
+                var prevChassis = em.GetComponentData<ShipChassisState>(shipEntity);
+                var chassisKey = new FixedString64Bytes(chassisId);
+                chassisIdentityChanged = !prevChassis.ChassisId.Equals(chassisKey)
+                    || prevChassis.AppliedShipLevel != shipLevel
+                    || prevChassis.AppliedBranchIndex != branchIndex;
+            }
 
             int attributeSum = 0;
             // --- Attribute upgrades (+10% per level from bottom HUD) ---
@@ -235,6 +264,7 @@ namespace TitanOrbit.ECS
                 ship.MaxEnergy = Mathf.Max(1f, effective.energyCap);
                 ship.PeopleCapacity = Mathf.Max(0, Mathf.RoundToInt(effective.maxPeople));
                 ship.ShipLevel = shipLevel;
+                ship.BranchIndex = branchIndex;
                 ship.Health = Mathf.Clamp(ship.Health, 0f, ship.MaxHealth);
                 if (ship.Health <= 0.01f || ship.AwaitingTeamSelection)
                     ship.Health = ship.MaxHealth;
@@ -256,15 +286,19 @@ namespace TitanOrbit.ECS
                 float firePower = Mathf.Max(0.1f, effective.firePower);
                 float fireRate = Mathf.Max(0.1f, effective.fireRate);
                 float bulletSpeed = Mathf.Max(0.1f, effective.bulletSpeed);
+                // Chassis baseline (no attribute mul) — visual "level 1 for this hull".
+                float baselineDamage = Mathf.Max(0.1f, chassisBaseline.firePower);
+                float baselineSpeed = Mathf.Max(0.1f, chassisBaseline.bulletSpeed);
                 var weapon = em.GetComponentData<ShipWeaponConfig>(shipEntity);
                 weapon.FireRate = fireRate;
                 weapon.BulletSpeed = bulletSpeed;
                 weapon.BulletDamage = firePower;
                 weapon.EnergyCostPerShot = firePower;
-                if (weapon.ReferenceBulletDamage <= 0.01f)
-                    weapon.ReferenceBulletDamage = firePower;
-                if (weapon.ReferenceBulletSpeed <= 0.01f)
-                    weapon.ReferenceBulletSpeed = bulletSpeed;
+                // [TITAN-ORBIT] Reset VFX baselines on hull swap so upgradeMul ≈ 1 until attributes climb.
+                if (chassisIdentityChanged || weapon.ReferenceBulletDamage <= 0.01f)
+                    weapon.ReferenceBulletDamage = baselineDamage;
+                if (chassisIdentityChanged || weapon.ReferenceBulletSpeed <= 0.01f)
+                    weapon.ReferenceBulletSpeed = baselineSpeed;
                 em.SetComponentData(shipEntity, weapon);
             }
 

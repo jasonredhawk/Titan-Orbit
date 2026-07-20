@@ -48,6 +48,7 @@ namespace TitanOrbit.ECS.Authoring
                     Health = 100f,
                     MaxHealth = 100f,
                     ShipLevel = 1,
+                    BranchIndex = 0,
                     GemCapacity = 50f,
                     CurrentEnergy = 50f,
                     MaxEnergy = 50f,
@@ -55,6 +56,10 @@ namespace TitanOrbit.ECS.Authoring
                     // [TITAN-ORBIT] New ships wait for RequestTeamCommand before movement is enabled.
                     AwaitingTeamSelection = true,
                 });
+                // [NETCODE] ShipLoadoutState is still added at runtime by ShipEnsureComponentsSystem.
+                // Branch for upgrade-tree hulls replicates via ShipState.BranchIndex (baked above).
+                // Baking Loadout here is optional later once GhostAuthoring variants are audited —
+                // avoid expanding the ghost prefab component set mid-debug of join Instantiates.
                 AddComponent(entity, new ShipMotorConfig
                 {
                     EngineThrust = authoring.EngineThrust,
@@ -173,21 +178,26 @@ namespace TitanOrbit.ECS.Authoring
 
             /// <summary>
             /// Collects wing tractor beam child authorings for gem collection gameplay.
+            /// Stores hull-root-local unscaled offsets (not immediate-parent localPosition).
             /// </summary>
             void BakeWingTractorBeams(StarshipGhostAuthoring authoring, Entity shipEntity)
             {
                 var wings = AddBuffer<ShipWingTractorBeamElement>(shipEntity);
+                Transform hullRoot = authoring.transform;
                 var wingAuthorings = authoring.GetComponentsInChildren<ShipWingTractorBeamAuthoring>(true);
                 for (int i = 0; i < wingAuthorings.Length; i++)
                 {
                     var wing = wingAuthorings[i];
-                    if (wing == null || wing.transform == authoring.transform)
+                    if (wing == null || wing.transform == hullRoot)
                         continue;
 
-                    var t = wing.transform;
+                    // [TITAN-ORBIT] Same hull-root rule as BakeWeaponMounts — nested wings on upgrade
+                    // chassis were baking parent-local offsets and drawing beams outside the hull.
+                    ShipChassisPrefabBakeUtility.GetHullRootLocalPose(
+                        hullRoot, wing.transform, out float3 localPos, out _);
                     wings.Add(new ShipWingTractorBeamElement
                     {
-                        LocalPosition = t.localPosition,
+                        LocalPosition = localPos,
                         TractorBeamDistance = wing.tractorBeamDistance,
                         TractorBeamDistancePerLevel = wing.tractorBeamDistancePerLevel,
                         TractorBeamPower = wing.tractorBeamPower,
@@ -201,14 +211,16 @@ namespace TitanOrbit.ECS.Authoring
                 {
                     foreach (var t in authoring.GetComponentsInChildren<Transform>(true))
                     {
-                        if (t == authoring.transform || !t.name.Contains("Wing"))
+                        if (t == hullRoot || !t.name.Contains("Wing"))
                             continue;
                         if (t.name.Contains("Weapon"))
                             continue;
 
+                        ShipChassisPrefabBakeUtility.GetHullRootLocalPose(
+                            hullRoot, t, out float3 localPos, out _);
                         wings.Add(new ShipWingTractorBeamElement
                         {
-                            LocalPosition = t.localPosition,
+                            LocalPosition = localPos,
                             TractorBeamDistance = 3f,
                             TractorBeamDistancePerLevel = 0.75f,
                             TractorBeamPower = 4f,

@@ -105,7 +105,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Count of live weapon barrels on the local hull (GO path). 0 when none / no hull.
-        /// Used by anticipation round-robin so index matches <see cref="TryResolveMuzzle"/>.
+        /// Used by anticipation volleys so index matches <see cref="TryResolveMuzzle"/>.
         /// </summary>
         public static int GetLiveWeaponMountCount(EntityManager em, Entity shipEntity)
         {
@@ -157,7 +157,10 @@ namespace TitanOrbit.Game
             if (!em.HasComponent<ShipWeaponConfig>(shipEntity))
                 return false;
 
-            if (!TryResolveMuzzle(em, shipEntity, 0, out float3 origin, out float3 forward,
+            // [TITAN-ORBIT] Use the spawn's MountIndex — hardcoding 0 snapped every volley bullet
+            // onto the first barrel after upgrade-tree multi-cannon hulls landed.
+            int mountIndex = req.MountIndex < 0 ? 0 : req.MountIndex;
+            if (!TryResolveMuzzle(em, shipEntity, mountIndex, out float3 origin, out float3 forward,
                     out bool displaySpace, out float3 shipVel))
                 return false;
 

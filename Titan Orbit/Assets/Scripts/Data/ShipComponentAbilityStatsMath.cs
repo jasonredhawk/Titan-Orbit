@@ -6,8 +6,9 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// Pure math helpers for <see cref="ShipComponentAbilityStats"/> — addition, zero checks, fallback fill,
-    /// transform-based scaling, and component-id classification (weapon vs engine vs thruster).
-    /// No Unity scene access; safe to call from editor tooling and runtime stat pipelines.
+    /// transform-based scaling, weapon projectile-speed aggregation (max, not sum), and component-id
+    /// classification (weapon vs engine vs thruster). No Unity scene access; safe to call from editor
+    /// tooling and runtime stat pipelines.
     /// </summary>
     public static class ShipComponentAbilityStatsMath
     {
@@ -53,6 +54,57 @@ namespace TitanOrbit.Data
         public static void AddInPlace(ref ShipComponentAbilityStats target, ShipComponentAbilityStats other)
         {
             target = Add(target, other);
+        }
+
+        /// <summary>
+        /// Replaces naively summed weapon <c>bulletSpeed</c> with the <b>max</b> across weapon parts.
+        /// <para>
+        /// [TITAN-ORBIT] Bullet speed is a per-projectile property (legacy <c>WeaponConfig</c> ~12–20),
+        /// not a pool like firePower. Field-wise <see cref="Add"/> turns a 6-gun hull into 6× speed
+        /// (e.g. 72) — top-tier free ships then shoot lasers. Fire power still sums; projectile
+        /// speed does not. Player speed growth is attribute upgrades / Shard cards only
+        /// (<see cref="ShipComponentStoreData.GetEffectiveStatsAtShipLevel"/> also skips
+        /// <c>bulletSpeedPerLevel</c> for chassis leveling).
+        /// </para>
+        /// Call after summing scaled component stats (same slot as propulsion aggregation).
+        /// </summary>
+        public static ShipComponentAbilityStats ApplyWeaponProjectileSpeedToSummedStats(
+            ShipComponentAbilityStats total,
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
+        {
+            if (componentIds == null || perComponentStats == null)
+                return total;
+
+            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            if (count == 0)
+                return total;
+
+            float maxSpeed = 0f;
+            float maxSpeedPerLevel = 0f;
+            bool anyWeapon = false;
+
+            // --- Peel weapon contributions out of the naive sum ---
+            for (int i = 0; i < count; i++)
+            {
+                if (!IsWeaponComponent(componentIds[i]))
+                    continue;
+
+                ShipComponentAbilityStats s = perComponentStats[i];
+                total.bulletSpeed -= s.bulletSpeed;
+                total.bulletSpeedPerLevel -= s.bulletSpeedPerLevel;
+                maxSpeed = Mathf.Max(maxSpeed, s.bulletSpeed);
+                maxSpeedPerLevel = Mathf.Max(maxSpeedPerLevel, s.bulletSpeedPerLevel);
+                anyWeapon = true;
+            }
+
+            if (!anyWeapon)
+                return total;
+
+            // --- One projectile speed for the hull (fastest barrel), not N× sum ---
+            total.bulletSpeed = Mathf.Max(0f, total.bulletSpeed) + maxSpeed;
+            total.bulletSpeedPerLevel = Mathf.Max(0f, total.bulletSpeedPerLevel) + maxSpeedPerLevel;
+            return total;
         }
 
         /// <summary>True when every base and per-level field is exactly zero.</summary>

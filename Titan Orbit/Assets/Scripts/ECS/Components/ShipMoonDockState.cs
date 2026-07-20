@@ -6,8 +6,10 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// [NETCODE] Replicated moon landing progress for a ship. Updated server-side by
     /// <see cref="ShipMoonDockSystem"/> each fixed step. [TITAN-ORBIT] LandingProgress reaches 1 when
-    /// the ship is fully docked and gem deposit / orbit store actions are allowed. Ghost-serialized so
-    /// clients show landing UI and dock cinematics without reading raw sim in MonoBehaviour.
+    /// the ship is fully docked and gem deposit / orbit store actions are allowed. While fully
+    /// landed, dock latches until thrust — the hull co-orbits via <see cref="ShipPhysicsDriveLogic"/>
+    /// so the moving moon cannot clear the zone. Ghost-serialized so clients show landing UI and
+    /// dock cinematics without reading raw sim in MonoBehaviour.
     /// </summary>
     public struct ShipMoonDockState : IComponentData
     {

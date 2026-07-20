@@ -93,6 +93,15 @@ namespace TitanOrbit.Game
         readonly Dictionary<Entity, int> _proxyNetworkIds = new Dictionary<Entity, int>();
         /// <summary>Last applied ship level — triggers proxy rebuild on upgrade.</summary>
         readonly Dictionary<Entity, int> _proxyShipLevels = new Dictionary<Entity, int>();
+        /// <summary>
+        /// Last applied upgrade-tree branch — must rebuild when branch changes at the same level
+        /// (debug free-tree / hull swap), not only when ShipLevel changes.
+        /// </summary>
+        readonly Dictionary<Entity, int> _proxyBranchIndices = new Dictionary<Entity, int>();
+        /// <summary>
+        /// Last applied chassis id string — exact hull identity for hybrid proxies under TransformQuarantine.
+        /// </summary>
+        readonly Dictionary<Entity, string> _proxyChassisIds = new Dictionary<Entity, string>();
         /// <summary>Last applied team — triggers material swap on capture.</summary>
         readonly Dictionary<Entity, TeamId> _proxyTeams = new Dictionary<Entity, TeamId>();
         /// <summary>Planet visual identity — rebuild when home/team/level/id changes.</summary>
@@ -246,6 +255,22 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// [HYBRID] Looks up the GameObject proxy for one entity (gem diameter, anchors, etc.).
+        /// Dictionary only — no ECS gathers.
+        /// </summary>
+        public bool TryGetProxy(Entity entity, out GameObject proxy)
+        {
+            proxy = null;
+            if (!_proxies.TryGetValue(entity, out proxy) || proxy == null)
+            {
+                proxy = null;
+                return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Quarantine-safe planet lookup by <see cref="PlanetState.PlanetId"/>.
         /// Walks hybrid proxy keys only, then per-entity <c>HasComponent</c>/<c>GetComponentData</c> —
         /// never <c>ToEntityArray</c> / full planet archetype gathers (Crash!!! after Settling OFF).
@@ -366,12 +391,14 @@ namespace TitanOrbit.Game
                                !TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips;
             if (hybridShips)
             {
-                // [TITAN-ORBIT] EnsureShipProxies uses ToEntityArray on ships — fine when idle, but
-                // skip during Settling and during GhostSpawnBacklog (post–Join Team ship Instantiates
-                // while Settling stays OFF — Player.log 2026-07-19 Crash!!!).
-                if (!settling && !ClientJoinSettleCache.GhostSpawnBacklog)
+                // [TITAN-ORBIT] Both EnsureShipProxies AND SyncShipProxyTransforms use ship
+                // ToEntityArray — Sync was previously ungated and Crash!!!'d after TeamChoice
+                // (Player.log 2026-07-20) while Ensure alone was skipped. Gate both.
+                if (!ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                {
                     EnsureShipProxies(em);
-                SyncShipProxyTransforms(em, alive);
+                    SyncShipProxyTransforms(em, alive);
+                }
             }
 
             // --- People transports ---
@@ -921,8 +948,13 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Spawns missing ship proxies and rebuilds when team or ship level changes.
+        /// Spawns missing ship proxies and rebuilds when team, ship level, branch, or chassis id changes.
         /// Does not move transforms — SyncShipProxyTransforms handles per-frame pose.
+        /// <para>
+        /// [TITAN-ORBIT] Under TransformQuarantine, Entities Graphics ship meshes are skipped — this hybrid
+        /// path is the only hull the player sees. Branch/chassis must be tracked or moon-menu ship picks
+        /// look unlocked but keep showing the wrong prefab.
+        /// </para>
         /// </summary>
         void EnsureShipProxies(EntityManager em)
         {
@@ -956,20 +988,36 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
+                // --- Resolve live chassis identity (level + branch → chassis id) ---
+                // [NETCODE] ShipState.BranchIndex is ghosted with ShipLevel — required for correct hull.
                 TeamId team = TeamId.None;
                 int shipLevel = 1;
+                int branchIndex = 0;
                 if (em.HasComponent<ShipState>(entity))
                 {
                     var ship = em.GetComponentData<ShipState>(entity);
                     team = ship.Team;
                     shipLevel = Mathf.Max(1, ship.ShipLevel);
+                    branchIndex = Mathf.Max(0, ship.BranchIndex);
                 }
+
+                string chassisId = null;
+                if (team != TeamId.None)
+                    ShipStatApplyLogic.TryResolveChassisId(team, shipLevel, branchIndex, out chassisId);
 
                 if (_proxies.TryGetValue(entity, out var existing) && existing != null)
                 {
                     _proxyShipLevels.TryGetValue(entity, out int lastLevel);
+                    _proxyBranchIndices.TryGetValue(entity, out int lastBranch);
                     _proxyTeams.TryGetValue(entity, out TeamId lastTeam);
-                    if (lastLevel == shipLevel && lastTeam == team)
+                    _proxyChassisIds.TryGetValue(entity, out string lastChassis);
+
+                    // Same level + different branch (or chassis) still needs a new hull prefab.
+                    bool sameHull = lastLevel == shipLevel
+                        && lastBranch == branchIndex
+                        && lastTeam == team
+                        && string.Equals(lastChassis, chassisId, System.StringComparison.Ordinal);
+                    if (sameHull)
                         continue;
 
                     DestroyProxy(entity);
@@ -979,9 +1027,15 @@ namespace TitanOrbit.Game
                 if (em.HasComponent<ShipWeaponConfig>(entity))
                     muzzleOffset = em.GetComponentData<ShipWeaponConfig>(entity).MuzzleOffset;
 
-                var go = CreateShipProxy(entity, networkId, team, shipLevel, scale, muzzleOffset);
+                var go = CreateShipProxy(
+                    entity, networkId, team, shipLevel, branchIndex, chassisId, scale, muzzleOffset);
                 if (TryGetPresentationTransform(entity, em, out var presentLt))
                     ApplyShipProxyTransform(entity, em, isLocalPlayerShip, presentLt, go.transform, scale);
+
+                // After pose apply: if still fully moon-docked, snap cinematic to landed (chassis swap).
+                var moonDockVisual = go.GetComponent<ShipMoonDockVisualApplier>();
+                if (moonDockVisual != null)
+                    moonDockVisual.SeedFullyLandedPresentation(em);
             }
         }
 
@@ -1032,10 +1086,13 @@ namespace TitanOrbit.Game
                 else if (em.HasComponent<ShipMoonDockState>(entity))
                 {
                     var moonDock = em.GetComponentData<ShipMoonDockState>(entity);
+                    // [TITAN-ORBIT] Same gate as ShipMoonDockVisualApplier — fully landed stays skipped
+                    // even if approach delay briefly replicates as 0.
                     bool approachReady = moonDock.LandingApproachDelay + 0.0001f >= GemEconomyConstants.MoonLandingApproachDelaySeconds;
+                    bool fullyLanded = moonDock.LandingProgress + 0.0001f >= GemEconomyConstants.MoonLandingCompleteThreshold;
                     skipTransformSync = moonDock.MoonPlanetId != 0
-                        && approachReady
-                        && moonDock.LandingProgress > 0.001f;
+                        && moonDock.LandingProgress > 0.001f
+                        && (approachReady || fullyLanded);
                 }
 
                 bool isLocalPlayerShip = IsLocalPlayerShip(entity, localShipEntity);
@@ -1063,6 +1120,13 @@ namespace TitanOrbit.Game
                         go.SetActive(true);
                 }
 
+                // Keep branch/chassis bookkeeping fresh for EnsureShipProxies rebuild checks.
+                // [NETCODE] Must match EnsureShipProxies (ShipState.BranchIndex) — loadout used to
+                // thrash DestroyProxy/CreateShipProxy every frame after upgrade-tree purchases and
+                // reset the moon-dock cinematic (ship looked ejected from orbit).
+                if (em.HasComponent<ShipState>(entity))
+                    _proxyBranchIndices[entity] = Mathf.Max(0, em.GetComponentData<ShipState>(entity).BranchIndex);
+
                 if (networkId > 0)
                 {
                     _proxyNetworkIds.TryGetValue(entity, out int existingId);
@@ -1079,11 +1143,22 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Instantiates ship visual hierarchy with bank, moon-dock, propulsion, and attribute-scale appliers bound to ECS entity.
+        /// Prefab comes from the exact chassis id (level + branch) so upgrade-tree picks match the hull on screen.
         /// </summary>
-        GameObject CreateShipProxy(Entity entity, int networkId, TeamId team, int shipLevel, float scale, float muzzleOffset)
+        GameObject CreateShipProxy(
+            Entity entity,
+            int networkId,
+            TeamId team,
+            int shipLevel,
+            int branchIndex,
+            string chassisId,
+            float scale,
+            float muzzleOffset)
         {
+            // --- Instantiate chassis-specific hull ---
             GameObject go;
-            if (ShipVisualApplier.TryCreateShipVisual(shipFamily, shipVisualPrefab, team, shipLevel, out go))
+            if (ShipVisualApplier.TryCreateShipVisualForChassis(
+                    shipFamily, shipVisualPrefab, team, shipLevel, chassisId, out go))
             {
                 go.name = "ShipTagProxy";
             }
@@ -1110,7 +1185,10 @@ namespace TitanOrbit.Game
                 _proxyNetworkIds[entity] = networkId;
             }
 
+            // --- Bookkeeping for rebuild detection ---
             _proxyShipLevels[entity] = shipLevel;
+            _proxyBranchIndices[entity] = branchIndex;
+            _proxyChassisIds[entity] = chassisId ?? string.Empty;
             _proxyTeams[entity] = team;
             _proxies[entity] = go;
 
@@ -1127,13 +1205,24 @@ namespace TitanOrbit.Game
             var propulsionVisual = go.GetComponent<ShipPropulsionVisualApplier>();
             if (propulsionVisual == null)
                 propulsionVisual = go.AddComponent<ShipPropulsionVisualApplier>();
+
+            // Family prefix from chassis id (AstroEagle_T2 → AstroEagle) when available.
+            ShipFamilyDefinition bindFamily = shipFamily;
             string familyPrefix = shipFamily != null ? shipFamily.familyId : "AstroEagle";
+            if (!string.IsNullOrEmpty(chassisId)
+                && ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition resolved)
+                && resolved != null)
+            {
+                bindFamily = resolved;
+                familyPrefix = resolved.familyId;
+            }
+
             propulsionVisual.Bind(entity, familyPrefix, propulsionVfxSettings);
 
             var attributeScaleVisual = go.GetComponent<ShipComponentAttributeScaleApplier>();
             if (attributeScaleVisual == null)
                 attributeScaleVisual = go.AddComponent<ShipComponentAttributeScaleApplier>();
-            attributeScaleVisual.Bind(entity, familyPrefix, shipFamily);
+            attributeScaleVisual.Bind(entity, familyPrefix, bindFamily);
 
             return go;
         }
@@ -1219,6 +1308,8 @@ namespace TitanOrbit.Game
                 _proxies.Remove(entity);
                 _proxyNetworkIds.Remove(entity);
                 _proxyShipLevels.Remove(entity);
+                _proxyBranchIndices.Remove(entity);
+                _proxyChassisIds.Remove(entity);
                 _proxyTeams.Remove(entity);
                 _proxyPlanetVisuals.Remove(entity);
                 _bulletStretchVisuals.Remove(entity);
@@ -1685,6 +1776,8 @@ namespace TitanOrbit.Game
             _proxies.Clear();
             _proxyNetworkIds.Clear();
             _proxyShipLevels.Clear();
+            _proxyBranchIndices.Clear();
+            _proxyChassisIds.Clear();
             _proxyTeams.Clear();
             _proxyPlanetVisuals.Clear();
         }

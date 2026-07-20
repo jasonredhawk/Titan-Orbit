@@ -197,7 +197,7 @@ namespace TitanOrbit.UI
         }
 
         private static bool IsDebugFreeShipUpgradeTree() =>
-            GameManager.Instance != null && GameManager.Instance.DebugFreeShipUpgradeTree;
+            GameManager.IsDebugFreeShipUpgradeTreeActive;
 
         /// <summary>
         /// Colors, prices, interactable state, and power bars for every tree node (and current-ship display).

@@ -13,9 +13,13 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Broadcasts a spawn and mirrors into the host VFX bridge when ClientWorld exists.
         /// </summary>
+        /// <param name="ecb">Server ECB for the broadcast RPC entity.</param>
+        /// <param name="bullet">Authoritative bullet just spawned (or same-frame hit).</param>
+        /// <param name="mountIndex">Weapon mount index for local muzzle reproject (volley-aware).</param>
         public static void SendSpawn(
             ref EntityCommandBuffer ecb,
-            in BulletElement bullet)
+            in BulletElement bullet,
+            int mountIndex = 0)
         {
             if (bullet.Sequence == 0)
                 return;
@@ -24,6 +28,7 @@ namespace TitanOrbit.ECS
             float3 spawnPos = bullet.Position;
             float3 velocity = bullet.Velocity;
             velocity.y = 0f;
+            int safeMount = mountIndex < 0 ? 0 : mountIndex;
 
             var req = new BulletVfxBridge.SpawnRequest
             {
@@ -37,6 +42,7 @@ namespace TitanOrbit.ECS
                 OwnerNetworkId = bullet.OwnerNetworkId,
                 BankIndex = bullet.BankIndex,
                 ScaleMultiplier = bullet.ScaleMultiplier > 0f ? bullet.ScaleMultiplier : 1f,
+                MountIndex = safeMount,
                 IsAnticipation = false,
                 IsDisplaySpace = false,
             };
@@ -59,6 +65,7 @@ namespace TitanOrbit.ECS
                 OwnerNetworkId = bullet.OwnerNetworkId,
                 BankIndex = bullet.BankIndex,
                 ScaleMultiplier = bullet.ScaleMultiplier > 0f ? bullet.ScaleMultiplier : 1f,
+                MountIndex = safeMount,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }

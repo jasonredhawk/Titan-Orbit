@@ -28,8 +28,10 @@ namespace TitanOrbit.Game
                 return;
             _lastUpdateFrame = Time.frameCount;
 
-            // [TITAN-ORBIT] Settling only — quarantine must not hide beams for the whole session.
-            if (ClientJoinSettleCache.Settling)
+            // [TITAN-ORBIT] Settling OR GhostSpawnBacklog — quarantine must not hide beams for the
+            // whole session, but ship ToEntityArray during post–Join Team Instantiates Crash!!!
+            // (Settling stays OFF after JoinSettleCompleted; backlog covers the ship Instantiates window).
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
             {
                 VisibilityByPair.Clear();
                 return;

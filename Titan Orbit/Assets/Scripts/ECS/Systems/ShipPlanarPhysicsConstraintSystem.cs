@@ -8,8 +8,9 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Top-down constraint after Unity Physics and toroidal seam collision resolve. Hull impacts
-    /// can impart pitch/roll; this re-locks yaw-only rotation and planar velocity. Bounce linear
-    /// velocity is preserved for <see cref="ShipKinematicsSyncSystem"/>. Pipeline:
+    /// can impart pitch/roll; this re-locks yaw-only rotation, clamps <c>Position.y</c> to the play
+    /// plane, and zeros vertical velocity. Bounce linear XZ is preserved for
+    /// <see cref="ShipKinematicsSyncSystem"/>. Pipeline:
     /// Drive → Physics → <see cref="ShipToroidalWorldCollisionSystem"/> → Planar (this) → KinematicsSync.
     /// </summary>
     // OrderLast: after default-slot PhysicsSystemGroup. Avoid UpdateAfter(PhysicsSystemGroup) —
@@ -42,6 +43,16 @@ namespace TitanOrbit.ECS
                 float tiltDegrees = math.degrees(math.angle(transform.ValueRO.Rotation, planarRotation));
                 if (tiltDegrees > 0.35f)
                     transform.ValueRW.Rotation = planarRotation;
+
+                // --- Keep the hull on the play plane ---
+                // [TITAN-ORBIT] Top-down flight is Y = 0. Moon dock / collider hits can leave a
+                // leftover Position.y; velocity-only clamps were not enough after undock.
+                float3 pos = transform.ValueRO.Position;
+                if (math.abs(pos.y) > 1e-4f)
+                {
+                    pos.y = 0f;
+                    transform.ValueRW.Position = pos;
+                }
 
                 // --- Planar linear + yaw angular only ---
                 float3 linear = velocity.ValueRO.Linear;

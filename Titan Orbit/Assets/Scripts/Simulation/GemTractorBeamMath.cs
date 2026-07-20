@@ -43,10 +43,14 @@ namespace TitanOrbit.Simulation
         /// <summary>Min speed toward ship (m/s) before a gem counts as actively tractor-pulled.</summary>
         public const float ActivePullTowardSpeedThreshold = 0.22f;
 
-        public const float ExtendLineSpeed = 16f;
-        public const float MinExtendDuration = 0.07f;
-        public const float MaxExtendDuration = 0.32f;
-        public const float WidthExpandDuration = 0.05f;
+        /// <summary>
+        /// Deploy VFX: thin line shoots from wing → gem, then cone mouth opens, then pull starts.
+        /// Kept short for snappy feel but long enough to read (not instant).
+        /// </summary>
+        public const float ExtendLineSpeed = 11f;
+        public const float MinExtendDuration = 0.12f;
+        public const float MaxExtendDuration = 0.42f;
+        public const float WidthExpandDuration = 0.14f;
 
         /// <summary>
         /// Converts wing Max Gems Capacity (at current ship level) into tractor reach and pull strength.

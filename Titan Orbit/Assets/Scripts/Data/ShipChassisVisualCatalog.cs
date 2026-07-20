@@ -41,10 +41,14 @@ namespace TitanOrbit.Data
         public int CannonIndex;
     }
 
-    /// <summary>Wing tractor beam slot relative to ship root.</summary>
+    /// <summary>
+    /// Wing tractor beam slot: hull-root local offset in unscaled prefab space.
+    /// Runtime applies <c>ShipPresentationScale</c> in <c>ShipWingTractorBeamPose.GetWorldPosition</c>.
+    /// </summary>
     [Serializable]
     public struct ShipWingTractorBeamBakeData
     {
+        /// <summary>Hull-root local position (not immediate-parent localPosition).</summary>
         public float3 LocalPosition;
         public float TractorBeamDistance;
         public float TractorBeamDistancePerLevel;

@@ -22,6 +22,12 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Applies per-level growth to every stat field, including mobility penalty on move/turn at higher levels.
         /// <paramref name="shipLevel"/> 1 = base stats only; level 7 adds six steps of *PerLevel fields.
+        /// <para>
+        /// [TITAN-ORBIT] Intentional exception: <c>bulletSpeed</c> does <b>not</b> apply
+        /// <c>bulletSpeedPerLevel</c>. Projectile speed stays at the chassis base (max across weapon
+        /// parts — see <see cref="ShipComponentAbilityStatsMath.ApplyWeaponProjectileSpeedToSummedStats"/>).
+        /// Faster bullets come from attribute upgrades / Shard cards, not ship tier.
+        /// </para>
         /// </summary>
         public static ShipComponentAbilityStats GetEffectiveStatsAtShipLevel(ShipComponentAbilityStats stats, int shipLevel)
         {
@@ -30,6 +36,7 @@ namespace TitanOrbit.Data
             float turnAtLevel = stats.turnSpeed + stats.turnSpeedPerLevel * perLvl;
 
             // --- Linear growth on most stats; move/turn also pass through mobility penalty curve ---
+            // bulletSpeed: base only (no perLvl) — see method summary.
             return new ShipComponentAbilityStats
             {
                 firePower = stats.firePower + stats.firePowerPerLevel * perLvl,

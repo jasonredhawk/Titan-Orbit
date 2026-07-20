@@ -10,7 +10,13 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.UI
 {
-    /// <summary>Moon orbit station menu: deposit gems, ship upgrade tree, and store.</summary>
+    /// <summary>
+    /// Moon orbit station menu: deposit gems, ship upgrade tree, and store.
+    /// Client-only hybrid UI. Ship-tree unlock / purchase rules live here; when
+    /// <see cref="GameManager.DebugFreeShipUpgradeTree"/> is enabled in the Inspector
+    /// (NceGameRoot → Game Manager), every tree node is free to click for local testing.
+    /// Paired with <see cref="MoonOrbitStoreSystem"/> on the server for purchase validation.
+    /// </summary>
     public class MoonOrbitStationUI : MonoBehaviour, IOrbitStationHost
     {
         const float MainPanelScreenWidthFraction = 0.78f;
@@ -118,11 +124,22 @@ namespace TitanOrbit.UI
             }
 
             Instance = this;
+
+            // [TITAN-ORBIT] Debug free-tree flag lives on GameManager (Inspector on NceGameRoot).
+            // EnsureExists creates a fallback only when the scene object is missing.
+            GameManager.EnsureExists();
+
             if (upgradeTree == null)
                 upgradeTree = Resources.Load<UpgradeTree>("UpgradeTree");
             EnsureUiBuilt();
             Hide();
         }
+
+        /// <summary>
+        /// True when designers enabled free ship-tree unlocks on <see cref="GameManager"/>.
+        /// Same gate the old <c>OrbitStationUI</c> used before the moon menu rewrite.
+        /// </summary>
+        static bool IsDebugFreeShipUpgradeTree() => GameManager.IsDebugFreeShipUpgradeTreeActive;
 
         void OnDestroy()
         {
@@ -207,10 +224,9 @@ namespace TitanOrbit.UI
             if (!EcsGameBridge.TryGetLocalShipState(out var ship))
                 return;
 
+            // [NETCODE] BranchIndex is ghosted on ShipState (not only loadout).
             ShipLevel = Mathf.Max(1, ship.ShipLevel);
-            BranchIndex = 0;
-            if (EcsGameBridge.TryGetLocalShipLoadout(out var loadout))
-                BranchIndex = loadout.BranchIndex;
+            BranchIndex = Mathf.Max(0, ship.BranchIndex);
 
             if (EcsGameBridge.TryGetPlanetStateByPlanetId(_storePlanetId, out var storePlanet))
                 StorePlanetLevel = Mathf.Max(1, storePlanet.PlanetLevel);
@@ -520,17 +536,63 @@ namespace TitanOrbit.UI
 
         public void RefreshShipUpgradeTreeNodeStates(IReadOnlyList<ShipUpgradeTreeNodeUI> nodes, float maxPower)
         {
+            // --- Hint line (debug vs normal purchase rules) ---
+            UpdateShipTreeHintText();
+
             if (nodes == null)
                 return;
             for (int i = 0; i < nodes.Count; i++)
                 PopulateTreeNode(nodes[i], maxPower);
         }
 
+        /// <summary>
+        /// Updates the upgrade-tree subtitle under the title. Debug mode explains that every node is free.
+        /// </summary>
+        void UpdateShipTreeHintText()
+        {
+            if (_shipTree == null)
+                return;
+
+            _shipTree.EnsurePanelHeader();
+            if (_shipTree.Title != null)
+                _shipTree.Title.text = ShipUpgradeTreeUI.PanelTitleText;
+
+            if (_shipTree.Hint == null)
+                return;
+
+            // [TITAN-ORBIT] Same copy the old OrbitStationUI used when Debug Free Ship Upgrade Tree is on.
+            if (IsDebugFreeShipUpgradeTree())
+                _shipTree.Hint.text = "Debug: click any ship to try it for free (all tiers unlocked).";
+            else
+                _shipTree.Hint.text = ShipUpgradeTreeUI.PanelDefaultSubtitle;
+        }
+
+        /// <summary>
+        /// Colors, prices, and click handlers for one tree node (or current-ship display).
+        /// Debug mode unlocks every node; normal mode only next-tier purchases / current slot.
+        /// </summary>
         public void PopulateTreeNode(ShipUpgradeTreeNodeUI view, float maxPower)
         {
             if (view == null || upgradeTree == null)
                 return;
 
+            // --- Current-ship sidebar card ---
+            // [HYBRID] Left panel "You" node uses the same populate path with IsCurrentShipDisplay.
+            if (view.IsCurrentShipDisplay)
+            {
+                PopulateCurrentShipDisplayNode(view, maxPower);
+                return;
+            }
+
+            // --- Debug: unlock entire tree ---
+            // [TITAN-ORBIT] GameManager.DebugFreeShipUpgradeTree — Inspector toggle on NceGameRoot.
+            if (IsDebugFreeShipUpgradeTree())
+            {
+                PopulateTreeNodeDebug(view, maxPower);
+                return;
+            }
+
+            // --- Normal unlock / purchase eligibility ---
             int currentLevel = ShipLevel;
             int currentBranch = BranchIndex;
             int nextLevel = currentLevel + 1;
@@ -550,10 +612,9 @@ namespace TitanOrbit.UI
                     : new Color(0.2f, 0.22f, 0.28f, 0.92f));
 
             view.SetLevelLabel(view.Level == 1 ? "Lv 1" : $"Lv {view.Level}");
-            var node = upgradeTree.GetNodeForBranch(view.Level, view.BranchIndex);
-            view.SetShipName(node != null && !string.IsNullOrEmpty(node.shipName)
-                ? node.shipName
-                : $"Ship {view.Level}.{view.BranchIndex + 1}");
+            TryGetChassisIdForTreeSlot(view.Level, view.BranchIndex, out string chassisId);
+            view.SetShipName(GetShipDisplayNameForSlot(view.Level, view.BranchIndex, chassisId));
+            view.SetPreview(GetMenuPreviewForChassis(chassisId));
 
             if (isCurrent)
                 view.SetPrice("You");
@@ -565,11 +626,71 @@ namespace TitanOrbit.UI
                 view.SetPrice("—");
 
             view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxPower);
-            view.SetPriceClickHandler(() => OnUpgradeTreeNodeClicked(view.Level, view.BranchIndex));
+            UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(view.Level, view.BranchIndex);
+            view.SetClickHandler(canPurchase || isCurrent ? click : null);
+            view.SetPriceClickHandler(canPurchase || isCurrent ? click : null);
         }
 
+        /// <summary>
+        /// Debug populate: every node is interactable and priced "Free" so designers can jump to any hull.
+        /// </summary>
+        void PopulateTreeNodeDebug(ShipUpgradeTreeNodeUI view, float maxPower)
+        {
+            int level = view.Level;
+            int branch = view.BranchIndex;
+            bool isCurrent = level == ShipLevel && branch == BranchIndex;
+            bool hasChassis = TryGetChassisIdForTreeSlot(level, branch, out string chassisId);
+
+            view.SetInteractable(hasChassis);
+            view.SetButtonBackgroundColor(!hasChassis
+                ? new Color(0.15f, 0.16f, 0.18f, 0.92f)
+                : isCurrent
+                    ? new Color(0.26f, 0.62f, 0.36f, 0.98f)
+                    : new Color(0.28f, 0.68f, 0.82f, 0.98f));
+
+            view.SetLevelLabel(level == 1 ? "Lv 1" : $"Lv {level}");
+            view.SetShipName(GetShipDisplayNameForSlot(level, branch, chassisId));
+            view.SetPreview(GetMenuPreviewForChassis(chassisId));
+            view.SetPrice(hasChassis ? "Free" : "—");
+            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(level, branch), maxPower);
+
+            // Whole card + Free button both purchase (not only the price chip).
+            UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(level, branch);
+            view.SetClickHandler(hasChassis ? click : null);
+            view.SetPriceClickHandler(hasChassis ? click : null);
+        }
+
+        /// <summary>Sidebar "current ship" card — always shows your hull; debug mode still allows click-through.</summary>
+        void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, float maxPower)
+        {
+            bool debugFree = IsDebugFreeShipUpgradeTree();
+            view.SetInteractable(debugFree);
+            view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
+            view.SetLevelLabel("You");
+            view.SetShipName($"Lv {ShipLevel}");
+            view.SetPrice(debugFree ? "Free" : "—");
+            view.ApplyPowerBreakdown(GetCurrentShipPowerBreakdown(), maxPower);
+        }
+
+        /// <summary>
+        /// Handles upgrade purchase or debug-free hull select. Sends <see cref="MoonOrbitRpcClient.PurchaseShipUpgrade"/>.
+        /// Server only accepts arbitrary levels when <see cref="GameManager.DebugFreeShipUpgradeTree"/> is on.
+        /// </summary>
         public void OnUpgradeTreeNodeClicked(int nodeLevel, int targetBranchIndex)
         {
+            // --- Debug free select (any tier / branch) ---
+            if (IsDebugFreeShipUpgradeTree())
+            {
+                // Skip no-op click on the hull you already fly.
+                if (nodeLevel == ShipLevel && targetBranchIndex == BranchIndex)
+                    return;
+
+                MoonOrbitRpcClient.PurchaseShipUpgrade(_storePlanetId, nodeLevel, targetBranchIndex);
+                MoonOrbitRpcClient.RequestContributedGems(_homePlanetId);
+                return;
+            }
+
+            // --- Normal: only next ship level along a valid branch edge ---
             if (nodeLevel == ShipLevel + 1)
             {
                 MoonOrbitRpcClient.PurchaseShipUpgrade(_storePlanetId, nodeLevel, targetBranchIndex);
@@ -580,9 +701,78 @@ namespace TitanOrbit.UI
         public void OnCurrentShipDisplayNodeClicked() =>
             OnUpgradeTreeNodeClicked(ShipLevel, BranchIndex);
 
-        public ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown() => default;
+        public ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown()
+        {
+            if (!TryGetChassisIdForTreeSlot(ShipLevel, BranchIndex, out string chassisId))
+                return default;
+            var config = ShipStatApplyLogic.Config;
+            return config != null ? config.GetPowerScoreBreakdownForChassisId(chassisId) : default;
+        }
 
-        public ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex) => default;
+        public ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex)
+        {
+            if (!TryGetChassisIdForTreeSlot(level, branchIndex, out string chassisId))
+                return default;
+            var config = ShipStatApplyLogic.Config;
+            return config != null ? config.GetPowerScoreBreakdownForChassisId(chassisId) : default;
+        }
+
+        /// <summary>
+        /// Resolves the PlanetShipFamilyConfig ladder chassis for this store slot.
+        /// Same mapping the server uses in <see cref="ShipStatApplyLogic.TryResolveChassisId"/>.
+        /// </summary>
+        bool TryGetChassisIdForTreeSlot(int level, int branchIndex, out string chassisId)
+        {
+            chassisId = null;
+            if (!EcsGameBridge.TryGetLocalShipState(out var ship) || ship.Team == TeamId.None)
+            {
+                // Menu can open briefly before team is known — still resolve home family ladder.
+                return ShipStatApplyLogic.TryResolveChassisId(
+                    TeamId.TeamA, level, branchIndex, out chassisId, allowFallback: false);
+            }
+
+            return ShipStatApplyLogic.TryResolveChassisId(
+                ship.Team, level, branchIndex, out chassisId, allowFallback: false);
+        }
+
+        /// <summary>
+        /// Display name from family upgradeTree (Hawk, Sparrow, …) — not legacy UpgradeTree.asset labels (2.1).
+        /// </summary>
+        string GetShipDisplayNameForSlot(int level, int branchIndex, string chassisId)
+        {
+            var config = ShipStatApplyLogic.Config;
+            if (config != null && !string.IsNullOrEmpty(chassisId))
+            {
+                string treeName = config.GetUpgradeTreeShipNameForChassisId(chassisId);
+                if (!string.IsNullOrEmpty(treeName))
+                    return treeName.Trim();
+            }
+
+            if (upgradeTree != null)
+            {
+                var node = upgradeTree.GetNodeForBranch(level, branchIndex);
+                if (node != null && !string.IsNullOrEmpty(node.shipName))
+                    return node.shipName.Trim();
+            }
+
+            return string.IsNullOrEmpty(chassisId)
+                ? $"Ship {level}.{branchIndex + 1}"
+                : chassisId;
+        }
+
+        /// <summary>Menu thumbnail for the chassis, or null when the slot has no family entry.</summary>
+        Sprite GetMenuPreviewForChassis(string chassisId)
+        {
+            var config = ShipStatApplyLogic.Config;
+            if (config == null || string.IsNullOrEmpty(chassisId))
+                return null;
+
+            TeamManager.Team team = TeamManager.Team.None;
+            if (EcsGameBridge.TryGetLocalShipState(out var ship))
+                team = (TeamManager.Team)(int)ship.Team;
+
+            return config.GetMenuPreviewSpriteForChassisId(chassisId, team);
+        }
 
         #endregion
 

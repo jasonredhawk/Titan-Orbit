@@ -11,18 +11,34 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative moon dock zone detection and landing progress for gem deposit UI.
-    /// Ships stay fully dynamic — no kinematic overrides or position snapping.
+    /// [TITAN-ORBIT] While fully landed, dock state latches until the player thrusts — the moon
+    /// keeps orbiting the planet ring, so a pure world-space stillness check would clear landing
+    /// after a few seconds (felt like the orbit ring "booting" the ship). Hull co-orbit attach
+    /// lives in shared <see cref="ShipPhysicsDriveLogic"/> so client prediction matches.
+    /// Runs before <see cref="GemDepositSystem"/> so deposit sees the latest dock flags.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateBefore(typeof(GemDepositSystem))]
     public partial struct ShipMoonDockSystem : ISystem
     {
+        /// <summary>Seconds of in-zone progress after approach delay to reach LandingProgress = 1.</summary>
         const float LandingDurationSeconds = 1f;
+
+        /// <summary>Max horizontal speed (world units/s) allowed while accumulating landing progress.</summary>
         const float MaxLandingSpeed = 2.35f;
+
+        /// <summary>Slight expand of the authored dock shell so approach feels fair at the rim.</summary>
         const float MoonDockZoneMultiplier = 1.05f;
+
+        /// <summary>Fallback hull radius when estimating dock zone size (matches legacy dock feel).</summary>
         const float ShipRadiusEstimate = 0.8f;
 
+        /// <summary>
+        /// Each server sim tick: update who is in a friendly moon dock zone, advance landing
+        /// timers, latch fully-landed ships until thrust, and mirror moon orbital velocity so
+        /// post-physics velocity writes cannot freeze the hull in world space.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             float dt = SystemAPI.Time.DeltaTime;
@@ -44,12 +60,14 @@ namespace TitanOrbit.ECS
                          .Query<RefRO<LocalTransform>, RefRO<ShipInput>, RefRW<ShipKinematics>, RefRO<ShipState>, RefRW<ShipMoonDockState>, RefRW<PhysicsVelocity>>()
                          .WithAll<ShipTag>())
             {
+                // --- Dead / team-select: clear dock ---
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                 {
                     moonDock.ValueRW = default;
                     continue;
                 }
 
+                // --- Thrust always undocks (explicit player takeoff) ---
                 if (shipInput.ValueRO.Thrust && moonDock.ValueRO.MoonPlanetId != 0)
                 {
                     moonDock.ValueRW = default;
@@ -59,7 +77,17 @@ namespace TitanOrbit.ECS
                 int landedPlanetId = moonDock.ValueRO.MoonPlanetId;
                 float landingProgress = moonDock.ValueRO.LandingProgress;
                 float approachDelay = moonDock.ValueRO.LandingApproachDelay;
+
+                // [TITAN-ORBIT] Once fully landed, keep dock state even if the zone check flickers —
+                // the moon moves every tick; attach in ShipPhysicsDriveLogic re-centers the hull.
+                bool fullyLandedLatch =
+                    landedPlanetId != 0 &&
+                    landingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold &&
+                    !shipInput.ValueRO.Thrust;
+
                 bool inMoonZone = false;
+                float3 dockedMoonOrbitalVelocity = float3.zero;
+                bool haveDockedMoonVelocity = false;
 
                 if (!shipInput.ValueRO.Thrust && shipState.ValueRO.Team != TeamId.None)
                 {
@@ -70,17 +98,21 @@ namespace TitanOrbit.ECS
                                  .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
                                  .WithAll<PlanetTag>())
                     {
+                        // Friendly moons only — enemy / neutral moons never accept a dock.
                         if (planetState.ValueRO.Ownership != shipState.ValueRO.Team)
                             continue;
 
                         float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
-                        float3 moonPos = PlanetOrbitMath.GetMoonWorldPosition(
+                        // [TITAN-ORBIT] Near-tile moon — same unwrap as motor attach / combat.
+                        float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
+                            shipTransform.ValueRO.Position,
                             planetTransform.ValueRO.Position,
                             planetSize,
                             planetState.ValueRO.PlanetLevel,
                             planetState.ValueRO.PlanetId,
                             elapsed,
-                            planetState.ValueRO.IsHomePlanet);
+                            mapW,
+                            mapH);
 
                         float zoneRadius = PlanetGemMoonMath.GetMoonDockZoneRadiusWorld(
                             planetSize,
@@ -92,10 +124,15 @@ namespace TitanOrbit.ECS
                             moonPos,
                             mapW,
                             mapH);
-                        if (dist > zoneRadius)
+
+                        // Latch path: still resolve orbital velocity for the docked planet even if
+                        // the hull briefly sits outside the zone (attach runs next drive tick).
+                        bool isLatchedPlanet = fullyLandedLatch && planetState.ValueRO.PlanetId == landedPlanetId;
+                        if (dist > zoneRadius && !isLatchedPlanet)
                             continue;
 
-                        inMoonZone = true;
+                        if (dist <= zoneRadius)
+                            inMoonZone = true;
 
                         if (landedPlanetId != 0 && landedPlanetId != planetState.ValueRO.PlanetId)
                         {
@@ -104,33 +141,59 @@ namespace TitanOrbit.ECS
                         }
 
                         landedPlanetId = planetState.ValueRO.PlanetId;
+                        dockedMoonOrbitalVelocity = PlanetOrbitMath.GetMoonOrbitalVelocity(
+                            planetSize,
+                            planetState.ValueRO.PlanetLevel,
+                            planetState.ValueRO.PlanetId,
+                            elapsed);
+                        haveDockedMoonVelocity = true;
 
-                        if (disruptLanding)
+                        // --- Approach delay + landing progress (only while inside the zone) ---
+                        // [TITAN-ORBIT] Once fully landed, never treat co-orbit speed / shield bumps as
+                        // "disrupt" — zeroing LandingApproachDelay made the client cinematic drop
+                        // (ship pops to full size beside the moon) while MoonPlanetId stayed set.
+                        bool alreadyLanded =
+                            landingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
+                        if (dist <= zoneRadius && !alreadyLanded)
                         {
-                            approachDelay = 0f;
-                        }
-                        else
-                        {
-                            approachDelay = math.min(approachDelayRequired, approachDelay + dt);
-                            if (approachDelay >= approachDelayRequired && speed <= MaxLandingSpeed)
-                                landingProgress = math.min(1f, landingProgress + dt / LandingDurationSeconds);
-                        }
-
-                        if (landingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold)
-                        {
-                            physicsVelocity.ValueRW = PhysicsVelocity.Zero;
-                            shipKinematics.ValueRW = new ShipKinematics { Velocity = float3.zero };
+                            if (disruptLanding)
+                            {
+                                approachDelay = 0f;
+                            }
+                            else
+                            {
+                                approachDelay = math.min(approachDelayRequired, approachDelay + dt);
+                                if (approachDelay >= approachDelayRequired && speed <= MaxLandingSpeed)
+                                    landingProgress = math.min(1f, landingProgress + dt / LandingDurationSeconds);
+                            }
                         }
 
                         break;
                     }
                 }
 
-                if (!inMoonZone)
+                // --- Leave zone: clear unless fully landed (thrust is the only undock) ---
+                // If the latched planet vanished from the world, drop dock so we cannot soft-lock.
+                if (!inMoonZone && (!fullyLandedLatch || !haveDockedMoonVelocity))
                 {
                     landedPlanetId = 0;
                     landingProgress = 0f;
                     approachDelay = 0f;
+                }
+
+                // --- Fully landed: keep kinematics matched to the moon (do not world-freeze) ---
+                if (landedPlanetId != 0 &&
+                    landingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold &&
+                    haveDockedMoonVelocity)
+                {
+                    // Keep approach delay latched so ghost replication cannot starve the cinematic.
+                    approachDelay = approachDelayRequired;
+                    physicsVelocity.ValueRW = new PhysicsVelocity
+                    {
+                        Linear = dockedMoonOrbitalVelocity,
+                        Angular = float3.zero,
+                    };
+                    shipKinematics.ValueRW = new ShipKinematics { Velocity = dockedMoonOrbitalVelocity };
                 }
 
                 moonDock.ValueRW = new ShipMoonDockState
@@ -142,6 +205,9 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>
+        /// True when firing or moving too fast to count as a calm landing approach.
+        /// </summary>
         static bool IsDisruptingLanding(in ShipInput input, float speed)
         {
             if (input.Fire.IsSet)

@@ -8667,6 +8667,7 @@ GameObject:
   - component: {fileID: 1418200280}
   - component: {fileID: 1418200279}
   - component: {fileID: 1418200278}
+  - component: {fileID: 1418200283}
   m_Layer: 0
   m_Name: NceGameRoot
   m_TagString: Untagged
@@ -8931,6 +8932,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.JoinGameBrowserController
   mainMenuPanel: {fileID: 0}
+--- !u!114 &1418200283
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 98bebdf998b96a64c8683982a44e3e5b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
+  debugFreeShipUpgradeTree: 1
 --- !u!1 &1427633624
 GameObject:
   m_ObjectHideFlags: 0

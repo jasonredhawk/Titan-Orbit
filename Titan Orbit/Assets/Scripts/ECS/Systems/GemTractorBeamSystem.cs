@@ -105,7 +105,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Sets gem velocity toward assigned wing once deploy animation (extend + width) completes.
+        /// Sets gem velocity toward assigned wing after the deploy VFX window (extend line + width open).
+        /// Matches client <see cref="Game.GemTractorBeamDeployTracker"/> so pull starts when the cone is ready.
         /// </summary>
         void ApplyPullPhysics(
             Entity shipEntity,
@@ -129,6 +130,8 @@ namespace TitanOrbit.ECS
                 if (!assignment.ContainsKey(gemEntity.Index))
                     continue;
 
+                // [TITAN-ORBIT] Wait for extend + width-expand so gameplay matches the VFX beat:
+                // line out → mouth opens → then pull.
                 long pairKey = PairKey(shipEntity.Index, gemEntity.Index);
                 if (!IsPullPhysicsActive(pairKey, now))
                     continue;

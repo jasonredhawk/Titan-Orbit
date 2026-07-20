@@ -262,6 +262,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>Per-shot visual scale multiplier.</summary>
         public float ScaleMultiplier;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Weapon mount index for this shot (0-based). Local clients reproject
+        /// the tracer onto the matching live barrel so multi-cannon volleys do not snap to muzzle 0.
+        /// </summary>
+        public int MountIndex;
     }
 
     /// <summary>

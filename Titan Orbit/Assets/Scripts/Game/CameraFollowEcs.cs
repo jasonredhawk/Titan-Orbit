@@ -48,11 +48,12 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Resolves world follow position. Moon-dock cinematic overrides presentation when active.
+        /// Resolves world follow position. Moon-dock cinematic overrides presentation when active
+        /// (stable moon anchor while parked — not the spinning surface hull).
         /// </summary>
         static bool TryResolveFollowTarget(out Vector3 targetPos)
         {
-            // [HYBRID] Moon dock GameObject applier may override during landing/takeoff.
+            // [HYBRID] Moon dock GameObject applier overrides during landing/dock/takeoff.
             if (ShipMoonDockVisualApplier.TryGetLocalFollowPosition(out targetPos))
                 return true;
 

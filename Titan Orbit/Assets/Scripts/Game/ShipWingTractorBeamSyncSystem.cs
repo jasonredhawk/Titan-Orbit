@@ -1,72 +1,28 @@
-using TitanOrbit.Data;
 using TitanOrbit.ECS;
-using TitanOrbit.ECS.Authoring;
 using Unity.Entities;
-using Unity.Mathematics;
-using Unity.NetCode;
-using Unity.Transforms;
-using UnityEngine;
 
 namespace TitanOrbit.Game
 {
-    // --- Type members ---
     /// <summary>
-    /// Copies wing tractor-beam authoring from ship visual hull proxies into ShipWingTractorBeamElement
-    /// on ship ghosts. Runs on server and client so both worlds have wing local poses and stats.
-    /// GemTractorBeamSystem (server) consumes the buffer for gem pull assignment. Hull lookup
-    /// uses ShipWeaponProxyRegistry keyed by GhostOwner.NetworkId.
+    /// Formerly copied live hull GO wing transforms into <see cref="ShipWingTractorBeamElement"/> each
+    /// frame. That path is intentionally disabled.
+    /// <para>
+    /// [TITAN-ORBIT] Hybrid proxies + <c>ShipWingTractorBeamCollector</c> can invent more Wing-named
+    /// children than the sim catalog. Client VFX then showed beams while the server (catalog / prefab
+    /// bake) still used a smaller reach set — gems did not pull until the ship was nearly on top of
+    /// them. Wing buffers now come only from <see cref="ShipChassisCatalogApplySystem"/> (live prefab
+    /// bake) on server and client so beam visuals and pull physics share one source of truth.
+    /// </para>
+    /// System kept so update-order / asmdef wiring stay stable.
     /// </summary>
-    // No UpdateAfter(ShipWeaponMountSyncSystem) — mount sync is server-only; ClientWorld sorter warns.
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial class ShipWingTractorBeamSyncSystem : SystemBase
     {
+        /// <summary>No-op: do not overwrite wing buffers from hybrid GO hierarchies.</summary>
         protected override void OnUpdate()
         {
-            // --- When to sync from GO hull ---
-            // [TITAN-ORBIT] Under TransformQuarantine (session-long on Windows) ships use hybrid GO
-            // proxies — refresh wing local offsets/stats from those hulls. When Entities Graphics
-            // draws ships without quarantine, baked ShipWingTractorBeamElement is enough.
-            if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips &&
-                !ClientJoinSettleCache.TransformQuarantine)
-                return;
-
-            foreach (var (owner, entity) in SystemAPI.Query<RefRO<GhostOwner>>()
-                         .WithAll<ShipTag>()
-                         .WithEntityAccess())
-            {
-                if (!ShipWeaponProxyRegistry.TryGetHull(owner.ValueRO.NetworkId, out var hullRoot))
-                    continue;
-
-                var wingAuthorings = hullRoot.GetComponentsInChildren<ShipWingTractorBeamAuthoring>(true);
-                if (wingAuthorings == null || wingAuthorings.Length == 0)
-                    continue;
-
-                if (!EntityManager.HasBuffer<ShipWingTractorBeamElement>(entity))
-                    EntityManager.AddBuffer<ShipWingTractorBeamElement>(entity);
-
-                var buffer = EntityManager.GetBuffer<ShipWingTractorBeamElement>(entity);
-                buffer.Clear();
-
-                for (int i = 0; i < wingAuthorings.Length; i++)
-                {
-                    var wingAuth = wingAuthorings[i];
-                    if (wingAuth == null || wingAuth.transform == hullRoot)
-                        continue;
-
-                    var wt = wingAuth.transform;
-                    buffer.Add(new ShipWingTractorBeamElement
-                    {
-                        LocalPosition = wt.localPosition,
-                        TractorBeamDistance = wingAuth.tractorBeamDistance,
-                        TractorBeamDistancePerLevel = wingAuth.tractorBeamDistancePerLevel,
-                        TractorBeamPower = wingAuth.tractorBeamPower,
-                        TractorBeamPowerPerLevel = wingAuth.tractorBeamPowerPerLevel,
-                        MaxGems = wingAuth.maxGems,
-                        MaxGemsPerLevel = wingAuth.maxGemsPerLevel,
-                    });
-                }
-            }
+            // Intentionally empty — see type summary (catalog/prefab bake owns wing locals).
         }
     }
 }

@@ -28,6 +28,11 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             // --- System OnUpdate ---
+            // [TITAN-ORBIT] Client ship WithEntityAccess + structural ApplyToShip during post–Join
+            // Team Instantiates → Crash!!!. Server always applies. Gate with IsClient().
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
             var em = state.EntityManager;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
@@ -41,7 +46,8 @@ namespace TitanOrbit.ECS
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
                     continue;
 
-                int branch = loadout.ValueRO.BranchIndex;
+                // [NETCODE] ShipState.BranchIndex is the ghosted source of truth for chassis branch.
+                int branch = ship.ValueRO.BranchIndex;
                 int attrSum = 0;
                 if (em.HasComponent<ShipAttributeUpgradeState>(entity))
                     attrSum = ShipStatApplyLogic.SumAttributeLevels(em.GetComponentData<ShipAttributeUpgradeState>(entity));
@@ -70,7 +76,7 @@ namespace TitanOrbit.ECS
                     writeGhostedShipState: writeGhostedShipState);
             }
 
-            // Ships without loadout state (legacy prefabs) — default branch 0.
+            // Ships without loadout state — still use ghosted ShipState.BranchIndex.
             foreach (var (ship, entity) in SystemAPI.Query<RefRW<ShipState>>()
                          .WithAll<ShipTag>()
                          .WithNone<ShipLoadoutState>()
@@ -79,6 +85,7 @@ namespace TitanOrbit.ECS
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
                     continue;
 
+                int branch = ship.ValueRO.BranchIndex;
                 int attrSum = 0;
                 if (em.HasComponent<ShipAttributeUpgradeState>(entity))
                     attrSum = ShipStatApplyLogic.SumAttributeLevels(em.GetComponentData<ShipAttributeUpgradeState>(entity));
@@ -87,7 +94,7 @@ namespace TitanOrbit.ECS
                 {
                     var chassis = em.GetComponentData<ShipChassisState>(entity);
                     if (chassis.AppliedShipLevel == ship.ValueRO.ShipLevel
-                        && chassis.AppliedBranchIndex == 0
+                        && chassis.AppliedBranchIndex == branch
                         && chassis.AppliedAttributeSum == attrSum)
                         continue;
                 }
@@ -97,7 +104,7 @@ namespace TitanOrbit.ECS
                     entity,
                     ship.ValueRO.Team,
                     ship.ValueRO.ShipLevel,
-                    branchIndex: 0,
+                    branch,
                     ecb,
                     queueStructuralChanges: true,
                     writeGhostedShipState: writeGhostedShipState);

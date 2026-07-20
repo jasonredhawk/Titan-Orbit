@@ -33,7 +33,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         /// <param name="input">Predicted ship input for this tick.</param>
         /// <param name="motor">Designer motor caps (thrust, max speed, turn rate).</param>
-        /// <param name="moonDock">Moon landing progress — pins hull when fully landed without thrust.</param>
+        /// <param name="moonDock">Moon landing progress — co-orbits moon surface when fully landed without thrust.</param>
         /// <param name="shipState">Death / team-select / mass contributors (HP, gems).</param>
         /// <param name="physicsVelocity">Read/write linear velocity handed to Unity Physics.</param>
         /// <param name="physicsDamping">Cleared so package damping cannot fight motor curves.</param>
@@ -74,13 +74,24 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // --- Landed moon dock — hold still until thrust undocks ---
-            // [TITAN-ORBIT] ShipMoonDockSystem owns landing progress; motor yields and clears orbit.
+            // --- Landed moon dock — co-orbit the moon until thrust undocks ---
+            // [TITAN-ORBIT] Moons ride the planet orbit ring every tick. Zeroing world velocity here
+            // (old behavior) left the hull parked while the moon drifted away → dock zone cleared
+            // → takeoff loop that felt like the ring "booting" the ship. Instead we pin the hull to
+            // the moon surface and match moon orbital velocity so Physics integration keeps pace.
+            // ShipMoonDockSystem owns LandingProgress; this motor runs on server + predicted client.
             if (moonDock.MoonPlanetId != 0 &&
                 moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold &&
                 !input.Thrust)
             {
-                physicsVelocity = PhysicsVelocity.Zero;
+                ApplyMoonDockAttach(
+                    moonDock.MoonPlanetId,
+                    ref transform,
+                    ref physicsVelocity,
+                    in planets,
+                    mapW,
+                    mapH,
+                    elapsedSeconds);
                 physicsDamping = default;
                 orbitState = default;
                 return;
@@ -103,10 +114,13 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,
             // load/unload never starts. Thrust or fire cancels passive orbit motor only — ring flag
             // stays true while still inside the annulus (tractor / HUD / dwell can still see it).
+            // While moon-docking (approach / land), skip the orbit motor so radial pull cannot yank
+            // the hull out of the dock sphere mid-landing.
             bool inOrbitRing = TryFindOrbitPlanet(
                 transform.Position, mapW, mapH, in planets,
                 out PlanetState orbitPlanetState, out LocalTransform orbitPlanetTransform);
-            bool useOrbit = inOrbitRing && !input.Thrust && !input.Fire.IsSet;
+            bool moonDocking = moonDock.MoonPlanetId != 0 && !input.Thrust;
+            bool useOrbit = inOrbitRing && !input.Thrust && !input.Fire.IsSet && !moonDocking;
 
             // --- Start from post-collision velocity (Unity Physics may have bounced us last tick) ---
             float3 vel = physicsVelocity.Linear;
@@ -218,6 +232,129 @@ namespace TitanOrbit.ECS
             }
 
             return found;
+        }
+
+        /// <summary>
+        /// Looks up a planet snapshot by <see cref="PlanetState.PlanetId"/> for moon-dock attach.
+        /// </summary>
+        /// <returns>True when a matching planet exists in this tick's snapshot list.</returns>
+        static bool TryFindPlanetById(
+            int planetId,
+            in NativeArray<PlanetMotorSnapshot> planets,
+            out PlanetMotorSnapshot snapshot)
+        {
+            snapshot = default;
+            if (planetId == 0)
+                return false;
+
+            for (int i = 0; i < planets.Length; i++)
+            {
+                if (planets[i].Planet.PlanetId != planetId)
+                    continue;
+                snapshot = planets[i];
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Pins a fully landed ship to the gem-moon surface and matches moon orbital velocity.
+        /// Looks up <paramref name="moonPlanetId"/> in the per-tick snapshot list.
+        /// Called from <see cref="Step"/> on both server and predicted client before Physics integrates.
+        /// </summary>
+        public static void ApplyMoonDockAttach(
+            int moonPlanetId,
+            ref LocalTransform transform,
+            ref PhysicsVelocity physicsVelocity,
+            in NativeArray<PlanetMotorSnapshot> planets,
+            float mapW,
+            float mapH,
+            double elapsedSeconds)
+        {
+            // --- Resolve docked moon ---
+            if (!TryFindPlanetById(moonPlanetId, in planets, out PlanetMotorSnapshot snapshot))
+            {
+                // [STANDARD] Planet missing this tick (despawn / collect race) — freeze safely.
+                physicsVelocity = PhysicsVelocity.Zero;
+                return;
+            }
+
+            ApplyMoonDockAttach(
+                moonPlanetId,
+                ref transform,
+                ref physicsVelocity,
+                in snapshot,
+                mapW,
+                mapH,
+                elapsedSeconds);
+        }
+
+        /// <summary>
+        /// Pins a fully landed ship using a pre-resolved planet snapshot (upgrade re-attach path).
+        /// Preserves the ship's angular side of the moon; contact radius updates for the new hull size.
+        /// </summary>
+        public static void ApplyMoonDockAttach(
+            int moonPlanetId,
+            ref LocalTransform transform,
+            ref PhysicsVelocity physicsVelocity,
+            in PlanetMotorSnapshot snapshot,
+            float mapW,
+            float mapH,
+            double elapsedSeconds)
+        {
+            if (moonPlanetId == 0 || snapshot.Planet.PlanetId != moonPlanetId)
+            {
+                physicsVelocity = PhysicsVelocity.Zero;
+                return;
+            }
+
+            var planet = snapshot.Planet;
+            var planetXform = snapshot.Transform;
+            float planetSize = math.max(0.25f, planetXform.Scale);
+
+            // [TITAN-ORBIT] Near-tile moon pose so wrap seams do not place the attach point a map away.
+            float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
+                transform.Position,
+                planetXform.Position,
+                planetSize,
+                planet.PlanetLevel,
+                planet.PlanetId,
+                elapsedSeconds,
+                mapW,
+                mapH);
+
+            // --- Surface contact direction (preserve approach side on the XZ plane) ---
+            float3 offset = ToroidalMapEcs.ShortestOffsetXZ(moonPos, transform.Position, mapW, mapH);
+            offset.y = 0f;
+            float offsetLen = math.length(offset);
+            if (offsetLen < 1e-4f)
+                offset = new float3(1f, 0f, 0f);
+            else
+                offset /= offsetLen;
+
+            // Contact = moon body + hull radius (matches client ShipMoonDockVisualApplier standoff).
+            // [TITAN-ORBIT] Flight is planar (Y = 0). Do not preserve Position.y — the kinematic
+            // moon hull can push the ship upward during Physics; locking that Y made undock leave
+            // the hull flying above asteroids.
+            float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(transform.Scale);
+            float contactRadius = math.max(0.05f, snapshot.MoonBodyRadiusWorld + shipRadius);
+            float3 attachPos = moonPos + offset * contactRadius;
+            attachPos.y = 0f;
+            transform.Position = attachPos;
+
+            // --- Match moon velocity so Physics does not leave the moon behind this tick ---
+            float3 moonVel = PlanetOrbitMath.GetMoonOrbitalVelocity(
+                planetSize,
+                planet.PlanetLevel,
+                planet.PlanetId,
+                elapsedSeconds);
+            moonVel.y = 0f;
+            physicsVelocity = new PhysicsVelocity
+            {
+                Linear = moonVel,
+                Angular = float3.zero,
+            };
         }
 
         /// <summary>

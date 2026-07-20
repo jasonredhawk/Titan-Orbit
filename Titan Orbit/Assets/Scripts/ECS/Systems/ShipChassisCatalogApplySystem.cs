@@ -1,14 +1,23 @@
+using System.Collections.Generic;
 using TitanOrbit.Data;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
+using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Applies baked weapon mounts, wing tractor beams, and hull colliders from
-    /// <see cref="ShipChassisVisualCatalog"/> when chassis/level/team changes. Runs on server
-    /// and client so sim buffers match without GameObject hull proxies.
+    /// Applies weapon mounts, wing tractor beams, and hull colliders when chassis/level/branch changes.
+    /// Runs on server and client so both worlds share the same sim attachment buffers.
+    /// Weapon and wing locals are preferred from a live prefab bake (hull-root unscaled) so fire
+    /// muzzles and tractor reach match the visible upgrade-tree hull without requiring a manual
+    /// catalog re-bake menu pass.
+    /// <para>
+    /// Re-applies only when the chassis identity changes — not when a hull simply has zero wings
+    /// (that used to Instantiates the prefab every frame and could stall join loading near 92%).
+    /// </para>
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ShipStatApplySystem))]
@@ -22,13 +31,25 @@ namespace TitanOrbit.ECS
             public int BranchIndex;
         }
 
+        /// <summary>Scratch list for runtime weapon bake — reused to avoid per-apply List alloc noise.</summary>
+        static readonly List<ShipWeaponMountBakeData> WeaponBakeScratch =
+            new List<ShipWeaponMountBakeData>(8);
+
+        /// <summary>Scratch list for runtime wing bake — reused to avoid per-apply List alloc noise.</summary>
+        static readonly List<ShipWingTractorBeamBakeData> WingBakeScratch =
+            new List<ShipWingTractorBeamBakeData>(16);
+
+        /// <summary>
+        /// Per tick: find ships whose chassis key changed, then write mounts/wings/colliders.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            // [TITAN-ORBIT] Server must always apply mounts for fire origin. Client under
-            // session-long TransformQuarantine skips (uses ghost-baked mounts for anticipation).
-            if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
-                return;
-            if (state.World.IsClient() && ClientJoinSettleCache.TransformQuarantine)
+            // --- Join-crash gate (client only) ---
+            // [TITAN-ORBIT] Ship WithEntityAccess during post–Join Team Instantiates Crash!!!.
+            // Server always applies — tractor reach and fire mounts are authoritative sim data.
+            // Do NOT gate on TransformQuarantine or UseEntitiesGraphicsForShips: quarantine is
+            // session-long on Windows, and hybrid mode still needs upgrade-tree wing buffers.
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
                 return;
 
             var catalog = ShipChassisVisualCatalog.Instance;
@@ -48,12 +69,13 @@ namespace TitanOrbit.ECS
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
                     continue;
 
-                if (NeedsCatalogApply(em, catalog, entity, ship.ValueRO, loadout.ValueRO.BranchIndex))
+                int branch = ship.ValueRO.BranchIndex;
+                if (NeedsCatalogApply(em, catalog, config, entity, ship.ValueRO, branch))
                 {
                     pending.Add(new PendingCatalogApply
                     {
                         Entity = entity,
-                        BranchIndex = loadout.ValueRO.BranchIndex,
+                        BranchIndex = branch,
                     });
                 }
             }
@@ -67,17 +89,34 @@ namespace TitanOrbit.ECS
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
                     continue;
 
-                if (NeedsCatalogApply(em, catalog, entity, ship.ValueRO, branchIndex: 0))
+                int branch = ship.ValueRO.BranchIndex;
+                if (NeedsCatalogApply(em, catalog, config, entity, ship.ValueRO, branch))
                 {
                     pending.Add(new PendingCatalogApply
                     {
                         Entity = entity,
-                        BranchIndex = 0,
+                        BranchIndex = branch,
                     });
                 }
             }
 
             // --- Pass 2: structural changes (buffers, colliders, tracking component) ---
+            // Server-only moon re-pin after collider swap (client TransformQuarantine forbids planet gather).
+            bool serverReattach = state.World.IsServer();
+            float mapW = 1000f;
+            float mapH = 1000f;
+            double moonElapsed = SystemAPI.Time.ElapsedTime;
+            if (serverReattach)
+            {
+                ShipMoonDockAttachLogic.GetMapSize(em, out mapW, out mapH);
+                int hz = 0;
+                if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                    hz = tickRate.SimulationTickRate;
+                if (SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime))
+                    moonElapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(
+                        networkTime, hz, includeTickFraction: false);
+            }
+
             for (int i = 0; i < pending.Length; i++)
             {
                 var work = pending[i];
@@ -86,14 +125,25 @@ namespace TitanOrbit.ECS
 
                 var ship = em.GetComponentData<ShipState>(work.Entity);
                 TryApplyCatalogData(em, config, catalog, work.Entity, ship, work.BranchIndex);
+
+                // [TITAN-ORBIT] New hull collider while docked can Physics-eject the ship — re-pin.
+                if (serverReattach)
+                {
+                    ShipMoonDockAttachLogic.TryReattachFullyDockedShip(
+                        em, work.Entity, mapW, mapH, moonElapsed);
+                }
             }
 
             pending.Dispose();
         }
 
+        /// <summary>
+        /// True when chassis id / level / branch differs from the last applied <see cref="ShipHullColliderState"/>.
+        /// </summary>
         static bool NeedsCatalogApply(
             EntityManager em,
             ShipChassisVisualCatalog catalog,
+            PlanetShipFamilyConfig config,
             Entity entity,
             in ShipState ship,
             int branchIndex)
@@ -101,7 +151,10 @@ namespace TitanOrbit.ECS
             if (!ShipStatApplyLogic.TryResolveChassisId(ship.Team, ship.ShipLevel, branchIndex, out string chassisId))
                 return false;
 
-            if (!catalog.TryGetEntry(chassisId, out _))
+            // Catalog entry OR tier prefab is enough — wings can live-bake from the prefab alone.
+            bool hasCatalog = catalog.TryGetEntry(chassisId, out _);
+            bool hasPrefab = config.GetTierEntryForChassisId(chassisId)?.prefab != null;
+            if (!hasCatalog && !hasPrefab)
                 return false;
 
             if (!em.HasComponent<ShipHullColliderState>(entity))
@@ -109,11 +162,22 @@ namespace TitanOrbit.ECS
 
             var applied = em.GetComponentData<ShipHullColliderState>(entity);
             var chassisKey = new FixedString64Bytes(chassisId);
-            return !applied.ChassisId.Equals(chassisKey)
+            if (!applied.ChassisId.Equals(chassisKey)
                 || applied.AppliedShipLevel != ship.ShipLevel
-                || applied.AppliedBranchIndex != branchIndex;
+                || applied.AppliedBranchIndex != branchIndex)
+                return true;
+
+            // [TITAN-ORBIT] Do NOT re-apply when wing buffer is empty for the same chassis.
+            // Many upgrade-tree hulls have zero WingTractorBeam mounts. The old check treated
+            // that as "stale" and called TryApplyCatalogData every frame → Object.Instantiate
+            // of the full chassis prefab on the server (and client after settle). That starved
+            // GhostSpawn Instantiates / hybrid map drain and left the loading bar stuck near 92%.
+            return false;
         }
 
+        /// <summary>
+        /// Writes mounts, wings, and optional hull collider for one ship entity.
+        /// </summary>
         static void TryApplyCatalogData(
             EntityManager em,
             PlanetShipFamilyConfig config,
@@ -125,20 +189,26 @@ namespace TitanOrbit.ECS
             if (!ShipStatApplyLogic.TryResolveChassisId(ship.Team, ship.ShipLevel, branchIndex, out string chassisId))
                 return;
 
-            if (!catalog.TryGetEntry(chassisId, out var entry))
-                return;
-
-            ApplyWeaponMounts(em, entity, entry);
-            ApplyWingTractorBeams(em, entity, entry);
-
+            catalog.TryGetEntry(chassisId, out var entry);
             var tier = config.GetTierEntryForChassisId(chassisId);
-            if (tier?.prefab != null)
+            GameObject chassisPrefab = tier != null ? tier.prefab : null;
+
+            // [TITAN-ORBIT] Weapons: live prefab bake first so multi-cannon upgrade hulls fire from
+            // every Weapon child. Stale catalog WeaponMounts often had 0–1 entries while the GO
+            // showed 4 barrels — server then round-robined / volleyed a single muzzle.
+            ApplyWeaponMounts(em, entity, entry, chassisPrefab);
+
+            // [TITAN-ORBIT] Wings: live prefab bake first so server pull radius matches the upgrade
+            // hull the client draws beams from. Stale catalog lists caused “beam shows, no pull.”
+            ApplyWingTractorBeams(em, entity, entry, chassisPrefab);
+
+            if (chassisPrefab != null)
             {
                 float motorMass = 1f;
                 if (em.HasComponent<ShipMotorConfig>(entity))
                     motorMass = em.GetComponentData<ShipMotorConfig>(entity).Mass;
 
-                ShipHullColliderLogic.TryApplyChassisCollider(em, entity, tier.prefab, motorMass);
+                ShipHullColliderLogic.TryApplyChassisCollider(em, entity, chassisPrefab, motorMass);
             }
 
             var hullState = new ShipHullColliderState
@@ -154,7 +224,15 @@ namespace TitanOrbit.ECS
                 em.AddComponentData(entity, hullState);
         }
 
-        static void ApplyWeaponMounts(EntityManager em, Entity entity, ShipChassisVisualEntry entry)
+        /// <summary>
+        /// Fills <see cref="ShipWeaponMountElement"/> from a live chassis prefab bake when possible,
+        /// else from the catalog entry list. Empty buffer = intentional unarmed.
+        /// </summary>
+        static void ApplyWeaponMounts(
+            EntityManager em,
+            Entity entity,
+            ShipChassisVisualEntry entry,
+            GameObject chassisPrefab)
         {
             if (!em.HasBuffer<ShipWeaponMountElement>(entity))
                 em.AddBuffer<ShipWeaponMountElement>(entity);
@@ -162,20 +240,41 @@ namespace TitanOrbit.ECS
             var buffer = em.GetBuffer<ShipWeaponMountElement>(entity);
             buffer.Clear();
 
-            for (int i = 0; i < entry.WeaponMounts.Count; i++)
+            // --- Path A: live prefab bake (authoritative for upgrade-tree hulls) ---
+            if (ShipChassisPrefabBakeUtility.TryBakeWeaponMounts(chassisPrefab, WeaponBakeScratch))
             {
-                var mount = entry.WeaponMounts[i];
-                buffer.Add(new ShipWeaponMountElement
-                {
-                    LocalPosition = mount.LocalPosition,
-                    LocalRotation = mount.LocalRotation,
-                    DirectionAngleDeg = mount.DirectionAngleDeg,
-                    CannonIndex = mount.CannonIndex,
-                });
+                for (int i = 0; i < WeaponBakeScratch.Count; i++)
+                    buffer.Add(ToWeaponElement(WeaponBakeScratch[i]));
+                return;
             }
+
+            // --- Path B: catalog ScriptableObject fallback ---
+            if (entry?.WeaponMounts == null)
+                return;
+
+            for (int i = 0; i < entry.WeaponMounts.Count; i++)
+                buffer.Add(ToWeaponElement(entry.WeaponMounts[i]));
         }
 
-        static void ApplyWingTractorBeams(EntityManager em, Entity entity, ShipChassisVisualEntry entry)
+        /// <summary>Maps bake DTO → runtime weapon mount buffer element.</summary>
+        static ShipWeaponMountElement ToWeaponElement(in ShipWeaponMountBakeData mount) =>
+            new ShipWeaponMountElement
+            {
+                LocalPosition = mount.LocalPosition,
+                LocalRotation = mount.LocalRotation,
+                DirectionAngleDeg = mount.DirectionAngleDeg,
+                CannonIndex = mount.CannonIndex,
+            };
+
+        /// <summary>
+        /// Fills <see cref="ShipWingTractorBeamElement"/> from a live chassis prefab bake when possible,
+        /// else from the catalog entry list.
+        /// </summary>
+        static void ApplyWingTractorBeams(
+            EntityManager em,
+            Entity entity,
+            ShipChassisVisualEntry entry,
+            GameObject chassisPrefab)
         {
             if (!em.HasBuffer<ShipWingTractorBeamElement>(entity))
                 em.AddBuffer<ShipWingTractorBeamElement>(entity);
@@ -183,20 +282,33 @@ namespace TitanOrbit.ECS
             var buffer = em.GetBuffer<ShipWingTractorBeamElement>(entity);
             buffer.Clear();
 
-            for (int i = 0; i < entry.WingTractorBeams.Count; i++)
+            // --- Path A: live prefab bake (authoritative for upgrade-tree hulls) ---
+            if (ShipChassisPrefabBakeUtility.TryBakeWingTractorBeams(chassisPrefab, WingBakeScratch))
             {
-                var wing = entry.WingTractorBeams[i];
-                buffer.Add(new ShipWingTractorBeamElement
-                {
-                    LocalPosition = wing.LocalPosition,
-                    TractorBeamDistance = wing.TractorBeamDistance,
-                    TractorBeamDistancePerLevel = wing.TractorBeamDistancePerLevel,
-                    TractorBeamPower = wing.TractorBeamPower,
-                    TractorBeamPowerPerLevel = wing.TractorBeamPowerPerLevel,
-                    MaxGems = wing.MaxGems,
-                    MaxGemsPerLevel = wing.MaxGemsPerLevel,
-                });
+                for (int i = 0; i < WingBakeScratch.Count; i++)
+                    buffer.Add(ToWingElement(WingBakeScratch[i]));
+                return;
             }
+
+            // --- Path B: catalog ScriptableObject fallback ---
+            if (entry?.WingTractorBeams == null)
+                return;
+
+            for (int i = 0; i < entry.WingTractorBeams.Count; i++)
+                buffer.Add(ToWingElement(entry.WingTractorBeams[i]));
         }
+
+        /// <summary>Maps bake DTO → runtime buffer element.</summary>
+        static ShipWingTractorBeamElement ToWingElement(in ShipWingTractorBeamBakeData wing) =>
+            new ShipWingTractorBeamElement
+            {
+                LocalPosition = wing.LocalPosition,
+                TractorBeamDistance = wing.TractorBeamDistance,
+                TractorBeamDistancePerLevel = wing.TractorBeamDistancePerLevel,
+                TractorBeamPower = wing.TractorBeamPower,
+                TractorBeamPowerPerLevel = wing.TractorBeamPowerPerLevel,
+                MaxGems = wing.MaxGems,
+                MaxGemsPerLevel = wing.MaxGemsPerLevel,
+            };
     }
 }

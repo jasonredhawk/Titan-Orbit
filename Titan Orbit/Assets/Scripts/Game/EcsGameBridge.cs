@@ -180,6 +180,10 @@ namespace TitanOrbit.Game
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 return false;
 
+            // [TITAN-ORBIT] Ship ToEntityArray during post–Join Team Instantiates Crash!!!
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             // [TITAN-ORBIT] No local ship camera/control until the galaxy build finishes.
             if (IsNetworkInGame() && !IsMapLoadingComplete())
                 return false;
@@ -914,6 +918,10 @@ namespace TitanOrbit.Game
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 return false;
 
+            // [TITAN-ORBIT] Ship ToEntityArray during post–Join Team Instantiates Crash!!!
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             int localId = GetLocalNetworkId(ClientWorld);
             if (localId > 0)
             {
@@ -983,6 +991,8 @@ namespace TitanOrbit.Game
         static bool TryGetShipTransform(EntityManager em, ComponentType marker, out LocalTransform transform)
         {
             transform = default;
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
             using var query = em.CreateEntityQuery(marker, typeof(ShipTag), typeof(LocalTransform));
             using var entities = query.ToEntityArray(Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
@@ -1003,6 +1013,8 @@ namespace TitanOrbit.Game
         static bool TryGetShipTransformByNetworkId(EntityManager em, int networkId, out LocalTransform transform)
         {
             transform = default;
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(LocalTransform));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
@@ -1021,6 +1033,8 @@ namespace TitanOrbit.Game
         static bool TryGetShipStateByNetworkId(EntityManager em, int networkId, out ShipState state)
         {
             state = default;
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipState));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
@@ -1039,6 +1053,8 @@ namespace TitanOrbit.Game
         static bool TryGetShipOrbitStateByNetworkId(EntityManager em, int networkId, out ShipOrbitState orbitState)
         {
             orbitState = default;
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
             using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipOrbitState));
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var states = query.ToComponentDataArray<ShipOrbitState>(Allocator.Temp);
@@ -1070,6 +1086,9 @@ namespace TitanOrbit.Game
             shipOrbit = default;
             moonDock = default;
             shipTransform = default;
+
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
 
             using var query = em.CreateEntityQuery(
                 typeof(ShipTag),
@@ -1552,6 +1571,108 @@ namespace TitanOrbit.Game
         }
 
         // --- Planet queries ---
+
+        /// <summary>
+        /// Finds the team's home planet <see cref="PlanetState.PlanetId"/> for orbit-store Bank UI.
+        /// Uses replicated <see cref="PlanetState.IsHomePlanet"/> — not server-only <see cref="HomePlanetTag"/>
+        /// (that tag never appears on client ghosts, so Bank RPCs were stuck with home id 0).
+        /// </summary>
+        /// <param name="team">Local ship's team.</param>
+        /// <param name="planetId">Stable planet id of that team's home, or 0 on failure.</param>
+        /// <returns>True when a matching home planet was found.</returns>
+        public static bool TryGetHomePlanetIdForTeam(TeamId team, out int planetId)
+        {
+            // --- Resolve home planet id for orbit Bank / store RPCs ---
+            planetId = 0;
+            if (team == TeamId.None)
+                return false;
+
+            // Local host: authoritative server world has HomePlanetTag + full PlanetState.
+            if (IsLocalHost() &&
+                TryFindHomePlanetIdInWorld(ServerWorld, team, preferHomePlanetTag: true, out planetId))
+                return true;
+
+            // Client / visualization: HomePlanetTag is not replicated — filter on IsHomePlanet.
+            if (TryFindHomePlanetIdInWorld(GetVisualizationWorld(), team, preferHomePlanetTag: false, out planetId))
+                return true;
+
+            if (TryFindHomePlanetIdInWorld(ClientWorld, team, preferHomePlanetTag: false, out planetId))
+                return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// Scans one world for the team's home planet id. Under TransformQuarantine / Settling /
+        /// GhostSpawnBacklog walks hybrid proxies only — never a full planet <c>ToComponentDataArray</c>.
+        /// </summary>
+        static bool TryFindHomePlanetIdInWorld(
+            World world,
+            TeamId team,
+            bool preferHomePlanetTag,
+            out int planetId)
+        {
+            planetId = 0;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+
+            // [TITAN-ORBIT] Windows late-join: Settling OFF is NOT safe for map gathers.
+            // TransformQuarantine stays true for the whole in-game session.
+            bool useProxyWalk =
+                ClientJoinSettleCache.TransformQuarantine ||
+                ClientJoinSettleCache.Settling ||
+                ClientJoinSettleCache.GhostSpawnBacklog;
+
+            if (useProxyWalk)
+            {
+                foreach (var entity in GetScratchProxyEntities())
+                {
+                    if (!em.Exists(entity) || !em.HasComponent<PlanetState>(entity))
+                        continue;
+
+                    var state = em.GetComponentData<PlanetState>(entity);
+                    if (!state.IsHomePlanet || state.Ownership != team || state.PlanetId <= 0)
+                        continue;
+
+                    planetId = state.PlanetId;
+                    return true;
+                }
+
+                return false;
+            }
+
+            // Server / non-quarantined path: HomePlanetTag is a tiny set (one per team).
+            if (preferHomePlanetTag)
+            {
+                using var homeQuery = em.CreateEntityQuery(typeof(HomePlanetTag), typeof(PlanetState));
+                if (!homeQuery.IsEmptyIgnoreFilter)
+                {
+                    using var homeStates = homeQuery.ToComponentDataArray<PlanetState>(Allocator.Temp);
+                    for (int i = 0; i < homeStates.Length; i++)
+                    {
+                        if (homeStates[i].Ownership != team || homeStates[i].PlanetId <= 0)
+                            continue;
+                        planetId = homeStates[i].PlanetId;
+                        return true;
+                    }
+                }
+            }
+
+            // Client ghosts: IsHomePlanet is the replicated flag (HomePlanetTag is server-only).
+            using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState));
+            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            for (int i = 0; i < states.Length; i++)
+            {
+                if (!states[i].IsHomePlanet || states[i].Ownership != team || states[i].PlanetId <= 0)
+                    continue;
+                planetId = states[i].PlanetId;
+                return true;
+            }
+
+            return false;
+        }
 
         /// <summary><see cref="PlanetState"/> by stable <see cref="PlanetState.PlanetId"/> across host/client worlds.</summary>
         public static bool TryGetPlanetStateByPlanetId(int planetId, out PlanetState state)

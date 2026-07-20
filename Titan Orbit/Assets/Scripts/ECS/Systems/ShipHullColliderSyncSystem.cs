@@ -1,6 +1,8 @@
 using TitanOrbit.Data;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.NetCode;
 using Unity.Physics;
 
 namespace TitanOrbit.ECS
@@ -26,6 +28,11 @@ namespace TitanOrbit.ECS
             if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
                 return;
 
+            // [TITAN-ORBIT] Client: ship WithEntityAccess + collider structural swap during
+            // GhostSpawn Instantiates Crash!!!. Server always syncs. Gate with IsClient().
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
             var em = state.EntityManager;
             var config = ShipStatApplyLogic.Config;
             if (config == null)
@@ -41,12 +48,13 @@ namespace TitanOrbit.ECS
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
                     continue;
 
-                if (NeedsHullSync(em, entity, ship.ValueRO, loadout.ValueRO.BranchIndex))
+                int branch = ship.ValueRO.BranchIndex;
+                if (NeedsHullSync(em, entity, ship.ValueRO, branch))
                 {
                     pending.Add(new PendingHullSync
                     {
                         Entity = entity,
-                        BranchIndex = loadout.ValueRO.BranchIndex,
+                        BranchIndex = branch,
                     });
                 }
             }
@@ -70,6 +78,22 @@ namespace TitanOrbit.ECS
                 }
             }
 
+            // Server-only moon re-pin after collider swap (client TransformQuarantine forbids planet gather).
+            bool serverReattach = state.World.IsServer();
+            float mapW = 1000f;
+            float mapH = 1000f;
+            double moonElapsed = SystemAPI.Time.ElapsedTime;
+            if (serverReattach)
+            {
+                ShipMoonDockAttachLogic.GetMapSize(em, out mapW, out mapH);
+                int hz = 0;
+                if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                    hz = tickRate.SimulationTickRate;
+                if (SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime))
+                    moonElapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(
+                        networkTime, hz, includeTickFraction: false);
+            }
+
             for (int i = 0; i < pending.Length; i++)
             {
                 var work = pending[i];
@@ -78,6 +102,13 @@ namespace TitanOrbit.ECS
 
                 var ship = em.GetComponentData<ShipState>(work.Entity);
                 TrySyncHull(work.Entity, em, config, ship, work.BranchIndex);
+
+                // [TITAN-ORBIT] New hull collider while docked can Physics-eject the ship — re-pin.
+                if (serverReattach)
+                {
+                    ShipMoonDockAttachLogic.TryReattachFullyDockedShip(
+                        em, work.Entity, mapW, mapH, moonElapsed);
+                }
             }
 
             pending.Dispose();

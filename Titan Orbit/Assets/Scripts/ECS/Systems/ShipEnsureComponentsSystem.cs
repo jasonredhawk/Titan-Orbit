@@ -23,6 +23,12 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
+            // [TITAN-ORBIT] Client: ship WithEntityAccess during GhostSpawn Instantiates Crash!!!
+            // (TeamChoiceResult — Settling OFF, backlog ON). Server always runs. Local Host shares
+            // ClientJoinSettleCache statics — must gate with IsClient(), not the flag alone.
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             // --- Kinematics mirror (velocity for gameplay reads) ---

@@ -1,12 +1,14 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Instantiates legacy gem crystal prefabs as ECS presentation proxies for
-    /// <see cref="EcsWorldVisualizer"/>. Strips NGO/legacy components, tints for team visibility,
-    /// and scales mesh by gem value. Render only — sim value lives on <see cref="GemState"/>.
+    /// [HYBRID] Instantiates gem crystal prefabs as ECS presentation proxies for
+    /// <see cref="EcsWorldVisualizer"/> and <see cref="ClientGemBurstPresenter"/>.
+    /// Strips NGO/legacy components, applies a readable red tint, and scales mesh by gem value.
+    /// Render only — sim value lives on <see cref="GemState"/>.
     /// </summary>
     public static class GemVisualApplier
     {
@@ -18,8 +20,12 @@ namespace TitanOrbit.Game
         const float ScaleAtMinValue = 0.5f;
         const float ScaleAtMaxValue = 4f;
 
-        /// <summary>Semi-transparent red overlay so gems read on busy backgrounds.</summary>
-        static readonly Color GemTintColor = new Color(1f, 0f, 0f, 0.45f);
+        /// <summary>
+        /// Semi-transparent red so gems read on busy backgrounds.
+        /// Alpha is only correct when URP Lit keywords/blend state are set together — see
+        /// <see cref="ApplyGemTint"/>.
+        /// </summary>
+        static readonly Color GemTintColor = new Color(1f, 0.2f, 0.2f, 0.55f);
 
         /// <summary>MonoBehaviour types removed so the proxy is a pure visual shell.</summary>
         static readonly HashSet<string> StripComponentNames = new HashSet<string>
@@ -32,7 +38,12 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Creates a stripped gem proxy at default scale for the given gem value.
+        /// Used for networked gem ghosts and for the immediate local destroy burst.
         /// </summary>
+        /// <param name="gemPrefab">Crystal mesh prefab (usually <c>Assets/Prefabs/Gem.prefab</c>).</param>
+        /// <param name="gemValue">Authoritative gem value — drives visual scale only.</param>
+        /// <param name="instance">Created GameObject, or null on failure.</param>
+        /// <returns>True when Instantiates succeeded.</returns>
         public static bool TryCreateGemVisual(GameObject gemPrefab, float gemValue, out GameObject instance)
         {
             instance = null;
@@ -76,29 +87,61 @@ namespace TitanOrbit.Game
             return ComputeVisualDiameter(gemValue);
         }
 
+        /// <summary>
+        /// Tints the gem mesh red and configures URP Lit for real alpha blending.
+        /// </summary>
+        /// <remarks>
+        /// [TITAN-ORBIT] Bug (2026-07-20): setting only <c>_Surface = 1</c> + blend floats without
+        /// enabling <c>_SURFACE_TYPE_TRANSPARENT</c> leaves URP Lit in a broken opaque/transparent
+        /// hybrid. Those meshes draw near-black. When an asteroid is destroyed, up to
+        /// <see cref="Data.GemExplosionSettings.MaxGemCount"/> local gems Instantiates at once
+        /// near the camera — that looked like a full-screen dark wash (easy to blame on bullet impact VFX).
+        /// </remarks>
+        /// <param name="root">Gem proxy root (may have a child MeshRenderer).</param>
         static void ApplyGemTint(GameObject root)
         {
             var renderer = root.GetComponentInChildren<Renderer>();
             if (renderer == null)
                 return;
 
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            var material = renderer.material;
-            if (material.HasProperty("_Surface"))
-                material.SetFloat("_Surface", 1f);
-            if (material.HasProperty("_Mode"))
-                material.SetFloat("_Mode", 3f);
-            if (material.HasProperty("_SrcBlend"))
-                material.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-            if (material.HasProperty("_DstBlend"))
-                material.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-            if (material.HasProperty("_ZWrite"))
-                material.SetInt("_ZWrite", 0);
+            // --- Instance the material so we do not mutate the shared TitanOrbit_Gem asset ---
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            Material material = renderer.material;
+
+            // --- Color ---
             if (material.HasProperty("_BaseColor"))
                 material.SetColor("_BaseColor", GemTintColor);
             if (material.HasProperty("_Color"))
                 material.SetColor("_Color", GemTintColor);
-            material.renderQueue = 3000;
+            material.color = GemTintColor;
+
+            // --- Full URP Lit transparent setup (keywords + blend + queue) ---
+            // [UNITY] URP Lit ignores half of the float toggles unless the matching keywords / tags
+            // are set — incomplete setup is a common source of black transparent meshes.
+            if (material.HasProperty("_Surface"))
+                material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_Blend"))
+                material.SetFloat("_Blend", 0f); // 0 = Alpha blend
+            if (material.HasProperty("_AlphaClip"))
+                material.SetFloat("_AlphaClip", 0f);
+            if (material.HasProperty("_Mode"))
+                material.SetFloat("_Mode", 3f); // Legacy Built-in transparent enum (harmless on URP)
+
+            material.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
+            material.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+            if (material.HasProperty("_SrcBlendAlpha"))
+                material.SetInt("_SrcBlendAlpha", (int)BlendMode.One);
+            if (material.HasProperty("_DstBlendAlpha"))
+                material.SetInt("_DstBlendAlpha", (int)BlendMode.OneMinusSrcAlpha);
+            material.SetInt("_ZWrite", 0);
+
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+            material.DisableKeyword("_ALPHAMODULATE_ON");
+            material.SetShaderPassEnabled("ShadowCaster", false);
+
+            material.SetOverrideTag("RenderType", "Transparent");
+            material.renderQueue = (int)RenderQueue.Transparent;
         }
 
         /// <summary>Removes physics, networking, and legacy Gem behaviours so proxy is render-only.</summary>

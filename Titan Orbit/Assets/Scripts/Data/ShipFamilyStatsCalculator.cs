@@ -7,7 +7,8 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Static stat summing from a chassis prefab hierarchy plus a <see cref="ShipFamilyDefinition"/>.
     /// Walks child transforms named <c>{familyId}_{componentId}</c>, scales stats by transform size, applies
-    /// propulsion aggregation, then stat fallbacks. Shared by editor previews, power-score baking, and runtime UI.
+    /// propulsion aggregation + weapon projectile-speed max (not sum), then stat fallbacks.
+    /// Shared by editor previews, power-score baking, and runtime UI.
     /// </summary>
     public static class ShipFamilyStatsCalculator
     {
@@ -107,6 +108,11 @@ namespace TitanOrbit.Data
                     result.MatchedComponentIds,
                     result.PerComponentStats,
                     shipLevel);
+                // [TITAN-ORBIT] Bullet speed is per-projectile — max across weapons, never N× sum.
+                result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponProjectileSpeedToSummedStats(
+                    result.TotalStats,
+                    result.MatchedComponentIds,
+                    result.PerComponentStats);
                 result.TotalStats = family.ApplyStatFallbacks(result.TotalStats);
             }
             finally

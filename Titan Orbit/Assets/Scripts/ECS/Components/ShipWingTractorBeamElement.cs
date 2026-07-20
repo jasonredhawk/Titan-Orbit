@@ -13,7 +13,12 @@ namespace TitanOrbit.ECS
     public struct ShipWingTractorBeamElement : IBufferElementData
     {
         // --- Type members ---
-        /// <summary>[UNITY] Local offset from ship hull origin (authored on wing child transform).</summary>
+        /// <summary>
+        /// [UNITY] Hull-root local offset in <b>unscaled prefab space</b> (not immediate-parent
+        /// <c>localPosition</c>, and not yet multiplied by <see cref="BodyCollisionMath.ShipPresentationScale"/>).
+        /// <see cref="ShipWingTractorBeamPose.GetWorldPosition"/> applies presentation scale so beams
+        /// line up with the hybrid ship mesh.
+        /// </summary>
         public float3 LocalPosition;
 
         /// <summary>[TITAN-ORBIT] Base tractor search radius at ship level 1.</summary>
@@ -60,10 +65,20 @@ namespace TitanOrbit.ECS
         /// [ECS/DOTS] Resolves wing attachment point in world space from ship hull transform.
         /// </summary>
         /// <param name="shipTransform">Ship hull LocalTransform (position + rotation).</param>
-        /// <param name="wing">Baked wing element with local offset.</param>
-        /// <returns>World-space wing position on the XZ plane.</returns>
-        public static float3 GetWorldPosition(in LocalTransform shipTransform, in ShipWingTractorBeamElement wing) =>
-            GemTractorBeamMath.ResolveWingWorldPosition(shipTransform.Position, shipTransform.Rotation, wing.LocalPosition);
+        /// <param name="wing">Baked wing element with unscaled hull-root local offset.</param>
+        /// <returns>World-space wing position on the XZ plane (presentation-scaled).</returns>
+        public static float3 GetWorldPosition(in LocalTransform shipTransform, in ShipWingTractorBeamElement wing)
+        {
+            // --- Prefab-local → presentation world ---
+            // [TITAN-ORBIT] Chassis prefabs are authored large; hybrid proxies multiply by
+            // ShipPresentationScale (~0.155). Wing LocalPosition stays unscaled (same as bake /
+            // InverseTransformPoint). Without this multiply, multi-wing upgrade ships draw beams
+            // far outside the visible hull while gems still pull toward those inflated origins.
+            float ecsScale = math.max(0.25f, shipTransform.Scale);
+            float3 presentationLocal = wing.LocalPosition * (BodyCollisionMath.ShipPresentationScale * ecsScale);
+            return GemTractorBeamMath.ResolveWingWorldPosition(
+                shipTransform.Position, shipTransform.Rotation, presentationLocal);
+        }
 
         /// <summary>
         /// [TITAN-ORBIT] Computes effective search radius and attraction speed for one wing at the

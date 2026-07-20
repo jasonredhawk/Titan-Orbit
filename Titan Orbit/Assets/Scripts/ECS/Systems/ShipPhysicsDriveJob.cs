@@ -34,8 +34,8 @@ namespace TitanOrbit.ECS
         [ReadOnly] public NativeArray<PlanetMotorSnapshot> Planets;
 
         /// <summary>
-        /// Per-ship motor tick. Writes velocity, yaw, and <see cref="ShipOrbitState"/>;
-        /// position stays physics-owned.
+        /// Per-ship motor tick. Writes velocity, yaw, and <see cref="ShipOrbitState"/>.
+        /// Position stays physics-owned except while fully moon-docked (surface attach).
         /// </summary>
         void Execute(
             RefRO<ShipInput> input,

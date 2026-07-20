@@ -67,6 +67,12 @@ namespace TitanOrbit.ECS
         /// </summary>
         public static bool GhostSpawnBacklog { get; private set; }
 
+        /// <summary>
+        /// [TITAN-ORBIT] True when ship <c>ToEntityArray</c> / <c>WithEntityAccess</c> must not run.
+        /// Covers Settling and the post–Join Team Instantiates window (Settling stays OFF).
+        /// </summary>
+        public static bool ShouldSkipShipEntityQueries => Settling || GhostSpawnBacklog;
+
         /// <summary>Updates settle + quarantine flags from the join gate system.</summary>
         public static void Set(
             bool settling,
@@ -79,6 +85,16 @@ namespace TitanOrbit.ECS
             TransformQuarantine = transformQuarantine;
             InGameFrames = inGameFrames;
             JoinSettleCompleted = joinSettleCompleted;
+            GhostSpawnBacklog = ghostSpawnBacklog;
+        }
+
+        /// <summary>
+        /// Refreshes only <see cref="GhostSpawnBacklog"/> after GhostSpawn runs mid-frame.
+        /// The join gate publishes backlog in InitializationSystemGroup — before GhostSpawn —
+        /// so MonoBehaviours in LateUpdate would otherwise see a stale false on the arrival frame.
+        /// </summary>
+        public static void SetGhostSpawnBacklog(bool ghostSpawnBacklog)
+        {
             GhostSpawnBacklog = ghostSpawnBacklog;
         }
 

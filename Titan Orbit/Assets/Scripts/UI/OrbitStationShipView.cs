@@ -60,10 +60,10 @@ namespace TitanOrbit.Entities
 
             ShipTeam = TeamManager.FromTeamId(ship.Team);
             ShipLevel = Mathf.Max(1, ship.ShipLevel);
-            BranchIndex = 0;
-
-            if (EcsGameBridge.TryGetLocalShipLoadout(out var loadout))
-                BranchIndex = loadout.BranchIndex;
+            // [NETCODE] ShipState.BranchIndex is the authoritative ghosted upgrade-tree branch.
+            // Loadout.BranchIndex alone used to leave the tree highlighting branch 0 while the
+            // correct hull (ShipState branch) was already on screen after a purchase.
+            BranchIndex = Mathf.Max(0, ship.BranchIndex);
 
             if (EcsGameBridge.TryGetLocalShipMoonDockState(out var moonDock))
                 GemMoonDocked = moonDock.MoonPlanetId != 0

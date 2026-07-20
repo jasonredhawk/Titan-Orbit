@@ -25,6 +25,14 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Upgrade ladder level (1 = starter chassis).</summary>
         [GhostField] public int ShipLevel;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Upgrade-tree branch within <see cref="ShipLevel"/> (0-based).
+        /// Ghosted on ShipState so clients rebuild the correct hull after moon-store purchases —
+        /// <see cref="ShipLoadoutState.BranchIndex"/> alone was not baked on older ship ghosts and
+        /// did not reliably replicate, so every client stayed on branch 0.
+        /// </summary>
+        [GhostField] public int BranchIndex;
+
         /// <summary>[TITAN-ORBIT] Gems currently stored in the ship cargo hold.</summary>
         [GhostField] public float CurrentGems;
 
@@ -143,13 +151,16 @@ namespace TitanOrbit.ECS
         public double LastHullDamageTime;
     }
 
-    /// <summary>[ECS/DOTS] Per-ship weapon cooldown and round-robin mount index (server sim).</summary>
+    /// <summary>[ECS/DOTS] Per-ship weapon cooldown (server sim). NextMountIndex kept for compatibility.</summary>
     public struct ShipWeaponState : IComponentData
     {
-        /// <summary>[UNITY] Seconds until next shot is allowed.</summary>
+        /// <summary>[UNITY] Seconds until next volley is allowed.</summary>
         public float FireCooldown;
 
-        /// <summary>[TITAN-ORBIT] Next mount index for multi-cannon round-robin firing.</summary>
+        /// <summary>
+        /// [LEGACY] Formerly round-robin mount index. Multi-cannon ships now fire a full volley
+        /// each tick (<see cref="BulletSimulationSystem"/>); this field is cleared to 0 after fire.
+        /// </summary>
         public int NextMountIndex;
     }
 

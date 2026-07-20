@@ -14,9 +14,13 @@ namespace TitanOrbit.Game
     /// Local-owner bullet anticipation: enqueues cosmetic tracers into <see cref="BulletVfxBridge"/>
     /// from live weapon component transforms (<see cref="BulletMuzzlePresentation"/>) so muzzle
     /// flash matches the drawn barrel (including BankPivot). Server remains authoritative for
-    /// damage (<see cref="BulletSimulationSystem"/>). Round-robin uses the same live mount list
-    /// as resolve. When <see cref="BulletSpawnRpc"/> arrives, <see cref="BulletVfxDriver"/> binds
-    /// Sequence without snapping pose back to the lagged server muzzle.
+    /// damage (<see cref="BulletSimulationSystem"/>).
+    /// <para>
+    /// [TITAN-ORBIT] Multi-cannon hulls fire a <b>volley</b> — one anticipation tracer per weapon
+    /// mount from that mount's pose (same order as the server). When <see cref="BulletSpawnRpc"/>
+    /// arrives, <see cref="BulletVfxDriver"/> binds Sequence without snapping pose back to the
+    /// lagged server muzzle.
+    /// </para>
     /// <para>
     /// [UNITY] LateUpdate after <see cref="EcsWorldVisualizer"/> (66000) so the hull / bank pose
     /// is published; velocity uses kinematics or hull pose-delta.
@@ -27,9 +31,6 @@ namespace TitanOrbit.Game
     {
         /// <summary>Client-side fire-rate gate mirroring server FireRate.</summary>
         float _fireCooldown;
-
-        /// <summary>Round-robin mount index (mirrors server NextMountIndex locally).</summary>
-        int _nextMountIndex;
 
         /// <summary>Cached reference to scene input — resolved in Start.</summary>
         PlayerInputHandler _input;
@@ -98,13 +99,7 @@ namespace TitanOrbit.Game
             if (shipState.CurrentEnergy < energyCost)
                 return;
 
-            // --- Live weapon Transform muzzle (exact component pose, includes bank) ---
-            if (!BulletMuzzlePresentation.TryResolveMuzzle(
-                    world.EntityManager, shipEntity, _nextMountIndex,
-                    out float3 fireOrigin, out float3 fireForward, out bool displaySpace, out float3 shipVel))
-                return;
-
-            // --- Round-robin over the same list TryResolveMuzzle used (live GO first) ---
+            // --- Mount count: live GO barrels first (matches TryResolveMuzzle), else ECS buffer ---
             int mountCount = BulletMuzzlePresentation.GetLiveWeaponMountCount(
                 world.EntityManager, shipEntity);
             if (mountCount <= 0 &&
@@ -113,21 +108,13 @@ namespace TitanOrbit.Game
                 mountCount = world.EntityManager.GetBuffer<ShipWeaponMountElement>(shipEntity).Length;
             }
 
-            if (mountCount > 0)
-                _nextMountIndex = (_nextMountIndex + 1) % mountCount;
-
-            // Shared helper: kinematics or pose-delta — never leave shipVel=0 while hull moves.
-            // --- Cap pending anticipations (MaxLive=1) ---
-            // [TITAN-ORBIT] Replicated CurrentEnergy lags the server spend, so at full RoF this
-            // bridge over-enqueues Sequence=0 tracers that never get a HitRpc and fly through
-            // rocks. When energy drops the visual RoF slows and tunneling stops (player clue).
-            // Cap=1 keeps at most one unadopted cosmetic; server fire is unchanged.
-            // Do not advance _fireCooldown here — retry next frame when adopt frees the slot.
-            if (!BulletVfxBridge.CanEnqueueAnticipation())
+            if (mountCount <= 0)
                 return;
 
-            float3 bulletVel = BulletMuzzlePresentation.BuildBulletWorldVelocity(
-                fireForward, weaponCfg.BulletSpeed, shipVel);
+            // --- Cap pending anticipations for the whole volley ---
+            // [TITAN-ORBIT] Do not advance _fireCooldown here — retry next frame when adopt frees slots.
+            if (!BulletVfxBridge.CanEnqueueAnticipation(mountCount))
+                return;
 
             float visualScale = BulletVisualScale.ComputePerShotScale(
                 weaponCfg.BulletScale,
@@ -140,24 +127,46 @@ namespace TitanOrbit.Game
                     ? weaponCfg.ReferenceBulletSpeed
                     : BulletVisualScale.DefaultReferenceBulletSpeed);
 
-            if (!BulletVfxBridge.TryEnqueueSpawn(new BulletVfxBridge.SpawnRequest
-            {
-                Sequence = 0,
-                SpawnPosition = fireOrigin,
-                Velocity = bulletVel,
-                Lifetime = math.max(0.1f, weaponCfg.BulletLifetime),
-                MaxDistance = math.max(10f, weaponCfg.BulletMaxDistance),
-                Damage = math.max(1f, weaponCfg.BulletDamage),
-                OwnerTeam = (byte)shipState.Team,
-                OwnerNetworkId = ownerNetworkId,
-                BankIndex = bankIndex,
-                ScaleMultiplier = visualScale,
-                IsAnticipation = true,
-                IsDisplaySpace = displaySpace,
-            }))
-                return;
+            // firePower is summed across weapons — split cosmetic damage like the server volley.
+            float damagePerBullet = math.max(1f, weaponCfg.BulletDamage / mountCount);
+            int enqueued = 0;
 
-            _fireCooldown = 1f / math.max(0.1f, weaponCfg.FireRate);
+            // --- Volley: one anticipation tracer per weapon mount pose ---
+            for (int mountIdx = 0; mountIdx < mountCount; mountIdx++)
+            {
+                if (!BulletMuzzlePresentation.TryResolveMuzzle(
+                        world.EntityManager, shipEntity, mountIdx,
+                        out float3 fireOrigin, out float3 fireForward, out bool displaySpace,
+                        out float3 shipVel))
+                    continue;
+
+                float3 bulletVel = BulletMuzzlePresentation.BuildBulletWorldVelocity(
+                    fireForward, weaponCfg.BulletSpeed, shipVel);
+
+                if (!BulletVfxBridge.TryEnqueueSpawn(new BulletVfxBridge.SpawnRequest
+                {
+                    Sequence = 0,
+                    SpawnPosition = fireOrigin,
+                    Velocity = bulletVel,
+                    Lifetime = math.max(0.1f, weaponCfg.BulletLifetime),
+                    MaxDistance = math.max(10f, weaponCfg.BulletMaxDistance),
+                    Damage = damagePerBullet,
+                    OwnerTeam = (byte)shipState.Team,
+                    OwnerNetworkId = ownerNetworkId,
+                    BankIndex = bankIndex,
+                    ScaleMultiplier = visualScale,
+                    MountIndex = mountIdx,
+                    IsAnticipation = true,
+                    IsDisplaySpace = displaySpace,
+                }))
+                    break;
+
+                enqueued++;
+            }
+
+            // Only start cooldown when at least one muzzle queued — otherwise retry next frame.
+            if (enqueued > 0)
+                _fireCooldown = 1f / math.max(0.1f, weaponCfg.FireRate);
         }
 
         /// <summary>

@@ -59,9 +59,12 @@ namespace TitanOrbit.Game
             WingByShipAndGem.Clear();
             AssignedGemsByShip.Clear();
 
-            // [TITAN-ORBIT] Skip only while Settling — TransformQuarantine stays ON all session on Windows
-            // and must NOT suppress beams. Gem data comes from hybrid proxies (no full gem gather).
-            if (ClientJoinSettleCache.Settling)
+            // [TITAN-ORBIT] Skip while Settling OR GhostSpawnBacklog.
+            // TransformQuarantine stays ON all session on Windows and must NOT suppress beams
+            // (gems come from hybrid proxies — no full gem gather). But ship ToEntityArray during
+            // post–Join Team Instantiates (Settling OFF, GhostSpawnBacklog ON) → Crash!!!
+            // See titan-orbit-windows-join-crash.mdc #11 / 2026-07-19 TeamChoiceResult.
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
                 return;
 
             var world = EcsGameBridge.GetVisualizationWorld();
@@ -72,7 +75,7 @@ namespace TitanOrbit.Game
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
 
-            // --- Ships: tiny query (few entities) — safe ---
+            // --- Ships: tiny query, but still unsafe during GhostSpawnBacklog Instantiates ---
             using var shipQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),
@@ -420,14 +423,123 @@ namespace TitanOrbit.Game
             DynamicBuffer<ShipWingTractorBeamElement> wings,
             Entity gemEntity)
         {
-            if (WingByShipAndGem.TryGetValue(shipEntity.Index, out var gemToWing) &&
-                gemToWing.TryGetValue(gemEntity.Index, out int wingIndex) &&
+            if (TryGetAssignedWingIndex(shipEntity.Index, gemEntity.Index, out int wingIndex) &&
                 wings.IsCreated && wingIndex >= 0 && wingIndex < wings.Length)
             {
                 return ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wingIndex]);
             }
 
             return shipTransform.Position;
+        }
+
+        /// <summary>
+        /// Returns the wing buffer index assigned to this ship→gem pair after
+        /// <see cref="RebuildAssignmentCache"/> (used by beam VFX to pick the live wing tip).
+        /// </summary>
+        public static bool TryGetAssignedWingIndex(int shipIndex, int gemIndex, out int wingIndex)
+        {
+            RebuildAssignmentCache();
+            wingIndex = -1;
+            return WingByShipAndGem.TryGetValue(shipIndex, out var gemToWing) &&
+                   gemToWing.TryGetValue(gemIndex, out wingIndex);
+        }
+
+        /// <summary>
+        /// [HYBRID] Client presentation pull: when a beam is assigned to <paramref name="gemEntity"/>,
+        /// returns the same wing-directed velocity the server applies so gems glide while the beam
+        /// is visible (gem ghosts can lag; GO motion must not wait on sparse Velocity snapshots).
+        /// </summary>
+        /// <returns>True when this gem should be client-pulled toward a wing this frame.</returns>
+        public static bool TryGetClientPullVelocity(Entity gemEntity, float3 gemLogicalPos, out float3 pullVelocity)
+        {
+            pullVelocity = float3.zero;
+            RebuildAssignmentCache();
+
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            float mapW = ToroidalMapEcs.MapWidth;
+            float mapH = ToroidalMapEcs.MapHeight;
+
+            // --- Find which ship (if any) has this gem assigned ---
+            foreach (var kv in WingByShipAndGem)
+            {
+                if (!kv.Value.TryGetValue(gemEntity.Index, out int wingIndex))
+                    continue;
+
+                int shipIndex = kv.Key;
+                // [TITAN-ORBIT] Hold client pull until deploy finishes (extend → widen → pull),
+                // matching GemTractorBeamSystem so the gem does not slide during the line shot.
+                if (!GemTractorBeamDeployTracker.IsPullPhysicsActive(shipIndex, gemEntity.Index))
+                    continue;
+
+                if (!TryFindShipEntityByIndex(em, shipIndex, out Entity shipEntity))
+                    continue;
+                if (!em.HasComponent<ShipState>(shipEntity) || !em.HasComponent<LocalTransform>(shipEntity))
+                    continue;
+
+                var shipState = em.GetComponentData<ShipState>(shipEntity);
+                if (!IsShipEligibleForBeam(shipState))
+                    continue;
+
+                var shipTransform = em.GetComponentData<LocalTransform>(shipEntity);
+                var wings = em.HasBuffer<ShipWingTractorBeamElement>(shipEntity)
+                    ? em.GetBuffer<ShipWingTractorBeamElement>(shipEntity)
+                    : default;
+
+                int shipLevel = math.max(1, shipState.ShipLevel);
+                bool inOrbit = TryGetInOrbit(em, shipEntity);
+
+                float wingAttraction;
+                float3 pullTarget;
+                if (wings.IsCreated && wingIndex >= 0 && wingIndex < wings.Length)
+                {
+                    ShipWingTractorBeamPose.GetTractorParams(
+                        wings[wingIndex], shipLevel, inOrbit, out _, out wingAttraction);
+                    pullTarget = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wingIndex]);
+                }
+                else
+                {
+                    GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out _, out wingAttraction);
+                    pullTarget = shipTransform.Position;
+                }
+
+                float gemValue = em.HasComponent<GemState>(gemEntity)
+                    ? em.GetComponentData<GemState>(gemEntity).Value
+                    : 1f;
+                float gemSize = em.HasComponent<GemState>(gemEntity)
+                    ? em.GetComponentData<GemState>(gemEntity).Size
+                    : 0f;
+
+                float pullSpeed = GemTractorBeamMath.ResolvePullSpeedFromWing(wingAttraction, gemValue, gemSize);
+                float3 toWing = GemTractorBeamMath.ToroidalDirection(gemLogicalPos, pullTarget, mapW, mapH);
+                if (math.lengthsq(toWing) < 0.0001f)
+                    return false;
+
+                pullVelocity = toWing * pullSpeed;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Resolves a ship entity from the index used as the assignment-cache key.</summary>
+        static bool TryFindShipEntityByIndex(EntityManager em, int shipIndex, out Entity shipEntity)
+        {
+            shipEntity = Entity.Null;
+            using var shipQuery = em.CreateEntityQuery(ComponentType.ReadOnly<ShipTag>());
+            using var ships = shipQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
+            for (int i = 0; i < ships.Length; i++)
+            {
+                if (ships[i].Index != shipIndex)
+                    continue;
+                shipEntity = ships[i];
+                return true;
+            }
+
+            return false;
         }
 
         public static bool IsEligibleForBeamVisual(

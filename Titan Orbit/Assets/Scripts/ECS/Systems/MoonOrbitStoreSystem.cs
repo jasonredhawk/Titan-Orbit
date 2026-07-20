@@ -1,5 +1,7 @@
+using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -218,17 +220,42 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            int nextLevel = ship.ShipLevel + 1;
-            if (targetLevel != nextLevel)
-            {
-                message = "Invalid upgrade level.";
-                return false;
-            }
+            // [TITAN-ORBIT] Local Editor / development convenience — GameManager Inspector toggle
+            // "Debug Free Ship Upgrade Tree" publishes into TitanOrbitDebugFlags (Shared) because
+            // TitanOrbit.ECS cannot reference TitanOrbit.Core. Dedicated servers leave this false.
+            bool debugFree = TitanOrbitDebugFlags.FreeShipUpgradeTree;
 
-            if (targetLevel > storePlanet.PlanetLevel)
+            if (!debugFree)
             {
-                message = "Planet level too low.";
-                return false;
+                // --- Normal ladder: only ShipLevel + 1 ---
+                int nextLevel = ship.ShipLevel + 1;
+                if (targetLevel != nextLevel)
+                {
+                    message = "Invalid upgrade level.";
+                    return false;
+                }
+
+                if (targetLevel > storePlanet.PlanetLevel)
+                {
+                    message = "Planet level too low.";
+                    return false;
+                }
+            }
+            else
+            {
+                // --- Debug free: any authored tier 1–7 with a valid branch index ---
+                if (targetLevel < 1 || targetLevel > 7)
+                {
+                    message = "Invalid debug ship level.";
+                    return false;
+                }
+
+                int branchCount = UpgradeTree.GetShipCountForLevel(targetLevel);
+                if (targetBranchIndex < 0 || targetBranchIndex >= branchCount)
+                {
+                    message = "Invalid debug ship branch.";
+                    return false;
+                }
             }
 
             if (!TryFindHomePlanet(em, ship.Team, out var homeEntity, out _))
@@ -237,14 +264,31 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            float cost = MoonOrbitStorePricing.GetShipUpgradeCost(targetLevel);
-            if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
+            // --- Validate ladder slot exists in PlanetShipFamilyConfig before mutating ---
+            // AstroEagle currently has L1–L6 only; UI still draws L7 MEGA columns from UpgradeTree counts.
+            if (!ShipStatApplyLogic.TryResolveChassisId(
+                    ship.Team, targetLevel, targetBranchIndex, out _, allowFallback: false))
             {
-                message = "Not enough contributed gems.";
+                message = "No chassis for that upgrade slot.";
                 return false;
             }
 
+            // Debug mode skips gem spend so you can try every hull without depositing.
+            if (!debugFree)
+            {
+                float cost = MoonOrbitStorePricing.GetShipUpgradeCost(targetLevel);
+                if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
+                {
+                    message = "Not enough contributed gems.";
+                    return false;
+                }
+            }
+
+            // --- Apply chassis tier + branch (both must ghost to clients) ---
+            // [NETCODE] ShipState.BranchIndex is the authoritative replicated branch for visuals.
+            // ShipLoadoutState.BranchIndex is kept in sync for systems that still read loadout.
             ship.ShipLevel = targetLevel;
+            ship.BranchIndex = targetBranchIndex;
             em.SetComponentData(shipEntity, ship);
 
             if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
@@ -261,16 +305,41 @@ namespace TitanOrbit.ECS
                 loadout.ChassisIndex = targetBranchIndex;
                 em.SetComponentData(shipEntity, loadout);
             }
+            else
+            {
+                em.AddComponentData(shipEntity, new ShipLoadoutState
+                {
+                    BranchIndex = targetBranchIndex,
+                    ChassisIndex = targetBranchIndex,
+                });
+            }
 
-            var shipState = em.GetComponentData<ShipState>(shipEntity);
             ShipStatApplyLogic.ApplyToShip(
                 em,
                 shipEntity,
-                shipState.Team,
-                shipState.ShipLevel,
+                ship.Team,
+                targetLevel,
                 targetBranchIndex);
 
-            message = "Ship upgraded.";
+            // Catalog/hull sync re-pins on the next tick; also re-pin here so the purchase frame
+            // itself does not leave a Physics gap while the old collider is still swapping.
+            ShipMoonDockAttachLogic.GetMapSize(em, out float mapW, out float mapH);
+            double moonElapsed = 0.0;
+            using (var tickQuery = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkTime>()))
+            using (var rateQuery = em.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>()))
+            {
+                int hz = 0;
+                if (rateQuery.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                    hz = tickRate.SimulationTickRate;
+                if (tickQuery.TryGetSingleton<NetworkTime>(out var networkTime))
+                    moonElapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(
+                        networkTime, hz, includeTickFraction: false);
+            }
+
+            ShipMoonDockAttachLogic.TryReattachFullyDockedShip(
+                em, shipEntity, mapW, mapH, moonElapsed);
+
+            message = debugFree ? "Debug ship selected." : "Ship upgraded.";
             return true;
         }
 

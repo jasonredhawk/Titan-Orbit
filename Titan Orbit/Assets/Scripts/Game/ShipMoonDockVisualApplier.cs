@@ -10,17 +10,31 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-side moon landing presentation: animates the ship proxy from flight pose onto the moon
-    /// surface (scale shrink, spin with moon), and reverses when thrusting away. Reads ShipMoonDockState
-    /// from the visualization ECS world. When active, EcsWorldVisualizer skips transform sync
-    /// (ShouldSkipTransformSync). Provides local camera follow override via TryGetLocalFollowPosition.
-    /// Cosmetic cinematic — authoritative dock state lives in ShipMoonDockSystem on the server.
+    /// surface (scale shrink, optional spin during approach), and reverses when thrusting away. Reads
+    /// <see cref="ShipMoonDockState"/> from the visualization ECS world. When active,
+    /// <see cref="EcsWorldVisualizer"/> skips transform sync (<see cref="ShouldSkipTransformSync"/>).
+    /// Provides a stable local camera follow override via <see cref="TryGetLocalFollowPosition"/> —
+    /// once landed the camera tracks the moon center (not the spinning surface point) so co-orbit
+    /// attach + surface spin cannot jerk the hard-lock follow. Cosmetic only; server dock state is
+    /// owned by <see cref="ShipMoonDockSystem"/>.
     /// </summary>
     [DefaultExecutionOrder(100)]
     public class ShipMoonDockVisualApplier : MonoBehaviour
     {
+        /// <summary>Cosmetic hull spin during the landing lerp only (deg/sec). Frozen once fully docked.</summary>
         const float SpinSpeedDegPerSec = 9f;
+
+        /// <summary>Proxy scale multiplier when parked on the moon surface.</summary>
         const float DockScaleAtSurface = 0.24f;
+
+        /// <summary>Landing and takeoff cinematic duration (seconds).</summary>
         const float LandingDurationSeconds = 1f;
+
+        /// <summary>
+        /// Soft follow rate toward the moon anchor while docked (1/s). [TITAN-ORBIT] Presentation only —
+        /// not a second flight motor; hides tick-fraction / registry jitter from the hard-lock camera.
+        /// </summary>
+        const float DockCameraFollowCatchUp = 14f;
 
         Entity _shipEntity;
         float _baselineScale = 1f;
@@ -33,7 +47,7 @@ namespace TitanOrbit.Game
         Quaternion _landingStartRotation;
         float _landingStartScale;
 
-        // Surface contact direction on the moon spin plane (rotates with moon during dock).
+        // Surface contact direction on the moon spin plane (rotates with moon during approach only).
         Vector3 _landingSurfaceDir;
 
         // Takeoff animation.
@@ -43,15 +57,37 @@ namespace TitanOrbit.Game
         Quaternion _takeoffStartRotation;
         float _takeoffStartScale;
 
+        // --- Stable camera anchor (moon-centered while docked) ---
+        bool _dockCameraFollowValid;
+        Vector3 _dockCameraFollowPosition;
+
         /// <summary>When true, EcsWorldVisualizer should not overwrite this proxy's transform.</summary>
         public bool ShouldSkipTransformSync => _isTakeoffAnimating || _wasControllingTransform;
 
         static ShipMoonDockVisualApplier s_localInstance;
 
-        /// <summary>Visual follow point for the local player while landing/docked/taking off.</summary>
+        /// <summary>
+        /// Visual follow point for the local player while landing/docked/taking off.
+        /// Prefers the moon-stable anchor so <see cref="CameraFollowEcs"/> does not hard-lock to
+        /// surface spin or flicker onto planar ECS attach beside the moon.
+        /// </summary>
         public static bool TryGetLocalFollowPosition(out Vector3 position)
         {
-            if (s_localInstance != null && s_localInstance.ShouldSkipTransformSync)
+            if (s_localInstance == null)
+            {
+                position = default;
+                return false;
+            }
+
+            // [HYBRID] Moon-stable anchor while dock cinematic is driving presentation.
+            if (s_localInstance._dockCameraFollowValid)
+            {
+                position = s_localInstance._dockCameraFollowPosition;
+                return true;
+            }
+
+            // Takeoff (or pre-anchor frames): follow the proxy hull itself.
+            if (s_localInstance.ShouldSkipTransformSync)
             {
                 position = s_localInstance.transform.position;
                 return true;
@@ -69,6 +105,42 @@ namespace TitanOrbit.Game
                 _baselineScale = presentationScale;
             else
                 RefreshBaselineScale();
+        }
+
+        /// <summary>
+        /// After a hybrid hull rebuild while still fully moon-docked, snap presentation to the
+        /// landed pose immediately so we do not replay the landing lerp from a physics-ejected
+        /// ECS position (felt like the upgrade "booted" the ship out of orbit).
+        /// </summary>
+        public void SeedFullyLandedPresentation(EntityManager em)
+        {
+            if (_shipEntity == Entity.Null || !em.Exists(_shipEntity) ||
+                !em.HasComponent<ShipMoonDockState>(_shipEntity))
+                return;
+
+            var moonDock = em.GetComponentData<ShipMoonDockState>(_shipEntity);
+            if (moonDock.MoonPlanetId == 0 ||
+                moonDock.LandingProgress + 0.0001f < GemEconomyConstants.MoonLandingCompleteThreshold)
+                return;
+
+            if (!TryResolveMoonPose(moonDock.MoonPlanetId, out Vector3 moonPos, out Vector3 spinAxis,
+                    out float moonBodyRadius))
+                return;
+
+            // --- Instant landed state (skip approach lerp / takeoff flags) ---
+            RefreshBaselineScale();
+            _landingSurfaceDir = ComputeSurfaceDirection(transform.position, moonPos, spinAxis);
+            _landingStartPosition = moonPos + _landingSurfaceDir *
+                (moonBodyRadius + BodyCollisionMath.GetShipHullRadiusWorld(
+                    _baselineScale / BodyCollisionMath.ShipPresentationScale));
+            _landingStartRotation = ComputeDockedRotation(_landingSurfaceDir, spinAxis);
+            _landingStartScale = _baselineScale * DockScaleAtSurface;
+            _isTakeoffAnimating = false;
+            _wasLandingVisualActive = true;
+            _wasMoonDockEngaged = true;
+            _wasControllingTransform = true;
+
+            ApplyLandingAnimation(moonDock, moonPos, spinAxis, moonBodyRadius);
         }
 
         void RefreshBaselineScale()
@@ -105,14 +177,21 @@ namespace TitanOrbit.Game
             var moonDock = em.GetComponentData<ShipMoonDockState>(_shipEntity);
             bool moonDockEngaged = moonDock.MoonPlanetId != 0;
             // [TITAN-ORBIT] Brief approach delay before landing animation starts (matches server timing).
+            // Fully landed must stay cinematic even if LandingApproachDelay flickers to 0 — that used
+            // to drop ShouldSkipTransformSync and show the planar ECS pose at full flight scale.
             bool approachReady = moonDock.LandingApproachDelay + 0.0001f >= GemEconomyConstants.MoonLandingApproachDelaySeconds;
-            bool landingVisualActive = moonDockEngaged && approachReady && moonDock.LandingProgress > 0.001f;
+            bool fullyLanded = moonDock.LandingProgress + 0.0001f >= GemEconomyConstants.MoonLandingCompleteThreshold;
+            bool landingVisualActive = moonDockEngaged
+                && moonDock.LandingProgress > 0.001f
+                && (approachReady || fullyLanded);
             UpdateLocalInstanceRegistration(em);
 
             // --- Takeoff reverse animation (when moon dock disengages) ---
             if (_isTakeoffAnimating)
             {
                 UpdateTakeoffAnimation(em);
+                // Follow the lerping hull during takeoff (not the parked moon anchor).
+                SetDockCameraFollow(transform.position, softCatchUp: false);
                 _wasControllingTransform = true;
                 _wasLandingVisualActive = false;
                 _wasMoonDockEngaged = moonDockEngaged;
@@ -127,12 +206,14 @@ namespace TitanOrbit.Game
                 if (_isTakeoffAnimating)
                 {
                     UpdateTakeoffAnimation(em);
+                    SetDockCameraFollow(transform.position, softCatchUp: false);
                     _wasControllingTransform = true;
                     _wasLandingVisualActive = false;
                     _wasMoonDockEngaged = moonDockEngaged;
                     return;
                 }
 
+                ClearDockCameraFollow();
                 _wasControllingTransform = false;
                 _wasLandingVisualActive = false;
                 _wasMoonDockEngaged = moonDockEngaged;
@@ -141,6 +222,7 @@ namespace TitanOrbit.Game
 
             if (!TryResolveMoonPose(moonDock.MoonPlanetId, out Vector3 moonPos, out Vector3 spinAxis, out float moonBodyRadius))
             {
+                // Keep last good camera anchor if the moon proxy blips for a frame.
                 _wasControllingTransform = false;
                 _wasLandingVisualActive = false;
                 _wasMoonDockEngaged = moonDockEngaged;
@@ -158,6 +240,7 @@ namespace TitanOrbit.Game
 
         void ResetDockPresentationState()
         {
+            ClearDockCameraFollow();
             _wasControllingTransform = false;
             _wasLandingVisualActive = false;
             _wasMoonDockEngaged = false;
@@ -172,15 +255,27 @@ namespace TitanOrbit.Game
             _landingSurfaceDir = ComputeSurfaceDirection(transform.position, moonPos, spinAxis);
         }
 
+        /// <summary>
+        /// Drives proxy pose onto the moon surface and publishes a stable camera follow anchor.
+        /// </summary>
         void ApplyLandingAnimation(ShipMoonDockState moonDock, Vector3 moonPos, Vector3 spinAxis, float moonBodyRadius)
         {
             float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(_baselineScale / BodyCollisionMath.ShipPresentationScale);
             float contactRadius = moonBodyRadius + shipRadius;
 
-            float eased = GemMoonDockEaseInOut(Mathf.Clamp01(moonDock.LandingProgress));
-            float spinStep = SpinSpeedDegPerSec * Time.deltaTime * eased;
-            if (Mathf.Abs(spinStep) > 0.0001f)
-                _landingSurfaceDir = Quaternion.AngleAxis(spinStep, spinAxis) * _landingSurfaceDir;
+            float progress = Mathf.Clamp01(moonDock.LandingProgress);
+            float eased = GemMoonDockEaseInOut(progress);
+            bool fullyLanded = progress + 0.0001f >= GemEconomyConstants.MoonLandingCompleteThreshold;
+
+            // --- Cosmetic surface spin during approach only ---
+            // [TITAN-ORBIT] Once landed, freeze the contact direction. Spinning the hull under a
+            // hard-lock camera made the view orbit the moon in a jerky compound motion with co-orbit.
+            if (!fullyLanded)
+            {
+                float spinStep = SpinSpeedDegPerSec * Time.deltaTime * eased;
+                if (Mathf.Abs(spinStep) > 0.0001f)
+                    _landingSurfaceDir = Quaternion.AngleAxis(spinStep, spinAxis) * _landingSurfaceDir;
+            }
 
             _landingSurfaceDir = _landingSurfaceDir.normalized;
             Vector3 endPosition = moonPos + _landingSurfaceDir * contactRadius;
@@ -190,10 +285,47 @@ namespace TitanOrbit.Game
             transform.position = Vector3.Lerp(_landingStartPosition, endPosition, eased);
             transform.rotation = Quaternion.Slerp(_landingStartRotation, endRotation, eased);
             transform.localScale = Vector3.one * Mathf.Lerp(_landingStartScale, dockedScale, eased);
+
+            // --- Camera: ship during approach, moon center once parked ---
+            // Moon center rides the smooth tick-fraction orbit without surface-spin radius.
+            if (fullyLanded)
+                SetDockCameraFollow(moonPos, softCatchUp: true);
+            else
+                SetDockCameraFollow(transform.position, softCatchUp: false);
+        }
+
+        /// <summary>
+        /// Updates the local-player camera anchor used by <see cref="TryGetLocalFollowPosition"/>.
+        /// </summary>
+        /// <param name="target">World point the gameplay camera should hard-lock to (plus its offset).</param>
+        /// <param name="softCatchUp">
+        /// When true, exponentially ease toward <paramref name="target"/> to hide moon pose jitter.
+        /// </param>
+        void SetDockCameraFollow(Vector3 target, bool softCatchUp)
+        {
+            if (!_dockCameraFollowValid || !softCatchUp)
+            {
+                _dockCameraFollowPosition = target;
+                _dockCameraFollowValid = true;
+                return;
+            }
+
+            // [STANDARD] Frame-rate independent exp lerp: 1 - e^(-k dt).
+            float t = 1f - Mathf.Exp(-DockCameraFollowCatchUp * Time.deltaTime);
+            _dockCameraFollowPosition = Vector3.Lerp(_dockCameraFollowPosition, target, t);
+            _dockCameraFollowValid = true;
+        }
+
+        /// <summary>Clears the dock camera override so <see cref="CameraFollowEcs"/> returns to presentation pose.</summary>
+        void ClearDockCameraFollow()
+        {
+            _dockCameraFollowValid = false;
+            _dockCameraFollowPosition = default;
         }
 
         void OnDisable()
         {
+            ClearDockCameraFollow();
             if (s_localInstance == this)
                 s_localInstance = null;
         }

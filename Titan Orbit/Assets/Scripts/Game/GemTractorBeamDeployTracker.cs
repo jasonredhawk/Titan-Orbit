@@ -40,8 +40,10 @@ namespace TitanOrbit.Game
                 return;
             _lastUpdateFrame = Time.frameCount;
 
-            // [TITAN-ORBIT] Skip only while Settling. Quarantine stays ON all session — beams must still deploy.
-            if (ClientJoinSettleCache.Settling)
+            // [TITAN-ORBIT] Settling OR GhostSpawnBacklog. Quarantine stays ON all session — beams
+            // must still deploy after settle. Ship ToEntityArray during post–Join Team Instantiates
+            // (Settling OFF + GhostSpawnBacklog ON) → Crash!!! (2026-07-19 TeamChoiceResult).
+            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
             {
                 StateByPair.Clear();
                 return;

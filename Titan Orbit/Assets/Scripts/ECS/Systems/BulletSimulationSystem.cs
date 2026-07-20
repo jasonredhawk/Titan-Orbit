@@ -13,6 +13,11 @@ namespace TitanOrbit.ECS
     /// Server-authoritative bullet simulation and ship firing. Runs after
     /// <see cref="ShipPhysicsDriveSystem"/> so muzzle positions use current transforms.
     /// <para>
+    /// Multi-cannon ships fire a <b>volley</b>: one bullet per <see cref="ShipWeaponMountElement"/>
+    /// from that mount's pose each fire tick (damage split across mounts so summed firePower DPS
+    /// stays balanced). Empty mount buffer = unarmed.
+    /// </para>
+    /// <para>
     /// Starblast-style hardening vs asteroid tunneling:
     /// (1) same-frame spawn collide (point + first <c>vel*dt</c> segment) so the first shot
     /// does not idle one tick at the muzzle; (2) substep advance when travel is large vs
@@ -168,32 +173,6 @@ namespace TitanOrbit.ECS
                 if (mounts.Length == 0)
                     continue;
 
-                int mountIdx = weaponState.ValueRO.NextMountIndex;
-                if (mountIdx < 0)
-                    mountIdx = 0;
-                mountIdx %= mounts.Length;
-                var mount = mounts[mountIdx];
-
-                float3 fireOrigin;
-                float3 fireForward;
-                if (!ShipWeaponPose.TryResolve(transform.ValueRO, mount, out fireOrigin, out fireForward))
-                {
-                    float3 localFwd = math.mul(mount.LocalRotation, new float3(0f, 0f, 1f));
-                    localFwd.y = 0f;
-                    if (math.lengthsq(localFwd) < 0.0001f)
-                        localFwd = new float3(0f, 0f, 1f);
-                    else
-                        localFwd = math.normalize(localFwd);
-                    fireForward = math.rotate(transform.ValueRO.Rotation, localFwd);
-                    fireForward.y = 0f;
-                    if (math.lengthsq(fireForward) < 0.0001f)
-                        fireForward = new float3(0f, 0f, 1f);
-                    else
-                        fireForward = math.normalize(fireForward);
-                    // Keep mount world Y (same as ShipWeaponPose.TryResolve).
-                    fireOrigin = transform.ValueRO.Position + math.rotate(transform.ValueRO.Rotation, mount.LocalPosition);
-                }
-
                 // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
                 int bankIndex = 0;
                 if (SystemAPI.HasComponent<ShipLoadoutState>(entity))
@@ -201,7 +180,6 @@ namespace TitanOrbit.ECS
 
                 float3 shipVel = kinematics.ValueRO.Velocity;
                 shipVel.y = 0f;
-                float3 bulletVel = fireForward * math.max(1f, weaponCfg.ValueRO.BulletSpeed) + shipVel;
                 float visualScale = BulletVisualScale.ComputePerShotScale(
                     weaponCfg.ValueRO.BulletScale,
                     weaponCfg.ValueRO.BulletDamage,
@@ -213,67 +191,99 @@ namespace TitanOrbit.ECS
                         ? weaponCfg.ValueRO.ReferenceBulletSpeed
                         : BulletVisualScale.DefaultReferenceBulletSpeed);
 
-                uint sequence = BulletVfxBridge.NextSequence();
-                var spawn = new BulletElement
-                {
-                    Position = fireOrigin,
-                    Velocity = bulletVel,
-                    MaxDistance = math.max(10f, weaponCfg.ValueRO.BulletMaxDistance),
-                    Lifetime = math.max(0.1f, weaponCfg.ValueRO.BulletLifetime),
-                    Damage = math.max(1f, weaponCfg.ValueRO.BulletDamage),
-                    OwnerNetworkId = ghostOwner.ValueRO.NetworkId,
-                    OwnerTeam = (byte)shipState.ValueRO.Team,
-                    Sequence = sequence,
-                    BankIndex = bankIndex,
-                    ScaleMultiplier = visualScale,
-                };
+                // [TITAN-ORBIT] Volley: one bullet per weapon mount from that mount's pose.
+                // firePower is already summed across weapon components — split damage so a 4-gun
+                // hull keeps the same DPS as round-robin at full BulletDamage (one energy spend).
+                int mountCount = mounts.Length;
+                float damagePerBullet = math.max(1f, weaponCfg.ValueRO.BulletDamage / mountCount);
 
-                spawnEvents.Add(new BulletSpawnEventElement
+                for (int mountIdx = 0; mountIdx < mountCount; mountIdx++)
                 {
-                    SpawnPosition = spawn.Position,
-                    Velocity = spawn.Velocity,
-                    Lifetime = spawn.Lifetime,
-                    MaxDistance = spawn.MaxDistance,
-                    Damage = spawn.Damage,
-                    OwnerTeam = spawn.OwnerTeam,
-                    Sequence = spawn.Sequence,
-                    BankIndex = bankIndex,
-                    ScaleMultiplier = visualScale,
-                });
+                    var mount = mounts[mountIdx];
+                    float3 fireOrigin;
+                    float3 fireForward;
+                    if (!ShipWeaponPose.TryResolve(transform.ValueRO, mount, out fireOrigin, out fireForward))
+                    {
+                        float3 localFwd = math.mul(mount.LocalRotation, new float3(0f, 0f, 1f));
+                        localFwd.y = 0f;
+                        if (math.lengthsq(localFwd) < 0.0001f)
+                            localFwd = new float3(0f, 0f, 1f);
+                        else
+                            localFwd = math.normalize(localFwd);
+                        fireForward = math.rotate(transform.ValueRO.Rotation, localFwd);
+                        fireForward.y = 0f;
+                        if (math.lengthsq(fireForward) < 0.0001f)
+                            fireForward = new float3(0f, 0f, 1f);
+                        else
+                            fireForward = math.normalize(fireForward);
+                        // Keep mount world Y (same as ShipWeaponPose.TryResolve).
+                        fireOrigin = transform.ValueRO.Position
+                            + math.rotate(transform.ValueRO.Rotation, mount.LocalPosition);
+                    }
 
-                // [NETCODE] Cosmetic path for all clients (host bridge + broadcast RPC).
-                BulletNetNotify.SendSpawn(ref ecb, spawn);
+                    float3 bulletVel = fireForward * math.max(1f, weaponCfg.ValueRO.BulletSpeed) + shipVel;
+                    uint sequence = BulletVfxBridge.NextSequence();
+                    var spawn = new BulletElement
+                    {
+                        Position = fireOrigin,
+                        Velocity = bulletVel,
+                        MaxDistance = math.max(10f, weaponCfg.ValueRO.BulletMaxDistance),
+                        Lifetime = math.max(0.1f, weaponCfg.ValueRO.BulletLifetime),
+                        Damage = damagePerBullet,
+                        OwnerNetworkId = ghostOwner.ValueRO.NetworkId,
+                        OwnerTeam = (byte)shipState.ValueRO.Team,
+                        Sequence = sequence,
+                        BankIndex = bankIndex,
+                        ScaleMultiplier = visualScale,
+                    };
 
-                // --- Same-frame spawn collide (first-bullet tunnel fix) ---
-                // [TITAN-ORBIT] Without this, Phase B appends and the bullet idles until next tick —
-                // the first open-fire shot into a nose-touch rock often tunnels. Starblast: collide
-                // as soon as the projectile exists (point + first vel*dt segment).
-                float3 firstEnd = fireOrigin + bulletVel * dt;
-                bool pointHit = TryResolveBulletHit(
-                    ref state, in spawn, fireOrigin, fireOrigin, mapW, mapH, moonElapsed, serverElapsed,
-                    out float3 spawnHitPoint);
-                bool spawnHit = pointHit;
-                if (!spawnHit)
-                {
-                    spawnHit = TryResolveBulletHit(
-                        ref state, in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
-                        out spawnHitPoint);
+                    spawnEvents.Add(new BulletSpawnEventElement
+                    {
+                        SpawnPosition = spawn.Position,
+                        Velocity = spawn.Velocity,
+                        Lifetime = spawn.Lifetime,
+                        MaxDistance = spawn.MaxDistance,
+                        Damage = spawn.Damage,
+                        OwnerTeam = spawn.OwnerTeam,
+                        Sequence = spawn.Sequence,
+                        BankIndex = bankIndex,
+                        ScaleMultiplier = visualScale,
+                    });
+
+                    // [NETCODE] Cosmetic path for all clients (host bridge + broadcast RPC).
+                    BulletNetNotify.SendSpawn(ref ecb, spawn, mountIdx);
+
+                    // --- Same-frame spawn collide (first-bullet tunnel fix) ---
+                    // [TITAN-ORBIT] Without this, Phase B appends and the bullet idles until next tick —
+                    // the first open-fire shot into a nose-touch rock often tunnels. Starblast: collide
+                    // as soon as the projectile exists (point + first vel*dt segment).
+                    float3 firstEnd = fireOrigin + bulletVel * dt;
+                    bool pointHit = TryResolveBulletHit(
+                        ref state, in spawn, fireOrigin, fireOrigin, mapW, mapH, moonElapsed, serverElapsed,
+                        out float3 spawnHitPoint);
+                    bool spawnHit = pointHit;
+                    if (!spawnHit)
+                    {
+                        spawnHit = TryResolveBulletHit(
+                            ref state, in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
+                            out spawnHitPoint);
+                    }
+
+                    if (spawnHit)
+                    {
+                        BulletNetNotify.SendHit(ref ecb, spawn, spawnHitPoint);
+                        // Do not add to the live buffer — bullet resolved this frame.
+                    }
+                    else
+                    {
+                        bullets.Add(spawn);
+                    }
                 }
 
-                if (spawnHit)
-                {
-                    BulletNetNotify.SendHit(ref ecb, spawn, spawnHitPoint);
-                    // Do not add to the live buffer — bullet resolved this frame.
-                }
-                else
-                {
-                    bullets.Add(spawn);
-                }
-
+                // One energy spend + cooldown for the whole volley (not per muzzle).
                 shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - energyCost);
-
                 weaponState.ValueRW.FireCooldown = 1f / fireRate;
-                weaponState.ValueRW.NextMountIndex = (mountIdx + 1) % mounts.Length;
+                weaponState.ValueRW.NextMountIndex = 0;
             }
 
             ecb.Playback(state.EntityManager);

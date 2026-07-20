@@ -46,6 +46,8 @@ namespace TitanOrbit.Game
             public byte OwnerTeam;
             public int BankIndex;
             public float ScaleMultiplier;
+            /// <summary>[TITAN-ORBIT] Weapon mount index — volley adopt / duplicate gate use this.</summary>
+            public int MountIndex;
             public bool IsDisplaySpace;
             public bool IsAnticipation;
             /// <summary>Monotonic fire order for FIFO adopt (RemoveAtSwap shuffles list indices).</summary>
@@ -193,10 +195,12 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
-                // --- Local owner: drop redundant anticipation if a presentation tracer already flies ---
+                // --- Local owner: drop redundant anticipation if THAT muzzle already has a fresh tracer ---
+                // [TITAN-ORBIT] Mount-aware — a flying bullet from mount 0 must not kill anticipations
+                // for mounts 1–3 in the same multi-cannon volley.
                 if (req.IsAnticipation &&
                     BulletMuzzlePresentation.IsLocalOwner(req.OwnerNetworkId) &&
-                    HasFreshLocalPresentationTracer(req.OwnerNetworkId))
+                    HasFreshLocalPresentationTracer(req.OwnerNetworkId, req.MountIndex))
                     continue;
 
                 // --- Starblast: reproject local muzzle/velocity at CreateTracer time (best-effort) ---
@@ -215,15 +219,17 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// True when a non-anticipation local tracer for this owner just spawned (presentation-locked).
-        /// Used to drop duplicate anticipation after a reprojected server spawn.
+        /// True when a non-anticipation local tracer for this owner+mount just spawned (presentation-locked).
+        /// Used to drop duplicate anticipation after a reprojected server spawn for the same barrel.
         /// </summary>
-        bool HasFreshLocalPresentationTracer(int ownerNetworkId)
+        bool HasFreshLocalPresentationTracer(int ownerNetworkId, int mountIndex)
         {
             for (int i = 0; i < _tracers.Count; i++)
             {
                 var t = _tracers[i];
                 if (t.IsAnticipation || t.OwnerNetworkId != ownerNetworkId)
+                    continue;
+                if (t.MountIndex != mountIndex)
                     continue;
                 if (t.IsDisplaySpace && t.Traveled < 2f)
                     return true;
@@ -258,10 +264,10 @@ namespace TitanOrbit.Game
                 {
                     DestroyTracerGo(_tracers[idx]);
                     RemoveAtSwap(idx);
-                    // [TITAN-ORBIT] Full-RoF leftover anticipations (stale energy) fly through rocks.
-                    // Clearing them forces the next server spawn onto CreateTracer (the path that
-                    // already looks correct when fire rate slows). Cap=1 limits how often this runs.
-                    ClearAnticipationTracers(hit.OwnerTeam);
+                    // [TITAN-ORBIT] Cull only far leftover anticipations (energy-lag overfire).
+                    // Do NOT wipe the whole team — a multi-cannon volley has sibling tracers that
+                    // are still valid when one muzzle's bullet hits first.
+                    ClearStaleAnticipationTracers(hit.OwnerTeam);
                     continue;
                 }
 
@@ -283,25 +289,12 @@ namespace TitanOrbit.Game
         /// </summary>
         bool TryAdoptAnticipation(in BulletVfxBridge.SpawnRequest req)
         {
-            // --- FIFO adopt (oldest AnticipationOrder for this owner) ---
-            // [TITAN-ORBIT] Nearest-to-muzzle adopt was wrong under hold-fire: when SpawnRpc lags,
-            // newer anticipations sit near the nose while older ones are already mid-flight.
-            // Use AnticipationOrder — RemoveAtSwap shuffles list indices, so index≠fire order.
-            int bestIndex = -1;
-            int bestOrder = int.MaxValue;
-            for (int i = 0; i < _tracers.Count; i++)
-            {
-                var t = _tracers[i];
-                if (!t.IsAnticipation || t.Sequence != 0)
-                    continue;
-                if (!OwnersMatchForAdopt(t.OwnerNetworkId, req.OwnerNetworkId))
-                    continue;
-                if (t.AnticipationOrder >= bestOrder)
-                    continue;
-
-                bestOrder = t.AnticipationOrder;
-                bestIndex = i;
-            }
+            // --- FIFO adopt (oldest AnticipationOrder for this owner + mount) ---
+            // [TITAN-ORBIT] Prefer matching MountIndex so a 4-gun volley binds each server Sequence
+            // onto the anticipation that left that barrel. Fall back to any mount if none match
+            // (older clients / missing MountIndex on RPC).
+            if (!TryFindAdoptIndex(req, preferMountMatch: true, out int bestIndex))
+                TryFindAdoptIndex(req, preferMountMatch: false, out bestIndex);
 
             if (bestIndex < 0)
                 return false;
@@ -312,6 +305,7 @@ namespace TitanOrbit.Game
             adopted.Sequence = req.Sequence;
             adopted.IsAnticipation = false;
             adopted.OwnerNetworkId = req.OwnerNetworkId > 0 ? req.OwnerNetworkId : adopted.OwnerNetworkId;
+            adopted.MountIndex = req.MountIndex;
             adopted.Velocity = req.Velocity;
             adopted.BankIndex = req.BankIndex;
             adopted.ScaleMultiplier = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : adopted.ScaleMultiplier;
@@ -328,17 +322,50 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Destroys every still-pending anticipation tracer for a team (local-only cosmetics).
-        /// Used after a real hit so stale full-RoF anticipations cannot keep flying through rocks.
+        /// Finds the oldest anticipation tracer for adopt, optionally requiring MountIndex match.
         /// </summary>
-        void ClearAnticipationTracers(byte ownerTeam)
+        bool TryFindAdoptIndex(in BulletVfxBridge.SpawnRequest req, bool preferMountMatch, out int bestIndex)
         {
+            bestIndex = -1;
+            int bestOrder = int.MaxValue;
+            for (int i = 0; i < _tracers.Count; i++)
+            {
+                var t = _tracers[i];
+                if (!t.IsAnticipation || t.Sequence != 0)
+                    continue;
+                if (!OwnersMatchForAdopt(t.OwnerNetworkId, req.OwnerNetworkId))
+                    continue;
+                if (preferMountMatch && t.MountIndex != req.MountIndex)
+                    continue;
+                if (t.AnticipationOrder >= bestOrder)
+                    continue;
+
+                bestOrder = t.AnticipationOrder;
+                bestIndex = i;
+            }
+
+            return bestIndex >= 0;
+        }
+
+        /// <summary>
+        /// Destroys far-traveled still-pending anticipation tracers for a team.
+        /// Fresh volley siblings (near the muzzle) are kept so multi-cannon cosmetics survive
+        /// when one barrel scores a hit first.
+        /// </summary>
+        void ClearStaleAnticipationTracers(byte ownerTeam)
+        {
+            // Beyond this travel, an unadopted anticipation is almost certainly a leftover from
+            // energy-lag overfire — safe to cull without killing a just-fired volley mate.
+            const float StaleTravel = 8f;
+
             for (int i = _tracers.Count - 1; i >= 0; i--)
             {
                 var t = _tracers[i];
-                if (!t.IsAnticipation && t.Sequence != 0)
+                if (!t.IsAnticipation || t.Sequence != 0)
                     continue;
                 if (t.OwnerTeam != ownerTeam)
+                    continue;
+                if (t.Traveled < StaleTravel)
                     continue;
 
                 DestroyTracerGo(t);
@@ -460,6 +487,7 @@ namespace TitanOrbit.Game
                 OwnerTeam = req.OwnerTeam,
                 BankIndex = bankIndex,
                 ScaleMultiplier = scaleMul,
+                MountIndex = req.MountIndex < 0 ? 0 : req.MountIndex,
                 IsDisplaySpace = req.IsDisplaySpace,
                 IsAnticipation = req.IsAnticipation,
                 // Only anticipations need order; server-only tracers keep 0.

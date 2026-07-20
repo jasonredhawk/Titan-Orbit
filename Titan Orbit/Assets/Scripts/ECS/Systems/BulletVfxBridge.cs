@@ -29,6 +29,10 @@ namespace TitanOrbit.ECS
             public int OwnerNetworkId;
             public int BankIndex;
             public float ScaleMultiplier;
+            /// <summary>
+            /// [TITAN-ORBIT] Weapon mount index for muzzle reproject (matches server volley order).
+            /// </summary>
+            public int MountIndex;
             /// <summary>True when client fired locally before the server RPC arrived.</summary>
             public bool IsAnticipation;
             /// <summary>True when positions are already in display/world space (skip toroidal unwrap).</summary>
@@ -65,11 +69,11 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Max live Sequence=0 anticipation tracers for the local player.
-        /// [TITAN-ORBIT] Cap=1: replicated energy lags, so client LateUpdate over-fires anticipations
-        /// at full RoF; extras fly through rocks. When energy drops / RoF slows, adopt_fail→server
-        /// CreateTracer and hits look correct (player clue + debug 08c82b post-fix-cap).
+        /// [TITAN-ORBIT] Enough for one multi-cannon volley (upgrade hulls up to ~8 weapons).
+        /// Client fire still gates on FireCooldown + energy, so this is not an open RoF spam path.
+        /// Older Cap=1 hid every muzzle after the first in a volley.
         /// </summary>
-        public const int MaxLiveAnticipations = 1;
+        public const int MaxLiveAnticipations = 8;
 
         /// <summary>Live anticipation tracers (driver maintains; used to gate local enqueue).</summary>
         public static int LiveAnticipationCount { get; private set; }
@@ -78,8 +82,17 @@ namespace TitanOrbit.ECS
         public static uint NextSequence() => s_NextSequence++;
 
         /// <summary>True when the local client may enqueue another anticipation tracer.</summary>
-        public static bool CanEnqueueAnticipation() =>
-            LiveAnticipationCount < MaxLiveAnticipations;
+        public static bool CanEnqueueAnticipation() => CanEnqueueAnticipation(1);
+
+        /// <summary>
+        /// True when the local client may enqueue <paramref name="count"/> anticipation tracers
+        /// (one fire-tick volley across all weapon mounts).
+        /// </summary>
+        public static bool CanEnqueueAnticipation(int count)
+        {
+            int need = math.max(1, count);
+            return LiveAnticipationCount + need <= MaxLiveAnticipations;
+        }
 
         /// <summary>Driver: anticipation tracer Instantiated.</summary>
         public static void NotifyAnticipationCreated() => LiveAnticipationCount++;

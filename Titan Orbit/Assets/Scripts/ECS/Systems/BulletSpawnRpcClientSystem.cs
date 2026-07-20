@@ -42,6 +42,7 @@ namespace TitanOrbit.ECS
                     OwnerNetworkId = r.OwnerNetworkId,
                     BankIndex = r.BankIndex,
                     ScaleMultiplier = r.ScaleMultiplier > 0f ? r.ScaleMultiplier : 1f,
+                    MountIndex = r.MountIndex < 0 ? 0 : r.MountIndex,
                     IsAnticipation = false,
                     IsDisplaySpace = false,
                 });

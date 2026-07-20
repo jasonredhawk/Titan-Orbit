@@ -69,7 +69,7 @@ namespace TitanOrbit.ECS
                          .WithAll<ShipTag, LocalTransform>()
                          .WithEntityAccess())
             {
-                CollectShipVisualWork(entity, ship.ValueRO, loadout.ValueRO.BranchIndex, catalog);
+                CollectShipVisualWork(entity, ship.ValueRO, ship.ValueRO.BranchIndex, catalog);
             }
 
             foreach (var (ship, entity) in SystemAPI
@@ -78,7 +78,7 @@ namespace TitanOrbit.ECS
                          .WithNone<ShipLoadoutState>()
                          .WithEntityAccess())
             {
-                CollectShipVisualWork(entity, ship.ValueRO, branchIndex: 0, catalog);
+                CollectShipVisualWork(entity, ship.ValueRO, ship.ValueRO.BranchIndex, catalog);
             }
 
             // --- Pass 2: structural changes outside entity queries ---

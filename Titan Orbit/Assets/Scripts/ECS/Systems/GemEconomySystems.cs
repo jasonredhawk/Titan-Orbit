@@ -308,15 +308,22 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Server: deposits ship cargo gems into friendly planets while docked at the gem moon.
-    /// Credits home-planet contributed gems for store purchases.
+    /// Planet treasury levels up via <see cref="PlanetEconomyMath"/>; the player's spendable
+    /// Bank (contributed gems) is always credited on the team's <b>home</b> planet ledger so
+    /// orbit-store purchases work after depositing at any friendly moon.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(GemPickupSystem))]
     public partial struct GemDepositSystem : ISystem
     {
+        /// <summary>
+        /// Fixed-step deposit pass: for each docked ship with deposit intent and cargo gems,
+        /// transfer into the docked planet and credit the home contributed-gems Bank.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            // --- Fixed timestep ---
             float dt = SystemAPI.Time.DeltaTime;
 
             foreach (var (shipState, shipInput, moonDock, shipEntity) in SystemAPI
@@ -324,15 +331,18 @@ namespace TitanOrbit.ECS
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
+                // --- Skip ships that cannot deposit ---
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                     continue;
                 if (shipState.ValueRO.Team == TeamId.None || shipState.ValueRO.CurrentGems <= 0f)
                     continue;
 
+                // --- Deposit intent: prefer ShipDepositIntent (survives prediction rollback) ---
                 bool wantDeposit = shipInput.ValueRO.WantDepositGems;
                 if (state.EntityManager.HasComponent<ShipDepositIntent>(shipEntity))
                     wantDeposit = state.EntityManager.GetComponentData<ShipDepositIntent>(shipEntity).WantDepositGems;
 
+                // --- GhostOwner.NetworkId keys the contributed-gems Bank row ---
                 int ownerNetworkId = 0;
                 if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
                     ownerNetworkId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
@@ -352,16 +362,19 @@ namespace TitanOrbit.ECS
                             planetState.ValueRO))
                         continue;
 
+                    // --- Rate-limited transfer this tick ---
                     float gemValue = math.max(1f, shipState.ValueRO.ShipLevel);
                     float rate = gemValue * GemEconomyConstants.DepositRatePerShipLevel * dt;
                     float amount = math.min(rate, shipState.ValueRO.CurrentGems);
                     if (amount <= 0.001f)
                         continue;
 
+                    // --- Ship cargo ↓ ---
                     var ship = shipState.ValueRO;
                     ship.CurrentGems -= amount;
                     shipState.ValueRW = ship;
 
+                    // --- Planet treasury ↑ (level-up math) ---
                     var planet = planetState.ValueRO;
                     int level = planet.PlanetLevel;
                     float gems = planet.CurrentGems;
@@ -370,12 +383,25 @@ namespace TitanOrbit.ECS
                     planet.CurrentGems = gems;
                     planetState.ValueRW = planet;
 
-                    if (planet.IsHomePlanet && ownerNetworkId > 0)
-                        ContributedGemsLogic.Add(state.EntityManager, planetEntity, ownerNetworkId, amount);
+                    // --- Personal Bank ↑ on the team's HOME ledger (store spend currency) ---
+                    // [TITAN-ORBIT] Do not gate on planet.IsHomePlanet alone — captured moons must
+                    // still credit Bank. MoonOrbitStoreSystem always spends from the home buffer.
+                    if (ownerNetworkId > 0 &&
+                        TryFindHomePlanetEntity(
+                            state.EntityManager,
+                            shipState.ValueRO.Team,
+                            planet.IsHomePlanet ? planetEntity : Entity.Null,
+                            out Entity homeEntity))
+                    {
+                        ContributedGemsLogic.Add(state.EntityManager, homeEntity, ownerNetworkId, amount);
+                    }
                 }
             }
         }
 
+        /// <summary>
+        /// True when the ship is fully landed on this planet's moon, wants to deposit, and is not thrusting.
+        /// </summary>
         static bool CanDepositAtPlanet(
             in ShipInput input,
             bool wantDepositGems,
@@ -389,6 +415,43 @@ namespace TitanOrbit.ECS
                 return false;
 
             return moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
+        }
+
+        /// <summary>
+        /// Resolves the team's home planet entity for contributed-gems credit.
+        /// When <paramref name="dockedIfHome"/> is already the home entity, uses it; otherwise
+        /// searches <see cref="HomePlanetTag"/> on the server world.
+        /// </summary>
+        static bool TryFindHomePlanetEntity(
+            EntityManager em,
+            TeamId team,
+            Entity dockedIfHome,
+            out Entity homeEntity)
+        {
+            homeEntity = Entity.Null;
+            if (team == TeamId.None)
+                return false;
+
+            // Fast path: deposit moon is already the home capital.
+            if (dockedIfHome != Entity.Null)
+            {
+                homeEntity = dockedIfHome;
+                return true;
+            }
+
+            // Server-only tag — safe here (this system is ServerSimulation).
+            using var query = em.CreateEntityQuery(typeof(HomePlanetTag), typeof(PlanetState));
+            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            for (int i = 0; i < states.Length; i++)
+            {
+                if (states[i].Ownership != team)
+                    continue;
+                homeEntity = entities[i];
+                return true;
+            }
+
+            return false;
         }
     }
 

@@ -144,6 +144,33 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// Instantaneous world-space velocity of the gem moon on the ship orbit ring (clockwise).
+        /// [TITAN-ORBIT] Derivative of <see cref="GetShipOrbitRingOffset"/> — used to co-orbit a
+        /// docked ship so freezing hull velocity does not leave the moon behind.
+        /// </summary>
+        /// <param name="planetSize">Planet uniform scale (world radius proxy).</param>
+        /// <param name="planetLevel">Planet level (ring radii currently ignore level; kept for API stability).</param>
+        /// <param name="planetId">Planet id — seeds the same phase offset as moon placement.</param>
+        /// <param name="elapsedSeconds">Shared ServerTick orbit clock (same as moon position).</param>
+        /// <returns>XZ velocity in world units/sec; Y is always 0.</returns>
+        public static float3 GetMoonOrbitalVelocity(
+            float planetSize,
+            int planetLevel,
+            int planetId,
+            double elapsedSeconds)
+        {
+            // --- Match GetShipOrbitRingOffset kinematics ---
+            // Position = (cos θ, 0, sin θ) * centerWorld where θ = phase − ω t.
+            // d/dt → (sin θ, 0, −cos θ) * speed  (clockwise tangent × target speed).
+            GetRingRadiiWorld(planetSize, planetLevel, out float innerWorld, out float outerWorld, out float centerWorld);
+            float speed = GetTargetSpeed(planetSize, centerWorld, innerWorld, outerWorld, centerWorld);
+            float omega = centerWorld > 0.001f ? speed / centerWorld : 0f;
+            float phase = GetShipOrbitPhaseOffset(planetId);
+            float theta = phase - omega * (float)elapsedSeconds;
+            return new float3(math.sin(theta), 0f, -math.cos(theta)) * speed;
+        }
+
+        /// <summary>
         /// Moon world position on the map tile nearest <paramref name="nearPosition"/>.
         /// Unwraps the planet first, then applies orbit offset (matches gem-moon visuals and toroidal display).
         /// </summary>
