@@ -11,6 +11,8 @@ namespace TitanOrbit.Editor.Build
     /// [EDITOR] Unity menu items for Titan Orbit production builds — WebGL (Cloudflare), Windows
     /// client, Windows headless server, Linux GCE server, Linux Edgegap server, and Android APK.
     /// Centralizes output paths under BuildOutput/ (GCE) and Builds/EdgegapServer (Edgegap plugin).
+    /// Also exposes <see cref="BuildHeadlessServerLinuxBatchMode"/> for headless CLI builds used by
+    /// <c>tools/gce/build_and_deploy_server_gce.bat</c> (build + upload in one PowerShell step).
     /// Not compiled into player or dedicated-server binaries.
     /// </summary>
     public static class TitanOrbitBuildAutomation
@@ -109,7 +111,37 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/Headless Server (Linux — Google Cloud)")]
         public static void BuildHeadlessServerLinux()
         {
-            BuildLinuxDedicatedServer(GetLinuxServerOutputBasePath(), "GCE", "tools\\gce\\deploy_server_gce.bat");
+            // --- Interactive Editor menu ---
+            // [TITAN-ORBIT] Menu path keeps the Editor open after build so you can inspect Console output.
+            BuildLinuxDedicatedServer(
+                GetLinuxServerOutputBasePath(),
+                "GCE",
+                "tools\\gce\\deploy_server_gce.bat",
+                exitEditorWhenDone: false);
+        }
+
+        /// <summary>
+        /// CLI / PowerShell entry point for a Linux GCE dedicated-server build.
+        /// Invoked by <c>tools/gce/build_and_deploy_server_gce.bat</c> via Unity
+        /// <c>-batchmode -executeMethod …BuildHeadlessServerLinuxBatchMode</c> (no <c>-quit</c> —
+        /// this method calls <see cref="EditorApplication.Exit"/> so a platform-switch + domain
+        /// reload can finish the build first).
+        /// </summary>
+        /// <remarks>
+        /// [UNITY] Do not pass <c>-quit</c> on the command line for this method: if the Editor must
+        /// switch to Linux Dedicated Server first, <c>-quit</c> would exit before the deferred
+        /// <see cref="BuildPipeline.BuildPlayer"/> runs after domain reload.
+        /// </remarks>
+        public static void BuildHeadlessServerLinuxBatchMode()
+        {
+            // --- Batchmode build (PowerShell / CI) ---
+            // [TITAN-ORBIT] Same output folder as the Google Cloud menu item so deploy scripts find it.
+            Debug.Log("[TitanOrbitBuild] Batchmode Linux GCE server build starting (exit Editor when done).");
+            BuildLinuxDedicatedServer(
+                GetLinuxServerOutputBasePath(),
+                "GCE",
+                "tools\\gce\\build_and_deploy_server_gce.bat",
+                exitEditorWhenDone: true);
         }
 
         /// <summary>
@@ -119,11 +151,16 @@ namespace TitanOrbit.Editor.Build
         [MenuItem("TitanOrbit/Build/Headless Server (Linux — Edgegap)")]
         public static void BuildHeadlessServerLinuxEdgegap()
         {
-            BuildLinuxDedicatedServer(GetEdgegapServerOutputBasePath(), "Edgegap", "tools\\edgegap\\README.md");
+            BuildLinuxDedicatedServer(
+                GetEdgegapServerOutputBasePath(),
+                "Edgegap",
+                "tools\\edgegap\\README.md",
+                exitEditorWhenDone: false);
         }
 
         /// <summary>
-        /// Shared IL2CPP Linux Dedicated Server build used by GCE and Edgegap menu items.
+        /// Shared IL2CPP Linux Dedicated Server build used by GCE and Edgegap menu items, and by
+        /// the batchmode PowerShell pipeline.
         /// </summary>
         /// <remarks>
         /// [TITAN-ORBIT] After a Windows client build, the Editor active target is Windows and
@@ -138,7 +175,15 @@ namespace TitanOrbit.Editor.Build
         /// <param name="outputBasePath">Path without extension; Unity writes <c>.x86_64</c> + <c>_Data</c>.</param>
         /// <param name="label">Human label for console logs (GCE / Edgegap).</param>
         /// <param name="nextStepDocPath">Deploy docs path printed on success.</param>
-        static void BuildLinuxDedicatedServer(string outputBasePath, string label, string nextStepDocPath)
+        /// <param name="exitEditorWhenDone">
+        /// When true (batchmode CLI), call <see cref="EditorApplication.Exit"/> with 0/1 after the
+        /// build finishes — including after a deferred build that resumes post platform-switch.
+        /// </param>
+        static void BuildLinuxDedicatedServer(
+            string outputBasePath,
+            string label,
+            string nextStepDocPath,
+            bool exitEditorWhenDone)
         {
             // --- Guard: Linux module installed in this Editor ---
             // [UNITY] Hub module "Linux Dedicated Server Build Support" / Linux IL2CPP must be present.
@@ -147,6 +192,7 @@ namespace TitanOrbit.Editor.Build
                 Debug.LogError(
                     "[TitanOrbitBuild] StandaloneLinux64 is not available in this Editor. " +
                     "Install Linux Build Support (IL2CPP) / Linux Dedicated Server via Unity Hub, then retry.");
+                ExitEditorIfRequested(exitEditorWhenDone, exitCode: 1);
                 return;
             }
 
@@ -155,11 +201,18 @@ namespace TitanOrbit.Editor.Build
             // packages implement UnityEditor.LinuxStandalone.Sysroot and Bee can find clang + sysroot.
             if (!IsLinuxDedicatedServerActiveTarget())
             {
-                QueueLinuxServerBuildAfterPlatformSwitch(outputBasePath, label, nextStepDocPath);
+                // Do not Exit here — domain reload must complete, then ResumePending builds + exits.
+                QueueLinuxServerBuildAfterPlatformSwitch(
+                    outputBasePath,
+                    label,
+                    nextStepDocPath,
+                    exitEditorWhenDone);
                 return;
             }
 
-            ExecuteLinuxDedicatedServerBuild(outputBasePath, label, nextStepDocPath);
+            // --- Already on Linux Dedicated Server: build now ---
+            bool ok = ExecuteLinuxDedicatedServerBuild(outputBasePath, label, nextStepDocPath);
+            ExitEditorIfRequested(exitEditorWhenDone, exitCode: ok ? 0 : 1);
         }
 
         /// <summary>
@@ -182,7 +235,14 @@ namespace TitanOrbit.Editor.Build
         /// <param name="outputBasePath">Pending output path (no extension).</param>
         /// <param name="label">Pending log label.</param>
         /// <param name="nextStepDocPath">Pending deploy-docs path.</param>
-        static void QueueLinuxServerBuildAfterPlatformSwitch(string outputBasePath, string label, string nextStepDocPath)
+        /// <param name="exitEditorWhenDone">
+        /// Persisted into the pending JSON so the post-reload resume can still exit batchmode Unity.
+        /// </param>
+        static void QueueLinuxServerBuildAfterPlatformSwitch(
+            string outputBasePath,
+            string label,
+            string nextStepDocPath,
+            bool exitEditorWhenDone)
         {
             // --- Persist request across domain reload ---
             // [STANDARD] SwitchActiveBuildTarget reloads assemblies; static locals die. Temp JSON survives.
@@ -190,7 +250,8 @@ namespace TitanOrbit.Editor.Build
             {
                 outputBasePath = outputBasePath,
                 label = label,
-                nextStepDocPath = nextStepDocPath
+                nextStepDocPath = nextStepDocPath,
+                exitEditorWhenDone = exitEditorWhenDone
             };
 
             try
@@ -202,6 +263,7 @@ namespace TitanOrbit.Editor.Build
                 Debug.LogError(
                     "[TitanOrbitBuild] Could not write pending Linux server build state. " +
                     "Switch to Linux Dedicated Server in Build Profiles manually, then retry.\n" + ex);
+                ExitEditorIfRequested(exitEditorWhenDone, exitCode: 1);
                 return;
             }
 
@@ -224,7 +286,9 @@ namespace TitanOrbit.Editor.Build
                 Debug.LogError(
                     "[TitanOrbitBuild] SwitchActiveBuildTarget to Linux Dedicated Server failed. " +
                     "Open File → Build Profiles, select Linux Dedicated Server, Switch Platform, then retry the menu item.");
+                ExitEditorIfRequested(exitEditorWhenDone, exitCode: 1);
             }
+            // Success path: return without Exit — InitializeOnLoad resume builds after reload.
         }
 
         /// <summary>
@@ -241,6 +305,7 @@ namespace TitanOrbit.Editor.Build
 
         /// <summary>
         /// Loads and clears the pending Linux build file, then runs <see cref="ExecuteLinuxDedicatedServerBuild"/> if valid.
+        /// In batchmode, exits the Editor with 0/1 when the pending request asked for it.
         /// </summary>
         static void TryExecutePendingLinuxServerBuild()
         {
@@ -258,15 +323,19 @@ namespace TitanOrbit.Editor.Build
             {
                 ClearPendingLinuxServerBuild();
                 Debug.LogError("[TitanOrbitBuild] Corrupt pending Linux server build file; deleted. Retry the menu item.\n" + ex);
+                // Cannot know exitEditorWhenDone if JSON was corrupt — only exit when already in batchmode.
+                ExitEditorIfRequested(Application.isBatchMode, exitCode: 1);
                 return;
             }
 
             // Clear before BuildPlayer so a failed build cannot loop on every subsequent domain reload.
+            bool exitEditorWhenDone = pending != null && pending.exitEditorWhenDone;
             ClearPendingLinuxServerBuild();
 
             if (pending == null || string.IsNullOrEmpty(pending.outputBasePath))
             {
                 Debug.LogError("[TitanOrbitBuild] Pending Linux server build was empty; retry the menu item.");
+                ExitEditorIfRequested(exitEditorWhenDone, exitCode: 1);
                 return;
             }
 
@@ -277,11 +346,13 @@ namespace TitanOrbit.Editor.Build
                     "[TitanOrbitBuild] Expected Linux Dedicated Server after platform switch, but Editor is still " +
                     $"{EditorUserBuildSettings.activeBuildTarget} / {EditorUserBuildSettings.standaloneBuildSubtarget}. " +
                     "Open File → Build Profiles → Linux Dedicated Server → Switch Platform, then retry.");
+                ExitEditorIfRequested(exitEditorWhenDone, exitCode: 1);
                 return;
             }
 
             Debug.Log($"[TitanOrbitBuild] Resuming queued Linux server build ({pending.label}) after platform switch.");
-            ExecuteLinuxDedicatedServerBuild(pending.outputBasePath, pending.label, pending.nextStepDocPath);
+            bool ok = ExecuteLinuxDedicatedServerBuild(pending.outputBasePath, pending.label, pending.nextStepDocPath);
+            ExitEditorIfRequested(exitEditorWhenDone, exitCode: ok ? 0 : 1);
         }
 
         /// <summary>
@@ -291,7 +362,8 @@ namespace TitanOrbit.Editor.Build
         /// <param name="outputBasePath">Path without extension.</param>
         /// <param name="label">Log label (GCE / Edgegap).</param>
         /// <param name="nextStepDocPath">Deploy docs path on success.</param>
-        static void ExecuteLinuxDedicatedServerBuild(string outputBasePath, string label, string nextStepDocPath)
+        /// <returns>True when <see cref="BuildResult.Succeeded"/>.</returns>
+        static bool ExecuteLinuxDedicatedServerBuild(string outputBasePath, string label, string nextStepDocPath)
         {
             // --- Scripting backend ---
             // GCE Debian images often fail to load MonoBleedingEdge native libs ("Unable to load mono library" / exit 1).
@@ -314,16 +386,42 @@ namespace TitanOrbit.Editor.Build
             {
                 string folder = Path.GetDirectoryName(outputBasePath) ?? outputBasePath;
                 Debug.Log($"[TitanOrbitBuild] Linux server build OK ({label}). Next: {nextStepDocPath}\nOutput folder: {folder}");
+                return true;
             }
-            else
+
+            Debug.LogError(
+                $"[TitanOrbitBuild] Linux server build failed ({label}): {report.summary.result} — " +
+                $"{report.summary.totalErrors} error(s). See Console / Build steps. " +
+                "If errors mention missing Linux sysroot/toolchain packages, confirm " +
+                "com.unity.toolchain.win-x86_64-linux and com.unity.sdk.linux-x86_64 are in Packages/manifest.json, " +
+                "then use File → Build Profiles → Linux Dedicated Server → Switch Platform and retry.");
+            return false;
+        }
+
+        /// <summary>
+        /// In batchmode CLI builds, quit Unity with a process exit code so PowerShell can chain deploy.
+        /// Interactive Editor menu builds never set <paramref name="exitEditorWhenDone"/>, so this is a no-op there.
+        /// </summary>
+        /// <param name="exitEditorWhenDone">True only for <see cref="BuildHeadlessServerLinuxBatchMode"/> pipeline.</param>
+        /// <param name="exitCode">0 = success, non-zero = failure (PowerShell <c>$LASTEXITCODE</c>).</param>
+        static void ExitEditorIfRequested(bool exitEditorWhenDone, int exitCode)
+        {
+            // --- Guard: only quit when the batch pipeline asked for it ---
+            if (!exitEditorWhenDone)
+                return;
+
+            // [UNITY] Never call EditorApplication.Exit from an interactive menu click — that would
+            // close the user's Editor. Batchmode is the only supported Exit path.
+            if (!Application.isBatchMode)
             {
-                Debug.LogError(
-                    $"[TitanOrbitBuild] Linux server build failed ({label}): {report.summary.result} — " +
-                    $"{report.summary.totalErrors} error(s). See Console / Build steps. " +
-                    "If errors mention missing Linux sysroot/toolchain packages, confirm " +
-                    "com.unity.toolchain.win-x86_64-linux and com.unity.sdk.linux-x86_64 are in Packages/manifest.json, " +
-                    "then use File → Build Profiles → Linux Dedicated Server → Switch Platform and retry.");
+                Debug.LogWarning(
+                    "[TitanOrbitBuild] exitEditorWhenDone was set but Editor is not in batchmode — " +
+                    "skipping EditorApplication.Exit so the interactive Editor stays open.");
+                return;
             }
+
+            Debug.Log($"[TitanOrbitBuild] Batchmode build finished — EditorApplication.Exit({exitCode}).");
+            EditorApplication.Exit(exitCode);
         }
 
         /// <summary>Absolute path to the Temp JSON that queues a Linux server build across domain reload.</summary>
@@ -464,6 +562,12 @@ namespace TitanOrbit.Editor.Build
 
             /// <summary>Docs/script path printed after a successful build.</summary>
             public string nextStepDocPath;
+
+            /// <summary>
+            /// When true, resume path calls <see cref="EditorApplication.Exit"/> after BuildPlayer
+            /// (batchmode PowerShell pipeline). Menu builds leave this false.
+            /// </summary>
+            public bool exitEditorWhenDone;
         }
     }
 }
