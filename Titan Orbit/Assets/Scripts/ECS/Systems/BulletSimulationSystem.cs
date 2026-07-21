@@ -13,9 +13,11 @@ namespace TitanOrbit.ECS
     /// Server-authoritative bullet simulation and ship firing. Runs after
     /// <see cref="ShipPhysicsDriveSystem"/> so muzzle positions use current transforms.
     /// <para>
-    /// Multi-cannon ships fire a <b>volley</b>: one bullet per <see cref="ShipWeaponMountElement"/>
-    /// from that mount's pose each fire tick (damage split across mounts so summed firePower DPS
-    /// stays balanced). Empty mount buffer = unarmed.
+    /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>:
+    /// <b>full volley</b> (every mount same tick) when energy covers all weapons;
+    /// otherwise <b>round-robin drip</b> — exactly one mount via
+    /// <see cref="ShipWeaponState.NextMountIndex"/> (0→1→2→…→0). Damage/energy split evenly
+    /// across mounts. Empty mount buffer = unarmed.
     /// </para>
     /// <para>
     /// Starblast-style hardening vs asteroid tunneling:
@@ -124,6 +126,7 @@ namespace TitanOrbit.ECS
                 }
 
                 // --- No hit this tick: apply age/travel, then expire or keep flying ---
+                // [TITAN-ORBIT] Range/lifetime expiry is silent — no BulletHitRpc / impact VFX.
                 b.Age += dt;
                 b.Traveled += stepDistance;
                 if (wouldExpire)
@@ -159,18 +162,29 @@ namespace TitanOrbit.ECS
                 if (cooldown > 0f)
                     continue;
 
-                float energyCost = weaponCfg.ValueRO.EnergyCostPerShot > 0f
-                    ? weaponCfg.ValueRO.EnergyCostPerShot
-                    : weaponCfg.ValueRO.BulletDamage;
-                if (shipState.ValueRO.CurrentEnergy < energyCost)
-                    continue;
-
                 // [TITAN-ORBIT] Empty mounts = intentional unarmed — no fire, no default muzzle.
                 if (!SystemAPI.HasBuffer<ShipWeaponMountElement>(entity))
                     continue;
 
                 var mounts = SystemAPI.GetBuffer<ShipWeaponMountElement>(entity);
                 if (mounts.Length == 0)
+                    continue;
+
+                // --- Volley vs round-robin drip ---
+                // [TITAN-ORBIT] Full energy → all mounts same tick. Otherwise exactly one mount
+                // from NextMountIndex, then +1 (never partial multi-fire — that skipped barrels).
+                float energyCostTotal = weaponCfg.ValueRO.EnergyCostPerShot > 0f
+                    ? weaponCfg.ValueRO.EnergyCostPerShot
+                    : weaponCfg.ValueRO.BulletDamage;
+                int mountCount = mounts.Length;
+                if (!ShipWeaponFireLogic.TryPlanFire(
+                        shipState.ValueRO.CurrentEnergy,
+                        energyCostTotal,
+                        weaponCfg.ValueRO.BulletDamage,
+                        fireRate,
+                        mountCount,
+                        weaponState.ValueRO.NextMountIndex,
+                        out var firePlan))
                     continue;
 
                 // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
@@ -191,14 +205,10 @@ namespace TitanOrbit.ECS
                         ? weaponCfg.ValueRO.ReferenceBulletSpeed
                         : BulletVisualScale.DefaultReferenceBulletSpeed);
 
-                // [TITAN-ORBIT] Volley: one bullet per weapon mount from that mount's pose.
-                // firePower is already summed across weapon components — split damage so a 4-gun
-                // hull keeps the same DPS as round-robin at full BulletDamage (one energy spend).
-                int mountCount = mounts.Length;
-                float damagePerBullet = math.max(1f, weaponCfg.ValueRO.BulletDamage / mountCount);
-
-                for (int mountIdx = 0; mountIdx < mountCount; mountIdx++)
+                // --- Spawn planned mounts (all for volley; 1+ from cursor for drip) ---
+                for (int shot = 0; shot < firePlan.FireCount; shot++)
                 {
+                    int mountIdx = ShipWeaponFireLogic.ResolveMountIndex(in firePlan, shot, mountCount);
                     var mount = mounts[mountIdx];
                     float3 fireOrigin;
                     float3 fireForward;
@@ -229,7 +239,7 @@ namespace TitanOrbit.ECS
                         Velocity = bulletVel,
                         MaxDistance = math.max(10f, weaponCfg.ValueRO.BulletMaxDistance),
                         Lifetime = math.max(0.1f, weaponCfg.ValueRO.BulletLifetime),
-                        Damage = damagePerBullet,
+                        Damage = firePlan.DamagePerBullet,
                         OwnerNetworkId = ghostOwner.ValueRO.NetworkId,
                         OwnerTeam = (byte)shipState.ValueRO.Team,
                         Sequence = sequence,
@@ -280,10 +290,10 @@ namespace TitanOrbit.ECS
                     }
                 }
 
-                // One energy spend + cooldown for the whole volley (not per muzzle).
-                shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - energyCost);
-                weaponState.ValueRW.FireCooldown = 1f / fireRate;
-                weaponState.ValueRW.NextMountIndex = 0;
+                // Energy spend matches plan (full volley or N drip shares) + fire-rate cooldown.
+                shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - firePlan.EnergySpend);
+                weaponState.ValueRW.FireCooldown = firePlan.CooldownSeconds;
+                weaponState.ValueRW.NextMountIndex = firePlan.NextMountIndexAfter;
             }
 
             ecb.Playback(state.EntityManager);

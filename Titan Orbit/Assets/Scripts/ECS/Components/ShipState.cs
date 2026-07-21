@@ -95,6 +95,12 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct ShipWeaponConfig : IComponentData
     {
+        /// <summary>
+        /// [TITAN-ORBIT] Default max travel distance before a bullet expires with no impact VFX.
+        /// Matches the original NGO-era design (~30 world units); bank range multipliers scale this.
+        /// </summary>
+        public const float DefaultBulletMaxDistance = 30f;
+
         /// <summary>[TITAN-ORBIT] Minimum seconds between shots.</summary>
         public float FireRate;
 
@@ -104,13 +110,22 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Damage per bullet on hit.</summary>
         public float BulletDamage;
 
-        /// <summary>[TITAN-ORBIT] Energy spent per shot.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Energy spent for a full multi-mount volley (summed firePower).
+        /// Round-robin drip spends this ÷ mount count per barrel via <see cref="ShipWeaponFireLogic"/>.
+        /// </summary>
         public float EnergyCostPerShot;
 
-        /// <summary>[UNITY] Bullet lifetime in seconds.</summary>
+        /// <summary>
+        /// [UNITY] Bullet lifetime in seconds. Prefer distance cull; keep lifetime ≥ distance/speed
+        /// so MaxDistance is the primary kill when the shot misses.
+        /// </summary>
         public float BulletLifetime;
 
-        /// <summary>[TITAN-ORBIT] Maximum bullet travel distance.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Max travel distance before the bullet is removed with no hit/impact.
+        /// Default <see cref="DefaultBulletMaxDistance"/> (~30).
+        /// </summary>
         public float BulletMaxDistance;
 
         /// <summary>[TITAN-ORBIT] Fallback muzzle offset when no weapon mount buffer exists.</summary>
@@ -151,15 +166,19 @@ namespace TitanOrbit.ECS
         public double LastHullDamageTime;
     }
 
-    /// <summary>[ECS/DOTS] Per-ship weapon cooldown (server sim). NextMountIndex kept for compatibility.</summary>
+    /// <summary>
+    /// [ECS/DOTS] Per-ship weapon cooldown and round-robin drip cursor (server sim).
+    /// Written by <see cref="BulletSimulationSystem"/> via <see cref="ShipWeaponFireLogic"/>.
+    /// </summary>
     public struct ShipWeaponState : IComponentData
     {
-        /// <summary>[UNITY] Seconds until next volley is allowed.</summary>
+        /// <summary>[UNITY] Seconds until the next fire tick is allowed (volley or drip).</summary>
         public float FireCooldown;
 
         /// <summary>
-        /// [LEGACY] Formerly round-robin mount index. Multi-cannon ships now fire a full volley
-        /// each tick (<see cref="BulletSimulationSystem"/>); this field is cleared to 0 after fire.
+        /// [TITAN-ORBIT] Round-robin mount index used only when energy cannot cover a full volley.
+        /// <see cref="ShipWeaponFireLogic"/> fires exactly one mount from this cursor, then advances
+        /// +1 (0→1→2→…→0). Reset to 0 after a full same-tick volley.
         /// </summary>
         public int NextMountIndex;
     }

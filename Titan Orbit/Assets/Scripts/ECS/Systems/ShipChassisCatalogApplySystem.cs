@@ -245,6 +245,7 @@ namespace TitanOrbit.ECS
             {
                 for (int i = 0; i < WeaponBakeScratch.Count; i++)
                     buffer.Add(ToWeaponElement(WeaponBakeScratch[i]));
+                SortWeaponMountBufferByCannonIndex(buffer);
                 return;
             }
 
@@ -254,6 +255,32 @@ namespace TitanOrbit.ECS
 
             for (int i = 0; i < entry.WeaponMounts.Count; i++)
                 buffer.Add(ToWeaponElement(entry.WeaponMounts[i]));
+            SortWeaponMountBufferByCannonIndex(buffer);
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Stable round-robin order — buffer index 0,1,2… matches live GO
+        /// <c>CannonIndex</c> sort in <c>BulletMuzzlePresentation</c>.
+        /// </summary>
+        static void SortWeaponMountBufferByCannonIndex(DynamicBuffer<ShipWeaponMountElement> buffer)
+        {
+            int n = buffer.Length;
+            if (n <= 1)
+                return;
+
+            // --- Insertion sort (mount counts are tiny, usually ≤ 8) ---
+            for (int i = 1; i < n; i++)
+            {
+                var key = buffer[i];
+                int j = i - 1;
+                while (j >= 0 && buffer[j].CannonIndex > key.CannonIndex)
+                {
+                    buffer[j + 1] = buffer[j];
+                    j--;
+                }
+
+                buffer[j + 1] = key;
+            }
         }
 
         /// <summary>Maps bake DTO → runtime weapon mount buffer element.</summary>

@@ -29,8 +29,8 @@ namespace TitanOrbit.ECS.Authoring
         public float FireRate = 2f;
         public float BulletSpeed = 20f;
         public float BulletDamage = 8f;
-        public float BulletLifetime = 3f;
-        public float BulletMaxDistance = 200f;
+        public float BulletLifetime = 2f;
+        public float BulletMaxDistance = 30f;
         public float MuzzleOffset = 2f;
         public float BulletScale = 1f;
 

@@ -307,7 +307,11 @@ namespace TitanOrbit.Game
             }
 
             if (into.Count > 0)
+            {
+                // [TITAN-ORBIT] Stable order by CannonIndex so round-robin 0→1→2 matches ECS buffer.
+                into.Sort(CompareLiveMountByCannonIndex);
                 return true;
+            }
 
             // --- Name / family id scan (same rules as chassis bake) ---
             var transforms = hullRoot.GetComponentsInChildren<Transform>(true);
@@ -327,7 +331,19 @@ namespace TitanOrbit.Game
                 });
             }
 
+            if (into.Count > 0)
+                into.Sort(CompareLiveMountByCannonIndex);
+
             return into.Count > 0;
+        }
+
+        /// <summary>
+        /// [STANDARD] Sort key for live mounts — lower <see cref="LiveWeaponMount.CannonIndex"/> first.
+        /// Ties keep relative order via zero compare (stable enough for unique indices).
+        /// </summary>
+        static int CompareLiveMountByCannonIndex(LiveWeaponMount a, LiveWeaponMount b)
+        {
+            return a.CannonIndex.CompareTo(b.CannonIndex);
         }
 
         /// <summary>ECS mount buffer only (no GO recomposition).</summary>

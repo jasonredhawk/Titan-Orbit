@@ -294,6 +294,10 @@ namespace TitanOrbit.ECS
                 weapon.BulletSpeed = bulletSpeed;
                 weapon.BulletDamage = firePower;
                 weapon.EnergyCostPerShot = firePower;
+                // [TITAN-ORBIT] Original design range ~30 units — distance cull (no impact VFX).
+                // Lifetime is derived so MaxDistance wins before the timer for normal bullet speeds.
+                weapon.BulletMaxDistance = ShipWeaponConfig.DefaultBulletMaxDistance;
+                weapon.BulletLifetime = Mathf.Max(0.25f, weapon.BulletMaxDistance / Mathf.Max(1f, bulletSpeed));
                 // [TITAN-ORBIT] Reset VFX baselines on hull swap so upgradeMul ≈ 1 until attributes climb.
                 if (chassisIdentityChanged || weapon.ReferenceBulletDamage <= 0.01f)
                     weapon.ReferenceBulletDamage = baselineDamage;
