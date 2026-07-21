@@ -7,15 +7,21 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// [ECS/DOTS] One weapon mount on a ship hull — local offset and rotation relative to the ship
-    /// transform. Stored in a DynamicBuffer so multi-cannon ships fire from multiple muzzles.
-    /// Baked from child <see cref="Authoring.ShipWeaponMountAuthoring"/> / chassis prefab Weapon
-    /// children via <see cref="ShipChassisPrefabBakeUtility"/>.
+    /// [ECS/DOTS] One weapon mount on a ship hull — local offset, rotation, and <b>per-barrel</b>
+    /// combat stats. Stored in a DynamicBuffer so multi-cannon ships fire from multiple muzzles.
+    /// Pose is baked from child <see cref="Authoring.ShipWeaponMountAuthoring"/> / chassis prefab
+    /// Weapon children via <see cref="ShipChassisPrefabBakeUtility"/>. Combat numbers come from
+    /// <see cref="ShipWeaponMountCombatLogic"/> (family Weapon stats × transform scale × ship level).
     /// <para>
     /// <see cref="LocalPosition"/> is <b>unscaled prefab-local</b> (same contract as
     /// <see cref="ShipWingTractorBeamElement"/>). <see cref="ShipWeaponPose"/> multiplies by
     /// <see cref="BodyCollisionMath.ShipPresentationScale"/> at fire time so server muzzles match
     /// the hybrid hull (which is drawn at ~0.155× prefab size).
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Each barrel keeps its own <see cref="FirePower"/> and <see cref="FireRate"/> —
+    /// not a hull average. A large main gun can deal high damage at a slow cadence while small
+    /// side guns deal less damage but shoot faster (driven by Weapon child XY / Z scale).
     /// </para>
     /// </summary>
     public struct ShipWeaponMountElement : IBufferElementData
@@ -35,6 +41,30 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Index into weapon config arrays for multi-cannon loadouts.</summary>
         public int CannonIndex;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Damage and energy cost for bullets from this barrel only
+        /// (scale-adjusted family firePower + ship level + Fire Power attributes).
+        /// </summary>
+        public float FirePower;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Shots per second for this barrel only (scale-adjusted family fireRate +
+        /// ship level). Independent of other mounts — see <see cref="FireCooldown"/>.
+        /// </summary>
+        public float FireRate;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Seconds until this barrel may fire again. Ticked per mount so mixed
+        /// calibers keep different cadences while Fire is held.
+        /// </summary>
+        public float FireCooldown;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Level-1 firePower for this barrel (before attributes) — bullet VFX
+        /// growth baseline so a fat gun looks larger than a peashooter at the same ship level.
+        /// </summary>
+        public float ReferenceFirePower;
     }
 
     /// <summary>

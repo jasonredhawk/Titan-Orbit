@@ -798,9 +798,11 @@ namespace TitanOrbit.UI
             string line4;
             if (weapon.FireRate > 0.01f && weapon.BulletDamage > 0.01f)
             {
+                // [TITAN-ORBIT] BulletDamage / FireRate on ShipWeaponConfig are averages across
+                // mounts — each barrel still fires its own FirePower (see ShipWeaponMountElement).
                 float dps = weapon.BulletDamage * weapon.FireRate;
                 line4 =
-                    $"BUL {FormatFixed1(weapon.BulletDamage)}/hit  ·  {FormatFixed1(dps)}/s  <color=#888888>({FormatFixed1(weapon.FireRate)}/s)</color>";
+                    $"BUL {FormatFixed1(weapon.BulletDamage)}/hit avg  ·  {FormatFixed1(dps)}/s  <color=#888888>({FormatFixed1(weapon.FireRate)}/s avg)</color>";
             }
             else
                 line4 = "BUL  —.−/hit  ·   —.−/s";

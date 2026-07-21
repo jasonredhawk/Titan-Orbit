@@ -16,11 +16,12 @@ namespace TitanOrbit.Game
     /// flash matches the drawn barrel (including BankPivot). Server remains authoritative for
     /// damage (<see cref="BulletSimulationSystem"/>).
     /// <para>
-    /// [TITAN-ORBIT] Multi-cannon hulls mirror <see cref="ShipWeaponFireLogic"/>: full-volley
-    /// anticipation when energy covers every mount; otherwise round-robin drip — one tracer
-    /// from <c>_nextMountIndex</c>, then advance +1 (0→1→2→…→0). When <see cref="BulletSpawnRpc"/>
-    /// arrives, <see cref="BulletVfxDriver"/> binds Sequence without snapping pose back to the
-    /// lagged server muzzle.
+    /// [TITAN-ORBIT] Multi-cannon hulls mirror <see cref="ShipWeaponFireLogic"/> independent
+    /// barrels: each mount has its own firePower, fireRate, and FireCooldown. While Fire is held,
+    /// every ready mount the predicted energy pool can afford may spawn a tracer in the same frame
+    /// (big slow cannon + small fast side guns). When <see cref="BulletSpawnRpc"/> arrives,
+    /// <see cref="BulletVfxDriver"/> binds Sequence without snapping pose back to the lagged
+    /// server muzzle.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Anticipation deducts a <b>local predicted energy</b> pool (mirrors server
@@ -35,15 +36,11 @@ namespace TitanOrbit.Game
     [DefaultExecutionOrder(66100)]
     public class ClientLocalBulletVfxBridge : MonoBehaviour
     {
-        /// <summary>Client-side fire-rate gate mirroring server FireRate cooldown.</summary>
-        float _fireCooldown;
-
         /// <summary>
-        /// [TITAN-ORBIT] Local round-robin cursor mirroring server
-        /// <see cref="ShipWeaponState.NextMountIndex"/> for drip anticipation.
-        /// Not ghosted — cosmetic only; adopt uses MountIndex from the spawn RPC.
+        /// Reused shot plan — mirrors server <c>BulletSimulationSystem</c> scratch (no per-frame alloc).
         /// </summary>
-        int _nextMountIndex;
+        static readonly ShipWeaponFireLogic.MountShot[] s_ShotScratch =
+            new ShipWeaponFireLogic.MountShot[ShipWeaponFireLogic.MaxShotsPerTick];
 
         /// <summary>
         /// Local energy estimate after anticipation spends. Snaps down when ghost energy is lower;
@@ -107,79 +104,78 @@ namespace TitanOrbit.Game
             if (MoonOrbitClientState.IsOrbitMenuVisible)
                 return;
 
-            float dt = Time.deltaTime;
-            if (_fireCooldown > 0f)
-                _fireCooldown = Mathf.Max(0f, _fireCooldown - dt);
-
-            if (_fireCooldown > 0f)
-                return;
-
             if (!TryGetLocalShipCombatState(world.EntityManager, out Entity shipEntity, out ShipWeaponConfig weaponCfg,
                     out ShipState shipState, out int ownerNetworkId, out int bankIndex, out bool fireHeld))
-                return;
-
-            if (!fireHeld)
                 return;
 
             if (shipState.IsDead || shipState.AwaitingTeamSelection)
                 return;
 
+            // --- Need ECS mounts for per-barrel cooldown + damage (live GO count alone is not enough) ---
+            if (!world.EntityManager.HasBuffer<ShipWeaponMountElement>(shipEntity))
+                return;
+
+            var mounts = world.EntityManager.GetBuffer<ShipWeaponMountElement>(shipEntity);
+            if (mounts.Length <= 0)
+                return;
+
+            float dt = Time.deltaTime;
+            // Tick cooldowns even when Fire is released so barrels stay in sync with server cadence.
+            ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
+
+            if (!fireHeld)
+                return;
+
             // --- Sync predicted energy with ghost (before planning fire) ---
             SyncPredictedEnergy(shipState.CurrentEnergy);
 
-            // --- Mount count: prefer ECS buffer (server truth for round-robin), else live GOs ---
-            int mountCount = 0;
-            if (world.EntityManager.HasBuffer<ShipWeaponMountElement>(shipEntity))
-                mountCount = world.EntityManager.GetBuffer<ShipWeaponMountElement>(shipEntity).Length;
-            if (mountCount <= 0)
-                mountCount = BulletMuzzlePresentation.GetLiveWeaponMountCount(
-                    world.EntityManager, shipEntity);
-
-            if (mountCount <= 0)
-                return;
-
-            // --- Volley vs drip (same planner as server) ---
-            // Gate on predicted energy (not raw ghost) so we cannot over-fire while CurrentEnergy lags.
-            float energyCostPerBarrel = weaponCfg.EnergyCostPerShot > 0f
-                ? weaponCfg.EnergyCostPerShot
-                : weaponCfg.BulletDamage;
-            if (!ShipWeaponFireLogic.TryPlanFire(
+            // --- Independent barrels (same planner as server) ---
+            if (!ShipWeaponFireLogic.TryPlanIndependentFire(
                     _predictedEnergy,
-                    energyCostPerBarrel,
+                    mounts,
                     weaponCfg.BulletDamage,
                     weaponCfg.FireRate,
-                    mountCount,
-                    _nextMountIndex,
-                    out var firePlan))
+                    s_ShotScratch,
+                    out int shotCount,
+                    out float energySpend))
                 return;
 
-            // --- Cap pending anticipations for this plan (volley = N, drip = FireCount) ---
-            // [TITAN-ORBIT] Do not advance cooldown / cursor here — retry next frame when adopt frees slots.
-            if (!BulletVfxBridge.CanEnqueueAnticipation(firePlan.FireCount))
+            // --- Cap pending anticipations — do not arm cooldowns if the queue is full ---
+            if (!BulletVfxBridge.CanEnqueueAnticipation(shotCount))
                 return;
 
-            float visualScale = BulletVisualScale.ComputePerShotScale(
-                weaponCfg.BulletScale,
-                weaponCfg.BulletDamage,
-                weaponCfg.BulletSpeed,
-                weaponCfg.ReferenceBulletDamage > 0f
-                    ? weaponCfg.ReferenceBulletDamage
-                    : BulletVisualScale.DefaultReferenceBulletDamage,
-                weaponCfg.ReferenceBulletSpeed > 0f
-                    ? weaponCfg.ReferenceBulletSpeed
-                    : BulletVisualScale.DefaultReferenceBulletSpeed);
+            float fallbackRefDamage = weaponCfg.ReferenceBulletDamage > 0f
+                ? weaponCfg.ReferenceBulletDamage
+                : BulletVisualScale.DefaultReferenceBulletDamage;
+            float refSpeed = weaponCfg.ReferenceBulletSpeed > 0f
+                ? weaponCfg.ReferenceBulletSpeed
+                : BulletVisualScale.DefaultReferenceBulletSpeed;
 
             int enqueued = 0;
+            float spent = 0f;
 
             // --- Enqueue planned mounts from live weapon transforms ---
-            for (int shot = 0; shot < firePlan.FireCount; shot++)
+            for (int shot = 0; shot < shotCount; shot++)
             {
-                int mountIdx = ShipWeaponFireLogic.ResolveMountIndex(in firePlan, shot, mountCount);
+                var planned = s_ShotScratch[shot];
+                int mountIdx = planned.MountIndex;
                 if (!BulletMuzzlePresentation.TryResolveMuzzle(
                         world.EntityManager, shipEntity, mountIdx,
                         out float3 fireOrigin, out float3 fireForward, out bool displaySpace,
                         out float3 shipVel))
                     continue;
+
+                // Re-read mount after buffer may have been refreshed (pose resolve is read-only).
+                ShipWeaponMountElement mount = mounts[mountIdx];
+                float refDamage = mount.ReferenceFirePower > 0.01f
+                    ? mount.ReferenceFirePower
+                    : fallbackRefDamage;
+                float visualScale = BulletVisualScale.ComputePerShotScale(
+                    weaponCfg.BulletScale,
+                    planned.Damage,
+                    weaponCfg.BulletSpeed,
+                    refDamage,
+                    refSpeed);
 
                 float3 bulletVel = BulletMuzzlePresentation.BuildBulletWorldVelocity(
                     fireForward, weaponCfg.BulletSpeed, shipVel);
@@ -191,7 +187,7 @@ namespace TitanOrbit.Game
                     Velocity = bulletVel,
                     Lifetime = math.max(0.1f, weaponCfg.BulletLifetime),
                     MaxDistance = math.max(10f, weaponCfg.BulletMaxDistance),
-                    Damage = firePlan.DamagePerBullet,
+                    Damage = planned.Damage,
                     OwnerTeam = (byte)shipState.Team,
                     OwnerNetworkId = ownerNetworkId,
                     BankIndex = bankIndex,
@@ -202,20 +198,18 @@ namespace TitanOrbit.Game
                 }))
                     break;
 
+                // Arm this barrel’s client-side cooldown so we do not spam tracers faster than server.
+                mount.FireCooldown = planned.CooldownSeconds;
+                mounts[mountIdx] = mount;
+                spent += planned.EnergyCost;
                 enqueued++;
             }
 
-            // Only start cooldown / advance drip cursor when at least one muzzle queued.
             if (enqueued > 0)
             {
-                // Spend predicted energy for the full plan (matches server EnergySpend).
-                float spend = firePlan.EnergySpend;
-                if (enqueued < firePlan.FireCount && firePlan.FireCount > 0)
-                    spend = firePlan.EnergySpend * (enqueued / (float)firePlan.FireCount);
-
+                // Prefer planned energy when every shot queued; otherwise spend only what enqueued.
+                float spend = enqueued == shotCount ? energySpend : spent;
                 _predictedEnergy = math.max(0f, _predictedEnergy - spend);
-                _fireCooldown = firePlan.CooldownSeconds;
-                _nextMountIndex = firePlan.NextMountIndexAfter;
             }
         }
 

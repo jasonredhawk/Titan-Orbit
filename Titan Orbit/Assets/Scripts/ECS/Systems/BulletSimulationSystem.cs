@@ -13,12 +13,10 @@ namespace TitanOrbit.ECS
     /// Server-authoritative bullet simulation and ship firing. Runs after
     /// <see cref="ShipPhysicsDriveSystem"/> so muzzle positions use current transforms.
     /// <para>
-    /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>:
-    /// <b>full volley</b> (every mount same tick) when energy covers all weapons;
-    /// otherwise <b>round-robin drip</b> — exactly one mount via
-    /// <see cref="ShipWeaponState.NextMountIndex"/> (0→1→2→…→0). Per-bullet damage and
-    /// per-barrel energy come from averaged weapon firePower (gun count does not multiply
-    /// hit strength); a full volley spends energy × mount count. Empty mount buffer = unarmed.
+    /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/> with <b>independent barrels</b>:
+    /// each <see cref="ShipWeaponMountElement"/> has its own firePower, fireRate, and cooldown.
+    /// While Fire is held, every ready mount that the energy pool can afford may shoot in the
+    /// same tick (big slow cannon + small fast side guns). Empty mount buffer = unarmed.
     /// </para>
     /// <para>
     /// Starblast-style hardening vs asteroid tunneling:
@@ -34,6 +32,12 @@ namespace TitanOrbit.ECS
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct BulletSimulationSystem : ISystem
     {
+        /// <summary>
+        /// Reused per-tick shot plan — avoids allocating a new array for every armed ship.
+        /// </summary>
+        static readonly ShipWeaponFireLogic.MountShot[] s_ShotScratch =
+            new ShipWeaponFireLogic.MountShot[ShipWeaponFireLogic.MaxShotsPerTick];
+
         /// <summary>Require bullet singleton before ticking.</summary>
         public void OnCreate(ref SystemState state)
         {
@@ -145,26 +149,12 @@ namespace TitanOrbit.ECS
             }
 
             // --- Phase B: ship firing + same-frame spawn collide ---
-            foreach (var (input, weaponCfg, weaponState, shipState, kinematics, transform, ghostOwner, entity) in SystemAPI
-                         .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipWeaponState>, RefRW<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
+            foreach (var (input, weaponCfg, shipState, kinematics, transform, ghostOwner, entity) in SystemAPI
+                         .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
                 if (shipState.ValueRO.IsDead)
-                    continue;
-
-                float cooldown = weaponState.ValueRO.FireCooldown;
-                if (cooldown > 0f)
-                {
-                    cooldown = math.max(0f, cooldown - dt);
-                    weaponState.ValueRW.FireCooldown = cooldown;
-                }
-
-                if (!input.ValueRO.Fire.IsSet)
-                    continue;
-
-                float fireRate = math.max(0.1f, weaponCfg.ValueRO.FireRate);
-                if (cooldown > 0f)
                     continue;
 
                 // [TITAN-ORBIT] Empty mounts = intentional unarmed — no fire, no default muzzle.
@@ -175,22 +165,21 @@ namespace TitanOrbit.ECS
                 if (mounts.Length == 0)
                     continue;
 
-                // --- Volley vs round-robin drip ---
-                // [TITAN-ORBIT] Full energy → all mounts same tick. Otherwise exactly one mount
-                // from NextMountIndex, then +1 (never partial multi-fire — that skipped barrels).
-                // EnergyCostPerShot / BulletDamage are per barrel (averaged firePower — not N×).
-                float energyCostPerBarrel = weaponCfg.ValueRO.EnergyCostPerShot > 0f
-                    ? weaponCfg.ValueRO.EnergyCostPerShot
-                    : weaponCfg.ValueRO.BulletDamage;
-                int mountCount = mounts.Length;
-                if (!ShipWeaponFireLogic.TryPlanFire(
+                // --- Per-barrel cooldown tick (independent cadences) ---
+                ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
+
+                if (!input.ValueRO.Fire.IsSet)
+                    continue;
+
+                // --- Plan ready mounts that the energy pool can afford this tick ---
+                if (!ShipWeaponFireLogic.TryPlanIndependentFire(
                         shipState.ValueRO.CurrentEnergy,
-                        energyCostPerBarrel,
+                        mounts,
                         weaponCfg.ValueRO.BulletDamage,
-                        fireRate,
-                        mountCount,
-                        weaponState.ValueRO.NextMountIndex,
-                        out var firePlan))
+                        weaponCfg.ValueRO.FireRate,
+                        s_ShotScratch,
+                        out int shotCount,
+                        out float energySpend))
                     continue;
 
                 // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
@@ -200,21 +189,18 @@ namespace TitanOrbit.ECS
 
                 float3 shipVel = kinematics.ValueRO.Velocity;
                 shipVel.y = 0f;
-                float visualScale = BulletVisualScale.ComputePerShotScale(
-                    weaponCfg.ValueRO.BulletScale,
-                    weaponCfg.ValueRO.BulletDamage,
-                    weaponCfg.ValueRO.BulletSpeed,
-                    weaponCfg.ValueRO.ReferenceBulletDamage > 0f
-                        ? weaponCfg.ValueRO.ReferenceBulletDamage
-                        : BulletVisualScale.DefaultReferenceBulletDamage,
-                    weaponCfg.ValueRO.ReferenceBulletSpeed > 0f
-                        ? weaponCfg.ValueRO.ReferenceBulletSpeed
-                        : BulletVisualScale.DefaultReferenceBulletSpeed);
+                float fallbackRefDamage = weaponCfg.ValueRO.ReferenceBulletDamage > 0f
+                    ? weaponCfg.ValueRO.ReferenceBulletDamage
+                    : BulletVisualScale.DefaultReferenceBulletDamage;
+                float refSpeed = weaponCfg.ValueRO.ReferenceBulletSpeed > 0f
+                    ? weaponCfg.ValueRO.ReferenceBulletSpeed
+                    : BulletVisualScale.DefaultReferenceBulletSpeed;
 
-                // --- Spawn planned mounts (all for volley; 1+ from cursor for drip) ---
-                for (int shot = 0; shot < firePlan.FireCount; shot++)
+                // --- Spawn each planned barrel with that mount’s own damage / VFX scale ---
+                for (int shot = 0; shot < shotCount; shot++)
                 {
-                    int mountIdx = ShipWeaponFireLogic.ResolveMountIndex(in firePlan, shot, mountCount);
+                    var planned = s_ShotScratch[shot];
+                    int mountIdx = planned.MountIndex;
                     var mount = mounts[mountIdx];
                     float3 fireOrigin;
                     float3 fireForward;
@@ -240,6 +226,16 @@ namespace TitanOrbit.ECS
                             + math.rotate(transform.ValueRO.Rotation, presentationLocal);
                     }
 
+                    float refDamage = mount.ReferenceFirePower > 0.01f
+                        ? mount.ReferenceFirePower
+                        : fallbackRefDamage;
+                    float visualScale = BulletVisualScale.ComputePerShotScale(
+                        weaponCfg.ValueRO.BulletScale,
+                        planned.Damage,
+                        weaponCfg.ValueRO.BulletSpeed,
+                        refDamage,
+                        refSpeed);
+
                     float3 bulletVel = fireForward * math.max(1f, weaponCfg.ValueRO.BulletSpeed) + shipVel;
                     uint sequence = BulletVfxBridge.NextSequence();
                     var spawn = new BulletElement
@@ -248,7 +244,7 @@ namespace TitanOrbit.ECS
                         Velocity = bulletVel,
                         MaxDistance = math.max(10f, weaponCfg.ValueRO.BulletMaxDistance),
                         Lifetime = math.max(0.1f, weaponCfg.ValueRO.BulletLifetime),
-                        Damage = firePlan.DamagePerBullet,
+                        Damage = planned.Damage,
                         OwnerNetworkId = ghostOwner.ValueRO.NetworkId,
                         OwnerTeam = (byte)shipState.ValueRO.Team,
                         Sequence = sequence,
@@ -272,6 +268,10 @@ namespace TitanOrbit.ECS
                     // [NETCODE] Cosmetic path for all clients (host bridge + broadcast RPC).
                     BulletNetNotify.SendSpawn(ref ecb, spawn, mountIdx);
 
+                    // --- Arm this barrel’s own cooldown (independent of other mounts) ---
+                    mount.FireCooldown = planned.CooldownSeconds;
+                    mounts[mountIdx] = mount;
+
                     // --- Same-frame spawn collide (first-bullet tunnel fix) ---
                     // [TITAN-ORBIT] Collide the first vel*dt segment immediately so nose-touch shots
                     // do not idle one tick. Do NOT point-test fireOrigin alone — wing muzzles on
@@ -293,10 +293,8 @@ namespace TitanOrbit.ECS
                     }
                 }
 
-                // Energy spend matches plan (full volley or N drip shares) + fire-rate cooldown.
-                shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - firePlan.EnergySpend);
-                weaponState.ValueRW.FireCooldown = firePlan.CooldownSeconds;
-                weaponState.ValueRW.NextMountIndex = firePlan.NextMountIndexAfter;
+                // Energy equals sum of each firing barrel’s firePower this tick.
+                shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - energySpend);
             }
 
             ecb.Playback(state.EntityManager);

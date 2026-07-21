@@ -1,3 +1,4 @@
+using Unity.Entities;
 using Unity.Mathematics;
 
 namespace TitanOrbit.ECS
@@ -5,158 +6,130 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Shared multi-mount fire planner for server bullets and client anticipation VFX.
     /// <para>
-    /// [TITAN-ORBIT] Two modes:
+    /// [TITAN-ORBIT] Each barrel is independent:
     /// <list type="bullet">
-    /// <item><b>Full volley</b> — energy covers every mount → all muzzles fire in the same tick.</item>
-    /// <item><b>Round-robin drip</b> — energy cannot cover a full volley → fire <b>exactly one</b>
-    /// mount from <c>NextMountIndex</c>, then advance +1 so the loop is always 0→1→2→…→0.
-    /// Never fires a partial multi-mount burst in drip mode (that skipped every other barrel).</item>
+    /// <item>Own <c>FirePower</c> (damage + energy for that bullet)</item>
+    /// <item>Own <c>FireRate</c> / <c>FireCooldown</c> (big guns can be slow while side guns are fast)</item>
     /// </list>
+    /// While Fire is held, every mount whose cooldown is ready and whose energy cost fits the pool
+    /// may shoot in the same tick. No hull-wide average damage and no shared single cooldown.
     /// </para>
     /// Paired with <see cref="BulletSimulationSystem"/> (server) and
     /// <c>ClientLocalBulletVfxBridge</c> (client cosmetics).
-    /// <para>
-    /// [TITAN-ORBIT] <c>ShipWeaponConfig.BulletDamage</c> and <c>EnergyCostPerShot</c> are
-    /// <b>per barrel</b> (average scale-adjusted weapon firePower — not N× sum). Each bullet deals
-    /// that damage; a full volley spends <c>EnergyCostPerShot × mountCount</c>.
-    /// </para>
     /// </summary>
     public static class ShipWeaponFireLogic
     {
         /// <summary>
-        /// Result of planning one fire tick: which mounts shoot and how much energy to spend.
+        /// One barrel that should spawn a bullet this tick (damage / energy / post-fire cooldown).
         /// </summary>
-        public struct FirePlan
+        public struct MountShot
         {
-            /// <summary>True when at least one mount should fire this tick.</summary>
-            public bool CanFire;
+            /// <summary>Index into the ship <see cref="ShipWeaponMountElement"/> buffer.</summary>
+            public int MountIndex;
 
-            /// <summary>
-            /// True when every mount fires together (energy ≥ full volley cost).
-            /// </summary>
-            public bool IsFullVolley;
+            /// <summary>Damage written on the spawned bullet (this barrel’s firePower).</summary>
+            public float Damage;
 
-            /// <summary>
-            /// First mount index to fire. Full volley starts at 0; drip is the round-robin cursor.
-            /// </summary>
-            public int StartMountIndex;
+            /// <summary>Energy to subtract for this barrel’s shot.</summary>
+            public float EnergyCost;
 
-            /// <summary>
-            /// How many mounts fire this tick (mountCount for full volley; always 1 for drip).
-            /// </summary>
-            public int FireCount;
-
-            /// <summary>Energy to subtract from <c>ShipState.CurrentEnergy</c> after spawn.</summary>
-            public float EnergySpend;
-
-            /// <summary>Damage written on each spawned bullet (per-barrel firePower — not divided).</summary>
-            public float DamagePerBullet;
-
-            /// <summary>
-            /// Value to write back to <c>ShipWeaponState.NextMountIndex</c> after this fire.
-            /// Full volley resets to 0; drip advances by exactly one mount.
-            /// </summary>
-            public int NextMountIndexAfter;
-
-            /// <summary>Seconds until the next fire tick (<c>1 / fireRate</c>).</summary>
+            /// <summary>Seconds to write into this mount’s <c>FireCooldown</c> after spawn.</summary>
             public float CooldownSeconds;
         }
 
         /// <summary>
-        /// Decides full volley vs single-mount round-robin from current energy and mount count.
-        /// Call only after cooldown / Fire-input gates have already passed.
+        /// Maximum shots planned in one tick (hard cap — mount counts are tiny, usually ≤ 8).
         /// </summary>
-        /// <param name="currentEnergy">Ship energy pool right now (server or replicated client).</param>
-        /// <param name="energyCostPerBarrel">
-        /// Energy for one barrel — usually <c>ShipWeaponConfig.EnergyCostPerShot</c> (per-bullet firePower).
-        /// </param>
-        /// <param name="bulletDamagePerBarrel">
-        /// Damage per bullet — usually <c>ShipWeaponConfig.BulletDamage</c> (not a hull total to split).
-        /// </param>
-        /// <param name="fireRate">Ship fire rate from <c>ShipWeaponConfig.FireRate</c>.</param>
-        /// <param name="mountCount">Number of <see cref="ShipWeaponMountElement"/> entries (≥ 1).</param>
-        /// <param name="nextMountIndex">
-        /// Current round-robin cursor from <c>ShipWeaponState.NextMountIndex</c> (or client mirror).
-        /// </param>
-        /// <param name="plan">Filled when returning; <see cref="FirePlan.CanFire"/> is false if energy is too low.</param>
-        /// <returns>True when the ship should spawn at least one bullet this tick.</returns>
-        public static bool TryPlanFire(
-            float currentEnergy,
-            float energyCostPerBarrel,
-            float bulletDamagePerBarrel,
-            float fireRate,
-            int mountCount,
-            int nextMountIndex,
-            out FirePlan plan)
-        {
-            plan = default;
+        public const int MaxShotsPerTick = 16;
 
-            // --- Guard degenerate mounts ---
-            if (mountCount <= 0)
+        /// <summary>
+        /// Plans which mounts fire this tick from per-mount readiness and remaining energy.
+        /// Call after ticking mount cooldowns down by dt. Does not mutate mounts — caller applies
+        /// energy spend and writes each shot’s <see cref="MountShot.CooldownSeconds"/>.
+        /// </summary>
+        /// <param name="currentEnergy">Ship energy pool right now.</param>
+        /// <param name="mounts">Weapon mount buffer (pose + combat + cooldown).</param>
+        /// <param name="fallbackDamage">
+        /// Used when a mount’s <c>FirePower</c> is unset (legacy / bake race).
+        /// </param>
+        /// <param name="fallbackFireRate">
+        /// Used when a mount’s <c>FireRate</c> is unset.
+        /// </param>
+        /// <param name="shots">
+        /// Caller-owned output (≥ <see cref="MaxShotsPerTick"/> or mount count). Filled from index 0.
+        /// </param>
+        /// <param name="shotCount">How many entries in <paramref name="shots"/> are valid.</param>
+        /// <param name="totalEnergySpend">Sum of energy costs for the planned shots.</param>
+        /// <returns>True when at least one mount should fire.</returns>
+        public static bool TryPlanIndependentFire(
+            float currentEnergy,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            float fallbackDamage,
+            float fallbackFireRate,
+            MountShot[] shots,
+            out int shotCount,
+            out float totalEnergySpend)
+        {
+            shotCount = 0;
+            totalEnergySpend = 0f;
+
+            if (mounts.Length <= 0 || shots == null || shots.Length <= 0)
                 return false;
 
-            // --- Per-barrel economy ---
-            // [TITAN-ORBIT] BulletDamage / EnergyCostPerShot are per barrel (averaged weapon firePower).
-            // Gun count must not change per-hit damage — only XY scale and ship/attribute levels do.
-            float energyCostPerMount = math.max(0.01f, energyCostPerBarrel);
-            float damagePerBullet = math.max(1f, bulletDamagePerBarrel);
-            float fullVolleyCost = energyCostPerMount * mountCount;
-            float cooldownSeconds = 1f / math.max(0.1f, fireRate);
+            float energyLeft = currentEnergy;
+            int capacity = math.min(mounts.Length, math.min(shots.Length, MaxShotsPerTick));
 
-            // --- Mode A: full volley (energy covers every muzzle at once) ---
-            if (currentEnergy >= fullVolleyCost)
+            // --- Each ready barrel spends its own firePower and arms its own cooldown ---
+            for (int i = 0; i < capacity; i++)
             {
-                plan.CanFire = true;
-                plan.IsFullVolley = true;
-                plan.StartMountIndex = 0;
-                plan.FireCount = mountCount;
-                plan.EnergySpend = fullVolleyCost;
-                plan.DamagePerBullet = damagePerBullet;
-                // Reset drip cursor so the first post-drain shot starts at mount 0.
-                plan.NextMountIndexAfter = 0;
-                plan.CooldownSeconds = cooldownSeconds;
-                return true;
+                ShipWeaponMountElement mount = mounts[i];
+                if (mount.FireCooldown > 0f)
+                    continue;
+
+                float damage = mount.FirePower > 0.01f
+                    ? mount.FirePower
+                    : math.max(0.1f, fallbackDamage);
+                float fireRate = mount.FireRate > 0.01f
+                    ? mount.FireRate
+                    : math.max(0.1f, fallbackFireRate);
+                float energyCost = math.max(0.01f, damage);
+
+                // [TITAN-ORBIT] Skip this barrel if the pool cannot afford it — cheaper guns may
+                // still fire later in the loop if they cost less.
+                if (energyLeft < energyCost)
+                    continue;
+
+                shots[shotCount++] = new MountShot
+                {
+                    MountIndex = i,
+                    Damage = math.max(1f, damage),
+                    EnergyCost = energyCost,
+                    CooldownSeconds = 1f / fireRate,
+                };
+                energyLeft -= energyCost;
+                totalEnergySpend += energyCost;
             }
 
-            // --- Mode B: round-robin drip (not enough for a full same-tick volley) ---
-            // [TITAN-ORBIT] Always exactly one mount per tick and +1 cursor. Firing multiple drip
-            // mounts (advance by FireCount) made 4-gun ships oscillate pairs 0,1 ↔ 2,3.
-            if (currentEnergy < energyCostPerMount)
-                return false;
-
-            int mountIdx = nextMountIndex;
-            if (mountIdx < 0)
-                mountIdx = 0;
-            mountIdx %= mountCount;
-
-            plan.CanFire = true;
-            plan.IsFullVolley = false;
-            plan.StartMountIndex = mountIdx;
-            plan.FireCount = 1;
-            plan.EnergySpend = energyCostPerMount;
-            plan.DamagePerBullet = damagePerBullet;
-            plan.NextMountIndexAfter = (mountIdx + 1) % mountCount;
-            plan.CooldownSeconds = cooldownSeconds;
-            return true;
+            return shotCount > 0;
         }
 
         /// <summary>
-        /// Resolves the mount index for the <paramref name="shotOrdinal"/>-th bullet in a planned fire.
-        /// Full volley uses 0..FireCount-1; drip is always <see cref="FirePlan.StartMountIndex"/>.
+        /// Ticks every mount’s <see cref="ShipWeaponMountElement.FireCooldown"/> down by dt.
+        /// Call once per frame before planning fire (server sim and client anticipation).
         /// </summary>
-        /// <param name="plan">Plan from <see cref="TryPlanFire"/>.</param>
-        /// <param name="shotOrdinal">0-based index within this fire tick (0 .. FireCount-1).</param>
-        /// <param name="mountCount">Total mounts (for wrap safety).</param>
-        /// <returns>Buffer index into <see cref="ShipWeaponMountElement"/>.</returns>
-        public static int ResolveMountIndex(in FirePlan plan, int shotOrdinal, int mountCount)
+        public static void TickMountCooldowns(DynamicBuffer<ShipWeaponMountElement> mounts, float dt)
         {
-            if (mountCount <= 0)
-                return 0;
+            if (mounts.Length <= 0 || dt <= 0f)
+                return;
 
-            if (plan.IsFullVolley)
-                return ((shotOrdinal % mountCount) + mountCount) % mountCount;
-
-            return plan.StartMountIndex;
+            for (int i = 0; i < mounts.Length; i++)
+            {
+                ShipWeaponMountElement mount = mounts[i];
+                if (mount.FireCooldown <= 0f)
+                    continue;
+                mount.FireCooldown = math.max(0f, mount.FireCooldown - dt);
+                mounts[i] = mount;
+            }
         }
     }
 }

@@ -195,8 +195,12 @@ namespace TitanOrbit.ECS
 
             // [TITAN-ORBIT] Weapons: live prefab bake first so multi-cannon upgrade hulls fire from
             // every Weapon child. Stale catalog WeaponMounts often had 0–1 entries while the GO
-            // showed 4 barrels — server then round-robined / volleyed a single muzzle.
+            // showed 4 barrels — server then only simulated a single muzzle.
             ApplyWeaponMounts(em, entity, entry, chassisPrefab);
+
+            // [TITAN-ORBIT] Pose bake clears combat fields — refill per-barrel firePower / fireRate
+            // from family Weapon stats × transform scale × ship level (same helper as ShipStatApply).
+            ShipStatApplyLogic.TryApplyPerMountWeaponCombat(em, entity, chassisId, ship.ShipLevel);
 
             // [TITAN-ORBIT] Wings: live prefab bake first so server pull radius matches the upgrade
             // hull the client draws beams from. Stale catalog lists caused “beam shows, no pull.”

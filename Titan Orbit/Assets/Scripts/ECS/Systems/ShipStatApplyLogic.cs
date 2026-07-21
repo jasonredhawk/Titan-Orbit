@@ -143,11 +143,15 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Sums component stats from the chassis prefab (or tier breakdown / family fallback)
-        /// at the given ship level. Output is base stats before attribute-upgrade multipliers.
+        /// at <b>level 1</b>. Callers must apply
+        /// <see cref="ShipComponentStoreData.GetEffectiveStatsAtShipLevel"/> for the live ship level.
+        /// <paramref name="shipLevel"/> is kept for API stability; scaling is intentionally not
+        /// applied here (double-apply bug: level 6 Weapon 3+1×5 became 13 instead of 8).
         /// </summary>
         public static bool TryGetBaseStatsForChassis(string chassisId, int shipLevel, out ShipComponentAbilityStats baseStats)
         {
             baseStats = default;
+            _ = shipLevel;
             var config = Config;
             if (config == null || string.IsNullOrEmpty(chassisId))
                 return false;
@@ -160,8 +164,11 @@ namespace TitanOrbit.ECS
             TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family);
 
             // [TITAN-ORBIT] Prefer summing stats from the baked chassis prefab hierarchy.
+            // Always sum at level 1 here — ApplyToShip / HUD call GetEffectiveStatsAtShipLevel
+            // once. Passing shipLevel into TrySumFromPrefab used to double-apply per-level growth
+            // (e.g. level 6 AstroEagle Weapon 3+1×5 became 13 instead of 8).
             if (tier.prefab != null && family != null &&
-                ShipFamilyStatsCalculator.TrySumFromPrefab(tier.prefab, family, shipLevel, out baseStats))
+                ShipFamilyStatsCalculator.TrySumFromPrefab(tier.prefab, family, shipLevel: 1, out baseStats))
                 return true;
 
             // Fallback: use tier power-score breakdown or family default stats.
@@ -170,18 +177,13 @@ namespace TitanOrbit.ECS
                 baseStats = ShipFamilyStatsCalculator.BreakdownToBaseStats(tier.powerScoreBreakdown);
                 if (family != null)
                 {
-                    // [TITAN-ORBIT] Older baked breakdowns summed bulletSpeed / fireRate / firePower
-                    // across every Weapon child (e.g. 4×12 speed, 4×6 RoF, 4×3 damage). Prefab sum
-                    // now uses max speed and average fire rate / fire power; until the catalog is
-                    // re-baked, force all three back to the family default baseline so multi-gun
-                    // hulls do not inherit N× cadence or N× per-hit damage.
+                    // [TITAN-ORBIT] Older baked breakdowns summed bulletSpeed across every Weapon
+                    // child (e.g. 4×12 speed). Prefab sum now uses max speed; until the catalog is
+                    // re-baked, force bullet speed (and leave firePower/fireRate as authored
+                    // breakdown totals — live shots use per-mount combat, not this hull block).
                     var familyDefaults = family.GetEffectiveDefaultFallbackStats();
                     if (familyDefaults.bulletSpeed > 0.01f)
                         baseStats.bulletSpeed = familyDefaults.bulletSpeed;
-                    if (familyDefaults.fireRate > 0.01f)
-                        baseStats.fireRate = familyDefaults.fireRate;
-                    if (familyDefaults.firePower > 0.01f)
-                        baseStats.firePower = familyDefaults.firePower;
                     baseStats = family.ApplyStatFallbacks(baseStats);
                 }
                 return true;
@@ -287,6 +289,8 @@ namespace TitanOrbit.ECS
             }
 
             // --- Weapon tuning (server-authoritative bullet sim reads these) ---
+            // Hull BulletDamage / FireRate are averages for HUD + fallback; live shots use
+            // per-mount FirePower / FireRate from ShipWeaponMountCombatLogic after this block.
             if (em.HasComponent<ShipWeaponConfig>(shipEntity))
             {
                 float firePower = Mathf.Max(0.1f, effective.firePower);
@@ -311,6 +315,11 @@ namespace TitanOrbit.ECS
                     weapon.ReferenceBulletSpeed = baselineSpeed;
                 em.SetComponentData(shipEntity, weapon);
             }
+
+            // --- Per-barrel combat (own firePower / fireRate — not hull average) ---
+            // [TITAN-ORBIT] Must run after ShipWeaponConfig write; overwrites BulletDamage/FireRate
+            // with averages of the mounts for HUD while each mount keeps its own shot strength.
+            TryApplyPerMountWeaponCombat(em, shipEntity, chassisId, shipLevel);
 
             // --- Bullet VFX bank from ShipFamilyDefinition.bulletPrefabIndex ---
             // [NETCODE] RuntimeBulletIndex is ghosted — server only; clients read replica for anticipation.
@@ -405,6 +414,56 @@ namespace TitanOrbit.ECS
                    + attrs.RotationSpeed
                    + attrs.GemCapacity
                    + attrs.PeopleCapacity;
+        }
+
+        /// <summary>
+        /// Writes each weapon mount’s own firePower / fireRate from the chassis prefab Weapon
+        /// children (scale × ship level × Fire Power attributes). No-ops when mounts are missing —
+        /// <see cref="ShipChassisCatalogApplySystem"/> rebuilds poses after this system, then
+        /// refreshes combat again.
+        /// </summary>
+        public static void TryApplyPerMountWeaponCombat(
+            EntityManager em,
+            Entity shipEntity,
+            string chassisId,
+            int shipLevel)
+        {
+            if (string.IsNullOrEmpty(chassisId) || !em.HasBuffer<ShipWeaponMountElement>(shipEntity))
+                return;
+
+            var config = Config;
+            if (config == null)
+                return;
+
+            var tier = config.GetTierEntryForChassisId(chassisId);
+            if (tier?.prefab == null)
+                return;
+
+            if (!TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family) || family == null)
+                return;
+
+            ShipAttributeUpgradeState attrs = default;
+            if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+
+            float fallbackDamage = 3f;
+            float fallbackRate = 3f;
+            if (em.HasComponent<ShipWeaponConfig>(shipEntity))
+            {
+                var weapon = em.GetComponentData<ShipWeaponConfig>(shipEntity);
+                fallbackDamage = Mathf.Max(0.1f, weapon.BulletDamage);
+                fallbackRate = Mathf.Max(0.1f, weapon.FireRate);
+            }
+
+            ShipWeaponMountCombatLogic.TryApplyCombatStatsToMounts(
+                em,
+                shipEntity,
+                tier.prefab,
+                family,
+                shipLevel,
+                in attrs,
+                fallbackDamage,
+                fallbackRate);
         }
 
         /// <summary>

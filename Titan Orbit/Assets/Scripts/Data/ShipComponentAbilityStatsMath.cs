@@ -6,9 +6,10 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// Pure math helpers for <see cref="ShipComponentAbilityStats"/> — addition, zero checks, fallback fill,
-    /// transform-based scaling, weapon projectile-speed aggregation (max, not sum), weapon fire-power
-    /// and fire-rate aggregation (average, not sum), and component-id classification (weapon vs engine
-    /// vs thruster). No Unity scene access; safe to call from editor tooling and runtime stat pipelines.
+    /// transform-based scaling, weapon projectile-speed aggregation (max, not sum), and component-id
+    /// classification (weapon vs engine vs thruster). Fire power / fire rate stay as field-wise sums
+    /// for power-score totals; live bullets use per-mount stats instead. No Unity scene access; safe
+    /// to call from editor tooling and runtime stat pipelines.
     /// </summary>
     public static class ShipComponentAbilityStatsMath
     {
@@ -16,10 +17,9 @@ namespace TitanOrbit.Data
         public static ShipComponentAbilityStats Add(ShipComponentAbilityStats a, ShipComponentAbilityStats b)
         {
             // --- Add ---
-            // [TITAN-ORBIT] firePower / fireRate / bulletSpeed are summed here, then corrected by
-            // ApplyWeaponFirePowerToSummedStats / ApplyWeaponFireRateToSummedStats /
-            // ApplyWeaponProjectileSpeedToSummedStats after the prefab walk — naive Add alone would
-            // multiply damage, RoF, and speed by gun count.
+            // [TITAN-ORBIT] firePower / fireRate are summed for hull power-score capacity.
+            // Per-bullet damage and per-barrel cadence come from ShipWeaponMountElement, not this total.
+            // bulletSpeed is corrected by ApplyWeaponProjectileSpeedToSummedStats (max, not sum).
             return new ShipComponentAbilityStats
             {
                 firePower = a.firePower + b.firePower,
@@ -65,10 +65,9 @@ namespace TitanOrbit.Data
         /// <para>
         /// [TITAN-ORBIT] Bullet speed is a per-projectile property (legacy <c>WeaponConfig</c> ~12–20).
         /// Field-wise <see cref="Add"/> turns a 6-gun hull into 6× speed (e.g. 72) — top-tier free
-        /// ships then shoot lasers. Fire power and fire rate are averaged separately; projectile
-        /// speed uses max (fastest barrel). Player speed growth is attribute upgrades / Shard cards
-        /// only (<see cref="ShipComponentStoreData.GetEffectiveStatsAtShipLevel"/> also skips
-        /// <c>bulletSpeedPerLevel</c> for chassis leveling).
+        /// ships then shoot lasers. Projectile speed uses max (fastest barrel). Player speed growth
+        /// is attribute upgrades / Shard cards only (<see cref="ShipComponentStoreData.GetEffectiveStatsAtShipLevel"/>
+        /// also skips <c>bulletSpeedPerLevel</c> for chassis leveling).
         /// </para>
         /// Call after summing scaled component stats (same slot as propulsion aggregation).
         /// </summary>
@@ -112,116 +111,40 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Replaces naively summed weapon <c>firePower</c> with the <b>average</b> across weapon parts.
+        /// Intentionally keeps naively summed weapon <c>firePower</c> (total across barrels).
         /// <para>
-        /// [TITAN-ORBIT] Each barrel fires the same per-bullet damage. Field-wise <see cref="Add"/>
-        /// turns a 4-gun ship into 4× firePower; with the old “sum then ÷ mounts” fire planner that
-        /// cancelled for identical guns, but mixed scales and UI/power scores still read N× damage.
-        /// Hull <c>ShipWeaponConfig.BulletDamage</c> is now this average (scale-adjusted). Gun count
-        /// must not multiply damage — XY mesh scale and ship-level <c>firePowerPerLevel</c> still do.
+        /// [TITAN-ORBIT] Live bullets use <b>per-mount</b> firePower from
+        /// <c>ShipWeaponMountCombatLogic</c> — not this hull total. The summed value is for power
+        /// score / UI “how much gun does this hull carry.” Older code averaged here so a single
+        /// shared <c>ShipWeaponConfig.BulletDamage</c> would not N×; that is obsolete.
         /// </para>
-        /// Call after summing scaled component stats (same slot as fire-rate aggregation).
         /// </summary>
-        /// <param name="total">Hull totals after naive field-wise sum (fire power still N×).</param>
-        /// <param name="componentIds">Matched prefab child component ids (parallel to stats).</param>
-        /// <param name="perComponentStats">Per-child scaled stats before aggregation fixes.</param>
-        /// <returns>Same totals with weapon firePower / firePowerPerLevel replaced by the weapon average.</returns>
         public static ShipComponentAbilityStats ApplyWeaponFirePowerToSummedStats(
             ShipComponentAbilityStats total,
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
         {
-            if (componentIds == null || perComponentStats == null)
-                return total;
-
-            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
-            if (count == 0)
-                return total;
-
-            float powerSum = 0f;
-            float powerPerLevelSum = 0f;
-            int weaponCount = 0;
-
-            // --- Peel weapon fire-power contributions out of the naive sum ---
-            for (int i = 0; i < count; i++)
-            {
-                if (!IsWeaponComponent(componentIds[i]))
-                    continue;
-
-                ShipComponentAbilityStats s = perComponentStats[i];
-                total.firePower -= s.firePower;
-                total.firePowerPerLevel -= s.firePowerPerLevel;
-                powerSum += s.firePower;
-                powerPerLevelSum += s.firePowerPerLevel;
-                weaponCount++;
-            }
-
-            if (weaponCount <= 0)
-                return total;
-
-            // --- One per-bullet fire power: mean of scale-adjusted weapon powers (not N× sum) ---
-            float avgPower = powerSum / weaponCount;
-            float avgPowerPerLevel = powerPerLevelSum / weaponCount;
-            total.firePower = Mathf.Max(0f, total.firePower) + avgPower;
-            total.firePowerPerLevel = Mathf.Max(0f, total.firePowerPerLevel) + avgPowerPerLevel;
+            // --- Keep sum (per-bullet damage lives on each ShipWeaponMountElement) ---
+            _ = componentIds;
+            _ = perComponentStats;
             return total;
         }
 
         /// <summary>
-        /// Replaces naively summed weapon <c>fireRate</c> with the <b>average</b> across weapon parts.
+        /// Intentionally keeps naively summed weapon <c>fireRate</c> (total across barrels).
         /// <para>
-        /// [TITAN-ORBIT] Ship fire cadence is one shared cooldown (<c>ShipWeaponConfig.FireRate</c>)
-        /// for the whole hull. Field-wise <see cref="Add"/> turns a 4-gun ship into 4× RoF, and full
-        /// volleys then fire all mounts every tick — bullets/sec scales ~N². Per-weapon transform
-        /// scale still matters: <see cref="ScaleStatsByTransform"/> uses Z depth so fatter guns
-        /// shoot slower — those scaled rates are averaged here, not multiplied by count.
+        /// [TITAN-ORBIT] Live fire uses <b>per-mount</b> fireRate / FireCooldown so a fat cannon
+        /// can shoot slowly while side guns shoot fast. Hull sum is for power-score capacity only.
         /// </para>
-        /// Call after summing scaled component stats (same slot as projectile-speed aggregation).
         /// </summary>
-        /// <param name="total">Hull totals after naive field-wise sum (fire rates still N×).</param>
-        /// <param name="componentIds">Matched prefab child component ids (parallel to stats).</param>
-        /// <param name="perComponentStats">Per-child scaled stats before aggregation fixes.</param>
-        /// <returns>Same totals with weapon fireRate / fireRatePerLevel replaced by the weapon average.</returns>
         public static ShipComponentAbilityStats ApplyWeaponFireRateToSummedStats(
             ShipComponentAbilityStats total,
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
         {
-            if (componentIds == null || perComponentStats == null)
-                return total;
-
-            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
-            if (count == 0)
-                return total;
-
-            float rateSum = 0f;
-            float ratePerLevelSum = 0f;
-            int weaponCount = 0;
-
-            // --- Peel weapon fire-rate contributions out of the naive sum ---
-            // [STANDARD] Subtract each weapon's scaled rate, then write back a single average so
-            // non-weapon leftovers (if any) in total.fireRate are preserved.
-            for (int i = 0; i < count; i++)
-            {
-                if (!IsWeaponComponent(componentIds[i]))
-                    continue;
-
-                ShipComponentAbilityStats s = perComponentStats[i];
-                total.fireRate -= s.fireRate;
-                total.fireRatePerLevel -= s.fireRatePerLevel;
-                rateSum += s.fireRate;
-                ratePerLevelSum += s.fireRatePerLevel;
-                weaponCount++;
-            }
-
-            if (weaponCount <= 0)
-                return total;
-
-            // --- One hull fire rate: mean of scale-adjusted weapon rates (not N× sum) ---
-            float avgRate = rateSum / weaponCount;
-            float avgRatePerLevel = ratePerLevelSum / weaponCount;
-            total.fireRate = Mathf.Max(0f, total.fireRate) + avgRate;
-            total.fireRatePerLevel = Mathf.Max(0f, total.fireRatePerLevel) + avgRatePerLevel;
+            // --- Keep sum (per-barrel cadence lives on each ShipWeaponMountElement) ---
+            _ = componentIds;
+            _ = perComponentStats;
             return total;
         }
 
@@ -357,10 +280,8 @@ namespace TitanOrbit.Data
         /// Propulsion move/accel ignore scale; turn and ramming are never scaled.
         /// <para>
         /// [TITAN-ORBIT] Art size is the intentional combat lever for per-gun feel (fatter barrel →
-        /// slower cadence, wider barrel → harder hit). Hull fire power and fire rate after the prefab
-        /// walk are the <b>averages</b> of these scaled weapon values — adding more guns does not
-        /// multiply damage or RoF (see <see cref="ApplyWeaponFirePowerToSummedStats"/> /
-        /// <see cref="ApplyWeaponFireRateToSummedStats"/>).
+        /// slower cadence, wider barrel → harder hit). Those scaled values are written onto each
+        /// <c>ShipWeaponMountElement</c> for independent firing — hull power-score still sums them.
         /// </para>
         /// </summary>
         public static ShipComponentAbilityStats ScaleStatsByTransform(
@@ -376,7 +297,7 @@ namespace TitanOrbit.Data
             if (IsWeaponComponent(componentId))
             {
                 // [TITAN-ORBIT] Wider weapon mesh → more fire power; deeper (Z) mesh → slower fire rate.
-                // These scaled values feed hull averages — they are not summed into N× damage/RoF.
+                // Written onto each ShipWeaponMountElement for independent barrels.
                 float firePowerScale = (x + y) * 0.5f;
                 float fireRateScale = 1f / z;
                 return new ShipComponentAbilityStats

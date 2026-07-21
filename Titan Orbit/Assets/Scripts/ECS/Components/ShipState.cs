@@ -101,19 +101,21 @@ namespace TitanOrbit.ECS
         /// </summary>
         public const float DefaultBulletMaxDistance = 30f;
 
-        /// <summary>[TITAN-ORBIT] Minimum seconds between shots.</summary>
+        /// <summary>[TITAN-ORBIT] Minimum seconds between shots (HUD / fallback — live fire uses per-mount FireRate).</summary>
         public float FireRate;
 
         /// <summary>[TITAN-ORBIT] Bullet speed in world units per second.</summary>
         public float BulletSpeed;
 
-        /// <summary>[TITAN-ORBIT] Damage per bullet on hit (per barrel — not a multi-gun total).</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Average damage per bullet across mounts (HUD / fallback).
+        /// Live shots read each <see cref="ShipWeaponMountElement.FirePower"/>.
+        /// </summary>
         public float BulletDamage;
 
         /// <summary>
-        /// [TITAN-ORBIT] Energy spent per barrel / per bullet (matches per-barrel firePower).
-        /// A full volley spends this × mount count via <see cref="ShipWeaponFireLogic"/>.
-        /// Round-robin drip spends this once per single-barrel shot.
+        /// [TITAN-ORBIT] Average energy per barrel (HUD / fallback). Live spend uses each
+        /// mount’s firePower via <see cref="ShipWeaponFireLogic"/>.
         /// </summary>
         public float EnergyCostPerShot;
 
@@ -168,19 +170,16 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [ECS/DOTS] Per-ship weapon cooldown and round-robin drip cursor (server sim).
-    /// Written by <see cref="BulletSimulationSystem"/> via <see cref="ShipWeaponFireLogic"/>.
+    /// [ECS/DOTS] Legacy hull-wide weapon cooldown / drip cursor. Live fire now uses per-mount
+    /// <see cref="ShipWeaponMountElement.FireCooldown"/> via <see cref="ShipWeaponFireLogic"/>.
+    /// Kept on ships for ghost/prefab compatibility; new code should not write these fields.
     /// </summary>
     public struct ShipWeaponState : IComponentData
     {
-        /// <summary>[UNITY] Seconds until the next fire tick is allowed (volley or drip).</summary>
+        /// <summary>[LEGACY] Prefer per-mount <see cref="ShipWeaponMountElement.FireCooldown"/>.</summary>
         public float FireCooldown;
 
-        /// <summary>
-        /// [TITAN-ORBIT] Round-robin mount index used only when energy cannot cover a full volley.
-        /// <see cref="ShipWeaponFireLogic"/> fires exactly one mount from this cursor, then advances
-        /// +1 (0→1→2→…→0). Reset to 0 after a full same-tick volley.
-        /// </summary>
+        /// <summary>[LEGACY] Round-robin cursor from the old shared-cooldown drip planner.</summary>
         public int NextMountIndex;
     }
 
