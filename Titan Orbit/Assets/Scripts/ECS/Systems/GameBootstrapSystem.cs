@@ -438,21 +438,22 @@ namespace TitanOrbit.ECS
             SetOrAddComponent(em, e, moonState);
         }
 
+        /// <summary>
+        /// Instantiates one asteroid from the map queue with full gem capacity (including MaxGems for respawn).
+        /// </summary>
         void SpawnAsteroid(ref SystemState state, float3 pos, float3 scale, float gemValue)
         {
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Asteroid == Entity.Null)
                 return;
-            var em = state.EntityManager;
-            var e = em.Instantiate(prefabs.Asteroid);
-            float uniformScale = math.cmax(scale);
-            em.SetComponentData(e, LocalTransform.FromPositionRotationScale(pos, quaternion.identity, uniformScale));
-            SetOrAddComponent(em, e, new AsteroidState
-            {
-                RemainingGems = gemValue,
-                Health = gemValue,
-            });
-            if (!em.HasComponent<AsteroidTag>(e))
-                em.AddComponent<AsteroidTag>(e);
+
+            // --- Shared spawn path (same as timed respawn) ---
+            // [TITAN-ORBIT] MaxGems is stored so destroy→respawn restores the original capacity.
+            AsteroidSpawning.Spawn(
+                state.EntityManager,
+                prefabs.Asteroid,
+                pos,
+                math.cmax(scale),
+                gemValue);
         }
 
         static void SetOrAddComponent<T>(EntityManager em, Entity e, T value) where T : unmanaged, IComponentData

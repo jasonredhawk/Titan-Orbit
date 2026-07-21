@@ -89,6 +89,37 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// ISystem helper: ServerTick seconds from this world's EntityManager, or <paramref name="fallbackElapsed"/>.
+        /// Prefer over World.Time for gem lifetime stamps and anything that must match late-join clients.
+        /// </summary>
+        /// <param name="em">World EntityManager (server or client).</param>
+        /// <param name="fallbackElapsed">Used when NetworkTime is not ready (usually World.Time.ElapsedTime).</param>
+        /// <param name="includeTickFraction">False for sim stamps; true for presentation smoothing.</param>
+        /// <returns>Seconds on the ServerTick timeline, or the fallback.</returns>
+        public static float GetElapsedSecondsOrFallback(
+            EntityManager em,
+            double fallbackElapsed,
+            bool includeTickFraction = false)
+        {
+            // --- NetworkTime singleton ---
+            // [NETCODE] Allocates a short-lived query — call once per system OnUpdate, not per entity.
+            using var timeQuery = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkTime>());
+            if (!timeQuery.TryGetSingleton<NetworkTime>(out var networkTime) || !networkTime.ServerTick.IsValid)
+                return (float)fallbackElapsed;
+
+            // --- Sim Hz (usually 60) ---
+            int hz = FallbackSimulationHz;
+            using var rateQuery = em.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>());
+            if (rateQuery.TryGetSingleton<ClientServerTickRate>(out var tickRate)
+                && tickRate.SimulationTickRate > 0)
+            {
+                hz = tickRate.SimulationTickRate;
+            }
+
+            return (float)ToElapsedSeconds(networkTime, hz, includeTickFraction);
+        }
+
+        /// <summary>
         /// MonoBehaviour / hybrid helper: prefer ClientWorld (matches predicted colliders), else ServerWorld.
         /// </summary>
         /// <param name="elapsedSeconds">Orbit elapsed when true.</param>

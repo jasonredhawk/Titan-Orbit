@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using TitanOrbit.Data;
+using TitanOrbit.Simulation;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -8,7 +10,8 @@ namespace TitanOrbit.Game
     /// [HYBRID] Instantiates gem crystal prefabs as ECS presentation proxies for
     /// <see cref="EcsWorldVisualizer"/> and <see cref="ClientGemBurstPresenter"/>.
     /// Strips NGO/legacy components, applies a readable red tint, and scales mesh by gem value.
-    /// Render only — sim value lives on <see cref="GemState"/>.
+    /// Render only — sim value lives on ECS <c>GemState</c>. Applies end-of-life shrink
+    /// (original Gem.shrinkDuration) when spawn time + settings are provided.
     /// </summary>
     public static class GemVisualApplier
     {
@@ -27,6 +30,15 @@ namespace TitanOrbit.Game
         /// </summary>
         static readonly Color GemTintColor = new Color(1f, 0.2f, 0.2f, 0.55f);
 
+        /// <summary>
+        /// Shared tinted material for all gem proxies. Creating <c>renderer.material</c> per Instantiates
+        /// allocated a new Material on every burst gem and hitchs destroy frames — reuse one instance.
+        /// </summary>
+        static Material s_sharedTintedGemMaterial;
+
+        /// <summary>True after <see cref="PrewarmSharedTint"/> ran (shader/material setup done off the destroy frame).</summary>
+        static bool s_prewarmed;
+
         /// <summary>MonoBehaviour types removed so the proxy is a pure visual shell.</summary>
         static readonly HashSet<string> StripComponentNames = new HashSet<string>
         {
@@ -35,6 +47,30 @@ namespace TitanOrbit.Game
             "ToroidalRenderer",
             "Gem",
         };
+
+        /// <summary>
+        /// [TITAN-ORBIT] Builds the shared URP tint material before the first asteroid destroy.
+        /// debug-604d3d post-fix: first gem Instantiates after settle hitchs 40–47ms (feels like a blink)
+        /// while camera/tiles stay stable — shader/material setup on the destroy frame is the suspect.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        static void PrewarmSharedTint()
+        {
+            if (s_prewarmed)
+                return;
+            s_prewarmed = true;
+
+            GameObject prefab = LoadDefaultGemPrefab();
+            if (prefab == null)
+                return;
+
+            // --- One throwaway Instantiates so URP keywords compile off the hot path ---
+            if (!TryCreateGemVisual(prefab, 1f, out GameObject warmup) || warmup == null)
+                return;
+            warmup.name = "GemTintPrewarm";
+            warmup.SetActive(false);
+            Object.Destroy(warmup);
+        }
 
         /// <summary>
         /// Creates a stripped gem proxy at default scale for the given gem value.
@@ -50,6 +86,8 @@ namespace TitanOrbit.Game
             if (gemPrefab == null)
                 return false;
 
+            bool firstMaterial = s_sharedTintedGemMaterial == null;
+
             // --- Instantiate legacy prefab and strip sim/network components ---
             instance = Object.Instantiate(gemPrefab);
             instance.name = "GemTagProxy";
@@ -57,6 +95,14 @@ namespace TitanOrbit.Game
             ApplyGemTint(instance);
             float scale = ComputeVisualScale(gemValue);
             instance.transform.localScale = Vector3.one * scale;
+
+            // #region agent log
+            if (firstMaterial)
+            {
+                AsteroidDestroyBlinkProbe.NotifyGemWork(
+                    $"gemMaterialFirstCreate frame={Time.frameCount}");
+            }
+            // #endregion
             return true;
         }
 
@@ -65,6 +111,27 @@ namespace TitanOrbit.Game
         {
             float t = Mathf.InverseLerp(MinGemValue, MaxGemValue, gemValue);
             return Mathf.Lerp(ScaleAtMinValue, ScaleAtMaxValue, t);
+        }
+
+        /// <summary>
+        /// Value scale × lifetime shrink (original: full size until last 3s, then linear to zero).
+        /// </summary>
+        /// <param name="gemValue">Authoritative gem value.</param>
+        /// <param name="spawnServerTime">Ghosted <c>GemState.SpawnServerTime</c> (ServerTick seconds).</param>
+        /// <param name="nowServerTime">Current ServerTick seconds (via <c>PlanetGemMoonOrbitClock</c>).</param>
+        public static float ComputeLifetimeVisualScale(float gemValue, float spawnServerTime, float nowServerTime)
+        {
+            float baseScale = ComputeVisualScale(Mathf.Max(0.25f, gemValue));
+            if (spawnServerTime <= 0f)
+                return baseScale;
+
+            var settings = GemExplosionSettingsCache.ResolveOrDefault();
+            float mul = GemExplosionMath.LifetimeScaleMultiplier(
+                spawnServerTime,
+                nowServerTime,
+                settings.GemLifetimeSeconds,
+                settings.GemShrinkDurationSeconds);
+            return baseScale * mul;
         }
 
         /// <summary>Estimated world diameter when proxy renderer bounds are unavailable.</summary>
@@ -89,13 +156,11 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Tints the gem mesh red and configures URP Lit for real alpha blending.
+        /// Uses one shared material for all gems (no per-Instantiates Material alloc).
         /// </summary>
         /// <remarks>
-        /// [TITAN-ORBIT] Bug (2026-07-20): setting only <c>_Surface = 1</c> + blend floats without
-        /// enabling <c>_SURFACE_TYPE_TRANSPARENT</c> leaves URP Lit in a broken opaque/transparent
-        /// hybrid. Those meshes draw near-black. When an asteroid is destroyed, up to
-        /// <see cref="Data.GemExplosionSettings.MaxGemCount"/> local gems Instantiates at once
-        /// near the camera — that looked like a full-screen dark wash (easy to blame on bullet impact VFX).
+        /// [TITAN-ORBIT] Incomplete URP transparent setup used to draw near-black meshes.
+        /// Full keyword/blend setup is applied once on <see cref="s_sharedTintedGemMaterial"/>.
         /// </remarks>
         /// <param name="root">Gem proxy root (may have a child MeshRenderer).</param>
         static void ApplyGemTint(GameObject root)
@@ -104,28 +169,45 @@ namespace TitanOrbit.Game
             if (renderer == null)
                 return;
 
-            // --- Instance the material so we do not mutate the shared TitanOrbit_Gem asset ---
             renderer.shadowCastingMode = ShadowCastingMode.Off;
-            Material material = renderer.material;
 
-            // --- Color ---
+            // --- Build shared tinted material once from the prefab's sharedMaterial ---
+            if (s_sharedTintedGemMaterial == null)
+            {
+                Material source = renderer.sharedMaterial != null
+                    ? renderer.sharedMaterial
+                    : renderer.material;
+                s_sharedTintedGemMaterial = new Material(source)
+                {
+                    name = "TitanOrbit_GemTinted_Shared",
+                };
+                ConfigureUrpTransparentTint(s_sharedTintedGemMaterial);
+            }
+
+            // [UNITY] sharedMaterial — all gems share one Material; no per-gem .material clone.
+            renderer.sharedMaterial = s_sharedTintedGemMaterial;
+        }
+
+        /// <summary>
+        /// Writes URP Lit transparent + red tint onto <paramref name="material"/> (once at shared create).
+        /// </summary>
+        static void ConfigureUrpTransparentTint(Material material)
+        {
             if (material.HasProperty("_BaseColor"))
                 material.SetColor("_BaseColor", GemTintColor);
             if (material.HasProperty("_Color"))
                 material.SetColor("_Color", GemTintColor);
             material.color = GemTintColor;
 
-            // --- Full URP Lit transparent setup (keywords + blend + queue) ---
-            // [UNITY] URP Lit ignores half of the float toggles unless the matching keywords / tags
-            // are set — incomplete setup is a common source of black transparent meshes.
+            // [UNITY] URP Lit needs keywords + blend + queue together — floats alone are not enough.
             if (material.HasProperty("_Surface"))
                 material.SetFloat("_Surface", 1f);
             if (material.HasProperty("_Blend"))
-                material.SetFloat("_Blend", 0f); // 0 = Alpha blend
+                material.SetFloat("_Blend", 0f);
             if (material.HasProperty("_AlphaClip"))
                 material.SetFloat("_AlphaClip", 0f);
             if (material.HasProperty("_Mode"))
-                material.SetFloat("_Mode", 3f); // Legacy Built-in transparent enum (harmless on URP)
+                material.SetFloat("_Mode", 3f);
 
             material.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
             material.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);

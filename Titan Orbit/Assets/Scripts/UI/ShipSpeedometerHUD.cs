@@ -3,6 +3,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
+using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using TMPro;
 using Unity.Entities;
@@ -86,6 +87,19 @@ namespace TitanOrbit.UI
 
         /// <summary>Last max-accel scale used for accel tick labels.</summary>
         float lastTickAccelSkew = -1f;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Cached HUD snapshot — GhostSpawnBacklog skips full ship entity lookups, which
+        /// used to SetActive(false) the speedometer for a frame on asteroid destroy (gem Instantiates).
+        /// </summary>
+        bool _hasHudCache;
+        ShipState _cachedShip;
+        ShipMotorConfig _cachedMotor;
+        ShipKinematics _cachedKinematics;
+        ShipWeaponConfig _cachedWeapon;
+        ShipComponentAbilityStats _cachedEffectiveStats;
+        Entity _cachedShipEntity;
+        bool _lastShowLogged = true;
 
         /// <summary>Throttle rich-text rebuilds — string allocs every LateUpdate show up as GC.Alloc.</summary>
         float nextTextRebuildTime;
@@ -407,8 +421,50 @@ namespace TitanOrbit.UI
                 return false;
 
             var em = world.EntityManager;
+
+            // --- Tiny tagged lookup first (safe during GhostSpawnBacklog) ---
+            // [TITAN-ORBIT] TryGetLocalShipEntity scans all ships and is gated off during Instantiates.
+            // LocalPlayerShipTag is a singleton-style tag — CalculateEntityCount/GetSingletonEntity only.
+            using (var tagged = em.CreateEntityQuery(
+                       typeof(LocalPlayerShipTag),
+                       typeof(ShipState),
+                       typeof(ShipMotorConfig),
+                       typeof(ShipKinematics)))
+            {
+                if (tagged.CalculateEntityCount() == 1)
+                {
+                    shipEntity = tagged.GetSingletonEntity();
+                    return FillHudDataFromEntity(
+                        em, shipEntity, out ship, out motor, out kinematics, out weapon, out effectiveStats);
+                }
+            }
+
+            // --- Broader resolve (skipped during Settling / GhostSpawnBacklog — Crash!!! risk) ---
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out shipEntity))
                 return false;
+
+            return FillHudDataFromEntity(
+                em, shipEntity, out ship, out motor, out kinematics, out weapon, out effectiveStats);
+        }
+
+        /// <summary>Reads motor/kinematics/weapon/stats from a resolved ship entity.</summary>
+        static bool FillHudDataFromEntity(
+            EntityManager em,
+            Entity shipEntity,
+            out ShipState ship,
+            out ShipMotorConfig motor,
+            out ShipKinematics kinematics,
+            out ShipWeaponConfig weapon,
+            out ShipComponentAbilityStats effectiveStats)
+        {
+            ship = default;
+            motor = default;
+            kinematics = default;
+            weapon = default;
+            effectiveStats = default;
 
             if (!em.HasComponent<ShipState>(shipEntity) ||
                 !em.HasComponent<ShipMotorConfig>(shipEntity) ||
@@ -555,6 +611,32 @@ namespace TitanOrbit.UI
                 out ShipComponentAbilityStats effectiveStats,
                 out Entity shipEntity);
 
+            // --- Hold last good snapshot during GhostSpawnBacklog ---
+            // Tagged lookup usually succeeds; if LocalPlayerShipTag is briefly missing while pose stays,
+            // keep showing cached numbers instead of SetActive(false) for one frame.
+            if (hasShip)
+            {
+                _hasHudCache = true;
+                _cachedShip = ship;
+                _cachedMotor = motor;
+                _cachedKinematics = kinematics;
+                _cachedWeapon = weapon;
+                _cachedEffectiveStats = effectiveStats;
+                _cachedShipEntity = shipEntity;
+            }
+            else if (_hasHudCache &&
+                     (EcsGameBridge.HasLocalPlayerShip() || ShipDisplayPose.HasLocalPose) &&
+                     !ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+            {
+                ship = _cachedShip;
+                motor = _cachedMotor;
+                kinematics = _cachedKinematics;
+                weapon = _cachedWeapon;
+                effectiveStats = _cachedEffectiveStats;
+                shipEntity = _cachedShipEntity;
+                hasShip = true;
+            }
+
             bool show = hasShip &&
                         !ship.IsDead &&
                         !ship.AwaitingTeamSelection &&
@@ -562,6 +644,19 @@ namespace TitanOrbit.UI
                         !ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
             if (HUDController.ShipUpgradeTreeObscuresHud)
                 show = false;
+
+            // #region agent log
+            if (show != _lastShowLogged)
+            {
+                AsteroidDestroyBlinkProbe.NotifySpeedometerVisibility(
+                    show,
+                    hasShip,
+                    _hasHudCache,
+                    ClientJoinSettleCache.GhostSpawnBacklog,
+                    ClientJoinSettleCache.ShouldSkipShipEntityQueries);
+                _lastShowLogged = show;
+            }
+            // #endregion
 
             // --- Visibility and layout refresh ---
             rootPanel.SetActive(show);

@@ -21,8 +21,15 @@ namespace TitanOrbit.Core
         [Tooltip("When enabled, the moon orbit ship upgrade tree unlocks every node. Click any ship to try it for free (local Editor / development only).")]
         [SerializeField] bool debugFreeShipUpgradeTree;
 
+        [Header("Debug — Asteroid Destroy Hitch")]
+        [Tooltip("Logs [AsteroidDestroy] timings in the Console when an asteroid explodes (local gem Instantiates + urgent gem proxies). Filter the Console with that tag.")]
+        [SerializeField] bool debugLogAsteroidDestroyPerf = true;
+
         /// <summary>True when designers enabled free upgrades in the Inspector (client + local-host convenience).</summary>
         public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
+
+        /// <summary>True when asteroid-destroy hitch logging is enabled in the Inspector.</summary>
+        public bool DebugLogAsteroidDestroyPerf => debugLogAsteroidDestroyPerf;
 
         /// <summary>
         /// Safe static check used by moon orbit UI. Also true when the Shared flag was published
@@ -96,6 +103,7 @@ namespace TitanOrbit.Core
             {
                 Instance = null;
                 TitanOrbitDebugFlags.FreeShipUpgradeTree = false;
+                TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
             }
         }
 
@@ -106,6 +114,7 @@ namespace TitanOrbit.Core
         {
             // [TITAN-ORBIT] ECS MoonOrbitStoreSystem cannot reference TitanOrbit.Core — Shared bridge.
             TitanOrbitDebugFlags.FreeShipUpgradeTree = debugFreeShipUpgradeTree;
+            TitanOrbitDebugFlags.LogAsteroidDestroyPerf = debugLogAsteroidDestroyPerf;
         }
     }
 }

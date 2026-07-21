@@ -90,6 +90,9 @@ namespace TitanOrbit.ECS
                 return;
 
             float dt = SystemAPI.Time.DeltaTime;
+            // [NETCODE] ServerTick seconds — matches client shrink / despawn (not World.Time).
+            float spawnServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
+                state.EntityManager, SystemAPI.Time.ElapsedTime);
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
             if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
@@ -138,7 +141,14 @@ namespace TitanOrbit.ECS
                     }
 
                     asteroidState.ValueRW = a;
-                    GemSpawning.Spawn(ecb, prefabs.Gem, asteroidTransform.ValueRO.Position, mined, (uint)asteroidEntity.Index, burst: false);
+                    GemSpawning.Spawn(
+                        ecb,
+                        prefabs.Gem,
+                        asteroidTransform.ValueRO.Position,
+                        mined,
+                        (uint)asteroidEntity.Index,
+                        burst: false,
+                        spawnServerTime);
                 }
             }
 
@@ -194,12 +204,59 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// Server: despawns loose gems after their lifetime (original Gem.lifetimeSeconds = 20).
+    /// Runs after motion so expired gems are removed before pickup that same tick is irrelevant.
+    /// Shrink is presentation-only on clients via <see cref="GemState.SpawnServerTime"/>.
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(GemMotionSystem))]
+    [UpdateAfter(typeof(AsteroidDestructionSystem))]
+    public partial struct GemLifetimeDespawnSystem : ISystem
+    {
+        /// <summary>Destroys gems whose elapsed life exceeds <see cref="GemExplosionSettings.GemLifetimeSeconds"/>.</summary>
+        public void OnUpdate(ref SystemState state)
+        {
+            var settings = GemExplosionSettingsCache.ResolveOrDefault();
+            settings.ClampCounts();
+            float lifetime = settings.GemLifetimeSeconds;
+            // [NETCODE] Same ServerTick timeline stamped at spawn (late-join safe).
+            float now = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
+                state.EntityManager, SystemAPI.Time.ElapsedTime);
+
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
+
+            // --- Expire uncollected gems ---
+            // [TITAN-ORBIT] Matches NGO Gem.FixedUpdate: elapsed >= lifetimeSeconds → Despawn.
+            foreach (var (gemState, gemEntity) in SystemAPI
+                         .Query<RefRO<GemState>>()
+                         .WithAll<GemTag>()
+                         .WithEntityAccess())
+            {
+                float spawnTime = gemState.ValueRO.SpawnServerTime;
+                // Baked prefab default is 0 until spawn overwrites — skip unset stamps.
+                if (spawnTime <= 0f)
+                    continue;
+
+                if (now - spawnTime < lifetime)
+                    continue;
+
+                ecb.DestroyEntity(gemEntity);
+            }
+
+            ecb.Playback(state.EntityManager);
+            ecb.Dispose();
+        }
+    }
+
+    /// <summary>
     /// Server: collects gems into ship cargo when within hull or wing tractor pickup radius.
     /// Runs after <see cref="GemTractorBeamSystem"/> so pulled gems can be collected at wings.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(AsteroidDestructionSystem))]
+    [UpdateAfter(typeof(GemLifetimeDespawnSystem))]
     public partial struct GemPickupSystem : ISystem
     {
         public void OnUpdate(ref SystemState state)
@@ -458,8 +515,9 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server: when an asteroid is destroyed, spawns N gem entities (Editor min–max on
     /// <see cref="GemExplosionSettings"/>) that sum to leftover <see cref="AsteroidState.RemainingGems"/>,
-    /// with original NGO explosion speed, damping, and tumble. Clients also play an immediate
-    /// local burst via <c>ClientGemBurstPresenter</c> so visuals do not wait on GhostSpawn Instantiates.
+    /// with original NGO explosion speed, damping, and tumble. Schedules a timed respawn
+    /// (<see cref="AsteroidSpawning.ScheduleRespawn"/>) then destroys the entity.
+    /// Clients also play an immediate local burst via <c>ClientGemBurstPresenter</c>.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -467,11 +525,17 @@ namespace TitanOrbit.ECS
     [UpdateAfter(typeof(MiningSystem))]
     public partial struct AsteroidDestructionSystem : ISystem
     {
+        /// <summary>Requires gem prefab and ensures the respawn queue singleton exists.</summary>
         public void OnCreate(ref SystemState state)
         {
+            AsteroidSpawning.EnsureRespawnQueue(state.EntityManager);
             state.RequireForUpdate<GamePrefabs>();
+            state.RequireForUpdate<AsteroidRespawnQueueTag>();
         }
 
+        /// <summary>
+        /// For each destroyed asteroid: burst leftover gems, enqueue respawn, destroy entity.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Gem == Entity.Null)
@@ -479,6 +543,11 @@ namespace TitanOrbit.ECS
 
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
             settings.ClampCounts();
+            float spawnTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
+                state.EntityManager, SystemAPI.Time.ElapsedTime);
+            // Respawn queue is server-only — World.Time is fine (not replicated to clients).
+            double now = SystemAPI.Time.ElapsedTime;
+            var respawnBuffer = SystemAPI.GetSingletonBuffer<PendingAsteroidRespawnElement>();
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
@@ -490,14 +559,31 @@ namespace TitanOrbit.ECS
                 if (!asteroidState.ValueRO.IsDestroyed)
                     continue;
 
+                float3 pos = asteroidTransform.ValueRO.Position;
                 float remaining = asteroidState.ValueRO.RemainingGems;
                 if (remaining >= GemEconomyConstants.MinGemSpawnValue)
                 {
-                    float3 pos = asteroidTransform.ValueRO.Position;
                     // Deterministic seed so client immediate burst can match count/feel closely.
                     uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
-                    SpawnAsteroidDestructionGems(ecb, prefabs.Gem, pos, remaining, seed, settings);
+                    SpawnAsteroidDestructionGems(
+                        ecb, prefabs.Gem, pos, remaining, seed, settings, spawnTime);
                 }
+
+                // --- Schedule respawn (original AsteroidRespawnManager.ScheduleRespawn) ---
+                // Use MaxGems — RemainingGems is often 0 after mining. Fall back to Health/remaining.
+                float restoreGems = asteroidState.ValueRO.MaxGems;
+                if (restoreGems < GemEconomyConstants.MinGemSpawnValue)
+                    restoreGems = math.max(asteroidState.ValueRO.Health, remaining);
+                if (restoreGems < GemEconomyConstants.MinGemSpawnValue)
+                    restoreGems = 1f;
+
+                AsteroidSpawning.ScheduleRespawn(
+                    respawnBuffer,
+                    pos,
+                    asteroidTransform.ValueRO.Scale,
+                    restoreGems,
+                    now,
+                    settings.AsteroidRespawnDelaySeconds);
 
                 ecb.DestroyEntity(entity);
             }
@@ -515,7 +601,8 @@ namespace TitanOrbit.ECS
             float3 pos,
             float remaining,
             uint seed,
-            GemExplosionSettings settings)
+            GemExplosionSettings settings,
+            float spawnServerTime)
         {
             var rng = Random.CreateFromIndex(seed);
             int count = GemExplosionMath.ResolveGemCount(
@@ -526,17 +613,26 @@ namespace TitanOrbit.ECS
                 float value = GemExplosionMath.ValuePerGem(remaining, count, i);
                 if (value < GemEconomyConstants.MinGemSpawnValue)
                     continue;
-                GemSpawning.Spawn(ecb, gemPrefab, pos, value, seed + (uint)(i + 1) * 97u, burst: true, settings);
+                GemSpawning.Spawn(
+                    ecb,
+                    gemPrefab,
+                    pos,
+                    value,
+                    seed + (uint)(i + 1) * 97u,
+                    burst: true,
+                    spawnServerTime,
+                    settings);
             }
         }
     }
 
     /// <summary>Shared gem entity spawn helper for mining and asteroid destruction bursts.</summary>
-    static class GemSpawning
+    public static class GemSpawning
     {
         /// <summary>
-        /// Instantiates a gem prefab with value, optional burst velocity/tumble, and offset.
+        /// Instantiates a gem prefab with value, optional burst velocity/tumble, offset, and lifetime stamp.
         /// </summary>
+        /// <param name="spawnServerTime">ServerTick seconds — drives lifetime despawn and client shrink.</param>
         public static void Spawn(
             EntityCommandBuffer ecb,
             Entity gemPrefab,
@@ -544,6 +640,7 @@ namespace TitanOrbit.ECS
             float value,
             uint salt,
             bool burst,
+            float spawnServerTime,
             GemExplosionSettings settings = null)
         {
             if (value <= 0f)
@@ -564,6 +661,7 @@ namespace TitanOrbit.ECS
                 Value = value,
                 Size = scale,
                 DepositTeam = TeamId.None,
+                SpawnServerTime = spawnServerTime,
             });
 
             if (burst)

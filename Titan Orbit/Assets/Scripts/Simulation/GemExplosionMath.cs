@@ -112,5 +112,38 @@ namespace TitanOrbit.Simulation
                 return float3.zero;
             return angularVelocity;
         }
+
+        /// <summary>
+        /// Original Gem shrink: full scale until the last <paramref name="shrinkDurationSeconds"/> of life,
+        /// then linear 1→0. Returns 1 when lifetime/shrink are disabled or the gem is still early in life.
+        /// </summary>
+        /// <param name="spawnServerTime">Server ElapsedTime when the gem spawned.</param>
+        /// <param name="nowServerTime">Current server (or client-synced) ElapsedTime.</param>
+        /// <param name="lifetimeSeconds">Total life before despawn (original 20).</param>
+        /// <param name="shrinkDurationSeconds">End-of-life shrink window (original 3).</param>
+        /// <returns>Multiplier in [0, 1] applied to the gem's full visual scale.</returns>
+        public static float LifetimeScaleMultiplier(
+            float spawnServerTime,
+            float nowServerTime,
+            float lifetimeSeconds,
+            float shrinkDurationSeconds)
+        {
+            float lifetime = math.max(0.01f, lifetimeSeconds);
+            float elapsed = nowServerTime - spawnServerTime;
+            if (elapsed < 0f)
+                return 1f;
+            if (elapsed >= lifetime)
+                return 0f;
+
+            float shrink = math.clamp(shrinkDurationSeconds, 0f, lifetime);
+            if (shrink <= 0.001f)
+                return 1f;
+
+            float remaining = lifetime - elapsed;
+            if (remaining >= shrink)
+                return 1f;
+
+            return math.saturate(remaining / shrink);
+        }
     }
 }

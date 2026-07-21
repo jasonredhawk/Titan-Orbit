@@ -113,9 +113,23 @@ namespace TitanOrbit.Game
             if (ShipMoonDockVisualApplier.TryGetLocalFollowPosition(out position))
                 return true;
 
+            // [TITAN-ORBIT] Prefer presentation pose when ship ECS queries are gated (GhostSpawnBacklog).
+            // Otherwise HasLocalPlayerShip / HUD flicker during gem Instantiates after asteroid destroy.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries && ShipDisplayPose.HasLocalPose)
+            {
+                position = ShipDisplayPose.LocalPosition;
+                return true;
+            }
+
             if (TryGetLocalShipTransform(out var lt))
             {
                 position = lt.Position;
+                return true;
+            }
+
+            if (ShipDisplayPose.HasLocalPose)
+            {
+                position = ShipDisplayPose.LocalPosition;
                 return true;
             }
 
@@ -229,10 +243,19 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>True when map is loaded, team flow allows control, and a local ship position resolves.</summary>
-        public static bool HasLocalPlayerShip() =>
-            IsMapLoadingComplete() &&
-            !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() &&
-            TryGetLocalShipPosition(out _);
+        public static bool HasLocalPlayerShip()
+        {
+            if (!IsMapLoadingComplete() || ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+                return false;
+
+            // [TITAN-ORBIT] During GhostSpawnBacklog (e.g. gem Instantiates after asteroid destroy),
+            // ship ECS queries are skipped to avoid Crash!!!. Presentation pose still means we have
+            // a ship — without this, NceGameFlow hides gameplay HUD and flashes the lobby overlay.
+            if (ShipDisplayPose.HasLocalPose)
+                return true;
+
+            return TryGetLocalShipPosition(out _);
+        }
 
         /// <summary>
         /// True when the server still has this player's ship from a prior session on the same match.

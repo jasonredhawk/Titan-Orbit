@@ -173,7 +173,8 @@ namespace TitanOrbit.ECS
                     moonPos,
                     spawnValue,
                     (uint)planetState.PlanetId,
-                    burst: false);
+                    burst: false,
+                    (float)moonElapsed);
             }
 
             ecb.Playback(state.EntityManager);

@@ -727,15 +727,11 @@ namespace TitanOrbit.UI
         private void ToggleExpand()
         {
             isExpanded = !isExpanded;
-            
+
             if (isExpanded)
-            {
                 ExpandMinimap();
-            }
             else
-            {
                 CollapseMinimap();
-            }
         }
         
         private void ExpandMinimap()

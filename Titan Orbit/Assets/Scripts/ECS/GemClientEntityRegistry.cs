@@ -47,18 +47,27 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Drains entities that need a GameObject proxy ASAP (bypass normal asteroid backlog).
+        /// Drains up to <paramref name="maxCount"/> entities that need a GameObject proxy ASAP
+        /// (bypass normal asteroid backlog). Remaining entries stay queued for later frames —
+        /// Instantiating every destroy-burst gem in one LateUpdate hitchs the client.
         /// </summary>
-        public static void DrainUrgentVisualQueue(List<Entity> dst)
+        /// <param name="dst">Cleared then filled with up to <paramref name="maxCount"/> entities.</param>
+        /// <param name="maxCount">Max entities to take this call (use 2–3 in gameplay).</param>
+        /// <returns>How many entities were left in the queue after this drain.</returns>
+        public static int DrainUrgentVisualQueue(List<Entity> dst, int maxCount = int.MaxValue)
         {
             if (dst == null)
-                return;
-            dst.Clear();
-            if (UrgentVisualQueue.Count == 0)
-                return;
+                return UrgentVisualQueue.Count;
 
-            dst.AddRange(UrgentVisualQueue);
-            UrgentVisualQueue.Clear();
+            dst.Clear();
+            if (UrgentVisualQueue.Count == 0 || maxCount <= 0)
+                return 0;
+
+            int take = UrgentVisualQueue.Count < maxCount ? UrgentVisualQueue.Count : maxCount;
+            for (int i = 0; i < take; i++)
+                dst.Add(UrgentVisualQueue[i]);
+            UrgentVisualQueue.RemoveRange(0, take);
+            return UrgentVisualQueue.Count;
         }
 
         /// <summary>True when this Instantiated gem is still tracked as live.</summary>

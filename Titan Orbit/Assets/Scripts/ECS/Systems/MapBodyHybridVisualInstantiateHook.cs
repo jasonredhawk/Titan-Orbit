@@ -32,6 +32,7 @@ namespace TitanOrbit.Game
         {
             s_PendingQueue.Clear();
             GemClientEntityRegistry.Clear();
+            LocalShipEntitySeed.Clear();
             // --- Replace any prior handler (domain reload / play mode) ---
             TitanOrbitJoinLoadCounters.OnDelayedGhostInstantiate = OnDelayedGhostInstantiate;
             // Prefer gem Instantiates among ready delayed ghosts (still 1/frame).
@@ -53,6 +54,16 @@ namespace TitanOrbit.Game
         {
             if (entity == Entity.Null || !em.Exists(entity))
                 return;
+
+            // --- Local ship: seed presentation cache during GhostSpawnBacklog ---
+            // [TITAN-ORBIT] debug-604d3d: post–Join Team ship Instantiates left hasPose=false
+            // (lookup gated, cache empty) then !!CAM_JUMP 113m + !!RETILE when backlog cleared.
+            // One-entity Instantiates hook — no ship ToEntityArray / WithEntityAccess.
+            if (em.HasComponent<ShipTag>(entity))
+            {
+                LocalShipEntitySeed.NotifyShipInstantiated(em, entity);
+                return;
+            }
 
             // --- Gems: track for tractor beams + force an urgent visual (do not wait on asteroid drain) ---
             // [TITAN-ORBIT] Gem ghosts often already have baked Pending, so the early-return below

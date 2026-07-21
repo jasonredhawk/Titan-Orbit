@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 namespace TitanOrbit.Shared
@@ -17,6 +18,12 @@ namespace TitanOrbit.Shared
         /// <summary>World rotation of the local ship visual proxy (presentation phase).</summary>
         public static Quaternion LocalRotation { get; private set; }
 
+        /// <summary>
+        /// [DIAGNOSTIC] Fired when pose is cleared (reason string). Game blink probe subscribes —
+        /// Shared must not reference Game assemblies.
+        /// </summary>
+        public static event Action<string> OnCleared;
+
         /// <summary>Caches presentation pose for camera / parallax readers.</summary>
         public static void SetLocalPose(Vector3 position, Quaternion rotation)
         {
@@ -26,12 +33,21 @@ namespace TitanOrbit.Shared
         }
 
         /// <summary>Clears pose when local ship despawns or player disconnects.</summary>
-        public static void ClearLocalPose()
+        public static void ClearLocalPose() => ClearLocalPose("ClearLocalPose");
+
+        /// <summary>
+        /// Clears pose with a diagnostic reason (e.g. who decided the local ship was gone).
+        /// </summary>
+        /// <param name="reason">Short tag for Console filter <c>[AsteroidBlink]</c>.</param>
+        public static void ClearLocalPose(string reason)
         {
             // --- Invalidate so camera stops following the stale last-known position ---
             // [TITAN-ORBIT] Position/rotation left as-is are unused while HasLocalPose is false;
             // ShipVisualSyncSystem also resets its soft-track so the next ship hard-snaps.
+            bool wasSet = HasLocalPose;
             HasLocalPose = false;
+            if (wasSet)
+                OnCleared?.Invoke(string.IsNullOrEmpty(reason) ? "ClearLocalPose" : reason);
         }
     }
 }

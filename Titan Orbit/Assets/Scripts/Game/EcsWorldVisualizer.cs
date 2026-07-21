@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
@@ -460,8 +461,15 @@ namespace TitanOrbit.Game
                 float gemValue = 0f;
                 if (isGem && em.HasComponent<GemState>(entity))
                 {
-                    gemValue = em.GetComponentData<GemState>(entity).Value;
-                    scale = GemVisualApplier.ComputeVisualScale(math.max(0.25f, gemValue));
+                    // --- Gem value scale + end-of-life shrink (original Gem.shrinkDuration) ---
+                    var gemState = em.GetComponentData<GemState>(entity);
+                    gemValue = gemState.Value;
+                    // [TITAN-ORBIT] ServerTick clock — World.Time diverges on late-join (moon orbit rule).
+                    float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
+                        ? (float)tickNow
+                        : (float)Time.timeAsDouble;
+                    scale = GemVisualApplier.ComputeLifetimeVisualScale(
+                        gemValue, gemState.SpawnServerTime, now);
                 }
 
                 alive.Add(entity);
@@ -531,6 +539,12 @@ namespace TitanOrbit.Game
                 }
 
                 uint seed = math.hash(new uint2((uint)entity.Index, math.hash(lt.Position)));
+
+                // Hide the asteroid proxy immediately — the ghost may linger a few frames while
+                // gems Instantiates. Keeping a dead rock visible under a hitch made the blink worse.
+                if (kv.Value != null && kv.Value.activeSelf)
+                    kv.Value.SetActive(false);
+
                 ClientGemBurstPresenter.PlayBurst(lt.Position, remaining, seed);
             }
         }
@@ -1248,14 +1262,54 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Max networked gem GO Instantiates per frame from the urgent queue.
+        /// Destroy bursts can enqueue many ghosts at once — Instantiating all of them in one
+        /// <see cref="SyncAllProxies"/> call hitchs the client (scene blink).
+        /// </summary>
+        /// <summary>
+        /// Max networked gem GO Instantiates per frame from the urgent queue.
+        /// Kept at 1 — post-fix logs still showed 40ms+ hitch when creating gems after destroy.
+        /// </summary>
+        const int MaxUrgentGemProxiesPerFrame = 1;
+
+        /// <summary>
         /// Creates GameObject proxies for gems that Instantiated this frame (from
         /// <see cref="GemClientEntityRegistry"/>). Bypasses the shared world-body budget so
-        /// destroy bursts are not stuck behind asteroid Pending drain.
+        /// destroy bursts are not stuck behind asteroid Pending drain — but still rate-limits
+        /// Instantiates per frame (see <see cref="MaxUrgentGemProxiesPerFrame"/>).
         /// </summary>
         void DrainUrgentGemProxies(EntityManager em, HashSet<Entity> alive)
         {
+            // --- Skip during map Instantiates storm ---
+            // [TITAN-ORBIT] debug-604d3d: urgent gems during Settling armed false blink windows and
+            // contributed to 100ms hitches while the camera sat at the origin.
+            if (ClientJoinSettleCache.Settling)
+                return;
+
+            // --- A/B: skip networked gem GO Instantiates while isolating destroy blink ---
+            if (AsteroidDestroyBlinkProbe.DebugSkipDestroyGemVisuals)
+            {
+                // Still drain the queue so it does not grow forever — drop without Instantiates.
+                var discard = new List<Entity>(8);
+                GemClientEntityRegistry.DrainUrgentVisualQueue(discard, 64);
+                if (discard.Count > 0)
+                {
+                    AsteroidDestroyBlinkProbe.NotifyGemWork(
+                        $"urgentGemProxies SKIPPED count={discard.Count} (DebugSkipDestroyGemVisuals)");
+                }
+
+                return;
+            }
+
             var urgent = new List<Entity>(8);
-            GemClientEntityRegistry.DrainUrgentVisualQueue(urgent);
+            int remainingAfter = GemClientEntityRegistry.DrainUrgentVisualQueue(urgent, MaxUrgentGemProxiesPerFrame);
+            if (urgent.Count == 0)
+                return;
+
+            // [DIAGNOSTIC] Always time Instantiates — hypothesis G (hitch = blink).
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            int created = 0;
+
             for (int i = 0; i < urgent.Count; i++)
             {
                 Entity entity = urgent[i];
@@ -1282,8 +1336,23 @@ namespace TitanOrbit.Game
                 if (!em.HasComponent<MapBodyHybridVisualLinked>(entity))
                     em.AddComponentData(entity, new MapBodyHybridVisualLinked());
                 alive.Add(entity);
-                // Do not consume world-body budget — gems are gameplay-critical and few.
+                // Do not consume world-body asteroid budget — gems use their own per-frame cap.
                 _newWorldBodyProxiesThisFrame++;
+                created++;
+            }
+
+            sw.Stop();
+            double ms = sw.Elapsed.TotalMilliseconds;
+            // #region agent log
+            AsteroidDestroyBlinkProbe.NotifyGemInstantiateTiming(created, remainingAfter, ms);
+            // #endregion
+
+            if (TitanOrbitDebugFlags.LogAsteroidDestroyPerf)
+            {
+                Debug.Log(
+                    $"[AsteroidDestroy] Urgent gem proxies created={created}/{urgent.Count} " +
+                    $"queueLeft={remainingAfter} ms={ms:F2} " +
+                    $"frameDtMs={Time.deltaTime * 1000f:F1}");
             }
         }
 
@@ -1292,6 +1361,12 @@ namespace TitanOrbit.Game
         {
             if (entity == _cachedDedicatedLocalShipEntity)
                 _cachedDedicatedLocalShipEntity = Entity.Null;
+
+            bool wasAsteroid = _asteroidLastKnown.ContainsKey(entity) ||
+                               _asteroidBurstFired.Contains(entity) ||
+                               (_proxies.TryGetValue(entity, out var existingGo) &&
+                                existingGo != null &&
+                                existingGo.name.IndexOf("Asteroid", System.StringComparison.Ordinal) >= 0);
 
             // --- Drop toroidal tile memory for this entity ---
             ToroidalDisplay.RemoveEntity(entity);
@@ -1304,7 +1379,14 @@ namespace TitanOrbit.Game
                 if (_proxyNetworkIds.TryGetValue(entity, out int networkId) && go != null)
                     ShipWeaponProxyRegistry.Unregister(networkId, go.transform);
                 if (go != null)
+                {
+                    // #region agent log
+                    if (wasAsteroid)
+                        AsteroidDestroyBlinkProbe.NotifyAsteroidProxyDestroyed(
+                            entity.Index, go.name, go.activeSelf);
+                    // #endregion
                     Destroy(go);
+                }
                 _proxies.Remove(entity);
                 _proxyNetworkIds.Remove(entity);
                 _proxyShipLevels.Remove(entity);
@@ -1621,7 +1703,10 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Gem proxies — value-scaled via <see cref="GemVisualApplier"/>; registers diameter for tractor beam.</summary>
+        /// <summary>
+        /// Gem proxies — value-scaled via <see cref="GemVisualApplier"/> with end-of-life shrink;
+        /// registers diameter for tractor beam.
+        /// </summary>
         void DrawGems(EntityManager em, HashSet<Entity> alive)
         {
             using var query = em.CreateEntityQuery(
@@ -1632,12 +1717,18 @@ namespace TitanOrbit.Game
             using var states = query.ToComponentDataArray<GemState>(Unity.Collections.Allocator.Temp);
             using var transforms = query.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
 
+            // --- Lifetime clock (ServerTick — same as SpawnServerTime stamp) ---
+            float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
+                ? (float)tickNow
+                : (float)Time.timeAsDouble;
+
             for (int i = 0; i < entities.Length; i++)
             {
                 var entity = entities[i];
                 var state = states[i];
                 var lt = transforms[i];
-                float scale = GemVisualApplier.ComputeVisualScale(math.max(0.25f, state.Value));
+                float scale = GemVisualApplier.ComputeLifetimeVisualScale(
+                    state.Value, state.SpawnServerTime, now);
 
                 if (_proxies.TryGetValue(entity, out var go) && go != null)
                 {

@@ -13,5 +13,11 @@ namespace TitanOrbit
         /// Written by GameManager; read by MoonOrbitStoreSystem and UI helpers.
         /// </summary>
         public static bool FreeShipUpgradeTree;
+
+        /// <summary>
+        /// When true, asteroid-destroy paths log millisecond timings (local gem burst, urgent gem
+        /// proxies). Use this to find hitch frames — Console filter: <c>[AsteroidDestroy]</c>.
+        /// </summary>
+        public static bool LogAsteroidDestroyPerf;
     }
 }

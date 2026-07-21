@@ -38,6 +38,7 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// [NETCODE] Mineable asteroid body — destroyed when <see cref="RemainingGems"/> reaches zero.
+    /// Server schedules a fresh spawn via <see cref="PendingAsteroidRespawnElement"/> (original ~30s).
     /// </summary>
     public struct AsteroidState : IComponentData
     {
@@ -52,6 +53,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Team that mined this cluster most recently (territory tint on minimap).</summary>
         [GhostField] public TeamId TerritoryTeam;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Original gem capacity at spawn (server-only). RemainingGems hits 0 on destroy,
+        /// so respawn must restore from this — matches NGO maxGems when a fresh instance was spawned.
+        /// </summary>
+        public float MaxGems;
     }
 
     /// <summary>[NETCODE] Loose gem pickup spawned by mining or moon drain.</summary>
@@ -65,6 +72,38 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Team that receives credit when deposited (from miner's team).</summary>
         [GhostField] public TeamId DepositTeam;
+
+        /// <summary>
+        /// [NETCODE] ServerTick-timeline seconds when this gem was spawned (same clock as
+        /// <c>PlanetGemMoonOrbitClock</c> — not World.Time.ElapsedTime, which diverges on late-join).
+        /// Ghosted so clients can shrink in the last seconds of life; server destroys after lifetime.
+        /// </summary>
+        [GhostField] public float SpawnServerTime;
+    }
+
+    /// <summary>
+    /// [ECS/DOTS] Marker on the server singleton that owns the asteroid respawn queue buffer.
+    /// Created by <c>AsteroidRespawnSystem</c>; not ghost-replicated.
+    /// </summary>
+    public struct AsteroidRespawnQueueTag : IComponentData { }
+
+    /// <summary>
+    /// [TITAN-ORBIT] One scheduled asteroid respawn — same position/scale/gem value as the destroyed rock.
+    /// Original NGO <c>AsteroidRespawnManager.PendingRespawn</c> (default delay 30s).
+    /// </summary>
+    public struct PendingAsteroidRespawnElement : IBufferElementData
+    {
+        /// <summary>World XZ position (Y locked to 0 on spawn).</summary>
+        public float3 Position;
+
+        /// <summary>Uniform LocalTransform scale for the fresh asteroid.</summary>
+        public float Scale;
+
+        /// <summary>Full gem capacity / health restored on respawn (<see cref="AsteroidState.MaxGems"/>).</summary>
+        public float GemValue;
+
+        /// <summary>Server ElapsedTime when this entry is due to spawn.</summary>
+        public double RespawnAtElapsedTime;
     }
 
     /// <summary>[ECS/DOTS] Query filter — entity is a planet (home or neutral).</summary>

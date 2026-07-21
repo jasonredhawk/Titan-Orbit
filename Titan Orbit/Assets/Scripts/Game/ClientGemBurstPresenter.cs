@@ -1,8 +1,11 @@
 using System.Collections.Generic;
+using System.Diagnostics;
+using TitanOrbit;
 using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Mathematics;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
 using Random = Unity.Mathematics.Random;
 
 namespace TitanOrbit.Game
@@ -10,13 +13,21 @@ namespace TitanOrbit.Game
     /// <summary>
     /// [HYBRID] Immediate client-side gem explosion visuals when an asteroid is destroyed.
     /// GhostSpawn Instantiates is 1/frame — waiting for networked gem ghosts made bursts feel
-    /// seconds late. This presenter Instantiates local Gem prefab shells the same frame the
-    /// client sees <c>AsteroidState.IsDestroyed</c>, with original launch/tumble feel.
-    /// When real gem ghosts Instantiates later, nearby local shells are cleared to avoid doubles.
-    /// Cosmetic only — pickup authority stays on server gem ghosts.
+    /// seconds late. This presenter queues local Gem prefab shells the frame the client sees
+    /// <c>AsteroidState.IsDestroyed</c>, then Instantiates a few per frame so one destroy cannot
+    /// hitch the whole scene (looks like a blink). When real gem ghosts Instantiates later,
+    /// nearby local shells are cleared to avoid doubles. Cosmetic only — pickup authority stays
+    /// on server gem ghosts.
     /// </summary>
     public sealed class ClientGemBurstPresenter : MonoBehaviour
     {
+        /// <summary>
+        /// Max local gem Instantiates per frame. Destroy used to Instantiates up to
+        /// <see cref="GemExplosionSettings.MaxGemCount"/> (10) in one shot — that GC + mesh
+        /// Instantiates spike is the hitch that looked like the scene blinked away.
+        /// </summary>
+        const int MaxSpawnsPerFrame = 1;
+
         static ClientGemBurstPresenter _instance;
 
         [SerializeField] GameObject gemVisualPrefab;
@@ -24,10 +35,25 @@ namespace TitanOrbit.Game
         [SerializeField] float claimRadius = 2.5f;
 
         readonly List<LocalBurstGem> _live = new List<LocalBurstGem>(32);
+        readonly List<PendingBurstGem> _pending = new List<PendingBurstGem>(16);
 
+        /// <summary>One already-spawned local burst gem (motion integrated in Update).</summary>
         struct LocalBurstGem
         {
             public GameObject Go;
+            public Vector3 Velocity;
+            public Vector3 AngularVelocity;
+            public float LinearDamping;
+            public float AngularDamping;
+            public float StopSpeed;
+            public float DieAt;
+        }
+
+        /// <summary>Queued spawn — Instantiates later so the destroy frame stays light.</summary>
+        struct PendingBurstGem
+        {
+            public Vector3 Position;
+            public float Value;
             public Vector3 Velocity;
             public Vector3 AngularVelocity;
             public float LinearDamping;
@@ -66,8 +92,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Spawns local exploding gems at the asteroid pose. Call when the client first sees
-        /// IsDestroyed (or the asteroid proxy is about to vanish).
+        /// Queues local exploding gems at the asteroid pose. Call when the client first sees
+        /// IsDestroyed (or the asteroid proxy is about to vanish). Instantiates are spread
+        /// across the next few frames — see <see cref="MaxSpawnsPerFrame"/>.
         /// </summary>
         public static void PlayBurst(float3 worldPosition, float remainingValue, uint seed)
         {
@@ -94,10 +121,16 @@ namespace TitanOrbit.Game
         public static void ClaimNear(Vector3 worldPosition) =>
             TryClaimNear(worldPosition, out _, out _);
 
+        /// <summary>
+        /// Builds the burst plan (count, velocities) and enqueues Instantiates — does not
+        /// Instantiates every gem on this call.
+        /// </summary>
         void PlayBurstInternal(float3 worldPosition, float remainingValue, uint seed)
         {
             if (remainingValue < 0.25f)
                 return;
+
+            var sw = TitanOrbitDebugFlags.LogAsteroidDestroyPerf ? Stopwatch.StartNew() : null;
 
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
             settings.ClampCounts();
@@ -117,6 +150,7 @@ namespace TitanOrbit.Game
                 center = ToroidalDisplay.ToDisplayPosition(worldPosition, reference);
 
             float dieAt = Time.time + localLifetimeSeconds;
+            int queued = 0;
 
             for (int i = 0; i < count; i++)
             {
@@ -132,25 +166,10 @@ namespace TitanOrbit.Game
                     ref rng);
                 float3 ang = GemExplosionMath.BurstAngularVelocity(settings.AngularSpeedMax, ref rng);
 
-                GameObject go;
-                if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, value, out go) || go == null)
+                _pending.Add(new PendingBurstGem
                 {
-                    go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-                    go.name = "GemBurstLocal";
-                    var col = go.GetComponent<Collider>();
-                    if (col != null) Destroy(col);
-                }
-                else
-                {
-                    go.name = "GemBurstLocal";
-                }
-
-                go.transform.position = center + new Vector3(offset.x, 0f, offset.z);
-                go.transform.rotation = Quaternion.identity;
-
-                _live.Add(new LocalBurstGem
-                {
-                    Go = go,
+                    Position = center + new Vector3(offset.x, 0f, offset.z),
+                    Value = value,
                     Velocity = new Vector3(vel.x, 0f, vel.z),
                     AngularVelocity = new Vector3(ang.x, ang.y, ang.z),
                     LinearDamping = settings.LinearDamping,
@@ -158,7 +177,73 @@ namespace TitanOrbit.Game
                     StopSpeed = settings.StopSpeedThreshold,
                     DieAt = dieAt,
                 });
+                queued++;
             }
+
+            // Spawn the first budget immediately so the burst still "pops" on the destroy frame.
+            int spawnedNow = DrainPendingSpawns(MaxSpawnsPerFrame);
+
+            AsteroidDestroyBlinkProbe.NotifyGemWork(
+                $"localBurst plan={count} spawnedNow={spawnedNow} pending={_pending.Count}");
+
+            if (sw != null)
+            {
+                sw.Stop();
+                Debug.Log(
+                    $"[AsteroidDestroy] Local burst plan gems={count} spawnedThisFrame={spawnedNow} " +
+                    $"pendingLeft={_pending.Count} enqueue+firstSpawnMs={sw.Elapsed.TotalMilliseconds:F2} " +
+                    $"frameDtMs={Time.deltaTime * 1000f:F1}");
+            }
+        }
+
+        /// <summary>
+        /// Instantiates up to <paramref name="budget"/> pending local gems. Returns how many were created.
+        /// </summary>
+        int DrainPendingSpawns(int budget)
+        {
+            if (budget <= 0 || _pending.Count == 0)
+                return 0;
+
+            if (gemVisualPrefab == null)
+                gemVisualPrefab = GemVisualApplier.LoadDefaultGemPrefab();
+
+            int spawned = 0;
+            while (spawned < budget && _pending.Count > 0)
+            {
+                PendingBurstGem p = _pending[0];
+                _pending.RemoveAt(0);
+
+                GameObject go;
+                if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, p.Value, out go) || go == null)
+                {
+                    go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    go.name = "GemBurstLocal";
+                    var col = go.GetComponent<Collider>();
+                    if (col != null)
+                        Destroy(col);
+                }
+                else
+                {
+                    go.name = "GemBurstLocal";
+                }
+
+                go.transform.position = p.Position;
+                go.transform.rotation = Quaternion.identity;
+
+                _live.Add(new LocalBurstGem
+                {
+                    Go = go,
+                    Velocity = p.Velocity,
+                    AngularVelocity = p.AngularVelocity,
+                    LinearDamping = p.LinearDamping,
+                    AngularDamping = p.AngularDamping,
+                    StopSpeed = p.StopSpeed,
+                    DieAt = p.DieAt,
+                });
+                spawned++;
+            }
+
+            return spawned;
         }
 
         bool ClaimNearInternal(Vector3 worldPosition, out Vector3 velocity, out Vector3 angularVelocity)
@@ -197,6 +282,20 @@ namespace TitanOrbit.Game
 
         void Update()
         {
+            // --- Spread remaining Instantiates across frames (hitch fix) ---
+            if (_pending.Count > 0)
+            {
+                var sw = TitanOrbitDebugFlags.LogAsteroidDestroyPerf ? Stopwatch.StartNew() : null;
+                int spawned = DrainPendingSpawns(MaxSpawnsPerFrame);
+                if (sw != null && spawned > 0)
+                {
+                    sw.Stop();
+                    Debug.Log(
+                        $"[AsteroidDestroy] Local burst drain spawned={spawned} pendingLeft={_pending.Count} " +
+                        $"ms={sw.Elapsed.TotalMilliseconds:F2} frameDtMs={Time.deltaTime * 1000f:F1}");
+                }
+            }
+
             float dt = Time.deltaTime;
             float now = Time.time;
             for (int i = _live.Count - 1; i >= 0; i--)
@@ -231,6 +330,7 @@ namespace TitanOrbit.Game
 
         void ClearAll()
         {
+            _pending.Clear();
             for (int i = 0; i < _live.Count; i++)
             {
                 if (_live[i].Go != null)

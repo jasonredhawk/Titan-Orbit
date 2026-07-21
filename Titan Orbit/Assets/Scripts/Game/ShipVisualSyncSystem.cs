@@ -1,3 +1,5 @@
+using TitanOrbit;
+using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
@@ -22,6 +24,14 @@ namespace TitanOrbit.Game
     /// Evidence: H71 absorbed pops (maxDelta max 0.25). H72 deadzone rejected — correctFrames
     /// stayed ~58 because capped pull could not close a steady &gt;0.08u lag, so the spring ran
     /// every frame. H73 snaps when close (no shimmer) and only coasts on real pops.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Asteroid destroy / Join Team eye-blink (2026-07-20 Editor.log): any miss from
+    /// <see cref="EcsGameBridge"/> (GhostSpawnBacklog ToEntityArray gate OR team suppress) used to
+    /// call <see cref="ToroidalDisplay.ResetSession"/> every frame and wipe ~283 tiles — whole-map
+    /// blink. Fix: reuse cached ship when it still exists; never ResetSession during backlog /
+    /// team suppress; debounce confirmed despawn (~45 frames) and clear tiles/pose only once.
+    /// Join Settling still skips everything. Backlog still skips remote <c>WithEntityAccess</c>.
     /// </para>
     /// People-transport float poses are published afterward by
     /// <see cref="PeopleTransportVisualSyncSystem"/> (not from raw ghost LT).
@@ -67,51 +77,117 @@ namespace TitanOrbit.Game
         /// </summary>
         const float CruiseRawFollowSlopRatio = 1.15f;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Frames the local ship must stay unresolved before we treat it as a real
+        /// despawn. Editor.log 2026-07-20: calling ResetSession every Null frame wiped ~283 tiles
+        /// and blinked the whole map (Join Team suppress / brief lookup misses).
+        /// </summary>
+        const int MissingShipClearDelayFrames = 45;
+
         // --- Local-owner display state (not sim) ---
         float3 _smoothPos;
         quaternion _smoothRot = quaternion.identity;
         bool _smoothInitialized;
         Entity _smoothShipEntity;
 
+        /// <summary>Consecutive frames where local ship could not be resolved (despawn debounce).</summary>
+        int _missingShipFrames;
+
+        /// <summary>True after we already ran one ResetSession/ClearLocalPose for this missing streak.</summary>
+        bool _missingShipCleared;
+
         /// <summary>
-        /// Each presentation frame: publish remotes raw, then soft-track or raw-follow local owner.
+        /// Each presentation frame: publish remotes raw (when safe), then soft-track or raw-follow
+        /// local owner. Local pose keeps updating during gem Instantiates backlog so the camera
+        /// does not freeze then jump.
         /// </summary>
         protected override void OnUpdate()
         {
             // --- Frame stamp for LateUpdate readers ---
             GhostPresentationTransformCache.BeginPublish(UnityEngine.Time.frameCount);
 
-            // --- Skip ship WithEntityAccess during GhostSpawn Instantiates ---
-            // [TITAN-ORBIT] Same EntityTypeHandle NRE class as MapBodyHybrid / ClientCommandTarget
-            // when Settling is on, and after Join Team when Settling stays OFF but ship Instantiates
-            // still run (Player.log 2026-07-19 TeamChoiceResult → Crash!!!).
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+            // --- Join Instantiates storm: skip all ship queries (Windows Crash!!! path) ---
+            // [TITAN-ORBIT] Settling = initial map Instantiates. Do not touch ship queries here.
+            if (ClientJoinSettleCache.Settling)
                 return;
 
+            // --- Resolve local ship (safe during gem Instantiates / brief lookup misses) ---
+            // [TITAN-ORBIT] EcsGameBridge.TryGetLocalShipEntity returns false while
+            // GhostSpawnBacklog (ToEntityArray gate) OR while team suppress is on. Neither is a
+            // despawn. Editor.log: ResetSession every miss wiped ~283 tiles → whole-map blink.
+            // Keep using the cached ship entity whenever it still exists (not only during backlog).
+            bool backlog = ClientJoinSettleCache.GhostSpawnBacklog;
+            bool teamSuppress = ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
             Entity localShip = Entity.Null;
-            // [TITAN-ORBIT] TryGetLocalShipEntity returns false while team flow suppresses control.
-            EcsGameBridge.TryGetLocalShipEntityOnWorld(World, out localShip);
-
-            // --- Remotes (and non-local): NetCode presentation LocalTransform as-is ---
-            // While suppressed, every ship is treated as remote for the cache; local pose is cleared below.
-            foreach (var (lt, entity) in SystemAPI
-                         .Query<RefRO<LocalTransform>>()
-                         .WithAll<ShipTag>()
-                         .WithEntityAccess())
+            bool resolved = EcsGameBridge.TryGetLocalShipEntityOnWorld(World, out localShip);
+            string resolvePath = resolved ? "bridge" : "none";
+            if (!resolved &&
+                !teamSuppress &&
+                _smoothShipEntity != Entity.Null &&
+                EntityManager.Exists(_smoothShipEntity) &&
+                EntityManager.HasComponent<ShipTag>(_smoothShipEntity))
             {
-                if (entity == localShip)
-                    continue;
+                localShip = _smoothShipEntity;
+                resolved = true;
+                resolvePath = "cache";
+            }
 
-                PublishShip(entity, lt.ValueRO);
+            // --- Instantiates-hook seed (post–Join Team ship while backlog gates bridge lookup) ---
+            // [TITAN-ORBIT] debug-604d3d frame 1782: cacheEmpty + backlog → hasPose false → CAM_JUMP.
+            if (!resolved &&
+                !teamSuppress &&
+                LocalShipEntitySeed.TryGetSeededShip(EntityManager, out var seededShip))
+            {
+                localShip = seededShip;
+                resolved = true;
+                resolvePath = "instantiateSeed";
+            }
+
+            // #region agent log
+            // Log failures too — 604d3d had silent "none" for 35 frames then POSE_GAINED 113m jump.
+            if (backlog || resolvePath == "instantiateSeed" || (!resolved && !teamSuppress))
+            {
+                AsteroidDestroyBlinkProbe.NotifyResolvePath(
+                    resolvePath, localShip, ShipDisplayPose.HasLocalPose);
+            }
+            // #endregion
+
+            // --- Remotes: skip WithEntityAccess while GhostSpawnBacklog ---
+            // [TITAN-ORBIT] Player.log 2026-07-19: ship WithEntityAccess during Instantiates → Crash!!!.
+            if (!backlog)
+            {
+                foreach (var (lt, entity) in SystemAPI
+                             .Query<RefRO<LocalTransform>>()
+                             .WithAll<ShipTag>()
+                             .WithEntityAccess())
+                {
+                    if (entity == localShip)
+                        continue;
+
+                    PublishShip(entity, lt.ValueRO);
+                }
+            }
+            else
+            {
+                // [DIAGNOSTIC] GhostSpawnBacklog after asteroid destroy — gem Instantiates window.
+                if (!resolved)
+                {
+                    AsteroidDestroyBlinkProbe.NotifyLocalShipUnresolved(
+                        $"backlog lookup failed cacheEmpty={_smoothShipEntity == Entity.Null}");
+                }
+                else if (TitanOrbitDebugFlags.LogAsteroidDestroyPerf)
+                {
+                    Debug.Log(
+                        $"[AsteroidDestroy] ShipVisualSync backlog: localShipCached={resolved} " +
+                        $"entityIndex={localShip.Index} frameDtMs={UnityEngine.Time.deltaTime * 1000f:F1}");
+                }
             }
 
             // --- People transports ---
-            // [TITAN-ORBIT] Owned by PeopleTransportVisualSyncSystem (UpdateAfter this): client magnet
-            // into the presentation cache. Publishing raw ghost LocalTransform here left proxies stuck
-            // at spawn when the transport ghost was Static/low-importance under MaxSendChunks.
+            // [TITAN-ORBIT] Owned by PeopleTransportVisualSyncSystem (UpdateAfter this).
 
-            // --- Local owner: storm soft-track or raw sim follow ---
-            PublishLocalShipDisplayPose(localShip);
+            // --- Local owner: GetComponentData on known entity — no ship gather ---
+            PublishLocalShipDisplayPose(localShip, skipBankPivotQuery: backlog);
         }
 
         /// <summary>
@@ -119,16 +195,21 @@ namespace TitanOrbit.Game
         /// Hard-snaps when the local ship entity is missing or replaced (rejoin / fresh spawn).
         /// </summary>
         /// <param name="localShip">Local player ship entity, or Null when not spawned.</param>
-        void PublishLocalShipDisplayPose(Entity localShip)
+        /// <param name="skipBankPivotQuery">
+        /// When true (GhostSpawnBacklog), skip the BankPivot <c>WithEntityAccess</c> walk — still
+        /// write ship LocalToWorld + ShipDisplayPose so the camera keeps tracking.
+        /// </param>
+        void PublishLocalShipDisplayPose(Entity localShip, bool skipBankPivotQuery = false)
         {
             if (localShip == Entity.Null || !EntityManager.Exists(localShip))
             {
-                // [TITAN-ORBIT] Drop soft-track state on despawn / leave so the next ship hard-snaps.
-                ResetLocalDisplaySmoothing();
-                ToroidalDisplay.ResetSession();
-                ShipDisplayPose.ClearLocalPose();
+                HandleMissingLocalShip();
                 return;
             }
+
+            // --- Ship is back — clear missing-ship debounce ---
+            _missingShipFrames = 0;
+            _missingShipCleared = false;
 
             if (!EntityManager.HasComponent<LocalTransform>(localShip))
                 return;
@@ -157,7 +238,7 @@ namespace TitanOrbit.Game
             if (!_smoothInitialized || shipChanged)
             {
                 if (shipChanged)
-                    ToroidalDisplay.ResetSession();
+                    ToroidalDisplay.ResetSession("ShipVisualSync.shipChanged");
                 _smoothPos = targetPos;
                 _smoothRot = targetRot;
                 _smoothInitialized = true;
@@ -192,25 +273,30 @@ namespace TitanOrbit.Game
             ShipDisplayPose.SetLocalPose((Vector3)_smoothPos, (Quaternion)_smoothRot);
 
             // [ECS/DOTS] Entities Graphics reads LocalToWorld — override after transform systems this frame.
-            if (EntityManager.HasComponent<LocalToWorld>(localShip))
+            if (!EntityManager.HasComponent<LocalToWorld>(localShip))
+                return;
+
+            var shipLtw = new LocalToWorld { Value = displayLt.ToMatrix() };
+            EntityManager.SetComponentData(localShip, shipLtw);
+
+            // --- Bank pivots: full query is unsafe during GhostSpawnBacklog Instantiates ---
+            // Camera already has ShipDisplayPose; pivot LTW can wait a frame.
+            if (skipBankPivotQuery)
+                return;
+
+            foreach (var (pivotTag, pivotLt, pivotEntity) in SystemAPI
+                         .Query<RefRO<ShipVisualBankPivotTag>, RefRO<LocalTransform>>()
+                         .WithEntityAccess())
             {
-                var shipLtw = new LocalToWorld { Value = displayLt.ToMatrix() };
-                EntityManager.SetComponentData(localShip, shipLtw);
+                if (pivotTag.ValueRO.ShipEntity != localShip)
+                    continue;
+                if (!EntityManager.HasComponent<LocalToWorld>(pivotEntity))
+                    continue;
 
-                foreach (var (pivotTag, pivotLt, pivotEntity) in SystemAPI
-                             .Query<RefRO<ShipVisualBankPivotTag>, RefRO<LocalTransform>>()
-                             .WithEntityAccess())
+                EntityManager.SetComponentData(pivotEntity, new LocalToWorld
                 {
-                    if (pivotTag.ValueRO.ShipEntity != localShip)
-                        continue;
-                    if (!EntityManager.HasComponent<LocalToWorld>(pivotEntity))
-                        continue;
-
-                    EntityManager.SetComponentData(pivotEntity, new LocalToWorld
-                    {
-                        Value = math.mul(shipLtw.Value, pivotLt.ValueRO.ToMatrix()),
-                    });
-                }
+                    Value = math.mul(shipLtw.Value, pivotLt.ValueRO.ToMatrix()),
+                });
             }
         }
 
@@ -249,6 +335,48 @@ namespace TitanOrbit.Game
             _smoothPos = coasted + pull;
             _smoothPos.y = simPos.y;
             _smoothRot = math.slerp(_smoothRot, simRot, 1f - math.exp(-DisplayRotationSharpness * dt));
+        }
+
+        /// <summary>
+        /// Local ship entity is Null / destroyed this frame. Keep pose + tile memory across
+        /// GhostSpawnBacklog, team-suppress, and brief lookup misses. Only after a sustained gap
+        /// do we clear once (not every frame — that wiped hundreds of tiles and blinked the map).
+        /// </summary>
+        void HandleMissingLocalShip()
+        {
+            // --- Gated lookup / Join Team UI — never thrash tiles ---
+            // [TITAN-ORBIT] Backlog: gem Instantiates after asteroid destroy. Suppress: map visible
+            // before TeamChoiceConfirmed. Both used to call ResetSession every frame (Editor.log).
+            if (ClientJoinSettleCache.GhostSpawnBacklog ||
+                ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+            {
+                _missingShipFrames = 0;
+                return;
+            }
+
+            _missingShipFrames++;
+            if (_missingShipFrames == 1)
+            {
+                AsteroidDestroyBlinkProbe.NotifyLocalShipUnresolved(
+                    $"missing ship streak started hasPose={ShipDisplayPose.HasLocalPose} " +
+                    $"cacheEmpty={_smoothShipEntity == Entity.Null}");
+            }
+
+            // --- Still holding last pose for camera / toroidal reference ---
+            if (_missingShipFrames < MissingShipClearDelayFrames)
+                return;
+
+            // --- Confirmed leave / despawn: clear once per streak ---
+            if (_missingShipCleared)
+                return;
+
+            _missingShipCleared = true;
+            AsteroidDestroyBlinkProbe.NotifyLocalShipUnresolved(
+                $"confirmed missing after {_missingShipFrames} frames — clearing pose+tiles once");
+            ResetLocalDisplaySmoothing();
+            LocalShipEntitySeed.Clear();
+            ToroidalDisplay.ResetSession("ShipVisualSync.PublishLocalShip_missingShip_confirmed");
+            ShipDisplayPose.ClearLocalPose("ShipVisualSync.PublishLocalShip_missingShip_confirmed");
         }
 
         /// <summary>

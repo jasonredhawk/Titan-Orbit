@@ -84,6 +84,20 @@ namespace TitanOrbit.Game
         bool _mainMenuButtonsBuilt;
         bool _initialized;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Once the local ship has been seen this session, keep gameplay HUD up even if
+        /// <see cref="EcsGameBridge.HasLocalPlayerShip"/> briefly returns false during GhostSpawnBacklog
+        /// (gem Instantiates after asteroid destroy). Otherwise lobby overlay + HUD hide = black blink.
+        /// </summary>
+        bool _latchedHasShipThisSession;
+
+        // #region agent log
+        bool _lastLoggedHasShip;
+        bool _lastLoggedShowHud;
+        bool _lastLoggedSpawnWait;
+        bool _lastLoggedLoading;
+        // #endregion
+
         void Awake()
         {
             Debug.Log("[NceGameFlow] Awake on " + gameObject.name + " enabled=" + enabled);
@@ -953,7 +967,14 @@ namespace TitanOrbit.Game
             // (impossible). Windows clients sat on "Queuing map visuals... N/N" forever even at 100%.
             // Loading dismisses when the map heuristic completes; "Preparing teams..." covers meta lag.
             bool mapReady = connected && mapLoaded;
-            bool hasShip = connected && EcsGameBridge.HasLocalPlayerShip();
+            bool hasShipLive = connected && EcsGameBridge.HasLocalPlayerShip();
+            if (!connected)
+                _latchedHasShipThisSession = false;
+            else if (hasShipLive)
+                _latchedHasShipThisSession = true;
+
+            // Prefer live detect; latch covers GhostSpawnBacklog false-negatives mid-combat.
+            bool hasShip = hasShipLive || _latchedHasShipThisSession;
             bool teamConfirmed = ClientTeamFlowState.TeamChoiceConfirmed;
             bool teamPickInFlight = ClientTeamFlowState.HasRequestedTeamPick && !teamConfirmed;
             bool showRejoinChoice = connected && mapReady && hasRejoinableShip &&
@@ -970,7 +991,9 @@ namespace TitanOrbit.Game
                                      !teamPickInFlight && !knowsTeamCount;
             bool showTeam = connected && mapReady && allowTeamPick && !hasShip && !teamConfirmed &&
                             !teamPickInFlight && knowsTeamCount && !showRejoinChoice;
-            bool showSpawnWait = connected && (teamConfirmed || teamPickInFlight) && !hasShip && !showRejoinChoice;
+            // Do not re-enter spawn-wait lobby after we already had a ship (would flash dark overlay).
+            bool showSpawnWait = connected && (teamConfirmed || teamPickInFlight) && !hasShip &&
+                                 !showRejoinChoice && !_latchedHasShipThisSession;
 
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && connected && !mapReady && !_loggedWaitingForMap)
             {
@@ -1067,6 +1090,28 @@ namespace TitanOrbit.Game
             bool matchWon = EcsGameBridge.TryGetMatchState(out var match) && match.WinningTeam != TeamId.None;
             bool showGameplayHud = connected && mapReady && hasShip && !showRejoinChoice &&
                                    !ClientTeamFlowState.IsRejoinChoicePending && !matchWon;
+
+            // #region agent log
+            // Hypothesis P: HUD blink = hasShip false during GhostSpawnBacklog → lobby/spawn overlay.
+            if (hasShipLive != _lastLoggedHasShip ||
+                showGameplayHud != _lastLoggedShowHud ||
+                showSpawnWait != _lastLoggedSpawnWait ||
+                showLoadingOverlay != _lastLoggedLoading)
+            {
+                AsteroidDestroyBlinkProbe.NotifyUiFlowFlash(
+                    hasShipLive,
+                    _latchedHasShipThisSession,
+                    showGameplayHud,
+                    showSpawnWait,
+                    showLoadingOverlay,
+                    ClientJoinSettleCache.GhostSpawnBacklog,
+                    ClientJoinSettleCache.ShouldSkipShipEntityQueries);
+                _lastLoggedHasShip = hasShipLive;
+                _lastLoggedShowHud = showGameplayHud;
+                _lastLoggedSpawnWait = showSpawnWait;
+                _lastLoggedLoading = showLoadingOverlay;
+            }
+            // #endregion
 
             if (gameplayRoot != null)
                 gameplayRoot.SetActive(showGameplayHud);

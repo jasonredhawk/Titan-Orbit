@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: GemExplosionSettings
   m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.GemExplosionSettings
   MinGemCount: 1
-  MaxGemCount: 10
+  MaxGemCount: 3
   AsteroidExplosionSpeed: 2.2
   AsteroidExplosionRadius: 1.4
   SpeedRandomMin: 0.45
@@ -24,3 +24,6 @@ MonoBehaviour:
   AngularDamping: 0.05
   MiningNudgeSpeedMin: 0.4
   MiningNudgeSpeedMax: 0.9
+  AsteroidRespawnDelaySeconds: 30
+  GemLifetimeSeconds: 20
+  GemShrinkDurationSeconds: 3

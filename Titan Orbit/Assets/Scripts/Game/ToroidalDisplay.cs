@@ -44,11 +44,21 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>Clears tile memory (despawn / leave match).</summary>
-        public static void ResetSession()
+        public static void ResetSession() => ResetSession("ResetSession");
+
+        /// <summary>
+        /// Clears tile memory with a diagnostic reason. Whole-map retile after this looks like an eye blink.
+        /// </summary>
+        /// <param name="reason">Who requested the clear — logged by <see cref="AsteroidDestroyBlinkProbe"/>.</param>
+        public static void ResetSession(string reason)
         {
+            int entityTiles = s_EntityTiles.Count;
+            int keyedTiles = s_KeyedTiles.Count;
             s_EntityTiles.Clear();
             s_KeyedTiles.Clear();
             s_TileSwitchesThisFrame = 0;
+            AsteroidDestroyBlinkProbe.NotifyTileSessionReset(
+                $"{reason} clearedEntityTiles={entityTiles} clearedKeyedTiles={keyedTiles}");
         }
 
         /// <summary>
@@ -75,21 +85,27 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Local ship world position (unbounded). Prefer live ECS, then ShipDisplayPose, then camera.
+        /// Local ship world position (unbounded). Prefer <see cref="ShipDisplayPose"/> (always safe),
+        /// then live ECS when ship queries are allowed, then camera.
         /// </summary>
         public static bool TryGetReferencePosition(out Vector3 reference)
         {
-            // --- Local ship can sit many map-widths from origin; that is intentional ---
-            if (EcsGameBridge.TryGetLocalShipPosition(out var shipPos))
-            {
-                reference = new Vector3(shipPos.x, 0f, shipPos.z);
-                return true;
-            }
-
+            // --- Presentation pose first ---
+            // [TITAN-ORBIT] During GhostSpawnBacklog (asteroid destroy → gem Instantiates),
+            // EcsGameBridge ship lookups return false on purpose. Preferring ShipDisplayPose stops
+            // a one-frame fallthrough that retile-blinks the map.
             if (ShipDisplayPose.HasLocalPose)
             {
                 var p = ShipDisplayPose.LocalPosition;
                 reference = new Vector3(p.x, 0f, p.z);
+                return true;
+            }
+
+            // --- Live ECS when ship ToEntityArray is safe ---
+            if (!ClientJoinSettleCache.ShouldSkipShipEntityQueries &&
+                EcsGameBridge.TryGetLocalShipPosition(out var shipPos))
+            {
+                reference = new Vector3(shipPos.x, 0f, shipPos.z);
                 return true;
             }
 
