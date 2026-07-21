@@ -211,6 +211,9 @@ namespace TitanOrbit.Game
                 peopleTransportVisualPrefab = LoadDefaultPrefab(DefaultPeopleTransportPath);
             if (bulletVfxBank == null)
                 bulletVfxBank = BulletVfxBank.LoadDefault();
+            if (bulletVfxBank != null)
+                BulletVisualScale.ActiveUpgradeVisualScaleMultiplier =
+                    bulletVfxBank.UpgradeVisualScaleMultiplier;
             if (propulsionVfxSettings.thrusterJetFlameBank == null ||
                 propulsionVfxSettings.thrusterJetFlameBank.Count == 0)
             {

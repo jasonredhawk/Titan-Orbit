@@ -43,6 +43,12 @@ namespace TitanOrbit.ECS
         {
             // [ECS/DOTS] RequireForUpdate — system skips OnUpdate until a bullet singleton exists.
             state.RequireForUpdate<ActiveBulletsTag>();
+
+            // [TITAN-ORBIT] Pull Upgrade Visual Scale Multiplier from the single Resources bank
+            // so ScaleMultiplier on spawns matches designer Inspector values (client + server).
+            var vfxBank = TitanOrbit.Data.BulletVfxBank.LoadDefault();
+            if (vfxBank != null)
+                BulletVisualScale.ActiveUpgradeVisualScaleMultiplier = vfxBank.UpgradeVisualScaleMultiplier;
         }
 
         /// <summary>

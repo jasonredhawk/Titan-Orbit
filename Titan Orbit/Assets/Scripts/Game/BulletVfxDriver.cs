@@ -711,6 +711,8 @@ namespace TitanOrbit.Game
         {
             if (_bank == null)
                 _bank = BulletVfxBank.LoadDefault();
+            if (_bank != null)
+                BulletVisualScale.ActiveUpgradeVisualScaleMultiplier = _bank.UpgradeVisualScaleMultiplier;
         }
 
         /// <summary>

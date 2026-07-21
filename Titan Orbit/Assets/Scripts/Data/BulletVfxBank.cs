@@ -3,19 +3,35 @@ using System.Collections.Generic;
 using System.Reflection;
 using TitanOrbit.Core;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// [HYBRID] Projectile bank for client bullet VFX (Sci-Fi Arsenal demo prefabs). Each category maps
-    /// to a <see cref="BulletBankProfile"/> for gameplay modifiers and a list of team-colored prefabs.
-    /// Team color picks the variant (e.g. LaserBoltBlueOBJ for TeamB). Loaded by
-    /// <see cref="Game.BulletVfxDriver"/> — does not affect server hit detection.
+    /// [HYBRID] Single project-wide projectile VFX bank (Sci-Fi Arsenal team-colored prefabs).
+    /// One asset at <c>Resources/BulletVfxBank</c> so Editor and player builds share the same file
+    /// (no Data + Resources duplicate to keep in sync).
+    /// <para>
+    /// Each category maps to a <see cref="BulletBankProfile"/> and team-colored prefabs. Loaded by
+    /// <see cref="Game.BulletVfxDriver"/>. Presentation only — hit detection stays server-side.
+    /// </para>
+    /// <para>
+    /// Inspector scale knobs:
+    /// <list type="bullet">
+    /// <item><b>Global Visual Scale Multiplier</b> — shrink/grow every bullet VFX.</item>
+    /// <item><b>Upgrade Visual Scale Multiplier</b> — how much tier/attribute fire-power growth
+    /// becomes size (0.5 = half-step: 3→8 fire → ~1.83× size, not 2.67×).</item>
+    /// </list>
+    /// </para>
     /// </summary>
     [CreateAssetMenu(fileName = "BulletVfxBank", menuName = "Titan Orbit/Bullet VFX Bank")]
     public class BulletVfxBank : ScriptableObject
     {
-        const string DefaultAssetPath = "Assets/Data/BulletVfxBank.asset";
+        /// <summary>[UNITY] Sole asset path — Resources so builds can <see cref="Resources.Load"/>.</summary>
+        public const string ResourcesAssetPath = "Assets/Resources/BulletVfxBank.asset";
+
+        /// <summary>Name passed to <see cref="Resources.Load"/> (no folder / extension).</summary>
+        public const string ResourcesLoadName = "BulletVfxBank";
 
         /// <summary>One row in the bank — name, prefab variants, and paired gameplay profile.</summary>
         [Serializable]
@@ -28,26 +44,41 @@ namespace TitanOrbit.Data
 
         [SerializeField] List<Category> categories = new List<Category>();
         [SerializeField] GameObject fallbackImpactPrefab;
-        [SerializeField] float visualScaleMultiplier = 0.5f;
 
-        /// <summary>Global scale on spawned VFX instances (designer tuning).</summary>
-        public float VisualScaleMultiplier => Mathf.Max(0.05f, visualScaleMultiplier);
+        [Header("Visual scale (all categories)")]
+        [Tooltip("Multiplies every spawned bullet / impact VFX after per-shot fire-power scale. 1 = authored size; 0.25 = quarter size.")]
+        [FormerlySerializedAs("visualScaleMultiplier")]
+        [SerializeField] float globalVisualScaleMultiplier = 0.25f;
+
+        [Tooltip("How much fire-power growth above level-1 becomes bullet size. 1 = size tracks damage 1:1; 0.5 = half-step (3→8 fire ≈ 1.83× size).")]
+        [SerializeField] float upgradeVisualScaleMultiplier = 0.5f;
+
+        /// <summary>Global VFX size on spawned instances.</summary>
+        public float GlobalVisualScaleMultiplier => Mathf.Max(0.05f, globalVisualScaleMultiplier);
+
+        /// <summary>
+        /// Fraction of (damage/reference − 1) applied to visual size.
+        /// Callers push this into <c>BulletVisualScale.ActiveUpgradeVisualScaleMultiplier</c> on load.
+        /// </summary>
+        public float UpgradeVisualScaleMultiplier => Mathf.Clamp01(upgradeVisualScaleMultiplier);
+
+        /// <summary>[LEGACY] Alias of <see cref="GlobalVisualScaleMultiplier"/> for older call sites.</summary>
+        public float VisualScaleMultiplier => GlobalVisualScaleMultiplier;
+
         public int CategoryCount => categories != null ? categories.Count : 0;
 
-        /// <summary>Loads Resources/BulletVfxBank or editor default path — whichever exists first.</summary>
+        /// <summary>
+        /// Loads the single Resources bank (Editor + player builds). No Data/ folder duplicate.
+        /// </summary>
         public static BulletVfxBank LoadDefault()
         {
-            // --- LoadDefault ---
-            var fromResources = Resources.Load<BulletVfxBank>("BulletVfxBank");
-            if (fromResources != null)
-                return fromResources;
-
+            // --- One asset only (Resources) ---
+            var bank = Resources.Load<BulletVfxBank>(ResourcesLoadName);
 #if UNITY_EDITOR
-            var fromPath = UnityEditor.AssetDatabase.LoadAssetAtPath<BulletVfxBank>(DefaultAssetPath);
-            if (fromPath != null)
-                return fromPath;
+            if (bank == null)
+                bank = UnityEditor.AssetDatabase.LoadAssetAtPath<BulletVfxBank>(ResourcesAssetPath);
 #endif
-            return null;
+            return bank;
         }
 
         /// <summary>
@@ -56,7 +87,6 @@ namespace TitanOrbit.Data
         /// </summary>
         public GameObject GetBankPrefab(int index, TeamId team)
         {
-            // --- Compute value ---
             if (categories == null || index < 0 || index >= categories.Count)
                 return null;
 
@@ -97,7 +127,6 @@ namespace TitanOrbit.Data
         /// <summary>Impact burst prefab on hit; uses <see cref="fallbackImpactPrefab"/> when bank has none.</summary>
         public GameObject GetImpactPrefab(int index, TeamId team)
         {
-            // --- Compute value ---
             GameObject bankPrefab = GetBankPrefab(index, team);
             GameObject impact = TryGetSciFiParticlePrefab(bankPrefab, "impactParticle");
             return impact != null ? impact : fallbackImpactPrefab;
@@ -106,7 +135,6 @@ namespace TitanOrbit.Data
         /// <summary>Gameplay profile paired with VFX category index (damage multipliers, burn, etc.).</summary>
         public bool TryGetProfile(int index, out BulletBankProfile profile)
         {
-            // --- Attempt resolution ---
             profile = null;
             if (categories == null || index < 0 || index >= categories.Count)
                 return false;
@@ -122,7 +150,6 @@ namespace TitanOrbit.Data
         /// <summary>[TITAN-ORBIT] Maps <see cref="TeamId"/> to Sci-Fi Arsenal color token in prefab names.</summary>
         static string GetColorNameForTeam(TeamId team)
         {
-            // --- Compute value ---
             switch (team)
             {
                 case TeamId.TeamA: return "Red";
@@ -140,7 +167,6 @@ namespace TitanOrbit.Data
         /// </summary>
         static GameObject TryGetSciFiParticlePrefab(GameObject bankPrefab, string fieldName)
         {
-            // --- Attempt resolution ---
             if (bankPrefab == null || string.IsNullOrEmpty(fieldName))
                 return null;
 
@@ -155,5 +181,6 @@ namespace TitanOrbit.Data
 
             return null;
         }
+
     }
 }

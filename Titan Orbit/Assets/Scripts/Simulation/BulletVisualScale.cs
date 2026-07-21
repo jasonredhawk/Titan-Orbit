@@ -4,17 +4,16 @@ using Unity.Mathematics;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Bullet VFX sizing from fire power only. Authored cannon scale is the baseline; size then grows
-    /// with this shot’s damage vs a per-barrel reference (level-1 firePower). Bullet speed does
-    /// <b>not</b> affect size — the player already sees speed from how fast the tracer moves.
-    /// Global bank scale (0.5) is applied in <see cref="Entities.BulletVisualFactory"/>.
-    /// Burst-compiled — safe for sim hot paths and client VFX bridges. Server hit detection uses
-    /// logical radius; this is presentation only.
+    /// Bullet VFX sizing from fire power + designer scale knobs on <c>BulletVfxBank</c>.
+    /// Authored cannon scale is the baseline; size then grows with this shot’s damage vs a
+    /// per-barrel level-1 reference. Bullet speed does <b>not</b> affect size.
     /// <para>
-    /// [TITAN-ORBIT] Fire-power size growth is half of the damage ratio step.
-    /// Example: damage 8 vs reference 3 → ratio 2.67, visual ≈ 1 + (2.67−1)×0.5 ≈ 1.83×.
-    /// Tunable via <see cref="DamageVisualGrowthFactor"/>.
+    /// Global shrink/grow: <c>BulletVfxBank.GlobalVisualScaleMultiplier</c> (applied in
+    /// <see cref="Entities.BulletVisualFactory"/>).
+    /// Upgrade growth: <see cref="ActiveUpgradeVisualScaleMultiplier"/> (pushed from the bank on
+    /// load) — e.g. 0.5 → fire power 3→8 grows size by ~1.83×, not 2.67×.
     /// </para>
+    /// Burst-safe static — server writes <c>ScaleMultiplier</c> on spawn; clients render it.
     /// </summary>
     [BurstCompile]
     public static class BulletVisualScale
@@ -28,10 +27,21 @@ namespace TitanOrbit.Simulation
         public const float DefaultReferenceBulletSpeed = 20f;
 
         /// <summary>
-        /// How much of the (damage / reference − 1) ratio becomes visual size growth.
-        /// 1.0 = linear with fire power; 0.5 = half-step (8 vs 3 ≈ 1.83×, not 2.67×).
+        /// Default upgrade growth when the VFX bank has not refreshed the cache yet (0.5 = half-step).
         /// </summary>
-        public const float DamageVisualGrowthFactor = 0.5f;
+        public const float DefaultUpgradeVisualScaleMultiplier = 0.5f;
+
+        /// <summary>
+        /// [LEGACY] Same meaning as <see cref="DefaultUpgradeVisualScaleMultiplier"/>.
+        /// Prefer the bank field / <see cref="ActiveUpgradeVisualScaleMultiplier"/>.
+        /// </summary>
+        public const float DamageVisualGrowthFactor = DefaultUpgradeVisualScaleMultiplier;
+
+        /// <summary>
+        /// Live upgrade growth factor from <c>BulletVfxBank.UpgradeVisualScaleMultiplier</c>.
+        /// Written by <c>BulletVfxBank.ApplyScaleCache</c> / <c>LoadDefault</c>. Burst-readable.
+        /// </summary>
+        public static float ActiveUpgradeVisualScaleMultiplier = DefaultUpgradeVisualScaleMultiplier;
 
         /// <summary>
         /// Scale multiplier from fire power vs reference. Bullet speed is ignored (API kept so
@@ -55,16 +65,18 @@ namespace TitanOrbit.Simulation
             _ = bulletSpeed;
             _ = referenceBulletSpeed;
 
-            // damageMul 2.67 means “this shot hits 2.67× harder than the reference.”
             float damageMul = bulletDamage / math.max(0.01f, referenceBulletDamage);
 
-            // [TITAN-ORBIT] Half-step: (ratio − 1) × 0.5 so firePower 3→8 grows size by ~0.83×.
-            float damageGrowth = (damageMul - 1f) * DamageVisualGrowthFactor;
+            // [TITAN-ORBIT] Upgrade Visual Scale Multiplier from BulletVfxBank (cached).
+            // Example at 0.5: damage 8 vs reference 3 → 1 + (8/3 − 1)×0.5 ≈ 1.83×.
+            float growthFactor = math.clamp(ActiveUpgradeVisualScaleMultiplier, 0f, 1f);
+            float damageGrowth = (damageMul - 1f) * growthFactor;
             return 1f + math.max(0f, damageGrowth);
         }
 
         /// <summary>
         /// Final per-shot visual scale = cannon authored scale × fire-power upgrade multiplier (floor 0.1).
+        /// Global bank scale is applied later in <see cref="Entities.BulletVisualFactory"/>.
         /// </summary>
         [BurstCompile]
         public static float ComputePerShotScale(
@@ -74,7 +86,6 @@ namespace TitanOrbit.Simulation
             float referenceBulletDamage = DefaultReferenceBulletDamage,
             float referenceBulletSpeed = DefaultReferenceBulletSpeed)
         {
-            // --- Combine authored cannon scale with fire-power growth only ---
             float upgradeMul = ComputeUpgradeScaleMultiplier(
                 bulletDamage,
                 bulletSpeed,

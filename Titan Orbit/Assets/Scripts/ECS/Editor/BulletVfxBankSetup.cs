@@ -8,79 +8,79 @@ using UnityEngine;
 namespace TitanOrbit.ECS.Editor
 {
     /// <summary>
-    /// Editor utility that creates or populates the BulletVfxBank ScriptableObject with default
-    /// tracer and impact prefabs. Used by NetCode setup and client bullet VFX bridges.
+    /// Editor utility that creates or populates the single <see cref="BulletVfxBank"/> at
+    /// <c>Assets/Resources/BulletVfxBank.asset</c> (no Data duplicate).
     /// </summary>
     public static class BulletVfxBankSetup
     {
-        const string AssetPath = "Assets/Data/BulletVfxBank.asset";
-        const string ResourcesPath = "Assets/Resources/BulletVfxBank.asset";
+        const string ResourcesPath = BulletVfxBank.ResourcesAssetPath;
         const string FallbackImpactPath = "Assets/Plugins/AllIn1VfxToolkit/Demo & Assets/Demo/Prefabs/Red Impact.prefab";
         const string LaserboltFolder = "Assets/Archanor/Sci-Fi Arsenal/InteractiveDemo/Demo Prefabs/Laserbolt";
+        const string LegacyDataPath = "Assets/Data/BulletVfxBank.asset";
 
         /// <summary>
-        /// Loads or creates <see cref="BulletVfxBank"/> at Assets/Data and mirrors to Resources for runtime load.
+        /// Loads or creates the Resources bank. Removes a leftover Data copy if present.
         /// </summary>
         public static BulletVfxBank EnsureAsset()
         {
-            // --- Ensure setup ---
-            var existing = AssetDatabase.LoadAssetAtPath<BulletVfxBank>(AssetPath);
+            // --- Prefer existing Resources bank ---
+            var existing = AssetDatabase.LoadAssetAtPath<BulletVfxBank>(ResourcesPath);
             if (existing != null)
             {
                 PopulateIfEmpty(existing);
-                ApplyLegacyVisualScale(existing);
-                SyncResourcesCopy();
+                DeleteLegacyDataCopyIfPresent();
                 return existing;
             }
 
-            if (!Directory.Exists("Assets/Data"))
-                Directory.CreateDirectory("Assets/Data");
+            // --- Migrate Data → Resources once, then delete Data ---
+            var legacy = AssetDatabase.LoadAssetAtPath<BulletVfxBank>(LegacyDataPath);
+            if (legacy != null)
+            {
+                if (!Directory.Exists("Assets/Resources"))
+                    Directory.CreateDirectory("Assets/Resources");
+                AssetDatabase.CopyAsset(LegacyDataPath, ResourcesPath);
+                AssetDatabase.DeleteAsset(LegacyDataPath);
+                AssetDatabase.SaveAssets();
+                existing = AssetDatabase.LoadAssetAtPath<BulletVfxBank>(ResourcesPath);
+                if (existing != null)
+                {
+                    PopulateIfEmpty(existing);
+                    return existing;
+                }
+            }
+
+            if (!Directory.Exists("Assets/Resources"))
+                Directory.CreateDirectory("Assets/Resources");
 
             var bank = ScriptableObject.CreateInstance<BulletVfxBank>();
             PopulateIfEmpty(bank);
-            AssetDatabase.CreateAsset(bank, AssetPath);
+            AssetDatabase.CreateAsset(bank, ResourcesPath);
             AssetDatabase.SaveAssets();
-
-            if (!Directory.Exists("Assets/Resources"))
-                Directory.CreateDirectory("Assets/Resources");
-
-            if (!File.Exists(ResourcesPath))
-                AssetDatabase.CopyAsset(AssetPath, ResourcesPath);
-
-            AssetDatabase.SaveAssets();
-            ApplyLegacyVisualScale(bank);
-            SyncResourcesCopy();
             return bank;
         }
 
-        static void ApplyLegacyVisualScale(BulletVfxBank bank)
+        static void DeleteLegacyDataCopyIfPresent()
         {
-            // --- Apply changes ---
-            if (bank == null) return;
-            var so = new SerializedObject(bank);
-            so.FindProperty("visualScaleMultiplier").floatValue = 0.5f;
-            so.ApplyModifiedPropertiesWithoutUndo();
-            EditorUtility.SetDirty(bank);
-        }
-
-        static void SyncResourcesCopy()
-        {
-            // --- SyncResourcesCopy ---
-            if (!File.Exists(AssetPath)) return;
-            if (!Directory.Exists("Assets/Resources"))
-                Directory.CreateDirectory("Assets/Resources");
-            AssetDatabase.CopyAsset(AssetPath, ResourcesPath);
+            if (AssetDatabase.LoadAssetAtPath<BulletVfxBank>(LegacyDataPath) == null)
+                return;
+            AssetDatabase.DeleteAsset(LegacyDataPath);
             AssetDatabase.SaveAssets();
+            Debug.Log("[BulletVfxBankSetup] Removed legacy Assets/Data/BulletVfxBank.asset — use Resources only.");
         }
 
         static void PopulateIfEmpty(BulletVfxBank bank)
         {
-            // --- PopulateIfEmpty ---
+            if (bank == null)
+                return;
+
             var so = new SerializedObject(bank);
             var categories = so.FindProperty("categories");
             if (categories != null && categories.arraySize > 0)
             {
-                ApplyLegacyVisualScale(bank);
+                // Ensure new scale fields exist with sensible defaults if missing from old YAML.
+                EnsureScaleDefaults(so);
+                so.ApplyModifiedPropertiesWithoutUndo();
+                EditorUtility.SetDirty(bank);
                 return;
             }
 
@@ -102,15 +102,26 @@ namespace TitanOrbit.ECS.Editor
             if (impact != null)
                 so.FindProperty("fallbackImpactPrefab").objectReferenceValue = impact;
 
-            so.FindProperty("visualScaleMultiplier").floatValue = 0.5f;
-
+            EnsureScaleDefaults(so);
             so.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(bank);
         }
 
+        /// <summary>Does not overwrite designer values — only fills missing/zero upgrade field.</summary>
+        static void EnsureScaleDefaults(SerializedObject so)
+        {
+            var globalProp = so.FindProperty("globalVisualScaleMultiplier");
+            if (globalProp == null)
+                globalProp = so.FindProperty("visualScaleMultiplier");
+            // Leave global as-is when already set (designer may have chosen 0.25).
+
+            var upgradeProp = so.FindProperty("upgradeVisualScaleMultiplier");
+            if (upgradeProp != null && upgradeProp.floatValue <= 0.001f)
+                upgradeProp.floatValue = 0.5f;
+        }
+
         static List<GameObject> LoadLaserboltPrefabs()
         {
-            // --- LoadLaserboltPrefabs ---
             var list = new List<GameObject>();
             string[] colors = { "Red", "Blue", "Green", "Yellow", "Purple" };
             foreach (string color in colors)

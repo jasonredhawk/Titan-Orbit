@@ -32,10 +32,15 @@ namespace TitanOrbit.Entities
         static Material trailMat;
         static Material defaultBulletMat;
 
-        /// <summary>Global VFX size tuning (legacy CombatSystem default was 0.5). Applied after per-shot scale.</summary>
+        /// <summary>
+        /// Final VFX size = factory baseline × per-shot fire-power scale × bank
+        /// <see cref="BulletVfxBank.GlobalVisualScaleMultiplier"/>.
+        /// </summary>
         public static float GetBulletVisualScale(BulletVfxBank bank, float scaleMultiplier)
         {
-            float globalScale = bank != null ? bank.VisualScaleMultiplier : LegacyGlobalVisualScale;
+            float globalScale = bank != null
+                ? bank.GlobalVisualScaleMultiplier
+                : LegacyGlobalVisualScale;
             return DefaultBulletVisualScale * Mathf.Max(0.1f, scaleMultiplier) * globalScale;
         }
 
