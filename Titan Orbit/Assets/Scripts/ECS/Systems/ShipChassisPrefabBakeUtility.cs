@@ -181,14 +181,20 @@ namespace TitanOrbit.ECS
                 dst.Add(new ShipWeaponMountBakeData
                 {
                     LocalPosition = localPos,
-                    LocalRotation = localRot,
+                    // Planar yaw only — pitched meshes must not collapse ShipWeaponPose aim to +Z.
+                    LocalRotation = ToPlanarYawLocalRotation(localRot),
                     DirectionAngleDeg = mountAuth.DirectionAngleDeg,
                     CannonIndex = mountAuth.CannonIndex,
                 });
             }
 
             if (dst.Count > 0)
+            {
+                // [TITAN-ORBIT] Many prefabs leave every CannonIndex at 0 — assign discovery order
+                // so round-robin buffer slots stay paired with the same live GO barrel.
+                EnsureUniqueCannonIndices(dst);
                 return;
+            }
 
             // --- Name / family weapon id scan (matches ShipWeaponMountCollector + IsWeaponComponent) ---
             foreach (var t in root.GetComponentsInChildren<Transform>(true))
@@ -202,7 +208,7 @@ namespace TitanOrbit.ECS
                 dst.Add(new ShipWeaponMountBakeData
                 {
                     LocalPosition = localPos,
-                    LocalRotation = localRot,
+                    LocalRotation = ToPlanarYawLocalRotation(localRot),
                     DirectionAngleDeg = 0f,
                     CannonIndex = dst.Count,
                 });
@@ -211,6 +217,38 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Zero mounts is valid (unarmed). Do not invent a centerline muzzle.
             if (dst.Count == 0 && !string.IsNullOrEmpty(chassisIdForLog))
                 Debug.Log($"[ChassisBake] Chassis '{chassisIdForLog}' has no Weapon mounts — unarmed.");
+        }
+
+        /// <summary>
+        /// When every authored <see cref="ShipWeaponMountBakeData.CannonIndex"/> is the same
+        /// (usually all 0), rewrite to 0..N-1 in list order so ECS buffer slots and live GO
+        /// barrels stay paired during round-robin fire.
+        /// </summary>
+        static void EnsureUniqueCannonIndices(List<ShipWeaponMountBakeData> mounts)
+        {
+            if (mounts == null || mounts.Count <= 1)
+                return;
+
+            bool allSame = true;
+            int first = mounts[0].CannonIndex;
+            for (int i = 1; i < mounts.Count; i++)
+            {
+                if (mounts[i].CannonIndex != first)
+                {
+                    allSame = false;
+                    break;
+                }
+            }
+
+            if (!allSame)
+                return;
+
+            for (int i = 0; i < mounts.Count; i++)
+            {
+                var m = mounts[i];
+                m.CannonIndex = i;
+                mounts[i] = m;
+            }
         }
 
         /// <summary>
@@ -228,6 +266,20 @@ namespace TitanOrbit.ECS
             Quaternion lr = Quaternion.Inverse(hullRoot.rotation) * mount.rotation;
             localPosition = lp;
             localRotation = lr;
+        }
+
+        /// <summary>
+        /// Flattens a mount local rotation to yaw-only so <see cref="ShipWeaponPose"/> aims along
+        /// the weapon’s horizontal facing (pitched barrels no longer fall back to hull +Z).
+        /// </summary>
+        public static quaternion ToPlanarYawLocalRotation(quaternion localRotation)
+        {
+            float3 fwd = math.mul(localRotation, new float3(0f, 0f, 1f));
+            fwd.y = 0f;
+            if (math.lengthsq(fwd) < 0.0001f)
+                return quaternion.identity;
+            fwd = math.normalize(fwd);
+            return quaternion.LookRotationSafe(fwd, new float3(0f, 1f, 0f));
         }
 
         /// <summary>

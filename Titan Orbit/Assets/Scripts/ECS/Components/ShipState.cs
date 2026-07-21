@@ -170,16 +170,20 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [ECS/DOTS] Legacy hull-wide weapon cooldown / drip cursor. Live fire now uses per-mount
-    /// <see cref="ShipWeaponMountElement.FireCooldown"/> via <see cref="ShipWeaponFireLogic"/>.
-    /// Kept on ships for ghost/prefab compatibility; new code should not write these fields.
+    /// [ECS/DOTS] Energy-queue cursor for low-energy multi-cannon fire (server sim).
+    /// Per-barrel cooldowns live on <see cref="ShipWeaponMountElement.FireCooldown"/>.
+    /// <see cref="NextMountIndex"/> is which mount may spend energy when a full volley is not affordable.
     /// </summary>
     public struct ShipWeaponState : IComponentData
     {
-        /// <summary>[LEGACY] Prefer per-mount <see cref="ShipWeaponMountElement.FireCooldown"/>.</summary>
+        /// <summary>[LEGACY] Unused — prefer per-mount <see cref="ShipWeaponMountElement.FireCooldown"/>.</summary>
         public float FireCooldown;
 
-        /// <summary>[LEGACY] Round-robin cursor from the old shared-cooldown drip planner.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Energy-queue index for round-robin drip. When the shared pool cannot
+        /// cover every mount at once, only this barrel may fire; after it shoots the cursor
+        /// advances 0→1→2→…→0. Reset to 0 after a full same-tick volley.
+        /// </summary>
         public int NextMountIndex;
     }
 

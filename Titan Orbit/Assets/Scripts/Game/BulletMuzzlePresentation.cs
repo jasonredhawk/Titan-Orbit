@@ -15,15 +15,18 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Local muzzle resolve for cosmetic bullet VFX.
     /// <para>
-    /// Prefers live weapon component <see cref="Transform"/> poses on the hybrid hull
-    /// (<c>fireOrigin = weapon.position</c>) so flashes follow BankPivot banking and authored Y.
-    /// Falls back to ECS <see cref="ShipWeaponMountElement"/> + <see cref="ShipWeaponPose"/> when
-    /// no GO mounts exist. Velocity is always <c>aim * BulletSpeed + shipVel</c> (planar).
-    /// Damage remains server-side (<see cref="BulletSimulationSystem"/>).
+    /// Prefers the live weapon component: <c>origin = weapon.position</c>, aim = <b>unbanked</b>
+    /// planar <c>weapon.forward</c> (BankPivot roll stripped) + authored
+    /// <see cref="ShipWeaponMountAuthoring.DirectionAngleDeg"/>. That keeps sequential fire aligned
+    /// with each barrel mesh. Falls back to ECS <see cref="ShipWeaponPose"/> when no live GO.
+    /// Velocity is <c>aim * BulletSpeed + shipVel</c> (planar). Damage is server-side.
     /// </para>
     /// </summary>
     public static class BulletMuzzlePresentation
     {
+        /// <summary>[UNITY] Created by <see cref="ShipBankVisualApplier"/> under the hull root.</summary>
+        const string BankPivotName = "BankPivot";
+
         /// <summary>
         /// If presentation lags predicted sim by more than this × one-tick travel, use predicted pose
         /// for the ECS fallback path only (live GO path uses drawn weapon transforms).
@@ -51,11 +54,16 @@ namespace TitanOrbit.Game
             public Transform Weapon;
             public float DirectionAngleDeg;
             public int CannonIndex;
+            /// <summary>
+            /// Discovery order before sort — secondary key so equal CannonIndex stays stable
+            /// (List.Sort is unstable; ties used to reshuffle barrels → random aim).
+            /// </summary>
+            public int CollectOrder;
         }
 
         /// <summary>
         /// Resolves world muzzle origin/forward for one mount index on the local ship.
-        /// Live GO weapons win: exact <c>weapon.position</c> (bank + Y). ECS buffer is fallback only.
+        /// Live GO path: tip position + unbanked planar forward of that weapon component.
         /// </summary>
         public static bool TryResolveMuzzle(
             EntityManager em,
@@ -74,8 +82,12 @@ namespace TitanOrbit.Game
             if (!em.Exists(shipEntity))
                 return false;
 
-            // --- Preferred: live weapon component Transform (includes BankPivot) ---
-            if (TryResolveLiveWeaponMuzzle(em, shipEntity, mountIndex,
+            // --- Preferred: live weapon component (position + unbanked aim) ---
+            int cannonIndex = 0;
+            if (TryGetMountElementFromBuffer(em, shipEntity, mountIndex, out ShipWeaponMountElement ecsMount))
+                cannonIndex = ecsMount.CannonIndex;
+
+            if (TryResolveLiveWeaponMuzzle(em, shipEntity, mountIndex, cannonIndex,
                     out fireOrigin, out fireForward, out float3 hullPosForVel))
             {
                 isDisplaySpace = true;
@@ -207,13 +219,14 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Exact live weapon pose: origin = <c>weapon.position</c>, planar aim from weapon forward
-        /// + <see cref="ShipWeaponMountAuthoring.DirectionAngleDeg"/> (legacy Starship).
+        /// Live barrel tip + aim along that weapon component. BankPivot roll is stripped so aim
+        /// matches the barrel’s hull-relative facing (not a banked wild XZ spray).
         /// </summary>
         static bool TryResolveLiveWeaponMuzzle(
             EntityManager em,
             Entity shipEntity,
             int mountIndex,
+            int cannonIndex,
             out float3 fireOrigin,
             out float3 fireForward,
             out float3 hullPosForVel)
@@ -229,17 +242,37 @@ namespace TitanOrbit.Game
             if (count <= 0)
                 return false;
 
-            int idx = mountIndex % count;
-            if (idx < 0)
-                idx = 0;
+            // Unique CannonIndex → exact barrel. Duplicate/default 0s → sorted list index.
+            int matchCount = 0;
+            int matchIdx = -1;
+            for (int i = 0; i < count; i++)
+            {
+                if (s_LiveMountScratch[i].CannonIndex != cannonIndex)
+                    continue;
+                matchCount++;
+                matchIdx = i;
+            }
+
+            int idx;
+            if (matchCount == 1)
+                idx = matchIdx;
+            else
+            {
+                idx = mountIndex % count;
+                if (idx < 0)
+                    idx = 0;
+            }
 
             LiveWeaponMount live = s_LiveMountScratch[idx];
             if (live.Weapon == null)
                 return false;
 
-            // Exact component world pose — no hull-root × yaw-only recomposition.
+            // Exact component tip — BankPivot may lift Y; that is intentional for the flash.
             fireOrigin = live.Weapon.position;
-            if (!TryBuildPlanarAimFromWeaponForward(live.Weapon.forward, live.DirectionAngleDeg, out fireForward))
+
+            // --- Unbanked planar aim (strip BankPivot roll, keep weapon local yaw/pitch facing) ---
+            Vector3 unbankedFwd = GetUnbankedWorldForward(live.Weapon);
+            if (!TryBuildPlanarAimFromWeaponForward(unbankedFwd, live.DirectionAngleDeg, out fireForward))
                 return false;
 
             if (TryGetLocalHullRoot(em, shipEntity, out Transform hullRoot) && hullRoot != null)
@@ -248,6 +281,38 @@ namespace TitanOrbit.Game
                 hullPosForVel = fireOrigin;
 
             return true;
+        }
+
+        /// <summary>
+        /// World forward of <paramref name="weapon"/> with <c>BankPivot</c> roll removed so aim
+        /// matches the hull-relative weapon component (same facing the player sees on the mesh).
+        /// </summary>
+        static Vector3 GetUnbankedWorldForward(Transform weapon)
+        {
+            if (weapon == null)
+                return Vector3.forward;
+
+            Transform bank = FindBankPivotAncestor(weapon);
+            if (bank == null || bank.parent == null)
+                return weapon.forward;
+
+            // World → BankPivot local (includes roll) → world via hull parent (yaw only).
+            Vector3 inBank = bank.InverseTransformDirection(weapon.forward);
+            return bank.parent.TransformDirection(inBank);
+        }
+
+        /// <summary>Walks parents for the BankPivot created by <see cref="ShipBankVisualApplier"/>.</summary>
+        static Transform FindBankPivotAncestor(Transform start)
+        {
+            Transform t = start;
+            while (t != null)
+            {
+                if (t.name == BankPivotName)
+                    return t;
+                t = t.parent;
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -278,6 +343,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Discovers offensive barrels on the drawn hull: authoring markers first, then weapon-named
         /// children (<see cref="ShipComponentAbilityStatsMath.IsWeaponComponent"/> / "Weapon").
+        /// Order matches ECS buffer: CannonIndex, then discovery order (stable ties).
         /// </summary>
         static bool TryCollectLiveWeaponMounts(
             EntityManager em,
@@ -287,6 +353,8 @@ namespace TitanOrbit.Game
             into.Clear();
             if (!TryGetLocalHullRoot(em, shipEntity, out Transform hullRoot) || hullRoot == null)
                 return false;
+
+            int collectOrder = 0;
 
             // --- Authoring markers (preferred) ---
             var authorings = hullRoot.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
@@ -302,14 +370,15 @@ namespace TitanOrbit.Game
                         Weapon = a.transform,
                         DirectionAngleDeg = a.DirectionAngleDeg,
                         CannonIndex = a.CannonIndex,
+                        CollectOrder = collectOrder++,
                     });
                 }
             }
 
             if (into.Count > 0)
             {
-                // [TITAN-ORBIT] Stable order by CannonIndex so round-robin 0→1→2 matches ECS buffer.
-                into.Sort(CompareLiveMountByCannonIndex);
+                EnsureUniqueLiveCannonIndices(into);
+                into.Sort(CompareLiveMountStable);
                 return true;
             }
 
@@ -327,23 +396,59 @@ namespace TitanOrbit.Game
                 {
                     Weapon = t,
                     DirectionAngleDeg = 0f,
-                    CannonIndex = into.Count,
+                    // Unique indices so sort matches hierarchy discovery order.
+                    CannonIndex = collectOrder,
+                    CollectOrder = collectOrder,
                 });
+                collectOrder++;
             }
 
             if (into.Count > 0)
-                into.Sort(CompareLiveMountByCannonIndex);
+                into.Sort(CompareLiveMountStable);
 
             return into.Count > 0;
         }
 
         /// <summary>
-        /// [STANDARD] Sort key for live mounts — lower <see cref="LiveWeaponMount.CannonIndex"/> first.
-        /// Ties keep relative order via zero compare (stable enough for unique indices).
+        /// [STANDARD] CannonIndex primary, CollectOrder secondary — List.Sort is unstable on ties.
         /// </summary>
-        static int CompareLiveMountByCannonIndex(LiveWeaponMount a, LiveWeaponMount b)
+        static int CompareLiveMountStable(LiveWeaponMount a, LiveWeaponMount b)
         {
-            return a.CannonIndex.CompareTo(b.CannonIndex);
+            int byCannon = a.CannonIndex.CompareTo(b.CannonIndex);
+            if (byCannon != 0)
+                return byCannon;
+            return a.CollectOrder.CompareTo(b.CollectOrder);
+        }
+
+        /// <summary>
+        /// When every live barrel still has the same authored CannonIndex (usually 0), rewrite
+        /// to discovery order so slots align with the ECS mount buffer after bake uniquify.
+        /// </summary>
+        static void EnsureUniqueLiveCannonIndices(List<LiveWeaponMount> mounts)
+        {
+            if (mounts == null || mounts.Count <= 1)
+                return;
+
+            bool allSame = true;
+            int first = mounts[0].CannonIndex;
+            for (int i = 1; i < mounts.Count; i++)
+            {
+                if (mounts[i].CannonIndex != first)
+                {
+                    allSame = false;
+                    break;
+                }
+            }
+
+            if (!allSame)
+                return;
+
+            for (int i = 0; i < mounts.Count; i++)
+            {
+                var m = mounts[i];
+                m.CannonIndex = m.CollectOrder;
+                mounts[i] = m;
+            }
         }
 
         /// <summary>ECS mount buffer only (no GO recomposition).</summary>

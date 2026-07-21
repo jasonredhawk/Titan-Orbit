@@ -503,13 +503,15 @@ namespace TitanOrbit.Game
                 return false;
 
             var adopted = _tracers[bestIndex];
-            // --- Bind authority metadata + server flight direction ---
-            // [TITAN-ORBIT] Keep presentation position (no muzzle snap) but take server Velocity.
+            // --- Bind authority metadata — keep presentation flight ---
+            // [TITAN-ORBIT] Do not overwrite Velocity with lagged server aim. Server mounts often
+            // bake LocalRotation ≈ identity (hull-forward) while the live weapon component faces
+            // a different way — adopting that mid-flight made sequential shots look mis-aimed.
+            // Position was already correct from the live muzzle; keep that aim too.
             adopted.Sequence = req.Sequence;
             adopted.IsAnticipation = false;
             adopted.OwnerNetworkId = req.OwnerNetworkId > 0 ? req.OwnerNetworkId : adopted.OwnerNetworkId;
             adopted.MountIndex = req.MountIndex;
-            adopted.Velocity = req.Velocity;
             adopted.BankIndex = req.BankIndex;
             adopted.ScaleMultiplier = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : adopted.ScaleMultiplier;
             adopted.Damage = req.Damage;

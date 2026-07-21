@@ -149,7 +149,7 @@ namespace TitanOrbit.ECS.Authoring
                     mounts.Add(new ShipWeaponMountElement
                     {
                         LocalPosition = localPos,
-                        LocalRotation = localRot,
+                        LocalRotation = ShipChassisPrefabBakeUtility.ToPlanarYawLocalRotation(localRot),
                         DirectionAngleDeg = mount.DirectionAngleDeg,
                         CannonIndex = mount.CannonIndex,
                     });
@@ -167,13 +167,49 @@ namespace TitanOrbit.ECS.Authoring
                         mounts.Add(new ShipWeaponMountElement
                         {
                             LocalPosition = localPos,
-                            LocalRotation = localRot,
+                            LocalRotation = ShipChassisPrefabBakeUtility.ToPlanarYawLocalRotation(localRot),
                             DirectionAngleDeg = 0f,
                             CannonIndex = mounts.Length,
                         });
                     }
                 }
+                else
+                {
+                    // [TITAN-ORBIT] Prefabs often leave every CannonIndex at 0 — uniquify so
+                    // round-robin slots stay paired with the same live barrel.
+                    EnsureUniqueBakedCannonIndices(mounts);
+                }
                 // [TITAN-ORBIT] Intentionally no MuzzleOffset fallback — unarmed ships stay empty.
+            }
+
+            /// <summary>
+            /// Rewrites all-equal CannonIndex values to 0..N-1 in buffer order.
+            /// </summary>
+            static void EnsureUniqueBakedCannonIndices(DynamicBuffer<ShipWeaponMountElement> mounts)
+            {
+                if (mounts.Length <= 1)
+                    return;
+
+                bool allSame = true;
+                int first = mounts[0].CannonIndex;
+                for (int i = 1; i < mounts.Length; i++)
+                {
+                    if (mounts[i].CannonIndex != first)
+                    {
+                        allSame = false;
+                        break;
+                    }
+                }
+
+                if (!allSame)
+                    return;
+
+                for (int i = 0; i < mounts.Length; i++)
+                {
+                    var m = mounts[i];
+                    m.CannonIndex = i;
+                    mounts[i] = m;
+                }
             }
 
             /// <summary>

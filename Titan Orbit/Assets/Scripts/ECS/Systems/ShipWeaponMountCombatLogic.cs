@@ -23,7 +23,7 @@ namespace TitanOrbit.ECS
     /// not multiply firePower / fireRate again (attributes already apply via
     /// <see cref="ShipAttributeUpgradeLogic.MultiplierPerLevel"/> on the numeric stats).
     /// </para>
-    /// Paired with <see cref="ShipWeaponFireLogic"/> (independent per-barrel cooldowns) and
+    /// Paired with <see cref="ShipWeaponFireLogic"/> (volley + energy-queue round-robin) and
     /// <see cref="ShipStatApplyLogic"/> / <see cref="ShipChassisCatalogApplySystem"/>.
     /// </summary>
     public static class ShipWeaponMountCombatLogic

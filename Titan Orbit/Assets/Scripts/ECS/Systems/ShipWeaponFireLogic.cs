@@ -6,13 +6,18 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Shared multi-mount fire planner for server bullets and client anticipation VFX.
     /// <para>
-    /// [TITAN-ORBIT] Each barrel is independent:
+    /// [TITAN-ORBIT] Shared energy pool (summed cap + regen), but <b>energy is claimed by one
+    /// barrel at a time</b> when the pool cannot cover a full volley:
     /// <list type="bullet">
-    /// <item>Own <c>FirePower</c> (damage + energy for that bullet)</item>
-    /// <item>Own <c>FireRate</c> / <c>FireCooldown</c> (big guns can be slow while side guns are fast)</item>
+    /// <item><b>Full volley</b> — energy ≥ sum of every mount’s firePower <b>and</b> every mount’s
+    /// cooldown is ready → all barrels fire in the same tick.</item>
+    /// <item><b>Energy queue (round-robin)</b> — otherwise only
+    /// <see cref="ShipWeaponState.NextMountIndex"/> may spend energy. Regen fills the pool for
+    /// that barrel alone until it fires; then the cursor advances to the next mount
+    /// (0→1→2→…→0). Other ready barrels do not steal energy out of turn.</item>
     /// </list>
-    /// While Fire is held, every mount whose cooldown is ready and whose energy cost fits the pool
-    /// may shoot in the same tick. No hull-wide average damage and no shared single cooldown.
+    /// Each mount still keeps its own <see cref="ShipWeaponMountElement.FirePower"/> /
+    /// <see cref="ShipWeaponMountElement.FireRate"/> / cooldown.
     /// </para>
     /// Paired with <see cref="BulletSimulationSystem"/> (server) and
     /// <c>ClientLocalBulletVfxBridge</c> (client cosmetics).
@@ -43,12 +48,17 @@ namespace TitanOrbit.ECS
         public const int MaxShotsPerTick = 16;
 
         /// <summary>
-        /// Plans which mounts fire this tick from per-mount readiness and remaining energy.
-        /// Call after ticking mount cooldowns down by dt. Does not mutate mounts — caller applies
-        /// energy spend and writes each shot’s <see cref="MountShot.CooldownSeconds"/>.
+        /// Plans which mounts fire this tick: full volley when the pool covers every barrel,
+        /// otherwise exactly the round-robin energy-queue mount. Call after ticking mount
+        /// cooldowns down by dt. Does not mutate mounts — caller applies energy spend, writes
+        /// each shot’s <see cref="MountShot.CooldownSeconds"/>, and stores
+        /// <paramref name="nextMountIndexAfter"/>.
         /// </summary>
         /// <param name="currentEnergy">Ship energy pool right now.</param>
         /// <param name="mounts">Weapon mount buffer (pose + combat + cooldown).</param>
+        /// <param name="nextMountIndex">
+        /// Current energy-queue cursor (<see cref="ShipWeaponState.NextMountIndex"/> or client mirror).
+        /// </param>
         /// <param name="fallbackDamage">
         /// Used when a mount’s <c>FirePower</c> is unset (legacy / bake race).
         /// </param>
@@ -60,57 +70,92 @@ namespace TitanOrbit.ECS
         /// </param>
         /// <param name="shotCount">How many entries in <paramref name="shots"/> are valid.</param>
         /// <param name="totalEnergySpend">Sum of energy costs for the planned shots.</param>
+        /// <param name="nextMountIndexAfter">Cursor to write after this fire (or unchanged if none).</param>
         /// <returns>True when at least one mount should fire.</returns>
-        public static bool TryPlanIndependentFire(
+        public static bool TryPlanFire(
             float currentEnergy,
             DynamicBuffer<ShipWeaponMountElement> mounts,
+            int nextMountIndex,
             float fallbackDamage,
             float fallbackFireRate,
             MountShot[] shots,
             out int shotCount,
-            out float totalEnergySpend)
+            out float totalEnergySpend,
+            out int nextMountIndexAfter)
         {
             shotCount = 0;
             totalEnergySpend = 0f;
+            nextMountIndexAfter = nextMountIndex;
 
             if (mounts.Length <= 0 || shots == null || shots.Length <= 0)
                 return false;
 
-            float energyLeft = currentEnergy;
-            int capacity = math.min(mounts.Length, math.min(shots.Length, MaxShotsPerTick));
+            int mountCount = mounts.Length;
 
-            // --- Each ready barrel spends its own firePower and arms its own cooldown ---
-            for (int i = 0; i < capacity; i++)
+            // --- Sum every barrel’s cost + check all cooldowns ready ---
+            float totalCost = 0f;
+            bool allReady = true;
+            for (int i = 0; i < mountCount; i++)
             {
-                ShipWeaponMountElement mount = mounts[i];
-                if (mount.FireCooldown > 0f)
-                    continue;
-
-                float damage = mount.FirePower > 0.01f
-                    ? mount.FirePower
-                    : math.max(0.1f, fallbackDamage);
-                float fireRate = mount.FireRate > 0.01f
-                    ? mount.FireRate
-                    : math.max(0.1f, fallbackFireRate);
-                float energyCost = math.max(0.01f, damage);
-
-                // [TITAN-ORBIT] Skip this barrel if the pool cannot afford it — cheaper guns may
-                // still fire later in the loop if they cost less.
-                if (energyLeft < energyCost)
-                    continue;
-
-                shots[shotCount++] = new MountShot
-                {
-                    MountIndex = i,
-                    Damage = math.max(1f, damage),
-                    EnergyCost = energyCost,
-                    CooldownSeconds = 1f / fireRate,
-                };
-                energyLeft -= energyCost;
-                totalEnergySpend += energyCost;
+                ResolveMountCombat(mounts[i], fallbackDamage, fallbackFireRate,
+                    out float damage, out _, out float energyCost);
+                totalCost += energyCost;
+                if (mounts[i].FireCooldown > 0f)
+                    allReady = false;
             }
 
-            return shotCount > 0;
+            // --- Mode A: full volley (pool covers every weapon and all are off cooldown) ---
+            // [TITAN-ORBIT] Same-tick multi-fire only when energy can feed the whole bank at once.
+            if (allReady && currentEnergy >= totalCost && totalCost > 0f)
+            {
+                int capacity = math.min(mountCount, math.min(shots.Length, MaxShotsPerTick));
+                for (int i = 0; i < capacity; i++)
+                {
+                    ResolveMountCombat(mounts[i], fallbackDamage, fallbackFireRate,
+                        out float damage, out float fireRate, out float energyCost);
+                    shots[shotCount++] = new MountShot
+                    {
+                        MountIndex = i,
+                        Damage = damage,
+                        EnergyCost = energyCost,
+                        CooldownSeconds = 1f / fireRate,
+                    };
+                    totalEnergySpend += energyCost;
+                }
+
+                // Next drip after the pool drains starts at mount 0.
+                nextMountIndexAfter = 0;
+                return shotCount > 0;
+            }
+
+            // --- Mode B: energy queue — only NextMountIndex may spend / fire ---
+            // [TITAN-ORBIT] Regen fills the shared pool, but other barrels must wait their turn.
+            // That is what makes low-energy fire cycle 0→1→2→… instead of mount 0 monopolizing.
+            int mountIdx = nextMountIndex;
+            if (mountIdx < 0)
+                mountIdx = 0;
+            mountIdx %= mountCount;
+
+            ShipWeaponMountElement mount = mounts[mountIdx];
+            if (mount.FireCooldown > 0f)
+                return false;
+
+            ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
+                out float dripDamage, out float dripRate, out float dripCost);
+            if (currentEnergy < dripCost)
+                return false;
+
+            shots[0] = new MountShot
+            {
+                MountIndex = mountIdx,
+                Damage = dripDamage,
+                EnergyCost = dripCost,
+                CooldownSeconds = 1f / dripRate,
+            };
+            shotCount = 1;
+            totalEnergySpend = dripCost;
+            nextMountIndexAfter = (mountIdx + 1) % mountCount;
+            return true;
         }
 
         /// <summary>
@@ -124,12 +169,34 @@ namespace TitanOrbit.ECS
 
             for (int i = 0; i < mounts.Length; i++)
             {
-                ShipWeaponMountElement mount = mounts[i];
-                if (mount.FireCooldown <= 0f)
+                ShipWeaponMountElement m = mounts[i];
+                if (m.FireCooldown <= 0f)
                     continue;
-                mount.FireCooldown = math.max(0f, mount.FireCooldown - dt);
-                mounts[i] = mount;
+                m.FireCooldown = math.max(0f, m.FireCooldown - dt);
+                mounts[i] = m;
             }
+        }
+
+        /// <summary>
+        /// Resolves per-barrel damage, fire rate, and energy cost (energy = firePower).
+        /// </summary>
+        static void ResolveMountCombat(
+            in ShipWeaponMountElement mount,
+            float fallbackDamage,
+            float fallbackFireRate,
+            out float damage,
+            out float fireRate,
+            out float energyCost)
+        {
+            damage = mount.FirePower > 0.01f
+                ? mount.FirePower
+                : math.max(0.1f, fallbackDamage);
+            fireRate = mount.FireRate > 0.01f
+                ? mount.FireRate
+                : math.max(0.1f, fallbackFireRate);
+            damage = math.max(1f, damage);
+            fireRate = math.max(0.1f, fireRate);
+            energyCost = math.max(0.01f, damage);
         }
     }
 }

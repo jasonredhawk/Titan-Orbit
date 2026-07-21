@@ -16,10 +16,9 @@ namespace TitanOrbit.Game
     /// flash matches the drawn barrel (including BankPivot). Server remains authoritative for
     /// damage (<see cref="BulletSimulationSystem"/>).
     /// <para>
-    /// [TITAN-ORBIT] Multi-cannon hulls mirror <see cref="ShipWeaponFireLogic"/> independent
-    /// barrels: each mount has its own firePower, fireRate, and FireCooldown. While Fire is held,
-    /// every ready mount the predicted energy pool can afford may spawn a tracer in the same frame
-    /// (big slow cannon + small fast side guns). When <see cref="BulletSpawnRpc"/> arrives,
+    /// [TITAN-ORBIT] Mirrors <see cref="ShipWeaponFireLogic"/>: full-volley when predicted energy
+    /// covers every mount; otherwise only <c>_nextMountIndex</c> may spend energy until it fires,
+    /// then the next barrel in sequence (0→1→2→…→0). When <see cref="BulletSpawnRpc"/> arrives,
     /// <see cref="BulletVfxDriver"/> binds Sequence without snapping pose back to the lagged
     /// server muzzle.
     /// </para>
@@ -54,6 +53,12 @@ namespace TitanOrbit.Game
         /// <summary>True after the first successful energy sync this session.</summary>
         bool _energyPrimed;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Local energy-queue cursor mirroring server
+        /// <see cref="ShipWeaponState.NextMountIndex"/>. Not ghosted — cosmetic only.
+        /// </summary>
+        int _nextMountIndex;
+
         /// <summary>Cached reference to scene input — resolved in Start.</summary>
         PlayerInputHandler _input;
 
@@ -79,6 +84,7 @@ namespace TitanOrbit.Game
             _energyPrimed = false;
             _predictedEnergy = 0f;
             _lastGhostEnergy = 0f;
+            _nextMountIndex = 0;
         }
 
         /// <summary>
@@ -129,18 +135,20 @@ namespace TitanOrbit.Game
             // --- Sync predicted energy with ghost (before planning fire) ---
             SyncPredictedEnergy(shipState.CurrentEnergy);
 
-            // --- Independent barrels (same planner as server) ---
-            if (!ShipWeaponFireLogic.TryPlanIndependentFire(
+            // --- Volley vs energy-queue round-robin (same planner as server) ---
+            if (!ShipWeaponFireLogic.TryPlanFire(
                     _predictedEnergy,
                     mounts,
+                    _nextMountIndex,
                     weaponCfg.BulletDamage,
                     weaponCfg.FireRate,
                     s_ShotScratch,
                     out int shotCount,
-                    out float energySpend))
+                    out float energySpend,
+                    out int nextMountIndexAfter))
                 return;
 
-            // --- Cap pending anticipations — do not arm cooldowns if the queue is full ---
+            // --- Cap pending anticipations — do not arm cooldowns / cursor if the queue is full ---
             if (!BulletVfxBridge.CanEnqueueAnticipation(shotCount))
                 return;
 
@@ -165,7 +173,6 @@ namespace TitanOrbit.Game
                         out float3 shipVel))
                     continue;
 
-                // Re-read mount after buffer may have been refreshed (pose resolve is read-only).
                 ShipWeaponMountElement mount = mounts[mountIdx];
                 float refDamage = mount.ReferenceFirePower > 0.01f
                     ? mount.ReferenceFirePower
@@ -210,6 +217,9 @@ namespace TitanOrbit.Game
                 // Prefer planned energy when every shot queued; otherwise spend only what enqueued.
                 float spend = enqueued == shotCount ? energySpend : spent;
                 _predictedEnergy = math.max(0f, _predictedEnergy - spend);
+                // Only advance the energy-queue cursor when the full plan enqueued (avoids skips).
+                if (enqueued == shotCount)
+                    _nextMountIndex = nextMountIndexAfter;
             }
         }
 

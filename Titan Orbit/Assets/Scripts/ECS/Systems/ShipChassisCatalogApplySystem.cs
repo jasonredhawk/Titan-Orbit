@@ -292,7 +292,7 @@ namespace TitanOrbit.ECS
             new ShipWeaponMountElement
             {
                 LocalPosition = mount.LocalPosition,
-                LocalRotation = mount.LocalRotation,
+                LocalRotation = ShipChassisPrefabBakeUtility.ToPlanarYawLocalRotation(mount.LocalRotation),
                 DirectionAngleDeg = mount.DirectionAngleDeg,
                 CannonIndex = mount.CannonIndex,
             };

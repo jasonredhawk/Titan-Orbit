@@ -13,10 +13,10 @@ namespace TitanOrbit.ECS
     /// Server-authoritative bullet simulation and ship firing. Runs after
     /// <see cref="ShipPhysicsDriveSystem"/> so muzzle positions use current transforms.
     /// <para>
-    /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/> with <b>independent barrels</b>:
-    /// each <see cref="ShipWeaponMountElement"/> has its own firePower, fireRate, and cooldown.
-    /// While Fire is held, every ready mount that the energy pool can afford may shoot in the
-    /// same tick (big slow cannon + small fast side guns). Empty mount buffer = unarmed.
+    /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>: shared energy pool with
+    /// per-barrel firePower / fireRate. Full energy + all cooldowns ready → same-tick volley;
+    /// otherwise only <see cref="ShipWeaponState.NextMountIndex"/> may spend energy until it
+    /// fires, then the next mount in sequence (0→1→2→…→0). Empty mount buffer = unarmed.
     /// </para>
     /// <para>
     /// Starblast-style hardening vs asteroid tunneling:
@@ -149,8 +149,8 @@ namespace TitanOrbit.ECS
             }
 
             // --- Phase B: ship firing + same-frame spawn collide ---
-            foreach (var (input, weaponCfg, shipState, kinematics, transform, ghostOwner, entity) in SystemAPI
-                         .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
+            foreach (var (input, weaponCfg, weaponState, shipState, kinematics, transform, ghostOwner, entity) in SystemAPI
+                         .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipWeaponState>, RefRW<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
@@ -171,15 +171,17 @@ namespace TitanOrbit.ECS
                 if (!input.ValueRO.Fire.IsSet)
                     continue;
 
-                // --- Plan ready mounts that the energy pool can afford this tick ---
-                if (!ShipWeaponFireLogic.TryPlanIndependentFire(
+                // --- Volley vs energy-queue round-robin ---
+                if (!ShipWeaponFireLogic.TryPlanFire(
                         shipState.ValueRO.CurrentEnergy,
                         mounts,
+                        weaponState.ValueRO.NextMountIndex,
                         weaponCfg.ValueRO.BulletDamage,
                         weaponCfg.ValueRO.FireRate,
                         s_ShotScratch,
                         out int shotCount,
-                        out float energySpend))
+                        out float energySpend,
+                        out int nextMountIndexAfter))
                     continue;
 
                 // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
@@ -295,6 +297,8 @@ namespace TitanOrbit.ECS
 
                 // Energy equals sum of each firing barrel’s firePower this tick.
                 shipState.ValueRW.CurrentEnergy = math.max(0f, shipState.ValueRO.CurrentEnergy - energySpend);
+                // Advance energy-queue cursor (0 after full volley; +1 after a drip shot).
+                weaponState.ValueRW.NextMountIndex = nextMountIndexAfter;
             }
 
             ecb.Playback(state.EntityManager);
