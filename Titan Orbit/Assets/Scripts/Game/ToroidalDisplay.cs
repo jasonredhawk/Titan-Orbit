@@ -47,18 +47,17 @@ namespace TitanOrbit.Game
         public static void ResetSession() => ResetSession("ResetSession");
 
         /// <summary>
-        /// Clears tile memory with a diagnostic reason. Whole-map retile after this looks like an eye blink.
+        /// Clears tile memory with a reason tag (despawn / leave match / confirmed missing ship).
+        /// Whole-map retile after this looks like an eye blink — call sparingly.
         /// </summary>
-        /// <param name="reason">Who requested the clear — logged by <see cref="AsteroidDestroyBlinkProbe"/>.</param>
+        /// <param name="reason">Who requested the clear (for call-site clarity).</param>
         public static void ResetSession(string reason)
         {
-            int entityTiles = s_EntityTiles.Count;
-            int keyedTiles = s_KeyedTiles.Count;
+            // reason is for call-site clarity when grepping who cleared tiles.
+            _ = reason;
             s_EntityTiles.Clear();
             s_KeyedTiles.Clear();
             s_TileSwitchesThisFrame = 0;
-            AsteroidDestroyBlinkProbe.NotifyTileSessionReset(
-                $"{reason} clearedEntityTiles={entityTiles} clearedKeyedTiles={keyedTiles}");
         }
 
         /// <summary>

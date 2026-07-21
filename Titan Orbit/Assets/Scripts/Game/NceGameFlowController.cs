@@ -91,13 +91,6 @@ namespace TitanOrbit.Game
         /// </summary>
         bool _latchedHasShipThisSession;
 
-        // #region agent log
-        bool _lastLoggedHasShip;
-        bool _lastLoggedShowHud;
-        bool _lastLoggedSpawnWait;
-        bool _lastLoggedLoading;
-        // #endregion
-
         void Awake()
         {
             Debug.Log("[NceGameFlow] Awake on " + gameObject.name + " enabled=" + enabled);
@@ -1090,28 +1083,6 @@ namespace TitanOrbit.Game
             bool matchWon = EcsGameBridge.TryGetMatchState(out var match) && match.WinningTeam != TeamId.None;
             bool showGameplayHud = connected && mapReady && hasShip && !showRejoinChoice &&
                                    !ClientTeamFlowState.IsRejoinChoicePending && !matchWon;
-
-            // #region agent log
-            // Hypothesis P: HUD blink = hasShip false during GhostSpawnBacklog → lobby/spawn overlay.
-            if (hasShipLive != _lastLoggedHasShip ||
-                showGameplayHud != _lastLoggedShowHud ||
-                showSpawnWait != _lastLoggedSpawnWait ||
-                showLoadingOverlay != _lastLoggedLoading)
-            {
-                AsteroidDestroyBlinkProbe.NotifyUiFlowFlash(
-                    hasShipLive,
-                    _latchedHasShipThisSession,
-                    showGameplayHud,
-                    showSpawnWait,
-                    showLoadingOverlay,
-                    ClientJoinSettleCache.GhostSpawnBacklog,
-                    ClientJoinSettleCache.ShouldSkipShipEntityQueries);
-                _lastLoggedHasShip = hasShipLive;
-                _lastLoggedShowHud = showGameplayHud;
-                _lastLoggedSpawnWait = showSpawnWait;
-                _lastLoggedLoading = showLoadingOverlay;
-            }
-            // #endregion
 
             if (gameplayRoot != null)
                 gameplayRoot.SetActive(showGameplayHud);

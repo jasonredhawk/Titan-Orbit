@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using TitanOrbit.Core;
 using Unity.Collections;
 using Unity.Entities;
@@ -13,13 +11,13 @@ namespace TitanOrbit.ECS
     /// <para>
     /// After Join Team, Settling stays OFF but <see cref="ClientJoinSettleCache.GhostSpawnBacklog"/>
     /// is true while the ship Instantiates. Bridge lookup is gated — without a seed, presentation
-    /// kept <c>hasPose=false</c> at the origin then snapped ~113m (debug-604d3d POSE_GAINED).
+    /// kept <c>hasPose=false</c> at the origin then snapped when the first pose arrived.
     /// </para>
     /// <para>
-    /// Race (604d3d frame 903→949): ship Instantiates while team-suppress is still true → old seed
-    /// code returned without storing → suppress cleared later but seed stayed empty → 35 frames of
-    /// no pose → !!CAM_JUMP + !!RETILE. Fix: always record a pending owned ship on Instantiates;
-    /// promote to the live seed once suppress is off.
+    /// Race: ship Instantiates while team-suppress is still true → old seed code returned without
+    /// storing → suppress cleared later but seed stayed empty → many frames of no pose → camera jump.
+    /// Fix: always record a pending owned ship on Instantiates; promote to the live seed once
+    /// suppress is off.
     /// </para>
     /// </summary>
     public static class LocalShipEntitySeed
@@ -55,27 +53,14 @@ namespace TitanOrbit.ECS
                 return;
 
             if (!IsLocallyOwnedShip(em, entity))
-            {
-                // #region agent log
-                WriteSeedLog("SHIP_INSTANTIATE_NOT_OWNED", entity, em);
-                // #endregion
                 return;
-            }
 
             // --- Always remember ownership match (even during team suppress) ---
             // [TITAN-ORBIT] Suppress may still be true the Instantiates frame of TeamChoiceResult;
-            // discarding here caused the 113m POSE_GAINED blink (debug-604d3d).
+            // discarding here caused a late POSE_GAINED camera jump.
             s_PendingOwnedShip = entity;
-            bool suppress = ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
-            if (!suppress)
+            if (!ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 SeededShip = entity;
-
-            // #region agent log
-            WriteSeedLog(
-                suppress ? "SHIP_INSTANTIATE_PENDING" : "SHIP_INSTANTIATE_SEEDED",
-                entity,
-                em);
-            // #endregion
         }
 
         /// <summary>
@@ -97,9 +82,6 @@ namespace TitanOrbit.ECS
                 em.HasComponent<ShipTag>(s_PendingOwnedShip))
             {
                 SeededShip = s_PendingOwnedShip;
-                // #region agent log
-                WriteSeedLog("SHIP_SEED_PROMOTED", SeededShip, em);
-                // #endregion
             }
 
             shipEntity = SeededShip;
@@ -109,44 +91,28 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            if (!em.HasComponent<ShipTag>(shipEntity))
-            {
-                shipEntity = Entity.Null;
-                return false;
-            }
-
             return true;
         }
 
-        /// <summary>Clears the seed (despawn / leave).</summary>
+        /// <summary>Clears seed when the local ship is confirmed gone.</summary>
         public static void Clear()
         {
             SeededShip = Entity.Null;
             s_PendingOwnedShip = Entity.Null;
         }
 
-        /// <summary>True when this ship ghost is owned by the local connection.</summary>
+        /// <summary>True when this ship ghost belongs to the local NetworkId connection.</summary>
         static bool IsLocallyOwnedShip(EntityManager em, Entity entity)
         {
-            // --- Path 1: NetCode enableable local-owner flag (must be enabled) ---
-            if (em.HasComponent<GhostOwnerIsLocal>(entity) &&
-                em.IsComponentEnabled<GhostOwnerIsLocal>(entity))
-                return true;
-
-            // --- Path 2: GhostOwner.NetworkId matches our connection ---
             if (!em.HasComponent<GhostOwner>(entity))
                 return false;
 
+            int ownerId = em.GetComponentData<GhostOwner>(entity).NetworkId;
             int localId = ReadLocalNetworkId(em);
-            if (localId <= 0)
-                return false;
-
-            return em.GetComponentData<GhostOwner>(entity).NetworkId == localId;
+            return localId > 0 && ownerId == localId;
         }
 
-        /// <summary>
-        /// Tiny connection query only — not a ship gather. Safe during GhostSpawnBacklog.
-        /// </summary>
+        /// <summary>Local client's NetworkId from the in-game connection entity (tiny query).</summary>
         static int ReadLocalNetworkId(EntityManager em)
         {
             using var ids = em.CreateEntityQuery(
@@ -154,38 +120,5 @@ namespace TitanOrbit.ECS
                 .ToComponentDataArray<NetworkId>(Allocator.Temp);
             return ids.Length > 0 ? ids[0].Value : -1;
         }
-
-        // #region agent log
-        /// <summary>NDJSON for debug-604d3d — hypothesis F (seed race / POSE_GAINED jump).</summary>
-        static void WriteSeedLog(string message, Entity entity, EntityManager em)
-        {
-            try
-            {
-                int localId = ReadLocalNetworkId(em);
-                int ownerId = em.HasComponent<GhostOwner>(entity)
-                    ? em.GetComponentData<GhostOwner>(entity).NetworkId
-                    : -1;
-                bool suppress = ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
-                string path = Path.GetFullPath(
-                    Path.Combine(Application.dataPath, "..", "..", "debug-604d3d.log"));
-                long ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                string line =
-                    "{\"sessionId\":\"604d3d\",\"hypothesisId\":\"F\",\"location\":\"LocalShipEntitySeed\"," +
-                    "\"message\":\"" + message + "\",\"data\":{" +
-                    "\"shipIndex\":" + entity.Index +
-                    ",\"localId\":" + localId +
-                    ",\"ownerId\":" + ownerId +
-                    ",\"suppress\":" + (suppress ? "true" : "false") +
-                    ",\"backlog\":" + (ClientJoinSettleCache.GhostSpawnBacklog ? "true" : "false") +
-                    ",\"frame\":" + Time.frameCount +
-                    "},\"timestamp\":" + ts + ",\"runId\":\"post-fix\"}\n";
-                File.AppendAllText(path, line);
-            }
-            catch
-            {
-                // Diagnostic only.
-            }
-        }
-        // #endregion
     }
 }

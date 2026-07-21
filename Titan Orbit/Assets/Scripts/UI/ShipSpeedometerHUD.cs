@@ -99,7 +99,6 @@ namespace TitanOrbit.UI
         ShipWeaponConfig _cachedWeapon;
         ShipComponentAbilityStats _cachedEffectiveStats;
         Entity _cachedShipEntity;
-        bool _lastShowLogged = true;
 
         /// <summary>Throttle rich-text rebuilds — string allocs every LateUpdate show up as GC.Alloc.</summary>
         float nextTextRebuildTime;
@@ -644,19 +643,6 @@ namespace TitanOrbit.UI
                         !ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
             if (HUDController.ShipUpgradeTreeObscuresHud)
                 show = false;
-
-            // #region agent log
-            if (show != _lastShowLogged)
-            {
-                AsteroidDestroyBlinkProbe.NotifySpeedometerVisibility(
-                    show,
-                    hasShip,
-                    _hasHudCache,
-                    ClientJoinSettleCache.GhostSpawnBacklog,
-                    ClientJoinSettleCache.ShouldSkipShipEntityQueries);
-                _lastShowLogged = show;
-            }
-            // #endregion
 
             // --- Visibility and layout refresh ---
             rootPanel.SetActive(show);

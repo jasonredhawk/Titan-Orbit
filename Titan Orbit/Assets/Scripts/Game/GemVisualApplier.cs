@@ -50,8 +50,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// [TITAN-ORBIT] Builds the shared URP tint material before the first asteroid destroy.
-        /// debug-604d3d post-fix: first gem Instantiates after settle hitchs 40–47ms (feels like a blink)
-        /// while camera/tiles stay stable — shader/material setup on the destroy frame is the suspect.
+        /// First gem Instantiates after settle can hitch on shader/material setup — prewarm avoids
+        /// that cost on the destroy frame.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void PrewarmSharedTint()
@@ -86,8 +86,6 @@ namespace TitanOrbit.Game
             if (gemPrefab == null)
                 return false;
 
-            bool firstMaterial = s_sharedTintedGemMaterial == null;
-
             // --- Instantiate legacy prefab and strip sim/network components ---
             instance = Object.Instantiate(gemPrefab);
             instance.name = "GemTagProxy";
@@ -96,13 +94,6 @@ namespace TitanOrbit.Game
             float scale = ComputeVisualScale(gemValue);
             instance.transform.localScale = Vector3.one * scale;
 
-            // #region agent log
-            if (firstMaterial)
-            {
-                AsteroidDestroyBlinkProbe.NotifyGemWork(
-                    $"gemMaterialFirstCreate frame={Time.frameCount}");
-            }
-            // #endregion
             return true;
         }
 

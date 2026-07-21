@@ -56,8 +56,8 @@ namespace TitanOrbit.Game
                 return;
 
             // --- Local ship: seed presentation cache during GhostSpawnBacklog ---
-            // [TITAN-ORBIT] debug-604d3d: post–Join Team ship Instantiates left hasPose=false
-            // (lookup gated, cache empty) then !!CAM_JUMP 113m + !!RETILE when backlog cleared.
+            // [TITAN-ORBIT] Post–Join Team ship Instantiates leave bridge lookup gated; without a
+            // seed, hasPose stays false then the camera snaps when backlog clears.
             // One-entity Instantiates hook — no ship ToEntityArray / WithEntityAccess.
             if (em.HasComponent<ShipTag>(entity))
             {

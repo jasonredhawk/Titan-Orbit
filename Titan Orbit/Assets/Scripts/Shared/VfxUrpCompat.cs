@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using UnityEngine;
 
 namespace TitanOrbit.Core
@@ -9,9 +8,8 @@ namespace TitanOrbit.Core
     /// especially on mobile (GLES/Vulkan). Do not add AllIn1 shaders to Project Settings → Graphics →
     /// Always Included Shaders — that can crash or destabilize Android/iOS builds; rely on fallbacks here instead.
     /// <para>
-    /// [TITAN-ORBIT] debug-604d3d: asteroid destroy still blinked after camera/tile/gem Instantiates were
-    /// proven clean. Sci-Fi impact prefabs carry Point Lights — a short intensity spike reads as a
-    /// whole-scene eye-blink. Lights are stripped on prepare; particles stay.
+    /// [TITAN-ORBIT] Sci-Fi impact prefabs also carry Point Lights — a short intensity spike reads as a
+    /// whole-scene flash. Lights are stripped on prepare; particles stay.
     /// </para>
     /// </summary>
     public static class VfxUrpCompat
@@ -23,8 +21,7 @@ namespace TitanOrbit.Core
         /// <summary>
         /// Swap GrabPass AllIn1 materials for SRP batch or particle unlit fallbacks; disable screen
         /// distortion and soft particles. Uses <c>sharedMaterials</c> only — never
-        /// <c>Renderer.materials</c> (that clones every material per impact and GC-hitchs destroy frames;
-        /// debug-604d3d showed 40–56ms !!HITCH with camera stable after Sci-Fi Instantiates).
+        /// <c>Renderer.materials</c> (that clones every material per impact and GC-hitchs destroy frames).
         /// </summary>
         public static void FixAllIn1MaterialsForUrp(GameObject root)
         {
@@ -120,7 +117,7 @@ namespace TitanOrbit.Core
         public static void PrepareVfxInstance(GameObject root)
         {
             FixAllIn1MaterialsForUrp(root);
-            StripSceneFlashLights(root, "PrepareVfxInstance");
+            StripSceneFlashLights(root);
             PlayParticleSystemsInHierarchy(root);
         }
 
@@ -130,84 +127,21 @@ namespace TitanOrbit.Core
         /// Particles / meshes stay — only the light components are turned off.
         /// </summary>
         /// <param name="root">Impact or muzzle instance.</param>
-        /// <param name="caller">Diagnostic tag for debug-604d3d.log.</param>
-        public static void StripSceneFlashLights(GameObject root, string caller)
+        public static void StripSceneFlashLights(GameObject root)
         {
             if (root == null)
                 return;
 
             Light[] lights = root.GetComponentsInChildren<Light>(true);
-            int count = 0;
-            float peakIntensity = 0f;
-            float peakRange = 0f;
             for (int i = 0; i < lights.Length; i++)
             {
                 Light light = lights[i];
                 if (light == null)
                     continue;
-                count++;
-                peakIntensity = Mathf.Max(peakIntensity, light.intensity);
-                peakRange = Mathf.Max(peakRange, light.range);
                 light.enabled = false;
                 light.intensity = 0f;
                 // Destroy so nothing can re-enable the light next frame.
                 UnityEngine.Object.Destroy(light);
-            }
-
-            // #region agent log
-            // Hypothesis H: impact Point Lights cause whole-scene blink on asteroid kill.
-            if (count > 0)
-            {
-                try
-                {
-                    string path = Path.GetFullPath(
-                        Path.Combine(Application.dataPath, "..", "..", "debug-604d3d.log"));
-                    long ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                    string line =
-                        "{\"sessionId\":\"604d3d\",\"hypothesisId\":\"H\",\"location\":\"VfxUrpCompat.StripSceneFlashLights\"," +
-                        "\"message\":\"IMPACT_LIGHTS_STRIPPED\",\"data\":{" +
-                        "\"caller\":\"" + (caller ?? "") + "\",\"count\":" + count +
-                        ",\"peakIntensity\":" + peakIntensity.ToString("F2") +
-                        ",\"peakRange\":" + peakRange.ToString("F2") +
-                        ",\"frame\":" + Time.frameCount +
-                        "},\"timestamp\":" + ts + ",\"runId\":\"post-fix\"}\n";
-                    File.AppendAllText(path, line);
-                }
-                catch
-                {
-                    // Diagnostic only.
-                }
-
-                Debug.Log(
-                    $"[AsteroidBlink] IMPACT_LIGHTS_STRIPPED caller={caller} count={count} " +
-                    $"peakIntensity={peakIntensity:F2} peakRange={peakRange:F2}");
-            }
-            // #endregion
-        }
-
-        /// <summary>
-        /// [DIAGNOSTIC] Hypothesis I — which impact path ran (Sci-Fi vs mobile) and Instantiates cost.
-        /// </summary>
-        public static void LogImpactPath(string pathName, float scale, double ms = 0)
-        {
-            try
-            {
-                string path = Path.GetFullPath(
-                    Path.Combine(Application.dataPath, "..", "..", "debug-604d3d.log"));
-                long ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                string line =
-                    "{\"sessionId\":\"604d3d\",\"hypothesisId\":\"I\",\"location\":\"BulletVisualFactory.SpawnBulletImpactVfx\"," +
-                    "\"message\":\"IMPACT_PATH\",\"data\":{" +
-                    "\"path\":\"" + pathName + "\",\"scale\":" + scale.ToString("F2") +
-                    ",\"ms\":" + ms.ToString("F2") +
-                    ",\"frame\":" + Time.frameCount +
-                    ",\"frameDtMs\":" + (Time.deltaTime * 1000f).ToString("F1") +
-                    "},\"timestamp\":" + ts + ",\"runId\":\"post-fix\"}\n";
-                File.AppendAllText(path, line);
-            }
-            catch
-            {
-                // Diagnostic only.
             }
         }
 

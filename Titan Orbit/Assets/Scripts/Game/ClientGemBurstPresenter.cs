@@ -183,9 +183,6 @@ namespace TitanOrbit.Game
             // Spawn the first budget immediately so the burst still "pops" on the destroy frame.
             int spawnedNow = DrainPendingSpawns(MaxSpawnsPerFrame);
 
-            AsteroidDestroyBlinkProbe.NotifyGemWork(
-                $"localBurst plan={count} spawnedNow={spawnedNow} pending={_pending.Count}");
-
             if (sw != null)
             {
                 sw.Stop();

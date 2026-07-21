@@ -1264,11 +1264,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Max networked gem GO Instantiates per frame from the urgent queue.
         /// Destroy bursts can enqueue many ghosts at once — Instantiating all of them in one
-        /// <see cref="SyncAllProxies"/> call hitchs the client (scene blink).
-        /// </summary>
-        /// <summary>
-        /// Max networked gem GO Instantiates per frame from the urgent queue.
-        /// Kept at 1 — post-fix logs still showed 40ms+ hitch when creating gems after destroy.
+        /// <see cref="SyncAllProxies"/> call hitchs the client (scene blink). Cap at 1 per frame.
         /// </summary>
         const int MaxUrgentGemProxiesPerFrame = 1;
 
@@ -1281,33 +1277,19 @@ namespace TitanOrbit.Game
         void DrainUrgentGemProxies(EntityManager em, HashSet<Entity> alive)
         {
             // --- Skip during map Instantiates storm ---
-            // [TITAN-ORBIT] debug-604d3d: urgent gems during Settling armed false blink windows and
-            // contributed to 100ms hitches while the camera sat at the origin.
+            // [TITAN-ORBIT] Urgent gem Instantiates during Settling pile hitch cost onto join;
+            // map load already drains Pending/SpawnRequest under the loading screen.
             if (ClientJoinSettleCache.Settling)
                 return;
-
-            // --- A/B: skip networked gem GO Instantiates while isolating destroy blink ---
-            if (AsteroidDestroyBlinkProbe.DebugSkipDestroyGemVisuals)
-            {
-                // Still drain the queue so it does not grow forever — drop without Instantiates.
-                var discard = new List<Entity>(8);
-                GemClientEntityRegistry.DrainUrgentVisualQueue(discard, 64);
-                if (discard.Count > 0)
-                {
-                    AsteroidDestroyBlinkProbe.NotifyGemWork(
-                        $"urgentGemProxies SKIPPED count={discard.Count} (DebugSkipDestroyGemVisuals)");
-                }
-
-                return;
-            }
 
             var urgent = new List<Entity>(8);
             int remainingAfter = GemClientEntityRegistry.DrainUrgentVisualQueue(urgent, MaxUrgentGemProxiesPerFrame);
             if (urgent.Count == 0)
                 return;
 
-            // [DIAGNOSTIC] Always time Instantiates — hypothesis G (hitch = blink).
-            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var sw = TitanOrbitDebugFlags.LogAsteroidDestroyPerf
+                ? System.Diagnostics.Stopwatch.StartNew()
+                : null;
             int created = 0;
 
             for (int i = 0; i < urgent.Count; i++)
@@ -1341,17 +1323,12 @@ namespace TitanOrbit.Game
                 created++;
             }
 
-            sw.Stop();
-            double ms = sw.Elapsed.TotalMilliseconds;
-            // #region agent log
-            AsteroidDestroyBlinkProbe.NotifyGemInstantiateTiming(created, remainingAfter, ms);
-            // #endregion
-
-            if (TitanOrbitDebugFlags.LogAsteroidDestroyPerf)
+            if (sw != null)
             {
+                sw.Stop();
                 Debug.Log(
                     $"[AsteroidDestroy] Urgent gem proxies created={created}/{urgent.Count} " +
-                    $"queueLeft={remainingAfter} ms={ms:F2} " +
+                    $"queueLeft={remainingAfter} ms={sw.Elapsed.TotalMilliseconds:F2} " +
                     $"frameDtMs={Time.deltaTime * 1000f:F1}");
             }
         }
@@ -1361,12 +1338,6 @@ namespace TitanOrbit.Game
         {
             if (entity == _cachedDedicatedLocalShipEntity)
                 _cachedDedicatedLocalShipEntity = Entity.Null;
-
-            bool wasAsteroid = _asteroidLastKnown.ContainsKey(entity) ||
-                               _asteroidBurstFired.Contains(entity) ||
-                               (_proxies.TryGetValue(entity, out var existingGo) &&
-                                existingGo != null &&
-                                existingGo.name.IndexOf("Asteroid", System.StringComparison.Ordinal) >= 0);
 
             // --- Drop toroidal tile memory for this entity ---
             ToroidalDisplay.RemoveEntity(entity);
@@ -1379,14 +1350,7 @@ namespace TitanOrbit.Game
                 if (_proxyNetworkIds.TryGetValue(entity, out int networkId) && go != null)
                     ShipWeaponProxyRegistry.Unregister(networkId, go.transform);
                 if (go != null)
-                {
-                    // #region agent log
-                    if (wasAsteroid)
-                        AsteroidDestroyBlinkProbe.NotifyAsteroidProxyDestroyed(
-                            entity.Index, go.name, go.activeSelf);
-                    // #endregion
                     Destroy(go);
-                }
                 _proxies.Remove(entity);
                 _proxyNetworkIds.Remove(entity);
                 _proxyShipLevels.Remove(entity);
