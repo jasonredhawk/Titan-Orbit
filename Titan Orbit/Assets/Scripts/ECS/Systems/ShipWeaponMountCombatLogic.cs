@@ -9,13 +9,22 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Fills each <see cref="ShipWeaponMountElement"/> with its own fire power and fire rate from
-    /// the chassis prefab weapon child (transform-scaled family stats + ship level + attributes).
+    /// the chassis <b>prefab</b> weapon child (authored localScale × family stats + ship level +
+    /// Fire Power attributes).
     /// <para>
     /// [TITAN-ORBIT] Bullets use <b>per-mount</b> firePower — not a hull-wide average. A fat main
-    /// cannon can hit hard and cool slowly while small side guns hit lighter and shoot faster.
+    /// cannon can hit hard and cool slowly while small side guns hit lighter and shoot faster,
+    /// driven by each Weapon child’s <b>authored prefab</b> XY / Z scale.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Intentional: combat stats are read from a fresh Instantiates of the chassis
+    /// prefab — <b>never</b> from the live hybrid proxy. Bottom-bar attribute upgrades grow weapon
+    /// meshes via <c>ShipComponentAttributeScaleApplier</c> for looks only; that runtime scale must
+    /// not multiply firePower / fireRate again (attributes already apply via
+    /// <see cref="ShipAttributeUpgradeLogic.MultiplierPerLevel"/> on the numeric stats).
+    /// </para>
     /// Paired with <see cref="ShipWeaponFireLogic"/> (independent per-barrel cooldowns) and
     /// <see cref="ShipStatApplyLogic"/> / <see cref="ShipChassisCatalogApplySystem"/>.
-    /// </para>
     /// </summary>
     public static class ShipWeaponMountCombatLogic
     {
@@ -145,6 +154,11 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Instantiates the chassis prefab briefly and reads each Weapon child’s scaled stats.
         /// Order / CannonIndex match <see cref="ShipChassisPrefabBakeUtility"/> mount bake.
+        /// <para>
+        /// [TITAN-ORBIT] Always uses a temporary Instantiates when the asset is not already a scene
+        /// object, so authored prefab localScale is the combat lever — not the live ship’s
+        /// attribute-grown meshes.
+        /// </para>
         /// </summary>
         public static void CollectWeaponCombatBases(
             GameObject chassisPrefab,
@@ -163,13 +177,19 @@ namespace TitanOrbit.ECS
             try
             {
                 // [UNITY] Prefab assets are not in a scene — instantiate so children are walkable.
+                // [TITAN-ORBIT] Never walk a live hybrid hull here: attribute scale has already
+                // grown those meshes for cosmetics and would double-count into firePower/fireRate.
                 if (!chassisPrefab.scene.IsValid())
                 {
                     instance = UnityEngine.Object.Instantiate(chassisPrefab);
                     destroyInstance = true;
                 }
                 else
-                    instance = chassisPrefab;
+                {
+                    // Scene object (rare) — still clone so we do not read mutated live scales.
+                    instance = UnityEngine.Object.Instantiate(chassisPrefab);
+                    destroyInstance = true;
+                }
 
                 Transform root = instance.transform;
                 var mountAuthorings = root.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);

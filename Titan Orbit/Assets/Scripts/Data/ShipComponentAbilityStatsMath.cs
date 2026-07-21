@@ -279,9 +279,10 @@ namespace TitanOrbit.Data
         /// Scales authored stats by prefab child transform size. Weapons: XY → fire power, Z → fire rate.
         /// Propulsion move/accel ignore scale; turn and ramming are never scaled.
         /// <para>
-        /// [TITAN-ORBIT] Art size is the intentional combat lever for per-gun feel (fatter barrel →
-        /// slower cadence, wider barrel → harder hit). Those scaled values are written onto each
-        /// <c>ShipWeaponMountElement</c> for independent firing — hull power-score still sums them.
+        /// [TITAN-ORBIT] Call only with <b>chassis prefab</b> authored localScale (art lever for
+        /// mixed calibers on one hull). Do not pass live hybrid proxies after
+        /// <c>ShipComponentAttributeScaleApplier</c> has grown meshes — that scale is visual-only
+        /// and combat already applies Fire Power attributes as numeric multipliers.
         /// </para>
         /// </summary>
         public static ShipComponentAbilityStats ScaleStatsByTransform(

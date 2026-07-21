@@ -9,7 +9,12 @@ namespace TitanOrbit.Game
     /// Maps bottom-bar attribute upgrade levels to per-component mesh scale factors on ship proxies
     /// (ported from legacy Starship). Each chassis part group (cockpit, wing, weapon, engine, etc.)
     /// scales from relevant upgrade stats with visibility dampening (ComponentScaleVisibility).
-    /// Used by ShipComponentAttributeScaleApplier — presentation only, not sim mass or hitboxes.
+    /// Used by ShipComponentAttributeScaleApplier — <b>presentation only</b>.
+    /// <para>
+    /// [TITAN-ORBIT] This must never feed combat. Fire power / fire rate come from family Weapon
+    /// stats × <b>authored prefab</b> localScale (via <c>ShipWeaponMountCombatLogic</c>) plus ship
+    /// level and numeric attribute multipliers — not from these grown proxy meshes.
+    /// </para>
     /// </summary>
     public static class ShipComponentAttributeScaleLogic
     {

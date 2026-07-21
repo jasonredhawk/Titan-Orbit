@@ -8,8 +8,9 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Client-side component mesh scaling on ship proxies when bottom-bar attribute upgrades change.
     /// Watches ShipAttributeUpgradeState on the linked ship entity and applies scale factors via
-    /// ShipComponentAttributeScaleLogic. Attached by EcsWorldVisualizer; cosmetic feedback only —
-    /// authoritative stats come from ShipStatApplyLogic on the server.
+    /// ShipComponentAttributeScaleLogic. Attached by EcsWorldVisualizer; <b>cosmetic only</b> —
+    /// does not change firePower, fireRate, or any sim stats (those use authored prefab scale +
+    /// numeric attribute multipliers in <c>ShipWeaponMountCombatLogic</c> / ShipStatApplyLogic).
     /// </summary>
     [DefaultExecutionOrder(95)]
     public class ShipComponentAttributeScaleApplier : MonoBehaviour
