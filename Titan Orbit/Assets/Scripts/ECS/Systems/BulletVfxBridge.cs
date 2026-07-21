@@ -48,6 +48,11 @@ namespace TitanOrbit.ECS
             public byte OwnerTeam;
             public int BankIndex;
             public float ScaleMultiplier;
+            /// <summary>
+            /// Asteroid Health after this hit, or &lt; 0 when not an asteroid impact.
+            /// Mirrors <see cref="BulletHitRpc.AsteroidHealthAfter"/>.
+            /// </summary>
+            public float AsteroidHealthAfter;
         }
 
         static readonly ConcurrentQueue<SpawnRequest> SpawnQueue = new ConcurrentQueue<SpawnRequest>();

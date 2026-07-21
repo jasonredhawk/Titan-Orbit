@@ -37,6 +37,7 @@ namespace TitanOrbit.ECS
                     OwnerTeam = r.OwnerTeam,
                     BankIndex = r.BankIndex,
                     ScaleMultiplier = r.ScaleMultiplier > 0f ? r.ScaleMultiplier : 1f,
+                    AsteroidHealthAfter = r.AsteroidHealthAfter,
                 });
                 ecb.DestroyEntity(entity);
             }

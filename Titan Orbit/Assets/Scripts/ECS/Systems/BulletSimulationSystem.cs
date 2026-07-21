@@ -1,5 +1,4 @@
 using TitanOrbit.Core;
-using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -23,9 +22,9 @@ namespace TitanOrbit.ECS
     /// </para>
     /// <para>
     /// Starblast-style hardening vs asteroid tunneling:
-    /// (1) same-frame spawn collide (point + first <c>vel*dt</c> segment) so the first shot
-    /// does not idle one tick at the muzzle; (2) substep advance when travel is large vs
-    /// <see cref="GemEconomyConstants.MinAsteroidHitRadius"/>; (3) collide before lifetime cull.
+    /// (1) same-frame spawn collide on the first <c>vel*dt</c> segment (not a bare point test —
+    /// wing muzzles inside side rocks must not count); (2) substep advance when travel is large
+    /// vs <see cref="GemEconomyConstants.MinAsteroidHitRadius"/>; (3) collide before lifetime cull.
     /// </para>
     /// Broadcasts <see cref="BulletSpawnRpc"/> / <see cref="BulletHitRpc"/> via
     /// <see cref="BulletNetNotify"/>. Damage is server-only. Not Burst-compiled — managed notify.
@@ -99,10 +98,12 @@ namespace TitanOrbit.ECS
                 // --- Substep when |vel|*dt is large vs smallest asteroid ---
                 // [TITAN-ORBIT] Starblast continuous feel: split long steps so grazing rocks cannot
                 // fall between discrete samples while flying at shipVel + BulletSpeed.
+                // Upgraded hulls (higher BulletSpeed + shipVel) need far more than 4 samples.
                 int substeps = BulletCollision.ComputeAdvanceSubstepCount(stepDistance);
                 float3 cursor = startPos;
                 bool hit = false;
                 float3 hitPoint = endPos;
+                float asteroidHealthAfter = -1f;
 
                 for (int s = 0; s < substeps; s++)
                 {
@@ -110,7 +111,7 @@ namespace TitanOrbit.ECS
                     float3 next = math.lerp(startPos, endPos, t1);
                     if (TryResolveBulletHit(
                             ref state, in b, cursor, next, mapW, mapH, moonElapsed, serverElapsed,
-                            out hitPoint))
+                            out hitPoint, out asteroidHealthAfter))
                     {
                         hit = true;
                         break;
@@ -122,7 +123,9 @@ namespace TitanOrbit.ECS
                 if (hit)
                 {
                     // [NETCODE] Server owns impact timing — clients play VFX from BulletHitRpc.
-                    BulletNetNotify.SendHit(ref ecb, b, hitPoint);
+                    // AsteroidHealthAfter lets clients show true HP Left / hide on kill without
+                    // waiting for lagging asteroid ghost snapshots.
+                    BulletNetNotify.SendHit(ref ecb, b, hitPoint, asteroidHealthAfter);
                     bullets.RemoveAtSwapBack(i);
                     continue;
                 }
@@ -217,6 +220,7 @@ namespace TitanOrbit.ECS
                     float3 fireForward;
                     if (!ShipWeaponPose.TryResolve(transform.ValueRO, mount, out fireOrigin, out fireForward))
                     {
+                        // Fallback mirrors ShipWeaponPose (presentation-scaled local offset).
                         float3 localFwd = math.mul(mount.LocalRotation, new float3(0f, 0f, 1f));
                         localFwd.y = 0f;
                         if (math.lengthsq(localFwd) < 0.0001f)
@@ -229,9 +233,11 @@ namespace TitanOrbit.ECS
                             fireForward = new float3(0f, 0f, 1f);
                         else
                             fireForward = math.normalize(fireForward);
-                        // Keep mount world Y (same as ShipWeaponPose.TryResolve).
+                        float ecsScale = math.max(0.25f, transform.ValueRO.Scale);
+                        float3 presentationLocal = mount.LocalPosition
+                            * (BodyCollisionMath.ShipPresentationScale * ecsScale);
                         fireOrigin = transform.ValueRO.Position
-                            + math.rotate(transform.ValueRO.Rotation, mount.LocalPosition);
+                            + math.rotate(transform.ValueRO.Rotation, presentationLocal);
                     }
 
                     float3 bulletVel = fireForward * math.max(1f, weaponCfg.ValueRO.BulletSpeed) + shipVel;
@@ -267,24 +273,18 @@ namespace TitanOrbit.ECS
                     BulletNetNotify.SendSpawn(ref ecb, spawn, mountIdx);
 
                     // --- Same-frame spawn collide (first-bullet tunnel fix) ---
-                    // [TITAN-ORBIT] Without this, Phase B appends and the bullet idles until next tick —
-                    // the first open-fire shot into a nose-touch rock often tunnels. Starblast: collide
-                    // as soon as the projectile exists (point + first vel*dt segment).
+                    // [TITAN-ORBIT] Collide the first vel*dt segment immediately so nose-touch shots
+                    // do not idle one tick. Do NOT point-test fireOrigin alone — wing muzzles on
+                    // 4-gun hulls sit inside side rocks in clusters and that registered false hits
+                    // with no aim (player saw forward tracers; side asteroids died).
                     float3 firstEnd = fireOrigin + bulletVel * dt;
-                    bool pointHit = TryResolveBulletHit(
-                        ref state, in spawn, fireOrigin, fireOrigin, mapW, mapH, moonElapsed, serverElapsed,
-                        out float3 spawnHitPoint);
-                    bool spawnHit = pointHit;
-                    if (!spawnHit)
-                    {
-                        spawnHit = TryResolveBulletHit(
-                            ref state, in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
-                            out spawnHitPoint);
-                    }
+                    bool spawnHit = TryResolveBulletHit(
+                        ref state, in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
+                        out float3 spawnHitPoint, out float spawnAsteroidHealthAfter);
 
                     if (spawnHit)
                     {
-                        BulletNetNotify.SendHit(ref ecb, spawn, spawnHitPoint);
+                        BulletNetNotify.SendHit(ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter);
                         // Do not add to the live buffer — bullet resolved this frame.
                     }
                     else
@@ -342,6 +342,9 @@ namespace TitanOrbit.ECS
         /// <param name="moonElapsed">ServerTick seconds for gem-moon orbit phase.</param>
         /// <param name="serverElapsed">World elapsed for shield hit timestamps.</param>
         /// <param name="hitPoint">Nearest contact along the segment when true.</param>
+        /// <param name="asteroidHealthAfter">
+        /// Asteroid Health after this hit, or &lt; 0 when the winner was not an asteroid.
+        /// </param>
         /// <returns>True when this segment scored a hit and applied damage (or planet block).</returns>
         bool TryResolveBulletHit(
             ref SystemState state,
@@ -352,9 +355,11 @@ namespace TitanOrbit.ECS
             float mapH,
             double moonElapsed,
             double serverElapsed,
-            out float3 hitPoint)
+            out float3 hitPoint,
+            out float asteroidHealthAfter)
         {
             hitPoint = to;
+            asteroidHealthAfter = -1f;
 
             // --- Pass 1: scan every obstacle, keep nearest contact (smallest segment t) ---
             // [TITAN-ORBIT] Do not apply damage inside the scan — a farther body must not win
@@ -534,12 +539,12 @@ namespace TitanOrbit.ECS
                     // (also accepts Health<=0 alone so a missed flag cannot leave zombies).
                     var asteroid = state.EntityManager.GetComponentData<AsteroidState>(bestEntity);
                     if (asteroid.IsDestroyed || asteroid.Health <= 0f)
+                    {
+                        // Still report 0 so clients can hide a lingering proxy.
+                        asteroidHealthAfter = 0f;
                         return true;
+                    }
 
-                    float healthBefore = asteroid.Health;
-                    float3 pos = state.EntityManager.HasComponent<LocalTransform>(bestEntity)
-                        ? state.EntityManager.GetComponentData<LocalTransform>(bestEntity).Position
-                        : float3.zero;
                     asteroid.Health -= b.Damage;
                     if (asteroid.Health <= 0f)
                     {
@@ -547,24 +552,9 @@ namespace TitanOrbit.ECS
                         asteroid.IsDestroyed = true;
                     }
 
+                    // Publish post-hit HP on BulletHitRpc — ghost snapshots lag MaxSendRate.
+                    asteroidHealthAfter = asteroid.Health;
                     state.EntityManager.SetComponentData(bestEntity, asteroid);
-                    // #region agent log
-                    if (asteroid.IsDestroyed || healthBefore - asteroid.Health > 0.01f)
-                    {
-                        AgentDebugSessionLog.Write(
-                            asteroid.IsDestroyed ? "A" : "A",
-                            "BulletSimulationSystem.TryResolveBulletHit",
-                            asteroid.IsDestroyed ? "server_asteroid_kill" : "server_asteroid_damage",
-                            "{\"entityIndex\":" + bestEntity.Index +
-                            ",\"healthBefore\":" + healthBefore.ToString("R") +
-                            ",\"healthAfter\":" + asteroid.Health.ToString("R") +
-                            ",\"damage\":" + b.Damage.ToString("R") +
-                            ",\"isDestroyed\":" + (asteroid.IsDestroyed ? "true" : "false") +
-                            ",\"remainingGems\":" + asteroid.RemainingGems.ToString("R") +
-                            ",\"posX\":" + pos.x.ToString("R") +
-                            ",\"posZ\":" + pos.z.ToString("R") + "}");
-                    }
-                    // #endregion
                     return true;
                 }
 

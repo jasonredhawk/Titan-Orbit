@@ -23,6 +23,11 @@ namespace TitanOrbit.Game
     /// lagged server muzzle.
     /// </para>
     /// <para>
+    /// [TITAN-ORBIT] Anticipation deducts a <b>local predicted energy</b> pool (mirrors server
+    /// spend). Using only replicated <c>ShipState.CurrentEnergy</c> over-fired cosmetics while
+    /// ghost energy lagged — optimistic “HP Left: 0” on asteroids the server had not killed.
+    /// </para>
+    /// <para>
     /// [UNITY] LateUpdate after <see cref="EcsWorldVisualizer"/> (66000) so the hull / bank pose
     /// is published; velocity uses kinematics or hull pose-delta.
     /// </para>
@@ -39,6 +44,18 @@ namespace TitanOrbit.Game
         /// Not ghosted — cosmetic only; adopt uses MountIndex from the spawn RPC.
         /// </summary>
         int _nextMountIndex;
+
+        /// <summary>
+        /// Local energy estimate after anticipation spends. Snaps down when ghost energy is lower;
+        /// snaps up when ghost energy rises (regen / refill).
+        /// </summary>
+        float _predictedEnergy;
+
+        /// <summary>Last replicated <see cref="ShipState.CurrentEnergy"/> — detects regen snaps.</summary>
+        float _lastGhostEnergy;
+
+        /// <summary>True after the first successful energy sync this session.</summary>
+        bool _energyPrimed;
 
         /// <summary>Cached reference to scene input — resolved in Start.</summary>
         PlayerInputHandler _input;
@@ -58,6 +75,13 @@ namespace TitanOrbit.Game
         void Start()
         {
             _input = FindAnyObjectByType<PlayerInputHandler>();
+        }
+
+        void OnDisable()
+        {
+            _energyPrimed = false;
+            _predictedEnergy = 0f;
+            _lastGhostEnergy = 0f;
         }
 
         /// <summary>
@@ -100,6 +124,9 @@ namespace TitanOrbit.Game
             if (shipState.IsDead || shipState.AwaitingTeamSelection)
                 return;
 
+            // --- Sync predicted energy with ghost (before planning fire) ---
+            SyncPredictedEnergy(shipState.CurrentEnergy);
+
             // --- Mount count: prefer ECS buffer (server truth for round-robin), else live GOs ---
             int mountCount = 0;
             if (world.EntityManager.HasBuffer<ShipWeaponMountElement>(shipEntity))
@@ -112,13 +139,12 @@ namespace TitanOrbit.Game
                 return;
 
             // --- Volley vs drip (same planner as server) ---
-            // Energy is server-authoritative; soft gate so we do not spam empty-pool anticipation.
-            // EnergyCostPerShot is per barrel; planner multiplies for full volleys.
+            // Gate on predicted energy (not raw ghost) so we cannot over-fire while CurrentEnergy lags.
             float energyCostPerBarrel = weaponCfg.EnergyCostPerShot > 0f
                 ? weaponCfg.EnergyCostPerShot
                 : weaponCfg.BulletDamage;
             if (!ShipWeaponFireLogic.TryPlanFire(
-                    shipState.CurrentEnergy,
+                    _predictedEnergy,
                     energyCostPerBarrel,
                     weaponCfg.BulletDamage,
                     weaponCfg.FireRate,
@@ -182,9 +208,41 @@ namespace TitanOrbit.Game
             // Only start cooldown / advance drip cursor when at least one muzzle queued.
             if (enqueued > 0)
             {
+                // Spend predicted energy for the full plan (matches server EnergySpend).
+                float spend = firePlan.EnergySpend;
+                if (enqueued < firePlan.FireCount && firePlan.FireCount > 0)
+                    spend = firePlan.EnergySpend * (enqueued / (float)firePlan.FireCount);
+
+                _predictedEnergy = math.max(0f, _predictedEnergy - spend);
                 _fireCooldown = firePlan.CooldownSeconds;
                 _nextMountIndex = firePlan.NextMountIndexAfter;
             }
+        }
+
+        /// <summary>
+        /// Keeps <see cref="_predictedEnergy"/> aligned with replicated energy without allowing
+        /// unlimited anticipation while the ghost value is still high after server spends.
+        /// </summary>
+        /// <param name="ghostEnergy">Current replicated <see cref="ShipState.CurrentEnergy"/>.</param>
+        void SyncPredictedEnergy(float ghostEnergy)
+        {
+            if (!_energyPrimed)
+            {
+                _predictedEnergy = ghostEnergy;
+                _lastGhostEnergy = ghostEnergy;
+                _energyPrimed = true;
+                return;
+            }
+
+            // Server spent (or we overshot) — never stay above the ghost.
+            if (ghostEnergy < _predictedEnergy - 0.01f)
+                _predictedEnergy = ghostEnergy;
+
+            // Regen / refill — ghost rose since last sample; adopt the new pool.
+            if (ghostEnergy > _lastGhostEnergy + 0.01f)
+                _predictedEnergy = ghostEnergy;
+
+            _lastGhostEnergy = ghostEnergy;
         }
 
         /// <summary>

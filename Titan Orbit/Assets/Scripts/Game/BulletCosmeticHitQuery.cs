@@ -283,39 +283,27 @@ namespace TitanOrbit.Game
 
                 if (o.Kind == ObstacleKind.Moon)
                 {
-                    // --- Recompute orbiting moon pose (server uses SegmentHitsMoonNear) ---
+                    // --- Same unwrap origin as server SegmentHitsMoonNear (segment start) ---
+                    // [TITAN-ORBIT] Do not unwrap moons from the ship reference while the segment
+                    // starts at the muzzle — that disagreed with server and mis-ordered hits.
                     float radius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
                         o.Scale, o.IsHomePlanet, o.CurrentShield);
-                    float3 unwrapOrigin = isDisplaySpace && hasRef ? (float3)reference : from;
-                    float3 moonLogical = PlanetOrbitMath.GetMoonWorldPositionNear(
-                        unwrapOrigin,
-                        o.LogicalCenter,
-                        o.Scale,
-                        o.PlanetLevel,
-                        o.PlanetId,
-                        moonElapsed,
-                        s_MapW,
-                        s_MapH);
-
-                    if (isDisplaySpace && hasRef)
-                    {
-                        float3 moonDisplay = ToroidalDisplay.ToDisplayPosition(moonLogical, reference);
-                        hit = BulletCollision.SegmentHitsSphere(from, to, moonDisplay, radius, out hp);
-                    }
-                    else
-                    {
-                        hit = BulletCollision.SegmentHitsSphere(from, to, moonLogical, radius, out hp);
-                    }
-                }
-                else if (isDisplaySpace && hasRef)
-                {
-                    // Display-space tracers (local anticipation) vs display-unwrapped centers.
-                    float3 displayCenter = ToroidalDisplay.ToDisplayPosition(o.LogicalCenter, reference);
-                    hit = BulletCollision.SegmentHitsSphere(from, to, displayCenter, o.Radius, out hp);
+                    hit = BulletCollision.SegmentHitsMoonNear(
+                        from, to, o.LogicalCenter, o.Scale,
+                        o.PlanetLevel, o.PlanetId, moonElapsed,
+                        o.IsHomePlanet, radius, s_MapW, s_MapH, out hp);
                 }
                 else
                 {
-                    // Logical tracers (remotes / server spawn) — full toroidal unwrap.
+                    // --- Match server TryResolveBulletHit ---
+                    // [TITAN-ORBIT] Local anticipation tracers fly in unbounded ship space (same
+                    // frame as sim LocalTransform). Old path used Euclidean vs
+                    // ToDisplayPosition(center, shipRef) which could pick a different rock than
+                    // SegmentHitsSphereToroidal(from, …) — floats on A, server damage on B.
+                    // Keep isDisplaySpace only for callers that need the flag; hit math is toroidal.
+                    _ = isDisplaySpace;
+                    _ = hasRef;
+                    _ = reference;
                     hit = BulletCollision.SegmentHitsSphereToroidal(
                         from, to, o.LogicalCenter, o.Radius, s_MapW, s_MapH, out hp);
                 }
@@ -435,13 +423,110 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Finds the nearest live asteroid hybrid proxy to a display-space hit point.
-        /// Used when <see cref="BulletHitRpc"/> arrives without a predicted Obstacle identity
-        /// (e.g. prediction was skipped during Settling). Quarantine-safe — proxy keys only.
+        /// Finds the asteroid that best matches a server impact point (surface fit).
+        /// <para>
+        /// [TITAN-ORBIT] Do <b>not</b> pick nearest-center among overlapping spheres. A surface hit
+        /// on rock A toward neighbor B often lies closer to B’s center — logs showed HitRpc
+        /// remaining HP / hide applied to the wrong proxy (e.g. server kill at -150 while client
+        /// hid the rock at -146). Score = |dist(hit,center) − hitRadius|; lowest wins.
+        /// When <paramref name="asteroidHealthAfter"/> ≥ 0, reject candidates whose ghost Health
+        /// is already below the server remaining (impossible for the damaged rock).
+        /// </para>
+        /// Quarantine-safe — hybrid proxy keys only. Skips already-hidden proxies.
+        /// </summary>
+        /// <param name="hitDisplayPos">Server hit position converted to display space.</param>
+        /// <param name="asteroidEntity">Best surface-fit live asteroid, or Null.</param>
+        /// <param name="asteroidHealthAfter">
+        /// Server Health after this hit (&lt; 0 = unknown / non-asteroid). Used as a soft filter.
+        /// </param>
+        /// <returns>True when a live proxy rock matches the impact.</returns>
+        public static bool TryFindAsteroidAtImpact(
+            Vector3 hitDisplayPos,
+            out Entity asteroidEntity,
+            float asteroidHealthAfter = -1f)
+        {
+            asteroidEntity = Entity.Null;
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null)
+                return false;
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            visualizer.CopyLiveProxyEntities(ProxyScratch);
+
+            bool hasRef = ToroidalDisplay.TryGetReferencePosition(out Vector3 reference);
+            // Lowest surface residual wins (0 = hit sits exactly on the bullet sphere).
+            float bestSurfaceError = float.MaxValue;
+            Entity best = Entity.Null;
+            float3 hit = new float3(hitDisplayPos.x, 0f, hitDisplayPos.z);
+            bool hasAuthHp = asteroidHealthAfter >= 0f;
+
+            for (int i = 0; i < ProxyScratch.Count; i++)
+            {
+                Entity entity = ProxyScratch[i];
+                if (!em.Exists(entity) ||
+                    !em.HasComponent<AsteroidTag>(entity) ||
+                    !em.HasComponent<AsteroidState>(entity) ||
+                    !em.HasComponent<LocalTransform>(entity))
+                    continue;
+
+                // Already-hidden kill proxies stay in the dictionary — skip them so a neighbor
+                // hit cannot re-attribute floats/hide to a dead GO.
+                if (!visualizer.TryGetProxy(entity, out var proxyGo) ||
+                    proxyGo == null ||
+                    !proxyGo.activeSelf)
+                    continue;
+
+                var state = em.GetComponentData<AsteroidState>(entity);
+                if (state.IsDestroyed || state.Health <= 0f)
+                    continue;
+
+                // Ghost already below server post-hit HP → cannot be the rock that was just hit
+                // (that rock's ghost is equal or still higher due to lag). Rejects wrong neighbors
+                // that had lower HP than the authoritative remaining (log line 78: rem 39 vs ghost 25).
+                if (hasAuthHp && state.Health + 0.5f < asteroidHealthAfter)
+                    continue;
+
+                var lt = em.GetComponentData<LocalTransform>(entity);
+                float3 logical = lt.Position;
+                float3 display = hasRef
+                    ? (float3)ToroidalDisplay.ToDisplayPosition(logical, reference)
+                    : logical;
+                display.y = 0f;
+
+                float hitRadius = BulletCollision.AsteroidHitRadius(lt.Scale);
+                // Tight slack — only absorb network/display jitter, not a neighbor’s center.
+                float maxDist = hitRadius + 0.35f;
+                float dist = math.distance(display, hit);
+                if (dist > maxDist)
+                    continue;
+
+                float surfaceError = math.abs(dist - hitRadius);
+                if (surfaceError >= bestSurfaceError)
+                    continue;
+
+                bestSurfaceError = surfaceError;
+                best = entity;
+            }
+
+            if (best == Entity.Null)
+                return false;
+
+            asteroidEntity = best;
+            return true;
+        }
+
+        /// <summary>
+        /// Finds the nearest live asteroid hybrid proxy within <paramref name="maxDistance"/>.
+        /// Prefer <see cref="TryFindAsteroidAtImpact"/> for HitRpc mining floats.
         /// </summary>
         /// <param name="hitDisplayPos">Impact position in display / presentation space.</param>
         /// <param name="maxDistance">Search radius in world units.</param>
         /// <param name="asteroidEntity">Matching asteroid ghost entity, or Null.</param>
+        /// <returns>True when a live proxy is within range.</returns>
         public static bool TryFindNearestAsteroidEntity(
             Vector3 hitDisplayPos,
             float maxDistance,

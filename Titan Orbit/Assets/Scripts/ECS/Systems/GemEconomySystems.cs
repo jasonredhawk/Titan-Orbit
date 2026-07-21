@@ -1,6 +1,5 @@
 using TitanOrbit.Core;
 using TitanOrbit.Data;
-using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -597,22 +596,6 @@ namespace TitanOrbit.ECS
                     restoreGems,
                     now,
                     settings.AsteroidRespawnDelaySeconds);
-
-                // #region agent log
-                AgentDebugSessionLog.Write(
-                    "B",
-                    "AsteroidDestructionSystem.OnUpdate",
-                    "server_asteroid_destroy_entity",
-                    "{\"entityIndex\":" + entity.Index +
-                    ",\"isDestroyed\":" + (a.IsDestroyed ? "true" : "false") +
-                    ",\"health\":" + a.Health.ToString("R") +
-                    ",\"remainingGems\":" + remaining.ToString("R") +
-                    ",\"maxGems\":" + a.MaxGems.ToString("R") +
-                    ",\"canSpawnGems\":" + (canSpawnGems ? "true" : "false") +
-                    ",\"restoreGems\":" + restoreGems.ToString("R") +
-                    ",\"posX\":" + pos.x.ToString("R") +
-                    ",\"posZ\":" + pos.z.ToString("R") + "}");
-                // #endregion
 
                 ecb.DestroyEntity(entity);
             }

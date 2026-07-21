@@ -1,11 +1,11 @@
 using System.Collections.Generic;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
-using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
+using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -13,11 +13,10 @@ namespace TitanOrbit.Game
     /// <summary>
     /// [HYBRID] Client-side floating +/- popups driven by replicated ECS state deltas
     /// and immediate bullet-impact hooks.
-    /// Compares per-frame snapshots of ship gems/people/health; asteroid <b>bullet</b> damage
-    /// prefers <see cref="TryNotifyLocalAsteroidBulletHit"/> (same frame as tracer impact) so
-    /// floats are not delayed by ghost Health replication. <see cref="PollAsteroids"/> remains
-    /// as a fallback for ramming / missed prediction. Delegates display to
-    /// <see cref="WorldFloatingCountManager"/>. Runs on main thread in Update.
+    /// Compares per-frame snapshots of ship gems/people/health. Asteroid bullet HitRpc floats
+    /// use <see cref="TryNotifyLocalAsteroidBulletHit"/> with server <c>AsteroidHealthAfter</c>
+    /// (never ghost − damage). <see cref="PollAsteroids"/> remains a fallback for rams / missed RPCs.
+    /// Delegates display to <see cref="WorldFloatingCountManager"/>. Runs on main thread in Update.
     /// <para>
     /// People load/unload floats are owned by <see cref="PeopleTransportVfxDriver"/> (sphere leave/consume).
     /// Asteroid health polling walks hybrid map-body proxies only — never a full asteroid
@@ -31,8 +30,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Live presenter instance — <see cref="BulletVfxDriver"/> calls
-        /// <see cref="TryNotifyLocalAsteroidBulletHit"/> on predicted impacts so floats are not
-        /// delayed by asteroid ghost Health replication.
+        /// <see cref="TryNotifyLocalAsteroidBulletHit"/> on HitRpc so mining floats use
+        /// server <c>AsteroidHealthAfter</c> (not lagging ghost Health).
         /// </summary>
         public static EcsFloatingCountPresenter Active { get; private set; }
 
@@ -321,18 +320,22 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Immediate asteroid mining float for the local player's bullet impact.
-        /// Called from <see cref="BulletVfxDriver"/> on client-predicted hits (and HitRpc fallback)
-        /// so the stack appears with the impact VFX — not ~1s later when
-        /// <see cref="AsteroidState.Health"/> finally replicates.
+        /// Called from <see cref="BulletVfxDriver"/> on HitRpc (impact VFX may already have
+        /// played from client-predicted cosmetic collide).
         /// </summary>
         /// <param name="asteroidEntity">Hybrid-proxy asteroid ghost that was hit.</param>
         /// <param name="damage">Bullet damage from the tracer / HitRpc (server-authored amount).</param>
         /// <param name="ownerTeam">Shooter team for tint colors.</param>
+        /// <param name="authoritativeRemainingHealth">
+        /// When set (HitRpc <c>AsteroidHealthAfter</c>), show that “HP Left” — never ghost − damage.
+        /// Null = +Damage only (legacy / non-authoritative path).
+        /// </param>
         /// <returns>True when a popup was spawned.</returns>
         public static bool TryNotifyLocalAsteroidBulletHit(
             Entity asteroidEntity,
             float damage,
-            TeamId ownerTeam)
+            TeamId ownerTeam,
+            float? authoritativeRemainingHealth = null)
         {
             // --- Resolve live presenter ---
             var presenter = Active;
@@ -355,44 +358,24 @@ namespace TitanOrbit.Game
                 return false;
 
             var state = em.GetComponentData<AsteroidState>(asteroidEntity);
-            if (state.IsDestroyed)
+            // Authoritative HitRpc may report HP Left: 0 while ghost still looks alive — allow it.
+            if (!authoritativeRemainingHealth.HasValue &&
+                (state.IsDestroyed || state.Health <= 0f))
                 return false;
 
-            // --- Optimistic HP baseline ---
-            // Ghost Health often still shows the pre-hit value for a long RTT window.
-            // Track an optimistic remaining HP so PollAsteroids does not re-fire the same damage
-            // when the snapshot finally arrives, and so multi-hit bursts stack correctly.
-            float baseline = state.Health;
-            if (presenter._asteroidHealth.TryGetValue(asteroidEntity, out float tracked) &&
-                tracked < baseline - 0.01f)
+            // --- RemainingHealth from server HitRpc only ---
+            // [TITAN-ORBIT] Logs proved ghost Health can stay at ~16 while server already killed
+            // (healthAfter=0). Never compute remaining as ghost − damage on the HitRpc path.
+            float? remainingHealth = null;
+            if (authoritativeRemainingHealth.HasValue)
             {
-                // Already applied earlier predicted hits that replication has not caught up to.
-                baseline = tracked;
-            }
+                remainingHealth = Mathf.Max(0f, authoritativeRemainingHealth.Value);
 
-            float remainingHealth = Mathf.Max(0f, baseline - damage);
-            presenter._asteroidHealth[asteroidEntity] = remainingHealth;
-            // Hold the optimistic value until ghost Health catches down — or snap back if the
-            // server never applied this hit (tunnel / wrong body).
-            presenter._asteroidOptimisticUntil[asteroidEntity] =
-                Time.unscaledTime + AsteroidOptimisticHoldSeconds;
-
-            // #region agent log
-            if (remainingHealth <= 0.01f || baseline - remainingHealth > 0.01f)
-            {
-                AgentDebugSessionLog.Write(
-                    remainingHealth <= 0.01f ? "D" : "D",
-                    "EcsFloatingCountPresenter.TryNotifyLocalAsteroidBulletHit",
-                    remainingHealth <= 0.01f ? "client_optimistic_hp_zero" : "client_optimistic_hp_damage",
-                    "{\"entityIndex\":" + asteroidEntity.Index +
-                    ",\"ghostHealth\":" + state.Health.ToString("R") +
-                    ",\"baseline\":" + baseline.ToString("R") +
-                    ",\"damage\":" + damage.ToString("R") +
-                    ",\"optimisticRemaining\":" + remainingHealth.ToString("R") +
-                    ",\"ghostIsDestroyed\":" + (state.IsDestroyed ? "true" : "false") +
-                    ",\"remainingGems\":" + state.RemainingGems.ToString("R") + "}");
+                // Align PollAsteroids baseline so a late ghost snapshot does not double-popup.
+                presenter._asteroidHealth[asteroidEntity] = remainingHealth.Value;
+                presenter._asteroidOptimisticUntil[asteroidEntity] =
+                    Time.unscaledTime + AsteroidOptimisticHoldSeconds;
             }
-            // #endregion
 
             TeamId tintTeam = state.TerritoryTeam != TeamId.None
                 ? state.TerritoryTeam
@@ -405,7 +388,7 @@ namespace TitanOrbit.Game
                     Team = tintTeam,
                     Damage = damage,
                     RemainingHealth = remainingHealth,
-                    RemainingGems = state.RemainingGems,
+                    RemainingGems = null,
                 });
             return true;
         }
@@ -484,24 +467,8 @@ namespace TitanOrbit.Game
 
                 _asteroidHealth[entity] = tracked;
 
-                // #region agent log
-                // Ghost says dead/zero HP but entity still polled — zombie or lag before despawn.
-                if ((state.Health <= 0.01f || state.IsDestroyed) && !holdOptimistic)
-                {
-                    AgentDebugSessionLog.Write(
-                        "C",
-                        "EcsFloatingCountPresenter.PollAsteroids",
-                        "client_ghost_dead_still_present",
-                        "{\"entityIndex\":" + entity.Index +
-                        ",\"ghostHealth\":" + state.Health.ToString("R") +
-                        ",\"ghostIsDestroyed\":" + (state.IsDestroyed ? "true" : "false") +
-                        ",\"tracked\":" + tracked.ToString("R") +
-                        ",\"remainingGems\":" + state.RemainingGems.ToString("R") + "}");
-                }
-                // #endregion
-
                 // Only show when replicated Health dropped below our prior tracked baseline.
-                // Predicted bullet hits already showed floats and left lastHealth <= ghost Health.
+                // HitRpc path already showed floats and left lastHealth <= ghost Health.
                 if (damage <= 0.01f || state.IsDestroyed)
                     continue;
 

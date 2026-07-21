@@ -20,11 +20,13 @@ namespace TitanOrbit.ECS
             math.max(0.05f, GemEconomyConstants.MinAsteroidHitRadius * 0.5f);
 
         /// <summary>
-        /// Hard cap on substeps per tick. Must stay high enough that
-        /// <c>shipVel + BulletSpeed</c> at 60 Hz cannot skip
-        /// <see cref="GemEconomyConstants.MinAsteroidHitRadius"/> — a low cap (e.g. 4) let
-        /// client cosmetics register a hit while the server tunneled, leaving “HP Left: 0”
-        /// floats on rocks that never died.
+        /// Hard cap on substeps per tick.
+        /// <para>
+        /// [TITAN-ORBIT] Cap must cover upgraded hulls: <c>|shipVel| + BulletSpeed</c> at 60 Hz
+        /// with attribute/chassis speed can exceed ~1 unit/tick. With MaxAdvanceSubstepLength≈0.075
+        /// that needs ~14+ samples. Cap=4 let fast bullets tunnel small rocks — starter ships
+        /// (slow bullets) hit reliably; Moon-menu upgraded ships missed more often.
+        /// </para>
         /// </summary>
         public const int MaxAdvanceSubsteps = 32;
 
@@ -39,6 +41,17 @@ namespace TitanOrbit.ECS
                 return 1;
             int n = (int)math.ceil(stepDistance / maxStep);
             return math.clamp(n, 1, MaxAdvanceSubsteps);
+        }
+
+        /// <summary>
+        /// Uncapped substep count (before <see cref="MaxAdvanceSubsteps"/>). Used for tunnel-risk logs.
+        /// </summary>
+        public static int ComputeUncappedAdvanceSubstepCount(float stepDistance)
+        {
+            float maxStep = MaxAdvanceSubstepLength;
+            if (stepDistance <= maxStep || maxStep <= 1e-6f)
+                return 1;
+            return math.max(1, (int)math.ceil(stepDistance / maxStep));
         }
 
         /// <summary>
@@ -104,7 +117,25 @@ namespace TitanOrbit.ECS
 
             float t = math.clamp(tEnter, 0f, 1f);
             if (tEnter < 0f && tExit >= 0f)
+            {
+                // --- Started inside the sphere ---
+                // [TITAN-ORBIT] Multi-cannon wing muzzles often spawn already inside a *side*
+                // asteroid in a dense cluster. Counting that as a hit damaged rocks the player
+                // was not aiming at (client tracers look forward; server “point hit” killed sides).
+                // Only accept an interior start when the bullet is moving toward the rock center
+                // (nose-touch / digging into the aimed body). Lateral interior starts are ignored.
+                float3 toCenter = center - from;
+                toCenter.y = 0f;
+                float3 move = delta;
+                move.y = 0f;
+                if (math.lengthsq(toCenter) > 1e-8f && math.lengthsq(move) > 1e-8f)
+                {
+                    if (math.dot(math.normalize(move), math.normalize(toCenter)) < 0.25f)
+                        return false;
+                }
+
                 t = 0f;
+            }
 
             hitPoint = from + delta * t;
             hitPoint.y = center.y;

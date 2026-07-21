@@ -73,10 +73,17 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Broadcasts an impact and mirrors into the host VFX bridge when ClientWorld exists.
         /// </summary>
+        /// <param name="ecb">Server ECB for the broadcast RPC entity.</param>
+        /// <param name="bullet">Authoritative bullet that scored the hit.</param>
+        /// <param name="hitPosition">World impact point (logical XZ).</param>
+        /// <param name="asteroidHealthAfter">
+        /// Asteroid Health after damage, or &lt; 0 when the hit was not an asteroid.
+        /// </param>
         public static void SendHit(
             ref EntityCommandBuffer ecb,
             in BulletElement bullet,
-            float3 hitPosition)
+            float3 hitPosition,
+            float asteroidHealthAfter = -1f)
         {
             if (bullet.Sequence == 0)
                 return;
@@ -90,6 +97,7 @@ namespace TitanOrbit.ECS
                 OwnerTeam = bullet.OwnerTeam,
                 BankIndex = bullet.BankIndex,
                 ScaleMultiplier = bullet.ScaleMultiplier > 0f ? bullet.ScaleMultiplier : 1f,
+                AsteroidHealthAfter = asteroidHealthAfter,
             };
 
             if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
@@ -104,6 +112,7 @@ namespace TitanOrbit.ECS
                 OwnerTeam = bullet.OwnerTeam,
                 BankIndex = bullet.BankIndex,
                 ScaleMultiplier = bullet.ScaleMultiplier > 0f ? bullet.ScaleMultiplier : 1f,
+                AsteroidHealthAfter = asteroidHealthAfter,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }

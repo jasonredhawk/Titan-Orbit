@@ -272,6 +272,59 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Hides an asteroid hybrid proxy when <see cref="BulletHitRpc"/> reports Health after = 0.
+        /// <para>
+        /// [TITAN-ORBIT] Server destroys the rock the same tick it sets IsDestroyed; clients often
+        /// never observe Health≤0 / IsDestroyed before ghost despawn. HitRpc is the reliable kill
+        /// signal. Plays gem burst once from last-known RemainingGems.
+        /// </para>
+        /// </summary>
+        /// <param name="entity">Asteroid ghost entity whose proxy should hide.</param>
+        /// <returns>True when a proxy was found and hidden (or already inactive).</returns>
+        public bool TryHideAsteroidProxyFromHitRpc(Entity entity)
+        {
+            if (entity == Entity.Null || !_proxies.TryGetValue(entity, out var go) || go == null)
+                return false;
+
+            // Burst once — DetectAsteroidGemBursts may never see dead ghost fields.
+            bool firstBurst = _asteroidBurstFired.Add(entity);
+            float remaining = 0f;
+            float3 pos = go.transform.position;
+            if (_asteroidLastKnown.TryGetValue(entity, out var cached))
+            {
+                remaining = cached.RemainingGems;
+                pos = cached.Position;
+            }
+
+            // Prefer live ghost gems/pose when still present.
+            var world = EcsGameBridge.ClientWorld;
+            if (world != null && world.IsCreated)
+            {
+                var em = world.EntityManager;
+                if (em.Exists(entity) && em.HasComponent<AsteroidState>(entity))
+                {
+                    var state = em.GetComponentData<AsteroidState>(entity);
+                    if (state.RemainingGems >= 0.25f)
+                        remaining = state.RemainingGems;
+                }
+
+                if (em.Exists(entity) && em.HasComponent<LocalTransform>(entity))
+                    pos = em.GetComponentData<LocalTransform>(entity).Position;
+            }
+
+            if (go.activeSelf)
+                go.SetActive(false);
+
+            if (firstBurst && remaining >= 0.25f)
+            {
+                uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
+                ClientGemBurstPresenter.PlayBurst(pos, remaining, seed);
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Quarantine-safe planet lookup by <see cref="PlanetState.PlanetId"/>.
         /// Walks hybrid proxy keys only, then per-entity <c>HasComponent</c>/<c>GetComponentData</c> —
         /// never <c>ToEntityArray</c> / full planet archetype gathers (Crash!!! after Settling OFF).

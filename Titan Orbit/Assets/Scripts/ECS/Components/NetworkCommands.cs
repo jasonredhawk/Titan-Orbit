@@ -293,5 +293,13 @@ namespace TitanOrbit.ECS
 
         /// <summary>Per-shot visual scale multiplier.</summary>
         public float ScaleMultiplier;
+
+        /// <summary>
+        /// Asteroid <see cref="AsteroidState.Health"/> after this hit, or &lt; 0 when the impact
+        /// was not an asteroid (planet / ship / moon / transport).
+        /// [TITAN-ORBIT] Clients must not guess HP Left from lagging ghost Health — use this.
+        /// 0 means the rock was killed this hit (hide proxy immediately).
+        /// </summary>
+        public float AsteroidHealthAfter;
     }
 }

@@ -1,3 +1,4 @@
+using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -8,11 +9,22 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// [ECS/DOTS] One weapon mount on a ship hull — local offset and rotation relative to the ship
     /// transform. Stored in a DynamicBuffer so multi-cannon ships fire from multiple muzzles.
-    /// Baked from child <see cref="Authoring.ShipWeaponMountAuthoring"/> objects in StarshipGhostAuthoring.
+    /// Baked from child <see cref="Authoring.ShipWeaponMountAuthoring"/> / chassis prefab Weapon
+    /// children via <see cref="ShipChassisPrefabBakeUtility"/>.
+    /// <para>
+    /// <see cref="LocalPosition"/> is <b>unscaled prefab-local</b> (same contract as
+    /// <see cref="ShipWingTractorBeamElement"/>). <see cref="ShipWeaponPose"/> multiplies by
+    /// <see cref="BodyCollisionMath.ShipPresentationScale"/> at fire time so server muzzles match
+    /// the hybrid hull (which is drawn at ~0.155× prefab size).
+    /// </para>
     /// </summary>
     public struct ShipWeaponMountElement : IBufferElementData
     {
-        /// <summary>[UNITY] Local position offset from ship hull origin.</summary>
+        /// <summary>
+        /// Unscaled hull-root local offset from the chassis prefab bake.
+        /// Presentation scale is applied in <see cref="ShipWeaponPose.TryResolve"/> — do not
+        /// pre-multiply when writing the buffer.
+        /// </summary>
         public float3 LocalPosition;
 
         /// <summary>[UNITY] Local rotation of the mount relative to hull.</summary>
@@ -28,19 +40,20 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// [ECS/DOTS] Shared muzzle origin and fire direction from ship hull transform + weapon mount
     /// buffer element. Single source of truth for where bullets spawn — used by
-    /// <see cref="BulletSimulationSystem"/> (server hits) and client tracer VFX bridges.
+    /// <see cref="BulletSimulationSystem"/> (server hits) and client tracer VFX bridges
+    /// (ECS fallback when live GO weapons are missing).
     /// [BurstCompile] target per ship-simulation architecture rule.
     /// </summary>
     public static class ShipWeaponPose
     {
         /// <summary>
         /// [ECS/DOTS] Server / authority muzzle from unbanked catalog-bake locals + yaw-only ship.
-        /// Client cosmetics use live weapon <c>Transform.position</c> instead
+        /// Client cosmetics prefer live weapon <c>Transform.position</c>
         /// (<c>BulletMuzzlePresentation</c>) so BankPivot banking matches the drawn barrel.
         /// Do not feed banked GO locals into this path — yaw-only × banked local lifts the muzzle.
         /// </summary>
         /// <param name="shipTransform">Ship hull LocalTransform at fire time (yaw-only sim).</param>
-        /// <param name="mount">Unbanked bake/catalog mount (hull-root local).</param>
+        /// <param name="mount">Unbanked bake/catalog mount (hull-root local, prefab units).</param>
         /// <param name="fireOrigin">Output muzzle world position (keeps mount local Y).</param>
         /// <param name="fireForward">Output normalized fire direction on XZ plane.</param>
         /// <returns>False if the computed forward vector degenerates to zero length.</returns>
@@ -63,8 +76,15 @@ namespace TitanOrbit.ECS
             else
                 localFwd = math.normalize(localFwd);
 
-            // --- World muzzle origin (full mount offset, including Y) ---
-            fireOrigin = shipTransform.Position + math.rotate(shipTransform.Rotation, mount.LocalPosition);
+            // --- Prefab-local → presentation world (match hybrid hull + wing beams) ---
+            // [TITAN-ORBIT] Chassis Weapon children bake at full prefab size (e.g. localX ±4.28).
+            // Hybrid ship proxies draw at ShipPresentationScale (~0.155). Without this multiply,
+            // server bullets spawned ~4u beside the visible hull while client tracers used live
+            // GO muzzles on the scaled mesh — player had to aim ~20° off to land hits.
+            float ecsScale = math.max(0.25f, shipTransform.Scale);
+            float3 presentationLocal =
+                mount.LocalPosition * (BodyCollisionMath.ShipPresentationScale * ecsScale);
+            fireOrigin = shipTransform.Position + math.rotate(shipTransform.Rotation, presentationLocal);
 
             // --- Hull-relative cannon forward ---
             // [TITAN-ORBIT] Legacy Starship convention: hullRot * flatten(Inverse(hullRot) * weaponWorldForward)
