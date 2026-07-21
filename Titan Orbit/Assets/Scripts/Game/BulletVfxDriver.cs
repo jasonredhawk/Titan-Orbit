@@ -26,6 +26,12 @@ namespace TitanOrbit.Game
     /// mounts), server SpawnPosition/Velocity still Instantiates so the player never sees silent fire.
     /// Remotes keep server SpawnPosition.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Client-predicted impact: while tracers fly, swept-collide against hybrid-proxy
+    /// spheres (<see cref="BulletCosmeticHitQuery"/>) so cosmetics stop at the rock/ship surface
+    /// immediately. <see cref="BulletHitRpc"/> then reconciles (skip duplicate impact / destroy late
+    /// misses). Damage / HP are never written here.
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(66150)]
     public class BulletVfxDriver : MonoBehaviour
@@ -56,13 +62,58 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Server spawn that should not create a new tracer because anticipation already
+        /// predicted-hit and was destroyed before <see cref="BulletSpawnRpc"/> arrived.
+        /// </summary>
+        struct PendingPredictedAdoptSkip
+        {
+            public int OwnerNetworkId;
+            public int MountIndex;
+            public byte OwnerTeam;
+            public float ExpireTime;
+            public float3 HitDisplayPos;
+            public float Damage;
+            public int BankIndex;
+            public float ScaleMultiplier;
+        }
+
+        /// <summary>Recent cosmetic impact used to suppress a late HitRpc double-flash.</summary>
+        struct RecentPredictedImpact
+        {
+            public float3 DisplayPos;
+            public byte OwnerTeam;
+            public float ExpireTime;
+        }
+
+        /// <summary>
         /// Cosmetic Instantiates per frame (not GhostSpawn). Allow a few so high fire-rate
         /// anticipation does not sit in the queue with stale muzzle poses while flying.
         /// </summary>
         const int MaxSpawnsPerFrame = 8;
 
+        /// <summary>How long a predicted Sequence suppresses a duplicate HitRpc impact.</summary>
+        const float PredictedHitTtlSeconds = 2f;
+
+        /// <summary>How long a mount skip waits for the matching server spawn after anticipation predicted-hit.</summary>
+        const float PredictedAdoptSkipTtlSeconds = 1.25f;
+
+        /// <summary>Display-space radius for matching HitRpc to a recent predicted impact (no Sequence yet).</summary>
+        const float PredictedImpactMatchRadius = 14f;
+
         readonly List<Tracer> _tracers = new List<Tracer>(64);
         readonly Dictionary<uint, int> _indexBySequence = new Dictionary<uint, int>(64);
+
+        /// <summary>Sequences that already played client-predicted impact — HitRpc must not flash again.</summary>
+        readonly HashSet<uint> _clientPredictedHitSequences = new HashSet<uint>();
+        readonly Queue<(uint Sequence, float ExpireTime)> _clientPredictedHitExpiry =
+            new Queue<(uint, float)>(64);
+
+        /// <summary>Anticipation predicted-hit before adopt — next SpawnRpc for this mount is consumed silently.</summary>
+        readonly List<PendingPredictedAdoptSkip> _pendingPredictedAdoptSkips =
+            new List<PendingPredictedAdoptSkip>(8);
+
+        /// <summary>Display impacts for HitRpc dedupe when Sequence was never bound (anticipation-only).</summary>
+        readonly List<RecentPredictedImpact> _recentPredictedImpacts = new List<RecentPredictedImpact>(16);
 
         BulletVfxBank _bank;
         int _lastTickFrame = -1;
@@ -92,11 +143,17 @@ namespace TitanOrbit.Game
         {
             ClearAllTracers();
             BulletVfxBridge.Clear();
+            BulletCosmeticHitQuery.Clear();
             _indexBySequence.Clear();
+            _clientPredictedHitSequences.Clear();
+            _clientPredictedHitExpiry.Clear();
+            _pendingPredictedAdoptSkips.Clear();
+            _recentPredictedImpacts.Clear();
         }
 
         /// <summary>
-        /// LateUpdate: drain spawns/hits, dead-reckon, place GOs. Never Instantiates in onBeforeRender.
+        /// LateUpdate: drain spawns/hits, dead-reckon, cosmetic collide, place GOs.
+        /// Never Instantiates in onBeforeRender.
         /// Runs after <see cref="ClientLocalBulletVfxBridge"/> (66100) so anticipation is queued first.
         /// </summary>
         void LateUpdate()
@@ -112,6 +169,8 @@ namespace TitanOrbit.Game
             // TransformQuarantine stays on for the session — that alone must NOT block bullets.
             bool blockInstantiates = ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog;
 
+            PrunePredictedReconcileState();
+
             if (!blockInstantiates)
                 DrainSpawns();
 
@@ -123,6 +182,10 @@ namespace TitanOrbit.Game
             float dt = math.min(0.05f, math.max(0f, Time.deltaTime));
             bool hasRef = ToroidalDisplay.TryGetReferencePosition(out Vector3 reference);
 
+            // --- Cosmetic hit prediction (hybrid-proxy spheres; no map ToEntityArray) ---
+            // Skip while join Instantiates are incomplete — HitRpc still destroys tracers.
+            bool canPredictHits = !blockInstantiates && BulletCosmeticHitQuery.TryRefresh();
+
             for (int i = _tracers.Count - 1; i >= 0; i--)
             {
                 var t = _tracers[i];
@@ -132,10 +195,21 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
+                // --- Advance logical / display flight ---
+                float3 prevPos = t.LogicalPos;
                 t.RemainingLifetime -= dt;
                 float step = math.length(t.Velocity) * dt;
                 t.Traveled += step;
                 t.LogicalPos += t.Velocity * dt;
+
+                // --- Client-predicted impact before lifetime cull ---
+                // [TITAN-ORBIT] Destroy tracer at the rock surface now; server HitRpc reconciles later.
+                if (canPredictHits &&
+                    TryPredictCosmeticHit(in t, prevPos, t.LogicalPos, out float3 hitPoint))
+                {
+                    ApplyPredictedHit(i, in t, hitPoint);
+                    continue;
+                }
 
                 if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
                 {
@@ -185,6 +259,16 @@ namespace TitanOrbit.Game
             int spawned = 0;
             while (spawned < MaxSpawnsPerFrame && BulletVfxBridge.TryDequeueSpawn(out var req))
             {
+                // --- Consume server spawn when anticipation already predicted-hit this mount ---
+                // [TITAN-ORBIT] Without this, SpawnRpc Instantiates a twin that tunnels after the
+                // early impact destroyed Sequence=0 — looks like a second bullet ghosting through.
+                if (!req.IsAnticipation && req.Sequence != 0 &&
+                    TryConsumePredictedAdoptSkip(in req))
+                {
+                    spawned++;
+                    continue;
+                }
+
                 // --- Adopt local anticipation when server spawn arrives (no pose snap) ---
                 // Prevents a second tracer: orphan Sequence=0 cosmetics keep flying through rocks
                 // after HitRpc kills only the sequenced server twin.
@@ -242,6 +326,7 @@ namespace TitanOrbit.Game
         /// Impact VFX + destroy matching tracer by Sequence.
         /// Falls back to nearest same-team tracer (incl. Sequence=0 anticipation) so orphan
         /// cosmetics do not keep flying through the rock after a real server hit.
+        /// Skips duplicate flash when client already predicted this Sequence / nearby impact.
         /// </summary>
         void DrainHits()
         {
@@ -253,10 +338,26 @@ namespace TitanOrbit.Game
                     hitPos = ToroidalDisplay.ToDisplayPosition(hitPos, reference);
                 hitPos.y = 0f;
 
-                var team = (TeamId)hit.OwnerTeam;
-                int bankIndex = math.max(0, hit.BankIndex);
-                float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
-                BulletVisualFactory.SpawnBulletImpactVfx(hitPos, _bank, bankIndex, team, hit.Damage, scaleMul);
+                // --- Reconcile: client already showed impact for this Sequence ---
+                if (hit.Sequence != 0 && _clientPredictedHitSequences.Remove(hit.Sequence))
+                {
+                    // Tracer already destroyed; still cull stale anticipation leftovers.
+                    ClearStaleAnticipationTracers(hit.OwnerTeam);
+                    continue;
+                }
+
+                // --- Reconcile: anticipation predicted-hit before Sequence was bound ---
+                // Only suppresses the duplicate flash — still try to destroy any leftover tracer.
+                bool suppressImpactVfx = TryConsumeRecentPredictedImpact(hitPos, hit.OwnerTeam);
+
+                if (!suppressImpactVfx)
+                {
+                    var team = (TeamId)hit.OwnerTeam;
+                    int bankIndex = math.max(0, hit.BankIndex);
+                    float scaleMul = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
+                    BulletVisualFactory.SpawnBulletImpactVfx(
+                        hitPos, _bank, bankIndex, team, hit.Damage, scaleMul);
+                }
 
                 // --- Preferred: exact Sequence from server ---
                 if (_indexBySequence.TryGetValue(hit.Sequence, out int idx) &&
@@ -278,6 +379,11 @@ namespace TitanOrbit.Game
                 {
                     DestroyTracerGo(_tracers[nearIdx]);
                     RemoveAtSwap(nearIdx);
+                }
+                else if (suppressImpactVfx)
+                {
+                    // Anticipation already gone — nothing left to destroy.
+                    ClearStaleAnticipationTracers(hit.OwnerTeam);
                 }
             }
         }
@@ -506,6 +612,172 @@ namespace TitanOrbit.Game
         {
             if (_bank == null)
                 _bank = BulletVfxBank.LoadDefault();
+        }
+
+        /// <summary>
+        /// Swept cosmetic collide for one tracer step using <see cref="BulletCosmeticHitQuery"/>.
+        /// </summary>
+        static bool TryPredictCosmeticHit(
+            in Tracer t,
+            float3 from,
+            float3 to,
+            out float3 hitPoint)
+        {
+            return BulletCosmeticHitQuery.TryHitSegment(
+                from,
+                to,
+                t.OwnerTeam,
+                t.OwnerNetworkId,
+                t.IsDisplaySpace,
+                out hitPoint);
+        }
+
+        /// <summary>
+        /// Plays impact VFX, records reconcile keys, destroys the tracer.
+        /// Does not write damage — server HitRpc / sim still owns HP.
+        /// </summary>
+        void ApplyPredictedHit(int tracerIndex, in Tracer t, float3 hitPoint)
+        {
+            EnsureBank();
+
+            // --- Display-space impact position for the VFX prefab ---
+            Vector3 hitDisplay = hitPoint;
+            if (!t.IsDisplaySpace && ToroidalDisplay.TryGetReferencePosition(out var reference))
+                hitDisplay = ToroidalDisplay.ToDisplayPosition(hitPoint, reference);
+            hitDisplay.y = 0f;
+
+            var team = (TeamId)t.OwnerTeam;
+            int bankIndex = math.max(0, t.BankIndex);
+            float scaleMul = t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f;
+            BulletVisualFactory.SpawnBulletImpactVfx(
+                hitDisplay, _bank, bankIndex, team, t.Damage, scaleMul);
+
+            // --- Remember for HitRpc / SpawnRpc reconcile ---
+            float now = Time.unscaledTime;
+            if (t.Sequence != 0)
+                RememberPredictedSequence(t.Sequence, now);
+            else if (t.IsAnticipation)
+            {
+                // Anticipation died before adopt — next SpawnRpc for this mount must not twin.
+                _pendingPredictedAdoptSkips.Add(new PendingPredictedAdoptSkip
+                {
+                    OwnerNetworkId = t.OwnerNetworkId,
+                    MountIndex = t.MountIndex,
+                    OwnerTeam = t.OwnerTeam,
+                    ExpireTime = now + PredictedAdoptSkipTtlSeconds,
+                    HitDisplayPos = hitDisplay,
+                    Damage = t.Damage,
+                    BankIndex = bankIndex,
+                    ScaleMultiplier = scaleMul,
+                });
+            }
+
+            _recentPredictedImpacts.Add(new RecentPredictedImpact
+            {
+                DisplayPos = hitDisplay,
+                OwnerTeam = t.OwnerTeam,
+                ExpireTime = now + PredictedHitTtlSeconds,
+            });
+
+            DestroyTracerGo(t);
+            RemoveAtSwap(tracerIndex);
+        }
+
+        /// <summary>
+        /// When anticipation already predicted-hit, bind the arriving server Sequence into the
+        /// predicted-hit set and skip CreateTracer (no twin).
+        /// </summary>
+        bool TryConsumePredictedAdoptSkip(in BulletVfxBridge.SpawnRequest req)
+        {
+            float now = Time.unscaledTime;
+            for (int i = 0; i < _pendingPredictedAdoptSkips.Count; i++)
+            {
+                var skip = _pendingPredictedAdoptSkips[i];
+                if (now > skip.ExpireTime)
+                    continue;
+                if (!OwnersMatchForAdopt(skip.OwnerNetworkId, req.OwnerNetworkId))
+                    continue;
+                if (skip.MountIndex != req.MountIndex)
+                    continue;
+
+                // Bind server Sequence so the later HitRpc reconciles cleanly.
+                RememberPredictedSequence(req.Sequence, now);
+                // Drop the spatial recent-impact entry — Sequence owns reconcile from here.
+                TryConsumeRecentPredictedImpact(skip.HitDisplayPos, skip.OwnerTeam);
+                _pendingPredictedAdoptSkips.RemoveAt(i);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Records a sequenced predicted hit for HitRpc dedupe.</summary>
+        void RememberPredictedSequence(uint sequence, float now)
+        {
+            if (sequence == 0)
+                return;
+            if (_clientPredictedHitSequences.Add(sequence))
+                _clientPredictedHitExpiry.Enqueue((sequence, now + PredictedHitTtlSeconds));
+        }
+
+        /// <summary>
+        /// True when a recent predicted impact sits near this HitRpc display position
+        /// (anticipation predicted before Sequence was known).
+        /// </summary>
+        bool TryConsumeRecentPredictedImpact(Vector3 hitDisplayPos, byte ownerTeam)
+        {
+            float now = Time.unscaledTime;
+            float maxDistSq = PredictedImpactMatchRadius * PredictedImpactMatchRadius;
+            float3 hit = new float3(hitDisplayPos.x, 0f, hitDisplayPos.z);
+
+            for (int i = _recentPredictedImpacts.Count - 1; i >= 0; i--)
+            {
+                var recent = _recentPredictedImpacts[i];
+                if (now > recent.ExpireTime)
+                {
+                    _recentPredictedImpacts.RemoveAt(i);
+                    continue;
+                }
+
+                if (recent.OwnerTeam != ownerTeam)
+                    continue;
+
+                float distSq = math.distancesq(recent.DisplayPos, hit);
+                if (distSq > maxDistSq)
+                    continue;
+
+                _recentPredictedImpacts.RemoveAt(i);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Expires stale predicted-hit reconcile entries so HashSets cannot grow forever.</summary>
+        void PrunePredictedReconcileState()
+        {
+            float now = Time.unscaledTime;
+
+            while (_clientPredictedHitExpiry.Count > 0)
+            {
+                var head = _clientPredictedHitExpiry.Peek();
+                if (now <= head.ExpireTime)
+                    break;
+                _clientPredictedHitExpiry.Dequeue();
+                _clientPredictedHitSequences.Remove(head.Sequence);
+            }
+
+            for (int i = _pendingPredictedAdoptSkips.Count - 1; i >= 0; i--)
+            {
+                if (now > _pendingPredictedAdoptSkips[i].ExpireTime)
+                    _pendingPredictedAdoptSkips.RemoveAt(i);
+            }
+
+            for (int i = _recentPredictedImpacts.Count - 1; i >= 0; i--)
+            {
+                if (now > _recentPredictedImpacts[i].ExpireTime)
+                    _recentPredictedImpacts.RemoveAt(i);
+            }
         }
 
         static void ResetTrail(GameObject go)
