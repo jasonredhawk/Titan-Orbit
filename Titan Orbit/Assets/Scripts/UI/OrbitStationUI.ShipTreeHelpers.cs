@@ -441,16 +441,29 @@ namespace TitanOrbit.UI
                 {
                     if (nodeLevel == currentShip.ShipLevel && targetBranchIndex == currentShip.BranchIndex)
                         return;
-                    MoonOrbitRpcClient.PurchaseShipUpgrade(
-                        OrbitStationEcsContext.StorePlanetId, nodeLevel, targetBranchIndex);
+
+                    int storePlanetId = OrbitStationEcsContext.StorePlanetId;
+                    if (storePlanetId <= 0)
+                        storePlanetId = _ecsStorePlanetId;
+
+                    MoonOrbitRpcClient.PurchaseShipUpgrade(storePlanetId, nodeLevel, targetBranchIndex);
+                    // Optimistic UI update — ClientWorld ghost may lag the Local Host server apply.
+                    if (currentShip != null)
+                    {
+                        currentShip.ShipLevel = nodeLevel;
+                        currentShip.BranchIndex = targetBranchIndex;
+                    }
                     RefreshShipTreeAfterShipChange();
                     return;
                 }
 
                 if (nodeLevel == currentShip.ShipLevel + 1)
                 {
-                    MoonOrbitRpcClient.PurchaseShipUpgrade(
-                        OrbitStationEcsContext.StorePlanetId, nodeLevel, targetBranchIndex);
+                    int storePlanetId = OrbitStationEcsContext.StorePlanetId;
+                    if (storePlanetId <= 0)
+                        storePlanetId = _ecsStorePlanetId;
+
+                    MoonOrbitRpcClient.PurchaseShipUpgrade(storePlanetId, nodeLevel, targetBranchIndex);
                     pendingGemsRequest = true;
                     if (HomePlanetStoreSystem.Instance != null)
                         HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();

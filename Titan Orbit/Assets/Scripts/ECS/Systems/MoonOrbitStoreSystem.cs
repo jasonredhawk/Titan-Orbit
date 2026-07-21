@@ -194,6 +194,24 @@ namespace TitanOrbit.ECS
             int targetBranchIndex,
             out FixedString128Bytes message)
         {
+            return TryPurchaseShipUpgradeForNetworkId(
+                em, networkId, storePlanetId, targetLevel, targetBranchIndex, out message);
+        }
+
+        /// <summary>
+        /// Server-authoritative ship upgrade / debug-free hull select.
+        /// Also called directly from <see cref="UI.MoonOrbitRpcClient"/> on Local Host — SendRpc on
+        /// ServerWorld never becomes <see cref="ReceiveRpcCommandRequest"/>, so the store system
+        /// would silently ignore Local Host clicks without this path.
+        /// </summary>
+        public static bool TryPurchaseShipUpgradeForNetworkId(
+            EntityManager em,
+            int networkId,
+            int storePlanetId,
+            int targetLevel,
+            int targetBranchIndex,
+            out FixedString128Bytes message)
+        {
             message = default;
             if (!TryGetOwnedShip(em, networkId, out var shipEntity))
             {

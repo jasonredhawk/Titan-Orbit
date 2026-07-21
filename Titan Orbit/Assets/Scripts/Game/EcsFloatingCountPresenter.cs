@@ -4,22 +4,36 @@ using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using Unity.Collections;
 using Unity.Entities;
-using Unity.Mathematics;
 using Unity.NetCode;
-using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Client-side floating +/- popups driven by replicated ECS state deltas.
-    /// Compares per-frame snapshots of ship gems/people/health, planet gems, and asteroid damage;
-    /// delegates display to <see cref="WorldFloatingCountManager"/>. Runs on main thread in Update.
+    /// [HYBRID] Client-side floating +/- popups driven by replicated ECS state deltas
+    /// and immediate bullet-impact hooks.
+    /// Compares per-frame snapshots of ship gems/people/health; asteroid <b>bullet</b> damage
+    /// prefers <see cref="TryNotifyLocalAsteroidBulletHit"/> (same frame as tracer impact) so
+    /// floats are not delayed by ghost Health replication. <see cref="PollAsteroids"/> remains
+    /// as a fallback for ramming / missed prediction. Delegates display to
+    /// <see cref="WorldFloatingCountManager"/>. Runs on main thread in Update.
+    /// <para>
+    /// People load/unload floats are owned by <see cref="PeopleTransportVfxDriver"/> (sphere leave/consume).
+    /// Asteroid health polling walks hybrid map-body proxies only — never a full asteroid
+    /// <c>ToEntityArray</c> — so it still works under session-long <see cref="ClientJoinSettleCache.TransformQuarantine"/>.
+    /// </para>
     /// </summary>
     public class EcsFloatingCountPresenter : MonoBehaviour
     {
         /// <summary>Minimum seconds between gem-deposit sound bursts during continuous deposit.</summary>
         const float DepositGemSoundInterval = 0.5f;
+
+        /// <summary>
+        /// Live presenter instance — <see cref="BulletVfxDriver"/> calls
+        /// <see cref="TryNotifyLocalAsteroidBulletHit"/> on predicted impacts so floats are not
+        /// delayed by asteroid ghost Health replication.
+        /// </summary>
+        public static EcsFloatingCountPresenter Active { get; private set; }
 
         /// <summary>Per-ship last-known values for delta detection — keyed by <see cref="GhostOwner.NetworkId"/>.</summary>
         struct ShipSnapshot
@@ -36,9 +50,25 @@ namespace TitanOrbit.Game
 
         readonly Dictionary<int, ShipSnapshot> _ships = new Dictionary<int, ShipSnapshot>();
         readonly Dictionary<int, float> _planetGems = new Dictionary<int, float>();
+        /// <summary>Last replicated asteroid Health per ghost entity — used to detect mining damage deltas.</summary>
         readonly Dictionary<Entity, float> _asteroidHealth = new Dictionary<Entity, float>();
+        /// <summary>
+        /// Scratch for <see cref="EcsWorldVisualizer.CopyLiveProxyEntities"/> — reused each frame to avoid GC.
+        /// </summary>
+        readonly List<Entity> _proxyEntityScratch = new List<Entity>(512);
         /// <summary>Skip delta popups on first frame after connect — avoids spurious +N from baseline.</summary>
         bool _primed;
+
+        void OnEnable()
+        {
+            Active = this;
+        }
+
+        void OnDisable()
+        {
+            if (Active == this)
+                Active = null;
+        }
 
         /// <summary>
         /// [UNITY] Polls visualization world each frame when in-game; primes snapshots once on join.
@@ -74,21 +104,30 @@ namespace TitanOrbit.Game
             }
 
             PollShips(em);
-            // [TITAN-ORBIT] Planet/asteroid ToComponentDataArray is unsafe under Windows TransformQuarantine.
-            if (!ClientJoinSettleCache.TransformQuarantine)
-            {
-                PollPlanetGems(em);
+
+            // [TITAN-ORBIT] Asteroid mining floats must run under TransformQuarantine (session-long on
+            // Windows). PollAsteroids walks hybrid proxies + per-entity reads — same pattern as
+            // BulletCosmeticHitQuery / minimap. Skip only while Settling (map Instantiates storm).
+            if (!ClientJoinSettleCache.Settling)
                 PollAsteroids(em);
-            }
+
+            // Planet gem dictionary is reserved for future deposit popups. Full planet
+            // ToComponentDataArray stays gated — unsafe under TransformQuarantine after Settling OFF.
+            if (!ClientJoinSettleCache.TransformQuarantine)
+                PollPlanetGems(em);
         }
 
-        /// <summary>Captures initial ship/planet/asteroid state into snapshot dictionaries.</summary>
+        /// <summary>
+        /// Captures initial ship/planet/asteroid state into snapshot dictionaries so the first
+        /// real delta frame does not treat the baseline as a +N popup.
+        /// </summary>
         void PrimeSnapshots(EntityManager em)
         {
             _ships.Clear();
             _planetGems.Clear();
             _asteroidHealth.Clear();
 
+            // --- Ships (tiny query — safe after ShouldSkipShipEntityQueries clears) ---
             using var shipQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),
@@ -112,7 +151,12 @@ namespace TitanOrbit.Game
                 };
             }
 
-            // Skip planet/asteroid baseline under TransformQuarantine (same Crash!!! pattern as minimap).
+            // --- Asteroids via hybrid proxies (quarantine-safe) ---
+            // First-sight in PollAsteroids also baselines Health; priming here avoids a one-frame lag
+            // before mining feedback after Join Team.
+            PrimeAsteroidHealthFromProxies(em);
+
+            // Skip planet baseline under TransformQuarantine (same Crash!!! pattern as minimap).
             if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.TransformQuarantine)
                 return;
 
@@ -122,15 +166,30 @@ namespace TitanOrbit.Game
             using var planetStates = planetQuery.ToComponentDataArray<PlanetState>(Allocator.Temp);
             for (int i = 0; i < planetStates.Length; i++)
                 _planetGems[planetStates[i].PlanetId] = planetStates[i].CurrentGems;
+        }
 
+        /// <summary>
+        /// Seeds <see cref="_asteroidHealth"/> from live hybrid map-body proxies.
+        /// Walks the managed proxy dictionary only — never <c>ToEntityArray</c> over all asteroids.
+        /// </summary>
+        void PrimeAsteroidHealthFromProxies(EntityManager em)
+        {
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null)
+                return;
 
-            using var asteroidQuery = em.CreateEntityQuery(
-                ComponentType.ReadOnly<AsteroidTag>(),
-                ComponentType.ReadOnly<AsteroidState>());
-            using var asteroidEntities = asteroidQuery.ToEntityArray(Allocator.Temp);
-            using var asteroidStates = asteroidQuery.ToComponentDataArray<AsteroidState>(Allocator.Temp);
-            for (int i = 0; i < asteroidEntities.Length; i++)
-                _asteroidHealth[asteroidEntities[i]] = asteroidStates[i].Health;
+            visualizer.CopyLiveProxyEntities(_proxyEntityScratch);
+            for (int i = 0; i < _proxyEntityScratch.Count; i++)
+            {
+                Entity entity = _proxyEntityScratch[i];
+                if (!em.Exists(entity) ||
+                    !em.HasComponent<AsteroidTag>(entity) ||
+                    !em.HasComponent<AsteroidState>(entity))
+                    continue;
+
+                var state = em.GetComponentData<AsteroidState>(entity);
+                _asteroidHealth[entity] = state.Health;
+            }
         }
 
         /// <summary>
@@ -244,32 +303,127 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Local-player asteroid mining feedback — damage and remaining gems near local ship.</summary>
+        /// <summary>
+        /// Immediate asteroid mining float for the local player's bullet impact.
+        /// Called from <see cref="BulletVfxDriver"/> on client-predicted hits (and HitRpc fallback)
+        /// so the stack appears with the impact VFX — not ~1s later when
+        /// <see cref="AsteroidState.Health"/> finally replicates.
+        /// </summary>
+        /// <param name="asteroidEntity">Hybrid-proxy asteroid ghost that was hit.</param>
+        /// <param name="damage">Bullet damage from the tracer / HitRpc (server-authored amount).</param>
+        /// <param name="ownerTeam">Shooter team for tint colors.</param>
+        /// <returns>True when a popup was spawned.</returns>
+        public static bool TryNotifyLocalAsteroidBulletHit(
+            Entity asteroidEntity,
+            float damage,
+            TeamId ownerTeam)
+        {
+            // --- Resolve live presenter ---
+            var presenter = Active;
+            if (presenter == null || WorldFloatingCountManager.Instance == null)
+                return false;
+            if (asteroidEntity == Entity.Null || damage <= 0.01f)
+                return false;
+
+            // --- Hull anchor (stack rises above local ship, same as PollAsteroids) ---
+            if (!TryGetLocalShipAnchor(out Transform localAnchor))
+                return false;
+
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (!em.Exists(asteroidEntity) ||
+                !em.HasComponent<AsteroidState>(asteroidEntity))
+                return false;
+
+            var state = em.GetComponentData<AsteroidState>(asteroidEntity);
+            if (state.IsDestroyed)
+                return false;
+
+            // --- Optimistic HP baseline ---
+            // Ghost Health often still shows the pre-hit value for a long RTT window.
+            // Track an optimistic remaining HP so PollAsteroids does not re-fire the same damage
+            // when the snapshot finally arrives, and so multi-hit bursts stack correctly.
+            float baseline = state.Health;
+            if (presenter._asteroidHealth.TryGetValue(asteroidEntity, out float tracked) &&
+                tracked < baseline - 0.01f)
+            {
+                // Already applied earlier predicted hits that replication has not caught up to.
+                baseline = tracked;
+            }
+
+            float remainingHealth = Mathf.Max(0f, baseline - damage);
+            presenter._asteroidHealth[asteroidEntity] = remainingHealth;
+
+            TeamId tintTeam = state.TerritoryTeam != TeamId.None
+                ? state.TerritoryTeam
+                : ownerTeam;
+
+            WorldFloatingCountManager.Instance.ShowAsteroidFeedback(
+                localAnchor,
+                new AsteroidFloatingFeedback
+                {
+                    Team = tintTeam,
+                    Damage = damage,
+                    RemainingHealth = remainingHealth,
+                    RemainingGems = state.RemainingGems,
+                });
+            return true;
+        }
+
+        /// <summary>
+        /// Fallback asteroid mining feedback from replicated Health deltas (ramming, or when
+        /// cosmetic hit prediction did not run). Bullet hits should prefer
+        /// <see cref="TryNotifyLocalAsteroidBulletHit"/> for zero-latency floats.
+        /// <para>
+        /// [TITAN-ORBIT] Under session-long TransformQuarantine we must not
+        /// <c>ToEntityArray</c> / <c>ToComponentDataArray</c> all asteroids (Windows late-join Crash!!!).
+        /// Instead walk <see cref="EcsWorldVisualizer"/> hybrid proxy keys and read
+        /// <see cref="AsteroidState"/> per entity — same quarantine-safe pattern as
+        /// <see cref="BulletCosmeticHitQuery"/>.
+        /// </para>
+        /// </summary>
         void PollAsteroids(EntityManager em)
         {
+            // --- Need a hull anchor so the stack rises above the local ship ---
             if (!TryGetLocalShipAnchor(out Transform localAnchor))
                 return;
 
-            using var asteroidQuery = em.CreateEntityQuery(
-                ComponentType.ReadOnly<AsteroidTag>(),
-                ComponentType.ReadOnly<AsteroidState>());
-            using var entities = asteroidQuery.ToEntityArray(Allocator.Temp);
-            using var states = asteroidQuery.ToComponentDataArray<AsteroidState>(Allocator.Temp);
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null)
+                return;
+
+            // Managed dictionary of live GameObject proxies — no Burst gather over asteroids.
+            visualizer.CopyLiveProxyEntities(_proxyEntityScratch);
 
             var seen = new HashSet<Entity>();
 
-            for (int i = 0; i < entities.Length; i++)
+            for (int i = 0; i < _proxyEntityScratch.Count; i++)
             {
-                Entity entity = entities[i];
-                seen.Add(entity);
-                var state = states[i];
+                Entity entity = _proxyEntityScratch[i];
+                // Per-entity HasComponent — never GatherEntitiesWithoutFilter over AsteroidTag.
+                if (!em.Exists(entity) ||
+                    !em.HasComponent<AsteroidTag>(entity) ||
+                    !em.HasComponent<AsteroidState>(entity))
+                    continue;
 
+                seen.Add(entity);
+                var state = em.GetComponentData<AsteroidState>(entity);
+
+                // First sight of this ghost: baseline Health so we do not flash a fake +Damage.
                 if (!_asteroidHealth.TryGetValue(entity, out float lastHealth))
                     lastHealth = state.Health;
 
                 float damage = lastHealth - state.Health;
-                _asteroidHealth[entity] = state.Health;
+                // [TITAN-ORBIT] Bullet prediction may have already lowered lastHealth optimistically
+                // while ghost Health is still stale (higher). Never raise the tracked value from a
+                // lagging snapshot — that would wipe the optimistic baseline and double-popup later.
+                _asteroidHealth[entity] = Mathf.Min(lastHealth, state.Health);
 
+                // Only show when replicated Health dropped below our tracked baseline.
+                // Predicted bullet hits already showed floats and left lastHealth <= ghost Health.
                 if (damage <= 0.01f || state.IsDestroyed)
                     continue;
 
@@ -284,6 +438,7 @@ namespace TitanOrbit.Game
                     });
             }
 
+            // --- Drop snapshots for despawned / recycled entities ---
             if (_asteroidHealth.Count > seen.Count)
             {
                 var stale = new List<Entity>();

@@ -83,10 +83,59 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Requests a ship upgrade-tree purchase (or debug-free hull select).
+        /// <para>
+        /// [NETCODE] Local Host applies directly on the server world — creating
+        /// <see cref="SendRpcCommandRequest"/> on ServerWorld never yields
+        /// <see cref="ReceiveRpcCommandRequest"/> for <see cref="MoonOrbitStoreSystem"/>, so Free
+        /// tree clicks previously did nothing. Dedicated clients still SendRpc from ClientWorld.
+        /// </para>
+        /// </summary>
         public static void PurchaseShipUpgrade(int storePlanetId, int targetLevel, int targetBranchIndex)
         {
-            // --- PurchaseShipUpgrade ---
-            var world = EcsGameBridge.ServerWorld ?? EcsGameBridge.ClientWorld;
+            // --- Validate store planet ---
+            if (storePlanetId <= 0)
+            {
+                Debug.LogWarning(
+                    "[MoonOrbit] PurchaseShipUpgrade ignored — StorePlanetId is 0 (orbit context not set).");
+                return;
+            }
+
+            // --- Local Host: apply on ServerWorld immediately (mirrors PurchaseAttributeUpgrade) ---
+            if (EcsGameBridge.IsLocalHost())
+            {
+                // Keep Shared debug flags in sync with the Inspector toggle (server reads Shared only).
+                GameManager.EnsureExists();
+
+                var server = EcsGameBridge.ServerWorld;
+                if (server == null || !server.IsCreated)
+                    return;
+
+                int networkId = EcsGameBridge.GetLocalNetworkId();
+                if (networkId <= 0)
+                {
+                    Debug.LogWarning("[MoonOrbit] PurchaseShipUpgrade ignored — local NetworkId not ready.");
+                    return;
+                }
+
+                bool ok = MoonOrbitStoreSystem.TryPurchaseShipUpgradeForNetworkId(
+                    server.EntityManager,
+                    networkId,
+                    storePlanetId,
+                    targetLevel,
+                    targetBranchIndex,
+                    out var message);
+                if (!ok && !message.IsEmpty)
+                {
+                    MoonOrbitClientState.SetStoreMessage(message.ToString());
+                    Debug.LogWarning($"[MoonOrbit] Ship upgrade failed: {message}");
+                }
+                return;
+            }
+
+            // --- Dedicated / remote client: SendRpc from ClientWorld only ---
+            var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
                 return;
 

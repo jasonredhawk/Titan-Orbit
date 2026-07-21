@@ -6,6 +6,7 @@ using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
+using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -30,7 +31,9 @@ namespace TitanOrbit.Game
     /// [TITAN-ORBIT] Client-predicted impact: while tracers fly, swept-collide against hybrid-proxy
     /// spheres (<see cref="BulletCosmeticHitQuery"/>) so cosmetics stop at the rock/ship surface
     /// immediately. <see cref="BulletHitRpc"/> then reconciles (skip duplicate impact / destroy late
-    /// misses). Damage / HP are never written here.
+    /// misses). Damage / HP are never written here — but local asteroid hits do notify
+    /// <see cref="EcsFloatingCountPresenter"/> so mining floats appear with the impact VFX
+    /// (ghost Health replication is too slow for that feedback).
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66150)]
@@ -205,9 +208,13 @@ namespace TitanOrbit.Game
                 // --- Client-predicted impact before lifetime cull ---
                 // [TITAN-ORBIT] Destroy tracer at the rock surface now; server HitRpc reconciles later.
                 if (canPredictHits &&
-                    TryPredictCosmeticHit(in t, prevPos, t.LogicalPos, out float3 hitPoint))
+                    TryPredictCosmeticHit(
+                        in t, prevPos, t.LogicalPos,
+                        out float3 hitPoint,
+                        out var hitKind,
+                        out var hitEntity))
                 {
-                    ApplyPredictedHit(i, in t, hitPoint);
+                    ApplyPredictedHit(i, in t, hitPoint, hitKind, hitEntity);
                     continue;
                 }
 
@@ -327,6 +334,7 @@ namespace TitanOrbit.Game
         /// Falls back to nearest same-team tracer (incl. Sequence=0 anticipation) so orphan
         /// cosmetics do not keep flying through the rock after a real server hit.
         /// Skips duplicate flash when client already predicted this Sequence / nearby impact.
+        /// When prediction did not run, local asteroid HitRpcs still spawn floating damage text.
         /// </summary>
         void DrainHits()
         {
@@ -341,7 +349,7 @@ namespace TitanOrbit.Game
                 // --- Reconcile: client already showed impact for this Sequence ---
                 if (hit.Sequence != 0 && _clientPredictedHitSequences.Remove(hit.Sequence))
                 {
-                    // Tracer already destroyed; still cull stale anticipation leftovers.
+                    // Tracer already destroyed; floating count already shown on predicted asteroid hit.
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                     continue;
                 }
@@ -363,7 +371,12 @@ namespace TitanOrbit.Game
                 if (_indexBySequence.TryGetValue(hit.Sequence, out int idx) &&
                     idx >= 0 && idx < _tracers.Count)
                 {
-                    DestroyTracerGo(_tracers[idx]);
+                    var tracer = _tracers[idx];
+                    // Prediction missed (e.g. Settling) — still show float for local asteroid hits.
+                    if (!suppressImpactVfx)
+                        TryShowAsteroidFloatForHitRpc(hitPos, hit.Damage, (TeamId)hit.OwnerTeam, in tracer);
+
+                    DestroyTracerGo(tracer);
                     RemoveAtSwap(idx);
                     // [TITAN-ORBIT] Cull only far leftover anticipations (energy-lag overfire).
                     // Do NOT wipe the whole team — a multi-cannon volley has sibling tracers that
@@ -377,7 +390,11 @@ namespace TitanOrbit.Game
                 // has a Sequence the client never bound — without this, the cosmetic tunnels.
                 if (TryFindNearestTracerIndex(hitPos, hit.OwnerTeam, maxDistance: 12f, out int nearIdx))
                 {
-                    DestroyTracerGo(_tracers[nearIdx]);
+                    var nearTracer = _tracers[nearIdx];
+                    if (!suppressImpactVfx)
+                        TryShowAsteroidFloatForHitRpc(hitPos, hit.Damage, (TeamId)hit.OwnerTeam, in nearTracer);
+
+                    DestroyTracerGo(nearTracer);
                     RemoveAtSwap(nearIdx);
                 }
                 else if (suppressImpactVfx)
@@ -386,6 +403,30 @@ namespace TitanOrbit.Game
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                 }
             }
+        }
+
+        /// <summary>
+        /// HitRpc path when cosmetic prediction did not already show a float: if this is a local
+        /// shot near an asteroid proxy, spawn the mining stack immediately.
+        /// </summary>
+        static void TryShowAsteroidFloatForHitRpc(
+            Vector3 hitDisplayPos,
+            float damage,
+            TeamId ownerTeam,
+            in Tracer tracer)
+        {
+            bool localShot = tracer.IsAnticipation ||
+                             BulletMuzzlePresentation.IsLocalOwner(tracer.OwnerNetworkId);
+            if (!localShot)
+                return;
+
+            // Nearest asteroid within a generous impact radius (display space).
+            if (!BulletCosmeticHitQuery.TryFindNearestAsteroidEntity(
+                    hitDisplayPos, maxDistance: 18f, out Entity asteroidEntity))
+                return;
+
+            EcsFloatingCountPresenter.TryNotifyLocalAsteroidBulletHit(
+                asteroidEntity, damage, ownerTeam);
         }
 
         /// <summary>
@@ -616,12 +657,15 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Swept cosmetic collide for one tracer step using <see cref="BulletCosmeticHitQuery"/>.
+        /// Also returns hit kind + entity so asteroid floating counts can spawn immediately.
         /// </summary>
         static bool TryPredictCosmeticHit(
             in Tracer t,
             float3 from,
             float3 to,
-            out float3 hitPoint)
+            out float3 hitPoint,
+            out BulletCosmeticHitQuery.ObstacleKind hitKind,
+            out Entity hitEntity)
         {
             return BulletCosmeticHitQuery.TryHitSegment(
                 from,
@@ -629,14 +673,22 @@ namespace TitanOrbit.Game
                 t.OwnerTeam,
                 t.OwnerNetworkId,
                 t.IsDisplaySpace,
-                out hitPoint);
+                out hitPoint,
+                out hitKind,
+                out hitEntity);
         }
 
         /// <summary>
         /// Plays impact VFX, records reconcile keys, destroys the tracer.
         /// Does not write damage — server HitRpc / sim still owns HP.
+        /// Local asteroid hits also spawn floating damage text immediately (ghost Health lags).
         /// </summary>
-        void ApplyPredictedHit(int tracerIndex, in Tracer t, float3 hitPoint)
+        void ApplyPredictedHit(
+            int tracerIndex,
+            in Tracer t,
+            float3 hitPoint,
+            BulletCosmeticHitQuery.ObstacleKind hitKind,
+            Entity hitEntity)
         {
             EnsureBank();
 
@@ -651,6 +703,18 @@ namespace TitanOrbit.Game
             float scaleMul = t.ScaleMultiplier > 0f ? t.ScaleMultiplier : 1f;
             BulletVisualFactory.SpawnBulletImpactVfx(
                 hitDisplay, _bank, bankIndex, team, t.Damage, scaleMul);
+
+            // --- Immediate asteroid floating count (local shots only) ---
+            // [TITAN-ORBIT] AsteroidState.Health replication can lag ~1s behind the tracer impact.
+            // Anticipation is always local; sequenced tracers use GhostOwner NetworkId.
+            bool localShot = t.IsAnticipation || BulletMuzzlePresentation.IsLocalOwner(t.OwnerNetworkId);
+            if (localShot &&
+                hitKind == BulletCosmeticHitQuery.ObstacleKind.Asteroid &&
+                hitEntity != Entity.Null)
+            {
+                EcsFloatingCountPresenter.TryNotifyLocalAsteroidBulletHit(
+                    hitEntity, t.Damage, team);
+            }
 
             // --- Remember for HitRpc / SpawnRpc reconcile ---
             float now = Time.unscaledTime;

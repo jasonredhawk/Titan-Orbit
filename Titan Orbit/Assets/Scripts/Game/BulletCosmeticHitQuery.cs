@@ -34,6 +34,12 @@ namespace TitanOrbit.Game
             public ObstacleKind Kind;
 
             /// <summary>
+            /// Hybrid-proxy entity this sphere was built from (asteroid / planet / ship).
+            /// Used by floating-count feedback to read <see cref="AsteroidState"/> without a full gather.
+            /// </summary>
+            public Entity SourceEntity;
+
+            /// <summary>
             /// Logical / unbounded XZ center. For moons this is the <b>planet</b> center —
             /// <see cref="TryHitSegment"/> recomputes the orbiting moon pose each test.
             /// </summary>
@@ -142,6 +148,7 @@ namespace TitanOrbit.Game
                     Obstacles.Add(new Obstacle
                     {
                         Kind = ObstacleKind.Planet,
+                        SourceEntity = entity,
                         LogicalCenter = lt.Position,
                         Radius = BodyCollisionMath.GetPlanetBodyRadiusWorld(planetScale),
                         Scale = planetScale,
@@ -160,6 +167,7 @@ namespace TitanOrbit.Game
                         Obstacles.Add(new Obstacle
                         {
                             Kind = ObstacleKind.Moon,
+                            SourceEntity = entity,
                             LogicalCenter = lt.Position,
                             Radius = hitRadius,
                             Scale = planetScale,
@@ -184,6 +192,7 @@ namespace TitanOrbit.Game
                     Obstacles.Add(new Obstacle
                     {
                         Kind = ObstacleKind.Asteroid,
+                        SourceEntity = entity,
                         LogicalCenter = lt.Position,
                         Radius = BulletCollision.AsteroidHitRadius(lt.Scale),
                         Scale = lt.Scale,
@@ -206,6 +215,7 @@ namespace TitanOrbit.Game
                     Obstacles.Add(new Obstacle
                     {
                         Kind = ObstacleKind.Ship,
+                        SourceEntity = entity,
                         LogicalCenter = lt.Position,
                         Radius = BodyCollisionMath.GetShipHullRadiusWorld(lt.Scale),
                         Scale = lt.Scale,
@@ -228,15 +238,21 @@ namespace TitanOrbit.Game
         /// <param name="ownerNetworkId">Shooter NetworkId — skips own hull.</param>
         /// <param name="isDisplaySpace">True when the tracer flies in presentation / display coords.</param>
         /// <param name="hitPoint">Contact point in the same space as from/to.</param>
+        /// <param name="hitKind">Which obstacle category was hit (asteroid / planet / …).</param>
+        /// <param name="hitEntity">Hybrid-proxy entity for the hit body (Null if none).</param>
         public static bool TryHitSegment(
             float3 from,
             float3 to,
             byte ownerTeam,
             int ownerNetworkId,
             bool isDisplaySpace,
-            out float3 hitPoint)
+            out float3 hitPoint,
+            out ObstacleKind hitKind,
+            out Entity hitEntity)
         {
             hitPoint = to;
+            hitKind = ObstacleKind.Asteroid;
+            hitEntity = Entity.Null;
             if (Obstacles.Count == 0)
                 return false;
 
@@ -248,6 +264,8 @@ namespace TitanOrbit.Game
 
             float bestT = float.MaxValue;
             float3 bestHit = to;
+            ObstacleKind bestKind = ObstacleKind.Asteroid;
+            Entity bestEntity = Entity.Null;
             bool any = false;
             float3 delta = to - from;
             float deltaLenSq = math.lengthsq(delta);
@@ -304,14 +322,36 @@ namespace TitanOrbit.Game
                     continue;
 
                 if (TryUpdateBest(from, delta, deltaLenSq, hp, ref bestT, ref bestHit))
+                {
                     any = true;
+                    bestKind = o.Kind;
+                    bestEntity = o.SourceEntity;
+                }
             }
 
             if (!any)
                 return false;
 
             hitPoint = bestHit;
+            hitKind = bestKind;
+            hitEntity = bestEntity;
             return true;
+        }
+
+        /// <summary>
+        /// Overload kept for callers that only need the contact point.
+        /// </summary>
+        public static bool TryHitSegment(
+            float3 from,
+            float3 to,
+            byte ownerTeam,
+            int ownerNetworkId,
+            bool isDisplaySpace,
+            out float3 hitPoint)
+        {
+            return TryHitSegment(
+                from, to, ownerTeam, ownerNetworkId, isDisplaySpace,
+                out hitPoint, out _, out _);
         }
 
         /// <summary>Keeps the contact closest to segment start (parameter t in [0,1]).</summary>
@@ -390,6 +430,71 @@ namespace TitanOrbit.Game
             Obstacles.Clear();
             ProxyScratch.Clear();
             s_LastRefreshFrame = -1;
+        }
+
+        /// <summary>
+        /// Finds the nearest live asteroid hybrid proxy to a display-space hit point.
+        /// Used when <see cref="BulletHitRpc"/> arrives without a predicted Obstacle identity
+        /// (e.g. prediction was skipped during Settling). Quarantine-safe — proxy keys only.
+        /// </summary>
+        /// <param name="hitDisplayPos">Impact position in display / presentation space.</param>
+        /// <param name="maxDistance">Search radius in world units.</param>
+        /// <param name="asteroidEntity">Matching asteroid ghost entity, or Null.</param>
+        public static bool TryFindNearestAsteroidEntity(
+            Vector3 hitDisplayPos,
+            float maxDistance,
+            out Entity asteroidEntity)
+        {
+            asteroidEntity = Entity.Null;
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null)
+                return false;
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            visualizer.CopyLiveProxyEntities(ProxyScratch);
+
+            bool hasRef = ToroidalDisplay.TryGetReferencePosition(out Vector3 reference);
+            float maxDistSq = maxDistance * maxDistance;
+            float bestDistSq = maxDistSq;
+            Entity best = Entity.Null;
+            float3 hit = new float3(hitDisplayPos.x, 0f, hitDisplayPos.z);
+
+            for (int i = 0; i < ProxyScratch.Count; i++)
+            {
+                Entity entity = ProxyScratch[i];
+                if (!em.Exists(entity) ||
+                    !em.HasComponent<AsteroidTag>(entity) ||
+                    !em.HasComponent<AsteroidState>(entity) ||
+                    !em.HasComponent<LocalTransform>(entity))
+                    continue;
+
+                var state = em.GetComponentData<AsteroidState>(entity);
+                if (state.IsDestroyed)
+                    continue;
+
+                float3 logical = em.GetComponentData<LocalTransform>(entity).Position;
+                float3 display = hasRef
+                    ? (float3)ToroidalDisplay.ToDisplayPosition(logical, reference)
+                    : logical;
+                display.y = 0f;
+
+                float distSq = math.distancesq(display, hit);
+                if (distSq > bestDistSq)
+                    continue;
+
+                bestDistSq = distSq;
+                best = entity;
+            }
+
+            if (best == Entity.Null)
+                return false;
+
+            asteroidEntity = best;
+            return true;
         }
     }
 }
