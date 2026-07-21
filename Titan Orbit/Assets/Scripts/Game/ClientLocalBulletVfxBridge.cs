@@ -113,12 +113,13 @@ namespace TitanOrbit.Game
 
             // --- Volley vs drip (same planner as server) ---
             // Energy is server-authoritative; soft gate so we do not spam empty-pool anticipation.
-            float energyCostTotal = weaponCfg.EnergyCostPerShot > 0f
+            // EnergyCostPerShot is per barrel; planner multiplies for full volleys.
+            float energyCostPerBarrel = weaponCfg.EnergyCostPerShot > 0f
                 ? weaponCfg.EnergyCostPerShot
                 : weaponCfg.BulletDamage;
             if (!ShipWeaponFireLogic.TryPlanFire(
                     shipState.CurrentEnergy,
-                    energyCostTotal,
+                    energyCostPerBarrel,
                     weaponCfg.BulletDamage,
                     weaponCfg.FireRate,
                     mountCount,

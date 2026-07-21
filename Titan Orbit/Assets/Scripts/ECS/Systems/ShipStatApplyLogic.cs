@@ -170,12 +170,18 @@ namespace TitanOrbit.ECS
                 baseStats = ShipFamilyStatsCalculator.BreakdownToBaseStats(tier.powerScoreBreakdown);
                 if (family != null)
                 {
-                    // [TITAN-ORBIT] Older baked breakdowns summed bulletSpeed across every Weapon
-                    // child (6×12 → 72). Prefab sum now uses max; until the catalog is re-baked,
-                    // force projectile speed back to the family default baseline.
+                    // [TITAN-ORBIT] Older baked breakdowns summed bulletSpeed / fireRate / firePower
+                    // across every Weapon child (e.g. 4×12 speed, 4×6 RoF, 4×3 damage). Prefab sum
+                    // now uses max speed and average fire rate / fire power; until the catalog is
+                    // re-baked, force all three back to the family default baseline so multi-gun
+                    // hulls do not inherit N× cadence or N× per-hit damage.
                     var familyDefaults = family.GetEffectiveDefaultFallbackStats();
                     if (familyDefaults.bulletSpeed > 0.01f)
                         baseStats.bulletSpeed = familyDefaults.bulletSpeed;
+                    if (familyDefaults.fireRate > 0.01f)
+                        baseStats.fireRate = familyDefaults.fireRate;
+                    if (familyDefaults.firePower > 0.01f)
+                        baseStats.firePower = familyDefaults.firePower;
                     baseStats = family.ApplyStatFallbacks(baseStats);
                 }
                 return true;

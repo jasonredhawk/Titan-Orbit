@@ -7,8 +7,8 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Static stat summing from a chassis prefab hierarchy plus a <see cref="ShipFamilyDefinition"/>.
     /// Walks child transforms named <c>{familyId}_{componentId}</c>, scales stats by transform size, applies
-    /// propulsion aggregation + weapon projectile-speed max (not sum), then stat fallbacks.
-    /// Shared by editor previews, power-score baking, and runtime UI.
+    /// propulsion aggregation, weapon projectile-speed max (not sum), weapon fire-power and fire-rate
+    /// averages (not sum), then stat fallbacks. Shared by editor previews, power-score baking, and runtime UI.
     /// </summary>
     public static class ShipFamilyStatsCalculator
     {
@@ -110,6 +110,17 @@ namespace TitanOrbit.Data
                     shipLevel);
                 // [TITAN-ORBIT] Bullet speed is per-projectile — max across weapons, never N× sum.
                 result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponProjectileSpeedToSummedStats(
+                    result.TotalStats,
+                    result.MatchedComponentIds,
+                    result.PerComponentStats);
+                // [TITAN-ORBIT] Per-bullet damage — average scaled weapon firePower, never N× sum.
+                result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponFirePowerToSummedStats(
+                    result.TotalStats,
+                    result.MatchedComponentIds,
+                    result.PerComponentStats);
+                // [TITAN-ORBIT] Fire rate is one shared hull cooldown — average scaled weapon rates,
+                // never N× sum (gun count must not multiply RoF; GO Z-scale still does).
+                result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponFireRateToSummedStats(
                     result.TotalStats,
                     result.MatchedComponentIds,
                     result.PerComponentStats);

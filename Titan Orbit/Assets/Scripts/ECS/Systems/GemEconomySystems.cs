@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -518,6 +519,11 @@ namespace TitanOrbit.ECS
     /// with original NGO explosion speed, damping, and tumble. Schedules a timed respawn
     /// (<see cref="AsteroidSpawning.ScheduleRespawn"/>) then destroys the entity.
     /// Clients also play an immediate local burst via <c>ClientGemBurstPresenter</c>.
+    /// <para>
+    /// [TITAN-ORBIT] Despawn triggers on <see cref="AsteroidState.IsDestroyed"/> <b>or</b>
+    /// <c>Health &lt;= 0</c> (belt-and-suspenders for bullet kills). Missing Gem prefab must not
+    /// leave 0-HP zombies — we still destroy the entity and only skip the gem burst.
+    /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -538,9 +544,12 @@ namespace TitanOrbit.ECS
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Gem == Entity.Null)
+            // [TITAN-ORBIT] Gem prefab is optional for despawn — never early-out the whole system
+            // when Gem is null (that left Health=0 / IsDestroyed rocks alive forever).
+            if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs))
                 return;
 
+            bool canSpawnGems = prefabs.Gem != Entity.Null;
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
             settings.ClampCounts();
             float spawnTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
@@ -556,12 +565,15 @@ namespace TitanOrbit.ECS
                          .WithAll<AsteroidTag>()
                          .WithEntityAccess())
             {
-                if (!asteroidState.ValueRO.IsDestroyed)
+                var a = asteroidState.ValueRO;
+                // Bullet path sets IsDestroyed with Health=0; also accept Health<=0 alone.
+                bool shouldDestroy = a.IsDestroyed || a.Health <= 0f;
+                if (!shouldDestroy)
                     continue;
 
                 float3 pos = asteroidTransform.ValueRO.Position;
-                float remaining = asteroidState.ValueRO.RemainingGems;
-                if (remaining >= GemEconomyConstants.MinGemSpawnValue)
+                float remaining = a.RemainingGems;
+                if (canSpawnGems && remaining >= GemEconomyConstants.MinGemSpawnValue)
                 {
                     // Deterministic seed so client immediate burst can match count/feel closely.
                     uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
@@ -570,10 +582,11 @@ namespace TitanOrbit.ECS
                 }
 
                 // --- Schedule respawn (original AsteroidRespawnManager.ScheduleRespawn) ---
-                // Use MaxGems — RemainingGems is often 0 after mining. Fall back to Health/remaining.
-                float restoreGems = asteroidState.ValueRO.MaxGems;
+                // Prefer MaxGems. If unset: mining leaves Health full / RemainingGems 0; bullet
+                // kills leave Health 0 / RemainingGems full — max() covers both.
+                float restoreGems = a.MaxGems;
                 if (restoreGems < GemEconomyConstants.MinGemSpawnValue)
-                    restoreGems = math.max(asteroidState.ValueRO.Health, remaining);
+                    restoreGems = math.max(a.Health, remaining);
                 if (restoreGems < GemEconomyConstants.MinGemSpawnValue)
                     restoreGems = 1f;
 
@@ -584,6 +597,22 @@ namespace TitanOrbit.ECS
                     restoreGems,
                     now,
                     settings.AsteroidRespawnDelaySeconds);
+
+                // #region agent log
+                AgentDebugSessionLog.Write(
+                    "B",
+                    "AsteroidDestructionSystem.OnUpdate",
+                    "server_asteroid_destroy_entity",
+                    "{\"entityIndex\":" + entity.Index +
+                    ",\"isDestroyed\":" + (a.IsDestroyed ? "true" : "false") +
+                    ",\"health\":" + a.Health.ToString("R") +
+                    ",\"remainingGems\":" + remaining.ToString("R") +
+                    ",\"maxGems\":" + a.MaxGems.ToString("R") +
+                    ",\"canSpawnGems\":" + (canSpawnGems ? "true" : "false") +
+                    ",\"restoreGems\":" + restoreGems.ToString("R") +
+                    ",\"posX\":" + pos.x.ToString("R") +
+                    ",\"posZ\":" + pos.z.ToString("R") + "}");
+                // #endregion
 
                 ecb.DestroyEntity(entity);
             }

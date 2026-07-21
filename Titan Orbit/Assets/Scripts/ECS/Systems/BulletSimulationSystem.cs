@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -16,8 +17,9 @@ namespace TitanOrbit.ECS
     /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>:
     /// <b>full volley</b> (every mount same tick) when energy covers all weapons;
     /// otherwise <b>round-robin drip</b> — exactly one mount via
-    /// <see cref="ShipWeaponState.NextMountIndex"/> (0→1→2→…→0). Damage/energy split evenly
-    /// across mounts. Empty mount buffer = unarmed.
+    /// <see cref="ShipWeaponState.NextMountIndex"/> (0→1→2→…→0). Per-bullet damage and
+    /// per-barrel energy come from averaged weapon firePower (gun count does not multiply
+    /// hit strength); a full volley spends energy × mount count. Empty mount buffer = unarmed.
     /// </para>
     /// <para>
     /// Starblast-style hardening vs asteroid tunneling:
@@ -173,13 +175,14 @@ namespace TitanOrbit.ECS
                 // --- Volley vs round-robin drip ---
                 // [TITAN-ORBIT] Full energy → all mounts same tick. Otherwise exactly one mount
                 // from NextMountIndex, then +1 (never partial multi-fire — that skipped barrels).
-                float energyCostTotal = weaponCfg.ValueRO.EnergyCostPerShot > 0f
+                // EnergyCostPerShot / BulletDamage are per barrel (averaged firePower — not N×).
+                float energyCostPerBarrel = weaponCfg.ValueRO.EnergyCostPerShot > 0f
                     ? weaponCfg.ValueRO.EnergyCostPerShot
                     : weaponCfg.ValueRO.BulletDamage;
                 int mountCount = mounts.Length;
                 if (!ShipWeaponFireLogic.TryPlanFire(
                         shipState.ValueRO.CurrentEnergy,
-                        energyCostTotal,
+                        energyCostPerBarrel,
                         weaponCfg.ValueRO.BulletDamage,
                         fireRate,
                         mountCount,
@@ -301,8 +304,34 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Which body category won the nearest-hit scan for one bullet segment.
+        /// Planet blocks without damage; the rest apply server-authoritative damage.
+        /// </summary>
+        enum BulletHitKind : byte
+        {
+            /// <summary>No intersection this segment.</summary>
+            None = 0,
+            /// <summary>Planet body — absorbs the bullet, no HP write.</summary>
+            Planet = 1,
+            /// <summary>Enemy gem-moon shield on a planet entity.</summary>
+            Moon = 2,
+            /// <summary>Enemy ship hull.</summary>
+            Ship = 3,
+            /// <summary>Asteroid rock (sets <see cref="AsteroidState.IsDestroyed"/> at 0 HP).</summary>
+            Asteroid = 4,
+            /// <summary>Enemy people transport.</summary>
+            Transport = 5,
+        }
+
+        /// <summary>
         /// Swept segment hit test + damage for planets, moons, ships, asteroids, transports.
         /// Shared by advance substeps and same-frame spawn collide.
+        /// <para>
+        /// [TITAN-ORBIT] Nearest contact along the segment wins (smallest t), matching
+        /// <c>BulletCosmeticHitQuery.TryHitSegment</c>. Older code returned the first ECS-query
+        /// intersection — that damaged rocks behind the aim target while client floats showed
+        /// 0 HP on the front rock that never received server damage.
+        /// </para>
         /// </summary>
         /// <param name="state">Server system state (vitals write / transport destroy).</param>
         /// <param name="b">Bullet dealing damage (OwnerTeam / Damage).</param>
@@ -312,8 +341,8 @@ namespace TitanOrbit.ECS
         /// <param name="mapH">Toroidal map height.</param>
         /// <param name="moonElapsed">ServerTick seconds for gem-moon orbit phase.</param>
         /// <param name="serverElapsed">World elapsed for shield hit timestamps.</param>
-        /// <param name="hitPoint">First contact along the segment when true.</param>
-        /// <returns>True when this segment scored a hit and applied damage.</returns>
+        /// <param name="hitPoint">Nearest contact along the segment when true.</param>
+        /// <returns>True when this segment scored a hit and applied damage (or planet block).</returns>
         bool TryResolveBulletHit(
             ref SystemState state,
             in BulletElement b,
@@ -327,18 +356,33 @@ namespace TitanOrbit.ECS
         {
             hitPoint = to;
 
+            // --- Pass 1: scan every obstacle, keep nearest contact (smallest segment t) ---
+            // [TITAN-ORBIT] Do not apply damage inside the scan — a farther body must not win
+            // just because its category or entity index appears earlier in the query.
+            float bestT = float.MaxValue;
+            float3 bestHit = to;
+            var bestKind = BulletHitKind.None;
+            Entity bestEntity = Entity.Null;
+
             // --- Planets + gem-moon shields ---
-            foreach (var (planetState, planetTransform, moonState) in SystemAPI
-                         .Query<RefRO<PlanetState>, RefRO<LocalTransform>, RefRW<PlanetGemMoonState>>()
-                         .WithAll<PlanetTag>())
+            foreach (var (planetState, planetTransform, moonState, planetEntity) in SystemAPI
+                         .Query<RefRO<PlanetState>, RefRO<LocalTransform>, RefRO<PlanetGemMoonState>>()
+                         .WithAll<PlanetTag>()
+                         .WithEntityAccess())
             {
                 float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
                 float3 planetPos = planetTransform.ValueRO.Position;
 
+                // Planet body blocks the shot (no HP on planets — still stops the bullet).
                 if (BulletCollision.SegmentHitsPlanetToroidal(
-                        from, to, planetPos, planetSize, mapW, mapH, out hitPoint))
-                    return true;
+                        from, to, planetPos, planetSize, mapW, mapH, out float3 planetHit) &&
+                    TryKeepNearestHit(from, to, planetHit, ref bestT, ref bestHit))
+                {
+                    bestKind = BulletHitKind.Planet;
+                    bestEntity = planetEntity;
+                }
 
+                // Friendly moons do not absorb — bullets pass through to rocks/ships behind.
                 var attackerTeam = (TeamId)b.OwnerTeam;
                 if (PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.ValueRO.Ownership, attackerTeam))
                     continue;
@@ -351,15 +395,11 @@ namespace TitanOrbit.ECS
                 if (BulletCollision.SegmentHitsMoonNear(
                         from, to, planetPos, planetSize,
                         planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, moonElapsed,
-                        planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out hitPoint))
+                        planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out float3 moonHit) &&
+                    TryKeepNearestHit(from, to, moonHit, ref bestT, ref bestHit))
                 {
-                    PlanetGemMoonCombatLogic.ApplyBulletDamage(
-                        ref moonState.ValueRW,
-                        b.Damage,
-                        attackerTeam,
-                        planetState.ValueRO.Ownership,
-                        serverElapsed);
-                    return true;
+                    bestKind = BulletHitKind.Moon;
+                    bestEntity = planetEntity;
                 }
             }
 
@@ -382,55 +422,45 @@ namespace TitanOrbit.ECS
 
                 float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
                 if (!BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, shipTransform.ValueRO.Position, shipRadius, mapW, mapH, out hitPoint))
+                        from, to, shipTransform.ValueRO.Position, shipRadius, mapW, mapH, out float3 shipHit))
                     continue;
 
-                var writable = SystemAPI.GetComponentRW<ShipState>(shipEntity);
-                writable.ValueRW.Health -= b.Damage;
-                if (writable.ValueRW.Health <= 0f)
-                    writable.ValueRW.IsDead = true;
-                if (state.EntityManager.HasComponent<ShipVitalsState>(shipEntity))
-                {
-                    var vitals = state.EntityManager.GetComponentData<ShipVitalsState>(shipEntity);
-                    vitals.LastHullDamageTime = SystemAPI.Time.ElapsedTime;
-                    state.EntityManager.SetComponentData(shipEntity, vitals);
-                }
+                if (!TryKeepNearestHit(from, to, shipHit, ref bestT, ref bestHit))
+                    continue;
 
-                return true;
+                bestKind = BulletHitKind.Ship;
+                bestEntity = shipEntity;
             }
 
             // --- Asteroids ---
-            foreach (var (asteroidState, asteroidTransform) in SystemAPI
-                         .Query<RefRW<AsteroidState>, RefRO<LocalTransform>>()
-                         .WithAll<AsteroidTag>())
+            foreach (var (asteroidState, asteroidTransform, asteroidEntity) in SystemAPI
+                         .Query<RefRO<AsteroidState>, RefRO<LocalTransform>>()
+                         .WithAll<AsteroidTag>()
+                         .WithEntityAccess())
             {
-                if (asteroidState.ValueRO.IsDestroyed)
+                // Already-dead rocks do not block or absorb further shots this tick.
+                if (asteroidState.ValueRO.IsDestroyed || asteroidState.ValueRO.Health <= 0f)
                     continue;
 
                 float hitRadius = BulletCollision.AsteroidHitRadius(asteroidTransform.ValueRO.Scale);
                 if (!BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, asteroidTransform.ValueRO.Position, hitRadius, mapW, mapH, out hitPoint))
+                        from, to, asteroidTransform.ValueRO.Position, hitRadius, mapW, mapH, out float3 rockHit))
                     continue;
 
-                var asteroid = asteroidState.ValueRO;
-                asteroid.Health -= b.Damage;
-                if (asteroid.Health <= 0f)
-                {
-                    asteroid.Health = 0f;
-                    asteroid.IsDestroyed = true;
-                }
+                if (!TryKeepNearestHit(from, to, rockHit, ref bestT, ref bestHit))
+                    continue;
 
-                asteroidState.ValueRW = asteroid;
-                return true;
+                bestKind = BulletHitKind.Asteroid;
+                bestEntity = asteroidEntity;
             }
 
             // --- Enemy people transports ---
             foreach (var (transport, transform, transportEntity) in SystemAPI
-                         .Query<RefRW<PeopleTransportState>, RefRO<LocalTransform>>()
+                         .Query<RefRO<PeopleTransportState>, RefRO<LocalTransform>>()
                          .WithAll<PeopleTransportTag>()
                          .WithEntityAccess())
             {
-                ref var t = ref transport.ValueRW;
+                var t = transport.ValueRO;
                 if (t.Amount <= 0f || t.Health <= 0f)
                     continue;
 
@@ -441,17 +471,144 @@ namespace TitanOrbit.ECS
 
                 float hitRadius = PeopleTransportMath.GetBulletHitRadius(transform.ValueRO.Scale);
                 if (!BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, transform.ValueRO.Position, hitRadius, mapW, mapH, out hitPoint))
+                        from, to, transform.ValueRO.Position, hitRadius, mapW, mapH, out float3 transportHit))
                     continue;
 
-                t.Health -= b.Damage;
-                if (t.Health <= 0f)
-                    PeopleTransportSimulationSystem.DestroyFromBulletDamage(ref state, transportEntity, t);
+                if (!TryKeepNearestHit(from, to, transportHit, ref bestT, ref bestHit))
+                    continue;
 
-                return true;
+                bestKind = BulletHitKind.Transport;
+                bestEntity = transportEntity;
             }
 
-            return false;
+            // --- No intersection ---
+            if (bestKind == BulletHitKind.None || bestEntity == Entity.Null)
+                return false;
+
+            // --- Pass 2: apply damage (or planet block) only to the nearest winner ---
+            hitPoint = bestHit;
+            switch (bestKind)
+            {
+                case BulletHitKind.Planet:
+                    // Body absorbs the round — no component write.
+                    return true;
+
+                case BulletHitKind.Moon:
+                {
+                    // Gem-moon shield lives on the planet entity (same as bake / orbit systems).
+                    if (!state.EntityManager.HasComponent<PlanetGemMoonState>(bestEntity) ||
+                        !state.EntityManager.HasComponent<PlanetState>(bestEntity))
+                        return true;
+
+                    var moon = state.EntityManager.GetComponentData<PlanetGemMoonState>(bestEntity);
+                    var planet = state.EntityManager.GetComponentData<PlanetState>(bestEntity);
+                    PlanetGemMoonCombatLogic.ApplyBulletDamage(
+                        ref moon,
+                        b.Damage,
+                        (TeamId)b.OwnerTeam,
+                        planet.Ownership,
+                        serverElapsed);
+                    state.EntityManager.SetComponentData(bestEntity, moon);
+                    return true;
+                }
+
+                case BulletHitKind.Ship:
+                {
+                    var writable = SystemAPI.GetComponentRW<ShipState>(bestEntity);
+                    writable.ValueRW.Health -= b.Damage;
+                    if (writable.ValueRW.Health <= 0f)
+                        writable.ValueRW.IsDead = true;
+                    if (state.EntityManager.HasComponent<ShipVitalsState>(bestEntity))
+                    {
+                        var vitals = state.EntityManager.GetComponentData<ShipVitalsState>(bestEntity);
+                        vitals.LastHullDamageTime = SystemAPI.Time.ElapsedTime;
+                        state.EntityManager.SetComponentData(bestEntity, vitals);
+                    }
+
+                    return true;
+                }
+
+                case BulletHitKind.Asteroid:
+                {
+                    // [TITAN-ORBIT] Health → 0 sets IsDestroyed; AsteroidDestructionSystem despawns
+                    // (also accepts Health<=0 alone so a missed flag cannot leave zombies).
+                    var asteroid = state.EntityManager.GetComponentData<AsteroidState>(bestEntity);
+                    if (asteroid.IsDestroyed || asteroid.Health <= 0f)
+                        return true;
+
+                    float healthBefore = asteroid.Health;
+                    float3 pos = state.EntityManager.HasComponent<LocalTransform>(bestEntity)
+                        ? state.EntityManager.GetComponentData<LocalTransform>(bestEntity).Position
+                        : float3.zero;
+                    asteroid.Health -= b.Damage;
+                    if (asteroid.Health <= 0f)
+                    {
+                        asteroid.Health = 0f;
+                        asteroid.IsDestroyed = true;
+                    }
+
+                    state.EntityManager.SetComponentData(bestEntity, asteroid);
+                    // #region agent log
+                    if (asteroid.IsDestroyed || healthBefore - asteroid.Health > 0.01f)
+                    {
+                        AgentDebugSessionLog.Write(
+                            asteroid.IsDestroyed ? "A" : "A",
+                            "BulletSimulationSystem.TryResolveBulletHit",
+                            asteroid.IsDestroyed ? "server_asteroid_kill" : "server_asteroid_damage",
+                            "{\"entityIndex\":" + bestEntity.Index +
+                            ",\"healthBefore\":" + healthBefore.ToString("R") +
+                            ",\"healthAfter\":" + asteroid.Health.ToString("R") +
+                            ",\"damage\":" + b.Damage.ToString("R") +
+                            ",\"isDestroyed\":" + (asteroid.IsDestroyed ? "true" : "false") +
+                            ",\"remainingGems\":" + asteroid.RemainingGems.ToString("R") +
+                            ",\"posX\":" + pos.x.ToString("R") +
+                            ",\"posZ\":" + pos.z.ToString("R") + "}");
+                    }
+                    // #endregion
+                    return true;
+                }
+
+                case BulletHitKind.Transport:
+                {
+                    var t = state.EntityManager.GetComponentData<PeopleTransportState>(bestEntity);
+                    t.Health -= b.Damage;
+                    if (t.Health <= 0f)
+                        PeopleTransportSimulationSystem.DestroyFromBulletDamage(ref state, bestEntity, t);
+                    else
+                        state.EntityManager.SetComponentData(bestEntity, t);
+
+                    return true;
+                }
+
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Keeps the contact closest to segment start (parameter t in [0,1]).
+        /// Same rule as client <c>BulletCosmeticHitQuery</c> so floats/VFX target the damaged body.
+        /// </summary>
+        /// <param name="from">Segment start.</param>
+        /// <param name="to">Segment end.</param>
+        /// <param name="candidateHit">New intersection point to consider.</param>
+        /// <param name="bestT">Best t so far (updated when candidate is nearer).</param>
+        /// <param name="bestHit">Best hit point so far (updated with candidate).</param>
+        /// <returns>True when <paramref name="candidateHit"/> is the new nearest contact.</returns>
+        static bool TryKeepNearestHit(
+            float3 from,
+            float3 to,
+            float3 candidateHit,
+            ref float bestT,
+            ref float3 bestHit)
+        {
+            float t = BulletCollision.GetSegmentHitParameter(from, to, candidateHit);
+            if (t > bestT)
+                return false;
+
+            bestT = t;
+            bestHit = candidateHit;
+            return true;
         }
     }
 }

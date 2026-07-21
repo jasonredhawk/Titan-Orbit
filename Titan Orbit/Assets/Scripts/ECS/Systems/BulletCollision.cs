@@ -19,8 +19,14 @@ namespace TitanOrbit.ECS
         public static float MaxAdvanceSubstepLength =>
             math.max(0.05f, GemEconomyConstants.MinAsteroidHitRadius * 0.5f);
 
-        /// <summary>Hard cap on substeps per tick (Starblast-style continuous feel, bounded cost).</summary>
-        public const int MaxAdvanceSubsteps = 4;
+        /// <summary>
+        /// Hard cap on substeps per tick. Must stay high enough that
+        /// <c>shipVel + BulletSpeed</c> at 60 Hz cannot skip
+        /// <see cref="GemEconomyConstants.MinAsteroidHitRadius"/> — a low cap (e.g. 4) let
+        /// client cosmetics register a hit while the server tunneled, leaving “HP Left: 0”
+        /// floats on rocks that never died.
+        /// </summary>
+        public const int MaxAdvanceSubsteps = 32;
 
         /// <summary>
         /// How many equal substeps to split a tick travel into. Always at least 1; at most
@@ -103,6 +109,26 @@ namespace TitanOrbit.ECS
             hitPoint = from + delta * t;
             hitPoint.y = center.y;
             return true;
+        }
+
+        /// <summary>
+        /// Parameter t along [from, to] for a contact point (0 = start, 1 = end).
+        /// Used when several obstacles intersect the same segment — nearest t wins.
+        /// </summary>
+        /// <param name="from">Segment start.</param>
+        /// <param name="to">Segment end.</param>
+        /// <param name="hitPoint">Contact from <see cref="SegmentHitsSphere"/> (or toroidal wrapper).</param>
+        /// <returns>Projection of hit onto the segment as a scalar in roughly [0,1].</returns>
+        public static float GetSegmentHitParameter(float3 from, float3 to, float3 hitPoint)
+        {
+            // --- Point segment: every contact is at the muzzle ---
+            float3 delta = to - from;
+            float deltaLenSq = math.lengthsq(delta);
+            if (deltaLenSq < 1e-8f)
+                return 0f;
+
+            // [STANDARD] Scalar projection onto the segment direction.
+            return math.dot(hitPoint - from, delta) / deltaLenSq;
         }
 
         /// <summary>World hit radius for asteroid mesh scale (mining VFX alignment).</summary>

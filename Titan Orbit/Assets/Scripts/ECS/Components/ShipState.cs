@@ -107,12 +107,13 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Bullet speed in world units per second.</summary>
         public float BulletSpeed;
 
-        /// <summary>[TITAN-ORBIT] Damage per bullet on hit.</summary>
+        /// <summary>[TITAN-ORBIT] Damage per bullet on hit (per barrel — not a multi-gun total).</summary>
         public float BulletDamage;
 
         /// <summary>
-        /// [TITAN-ORBIT] Energy spent for a full multi-mount volley (summed firePower).
-        /// Round-robin drip spends this ÷ mount count per barrel via <see cref="ShipWeaponFireLogic"/>.
+        /// [TITAN-ORBIT] Energy spent per barrel / per bullet (matches per-barrel firePower).
+        /// A full volley spends this × mount count via <see cref="ShipWeaponFireLogic"/>.
+        /// Round-robin drip spends this once per single-barrel shot.
         /// </summary>
         public float EnergyCostPerShot;
 

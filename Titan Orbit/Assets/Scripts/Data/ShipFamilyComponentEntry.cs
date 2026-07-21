@@ -28,7 +28,7 @@ namespace TitanOrbit.Data
     [Serializable]
     public struct ShipComponentAbilityStats
     {
-        /// <summary>Damage per shot before weapon multipliers.</summary>
+        /// <summary>Damage per shot before weapon multipliers (per barrel; hull uses average across guns).</summary>
         public float firePower;
         public float firePowerPerLevel;
         /// <summary>Projectile speed in world units per second.</summary>

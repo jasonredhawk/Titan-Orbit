@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using Unity.Collections;
 using Unity.Entities;
@@ -50,14 +51,28 @@ namespace TitanOrbit.Game
 
         readonly Dictionary<int, ShipSnapshot> _ships = new Dictionary<int, ShipSnapshot>();
         readonly Dictionary<int, float> _planetGems = new Dictionary<int, float>();
-        /// <summary>Last replicated asteroid Health per ghost entity — used to detect mining damage deltas.</summary>
+        /// <summary>
+        /// Tracked asteroid HP for floats — may be optimistic (below ghost Health) after local bullet hits.
+        /// </summary>
         readonly Dictionary<Entity, float> _asteroidHealth = new Dictionary<Entity, float>();
+        /// <summary>
+        /// Unscaled-time deadline while optimistic HP may stay below ghost Health.
+        /// After expiry, <see cref="PollAsteroids"/> snaps back up so a missed server hit cannot
+        /// leave “HP Left: 0” forever on a living rock.
+        /// </summary>
+        readonly Dictionary<Entity, float> _asteroidOptimisticUntil = new Dictionary<Entity, float>();
         /// <summary>
         /// Scratch for <see cref="EcsWorldVisualizer.CopyLiveProxyEntities"/> — reused each frame to avoid GC.
         /// </summary>
         readonly List<Entity> _proxyEntityScratch = new List<Entity>(512);
         /// <summary>Skip delta popups on first frame after connect — avoids spurious +N from baseline.</summary>
         bool _primed;
+
+        /// <summary>
+        /// How long optimistic bullet HP may lag under replicated Health before we trust the ghost again.
+        /// Asteroid ghosts use a low MaxSendRate — keep this above one snapshot interval.
+        /// </summary>
+        const float AsteroidOptimisticHoldSeconds = 1.25f;
 
         void OnEnable()
         {
@@ -126,6 +141,7 @@ namespace TitanOrbit.Game
             _ships.Clear();
             _planetGems.Clear();
             _asteroidHealth.Clear();
+            _asteroidOptimisticUntil.Clear();
 
             // --- Ships (tiny query — safe after ShouldSkipShipEntityQueries clears) ---
             using var shipQuery = em.CreateEntityQuery(
@@ -356,6 +372,27 @@ namespace TitanOrbit.Game
 
             float remainingHealth = Mathf.Max(0f, baseline - damage);
             presenter._asteroidHealth[asteroidEntity] = remainingHealth;
+            // Hold the optimistic value until ghost Health catches down — or snap back if the
+            // server never applied this hit (tunnel / wrong body).
+            presenter._asteroidOptimisticUntil[asteroidEntity] =
+                Time.unscaledTime + AsteroidOptimisticHoldSeconds;
+
+            // #region agent log
+            if (remainingHealth <= 0.01f || baseline - remainingHealth > 0.01f)
+            {
+                AgentDebugSessionLog.Write(
+                    remainingHealth <= 0.01f ? "D" : "D",
+                    "EcsFloatingCountPresenter.TryNotifyLocalAsteroidBulletHit",
+                    remainingHealth <= 0.01f ? "client_optimistic_hp_zero" : "client_optimistic_hp_damage",
+                    "{\"entityIndex\":" + asteroidEntity.Index +
+                    ",\"ghostHealth\":" + state.Health.ToString("R") +
+                    ",\"baseline\":" + baseline.ToString("R") +
+                    ",\"damage\":" + damage.ToString("R") +
+                    ",\"optimisticRemaining\":" + remainingHealth.ToString("R") +
+                    ",\"ghostIsDestroyed\":" + (state.IsDestroyed ? "true" : "false") +
+                    ",\"remainingGems\":" + state.RemainingGems.ToString("R") + "}");
+            }
+            // #endregion
 
             TeamId tintTeam = state.TerritoryTeam != TeamId.None
                 ? state.TerritoryTeam
@@ -417,12 +454,53 @@ namespace TitanOrbit.Game
                     lastHealth = state.Health;
 
                 float damage = lastHealth - state.Health;
-                // [TITAN-ORBIT] Bullet prediction may have already lowered lastHealth optimistically
-                // while ghost Health is still stale (higher). Never raise the tracked value from a
-                // lagging snapshot — that would wipe the optimistic baseline and double-popup later.
-                _asteroidHealth[entity] = Mathf.Min(lastHealth, state.Health);
 
-                // Only show when replicated Health dropped below our tracked baseline.
+                // --- Reconcile tracked HP with ghost ---
+                // [TITAN-ORBIT] While optimistic hold is active, keep the lower predicted value so
+                // lagging snapshots do not wipe the stack / double-popup. After the hold expires,
+                // snap UP to ghost Health — otherwise a tunneled / missed server hit leaves
+                // “HP Left: 0” forever on a rock that is still alive.
+                float tracked = lastHealth;
+                bool holdOptimistic =
+                    _asteroidOptimisticUntil.TryGetValue(entity, out float until) &&
+                    Time.unscaledTime < until;
+
+                if (state.Health < tracked - 0.01f)
+                {
+                    // Ghost caught up (or mining/ram damage) — trust the lower server value.
+                    tracked = state.Health;
+                    _asteroidOptimisticUntil.Remove(entity);
+                }
+                else if (!holdOptimistic && state.Health > tracked + 0.01f)
+                {
+                    // Prediction was wrong / expired — restore authoritative HP for future floats.
+                    tracked = state.Health;
+                    _asteroidOptimisticUntil.Remove(entity);
+                }
+                else
+                {
+                    tracked = Mathf.Min(tracked, state.Health);
+                }
+
+                _asteroidHealth[entity] = tracked;
+
+                // #region agent log
+                // Ghost says dead/zero HP but entity still polled — zombie or lag before despawn.
+                if ((state.Health <= 0.01f || state.IsDestroyed) && !holdOptimistic)
+                {
+                    AgentDebugSessionLog.Write(
+                        "C",
+                        "EcsFloatingCountPresenter.PollAsteroids",
+                        "client_ghost_dead_still_present",
+                        "{\"entityIndex\":" + entity.Index +
+                        ",\"ghostHealth\":" + state.Health.ToString("R") +
+                        ",\"ghostIsDestroyed\":" + (state.IsDestroyed ? "true" : "false") +
+                        ",\"tracked\":" + tracked.ToString("R") +
+                        ",\"remainingGems\":" + state.RemainingGems.ToString("R") + "}");
+                }
+                // #endregion
+
+                // Only show when replicated Health dropped below our prior tracked baseline.
                 // Predicted bullet hits already showed floats and left lastHealth <= ghost Health.
                 if (damage <= 0.01f || state.IsDestroyed)
                     continue;
@@ -449,7 +527,10 @@ namespace TitanOrbit.Game
                 }
 
                 for (int i = 0; i < stale.Count; i++)
+                {
                     _asteroidHealth.Remove(stale[i]);
+                    _asteroidOptimisticUntil.Remove(stale[i]);
+                }
             }
         }
 

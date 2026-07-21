@@ -517,7 +517,10 @@ namespace TitanOrbit.Game
                 var lt = em.GetComponentData<LocalTransform>(entity);
 
                 // Cache only while alive — needed if RemainingGems is zeroed on the destroy frame.
-                if (!asteroid.IsDestroyed)
+                // [TITAN-ORBIT] Health<=0 also means dead (bullet kill) even if IsDestroyed lags
+                // behind on a low MaxSendRate asteroid ghost.
+                bool dead = asteroid.IsDestroyed || asteroid.Health <= 0f;
+                if (!dead)
                 {
                     _asteroidLastKnown[entity] = new AsteroidBurstCache
                     {

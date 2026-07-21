@@ -186,7 +186,8 @@ namespace TitanOrbit.Game
                 if (em.HasComponent<AsteroidTag>(entity) && em.HasComponent<AsteroidState>(entity))
                 {
                     var asteroid = em.GetComponentData<AsteroidState>(entity);
-                    if (asteroid.IsDestroyed)
+                    // Mirror server — Health<=0 is already a kill even if IsDestroyed lags.
+                    if (asteroid.IsDestroyed || asteroid.Health <= 0f)
                         continue;
 
                     Obstacles.Add(new Obstacle
@@ -229,8 +230,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Swept segment vs all cached obstacles. Earliest contact along [from, to] wins
-        /// (good enough for cosmetics — server still owns real damage order).
+        /// Swept segment vs all cached obstacles. Earliest contact along [from, to] wins.
+        /// Must match server <c>BulletSimulationSystem.TryResolveBulletHit</c> nearest-t rule
+        /// so optimistic floats/VFX land on the same body the server damages.
         /// </summary>
         /// <param name="from">Segment start (logical or display — must match <paramref name="isDisplaySpace"/>).</param>
         /// <param name="to">Segment end.</param>
@@ -473,7 +475,7 @@ namespace TitanOrbit.Game
                     continue;
 
                 var state = em.GetComponentData<AsteroidState>(entity);
-                if (state.IsDestroyed)
+                if (state.IsDestroyed || state.Health <= 0f)
                     continue;
 
                 float3 logical = em.GetComponentData<LocalTransform>(entity).Position;

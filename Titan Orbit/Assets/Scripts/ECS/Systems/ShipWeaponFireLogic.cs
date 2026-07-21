@@ -14,8 +14,12 @@ namespace TitanOrbit.ECS
     /// </list>
     /// </para>
     /// Paired with <see cref="BulletSimulationSystem"/> (server) and
-    /// <c>ClientLocalBulletVfxBridge</c> (client cosmetics). Damage and energy are one mount's
-    /// share of summed firePower; a full volley spends the total budget once.
+    /// <c>ClientLocalBulletVfxBridge</c> (client cosmetics).
+    /// <para>
+    /// [TITAN-ORBIT] <c>ShipWeaponConfig.BulletDamage</c> and <c>EnergyCostPerShot</c> are
+    /// <b>per barrel</b> (average scale-adjusted weapon firePower — not N× sum). Each bullet deals
+    /// that damage; a full volley spends <c>EnergyCostPerShot × mountCount</c>.
+    /// </para>
     /// </summary>
     public static class ShipWeaponFireLogic
     {
@@ -45,7 +49,7 @@ namespace TitanOrbit.ECS
             /// <summary>Energy to subtract from <c>ShipState.CurrentEnergy</c> after spawn.</summary>
             public float EnergySpend;
 
-            /// <summary>Damage written on each spawned bullet (total damage ÷ mount count).</summary>
+            /// <summary>Damage written on each spawned bullet (per-barrel firePower — not divided).</summary>
             public float DamagePerBullet;
 
             /// <summary>
@@ -63,11 +67,11 @@ namespace TitanOrbit.ECS
         /// Call only after cooldown / Fire-input gates have already passed.
         /// </summary>
         /// <param name="currentEnergy">Ship energy pool right now (server or replicated client).</param>
-        /// <param name="energyCostTotal">
-        /// Full-volley cost — usually <c>ShipWeaponConfig.EnergyCostPerShot</c> (summed firePower).
+        /// <param name="energyCostPerBarrel">
+        /// Energy for one barrel — usually <c>ShipWeaponConfig.EnergyCostPerShot</c> (per-bullet firePower).
         /// </param>
-        /// <param name="totalBulletDamage">
-        /// Summed firePower damage — split evenly into <see cref="FirePlan.DamagePerBullet"/>.
+        /// <param name="bulletDamagePerBarrel">
+        /// Damage per bullet — usually <c>ShipWeaponConfig.BulletDamage</c> (not a hull total to split).
         /// </param>
         /// <param name="fireRate">Ship fire rate from <c>ShipWeaponConfig.FireRate</c>.</param>
         /// <param name="mountCount">Number of <see cref="ShipWeaponMountElement"/> entries (≥ 1).</param>
@@ -78,8 +82,8 @@ namespace TitanOrbit.ECS
         /// <returns>True when the ship should spawn at least one bullet this tick.</returns>
         public static bool TryPlanFire(
             float currentEnergy,
-            float energyCostTotal,
-            float totalBulletDamage,
+            float energyCostPerBarrel,
+            float bulletDamagePerBarrel,
             float fireRate,
             int mountCount,
             int nextMountIndex,
@@ -91,21 +95,22 @@ namespace TitanOrbit.ECS
             if (mountCount <= 0)
                 return false;
 
-            // --- Per-mount economy ---
-            // [TITAN-ORBIT] EnergyCostPerShot / BulletDamage are totals across all weapon components.
-            float safeTotalCost = math.max(0.01f, energyCostTotal);
-            float energyCostPerMount = safeTotalCost / mountCount;
-            float damagePerBullet = math.max(1f, totalBulletDamage / mountCount);
+            // --- Per-barrel economy ---
+            // [TITAN-ORBIT] BulletDamage / EnergyCostPerShot are per barrel (averaged weapon firePower).
+            // Gun count must not change per-hit damage — only XY scale and ship/attribute levels do.
+            float energyCostPerMount = math.max(0.01f, energyCostPerBarrel);
+            float damagePerBullet = math.max(1f, bulletDamagePerBarrel);
+            float fullVolleyCost = energyCostPerMount * mountCount;
             float cooldownSeconds = 1f / math.max(0.1f, fireRate);
 
             // --- Mode A: full volley (energy covers every muzzle at once) ---
-            if (currentEnergy >= safeTotalCost)
+            if (currentEnergy >= fullVolleyCost)
             {
                 plan.CanFire = true;
                 plan.IsFullVolley = true;
                 plan.StartMountIndex = 0;
                 plan.FireCount = mountCount;
-                plan.EnergySpend = safeTotalCost;
+                plan.EnergySpend = fullVolleyCost;
                 plan.DamagePerBullet = damagePerBullet;
                 // Reset drip cursor so the first post-drain shot starts at mount 0.
                 plan.NextMountIndexAfter = 0;
