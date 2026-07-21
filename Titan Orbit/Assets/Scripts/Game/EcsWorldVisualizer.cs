@@ -62,7 +62,11 @@ namespace TitanOrbit.Game
         [SerializeField] ShipFamilyDefinition shipFamily;
         /// <summary>Optional single prefab override when shipFamily is unset.</summary>
         [SerializeField] GameObject shipVisualPrefab;
-        /// <summary>Uniform scale multiplier applied on top of ECS <see cref="LocalTransform.Scale"/>.</summary>
+        /// <summary>
+        /// Level-1 presentation multiplier on top of ECS <see cref="LocalTransform.Scale"/>.
+        /// [TITAN-ORBIT] Tier growth is on <c>LocalTransform.Scale</c> (+10%/ship level via
+        /// <see cref="BodyCollisionMath.GetShipTierScale"/>) — final draw scale is Scale × this.
+        /// </summary>
         [SerializeField] float shipVisualScale = BodyCollisionMath.ShipPresentationScale;
         /// <summary>Fallback muzzle offset when ship entity lacks <see cref="ShipWeaponConfig"/>.</summary>
         [SerializeField] float defaultMuzzleOffset = 2f;

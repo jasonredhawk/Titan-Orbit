@@ -44,6 +44,12 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Replaces the ship's physics collider with a compound built from the chassis prefab.
         /// Falls back to the existing collider when the prefab has no usable collider sources.
+        /// <para>
+        /// [TITAN-ORBIT] Bake uses level-1 <see cref="BodyCollisionMath.ShipPresentationScale"/> only.
+        /// Whole-hull tier growth lives on <c>LocalTransform.Scale</c> (+10%/level via
+        /// <see cref="BodyCollisionMath.GetShipTierScale"/>) so PhysX / visual / muzzle stay aligned
+        /// without rebuilding a different mesh density per tier.
+        /// </para>
         /// </summary>
         public static bool TryApplyChassisCollider(
             EntityManager em,
@@ -54,6 +60,7 @@ namespace TitanOrbit.ECS
             if (chassisPrefab == null || !em.Exists(shipEntity))
                 return false;
 
+            // Level-1 presentation bake — tier size is LocalTransform.Scale (see ShipStatApplyLogic).
             float presentationScale = BodyCollisionMath.ShipPresentationScale;
             if (!TryBuildCompoundCollider(chassisPrefab, presentationScale, out var compound))
                 return false;

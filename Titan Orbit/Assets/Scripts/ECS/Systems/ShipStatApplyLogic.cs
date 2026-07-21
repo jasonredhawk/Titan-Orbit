@@ -3,6 +3,7 @@ using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.ECS
@@ -381,6 +382,21 @@ namespace TitanOrbit.ECS
                     ecb.AddComponent(shipEntity, new ShipVitalsState());
                 else
                     em.AddComponentData(shipEntity, new ShipVitalsState());
+            }
+
+            // --- Whole-hull tier size (+10% per ship level above 1) ---
+            // [TITAN-ORBIT] Uniform LocalTransform.Scale — not per-component mesh grow.
+            // Visual proxies use Scale × ShipPresentationScale; muzzles / hit radii read Scale too.
+            // Fire power is unchanged by this (family stats + authored weapon scale + attrs).
+            if (em.HasComponent<LocalTransform>(shipEntity))
+            {
+                var lt = em.GetComponentData<LocalTransform>(shipEntity);
+                float tierScale = BodyCollisionMath.GetShipTierScale(shipLevel);
+                if (!Mathf.Approximately(lt.Scale, tierScale))
+                {
+                    lt.Scale = tierScale;
+                    em.SetComponentData(shipEntity, lt);
+                }
             }
 
             // --- Bookkeeping so ShipStatApplySystem skips unchanged ships ---

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Simulation;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -14,6 +15,11 @@ namespace TitanOrbit.Game
     /// [TITAN-ORBIT] This must never feed combat. Fire power / fire rate come from family Weapon
     /// stats × <b>authored prefab</b> localScale (via <c>ShipWeaponMountCombatLogic</c>) plus ship
     /// level and numeric attribute multipliers — not from these grown proxy meshes.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Whole-ship tier size (+10%/level) is <c>LocalTransform.Scale</c> /
+    /// <see cref="BodyCollisionMath.GetShipTierScale"/> — not this per-part grow. Attribute mesh
+    /// scale is only for bottom-bar upgrade feedback on top of that uniform hull size.
     /// </para>
     /// </summary>
     public static class ShipComponentAttributeScaleLogic
