@@ -1075,6 +1075,11 @@ namespace TitanOrbit.Game
                 if (team != TeamId.None)
                     ShipStatApplyLogic.TryResolveChassisId(team, shipLevel, branchIndex, out chassisId);
 
+                // [TITAN-ORBIT] Chassis swap while moon-docked: keep the old hull's spinning
+                // surface contact so the new ship appears glued to the same moon pose.
+                Vector3 preservedMoonSurfaceDir = default;
+                bool havePreservedMoonSurfaceDir = false;
+
                 if (_proxies.TryGetValue(entity, out var existing) && existing != null)
                 {
                     _proxyShipLevels.TryGetValue(entity, out int lastLevel);
@@ -1090,6 +1095,14 @@ namespace TitanOrbit.Game
                     if (sameHull)
                         continue;
 
+                    // Capture contact dir before DestroyProxy clears the old applier.
+                    var oldMoonDockVisual = existing.GetComponent<ShipMoonDockVisualApplier>();
+                    if (oldMoonDockVisual != null && oldMoonDockVisual.IsDrivingMoonDockPresentation)
+                    {
+                        preservedMoonSurfaceDir = oldMoonDockVisual.LandingSurfaceDir;
+                        havePreservedMoonSurfaceDir = preservedMoonSurfaceDir.sqrMagnitude > 0.0001f;
+                    }
+
                     DestroyProxy(entity);
                 }
 
@@ -1103,9 +1116,15 @@ namespace TitanOrbit.Game
                     ApplyShipProxyTransform(entity, em, isLocalPlayerShip, presentLt, go.transform, scale);
 
                 // After pose apply: if still fully moon-docked, snap cinematic to landed (chassis swap).
+                // Prefer preserved surface dir so purchase keeps the spinning moon pose.
                 var moonDockVisual = go.GetComponent<ShipMoonDockVisualApplier>();
                 if (moonDockVisual != null)
-                    moonDockVisual.SeedFullyLandedPresentation(em);
+                {
+                    if (havePreservedMoonSurfaceDir)
+                        moonDockVisual.SeedFullyLandedPresentation(em, preservedMoonSurfaceDir);
+                    else
+                        moonDockVisual.SeedFullyLandedPresentation(em);
+                }
             }
         }
 

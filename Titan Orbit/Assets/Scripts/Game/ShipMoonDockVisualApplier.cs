@@ -10,9 +10,10 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-side moon landing presentation: animates the ship proxy from flight pose onto the moon
-    /// surface (scale shrink, optional spin during approach), and reverses when thrusting away. Reads
-    /// <see cref="ShipMoonDockState"/> from the visualization ECS world. When active,
-    /// <see cref="EcsWorldVisualizer"/> skips transform sync (<see cref="ShouldSkipTransformSync"/>).
+    /// surface (scale shrink + continuous surface spin matching the moon mesh), and reverses when
+    /// thrusting away. Reads <see cref="ShipMoonDockState"/> from the visualization ECS world.
+    /// When active, <see cref="EcsWorldVisualizer"/> skips transform sync
+    /// (<see cref="ShouldSkipTransformSync"/>).
     /// Provides a stable local camera follow override via <see cref="TryGetLocalFollowPosition"/> —
     /// once landed the camera tracks the moon center (not the spinning surface point) so co-orbit
     /// attach + surface spin cannot jerk the hard-lock follow. Cosmetic only; server dock state is
@@ -21,7 +22,10 @@ namespace TitanOrbit.Game
     [DefaultExecutionOrder(100)]
     public class ShipMoonDockVisualApplier : MonoBehaviour
     {
-        /// <summary>Cosmetic hull spin during the landing lerp only (deg/sec). Frozen once fully docked.</summary>
+        /// <summary>
+        /// Cosmetic hull spin around the moon (deg/sec). Must match
+        /// <see cref="PlanetGemMoonVisualProxy"/> mesh spin so the ship looks glued to the surface.
+        /// </summary>
         const float SpinSpeedDegPerSec = 9f;
 
         /// <summary>Proxy scale multiplier when parked on the moon surface.</summary>
@@ -47,7 +51,7 @@ namespace TitanOrbit.Game
         Quaternion _landingStartRotation;
         float _landingStartScale;
 
-        // Surface contact direction on the moon spin plane (rotates with moon during approach only).
+        // Surface contact direction on the moon spin plane (rotates with the moon mesh while docked).
         Vector3 _landingSurfaceDir;
 
         // Takeoff animation.
@@ -108,11 +112,56 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// True while this applier is driving the proxy onto / around the moon surface.
+        /// Used by <see cref="EcsWorldVisualizer"/> before a chassis rebuild to decide whether to
+        /// copy <see cref="LandingSurfaceDir"/> onto the replacement hull.
+        /// </summary>
+        public bool IsDrivingMoonDockPresentation =>
+            _wasControllingTransform && !_isTakeoffAnimating && _landingSurfaceDir.sqrMagnitude > 0.0001f;
+
+        /// <summary>
+        /// Current contact direction on the moon spin plane (unit vector from moon center toward hull).
+        /// Valid while <see cref="IsDrivingMoonDockPresentation"/> is true.
+        /// </summary>
+        public Vector3 LandingSurfaceDir => _landingSurfaceDir;
+
+        /// <summary>
         /// After a hybrid hull rebuild while still fully moon-docked, snap presentation to the
         /// landed pose immediately so we do not replay the landing lerp from a physics-ejected
         /// ECS position (felt like the upgrade "booted" the ship out of orbit).
         /// </summary>
+        /// <param name="em">Visualization-world EntityManager for this ship ghost.</param>
         public void SeedFullyLandedPresentation(EntityManager em)
+        {
+            SeedFullyLandedPresentation(em, preserveSurfaceDir: false, preservedSurfaceDir: default);
+        }
+
+        /// <summary>
+        /// Same as <see cref="SeedFullyLandedPresentation(EntityManager)"/>, but keeps the previous
+        /// hull's moon-surface contact direction so a purchased chassis appears at the same spun
+        /// pose (same side of the moon, same docked rotation) instead of snapping to the planar
+        /// ECS attach point.
+        /// </summary>
+        /// <param name="em">Visualization-world EntityManager for this ship ghost.</param>
+        /// <param name="preservedSurfaceDir">
+        /// Unit contact direction copied from the destroyed proxy's
+        /// <see cref="LandingSurfaceDir"/> before rebuild.
+        /// </param>
+        public void SeedFullyLandedPresentation(EntityManager em, Vector3 preservedSurfaceDir)
+        {
+            SeedFullyLandedPresentation(em, preserveSurfaceDir: true, preservedSurfaceDir);
+        }
+
+        /// <summary>
+        /// Shared seed path for chassis swaps while fully moon-docked.
+        /// </summary>
+        /// <param name="em">Visualization-world EntityManager.</param>
+        /// <param name="preserveSurfaceDir">
+        /// When true, use <paramref name="preservedSurfaceDir"/> instead of deriving contact from
+        /// the new proxy's (often planar ECS) transform.
+        /// </param>
+        /// <param name="preservedSurfaceDir">Prior hull contact direction on the moon spin plane.</param>
+        void SeedFullyLandedPresentation(EntityManager em, bool preserveSurfaceDir, Vector3 preservedSurfaceDir)
         {
             if (_shipEntity == Entity.Null || !em.Exists(_shipEntity) ||
                 !em.HasComponent<ShipMoonDockState>(_shipEntity))
@@ -129,7 +178,23 @@ namespace TitanOrbit.Game
 
             // --- Instant landed state (skip approach lerp / takeoff flags) ---
             RefreshBaselineScale();
-            _landingSurfaceDir = ComputeSurfaceDirection(transform.position, moonPos, spinAxis);
+
+            // Prefer the old hull's spinning contact dir so purchase keeps the same surface pose.
+            // Fallback: derive from current transform (first land / missing preserve).
+            if (preserveSurfaceDir && preservedSurfaceDir.sqrMagnitude > 0.0001f)
+            {
+                // [TITAN-ORBIT] Re-project onto the live spin plane in case the moon axis drifted
+                // a frame between DestroyProxy and CreateShipProxy.
+                Vector3 projected = Vector3.ProjectOnPlane(preservedSurfaceDir, spinAxis);
+                _landingSurfaceDir = projected.sqrMagnitude > 0.0001f
+                    ? projected.normalized
+                    : ComputeSurfaceDirection(transform.position, moonPos, spinAxis);
+            }
+            else
+            {
+                _landingSurfaceDir = ComputeSurfaceDirection(transform.position, moonPos, spinAxis);
+            }
+
             _landingStartPosition = moonPos + _landingSurfaceDir *
                 (moonBodyRadius + BodyCollisionMath.GetShipHullRadiusWorld(
                     _baselineScale / BodyCollisionMath.ShipPresentationScale));
@@ -267,24 +332,35 @@ namespace TitanOrbit.Game
             float eased = GemMoonDockEaseInOut(progress);
             bool fullyLanded = progress + 0.0001f >= GemEconomyConstants.MoonLandingCompleteThreshold;
 
-            // --- Cosmetic surface spin during approach only ---
-            // [TITAN-ORBIT] Once landed, freeze the contact direction. Spinning the hull under a
-            // hard-lock camera made the view orbit the moon in a jerky compound motion with co-orbit.
-            if (!fullyLanded)
-            {
-                float spinStep = SpinSpeedDegPerSec * Time.deltaTime * eased;
-                if (Mathf.Abs(spinStep) > 0.0001f)
-                    _landingSurfaceDir = Quaternion.AngleAxis(spinStep, spinAxis) * _landingSurfaceDir;
-            }
+            // --- Cosmetic surface spin (approach + fully landed) ---
+            // [TITAN-ORBIT] Same 9°/s as PlanetGemMoonVisualProxy so the hull rides the spinning
+            // mesh. Camera follows moon *center* once parked (below), so surface spin does not jerk
+            // the hard-lock follow the way locking to the hull did.
+            // Approach ramps spin with eased progress; fully landed uses full rate.
+            float spinWeight = fullyLanded ? 1f : eased;
+            float spinStep = SpinSpeedDegPerSec * Time.deltaTime * spinWeight;
+            if (Mathf.Abs(spinStep) > 0.0001f)
+                _landingSurfaceDir = Quaternion.AngleAxis(spinStep, spinAxis) * _landingSurfaceDir;
 
             _landingSurfaceDir = _landingSurfaceDir.normalized;
             Vector3 endPosition = moonPos + _landingSurfaceDir * contactRadius;
             Quaternion endRotation = ComputeDockedRotation(_landingSurfaceDir, spinAxis);
             float dockedScale = _baselineScale * DockScaleAtSurface;
 
-            transform.position = Vector3.Lerp(_landingStartPosition, endPosition, eased);
-            transform.rotation = Quaternion.Slerp(_landingStartRotation, endRotation, eased);
-            transform.localScale = Vector3.one * Mathf.Lerp(_landingStartScale, dockedScale, eased);
+            // Once fully landed, pin to the live surface point (no stale start-pose lerp).
+            // During approach, lerp from capture pose into the spinning surface contact.
+            if (fullyLanded)
+            {
+                transform.position = endPosition;
+                transform.rotation = endRotation;
+                transform.localScale = Vector3.one * dockedScale;
+            }
+            else
+            {
+                transform.position = Vector3.Lerp(_landingStartPosition, endPosition, eased);
+                transform.rotation = Quaternion.Slerp(_landingStartRotation, endRotation, eased);
+                transform.localScale = Vector3.one * Mathf.Lerp(_landingStartScale, dockedScale, eased);
+            }
 
             // --- Camera: ship during approach, moon center once parked ---
             // Moon center rides the smooth tick-fraction orbit without surface-spin radius.
