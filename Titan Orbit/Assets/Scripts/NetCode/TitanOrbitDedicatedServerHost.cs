@@ -16,10 +16,16 @@ namespace TitanOrbit.NetCode
     /// Keeps dedicated NetCode matches available: heartbeats, rotation, empty-lobby recreate, match requests,
     /// and self-heal when no joinable latest lobby exists in UGS.
     /// Started by <see cref="TitanOrbitSessionManager"/> after the first Relay lobby is live.
-    /// When the last player leaves, orphan ship ghosts are wiped immediately so a new joiner cannot
-    /// be offered a previous player's ship via NetworkId reuse. Rotation handoff keeps the current
-    /// UGS lobby open and heartbeating until a successor process publishes a joinable lobby —
-    /// avoids browse gaps when <c>SpawnNextMatch</c> or successor boot is slow.
+    ///
+    /// Lifecycle policy (do not break):
+    /// - While any NetCode player is connected, this match must keep running and stay joinable
+    ///   (IsOpen=1). Age rotation may spawn a successor and demote IsLatest, but must not close
+    ///   or wipe an occupied conquest map.
+    /// - Idle teardown / in-process recreate starts only when player count hits zero; the empty
+    ///   countdown resets at that moment (last player left). Until then, keep the sim alive
+    ///   until empty-idle timeout or a real game-end condition (e.g. team wins).
+    /// - When the last player leaves, orphan ship ghosts are wiped immediately so a new joiner
+    ///   cannot be offered a previous player's ship via NetworkId reuse.
     /// </summary>
     public class TitanOrbitDedicatedServerHost : MonoBehaviour
     {
@@ -57,6 +63,27 @@ namespace TitanOrbit.NetCode
         {
             if (s_Instance != null)
                 s_Instance.NotifyLobbyReplaced(newLobbyId, createdAtEpochSeconds, isLatest);
+        }
+
+        /// <summary>
+        /// UTC unix seconds when the current empty-idle recreate will fire, for UGS lobby heartbeat /
+        /// Join Game countdown. Returns false while players are connected or hosting has not started.
+        /// </summary>
+        /// <param name="killAtEpochSeconds">Deadline epoch when true; otherwise 0.</param>
+        /// <returns>True when the match is empty and an idle kill deadline is known.</returns>
+        public static bool TryGetEmptyIdleKillAtEpochSeconds(out long killAtEpochSeconds)
+        {
+            // --- TryGetEmptyIdleKillAtEpochSeconds ---
+            killAtEpochSeconds = 0;
+            if (s_Instance == null || s_Instance._config == null || !s_Instance._emptySinceUtc.HasValue)
+                return false;
+
+            // [TITAN-ORBIT] _emptySinceUtc is cleared whenever playerCount > 0 (TrackEmptyMatchTime).
+            DateTime emptyUtc = DateTime.SpecifyKind(s_Instance._emptySinceUtc.Value, DateTimeKind.Utc);
+            long emptySinceEpoch = new DateTimeOffset(emptyUtc).ToUnixTimeSeconds();
+            int idleSeconds = Mathf.Max(60, s_Instance._config.EmptyMatchRecreateSeconds);
+            killAtEpochSeconds = emptySinceEpoch + idleSeconds;
+            return killAtEpochSeconds > 0;
         }
 
         public static void Begin(TitanOrbitServerCommandLine config, string lobbyId, long createdAtEpochSeconds, bool isLatest)
@@ -156,7 +183,8 @@ namespace TitanOrbit.NetCode
                                 pendingStaleRecreate = true;
                         }
 
-                        // [TITAN-ORBIT] Age rotation — spawn successor; handoff coroutine closes this lobby only after successor is live.
+                        // [TITAN-ORBIT] Age rotation — spawn a fresh IsLatest successor for new joiners.
+                        // Occupied maps stay open (demoted only); see RunRotationHandoff.
                         if (_matchIsLatest && !_spawnedFromAge && playerCount > 0 &&
                             ageSeconds >= _config.AgeThresholdSeconds && !isFull)
                         {
@@ -165,6 +193,7 @@ namespace TitanOrbit.NetCode
                         }
                         else if (!_spawnedFromFull && isFull)
                         {
+                            // Full = no room for more players; close listing and spawn capacity elsewhere.
                             bool nextIsLatest = _matchIsLatest;
                             Debug.Log("[TitanOrbitDedicatedServerHost] Full rotation: starting handoff for " + lobbyId);
                             BeginRotationHandoff(lobbyId, "full_rotation", nextIsLatest);
@@ -271,7 +300,9 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Spawn successor with retries, wait for its UGS lobby, then close the old lobby.
+        /// Spawn successor with retries, wait for its UGS lobby, then hand off listing state.
+        /// Occupied non-full matches are demoted from IsLatest but stay IsOpen so conquest maps
+        /// remain joinable. Full matches (and empty edge cases) close for new joiners.
         /// On failure the old lobby stays open and heartbeating so browse never goes empty.
         /// </summary>
         IEnumerator RunRotationHandoff(string closingLobbyId, string reason, bool nextIsLatest)
@@ -310,8 +341,21 @@ namespace TitanOrbit.NetCode
                     continue;
                 }
 
-                Task closeTask = TitanOrbitSessionManager.Instance.CloseLobbyForNewJoinersAsync(closingLobbyId, reason);
-                while (!closeTask.IsCompleted)
+                // --- Listing handoff (after successor is live) ---
+                // [TITAN-ORBIT] Age rotation used to CloseLobby (IsOpen=0) while players were still
+                // in the match — the map vanished from Join Game mid-conquest. Occupied maps must
+                // stay open; only full lobbies need a hard close (no free slots).
+                int playersStillConnected = TitanOrbitSessionManager.Instance != null
+                    ? TitanOrbitSessionManager.Instance.GetServerConnectedPlayerCount()
+                    : 0;
+                bool hardCloseListing =
+                    string.Equals(reason, "full_rotation", StringComparison.Ordinal) ||
+                    playersStillConnected <= 0;
+
+                Task listingTask = hardCloseListing
+                    ? TitanOrbitSessionManager.Instance.CloseLobbyForNewJoinersAsync(closingLobbyId, reason)
+                    : TitanOrbitSessionManager.Instance.DemoteFromLatestKeepOpenAsync(closingLobbyId, reason);
+                while (!listingTask.IsCompleted)
                     yield return null;
 
                 if (string.Equals(reason, "age_rotation", StringComparison.Ordinal))
@@ -322,8 +366,11 @@ namespace TitanOrbit.NetCode
                 _matchIsLatest = false;
                 _rotationHandoffRetryAfterUtc = null;
                 handoffComplete = true;
-                DedicatedServerFileLog.Append("rotation", "Handoff complete reason=" + reason + " closed=" + closingLobbyId);
-                Debug.Log("[TitanOrbitDedicatedServerHost] Handoff complete (" + reason + "); closed lobby " + closingLobbyId);
+                string listingAction = hardCloseListing ? "closed" : "demoted_keep_open";
+                DedicatedServerFileLog.Append("rotation", "Handoff complete reason=" + reason + " " + listingAction +
+                                                      "=" + closingLobbyId + " players=" + playersStillConnected);
+                Debug.Log("[TitanOrbitDedicatedServerHost] Handoff complete (" + reason + "); " + listingAction +
+                          " lobby " + closingLobbyId + " players=" + playersStillConnected);
             }
 
             if (!handoffComplete)
@@ -367,6 +414,10 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>
+        /// Polls UGS that our lobby still exists. Only quits the process when the lobby is
+        /// unreachable AND the match is empty — never kill an occupied conquest map on a UGS blip.
+        /// </summary>
         IEnumerator LobbyPresenceWatchdogLoop()
         {
             // --- LobbyPresenceWatchdogLoop ---
@@ -401,12 +452,26 @@ namespace TitanOrbit.NetCode
                     consecutiveFailures++;
                     Debug.LogWarning("[TitanOrbitDedicatedServerHost] Lobby presence check failed (" +
                                      consecutiveFailures + "/" + threshold + "): " + e.Message);
-                    if (consecutiveFailures >= threshold)
+                    if (consecutiveFailures < threshold)
+                        continue;
+
+                    // [TITAN-ORBIT] Players still in sim → keep process alive; UGS can recover on next heartbeat.
+                    int playerCount = TitanOrbitSessionManager.Instance != null
+                        ? TitanOrbitSessionManager.Instance.GetServerConnectedPlayerCount()
+                        : 0;
+                    if (playerCount > 0)
                     {
-                        DedicatedServerFileLog.Append("watchdog", "Lobby unreachable; exiting process.");
-                        Application.Quit(1);
-                        yield break;
+                        DedicatedServerFileLog.Append("watchdog",
+                            "Lobby unreachable but players=" + playerCount + "; keeping process alive.");
+                        Debug.LogWarning("[TitanOrbitDedicatedServerHost] Lobby unreachable with " +
+                                         playerCount + " player(s) connected — not exiting.");
+                        consecutiveFailures = 0;
+                        continue;
                     }
+
+                    DedicatedServerFileLog.Append("watchdog", "Lobby unreachable; exiting empty process.");
+                    Application.Quit(1);
+                    yield break;
                 }
             }
         }
@@ -515,21 +580,32 @@ namespace TitanOrbit.NetCode
                    TitanOrbitSessionManager.Instance.IsRecreateDedicatedMatchInProgress;
         }
 
+        /// <summary>
+        /// Tracks when the match became empty. Countdown for idle recreate starts (or resets) at the
+        /// moment the last player leaves — never while anyone is still connected.
+        /// </summary>
+        /// <param name="playerCount">Live NetCode <c>NetworkStreamConnection</c> count on ServerWorld.</param>
         void TrackEmptyMatchTime(int playerCount)
         {
             // --- TrackEmptyMatchTime ---
+            // Anyone still playing → clear idle clock (occupied matches must not age into teardown).
             if (playerCount > 0)
             {
                 _emptySinceUtc = null;
                 return;
             }
 
-            // First frame we notice the lobby is empty: wipe orphan ships immediately.
-            // [TITAN-ORBIT] Empty lobbies stay joinable for EmptyMatchRecreateSeconds (often minutes).
-            // Without this wipe, a new joiner gets NetworkId 1 and is offered the previous player's ship.
+            // First sample at zero players: start EmptyMatchRecreateSeconds countdown from now.
+            // [TITAN-ORBIT] Also wipe orphan ships immediately so a mid-idle joiner is not offered
+            // the previous player's hull via NetworkId reuse. Map planets stay.
             if (!_emptySinceUtc.HasValue)
             {
                 _emptySinceUtc = DateTime.UtcNow;
+                DedicatedServerFileLog.Append("idle",
+                    "Empty match countdown started (last player left) lobby=" + _activeLobbyId +
+                    " recreateAfterSeconds=" + (_config != null ? _config.EmptyMatchRecreateSeconds : -1));
+                Debug.Log("[TitanOrbitDedicatedServerHost] Last player left — empty-idle countdown started (" +
+                          (_config != null ? _config.EmptyMatchRecreateSeconds : -1) + "s).");
                 if (TitanOrbitSessionManager.Instance != null)
                     TitanOrbitSessionManager.Instance.WipeOrphanPlayerShipsAndResetRosters();
             }

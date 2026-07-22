@@ -140,13 +140,18 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Adds edges/triangles for one team using <b>mutual</b> two-closest moons in toroidal space.
+        /// Adds edges/triangles for one team using each planet's two closest teammates.
         /// <para>
-        /// For each owned planet P, find the two nearest teammates Q,R by
-        /// <see cref="PlanetInput.Position"/> (gem-moon XZ, toroidal distance). Add triangle (P,Q,R)
-        /// only when P is also among Q's two nearest <b>and</b> among R's two nearest.
-        /// That keeps territories on the locally closest cluster and prevents a far capture from
-        /// stretching a huge triangle across the map.
+        /// [TITAN-ORBIT] For every owned planet P, find the two nearest teammates Q and R by
+        /// toroidal distance on <see cref="PlanetInput.Position"/> (gem-moon XZ), then form
+        /// triangle (P,Q,R). Several planets can propose the same three corners — 
+        /// <see cref="TryAddTriangle"/> and <see cref="TryAddEdge"/> dedupe by sorted planet ids
+        /// so we never store a duplicate.
+        /// </para>
+        /// <para>
+        /// Intentional (not mutual nearest-neighbor): a far capture still gets a triangle with
+        /// its two closest friends even when those friends prefer closer neighbors. Mutual
+        /// filtering left some captured planets with no connection at all.
         /// </para>
         /// </summary>
         public static void RebuildTeamGraph(
@@ -161,6 +166,7 @@ namespace TitanOrbit.Simulation
                 return;
 
             // --- Count teammates ---
+            // Need at least three same-team planets to form any triangle.
             int n = 0;
             for (int i = 0; i < planets.Length; i++)
             {
@@ -172,6 +178,7 @@ namespace TitanOrbit.Simulation
                 return;
 
             // --- Compact teammate indices into a temp list ---
+            // [STANDARD] Allocator.Temp — freed before this method returns (Burst-friendly).
             var indices = new NativeList<int>(n, Allocator.Temp);
             for (int i = 0; i < planets.Length; i++)
             {
@@ -179,64 +186,28 @@ namespace TitanOrbit.Simulation
                     indices.Add(i);
             }
 
-            // --- Precompute each planet's two nearest teammate indices (toroidal moon distance) ---
-            var nearA = new NativeArray<int>(indices.Length, Allocator.Temp);
-            var nearB = new NativeArray<int>(indices.Length, Allocator.Temp);
-            for (int i = 0; i < indices.Length; i++)
-            {
-                FindTwoClosest(planets, indices, indices[i], mapW, mapH, out int qIdx, out int rIdx);
-                nearA[i] = qIdx;
-                nearB[i] = rIdx;
-            }
-
-            // --- Mutual nearest: only triangles where all three claim each other as closest ---
+            // --- One triangle per planet: connect P to its two closest teammates ---
+            // [TITAN-ORBIT] Distances use gem-moon positions (matches drawn lines), toroidal so
+            // neighbors across the map seam still win when they are truly closest.
             for (int pi = 0; pi < indices.Length; pi++)
             {
                 int pIdx = indices[pi];
-                int qIdx = nearA[pi];
-                int rIdx = nearB[pi];
+                FindTwoClosest(planets, indices, pIdx, mapW, mapH, out int qIdx, out int rIdx);
                 if (qIdx < 0 || rIdx < 0)
-                    continue;
-
-                // P must be among Q's two nearest and among R's two nearest.
-                if (!IsAmongTwoClosest(indices, nearA, nearB, qIdx, pIdx))
-                    continue;
-                if (!IsAmongTwoClosest(indices, nearA, nearB, rIdx, pIdx))
                     continue;
 
                 var p = planets[pIdx];
                 var q = planets[qIdx];
                 var r = planets[rIdx];
+
+                // Edges + triangle; helpers no-op when the same undirected set already exists.
                 TryAddEdge(ref edges, p.PlanetId, q.PlanetId, team);
                 TryAddEdge(ref edges, p.PlanetId, r.PlanetId, team);
                 TryAddEdge(ref edges, q.PlanetId, r.PlanetId, team);
                 TryAddTriangle(ref triangles, p, q, r, team);
             }
 
-            nearA.Dispose();
-            nearB.Dispose();
             indices.Dispose();
-        }
-
-        /// <summary>
-        /// True when <paramref name="candidateIdx"/> is one of the two nearest teammates stored for
-        /// planet <paramref name="ownerIdx"/> in the parallel nearA/nearB tables.
-        /// </summary>
-        static bool IsAmongTwoClosest(
-            in NativeList<int> teammateIndices,
-            in NativeArray<int> nearA,
-            in NativeArray<int> nearB,
-            int ownerIdx,
-            int candidateIdx)
-        {
-            for (int i = 0; i < teammateIndices.Length; i++)
-            {
-                if (teammateIndices[i] != ownerIdx)
-                    continue;
-                return nearA[i] == candidateIdx || nearB[i] == candidateIdx;
-            }
-
-            return false;
         }
 
         /// <summary>

@@ -25,6 +25,11 @@ namespace TitanOrbit.NetCode
         public const string LobbyRelayProtocolKey = "RelayProtocol";
         public const string LobbyServerListenAddressKey = "ServerListenAddress";
         public const string LobbyActivePlayersKey = "ActivePlayers";
+        /// <summary>
+        /// [TITAN-ORBIT] Unix epoch (UTC seconds) when an empty match will idle-recreate/kill.
+        /// Published as <c>0</c> while any players are connected — Join Game hides the countdown then.
+        /// </summary>
+        public const string LobbyIdleKillAtEpochKey = "IdleKillAt";
         /// <summary>[TITAN-ORBIT] Authoritative map spawn step count (loading denominator).</summary>
         public const string LobbyMapLoadingStepsKey = "MapSteps";
         /// <summary>[TITAN-ORBIT] Team / home planet count for this match.</summary>
@@ -83,6 +88,12 @@ namespace TitanOrbit.NetCode
             public bool IsDedicatedServer;
             public long ServerAliveAtEpochSeconds;
             public int ActivePlayers = -1;
+
+            /// <summary>
+            /// [TITAN-ORBIT] UTC unix seconds when idle recreate will kill this empty match.
+            /// 0 / unset when players are present or the server has not published the field yet.
+            /// </summary>
+            public long IdleKillAtEpochSeconds;
 
             /// <summary>[TITAN-ORBIT] Map spawn steps from lobby Data; -1 if server has not published yet.</summary>
             public int MapLoadingSteps = -1;
@@ -899,6 +910,15 @@ namespace TitanOrbit.NetCode
                 long.TryParse(aliveAtObj?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long aliveAt))
             {
                 summary.ServerAliveAtEpochSeconds = aliveAt;
+            }
+
+            // --- Empty-idle kill deadline (Join Game countdown when CurrentPlayers == 0) ---
+            summary.IdleKillAtEpochSeconds = 0;
+            if (lobby.Data.TryGetValue(LobbyIdleKillAtEpochKey, out DataObject idleKillObj) &&
+                long.TryParse(idleKillObj?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out long idleKillAt) &&
+                idleKillAt > 0)
+            {
+                summary.IdleKillAtEpochSeconds = idleKillAt;
             }
 
             return summary;

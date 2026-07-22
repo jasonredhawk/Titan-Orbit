@@ -1071,14 +1071,32 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>
+        /// Tears down the current UGS lobby + Relay listen and publishes a fresh empty match on the
+        /// same ServerWorld. Hard-gated: refuses when any NetCode player is still connected so an
+        /// in-progress conquest map cannot be wiped by idle/self-heal/heartbeat paths.
+        /// </summary>
+        /// <param name="config">Dedicated CLI config (ports, idle seconds, IsLatest).</param>
+        /// <param name="forceIsLatest">When true, the new lobby is published as IsLatest=1.</param>
+        /// <returns>New lobby ids/timestamps, or null when skipped/failed.</returns>
         public async Task<DedicatedMatchRecreateResult> RecreateDedicatedMatchAsync(
             TitanOrbitServerCommandLine config,
             bool forceIsLatest = false)
         {
+            // --- RecreateDedicatedMatchAsync ---
             if (_recreateDedicatedMatchInProgress)
                 return null;
-            if (GetServerConnectedPlayerCount() > 0)
+
+            // [TITAN-ORBIT] Occupied match — never wipe ships/map or delete the live lobby.
+            int connectedPlayers = GetServerConnectedPlayerCount();
+            if (connectedPlayers > 0)
+            {
+                Debug.LogWarning("[TitanOrbitSessionManager] Recreate skipped — " + connectedPlayers +
+                                 " player(s) still connected.");
+                DedicatedServerFileLog.Append("self_heal",
+                    "Recreate skipped; players still connected count=" + connectedPlayers);
                 return null;
+            }
 
             _recreateDedicatedMatchInProgress = true;
             string oldLobbyId = _activeLobbyId;
@@ -1151,8 +1169,17 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>
+        /// Marks a dedicated lobby closed for browse/join: IsOpen=0, IsLatest=0, locked.
+        /// Use when the match is empty (idle recreate), full (no slots), or the process is exiting.
+        /// Do not use this for age rotation while players are still connected — use
+        /// <see cref="DemoteFromLatestKeepOpenAsync"/> so conquest maps stay joinable.
+        /// </summary>
+        /// <param name="lobbyId">UGS lobby id to close.</param>
+        /// <param name="reason">Logged reason (e.g. empty_match_recreate, full_rotation).</param>
         public async Task CloseLobbyForNewJoinersAsync(string lobbyId, string reason)
         {
+            // --- CloseLobbyForNewJoinersAsync ---
             if (string.IsNullOrWhiteSpace(lobbyId))
                 return;
             try
@@ -1186,6 +1213,58 @@ namespace TitanOrbit.NetCode
             catch (Exception e)
             {
                 Debug.LogWarning("[TitanOrbitSessionManager] CloseLobbyForNewJoiners failed: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// Age / supersede handoff for an occupied match: clear IsLatest so a successor can be the
+        /// new "fresh game" target, but keep IsOpen=1 and unlocked so players mid-conquest (and
+        /// friends rejoining) still see and join this lobby in Join Game.
+        /// </summary>
+        /// <param name="lobbyId">UGS lobby id to demote.</param>
+        /// <param name="reason">Logged reason (e.g. age_rotation, superseded_occupied).</param>
+        public async Task DemoteFromLatestKeepOpenAsync(string lobbyId, string reason)
+        {
+            // --- DemoteFromLatestKeepOpenAsync ---
+            if (string.IsNullOrWhiteSpace(lobbyId))
+                return;
+
+            try
+            {
+                await TitanOrbitLobbyService.AcquireLobbyApiGateAsync();
+                try
+                {
+                    // [TITAN-ORBIT] Only touch IsLatest. Leaving IsOpen=1 + unlocked is intentional —
+                    // closing mid-match was removing live games from the browser after ~AgeThreshold.
+                    await LobbyService.Instance.UpdateLobbyAsync(lobbyId, new UpdateLobbyOptions
+                    {
+                        Data = new Dictionary<string, DataObject>
+                        {
+                            {
+                                TitanOrbitLobbyService.LobbyIsLatestKey,
+                                new DataObject(DataObject.VisibilityOptions.Public, "0", DataObject.IndexOptions.N2)
+                            },
+                            {
+                                TitanOrbitLobbyService.LobbyIsOpenKey,
+                                new DataObject(DataObject.VisibilityOptions.Public, "1", DataObject.IndexOptions.N1)
+                            }
+                        },
+                        IsLocked = false
+                    });
+                }
+                finally
+                {
+                    TitanOrbitLobbyService.ReleaseLobbyApiGate();
+                }
+
+                DedicatedServerFileLog.Append("lobby",
+                    "Demoted IsLatest keep open (" + reason + ") id=" + lobbyId);
+                Debug.Log("[TitanOrbitSessionManager] Demoted lobby from IsLatest (kept open): " + lobbyId +
+                          " reason=" + reason);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[TitanOrbitSessionManager] DemoteFromLatestKeepOpen failed: " + e.Message);
             }
         }
 
@@ -1662,6 +1741,15 @@ namespace TitanOrbit.NetCode
                     { TitanOrbitLobbyService.LobbyActivePlayersKey, new DataObject(DataObject.VisibilityOptions.Public, "0", DataObject.IndexOptions.N4) },
                 };
 
+                // [TITAN-ORBIT] Brand-new lobby is empty — publish idle-kill deadline for Join Game countdown.
+                int idleSeconds = _serverConfig != null
+                    ? _serverConfig.EmptyMatchRecreateSeconds
+                    : TitanOrbitServerCommandLine.DefaultEmptyMatchRecreateSeconds;
+                long idleKillAt = createdAt + Mathf.Max(60, idleSeconds);
+                lobbyData[TitanOrbitLobbyService.LobbyIdleKillAtEpochKey] = new DataObject(
+                    DataObject.VisibilityOptions.Public,
+                    idleKillAt.ToString(CultureInfo.InvariantCulture));
+
                 // [TITAN-ORBIT] Publish map totals when generation already finished (often still rolling at create).
                 AppendMapSessionMetaLobbyData(lobbyData);
 
@@ -1741,8 +1829,14 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>
+        /// [NETCODE] UGS heartbeat + public lobby Data refresh (alive epoch, ActivePlayers, map meta,
+        /// and IdleKillAt for empty-match Join Game countdown).
+        /// </summary>
+        /// <returns>True when ping + UpdateLobby succeeded.</returns>
         async Task<bool> SendHeartbeatAsync()
         {
+            // --- SendHeartbeatAsync ---
             try
             {
                 await TitanOrbitLobbyService.AcquireLobbyApiGateAsync();
@@ -1750,6 +1844,16 @@ namespace TitanOrbit.NetCode
                 {
                     long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                     int activePlayers = GetServerConnectedPlayerCount();
+
+                    // Idle-kill deadline only while empty; publish 0 so Join Game hides the countdown
+                    // as soon as anyone is connected (does not wait for a full list refresh).
+                    long idleKillAtEpoch = 0;
+                    if (activePlayers <= 0 &&
+                        TitanOrbitDedicatedServerHost.TryGetEmptyIdleKillAtEpochSeconds(out long killAt))
+                    {
+                        idleKillAtEpoch = killAt;
+                    }
+
                     var heartbeatData = new Dictionary<string, DataObject>
                     {
                         {
@@ -1759,6 +1863,12 @@ namespace TitanOrbit.NetCode
                         {
                             TitanOrbitLobbyService.LobbyActivePlayersKey,
                             new DataObject(DataObject.VisibilityOptions.Public, activePlayers.ToString(CultureInfo.InvariantCulture))
+                        },
+                        {
+                            TitanOrbitLobbyService.LobbyIdleKillAtEpochKey,
+                            new DataObject(
+                                DataObject.VisibilityOptions.Public,
+                                idleKillAtEpoch.ToString(CultureInfo.InvariantCulture))
                         }
                     };
 
@@ -1785,9 +1895,15 @@ namespace TitanOrbit.NetCode
             }
         }
 
-        /// <summary>Closes older dedicated lobbies when a new server boot supersedes them.</summary>
+        /// <summary>
+        /// After this process publishes a new IsLatest lobby, clear IsLatest on older "latest"
+        /// lobbies. Occupied matches are demoted but kept open; only empty ones are hard-closed
+        /// so a mid-conquest map is never removed from Join Game by a sibling boot.
+        /// </summary>
+        /// <param name="keepLobbyId">This process's new lobby id — never closed/demoted here.</param>
         IEnumerator CloseSupersededDedicatedLobbies(string keepLobbyId)
         {
+            // --- CloseSupersededDedicatedLobbies ---
             Task<List<TitanOrbitLobbyService.LobbySummary>> queryTask =
                 TitanOrbitLobbyService.QueryOpenLobbiesAsync(latestOnly: true, count: 20);
             while (!queryTask.IsCompleted)
@@ -1803,8 +1919,13 @@ namespace TitanOrbit.NetCode
                 if (string.Equals(summary.LobbyId, keepLobbyId, StringComparison.Ordinal))
                     continue;
 
-                Task closeTask = CloseLobbyForNewJoinersAsync(summary.LobbyId, "superseded_by_new_boot");
-                while (!closeTask.IsCompleted)
+                // [TITAN-ORBIT] Heartbeat publishes ActivePlayers; CurrentPlayers prefers that for dedicated.
+                // If either says occupied, demote only — never IsOpen=0 on a live conquest map.
+                bool occupied = summary.CurrentPlayers > 0 || summary.ActivePlayers > 0;
+                Task listingTask = occupied
+                    ? DemoteFromLatestKeepOpenAsync(summary.LobbyId, "superseded_occupied")
+                    : CloseLobbyForNewJoinersAsync(summary.LobbyId, "superseded_by_new_boot");
+                while (!listingTask.IsCompleted)
                     yield return null;
             }
         }

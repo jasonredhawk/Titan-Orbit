@@ -16,7 +16,7 @@ namespace TitanOrbit.Game
     /// lobbies and connecting the client via Relay. Opened from <see cref="NceGameFlowController"/> main menu.
     /// Client only; dedicated server builds have no canvas.
     /// Each lobby row shows a small card per team (color, owned worlds, players/cap) plus match extras
-    /// (neutrals, asteroids) and a capacity line derived from map meta — not a fixed 60-slot label.
+    /// (neutrals, asteroids, empty-idle kill countdown when 0 players) and a capacity line from map meta.
     /// </summary>
     public class JoinGameBrowserController : MonoBehaviour
     {
@@ -25,6 +25,7 @@ namespace TitanOrbit.Game
         const float RowHeight = 168f;
         const float AutoRefreshIntervalSeconds = 45f;
         const float CacheGraceSeconds = 180f;
+        /// <summary>How often age + empty-idle countdown labels tick without re-querying UGS.</summary>
         const float RowDurationRefreshSeconds = 1f;
         const int RequestMatchPollAttempts = 18;
         const int RequestMatchPollIntervalMs = 5000;
@@ -52,6 +53,8 @@ namespace TitanOrbit.Game
         readonly List<GameObject> _rowObjects = new List<GameObject>();
         readonly List<Image> _rowBackgrounds = new List<Image>();
         readonly List<TextMeshProUGUI> _rowDurationLabels = new List<TextMeshProUGUI>();
+        /// <summary>Footer extras labels (map meta + idle countdown); parallel to <see cref="_cached"/>.</summary>
+        readonly List<TextMeshProUGUI> _rowExtrasLabels = new List<TextMeshProUGUI>();
         string _selectedLobbyId;
         int _selectedRowIndex = -1;
         bool _refreshInProgress;
@@ -152,14 +155,14 @@ namespace TitanOrbit.Game
                 _ = RefreshAsync(silent: true);
             }
 
-            // --- Live-update "5m" / "2h" age labels without re-querying UGS ---
+            // --- Live-update age + empty-idle countdown without re-querying UGS ---
             if (_cached.Count > 0)
             {
                 _durationRefreshTimer += Time.unscaledDeltaTime;
                 if (_durationRefreshTimer >= RowDurationRefreshSeconds)
                 {
                     _durationRefreshTimer = 0f;
-                    RefreshRowDurations();
+                    RefreshRowLiveLabels();
                 }
             }
         }
@@ -527,6 +530,7 @@ namespace TitanOrbit.Game
             _rowObjects.Clear();
             _rowBackgrounds.Clear();
             _rowDurationLabels.Clear();
+            _rowExtrasLabels.Clear();
 
             if (_cached.Count == 0)
             {
@@ -555,8 +559,11 @@ namespace TitanOrbit.Game
                 var durationLabel = row.transform.Find("LobbyRowMain/LobbyRowHeader/LobbyRowDuration")
                                         ?.GetComponent<TextMeshProUGUI>()
                                     ?? row.transform.Find("LobbyRowDuration")?.GetComponent<TextMeshProUGUI>();
-                if (durationLabel != null)
-                    _rowDurationLabels.Add(durationLabel);
+                // Keep lists index-aligned with _cached / _rowObjects (null-safe refresh).
+                _rowDurationLabels.Add(durationLabel);
+                var extrasLabel = row.transform.Find("LobbyRowMain/LobbyRowFooter/LobbyRowExtras")
+                                      ?.GetComponent<TextMeshProUGUI>();
+                _rowExtrasLabels.Add(extrasLabel);
             }
 
             ApplyRowSelectionVisuals();
@@ -756,16 +763,17 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Footer line for map size, neutrals, and asteroids (shared map features, not per-team).
+        /// Footer line for map size, neutrals, asteroids, and (only when empty) idle-kill countdown.
         /// </summary>
         /// <param name="summary">Lobby browse row data from UGS public Data.</param>
         /// <returns>Rich-text TMP string for the lobby footer extras label.</returns>
         static string FormatLobbyExtrasLine(TitanOrbitLobbyService.LobbySummary summary)
         {
+            // --- FormatLobbyExtrasLine ---
             if (summary == null)
                 return string.Empty;
 
-            var sb = new StringBuilder(96);
+            var sb = new StringBuilder(128);
             sb.Append("<size=14>");
 
             // --- Plain labels only ---
@@ -805,11 +813,69 @@ namespace TitanOrbit.Game
                 wrote = true;
             }
 
+            // --- Empty-idle kill countdown (server IdleKillAt; hidden while anyone is in the match) ---
+            if (TryFormatEmptyIdleCountdown(summary, out string idleCountdown))
+            {
+                if (wrote)
+                    sb.Append("   <color=#5f738a>|</color>   ");
+                sb.Append(idleCountdown);
+                wrote = true;
+            }
+
             if (!wrote)
                 sb.Append("<color=#6f8499>Waiting for map…</color>");
 
             sb.Append("</size>");
             return sb.ToString();
+        }
+
+        /// <summary>
+        /// Builds the "closes in Xm" fragment only when the lobby reports zero players and a kill deadline.
+        /// </summary>
+        /// <param name="summary">Lobby row from the last UGS query (cached locally).</param>
+        /// <param name="richText">TMP fragment including color tags; empty when not shown.</param>
+        /// <returns>True when the countdown should appear in the footer.</returns>
+        static bool TryFormatEmptyIdleCountdown(
+            TitanOrbitLobbyService.LobbySummary summary,
+            out string richText)
+        {
+            // --- TryFormatEmptyIdleCountdown ---
+            richText = string.Empty;
+            if (summary == null)
+                return false;
+
+            // [TITAN-ORBIT] Only empty matches idle-kill; occupied conquest maps never show this.
+            if (summary.CurrentPlayers > 0)
+                return false;
+            if (summary.IdleKillAtEpochSeconds <= 0)
+                return false;
+
+            long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            long remaining = Math.Max(0, summary.IdleKillAtEpochSeconds - now);
+            richText = "<color=#e8a87c><b>closes in " + FormatCountdownDuration(remaining) + "</b></color>";
+            return true;
+        }
+
+        /// <summary>Formats a remaining-seconds budget as short UI text (e.g. 29m, 1h 5m, 45s).</summary>
+        /// <param name="remainingSeconds">Seconds until idle kill; clamped at zero by caller.</param>
+        static string FormatCountdownDuration(long remainingSeconds)
+        {
+            // --- FormatCountdownDuration ---
+            if (remainingSeconds < 60)
+                return remainingSeconds + "s";
+            if (remainingSeconds < 3600)
+            {
+                long minutes = remainingSeconds / 60;
+                long seconds = remainingSeconds % 60;
+                // Under 10 minutes show seconds so the last stretch feels live.
+                return minutes < 10 && seconds > 0
+                    ? minutes + "m " + seconds + "s"
+                    : minutes + "m";
+            }
+
+            long hours = remainingSeconds / 3600;
+            long hourMinutes = (remainingSeconds % 3600) / 60;
+            return hourMinutes > 0 ? hours + "h " + hourMinutes + "m" : hours + "h";
         }
 
         void ApplyRowSelectionVisuals()
@@ -822,14 +888,21 @@ namespace TitanOrbit.Game
             }
         }
 
-        void RefreshRowDurations()
+        /// <summary>
+        /// Ticks lobby age labels and empty-idle countdown from cached <see cref="LobbySummary"/> data
+        /// without another UGS query (countdown uses IdleKillAt epoch from the last fetch/heartbeat).
+        /// </summary>
+        void RefreshRowLiveLabels()
         {
-            int count = Mathf.Min(_rowDurationLabels.Count, _cached.Count);
+            // --- RefreshRowLiveLabels ---
+            int count = Mathf.Min(_cached.Count, Mathf.Min(_rowDurationLabels.Count, _rowExtrasLabels.Count));
             for (int i = 0; i < count; i++)
             {
-                if (_rowDurationLabels[i] == null)
-                    continue;
-                _rowDurationLabels[i].text = FormatLobbyActiveDuration(_cached[i].CreatedAtEpochSeconds);
+                TitanOrbitLobbyService.LobbySummary summary = _cached[i];
+                if (_rowDurationLabels[i] != null)
+                    _rowDurationLabels[i].text = FormatLobbyActiveDuration(summary.CreatedAtEpochSeconds);
+                if (_rowExtrasLabels[i] != null)
+                    _rowExtrasLabels[i].text = FormatLobbyExtrasLine(summary);
             }
         }
 

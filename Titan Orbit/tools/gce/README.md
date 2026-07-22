@@ -154,10 +154,11 @@ The headless server publishes **Unity Gaming Services (UGS) lobbies** so clients
 | Trigger | When | Action |
 |---------|------|--------|
 | Boot | systemd starts | Relay + lobby (`IsLatest=1`, `IsOpen=1`) + heartbeat every 15s |
-| Empty recreate | 0 players for `--emptyMatchRecreateSeconds` (900s on GCE) | In-process new Relay + lobby |
+| Empty recreate | 0 players for `--emptyMatchRecreateSeconds` (default 1800s; countdown starts when last player leaves) | In-process new Relay + lobby — **never while players are connected** |
 | Stale lobby | Our lobby closed or heartbeat-stale while empty (`--staleLobbyRecreateSeconds=120`) | In-process recreate as latest |
 | Self-heal | No joinable `IsLatest` lobby in UGS while this server is empty | Immediate in-process recreate |
-| Age / full rotation | Match age ≥ 30 min with players, or lobby full | **`SpawnNextMatch`** — sibling OS process (not managed by systemd) |
+| Age rotation | Match age ≥ 30 min, players present, not full | **`SpawnNextMatch`** + demote `IsLatest` but **keep `IsOpen=1`** (occupied maps stay joinable) |
+| Full rotation | Lobby at max players | Close listing + **`SpawnNextMatch`** (sibling OS process; not managed by systemd) |
 | Match request | Client publishes wake lobby when browse is empty | Idle server recreates immediately |
 
 **Rotation spawns sibling processes** (`SpawnNextMatch`) using `--serverExecutablePath` from **`titanorbit-server.service`**. Those children are **not** restarted by systemd; if a successor dies after handoff, the **self-heal** and **heartbeat-failure** paths recreate a joinable lobby from the main process when it is empty.

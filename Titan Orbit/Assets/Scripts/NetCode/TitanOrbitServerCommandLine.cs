@@ -14,8 +14,18 @@ namespace TitanOrbit.NetCode
         /// <summary>Default player cap when --maxPlayers is omitted.</summary>
         public const int DefaultMaxPlayers = 60;
         public const ushort DefaultServerPort = 7777;
-        public const int DefaultEmptyMatchRecreateSeconds = 15 * 60;
+        /// <summary>
+        /// Idle empty timeout: after the last player leaves (zero NetCode connections), wait this
+        /// long before in-process match recreate. Occupied matches never use this clock.
+        /// </summary>
+        public const int DefaultEmptyMatchRecreateSeconds = 30 * 60;
+
+        /// <summary>
+        /// Age rotation: when IsLatest and players are present (not full), spawn a successor as the
+        /// new IsLatest after this many seconds. The occupied lobby is demoted but stays open.
+        /// </summary>
         public const int DefaultAgeThresholdSeconds = 30 * 60;
+
         /// <summary>When our lobby is closed or heartbeat-stale and empty, recreate after this many seconds (faster than empty idle refresh).</summary>
         public const int DefaultStaleLobbyRecreateSeconds = 120;
 
