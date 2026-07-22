@@ -106,6 +106,9 @@ namespace TitanOrbit.UI
         /// <summary>Cached HUD body text so we can skip TMP writes when unchanged.</summary>
         string lastHudBodyText = "";
 
+        /// <summary>Last applied corner position — avoid rewriting RectTransform every LateUpdate (sub-pixel shimmer).</summary>
+        Vector2 _lastAppliedAnchoredPos = new Vector2(float.NaN, float.NaN);
+
         void Start()
         {
             if (speedometerEnabled)
@@ -364,35 +367,46 @@ namespace TitanOrbit.UI
         void ApplyPlacement(RectTransform rootRect)
         {
             // --- Corner anchor + margin (stack above upgrade bar when bottom-left) ---
-            float h = horizontalMargin;
-            float v = verticalMargin + GetBottomLeftStackYBoost();
+            // Round to whole canvas units and skip writes when unchanged — continuous rewrites
+            // shimmer in windowed Game views the same way the upgrade strip did.
+            float h = Mathf.Round(horizontalMargin);
+            float v = Mathf.Round(verticalMargin + GetBottomLeftStackYBoost());
+            Vector2 pos;
             switch (placement)
             {
                 case SpeedometerPlacement.BottomLeft:
                     rootRect.anchorMin = new Vector2(0f, 0f);
                     rootRect.anchorMax = new Vector2(0f, 0f);
                     rootRect.pivot = new Vector2(0f, 0f);
-                    rootRect.anchoredPosition = new Vector2(h, v);
+                    pos = new Vector2(h, v);
                     break;
                 case SpeedometerPlacement.BottomRight:
                     rootRect.anchorMin = new Vector2(1f, 0f);
                     rootRect.anchorMax = new Vector2(1f, 0f);
                     rootRect.pivot = new Vector2(1f, 0f);
-                    rootRect.anchoredPosition = new Vector2(-h, v);
+                    pos = new Vector2(-h, v);
                     break;
                 case SpeedometerPlacement.TopLeft:
                     rootRect.anchorMin = new Vector2(0f, 1f);
                     rootRect.anchorMax = new Vector2(0f, 1f);
                     rootRect.pivot = new Vector2(0f, 1f);
-                    rootRect.anchoredPosition = new Vector2(h, -v);
+                    pos = new Vector2(h, -v);
                     break;
-                case SpeedometerPlacement.TopRight:
+                default: // TopRight
                     rootRect.anchorMin = new Vector2(1f, 1f);
                     rootRect.anchorMax = new Vector2(1f, 1f);
                     rootRect.pivot = new Vector2(1f, 1f);
-                    rootRect.anchoredPosition = new Vector2(-h, -v);
+                    pos = new Vector2(-h, -v);
                     break;
             }
+
+            if (!float.IsNaN(_lastAppliedAnchoredPos.x) &&
+                Mathf.Abs(pos.x - _lastAppliedAnchoredPos.x) < 0.5f &&
+                Mathf.Abs(pos.y - _lastAppliedAnchoredPos.y) < 0.5f)
+                return;
+
+            rootRect.anchoredPosition = pos;
+            _lastAppliedAnchoredPos = pos;
         }
 
         /// <summary>

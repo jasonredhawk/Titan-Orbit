@@ -1,6 +1,7 @@
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
+using TitanOrbit.Shared;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -15,7 +16,13 @@ namespace TitanOrbit.UI
     /// MoonOrbitRpcClient.PurchaseAttributeUpgrade (server validates in ShipAttributeUpgradeSystem).
     /// Cost = ShipLevel × 5 gems; max levels per attribute = ShipLevel. Strip layout avoids
     /// minimap overlap. Cosmetic tick marks reflect ghost-serialized upgrade levels.
-    /// Strip position: Screen / strip placement on this component (re-applied every frame in Play mode).
+    /// Strip layout: recomputed only when screen / canvas / minimap size changes; positions are
+    /// snapped to whole canvas units so windowed (non-1:1) views do not shimmer.
+    /// <para>
+    /// [TITAN-ORBIT] Holds a last-good HUD cache during <see cref="ClientJoinSettleCache.GhostSpawnBacklog"/>
+    /// (gem Instantiates after asteroid destroy). Without it the strip hid or zeroed ticks for a frame —
+    /// the same combat flicker class already fixed in <see cref="ShipSpeedometerHUD"/>.
+    /// </para>
     /// </summary>
     public class ShipAttributeUpgradeHUD : MonoBehaviour
     {
@@ -24,7 +31,7 @@ namespace TitanOrbit.UI
         [SerializeField] private bool upgradeBarEnabled = true;
 
         [Header("Screen / strip placement")]
-        [Tooltip("When on (recommended), the strip sits on the root canvas bottom-left plus the insets below — Inspector values apply every frame in Play mode. When off, the anchor follows Screen.safeArea mapped through the canvas pixel rect (useful on some notched layouts).")]
+        [Tooltip("When on (recommended), the strip sits on the root canvas bottom-left plus the insets below. Layout only recomputes on screen/minimap size changes (not every frame). When off, reserved for safe-area anchoring on notched layouts.")]
         [SerializeField] private bool stripAnchorUseCanvasRectPadding = true;
         [Tooltip("Padding from the root canvas rect's left (before mobile scale). Positive moves right; negative moves left. Applied live in Play mode.")]
         [SerializeField] private float upgradeStripInsetFromLeft = 12f;
@@ -95,6 +102,41 @@ namespace TitanOrbit.UI
 
         private const float FontSizeScale = 1f;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Last successful ship + attribute snapshot. GhostSpawnBacklog skips full ship
+        /// scans; brief misses used to SetActive(false) the strip or paint zero ticks mid-combat.
+        /// </summary>
+        private bool _hasHudCache;
+        private ShipState _cachedShip;
+        private ShipAttributeUpgradeState _cachedAttrs;
+        private bool _lastShowActive;
+        private readonly int[] _lastTickLevels = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+        private int _lastMaxUpgrades = -1;
+        private int _lastCost = -1;
+        private readonly string[] _lastCostText = new string[10];
+        private readonly bool[] _lastInteractable = new bool[10];
+        private bool _slotVisualsSeeded;
+
+        /// <summary>Cached minimap rect so layout dirty-checks do not FindFirstObjectByType every frame.</summary>
+        private RectTransform _cachedMinimapRect;
+
+        /// <summary>
+        /// Ignore sub-pixel noise when deciding whether the strip must relayout.
+        /// Windowed / non-integer canvas scale makes 0.01–0.4 unit wobble look like the whole bar jittering.
+        /// </summary>
+        private const float LayoutDirtyEpsilon = 0.5f;
+
+        private int _lastScreenW = -1;
+        private int _lastScreenH = -1;
+        private Vector2 _lastCanvasSize = new Vector2(-1f, -1f);
+        private Vector2 _lastMinimapSize = new Vector2(-1f, -1f);
+        private Vector2 _lastMinimapPos = new Vector2(float.NaN, float.NaN);
+        private float _lastInsetL = float.NaN;
+        private float _lastInsetB = float.NaN;
+        private float _lastBarH = -1f;
+        private float _lastButtonW = -1f;
+        private float _lastSpacing = -1f;
+
         private float S(float v) => v * _layoutScale;
         private float E(float v) => v * _elementScale;
         private float F(float nominalFontSize) => E(nominalFontSize * FontSizeScale);
@@ -113,14 +155,56 @@ namespace TitanOrbit.UI
 
         private void OnEnable()
         {
-            if (rootPanel != null)
-                rootPanel.SetActive(false);
+            // [TITAN-ORBIT] Do not force-hide here — this component lives on gameplayRoot, so any
+            // brief OnDisable/OnEnable would blink the whole strip for a frame.
+            _lastShowActive = false;
         }
 
         private void OnDisable()
         {
             if (rootPanel != null)
                 rootPanel.SetActive(false);
+            _lastShowActive = false;
+        }
+
+        /// <summary>
+        /// Resolves live ship + attrs, or holds the last-good cache while Instantiates gate ship scans.
+        /// </summary>
+        /// <returns>False only when there is no ship and no cache to show.</returns>
+        private bool TryGetUpgradeHudSnapshot(out ShipState ship, out ShipAttributeUpgradeState attrs)
+        {
+            // --- Live ECS read ---
+            bool hasShip = EcsGameBridge.TryGetLocalShipState(out ship);
+            bool hasAttrs = EcsGameBridge.TryGetLocalShipAttributeUpgrades(out attrs);
+
+            if (hasShip)
+            {
+                _cachedShip = ship;
+                if (hasAttrs)
+                    _cachedAttrs = attrs;
+                else if (_hasHudCache)
+                    attrs = _cachedAttrs;
+                else
+                    attrs = default;
+                _hasHudCache = true;
+                return true;
+            }
+
+            // --- Hold last good snapshot during GhostSpawnBacklog ---
+            // [TITAN-ORBIT] Same pattern as ShipSpeedometerHUD: pose / HasLocalPlayerShip means the
+            // ship still exists; only the entity query was skipped for Crash!!! safety.
+            if (_hasHudCache &&
+                (EcsGameBridge.HasLocalPlayerShip() || ShipDisplayPose.HasLocalPose) &&
+                !ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+            {
+                ship = _cachedShip;
+                attrs = _cachedAttrs;
+                return true;
+            }
+
+            ship = default;
+            attrs = default;
+            return false;
         }
 
         /// <summary>Gameplay gate only — does not require the bar to already exist.</summary>
@@ -129,9 +213,9 @@ namespace TitanOrbit.UI
             // --- CanShowUpgradeBar ---
             if (!upgradeBarEnabled)
                 return false;
-            if (!EcsGameBridge.HasLocalPlayerShip())
+            if (!EcsGameBridge.HasLocalPlayerShip() && !(_hasHudCache && ShipDisplayPose.HasLocalPose))
                 return false;
-            if (!EcsGameBridge.TryGetLocalShipState(out var ship))
+            if (!TryGetUpgradeHudSnapshot(out var ship, out _))
                 return false;
             return !ship.IsDead
                 && !ship.AwaitingTeamSelection
@@ -159,28 +243,90 @@ namespace TitanOrbit.UI
             return _layoutCanvasRect != null;
         }
 
-        private static bool TryGetMinimapLeftLocalX(RectTransform layoutSpace, out float minimapLeftLocalX)
+        /// <summary>Whole-canvas-unit snap — stops half-pixel shimmer in windowed / scaled canvases.</summary>
+        private static float SnapUi(float v) => Mathf.Round(v);
+
+        private static bool NearlyEqual(float a, float b) => Mathf.Abs(a - b) < LayoutDirtyEpsilon;
+
+        private void EnsureMinimapRectCached()
+        {
+            // --- Cache minimap RectTransform ---
+            if (_cachedMinimapRect != null)
+                return;
+            var minimap = Object.FindFirstObjectByType<MinimapController>();
+            if (minimap != null)
+                _cachedMinimapRect = minimap.transform as RectTransform;
+        }
+
+        private static bool TryGetMinimapLeftLocalX(RectTransform layoutSpace, RectTransform minimapRect, out float minimapLeftLocalX)
         {
             // --- Attempt resolution ---
             minimapLeftLocalX = 0f;
-            if (layoutSpace == null) return false;
-            var minimap = Object.FindFirstObjectByType<MinimapController>();
-            if (minimap == null) return false;
-            var mmRt = minimap.transform as RectTransform;
-            if (mmRt == null) return false;
-            Bounds b = RectTransformUtility.CalculateRelativeRectTransformBounds(layoutSpace, mmRt);
+            if (layoutSpace == null || minimapRect == null)
+                return false;
+            Bounds b = RectTransformUtility.CalculateRelativeRectTransformBounds(layoutSpace, minimapRect);
             minimapLeftLocalX = b.min.x;
             return true;
         }
 
-        private bool TryComputeStripMetrics(out float insetL, out float insetB, out float availableWidth, out float barH, out float buttonW, out float spacing)
+        /// <summary>
+        /// True when screen, canvas, or minimap geometry changed enough to justify a strip relayout.
+        /// Sub-pixel wobble from CalculateRelativeRectTransformBounds is intentionally ignored.
+        /// </summary>
+        private bool IsStripLayoutDirty()
+        {
+            // --- Dirty check (no writes) ---
+            if (Screen.width != _lastScreenW || Screen.height != _lastScreenH)
+                return true;
+
+            if (!TryResolveLayoutCanvas())
+                return false;
+
+            Vector2 canvasSize = _layoutCanvasRect.rect.size;
+            if (!NearlyEqual(canvasSize.x, _lastCanvasSize.x) || !NearlyEqual(canvasSize.y, _lastCanvasSize.y))
+                return true;
+
+            EnsureMinimapRectCached();
+            if (_cachedMinimapRect != null)
+            {
+                Vector2 mmSize = _cachedMinimapRect.sizeDelta;
+                Vector2 mmPos = _cachedMinimapRect.anchoredPosition;
+                if (!NearlyEqual(mmSize.x, _lastMinimapSize.x) || !NearlyEqual(mmSize.y, _lastMinimapSize.y))
+                    return true;
+                if (float.IsNaN(_lastMinimapPos.x) ||
+                    !NearlyEqual(mmPos.x, _lastMinimapPos.x) ||
+                    !NearlyEqual(mmPos.y, _lastMinimapPos.y))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private void RememberLayoutInputs()
+        {
+            // --- Latch inputs after a successful layout pass ---
+            _lastScreenW = Screen.width;
+            _lastScreenH = Screen.height;
+            if (_layoutCanvasRect != null)
+                _lastCanvasSize = _layoutCanvasRect.rect.size;
+            EnsureMinimapRectCached();
+            if (_cachedMinimapRect != null)
+            {
+                _lastMinimapSize = _cachedMinimapRect.sizeDelta;
+                _lastMinimapPos = _cachedMinimapRect.anchoredPosition;
+            }
+        }
+
+        private bool TryComputeStripMetrics(out float insetL, out float insetB, out float availableWidth, out float barH, out float buttonW, out float spacing, bool forceCanvasUpdate)
         {
             // --- Attempt resolution ---
             insetL = insetB = availableWidth = barH = buttonW = spacing = 0f;
             if (!TryResolveLayoutCanvas())
                 return false;
 
-            Canvas.ForceUpdateCanvases();
+            // [UNITY] ForceUpdateCanvases is expensive — only on first build / forced layout.
+            if (forceCanvasUpdate)
+                Canvas.ForceUpdateCanvases();
 
             Rect canvasRect = _layoutCanvasRect.rect;
             float canvasW = canvasRect.width;
@@ -207,7 +353,8 @@ namespace TitanOrbit.UI
             float leftEdgeX = canvasRect.xMin + insetL;
             float rightEdgeX = canvasRect.xMax;
 
-            if (TryGetMinimapLeftLocalX(_layoutCanvasRect, out float minimapLeftLocalX))
+            EnsureMinimapRectCached();
+            if (TryGetMinimapLeftLocalX(_layoutCanvasRect, _cachedMinimapRect, out float minimapLeftLocalX))
                 rightEdgeX = minimapLeftLocalX - S(minimapHorizontalGap);
             else
                 rightEdgeX = canvasRect.xMin + canvasW - S(fallbackRightReserve);
@@ -220,6 +367,14 @@ namespace TitanOrbit.UI
             // Fill the strip between the left edge and minimap (scale up as well as down).
             _elementScale = _layoutScale * (nominalW > 0.01f ? availableWidth / nominalW : 1f);
             buttonW = Mathf.Max(24f, (availableWidth - 9f * spacing) / 10f);
+
+            // --- Pixel snap (stable under windowed / non-integer canvas scale) ---
+            // [UNITY] Fractional RectTransform sizes shimmer when the game view is not 1:1 pixels.
+            insetL = SnapUi(insetL);
+            insetB = SnapUi(insetB);
+            spacing = SnapUi(spacing);
+            barH = SnapUi(barH);
+            buttonW = SnapUi(buttonW);
             availableWidth = 10f * buttonW + 9f * spacing;
             return availableWidth > 1f;
         }
@@ -229,19 +384,34 @@ namespace TitanOrbit.UI
             // --- RefreshUpgradeStripLayout ---
             if (!_uiBuilt || _stripRootRect == null)
                 return;
-            if (!TryComputeStripMetrics(out float insetL, out float insetB, out float availableWidth, out float barH, out float buttonW, out float spacing))
+            if (!TryComputeStripMetrics(out float insetL, out float insetB, out float availableWidth, out float barH, out float buttonW, out float spacing, forceCanvasUpdate: force))
                 return;
 
-            if (!force && Mathf.Approximately(_lastLayoutWidth, availableWidth))
-            {
-                _stripRootRect.anchoredPosition = new Vector2(insetL, insetB);
+            RememberLayoutInputs();
+
+            // Skip writes when snapped metrics match last apply — no per-frame position chase.
+            bool metricsUnchanged =
+                !force &&
+                NearlyEqual(availableWidth, _lastLayoutWidth) &&
+                NearlyEqual(insetL, _lastInsetL) &&
+                NearlyEqual(insetB, _lastInsetB) &&
+                NearlyEqual(barH, _lastBarH) &&
+                NearlyEqual(buttonW, _lastButtonW) &&
+                NearlyEqual(spacing, _lastSpacing);
+            if (metricsUnchanged)
                 return;
-            }
 
             _lastLayoutWidth = availableWidth;
+            _lastInsetL = insetL;
+            _lastInsetB = insetB;
+            _lastBarH = barH;
+            _lastButtonW = buttonW;
+            _lastSpacing = spacing;
+
             _stripRootRect.anchoredPosition = new Vector2(insetL, insetB);
             _stripRootRect.sizeDelta = new Vector2(availableWidth, barH);
 
+            float buttonH = SnapUi(barH - E(6f));
             for (int i = 0; i < 10; i++)
             {
                 if (_buttonRects[i] == null)
@@ -249,8 +419,9 @@ namespace TitanOrbit.UI
                 _buttonRects[i].anchorMin = new Vector2(0f, 0.5f);
                 _buttonRects[i].anchorMax = new Vector2(0f, 0.5f);
                 _buttonRects[i].pivot = new Vector2(0f, 0.5f);
+                // Integer step so each slot sits on a whole canvas unit.
                 _buttonRects[i].anchoredPosition = new Vector2(i * (buttonW + spacing), 0f);
-                _buttonRects[i].sizeDelta = new Vector2(buttonW, barH - E(6f));
+                _buttonRects[i].sizeDelta = new Vector2(buttonW, buttonH);
 
                 if (titleTexts[i] != null)
                     titleTexts[i].fontSize = E(titleFontSize);
@@ -493,19 +664,27 @@ namespace TitanOrbit.UI
 
         private void UpdateTickMarks(int index, int currentLevel, int maxLevel)
         {
-            // --- Per-frame refresh ---
+            // --- Per-slot tick paint ---
             if (tickContainers == null || index < 0 || index >= tickContainers.Length || tickContainers[index] == null) return;
             maxLevel = Mathf.Clamp(maxLevel, 0, 7);
             Transform container = tickContainers[index].transform;
             int childCount = container.childCount;
 
+            // Rebuild only when the allowed max level changes (ship level-up).
+            // [UNITY] Destroy() is deferred to end-of-frame — CreateTickMarks right after would
+            // duplicate children until then (same bug MinimapController fixed with DestroyImmediate).
             if (childCount != maxLevel)
             {
                 for (int i = container.childCount - 1; i >= 0; i--)
-                    Destroy(container.GetChild(i).gameObject);
+                    DestroyImmediate(container.GetChild(i).gameObject);
                 CreateTickMarks(tickContainers[index], maxLevel);
                 childCount = maxLevel;
+                _lastTickLevels[index] = -1; // force color refresh after rebuild
             }
+
+            // Skip Image.color writes when fill count is unchanged (avoids per-frame dirty).
+            if (_lastTickLevels[index] == currentLevel && _lastMaxUpgrades == maxLevel)
+                return;
 
             for (int i = 0; i < childCount; i++)
             {
@@ -513,6 +692,8 @@ namespace TitanOrbit.UI
                 if (img != null)
                     img.color = i < currentLevel ? new Color(1f, 1f, 0.9f, 1f) : new Color(0.3f, 0.3f, 0.35f, 0.8f);
             }
+
+            _lastTickLevels[index] = currentLevel;
         }
 
         private void Update()
@@ -526,17 +707,24 @@ namespace TitanOrbit.UI
                 return;
 
             bool show = CanShowUpgradeBar();
-            rootPanel.SetActive(show);
+
+            // Only toggle active when visibility actually changes (avoids layout rebuild thrash).
+            if (show != _lastShowActive)
+            {
+                rootPanel.SetActive(show);
+                _lastShowActive = show;
+            }
 
             if (!show)
                 return;
-            if (!EcsGameBridge.TryGetLocalShipState(out var ship))
+
+            if (!TryGetUpgradeHudSnapshot(out var ship, out var attrs))
                 return;
-            if (!EcsGameBridge.TryGetLocalShipAttributeUpgrades(out var attrs))
-                attrs = default;
 
             int maxUpgrades = ShipAttributeUpgradeLogic.GetMaxUpgrades(ship.ShipLevel);
             int cost = ShipAttributeUpgradeLogic.GetUpgradeCost(ship.ShipLevel);
+            bool maxChanged = maxUpgrades != _lastMaxUpgrades;
+            bool costChanged = cost != _lastCost;
 
             for (int i = 0; i < 10; i++)
             {
@@ -544,24 +732,42 @@ namespace TitanOrbit.UI
                 UpdateTickMarks(i, current, maxUpgrades);
 
                 bool canUpgrade = current < maxUpgrades && ship.CurrentGems >= cost - 0.01f;
-                if (buttons[i] != null)
-                    buttons[i].interactable = canUpgrade;
-
-                if (costLabels[i] != null)
+                // Button defaults to interactable=true — seed once so unaffordable slots disable on first paint.
+                if (buttons[i] != null && (!_slotVisualsSeeded || _lastInteractable[i] != canUpgrade))
                 {
-                    if (current >= maxUpgrades)
-                    {
-                        costLabels[i].text = "MAX";
-                        if (costGemIcons[i] != null) costGemIcons[i].enabled = false;
-                    }
-                    else
-                    {
-                        costLabels[i].text = $"{cost}";
-                        if (costGemIcons[i] != null)
-                            costGemIcons[i].enabled = gemCostIconSprite != null;
-                    }
+                    buttons[i].interactable = canUpgrade;
+                    _lastInteractable[i] = canUpgrade;
+                }
+
+                if (costLabels[i] == null)
+                    continue;
+
+                string costText;
+                bool showGemIcon;
+                if (current >= maxUpgrades)
+                {
+                    costText = "MAX";
+                    showGemIcon = false;
+                }
+                else
+                {
+                    costText = cost.ToString();
+                    showGemIcon = gemCostIconSprite != null;
+                }
+
+                // Dirty-check TMP / icon — farming asteroids changes gems every frame; skip when text identical.
+                if (costChanged || maxChanged || _lastCostText[i] != costText)
+                {
+                    costLabels[i].text = costText;
+                    _lastCostText[i] = costText;
+                    if (costGemIcons[i] != null)
+                        costGemIcons[i].enabled = showGemIcon;
                 }
             }
+
+            _lastMaxUpgrades = maxUpgrades;
+            _lastCost = cost;
+            _slotVisualsSeeded = true;
         }
 
         private void LateUpdate()
@@ -572,7 +778,10 @@ namespace TitanOrbit.UI
 
             EnsureUiBuilt();
 
-            if (_uiBuilt)
+            // Layout only when screen / canvas / minimap geometry actually changes — not every frame.
+            // Continuous remeasure against the minimap left edge caused sub-pixel button jitter
+            // (especially visible in a windowed Game view that is not 1:1 with canvas units).
+            if (_uiBuilt && IsStripLayoutDirty())
                 RefreshUpgradeStripLayout(force: false);
 
             if (!ShouldShowUpgradeBar())
@@ -605,11 +814,8 @@ namespace TitanOrbit.UI
                 return;
             if (index < 0 || index > 9)
                 return;
-            if (!EcsGameBridge.TryGetLocalShipState(out var ship))
+            if (!TryGetUpgradeHudSnapshot(out var ship, out var attrs))
                 return;
-
-            if (!EcsGameBridge.TryGetLocalShipAttributeUpgrades(out var attrs))
-                attrs = default;
 
             int current = ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, index);
             if (current >= ShipAttributeUpgradeLogic.GetMaxUpgrades(ship.ShipLevel)) return;

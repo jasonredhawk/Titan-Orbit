@@ -1,4 +1,7 @@
+using TitanOrbit.Core;
+using TitanOrbit.ECS;
 using TitanOrbit.Game;
+using TitanOrbit.Shared;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -9,6 +12,10 @@ namespace TitanOrbit.UI
     /// Top-left FPS-style ship vitals HUD (health, energy, gems, people). Reads local ship state from
     /// <see cref="EcsGameBridge"/> each <c>LateUpdate</c> — presentation only, not authoritative sim.
     /// Auto-binds Row0..Row3 child sliders when inspector references are empty.
+    /// <para>
+    /// [TITAN-ORBIT] Holds a last-good <see cref="ShipState"/> during GhostSpawnBacklog so asteroid→gem
+    /// Instantiates do not flash the bars to 0/0 (same combat flicker class as the upgrade strip).
+    /// </para>
     /// </summary>
     public class ShipStatsFpsStyleHUD : MonoBehaviour
     {
@@ -37,6 +44,13 @@ namespace TitanOrbit.UI
         bool _barsStyled;
         bool _layoutApplied;
         StatBarRow[] _rows;
+
+        /// <summary>Last successful vitals snapshot — kept across brief Instantiates lookup gaps.</summary>
+        bool _hasHudCache;
+        ShipState _cachedShip;
+
+        /// <summary>Dirty-check strings so TMP does not rebuild every frame while farming gems.</summary>
+        readonly string[] _lastValueText = new string[4];
 
         void Awake()
         {
@@ -96,7 +110,10 @@ namespace TitanOrbit.UI
             };
         }
 
-        /// <summary>Polls ECS each frame and updates four stat rows; zeros bars when local ship is missing.</summary>
+        /// <summary>
+        /// Polls ECS each frame and updates four stat rows. Uses last-good cache when ship entity
+        /// lookups are gated; only zeros bars when the local ship is truly gone.
+        /// </summary>
         void LateUpdate()
         {
             // --- Per-frame refresh ---
@@ -105,34 +122,54 @@ namespace TitanOrbit.UI
             if (!_barsStyled)
                 ApplySquareBarStyleToAll();
 
-            if (!EcsGameBridge.TryGetLocalShipState(out var ship))
+            bool hasShip = EcsGameBridge.TryGetLocalShipState(out var ship);
+            if (hasShip)
             {
-                UpdateRow(ref _rows[0], 0f, 0f);
-                UpdateRow(ref _rows[1], 0f, 0f);
-                UpdateRow(ref _rows[2], 0f, 0f);
-                UpdateRow(ref _rows[3], 0f, 0f);
+                _cachedShip = ship;
+                _hasHudCache = true;
+            }
+            else if (_hasHudCache &&
+                     (EcsGameBridge.HasLocalPlayerShip() || ShipDisplayPose.HasLocalPose) &&
+                     !ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+            {
+                // [TITAN-ORBIT] GhostSpawnBacklog briefly skips ship scans — keep last vitals painted.
+                ship = _cachedShip;
+                hasShip = true;
+            }
+
+            if (!hasShip)
+            {
+                UpdateRow(ref _rows[0], 0f, 0f, 0);
+                UpdateRow(ref _rows[1], 0f, 0f, 1);
+                UpdateRow(ref _rows[2], 0f, 0f, 2);
+                UpdateRow(ref _rows[3], 0f, 0f, 3);
                 return;
             }
 
-            UpdateRow(ref _rows[0], ship.Health, ship.MaxHealth);
-            UpdateRow(ref _rows[1], ship.CurrentEnergy, ship.MaxEnergy);
-            UpdateRow(ref _rows[2], ship.CurrentGems, ship.GemCapacity);
-            UpdateRow(ref _rows[3], ship.CurrentPeople, ship.PeopleCapacity);
+            UpdateRow(ref _rows[0], ship.Health, ship.MaxHealth, 0);
+            UpdateRow(ref _rows[1], ship.CurrentEnergy, ship.MaxEnergy, 1);
+            UpdateRow(ref _rows[2], ship.CurrentGems, ship.GemCapacity, 2);
+            UpdateRow(ref _rows[3], ship.CurrentPeople, ship.PeopleCapacity, 3);
         }
 
-        void UpdateRow(ref StatBarRow row, float current, float max)
+        void UpdateRow(ref StatBarRow row, float current, float max, int dirtyIndex)
         {
             // --- Per-frame refresh ---
             float displayCurrent = max > 0.0001f ? Mathf.Min(current, max) : current;
             float fill01 = max > 0.0001f ? Mathf.Clamp01(displayCurrent / max) : 0f;
             SetBarFill(row.Bar, fill01);
 
-            if (row.Value != null)
-            {
-                int curInt = Mathf.RoundToInt(displayCurrent);
-                int maxInt = Mathf.RoundToInt(max);
-                row.Value.text = maxInt > 0 ? $"{curInt}/{maxInt}" : curInt.ToString();
-            }
+            if (row.Value == null)
+                return;
+
+            int curInt = Mathf.RoundToInt(displayCurrent);
+            int maxInt = Mathf.RoundToInt(max);
+            string text = maxInt > 0 ? $"{curInt}/{maxInt}" : curInt.ToString();
+            if (_lastValueText[dirtyIndex] == text)
+                return;
+
+            row.Value.text = text;
+            _lastValueText[dirtyIndex] = text;
         }
 
         static void SetBarFill(Slider bar, float fill01)

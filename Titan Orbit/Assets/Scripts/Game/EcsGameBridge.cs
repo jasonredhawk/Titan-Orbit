@@ -322,7 +322,11 @@ namespace TitanOrbit.Game
             return false;
         }
 
-        /// <summary>Bottom-bar attribute upgrade levels for the local ship (zeros when component missing).</summary>
+        /// <summary>
+        /// Bottom-bar attribute upgrade levels for the local ship (zeros when component missing).
+        /// Prefers a tiny <see cref="LocalPlayerShipTag"/> lookup so combat gem Instantiates
+        /// (<see cref="ClientJoinSettleCache.GhostSpawnBacklog"/>) do not blank the upgrade HUD.
+        /// </summary>
         public static bool TryGetLocalShipAttributeUpgrades(out ShipAttributeUpgradeState attributes)
         {
             attributes = default;
@@ -331,13 +335,31 @@ namespace TitanOrbit.Game
                 return false;
 
             var em = world.EntityManager;
-            if (!TryGetLocalShipEntity(em, out var shipEntity))
+
+            // --- Tiny tagged lookup first (safe during GhostSpawnBacklog) ---
+            // [TITAN-ORBIT] TryGetLocalShipEntity scans all ships and is gated off during Instantiates
+            // (asteroid destroy → gem ghosts). Without this path, ShipAttributeUpgradeHUD set attrs
+            // to default and flashed empty tick marks every burst.
+            using (var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag)))
+            {
+                if (tagged.CalculateEntityCount() == 1)
+                {
+                    var shipEntity = tagged.GetSingletonEntity();
+                    if (!em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                        return true;
+                    attributes = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+                    return true;
+                }
+            }
+
+            // --- Broader resolve (skipped during Settling / GhostSpawnBacklog — Crash!!! risk) ---
+            if (!TryGetLocalShipEntity(em, out var resolvedShip))
                 return false;
 
-            if (!em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+            if (!em.HasComponent<ShipAttributeUpgradeState>(resolvedShip))
                 return true;
 
-            attributes = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+            attributes = em.GetComponentData<ShipAttributeUpgradeState>(resolvedShip);
             return true;
         }
 
