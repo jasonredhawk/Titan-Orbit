@@ -169,10 +169,14 @@ namespace TitanOrbit.Game
                         ? em.GetBuffer<ShipWingTractorBeamElement>(ships[si])
                         : default;
 
-                    for (int gi = 0; gi < GemScratch.Count; gi++)
+                    // One draw per wing↔gem pair (sticky primary + spare assists on the same gem).
+                    if (!GemTractorBeamClientLogic.TryGetShipBeamPairs(ships[si].Index, out var beamPairs))
+                        continue;
+
+                    for (int pi = 0; pi < beamPairs.Count; pi++)
                     {
-                        var gem = GemScratch[gi];
-                        if (!GemTractorBeamClientLogic.CanShipMagneticallyPull(ships[si].Index, gem.Entity.Index))
+                        var pair = beamPairs[pi];
+                        if (!TryFindGemSnapshot(pair.GemId, out var gem))
                             continue;
                         if (!GemTractorBeamClientLogic.IsWithinMagneticPullRange(
                                 em, ships[si], shipStates[si], shipTransforms[si], wings,
@@ -183,43 +187,32 @@ namespace TitanOrbit.Game
                         if (beamVisibility <= 0.001f)
                             continue;
 
-                        float3 beamOriginLogical = GemTractorBeamClientLogic.ResolveBeamOrigin(
-                            ships[si], shipTransforms[si], wings, gem.Entity);
-                        // [TITAN-ORBIT] Classic: nearest tile to logical local ship / camera.
+                        float3 beamOriginLogical = GemTractorBeamClientLogic.ResolveBeamOriginForWing(
+                            shipTransforms[si], wings, pair.WingIndex);
                         Vector3 reference = ToroidalDisplay.TryGetReferencePosition(out var shipRef)
                             ? shipRef
                             : cam.transform.position;
 
-                        // [HYBRID] Start on the live wing tip (hull proxy), not ECS LocalTransform —
-                        // presentation scale / proxy pose left a gap when we only used sim math.
                         Vector3 shipDisplay = ResolveWingBeamOriginDisplay(
-                            em, ships[si], wings, gem.Entity, beamOriginLogical, reference);
+                            em, ships[si], wings, pair.WingIndex, beamOriginLogical, reference);
 
-                        // [HYBRID] Tip must match the visible gem mesh. Client pull moves the proxy
-                        // ahead of ghosted LocalTransform — drawing to ECS pos made beams overshoot
-                        // past the crystal the player sees.
                         Vector3 gemDisplay = ResolveGemBeamTipDisplay(
                             gem.Entity, gem.Transform.Position, beamOriginLogical, shipDisplay, mapW, mapH);
 
-                        // Planar beam at wing mid-center height (heightAboveWing usually 0 — no gap).
                         float beamY = shipDisplay.y + heightAboveWing;
                         shipDisplay.y = beamY;
                         gemDisplay.y = beamY;
 
-                        // --- Deploy phases: thin line out → cone mouth opens → pull (sim) ---
                         float extension = GemTractorBeamDeployTracker.GetExtensionProgress(ships[si].Index, gem.Entity.Index);
                         float widthExpand = GemTractorBeamDeployTracker.GetWidthExpandProgress(ships[si].Index, gem.Entity.Index);
-                        // Ease the shoot-out so the tip does not pop to the gem in one frame.
                         float extensionEased = Mathf.SmoothStep(0f, 1f, extension);
                         Vector3 tipDisplay = Vector3.Lerp(shipDisplay, gemDisplay, extensionEased);
 
                         float gemDiameter = GetSmoothedGemVisualDiameter(gem.Entity, gem.State);
-                        // Mouth = gem diameter × 0.9 (default) × pulse ≤ gem so the flat edge sits inside.
                         float widthAtGem = gemDiameter * gemEndWidthScale * widthPulse;
 
                         if (extensionEased < 1f - 0.0001f)
                         {
-                            // Phase 1: thin line from wing mid-center toward gem (no round caps).
                             float extendVis = GemTractorBeamDeployTracker.IsInDeployAnimation(ships[si].Index, gem.Entity.Index)
                                 ? 1f
                                 : Mathf.Max(beamVisibility, 0.85f);
@@ -228,7 +221,6 @@ namespace TitanOrbit.Game
                             continue;
                         }
 
-                        // Phase 2–3: cone at full length on the gem; mouth lerps thin → gem-sized.
                         float thinWidth = Mathf.Max(extendLineThickness, GemTractorBeamDeployTracker.ExtendLineThickness);
                         float widthEased = Mathf.SmoothStep(0f, 1f, widthExpand);
                         float currentWidth = Mathf.Lerp(thinWidth, widthAtGem, widthEased);
@@ -250,6 +242,21 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>Finds a gem snapshot by entity index from the current <see cref="GemScratch"/> gather.</summary>
+        static bool TryFindGemSnapshot(int gemIndex, out GemTractorBeamClientLogic.GemProxySnapshot gem)
+        {
+            for (int i = 0; i < GemScratch.Count; i++)
+            {
+                if (GemScratch[i].Entity.Index != gemIndex)
+                    continue;
+                gem = GemScratch[i];
+                return true;
+            }
+
+            gem = default;
+            return false;
+        }
+
         /// <summary>
         /// Display-space wing <b>mid-center</b>: hybrid hull proxy renderer bounds center
         /// (not the wing tip pivot), else toroidal display of the ECS logical wing origin.
@@ -258,12 +265,12 @@ namespace TitanOrbit.Game
             EntityManager em,
             Entity shipEntity,
             DynamicBuffer<ShipWingTractorBeamElement> wings,
-            Entity gemEntity,
+            int wingIndex,
             float3 beamOriginLogical,
             Vector3 reference)
         {
             // --- Path A: live hull proxy wing body mid-center ---
-            if (TryGetLiveWingMidCenterWorld(em, shipEntity, wings, gemEntity, out Vector3 wingWorld))
+            if (TryGetLiveWingMidCenterWorld(em, shipEntity, wings, wingIndex, out Vector3 wingWorld))
                 return wingWorld;
 
             // --- Path B: ECS logical wing → display tile ---
@@ -271,22 +278,18 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Finds the assigned wing on the hybrid hull and returns the mid-center of that wing body
+        /// Finds the given wing on the hybrid hull and returns the mid-center of that wing body
         /// (outermost Wing-named ancestor + renderer bounds center — not a tip child pivot).
         /// </summary>
         static bool TryGetLiveWingMidCenterWorld(
             EntityManager em,
             Entity shipEntity,
             DynamicBuffer<ShipWingTractorBeamElement> wings,
-            Entity gemEntity,
+            int wingIndex,
             out Vector3 wingWorld)
         {
             wingWorld = default;
-            if (!GemTractorBeamClientLogic.TryGetAssignedWingIndex(
-                    shipEntity.Index, gemEntity.Index, out int wingIndex) ||
-                !wings.IsCreated ||
-                wingIndex < 0 ||
-                wingIndex >= wings.Length)
+            if (!wings.IsCreated || wingIndex < 0 || wingIndex >= wings.Length)
                 return false;
 
             int networkId = 0;

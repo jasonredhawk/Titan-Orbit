@@ -12,13 +12,10 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Client-side wing-to-gem assignment and eligibility for tractor beam <em>visuals</em> only.
-    /// Uses the same <see cref="GemTractorBeamAssignment"/> rules as server
-    /// <c>GemTractorBeamSystem</c> (nearest wing owns each gem; one gem per wing). Rebuilds a
-    /// per-frame cache keyed by ship/gem entity indices. Authoritative pull stays on the server.
-    /// [TITAN-ORBIT] Gems come from <see cref="EcsWorldVisualizer"/> hybrid proxies (managed dictionary),
-    /// never a full gem <c>ToEntityArray</c> — required under session-long TransformQuarantine
-    /// (same pattern as minimap). Ships stay a tiny query.
+    /// [HYBRID] Client-side wing-to-gem assignment for tractor beam <em>visuals</em>.
+    /// Mirrors server <see cref="GemTractorBeamAssignment"/> (sticky locks, primary fill, spare
+    /// assists). Authoritative pull velocity still comes from ghosted <see cref="GemMotionState"/>.
+    /// [TITAN-ORBIT] Gems come from hybrid proxies — never a full gem <c>ToEntityArray</c>.
     /// </summary>
     public static class GemTractorBeamClientLogic
     {
@@ -32,15 +29,23 @@ namespace TitanOrbit.Game
         }
 
         static int _cacheFrame = -1;
-        static readonly Dictionary<int, Dictionary<int, int>> WingByShipAndGem = new Dictionary<int, Dictionary<int, int>>(32);
+        /// <summary>ship → gem → primary wing (for ghost-aligned tip / range checks).</summary>
+        static readonly Dictionary<int, Dictionary<int, int>> PrimaryWingByShipAndGem =
+            new Dictionary<int, Dictionary<int, int>>(32);
+        /// <summary>ship → all wing↔gem pairs this frame (primary + assists) for multi-beam draw.</summary>
+        static readonly Dictionary<int, List<GemTractorBeamAssignment.Pair>> PairsByShip =
+            new Dictionary<int, List<GemTractorBeamAssignment.Pair>>(32);
         static readonly Dictionary<int, HashSet<int>> AssignedGemsByShip = new Dictionary<int, HashSet<int>>(32);
+        /// <summary>Sticky wing→gem locks per ship — survives rotation until out of that wing's range.</summary>
+        static readonly Dictionary<int, Dictionary<int, int>> StickyLocksByShip =
+            new Dictionary<int, Dictionary<int, int>>(32);
         static readonly List<GemTractorBeamAssignment.Candidate> CandidateScratch =
             new List<GemTractorBeamAssignment.Candidate>(64);
         static readonly List<GemTractorBeamAssignment.Candidate> FilteredScratch =
             new List<GemTractorBeamAssignment.Candidate>(64);
         static readonly List<GemTractorBeamAssignment.Pair> PairScratch =
             new List<GemTractorBeamAssignment.Pair>(16);
-        static readonly Dictionary<int, float> NearestDistScratch = new Dictionary<int, float>(32);
+        static readonly Dictionary<int, int> GemBeamCountScratch = new Dictionary<int, int>(32);
         static readonly List<Entity> ProxyEntityScratch = new List<Entity>(256);
         static readonly List<GemProxySnapshot> GemProxyScratch = new List<GemProxySnapshot>(64);
 
@@ -55,8 +60,10 @@ namespace TitanOrbit.Game
                 return;
             _cacheFrame = Time.frameCount;
 
-            WingByShipAndGem.Clear();
+            PrimaryWingByShipAndGem.Clear();
+            PairsByShip.Clear();
             AssignedGemsByShip.Clear();
+            // StickyLocksByShip intentionally persists across frames (unlocked only when out of range).
 
             // [TITAN-ORBIT] Skip while Settling OR GhostSpawnBacklog.
             // TransformQuarantine stays ON all session on Windows and must NOT suppress beams
@@ -90,10 +97,15 @@ namespace TitanOrbit.Game
             if (GemProxyScratch.Count == 0)
                 return;
 
+            var liveShipIndices = new HashSet<int>(ships.Length);
             for (int si = 0; si < ships.Length; si++)
             {
+                liveShipIndices.Add(ships[si].Index);
                 if (!IsShipEligibleForBeam(shipStates[si]))
+                {
+                    StickyLocksByShip.Remove(ships[si].Index);
                     continue;
+                }
 
                 var wings = em.HasBuffer<ShipWingTractorBeamElement>(ships[si])
                     ? em.GetBuffer<ShipWingTractorBeamElement>(ships[si])
@@ -108,6 +120,20 @@ namespace TitanOrbit.Game
                     GemProxyScratch,
                     mapW,
                     mapH);
+            }
+
+            // Drop sticky state for ships that left the world (entity index reuse safety).
+            if (StickyLocksByShip.Count > liveShipIndices.Count)
+            {
+                var stale = new List<int>(4);
+                foreach (var kv in StickyLocksByShip)
+                {
+                    if (!liveShipIndices.Contains(kv.Key))
+                        stale.Add(kv.Key);
+                }
+
+                for (int i = 0; i < stale.Count; i++)
+                    StickyLocksByShip.Remove(stale[i]);
             }
         }
 
@@ -213,6 +239,7 @@ namespace TitanOrbit.Game
             else
             {
                 // --- No wings: single hull-center beam (legacy fallback) ---
+                StickyLocksByShip.Remove(shipIndex);
                 GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out float searchRadius, out _);
                 float3 origin = shipTransform.Position;
                 int closestGemIndex = -1;
@@ -234,13 +261,17 @@ namespace TitanOrbit.Game
 
                 if (closestGemIndex >= 0)
                 {
-                    if (!WingByShipAndGem.TryGetValue(shipIndex, out var gemToWing))
+                    var pair = new GemTractorBeamAssignment.Pair
                     {
-                        gemToWing = new Dictionary<int, int>(4);
-                        WingByShipAndGem[shipIndex] = gemToWing;
-                    }
-
-                    gemToWing[closestGemIndex] = 0;
+                        WingIndex = 0,
+                        GemId = closestGemIndex,
+                        IsPrimary = true,
+                    };
+                    PairsByShip[shipIndex] = new List<GemTractorBeamAssignment.Pair>(1) { pair };
+                    PrimaryWingByShipAndGem[shipIndex] = new Dictionary<int, int>(1)
+                    {
+                        [closestGemIndex] = 0,
+                    };
                     AssignedGemsByShip[shipIndex] = new HashSet<int> { closestGemIndex };
                 }
 
@@ -248,30 +279,43 @@ namespace TitanOrbit.Game
             }
 
             if (CandidateScratch.Count == 0)
+            {
+                StickyLocksByShip.Remove(shipIndex);
                 return;
+            }
 
-            // --- Same exclusive matching as server GemTractorBeamSystem ---
-            int wingCount = wings.Length;
-            GemTractorBeamAssignment.AssignOneGemPerWing(
+            if (!StickyLocksByShip.TryGetValue(shipIndex, out var stickyLocks))
+            {
+                stickyLocks = new Dictionary<int, int>(wings.Length);
+                StickyLocksByShip[shipIndex] = stickyLocks;
+            }
+
+            // --- Same sticky / primary / assist matching as server ---
+            GemTractorBeamAssignment.AssignWings(
                 CandidateScratch,
-                wingCount,
+                wings.Length,
+                stickyLocks,
                 PairScratch,
-                NearestDistScratch,
-                FilteredScratch);
+                FilteredScratch,
+                GemBeamCountScratch);
 
             if (PairScratch.Count == 0)
                 return;
 
-            var gemToWingMap = new Dictionary<int, int>(PairScratch.Count);
+            var pairs = new List<GemTractorBeamAssignment.Pair>(PairScratch.Count);
+            var primaryMap = new Dictionary<int, int>(PairScratch.Count);
             var assignedGemIds = new HashSet<int>(PairScratch.Count);
             for (int i = 0; i < PairScratch.Count; i++)
             {
                 var pair = PairScratch[i];
-                gemToWingMap[pair.GemId] = pair.WingIndex;
+                pairs.Add(pair);
                 assignedGemIds.Add(pair.GemId);
+                if (pair.IsPrimary || !primaryMap.ContainsKey(pair.GemId))
+                    primaryMap[pair.GemId] = pair.WingIndex;
             }
 
-            WingByShipAndGem[shipIndex] = gemToWingMap;
+            PairsByShip[shipIndex] = pairs;
+            PrimaryWingByShipAndGem[shipIndex] = primaryMap;
             AssignedGemsByShip[shipIndex] = assignedGemIds;
         }
 
@@ -295,16 +339,36 @@ namespace TitanOrbit.Game
             if (!CanShipMagneticallyPull(shipEntity.Index, gemEntity.Index))
                 return false;
 
-            if (!WingByShipAndGem.TryGetValue(shipEntity.Index, out var gemToWing) ||
-                !gemToWing.TryGetValue(gemEntity.Index, out int wingIndex))
-                return false;
-
             int shipLevel = math.max(1, shipState.ShipLevel);
             bool inOrbit = TryGetInOrbit(em, shipEntity);
 
-            if (wings.IsCreated && wingIndex >= 0 && wingIndex < wings.Length)
+            // Any locked wing (primary or assist) still in its own radius keeps the gem active.
+            if (PairsByShip.TryGetValue(shipEntity.Index, out var pairs) && pairs != null && wings.IsCreated)
             {
-                var wing = wings[wingIndex];
+                for (int i = 0; i < pairs.Count; i++)
+                {
+                    if (pairs[i].GemId != gemEntity.Index)
+                        continue;
+                    int wingIndex = pairs[i].WingIndex;
+                    if (wingIndex < 0 || wingIndex >= wings.Length)
+                        continue;
+                    var wing = wings[wingIndex];
+                    ShipWingTractorBeamPose.GetTractorParams(wing, shipLevel, inOrbit, out float searchRadius, out _);
+                    float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wing);
+                    if (GemTractorBeamMath.IsWithinReach(gemTransform.Position, wingPos, searchRadius, mapW, mapH))
+                        return true;
+                }
+
+                return false;
+            }
+
+            if (!PrimaryWingByShipAndGem.TryGetValue(shipEntity.Index, out var gemToWing) ||
+                !gemToWing.TryGetValue(gemEntity.Index, out int primaryWing))
+                return false;
+
+            if (wings.IsCreated && primaryWing >= 0 && primaryWing < wings.Length)
+            {
+                var wing = wings[primaryWing];
                 ShipWingTractorBeamPose.GetTractorParams(wing, shipLevel, inOrbit, out float searchRadius, out _);
                 float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wing);
                 return GemTractorBeamMath.IsWithinReach(gemTransform.Position, wingPos, searchRadius, mapW, mapH);
@@ -389,25 +453,42 @@ namespace TitanOrbit.Game
             DynamicBuffer<ShipWingTractorBeamElement> wings,
             Entity gemEntity)
         {
-            if (TryGetAssignedWingIndex(shipEntity.Index, gemEntity.Index, out int wingIndex) &&
-                wings.IsCreated && wingIndex >= 0 && wingIndex < wings.Length)
-            {
-                return ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wingIndex]);
-            }
+            if (TryGetAssignedWingIndex(shipEntity.Index, gemEntity.Index, out int wingIndex))
+                return ResolveBeamOriginForWing(shipTransform, wings, wingIndex);
 
             return shipTransform.Position;
         }
 
+        /// <summary>Logical world origin for a specific wing buffer index (primary or assist).</summary>
+        public static float3 ResolveBeamOriginForWing(
+            in LocalTransform shipTransform,
+            DynamicBuffer<ShipWingTractorBeamElement> wings,
+            int wingIndex)
+        {
+            if (wings.IsCreated && wingIndex >= 0 && wingIndex < wings.Length)
+                return ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wingIndex]);
+            return shipTransform.Position;
+        }
+
         /// <summary>
-        /// Returns the wing buffer index assigned to this ship→gem pair after
-        /// <see cref="RebuildAssignmentCache"/> (used by beam VFX to pick the live wing tip).
+        /// Returns the <b>primary</b> wing for this ship→gem after
+        /// <see cref="RebuildAssignmentCache"/> (ghost TractorWingIndex / single-tip helpers).
         /// </summary>
         public static bool TryGetAssignedWingIndex(int shipIndex, int gemIndex, out int wingIndex)
         {
             RebuildAssignmentCache();
             wingIndex = -1;
-            return WingByShipAndGem.TryGetValue(shipIndex, out var gemToWing) &&
+            return PrimaryWingByShipAndGem.TryGetValue(shipIndex, out var gemToWing) &&
                    gemToWing.TryGetValue(gemIndex, out wingIndex);
+        }
+
+        /// <summary>
+        /// All wing↔gem pairs for a ship this frame (primary + spare assists) for multi-beam draw.
+        /// </summary>
+        public static bool TryGetShipBeamPairs(int shipIndex, out List<GemTractorBeamAssignment.Pair> pairs)
+        {
+            RebuildAssignmentCache();
+            return PairsByShip.TryGetValue(shipIndex, out pairs) && pairs != null && pairs.Count > 0;
         }
 
         /// <summary>
@@ -481,12 +562,56 @@ namespace TitanOrbit.Game
 
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
+            // --- Stack assist wings when local assignment matches this ghost lock ---
+            // Server sums spare-beam forces; client mirrors that so GO motion does not under-pull.
+            float3 velocity = float3.zero;
+            int shipIndex = shipEntity.Index;
+            RebuildAssignmentCache();
+            if (PairsByShip.TryGetValue(shipIndex, out var pairs) && pairs != null)
+            {
+                bool any = false;
+                for (int i = 0; i < pairs.Count; i++)
+                {
+                    if (pairs[i].GemId != gemEntity.Index)
+                        continue;
+
+                    int wi = pairs[i].WingIndex;
+                    float attract;
+                    float3 target;
+                    if (wings.IsCreated && wi >= 0 && wi < wings.Length)
+                    {
+                        ShipWingTractorBeamPose.GetTractorParams(
+                            wings[wi], shipLevel, inOrbit, out _, out attract);
+                        target = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wi]);
+                    }
+                    else
+                    {
+                        attract = wingAttraction;
+                        target = pullTarget;
+                    }
+
+                    float speed = GemTractorBeamMath.ResolvePullSpeedFromWing(attract, gemValue, gemSize);
+                    float3 toWing = GemTractorBeamMath.ToroidalDirection(gemLogicalPos, target, mapW, mapH);
+                    if (math.lengthsq(toWing) < 0.0001f)
+                        continue;
+                    velocity += toWing * speed;
+                    any = true;
+                }
+
+                if (any)
+                {
+                    pullVelocity = velocity;
+                    return math.lengthsq(pullVelocity) > 0.0001f;
+                }
+            }
+
+            // --- Fallback: ghost primary wing only ---
             float pullSpeed = GemTractorBeamMath.ResolvePullSpeedFromWing(wingAttraction, gemValue, gemSize);
-            float3 toWing = GemTractorBeamMath.ToroidalDirection(gemLogicalPos, pullTarget, mapW, mapH);
-            if (math.lengthsq(toWing) < 0.0001f)
+            float3 toPrimary = GemTractorBeamMath.ToroidalDirection(gemLogicalPos, pullTarget, mapW, mapH);
+            if (math.lengthsq(toPrimary) < 0.0001f)
                 return false;
 
-            pullVelocity = toWing * pullSpeed;
+            pullVelocity = toPrimary * pullSpeed;
             return true;
         }
 
@@ -589,8 +714,10 @@ namespace TitanOrbit.Game
         public static void Clear()
         {
             // --- Clear state ---
-            WingByShipAndGem.Clear();
+            PrimaryWingByShipAndGem.Clear();
+            PairsByShip.Clear();
             AssignedGemsByShip.Clear();
+            StickyLocksByShip.Clear();
             GemProxyScratch.Clear();
             ProxyEntityScratch.Clear();
             _cacheFrame = -1;
