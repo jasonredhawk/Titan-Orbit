@@ -82,6 +82,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>Computes scale factors from upgrade state and applies to all component groups.</summary>
+        /// <param name="territoryMovementMult">
+        /// Friendly-triangle speed multiplier (usually 1). Scales engine/thruster meshes the same way
+        /// a MovementSpeed attribute upgrade would — visual feedback that territory boost is active.
+        /// </param>
         public static void Apply(
             in ShipAttributeUpgradeState attrs,
             ScaleGroup cockpit,
@@ -90,7 +94,8 @@ namespace TitanOrbit.Game
             ScaleGroup engine,
             ScaleGroup thruster,
             ScaleGroup part,
-            bool hasWeaponComponentEnergy)
+            bool hasWeaponComponentEnergy,
+            float territoryMovementMult = 1f)
         {
             ComputeScaleFactors(
                 attrs,
@@ -102,6 +107,12 @@ namespace TitanOrbit.Game
                 out float engineScale,
                 out float thrusterScale,
                 out float partScale);
+
+            // --- Territory speed feedback (engine + thruster only) ---
+            // [TITAN-ORBIT] Match NGO feel: faster in friendly triangles → bigger propulsion meshes.
+            float tMult = Mathf.Max(1f, territoryMovementMult);
+            engineScale = Mathf.Min(engineScale * tMult, 2f);
+            thrusterScale = Mathf.Min(thrusterScale * tMult, 2.5f);
 
             ApplyGroup(cockpit, cockpitScale);
             ApplyGroup(wing, wingScale);

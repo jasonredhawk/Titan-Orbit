@@ -1,7 +1,10 @@
+using TitanOrbit.Core;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
@@ -12,8 +15,8 @@ namespace TitanOrbit.ECS
     /// Input is already on the ghost from <see cref="ShipInputApplySystem"/> in GhostInputSystemGroup.
     /// Under session-long <see cref="ClientJoinSettleCache.TransformQuarantine"/> planet snapshots
     /// come from <see cref="PlanetMotorSnapshotCollection.CollectFromClientRegistry"/> (Instantiates
-    /// registry — no ToEntityArray Crash!!!). Empty Collect was wrong: server still applied orbit
-    /// while client coasted → reconcile stepped the hull in the ring. Thrust/turn always predict.
+    /// registry — no ToEntityArray Crash!!!). Territory triangles come from
+    /// <see cref="PlanetConnectionGraphCache"/> rebuilt by <see cref="PlanetConnectionGraphClientSystem"/>.
     /// Server <see cref="ShipPhysicsDriveSystem"/> keeps full archetype Collect.
     /// </summary>
     // OrderFirst + after MassSync: runs before default-slot PhysicsSystemGroup without UpdateBefore
@@ -30,7 +33,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Collects shared orbit context, then schedules the Burst drive job for predicted local ships.
+        /// Collects shared orbit/territory context, then schedules the Burst drive job for predicted local ships.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -58,7 +61,7 @@ namespace TitanOrbit.ECS
                     ? PlanetMotorSnapshotCollection.CollectFromClientRegistry(ref state, Allocator.TempJob)
                     : PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
 
-            // --- Moon orbit clock for predicted shield repel ---
+            // --- Moon orbit clock for predicted shield repel + territory moon vertices ---
             // [TITAN-ORBIT] Must match server / collider sync — World.ElapsedTime diverges on late-join.
             int hz = 0;
             if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
@@ -67,6 +70,40 @@ namespace TitanOrbit.ECS
                 ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
                 : SystemAPI.Time.ElapsedTime;
 
+            // --- Territory triangles (Persistent native — do not Dispose) ---
+            // [TITAN-ORBIT] Dual cache: client publish never overwrites server TerritoryTeam inputs.
+            var territory = PlanetConnectionGraphCache.GetRuntimeTrianglesNative(
+                PlanetConnectionGraphSide.Client,
+                planets.AsArray(),
+                moonElapsed);
+            var homeLevels = new NativeArray<int>(6, Allocator.TempJob);
+            PlanetConnectionGraphCache.CopyHomeLevels(PlanetConnectionGraphSide.Client, ref homeLevels);
+
+            // --- Presentation thruster mult: first predicting tick only + sticky hold ---
+            // [NETCODE] Rollback/resim re-runs this system; writing LocalOwnerTerritoryMult every
+            // resim tick made engine/thruster meshes blink while inside a triangle.
+            bool publishPresentationMult = !SystemAPI.TryGetSingleton<NetworkTime>(out var nt) ||
+                                           nt.IsFirstTimeFullyPredictingTick;
+            if (publishPresentationMult)
+            {
+                float localMult = 1f;
+                foreach (var (lt, ship) in SystemAPI
+                             .Query<RefRO<LocalTransform>, RefRO<ShipState>>()
+                             .WithAll<ShipTag, GhostOwnerIsLocal, Simulate>())
+                {
+                    localMult = PlanetConnectionGraphLogic.FriendlyTerritoryMovementMultiplier(
+                        lt.ValueRO.Position,
+                        ship.ValueRO.Team,
+                        territory,
+                        homeLevels,
+                        mapW,
+                        mapH);
+                    break;
+                }
+
+                PlanetConnectionGraphCache.UpdateLocalOwnerTerritoryMult(localMult, moonElapsed);
+            }
+
             var job = new ShipPhysicsDriveJob
             {
                 Dt = SystemAPI.Time.DeltaTime,
@@ -74,9 +111,13 @@ namespace TitanOrbit.ECS
                 MapW = mapW,
                 MapH = mapH,
                 Planets = planets.AsArray(),
+                TerritoryTriangles = territory,
+                HomeLevelByTeam = homeLevels,
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);
+            // territory is Persistent cache — never Dispose here.
+            state.Dependency = homeLevels.Dispose(state.Dependency);
         }
 
         /// <summary>

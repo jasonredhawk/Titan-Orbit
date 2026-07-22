@@ -112,6 +112,12 @@ namespace TitanOrbit.Game
         /// <summary>Planet visual identity — rebuild when home/team/level/id changes.</summary>
         readonly Dictionary<Entity, PlanetVisualKey> _proxyPlanetVisuals = new Dictionary<Entity, PlanetVisualKey>();
 
+        /// <summary>
+        /// Last applied <see cref="AsteroidState.TerritoryTeam"/> per asteroid proxy — skip
+        /// GetComponent/tint work every SyncAllProxies when unchanged.
+        /// </summary>
+        readonly Dictionary<Entity, TeamId> _proxyAsteroidTerritory = new Dictionary<Entity, TeamId>();
+
         /// <summary>Cached local ship entity for dedicated-client weapon VFX (avoids per-frame query).</summary>
         Entity _cachedDedicatedLocalShipEntity;
         /// <summary>Cached local ship entity for transform sync and camera pose feed.</summary>
@@ -269,6 +275,10 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Minimap walks this instance's proxy dictionary instead of ECS gathers.
             Active = this;
             Application.onBeforeRender += OnBeforeRenderSync;
+
+            // --- Territory triangle world drawer (Shapes) ---
+            // [HYBRID] Reads PlanetConnectionGraphCache — no map-body ECS gathers.
+            PlanetConnectionShapesVisual.EnsureExists();
         }
 
         /// <summary>[UNITY] Unsubscribe to avoid leaks when the visualizer is destroyed.</summary>
@@ -627,7 +637,31 @@ namespace TitanOrbit.Game
                 // proxy only (no planet ToEntityArray / map gather).
                 if (kind == ProxyVisualKind.Planet)
                     RefreshPlanetProxyAppearanceIfChanged(em, entity, go, scale);
+
+                // --- Asteroid territory tint (triangle ownership) ---
+                // [TITAN-ORBIT] Ghosted TerritoryTeam → SgtPlanet _Color lerp. Walk known proxies only.
+                if (kind == ProxyVisualKind.Asteroid)
+                    RefreshAsteroidTerritoryTintIfChanged(em, entity, go);
             }
+        }
+
+        /// <summary>
+        /// Applies team territory highlight when ghosted <see cref="AsteroidState.TerritoryTeam"/> changes.
+        /// Per known proxy entity only — no asteroid archetype gather.
+        /// </summary>
+        void RefreshAsteroidTerritoryTintIfChanged(EntityManager em, Entity entity, GameObject go)
+        {
+            if (go == null || !em.Exists(entity) || !em.HasComponent<AsteroidState>(entity))
+                return;
+
+            var state = em.GetComponentData<AsteroidState>(entity);
+            // --- Skip before GetComponentInChildren / material writes ---
+            // [TITAN-ORBIT] TerritoryTeam changes ~1 Hz; SyncAllProxies is every frame.
+            if (_proxyAsteroidTerritory.TryGetValue(entity, out var applied) && applied == state.TerritoryTeam)
+                return;
+
+            WorldBodyVisualApplier.ApplyAsteroidTerritoryTint(go, state.TerritoryTeam);
+            _proxyAsteroidTerritory[entity] = state.TerritoryTeam;
         }
 
         /// <summary>
@@ -736,7 +770,7 @@ namespace TitanOrbit.Game
         /// Instantiates GameObject proxies for entities tagged with baked
         /// <see cref="MapBodyHybridVisualPending"/> or runtime
         /// <see cref="MapBodyHybridVisualSpawnRequest"/>.
-        /// Chunk iteration + per-frame budget — never gathers every asteroid.
+        /// Per-frame budget — never gathers every asteroid (only the Pending/SpawnRequest queue).
         /// Runs during Settling (smaller budget) so the loading bar covers GO Instantiates cost.
         /// </summary>
         /// <returns>Number of new proxies created this call.</returns>
@@ -761,31 +795,28 @@ namespace TitanOrbit.Game
             // --- Collect up to this frame's budget, then mutate ---
             // [TITAN-ORBIT] Prefer GemTag first so destroy/mining pickups appear before leftover
             // asteroid proxies fill the same budget (Instantiates stays 1/frame — unchanged).
+            //
+            // Player.log 2026-07-22: EntityManager.GetEntityTypeHandle() + ToArchetypeChunkArray
+            // → ArchetypeChunk.GetNativeArray NRE every LateUpdate (~2500×) → zero proxy climb →
+            // loading bar stuck (meta N latched, proxies never rise). Same stale-handle class as
+            // the forbidden ISystem mark path — do NOT chunk-walk with EntityTypeHandle here.
+            // ToEntityArray on this Pending/SpawnRequest queue only is join-safe (not all asteroids).
             int frameBudget = GetWorldBodyProxyBudgetThisFrame();
-            var entityTypeHandle = em.GetEntityTypeHandle();
-            using var chunks = query.ToArchetypeChunkArray(Unity.Collections.Allocator.Temp);
+            using var entities = query.ToEntityArray(Unity.Collections.Allocator.Temp);
             var batch = new List<Entity>(frameBudget);
 
             // Pass 1: gems only
-            for (int c = 0; c < chunks.Length && batch.Count < frameBudget; c++)
+            for (int i = 0; i < entities.Length && batch.Count < frameBudget; i++)
             {
-                var entities = chunks[c].GetNativeArray(entityTypeHandle);
-                for (int i = 0; i < entities.Length && batch.Count < frameBudget; i++)
-                {
-                    if (em.HasComponent<GemTag>(entities[i]))
-                        batch.Add(entities[i]);
-                }
+                if (em.HasComponent<GemTag>(entities[i]))
+                    batch.Add(entities[i]);
             }
 
             // Pass 2: remaining world bodies
-            for (int c = 0; c < chunks.Length && batch.Count < frameBudget; c++)
+            for (int i = 0; i < entities.Length && batch.Count < frameBudget; i++)
             {
-                var entities = chunks[c].GetNativeArray(entityTypeHandle);
-                for (int i = 0; i < entities.Length && batch.Count < frameBudget; i++)
-                {
-                    if (!em.HasComponent<GemTag>(entities[i]))
-                        batch.Add(entities[i]);
-                }
+                if (!em.HasComponent<GemTag>(entities[i]))
+                    batch.Add(entities[i]);
             }
 
             int created = 0;
@@ -911,7 +942,8 @@ namespace TitanOrbit.Game
                 // --- Network gem proxy from ghost only ---
                 // [TITAN-ORBIT] No local burst / handoff. Count and motion come from Instantiates
                 // gem ghosts + GemClientMotionApplier (interpolated LocalTransform / GemKinematics).
-                if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, state.Value, out go))
+                if (!GemVisualApplier.TryCreateGemVisual(
+                        gemVisualPrefab, state.Value, state.IsBonusGem, out go))
                 {
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "GemTagProxy";
@@ -919,7 +951,8 @@ namespace TitanOrbit.Game
                     if (col != null) Destroy(col);
                     var renderer = go.GetComponent<Renderer>();
                     if (renderer != null)
-                        renderer.material = WorldBodyVisualApplier.CreateLitMaterial(Color.yellow);
+                        renderer.material = WorldBodyVisualApplier.CreateLitMaterial(
+                            state.IsBonusGem ? new Color(1f, 0.9f, 0.15f) : Color.red);
                 }
                 else
                 {
@@ -1688,6 +1721,7 @@ namespace TitanOrbit.Game
                 _proxyChassisIds.Remove(entity);
                 _proxyTeams.Remove(entity);
                 _proxyPlanetVisuals.Remove(entity);
+                _proxyAsteroidTerritory.Remove(entity);
                 _bulletStretchVisuals.Remove(entity);
             }
         }
@@ -2045,7 +2079,8 @@ namespace TitanOrbit.Game
 
                 // DrawGems catch-up — same pool Rent as urgent Instantiates path.
                 GemVisualPool.EnsurePrefab(gemVisualPrefab);
-                if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, state.Value, out go))
+                if (!GemVisualApplier.TryCreateGemVisual(
+                        gemVisualPrefab, state.Value, state.IsBonusGem, out go))
                 {
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "GemTagProxy";
@@ -2053,7 +2088,8 @@ namespace TitanOrbit.Game
                     if (col != null) Destroy(col);
                     var renderer = go.GetComponent<Renderer>();
                     if (renderer != null)
-                        renderer.material = WorldBodyVisualApplier.CreateLitMaterial(Color.yellow);
+                        renderer.material = WorldBodyVisualApplier.CreateLitMaterial(
+                            state.IsBonusGem ? new Color(1f, 0.9f, 0.15f) : Color.red);
                 }
 
                 _proxies[entity] = go;
@@ -2173,6 +2209,7 @@ namespace TitanOrbit.Game
             _proxyChassisIds.Clear();
             _proxyTeams.Clear();
             _proxyPlanetVisuals.Clear();
+            _proxyAsteroidTerritory.Clear();
         }
     }
 }

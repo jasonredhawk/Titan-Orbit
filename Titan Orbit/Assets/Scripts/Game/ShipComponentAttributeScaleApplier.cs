@@ -1,20 +1,29 @@
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using Unity.Entities;
+using Unity.Mathematics;
+using Unity.NetCode;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-side component mesh scaling on ship proxies when bottom-bar attribute upgrades change.
-    /// Watches ShipAttributeUpgradeState on the linked ship entity and applies scale factors via
-    /// ShipComponentAttributeScaleLogic. Attached by EcsWorldVisualizer; <b>cosmetic only</b> —
-    /// does not change firePower, fireRate, or any sim stats (those use authored prefab scale +
-    /// numeric attribute multipliers in <c>ShipWeaponMountCombatLogic</c> / ShipStatApplyLogic).
+    /// Client-side component mesh scaling on ship proxies when bottom-bar attribute upgrades change,
+    /// and when the ship is inside a friendly territory triangle (engine/thruster grow like a speed
+    /// upgrade — NGO feel). Watches ShipAttributeUpgradeState + territory multiplier on the linked
+    /// ship entity. Attached by EcsWorldVisualizer; <b>cosmetic only</b>.
+    /// <para>
+    /// Territory mult is <see cref="PlanetConnectionGraphCache.LocalOwnerTerritoryMult"/> — sticky and
+    /// written only on first-time predicting ticks so NetCode resim / triangle-edge noise cannot
+    /// blink engine scale every frame.
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(95)]
     public class ShipComponentAttributeScaleApplier : MonoBehaviour
     {
+        /// <summary>Ignore tiny float noise; only re-apply on clear boosted↔normal transitions.</summary>
+        const float TerritoryMultApplyEpsilon = 0.02f;
+
         Entity _shipEntity;
         string _familyPrefix = "AstroEagle";
         bool _hasWeaponComponentEnergy;
@@ -28,23 +37,23 @@ namespace TitanOrbit.Game
         ShipComponentAttributeScaleLogic.ScaleGroup _part;
 
         ShipAttributeUpgradeState _lastApplied;
+        float _lastTerritoryMult = -1f;
 
         /// <summary>Links to ship entity, caches chassis transform groups, applies initial scale.</summary>
         public void Bind(Entity shipEntity, string familyPrefix, ShipFamilyDefinition family)
         {
-            // --- Bind ---
             _shipEntity = shipEntity;
             if (!string.IsNullOrWhiteSpace(familyPrefix))
                 _familyPrefix = familyPrefix.Trim();
             _hasWeaponComponentEnergy = ShipComponentAttributeScaleLogic.FamilyHasWeaponComponentEnergy(family);
             _lastApplied = default;
+            _lastTerritoryMult = -1f;
             RebuildCache();
         }
 
         /// <summary>Scans hull hierarchy for component transforms and stores base scales/positions.</summary>
         void RebuildCache()
         {
-            // --- Rebuild cache ---
             var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix);
 
             _cockpit = ShipComponentAttributeScaleLogic.BuildGroup(stats.cockpitTransforms);
@@ -72,9 +81,12 @@ namespace TitanOrbit.Game
             TryApplyAttributeScale(force: true);
         }
 
+        /// <summary>
+        /// Applies mesh scale when upgrades or the cached territory mult change.
+        /// Remotes use 1× territory (only the local owner cache is meaningful for thruster grow).
+        /// </summary>
         void TryApplyAttributeScale(bool force = false)
         {
-            // --- Attempt resolution ---
             if (!_initialized || _shipEntity == Entity.Null)
                 return;
 
@@ -97,11 +109,21 @@ namespace TitanOrbit.Game
                 return;
 
             var attrs = em.GetComponentData<ShipAttributeUpgradeState>(_shipEntity);
-            // [STANDARD] Skip work when ghost state unchanged since last frame.
-            if (!force && attrs.Equals(_lastApplied))
+
+            // --- Territory thruster grow (sticky cache from predicted drive) ---
+            float territoryMult = 1f;
+            if (em.HasComponent<GhostOwnerIsLocal>(_shipEntity) &&
+                em.IsComponentEnabled<GhostOwnerIsLocal>(_shipEntity))
+                territoryMult = PlanetConnectionGraphCache.LocalOwnerTerritoryMult;
+
+            // Skip when neither upgrades nor a meaningful territory step changed.
+            bool attrsSame = attrs.Equals(_lastApplied);
+            bool territorySame = math.abs(territoryMult - _lastTerritoryMult) < TerritoryMultApplyEpsilon;
+            if (!force && attrsSame && territorySame)
                 return;
 
             _lastApplied = attrs;
+            _lastTerritoryMult = territoryMult;
             ShipComponentAttributeScaleLogic.Apply(
                 attrs,
                 _cockpit,
@@ -110,7 +132,8 @@ namespace TitanOrbit.Game
                 _engine,
                 _thruster,
                 _part,
-                _hasWeaponComponentEnergy);
+                _hasWeaponComponentEnergy,
+                territoryMult);
         }
 
         void LateUpdate() => TryApplyAttributeScale();

@@ -28,8 +28,9 @@ if (ClientJoinSettleCache.ShouldSkipMapBodyQueries) return;
 2. Gate ship presentation on **`Settling` alone** — need `GhostSpawnBacklog` / `ShouldSkipShipEntityQueries`.
 3. Re-enable `TransformSystemGroup` after late-join.
 4. Add a new client `foreach` / `ToEntityArray` / `WithEntityAccess` over ships or map bodies **without** the helper above.
-5. “Editor works so Windows is fine” — verify Windows Relay Player.log only.
-6. Treat removing these checks as cleanup/refactor — it is a **regression bug**.
+5. `EntityManager.GetEntityTypeHandle()` + chunk walk in visualizer/systems — stale handle NRE kills Pending drain → bar stuck (Player.log 2026-07-22). Use `ToEntityArray` on Pending/SpawnRequest only.
+6. “Editor works so Windows is fine” — verify Windows Relay Player.log only.
+7. Treat removing these checks as cleanup/refactor — it is a **regression bug**.
 
 ## Pre-edit checklist (any client system / hybrid bridge)
 

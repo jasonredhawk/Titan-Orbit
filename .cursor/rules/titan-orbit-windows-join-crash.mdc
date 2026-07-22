@@ -193,7 +193,7 @@ Before finishing:
 | “Mark map visuals while Settling / scan asteroids to queue” | MarkChunkBudget Crash!!! (2026-07-18 16:53 / 21:18). Budgeted **drain** during Settling is required |
 | Re-enable MapBodyHybridVisualRequestSystem WithEntityAccess over asteroids | Still Crash!!! 2026-07-18 17:06 — keep system **disabled** |
 | Visualizer MarkSpawnRequestQuery over unqueued asteroids | EntityTypeHandle Crash!!! 2026-07-18 21:18 |
-| `EntityManager.GetEntityTypeHandle()` + chunk walk in ISystem | Stale handle NRE — do not mark map bodies this way |
+| `EntityManager.GetEntityTypeHandle()` + chunk walk in ISystem / visualizer | Stale handle NRE — do not mark map bodies this way; Pending drain must use `ToEntityArray` on Pending/SpawnRequest only (2026-07-22 bar stuck) |
 | “Count asteroids for progress — more accurate” | Gather Crash!!!; use `MapLoadingProxyCount` / meta N |
 | “Two loading bars to reduce overload” | UI ≠ safety; quarantine is safety |
 | “Minimap needs anchors now that Settling ended” | Full SyncAsteroids gather Crash!!! |

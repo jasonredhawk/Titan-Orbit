@@ -1,9 +1,11 @@
+using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
 using Unity.Physics;
 using Unity.Transforms;
+using RuntimeTriangle = TitanOrbit.Simulation.PlanetConnectionGraphLogic.RuntimeTriangle;
 
 namespace TitanOrbit.ECS
 {
@@ -11,8 +13,8 @@ namespace TitanOrbit.ECS
     /// Burst parallel job — applies shared <see cref="ShipPhysicsDriveLogic"/> for each predicted
     /// ship before the Unity Physics solver. [NETCODE] <see cref="Simulate"/> limits client work to
     /// owner-predicted ghosts; server runs all simulated ships.
-    /// Planet snapshots + map size are collected once on the main thread so every ship shares
-    /// the same toroidal orbit / shield inputs this tick.
+    /// Planet snapshots + map size + territory triangles are collected once on the main thread so
+    /// every ship shares the same toroidal orbit / shield / territory inputs this tick.
     /// </summary>
     [BurstCompile]
     [WithAll(typeof(ShipTag), typeof(Simulate))]
@@ -32,6 +34,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>Read-only planet snapshots collected before ScheduleParallel.</summary>
         [ReadOnly] public NativeArray<PlanetMotorSnapshot> Planets;
+
+        /// <summary>Live moon-vertex territory triangles (may be empty).</summary>
+        [ReadOnly] public NativeArray<RuntimeTriangle> TerritoryTriangles;
+
+        /// <summary>Home planet level per TeamId byte index (length ≥ 6).</summary>
+        [ReadOnly] public NativeArray<int> HomeLevelByTeam;
 
         /// <summary>
         /// Per-ship motor tick. Writes velocity, yaw, and <see cref="ShipOrbitState"/>.
@@ -60,7 +68,9 @@ namespace TitanOrbit.ECS
                 Dt,
                 MapW,
                 MapH,
-                Elapsed);
+                Elapsed,
+                in TerritoryTriangles,
+                in HomeLevelByTeam);
         }
     }
 }

@@ -182,6 +182,7 @@ namespace TitanOrbit.ECS
                 $"[MapGeneration] Using settings from {DescribeConfigSource()}. " +
                 $"Map {_config.MinMapSize:F0}-{_config.MaxMapSize:F0}, teams {_config.MinTeamsPerMatch}-{_config.MaxTeamsPerMatch}, " +
                 $"neutrals {_config.MinNeutralPlanets}-{_config.MaxNeutralPlanets}, " +
+                $"startingOwnedNeutralsPerTeam {_config.StartingOwnedNeutralPlanetsPerTeam}, " +
                 $"asteroids {_config.AsteroidsAtMinMapSize}-{_config.AsteroidsAtMaxMapSize}.");
 
             uint fallbackSeed = MapGenerationLogic.ComputeEphemeralSeed();
@@ -237,6 +238,17 @@ namespace TitanOrbit.ECS
             }
 
             MapGenerationLogic.BuildNeutralPlanets(_config, _rolled, ref _rng, planetPlacements, neutralLayouts);
+
+            // --- Optional: pre-own some neutrals so capture testing does not require transports ---
+            // [TITAN-ORBIT] Even spread when neutrals < desired×teams (see AssignStartingOwnedNeutralTeams).
+            var startingOwnership = new NativeArray<TeamId>(neutralLayouts.Length, Allocator.Temp);
+            MapGenerationLogic.AssignStartingOwnedNeutralTeams(
+                _config.StartingOwnedNeutralPlanetsPerTeam,
+                _rolled.TeamCount,
+                neutralLayouts.Length,
+                ref _rng,
+                startingOwnership);
+
             for (int i = 0; i < neutralLayouts.Length; i++)
             {
                 var neutral = neutralLayouts[i];
@@ -246,9 +258,12 @@ namespace TitanOrbit.ECS
                     Position = neutral.Position,
                     Scale = new float3(neutral.Scale),
                     Level = neutral.Level,
+                    Team = startingOwnership[i],
                     ShipFamilyConfigIndex = (byte)(1 + _rng.NextInt(0, PlanetShipFamilyAssignment.NonHomeFamilySlotCount)),
                 });
             }
+
+            startingOwnership.Dispose();
 
             MapGenerationLogic.BuildAsteroids(_config, _rolled, ref _rng, planetPlacements, asteroidLayouts);
             for (int i = 0; i < asteroidLayouts.Length; i++)
@@ -309,13 +324,16 @@ namespace TitanOrbit.ECS
                         ref _nextNeutralPlanetId, 0);
                     break;
                 case SpawnKind.NeutralPlanet:
+                    // Pending.Team may be a starting owner (test assist) or TeamId.None (true neutral).
                     _layoutEntries.Add(new MapLayoutEntryElement
                     {
                         EntityKind = 2,
                         Position = pending.Position,
                         Scale = pending.Scale.x,
+                        Team = pending.Team,
+                        PlanetId = _nextNeutralPlanetId,
                     });
-                    SpawnPlanet(ref state, pending.Position, TeamId.None, false, pending.Scale.x, pending.Level,
+                    SpawnPlanet(ref state, pending.Position, pending.Team, false, pending.Scale.x, pending.Level,
                         ref _nextNeutralPlanetId, pending.ShipFamilyConfigIndex);
                     break;
                 case SpawnKind.Asteroid:

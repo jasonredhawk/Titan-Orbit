@@ -203,7 +203,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 27238729}
-  - component: {fileID: 27238730}
   m_Layer: 0
   m_Name: ProximityRadar
   m_TagString: Untagged
@@ -226,18 +225,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 505988330}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &27238730
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 27238728}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: b147f5bbfad9bad4fbf883ac858e931c, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ProximityRadarHUD
 --- !u!1 &59805832
 GameObject:
   m_ObjectHideFlags: 0
@@ -1552,7 +1539,6 @@ GameObject:
   - component: {fileID: 376194410}
   - component: {fileID: 376194409}
   - component: {fileID: 376194408}
-  - component: {fileID: 376194407}
   m_Layer: 0
   m_Name: TeamSelectionPanel
   m_TagString: Untagged
@@ -1584,18 +1570,6 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 1320, y: 500}
   m_Pivot: {x: 0.5, y: 0.5}
---- !u!114 &376194407
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 376194405}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 30929118ca8c6104fb50f4e6e7927f90, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.TeamSelectionUI
 --- !u!114 &376194408
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -5570,7 +5544,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 867079294}
-  - component: {fileID: 867079293}
   - component: {fileID: 867079295}
   m_Layer: 0
   m_Name: LoadingScreenController
@@ -5579,18 +5552,6 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &867079293
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 867079292}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 999cf1f53e84b204aacdff1c6fc60580, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.LoadingScreenController
 --- !u!4 &867079294
 Transform:
   m_ObjectHideFlags: 0
@@ -8948,6 +8909,12 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
   debugFreeShipUpgradeTree: 1
   debugLogAsteroidDestroyPerf: 1
+  debugEnableStutterIsolator: 0
+  isolatorStartDisableImpactVfx: 0
+  isolatorStartDisableFloatingCounts: 0
+  isolatorStartDisableAsteroidShipCollision: 0
+  isolatorStartDisableShipSoftTrack: 0
+  isolatorStartDisableGemBurst: 0
 --- !u!1 &1427633624
 GameObject:
   m_ObjectHideFlags: 0

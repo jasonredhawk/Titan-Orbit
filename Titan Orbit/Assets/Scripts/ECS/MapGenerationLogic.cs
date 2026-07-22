@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -654,6 +655,105 @@ namespace TitanOrbit.ECS
                     return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Picks starting ownership for non-home planets so each team gets up to
+        /// <paramref name="desiredPerTeam"/> owned neutrals.
+        /// <para>
+        /// If there are not enough neutrals for every team to reach the desired count, ownership is
+        /// spread as evenly as possible (e.g. want 4×4 but only 12 neutrals → 3 each). Any leftover
+        /// after the even floor is given to randomly chosen teams that currently have fewer.
+        /// Remaining planets stay <see cref="TeamId.None"/>.
+        /// </para>
+        /// </summary>
+        /// <param name="desiredPerTeam">Designer setting (0 disables pre-ownership).</param>
+        /// <param name="teamCount">Active teams this match (2–5).</param>
+        /// <param name="neutralCount">How many non-home planets were placed.</param>
+        /// <param name="rng">Match RNG — used to shuffle which planets/teams get leftovers.</param>
+        /// <param name="outOwnership">Length = neutralCount; filled with TeamA..E or None.</param>
+        public static void AssignStartingOwnedNeutralTeams(
+            int desiredPerTeam,
+            int teamCount,
+            int neutralCount,
+            ref Random rng,
+            NativeArray<TeamId> outOwnership)
+        {
+            // --- Clear to neutral ---
+            for (int i = 0; i < outOwnership.Length; i++)
+                outOwnership[i] = TeamId.None;
+
+            if (desiredPerTeam <= 0 || teamCount < MinSupportedTeams || neutralCount <= 0)
+                return;
+
+            teamCount = math.clamp(teamCount, MinSupportedTeams, MaxSupportedTeams);
+            if (outOwnership.Length < neutralCount)
+                neutralCount = outOwnership.Length;
+
+            // --- How many we can actually assign ---
+            // Cap at available neutrals; then split evenly across teams.
+            int totalDesired = desiredPerTeam * teamCount;
+            int totalAssign = math.min(totalDesired, neutralCount);
+            if (totalAssign <= 0)
+                return;
+
+            int baseEach = totalAssign / teamCount;
+            int remainder = totalAssign % teamCount;
+
+            // counts[t] = how many neutrals team (t+1) receives.
+            var counts = new NativeArray<int>(teamCount, Allocator.Temp);
+            for (int t = 0; t < teamCount; t++)
+                counts[t] = baseEach;
+
+            // --- Uneven leftovers → random teams that currently have fewer ---
+            // [TITAN-ORBIT] Fisher–Yates on team indices; first `remainder` teams get +1.
+            if (remainder > 0)
+            {
+                var teamOrder = new NativeArray<int>(teamCount, Allocator.Temp);
+                for (int t = 0; t < teamCount; t++)
+                    teamOrder[t] = t;
+                for (int i = teamCount - 1; i > 0; i--)
+                {
+                    int j = rng.NextInt(0, i + 1);
+                    (teamOrder[i], teamOrder[j]) = (teamOrder[j], teamOrder[i]);
+                }
+
+                for (int r = 0; r < remainder; r++)
+                    counts[teamOrder[r]]++;
+
+                teamOrder.Dispose();
+            }
+
+            // --- Build shuffled ownership slots, then assign to shuffled planet indices ---
+            var slots = new NativeList<TeamId>(totalAssign, Allocator.Temp);
+            for (int t = 0; t < teamCount; t++)
+            {
+                var team = (TeamId)(t + 1);
+                for (int n = 0; n < counts[t]; n++)
+                    slots.Add(team);
+            }
+
+            for (int i = slots.Length - 1; i > 0; i--)
+            {
+                int j = rng.NextInt(0, i + 1);
+                (slots[i], slots[j]) = (slots[j], slots[i]);
+            }
+
+            var planetOrder = new NativeArray<int>(neutralCount, Allocator.Temp);
+            for (int i = 0; i < neutralCount; i++)
+                planetOrder[i] = i;
+            for (int i = neutralCount - 1; i > 0; i--)
+            {
+                int j = rng.NextInt(0, i + 1);
+                (planetOrder[i], planetOrder[j]) = (planetOrder[j], planetOrder[i]);
+            }
+
+            for (int i = 0; i < slots.Length; i++)
+                outOwnership[planetOrder[i]] = slots[i];
+
+            counts.Dispose();
+            slots.Dispose();
+            planetOrder.Dispose();
         }
     }
 }

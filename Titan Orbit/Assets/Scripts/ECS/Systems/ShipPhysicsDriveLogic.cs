@@ -4,6 +4,7 @@ using Unity.Collections;
 using Unity.Mathematics;
 using Unity.Physics;
 using Unity.Transforms;
+using RuntimeTriangle = TitanOrbit.Simulation.PlanetConnectionGraphLogic.RuntimeTriangle;
 
 namespace TitanOrbit.ECS
 {
@@ -46,6 +47,8 @@ namespace TitanOrbit.ECS
         /// <param name="elapsedSeconds">
         /// Shared moon orbit clock (<c>PlanetGemMoonOrbitClock</c> / ServerTick seconds) for shield repel phase.
         /// </param>
+        /// <param name="territoryTriangles">Live moon-vertex triangles for friendly speed boost; may be empty.</param>
+        /// <param name="homeLevelByTeam">Home planet level indexed by <c>TeamId</c> byte (length ≥ 6).</param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
@@ -59,7 +62,9 @@ namespace TitanOrbit.ECS
             float dt,
             float mapW,
             float mapH,
-            double elapsedSeconds)
+            double elapsedSeconds,
+            in NativeArray<RuntimeTriangle> territoryTriangles,
+            in NativeArray<int> homeLevelByTeam)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -122,6 +127,18 @@ namespace TitanOrbit.ECS
             bool moonDocking = moonDock.MoonPlanetId != 0 && !input.Thrust;
             bool useOrbit = inOrbitRing && !input.Thrust && !input.Fire.IsSet && !moonDocking;
 
+            // --- Friendly territory speed (1 + 0.05 × homeLevel) — NGO FriendlyTerritoryMovementMultiplier ---
+            // [TITAN-ORBIT] Must match on client prediction + server or reconciliation fights the boost.
+            float territoryMult = PlanetConnectionGraphLogic.FriendlyTerritoryMovementMultiplier(
+                transform.Position,
+                shipState.Team,
+                territoryTriangles,
+                homeLevelByTeam,
+                mapW,
+                mapH);
+            float thrust = motor.EngineThrust * territoryMult;
+            float maxSpeed = motor.MaxSpeed * territoryMult;
+
             // --- Start from post-collision velocity (Unity Physics may have bounced us last tick) ---
             float3 vel = physicsVelocity.Linear;
             vel.y = 0f;
@@ -141,6 +158,7 @@ namespace TitanOrbit.ECS
                     out float3 desiredVel,
                     out float alignRate);
                 desiredVel.y = 0f;
+                desiredVel *= territoryMult;
                 float t = math.saturate(alignRate * dt);
                 vel = math.lerp(vel, desiredVel, t);
                 vel.y = 0f;
@@ -150,15 +168,15 @@ namespace TitanOrbit.ECS
                 ApplyThrustCoastAndBrakes(
                     ref vel,
                     in transform.Rotation,
-                    motor.EngineThrust,
-                    motor.MaxSpeed,
+                    thrust,
+                    maxSpeed,
                     motor.BrakeDeceleration,
                     movementMass,
                     input.Thrust,
                     input.SpaceBrakes,
                     dt);
 
-                ApplyRecoilDecay(ref vel, motor.MaxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
+                ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
             }
 
             // --- Enemy moon shield repel (deterministic; moons have no physics colliders) ---

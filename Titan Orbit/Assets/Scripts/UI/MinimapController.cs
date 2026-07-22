@@ -252,6 +252,9 @@ namespace TitanOrbit.UI
         // Exposed read‑only helpers so other systems (like Shapes panels) can match minimap math.
         public float MinimapRadius => minimapRadius;
         public float DisplaySize => displaySize;
+
+        /// <summary>True while the minimap is expanded to (near) full-map view.</summary>
+        public bool IsExpanded => isExpanded;
         public Vector3 PlayerPosition => playerTransform != null ? playerTransform.position : Vector3.zero;
 
         public void GetToroidalDeltaForMinimap(Vector3 from, Vector3 to, out float dx, out float dz)
@@ -349,14 +352,16 @@ namespace TitanOrbit.UI
                 canvas.gameObject.AddComponent<TitanOrbit.UI.TitanOrbitShapesCanvas>();
             }
 
-            // Ensure a panel exists for drawing planet connection lines/triangles on the minimap.
-            // Parent under minimapContent so the circular Mask clips triangles/lines to the circle.
+            // Territory triangles: UGUI MinimapConnectionsUI under minimapContent so the circular
+            // Mask clips them. Draws wrap copies for expanded full-map view (toroidal seams).
+            Transform connectionsParent = minimapContent != null ? minimapContent : minimapRect;
+
             var connectionsUI = GetComponentInChildren<MinimapConnectionsUI>(true);
             if (connectionsUI == null)
             {
                 GameObject panelObj = new GameObject("MinimapConnectionsUI");
-                panelObj.transform.SetParent(minimapContent != null ? minimapContent : minimapRect, false);
-                panelObj.transform.SetAsLastSibling(); // Draw on top of content/blips so lines and triangles are visible
+                panelObj.transform.SetParent(connectionsParent, false);
+                panelObj.transform.SetAsLastSibling();
                 var rt = panelObj.AddComponent<RectTransform>();
                 rt.anchorMin = Vector2.zero;
                 rt.anchorMax = Vector2.one;
@@ -366,9 +371,9 @@ namespace TitanOrbit.UI
             }
             else
             {
-                if (minimapContent != null && connectionsUI.transform.parent != minimapContent)
-                    connectionsUI.transform.SetParent(minimapContent, false);
-                connectionsUI.transform.SetAsLastSibling(); // Ensure it draws on top (in case it was created with old order)
+                if (connectionsParent != null && connectionsUI.transform.parent != connectionsParent)
+                    connectionsUI.transform.SetParent(connectionsParent, false);
+                connectionsUI.transform.SetAsLastSibling();
             }
         }
         

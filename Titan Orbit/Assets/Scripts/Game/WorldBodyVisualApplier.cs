@@ -306,6 +306,51 @@ namespace TitanOrbit.Game
             spin.Configure(worldPosition);
         }
 
+        /// <summary>
+        /// [TITAN-ORBIT] NGO <c>Asteroid.SetTerritoryHighlight</c> — lerp SgtPlanet <c>_Color</c> toward
+        /// team color (0.7 blend) when the rock sits inside a friendly triangle; restore when None.
+        /// Caches the original color on first call via <see cref="AsteroidTerritoryTintCache"/>.
+        /// </summary>
+        /// <param name="root">Asteroid hybrid proxy root.</param>
+        /// <param name="team">Owning territory team, or <see cref="TeamId.None"/> to clear.</param>
+        public static void ApplyAsteroidTerritoryTint(GameObject root, TeamId team)
+        {
+            if (root == null)
+                return;
+
+            var cache = root.GetComponent<AsteroidTerritoryTintCache>();
+            if (cache == null)
+                cache = root.AddComponent<AsteroidTerritoryTintCache>();
+
+            // --- Skip identical writes (TerritoryTeam updates every ~1s server-side) ---
+            if (cache.AppliedTeam == team && cache.HasOriginal)
+                return;
+
+            var sgt = root.GetComponentInChildren<SgtPlanet>(true);
+            if (sgt == null || sgt.Material == null)
+                return;
+
+            // --- Cache original SgtPlanet color once ---
+            if (!cache.HasOriginal)
+            {
+                if (sgt.Material.HasProperty("_Color"))
+                    cache.OriginalColor = sgt.Material.GetColor("_Color");
+                else if (sgt.Material.HasProperty("_BaseColor"))
+                    cache.OriginalColor = sgt.Material.GetColor("_BaseColor");
+                else
+                    cache.OriginalColor = new Color(0.5f, 0.5f, 0.5f, 1f);
+                cache.HasOriginal = true;
+            }
+
+            Color color = team == TeamId.None
+                ? cache.OriginalColor
+                : Color.Lerp(cache.OriginalColor, team.ToColor(), 0.7f);
+
+            int id = Shader.PropertyToID("_Color");
+            sgt.Properties.SetColor(id, color);
+            cache.AppliedTeam = team;
+        }
+
         /// <summary>Same Barren asteroid texture for every rock; vary UV scale, normals, and displacement per instance.</summary>
         static void ApplyAsteroidSurfaceVariation(GameObject root, Vector3 worldPosition, float rawSize)
         {

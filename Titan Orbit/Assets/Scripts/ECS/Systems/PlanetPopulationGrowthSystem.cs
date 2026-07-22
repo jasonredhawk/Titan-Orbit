@@ -64,8 +64,11 @@ namespace TitanOrbit.ECS
                 ref var growth = ref growthState.ValueRW;
 
                 // [TITAN-ORBIT] Max population scales with planet visual size and upgrade level.
+                // ConnectionBonusFraction stacks triangle corner bonuses (original SetConnectionBonuses).
                 float planetSize = math.max(0.5f, transform.ValueRO.Scale);
-                int maxPop = PlanetPopulationMath.GetMaxPopulation(planetSize, planet.PlanetLevel);
+                int baseMaxPop = PlanetPopulationMath.GetMaxPopulation(planetSize, planet.PlanetLevel);
+                float bonus = math.max(0f, growth.ConnectionBonusFraction);
+                int maxPop = math.max(1, (int)math.round(baseMaxPop * (1f + bonus)));
                 float maxPopF = maxPop;
 
                 SyncFractionalPopulation(ref planet, ref growth);
@@ -83,7 +86,7 @@ namespace TitanOrbit.ECS
                     PlanetPopulationMath.PopulationGrowthPauseAfterAttackSeconds)
                     continue;
 
-                float rate = PlanetPopulationMath.GetGrowthRatePerSecond(planet.PlanetLevel);
+                float rate = PlanetPopulationMath.GetGrowthRatePerSecond(planet.PlanetLevel) * (1f + bonus);
                 if (rate <= 0f)
                     continue;
 

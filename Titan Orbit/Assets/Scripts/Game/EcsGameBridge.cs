@@ -45,6 +45,9 @@ namespace TitanOrbit.Game
             ClientJoinSettleCache.Clear();
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
+            PlanetConnectionGraphCache.Clear();
+            s_PlanetStateByIdCache.Clear();
+            s_PlanetStateCacheFrame = -1;
         }
 
         // --- World selection ---
@@ -1296,6 +1299,9 @@ namespace TitanOrbit.Game
             ClientJoinSettleCache.Clear();
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
+            PlanetConnectionGraphCache.Clear();
+            s_PlanetStateByIdCache.Clear();
+            s_PlanetStateCacheFrame = -1;
             GemTractorBeamVisibilityTracker.Clear();
         }
 
@@ -1737,13 +1743,17 @@ namespace TitanOrbit.Game
             if (planetId == 0)
                 return false;
 
+            // --- One planet map per frame for all labels/UI ---
+            // [TITAN-ORBIT] Avoid N× CreateEntityQuery (one per PlanetWorldStatsLabel LateUpdate).
+            EnsurePlanetStateCacheForFrame();
+            if (s_PlanetStateByIdCache.TryGetValue(planetId, out state))
+                return true;
+
+            // Fallback if cache empty mid-join (registry not ready yet).
             if (IsLocalHost() && TryFindPlanetState(ServerWorld, planetId, out state))
                 return true;
 
-            if (TryFindPlanetState(ClientWorld, planetId, out state))
-                return true;
-
-            return false;
+            return TryFindPlanetState(ClientWorld, planetId, out state);
         }
 
         /// <summary>Gem-moon combat state for a planet — shield, orbit zone, contributed gems UI.</summary>
@@ -1793,34 +1803,122 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>One PlanetState snapshot per planet id — rebuilt once per frame for labels/UI.</summary>
+        static readonly Dictionary<int, PlanetState> s_PlanetStateByIdCache = new Dictionary<int, PlanetState>(32);
+
+        /// <summary>Frame stamp for <see cref="s_PlanetStateByIdCache"/> (avoids N× CreateEntityQuery).</summary>
+        static int s_PlanetStateCacheFrame = -1;
+
+        /// <summary>Scratch for <see cref="TryFindPlanetStateFromClientRegistry"/> — no per-call List alloc.</summary>
+        static readonly List<Entity> s_PlanetRegistryScratch = new List<Entity>(32);
+
+        /// <summary>
+        /// Rebuilds the per-frame planet-id → PlanetState map once, then serves lookups.
+        /// Labels call this every LateUpdate — without the cache, Local Host ran a full planet
+        /// CreateEntityQuery per planet per frame (major Scripts hitch).
+        /// </summary>
+        static void EnsurePlanetStateCacheForFrame()
+        {
+            if (s_PlanetStateCacheFrame == Time.frameCount)
+                return;
+
+            s_PlanetStateCacheFrame = Time.frameCount;
+            s_PlanetStateByIdCache.Clear();
+
+            // Prefer authoritative server on Local Host; else client visualization world.
+            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
+                FillPlanetStateCacheFromWorld(ServerWorld, allowFullQuery: true);
+            else if (ClientWorld != null && ClientWorld.IsCreated)
+                FillPlanetStateCacheFromWorld(ClientWorld, allowFullQuery: false);
+        }
+
+        /// <summary>Fills <see cref="s_PlanetStateByIdCache"/> from one world (server full query or client-safe).</summary>
+        static void FillPlanetStateCacheFromWorld(World world, bool allowFullQuery)
+        {
+            var em = world.EntityManager;
+
+            if (allowFullQuery ||
+                (!ClientJoinSettleCache.Settling &&
+                 !ClientJoinSettleCache.TransformQuarantine &&
+                 !ClientJoinSettleCache.GhostSpawnBacklog))
+            {
+                using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState));
+                using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+                for (int i = 0; i < states.Length; i++)
+                {
+                    var s = states[i];
+                    if (s.PlanetId != 0)
+                        s_PlanetStateByIdCache[s.PlanetId] = s;
+                }
+
+                return;
+            }
+
+            // Client join Instantiates / quarantine — Instantiates planet registry only (no archetype gather).
+            if (ClientJoinSettleCache.Settling)
+                return;
+
+            PlanetClientEntityRegistry.CopyLive(s_PlanetRegistryScratch);
+            for (int i = 0; i < s_PlanetRegistryScratch.Count; i++)
+            {
+                Entity entity = s_PlanetRegistryScratch[i];
+                if (entity == Entity.Null ||
+                    !em.Exists(entity) ||
+                    !em.HasComponent<PlanetState>(entity))
+                    continue;
+                var s = em.GetComponentData<PlanetState>(entity);
+                if (s.PlanetId != 0)
+                    s_PlanetStateByIdCache[s.PlanetId] = s;
+            }
+        }
+
         /// <summary>Linear search for <see cref="PlanetState"/> by planet id in a world.</summary>
         static bool TryFindPlanetState(World world, int planetId, out PlanetState state)
         {
             state = default;
-            if (world == null || !world.IsCreated)
+            if (world == null || !world.IsCreated || planetId == 0)
                 return false;
 
-            // [TITAN-ORBIT] Full planet gathers Crash!!! under TransformQuarantine after Settling OFF
-            // (Player.log 2026-07-19 10:29 — Settling OFF → Crash!!!). Use hybrid proxies on Windows.
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
-                return false;
+            // Frame cache is filled from the preferred world; still accept caller world as fallback.
+            EnsurePlanetStateCacheForFrame();
+            if (s_PlanetStateByIdCache.TryGetValue(planetId, out state))
+                return true;
 
-            var em = world.EntityManager;
-            if (ClientJoinSettleCache.TransformQuarantine)
+            // Rare: cache empty / different world — quarantine-safe single lookup.
+            if (world.IsClient())
             {
+                if (ClientJoinSettleCache.Settling)
+                    return false;
+
+                var em = world.EntityManager;
                 if (EcsWorldVisualizer.Active != null &&
                     EcsWorldVisualizer.Active.TryGetPlanetPoseByPlanetId(em, planetId, out _, out _, out state))
                     return true;
-                return false;
+
+                return TryFindPlanetStateFromClientRegistry(em, planetId, out state);
             }
 
-            using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState));
-            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
-            for (int i = 0; i < states.Length; i++)
+            return false;
+        }
+
+        /// <summary>
+        /// Quarantine-safe PlanetState lookup via <see cref="PlanetClientEntityRegistry"/>.
+        /// </summary>
+        static bool TryFindPlanetStateFromClientRegistry(EntityManager em, int planetId, out PlanetState state)
+        {
+            state = default;
+            PlanetClientEntityRegistry.CopyLive(s_PlanetRegistryScratch);
+            for (int i = 0; i < s_PlanetRegistryScratch.Count; i++)
             {
-                if (states[i].PlanetId != planetId)
+                Entity entity = s_PlanetRegistryScratch[i];
+                if (entity == Entity.Null ||
+                    !em.Exists(entity) ||
+                    !em.HasComponent<PlanetState>(entity))
                     continue;
-                state = states[i];
+                var s = em.GetComponentData<PlanetState>(entity);
+                if (s.PlanetId != planetId)
+                    continue;
+                state = s;
                 return true;
             }
 

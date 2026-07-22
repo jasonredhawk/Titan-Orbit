@@ -29,6 +29,9 @@ namespace TitanOrbit.ECS
             ClearanceRadiusAroundHomePlanet = s.clearanceRadiusAroundHomePlanet,
             MinNeutralPlanets = s.minNeutralPlanets,
             MaxNeutralPlanets = s.maxNeutralPlanets,
+            StartingOwnedNeutralPlanetsPerTeam = s.startingOwnedNeutralPlanetsPerTeam < 0
+                ? 0
+                : s.startingOwnedNeutralPlanetsPerTeam,
             MinPlanetSize = s.minPlanetSize,
             MaxPlanetSize = s.maxPlanetSize,
             RandomizeNeutralStartingLevel = (byte)(s.randomizeNeutralStartingLevel ? 1 : 0),

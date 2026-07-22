@@ -9,7 +9,8 @@ namespace TitanOrbit.ECS
     /// Server-authoritative ship motor. Schedules shared <see cref="ShipPhysicsDriveJob"/> before
     /// <see cref="PhysicsSystemGroup"/> so thrust/turn/orbit write <see cref="Unity.Physics.PhysicsVelocity"/>,
     /// then Unity Physics integrates position and resolves hull collisions.
-    /// Collects planet snapshots + map size once per tick for toroidal orbit detection and shield repel.
+    /// Collects planet snapshots + territory triangles + map size once per tick for toroidal orbit,
+    /// shield repel, and friendly territory speed.
     /// Paired with <see cref="ShipClientPredictedPhysicsDriveSystem"/> (same job, client owner).
     /// Pipeline: Input → MassSync → Drive → Physics → Planar → KinematicsSync.
     /// </summary>
@@ -26,17 +27,17 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Collects shared orbit context, then schedules the Burst drive job for all simulated ships.
+        /// Collects shared orbit/territory context, then schedules the Burst drive job for all simulated ships.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            // --- Map size for toroidal orbit / shield math ---
+            // --- Map size for toroidal orbit / shield / territory math ---
             GetMapSize(ref state, out float mapW, out float mapH);
 
             // [ECS/DOTS] TempJob planet snapshot — disposed after the parallel job completes.
             var planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
 
-            // --- Moon orbit clock for shield repel ---
+            // --- Moon orbit clock for shield repel + territory moon vertices ---
             // [TITAN-ORBIT] Same ServerTick seconds as PlanetGemMoonColliderSyncSystem (not World.ElapsedTime).
             int hz = 0;
             if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
@@ -44,6 +45,15 @@ namespace TitanOrbit.ECS
             double moonElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
                 ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
                 : SystemAPI.Time.ElapsedTime;
+
+            // --- Friendly territory triangles (Persistent native — do not Dispose) ---
+            // [TITAN-ORBIT] Server side of dual cache — client must not overwrite these lists.
+            var territory = PlanetConnectionGraphCache.GetRuntimeTrianglesNative(
+                PlanetConnectionGraphSide.Server,
+                planets.AsArray(),
+                moonElapsed);
+            var homeLevels = new NativeArray<int>(6, Allocator.TempJob);
+            PlanetConnectionGraphCache.CopyHomeLevels(PlanetConnectionGraphSide.Server, ref homeLevels);
 
             // [NETCODE] Fixed-step dt from PredictedFixedStepSimulationSystemGroup — not frame delta.
             var job = new ShipPhysicsDriveJob
@@ -53,9 +63,13 @@ namespace TitanOrbit.ECS
                 MapW = mapW,
                 MapH = mapH,
                 Planets = planets.AsArray(),
+                TerritoryTriangles = territory,
+                HomeLevelByTeam = homeLevels,
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);
+            // territory is Persistent cache — never Dispose here.
+            state.Dependency = homeLevels.Dispose(state.Dependency);
         }
 
         /// <summary>

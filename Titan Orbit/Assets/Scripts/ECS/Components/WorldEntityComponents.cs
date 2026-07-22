@@ -51,7 +51,10 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] True after destruction; entity may be destroyed next tick.</summary>
         [GhostField] public bool IsDestroyed;
 
-        /// <summary>[TITAN-ORBIT] Team that mined this cluster most recently (territory tint on minimap).</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Team that owns the territory triangle containing this asteroid (point-in-triangle).
+        /// Written by <c>AsteroidTerritorySystem</c>; tint + friendly mining gem bonus. None = outside all triangles.
+        /// </summary>
         [GhostField] public TeamId TerritoryTeam;
 
         /// <summary>
@@ -85,6 +88,12 @@ namespace TitanOrbit.ECS
         /// Ghosted so clients can shrink in the last seconds of life; server destroys after lifetime.
         /// </summary>
         [GhostField] public float SpawnServerTime;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Territory bonus gem (yellow tint). True for the bonus portion of mining /
+        /// destroy yield inside a friendly triangle — NGO <c>isBonusGem</c>.
+        /// </summary>
+        [GhostField] public bool IsBonusGem;
     }
 
     /// <summary>
@@ -135,6 +144,13 @@ namespace TitanOrbit.ECS
 
         /// <summary>[UNITY] Server ElapsedTime of last hostile population impact (growth pause).</summary>
         public float LastHostilePopulationImpactServerTime;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Stacked connection-triangle bonus fraction for max pop + growth
+        /// (original NGO <c>SetConnectionBonuses</c>). Server-only; written by
+        /// <c>PlanetConnectionGraphSystem</c>. 0 = no triangle corners.
+        /// </summary>
+        public float ConnectionBonusFraction;
     }
 
     /// <summary>

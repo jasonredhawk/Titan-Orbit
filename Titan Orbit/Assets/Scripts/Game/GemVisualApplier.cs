@@ -37,10 +37,17 @@ namespace TitanOrbit.Game
         static readonly Color GemTintColor = new Color(1f, 0.2f, 0.2f, 0.55f);
 
         /// <summary>
-        /// Shared tinted material for all gem proxies. Creating <c>renderer.material</c> per Instantiates
-        /// allocated a new Material on every burst gem and hitched destroy frames — reuse one instance.
+        /// [TITAN-ORBIT] Territory bonus gem tint (NGO bonusGemTintColor ≈ yellow).
+        /// </summary>
+        static readonly Color BonusGemTintColor = new Color(1f, 0.9f, 0.15f, 0.55f);
+
+        /// <summary>
+        /// Shared tinted material for normal (red) gem proxies.
         /// </summary>
         static Material s_sharedTintedGemMaterial;
+
+        /// <summary>Shared yellow material for territory bonus gems.</summary>
+        static Material s_sharedBonusTintedGemMaterial;
 
         /// <summary>True after <see cref="EnsureSharedTintReady"/> finished material + keyword setup.</summary>
         static bool s_tintReady;
@@ -61,6 +68,7 @@ namespace TitanOrbit.Game
         static void ResetStatics()
         {
             s_sharedTintedGemMaterial = null;
+            s_sharedBonusTintedGemMaterial = null;
             s_tintReady = false;
         }
 
@@ -72,10 +80,20 @@ namespace TitanOrbit.Game
         /// <param name="gemValue">Authoritative gem value — drives visual scale only.</param>
         /// <param name="instance">Active GameObject, or null on failure.</param>
         /// <returns>True when a visual is ready to place.</returns>
-        public static bool TryCreateGemVisual(GameObject gemPrefab, float gemValue, out GameObject instance)
+        public static bool TryCreateGemVisual(GameObject gemPrefab, float gemValue, out GameObject instance) =>
+            TryCreateGemVisual(gemPrefab, gemValue, isBonusGem: false, out instance);
+
+        /// <summary>
+        /// Rents a gem visual and applies red or yellow tint from <paramref name="isBonusGem"/>.
+        /// </summary>
+        public static bool TryCreateGemVisual(
+            GameObject gemPrefab, float gemValue, bool isBonusGem, out GameObject instance)
         {
             GemVisualPool.EnsurePrefab(gemPrefab);
-            return GemVisualPool.TryRent(gemValue, out instance, "GemTagProxy");
+            if (!GemVisualPool.TryRent(gemValue, out instance, "GemTagProxy"))
+                return false;
+            ApplyGemTint(instance, isBonusGem);
+            return true;
         }
 
         /// <summary>
@@ -103,11 +121,17 @@ namespace TitanOrbit.Game
             instance = Object.Instantiate(gemPrefab);
             instance.name = "GemTagProxy";
             StripForProxy(instance, immediateStrip);
-            ApplyGemTint(instance);
+            ApplyGemTint(instance, isBonusGem: false);
             float scale = ComputeVisualScale(gemValue);
             instance.transform.localScale = Vector3.one * scale;
             return true;
         }
+
+        /// <summary>
+        /// Re-applies red/yellow shared tint on an already-rented gem proxy (pool shells start red).
+        /// </summary>
+        public static void ApplyTintForBonusFlag(GameObject root, bool isBonusGem) =>
+            ApplyGemTint(root, isBonusGem);
 
         /// <summary>
         /// [TITAN-ORBIT] Builds the shared URP tint material (and warms keywords) before combat.
@@ -116,7 +140,7 @@ namespace TitanOrbit.Game
         /// <param name="gemPrefab">Prefab whose MeshRenderer supplies the source material.</param>
         public static void EnsureSharedTintReady(GameObject gemPrefab)
         {
-            if (s_tintReady && s_sharedTintedGemMaterial != null)
+            if (s_tintReady && s_sharedTintedGemMaterial != null && s_sharedBonusTintedGemMaterial != null)
                 return;
 
             if (gemPrefab == null)
@@ -124,12 +148,13 @@ namespace TitanOrbit.Game
             if (gemPrefab == null)
                 return;
 
-            // --- Build shared material from prefab without leaving a visible GO ---
+            // --- Build shared materials from prefab without leaving a visible GO ---
             // Instantiates briefly so we can read MeshRenderer.sharedMaterial, then destroy.
             var probe = Object.Instantiate(gemPrefab);
             probe.name = "GemTintProbe";
             probe.SetActive(false);
-            ApplyGemTint(probe);
+            ApplyGemTint(probe, isBonusGem: false);
+            ApplyGemTint(probe, isBonusGem: true);
             Object.Destroy(probe);
 
             // --- Force URP to compile the transparent variant off the destroy frame ---
@@ -240,15 +265,12 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Tints the gem mesh red and configures URP Lit for real alpha blending.
-        /// Uses one shared material for all gems (no per-Instantiates Material alloc).
+        /// Tints the gem mesh red (normal) or yellow (territory bonus) with URP Lit alpha blending.
+        /// Uses two shared materials (no per-Instantiates Material alloc).
         /// </summary>
-        /// <remarks>
-        /// [TITAN-ORBIT] Incomplete URP transparent setup used to draw near-black meshes.
-        /// Full keyword/blend setup is applied once on <see cref="s_sharedTintedGemMaterial"/>.
-        /// </remarks>
         /// <param name="root">Gem proxy root (may have a child MeshRenderer).</param>
-        static void ApplyGemTint(GameObject root)
+        /// <param name="isBonusGem">True → yellow bonus tint.</param>
+        static void ApplyGemTint(GameObject root, bool isBonusGem)
         {
             var renderer = root.GetComponentInChildren<Renderer>();
             if (renderer == null)
@@ -256,33 +278,45 @@ namespace TitanOrbit.Game
 
             renderer.shadowCastingMode = ShadowCastingMode.Off;
 
-            // --- Build shared tinted material once from the prefab's sharedMaterial ---
-            if (s_sharedTintedGemMaterial == null)
+            // --- Build shared tinted materials once from the prefab's sharedMaterial ---
+            if (s_sharedTintedGemMaterial == null || s_sharedBonusTintedGemMaterial == null)
             {
                 Material source = renderer.sharedMaterial != null
                     ? renderer.sharedMaterial
                     : renderer.material;
-                s_sharedTintedGemMaterial = new Material(source)
+                if (s_sharedTintedGemMaterial == null)
                 {
-                    name = "TitanOrbit_GemTinted_Shared",
-                };
-                ConfigureUrpTransparentTint(s_sharedTintedGemMaterial);
+                    s_sharedTintedGemMaterial = new Material(source)
+                    {
+                        name = "TitanOrbit_GemTinted_Shared",
+                    };
+                    ConfigureUrpTransparentTint(s_sharedTintedGemMaterial, GemTintColor);
+                }
+
+                if (s_sharedBonusTintedGemMaterial == null)
+                {
+                    s_sharedBonusTintedGemMaterial = new Material(source)
+                    {
+                        name = "TitanOrbit_GemBonusTinted_Shared",
+                    };
+                    ConfigureUrpTransparentTint(s_sharedBonusTintedGemMaterial, BonusGemTintColor);
+                }
             }
 
-            // [UNITY] sharedMaterial — all gems share one Material; no per-gem .material clone.
-            renderer.sharedMaterial = s_sharedTintedGemMaterial;
+            // [UNITY] sharedMaterial — all gems of a tint class share one Material.
+            renderer.sharedMaterial = isBonusGem ? s_sharedBonusTintedGemMaterial : s_sharedTintedGemMaterial;
         }
 
         /// <summary>
-        /// Writes URP Lit transparent + red tint onto <paramref name="material"/> (once at shared create).
+        /// Writes URP Lit transparent + tint onto <paramref name="material"/> (once at shared create).
         /// </summary>
-        static void ConfigureUrpTransparentTint(Material material)
+        static void ConfigureUrpTransparentTint(Material material, Color tint)
         {
             if (material.HasProperty("_BaseColor"))
-                material.SetColor("_BaseColor", GemTintColor);
+                material.SetColor("_BaseColor", tint);
             if (material.HasProperty("_Color"))
-                material.SetColor("_Color", GemTintColor);
-            material.color = GemTintColor;
+                material.SetColor("_Color", tint);
+            material.color = tint;
 
             // [UNITY] URP Lit needs keywords + blend + queue together — floats alone are not enough.
             if (material.HasProperty("_Surface"))

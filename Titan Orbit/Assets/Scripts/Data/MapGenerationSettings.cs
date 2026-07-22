@@ -43,6 +43,13 @@ namespace TitanOrbit.Data
         public int minNeutralPlanets = 9;
         [Tooltip("Each map rolls a random neutral planet count in this range (inclusive).")]
         public int maxNeutralPlanets = 27;
+        [Tooltip(
+            "How many non-home (neutral) planets each team starts owning. 0 = all neutrals stay unowned. " +
+            "If there are not enough neutrals for every team to get this many, ownership is spread evenly " +
+            "(e.g. 4 wanted × 4 teams but only 12 neutrals → 3 each). Leftover neutrals after an even split " +
+            "go to randomly chosen teams that have fewer.")]
+        [Min(0)]
+        public int startingOwnedNeutralPlanetsPerTeam = 0;
         public float minPlanetSize = 9f;
         public float maxPlanetSize = 18f;
         [Tooltip("When enabled, neutral starting levels are spread evenly across the level range.")]

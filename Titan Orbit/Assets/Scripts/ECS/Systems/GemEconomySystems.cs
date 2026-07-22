@@ -96,6 +96,7 @@ namespace TitanOrbit.ECS
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(AsteroidTerritorySystem))]
     public partial struct MiningSystem : ISystem
     {
         public void OnCreate(ref SystemState state)
@@ -121,6 +122,18 @@ namespace TitanOrbit.ECS
             }
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
+
+            // --- Home planet levels for territory gem bonus (1 + 0.05 × homeLevel) ---
+            // [TITAN-ORBIT] Same formula as NGO MiningSystem when asteroid.TerritoryTeam matches ship.
+            var homeLevels = new NativeArray<int>(6, Allocator.Temp);
+            foreach (var planet in SystemAPI.Query<RefRO<PlanetState>>().WithAll<PlanetTag, HomePlanetTag>())
+            {
+                if (planet.ValueRO.Ownership == TeamId.None || !planet.ValueRO.IsHomePlanet)
+                    continue;
+                int idx = (int)planet.ValueRO.Ownership;
+                if (idx >= 0 && idx < homeLevels.Length)
+                    homeLevels[idx] = math.max(1, planet.ValueRO.PlanetLevel);
+            }
 
             // --- Each ship mines every asteroid in range this tick ---
             foreach (var (shipTransform, shipState, shipEntity) in SystemAPI
@@ -152,6 +165,15 @@ namespace TitanOrbit.ECS
                     if (mined < GemEconomyConstants.MinGemSpawnValue)
                         continue;
 
+                    // --- Friendly territory gem bonus ---
+                    // [TITAN-ORBIT] Base mined chunk is red; bonus portion spawns as a separate yellow
+                    // gem (NGO isBonusGem). Asteroid loses RemainingGems at the base rate only.
+                    int homeLevel = PlanetConnectionGraphLogic.GetHomePlanetLevel(
+                        shipState.ValueRO.Team, homeLevels);
+                    float gemMult = PlanetConnectionGraphLogic.FriendlyTerritoryGemMultiplier(
+                        shipState.ValueRO.Team, a.TerritoryTeam, homeLevel);
+                    float bonusValue = mined * (gemMult - 1f);
+
                     a.RemainingGems -= mined;
                     if (a.RemainingGems <= 0f)
                     {
@@ -167,9 +189,24 @@ namespace TitanOrbit.ECS
                         mined,
                         (uint)asteroidEntity.Index,
                         burst: false,
-                        spawnServerTime);
+                        spawnServerTime,
+                        isBonusGem: false);
+                    if (bonusValue >= GemEconomyConstants.MinGemSpawnValue)
+                    {
+                        GemSpawning.Spawn(
+                            ecb,
+                            prefabs.Gem,
+                            asteroidTransform.ValueRO.Position,
+                            bonusValue,
+                            (uint)asteroidEntity.Index + 7919u,
+                            burst: false,
+                            spawnServerTime,
+                            isBonusGem: true);
+                    }
                 }
             }
+
+            homeLevels.Dispose();
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
@@ -624,12 +661,29 @@ namespace TitanOrbit.ECS
 
                 float3 pos = asteroidTransform.ValueRO.Position;
                 float remaining = a.RemainingGems;
+                float bonusExtra = 0f;
+                // --- Territory gem bonus on destroy burst ---
+                // [TITAN-ORBIT] Bonus portion spawns as yellow gems; base remaining stays red.
+                if (a.TerritoryTeam != TeamId.None && remaining >= GemEconomyConstants.MinGemSpawnValue)
+                {
+                    int homeLevel = PlanetConnectionGraphCache.GetHomePlanetLevel(a.TerritoryTeam);
+                    float mult = PlanetConnectionGraphLogic.FriendlyTerritoryGemMultiplier(
+                        a.TerritoryTeam, a.TerritoryTeam, homeLevel);
+                    bonusExtra = remaining * (mult - 1f);
+                }
+
                 if (canSpawnGems && remaining >= GemEconomyConstants.MinGemSpawnValue)
                 {
                     // Deterministic seed so client immediate burst can match count/feel closely.
                     uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
                     SpawnAsteroidDestructionGems(
-                        ecb, prefabs.Gem, pos, remaining, seed, settings, spawnTime);
+                        ecb, prefabs.Gem, pos, remaining, seed, settings, spawnTime, isBonusGem: false);
+                    if (bonusExtra >= GemEconomyConstants.MinGemSpawnValue)
+                    {
+                        SpawnAsteroidDestructionGems(
+                            ecb, prefabs.Gem, pos, bonusExtra, seed + 1337u, settings, spawnTime,
+                            isBonusGem: true);
+                    }
                 }
 
                 // --- Schedule respawn (original AsteroidRespawnManager.ScheduleRespawn) ---
@@ -666,7 +720,8 @@ namespace TitanOrbit.ECS
             float remaining,
             uint seed,
             GemExplosionSettings settings,
-            float spawnServerTime)
+            float spawnServerTime,
+            bool isBonusGem)
         {
             var rng = Random.CreateFromIndex(seed);
             int count = GemExplosionMath.ResolveGemCount(
@@ -686,7 +741,8 @@ namespace TitanOrbit.ECS
                     burst: true,
                     spawnServerTime,
                     settings,
-                    burstIndex: (byte)i);
+                    burstIndex: (byte)i,
+                    isBonusGem: isBonusGem);
             }
         }
     }
@@ -710,7 +766,8 @@ namespace TitanOrbit.ECS
             bool burst,
             float spawnServerTime,
             GemExplosionSettings settings = null,
-            byte burstIndex = 0)
+            byte burstIndex = 0,
+            bool isBonusGem = false)
         {
             if (value <= 0f)
                 return;
@@ -731,6 +788,7 @@ namespace TitanOrbit.ECS
                 Size = scale,
                 DepositTeam = TeamId.None,
                 SpawnServerTime = spawnServerTime,
+                IsBonusGem = isBonusGem,
             });
 
             // --- Motion phase + burst slot (ghosted for client handoff / tractor lock) ---

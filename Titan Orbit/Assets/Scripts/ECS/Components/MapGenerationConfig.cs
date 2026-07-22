@@ -47,6 +47,12 @@ namespace TitanOrbit.ECS
         /// <summary>Upper bound on neutral planet count for rolled map size.</summary>
         public int MaxNeutralPlanets;
 
+        /// <summary>
+        /// How many non-home planets each team starts owning (0 = all stay neutral).
+        /// Capped/evened against available neutrals at spawn time.
+        /// </summary>
+        public int StartingOwnedNeutralPlanetsPerTeam;
+
         /// <summary>Smallest neutral planet body radius.</summary>
         public float MinPlanetSize;
 
