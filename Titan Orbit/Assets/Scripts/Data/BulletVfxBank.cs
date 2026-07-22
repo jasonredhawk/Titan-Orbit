@@ -12,6 +12,8 @@ namespace TitanOrbit.Data
     /// One asset at <c>Resources/BulletVfxBank</c> so Editor and player builds share the same file
     /// (no Data + Resources duplicate to keep in sync).
     /// <para>
+    /// Categories come from Demo Prefabs folders (Laserbolt, Plasma, Rockets, Fireballs, …).
+    /// Players press <b>B</b> to cycle <c>ShipLoadoutState.RuntimeBulletIndex</c> through them.
     /// Each category maps to a <see cref="BulletBankProfile"/> and team-colored prefabs. Loaded by
     /// <see cref="Game.BulletVfxDriver"/>. Presentation only — hit detection stays server-side.
     /// </para>
@@ -79,6 +81,32 @@ namespace TitanOrbit.Data
                 bank = UnityEditor.AssetDatabase.LoadAssetAtPath<BulletVfxBank>(ResourcesAssetPath);
 #endif
             return bank;
+        }
+
+        /// <summary>
+        /// Display name for B-key cycle feedback (category row name, e.g. "Laserbolt", "Plasma").
+        /// Returns empty string when the index is out of range.
+        /// </summary>
+        /// <param name="index">Zero-based category index from <c>ShipLoadoutState.RuntimeBulletIndex</c>.</param>
+        public string GetCategoryName(int index)
+        {
+            if (categories == null || index < 0 || index >= categories.Count)
+                return string.Empty;
+
+            var cat = categories[index];
+            if (cat == null || string.IsNullOrEmpty(cat.categoryName))
+                return $"Bank {index}";
+
+            return cat.categoryName;
+        }
+
+        /// <summary>
+        /// Wraps <see cref="GetCategoryName"/> for callers that prefer a bool success check.
+        /// </summary>
+        public bool TryGetCategoryName(int index, out string name)
+        {
+            name = GetCategoryName(index);
+            return !string.IsNullOrEmpty(name);
         }
 
         /// <summary>

@@ -32,6 +32,13 @@ namespace TitanOrbit.ECS
         [GhostField]
         public InputEvent Fire;
 
+        /// <summary>
+        /// [NETCODE] InputEvent — B key / CycleBullet action. Server increments
+        /// <see cref="ShipLoadoutState.RuntimeBulletIndex"/> when set (same pattern as <see cref="Fire"/>).
+        /// </summary>
+        [GhostField]
+        public InputEvent CycleBullet;
+
         /// <summary>True when space-brake deceleration is toggled on.</summary>
         [GhostField]
         public bool SpaceBrakes;
@@ -41,6 +48,6 @@ namespace TitanOrbit.ECS
         public bool WantDepositGems;
 
         public FixedString512Bytes ToFixedString() =>
-            $"ShipInput[t={Thrust},f={Fire.Count},b={SpaceBrakes},d={WantDepositGems}]";
+            $"ShipInput[t={Thrust},f={Fire.Count},c={CycleBullet.Count},b={SpaceBrakes},d={WantDepositGems}]";
     }
 }

@@ -9,6 +9,11 @@ namespace TitanOrbit.ECS
     /// runtime bullet bank index, upgrade branch, and chassis index. Equipped cards and store
     /// equipment live in DynamicBuffers on the same ship entity. Server validates purchases via
     /// orbit-store RPC handlers; this struct holds the authoritative result.
+    /// <para>
+    /// [NETCODE] Must be baked on the starship ghost (<see cref="Authoring.StarshipGhostAuthoring"/>).
+    /// Adding this component only at runtime does <b>not</b> replicate GhostFields — B-key
+    /// <see cref="RuntimeBulletIndex"/> stays stuck at 0 on clients.
+    /// </para>
     /// </summary>
     public struct ShipLoadoutState : IComponentData
     {
@@ -19,7 +24,10 @@ namespace TitanOrbit.ECS
         /// <summary>Remaining deployable mine charges.</summary>
         [GhostField] public int MineCount;
 
-        /// <summary>Index into bullet VFX/stats bank for current weapon appearance.</summary>
+        /// <summary>
+        /// Index into <c>BulletVfxBank</c> categories for current weapon VFX.
+        /// B-key cycles via <see cref="ShipCycleBulletSystem"/>; wraps at CategoryCount.
+        /// </summary>
         [GhostField] public int RuntimeBulletIndex;
 
         /// <summary>Upgrade tree branch — selects chassis row from PlanetShipFamilyConfig.</summary>

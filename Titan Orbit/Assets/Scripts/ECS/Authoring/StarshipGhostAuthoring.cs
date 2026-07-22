@@ -56,10 +56,17 @@ namespace TitanOrbit.ECS.Authoring
                     // [TITAN-ORBIT] New ships wait for RequestTeamCommand before movement is enabled.
                     AwaitingTeamSelection = true,
                 });
-                // [NETCODE] ShipLoadoutState is still added at runtime by ShipEnsureComponentsSystem.
-                // Branch for upgrade-tree hulls replicates via ShipState.BranchIndex (baked above).
-                // Baking Loadout here is optional later once GhostAuthoring variants are audited —
-                // avoid expanding the ghost prefab component set mid-debug of join Instantiates.
+                // [NETCODE] ShipLoadoutState MUST be baked — GhostFields (incl. RuntimeBulletIndex)
+                // do not replicate when the component is only added at runtime by
+                // ShipEnsureComponentsSystem. B-key bullet cycle depends on this ghosting.
+                AddComponent(entity, new ShipLoadoutState
+                {
+                    RocketCount = 0,
+                    MineCount = 0,
+                    RuntimeBulletIndex = 0,
+                    BranchIndex = 0,
+                    ChassisIndex = 0,
+                });
                 AddComponent(entity, new ShipMotorConfig
                 {
                     EngineThrust = authoring.EngineThrust,

@@ -17,12 +17,16 @@ namespace TitanOrbit.ECS
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipInputApplySystem : ISystem
     {
+        /// <summary>[NETCODE] Wait until the client connection is in-game before applying input.</summary>
         public void OnCreate(ref SystemState state)
         {
-            // [NETCODE] Wait until the client connection is in-game before applying input.
             state.RequireForUpdate<NetworkStreamInGame>();
         }
 
+        /// <summary>
+        /// Write pending keyboard/mouse onto the owner ghost, then clear one-shot latches
+        /// (CycleBullet) so the next Unity frame does not re-send the same B press forever.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             // --- System OnUpdate ---
@@ -38,6 +42,12 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Fallback tag added by LocalPlayerTagSystem for hybrid host paths.
             foreach (var input in SystemAPI.Query<RefRW<ShipInput>>().WithAll<ShipTag, LocalPlayerShipTag>())
                 input.ValueRW = cmd;
+
+            // --- Consume one-shots after copy ---
+            // [TITAN-ORBIT] Latch survives across Unity Updates until this apply runs; clear now
+            // so the next BuildInput / Set does not keep CycleBullet.IsSet for many ticks.
+            if (cmd.CycleBullet.IsSet)
+                ShipPendingInput.ConsumeCycleBulletLatch();
         }
     }
 }

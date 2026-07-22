@@ -323,8 +323,21 @@ namespace TitanOrbit.ECS
             TryApplyPerMountWeaponCombat(em, shipEntity, chassisId, shipLevel);
 
             // --- Bullet VFX bank from ShipFamilyDefinition.bulletPrefabIndex ---
-            // [NETCODE] RuntimeBulletIndex is ghosted — server only; clients read replica for anticipation.
+            // [NETCODE] RuntimeBulletIndex is ghosted — server writes; clients read replica / predict.
+            // [TITAN-ORBIT] Reset ONLY when hull family identity changes (ChassisId / branch),
+            // not on ship level or attribute re-applies — otherwise B-key cycle is wiped every
+            // level tick. ShipCycleBulletSystem owns mid-flight index changes.
+            bool bulletBankIdentityChanged = true;
+            if (em.HasComponent<ShipChassisState>(shipEntity))
+            {
+                var prevForBank = em.GetComponentData<ShipChassisState>(shipEntity);
+                var chassisKeyForBank = new FixedString64Bytes(chassisId);
+                bulletBankIdentityChanged = !prevForBank.ChassisId.Equals(chassisKeyForBank)
+                    || prevForBank.AppliedBranchIndex != branchIndex;
+            }
+
             if (writeGhostedShipState &&
+                bulletBankIdentityChanged &&
                 em.HasComponent<ShipLoadoutState>(shipEntity) &&
                 TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition bankFamily))
             {
