@@ -278,12 +278,39 @@ namespace TitanOrbit.Audio
         public void PlayGemDepositSound(float gemValue, float volumeScale = 1f)
         {
             // --- Deposit metronome one-shot ---
-            // [TITAN-ORBIT] Same clip family as pickup, but callers pass a stable gemValue each beat
-            // so pitch does not jump on leftover cargo flushes or bursty NetCode deltas.
-            if (volumeScale <= 0.001f)
+            // [TITAN-ORBIT] Do NOT reuse the pickup log-pitch curve (gemPitchMin can be 0.01 — that
+            // makes mid/high ship-level deposit beats nearly silent). Metronome stays in an audible
+            // band so every tick is clearly heard.
+            if (volumeScale <= 0.001f || gemCollectSound == null)
                 return;
 
-            PlayGemValueScaledSFX(gemCollectSound, gemValue, gemVolume * Mathf.Clamp01(volumeScale));
+            EnsureGemSoundPool();
+            float volume = GetSFXVolume(gemVolume * Mathf.Clamp01(volumeScale));
+            if (volume <= 0.001f)
+                return;
+
+            // Level 1 → brighter; level 20+ → deeper; always within a hearable metronome range.
+            float levelT = Mathf.InverseLerp(1f, 20f, Mathf.Max(1f, gemValue));
+            float pitch = Mathf.Lerp(1.2f, 0.7f, Mathf.Clamp01(levelT));
+
+            if (gemSoundSources == null || gemSoundSources.Length == 0)
+            {
+                if (sfxSource != null)
+                {
+                    sfxSource.pitch = pitch;
+                    sfxSource.PlayOneShot(gemCollectSound, volume);
+                    sfxSource.pitch = 1f;
+                }
+                return;
+            }
+
+            AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
+            nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;
+            if (src == null)
+                return;
+
+            src.pitch = pitch;
+            src.PlayOneShot(gemCollectSound, volume);
         }
 
         public void PlayExplosionSound()
