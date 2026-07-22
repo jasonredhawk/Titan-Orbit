@@ -21,6 +21,11 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
+            // [TITAN-ORBIT] Client: skip during Settling / GhostSpawnBacklog (post–Join Team
+            // Instantiates). Server always mirrors. Gate with IsClient() for Local Host.
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
             foreach (var (velocity, kinematics, shipState) in SystemAPI
                          .Query<RefRW<PhysicsVelocity>, RefRW<ShipKinematics>, RefRO<ShipState>>()
                          .WithAll<ShipTag, Simulate>())

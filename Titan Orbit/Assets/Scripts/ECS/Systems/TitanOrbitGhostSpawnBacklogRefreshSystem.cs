@@ -13,6 +13,11 @@ namespace TitanOrbit.ECS
     /// <c>EcsWorldVisualizer.SyncShipProxyTransforms</c> <c>ToEntityArray</c> → Crash!!!
     /// (Player.log 2026-07-20). This system closes that one-frame hole for LateUpdate / onBeforeRender.
     /// </para>
+    /// <para>
+    /// Backlog is queue/placeholder non-empty <b>or</b> a short Instantiates hold
+    /// (<see cref="ClientJoinSettleCache.ComputeGhostSpawnBacklog"/>) so ship systems stay gated
+    /// after the placeholder is already gone (Player.log 2026-07-22 TeamChoiceResult → Crash!!!).
+    /// </para>
     /// World: ClientSimulation. Group: GhostSpawnSystemGroup, after GhostSpawnSystem.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
@@ -46,10 +51,12 @@ namespace TitanOrbit.ECS
 
             // --- Placeholders still waiting for Instantiates ---
             int placeholderCount = _placeholderQuery.CalculateEntityCount();
-            bool backlog = spawnBufferLen > 0 || placeholderCount > 0;
+            bool queueBusy = spawnBufferLen > 0 || placeholderCount > 0;
 
-            // [TITAN-ORBIT] Only the backlog bit — Settling / quarantine stay owned by the join gate.
-            ClientJoinSettleCache.SetGhostSpawnBacklog(backlog);
+            // [TITAN-ORBIT] SetGhostSpawnBacklog also latches a short Instantiates hold so the
+            // TeamChoice ship frame (placeholder already gone) still blocks ship queries.
+            // Settling / quarantine stay owned by the join gate.
+            ClientJoinSettleCache.SetGhostSpawnBacklog(queueBusy);
         }
     }
 }

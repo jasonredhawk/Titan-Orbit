@@ -32,17 +32,24 @@ namespace TitanOrbit.ECS
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            // --- Skip ship Burst drive during Instantiates windows ---
+            // [TITAN-ORBIT] This world is ClientSimulation only. After Join Team, Settling stays OFF
+            // but GhostSpawnBacklog covers ship Instantiates — ScheduleParallel over fresh ship
+            // archetypes in that window Crash!!!'d (Player.log 2026-07-22 TeamChoiceResult).
+            // Thrust waits a few frames; server authority continues.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
             // --- Map size for toroidal orbit / shield math (same source as server) ---
             GetMapSize(ref state, out float mapW, out float mapH);
 
             // --- Planet snapshots (orbit ring + moon shield) ---
             // [ECS/DOTS] TempJob list — disposed after the parallel job completes.
             // [TITAN-ORBIT] Windows TransformQuarantine: PlanetMotorSnapshotCollection.Collect does
-            // planet ToEntityArray → Crash!!!. RequireForUpdate ShipMotorConfig only becomes true
-            // when the TeamChoice ship Instantiates — so the first Collect is right after
-            // TeamChoiceResult (Player.log 2026-07-20). Skip the gather; drive thrust/turn with an
-            // empty planet list. Server authority still runs full Collect. Do NOT gate Collect
-            // globally — Local Host shares ClientJoinSettleCache with the server world.
+            // planet ToEntityArray → Crash!!!. Quarantine is session-long after late-join — skip
+            // the gather and drive thrust/turn with an empty planet list. Server authority still
+            // runs full Collect. Do NOT gate Collect on the static alone from server worlds —
+            // this system is client-only, so quarantine here is safe.
             NativeList<PlanetMotorSnapshot> planets;
             if (ClientJoinSettleCache.TransformQuarantine || ClientJoinSettleCache.Settling)
                 planets = new NativeList<PlanetMotorSnapshot>(0, Allocator.TempJob);

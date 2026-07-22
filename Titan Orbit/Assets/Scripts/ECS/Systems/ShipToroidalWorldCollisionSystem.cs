@@ -14,7 +14,10 @@ namespace TitanOrbit.ECS
     /// Runs after Unity Physics integrates hulls and before
     /// <see cref="ShipPlanarPhysicsConstraintSystem"/> flattens tilt. Same math on
     /// ServerSimulation and ClientSimulation (<see cref="Simulate"/>) so NetCode prediction
-    /// matches authority. Presentation still draws bodies via <c>ToroidalDisplay</c>; this system
+    /// matches authority — except the Windows client under
+    /// <see cref="ClientJoinSettleCache.TransformQuarantine"/> skips the obstacle gather
+    /// (full planet/asteroid queries Crash!!! after TeamChoice; Player.log 2026-07-22).
+    /// Presentation still draws bodies via <c>ToroidalDisplay</c>; this system
     /// only adjusts ship <see cref="LocalTransform"/> / <see cref="PhysicsVelocity"/>.
     /// Pipeline: Drive → Physics → ToroidalWorldCollision (this) → Planar → KinematicsSync.
     /// </summary>
@@ -50,6 +53,20 @@ namespace TitanOrbit.ECS
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            // --- Client late-join safety (map-body gathers) ---
+            // [TITAN-ORBIT] RequireForUpdate<ShipTag> means this system first runs when the
+            // TeamChoice ship Instantiates — Settling is already OFF (JoinSettleCompleted).
+            // Planet/asteroid/moon foreach below is a full map gather. Player.log 2026-07-22:
+            // TeamChoiceResult → Crash!!! in Burst. Gate with TransformQuarantine (session-long)
+            // OR Settling OR GhostSpawnBacklog. Must use IsClient() — Local Host shares the
+            // static cache with the server world, and the server must keep seam resolve.
+            // Under quarantine the client relies on same-tile PhysX + server authority for seams.
+            if (state.World.IsClient() &&
+                (ClientJoinSettleCache.TransformQuarantine ||
+                 ClientJoinSettleCache.Settling ||
+                 ClientJoinSettleCache.GhostSpawnBacklog))
+                return;
+
             // --- Map size ---
             // Prefer MapStateSingleton when present (server / ghost); else ToroidalMapEcs cache
             // (client often gets size from MapSessionMetaRpc into that static).
