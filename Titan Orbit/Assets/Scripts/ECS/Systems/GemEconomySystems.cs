@@ -44,6 +44,25 @@ namespace TitanOrbit.ECS
         /// <summary>Gems deposited per second scales with ship level × this factor.</summary>
         public const float DepositRatePerShipLevel = 2f;
 
+        /// <summary>
+        /// Client deposit metronome period in seconds.
+        /// [TITAN-ORBIT] At rate <c>ShipLevel × DepositRatePerShipLevel</c>, one <c>ShipLevel</c>
+        /// of gems transfers every 0.5s — so the audible beat matches one gem-value chunk.
+        /// </summary>
+        public const float GemDepositBeatIntervalSeconds = 0.5f;
+
+        /// <summary>
+        /// Max toroidal distance (world units) at which a client still hears another ship's
+        /// gem-deposit metronome. Beyond this the beat is silent — keeps distant moons quiet.
+        /// </summary>
+        public const float GemDepositHearRange = 48f;
+
+        /// <summary>
+        /// Within this toroidal distance deposit beats play at full volume; between this and
+        /// <see cref="GemDepositHearRange"/> volume falls off linearly.
+        /// </summary>
+        public const float GemDepositHearFullVolumeRange = 18f;
+
         /// <summary>Smallest gem chunk worth spawning as an entity.</summary>
         public const float MinGemSpawnValue = 0.25f;
 
