@@ -111,9 +111,6 @@ namespace TitanOrbit.Game
             if (world == null || !world.IsCreated)
                 return;
 
-            if (WorldFloatingCountManager.Instance == null)
-                return;
-
             var em = world.EntityManager;
 
             // [TITAN-ORBIT] Ship ToComponentDataArray during GhostSpawn Instantiates Crash!!!
@@ -132,20 +129,74 @@ namespace TitanOrbit.Game
             // --- Gem deposit metronome BEFORE PollShips ---
             // Must run first so we can still see last-frame CurrentGems vs this frame (remote latch).
             // PollShips overwrites snapshot.Gems afterward.
+            // [TITAN-ORBIT] Runs even when WorldFloatingCountManager is missing — deposit SFX must
+            // not depend on floating-count UI being present.
             TickGemDepositMetronomes(em);
 
-            PollShips(em);
+            // Pickup / health floats need the popup manager; skip delta UI if it is not in the scene.
+            if (WorldFloatingCountManager.Instance != null)
+            {
+                PollShips(em);
 
-            // [TITAN-ORBIT] Asteroid mining floats must run under TransformQuarantine (session-long on
-            // Windows). PollAsteroids walks hybrid proxies + per-entity reads — same pattern as
-            // BulletCosmeticHitQuery / minimap. Skip only while Settling (map Instantiates storm).
-            if (!ClientJoinSettleCache.Settling)
-                PollAsteroids(em);
+                // [TITAN-ORBIT] Asteroid mining floats must run under TransformQuarantine (session-long on
+                // Windows). PollAsteroids walks hybrid proxies + per-entity reads — same pattern as
+                // BulletCosmeticHitQuery / minimap. Skip only while Settling (map Instantiates storm).
+                if (!ClientJoinSettleCache.Settling)
+                    PollAsteroids(em);
 
-            // Planet gem dictionary is reserved for future deposit popups. Full planet
-            // ToComponentDataArray stays gated — unsafe under TransformQuarantine after Settling OFF.
-            if (!ClientJoinSettleCache.TransformQuarantine)
-                PollPlanetGems(em);
+                // Planet gem dictionary is reserved for future deposit popups. Full planet
+                // ToComponentDataArray stays gated — unsafe under TransformQuarantine after Settling OFF.
+                if (!ClientJoinSettleCache.TransformQuarantine)
+                    PollPlanetGems(em);
+            }
+            else
+            {
+                // Keep cargo baselines fresh so the next metronome frame can detect remote drain.
+                RefreshShipGemBaselines(em);
+            }
+        }
+
+        /// <summary>
+        /// Lightweight gem cargo snapshot sync used when floating-count UI is unavailable so the
+        /// deposit metronome still has a previous-frame <c>CurrentGems</c> baseline for remotes.
+        /// </summary>
+        void RefreshShipGemBaselines(EntityManager em)
+        {
+            using var shipQuery = em.CreateEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadOnly<ShipState>(),
+                ComponentType.ReadOnly<GhostOwner>());
+            using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
+            using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+
+            for (int i = 0; i < shipStates.Length; i++)
+            {
+                int networkId = owners[i].NetworkId;
+                if (networkId == 0)
+                    continue;
+
+                var state = shipStates[i];
+                if (_ships.TryGetValue(networkId, out ShipSnapshot snap))
+                {
+                    snap.Gems = state.CurrentGems;
+                    snap.People = state.CurrentPeople;
+                    snap.Health = state.Health;
+                    snap.IsDead = state.IsDead;
+                    snap.ShipLevel = state.ShipLevel;
+                    _ships[networkId] = snap;
+                }
+                else
+                {
+                    _ships[networkId] = new ShipSnapshot
+                    {
+                        People = state.CurrentPeople,
+                        Gems = state.CurrentGems,
+                        Health = state.Health,
+                        IsDead = state.IsDead,
+                        ShipLevel = state.ShipLevel,
+                    };
+                }
+            }
         }
 
         /// <summary>
