@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using TitanOrbit.Game;
+using TitanOrbit.Simulation;
 using Shapes;
 
 namespace TitanOrbit.UI
@@ -15,6 +16,9 @@ namespace TitanOrbit.UI
     /// Minimap showing a larger region around the player (not full map).
     /// Displays: player ship (cross blip), friendly/enemy ships (cross, team colors), planets, home planets, gem moons, asteroids.
     /// Each team has its own color.
+    /// Planet blips also draw a thin team-colored ring at the gem-moon / ship orbit radius
+    /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>) so the orbit path is readable on the map.
+    /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> caches, never map-body ECS gathers.
     /// </summary>
     public class MinimapController : MonoBehaviour
     {
@@ -28,6 +32,8 @@ namespace TitanOrbit.UI
         [SerializeField] private float asteroidBlipScaleFactor = 1f; // Asteroids use physical scale for blip size
         [SerializeField] private float moonBlipScaleFactor = 0.85f;
         [SerializeField] private float moonBlipMinSize = 5f;
+        [Tooltip("Alpha of the thin moon-orbit ring around each planet blip (team tint).")]
+        [SerializeField] [Range(0.15f, 1f)] private float planetOrbitRingAlpha = 0.4f;
         [SerializeField] private float edgeMarkerSize = 36f; // Base size of edge markers for planets outside visible area
         [SerializeField] private float edgeMarkerMinSize = 20f; // Minimum size for farthest planets
         [SerializeField] private float edgeMarkerMaxSize = 48f; // Maximum size for closest planets
@@ -145,6 +151,8 @@ namespace TitanOrbit.UI
         private struct PlanetBlipLayoutState
         {
             public float QuantizedSize;
+            /// <summary>Quantized world→minimap scale used for orbit ring radius (position scale).</summary>
+            public float QuantizedWorldToMinimapScale;
             public int Population;
             public int Level;
             public Color32 Color;
@@ -167,7 +175,8 @@ namespace TitanOrbit.UI
             Triangle,    // (legacy directional blip)
             Cross,       // Ships (player + others)
             Irregular,   // Asteroids
-            Bullseye     // Markers (attack/defend)
+            Bullseye,    // Markers (attack/defend)
+            Ring         // Thin annulus — planet moon-orbit path on the minimap
         }
 
         /// <summary>
@@ -1645,11 +1654,11 @@ namespace TitanOrbit.UI
                     if (blips.ContainsKey(p.transform))
                     {
                         blips[p.transform].gameObject.SetActive(true);
-                        UpdatePlanetBlip(blips[p.transform], p, planetBlipColor, planetBlipSize);
+                        UpdatePlanetBlip(blips[p.transform], p, planetBlipColor, planetBlipSize, worldToMinimapScale);
                     }
                     else
                     {
-                        EnsureBlip(p.transform, () => CreatePlanetBlip(p, planetBlipColor, planetBlipSize));
+                        EnsureBlip(p.transform, () => CreatePlanetBlip(p, planetBlipColor, planetBlipSize, worldToMinimapScale));
                     }
                 }
             }
@@ -1694,11 +1703,11 @@ namespace TitanOrbit.UI
                     if (blips.ContainsKey(hp.transform))
                     {
                         blips[hp.transform].gameObject.SetActive(true);
-                        UpdatePlanetBlip(blips[hp.transform], hp, homeBlipColor, homeBlipSize);
+                        UpdatePlanetBlip(blips[hp.transform], hp, homeBlipColor, homeBlipSize, worldToMinimapScale);
                     }
                     else
                     {
-                        EnsureBlip(hp.transform, () => CreatePlanetBlip(hp, homeBlipColor, homeBlipSize));
+                        EnsureBlip(hp.transform, () => CreatePlanetBlip(hp, homeBlipColor, homeBlipSize, worldToMinimapScale));
                     }
                 }
             }
@@ -1908,10 +1917,19 @@ namespace TitanOrbit.UI
             return rt;
         }
 
-        private RectTransform CreatePlanetBlip(MinimapBlipAnchor p, Color color, float size)
+        /// <summary>
+        /// Builds a layered planet blip under <see cref="minimapContent"/>: orbit ring, level dots,
+        /// filled disc, and population label. Ring radius matches the gem-moon / ship orbit centerline.
+        /// </summary>
+        /// <param name="p">Planet (or home) anchor with team, level, and population.</param>
+        /// <param name="color">Team tint, or neutral grey / gold when unowned.</param>
+        /// <param name="size">Planet disc diameter in minimap UI pixels (includes sizeScaleFactor).</param>
+        /// <param name="worldToMinimapScale">World→UI scale used for blip <em>positions</em> (no sizeScaleFactor).</param>
+        private RectTransform CreatePlanetBlip(MinimapBlipAnchor p, Color color, float size, float worldToMinimapScale)
         {
             if (minimapContent == null || p == null) return null;
 
+            // --- Root blip (positioned later by UpdateBlipPositions) ---
             var go = new GameObject("Blip", typeof(RectTransform));
             go.transform.SetParent(minimapContent, false);
             go.SetActive(false);
@@ -1921,7 +1939,13 @@ namespace TitanOrbit.UI
             rt.anchorMax = new Vector2(0.5f, 0.5f);
             rt.pivot = new Vector2(0.5f, 0.5f);
 
-            // Level dots (small circles around the planet, behind fill)
+            // --- Moon / ship orbit ring (behind everything else) ---
+            // [TITAN-ORBIT] Same centerline as PlanetOrbitMath / gem moon — not the tight level-dot ring.
+            // Ring uses worldToMinimapScale (position scale), not the enlarged planet disc size.
+            float planetWorldSize = ResolvePlanetWorldSize(p);
+            AddOrUpdatePlanetOrbitRing(rt, planetWorldSize, worldToMinimapScale, color);
+
+            // --- Level dots (small circles just outside the planet fill) ---
             var dotsGo = new GameObject("LevelDots", typeof(RectTransform));
             dotsGo.transform.SetParent(rt, false);
             var dotsRect = dotsGo.GetComponent<RectTransform>();
@@ -1931,7 +1955,7 @@ namespace TitanOrbit.UI
             dotsRect.offsetMax = Vector2.zero;
             AddLevelDotsToContainer(dotsRect, p.PlanetLevel, size, color);
 
-            // Planet circle on top of lines
+            // --- Planet fill disc ---
             var fillGo = new GameObject("PlanetFill", typeof(RectTransform));
             fillGo.transform.SetParent(rt, false);
             var fillRt = fillGo.GetComponent<RectTransform>();
@@ -1944,7 +1968,7 @@ namespace TitanOrbit.UI
             fillImg.color = color;
             fillImg.raycastTarget = false;
 
-            // Population text on top; auto-sized to stay inside the circle (no wrap)
+            // --- Population text (auto-sized inside the disc) ---
             var textGo = new GameObject("PopulationText", typeof(RectTransform));
             textGo.transform.SetParent(rt, false);
             var textRect = textGo.GetComponent<RectTransform>();
@@ -1960,6 +1984,124 @@ namespace TitanOrbit.UI
             ApplyPlanetPopulationTextLayout(tmp, size);
 
             return rt;
+        }
+
+        /// <summary>
+        /// Planet uniform scale used for moon orbit math — same value as
+        /// <see cref="MinimapEcsEntitySync"/> passes into <c>GetMoonOrbitOffset</c>.
+        /// </summary>
+        private static float ResolvePlanetWorldSize(MinimapBlipAnchor p)
+        {
+            if (p == null) return 1f;
+            float fromScale = (p.transform.localScale.x + p.transform.localScale.y + p.transform.localScale.z) / 3f;
+            if (fromScale >= 0.1f) return fromScale;
+            return Mathf.Max(0.25f, p.BodySize);
+        }
+
+        /// <summary>
+        /// UI diameter (pixels) of the moon-orbit ring so its path matches the moon blip position.
+        /// Uses world orbit centerline × <paramref name="worldToMinimapScale"/> — the same scale as
+        /// blip positions — not the enlarged planet disc (<c>sizeScaleFactor</c>).
+        /// </summary>
+        /// <param name="planetWorldSize">Planet <c>LocalTransform.Scale</c> / BodySize (world units).</param>
+        /// <param name="worldToMinimapScale">displaySize / (minimapRadius × 2).</param>
+        /// <returns>Ring Image sizeDelta (diameter) in minimap pixels.</returns>
+        private static float GetPlanetOrbitRingBlipDiameter(float planetWorldSize, float worldToMinimapScale)
+        {
+            // --- Match moon blip distance from planet ---
+            // World moon offset length ≈ centerWorld from PlanetOrbitMath.GetRingRadiiWorld.
+            // Minimap positions: uiDelta = worldDelta * worldToMinimapScale (no sizeScaleFactor).
+            // Intentional: planet fill is enlarged for readability; the orbit ring is not.
+            PlanetOrbitMath.GetRingRadiiWorld(
+                Mathf.Max(0.01f, planetWorldSize),
+                1,
+                out _,
+                out _,
+                out float centerWorld);
+            // Stroke centerline sits slightly inside the texture edge (see BlipType.Ring) —
+            // scale sizeDelta so that centerline lands on centerWorld * worldToMinimapScale.
+            const float ringTexHalf = 128f;       // CreateBlipSprite(256) → half = 128
+            const float ringTexMid = 128f - 1.5f; // matches midRadius in Ring pixel gen
+            float centerlineScale = ringTexHalf / ringTexMid;
+            float diameter = 2f * centerWorld * Mathf.Max(0.0001f, worldToMinimapScale) * centerlineScale;
+            return Mathf.Max(4f, diameter);
+        }
+
+        /// <summary>
+        /// Creates or refreshes the thin OrbitRing child under a planet blip.
+        /// Drawn behind LevelDots / PlanetFill; tinted with the planet team color.
+        /// Radius follows the gem-moon orbit centerline in UI space.
+        /// </summary>
+        /// <param name="planetBlipRoot">Root RectTransform of the planet blip hierarchy.</param>
+        /// <param name="planetWorldSize">Planet world scale for <see cref="PlanetOrbitMath"/>.</param>
+        /// <param name="worldToMinimapScale">Same scale used to project moon/planet positions.</param>
+        /// <param name="planetColor">Team (or neutral) color used for the planet fill.</param>
+        private void AddOrUpdatePlanetOrbitRing(
+            RectTransform planetBlipRoot,
+            float planetWorldSize,
+            float worldToMinimapScale,
+            Color planetColor)
+        {
+            if (planetBlipRoot == null) return;
+
+            // --- Resolve / create OrbitRing child ---
+            Transform ringTf = planetBlipRoot.Find("OrbitRing");
+            RectTransform ringRt;
+            Image ringImg;
+            if (ringTf == null)
+            {
+                var ringGo = new GameObject("OrbitRing", typeof(RectTransform));
+                ringGo.transform.SetParent(planetBlipRoot, false);
+                ringRt = ringGo.GetComponent<RectTransform>();
+                // Centered on the planet; sizeDelta is the ring diameter (through the moon path).
+                ringRt.anchorMin = new Vector2(0.5f, 0.5f);
+                ringRt.anchorMax = new Vector2(0.5f, 0.5f);
+                ringRt.pivot = new Vector2(0.5f, 0.5f);
+                ringRt.anchoredPosition = Vector2.zero;
+                ringImg = ringGo.AddComponent<Image>();
+                ringImg.sprite = GetMinimapOrbitRingSprite();
+                ringImg.type = Image.Type.Simple;
+                ringImg.raycastTarget = false;
+                // [UNITY] First sibling draws behind later siblings under the same parent.
+                ringGo.transform.SetAsFirstSibling();
+            }
+            else
+            {
+                ringRt = ringTf as RectTransform;
+                ringImg = ringTf.GetComponent<Image>();
+                if (ringRt == null || ringImg == null) return;
+                // Hot-reload / thickness tweak: refresh sprite if an older thick ring is cached.
+                if (ringImg.sprite == null || ringImg.sprite.name != "MinimapOrbitRing_v3")
+                    ringImg.sprite = GetMinimapOrbitRingSprite();
+                ringTf.SetAsFirstSibling();
+            }
+
+            // --- Size + team tint ---
+            float ringDiameter = GetPlanetOrbitRingBlipDiameter(planetWorldSize, worldToMinimapScale);
+            ringRt.sizeDelta = new Vector2(ringDiameter, ringDiameter);
+            Color ringColor = planetColor;
+            ringColor.a = planetOrbitRingAlpha;
+            ringImg.color = ringColor;
+        }
+
+        /// <summary>
+        /// Cached thin-ring sprite shared by all planet orbit rings (white, tinted by Image.color).
+        /// </summary>
+        private Sprite _minimapOrbitRingSpriteCache;
+
+        /// <summary>
+        /// Returns a high-resolution thin annulus sprite for planet orbit rings on the minimap.
+        /// Generated once and reused; RGB is white so Image.color supplies the team tint.
+        /// </summary>
+        private Sprite GetMinimapOrbitRingSprite()
+        {
+            // v3 = medium-thin stroke; recreate if an older cache is still hanging around in Play Mode.
+            if (_minimapOrbitRingSpriteCache != null && _minimapOrbitRingSpriteCache.name == "MinimapOrbitRing_v3")
+                return _minimapOrbitRingSpriteCache;
+            _minimapOrbitRingSpriteCache = CreateBlipSprite(256, BlipType.Ring);
+            if (_minimapOrbitRingSpriteCache != null)
+                _minimapOrbitRingSpriteCache.name = "MinimapOrbitRing_v3";
+            return _minimapOrbitRingSpriteCache;
         }
 
         /// <summary>Single-line population label: shrinks font to fit inside the planet, no wrapping.</summary>
@@ -2032,18 +2174,31 @@ namespace TitanOrbit.UI
             }
         }
 
-        private void UpdatePlanetBlip(RectTransform blipRt, MinimapBlipAnchor p, Color color, float size)
+        /// <summary>
+        /// Refreshes planet blip layout when size, population, level, or team color changes.
+        /// Also keeps the moon-orbit ring sized/tinted to the gem-moon path (position scale).
+        /// </summary>
+        private void UpdatePlanetBlip(
+            RectTransform blipRt,
+            MinimapBlipAnchor p,
+            Color color,
+            float size,
+            float worldToMinimapScale)
         {
             if (blipRt == null || p == null) return;
 
+            // --- Quantize size so float jitter does not rebuild sprites every frame ---
             const float sizeQuantStep = 0.5f;
             float qSize = Mathf.Round(size / sizeQuantStep) * sizeQuantStep;
+            // Quantize position-scale too — ring radius uses this, not the enlarged disc size.
+            float qWorldScale = Mathf.Round(worldToMinimapScale * 1000f) / 1000f;
             int pop = p.Population;
             int level = p.PlanetLevel;
             Color32 c32 = color;
 
             if (planetBlipLayoutState.TryGetValue(p.transform, out var prev) &&
                 Mathf.Approximately(prev.QuantizedSize, qSize) &&
+                Mathf.Approximately(prev.QuantizedWorldToMinimapScale, qWorldScale) &&
                 prev.Population == pop &&
                 prev.Level == level &&
                 prev.Color.r == c32.r && prev.Color.g == c32.g && prev.Color.b == c32.b && prev.Color.a == c32.a)
@@ -2052,12 +2207,17 @@ namespace TitanOrbit.UI
             planetBlipLayoutState[p.transform] = new PlanetBlipLayoutState
             {
                 QuantizedSize = qSize,
+                QuantizedWorldToMinimapScale = qWorldScale,
                 Population = pop,
                 Level = level,
                 Color = c32
             };
 
+            // --- Root + orbit ring (ring follows moon path; disc may be larger for readability) ---
             blipRt.sizeDelta = new Vector2(qSize, qSize);
+            AddOrUpdatePlanetOrbitRing(blipRt, ResolvePlanetWorldSize(p), worldToMinimapScale, color);
+
+            // --- Planet fill tint ---
             Image planetImg = null;
             var fillTf = blipRt.Find("PlanetFill");
             if (fillTf != null)
@@ -2067,6 +2227,7 @@ namespace TitanOrbit.UI
             if (planetImg != null)
                 planetImg.color = color;
 
+            // --- Population label ---
             var textGo = blipRt.Find("PopulationText");
             if (textGo != null && textGo.GetComponent<TextMeshProUGUI>() is TextMeshProUGUI tmp)
             {
@@ -2074,6 +2235,7 @@ namespace TitanOrbit.UI
                 ApplyPlanetPopulationTextLayout(tmp, qSize);
             }
 
+            // --- Level dots around the fill (decorative; not the moon orbit) ---
             var dotsGo = blipRt.Find("LevelDots");
             if (dotsGo != null)
             {
@@ -2355,6 +2517,35 @@ namespace TitanOrbit.UI
                     }
                     break;
                 }
+
+                case BlipType.Ring:
+                {
+                    // Thin anti-aliased annulus for planet moon-orbit path on the minimap.
+                    // Stroke is centered near the outer edge so Image sizeDelta ≈ orbit diameter
+                    // (centerline through the moon). Slightly thicker than a hairline for readability.
+                    float midRadius = textureSize * 0.5f - 1.5f;
+                    float halfStroke = Mathf.Max(1.1f, textureSize * 0.008f); // ~2px @ 256
+                    float aa = Mathf.Max(0.9f, textureSize * 0.007f);
+                    for (int y = 0; y < textureSize; y++)
+                    {
+                        for (int x = 0; x < textureSize; x++)
+                        {
+                            float dx = x - centerX;
+                            float dy = y - centerY;
+                            float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                            float outside = Mathf.Abs(dist - midRadius) - halfStroke;
+                            float alpha;
+                            if (outside <= 0f)
+                                alpha = 1f;
+                            else if (outside < aa)
+                                alpha = 1f - Mathf.SmoothStep(0f, aa, outside);
+                            else
+                                alpha = 0f;
+                            pixels[y * textureSize + x] = new Color(1f, 1f, 1f, alpha);
+                        }
+                    }
+                    break;
+                }
             }
             
             texture.SetPixels(pixels);
@@ -2369,6 +2560,7 @@ namespace TitanOrbit.UI
                 case BlipType.Cross: spriteName = "Cross"; break;
                 case BlipType.Irregular: spriteName = "Irregular"; break;
                 case BlipType.Bullseye: spriteName = "Bullseye"; break;
+                case BlipType.Ring: spriteName = "Ring"; break;
             }
             
             Sprite sprite = Sprite.Create(texture, new Rect(0, 0, textureSize, textureSize), new Vector2(0.5f, 0.5f), 100f);
