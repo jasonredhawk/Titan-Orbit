@@ -7,6 +7,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -24,9 +25,9 @@ namespace TitanOrbit.Game
     /// <c>ToEntityArray</c> — so it still works under session-long <see cref="ClientJoinSettleCache.TransformQuarantine"/>.
     /// </para>
     /// <para>
-    /// Gem-deposit audio is a <b>metronome</b> driven by replicated
-    /// <see cref="ShipDepositIntent"/> + moon dock state — not cargo deltas — so beats stay
-    /// steady for the local ship and for nearby depositing players.
+    /// Gem-deposit audio is a wall-clock <b>metronome</b>: local ships use
+    /// <see cref="MoonOrbitClientState.WantDepositGems"/> immediately; remotes use ghost intent
+    /// or a short cargo-drain latch while docked. Pitch stays on ship level; hear range is toroidal.
     /// </para>
     /// </summary>
     public class EcsFloatingCountPresenter : MonoBehaviour
@@ -51,6 +52,12 @@ namespace TitanOrbit.Game
             /// Keeps each depositing hull on a steady cadence independent of NetCode snapshot jitter.
             /// </summary>
             public float LastDepositSoundTime;
+            /// <summary>
+            /// Keep playing remote deposit beats until this time after we observed cargo drain while
+            /// docked. Bridges gaps between ghost <c>CurrentGems</c> snapshots so the metronome
+            /// does not go silent between NetCode updates.
+            /// </summary>
+            public float DepositAudioLatchedUntil;
         }
 
         readonly Dictionary<int, ShipSnapshot> _ships = new Dictionary<int, ShipSnapshot>();
@@ -122,12 +129,12 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            PollShips(em);
-
-            // --- Gem deposit metronome (local + nearby remotes) ---
-            // [TITAN-ORBIT] Driven by ShipDepositIntent / moon dock ghosts — not CurrentGems deltas —
-            // so the beat stays steady even when NetCode snapshots arrive in bursts.
+            // --- Gem deposit metronome BEFORE PollShips ---
+            // Must run first so we can still see last-frame CurrentGems vs this frame (remote latch).
+            // PollShips overwrites snapshot.Gems afterward.
             TickGemDepositMetronomes(em);
+
+            PollShips(em);
 
             // [TITAN-ORBIT] Asteroid mining floats must run under TransformQuarantine (session-long on
             // Windows). PollAsteroids walks hybrid proxies + per-entity reads — same pattern as
@@ -295,7 +302,7 @@ namespace TitanOrbit.Game
                     }
                 }
 
-                // Preserve LastDepositSoundTime so the metronome phase survives cargo snapshot writes.
+                // Preserve metronome phase + remote deposit latch across cargo snapshot writes.
                 _ships[networkId] = new ShipSnapshot
                 {
                     People = state.CurrentPeople,
@@ -304,6 +311,7 @@ namespace TitanOrbit.Game
                     IsDead = state.IsDead,
                     ShipLevel = state.ShipLevel,
                     LastDepositSoundTime = snap.LastDepositSoundTime,
+                    DepositAudioLatchedUntil = snap.DepositAudioLatchedUntil,
                 };
             }
         }
@@ -510,41 +518,46 @@ namespace TitanOrbit.Game
         /// Plays a steady gem-deposit metronome for every nearby ship that is actively depositing.
         /// <para>
         /// Server deposit rate is <c>ShipLevel × 2</c> gems/sec, so one <c>ShipLevel</c> chunk
-        /// lands every <see cref="GemEconomyConstants.GemDepositBeatIntervalSeconds"/>. We tick on
-        /// that fixed interval from replicated <see cref="ShipDepositIntent"/> + dock state —
-        /// never from <c>CurrentGems</c> deltas (those arrive in NetCode bursts and sounded erratic).
+        /// lands every <see cref="GemEconomyConstants.GemDepositBeatIntervalSeconds"/>. Cadence is
+        /// wall-clock — not tied to when <c>CurrentGems</c> snapshots arrive.
         /// </para>
-        /// Other players are audible only within <see cref="GemEconomyConstants.GemDepositHearRange"/>
-        /// toroidal distance of the local ship, so distant moons stay quiet while the orbit menu
-        /// still lets you hear neighbors on the same moon.
+        /// <para>
+        /// Local player uses <see cref="MoonOrbitClientState.WantDepositGems"/> immediately (no RPC
+        /// wait). Remotes use ghost <see cref="ShipDepositIntent"/> when present, otherwise a short
+        /// latch after observed cargo drain while docked — so neighbors stay audible between
+        /// NetCode updates. Hear range is toroidal from the local ship; local beats always full volume.
+        /// </para>
         /// </summary>
         void TickGemDepositMetronomes(EntityManager em)
         {
-            // --- Listener pose (local ship) ---
-            // [HYBRID] Presentation pose when available — matches what the player sees at the moon.
-            if (!EcsGameBridge.TryGetLocalShipPresentationPosition(out Vector3 listenerPos) &&
-                !EcsGameBridge.TryGetLocalShipPosition(out listenerPos))
-                return;
-
-            float mapW = math.max(100f, ToroidalMapEcs.MapWidth);
-            float mapH = math.max(100f, ToroidalMapEcs.MapHeight);
             float now = Time.time;
             float beatInterval = GemEconomyConstants.GemDepositBeatIntervalSeconds;
             float hearRange = GemEconomyConstants.GemDepositHearRange;
             float fullVolumeRange = GemEconomyConstants.GemDepositHearFullVolumeRange;
+            float mapW = math.max(100f, ToroidalMapEcs.MapWidth);
+            float mapH = math.max(100f, ToroidalMapEcs.MapHeight);
+
+            int localNetworkId = EcsGameBridge.GetLocalNetworkId();
+            bool hasLocalNetworkId = localNetworkId > 0;
+
+            // --- Listener pose for remote proximity ---
+            // Local deposit beats ignore distance (always full volume). Remotes need a listener.
+            bool hasListener =
+                EcsGameBridge.TryGetLocalShipPresentationPosition(out Vector3 listenerPos) ||
+                EcsGameBridge.TryGetLocalShipPosition(out listenerPos);
 
             // --- Tiny ship query (safe after ShouldSkipShipEntityQueries) ---
-            // [ECS/DOTS] ShipDepositIntent + ShipMoonDockState are ghost-serialized on the hull.
+            // ShipDepositIntent is optional per-entity — older ghosts / ensure-system timing must not
+            // exclude a docked hull from the metronome entirely.
             using var shipQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),
                 ComponentType.ReadOnly<GhostOwner>(),
-                ComponentType.ReadOnly<ShipMoonDockState>(),
-                ComponentType.ReadOnly<ShipDepositIntent>());
+                ComponentType.ReadOnly<ShipMoonDockState>());
+            using var entities = shipQuery.ToEntityArray(Allocator.Temp);
             using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
             using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
             using var moonDocks = shipQuery.ToComponentDataArray<ShipMoonDockState>(Allocator.Temp);
-            using var depositIntents = shipQuery.ToComponentDataArray<ShipDepositIntent>(Allocator.Temp);
 
             for (int i = 0; i < shipStates.Length; i++)
             {
@@ -554,37 +567,10 @@ namespace TitanOrbit.Game
 
                 var state = shipStates[i];
                 var moonDock = moonDocks[i];
-                var depositIntent = depositIntents[i];
+                Entity shipEntity = entities[i];
+                bool isLocal = hasLocalNetworkId && networkId == localNetworkId;
 
-                // --- Same gates the server uses in GemDepositSystem (client-readable ghosts) ---
-                if (state.IsDead || state.AwaitingTeamSelection)
-                    continue;
-                if (!depositIntent.WantDepositGems)
-                    continue;
-                if (state.CurrentGems <= 0.001f)
-                    continue;
-                if (moonDock.MoonPlanetId == 0 ||
-                    moonDock.LandingProgress < GemEconomyConstants.MoonLandingCompleteThreshold)
-                    continue;
-
-                // --- Hull proxy for world position + floating-count anchor ---
-                if (!TryGetShipAnchor(networkId, out Transform anchor) || anchor == null)
-                    continue;
-
-                // --- Proximity (toroidal) — distant depositors stay silent ---
-                float3 listener = new float3(listenerPos.x, listenerPos.y, listenerPos.z);
-                float3 depositor = new float3(anchor.position.x, anchor.position.y, anchor.position.z);
-                float dist = ToroidalMapEcs.ToroidalDistance(listener, depositor, mapW, mapH);
-                if (dist > hearRange)
-                    continue;
-
-                // Full volume nearby; linear falloff out to hear range (metronome stays on-beat).
-                float volumeScale = dist <= fullVolumeRange
-                    ? 1f
-                    : 1f - Mathf.InverseLerp(fullVolumeRange, hearRange, dist);
-
-                // --- Per-ship metronome phase ---
-                // Ensure snapshot row exists so we can store LastDepositSoundTime across frames.
+                // --- Snapshot row (previous gems still valid — PollShips has not overwritten yet) ---
                 if (!_ships.TryGetValue(networkId, out ShipSnapshot snap))
                 {
                     snap = new ShipSnapshot
@@ -594,12 +580,100 @@ namespace TitanOrbit.Game
                         Health = state.Health,
                         IsDead = state.IsDead,
                         ShipLevel = state.ShipLevel,
-                        LastDepositSoundTime = 0f,
                     };
+                    // First sight: baseline only — avoid a spurious beat from join/spawn.
+                    _ships[networkId] = snap;
+                    continue;
                 }
 
-                // Not due yet — keep cadence; do not catch up multiple beats in one frame
-                // (catch-up would sound like a stutter burst after a hitch).
+                bool docked = moonDock.MoonPlanetId != 0 &&
+                              moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
+                bool canDeposit = !state.IsDead &&
+                                  !state.AwaitingTeamSelection &&
+                                  docked &&
+                                  state.CurrentGems > 0.001f;
+
+                if (!canDeposit)
+                {
+                    // Stop latch when undocked, empty, or dead so we do not keep ticking.
+                    snap.DepositAudioLatchedUntil = 0f;
+                    _ships[networkId] = snap;
+                    continue;
+                }
+
+                // --- Resolve "actively depositing" without waiting on flaky ghost intent alone ---
+                bool wantDeposit = false;
+                if (isLocal)
+                {
+                    // [TITAN-ORBIT] Immediate UI/input mirror — set the same frame as the toggle.
+                    wantDeposit = MoonOrbitClientState.WantDepositGems;
+                }
+
+                if (!wantDeposit &&
+                    em.HasComponent<ShipDepositIntent>(shipEntity) &&
+                    em.GetComponentData<ShipDepositIntent>(shipEntity).WantDepositGems)
+                {
+                    wantDeposit = true;
+                }
+
+                // Remote fallback: cargo went down while docked → latch metronome across snapshot gaps.
+                float gemsDelta = state.CurrentGems - snap.Gems;
+                if (!isLocal && gemsDelta < -0.01f)
+                    snap.DepositAudioLatchedUntil = now + 1.0f;
+
+                if (!wantDeposit && snap.DepositAudioLatchedUntil > now)
+                    wantDeposit = true;
+
+                if (!wantDeposit)
+                {
+                    _ships[networkId] = snap;
+                    continue;
+                }
+
+                // --- Volume: local always full; remotes use toroidal hear range ---
+                float volumeScale = 1f;
+                TryGetShipAnchor(networkId, out Transform anchor);
+
+                if (!isLocal)
+                {
+                    if (!hasListener)
+                    {
+                        _ships[networkId] = snap;
+                        continue;
+                    }
+
+                    // Prefer hull proxy world pos; fall back to ECS LocalTransform if proxy missing.
+                    Vector3 depositorPos;
+                    if (anchor != null)
+                    {
+                        depositorPos = anchor.position;
+                    }
+                    else if (em.HasComponent<LocalTransform>(shipEntity))
+                    {
+                        var lt = em.GetComponentData<LocalTransform>(shipEntity);
+                        depositorPos = lt.Position;
+                    }
+                    else
+                    {
+                        _ships[networkId] = snap;
+                        continue;
+                    }
+
+                    float3 listener = new float3(listenerPos.x, listenerPos.y, listenerPos.z);
+                    float3 depositor = new float3(depositorPos.x, depositorPos.y, depositorPos.z);
+                    float dist = ToroidalMapEcs.ToroidalDistance(listener, depositor, mapW, mapH);
+                    if (dist > hearRange)
+                    {
+                        _ships[networkId] = snap;
+                        continue;
+                    }
+
+                    volumeScale = dist <= fullVolumeRange
+                        ? 1f
+                        : 1f - Mathf.InverseLerp(fullVolumeRange, hearRange, dist);
+                }
+
+                // --- Metronome gate (one beat per interval; no multi-beat catch-up) ---
                 if (snap.LastDepositSoundTime > 0f &&
                     now - snap.LastDepositSoundTime < beatInterval)
                 {
@@ -607,7 +681,6 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
-                // --- One steady beat: pitch = ship-level gem value (constant for this hull) ---
                 float gemValue = Mathf.Max(1f, state.ShipLevel);
                 EmitGemDepositBeat(anchor, gemValue, state.Team, volumeScale);
                 snap.LastDepositSoundTime = now;
@@ -617,15 +690,21 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Single deposit metronome tick — consistent-pitch sound + floating count at the hull.
+        /// Single deposit metronome tick — consistent-pitch sound, plus floating count when a hull
+        /// proxy anchor exists.
         /// </summary>
-        /// <param name="anchor">Ship hull proxy transform (world popup attach point).</param>
+        /// <param name="anchor">Optional ship hull proxy (null = sound only).</param>
         /// <param name="gemValue">Stable gem-value chunk for pitch/amount (usually ship level).</param>
         /// <param name="team">Team tint for the floating count.</param>
         /// <param name="volumeScale">Proximity volume 0–1 from toroidal hear range.</param>
         static void EmitGemDepositBeat(Transform anchor, float gemValue, TeamId team, float volumeScale)
         {
+            // Sound does not require a hull proxy — local deposit must tick even if GO sync lags.
             AudioManager.Instance?.PlayGemDepositSound(gemValue, volumeScale);
+
+            if (anchor == null || WorldFloatingCountManager.Instance == null)
+                return;
+
             WorldFloatingCountManager.Instance.ShowFloatingCount(
                 anchor,
                 FloatingCountChannel.GemDeposit,
