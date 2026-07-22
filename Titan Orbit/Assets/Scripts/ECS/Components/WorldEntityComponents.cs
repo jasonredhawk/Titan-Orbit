@@ -52,16 +52,31 @@ namespace TitanOrbit.ECS
         [GhostField] public bool IsDestroyed;
 
         /// <summary>
-        /// [TITAN-ORBIT] Team that owns the territory triangle containing this asteroid (point-in-triangle).
-        /// Written by <c>AsteroidTerritorySystem</c>; tint + friendly mining gem bonus. None = outside all triangles.
+        /// [TITAN-ORBIT] Strongest (highest gem-mult) team triangle containing this asteroid.
+        /// Fallback tint when the viewer is not in <see cref="TerritoryTeamsMask"/>.
+        /// Written by <c>AsteroidTerritorySystem</c>. None = outside all triangles.
         /// </summary>
         [GhostField] public TeamId TerritoryTeam;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Bitmask of every team whose triangle covers this rock (TeamA=bit0…TeamE=bit4).
+        /// Overlaps set multiple bits — the asteroid is “both teams” for friendly mining / destroy
+        /// yellow gems. Client tint prefers the local team when their bit is set.
+        /// </summary>
+        [GhostField] public byte TerritoryTeamsMask;
 
         /// <summary>
         /// [TITAN-ORBIT] Original gem capacity at spawn (server-only). RemainingGems hits 0 on destroy,
         /// so respawn must restore from this — matches NGO maxGems when a fresh instance was spawned.
         /// </summary>
         public float MaxGems;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Server-only: last ship team that mined or shot this rock. Destroy bonus
+        /// yellow gems require this team to be in <see cref="TerritoryTeamsMask"/> (friendly only).
+        /// Not ghosted — clients do not need it for presentation.
+        /// </summary>
+        public TeamId LastInteractTeam;
     }
 
     /// <summary>

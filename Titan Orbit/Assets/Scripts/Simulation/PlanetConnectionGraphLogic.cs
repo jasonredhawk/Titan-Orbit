@@ -246,6 +246,8 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// Returns the team owning the strongest (highest gem mult) triangle containing
         /// <paramref name="worldPos"/>, or <see cref="TeamId.None"/>.
+        /// Use <see cref="GetTeamsMaskAtPosition"/> when multiple teams can share a point
+        /// (overlap) — strongest-wins alone is wrong for tint / friendly bonuses.
         /// </summary>
         public static TeamId GetTeamAtPosition(
             float3 worldPos,
@@ -253,6 +255,7 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
+            // --- Strongest-triangle pick (primary / fallback tint) ---
             TeamId bestTeam = TeamId.None;
             float bestBonus = 0f;
             if (!runtime.IsCreated)
@@ -274,8 +277,139 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// Bitmask of every team whose triangle contains <paramref name="worldPos"/>
+        /// (TeamA = bit 0 … TeamE = bit 4). Overlaps set multiple bits — the rock is
+        /// “both teams” for friendly mining / destroy bonuses.
+        /// </summary>
+        /// <returns>0 when outside every triangle or <paramref name="runtime"/> is empty.</returns>
+        public static byte GetTeamsMaskAtPosition(
+            float3 worldPos,
+            in NativeArray<RuntimeTriangle> runtime,
+            float mapW,
+            float mapH)
+        {
+            GetTerritoryOwnershipAtPosition(
+                worldPos, runtime, mapW, mapH, out byte mask, out _);
+            return mask;
+        }
+
+        /// <summary>
+        /// Single point-in-triangle pass: all owning teams (mask) plus strongest primary team.
+        /// Used by <c>AsteroidTerritorySystem</c> so each rock is not tested twice per refresh.
+        /// </summary>
+        /// <param name="worldPos">Canonical wrapped XZ position.</param>
+        /// <param name="runtime">Live moon-vertex triangles.</param>
+        /// <param name="mapW">Toroidal map width.</param>
+        /// <param name="mapH">Toroidal map height.</param>
+        /// <param name="mask">OR of every team bit that contains the point.</param>
+        /// <param name="primaryTeam">Highest <see cref="RuntimeTriangle.GemBonusMultiplier"/> team, or None.</param>
+        public static void GetTerritoryOwnershipAtPosition(
+            float3 worldPos,
+            in NativeArray<RuntimeTriangle> runtime,
+            float mapW,
+            float mapH,
+            out byte mask,
+            out TeamId primaryTeam)
+        {
+            // --- Accumulate ownership bits + track strongest triangle ---
+            mask = 0;
+            primaryTeam = TeamId.None;
+            float bestBonus = 0f;
+            if (!runtime.IsCreated)
+                return;
+
+            for (int i = 0; i < runtime.Length; i++)
+            {
+                var tri = runtime[i];
+                byte bit = TeamToMaskBit(tri.Team);
+                if (bit == 0)
+                    continue;
+
+                // Still PIT even when bit already set — another triangle of same team may
+                // be stronger for primary, and we need gem mult for primary pick.
+                if (!PointInTriangleXZ(worldPos, tri.VertexA, tri.VertexB, tri.VertexC, mapW, mapH))
+                    continue;
+
+                mask |= bit;
+                if (tri.GemBonusMultiplier > bestBonus)
+                {
+                    bestBonus = tri.GemBonusMultiplier;
+                    primaryTeam = tri.Team;
+                }
+            }
+        }
+
+        /// <summary>
+        /// True when <paramref name="team"/> owns at least one triangle containing the point.
+        /// Unlike <see cref="GetTeamAtPosition"/>, a stronger enemy overlap does not hide you.
+        /// </summary>
+        public static bool IsTeamAtPosition(
+            TeamId team,
+            float3 worldPos,
+            in NativeArray<RuntimeTriangle> runtime,
+            float mapW,
+            float mapH)
+        {
+            if (team == TeamId.None || !runtime.IsCreated)
+                return false;
+
+            byte bit = TeamToMaskBit(team);
+            if (bit == 0)
+                return false;
+
+            // Fast path: full mask scan would also work; walk only matching-team tris.
+            for (int i = 0; i < runtime.Length; i++)
+            {
+                var tri = runtime[i];
+                if (tri.Team != team)
+                    continue;
+                if (PointInTriangleXZ(worldPos, tri.VertexA, tri.VertexB, tri.VertexC, mapW, mapH))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Asteroid tint for a viewer: if their team is in the ownership mask,
+        /// show their colour (overlap defaults to “own team”); else show <paramref name="primaryTeam"/>
+        /// (strongest triangle). Empty mask → <see cref="TeamId.None"/> (no tint).
+        /// </summary>
+        /// <param name="territoryMask">Ghosted multi-team ownership bits.</param>
+        /// <param name="primaryTeam">Strongest containing triangle (server fallback).</param>
+        /// <param name="viewerTeam">Local player team, or None before Join Team.</param>
+        public static TeamId ResolveAsteroidTintTeam(
+            byte territoryMask,
+            TeamId primaryTeam,
+            TeamId viewerTeam)
+        {
+            // --- No ownership → clear tint ---
+            if (territoryMask == 0)
+                return TeamId.None;
+
+            // --- Overlap: prefer the viewer's own team colour ---
+            if (viewerTeam != TeamId.None && TeamMaskContains(territoryMask, viewerTeam))
+                return viewerTeam;
+
+            // --- Single / other-team ownership: strongest (primary) if still in mask ---
+            if (primaryTeam != TeamId.None && TeamMaskContains(territoryMask, primaryTeam))
+                return primaryTeam;
+
+            // --- Primary stale: first set bit (A→E) ---
+            for (byte t = (byte)TeamId.TeamA; t <= (byte)TeamId.TeamE; t++)
+            {
+                var candidate = (TeamId)t;
+                if (TeamMaskContains(territoryMask, candidate))
+                    return candidate;
+            }
+
+            return TeamId.None;
+        }
+
+        /// <summary>
         /// Friendly territory movement multiplier: <c>1 + 0.05 × homeLevel</c> when the ship sits
         /// inside a triangle owned by <paramref name="shipTeam"/>; otherwise 1.
+        /// Overlaps with a stronger enemy triangle still count as friendly.
         /// </summary>
         public static float FriendlyTerritoryMovementMultiplier(
             float3 shipPos,
@@ -288,8 +422,9 @@ namespace TitanOrbit.Simulation
             if (shipTeam == TeamId.None)
                 return 1f;
 
-            TeamId teamAt = GetTeamAtPosition(shipPos, runtime, mapW, mapH);
-            if (teamAt != shipTeam)
+            // [TITAN-ORBIT] Must not use GetTeamAtPosition (strongest-wins) — enemy overlap
+            // would incorrectly strip the friendly speed boost.
+            if (!IsTeamAtPosition(shipTeam, shipPos, runtime, mapW, mapH))
                 return 1f;
 
             int homeLevel = GetHomePlanetLevel(shipTeam, homeLevelByTeamIndex);
@@ -297,17 +432,52 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Gem mining multiplier when the asteroid's territory team matches the mining ship.
+        /// Gem mining / destroy multiplier when the ship's team is one of the asteroid's
+        /// territory owners (mask bit set). Enemy-only rocks return 1 (no yellow bonus).
         /// </summary>
-        public static float FriendlyTerritoryGemMultiplier(TeamId shipTeam, TeamId asteroidTerritoryTeam, int homePlanetLevel)
+        public static float FriendlyTerritoryGemMultiplier(
+            TeamId shipTeam,
+            byte asteroidTerritoryMask,
+            int homePlanetLevel)
         {
             if (shipTeam == TeamId.None ||
-                asteroidTerritoryTeam == TeamId.None ||
-                shipTeam != asteroidTerritoryTeam)
+                asteroidTerritoryMask == 0 ||
+                !TeamMaskContains(asteroidTerritoryMask, shipTeam))
                 return 1f;
 
             int level = math.max(1, homePlanetLevel);
             return 1f + PerLevelGemBonusFraction * level;
+        }
+
+        /// <summary>
+        /// Legacy single-team overload — treats <paramref name="asteroidTerritoryTeam"/> as the
+        /// only owner. Prefer the mask overload when <c>TerritoryTeamsMask</c> is available.
+        /// </summary>
+        public static float FriendlyTerritoryGemMultiplier(
+            TeamId shipTeam,
+            TeamId asteroidTerritoryTeam,
+            int homePlanetLevel) =>
+            FriendlyTerritoryGemMultiplier(
+                shipTeam,
+                TeamToMaskBit(asteroidTerritoryTeam),
+                homePlanetLevel);
+
+        /// <summary>
+        /// [STANDARD] TeamA = bit 0 … TeamE = bit 4 (same as <c>TeamIdExtensions.ToMaskBit</c>).
+        /// Inlined here so Burst callers never touch managed extension methods.
+        /// </summary>
+        public static byte TeamToMaskBit(TeamId team)
+        {
+            if (team == TeamId.None)
+                return 0;
+            return (byte)(1 << ((int)team - 1));
+        }
+
+        /// <summary>True when <paramref name="mask"/> includes <paramref name="team"/>.</summary>
+        public static bool TeamMaskContains(byte mask, TeamId team)
+        {
+            byte bit = TeamToMaskBit(team);
+            return bit != 0 && (mask & bit) != 0;
         }
 
         /// <summary>

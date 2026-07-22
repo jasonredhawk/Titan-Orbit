@@ -4,6 +4,7 @@ using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -528,9 +529,14 @@ namespace TitanOrbit.Game
                     Time.unscaledTime + AsteroidOptimisticHoldSeconds;
             }
 
-            TeamId tintTeam = state.TerritoryTeam != TeamId.None
-                ? state.TerritoryTeam
-                : ownerTeam;
+            // [TITAN-ORBIT] Same overlap rule as world tint: prefer shooter/viewer team when in mask.
+            byte mask = state.TerritoryTeamsMask;
+            if (mask == 0 && state.TerritoryTeam != TeamId.None)
+                mask = PlanetConnectionGraphLogic.TeamToMaskBit(state.TerritoryTeam);
+            TeamId tintTeam = PlanetConnectionGraphLogic.ResolveAsteroidTintTeam(
+                mask, state.TerritoryTeam, ownerTeam);
+            if (tintTeam == TeamId.None)
+                tintTeam = ownerTeam;
 
             WorldFloatingCountManager.Instance.ShowAsteroidFeedback(
                 localAnchor,
@@ -627,11 +633,17 @@ namespace TitanOrbit.Game
                 if (damage <= 0.01f || state.IsDestroyed)
                     continue;
 
+                byte mask = state.TerritoryTeamsMask;
+                if (mask == 0 && state.TerritoryTeam != TeamId.None)
+                    mask = PlanetConnectionGraphLogic.TeamToMaskBit(state.TerritoryTeam);
+                TeamId tintTeam = PlanetConnectionGraphLogic.ResolveAsteroidTintTeam(
+                    mask, state.TerritoryTeam, _cachedLocalTeam);
+
                 WorldFloatingCountManager.Instance.ShowAsteroidFeedback(
                     localAnchor,
                     new AsteroidFloatingFeedback
                     {
-                        Team = state.TerritoryTeam,
+                        Team = tintTeam,
                         Damage = damage,
                         RemainingHealth = state.Health,
                         RemainingGems = state.RemainingGems,

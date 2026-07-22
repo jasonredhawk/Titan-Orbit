@@ -124,7 +124,7 @@ namespace TitanOrbit.ECS
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             // --- Home planet levels for territory gem bonus (1 + 0.05 × homeLevel) ---
-            // [TITAN-ORBIT] Same formula as NGO MiningSystem when asteroid.TerritoryTeam matches ship.
+            // [TITAN-ORBIT] Same formula as NGO MiningSystem when ship's team is in TerritoryTeamsMask.
             var homeLevels = new NativeArray<int>(6, Allocator.Temp);
             foreach (var planet in SystemAPI.Query<RefRO<PlanetState>>().WithAll<PlanetTag, HomePlanetTag>())
             {
@@ -168,13 +168,16 @@ namespace TitanOrbit.ECS
                     // --- Friendly territory gem bonus ---
                     // [TITAN-ORBIT] Base mined chunk is red; bonus portion spawns as a separate yellow
                     // gem (NGO isBonusGem). Asteroid loses RemainingGems at the base rate only.
+                    // Mask (not strongest-wins TerritoryTeam): overlap still grants bonus to each owner.
                     int homeLevel = PlanetConnectionGraphLogic.GetHomePlanetLevel(
                         shipState.ValueRO.Team, homeLevels);
                     float gemMult = PlanetConnectionGraphLogic.FriendlyTerritoryGemMultiplier(
-                        shipState.ValueRO.Team, a.TerritoryTeam, homeLevel);
+                        shipState.ValueRO.Team, a.TerritoryTeamsMask, homeLevel);
                     float bonusValue = mined * (gemMult - 1f);
 
                     a.RemainingGems -= mined;
+                    // [TITAN-ORBIT] Record miner team so destroy-burst yellow gems stay friendly-only.
+                    a.LastInteractTeam = shipState.ValueRO.Team;
                     if (a.RemainingGems <= 0f)
                     {
                         a.RemainingGems = 0f;
@@ -663,12 +666,16 @@ namespace TitanOrbit.ECS
                 float remaining = a.RemainingGems;
                 float bonusExtra = 0f;
                 // --- Territory gem bonus on destroy burst ---
-                // [TITAN-ORBIT] Bonus portion spawns as yellow gems; base remaining stays red.
-                if (a.TerritoryTeam != TeamId.None && remaining >= GemEconomyConstants.MinGemSpawnValue)
+                // [TITAN-ORBIT] Yellow gems only when the last miner/shooter's team owns this rock
+                // (mask bit). Enemy-tinted asteroids must not dump bonus gems on kill.
+                // Legacy bug: FriendlyTerritoryGemMultiplier(TerritoryTeam, TerritoryTeam) always
+                // matched for any non-None tint — ignored the destroyer.
+                if (a.LastInteractTeam != TeamId.None &&
+                    remaining >= GemEconomyConstants.MinGemSpawnValue)
                 {
-                    int homeLevel = PlanetConnectionGraphCache.GetHomePlanetLevel(a.TerritoryTeam);
+                    int homeLevel = PlanetConnectionGraphCache.GetHomePlanetLevel(a.LastInteractTeam);
                     float mult = PlanetConnectionGraphLogic.FriendlyTerritoryGemMultiplier(
-                        a.TerritoryTeam, a.TerritoryTeam, homeLevel);
+                        a.LastInteractTeam, a.TerritoryTeamsMask, homeLevel);
                     bonusExtra = remaining * (mult - 1f);
                 }
 

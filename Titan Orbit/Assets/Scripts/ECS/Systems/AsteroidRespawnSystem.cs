@@ -121,7 +121,9 @@ namespace TitanOrbit.ECS
                 Health = gems,
                 IsDestroyed = false,
                 TerritoryTeam = TeamId.None,
+                TerritoryTeamsMask = 0,
                 MaxGems = gems,
+                LastInteractTeam = TeamId.None,
             };
             if (em.HasComponent<AsteroidState>(e))
                 em.SetComponentData(e, asteroidState);

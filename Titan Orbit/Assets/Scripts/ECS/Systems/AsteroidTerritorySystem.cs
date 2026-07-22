@@ -10,10 +10,15 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server: assigns <see cref="AsteroidState.TerritoryTeam"/> from point-in-triangle tests against
-    /// the current planet-connection graph (gem-moon vertices). Port of NGO
-    /// <c>AsteroidTerritoryHighlighter</c>. Runs after the graph rebuild so mining bonuses see fresh tint.
-    /// World: ServerSimulation only — clients receive TerritoryTeam via ghost field (no asteroid gather).
+    /// Server: assigns asteroid territory ownership from point-in-triangle tests against the
+    /// current planet-connection graph (gem-moon vertices). Port of NGO
+    /// <c>AsteroidTerritoryHighlighter</c>, extended for multi-team overlap.
+    /// <para>
+    /// Writes ghosted <see cref="AsteroidState.TerritoryTeamsMask"/> (all owning teams) and
+    /// <see cref="AsteroidState.TerritoryTeam"/> (strongest triangle — fallback tint). Clients
+    /// prefer the local team colour when their bit is set; mining / destroy yellow gems require
+    /// the interacting ship's team bit. World: ServerSimulation only — no client asteroid gather.
+    /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -33,7 +38,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Every second: build runtime moon-vertex triangles, then set each asteroid's TerritoryTeam.
+        /// Every second: build runtime moon-vertex triangles, then set each asteroid's
+        /// territory mask + primary team.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -48,8 +54,12 @@ namespace TitanOrbit.ECS
             {
                 foreach (var asteroid in SystemAPI.Query<RefRW<AsteroidState>>().WithAll<AsteroidTag>())
                 {
-                    if (asteroid.ValueRO.TerritoryTeam != TeamId.None)
+                    if (asteroid.ValueRO.TerritoryTeam != TeamId.None ||
+                        asteroid.ValueRO.TerritoryTeamsMask != 0)
+                    {
                         asteroid.ValueRW.TerritoryTeam = TeamId.None;
+                        asteroid.ValueRW.TerritoryTeamsMask = 0;
+                    }
                 }
 
                 return;
@@ -89,14 +99,22 @@ namespace TitanOrbit.ECS
 
                 // Wrap asteroid into canonical space — same space as moon vertices.
                 float3 asteroidPos = ToroidalMapEcs.Wrap(transform.ValueRO.Position, mapW, mapH);
-                TeamId team = PlanetConnectionGraphLogic.GetTeamAtPosition(
+
+                // [TITAN-ORBIT] Mask = every overlapping team; primary = strongest gem mult.
+                PlanetConnectionGraphLogic.GetTerritoryOwnershipAtPosition(
                     asteroidPos,
                     runtime.AsArray(),
                     mapW,
-                    mapH);
+                    mapH,
+                    out byte mask,
+                    out TeamId primary);
 
-                if (asteroid.ValueRO.TerritoryTeam != team)
-                    asteroid.ValueRW.TerritoryTeam = team;
+                if (asteroid.ValueRO.TerritoryTeam != primary ||
+                    asteroid.ValueRO.TerritoryTeamsMask != mask)
+                {
+                    asteroid.ValueRW.TerritoryTeam = primary;
+                    asteroid.ValueRW.TerritoryTeamsMask = mask;
+                }
             }
         }
     }

@@ -5,6 +5,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
+using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
@@ -113,8 +114,8 @@ namespace TitanOrbit.Game
         readonly Dictionary<Entity, PlanetVisualKey> _proxyPlanetVisuals = new Dictionary<Entity, PlanetVisualKey>();
 
         /// <summary>
-        /// Last applied <see cref="AsteroidState.TerritoryTeam"/> per asteroid proxy — skip
-        /// GetComponent/tint work every SyncAllProxies when unchanged.
+        /// Last applied display tint team per asteroid proxy (after overlap → prefer-local resolve).
+        /// Skip GetComponent/tint work every SyncAllProxies when unchanged.
         /// </summary>
         readonly Dictionary<Entity, TeamId> _proxyAsteroidTerritory = new Dictionary<Entity, TeamId>();
 
@@ -639,29 +640,59 @@ namespace TitanOrbit.Game
                     RefreshPlanetProxyAppearanceIfChanged(em, entity, go, scale);
 
                 // --- Asteroid territory tint (triangle ownership) ---
-                // [TITAN-ORBIT] Ghosted TerritoryTeam → SgtPlanet _Color lerp. Walk known proxies only.
+                // [TITAN-ORBIT] Client PIT vs drawn triangles — not ghosted server TerritoryTeam.
                 if (kind == ProxyVisualKind.Asteroid)
-                    RefreshAsteroidTerritoryTintIfChanged(em, entity, go);
+                    RefreshAsteroidTerritoryTintIfChanged(em, entity, go, lt.Position);
             }
         }
 
         /// <summary>
-        /// Applies team territory highlight when ghosted <see cref="AsteroidState.TerritoryTeam"/> changes.
-        /// Per known proxy entity only — no asteroid archetype gather.
+        /// Applies team territory highlight so rock colour matches the drawn territory fill.
+        /// Uses <see cref="PlanetConnectionPresentationTriangles"/> (same Client graph + moon
+        /// verts as <see cref="PlanetConnectionShapesVisual"/>). Overlap prefers the local
+        /// player's team. Per known proxy only — no asteroid archetype gather.
         /// </summary>
-        void RefreshAsteroidTerritoryTintIfChanged(EntityManager em, Entity entity, GameObject go)
+        /// <param name="em">Client EntityManager.</param>
+        /// <param name="entity">Asteroid ghost already in <see cref="_proxies"/>.</param>
+        /// <param name="go">Hybrid asteroid GameObject root.</param>
+        /// <param name="logicalPos">Ghost <see cref="LocalTransform.Position"/> (pre-display retile).</param>
+        void RefreshAsteroidTerritoryTintIfChanged(
+            EntityManager em, Entity entity, GameObject go, float3 logicalPos)
         {
-            if (go == null || !em.Exists(entity) || !em.HasComponent<AsteroidState>(entity))
+            if (go == null || !em.Exists(entity))
                 return;
 
-            var state = em.GetComponentData<AsteroidState>(entity);
+            // --- Viewer team (local ship) for overlap → own-colour preference ---
+            TeamId viewerTeam = TeamId.None;
+            if (TryResolveLocalPlayerShipEntityCached(em, out var localShip) &&
+                localShip != Entity.Null &&
+                em.Exists(localShip) &&
+                em.HasComponent<ShipState>(localShip))
+            {
+                viewerTeam = em.GetComponentData<ShipState>(localShip).Team;
+            }
+
+            // --- Canonical XZ (same space as moon verts / drawn fill topology) ---
+            // [TITAN-ORBIT] Do not use display-retiled proxy position — wrap copies would
+            // fail PIT against canonical triangle verts.
+            Vector3 wrapped = ToroidalMap.WrapPosition(new Vector3(logicalPos.x, 0f, logicalPos.z));
+            float3 canonical = new float3(wrapped.x, 0f, wrapped.z);
+
+            PlanetConnectionPresentationTriangles.GetOwnershipAtPosition(
+                canonical, out byte mask, out TeamId primary);
+
+            TeamId displayTeam = PlanetConnectionGraphLogic.ResolveAsteroidTintTeam(
+                mask, primary, viewerTeam);
+
             // --- Skip before GetComponentInChildren / material writes ---
-            // [TITAN-ORBIT] TerritoryTeam changes ~1 Hz; SyncAllProxies is every frame.
-            if (_proxyAsteroidTerritory.TryGetValue(entity, out var applied) && applied == state.TerritoryTeam)
+            // Re-evaluates when moons move (~30 Hz cache) or Join Team sets viewerTeam.
+            if (_proxyAsteroidTerritory.TryGetValue(entity, out var applied) && applied == displayTeam)
                 return;
 
-            WorldBodyVisualApplier.ApplyAsteroidTerritoryTint(go, state.TerritoryTeam);
-            _proxyAsteroidTerritory[entity] = state.TerritoryTeam;
+            // [TITAN-ORBIT] Only latch when SgtPlanet actually applied — missing material
+            // used to freeze "applied" forever and leave the rock untinted.
+            if (WorldBodyVisualApplier.ApplyAsteroidTerritoryTint(go, displayTeam))
+                _proxyAsteroidTerritory[entity] = displayTeam;
         }
 
         /// <summary>

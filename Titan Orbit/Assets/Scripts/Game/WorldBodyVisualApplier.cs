@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using SpaceGraphicsToolkit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Simulation;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -308,27 +309,33 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// [TITAN-ORBIT] NGO <c>Asteroid.SetTerritoryHighlight</c> — lerp SgtPlanet <c>_Color</c> toward
-        /// team color (0.7 blend) when the rock sits inside a friendly triangle; restore when None.
+        /// team color (0.7 blend) when the rock sits inside a territory triangle; restore when None.
+        /// Caller resolves overlap (prefer local team) via
+        /// <see cref="PlanetConnectionGraphLogic.ResolveAsteroidTintTeam"/> before calling.
         /// Caches the original color on first call via <see cref="AsteroidTerritoryTintCache"/>.
         /// </summary>
         /// <param name="root">Asteroid hybrid proxy root.</param>
-        /// <param name="team">Owning territory team, or <see cref="TeamId.None"/> to clear.</param>
-        public static void ApplyAsteroidTerritoryTint(GameObject root, TeamId team)
+        /// <param name="team">Display territory team, or <see cref="TeamId.None"/> to clear.</param>
+        /// <returns>
+        /// True when the material write succeeded (or was already applied). False when
+        /// <c>SgtPlanet</c> is missing — caller must <b>not</b> latch success or tint stays stuck forever.
+        /// </returns>
+        public static bool ApplyAsteroidTerritoryTint(GameObject root, TeamId team)
         {
             if (root == null)
-                return;
+                return false;
 
             var cache = root.GetComponent<AsteroidTerritoryTintCache>();
             if (cache == null)
                 cache = root.AddComponent<AsteroidTerritoryTintCache>();
 
-            // --- Skip identical writes (TerritoryTeam updates every ~1s server-side) ---
+            // --- Skip identical writes ---
             if (cache.AppliedTeam == team && cache.HasOriginal)
-                return;
+                return true;
 
             var sgt = root.GetComponentInChildren<SgtPlanet>(true);
             if (sgt == null || sgt.Material == null)
-                return;
+                return false;
 
             // --- Cache original SgtPlanet color once ---
             if (!cache.HasOriginal)
@@ -349,6 +356,7 @@ namespace TitanOrbit.Game
             int id = Shader.PropertyToID("_Color");
             sgt.Properties.SetColor(id, color);
             cache.AppliedTeam = team;
+            return true;
         }
 
         /// <summary>Same Barren asteroid texture for every rock; vary UV scale, normals, and displacement per instance.</summary>

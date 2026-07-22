@@ -46,6 +46,7 @@ namespace TitanOrbit.Game
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
             PlanetConnectionGraphCache.Clear();
+            PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();
             s_PlanetStateCacheFrame = -1;
         }
@@ -1300,6 +1301,7 @@ namespace TitanOrbit.Game
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
             PlanetConnectionGraphCache.Clear();
+            PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();
             s_PlanetStateCacheFrame = -1;
             GemTractorBeamVisibilityTracker.Clear();

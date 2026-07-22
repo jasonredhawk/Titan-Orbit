@@ -568,6 +568,8 @@ namespace TitanOrbit.ECS
                     }
 
                     asteroid.Health -= b.Damage;
+                    // [TITAN-ORBIT] Destroy yellow gems use LastInteractTeam ∩ TerritoryTeamsMask.
+                    asteroid.LastInteractTeam = (TeamId)b.OwnerTeam;
                     if (asteroid.Health <= 0f)
                     {
                         asteroid.Health = 0f;
