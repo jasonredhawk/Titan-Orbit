@@ -159,6 +159,12 @@ namespace TitanOrbit.Game
                 ? weaponCfg.ReferenceBulletSpeed
                 : BulletVisualScale.DefaultReferenceBulletSpeed;
 
+            // [TITAN-ORBIT] Per-category Upgrade Visual Scale (default 1 = same as bank).
+            float categoryUpgradeScale = 1f;
+            var vfxBank = TitanOrbit.Data.BulletVfxBank.LoadDefault();
+            if (vfxBank != null)
+                categoryUpgradeScale = vfxBank.GetCategoryUpgradeVisualScaleMultiplier(bankIndex);
+
             int enqueued = 0;
             float spent = 0f;
 
@@ -182,7 +188,8 @@ namespace TitanOrbit.Game
                     planned.Damage,
                     weaponCfg.BulletSpeed,
                     refDamage,
-                    refSpeed);
+                    refSpeed,
+                    categoryUpgradeScale);
 
                 float3 bulletVel = BulletMuzzlePresentation.BuildBulletWorldVelocity(
                     fireForward, weaponCfg.BulletSpeed, shipVel);

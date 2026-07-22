@@ -18,12 +18,15 @@ namespace TitanOrbit.Data
     /// <see cref="Game.BulletVfxDriver"/>. Presentation only — hit detection stays server-side.
     /// </para>
     /// <para>
-    /// Inspector scale knobs:
+    /// Inspector scale knobs (bank-wide + per category):
     /// <list type="bullet">
-    /// <item><b>Global Visual Scale Multiplier</b> — shrink/grow every bullet VFX.</item>
-    /// <item><b>Upgrade Visual Scale Multiplier</b> — how much tier/attribute fire-power growth
-    /// becomes size (0.5 = half-step: 3→8 fire → ~1.83× size, not 2.67×).</item>
+    /// <item><b>Global Visual Scale Multiplier</b> (bank) — shrink/grow every bullet VFX.</item>
+    /// <item><b>Upgrade Visual Scale Multiplier</b> (bank) — how much tier/attribute fire-power
+    /// growth becomes size (0.5 = half-step: 3→8 fire → ~1.83× size, not 2.67×).</item>
+    /// <item><b>Per-category</b> Global / Upgrade multipliers (default 1 = 100%) — relative to the
+    /// bank knobs, so one family (e.g. Fireballs) can be larger/smaller than Laserbolt.</item>
     /// </list>
+    /// Final size uses bank × category for both global and upgrade paths.
     /// </para>
     /// </summary>
     [CreateAssetMenu(fileName = "BulletVfxBank", menuName = "Titan Orbit/Bullet VFX Bank")]
@@ -35,11 +38,23 @@ namespace TitanOrbit.Data
         /// <summary>Name passed to <see cref="Resources.Load"/> (no folder / extension).</summary>
         public const string ResourcesLoadName = "BulletVfxBank";
 
-        /// <summary>One row in the bank — name, prefab variants, and paired gameplay profile.</summary>
+        /// <summary>
+        /// One row in the bank — name, team-colored prefabs, gameplay profile, and optional
+        /// per-family scale overrides (default 1 = same as bank-wide knobs).
+        /// </summary>
         [Serializable]
         public class Category
         {
             public string categoryName = "Laserbolt";
+
+            // --- Per-family scale (relative to bank-wide knobs; 1 = 100%) ---
+            [Header("Visual scale (this category)")]
+            [Tooltip("Relative to bank Global Visual Scale. 1 = 100% (same as bank); 0.5 = half that family.")]
+            public float globalVisualScaleMultiplier = 1f;
+
+            [Tooltip("Relative to bank Upgrade Visual Scale. 1 = 100% of bank upgrade growth; 0.5 = half.")]
+            public float upgradeVisualScaleMultiplier = 1f;
+
             public List<GameObject> prefabs = new List<GameObject>();
             public BulletBankProfile profile = new BulletBankProfile();
         }
@@ -55,11 +70,11 @@ namespace TitanOrbit.Data
         [Tooltip("How much fire-power growth above level-1 becomes bullet size. 1 = size tracks damage 1:1; 0.5 = half-step (3→8 fire ≈ 1.83× size).")]
         [SerializeField] float upgradeVisualScaleMultiplier = 0.5f;
 
-        /// <summary>Global VFX size on spawned instances.</summary>
+        /// <summary>Bank-wide global VFX size on spawned instances.</summary>
         public float GlobalVisualScaleMultiplier => Mathf.Max(0.05f, globalVisualScaleMultiplier);
 
         /// <summary>
-        /// Fraction of (damage/reference − 1) applied to visual size.
+        /// Bank-wide fraction of (damage/reference − 1) applied to visual size.
         /// Callers push this into <c>BulletVisualScale.ActiveUpgradeVisualScaleMultiplier</c> on load.
         /// </summary>
         public float UpgradeVisualScaleMultiplier => Mathf.Clamp01(upgradeVisualScaleMultiplier);
@@ -82,6 +97,81 @@ namespace TitanOrbit.Data
 #endif
             return bank;
         }
+
+        /// <summary>
+        /// Per-category global scale relative to the bank knob. Missing/zero serializes as 1 (100%).
+        /// </summary>
+        /// <param name="index">Category index (<c>RuntimeBulletIndex</c>).</param>
+        public float GetCategoryGlobalVisualScaleMultiplier(int index)
+        {
+            // --- Resolve category override (default 100%) ---
+            if (!TryGetCategory(index, out Category cat))
+                return 1f;
+
+            // [UNITY] Existing assets may lack the new fields → float defaults to 0. Treat as 1.
+            float v = cat.globalVisualScaleMultiplier;
+            if (v <= 0.001f)
+                v = 1f;
+            return Mathf.Max(0.05f, v);
+        }
+
+        /// <summary>
+        /// Per-category upgrade-growth scale relative to the bank knob. Missing/zero → 1 (100%).
+        /// </summary>
+        /// <param name="index">Category index (<c>RuntimeBulletIndex</c>).</param>
+        public float GetCategoryUpgradeVisualScaleMultiplier(int index)
+        {
+            if (!TryGetCategory(index, out Category cat))
+                return 1f;
+
+            float v = cat.upgradeVisualScaleMultiplier;
+            if (v <= 0.001f)
+                v = 1f;
+            return Mathf.Max(0f, v);
+        }
+
+        /// <summary>
+        /// Bank global × category global — what <see cref="Entities.BulletVisualFactory"/> multiplies by.
+        /// </summary>
+        public float GetCombinedGlobalVisualScaleMultiplier(int index) =>
+            GlobalVisualScaleMultiplier * GetCategoryGlobalVisualScaleMultiplier(index);
+
+        /// <summary>
+        /// Bank upgrade × category upgrade — growth factor for <see cref="Simulation.BulletVisualScale"/>.
+        /// </summary>
+        public float GetCombinedUpgradeVisualScaleMultiplier(int index) =>
+            UpgradeVisualScaleMultiplier * GetCategoryUpgradeVisualScaleMultiplier(index);
+
+        /// <summary>True when <paramref name="index"/> points at a non-null category row.</summary>
+        bool TryGetCategory(int index, out Category cat)
+        {
+            cat = null;
+            if (categories == null || index < 0 || index >= categories.Count)
+                return false;
+            cat = categories[index];
+            return cat != null;
+        }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// [EDITOR] Migrates missing category scale fields (0) to 1 so the Inspector shows 100%.
+        /// </summary>
+        void OnValidate()
+        {
+            if (categories == null)
+                return;
+            for (int i = 0; i < categories.Count; i++)
+            {
+                Category cat = categories[i];
+                if (cat == null)
+                    continue;
+                if (cat.globalVisualScaleMultiplier <= 0.001f)
+                    cat.globalVisualScaleMultiplier = 1f;
+                if (cat.upgradeVisualScaleMultiplier <= 0.001f)
+                    cat.upgradeVisualScaleMultiplier = 1f;
+            }
+        }
+#endif
 
         /// <summary>
         /// Display name for B-key cycle feedback (category row name, e.g. "Laserbolt", "Plasma").

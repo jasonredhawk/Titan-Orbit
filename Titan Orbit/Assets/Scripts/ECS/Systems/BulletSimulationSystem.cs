@@ -155,6 +155,9 @@ namespace TitanOrbit.ECS
             }
 
             // --- Phase B: ship firing + same-frame spawn collide ---
+            // [TITAN-ORBIT] Category Upgrade Visual Scale from Resources bank (once per tick).
+            var vfxBankForScale = TitanOrbit.Data.BulletVfxBank.LoadDefault();
+
             foreach (var (input, weaponCfg, weaponState, shipState, kinematics, transform, ghostOwner, entity) in SystemAPI
                          .Query<RefRO<ShipInput>, RefRO<ShipWeaponConfig>, RefRW<ShipWeaponState>, RefRW<ShipState>, RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
                          .WithAll<ShipTag>()
@@ -194,6 +197,12 @@ namespace TitanOrbit.ECS
                 int bankIndex = 0;
                 if (SystemAPI.HasComponent<ShipLoadoutState>(entity))
                     bankIndex = math.max(0, SystemAPI.GetComponentRO<ShipLoadoutState>(entity).ValueRO.RuntimeBulletIndex);
+
+                // Per-category Upgrade Visual Scale (default 1). Global category scale is applied
+                // later in BulletVisualFactory — ScaleMultiplier is fire-power upgrade only.
+                float categoryUpgradeScale = vfxBankForScale != null
+                    ? vfxBankForScale.GetCategoryUpgradeVisualScaleMultiplier(bankIndex)
+                    : 1f;
 
                 float3 shipVel = kinematics.ValueRO.Velocity;
                 shipVel.y = 0f;
@@ -242,7 +251,8 @@ namespace TitanOrbit.ECS
                         planned.Damage,
                         weaponCfg.ValueRO.BulletSpeed,
                         refDamage,
-                        refSpeed);
+                        refSpeed,
+                        categoryUpgradeScale);
 
                     float3 bulletVel = fireForward * math.max(1f, weaponCfg.ValueRO.BulletSpeed) + shipVel;
                     uint sequence = BulletVfxBridge.NextSequence();

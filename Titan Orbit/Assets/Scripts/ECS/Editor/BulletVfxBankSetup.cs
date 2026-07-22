@@ -174,17 +174,36 @@ namespace TitanOrbit.ECS.Editor
             EditorUtility.SetDirty(bank);
         }
 
-        /// <summary>Does not overwrite designer values — only fills missing/zero upgrade field.</summary>
+        /// <summary>
+        /// Does not overwrite designer values — only fills missing/zero scale fields.
+        /// Per-category Global/Upgrade default to 1 (100% of bank knobs).
+        /// </summary>
         static void EnsureScaleDefaults(SerializedObject so)
         {
             var globalProp = so.FindProperty("globalVisualScaleMultiplier");
             if (globalProp == null)
                 globalProp = so.FindProperty("visualScaleMultiplier");
-            // Leave global as-is when already set (designer may have chosen 0.25).
+            // Leave bank global as-is when already set (designer may have chosen 0.25).
 
             var upgradeProp = so.FindProperty("upgradeVisualScaleMultiplier");
             if (upgradeProp != null && upgradeProp.floatValue <= 0.001f)
                 upgradeProp.floatValue = 0.5f;
+
+            // --- Per-category overrides (new fields → 0 until migrated) ---
+            var categoriesProp = so.FindProperty("categories");
+            if (categoriesProp == null || !categoriesProp.isArray)
+                return;
+
+            for (int i = 0; i < categoriesProp.arraySize; i++)
+            {
+                var cat = categoriesProp.GetArrayElementAtIndex(i);
+                var catGlobal = cat.FindPropertyRelative("globalVisualScaleMultiplier");
+                if (catGlobal != null && catGlobal.floatValue <= 0.001f)
+                    catGlobal.floatValue = 1f;
+                var catUpgrade = cat.FindPropertyRelative("upgradeVisualScaleMultiplier");
+                if (catUpgrade != null && catUpgrade.floatValue <= 0.001f)
+                    catUpgrade.floatValue = 1f;
+            }
         }
 
         /// <summary>

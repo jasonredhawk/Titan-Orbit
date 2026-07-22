@@ -14,6 +14,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.BulletVfxBank
   categories:
   - categoryName: Laserbolt
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 126790, guid: 8b41f5320e19912428ff12551caca1e8, type: 3}
     - {fileID: 199764, guid: a722c1f6fea53614a920ed802bff377d, type: 3}
@@ -29,6 +31,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Bullets
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 196444, guid: 3a0fa38982e605a41b394c9146ff7b2f, type: 3}
     - {fileID: 182304, guid: 908544ebba480444ba018f5cf8f12e3b, type: 3}
@@ -44,6 +48,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: EnergySpheres
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 187196, guid: 2bd278cdd20d9084980be4d0c8122b88, type: 3}
     - {fileID: 176796, guid: b7f60022f07df5d4184199e9ebdba10b, type: 3}
@@ -59,6 +65,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Fireballs
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 103170, guid: 8a18fb05b16e27b4c97f18e9cbfa2e3a, type: 3}
     - {fileID: 199020, guid: b7dc35aadc137544d814112554482b0d, type: 3}
@@ -74,6 +82,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: FireballsV2
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 122692, guid: ba441e53a9f67e14eabbca1a92d5e05c, type: 3}
     - {fileID: 146288, guid: c02239edbb6ee004da97e3bb9738a0b9, type: 3}
@@ -89,6 +99,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Laser
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 135654, guid: eeb8171b60d8da849b1f6580e734d0aa, type: 3}
     - {fileID: 161724, guid: fec710d6f8ab81c4c9edff6545732936, type: 3}
@@ -104,6 +116,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: LaserSmall
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 133456, guid: 8824db73d5a760e479d5db6a614258aa, type: 3}
     - {fileID: 167542, guid: 54d2783d690a71048b93ff1b1d9683be, type: 3}
@@ -119,6 +133,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Lightning
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 136368, guid: 00e5a53b60a56384e8c1a6d4d0b1dc22, type: 3}
     - {fileID: 176544, guid: a258d3572d9b5da40b587a09eb3a251c, type: 3}
@@ -134,6 +150,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Liquid
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 176544, guid: 723ed2ed515a50d4fbb803298c478cc0, type: 3}
     - {fileID: 176544, guid: 74bfdb4389b1cca4b802a86c7054b52f, type: 3}
@@ -150,6 +168,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Plasma
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 187090, guid: 6380750ae876d4047842ef509c59ddd8, type: 3}
     - {fileID: 184960, guid: 1dbcbee7e5746904bb6cf5bccc207de3, type: 3}
@@ -165,6 +185,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Rift
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 134298, guid: 621b0e3fcb37d5c4ebcd031e3c01596e, type: 3}
     - {fileID: 122782, guid: 56eb854aae2c78a4d835d96ca4b84e0e, type: 3}
@@ -180,6 +202,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Ring
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 134298, guid: e7f7441670eafb54188310b5ab5082cf, type: 3}
     - {fileID: 122782, guid: ccb54bf4c6382814bbcb2996067e0ba1, type: 3}
@@ -195,6 +219,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Ring2
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 134298, guid: 74b0d797c172df64ea96889ff0bd4a2c, type: 3}
     - {fileID: 122782, guid: 81687eb9111a8fb45b0cb52a0762b73e, type: 3}
@@ -210,6 +236,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Rockets
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 107984, guid: 1a2aa1e6f6d149249b940a5686f7af4f, type: 3}
     - {fileID: 100044, guid: 81c812d6e2b61b24bae96c4e5654e484, type: 3}
@@ -225,6 +253,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Sharp
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 184960, guid: 2d434b4c97a047643a91338db3fe3f07, type: 3}
     - {fileID: 184960, guid: 1c9a42ca6c56dba4cb7ab60a79d2f340, type: 3}
@@ -240,6 +270,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Shockwave
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 157546, guid: 7378fe9867988ff4492465ce8a9ab988, type: 3}
     - {fileID: 182656, guid: 0347cb65956b62e47aefcf8493cbe81c, type: 3}
@@ -255,6 +287,8 @@ MonoBehaviour:
         bulletRangeMultiplier: 0
       abilities: []
   - categoryName: Sparkler
+    globalVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 1
     prefabs:
     - {fileID: 113096, guid: 0ecc05a236309d849b69538f00c98fca, type: 3}
     - {fileID: 150084, guid: f22db53bc2b4f7f449cf627bdc581f52, type: 3}

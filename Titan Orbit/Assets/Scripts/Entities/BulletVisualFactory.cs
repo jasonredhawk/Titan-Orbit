@@ -33,19 +33,29 @@ namespace TitanOrbit.Entities
         static Material defaultBulletMat;
 
         /// <summary>
-        /// Final VFX size = factory baseline × per-shot fire-power scale × bank
-        /// <see cref="BulletVfxBank.GlobalVisualScaleMultiplier"/>.
+        /// Final VFX size = factory baseline × per-shot fire-power scale ×
+        /// (bank Global × category Global). Category defaults to 1 (100%).
         /// </summary>
-        public static float GetBulletVisualScale(BulletVfxBank bank, float scaleMultiplier)
+        /// <param name="bankIndex">
+        /// Category index for the per-family global knob; negative skips category (bank only).
+        /// </param>
+        public static float GetBulletVisualScale(BulletVfxBank bank, float scaleMultiplier, int bankIndex = -1)
         {
-            float globalScale = bank != null
-                ? bank.GlobalVisualScaleMultiplier
-                : LegacyGlobalVisualScale;
+            // --- Bank-wide + optional per-category global ---
+            float globalScale;
+            if (bank == null)
+                globalScale = LegacyGlobalVisualScale;
+            else if (bankIndex >= 0)
+                globalScale = bank.GetCombinedGlobalVisualScaleMultiplier(bankIndex);
+            else
+                globalScale = bank.GlobalVisualScaleMultiplier;
+
             return DefaultBulletVisualScale * Mathf.Max(0.1f, scaleMultiplier) * globalScale;
         }
 
-        public static float GetImpactScale(BulletVfxBank bank, float bulletScaleMultiplier) =>
-            GetBulletVisualScale(bank, bulletScaleMultiplier);
+        /// <summary>Impact burst uses the same size stack as in-flight tracers.</summary>
+        public static float GetImpactScale(BulletVfxBank bank, float bulletScaleMultiplier, int bankIndex = -1) =>
+            GetBulletVisualScale(bank, bulletScaleMultiplier, bankIndex);
 
         public static Color GetTeamBulletColor(TeamId team) => team.ToColor();
 
@@ -59,7 +69,8 @@ namespace TitanOrbit.Entities
             float bulletSpeed,
             bool noTrail)
         {
-            float scale = GetBulletVisualScale(bank, scaleMultiplier);
+            // [TITAN-ORBIT] bankIndex also selects per-category Global Visual Scale (default 1).
+            float scale = GetBulletVisualScale(bank, scaleMultiplier, bankIndex);
             Color color = GetTeamBulletColor(team);
 
             GameObject visualPrefab = null;
@@ -114,7 +125,7 @@ namespace TitanOrbit.Entities
                 dir = Vector3.forward;
             dir.Normalize();
 
-            float visualScale = GetBulletVisualScale(bank, scaleMultiplier);
+            float visualScale = GetBulletVisualScale(bank, scaleMultiplier, bankIndex);
             float pitch = GetProjectileSoundPitchBySpeed(bulletSpeed);
             Color flashColor = GetTeamBulletColor(team);
 
@@ -144,7 +155,7 @@ namespace TitanOrbit.Entities
             float scaleMultiplier)
         {
             position.y = 0f;
-            float impactScale = GetImpactScale(bank, scaleMultiplier);
+            float impactScale = GetImpactScale(bank, scaleMultiplier, bankIndex);
             float pitch = GetImpactSoundPitch(damage);
 
             if (Application.isMobilePlatform)

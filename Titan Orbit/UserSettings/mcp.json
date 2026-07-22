@@ -1,0 +1,24 @@
+{
+  "enabled": true,
+  "path": "",
+  "mcpServers": {
+    "~example (prefix server name with ~ to hide)": {
+      "type": "stdio",
+      "command": "your-mcp-server-command",
+      "args": [
+        "--your-arg",
+        "value"
+      ],
+      "env": {
+        "EXAMPLE_VAR": "example_value"
+      }
+    },
+    "~example-http": {
+      "type": "http",
+      "url": "https://your-mcp-server.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN"
+      }
+    }
+  }
+}
