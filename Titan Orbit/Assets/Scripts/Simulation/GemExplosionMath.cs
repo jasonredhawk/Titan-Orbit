@@ -83,10 +83,9 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// Keeps burst motion radially outward from the asteroid center on XZ.
         /// <para>
-        /// [TITAN-ORBIT] Spawn offset and launch velocity share the same unit dir, so a gem on
-        /// the +X side of the rock must fly +X — never back through the center. Client soft-reconcile
-        /// or a mismatched local→ghost handoff can leave velocity pointing the wrong way; this
-        /// helper flips/aligns speed onto the outward radial without changing magnitude.
+        /// [TITAN-ORBIT] Spawn offset and launch velocity already share one unit dir on the server.
+        /// Client presentation follows ghost pose/velocity (no second integrator). This helper remains
+        /// for spawn validation or debug — not for soft-reconcile presentation hacks.
         /// </para>
         /// </summary>
         /// <param name="position">Current gem logical (or display) position.</param>

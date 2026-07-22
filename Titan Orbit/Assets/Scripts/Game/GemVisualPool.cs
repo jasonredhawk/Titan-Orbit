@@ -13,7 +13,8 @@ namespace TitanOrbit.Game
     /// up as a lag spike and a one-frame blank gem. Rent/Return reuses already-stripped,
     /// already-tinted shells. Cosmetic only — pickup authority stays on ECS gem ghosts.
     /// </para>
-    /// Used by <see cref="GemVisualApplier"/>, <see cref="ClientGemBurstPresenter"/>, and
+    /// Used by <see cref="GemVisualApplier"/> and networked gem proxies in
+    /// <see cref="EcsWorldVisualizer"/> (pool Rent — no Instantiates when warm).
     /// <see cref="EcsWorldVisualizer"/> DestroyProxy.
     /// </summary>
     public static class GemVisualPool
@@ -225,9 +226,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Marks a rented gem as no longer rented without parking it — used when
-        /// <see cref="ClientGemBurstPresenter.TryTakeNear"/> transfers the same GO to a
-        /// networked proxy (avoids Return+Rent flash).
+        /// Marks a rented gem as no longer rented without parking it.
+        /// Kept for rare ownership-transfer cases; gem burst handoff no longer uses this.
         /// </summary>
         public static void DetachRented(GameObject instance)
         {

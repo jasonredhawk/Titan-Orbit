@@ -179,10 +179,13 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server: applies original-style linear/angular damping and integrates gem pose from
     /// <see cref="GemKinematics"/>. Gems are scripted movers — not Unity Physics bodies.
+    /// Runs <b>after</b> <see cref="GemTractorBeamSystem"/> so tractor velocity and pose stay
+    /// same-tick coherent. Skips linear damping while <see cref="GemMotionState.PhaseTractor"/>.
     /// Tunables: <see cref="GemExplosionSettings"/> (Editor).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(GemTractorBeamSystem))]
     [UpdateAfter(typeof(MiningSystem))]
     public partial struct GemMotionSystem : ISystem
     {
@@ -195,13 +198,27 @@ namespace TitanOrbit.ECS
             float angularDamping = settings.AngularDamping;
             float stopSpeed = settings.StopSpeedThreshold;
 
-            foreach (var (kinematics, transform) in SystemAPI
+            foreach (var (kinematics, transform, entity) in SystemAPI
                          .Query<RefRW<GemKinematics>, RefRW<LocalTransform>>()
-                         .WithAll<GemTag>())
+                         .WithAll<GemTag>()
+                         .WithEntityAccess())
             {
                 var kin = kinematics.ValueRO;
-                float3 vel = GemExplosionMath.IntegrateLinearVelocity(
-                    kin.Velocity, linearDamping, stopSpeed, dt);
+                bool underTractor = false;
+                bool hasMotion = SystemAPI.HasComponent<GemMotionState>(entity);
+                GemMotionState motionRo = default;
+                if (hasMotion)
+                {
+                    motionRo = SystemAPI.GetComponent<GemMotionState>(entity);
+                    underTractor = motionRo.Phase == GemMotionState.PhaseTractor;
+                }
+
+                // --- Linear velocity ---
+                // [TITAN-ORBIT] Tractor owns constant pull speed — damping would fight the beam.
+                float3 vel = underTractor
+                    ? kin.Velocity
+                    : GemExplosionMath.IntegrateLinearVelocity(
+                        kin.Velocity, linearDamping, stopSpeed, dt);
                 float3 ang = GemExplosionMath.IntegrateAngularVelocity(
                     kin.AngularVelocity, angularDamping, dt);
 
@@ -218,6 +235,22 @@ namespace TitanOrbit.ECS
 
                 transform.ValueRW = lt;
                 kinematics.ValueRW = new GemKinematics { Velocity = vel, AngularVelocity = ang };
+
+                // --- Phase: Coast → Idle when stopped (never steal Tractor phase here) ---
+                if (!hasMotion || underTractor)
+                    continue;
+
+                if (math.lengthsq(vel) < stopSpeed * stopSpeed)
+                {
+                    motionRo.Phase = GemMotionState.PhaseIdle;
+                    SystemAPI.SetComponent(entity, motionRo);
+                }
+                else if (motionRo.Phase == GemMotionState.PhaseIdle)
+                {
+                    // Nudged / re-launched somehow — treat as coast again.
+                    motionRo.Phase = GemMotionState.PhaseCoast;
+                    SystemAPI.SetComponent(entity, motionRo);
+                }
             }
         }
     }
@@ -536,7 +569,7 @@ namespace TitanOrbit.ECS
     /// <see cref="GemExplosionSettings"/>) that sum to leftover <see cref="AsteroidState.RemainingGems"/>,
     /// with original NGO explosion speed, damping, and tumble. Schedules a timed respawn
     /// (<see cref="AsteroidSpawning.ScheduleRespawn"/>) then destroys the entity.
-    /// Clients also play an immediate local burst via <c>ClientGemBurstPresenter</c>.
+    /// Clients present gems only after ghost Instantiates (no local ClientGemBurstPresenter VFX).
     /// <para>
     /// [TITAN-ORBIT] Despawn triggers on <see cref="AsteroidState.IsDestroyed"/> <b>or</b>
     /// <c>Health &lt;= 0</c> (belt-and-suspenders for bullet kills). Missing Gem prefab must not
@@ -652,7 +685,8 @@ namespace TitanOrbit.ECS
                     seed + (uint)(i + 1) * 97u,
                     burst: true,
                     spawnServerTime,
-                    settings);
+                    settings,
+                    burstIndex: (byte)i);
             }
         }
     }
@@ -664,6 +698,9 @@ namespace TitanOrbit.ECS
         /// Instantiates a gem prefab with value, optional burst velocity/tumble, offset, and lifetime stamp.
         /// </summary>
         /// <param name="spawnServerTime">ServerTick seconds — drives lifetime despawn and client shrink.</param>
+        /// <param name="burstIndex">
+        /// Asteroid-burst slot (0..N-1) for client VFX handoff. Mining nuggets leave 0.
+        /// </param>
         public static void Spawn(
             EntityCommandBuffer ecb,
             Entity gemPrefab,
@@ -672,7 +709,8 @@ namespace TitanOrbit.ECS
             uint salt,
             bool burst,
             float spawnServerTime,
-            GemExplosionSettings settings = null)
+            GemExplosionSettings settings = null,
+            byte burstIndex = 0)
         {
             if (value <= 0f)
                 return;
@@ -693,6 +731,17 @@ namespace TitanOrbit.ECS
                 Size = scale,
                 DepositTeam = TeamId.None,
                 SpawnServerTime = spawnServerTime,
+            });
+
+            // --- Motion phase + burst slot (ghosted for client handoff / tractor lock) ---
+            ecb.SetComponent(gem, new GemMotionState
+            {
+                Phase = GemMotionState.PhaseCoast,
+                BurstIndex = burstIndex,
+                TractorShipId = 0,
+                TractorWingIndex = 0,
+                TractorLockTick = 0,
+                TractorExtendDuration = 0f,
             });
 
             if (burst)

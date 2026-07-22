@@ -5,6 +5,7 @@ using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Transforms;
 using UnityEngine;
 
@@ -12,20 +13,22 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// [HYBRID] Client-side deploy animation timing for tractor beams: extend line, then widen at gem,
-    /// before <see cref="IsPullPhysicsActive"/> reports the server pull phase. Pairs with
-    /// <see cref="GemTractorBeamMath"/> durations. Only tracks gems already assigned by
-    /// <see cref="GemTractorBeamAssignment"/> (nearest wing owns the gem). Cosmetic only —
-    /// does not affect gem velocity.
+    /// before pull reports active. Prefers ghosted <see cref="GemMotionState"/> lock tick + extend
+    /// duration (same clock as server). Falls back to local assignment timing only for beam VFX
+    /// when the gem has no lock yet. Does not write gem velocity.
     /// [TITAN-ORBIT] Under TransformQuarantine, gems come from hybrid proxies via
     /// <see cref="GemTractorBeamClientLogic.CollectGemProxies"/> — never a full gem ToEntityArray.
     /// </summary>
     public static class GemTractorBeamDeployTracker
     {
-        /// <summary>Per ship-gem pair: when lock started and how long extend phase lasts.</summary>
+        /// <summary>Per ship-gem pair: deploy clock (local fallback when ghost lock missing).</summary>
         struct DeployState
         {
             public float LockStartTime;
             public float ExtendDuration;
+            /// <summary>True when LockStartTime is ServerTick seconds (ghost lock), not Time.time.</summary>
+            public bool FromGhostLock;
+            public uint LockTick;
         }
 
         static readonly Dictionary<long, DeployState> StateByPair = new Dictionary<long, DeployState>(128);
@@ -35,16 +38,16 @@ namespace TitanOrbit.Game
 
         public const float ExtendLineThickness = 0.065f;
 
+        /// <summary>
+        /// Refreshes deploy pairs: ghost locks first, then local assignment for VFX-only beams.
+        /// </summary>
         public static void LateUpdateTick()
         {
-            // --- Per-frame refresh ---
             if (Time.frameCount == _lastUpdateFrame)
                 return;
             _lastUpdateFrame = Time.frameCount;
 
-            // [TITAN-ORBIT] Settling OR GhostSpawnBacklog. Quarantine stays ON all session — beams
-            // must still deploy after settle. Ship ToEntityArray during post–Join Team Instantiates
-            // (Settling OFF + GhostSpawnBacklog ON) → Crash!!! (2026-07-19 TeamChoiceResult).
+            // [TITAN-ORBIT] Settling OR GhostSpawnBacklog — ship queries unsafe during Instantiates.
             if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
             {
                 StateByPair.Clear();
@@ -62,6 +65,41 @@ namespace TitanOrbit.Game
             float now = Time.time;
             var active = new HashSet<long>(StateByPair.Count);
 
+            // Quarantine-safe: hybrid gem proxies only.
+            GemTractorBeamClientLogic.CollectGemProxies(em, GemScratch);
+
+            float mapW = ToroidalMapEcs.MapWidth;
+            float mapH = ToroidalMapEcs.MapHeight;
+
+            // --- Ghost locks (authoritative deploy clock) ---
+            for (int gi = 0; gi < GemScratch.Count; gi++)
+            {
+                var gem = GemScratch[gi];
+                if (!em.Exists(gem.Entity) || !em.HasComponent<GemMotionState>(gem.Entity))
+                    continue;
+
+                var motion = em.GetComponentData<GemMotionState>(gem.Entity);
+                if (motion.TractorShipId == 0 || motion.TractorLockTick == 0)
+                    continue;
+
+                if (!GemTractorBeamClientLogic.TryFindShipEntityByNetworkId(
+                        em, motion.TractorShipId, out Entity shipEntity))
+                    continue;
+
+                long key = PairKey(shipEntity.Index, gem.Entity.Index);
+                active.Add(key);
+                StateByPair[key] = new DeployState
+                {
+                    LockTick = motion.TractorLockTick,
+                    ExtendDuration = motion.TractorExtendDuration > 0.0001f
+                        ? motion.TractorExtendDuration
+                        : GemTractorBeamMath.MinExtendDuration,
+                    FromGhostLock = true,
+                    LockStartTime = 0f,
+                };
+            }
+
+            // --- Local fallback for beam VFX when ghost lock has not replicated yet ---
             using var shipQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),
@@ -69,12 +107,6 @@ namespace TitanOrbit.Game
             using var ships = shipQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
             using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Unity.Collections.Allocator.Temp);
             using var shipTransforms = shipQuery.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
-
-            // Quarantine-safe: hybrid gem proxies only.
-            GemTractorBeamClientLogic.CollectGemProxies(em, GemScratch);
-
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
 
             for (int si = 0; si < ships.Length; si++)
             {
@@ -88,18 +120,19 @@ namespace TitanOrbit.Game
                 for (int gi = 0; gi < GemScratch.Count; gi++)
                 {
                     var gem = GemScratch[gi];
-                    // Only the assigned nearest wing starts deploy — idle beams must not share a gem.
+                    long key = PairKey(ships[si].Index, gem.Entity.Index);
+                    if (active.Contains(key))
+                        continue;
+
                     if (!GemTractorBeamClientLogic.IsEligibleForBeamVisual(
                             em, ships[si], shipStates[si], shipTransforms[si], wings,
                             gem.Entity, gem.Transform, mapW, mapH))
                         continue;
 
-                    long key = PairKey(ships[si].Index, gem.Entity.Index);
                     active.Add(key);
                     if (StateByPair.ContainsKey(key))
                         continue;
 
-                    // Deploy origin = assigned wing (same as beam draw), not "any closest in range."
                     float3 origin = GemTractorBeamClientLogic.ResolveBeamOrigin(
                         ships[si], shipTransforms[si], wings, gem.Entity);
                     float dist = GemTractorBeamMath.ToroidalDistance(gem.Transform.Position, origin, mapW, mapH);
@@ -107,6 +140,8 @@ namespace TitanOrbit.Game
                     {
                         LockStartTime = now,
                         ExtendDuration = GemTractorBeamMath.ComputeExtendDuration(dist),
+                        FromGhostLock = false,
+                        LockTick = 0,
                     };
                 }
             }
@@ -125,9 +160,33 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// True when ghost lock says deploy (extend + widen) is finished — shared ServerTick clock.
+        /// </summary>
+        public static bool IsPullPhysicsActiveFromGhostLock(in GemMotionState motion)
+        {
+            if (motion.TractorLockTick == 0)
+                return false;
+
+            // PhaseTractor means server already applied pull — treat as active immediately.
+            if (motion.Phase == GemMotionState.PhaseTractor)
+                return true;
+
+            if (!TryGetServerElapsedSeconds(out double nowSec))
+                return false;
+
+            int hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
+            double lockSec = motion.TractorLockTick / (double)hz;
+            float extend = motion.TractorExtendDuration > 0.0001f
+                ? motion.TractorExtendDuration
+                : GemTractorBeamMath.MinExtendDuration;
+            float elapsed = (float)math.max(0d, nowSec - lockSec);
+            float total = extend + GemTractorBeamMath.WidthExpandDuration;
+            return elapsed >= total - 0.0001f;
+        }
+
         public static float GetExtensionProgress(int shipIndex, int gemIndex)
         {
-            // --- Compute value ---
             if (!StateByPair.TryGetValue(PairKey(shipIndex, gemIndex), out DeployState state))
                 return 0f;
 
@@ -135,17 +194,16 @@ namespace TitanOrbit.Game
             if (extendDuration <= 0.0001f)
                 return 1f;
 
-            float elapsed = Mathf.Max(0f, Time.time - state.LockStartTime);
+            float elapsed = GetElapsed(state);
             return Mathf.Clamp01(elapsed / extendDuration);
         }
 
         public static float GetWidthExpandProgress(int shipIndex, int gemIndex)
         {
-            // --- Compute value ---
             if (!StateByPair.TryGetValue(PairKey(shipIndex, gemIndex), out DeployState state))
                 return 0f;
 
-            float elapsed = Mathf.Max(0f, Time.time - state.LockStartTime);
+            float elapsed = GetElapsed(state);
             if (elapsed <= state.ExtendDuration)
                 return 0f;
 
@@ -157,11 +215,10 @@ namespace TitanOrbit.Game
 
         public static bool IsPullPhysicsActive(int shipIndex, int gemIndex)
         {
-            // --- IsPullPhysicsActive ---
             if (!StateByPair.TryGetValue(PairKey(shipIndex, gemIndex), out DeployState state))
                 return false;
 
-            float elapsed = Mathf.Max(0f, Time.time - state.LockStartTime);
+            float elapsed = GetElapsed(state);
             float total = state.ExtendDuration + GemTractorBeamMath.WidthExpandDuration;
             return elapsed >= total - 0.0001f;
         }
@@ -171,6 +228,41 @@ namespace TitanOrbit.Game
             StateByPair.Clear();
             GemScratch.Clear();
             _lastUpdateFrame = -1;
+        }
+
+        static float GetElapsed(in DeployState state)
+        {
+            if (state.FromGhostLock && state.LockTick != 0 && TryGetServerElapsedSeconds(out double nowSec))
+            {
+                int hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
+                double lockSec = state.LockTick / (double)hz;
+                return (float)math.max(0d, nowSec - lockSec);
+            }
+
+            return Mathf.Max(0f, Time.time - state.LockStartTime);
+        }
+
+        /// <summary>ServerTick seconds from the client visualization world NetworkTime singleton.</summary>
+        static bool TryGetServerElapsedSeconds(out double elapsed)
+        {
+            elapsed = 0d;
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            using var q = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkTime>());
+            if (q.IsEmptyIgnoreFilter)
+                return false;
+
+            var networkTime = q.GetSingleton<NetworkTime>();
+            int hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
+            using var rateQ = em.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>());
+            if (!rateQ.IsEmptyIgnoreFilter)
+                hz = math.max(1, rateQ.GetSingleton<ClientServerTickRate>().SimulationTickRate);
+
+            elapsed = PlanetGemMoonOrbitClock.ToElapsedSeconds(networkTime, hz, includeTickFraction: true);
+            return elapsed > 0d || (networkTime.ServerTick.IsValid);
         }
 
         static long PairKey(int shipIndex, int gemIndex) => ((long)shipIndex << 32) | (uint)gemIndex;

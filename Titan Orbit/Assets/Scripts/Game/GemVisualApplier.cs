@@ -8,12 +8,12 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// [HYBRID] Builds and configures gem crystal GameObject shells for
-    /// <see cref="GemVisualPool"/>, <see cref="EcsWorldVisualizer"/>, and
-    /// <see cref="ClientGemBurstPresenter"/>.
+    /// <see cref="GemVisualPool"/> and networked gem proxies in <see cref="EcsWorldVisualizer"/>.
     /// <para>
     /// Hot path is <see cref="TryCreateGemVisual"/> → pool Rent (no Instantiates).
     /// Cold path is <see cref="TryCreateGemVisualRaw"/> (Instantiates + strip + shared tint)
     /// used only when the pool must grow. Render only — sim value lives on ECS <c>GemState</c>.
+    /// Local ClientGemBurstPresenter VFX is disabled; gems appear from ghost Instantiates only.
     /// </para>
     /// </summary>
     public static class GemVisualApplier

@@ -136,7 +136,10 @@ namespace TitanOrbit.Game
         int _newWorldBodyProxiesThisFrame;
 
         /// <summary>
-        /// Asteroid entities that already fired <see cref="ClientGemBurstPresenter"/> for IsDestroyed.
+        /// <summary>
+        /// Asteroid entities already handled for kill hide (HitRpc or IsDestroyed detect).
+        /// Prevents double-hide work; gem VFX no longer uses this flag.
+        /// </summary>
         /// Prevents double local bursts while the ghost still exists for a few frames.
         /// </summary>
         readonly HashSet<Entity> _asteroidBurstFired = new HashSet<Entity>();
@@ -331,7 +334,7 @@ namespace TitanOrbit.Game
         /// <para>
         /// [TITAN-ORBIT] Server destroys the rock the same tick it sets IsDestroyed; clients often
         /// never observe Health≤0 / IsDestroyed before ghost despawn. HitRpc is the reliable kill
-        /// signal. Plays gem burst once from last-known RemainingGems.
+        /// signal. Gem visuals appear later from networked gem Instantiates (no local burst).
         /// </para>
         /// </summary>
         /// <param name="entity">Asteroid ghost entity whose proxy should hide.</param>
@@ -341,31 +344,8 @@ namespace TitanOrbit.Game
             if (entity == Entity.Null || !_proxies.TryGetValue(entity, out var go) || go == null)
                 return false;
 
-            // Burst once — DetectAsteroidGemBursts may never see dead ghost fields.
-            bool firstBurst = _asteroidBurstFired.Add(entity);
-            float remaining = 0f;
-            float3 pos = go.transform.position;
-            if (_asteroidLastKnown.TryGetValue(entity, out var cached))
-            {
-                remaining = cached.RemainingGems;
-                pos = cached.Position;
-            }
-
-            // Prefer live ghost gems/pose when still present.
-            var world = EcsGameBridge.ClientWorld;
-            if (world != null && world.IsCreated)
-            {
-                var em = world.EntityManager;
-                if (em.Exists(entity) && em.HasComponent<AsteroidState>(entity))
-                {
-                    var state = em.GetComponentData<AsteroidState>(entity);
-                    if (state.RemainingGems >= 0.25f)
-                        remaining = state.RemainingGems;
-                }
-
-                if (em.Exists(entity) && em.HasComponent<LocalTransform>(entity))
-                    pos = em.GetComponentData<LocalTransform>(entity).Position;
-            }
+            // Mark kill handled so DetectAsteroidGemBursts does not re-process this rock.
+            _asteroidBurstFired.Add(entity);
 
             if (go.activeSelf)
                 go.SetActive(false);
@@ -373,12 +353,8 @@ namespace TitanOrbit.Game
             // until NetCode despawn (ship bounce on empty space / pose step with stable FPS).
             ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
 
-            if (firstBurst && remaining >= 0.25f && !TitanOrbitDebugFlags.IsolateDisableGemBurst)
-            {
-                uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
-                ClientGemBurstPresenter.PlayBurst(pos, remaining, seed);
-            }
-
+            // Gem visuals wait for ghost Instantiates — no ClientGemBurstPresenter dual path
+            // (local VFX caused combine/split count pops and mid-flight direction flips).
             return true;
         }
 
@@ -607,7 +583,7 @@ namespace TitanOrbit.Game
                 alive.Add(entity);
 
                 // --- World-body / gem pose ---
-                // Gems: GemClientMotionApplier owns position (velocity-driven client animation).
+                // Gems: GemClientMotionApplier owns position (follows interpolated ghost LT/Velocity).
                 // Other bodies: snap to toroidal display of LocalTransform.
                 if (isGem)
                 {
@@ -704,8 +680,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// When a client asteroid ghost reports <see cref="AsteroidState.IsDestroyed"/>, play the
-        /// local burst immediately (original NGO feel). Server gems Instantiates later for pickup.
+        /// When a client asteroid ghost reports <see cref="AsteroidState.IsDestroyed"/>, hide the
+        /// rock immediately. Gem visuals wait for networked gem Instantiates (no local burst).
         /// Also refreshes <see cref="_asteroidLastKnown"/> for despawn-without-flag cases.
         /// Per-entity HasComponent only — no full asteroid ToEntityArray.
         /// </summary>
@@ -745,16 +721,6 @@ namespace TitanOrbit.Game
                 if (!_asteroidBurstFired.Add(entity))
                     continue;
 
-                float remaining = asteroid.RemainingGems;
-                if (remaining < 0.25f &&
-                    _asteroidLastKnown.TryGetValue(entity, out var cached) &&
-                    cached.RemainingGems >= 0.25f)
-                {
-                    remaining = cached.RemainingGems;
-                }
-
-                uint seed = math.hash(new uint2((uint)entity.Index, math.hash(lt.Position)));
-
                 // Hide the asteroid proxy immediately — the ghost may linger a few frames while
                 // gems Instantiates. Keeping a dead rock visible under a hitch made the blink worse.
                 if (go != null && go.activeSelf)
@@ -762,8 +728,7 @@ namespace TitanOrbit.Game
                 // Same phantom-hull cull as HitRpc hide (ram / missed-RPC destroy path).
                 ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
 
-                if (!TitanOrbitDebugFlags.IsolateDisableGemBurst)
-                    ClientGemBurstPresenter.PlayBurst(lt.Position, remaining, seed);
+                // No local gem VFX — wait for networked gem ghosts (authoritative pose/velocity).
             }
         }
 
@@ -943,24 +908,11 @@ namespace TitanOrbit.Game
                 scale = GemVisualApplier.ComputeVisualScale(math.max(0.25f, state.Value));
                 Vector3 displayPos = GetVisualPosition(entity, lt.Position);
 
-                // --- Prefer local-burst GO handoff (same mesh — no Instantiates, no material flash) ---
-                // [TITAN-ORBIT] TryTakeNear transfers ownership; AttachRented re-tracks for DestroyProxy Return.
-                // Match is nearest display pose (not fastest speed) so a right-side ghost claims the
-                // right-flying local — wrong claims caused “starts left, flies right / mid-air flip.”
-                Vector3 handoffVel = Vector3.zero;
-                Vector3 handoffAng = Vector3.zero;
-                Vector3 handoffBurstCenterDisplay = Vector3.zero;
-                bool haveHandoff = ClientGemBurstPresenter.TryTakeNear(
-                    displayPos, out go, out handoffVel, out handoffAng, out handoffBurstCenterDisplay);
-                if (haveHandoff && go != null)
+                // --- Network gem proxy from ghost only ---
+                // [TITAN-ORBIT] No local burst / handoff. Count and motion come from Instantiates
+                // gem ghosts + GemClientMotionApplier (interpolated LocalTransform / GemKinematics).
+                if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, state.Value, out go))
                 {
-                    go.name = "GemTagProxy";
-                    GemVisualPool.AttachRented(go);
-                }
-                else if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, state.Value, out go))
-                {
-                    // Handoff miss — Instantiates a fresh shell. Local twins should be rare after
-                    // server-matched seeds + wider claimRadius + orphan clear.
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "GemTagProxy";
                     var col = go.GetComponent<Collider>();
@@ -969,64 +921,27 @@ namespace TitanOrbit.Game
                     if (renderer != null)
                         renderer.material = WorldBodyVisualApplier.CreateLitMaterial(Color.yellow);
                 }
+                else
+                {
+                    go.name = "GemTagProxy";
+                }
 
                 _proxies[entity] = go;
                 RegisterProxyKind(entity, ProxyVisualKind.Gem);
                 go.transform.localScale = Vector3.one * scale;
                 GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, state.Value));
 
-                // --- Pose: keep local-burst continuity; never snap handoff GOs to server display ---
-                // [TITAN-ORBIT] Local burst places gems with explosion offsets in display space.
-                // Server ghost LocalTransform is usually the spawn center (or a later sample).
-                // SetPositionAndRotation(displayPos) after TryTakeNear made every gem pop to a
-                // different spot a split-second later — looked like bad reconciliation.
-                float3 logicalBind = lt.Position;
-                float3 burstOriginLogical = float3.zero;
-                bool hasBurstOrigin = false;
-                if (haveHandoff && go != null)
-                {
-                    Vector3 keepDisplay = go.transform.position;
-                    // Seed logical so toroidal display of logicalBind ≈ keepDisplay (XZ).
-                    logicalBind.x += keepDisplay.x - displayPos.x;
-                    logicalBind.z += keepDisplay.z - displayPos.z;
-                    // Convert display-space asteroid center → logical using the same tile bridge.
-                    // keepDisplay - burstCenter ≈ radial offset; logicalBind - that offset = origin.
-                    burstOriginLogical = logicalBind;
-                    burstOriginLogical.x += handoffBurstCenterDisplay.x - keepDisplay.x;
-                    burstOriginLogical.z += handoffBurstCenterDisplay.z - keepDisplay.z;
-                    hasBurstOrigin = true;
-                    // Leave transform where the burst already drew it.
-                }
-                else
-                {
-                    go.transform.SetPositionAndRotation(displayPos, lt.Rotation);
-                }
+                // --- Pose strictly from ghost LocalTransform ---
+                go.transform.SetPositionAndRotation(displayPos, lt.Rotation);
 
-                // --- Client velocity animation (server sets GemKinematics; client animates GO) ---
                 var motion = go.GetComponent<GemClientMotionApplier>();
                 if (motion == null)
                     motion = go.AddComponent<GemClientMotionApplier>();
-                motion.Bind(
-                    entity,
-                    logicalBind,
-                    fromLocalBurstHandoff: haveHandoff,
-                    burstOriginLogical: burstOriginLogical,
-                    hasBurstOrigin: hasBurstOrigin);
+                motion.Bind(entity, lt.Position);
 
-                // Prefer motion from the immediate local burst (handoff) so Instantiates lag
-                // does not kill the explosion. Fall back to ghosted kinematics when present.
-                if (haveHandoff && handoffVel.sqrMagnitude > 0.0001f)
-                {
-                    motion.SeedVelocity(
-                        new float3(handoffVel.x, 0f, handoffVel.z),
-                        new float3(handoffAng.x, handoffAng.y, handoffAng.z),
-                        burstOriginLogical,
-                        hasBurstOrigin);
-                }
-                else if (em.HasComponent<GemKinematics>(entity))
+                if (em.HasComponent<GemKinematics>(entity))
                 {
                     var kin = em.GetComponentData<GemKinematics>(entity);
-                    // No asteroid center on handoff-miss — SeedVelocity infers origin from launch dir.
                     motion.SeedVelocity(kin.Velocity, kin.AngularVelocity);
                 }
 

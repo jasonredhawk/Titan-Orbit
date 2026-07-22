@@ -5,6 +5,7 @@ using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Transforms;
 using UnityEngine;
 
@@ -410,80 +411,124 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [HYBRID] Client presentation pull: when a beam is assigned to <paramref name="gemEntity"/>,
-        /// returns the same wing-directed velocity the server applies so gems glide while the beam
-        /// is visible (gem ghosts can lag; GO motion must not wait on sparse Velocity snapshots).
+        /// [HYBRID] Pull velocity from <b>ghosted</b> <see cref="GemMotionState"/> lock only.
+        /// Used by <see cref="GemClientMotionApplier"/> — never invents wing assignment.
         /// </summary>
-        /// <returns>True when this gem should be client-pulled toward a wing this frame.</returns>
-        public static bool TryGetClientPullVelocity(Entity gemEntity, float3 gemLogicalPos, out float3 pullVelocity)
+        /// <param name="gemEntity">Gem ghost (for value/size mass feel).</param>
+        /// <param name="motion">Ghost motion/lock sample for this gem.</param>
+        /// <param name="gemLogicalPos">Current logical gem pose (usually ghost LocalTransform).</param>
+        /// <param name="pullVelocity">World XZ pull velocity toward the locked wing tip.</param>
+        /// <returns>True when lock is valid and a pull direction could be resolved.</returns>
+        public static bool TryGetPullVelocityFromGhostLock(
+            Entity gemEntity,
+            in GemMotionState motion,
+            float3 gemLogicalPos,
+            out float3 pullVelocity)
         {
             pullVelocity = float3.zero;
-            RebuildAssignmentCache();
+            if (motion.Phase != GemMotionState.PhaseTractor || motion.TractorShipId == 0)
+                return false;
+
+            // Deploy must be complete on the shared ServerTick clock (same numbers as server).
+            if (!GemTractorBeamDeployTracker.IsPullPhysicsActiveFromGhostLock(motion))
+                return false;
 
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
             var em = world.EntityManager;
+            if (!TryFindShipEntityByNetworkId(em, motion.TractorShipId, out Entity shipEntity))
+                return false;
+            if (!em.HasComponent<ShipState>(shipEntity) || !em.HasComponent<LocalTransform>(shipEntity))
+                return false;
+
+            var shipState = em.GetComponentData<ShipState>(shipEntity);
+            if (!IsShipEligibleForBeam(shipState))
+                return false;
+
+            var shipTransform = em.GetComponentData<LocalTransform>(shipEntity);
+            var wings = em.HasBuffer<ShipWingTractorBeamElement>(shipEntity)
+                ? em.GetBuffer<ShipWingTractorBeamElement>(shipEntity)
+                : default;
+
+            int shipLevel = math.max(1, shipState.ShipLevel);
+            bool inOrbit = TryGetInOrbit(em, shipEntity);
+            int wingIndex = motion.TractorWingIndex;
+
+            float wingAttraction;
+            float3 pullTarget;
+            if (wings.IsCreated && wingIndex >= 0 && wingIndex < wings.Length)
+            {
+                ShipWingTractorBeamPose.GetTractorParams(
+                    wings[wingIndex], shipLevel, inOrbit, out _, out wingAttraction);
+                pullTarget = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wingIndex]);
+            }
+            else
+            {
+                GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out _, out wingAttraction);
+                pullTarget = shipTransform.Position;
+            }
+
+            float gemValue = 1f;
+            float gemSize = 0f;
+            if (em.Exists(gemEntity) && em.HasComponent<GemState>(gemEntity))
+            {
+                var gemState = em.GetComponentData<GemState>(gemEntity);
+                gemValue = gemState.Value;
+                gemSize = gemState.Size;
+            }
+
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
+            float pullSpeed = GemTractorBeamMath.ResolvePullSpeedFromWing(wingAttraction, gemValue, gemSize);
+            float3 toWing = GemTractorBeamMath.ToroidalDirection(gemLogicalPos, pullTarget, mapW, mapH);
+            if (math.lengthsq(toWing) < 0.0001f)
+                return false;
 
-            // --- Find which ship (if any) has this gem assigned ---
-            foreach (var kv in WingByShipAndGem)
+            pullVelocity = toWing * pullSpeed;
+            return true;
+        }
+
+        /// <summary>
+        /// [LEGACY] Prefer ghost lock. Do not invent local assignment for GO kinematics.
+        /// </summary>
+        public static bool TryGetClientPullVelocity(Entity gemEntity, float3 gemLogicalPos, out float3 pullVelocity)
+        {
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world != null && world.IsCreated)
             {
-                if (!kv.Value.TryGetValue(gemEntity.Index, out int wingIndex))
-                    continue;
-
-                int shipIndex = kv.Key;
-                // [TITAN-ORBIT] Hold client pull until deploy finishes (extend → widen → pull),
-                // matching GemTractorBeamSystem so the gem does not slide during the line shot.
-                if (!GemTractorBeamDeployTracker.IsPullPhysicsActive(shipIndex, gemEntity.Index))
-                    continue;
-
-                if (!TryFindShipEntityByIndex(em, shipIndex, out Entity shipEntity))
-                    continue;
-                if (!em.HasComponent<ShipState>(shipEntity) || !em.HasComponent<LocalTransform>(shipEntity))
-                    continue;
-
-                var shipState = em.GetComponentData<ShipState>(shipEntity);
-                if (!IsShipEligibleForBeam(shipState))
-                    continue;
-
-                var shipTransform = em.GetComponentData<LocalTransform>(shipEntity);
-                var wings = em.HasBuffer<ShipWingTractorBeamElement>(shipEntity)
-                    ? em.GetBuffer<ShipWingTractorBeamElement>(shipEntity)
-                    : default;
-
-                int shipLevel = math.max(1, shipState.ShipLevel);
-                bool inOrbit = TryGetInOrbit(em, shipEntity);
-
-                float wingAttraction;
-                float3 pullTarget;
-                if (wings.IsCreated && wingIndex >= 0 && wingIndex < wings.Length)
+                var em = world.EntityManager;
+                if (em.Exists(gemEntity) && em.HasComponent<GemMotionState>(gemEntity))
                 {
-                    ShipWingTractorBeamPose.GetTractorParams(
-                        wings[wingIndex], shipLevel, inOrbit, out _, out wingAttraction);
-                    pullTarget = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wingIndex]);
+                    var motion = em.GetComponentData<GemMotionState>(gemEntity);
+                    if (TryGetPullVelocityFromGhostLock(gemEntity, motion, gemLogicalPos, out pullVelocity))
+                        return true;
                 }
-                else
-                {
-                    GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out _, out wingAttraction);
-                    pullTarget = shipTransform.Position;
-                }
+            }
 
-                float gemValue = em.HasComponent<GemState>(gemEntity)
-                    ? em.GetComponentData<GemState>(gemEntity).Value
-                    : 1f;
-                float gemSize = em.HasComponent<GemState>(gemEntity)
-                    ? em.GetComponentData<GemState>(gemEntity).Size
-                    : 0f;
+            pullVelocity = float3.zero;
+            return false;
+        }
 
-                float pullSpeed = GemTractorBeamMath.ResolvePullSpeedFromWing(wingAttraction, gemValue, gemSize);
-                float3 toWing = GemTractorBeamMath.ToroidalDirection(gemLogicalPos, pullTarget, mapW, mapH);
-                if (math.lengthsq(toWing) < 0.0001f)
-                    return false;
+        /// <summary>Resolves a ship ghost by <see cref="GhostOwner.NetworkId"/>.</summary>
+        public static bool TryFindShipEntityByNetworkId(EntityManager em, int networkId, out Entity shipEntity)
+        {
+            shipEntity = Entity.Null;
+            if (networkId == 0)
+                return false;
 
-                pullVelocity = toWing * pullSpeed;
+            // Tiny ship query — caller must already gate GhostSpawnBacklog.
+            using var shipQuery = em.CreateEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadOnly<GhostOwner>());
+            using var ships = shipQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
+            using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Unity.Collections.Allocator.Temp);
+            for (int i = 0; i < ships.Length; i++)
+            {
+                if (owners[i].NetworkId != networkId)
+                    continue;
+                shipEntity = ships[i];
                 return true;
             }
 
