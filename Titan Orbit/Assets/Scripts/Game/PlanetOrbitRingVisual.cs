@@ -37,9 +37,15 @@ namespace TitanOrbit.Game
         TeamId _team = TeamId.None;
         bool _isHome;
 
+        /// <summary>
+        /// Caches draw parameters for <see cref="DrawShapes"/>. Called at proxy Instantiates and again
+        /// from <see cref="WorldBodyVisualApplier.RefreshPlanetVisualAppearance"/> when ghosted
+        /// planet level or ownership changes (gem deposit level-up).
+        /// </summary>
         public void Configure(Transform planetRoot, float planetSize, int planetLevel, TeamId team, bool isHome, int planetId)
         {
-            // --- Configure ---
+            // --- Cache presentation fields (Shapes reads these each DrawShapes) ---
+            // [HYBRID] Not a live ECS query — EcsWorldVisualizer must re-Configure after level-up.
             _planetRoot = planetRoot;
             _planetSize = Mathf.Max(0.25f, planetSize);
             _planetLevel = ClampLevel(planetLevel);

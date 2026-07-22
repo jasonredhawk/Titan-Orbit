@@ -61,23 +61,36 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Syncs map size so tile math matches the rolled map (singleton, else MapSessionMetaRpc cache).
+        /// Syncs map size so tile math matches the rolled map.
+        /// Prefers <see cref="NetCode.MapSessionMetaCache"/> — avoids
+        /// <c>CreateEntityQuery</c> every presentation frame (was paid on both visualizer + minimap).
         /// </summary>
         public static void SyncMapSize(EntityManager em)
         {
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
-            using var mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
-            if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
-                map.MapWidth >= 100f && map.MapHeight >= 100f)
-            {
-                mapW = map.MapWidth;
-                mapH = map.MapHeight;
-            }
-            else if (NetCode.MapSessionMetaCache.HasMapSize)
+
+            // --- Hot path: session meta already latched after MapSessionMetaRpc ---
+            // [TITAN-ORBIT] CreateEntityQuery every LateUpdate was invisible in bodiesMs (it ran
+            // before phase timers) and is a known DOTS alloc/cost anti-pattern while flying.
+            if (NetCode.MapSessionMetaCache.HasMapSize)
             {
                 mapW = NetCode.MapSessionMetaCache.MapWidth;
                 mapH = NetCode.MapSessionMetaCache.MapHeight;
+                NetCode.MapSessionMetaCache.ApplyMapSizeToToroidalHelpers(mapW, mapH);
+                return;
+            }
+
+            // --- Cold path before meta arrives (loading only) ---
+            if (em != default)
+            {
+                using var mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
+                if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
+                    map.MapWidth >= 100f && map.MapHeight >= 100f)
+                {
+                    mapW = map.MapWidth;
+                    mapH = map.MapHeight;
+                }
             }
 
             NetCode.MapSessionMetaCache.ApplyMapSizeToToroidalHelpers(mapW, mapH);

@@ -19,5 +19,32 @@ namespace TitanOrbit
         /// proxies). Use this to find hitch frames — Console filter: <c>[AsteroidDestroy]</c>.
         /// </summary>
         public static bool LogAsteroidDestroyPerf;
+
+        /// <summary>
+        /// When true, <c>ClientStutterIsolator</c> shows the on-screen panel and accepts Shift+F1–F7.
+        /// Off by default — enable from GameManager Inspector when bisecting destroy stutter again.
+        /// </summary>
+        public static bool StutterIsolatorEnabled;
+
+        // --- Stutter / destroy isolation (Shift+F1–F5 while isolator enabled) ---
+
+        /// <summary>Skip bullet impact one-shot VFX (HitRpc + predicted impact).</summary>
+        public static bool IsolateDisableImpactVfx;
+
+        /// <summary>Skip mining float / HP Left popups on asteroid hits.</summary>
+        public static bool IsolateDisableFloatingCounts;
+
+        /// <summary>
+        /// Skip asteroid obstacles in <c>ShipToroidalWorldCollisionSystem</c> (planets/moons remain).
+        /// </summary>
+        public static bool IsolateDisableAsteroidShipCollision;
+
+        /// <summary>
+        /// Skip soft-track / cruise-correct on local ship presentation — raw NetCode pose only.
+        /// </summary>
+        public static bool IsolateDisableShipSoftTrack;
+
+        /// <summary>Skip local gem burst presentation on asteroid kill.</summary>
+        public static bool IsolateDisableGemBurst;
     }
 }

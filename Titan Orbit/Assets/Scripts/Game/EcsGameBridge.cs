@@ -44,6 +44,7 @@ namespace TitanOrbit.Game
             s_WasNetworkInGame = false;
             ClientJoinSettleCache.Clear();
             GemClientEntityRegistry.Clear();
+            PlanetClientEntityRegistry.Clear();
         }
 
         // --- World selection ---
@@ -252,6 +253,15 @@ namespace TitanOrbit.Game
             // ship ECS queries are skipped to avoid Crash!!!. Presentation pose still means we have
             // a ship — without this, NceGameFlow hides gameplay HUD and flashes the lobby overlay.
             if (ShipDisplayPose.HasLocalPose)
+                return true;
+
+            // --- Instantiates-hook seed (pose may land one frame later) ---
+            // [TITAN-ORBIT] After Join Team, seed is set the Instantiates frame; ShipDisplayPose may
+            // not publish until ShipVisualSync runs. Treat seed as "have a ship" so spawn-wait UI
+            // does not stick on "Spawning your ship..." for that gap.
+            var client = ClientWorld;
+            if (client != null && client.IsCreated &&
+                LocalShipEntitySeed.TryGetSeededShip(client.EntityManager, out _))
                 return true;
 
             return TryGetLocalShipPosition(out _);
@@ -1263,6 +1273,7 @@ namespace TitanOrbit.Game
             // Editor Play does not think Instantiates already finished.
             ClientJoinSettleCache.Clear();
             GemClientEntityRegistry.Clear();
+            PlanetClientEntityRegistry.Clear();
             GemTractorBeamVisibilityTracker.Clear();
         }
 

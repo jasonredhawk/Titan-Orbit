@@ -5,7 +5,10 @@ alwaysApply: true
 
 # Titan Orbit — Windows late-join crash invariants (HARD STOP)
 
-**Status (proven 2026-07-18 / updated 2026-07-19):** Relay late-join survives when `TransformQuarantine` gates map-body gathers, GhostSpawn stays CreateEntity-all + Instantiates 1/frame, hybrid map GOs queue via Instantiates hook (not asteroid scans), and ship presentation skips `GhostSpawnBacklog` after Join Team. Agents keep undoing this. Treat any “cleanup” that removes these gates as a **regression bug**, not a refactor.
+> **Agents:** start with the short always-on rule `titan-orbit-teamchoice-crash-hardstop.mdc`.
+> Use `ClientJoinSettleCache.ShouldSkipShipEntityQueries` / `ShouldSkipMapBodyQueries` — never invent Settling-only gates.
+
+**Status (proven 2026-07-18 / updated 2026-07-22):** Relay late-join survives when `TransformQuarantine` gates map-body gathers, GhostSpawn stays CreateEntity-all + Instantiates 1/frame, hybrid map GOs queue via Instantiates hook (not asteroid scans), and ship presentation skips `GhostSpawnBacklog` after Join Team. Agents keep undoing this. Treat any “cleanup” that removes these gates as a **regression bug**, not a refactor.
 
 Paired: `titan-orbit-ship-simulation.mdc`, embedded NetCode (`Packages/com.unity.netcode`), `tools/netcode-patches/`.
 
@@ -79,7 +82,14 @@ Two progress bars do **not** prevent the crash. They only show phases. Gates + I
 
 ### C. Gate patterns (copy these — do not invent weaker ones)
 
-**Map-body gathers** (asteroids / planets / gems / moons / full minimap ECS rebuilds):
+**Prefer the cache helpers** (single source of truth — see `titan-orbit-teamchoice-crash-hardstop.mdc`):
+
+```csharp
+if (ClientJoinSettleCache.ShouldSkipMapBodyQueries) return;   // planets/asteroids/gems/moons
+if (ClientJoinSettleCache.ShouldSkipShipEntityQueries) return; // ships / EnsureShipProxies
+```
+
+**Map-body gathers** (asteroids / planets / gems / moons / full minimap ECS rebuilds) — expanded form:
 
 ```csharp
 // [TITAN-ORBIT] Windows late-join: Settling OFF is NOT safe for map gathers.
@@ -88,7 +98,7 @@ if (ClientJoinSettleCache.TransformQuarantine || ClientJoinSettleCache.Settling)
     return;
 ```
 
-**Ship presentation / local-ship tagging / EnsureShipProxies** (tiny ship queries, but unsafe during Instantiates):
+**Ship presentation / local-ship tagging / EnsureShipProxies** (tiny ship queries, but unsafe during Instantiates) — expanded form:
 
 ```csharp
 // [TITAN-ORBIT] After Join Team, Settling stays OFF (JoinSettleCompleted) but ship
@@ -96,7 +106,6 @@ if (ClientJoinSettleCache.TransformQuarantine || ClientJoinSettleCache.Settling)
 if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
     return;
 ```
-
 Use the map-body gate before **any** client code that:
 - `ToEntityArray` / `WithEntityAccess` / `ToComponentDataArray` over asteroids, planets, gems, moons
 - Mass `CreateEntity` for map-related hulls

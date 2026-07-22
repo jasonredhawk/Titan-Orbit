@@ -80,6 +80,44 @@ namespace TitanOrbit.Simulation
             return dir * speed;
         }
 
+        /// <summary>
+        /// Keeps burst motion radially outward from the asteroid center on XZ.
+        /// <para>
+        /// [TITAN-ORBIT] Spawn offset and launch velocity share the same unit dir, so a gem on
+        /// the +X side of the rock must fly +X — never back through the center. Client soft-reconcile
+        /// or a mismatched local→ghost handoff can leave velocity pointing the wrong way; this
+        /// helper flips/aligns speed onto the outward radial without changing magnitude.
+        /// </para>
+        /// </summary>
+        /// <param name="position">Current gem logical (or display) position.</param>
+        /// <param name="burstCenter">Asteroid center used for the explosion (same space as position).</param>
+        /// <param name="velocity">Current velocity; Y is forced to 0.</param>
+        /// <returns>Velocity of the same speed aimed away from <paramref name="burstCenter"/> on XZ.</returns>
+        public static float3 EnsureOutwardBurstVelocity(float3 position, float3 burstCenter, float3 velocity)
+        {
+            // --- Radial from asteroid center to gem (XZ only) ---
+            float3 radial = position - burstCenter;
+            radial.y = 0f;
+            float radialLenSq = math.lengthsq(radial);
+            if (radialLenSq < 1e-6f)
+            {
+                // Still on the center — keep existing XZ direction, or +Z if velocity is zero.
+                float3 fallback = new float3(velocity.x, 0f, velocity.z);
+                if (math.lengthsq(fallback) < 1e-8f)
+                    return new float3(0f, 0f, 0f);
+                return fallback;
+            }
+
+            float3 outward = math.normalize(radial);
+            float3 planarVel = new float3(velocity.x, 0f, velocity.z);
+            float speed = math.length(planarVel);
+            if (speed < 1e-6f)
+                return float3.zero;
+
+            // Same speed, always away from the rock — kills inward / opposite-side glitches.
+            return outward * speed;
+        }
+
         /// <summary>Original GemSpawner tumble: Random(-max, max) per axis.</summary>
         public static float3 BurstAngularVelocity(float angularSpeedMax, ref Random rng)
         {

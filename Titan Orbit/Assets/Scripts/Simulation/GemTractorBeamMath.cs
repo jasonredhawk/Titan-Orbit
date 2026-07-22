@@ -9,8 +9,8 @@ namespace TitanOrbit.Simulation
     /// max-gems fallback remains for ships without explicit tractor stats.
     /// [TITAN-ORBIT] Restored from original NGO <c>GemTractorBeamSettings</c>: each wing has its
     /// own distance/power; pull speed comes from that wing (not a global gem-mass base speed).
-    /// Multiple wings work together by collecting in parallel (one gem per wing), not by stacking
-    /// force on a single gem.
+    /// Multiple wings collect in parallel via <see cref="GemTractorBeamAssignment"/> (one gem per
+    /// wing, nearest wing owns each gem) — idle beams never stack pull on the same gem.
     /// </summary>
     public static class GemTractorBeamMath
     {

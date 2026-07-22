@@ -189,6 +189,9 @@ namespace TitanOrbit.Game
                     // Mirror server — Health<=0 is already a kill even if IsDestroyed lags.
                     if (asteroid.IsDestroyed || asteroid.Health <= 0f)
                         continue;
+                    // HitRpc may have culled while ghost Health still looks alive.
+                    if (em.HasComponent<AsteroidClientCulledTag>(entity))
+                        continue;
 
                     Obstacles.Add(new Obstacle
                     {

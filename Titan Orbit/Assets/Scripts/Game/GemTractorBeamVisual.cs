@@ -12,7 +12,7 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// [HYBRID] Client-only Shapes drawer for wing tractor beams.
-    /// Deploy beat: thin line shoots wing mid-center→gem, cone mouth opens (slightly under gem diameter),
+    /// Deploy beat: thin line shoots wing mid-center→gem, cone mouth opens at 90% of gem diameter,
     /// then server/client pull begins. Start is pointy on the wing body center; gem end stays rounded.
     /// Pairs with <see cref="GemTractorBeamClientLogic"/>, <see cref="GemTractorBeamDeployTracker"/>,
     /// and <see cref="GemTractorBeamVisibilityTracker"/>. Cosmetic only — pull is
@@ -45,10 +45,10 @@ namespace TitanOrbit.Game
         /// </summary>
         [SerializeField] [Range(0f, 1f)] float gemMouthRoundness = 0.55f;
         /// <summary>
-        /// Cone mouth as a fraction of gem world diameter. Slightly under 1 keeps the flat edge
-        /// inside the crystal silhouette so it reads as ending on the gem, not past it.
+        /// Cone mouth as a fraction of gem world diameter.
+        /// [TITAN-ORBIT] 0.9 = 10% narrower than the gem so the flat edge sits inside the crystal.
         /// </summary>
-        [SerializeField] [Range(0.5f, 1.2f)] float gemEndWidthScale = 0.82f;
+        [SerializeField] [Range(0.5f, 1.2f)] float gemEndWidthScale = 0.9f;
 
         /// <summary>Per-gem smoothed visual diameter so beam width does not pop when proxy scale updates.</summary>
         static readonly Dictionary<int, float> SmoothedGemDiameterById = new Dictionary<int, float>(64);
@@ -145,7 +145,8 @@ namespace TitanOrbit.Game
 
             float pulseWave = Mathf.SmoothStep(0f, 1f, (Mathf.Sin(Time.time * pulseSpeed) + 1f) * 0.5f);
             float pulsedAlphaAtShip = Mathf.Clamp01(alphaAtShip + (pulseWave * 2f - 1f) * pulseAlphaAmplitude);
-            float widthPulse = 1f + (pulseWave * 2f - 1f) * pulseWidthAmplitude;
+            // [TITAN-ORBIT] Pulse only thins the mouth — never wider than gemEndWidthScale (10% under gem).
+            float widthPulse = 1f - (1f - pulseWave) * pulseWidthAmplitude;
 
             // --- Shapes draw scope for this camera ---
             using (Draw.Command(cam))
@@ -213,7 +214,7 @@ namespace TitanOrbit.Game
                         Vector3 tipDisplay = Vector3.Lerp(shipDisplay, gemDisplay, extensionEased);
 
                         float gemDiameter = GetSmoothedGemVisualDiameter(gem.Entity, gem.State);
-                        // Mouth slightly smaller than the gem so the flat edge sits inside the mesh.
+                        // Mouth = gem diameter × 0.9 (default) × pulse ≤ gem so the flat edge sits inside.
                         float widthAtGem = gemDiameter * gemEndWidthScale * widthPulse;
 
                         if (extensionEased < 1f - 0.0001f)
@@ -583,11 +584,9 @@ namespace TitanOrbit.Game
             if (GemVisualDiameterRegistry.TryGetDiameter(gemEntity, out float registered) && registered > 0.01f)
                 return registered;
 
-            // --- Path C: GemState.Size is already a world-ish scale from spawn/economy ---
-            if (gemState.Size > 0.01f)
-                return gemState.Size * 2f;
-
-            // --- Path D: value → visual scale curve (same as GemVisualApplier) ---
+            // --- Path C: value → visual scale curve (same as GemVisualApplier) ---
+            // [TITAN-ORBIT] Do not use GemState.Size * 2 — Size is sim LocalTransform scale
+            // (often 0.2–0.5), not the hybrid GO diameter. Doubling it mismatched the crystal.
             return GemVisualApplier.ComputeVisualDiameter(math.max(0.25f, gemState.Value));
         }
     }

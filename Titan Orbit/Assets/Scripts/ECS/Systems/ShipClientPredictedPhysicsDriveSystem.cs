@@ -10,9 +10,11 @@ namespace TitanOrbit.ECS
     /// before physics so local input feels instant (Starblast pillar 1). Does not wait for RTT.
     /// [NETCODE] Only entities with <see cref="Simulate"/> participate; remotes interpolate.
     /// Input is already on the ghost from <see cref="ShipInputApplySystem"/> in GhostInputSystemGroup.
-    /// Under Windows <see cref="ClientJoinSettleCache.TransformQuarantine"/> planet snapshots are
-    /// skipped (Collect ToEntityArray Crash!!! after TeamChoice); thrust/turn still predict.
-    /// Server <see cref="ShipPhysicsDriveSystem"/> keeps full orbit/shield Collect.
+    /// Under session-long <see cref="ClientJoinSettleCache.TransformQuarantine"/> planet snapshots
+    /// come from <see cref="PlanetMotorSnapshotCollection.CollectFromClientRegistry"/> (Instantiates
+    /// registry — no ToEntityArray Crash!!!). Empty Collect was wrong: server still applied orbit
+    /// while client coasted → reconcile stepped the hull in the ring. Thrust/turn always predict.
+    /// Server <see cref="ShipPhysicsDriveSystem"/> keeps full archetype Collect.
     /// </summary>
     // OrderFirst + after MassSync: runs before default-slot PhysicsSystemGroup without UpdateBefore
     // (ClientWorld often lacks PhysicsSystemGroup as a PredictedFixedStep sibling → sorter spam).
@@ -45,16 +47,16 @@ namespace TitanOrbit.ECS
 
             // --- Planet snapshots (orbit ring + moon shield) ---
             // [ECS/DOTS] TempJob list — disposed after the parallel job completes.
-            // [TITAN-ORBIT] Windows TransformQuarantine: PlanetMotorSnapshotCollection.Collect does
-            // planet ToEntityArray → Crash!!!. Quarantine is session-long after late-join — skip
-            // the gather and drive thrust/turn with an empty planet list. Server authority still
-            // runs full Collect. Do NOT gate Collect on the static alone from server worlds —
-            // this system is client-only, so quarantine here is safe.
-            NativeList<PlanetMotorSnapshot> planets;
-            if (ClientJoinSettleCache.TransformQuarantine || ClientJoinSettleCache.Settling)
-                planets = new NativeList<PlanetMotorSnapshot>(0, Allocator.TempJob);
-            else
-                planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
+            // [TITAN-ORBIT] TransformQuarantine is session-long after join. Full Collect
+            // (ToEntityArray) Crash!!! on Windows — use Instantiates registry Collect instead so
+            // passive orbit / moon shield match server prediction. Settling: ship queries already
+            // returned above via ShouldSkipShipEntityQueries; registry Collect is still safe if
+            // that gate ever narrows. Do NOT pass an empty planet list here — that caused choppy
+            // orbit-ring coast (predict coast, authority orbit → reconcile steps).
+            NativeList<PlanetMotorSnapshot> planets =
+                ClientJoinSettleCache.TransformQuarantine || ClientJoinSettleCache.Settling
+                    ? PlanetMotorSnapshotCollection.CollectFromClientRegistry(ref state, Allocator.TempJob)
+                    : PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
 
             // --- Moon orbit clock for predicted shield repel ---
             // [TITAN-ORBIT] Must match server / collider sync — World.ElapsedTime diverges on late-join.

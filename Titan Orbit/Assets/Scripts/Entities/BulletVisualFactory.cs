@@ -1,3 +1,4 @@
+using TitanOrbit;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
@@ -15,8 +16,10 @@ namespace TitanOrbit.Entities
     /// <summary>
     /// Builds bullet visuals (bank prefab particle, optional procedural core + trail) and spawns
     /// muzzle/impact VFX for ECS client tracers. Consumes <see cref="BulletVfxBank"/> team-colored
-    /// prefabs and <see cref="Simulation.BulletVisualScale"/> for per-shot sizing. Presentation
-    /// only — hit detection stays in server <see cref="ECS.Systems.BulletSimulationSystem"/>.
+    /// prefabs and <see cref="Simulation.BulletVisualScale"/> for per-shot sizing.
+    /// Muzzle/impact Instantiates go through <see cref="BulletOneShotVfxPool"/> so kill/fire
+    /// frames reuse shells. Presentation only — hit detection stays on server
+    /// <see cref="ECS.Systems.BulletSimulationSystem"/>.
     /// </summary>
     public static class BulletVisualFactory
     {
@@ -134,11 +137,15 @@ namespace TitanOrbit.Entities
                 GameObject muzzlePrefab = bank.GetMuzzlePrefab(bankIndex, team);
                 if (muzzlePrefab != null)
                 {
-                    GameObject muzzle = Object.Instantiate(muzzlePrefab, position, Quaternion.LookRotation(-dir));
+                    // [TITAN-ORBIT] Pool muzzle flashes — Instantiates-per-shot was ~18–20ms with impacts.
+                    if (!BulletOneShotVfxPool.TryRent(muzzlePrefab, out GameObject muzzle) || muzzle == null)
+                        return;
+
+                    muzzle.transform.SetPositionAndRotation(position, Quaternion.LookRotation(-dir));
                     VfxUrpCompat.ApplyImpactVisualScale(muzzle, visualScale);
                     VfxUrpCompat.PrepareVfxInstance(muzzle);
                     SetAudioPitchInHierarchy(muzzle, pitch);
-                    Object.Destroy(muzzle, 1.5f);
+                    BulletOneShotVfxPool.ScheduleReturn(muzzle, 1.5f);
                     return;
                 }
             }
@@ -154,6 +161,10 @@ namespace TitanOrbit.Entities
             float damage,
             float scaleMultiplier)
         {
+            // [TITAN-ORBIT] Isolation F1 — skip impact Instantiates/Rent to bisect destroy stutter.
+            if (TitanOrbitDebugFlags.IsolateDisableImpactVfx)
+                return;
+
             position.y = 0f;
             float impactScale = GetImpactScale(bank, scaleMultiplier, bankIndex);
             float pitch = GetImpactSoundPitch(damage);
@@ -244,15 +255,26 @@ namespace TitanOrbit.Entities
             return Mathf.Lerp(lowPitch, highPitch, t);
         }
 
+        /// <summary>
+        /// Places a one-shot impact flash. Rents from <see cref="BulletOneShotVfxPool"/> so
+        /// asteroid kills do not Instantiates a fresh prefab every HitRpc.
+        /// </summary>
         public static void SpawnImpactAt(Vector3 position, GameObject prefab, float pitch, float scale, float duration)
         {
-            // --- SpawnImpactAt ---
-            if (prefab == null) return;
-            GameObject go = Object.Instantiate(prefab, position, Quaternion.identity);
+            // --- SpawnImpactAt (pooled) ---
+            if (prefab == null)
+                return;
+
+            if (!BulletOneShotVfxPool.TryRent(prefab, out GameObject go) || go == null)
+                return;
+
+            go.transform.SetPositionAndRotation(position, Quaternion.identity);
             VfxUrpCompat.ApplyImpactVisualScale(go, scale);
             SetAudioPitchInHierarchy(go, pitch);
+            // [UNITY] PrepareVfxInstance restarts ParticleSystems — required after pool Return cleared them.
+            // Cold Instantiates also pays FixAllIn1 / light strip here once (marker after).
             VfxUrpCompat.PrepareVfxInstance(go);
-            Object.Destroy(go, duration);
+            BulletOneShotVfxPool.ScheduleReturn(go, duration);
         }
 
         static GameObject CreateCustomizableVfxStyle(BulletShape shape, float scale, float bulletSpeed, bool noTrailVisual, Color color)

@@ -93,10 +93,11 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Cosmetic Instantiates per frame (not GhostSpawn). Allow a few so high fire-rate
-        /// anticipation does not sit in the queue with stale muzzle poses while flying.
+        /// Cosmetic Instantiates per frame (not GhostSpawn). Kept modest so fire-while-flying
+        /// does not Instantiates a whole volley of tracer meshes in one LateUpdate
+        /// (session 74383c: spawnMs ~16 ms at MaxSpawnsPerFrame=8 before muzzle pool warm).
         /// </summary>
-        const int MaxSpawnsPerFrame = 8;
+        const int MaxSpawnsPerFrame = 3;
 
         /// <summary>How long a predicted Sequence suppresses a duplicate HitRpc impact.</summary>
         const float PredictedHitTtlSeconds = 2f;
@@ -181,10 +182,24 @@ namespace TitanOrbit.Game
 
             PrunePredictedReconcileState();
 
+            // --- Resolve bank + queue prewarm jobs before budgeted Instantiates ---
+            EnsureBank();
+
+            // --- Budgeted VFX prewarm (spread Instantiates; keep combat warm) ---
+            // [TITAN-ORBIT] 4 Sci-Fi VFX Instantiates/frame keeps load hitch off the kill path
+            // (kill-impact-fix: sync 1204 Instantiates = spawnMs 531 ms).
+            if (!BulletOneShotVfxPool.PrewarmComplete)
+                BulletOneShotVfxPool.TickPrewarm(4);
+
+            // --- Drain spawn Instantiates (muzzle + tracer visual) ---
             if (!blockInstantiates)
                 DrainSpawns();
 
+            // --- Drain HitRpc impacts (pooled one-shot VFX) + mining floats / gem burst ---
             DrainHits();
+
+            // Return expired muzzle/impact shells so the next shot can Rent without Instantiates.
+            BulletOneShotVfxPool.TickReturns();
 
             if (_tracers.Count == 0)
                 return;
@@ -652,23 +667,39 @@ namespace TitanOrbit.Game
             AudioManager.Instance?.PlayWeaponShootSound(
                 BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
 
-            var go = new GameObject("BulletTracer");
-            go.transform.position = spawnDisplay;
-            if (math.lengthsq(req.Velocity) > 0.0001f)
-                go.transform.rotation = Quaternion.LookRotation(((Vector3)req.Velocity).normalized, Vector3.up);
+            // --- Pooled tracer shell (destroy-probe: spawnMs ~14 ms was Instantiates here) ---
+            GameObject projectilePrefab = null;
+            if (!Application.isMobilePlatform && _bank != null)
+                projectilePrefab = _bank.GetProjectileVisualPrefab(bankIndex, team);
 
-            GameObject visual = BulletVisualFactory.BuildVisual(
-                go.transform,
-                _bank,
-                bankIndex,
-                team,
-                BulletShape.Sphere,
-                scaleMul,
-                bulletSpeed,
-                noTrail: false);
+            if (!BulletTracerPool.TryRent(projectilePrefab, out GameObject go, out _) || go == null)
+            {
+                // Last resort — should be rare (pool CreateShell failed).
+                go = new GameObject("BulletTracer");
+                BulletVisualFactory.BuildVisual(
+                    go.transform, _bank, bankIndex, team, BulletShape.Sphere,
+                    scaleMul, bulletSpeed, noTrail: false);
+            }
 
-            ClientBulletStretchVisual stretch = null;
-            if (_bank != null
+            Quaternion rot = math.lengthsq(req.Velocity) > 0.0001f
+                ? Quaternion.LookRotation(((Vector3)req.Velocity).normalized, Vector3.up)
+                : Quaternion.identity;
+            go.transform.SetPositionAndRotation(spawnDisplay, rot);
+
+            // Refresh tint / scale / particles on a recycled shell.
+            GameObject visual = go.transform.childCount > 0
+                ? go.transform.GetChild(0).gameObject
+                : go;
+            float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex);
+            BulletVisualFactory.ApplyColorToVisual(visual, BulletVisualFactory.GetTeamBulletColor(team));
+            VfxUrpCompat.ApplyImpactVisualScale(visual, visualScale);
+            VfxUrpCompat.PrepareVfxInstance(go);
+            BulletVisualFactory.SetAudioPitchInHierarchy(
+                go, BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
+
+            ClientBulletStretchVisual stretch = go.GetComponent<ClientBulletStretchVisual>();
+            if (stretch == null
+                && _bank != null
                 && _bank.TryGetProfile(bankIndex, out var profile)
                 && profile != null
                 && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor)
@@ -707,12 +738,45 @@ namespace TitanOrbit.Game
                 BulletVfxBridge.NotifyAnticipationCreated();
         }
 
+        bool _oneShotPoolPrewarmQueued;
+
         void EnsureBank()
         {
             if (_bank == null)
                 _bank = BulletVfxBank.LoadDefault();
             if (_bank != null)
                 BulletVisualScale.ActiveUpgradeVisualScaleMultiplier = _bank.UpgradeVisualScaleMultiplier;
+
+            // --- Queue muzzle/impact prewarm (drained a few Instantiates/frame) ---
+            // [TITAN-ORBIT] Sync Prewarm of 17×5×12 shells cost spawnMs 531 ms (kill-impact-fix).
+            // Enqueue + TickPrewarm keeps combat warm without one giant hitch.
+            if (!_oneShotPoolPrewarmQueued && _bank != null)
+            {
+                _oneShotPoolPrewarmQueued = true;
+                EnqueueOneShotVfxPoolPrewarm(_bank);
+                BulletTracerPool.PrewarmFromBank(_bank, categoryCap: 4, perPrefab: 6);
+            }
+        }
+
+        /// <summary>
+        /// Enqueues unique muzzle/impact prefabs for budgeted Instantiates.
+        /// Depth 4 is enough once PrepareVfxInstance is paid at create (cold Instantiates avoided on kill).
+        /// </summary>
+        static void EnqueueOneShotVfxPoolPrewarm(BulletVfxBank bank)
+        {
+            if (bank == null || Application.isMobilePlatform)
+                return;
+
+            int catCount = bank.CategoryCount;
+            for (int i = 0; i < catCount; i++)
+            {
+                for (int t = (int)TeamId.TeamA; t <= (int)TeamId.TeamE; t++)
+                {
+                    var team = (TeamId)t;
+                    BulletOneShotVfxPool.EnqueuePrewarm(bank.GetMuzzlePrefab(i, team), 3);
+                    BulletOneShotVfxPool.EnqueuePrewarm(bank.GetImpactPrefab(i, team), 4);
+                }
+            }
         }
 
         /// <summary>
@@ -910,10 +974,13 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Returns the tracer shell to <see cref="BulletTracerPool"/> (or Destroy if foreign).
+        /// </summary>
         static void DestroyTracerGo(in Tracer t)
         {
             if (t.Go != null)
-                Object.Destroy(t.Go);
+                BulletTracerPool.Return(t.Go);
         }
 
         void RemoveAtSwap(int index)

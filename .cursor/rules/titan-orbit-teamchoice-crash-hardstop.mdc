@@ -1,0 +1,40 @@
+---
+description: HARD STOP — TeamChoice / Join Team Crash!!! — required gate APIs before any client ECS query
+alwaysApply: true
+---
+
+# TeamChoice Crash!!! — HARD STOP (read before any client ECS edit)
+
+**Proven loop:** Join Team → `TeamChoiceResult` → ship Instantiates → `Settling` stays **OFF** → ungated client query → native `Crash!!!`. Agents keep reintroducing this (2026-07-19, 2026-07-22). Full detail: `titan-orbit-windows-join-crash.mdc`.
+
+## Mandatory gates (copy these — do not invent weaker ones)
+
+| Query kind | Required early-out |
+|---|---|
+| **Ships** (`WithEntityAccess`, `EnsureShipProxies`, local-ship tag) | `ClientJoinSettleCache.ShouldSkipShipEntityQueries` |
+| **Map bodies** (planet / asteroid / gem / moon gathers) | `ClientJoinSettleCache.ShouldSkipMapBodyQueries` |
+
+```csharp
+// Ships — Settling OR GhostSpawnBacklog (TeamChoice Instantiates window)
+if (ClientJoinSettleCache.ShouldSkipShipEntityQueries) return;
+
+// Map bodies — TransformQuarantine OR Settling (quarantine is session-long on Windows)
+if (ClientJoinSettleCache.ShouldSkipMapBodyQueries) return;
+```
+
+## Absolute forbidden
+
+1. Gate client map gathers on **`Settling` alone** — Settling is OFF after Join Team; Crash!!! still happens.
+2. Gate ship presentation on **`Settling` alone** — need `GhostSpawnBacklog` / `ShouldSkipShipEntityQueries`.
+3. Re-enable `TransformSystemGroup` after late-join.
+4. Add a new client `foreach` / `ToEntityArray` / `WithEntityAccess` over ships or map bodies **without** the helper above.
+5. “Editor works so Windows is fine” — verify Windows Relay Player.log only.
+6. Treat removing these checks as cleanup/refactor — it is a **regression bug**.
+
+## Pre-edit checklist (any client system / hybrid bridge)
+
+- [ ] New/changed client ECS query uses `ShouldSkipShipEntityQueries` or `ShouldSkipMapBodyQueries`?
+- [ ] No Settling-only early-out for ships or map bodies?
+- [ ] `RequireForUpdate<ShipTag>` systems: first run is often **exactly** TeamChoice Instantiates — gate before any map gather.
+
+If unsure → skip the query; do not ship ungated. Detail + ownership file list: `titan-orbit-windows-join-crash.mdc`.

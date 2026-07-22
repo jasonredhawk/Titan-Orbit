@@ -32,21 +32,71 @@ namespace TitanOrbit.Game
         {
             s_PendingQueue.Clear();
             GemClientEntityRegistry.Clear();
+            PlanetClientEntityRegistry.Clear();
             LocalShipEntitySeed.Clear();
             // --- Replace any prior handler (domain reload / play mode) ---
             TitanOrbitJoinLoadCounters.OnDelayedGhostInstantiate = OnDelayedGhostInstantiate;
-            // Prefer gem Instantiates among ready delayed ghosts (still 1/frame).
-            TitanOrbitJoinLoadCounters.IsPriorityDelayedInstantiate = IsGemPlaceholder;
+            // Prefer ship / gem Instantiates among ready delayed ghosts (still 1/frame).
+            // [TITAN-ORBIT] Ships must jump the post-settle asteroid Instantiates queue or Join Team
+            // leaves the client on "Spawning your ship..." for minutes while map bodies drain.
+            TitanOrbitJoinLoadCounters.IsPriorityDelayedInstantiate = IsPriorityPlaceholder;
         }
 
-        /// <summary>True when the delayed-spawn placeholder is a gem ghost (priority Instantiates).</summary>
-        static bool IsGemPlaceholder(EntityManager em, Entity placeholder) =>
-            placeholder != Entity.Null && em.Exists(placeholder) && em.HasComponent<GemTag>(placeholder);
+        /// <summary>
+        /// True when this delayed-spawn placeholder should Instantiates before map asteroids/planets.
+        /// Ships (Join Team) and gems (destroy bursts) are prioritized; still capped at 1/frame.
+        /// <para>
+        /// [TITAN-ORBIT] Placeholders are bare <c>GhostInstance</c> + snapshot buffers — they do
+        /// <b>not</b> carry <see cref="ShipTag"/> / <see cref="GemTag"/>. Checking tags on the
+        /// placeholder always returned false, so TeamChoice ships waited behind the 1/frame map
+        /// Instantiates queue ("Spawning your ship..." forever). Resolve the ghost prefab via
+        /// <see cref="GhostCollectionPrefab"/> and test tags on the prefab entity instead.
+        /// </para>
+        /// </summary>
+        static bool IsPriorityPlaceholder(EntityManager em, Entity placeholder)
+        {
+            if (placeholder == Entity.Null || !em.Exists(placeholder))
+                return false;
+
+            // --- Instantiated ghosts (rare path if called after Instantiates) ---
+            if (em.HasComponent<ShipTag>(placeholder) || em.HasComponent<GemTag>(placeholder))
+                return true;
+
+            // --- Delayed placeholders: look up prefab from GhostInstance.ghostType ---
+            // [NETCODE] GhostInstance.ghostType indexes GhostCollectionPrefab on the collection singleton.
+            if (!em.HasComponent<GhostInstance>(placeholder))
+                return false;
+
+            int ghostTypeIndex = em.GetComponentData<GhostInstance>(placeholder).ghostType;
+            if (ghostTypeIndex < 0)
+                return false;
+
+            using var collectionQuery = em.CreateEntityQuery(ComponentType.ReadOnly<GhostCollection>());
+            if (collectionQuery.IsEmptyIgnoreFilter)
+                return false;
+
+            var collectionEntity = collectionQuery.GetSingletonEntity();
+            if (!em.HasBuffer<GhostCollectionPrefab>(collectionEntity))
+                return false;
+
+            var prefabs = em.GetBuffer<GhostCollectionPrefab>(collectionEntity, isReadOnly: true);
+            if (ghostTypeIndex >= prefabs.Length)
+                return false;
+
+            Entity prefab = prefabs[ghostTypeIndex].GhostPrefab;
+            if (prefab == Entity.Null || !em.Exists(prefab))
+                return false;
+
+            // --- Ship / gem prefabs jump the asteroid Instantiates line ---
+            return em.HasComponent<ShipTag>(prefab) || em.HasComponent<GemTag>(prefab);
+        }
 
         /// <summary>
         /// Called from patched GhostSpawn after each delayed Instantiates success.
         /// Only records map-body entities — AddComponent happens in <see cref="FlushPending"/>.
         /// Gems are also registered for tractor VFX + urgent proxy create (appear ASAP).
+        /// Planets are registered for quarantine-safe orbit / moon-shield motor Collect
+        /// (<see cref="PlanetClientEntityRegistry"/>).
         /// </summary>
         /// <param name="em">Client EntityManager from GhostSpawn.</param>
         /// <param name="entity">The ghost entity that just Instantiated.</param>
@@ -64,6 +114,13 @@ namespace TitanOrbit.Game
                 LocalShipEntitySeed.NotifyShipInstantiated(em, entity);
                 return;
             }
+
+            // --- Planets: track for quarantine-safe orbit / moon-shield motor Collect ---
+            // [TITAN-ORBIT] Must register even when Pending already exists (early-return below).
+            // Without this, client predicted drive had zero planets under TransformQuarantine →
+            // coast while server orbit motor ran → choppy ring reconcile.
+            if (em.HasComponent<PlanetTag>(entity))
+                PlanetClientEntityRegistry.NotifyInstantiated(entity);
 
             // --- Gems: track for tractor beams + force an urgent visual (do not wait on asteroid drain) ---
             // [TITAN-ORBIT] Gem ghosts often already have baked Pending, so the early-return below

@@ -23,13 +23,35 @@ namespace TitanOrbit.Core
 
         [Header("Debug — Asteroid Destroy Hitch")]
         [Tooltip("Logs [AsteroidDestroy] timings in the Console when an asteroid explodes (local gem Instantiates + urgent gem proxies). Filter the Console with that tag.")]
-        [SerializeField] bool debugLogAsteroidDestroyPerf = true;
+        [SerializeField] bool debugLogAsteroidDestroyPerf;
+
+        [Header("Debug — Stutter Isolator")]
+        [Tooltip("When enabled in Play Mode, shows an on-screen panel and accepts Shift+F1–F5 to temporarily disable impact VFX, floats, asteroid toroidal collision, ship soft-track, or gem burst. Leave OFF for normal play.")]
+        [SerializeField] bool debugEnableStutterIsolator;
+
+        [Tooltip("Starting value when the isolator is enabled: skip impact VFX (Shift+F1).")]
+        [SerializeField] bool isolatorStartDisableImpactVfx;
+
+        [Tooltip("Starting value when the isolator is enabled: skip floating damage/HP text (Shift+F2).")]
+        [SerializeField] bool isolatorStartDisableFloatingCounts;
+
+        [Tooltip("Starting value when the isolator is enabled: skip asteroid toroidal ship collision (Shift+F3).")]
+        [SerializeField] bool isolatorStartDisableAsteroidShipCollision;
+
+        [Tooltip("Starting value when the isolator is enabled: raw ship pose, no soft-track (Shift+F4).")]
+        [SerializeField] bool isolatorStartDisableShipSoftTrack;
+
+        [Tooltip("Starting value when the isolator is enabled: skip local gem burst (Shift+F5).")]
+        [SerializeField] bool isolatorStartDisableGemBurst;
 
         /// <summary>True when designers enabled free upgrades in the Inspector (client + local-host convenience).</summary>
         public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
 
         /// <summary>True when asteroid-destroy hitch logging is enabled in the Inspector.</summary>
         public bool DebugLogAsteroidDestroyPerf => debugLogAsteroidDestroyPerf;
+
+        /// <summary>True when the Shift+F stutter isolator overlay is enabled.</summary>
+        public bool DebugEnableStutterIsolator => debugEnableStutterIsolator;
 
         /// <summary>
         /// Safe static check used by moon orbit UI. Also true when the Shared flag was published
@@ -95,7 +117,7 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// [UNITY] OnDestroy — clears the static reference and Shared flag so a reloaded scene starts clean.
+        /// [UNITY] OnDestroy — clears the static reference and Shared flags so a reloaded scene starts clean.
         /// </summary>
         void OnDestroy()
         {
@@ -104,6 +126,8 @@ namespace TitanOrbit.Core
                 Instance = null;
                 TitanOrbitDebugFlags.FreeShipUpgradeTree = false;
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
+                TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
+                ClearIsolationFlags();
             }
         }
 
@@ -115,6 +139,33 @@ namespace TitanOrbit.Core
             // [TITAN-ORBIT] ECS MoonOrbitStoreSystem cannot reference TitanOrbit.Core — Shared bridge.
             TitanOrbitDebugFlags.FreeShipUpgradeTree = debugFreeShipUpgradeTree;
             TitanOrbitDebugFlags.LogAsteroidDestroyPerf = debugLogAsteroidDestroyPerf;
+            TitanOrbitDebugFlags.StutterIsolatorEnabled = debugEnableStutterIsolator;
+
+            // Seed isolation bits from Inspector when enabling; when master switch is OFF, clear them
+            // so leftover Shift+F toggles from a previous Play session cannot stick.
+            if (debugEnableStutterIsolator)
+            {
+                TitanOrbitDebugFlags.IsolateDisableImpactVfx = isolatorStartDisableImpactVfx;
+                TitanOrbitDebugFlags.IsolateDisableFloatingCounts = isolatorStartDisableFloatingCounts;
+                TitanOrbitDebugFlags.IsolateDisableAsteroidShipCollision =
+                    isolatorStartDisableAsteroidShipCollision;
+                TitanOrbitDebugFlags.IsolateDisableShipSoftTrack = isolatorStartDisableShipSoftTrack;
+                TitanOrbitDebugFlags.IsolateDisableGemBurst = isolatorStartDisableGemBurst;
+            }
+            else
+            {
+                ClearIsolationFlags();
+            }
+        }
+
+        /// <summary>Resets all Shift+F isolation bits to off (normal gameplay).</summary>
+        static void ClearIsolationFlags()
+        {
+            TitanOrbitDebugFlags.IsolateDisableImpactVfx = false;
+            TitanOrbitDebugFlags.IsolateDisableFloatingCounts = false;
+            TitanOrbitDebugFlags.IsolateDisableAsteroidShipCollision = false;
+            TitanOrbitDebugFlags.IsolateDisableShipSoftTrack = false;
+            TitanOrbitDebugFlags.IsolateDisableGemBurst = false;
         }
     }
 }

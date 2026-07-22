@@ -70,25 +70,42 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// [TITAN-ORBIT] True when ship <c>ToEntityArray</c> / <c>WithEntityAccess</c> must not run.
         /// Covers Settling and the post–Join Team Instantiates window (Settling stays OFF).
+        /// Prefer this over hand-rolling <c>Settling || GhostSpawnBacklog</c> so TeamChoice
+        /// Crash!!! gates stay one-liners (see titan-orbit-teamchoice-crash-hardstop.mdc).
         /// </summary>
         public static bool ShouldSkipShipEntityQueries => Settling || GhostSpawnBacklog;
 
         /// <summary>
-        /// Extra frames to keep <see cref="GhostSpawnBacklog"/> true after a successful Instantiates
+        /// [TITAN-ORBIT] True when client code must not gather planets / asteroids / gems / moons
+        /// (<c>ToEntityArray</c>, <c>WithEntityAccess</c>, broad <c>foreach</c>).
+        /// <para>
+        /// <see cref="TransformQuarantine"/> stays true for the whole Windows in-game session.
+        /// Gating map gathers on <see cref="Settling"/> alone is forbidden: after Join Team,
+        /// Settling is OFF (<see cref="JoinSettleCompleted"/>) but full map gathers still
+        /// Crash!!! (Player.log 2026-07-18 Settling OFF; 2026-07-22 TeamChoice toroidal collide).
+        /// </para>
+        /// Prefer this helper over hand-rolled flags so new systems cannot omit quarantine.
+        /// </summary>
+        public static bool ShouldSkipMapBodyQueries => TransformQuarantine || Settling;
+
+        /// <summary>
+        /// Extra frames to keep <see cref="GhostSpawnBacklog"/> true after a <b>ship</b> Instantiates
         /// even when GhostSpawnBuffer / PendingSpawnPlaceholder are already empty.
         /// TeamChoice ship Instantiates clears the placeholder the same frame — without this hold,
         /// ship systems fail-open immediately (Player.log 2026-07-22 TeamChoiceResult → Crash!!!).
+        /// <para>
+        /// Intentional: do <b>not</b> re-arm on every map Instantiates. Distance-importance keeps
+        /// streaming asteroids at 1/frame after Settling OFF; arming on every Instantiates left
+        /// GhostSpawnBacklog true forever → no hybrid ship, HUD stuck on "Spawning your ship...".
+        /// </para>
         /// </summary>
-        const int PostInstantiateHoldFrames = 5;
+        const int PostShipInstantiateHoldFrames = 5;
 
-        /// <summary>Last <see cref="TitanOrbitJoinLoadCounters.InstantiatesSession"/> we observed.</summary>
-        static int s_LastSeenInstantiatesSession;
-
-        /// <summary>Remaining frames of Instantiates hold (counts down once per Unity frame).</summary>
-        static int s_PostInstantiateHoldRemaining;
+        /// <summary>Remaining frames of ship Instantiates hold (counts down once per Unity frame).</summary>
+        static int s_PostShipInstantiateHoldRemaining;
 
         /// <summary><see cref="UnityEngine.Time.frameCount"/> of the last hold tick (dedupe dual callers).</summary>
-        static int s_PostInstantiateHoldTickFrame = -1;
+        static int s_PostShipInstantiateHoldTickFrame = -1;
 
         /// <summary>Updates settle + quarantine flags from the join gate system.</summary>
         public static void Set(
@@ -117,7 +134,16 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Queue/placeholder non-empty <b>or</b> recent Instantiates hold.
+        /// Arms the short post–ship Instantiates hold. Call from
+        /// <c>LocalShipEntitySeed.NotifyShipInstantiated</c> only — not from map Instantiates.
+        /// </summary>
+        public static void ArmPostShipInstantiateHold()
+        {
+            s_PostShipInstantiateHoldRemaining = PostShipInstantiateHoldFrames;
+        }
+
+        /// <summary>
+        /// Queue/placeholder non-empty <b>or</b> recent <b>ship</b> Instantiates hold.
         /// Call from the join gate and from <c>TitanOrbitGhostSpawnBacklogRefreshSystem</c>.
         /// Hold decrements at most once per Unity frame even when both callers run.
         /// </summary>
@@ -125,27 +151,18 @@ namespace TitanOrbit.ECS
         /// <returns>Effective backlog flag for ship / Instantiates-sensitive presentation.</returns>
         public static bool ComputeGhostSpawnBacklog(bool queueOrPlaceholdersNonEmpty)
         {
-            // --- Detect Instantiates that cleared placeholders this frame ---
-            // [NETCODE] TitanOrbitJoinLoadCounters.InstantiatesSession increments inside GhostSpawn
-            // after each successful delayed Instantiates (1/frame). TeamChoice ship arrival bumps it
-            // while the placeholder query is already empty — queue-only backlog would flip false.
-            int session = TitanOrbitJoinLoadCounters.InstantiatesSession;
-            if (session > s_LastSeenInstantiatesSession)
-            {
-                s_LastSeenInstantiatesSession = session;
-                s_PostInstantiateHoldRemaining = PostInstantiateHoldFrames;
-            }
-
             // --- One hold tick per rendered frame ---
+            // [TITAN-ORBIT] Hold is armed only by ArmPostShipInstantiateHold (TeamChoice ship),
+            // so late map Instantiates at 1/frame cannot pin GhostSpawnBacklog forever.
             int frame = UnityEngine.Time.frameCount;
-            if (s_PostInstantiateHoldTickFrame != frame)
+            if (s_PostShipInstantiateHoldTickFrame != frame)
             {
-                s_PostInstantiateHoldTickFrame = frame;
-                if (s_PostInstantiateHoldRemaining > 0)
-                    s_PostInstantiateHoldRemaining--;
+                s_PostShipInstantiateHoldTickFrame = frame;
+                if (s_PostShipInstantiateHoldRemaining > 0)
+                    s_PostShipInstantiateHoldRemaining--;
             }
 
-            return queueOrPlaceholdersNonEmpty || s_PostInstantiateHoldRemaining > 0;
+            return queueOrPlaceholdersNonEmpty || s_PostShipInstantiateHoldRemaining > 0;
         }
 
         /// <summary>Clears when leaving a session / not in-game.</summary>
@@ -156,9 +173,8 @@ namespace TitanOrbit.ECS
             InGameFrames = 0;
             JoinSettleCompleted = false;
             GhostSpawnBacklog = false;
-            s_LastSeenInstantiatesSession = 0;
-            s_PostInstantiateHoldRemaining = 0;
-            s_PostInstantiateHoldTickFrame = -1;
+            s_PostShipInstantiateHoldRemaining = 0;
+            s_PostShipInstantiateHoldTickFrame = -1;
             // [NETCODE] GhostSpawn join counters — next Relay join starts from zero.
             TitanOrbitJoinLoadCounters.Reset();
         }

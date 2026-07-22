@@ -193,13 +193,24 @@ namespace TitanOrbit.NetCode
             if (server == null || !server.IsCreated)
                 return;
 
-            var simulation = server.GetExistingSystemManaged<SimulationSystemGroup>();
-            if (simulation == null || !simulation.Enabled)
+            // Already fully parked (menu idle after a prior suspend).
+            if (server.QuitUpdate)
+            {
+                s_EditorLocalServerSuspendedForOnline = true;
                 return;
+            }
 
-            simulation.Enabled = false;
+            var simulation = server.GetExistingSystemManaged<SimulationSystemGroup>();
+            if (simulation != null && simulation.Enabled)
+                simulation.Enabled = false;
+
+            // --- Park the whole ServerWorld, not only SimulationSystemGroup ---
+            // [NETCODE] Leaving Init running while sim is off floods
+            // "Expected server to always update once per frame when in sleep mode" (NetcodeServerRateManager
+            // still ticks in InitializationSystemGroup). QuitUpdate stops all groups until Local Host.
+            server.QuitUpdate = true;
             s_EditorLocalServerSuspendedForOnline = true;
-            Debug.Log("[TitanOrbitSessionManager] Suspended local ServerWorld simulation until Local play/host/client.");
+            Debug.Log("[TitanOrbitSessionManager] Suspended local ServerWorld (QuitUpdate) until Local play/host/client.");
 #endif
         }
 
@@ -256,6 +267,12 @@ namespace TitanOrbit.NetCode
                 Debug.Log("[TitanOrbitSessionManager] Recreated local ServerWorld for Local Host play.");
                 return;
             }
+
+            // --- Unpark world + re-enable sim (menu used QuitUpdate while idle) ---
+            // [NETCODE] QuitUpdate was set in SuspendEditorLocalServerUntilLocalPlay to silence
+            // sleep-mode rate-manager spam; Local Host must clear it before Listen / map gen.
+            if (server.QuitUpdate)
+                server.QuitUpdate = false;
 
             var simulation = server.GetExistingSystemManaged<SimulationSystemGroup>();
             if (simulation != null && !simulation.Enabled)

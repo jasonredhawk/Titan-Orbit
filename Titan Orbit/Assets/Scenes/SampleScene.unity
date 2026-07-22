@@ -2833,6 +2833,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b78f4fff537a8bc41a716671c7216877, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.ShipInputBridge
+  bulletNameTextPrefab: {fileID: 0}
 --- !u!4 &566081330
 Transform:
   m_ObjectHideFlags: 0
@@ -8700,6 +8701,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b78f4fff537a8bc41a716671c7216877, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.ShipInputBridge
+  bulletNameTextPrefab: {fileID: 0}
 --- !u!114 &1418200270
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -8833,13 +8835,13 @@ MonoBehaviour:
   floatingCountVisibility:
     gemPickup: 1
     gemDeposit: 1
-    asteroidDamage: 1
-    asteroidHealthRemaining: 1
-    asteroidGemsRemaining: 1
-    asteroidImpactForce: 1
-    damageShipOrDrone: 1
-    damageMoon: 1
-    healthChange: 1
+    asteroidDamage: 0
+    asteroidHealthRemaining: 0
+    asteroidGemsRemaining: 0
+    asteroidImpactForce: 0
+    damageShipOrDrone: 0
+    damageMoon: 0
+    healthChange: 0
     peopleLoad: 1
     peopleUnload: 1
   floatingCountFont: {fileID: 0}
@@ -8945,6 +8947,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
   debugFreeShipUpgradeTree: 1
+  debugLogAsteroidDestroyPerf: 1
 --- !u!1 &1427633624
 GameObject:
   m_ObjectHideFlags: 0

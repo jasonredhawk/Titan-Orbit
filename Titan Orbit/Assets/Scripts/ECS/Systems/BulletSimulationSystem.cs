@@ -11,7 +11,8 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative bullet simulation and ship firing. Runs after
-    /// <see cref="ShipPhysicsDriveSystem"/> so muzzle positions use current transforms.
+    /// <see cref="PredictedFixedStepSimulationSystemGroup"/> (which contains
+    /// <see cref="ShipPhysicsDriveSystem"/>) so muzzle positions use current transforms.
     /// <para>
     /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>: shared energy pool with
     /// per-barrel firePower / fireRate. Full energy + all cooldowns ready → same-tick volley;
@@ -27,8 +28,11 @@ namespace TitanOrbit.ECS
     /// Broadcasts <see cref="BulletSpawnRpc"/> / <see cref="BulletHitRpc"/> via
     /// <see cref="BulletNetNotify"/>. Damage is server-only. Not Burst-compiled — managed notify.
     /// </summary>
+    // [ECS/DOTS] ShipPhysicsDriveSystem lives in PredictedFixedStepSimulationSystemGroup — cannot
+    // UpdateAfter that sibling type from SimulationSystemGroup (Unity warns and ignores the attribute).
+    // Ordering after the whole predicted fixed-step group keeps fire/hits after the drive tick.
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(ShipPhysicsDriveSystem))]
+    [UpdateAfter(typeof(PredictedFixedStepSimulationSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial struct BulletSimulationSystem : ISystem
     {

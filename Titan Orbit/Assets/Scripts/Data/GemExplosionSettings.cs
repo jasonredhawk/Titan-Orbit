@@ -21,7 +21,7 @@ namespace TitanOrbit.Data
         [Range(1, 10)]
         public int MinGemCount = 1;
 
-        [Tooltip("Maximum gems spawned when an asteroid is destroyed (clamped by remaining value). Keep near 1–3 for smooth clients; raise toward 10 only to stress-test (causes Instantiates hitch if many).")]
+        [Tooltip("Maximum gems spawned when an asteroid is destroyed (clamped by remaining value). Client visuals rent from GemVisualPool (prewarm 32) — keep near 1–3 for gameplay density; pool grows if dumps exceed idle stock.")]
         [Range(1, 10)]
         public int MaxGemCount = 3;
 

@@ -37,8 +37,9 @@ namespace Unity.NetCode
 
         /// <summary>
         /// Optional: return true for placeholders that should Instantiates before other ready ghosts
-        /// (still 1/frame). Titan Orbit registers gem placeholders so destroy bursts are not stuck
-        /// behind a long asteroid Instantiates backlog.
+        /// (still 1/frame). Titan Orbit resolves the ghost prefab from <c>GhostInstance.ghostType</c>
+        /// (placeholders do not carry ShipTag/GemTag) so Join Team ships and gem bursts jump the
+        /// asteroid Instantiates queue.
         /// </summary>
         public static Func<EntityManager, Entity, bool> IsPriorityDelayedInstantiate;
 

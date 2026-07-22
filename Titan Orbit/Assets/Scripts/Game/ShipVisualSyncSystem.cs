@@ -157,9 +157,14 @@ namespace TitanOrbit.Game
             }
             else if (TitanOrbitDebugFlags.LogAsteroidDestroyPerf)
             {
-                Debug.Log(
-                    $"[AsteroidDestroy] ShipVisualSync backlog: localShipCached={resolved} " +
-                    $"entityIndex={localShip.Index} frameDtMs={UnityEngine.Time.deltaTime * 1000f:F1}");
+                // [TITAN-ORBIT] Rate-limit — backlog can last many frames during map Instantiates;
+                // logging every frame floods the Console and looks like a hard error storm.
+                if (UnityEngine.Time.frameCount % 60 == 0)
+                {
+                    Debug.Log(
+                        $"[AsteroidDestroy] ShipVisualSync backlog: localShipCached={resolved} " +
+                        $"entityIndex={localShip.Index} frameDtMs={UnityEngine.Time.deltaTime * 1000f:F1}");
+                }
             }
 
             // --- People transports ---
@@ -214,7 +219,15 @@ namespace TitanOrbit.Game
             _smoothShipEntity = localShip;
 
             // --- Step display state ---
-            if (!_smoothInitialized || shipChanged)
+            // [TITAN-ORBIT] Isolation F4: raw sim pose only — if destroy stutter vanishes, soft-track
+            // was amplifying physics reconcile pops from phantom asteroid hulls.
+            if (TitanOrbitDebugFlags.IsolateDisableShipSoftTrack)
+            {
+                _smoothPos = targetPos;
+                _smoothRot = targetRot;
+                _smoothInitialized = true;
+            }
+            else if (!_smoothInitialized || shipChanged)
             {
                 if (shipChanged)
                     ToroidalDisplay.ResetSession("ShipVisualSync.shipChanged");

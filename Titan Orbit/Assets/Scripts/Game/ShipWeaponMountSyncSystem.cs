@@ -1,5 +1,6 @@
 using TitanOrbit.ECS;
 using Unity.Entities;
+using Unity.NetCode;
 
 namespace TitanOrbit.Game
 {
@@ -17,8 +18,10 @@ namespace TitanOrbit.Game
     /// System kept so update-order attributes and asmdef wiring stay stable.
     /// </para>
     /// </summary>
+    // [ECS/DOTS] ShipPhysicsDriveSystem is in PredictedFixedStepSimulationSystemGroup — cannot
+    // UpdateAfter that type from SimulationSystemGroup (Unity ignores + warns).
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(ShipPhysicsDriveSystem))]
+    [UpdateAfter(typeof(PredictedFixedStepSimulationSystemGroup))]
     [UpdateBefore(typeof(BulletSimulationSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial class ShipWeaponMountSyncSystem : SystemBase

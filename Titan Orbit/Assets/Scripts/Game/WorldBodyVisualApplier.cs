@@ -10,6 +10,9 @@ namespace TitanOrbit.Game
     /// [HYBRID] Instantiates legacy planet and asteroid prefabs as ECS presentation proxies for
     /// <see cref="EcsWorldVisualizer"/>. Strips NGO/legacy gameplay components, applies team materials,
     /// attaches spin/moon/orbit-ring children, and scales by ECS world diameter. Render only.
+    /// Also refreshes existing planet proxies in place when ghosted level/ownership changes
+    /// (<see cref="RefreshPlanetVisualAppearance"/>) — required under TransformQuarantine because
+    /// the old DrawPlanets rebuild path is no longer called.
     /// </summary>
     public static class WorldBodyVisualApplier
     {
@@ -73,6 +76,63 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>
+        /// Reconfigures an existing planet GameObject proxy when ghosted <c>PlanetState</c> changes
+        /// (gem deposit level-up, ownership capture) without Destroy+Instantiate.
+        /// <para>
+        /// [HYBRID] [TITAN-ORBIT] Under TransformQuarantine the visualizer cannot run the old
+        /// <c>DrawPlanets</c> full gather that rebuilt proxies on <c>PlanetVisualKey</c> mismatch.
+        /// Call this from the known-proxy sync path instead — per-entity reads only, no map scan.
+        /// </para>
+        /// </summary>
+        /// <param name="instance">Existing planet proxy root created by <see cref="TryCreatePlanetVisual"/>.</param>
+        /// <param name="materialPool">Team/home surface materials; used when <paramref name="materialsChanged"/>.</param>
+        /// <param name="isHome">Homeworld flag from ghosted planet state.</param>
+        /// <param name="team">Ownership team — tints rings and (when changed) surface/moon materials.</param>
+        /// <param name="planetLevel">Current planet level — drives Saturn-style decorative ring band count.</param>
+        /// <param name="planetId">Stable planet id for material seed and moon registry.</param>
+        /// <param name="worldScale">ECS <c>LocalTransform.Scale</c> (world diameter).</param>
+        /// <param name="materialsChanged">
+        /// True when home/team identity changed (capture). Level-only updates skip material rebuild.
+        /// </param>
+        public static void RefreshPlanetVisualAppearance(
+            GameObject instance,
+            PlanetMaterialPool materialPool,
+            bool isHome,
+            TeamId team,
+            int planetLevel,
+            int planetId,
+            float worldScale,
+            bool materialsChanged)
+        {
+            // --- Guard ---
+            // [STANDARD] Caller may hold a destroyed Unity object if prune raced this frame.
+            if (instance == null)
+                return;
+
+            worldScale = Mathf.Max(0.25f, worldScale);
+
+            // --- Surface material (capture / home identity only) ---
+            // [TITAN-ORBIT] Level-up does not change the planet surface — only ring band count.
+            if (materialsChanged)
+                ApplyPlanetMaterial(instance, materialPool, isHome, team, planetId);
+
+            // --- Moon (orbit radius uses level; shield/tint uses team) ---
+            // [HYBRID] Pass null material on level-only refresh so Configure keeps the existing mat.
+            var moon = instance.GetComponent<PlanetGemMoonVisualProxy>();
+            if (moon != null)
+            {
+                Material moonMaterial = materialsChanged
+                    ? CreateGemMoonMaterial(instance, materialPool, isHome, team, planetId)
+                    : null;
+                moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial, team);
+            }
+
+            // --- Decorative level bands + people-transfer orbit ring ---
+            // [TITAN-ORBIT] PlanetOrbitRingVisual caches level at Configure — this is the live refresh.
+            EnsureOrbitRingVisual(instance, worldScale, planetLevel, team, isHome, planetId);
+        }
+
         static void EnsurePlanetSpin(GameObject planetRoot)
         {
             // --- Ensure setup ---
@@ -83,6 +143,10 @@ namespace TitanOrbit.Game
                 planetRoot.AddComponent<PlanetSpinVisualProxy>();
         }
 
+        /// <summary>
+        /// Ensures a <c>PlanetRings</c> child with <see cref="PlanetOrbitRingVisual"/> and configures
+        /// band count / team tint from the current planet state.
+        /// </summary>
         static void EnsureOrbitRingVisual(
             GameObject planetRoot,
             float planetSize,
@@ -94,6 +158,8 @@ namespace TitanOrbit.Game
             if (planetRoot == null)
                 return;
 
+            // --- Find or create rings root ---
+            // [UNITY] Prefab may already include PlanetRings; Instantiates path often needs create.
             Transform ringsRoot = planetRoot.transform.Find("PlanetRings");
             if (ringsRoot == null)
             {

@@ -61,6 +61,12 @@ namespace TitanOrbit.ECS
             s_PendingOwnedShip = entity;
             if (!ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 SeededShip = entity;
+
+            // --- Arm ship Instantiates hold (not map Instantiates) ---
+            // [TITAN-ORBIT] Placeholder is often gone the same frame Instantiates succeeds. Without
+            // a short hold, ship WithEntityAccess / EnsureShipProxies fail-open → Crash!!!.
+            // Only ships arm this — asteroid Instantiates must not pin GhostSpawnBacklog forever.
+            ClientJoinSettleCache.ArmPostShipInstantiateHold();
         }
 
         /// <summary>

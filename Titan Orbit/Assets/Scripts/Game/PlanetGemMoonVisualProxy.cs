@@ -98,12 +98,17 @@ namespace TitanOrbit.Game
         /// </summary>
         public void Configure(float planetSize, int planetLevel, bool isHome, int planetId, Material moonMaterial, TeamId team = TeamId.None)
         {
+            // --- Cache identity from planet proxy create / later refresh ---
+            // [HYBRID] WorldBodyVisualApplier calls this at Instantiates and again on level-up /
+            // capture without Destroy+Instantiate (TransformQuarantine cannot rebuild via DrawPlanets).
             _planetSize = Mathf.Max(0.01f, planetSize);
             _planetLevel = Mathf.Max(1, planetLevel);
             _planetId = planetId;
             _isHome = isHome;
             _team = team;
-            _moonMaterial = moonMaterial;
+            // [TITAN-ORBIT] null material = keep existing (level-only refresh). Non-null replaces tint.
+            if (moonMaterial != null)
+                _moonMaterial = moonMaterial;
             // --- Build hierarchy once, then refresh scale/material/children ---
             EnsureMoonVisual();
             ApplyMoonScale();

@@ -13,7 +13,9 @@ namespace TitanOrbit.Game
     /// <summary>
     /// [HYBRID] Client-side deploy animation timing for tractor beams: extend line, then widen at gem,
     /// before <see cref="IsPullPhysicsActive"/> reports the server pull phase. Pairs with
-    /// <see cref="GemTractorBeamMath"/> durations. Cosmetic only — does not affect gem velocity.
+    /// <see cref="GemTractorBeamMath"/> durations. Only tracks gems already assigned by
+    /// <see cref="GemTractorBeamAssignment"/> (nearest wing owns the gem). Cosmetic only —
+    /// does not affect gem velocity.
     /// [TITAN-ORBIT] Under TransformQuarantine, gems come from hybrid proxies via
     /// <see cref="GemTractorBeamClientLogic.CollectGemProxies"/> — never a full gem ToEntityArray.
     /// </summary>
@@ -63,11 +65,9 @@ namespace TitanOrbit.Game
             using var shipQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),
-                ComponentType.ReadOnly<ShipOrbitState>(),
                 ComponentType.ReadOnly<LocalTransform>());
             using var ships = shipQuery.ToEntityArray(Unity.Collections.Allocator.Temp);
             using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Unity.Collections.Allocator.Temp);
-            using var shipOrbits = shipQuery.ToComponentDataArray<ShipOrbitState>(Unity.Collections.Allocator.Temp);
             using var shipTransforms = shipQuery.ToComponentDataArray<LocalTransform>(Unity.Collections.Allocator.Temp);
 
             // Quarantine-safe: hybrid gem proxies only.
@@ -88,7 +88,8 @@ namespace TitanOrbit.Game
                 for (int gi = 0; gi < GemScratch.Count; gi++)
                 {
                     var gem = GemScratch[gi];
-                    if (!GemTractorBeamClientLogic.IsWithinCandidateRange(
+                    // Only the assigned nearest wing starts deploy — idle beams must not share a gem.
+                    if (!GemTractorBeamClientLogic.IsEligibleForBeamVisual(
                             em, ships[si], shipStates[si], shipTransforms[si], wings,
                             gem.Entity, gem.Transform, mapW, mapH))
                         continue;
@@ -98,9 +99,9 @@ namespace TitanOrbit.Game
                     if (StateByPair.ContainsKey(key))
                         continue;
 
-                    float3 origin = GemTractorBeamClientLogic.GetDeployBeamOrigin(
-                        shipTransforms[si], wings, gem.Transform,
-                        math.max(1, shipStates[si].ShipLevel), shipOrbits[si].InOrbitRing, mapW, mapH);
+                    // Deploy origin = assigned wing (same as beam draw), not "any closest in range."
+                    float3 origin = GemTractorBeamClientLogic.ResolveBeamOrigin(
+                        ships[si], shipTransforms[si], wings, gem.Entity);
                     float dist = GemTractorBeamMath.ToroidalDistance(gem.Transform.Position, origin, mapW, mapH);
                     StateByPair[key] = new DeployState
                     {

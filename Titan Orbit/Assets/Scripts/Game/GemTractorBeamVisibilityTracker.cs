@@ -37,8 +37,9 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            GemTractorBeamDeployTracker.LateUpdateTick();
+            // Assignment first — deploy / fade only track wing-owned gems (not every in-range pair).
             GemTractorBeamClientLogic.RebuildAssignmentCache();
+            GemTractorBeamDeployTracker.LateUpdateTick();
 
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)

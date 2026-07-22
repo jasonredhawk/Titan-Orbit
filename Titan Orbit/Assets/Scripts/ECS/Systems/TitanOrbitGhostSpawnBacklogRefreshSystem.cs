@@ -14,9 +14,11 @@ namespace TitanOrbit.ECS
     /// (Player.log 2026-07-20). This system closes that one-frame hole for LateUpdate / onBeforeRender.
     /// </para>
     /// <para>
-    /// Backlog is queue/placeholder non-empty <b>or</b> a short Instantiates hold
-    /// (<see cref="ClientJoinSettleCache.ComputeGhostSpawnBacklog"/>) so ship systems stay gated
+    /// Backlog is queue/placeholder non-empty <b>or</b> a short <b>ship</b> Instantiates hold
+    /// (<see cref="ClientJoinSettleCache.ComputeGhostSpawnBacklog"/> /
+    /// <see cref="ClientJoinSettleCache.ArmPostShipInstantiateHold"/>) so ship systems stay gated
     /// after the placeholder is already gone (Player.log 2026-07-22 TeamChoiceResult → Crash!!!).
+    /// Map Instantiates must not re-arm that hold or GhostSpawnBacklog never clears.
     /// </para>
     /// World: ClientSimulation. Group: GhostSpawnSystemGroup, after GhostSpawnSystem.
     /// </summary>

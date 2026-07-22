@@ -61,6 +61,12 @@ namespace TitanOrbit.ECS
         public float MaxGems;
     }
 
+    /// <summary>
+    /// Client-only: HitRpc already hid this asteroid. Not ghosted — survives lagging Health snapshots.
+    /// See <see cref="AsteroidClientCullPhysicsSystem"/>.
+    /// </summary>
+    public struct AsteroidClientCulledTag : IComponentData { }
+
     /// <summary>[NETCODE] Loose gem pickup spawned by mining or moon drain.</summary>
     public struct GemState : IComponentData
     {

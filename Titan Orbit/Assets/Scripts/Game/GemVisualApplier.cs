@@ -7,15 +7,21 @@ using UnityEngine.Rendering;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Instantiates gem crystal prefabs as ECS presentation proxies for
-    /// <see cref="EcsWorldVisualizer"/> and <see cref="ClientGemBurstPresenter"/>.
-    /// Strips NGO/legacy components, applies a readable red tint, and scales mesh by gem value.
-    /// Render only — sim value lives on ECS <c>GemState</c>. Applies end-of-life shrink
-    /// (original Gem.shrinkDuration) when spawn time + settings are provided.
+    /// [HYBRID] Builds and configures gem crystal GameObject shells for
+    /// <see cref="GemVisualPool"/>, <see cref="EcsWorldVisualizer"/>, and
+    /// <see cref="ClientGemBurstPresenter"/>.
+    /// <para>
+    /// Hot path is <see cref="TryCreateGemVisual"/> → pool Rent (no Instantiates).
+    /// Cold path is <see cref="TryCreateGemVisualRaw"/> (Instantiates + strip + shared tint)
+    /// used only when the pool must grow. Render only — sim value lives on ECS <c>GemState</c>.
+    /// </para>
     /// </summary>
     public static class GemVisualApplier
     {
         const string DefaultGemPrefabPath = "Assets/Prefabs/Gem.prefab";
+
+        /// <summary>Resources path for player builds (<c>Assets/Resources/Gem.prefab</c>).</summary>
+        const string DefaultGemResourcesName = "Gem";
 
         /// <summary>Designer reference range for visual scale curve.</summary>
         const float MinGemValue = 1f;
@@ -32,12 +38,12 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Shared tinted material for all gem proxies. Creating <c>renderer.material</c> per Instantiates
-        /// allocated a new Material on every burst gem and hitchs destroy frames — reuse one instance.
+        /// allocated a new Material on every burst gem and hitched destroy frames — reuse one instance.
         /// </summary>
         static Material s_sharedTintedGemMaterial;
 
-        /// <summary>True after <see cref="PrewarmSharedTint"/> ran (shader/material setup done off the destroy frame).</summary>
-        static bool s_prewarmed;
+        /// <summary>True after <see cref="EnsureSharedTintReady"/> finished material + keyword setup.</summary>
+        static bool s_tintReady;
 
         /// <summary>MonoBehaviour types removed so the proxy is a pure visual shell.</summary>
         static readonly HashSet<string> StripComponentNames = new HashSet<string>
@@ -49,52 +55,108 @@ namespace TitanOrbit.Game
         };
 
         /// <summary>
-        /// [TITAN-ORBIT] Builds the shared URP tint material before the first asteroid destroy.
-        /// First gem Instantiates after settle can hitch on shader/material setup — prewarm avoids
-        /// that cost on the destroy frame.
+        /// [UNITY] Domain reload safety — drop static material reference across Play Mode.
         /// </summary>
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        static void PrewarmSharedTint()
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics()
         {
-            if (s_prewarmed)
-                return;
-            s_prewarmed = true;
-
-            GameObject prefab = LoadDefaultGemPrefab();
-            if (prefab == null)
-                return;
-
-            // --- One throwaway Instantiates so URP keywords compile off the hot path ---
-            if (!TryCreateGemVisual(prefab, 1f, out GameObject warmup) || warmup == null)
-                return;
-            warmup.name = "GemTintPrewarm";
-            warmup.SetActive(false);
-            Object.Destroy(warmup);
+            s_sharedTintedGemMaterial = null;
+            s_tintReady = false;
         }
 
         /// <summary>
-        /// Creates a stripped gem proxy at default scale for the given gem value.
-        /// Used for networked gem ghosts and for the immediate local destroy burst.
+        /// Rents a gem visual from <see cref="GemVisualPool"/> (preferred hot path).
+        /// Grows the pool via Instantiates only when idle stock is empty.
         /// </summary>
-        /// <param name="gemPrefab">Crystal mesh prefab (usually <c>Assets/Prefabs/Gem.prefab</c>).</param>
+        /// <param name="gemPrefab">Crystal mesh prefab — remembered by the pool for growth.</param>
         /// <param name="gemValue">Authoritative gem value — drives visual scale only.</param>
-        /// <param name="instance">Created GameObject, or null on failure.</param>
-        /// <returns>True when Instantiates succeeded.</returns>
+        /// <param name="instance">Active GameObject, or null on failure.</param>
+        /// <returns>True when a visual is ready to place.</returns>
         public static bool TryCreateGemVisual(GameObject gemPrefab, float gemValue, out GameObject instance)
+        {
+            GemVisualPool.EnsurePrefab(gemPrefab);
+            return GemVisualPool.TryRent(gemValue, out instance, "GemTagProxy");
+        }
+
+        /// <summary>
+        /// Cold Instantiates path used by the pool when it must grow.
+        /// Prefer <see cref="TryCreateGemVisual"/> from gameplay code.
+        /// </summary>
+        /// <param name="gemPrefab">Source prefab (may include Rigidbody — stripped here).</param>
+        /// <param name="gemValue">Initial scale value.</param>
+        /// <param name="immediateStrip">
+        /// When true, uses DestroyImmediate for physics/network components so PhysX never
+        /// registers the proxy (pool growth / prewarm). Gameplay Rent never Instantiates.
+        /// </param>
+        /// <param name="instance">Created GameObject (caller parents/activates).</param>
+        public static bool TryCreateGemVisualRaw(
+            GameObject gemPrefab,
+            float gemValue,
+            bool immediateStrip,
+            out GameObject instance)
         {
             instance = null;
             if (gemPrefab == null)
                 return false;
 
-            // --- Instantiate legacy prefab and strip sim/network components ---
+            // --- Instantiates legacy prefab and strip sim/network components ---
             instance = Object.Instantiate(gemPrefab);
             instance.name = "GemTagProxy";
-            StripForProxy(instance);
+            StripForProxy(instance, immediateStrip);
             ApplyGemTint(instance);
             float scale = ComputeVisualScale(gemValue);
             instance.transform.localScale = Vector3.one * scale;
-
             return true;
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Builds the shared URP tint material (and warms keywords) before combat.
+        /// Called from <see cref="GemVisualPool.Prewarm"/> so the first Rent does not hitch.
+        /// </summary>
+        /// <param name="gemPrefab">Prefab whose MeshRenderer supplies the source material.</param>
+        public static void EnsureSharedTintReady(GameObject gemPrefab)
+        {
+            if (s_tintReady && s_sharedTintedGemMaterial != null)
+                return;
+
+            if (gemPrefab == null)
+                gemPrefab = LoadDefaultGemPrefab();
+            if (gemPrefab == null)
+                return;
+
+            // --- Build shared material from prefab without leaving a visible GO ---
+            // Instantiates briefly so we can read MeshRenderer.sharedMaterial, then destroy.
+            var probe = Object.Instantiate(gemPrefab);
+            probe.name = "GemTintProbe";
+            probe.SetActive(false);
+            ApplyGemTint(probe);
+            Object.Destroy(probe);
+
+            // --- Force URP to compile the transparent variant off the destroy frame ---
+            // [UNITY] Creating a Material alone does not compile shader variants; a tiny draw does.
+            // We park an invisible quad with the shared material for one frame via a warm camera
+            // is heavy — instead create a disabled renderer that ShaderVariantCollection would
+            // cover. Practical fallback: assign material on an active hidden mesh once.
+            if (s_sharedTintedGemMaterial != null)
+            {
+                var warm = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                warm.name = "GemTintShaderWarm";
+                warm.hideFlags = HideFlags.HideAndDontSave;
+                var col = warm.GetComponent<Collider>();
+                if (col != null)
+                    Object.Destroy(col);
+                var renderer = warm.GetComponent<Renderer>();
+                if (renderer != null)
+                {
+                    renderer.sharedMaterial = s_sharedTintedGemMaterial;
+                    // Off-camera but active so the first real gem is not the first draw.
+                    warm.transform.position = new Vector3(0f, -10000f, 0f);
+                }
+
+                Object.Destroy(warm, 0.5f);
+            }
+
+            s_tintReady = s_sharedTintedGemMaterial != null;
         }
 
         /// <summary>Maps gem value to uniform local scale via inverse lerp between min and max value.</summary>
@@ -125,20 +187,52 @@ namespace TitanOrbit.Game
             return baseScale * mul;
         }
 
-        /// <summary>Estimated world diameter when proxy renderer bounds are unavailable.</summary>
+        /// <summary>
+        /// Estimated world diameter when proxy mesh bounds are unavailable.
+        /// [TITAN-ORBIT] Treats visual scale as diameter when the mesh is ~1 unit across at scale 1.
+        /// </summary>
         public static float ComputeVisualDiameter(float gemValue) =>
             ComputeVisualScale(gemValue);
 
-        /// <summary>Reads renderer bounds world diameter when proxy exists; else analytic estimate.</summary>
+        /// <summary>
+        /// World-space XZ diameter of a gem proxy for tractor-beam mouth sizing.
+        /// Prefers local mesh bounds × lossy scale so a spinning crystal does not inflate
+        /// the axis-aligned world AABB (which made the beam mouth wider than the gem).
+        /// </summary>
+        /// <param name="proxy">Hybrid gem GameObject (may be null).</param>
+        /// <param name="gemValue">Fallback value curve when mesh is missing.</param>
+        /// <returns>World diameter on the play plane (XZ).</returns>
         public static float ReadWorldDiameter(GameObject proxy, float gemValue)
         {
             if (proxy != null)
             {
+                // --- Path A: local mesh size × uniform scale (rotation-stable) ---
+                // [UNITY] renderer.bounds is a world AABB — a diamond spun 45° grows that box
+                // even though the crystal silhouette stays the same. Tractor mouths used that
+                // inflated width and looked larger than the gem.
+                var meshFilter = proxy.GetComponentInChildren<MeshFilter>();
+                if (meshFilter != null && meshFilter.sharedMesh != null)
+                {
+                    Vector3 localSize = meshFilter.sharedMesh.bounds.size;
+                    Vector3 lossy = proxy.transform.lossyScale;
+                    float worldX = localSize.x * Mathf.Abs(lossy.x);
+                    float worldZ = localSize.z * Mathf.Abs(lossy.z);
+                    float fromMesh = Mathf.Max(worldX, worldZ);
+                    if (fromMesh > 0.01f)
+                        return fromMesh;
+                }
+
+                // --- Path B: renderer local bounds when MeshFilter is absent ---
                 var renderer = proxy.GetComponentInChildren<Renderer>();
                 if (renderer != null)
                 {
-                    Vector3 extents = renderer.bounds.extents;
-                    return Mathf.Max(extents.x, extents.z) * 2f;
+                    Vector3 localSize = renderer.localBounds.size;
+                    Vector3 lossy = proxy.transform.lossyScale;
+                    float worldX = localSize.x * Mathf.Abs(lossy.x);
+                    float worldZ = localSize.z * Mathf.Abs(lossy.z);
+                    float fromRenderer = Mathf.Max(worldX, worldZ);
+                    if (fromRenderer > 0.01f)
+                        return fromRenderer;
                 }
             }
 
@@ -217,10 +311,16 @@ namespace TitanOrbit.Game
             material.renderQueue = (int)RenderQueue.Transparent;
         }
 
-        /// <summary>Removes physics, networking, and legacy Gem behaviours so proxy is render-only.</summary>
-        public static void StripForProxy(GameObject root)
+        /// <summary>
+        /// Removes physics, networking, and legacy Gem behaviours so proxy is render-only.
+        /// </summary>
+        /// <param name="root">Instantiated gem root.</param>
+        /// <param name="immediate">
+        /// [TITAN-ORBIT] Pool prewarm/growth uses DestroyImmediate so Rigidbody never enters PhysX.
+        /// </param>
+        public static void StripForProxy(GameObject root, bool immediate = false)
         {
-            ShipVisualApplier.StripPhysicsAndNetworking(root);
+            StripPhysicsAndNetworking(root, immediate);
 
             var components = root.GetComponentsInChildren<Component>(true);
             for (int i = 0; i < components.Length; i++)
@@ -234,18 +334,51 @@ namespace TitanOrbit.Game
 
                 string typeName = component.GetType().Name;
                 if (StripComponentNames.Contains(typeName) || typeName.Contains("Network"))
-                    Object.Destroy(component);
+                    DestroyComponent(component, immediate);
             }
         }
 
-        /// <summary>[EDITOR] Loads default gem prefab from project path when none assigned at runtime.</summary>
+        /// <summary>
+        /// Strips colliders/rigidbodies/network behaviours. Local copy so pool growth can
+        /// DestroyImmediate without changing ship proxy strip timing.
+        /// </summary>
+        static void StripPhysicsAndNetworking(GameObject root, bool immediate)
+        {
+            foreach (var col in root.GetComponentsInChildren<Collider>(true))
+                DestroyComponent(col, immediate);
+            foreach (var rb in root.GetComponentsInChildren<Rigidbody>(true))
+                DestroyComponent(rb, immediate);
+            foreach (var component in root.GetComponentsInChildren<Component>(true))
+            {
+                if (component == null)
+                    continue;
+                string typeName = component.GetType().Name;
+                if (typeName.Contains("Network") || typeName.Contains("Netcode") || typeName.Contains("ClientNetwork"))
+                    DestroyComponent(component, immediate);
+            }
+        }
+
+        /// <summary>Destroy vs DestroyImmediate for strip paths.</summary>
+        static void DestroyComponent(Object component, bool immediate)
+        {
+            if (immediate)
+                Object.DestroyImmediate(component);
+            else
+                Object.Destroy(component);
+        }
+
+        /// <summary>
+        /// Loads default gem prefab — Editor AssetDatabase path, or <c>Resources/Gem</c> in players.
+        /// </summary>
         public static GameObject LoadDefaultGemPrefab()
         {
 #if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(DefaultGemPrefabPath);
-#else
-            return null;
+            var fromAssets = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(DefaultGemPrefabPath);
+            if (fromAssets != null)
+                return fromAssets;
 #endif
+            // [UNITY] Player builds cannot use AssetDatabase — Resources/Gem.prefab ships in builds.
+            return Resources.Load<GameObject>(DefaultGemResourcesName);
         }
     }
 }

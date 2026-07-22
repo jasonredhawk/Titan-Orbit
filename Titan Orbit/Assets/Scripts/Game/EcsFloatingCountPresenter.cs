@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
@@ -77,6 +78,10 @@ namespace TitanOrbit.Game
         /// Scratch for <see cref="EcsWorldVisualizer.CopyLiveProxyEntities"/> — reused each frame to avoid GC.
         /// </summary>
         readonly List<Entity> _proxyEntityScratch = new List<Entity>(512);
+        /// <summary>Asteroids seen this PollAsteroids pass — reused (was <c>new HashSet</c> every frame).</summary>
+        readonly HashSet<Entity> _asteroidSeenScratch = new HashSet<Entity>();
+        /// <summary>Stale asteroid keys to remove — reused (was <c>new List</c> on prune).</summary>
+        readonly List<Entity> _asteroidStaleScratch = new List<Entity>(64);
         /// <summary>Skip delta popups on first frame after connect — avoids spurious +N from baseline.</summary>
         bool _primed;
 
@@ -479,6 +484,10 @@ namespace TitanOrbit.Game
             TeamId ownerTeam,
             float? authoritativeRemainingHealth = null)
         {
+            // [TITAN-ORBIT] Isolation F2 — skip floats to see if Instantiates/UI drives the step.
+            if (TitanOrbitDebugFlags.IsolateDisableFloatingCounts)
+                return false;
+
             // --- Resolve live presenter ---
             var presenter = Active;
             if (presenter == null || WorldFloatingCountManager.Instance == null)
@@ -532,6 +541,7 @@ namespace TitanOrbit.Game
                     RemainingHealth = remainingHealth,
                     RemainingGems = null,
                 });
+
             return true;
         }
 
@@ -560,7 +570,10 @@ namespace TitanOrbit.Game
             // Managed dictionary of live GameObject proxies — no Burst gather over asteroids.
             visualizer.CopyLiveProxyEntities(_proxyEntityScratch);
 
-            var seen = new HashSet<Entity>();
+            // [TITAN-ORBIT] Reuse scratch — allocating HashSet/List every Update caused GC spikes
+            // while flying (move-probe session 74383c).
+            var seen = _asteroidSeenScratch;
+            seen.Clear();
 
             for (int i = 0; i < _proxyEntityScratch.Count; i++)
             {
@@ -628,7 +641,8 @@ namespace TitanOrbit.Game
             // --- Drop snapshots for despawned / recycled entities ---
             if (_asteroidHealth.Count > seen.Count)
             {
-                var stale = new List<Entity>();
+                var stale = _asteroidStaleScratch;
+                stale.Clear();
                 foreach (var kv in _asteroidHealth)
                 {
                     if (!seen.Contains(kv.Key))
@@ -665,6 +679,11 @@ namespace TitanOrbit.Game
                 return;
 
             // --- Tiny ship query (safe after ShouldSkipShipEntityQueries) ---
+            // [TITAN-ORBIT] Throttle: CreateEntityQuery + ToEntityArray every Update was paid while
+            // flying even when no one is depositing. HitRpc floats do not need this path.
+            if ((Time.frameCount % 3) != 0)
+                return;
+
             using var shipQuery = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),

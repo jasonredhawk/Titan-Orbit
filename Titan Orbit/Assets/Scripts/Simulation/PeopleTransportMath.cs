@@ -83,8 +83,9 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Multiplier on the prefab's authored localScale from carried people amount.
-        /// Dispatch chunk size already encodes ship/planet level and load vs unload, so amount alone
-        /// drives size the way the original <c>PeopleTransportProjectile</c> did.
+        /// Dispatch launches one sphere per person (<c>amount</c> usually 1). Load concurrency is
+        /// <c>min(ship, planet)</c>; unload concurrency is ship level. Larger amounts still scale up
+        /// if a single sphere ever carries more than one person.
         /// </summary>
         public static float GetVisualScaleMultiplier(float peopleAmount)
         {

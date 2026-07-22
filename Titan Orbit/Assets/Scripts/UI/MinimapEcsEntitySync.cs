@@ -139,20 +139,26 @@ namespace TitanOrbit.UI
         /// </summary>
         void SyncMapSize(EntityManager em)
         {
-            // --- Resolve authoritative size ---
+            // --- Resolve authoritative size (no CreateEntityQuery on the hot path) ---
+            // [TITAN-ORBIT] Prefer MapSessionMetaCache — same as ToroidalDisplay.SyncMapSize.
+            // Creating a MapStateSingleton query every LateUpdate while flying was wasted work:
+            // we early-out on unchanged size only AFTER paying CreateEntityQuery.
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
-            using var mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
-            if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
-                map.MapWidth >= 100f && map.MapHeight >= 100f)
-            {
-                mapW = map.MapWidth;
-                mapH = map.MapHeight;
-            }
-            else if (MapSessionMetaCache.HasMapSize)
+            if (MapSessionMetaCache.HasMapSize)
             {
                 mapW = MapSessionMetaCache.MapWidth;
                 mapH = MapSessionMetaCache.MapHeight;
+            }
+            else
+            {
+                using var mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
+                if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
+                    map.MapWidth >= 100f && map.MapHeight >= 100f)
+                {
+                    mapW = map.MapWidth;
+                    mapH = map.MapHeight;
+                }
             }
 
             if (mapW == _lastMapWidth && mapH == _lastMapHeight)
@@ -323,7 +329,7 @@ namespace TitanOrbit.UI
                 }
                 else if (anchor.Kind == MinimapBlipKind.Asteroid && em.HasComponent<AsteroidState>(entity))
                 {
-                    // --- if ---
+                    // --- Asteroid blip: destroyed flag + scale only (logical pose, not toroidal) ---
                     var asteroid = em.GetComponentData<AsteroidState>(entity);
                     anchor.IsDestroyed = asteroid.IsDestroyed;
                     anchor.BodySize = math.max(0.25f, lt.Scale);

@@ -19,6 +19,17 @@ namespace TitanOrbit.Core
         private static Shader s_legacyParticlesUnlit;
 
         /// <summary>
+        /// Marks a pooled muzzle/impact shell that already paid FixAllIn1 + light strip +
+        /// Hierarchy scale setup. Session 74383c kill frames hit <c>hitMs:21</c> while the pool
+        /// was still Instantiates-growing and re-running GrabPass material walks every Rent.
+        /// </summary>
+        sealed class VfxPreparedMarker : MonoBehaviour
+        {
+            /// <summary>True after particle systems were switched to Hierarchy scaling.</summary>
+            public bool HierarchyScaleReady;
+        }
+
+        /// <summary>
         /// Swap GrabPass AllIn1 materials for SRP batch or particle unlit fallbacks; disable screen
         /// distortion and soft particles. Uses <c>sharedMaterials</c> only — never
         /// <c>Renderer.materials</c> (that clones every material per impact and GC-hitchs destroy frames).
@@ -113,11 +124,25 @@ namespace TitanOrbit.Core
             }
         }
 
-        /// <summary>Fix materials then ensure particles are simulating — use for one-shot muzzle/impact instances.</summary>
+        /// <summary>
+        /// One-time material/light fix on first use, then restart particles every Rent.
+        /// Pooled shells keep the marker so destroy frames skip GrabPass walks.
+        /// </summary>
         public static void PrepareVfxInstance(GameObject root)
         {
-            FixAllIn1MaterialsForUrp(root);
-            StripSceneFlashLights(root);
+            if (root == null)
+                return;
+
+            // --- Cold prepare once per pooled shell ---
+            var marker = root.GetComponent<VfxPreparedMarker>();
+            if (marker == null)
+            {
+                FixAllIn1MaterialsForUrp(root);
+                StripSceneFlashLights(root);
+                marker = root.AddComponent<VfxPreparedMarker>();
+            }
+
+            // --- Hot path every Rent: restart particles only ---
             PlayParticleSystemsInHierarchy(root);
         }
 
@@ -146,45 +171,35 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// Uniformly scales impact VFX. Hierarchy-mode particles follow <see cref="Transform.localScale"/>.
-        /// World/local-space Sci-Fi Arsenal / AllIn1 prefabs ignore transform scale — scale their modules instead.
+        /// Scales impact VFX via root transform. On first call, switches particle systems to
+        /// Hierarchy scaling so later Rents only set <c>localScale</c> (no module *= drift,
+        /// no GetComponentsInChildren every kill — session 74383c destroy hitch).
         /// </summary>
         public static void ApplyImpactVisualScale(GameObject root, float scale)
         {
-            // --- Root transform scale (hierarchy-mode particles) ---
-            if (root == null) return;
+            if (root == null)
+                return;
+
             float s = Mathf.Max(0.05f, scale);
             root.transform.localScale = Vector3.one * s;
 
-            // --- Per-system module scaling (world/local space prefabs) ---
+            var marker = root.GetComponent<VfxPreparedMarker>();
+            if (marker != null && marker.HierarchyScaleReady)
+                return;
+
+            // --- One-time: make modules follow root scale ---
             ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
             for (int i = 0; i < systems.Length; i++)
             {
-                ParticleSystem ps = systems[i];
-                if (ps == null) continue;
-
-                var main = ps.main;
-                if (main.scalingMode == ParticleSystemScalingMode.Hierarchy)
+                if (systems[i] == null)
                     continue;
-
-                // Local / shape / world scaling: prefab size ignores root transform alone.
-                main.startSizeMultiplier *= s;
-                main.startSpeedMultiplier *= Mathf.Lerp(0.85f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
-                main.startLifetimeMultiplier *= Mathf.Lerp(0.9f, 1.25f, Mathf.InverseLerp(0.2f, 2.2f, s));
-
-                var shape = ps.shape;
-                if (shape.enabled)
-                {
-                    shape.radius *= s;
-                    shape.scale *= s;
-                }
-
-                var sizeOverLifetime = ps.sizeOverLifetime;
-                if (sizeOverLifetime.enabled)
-                    sizeOverLifetime.sizeMultiplier *= s;
+                var main = systems[i].main;
+                main.scalingMode = ParticleSystemScalingMode.Hierarchy;
             }
 
-            // --- Impact Point Lights: stripped in PrepareVfxInstance (not scaled up) ---
+            if (marker == null)
+                marker = root.AddComponent<VfxPreparedMarker>();
+            marker.HierarchyScaleReady = true;
         }
 
         /// <summary>Weapon fire: compact cone burst using URP Particles Unlit only (mobile; no AllIn1 prefabs).</summary>

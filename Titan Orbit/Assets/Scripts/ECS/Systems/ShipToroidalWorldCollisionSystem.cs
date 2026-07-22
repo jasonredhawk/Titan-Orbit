@@ -1,3 +1,4 @@
+using TitanOrbit;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -57,14 +58,12 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] RequireForUpdate<ShipTag> means this system first runs when the
             // TeamChoice ship Instantiates — Settling is already OFF (JoinSettleCompleted).
             // Planet/asteroid/moon foreach below is a full map gather. Player.log 2026-07-22:
-            // TeamChoiceResult → Crash!!! in Burst. Gate with TransformQuarantine (session-long)
-            // OR Settling OR GhostSpawnBacklog. Must use IsClient() — Local Host shares the
-            // static cache with the server world, and the server must keep seam resolve.
+            // TeamChoiceResult → Crash!!! in Burst. Use ShouldSkipMapBodyQueries (quarantine
+            // session-long OR Settling). Must use IsClient() — Local Host shares the static
+            // cache with the server world, and the server must keep seam resolve.
             // Under quarantine the client relies on same-tile PhysX + server authority for seams.
-            if (state.World.IsClient() &&
-                (ClientJoinSettleCache.TransformQuarantine ||
-                 ClientJoinSettleCache.Settling ||
-                 ClientJoinSettleCache.GhostSpawnBacklog))
+            // See titan-orbit-teamchoice-crash-hardstop.mdc.
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipMapBodyQueries)
                 return;
 
             // --- Map size ---
@@ -92,8 +91,23 @@ namespace TitanOrbit.ECS
                 });
             }
 
-            foreach (var asteroidTransform in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<AsteroidTag>())
+            // --- Asteroids (skip dead / client-culled ghosts) ---
+            // [TITAN-ORBIT] HitRpc hides the mesh immediately. Ghost Health can lag (logs:
+            // hidden:true dead:false) so Health/IsDestroyed alone is not enough — also skip
+            // AsteroidClientCulledTag and rocks with no solid PhysicsCollider.
+            foreach (var (asteroidTransform, asteroidState, entity) in SystemAPI
+                         .Query<RefRO<LocalTransform>, RefRO<AsteroidState>>()
+                         .WithAll<AsteroidTag>()
+                         .WithEntityAccess())
             {
+                if (asteroidState.ValueRO.IsDestroyed || asteroidState.ValueRO.Health <= 0f)
+                    continue;
+                if (state.EntityManager.HasComponent<AsteroidClientCulledTag>(entity))
+                    continue;
+                // [TITAN-ORBIT] Isolation toggle — F3 in ClientStutterIsolator.
+                if (TitanOrbitDebugFlags.IsolateDisableAsteroidShipCollision)
+                    continue;
+
                 obstacles.Add(new WorldSphere
                 {
                     Position = asteroidTransform.ValueRO.Position,

@@ -147,6 +147,38 @@ namespace TitanOrbit.Game
         /// </summary>
         readonly Dictionary<Entity, AsteroidBurstCache> _asteroidLastKnown = new Dictionary<Entity, AsteroidBurstCache>();
 
+        /// <summary>
+        /// Cached visual kind per proxy — avoids per-frame <c>string.IndexOf</c> over ~300 names
+        /// (was a major SyncAllProxies cost in debug session 74383c).
+        /// </summary>
+        readonly Dictionary<Entity, ProxyVisualKind> _proxyKinds = new Dictionary<Entity, ProxyVisualKind>();
+
+        /// <summary>Asteroid proxy keys only — DetectAsteroidGemBursts must not walk ships/planets/gems.</summary>
+        readonly HashSet<Entity> _asteroidProxyEntities = new HashSet<Entity>();
+
+        /// <summary>Reused each sync — allocating a 300+ entity HashSet every frame caused GC hitch.</summary>
+        readonly HashSet<Entity> _aliveScratch = new HashSet<Entity>();
+
+        /// <summary>Reused prune list for dead proxy entities.</summary>
+        readonly List<Entity> _removeScratch = new List<Entity>(64);
+
+        /// <summary>Incremental world-body count (planet/asteroid/gem/transport) — no full recount/frame.</summary>
+        int _worldBodyProxyCountCached;
+
+        /// <summary>Incremental planet+asteroid count for the loading bar.</summary>
+        int _mapLoadingProxyCountCached;
+
+        /// <summary>Proxy category for hot-path sync / counts / destroy.</summary>
+        enum ProxyVisualKind : byte
+        {
+            Other = 0,
+            Planet = 1,
+            Asteroid = 2,
+            Gem = 3,
+            Ship = 4,
+            PeopleTransport = 5,
+        }
+
         struct AsteroidBurstCache
         {
             public float3 Position;
@@ -205,6 +237,9 @@ namespace TitanOrbit.Game
                 asteroidVisualPrefab = LoadDefaultPrefab(DefaultAsteroidPath);
             if (gemVisualPrefab == null)
                 gemVisualPrefab = GemVisualApplier.LoadDefaultGemPrefab();
+            // [TITAN-ORBIT] Gem visuals rent from a pool — prewarm so destroy bursts do not Instantiates.
+            GemVisualPool.EnsurePrefab(gemVisualPrefab);
+            GemVisualPool.Prewarm(GemVisualPool.DefaultPrewarmCount);
             if (peopleTransportVisualPrefab == null)
                 peopleTransportVisualPrefab = PeopleTransportVisualApplier.LoadDefaultPrefab();
             if (peopleTransportVisualPrefab == null)
@@ -260,6 +295,19 @@ namespace TitanOrbit.Game
                 if (kv.Value != null)
                     dst.Add(kv.Key);
             }
+        }
+
+        /// <summary>
+        /// Copies asteroid hybrid-proxy entity keys into <paramref name="dst"/> (clears first).
+        /// Used by phantom-collision debug scans — never a full ECS asteroid gather.
+        /// </summary>
+        public void CopyAsteroidProxyEntitiesTo(List<Entity> dst)
+        {
+            if (dst == null)
+                return;
+            dst.Clear();
+            foreach (Entity e in _asteroidProxyEntities)
+                dst.Add(e);
         }
 
         /// <summary>
@@ -321,8 +369,11 @@ namespace TitanOrbit.Game
 
             if (go.activeSelf)
                 go.SetActive(false);
+            // [TITAN-ORBIT] Cull ECS PhysicsCollider now — visual hide alone left a phantom hull
+            // until NetCode despawn (ship bounce on empty space / pose step with stable FPS).
+            ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
 
-            if (firstBurst && remaining >= 0.25f)
+            if (firstBurst && remaining >= 0.25f && !TitanOrbitDebugFlags.IsolateDisableGemBurst)
             {
                 uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
                 ClientGemBurstPresenter.PlayBurst(pos, remaining, seed);
@@ -419,7 +470,10 @@ namespace TitanOrbit.Game
 
             var em = world.EntityManager;
             _newWorldBodyProxiesThisFrame = 0;
-            var alive = new HashSet<Entity>();
+            // [TITAN-ORBIT] Reuse scratch set — SyncAllProxies hitched with ~320 proxies when
+            // allocating a fresh HashSet every frame + string name scans.
+            var alive = _aliveScratch;
+            alive.Clear();
             bool settling = ClientJoinSettleCache.Settling;
 
             // --- Toroidal display: unbounded local ship; each body picks its own tile ---
@@ -441,6 +495,7 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Gems Instantiated this frame — create GO immediately (bypass asteroid budget).
             DrainUrgentGemProxies(em, alive);
             // Immediate local gem explosion when client sees IsDestroyed (do not wait Instantiates).
+            // Bullet kills already burst via HitRpc — this walks asteroid keys only (not all proxies).
             DetectAsteroidGemBursts(em);
             SyncExistingWorldBodyProxyTransforms(em, alive);
             DrainPendingWorldBodyProxies(em, alive);
@@ -460,6 +515,14 @@ namespace TitanOrbit.Game
                     EnsureShipProxies(em);
                     SyncShipProxyTransforms(em, alive);
                 }
+                else
+                {
+                    // --- Local hull only during Instantiates backlog (no ship gather) ---
+                    // [TITAN-ORBIT] After Join Team, map Instantiates can keep GhostSpawnBacklog
+                    // true for a long time. Seeded local ship Instantiates must still get a hybrid
+                    // GO + pose or the player sees a white fallback / stuck "Spawning your ship...".
+                    EnsureAndSyncLocalSeededShipProxy(em, alive);
+                }
             }
 
             // --- People transports ---
@@ -473,22 +536,23 @@ namespace TitanOrbit.Game
 
             // --- Proxy prune (quarantine-safe: dictionary only, no map-body ToEntityArray) ---
             {
-                var remove = new List<Entity>();
+                _removeScratch.Clear();
                 foreach (var kv in _proxies)
                 {
                     if (kv.Value == null || !em.Exists(kv.Key))
-                        remove.Add(kv.Key);
+                        _removeScratch.Add(kv.Key);
                 }
 
-                foreach (var entity in remove)
-                    DestroyProxy(entity);
+                for (int i = 0; i < _removeScratch.Count; i++)
+                    DestroyProxy(_removeScratch[i]);
 
                 if (!ClientJoinSettleCache.TransformQuarantine && !settling)
                     ToroidalDisplay.PruneStale(alive);
             }
 
-            WorldBodyProxyCount = CountWorldBodyProxies();
-            MapLoadingProxyCount = CountMapLoadingProxies();
+            // Incremental counts maintained in RegisterProxyKind / DestroyProxy.
+            WorldBodyProxyCount = _worldBodyProxyCountCached;
+            MapLoadingProxyCount = _mapLoadingProxyCountCached;
         }
 
         /// <summary>
@@ -496,6 +560,12 @@ namespace TitanOrbit.Game
         /// every asteroid entity (safe during GhostSpawn Instantiates).
         /// Gems use ghosted <see cref="GemKinematics"/> for a short presentation extrapolate + lerp
         /// so glide looks continuous between NetCode snapshot samples.
+        /// <para>
+        /// [TITAN-ORBIT] Toroidal display positions are absolute and only change on tile switch
+        /// (or when the logical ghost moves). Writing <c>transform.position</c> every frame while
+        /// flying still dirties ~200+ Transforms and showed up as ~25 ms wall-clock hitches with
+        /// unchanged tile switches. Skip unchanged writes.
+        /// </para>
         /// </summary>
         void SyncExistingWorldBodyProxyTransforms(EntityManager em, HashSet<Entity> alive)
         {
@@ -507,12 +577,14 @@ namespace TitanOrbit.Game
                     continue;
 
                 // Ships/bullets have their own sync paths after settle.
-                bool isGem = em.HasComponent<GemTag>(entity);
-                bool isWorldBody = isGem ||
-                                   _proxyPlanetVisuals.ContainsKey(entity) ||
-                                   go.name.IndexOf("Asteroid", System.StringComparison.Ordinal) >= 0 ||
-                                   go.name.IndexOf("Gem", System.StringComparison.Ordinal) >= 0 ||
-                                   go.name.IndexOf("Planet", System.StringComparison.Ordinal) >= 0;
+                // [TITAN-ORBIT] Kind is cached at create — do not string-scan GO names every frame.
+                if (!_proxyKinds.TryGetValue(entity, out var kind))
+                    kind = ProxyVisualKind.Other;
+                bool isGem = kind == ProxyVisualKind.Gem;
+                bool isWorldBody = kind == ProxyVisualKind.Planet ||
+                                   kind == ProxyVisualKind.Asteroid ||
+                                   isGem ||
+                                   kind == ProxyVisualKind.PeopleTransport;
                 if (!isWorldBody)
                     continue;
 
@@ -540,16 +612,95 @@ namespace TitanOrbit.Game
                 if (isGem)
                 {
                     // Scale / diameter only — do not overwrite pose (that caused “frozen until ship moves”).
-                    go.transform.localScale = Vector3.one * scale;
+                    Vector3 gemScale = Vector3.one * scale;
+                    if ((go.transform.localScale - gemScale).sqrMagnitude > 0.0001f)
+                        go.transform.localScale = gemScale;
                     if (gemValue > 0f)
                         GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, gemValue));
                     continue;
                 }
 
-                go.transform.position = GetVisualPosition(entity, lt.Position);
-                go.transform.rotation = lt.Rotation;
-                go.transform.localScale = Vector3.one * scale;
+                // --- Skip identical Transform writes (tile stable while ship flies) ---
+                // [UNITY] Assigning the same position still marks the Transform dirty and cascades
+                // into culling/rendering cost on the next frame.
+                Vector3 displayPos = GetVisualPosition(entity, lt.Position);
+                Transform t = go.transform;
+                if ((t.position - displayPos).sqrMagnitude > 0.0001f)
+                    t.position = displayPos;
+
+                // --- Rotation: asteroids must NOT be overwritten ---
+                // [TITAN-ORBIT] AsteroidSpinVisualProxy.LateUpdate rotates the ROOT every frame.
+                // Writing ECS LocalTransform.Rotation every frame dirtied every asteroid Transform
+                // while flying because spun rotation ≠ ECS rot. Planets spin a child pivot
+                // (PlanetSpinVisualProxy) — root rot can stay from ECS.
+                if (kind != ProxyVisualKind.Asteroid)
+                {
+                    Quaternion displayRot = lt.Rotation;
+                    if (Quaternion.Angle(t.rotation, displayRot) > 0.05f)
+                        t.rotation = displayRot;
+                }
+
+                Vector3 displayScale = Vector3.one * scale;
+                if ((t.localScale - displayScale).sqrMagnitude > 0.0001f)
+                    t.localScale = displayScale;
+
+                // --- Planet level / ownership visuals (rings, moon, materials) ---
+                // [TITAN-ORBIT] DrawPlanets used to Destroy+recreate when PlanetVisualKey changed,
+                // but SyncAllProxies never calls it under TransformQuarantine. Rings were stuck at
+                // Instantiates-time Configure. Refresh in place from ghosted PlanetState — per known
+                // proxy only (no planet ToEntityArray / map gather).
+                if (kind == ProxyVisualKind.Planet)
+                    RefreshPlanetProxyAppearanceIfChanged(em, entity, go, scale);
             }
+        }
+
+        /// <summary>
+        /// When ghosted <see cref="PlanetState"/> level/team/home diverges from the cached
+        /// <see cref="PlanetVisualKey"/>, reconfigure the existing proxy (Saturn rings, moon, materials)
+        /// without Destroy+Instantiate.
+        /// </summary>
+        /// <param name="em">Client EntityManager — per-entity reads only.</param>
+        /// <param name="entity">Planet ghost entity already in <see cref="_proxies"/>.</param>
+        /// <param name="go">Hybrid planet GameObject proxy root.</param>
+        /// <param name="scale">Current ECS world scale applied to the proxy.</param>
+        void RefreshPlanetProxyAppearanceIfChanged(EntityManager em, Entity entity, GameObject go, float scale)
+        {
+            // --- Guard: must be a live planet ghost ---
+            if (go == null || !em.Exists(entity) || !em.HasComponent<PlanetState>(entity))
+                return;
+
+            var state = em.GetComponentData<PlanetState>(entity);
+            var key = new PlanetVisualKey
+            {
+                IsHome = state.IsHomePlanet,
+                Team = state.Ownership,
+                PlanetLevel = state.PlanetLevel,
+                PlanetId = state.PlanetId,
+            };
+
+            // --- Skip when identity matches Instantiates-time / last refresh ---
+            bool hadKey = _proxyPlanetVisuals.TryGetValue(entity, out var existingKey);
+            if (hadKey && existingKey.Equals(key))
+                return;
+
+            // --- In-place refresh (materials only when home/team/id identity changed) ---
+            // Level-only gem deposits keep the same surface; capture retints home/team mats.
+            bool materialsChanged = !hadKey
+                || existingKey.IsHome != key.IsHome
+                || existingKey.Team != key.Team
+                || existingKey.PlanetId != key.PlanetId;
+
+            WorldBodyVisualApplier.RefreshPlanetVisualAppearance(
+                go,
+                planetMaterialPool,
+                key.IsHome,
+                key.Team,
+                key.PlanetLevel,
+                key.PlanetId,
+                scale,
+                materialsChanged);
+
+            _proxyPlanetVisuals[entity] = key;
         }
 
         /// <summary>
@@ -563,10 +714,11 @@ namespace TitanOrbit.Game
             if (ClientJoinSettleCache.Settling)
                 return;
 
-            foreach (var kv in _proxies)
+            // Walk asteroid proxy keys only (not ships/planets/gems). Bullet kills already burst
+            // via TryHideAsteroidProxyFromHitRpc — this is the ram / missed-RPC fallback.
+            foreach (Entity entity in _asteroidProxyEntities)
             {
-                Entity entity = kv.Key;
-                if (kv.Value == null || !em.Exists(entity))
+                if (!_proxies.TryGetValue(entity, out var go) || go == null || !em.Exists(entity))
                     continue;
                 if (!em.HasComponent<AsteroidTag>(entity) || !em.HasComponent<AsteroidState>(entity))
                     continue;
@@ -605,10 +757,13 @@ namespace TitanOrbit.Game
 
                 // Hide the asteroid proxy immediately — the ghost may linger a few frames while
                 // gems Instantiates. Keeping a dead rock visible under a hitch made the blink worse.
-                if (kv.Value != null && kv.Value.activeSelf)
-                    kv.Value.SetActive(false);
+                if (go != null && go.activeSelf)
+                    go.SetActive(false);
+                // Same phantom-hull cull as HitRpc hide (ram / missed-RPC destroy path).
+                ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
 
-                ClientGemBurstPresenter.PlayBurst(lt.Position, remaining, seed);
+                if (!TitanOrbitDebugFlags.IsolateDisableGemBurst)
+                    ClientGemBurstPresenter.PlayBurst(lt.Position, remaining, seed);
             }
         }
 
@@ -750,7 +905,11 @@ namespace TitanOrbit.Game
                 }
 
                 _proxies[entity] = go;
+                RegisterProxyKind(entity, ProxyVisualKind.Planet);
                 _proxyPlanetVisuals[entity] = key;
+                // [TITAN-ORBIT] Backup if Instantiates hook missed Pending early-return — orbit motor
+                // CollectFromClientRegistry needs this entity under TransformQuarantine.
+                PlanetClientEntityRegistry.NotifyInstantiated(entity);
                 go.transform.SetPositionAndRotation(GetVisualPosition(entity, lt.Position), lt.Rotation);
                 go.transform.localScale = Vector3.one * scale;
                 return true;
@@ -772,6 +931,7 @@ namespace TitanOrbit.Game
                 }
 
                 _proxies[entity] = go;
+                RegisterProxyKind(entity, ProxyVisualKind.Asteroid);
                 go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.localScale = Vector3.one * scale;
                 return true;
@@ -781,8 +941,26 @@ namespace TitanOrbit.Game
             {
                 var state = em.GetComponentData<GemState>(entity);
                 scale = GemVisualApplier.ComputeVisualScale(math.max(0.25f, state.Value));
-                if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, state.Value, out go))
+                Vector3 displayPos = GetVisualPosition(entity, lt.Position);
+
+                // --- Prefer local-burst GO handoff (same mesh — no Instantiates, no material flash) ---
+                // [TITAN-ORBIT] TryTakeNear transfers ownership; AttachRented re-tracks for DestroyProxy Return.
+                // Match is nearest display pose (not fastest speed) so a right-side ghost claims the
+                // right-flying local — wrong claims caused “starts left, flies right / mid-air flip.”
+                Vector3 handoffVel = Vector3.zero;
+                Vector3 handoffAng = Vector3.zero;
+                Vector3 handoffBurstCenterDisplay = Vector3.zero;
+                bool haveHandoff = ClientGemBurstPresenter.TryTakeNear(
+                    displayPos, out go, out handoffVel, out handoffAng, out handoffBurstCenterDisplay);
+                if (haveHandoff && go != null)
                 {
+                    go.name = "GemTagProxy";
+                    GemVisualPool.AttachRented(go);
+                }
+                else if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, state.Value, out go))
+                {
+                    // Handoff miss — Instantiates a fresh shell. Local twins should be rare after
+                    // server-matched seeds + wider claimRadius + orphan clear.
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                     go.name = "GemTagProxy";
                     var col = go.GetComponent<Collider>();
@@ -793,27 +971,62 @@ namespace TitanOrbit.Game
                 }
 
                 _proxies[entity] = go;
-                go.transform.SetPositionAndRotation(GetVisualPosition(entity, lt.Position), lt.Rotation);
+                RegisterProxyKind(entity, ProxyVisualKind.Gem);
                 go.transform.localScale = Vector3.one * scale;
                 GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, state.Value));
+
+                // --- Pose: keep local-burst continuity; never snap handoff GOs to server display ---
+                // [TITAN-ORBIT] Local burst places gems with explosion offsets in display space.
+                // Server ghost LocalTransform is usually the spawn center (or a later sample).
+                // SetPositionAndRotation(displayPos) after TryTakeNear made every gem pop to a
+                // different spot a split-second later — looked like bad reconciliation.
+                float3 logicalBind = lt.Position;
+                float3 burstOriginLogical = float3.zero;
+                bool hasBurstOrigin = false;
+                if (haveHandoff && go != null)
+                {
+                    Vector3 keepDisplay = go.transform.position;
+                    // Seed logical so toroidal display of logicalBind ≈ keepDisplay (XZ).
+                    logicalBind.x += keepDisplay.x - displayPos.x;
+                    logicalBind.z += keepDisplay.z - displayPos.z;
+                    // Convert display-space asteroid center → logical using the same tile bridge.
+                    // keepDisplay - burstCenter ≈ radial offset; logicalBind - that offset = origin.
+                    burstOriginLogical = logicalBind;
+                    burstOriginLogical.x += handoffBurstCenterDisplay.x - keepDisplay.x;
+                    burstOriginLogical.z += handoffBurstCenterDisplay.z - keepDisplay.z;
+                    hasBurstOrigin = true;
+                    // Leave transform where the burst already drew it.
+                }
+                else
+                {
+                    go.transform.SetPositionAndRotation(displayPos, lt.Rotation);
+                }
 
                 // --- Client velocity animation (server sets GemKinematics; client animates GO) ---
                 var motion = go.GetComponent<GemClientMotionApplier>();
                 if (motion == null)
                     motion = go.AddComponent<GemClientMotionApplier>();
-                motion.Bind(entity, lt.Position);
+                motion.Bind(
+                    entity,
+                    logicalBind,
+                    fromLocalBurstHandoff: haveHandoff,
+                    burstOriginLogical: burstOriginLogical,
+                    hasBurstOrigin: hasBurstOrigin);
 
                 // Prefer motion from the immediate local burst (handoff) so Instantiates lag
                 // does not kill the explosion. Fall back to ghosted kinematics when present.
-                if (ClientGemBurstPresenter.TryClaimNear(go.transform.position, out var handoffVel, out var handoffAng) &&
-                    handoffVel.sqrMagnitude > 0.0001f)
+                if (haveHandoff && handoffVel.sqrMagnitude > 0.0001f)
                 {
-                    motion.SeedVelocity(new float3(handoffVel.x, 0f, handoffVel.z),
-                        new float3(handoffAng.x, handoffAng.y, handoffAng.z));
+                    motion.SeedVelocity(
+                        new float3(handoffVel.x, 0f, handoffVel.z),
+                        new float3(handoffAng.x, handoffAng.y, handoffAng.z),
+                        burstOriginLogical,
+                        hasBurstOrigin);
                 }
                 else if (em.HasComponent<GemKinematics>(entity))
                 {
                     var kin = em.GetComponentData<GemKinematics>(entity);
+                    // No asteroid center on handoff-miss — SeedVelocity infers origin from launch dir.
                     motion.SeedVelocity(kin.Velocity, kin.AngularVelocity);
                 }
 
@@ -823,44 +1036,54 @@ namespace TitanOrbit.Game
             return false;
         }
 
-        /// <summary>Counts planet/asteroid/gem proxies (excludes ships/bullets).</summary>
-        int CountWorldBodyProxies()
+        /// <summary>
+        /// Records proxy kind + incremental loading/world-body counts.
+        /// Call whenever a proxy is first inserted into <see cref="_proxies"/>.
+        /// </summary>
+        void RegisterProxyKind(Entity entity, ProxyVisualKind kind)
         {
-            int n = 0;
-            foreach (var kv in _proxies)
+            if (_proxyKinds.TryGetValue(entity, out var prev))
             {
-                if (kv.Value == null)
-                    continue;
-                // Ship proxies are also in _proxies; world bodies use TagProxy names or planet keys.
-                if (_proxyPlanetVisuals.ContainsKey(kv.Key) ||
-                    kv.Value.name.IndexOf("Asteroid", System.StringComparison.Ordinal) >= 0 ||
-                    kv.Value.name.IndexOf("Gem", System.StringComparison.Ordinal) >= 0 ||
-                    kv.Value.name.IndexOf("Planet", System.StringComparison.Ordinal) >= 0 ||
-                    kv.Value.name.IndexOf("PeopleTransport", System.StringComparison.Ordinal) >= 0)
-                    n++;
+                if (prev == kind)
+                    return;
+                UnregisterProxyKindCounts(prev);
+                if (prev == ProxyVisualKind.Asteroid)
+                    _asteroidProxyEntities.Remove(entity);
             }
 
-            return n;
+            _proxyKinds[entity] = kind;
+            if (kind == ProxyVisualKind.Asteroid)
+                _asteroidProxyEntities.Add(entity);
+
+            switch (kind)
+            {
+                case ProxyVisualKind.Planet:
+                case ProxyVisualKind.Asteroid:
+                    _mapLoadingProxyCountCached++;
+                    _worldBodyProxyCountCached++;
+                    break;
+                case ProxyVisualKind.Gem:
+                case ProxyVisualKind.PeopleTransport:
+                    _worldBodyProxyCountCached++;
+                    break;
+            }
         }
 
-        /// <summary>
-        /// Counts only planet + asteroid GameObjects for the loading bar.
-        /// [TITAN-ORBIT] Progress = local GO Instantiates, not server packet / ECS Instantiates count.
-        /// </summary>
-        int CountMapLoadingProxies()
+        /// <summary>Decrements incremental counts when a kind is cleared or replaced.</summary>
+        void UnregisterProxyKindCounts(ProxyVisualKind kind)
         {
-            int n = 0;
-            foreach (var kv in _proxies)
+            switch (kind)
             {
-                if (kv.Value == null)
-                    continue;
-                if (_proxyPlanetVisuals.ContainsKey(kv.Key) ||
-                    kv.Value.name.IndexOf("Asteroid", System.StringComparison.Ordinal) >= 0 ||
-                    kv.Value.name.IndexOf("Planet", System.StringComparison.Ordinal) >= 0)
-                    n++;
+                case ProxyVisualKind.Planet:
+                case ProxyVisualKind.Asteroid:
+                    _mapLoadingProxyCountCached = math.max(0, _mapLoadingProxyCountCached - 1);
+                    _worldBodyProxyCountCached = math.max(0, _worldBodyProxyCountCached - 1);
+                    break;
+                case ProxyVisualKind.Gem:
+                case ProxyVisualKind.PeopleTransport:
+                    _worldBodyProxyCountCached = math.max(0, _worldBodyProxyCountCached - 1);
+                    break;
             }
-
-            return n;
         }
 
         /// <summary>Delegates world pick to <see cref="EcsGameBridge.GetVisualizationWorld"/>.</summary>
@@ -1022,6 +1245,104 @@ namespace TitanOrbit.Game
 
             _hasToroidalReference = true;
             return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+        }
+
+        /// <summary>
+        /// During <see cref="ClientJoinSettleCache.GhostSpawnBacklog"/>, create/sync only the
+        /// Instantiates-hook seeded local ship — never <c>ToEntityArray</c> all ships.
+        /// Remotes wait until the Instantiates queue drains.
+        /// </summary>
+        /// <param name="em">Client EntityManager.</param>
+        /// <param name="alive">Entities that still need a proxy this frame (prune set).</param>
+        void EnsureAndSyncLocalSeededShipProxy(EntityManager em, HashSet<Entity> alive)
+        {
+            // --- Team suppress: no owned hull until Join Team confirms ---
+            if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+                return;
+
+            // --- Seed from Instantiates hook (no ship gather) ---
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out var shipEntity) ||
+                shipEntity == Entity.Null ||
+                !em.Exists(shipEntity) ||
+                !em.HasComponent<LocalTransform>(shipEntity))
+                return;
+
+            alive.Add(shipEntity);
+
+            int networkId = 0;
+            if (em.HasComponent<GhostOwner>(shipEntity))
+                networkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+
+            TeamId team = TeamId.None;
+            int shipLevel = 1;
+            int branchIndex = 0;
+            if (em.HasComponent<ShipState>(shipEntity))
+            {
+                var ship = em.GetComponentData<ShipState>(shipEntity);
+                team = ship.Team;
+                shipLevel = Mathf.Max(1, ship.ShipLevel);
+                branchIndex = Mathf.Max(0, ship.BranchIndex);
+            }
+
+            string chassisId = null;
+            if (team != TeamId.None)
+                ShipStatApplyLogic.TryResolveChassisId(team, shipLevel, branchIndex, out chassisId);
+
+            var lt = em.GetComponentData<LocalTransform>(shipEntity);
+            float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
+
+            // --- Create hybrid GO if missing (or rebuild on chassis/team change) ---
+            bool needCreate = true;
+            if (_proxies.TryGetValue(shipEntity, out var existing) && existing != null)
+            {
+                _proxyShipLevels.TryGetValue(shipEntity, out int lastLevel);
+                _proxyBranchIndices.TryGetValue(shipEntity, out int lastBranch);
+                _proxyTeams.TryGetValue(shipEntity, out TeamId lastTeam);
+                _proxyChassisIds.TryGetValue(shipEntity, out string lastChassis);
+                bool sameHull = lastLevel == shipLevel
+                    && lastBranch == branchIndex
+                    && lastTeam == team
+                    && string.Equals(lastChassis, chassisId, System.StringComparison.Ordinal);
+                needCreate = !sameHull;
+                if (needCreate)
+                    DestroyProxy(shipEntity);
+            }
+
+            if (needCreate)
+            {
+                float muzzleOffset = defaultMuzzleOffset;
+                if (em.HasComponent<ShipWeaponConfig>(shipEntity))
+                    muzzleOffset = em.GetComponentData<ShipWeaponConfig>(shipEntity).MuzzleOffset;
+
+                var go = CreateShipProxy(
+                    shipEntity, networkId, team, shipLevel, branchIndex, chassisId, scale, muzzleOffset);
+                if (TryGetPresentationTransform(shipEntity, em, out var presentLt))
+                    ApplyShipProxyTransform(shipEntity, em, true, presentLt, go.transform, scale);
+            }
+
+            // --- Pose sync for the one known entity (no WithEntityAccess / ToEntityArray) ---
+            if (!_proxies.TryGetValue(shipEntity, out var proxyGo) || proxyGo == null)
+                return;
+
+            if (!TryGetPresentationTransform(shipEntity, em, out var poseLt))
+                return;
+
+            float poseScale = Mathf.Max(0.25f, poseLt.Scale) * shipVisualScale;
+            LocalPlayerShipProxy = proxyGo;
+            LocalPlayerShipVisualRoot = proxyGo.transform;
+            ApplyShipProxyTransform(shipEntity, em, true, poseLt, proxyGo.transform, poseScale);
+
+            if (em.HasComponent<ShipState>(shipEntity))
+            {
+                var ship = em.GetComponentData<ShipState>(shipEntity);
+                _proxyShipLevels[shipEntity] = Mathf.Max(1, ship.ShipLevel);
+                _proxyTeams[shipEntity] = ship.Team;
+                _proxyBranchIndices[shipEntity] = Mathf.Max(0, ship.BranchIndex);
+                if (ship.IsDead)
+                    proxyGo.SetActive(false);
+                else if (!proxyGo.activeSelf)
+                    proxyGo.SetActive(true);
+            }
         }
 
         /// <summary>
@@ -1287,6 +1608,7 @@ namespace TitanOrbit.Game
             _proxyChassisIds[entity] = chassisId ?? string.Empty;
             _proxyTeams[entity] = team;
             _proxies[entity] = go;
+            RegisterProxyKind(entity, ProxyVisualKind.Ship);
 
             var bankVisual = go.GetComponent<ShipBankVisualApplier>();
             if (bankVisual == null)
@@ -1369,9 +1691,7 @@ namespace TitanOrbit.Game
             if (urgent.Count == 0)
                 return;
 
-            var sw = TitanOrbitDebugFlags.LogAsteroidDestroyPerf
-                ? System.Diagnostics.Stopwatch.StartNew()
-                : null;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             int created = 0;
 
             for (int i = 0; i < urgent.Count; i++)
@@ -1405,9 +1725,9 @@ namespace TitanOrbit.Game
                 created++;
             }
 
-            if (sw != null)
+            sw.Stop();
+            if (TitanOrbitDebugFlags.LogAsteroidDestroyPerf)
             {
-                sw.Stop();
                 Debug.Log(
                     $"[AsteroidDestroy] Urgent gem proxies created={created}/{urgent.Count} " +
                     $"queueLeft={remainingAfter} ms={sw.Elapsed.TotalMilliseconds:F2} " +
@@ -1424,6 +1744,7 @@ namespace TitanOrbit.Game
             // --- Drop toroidal tile memory for this entity ---
             ToroidalDisplay.RemoveEntity(entity);
             GemClientEntityRegistry.NotifyDestroyed(entity);
+            PlanetClientEntityRegistry.NotifyDestroyed(entity);
             _asteroidBurstFired.Remove(entity);
             _asteroidLastKnown.Remove(entity);
 
@@ -1432,7 +1753,19 @@ namespace TitanOrbit.Game
                 if (_proxyNetworkIds.TryGetValue(entity, out int networkId) && go != null)
                     ShipWeaponProxyRegistry.Unregister(networkId, go.transform);
                 if (go != null)
-                    Destroy(go);
+                {
+                    // [TITAN-ORBIT] Gem visuals recycle via GemVisualPool — Destroy only non-pooled proxies.
+                    if (!GemVisualPool.TryReturn(go))
+                        Destroy(go);
+                }
+
+                if (_proxyKinds.TryGetValue(entity, out var registeredKind))
+                {
+                    UnregisterProxyKindCounts(registeredKind);
+                    _proxyKinds.Remove(entity);
+                }
+
+                _asteroidProxyEntities.Remove(entity);
                 _proxies.Remove(entity);
                 _proxyNetworkIds.Remove(entity);
                 _proxyShipLevels.Remove(entity);
@@ -1512,6 +1845,7 @@ namespace TitanOrbit.Game
                 {
                     go = PeopleTransportVisualApplier.CreateVisual(peopleTransportVisualPrefab, state.Amount, team);
                     _proxies[entity] = go;
+                    RegisterProxyKind(entity, ProxyVisualKind.PeopleTransport);
                 }
 
                 var pos = GetVisualPosition(entity, lt.Position);
@@ -1688,8 +2022,11 @@ namespace TitanOrbit.Game
                     _proxies[entity] = go;
                 }
 
+                RegisterProxyKind(entity, ProxyVisualKind.Planet);
                 alive.Add(entity);
                 _proxyPlanetVisuals[entity] = key;
+                // [TITAN-ORBIT] Backup Instantiates registry for quarantine-safe orbit Collect.
+                PlanetClientEntityRegistry.NotifyInstantiated(entity);
                 go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.rotation = lt.Rotation;
                 go.transform.localScale = Vector3.one * scale;
@@ -1743,6 +2080,7 @@ namespace TitanOrbit.Game
                 }
 
                 _proxies[entity] = go;
+                RegisterProxyKind(entity, ProxyVisualKind.Asteroid);
                 alive.Add(entity);
                 go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.localScale = Vector3.one * scale;
@@ -1790,6 +2128,8 @@ namespace TitanOrbit.Game
                 if (!TryConsumeWorldBodyProxyBudget())
                     continue;
 
+                // DrawGems catch-up — same pool Rent as urgent Instantiates path.
+                GemVisualPool.EnsurePrefab(gemVisualPrefab);
                 if (!GemVisualApplier.TryCreateGemVisual(gemVisualPrefab, state.Value, out go))
                 {
                     go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
@@ -1802,6 +2142,7 @@ namespace TitanOrbit.Game
                 }
 
                 _proxies[entity] = go;
+                RegisterProxyKind(entity, ProxyVisualKind.Gem);
                 alive.Add(entity);
                 go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.rotation = lt.Rotation;
