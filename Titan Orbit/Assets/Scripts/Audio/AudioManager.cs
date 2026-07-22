@@ -4,10 +4,16 @@ using UnityEngine.Audio;
 namespace TitanOrbit.Audio
 {
     /// <summary>
-    /// Manages audio playback including background music and sound effects
+    /// Central client audio hub for music and gameplay SFX.
+    /// Owns pooled <see cref="AudioSource"/>s for weapons, gems, and impacts so overlapping
+    /// one-shots can use different pitches without fighting a single source.
+    /// Gem deposit uses <see cref="PlayGemDepositSound"/> as a steady metronome beat
+    /// (stable pitch from gem value / ship level); pickup still uses value-scaled pitch bursts.
+    /// Singleton with DontDestroyOnLoad — UI and hybrid presenters call into <see cref="Instance"/>.
     /// </summary>
     public class AudioManager : MonoBehaviour
     {
+        /// <summary>Scene-wide singleton set in Awake; null after teardown / duplicate destroy.</summary>
         public static AudioManager Instance { get; private set; }
 
         [Header("Audio Mixer")]
@@ -261,9 +267,50 @@ namespace TitanOrbit.Audio
             PlaySFX(captureSound, captureVolume);
         }
 
-        public void PlayGemDepositSound(float amount)
+        /// <summary>
+        /// Gem-deposit metronome beat. Pitch is locked to <paramref name="gemValue"/> (usually
+        /// ship level) so every tick of a continuous deposit sounds the same — like a metronome,
+        /// not a random pickup burst. Optional <paramref name="volumeScale"/> applies proximity
+        /// falloff for other players' deposits (1 = full, 0 = silent).
+        /// </summary>
+        /// <param name="gemValue">Gem-value chunk for pitch (typically <c>ShipLevel</c>).</param>
+        /// <param name="volumeScale">Extra multiplier after mix settings — used for distance hear range.</param>
+        public void PlayGemDepositSound(float gemValue, float volumeScale = 1f)
         {
-            PlayGemValueScaledSFX(gemCollectSound, amount, gemVolume);
+            // --- Deposit metronome one-shot ---
+            // [TITAN-ORBIT] Do NOT reuse the pickup log-pitch curve (gemPitchMin can be 0.01 — that
+            // makes mid/high ship-level deposit beats nearly silent). Metronome stays in an audible
+            // band so every tick is clearly heard.
+            if (volumeScale <= 0.001f || gemCollectSound == null)
+                return;
+
+            EnsureGemSoundPool();
+            float volume = GetSFXVolume(gemVolume * Mathf.Clamp01(volumeScale));
+            if (volume <= 0.001f)
+                return;
+
+            // Level 1 → brighter; level 20+ → deeper; always within a hearable metronome range.
+            float levelT = Mathf.InverseLerp(1f, 20f, Mathf.Max(1f, gemValue));
+            float pitch = Mathf.Lerp(1.2f, 0.7f, Mathf.Clamp01(levelT));
+
+            if (gemSoundSources == null || gemSoundSources.Length == 0)
+            {
+                if (sfxSource != null)
+                {
+                    sfxSource.pitch = pitch;
+                    sfxSource.PlayOneShot(gemCollectSound, volume);
+                    sfxSource.pitch = 1f;
+                }
+                return;
+            }
+
+            AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
+            nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;
+            if (src == null)
+                return;
+
+            src.pitch = pitch;
+            src.PlayOneShot(gemCollectSound, volume);
         }
 
         public void PlayExplosionSound()
@@ -295,9 +342,14 @@ namespace TitanOrbit.Audio
             }
         }
 
+        /// <summary>
+        /// Plays a gem SFX one-shot whose pitch comes from <paramref name="amount"/>.
+        /// Small amounts → higher pitch; large amounts → lower pitch (log-scaled).
+        /// Deposit metronome callers pass the same amount every beat so pitch stays constant.
+        /// </summary>
         private void PlayGemValueScaledSFX(AudioClip clip, float amount, float clipVolumeMultiplier)
         {
-            // --- PlayGemValueScaledSFX ---
+            // --- Pitch-scaled gem one-shot ---
             if (clip == null) return;
             EnsureGemSoundPool();
             if (gemSoundSources == null || gemSoundSources.Length == 0)
@@ -306,6 +358,7 @@ namespace TitanOrbit.Audio
                 return;
             }
 
+            // Clamp into the designed audible range before log mapping.
             float clampedAmount = Mathf.Clamp(Mathf.Max(0.001f, amount), GEM_AMOUNT_MIN, GEM_AMOUNT_MAX);
             // Log mapping gives stronger audible contrast across small-to-large gem values.
             float minLog = Mathf.Log10(GEM_AMOUNT_MIN);
@@ -315,6 +368,8 @@ namespace TitanOrbit.Audio
             // Emphasize contrast: keep more time near the extremes (tiny gems very high, large gems very low).
             float emphasized = Mathf.Pow(normalized, 1.35f);
             float pitch = Mathf.Lerp(gemPitchMax, gemPitchMin, emphasized);
+
+            // Round-robin pool so overlapping gem SFX keep their own pitch on separate sources.
             AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
             nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;
             if (src != null)

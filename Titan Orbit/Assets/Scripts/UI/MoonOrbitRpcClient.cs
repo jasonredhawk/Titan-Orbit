@@ -9,7 +9,13 @@ using UnityEngine;
 
 namespace TitanOrbit.UI
 {
-    /// <summary>Sends moon orbit store RPCs from UI to the ECS server.</summary>
+    /// <summary>
+    /// Client glue for moon-orbit store actions: contributed-gems queries, deposit toggle,
+    /// and ship upgrade-tree purchases. UI calls these static helpers; they either write the
+    /// Local Host <c>ServerWorld</c> directly or send NetCode RPCs from <c>ClientWorld</c>.
+    /// Deposit toggle also updates <see cref="MoonOrbitClientState"/> immediately so local SFX
+    /// can metronome without waiting for ghost replication.
+    /// </summary>
     public static class MoonOrbitRpcClient
     {
         public static void RequestContributedGems(int homePlanetId)
@@ -36,12 +42,28 @@ namespace TitanOrbit.UI
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
 
+        /// <summary>
+        /// Toggles gem auto-deposit for the local ship.
+        /// Updates the immediate client mirror (<see cref="MoonOrbitClientState"/>), writes the
+        /// local ClientWorld ghost so UI/SFX do not wait on an RPC round-trip, applies on the
+        /// server world for Local Host, and sends <see cref="SetWantDepositGemsCommand"/> for
+        /// dedicated online clients.
+        /// </summary>
+        /// <param name="wantDeposit">True to drain ship cargo into the docked moon's planet pool.</param>
         public static void SetWantDepositGems(bool wantDeposit)
         {
             // --- SetWantDepositGems ---
+            // [TITAN-ORBIT] Client mirror is the authoritative "I want to deposit" signal for local
+            // SFX/UI this frame — ghost ShipDepositIntent can lag a full RPC + snapshot.
             MoonOrbitClientState.SetWantDepositGems(wantDeposit);
+
+            // Predict on the local ClientWorld hull so readers of ShipDepositIntent see the toggle now.
+            ApplyWantDepositOnWorld(EcsGameBridge.ClientWorld, wantDeposit);
+
+            // Local Host also owns ServerWorld — write intent there so GemDepositSystem runs immediately.
             ApplyWantDepositOnServer(wantDeposit);
 
+            // Dedicated online client: tell the remote server via RPC (Local Host already wrote server).
             if (EcsGameBridge.IsLocalHost() || !EcsGameBridge.IsNetworkInGame())
                 return;
 
@@ -55,23 +77,41 @@ namespace TitanOrbit.UI
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
 
+        /// <summary>
+        /// Writes deposit intent onto the Local Host server ship. No-op for dedicated online clients
+        /// (they have no ServerWorld gameplay authority).
+        /// </summary>
         static void ApplyWantDepositOnServer(bool wantDeposit)
         {
-            // --- Apply changes ---
+            // --- Apply on server world (Local Host only) ---
             if (TitanOrbit.NetCode.TitanOrbitSessionManager.IsDedicatedOnlineClient)
                 return;
 
-            var server = EcsGameBridge.ServerWorld;
-            if (server == null || !server.IsCreated)
+            ApplyWantDepositOnWorld(EcsGameBridge.ServerWorld, wantDeposit);
+        }
+
+        /// <summary>
+        /// Sets <see cref="ShipInput.WantDepositGems"/> and <see cref="ShipDepositIntent"/> on the
+        /// local player's ship in the given world (ClientWorld prediction and/or ServerWorld host).
+        /// </summary>
+        static void ApplyWantDepositOnWorld(World world, bool wantDeposit)
+        {
+            // --- Apply deposit flag on one ECS world ---
+            if (world == null || !world.IsCreated)
                 return;
 
-            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(server, out var shipEntity))
+            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out var shipEntity))
                 return;
 
-            var em = server.EntityManager;
-            var input = em.GetComponentData<ShipInput>(shipEntity);
-            input.WantDepositGems = wantDeposit;
-            em.SetComponentData(shipEntity, input);
+            var em = world.EntityManager;
+
+            // Keep ShipInput in sync — GemDepositSystem may read it before intent on some paths.
+            if (em.HasComponent<ShipInput>(shipEntity))
+            {
+                var input = em.GetComponentData<ShipInput>(shipEntity);
+                input.WantDepositGems = wantDeposit;
+                em.SetComponentData(shipEntity, input);
+            }
 
             if (em.HasComponent<ShipDepositIntent>(shipEntity))
             {

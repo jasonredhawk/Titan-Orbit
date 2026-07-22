@@ -42,6 +42,19 @@ namespace TitanOrbit.UI
         bool _menuVisible;
 
         /// <summary>
+        /// When &gt; 0, we first observed a "should hide" condition at this <see cref="Time.time"/>.
+        /// Brief ECS read gaps (GhostSpawnBacklog) must not clear deposit intent / close the menu.
+        /// </summary>
+        float _hidePendingSince = -1f;
+
+        /// <summary>
+        /// Seconds to tolerate failed local-ship / dock reads before actually hiding.
+        /// [TITAN-ORBIT] HideMenu clears <see cref="MoonOrbitClientState.WantDepositGems"/> — a one-frame
+        /// miss used to silence the deposit metronome and stop auto-deposit.
+        /// </summary>
+        const float HideGraceSeconds = 0.4f;
+
+        /// <summary>
         /// Each frame: if the local ship is fully landed on a friendly moon (and not thrusting),
         /// open the orbit station after a short delay; otherwise hide and clear deposit intent.
         /// </summary>
@@ -50,7 +63,7 @@ namespace TitanOrbit.UI
             // --- Per-frame dock / menu gate ---
             if (!EcsGameBridge.IsNetworkInGame())
             {
-                HideMenu();
+                HideMenuImmediate();
                 return;
             }
 
@@ -60,7 +73,7 @@ namespace TitanOrbit.UI
                 ship.AwaitingTeamSelection ||
                 ship.IsDead)
             {
-                HideMenu();
+                RequestHideMenu();
                 return;
             }
 
@@ -69,8 +82,7 @@ namespace TitanOrbit.UI
                 moonDock.MoonPlanetId == 0 ||
                 moonDock.LandingProgress < GemEconomyConstants.MoonLandingCompleteThreshold)
             {
-                _landingCompleteTime = -1f;
-                HideMenu();
+                RequestHideMenu();
                 return;
             }
 
@@ -78,16 +90,19 @@ namespace TitanOrbit.UI
             if (!EcsGameBridge.TryGetPlanetStateByPlanetId(moonDock.MoonPlanetId, out var planet) ||
                 planet.Ownership != ship.Team)
             {
-                HideMenu();
+                RequestHideMenu();
                 return;
             }
 
-            // --- Thrust undocks / dismisses the menu ---
+            // --- Thrust undocks / dismisses the menu (hard leave — no grace) ---
             if (EcsGameBridge.TryGetLocalShipInput(out var input) && input.Thrust)
             {
-                HideMenu();
+                HideMenuImmediate();
                 return;
             }
+
+            // Still docked — cancel any pending hide from a brief read gap.
+            _hidePendingSince = -1f;
 
             // --- First frame of completed landing: start timer + apply auto-deposit preference ---
             if (_landingCompleteTime < 0f)
@@ -111,17 +126,40 @@ namespace TitanOrbit.UI
             }
             else if (!shouldShow && _menuVisible)
             {
-                HideMenu();
+                HideMenuImmediate();
             }
+        }
+
+        /// <summary>
+        /// Starts/continues a short grace timer before <see cref="HideMenuImmediate"/>.
+        /// Ignores one-frame ECS lookup failures so deposit SFX and auto-deposit stay on.
+        /// </summary>
+        void RequestHideMenu()
+        {
+            // --- Grace before hide ---
+            if (_landingCompleteTime < 0f && !_menuVisible)
+            {
+                // Never docked this session — nothing to clear.
+                return;
+            }
+
+            if (_hidePendingSince < 0f)
+                _hidePendingSince = Time.time;
+
+            if (Time.time - _hidePendingSince < HideGraceSeconds)
+                return;
+
+            HideMenuImmediate();
         }
 
         /// <summary>
         /// Closes the orbit UI, clears the landing timer, and turns off deposit intent so gems
         /// stop transferring once the player leaves the dock.
         /// </summary>
-        void HideMenu()
+        void HideMenuImmediate()
         {
-            // --- HideMenu ---
+            // --- HideMenuImmediate ---
+            _hidePendingSince = -1f;
             MoonOrbitRpcClient.SetWantDepositGems(false);
             _landingCompleteTime = -1f;
             if (!_menuVisible)
@@ -130,6 +168,9 @@ namespace TitanOrbit.UI
                 _ui.Hide();
             _menuVisible = false;
         }
+
+        /// <summary>Legacy name kept for any external callers — same as immediate hide.</summary>
+        void HideMenu() => HideMenuImmediate();
 
         /// <summary>Returns the cached <see cref="OrbitStationUI"/>, creating it on first use.</summary>
         OrbitStationUI GetOrCreateUi()
