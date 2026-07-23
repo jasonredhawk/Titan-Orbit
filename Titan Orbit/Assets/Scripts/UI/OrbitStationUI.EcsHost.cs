@@ -144,6 +144,19 @@ namespace TitanOrbit.UI
                 _ecsShipView.SyncFromEcs(_ecsStorePlanetId);
         }
 
+        /// <summary>
+        /// Metronome beat — bump Bank by the actual chunk so GEM DEPOSITS ticks with the SFX.
+        /// Hooked from the main <see cref="OrbitStationUI"/> OnEnable/OnDisable.
+        /// </summary>
+        void OnLocalDepositBeatForBank(float chunkAmount)
+        {
+            if (chunkAmount <= 0.001f)
+                return;
+            contributedGems += chunkAmount;
+            lastReceivedGems = contributedGems;
+            RefreshSidebar();
+        }
+
         partial void OnOrbitStationEcsHide()
         {
             // --- Clear orbit menu visibility and ECS context ---

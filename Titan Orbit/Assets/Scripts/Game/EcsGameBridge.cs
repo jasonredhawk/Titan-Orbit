@@ -264,9 +264,19 @@ namespace TitanOrbit.Game
             // not publish until ShipVisualSync runs. Treat seed as "have a ship" so spawn-wait UI
             // does not stick on "Spawning your ship..." for that gap.
             var client = ClientWorld;
-            if (client != null && client.IsCreated &&
-                LocalShipEntitySeed.TryGetSeededShip(client.EntityManager, out _))
-                return true;
+            if (client != null && client.IsCreated)
+            {
+                var em = client.EntityManager;
+                if (LocalShipEntitySeed.TryGetSeededShip(em, out _))
+                    return true;
+
+                // --- Recover if Instantiates-hook seed was missed (idle Instantiates only) ---
+                // [TITAN-ORBIT] Old gate TeamChoiceConfirmed&&!seed made ShouldSkip forever when the
+                // hook missed — lobby stuck on semi-transparent "Spawning your ship...".
+                if (LocalShipEntitySeed.TryRecoverOwnedShip(em) &&
+                    LocalShipEntitySeed.TryGetSeededShip(em, out _))
+                    return true;
+            }
 
             return TryGetLocalShipPosition(out _);
         }

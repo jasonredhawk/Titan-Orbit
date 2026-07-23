@@ -70,16 +70,20 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] True when ship <c>ToEntityArray</c> / <c>WithEntityAccess</c> must not run.
-        /// Covers Settling, the post–Join Team Instantiates window (Settling stays OFF), and the
-        /// gap after <see cref="ClientTeamFlowState.TeamChoiceConfirmed"/> before the local ship
-        /// Instantiates (Player.log 2026-07-23 TeamChoiceResult → Crash!!!).
+        /// Covers Settling, GhostSpawnBacklog (incl. post-ship hold), and a short post–TeamChoice
+        /// hold while the ship Instantiates (Settling stays OFF after JoinSettleCompleted).
+        /// <para>
+        /// Intentional: do <b>not</b> gate forever on <c>TeamChoiceConfirmed &amp;&amp; !HasOwnedShipSeed</c>.
+        /// That deadlock stuck the lobby on "Spawning your ship..." when Instantiates-hook seeding
+        /// missed once — recovery queries could never run (Editor.log 2026-07-23).
+        /// </para>
         /// Prefer this over hand-rolling flags so TeamChoice Crash!!! gates stay one-liners
         /// (see titan-orbit-teamchoice-crash-hardstop.mdc).
         /// </summary>
         public static bool ShouldSkipShipEntityQueries =>
             Settling ||
             GhostSpawnBacklog ||
-            (ClientTeamFlowState.TeamChoiceConfirmed && !LocalShipEntitySeed.HasOwnedShipSeed);
+            s_PostTeamChoiceHoldRemaining > 0;
 
         /// <summary>
         /// [TITAN-ORBIT] True when client code must not gather planets / asteroids / gems / moons
@@ -107,8 +111,18 @@ namespace TitanOrbit.ECS
         /// </summary>
         const int PostShipInstantiateHoldFrames = 15;
 
+        /// <summary>
+        /// Frames to skip ship gathers after TeamChoice / rejoin confirm while the ship ghost
+        /// Instantiates. Expires so a missed Instantiates-hook seed can still recover via a tiny
+        /// ship query once Instantiates are idle.
+        /// </summary>
+        const int PostTeamChoiceHoldFrames = 45;
+
         /// <summary>Remaining frames of ship Instantiates hold (counts down once per Unity frame).</summary>
         static int s_PostShipInstantiateHoldRemaining;
+
+        /// <summary>Remaining frames of post–TeamChoice Instantiates gap hold.</summary>
+        static int s_PostTeamChoiceHoldRemaining;
 
         /// <summary><see cref="UnityEngine.Time.frameCount"/> of the last hold tick (dedupe dual callers).</summary>
         static int s_PostShipInstantiateHoldTickFrame = -1;
@@ -127,6 +141,7 @@ namespace TitanOrbit.ECS
             JoinSettleCompleted = joinSettleCompleted;
             // [TITAN-ORBIT] Always fold Instantiates hold into the published backlog bit.
             GhostSpawnBacklog = ComputeGhostSpawnBacklog(ghostSpawnBacklog);
+            TickPostTeamChoiceHold();
         }
 
         /// <summary>
@@ -137,6 +152,7 @@ namespace TitanOrbit.ECS
         public static void SetGhostSpawnBacklog(bool ghostSpawnBacklog)
         {
             GhostSpawnBacklog = ComputeGhostSpawnBacklog(ghostSpawnBacklog);
+            TickPostTeamChoiceHold();
         }
 
         /// <summary>
@@ -146,6 +162,15 @@ namespace TitanOrbit.ECS
         public static void ArmPostShipInstantiateHold()
         {
             s_PostShipInstantiateHoldRemaining = PostShipInstantiateHoldFrames;
+        }
+
+        /// <summary>
+        /// Arms the short TeamChoice → ship Instantiates gap hold.
+        /// Call from TeamChoice / rejoin success handlers after <see cref="ClientTeamFlowState.ConfirmTeamChoice"/>.
+        /// </summary>
+        public static void ArmPostTeamChoiceHold()
+        {
+            s_PostTeamChoiceHoldRemaining = PostTeamChoiceHoldFrames;
         }
 
         /// <summary>
@@ -166,9 +191,22 @@ namespace TitanOrbit.ECS
                 s_PostShipInstantiateHoldTickFrame = frame;
                 if (s_PostShipInstantiateHoldRemaining > 0)
                     s_PostShipInstantiateHoldRemaining--;
+                // TeamChoice hold ticks on the same frame cadence (shared tick frame).
+                if (s_PostTeamChoiceHoldRemaining > 0)
+                    s_PostTeamChoiceHoldRemaining--;
             }
 
             return queueOrPlaceholdersNonEmpty || s_PostShipInstantiateHoldRemaining > 0;
+        }
+
+        /// <summary>
+        /// Ensures post–TeamChoice hold still counts down when only <see cref="Set"/> / backlog
+        /// refresh run (ComputeGhostSpawnBacklog already ticks both holds).
+        /// </summary>
+        static void TickPostTeamChoiceHold()
+        {
+            // ComputeGhostSpawnBacklog already decrements both holds once per frame.
+            // Kept as a named step so Set/SetGhostSpawnBacklog call sites stay readable.
         }
 
         /// <summary>Clears when leaving a session / not in-game.</summary>
@@ -180,6 +218,7 @@ namespace TitanOrbit.ECS
             JoinSettleCompleted = false;
             GhostSpawnBacklog = false;
             s_PostShipInstantiateHoldRemaining = 0;
+            s_PostTeamChoiceHoldRemaining = 0;
             s_PostShipInstantiateHoldTickFrame = -1;
             // [NETCODE] GhostSpawn join counters — next Relay join starts from zero.
             TitanOrbitJoinLoadCounters.Reset();

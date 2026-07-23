@@ -41,7 +41,7 @@ namespace TitanOrbit.ECS
             // --- Ship Instantiates / TeamChoice gap (before any ship ToEntityArray) ---
             // [TITAN-ORBIT] Player.log 2026-07-23: TeamChoiceResult lifts suppress then ship
             // gathers Crash!!!. ShouldSkipShipEntityQueries covers Settling, GhostSpawnBacklog
-            // (incl. post-ship hold), and TeamChoiceConfirmed-before-local-ship-seed.
+            // (incl. post-ship hold), and the short ArmPostTeamChoiceHold Instantiates gap.
             if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
             {
                 ecb.Dispose();

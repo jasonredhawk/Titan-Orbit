@@ -45,9 +45,11 @@ namespace TitanOrbit.ECS
 
                 ecb.DestroyEntity(entity);
 
-                // [NETCODE] Duplicate team RPC (double-click / retry) — acknowledge so client UI advances.
+                // [NETCODE] Duplicate team RPC (double-click / retry / auto-pick) — acknowledge so
+                // client UI advances. Do not spawn a second ship for the same NetworkId.
                 if (TryGetShipTeamForNetworkId(ref state, networkId, out var existingTeam))
                 {
+                    LogExistingShipAck(networkId, existingTeam);
                     SendTeamChoiceResult(ecb, connection, networkId, existingTeam, success: true, default);
                     continue;
                 }
@@ -228,6 +230,13 @@ namespace TitanOrbit.ECS
         static void LogSpawned(int networkId, TeamId team, float3 spawnPos)
         {
             UnityEngine.Debug.Log($"[TeamManagementSystem] Spawned ship for networkId={networkId} team={team} at {spawnPos}.");
+        }
+
+        [BurstDiscard]
+        static void LogExistingShipAck(int networkId, TeamId team)
+        {
+            UnityEngine.Debug.Log(
+                $"[TeamManagementSystem] TeamChoice ack existing ship networkId={networkId} team={team} (no new spawn).");
         }
 
         [BurstDiscard]

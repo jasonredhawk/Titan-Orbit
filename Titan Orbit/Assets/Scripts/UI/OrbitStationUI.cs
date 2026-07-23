@@ -371,12 +371,15 @@ namespace TitanOrbit.UI
         {
             CardShopSystem.ClientSpinOfferReceived += OnClientSpinOfferReceived;
             CardShopSystem.ClientSpinOfferConsumed += OnClientSpinOfferConsumed;
+            // Bank GEM DEPOSITS ticks with deposit metronome (not only the 1s contributed-gems poll).
+            MoonOrbitClientState.LocalDepositBeat += OnLocalDepositBeatForBank;
         }
 
         private void OnDisable()
         {
             CardShopSystem.ClientSpinOfferReceived -= OnClientSpinOfferReceived;
             CardShopSystem.ClientSpinOfferConsumed -= OnClientSpinOfferConsumed;
+            MoonOrbitClientState.LocalDepositBeat -= OnLocalDepositBeatForBank;
         }
 
         private void OnClientSpinOfferReceived()
@@ -3300,8 +3303,15 @@ namespace TitanOrbit.UI
             }
 
             float shipGems = 0f;
-            if (EcsGameBridge.TryGetLocalShipState(out var shipState))
+            if (MoonOrbitClientState.WantDepositGems &&
+                MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optimisticCargo))
+            {
+                shipGems = optimisticCargo;
+            }
+            else if (EcsGameBridge.TryGetLocalShipState(out var shipState))
+            {
                 shipGems = shipState.CurrentGems;
+            }
 
             float planetGems = 0f;
             int planetLevel = 1;

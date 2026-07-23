@@ -45,6 +45,9 @@ namespace TitanOrbit.ECS
             {
                 // [TITAN-ORBIT] Team assigned — unblock local player control and close team picker.
                 ClientTeamFlowState.ConfirmTeamChoice();
+                // Cover TeamChoice → ship Instantiates gap (Settling stays OFF). Expires so a missed
+                // Instantiates-hook seed can recover without deadlocking spawn-wait UI.
+                ClientJoinSettleCache.ArmPostTeamChoiceHold();
                 UnityEngine.Debug.Log($"[TeamChoiceResult] Assigned to {(TeamId)rpc.AssignedTeam} (networkId={rpc.NetworkId}).");
             }
             else

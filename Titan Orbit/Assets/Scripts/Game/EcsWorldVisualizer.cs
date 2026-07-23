@@ -1239,8 +1239,11 @@ namespace TitanOrbit.Game
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 return;
 
-            // --- Seed from Instantiates hook (no ship gather) ---
-            if (!LocalShipEntitySeed.TryGetSeededShip(em, out var shipEntity) ||
+            // --- Seed from Instantiates hook (no ship gather); recover when Instantiates idle ---
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out var shipEntity))
+                LocalShipEntitySeed.TryRecoverOwnedShip(em);
+
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out shipEntity) ||
                 shipEntity == Entity.Null ||
                 !em.Exists(shipEntity) ||
                 !em.HasComponent<LocalTransform>(shipEntity))

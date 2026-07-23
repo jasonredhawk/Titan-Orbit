@@ -154,6 +154,7 @@ namespace TitanOrbit.UI
         void Update()
         {
             // --- Per-frame refresh ---
+            // Authoritative Bank from contributed-gems RPC (reconcile optimistic metronome ticks).
             if (MoonOrbitClientState.TryConsumeContributedGems(out float gems))
                 OnContributedGemsReceived(gems);
 
@@ -171,6 +172,28 @@ namespace TitanOrbit.UI
                 if (_homePlanetId > 0)
                     MoonOrbitRpcClient.RequestContributedGems(_homePlanetId);
             }
+        }
+
+        void OnEnable()
+        {
+            // --- Subscribe to deposit metronome for Bank UI sync ---
+            MoonOrbitClientState.LocalDepositBeat += OnLocalDepositBeat;
+        }
+
+        void OnDisable()
+        {
+            MoonOrbitClientState.LocalDepositBeat -= OnLocalDepositBeat;
+        }
+
+        /// <summary>
+        /// Metronome beat — bump Bank by the actual chunk so GEM DEPOSITS ticks with the SFX.
+        /// </summary>
+        void OnLocalDepositBeat(float chunkAmount)
+        {
+            if (chunkAmount <= 0.001f)
+                return;
+            _contributedGems += chunkAmount;
+            RefreshGemDepositFlow();
         }
 
         public void Show(int storePlanetId, int homePlanetId)
@@ -212,11 +235,36 @@ namespace TitanOrbit.UI
 
         public void OnContributedGemsReceived(float amount)
         {
+            // --- Authoritative Bank snap from server ---
             _contributedGems = amount;
-            if (_sidebar != null)
-                _sidebar.RefreshBank(amount);
+            RefreshGemDepositFlow();
             if (_gemsText != null)
                 _gemsText.text = $"Bank: {amount:0} gems";
+        }
+
+        /// <summary>
+        /// Ship → Bank flow row: live (or optimistic) cargo, contributed Bank, and planet progress.
+        /// Called on metronome beats and when ECS / RPC refresh the menu.
+        /// </summary>
+        void RefreshGemDepositFlow()
+        {
+            // --- Resolve ship cargo (prefer metronome estimate while depositing) ---
+            float shipGems = 0f;
+            if (MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optimisticCargo))
+                shipGems = optimisticCargo;
+            else if (EcsGameBridge.TryGetLocalShipState(out var ship))
+                shipGems = ship.CurrentGems;
+
+            // --- Planet treasury progress under the Bank banner ---
+            float planetGems = 0f;
+            int planetLevel = 1;
+            if (_storePlanetId > 0 && EcsGameBridge.TryGetPlanetStateByPlanetId(_storePlanetId, out var planet))
+            {
+                planetGems = planet.CurrentGems;
+                planetLevel = Mathf.Max(1, planet.PlanetLevel);
+            }
+
+            _sidebar?.RefreshDepositStatus(shipGems, _contributedGems, planetGems, planetLevel);
         }
 
         void RefreshFromEcs()
@@ -237,7 +285,7 @@ namespace TitanOrbit.UI
 
             RefreshShipTree();
             RefreshStore();
-            _sidebar?.RefreshBank(_contributedGems);
+            RefreshGemDepositFlow();
             _sidebar?.RefreshCurrentShip(PopulateTreeNode, 100f);
         }
 

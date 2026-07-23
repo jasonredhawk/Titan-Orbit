@@ -268,19 +268,20 @@ namespace TitanOrbit.Audio
         }
 
         /// <summary>
-        /// Gem-deposit metronome beat. Pitch is locked to <paramref name="gemValue"/> (usually
-        /// ship level) so every tick of a continuous deposit sounds the same — like a metronome,
-        /// not a random pickup burst. Optional <paramref name="volumeScale"/> applies proximity
-        /// falloff for other players' deposits (1 = full, 0 = silent).
+        /// Gem-deposit metronome beat. Pitch follows <paramref name="gemValue"/> — the actual gems
+        /// moved this beat (usually ship level; leftover cargo uses the smaller amount so the last
+        /// ticks are not a fake full-load pitch). Optional <paramref name="volumeScale"/> applies
+        /// proximity falloff for other players' deposits (1 = full, 0 = silent).
         /// </summary>
-        /// <param name="gemValue">Gem-value chunk for pitch (typically <c>ShipLevel</c>).</param>
+        /// <param name="gemValue">Actual gem chunk for pitch this beat.</param>
         /// <param name="volumeScale">Extra multiplier after mix settings — used for distance hear range.</param>
         public void PlayGemDepositSound(float gemValue, float volumeScale = 1f)
         {
             // --- Deposit metronome one-shot ---
             // [TITAN-ORBIT] Do NOT reuse the pickup log-pitch curve (gemPitchMin can be 0.01 — that
             // makes mid/high ship-level deposit beats nearly silent). Metronome stays in an audible
-            // band so every tick is clearly heard.
+            // band so every tick is clearly heard. Leftover loads (e.g. 3 gems on a level-5 ship)
+            // pitch as 3, not as 5.
             if (volumeScale <= 0.001f || gemCollectSound == null)
                 return;
 
@@ -289,7 +290,7 @@ namespace TitanOrbit.Audio
             if (volume <= 0.001f)
                 return;
 
-            // Level 1 → brighter; level 20+ → deeper; always within a hearable metronome range.
+            // Value 1 → brighter; value 20+ → deeper; always within a hearable metronome range.
             float levelT = Mathf.InverseLerp(1f, 20f, Mathf.Max(1f, gemValue));
             float pitch = Mathf.Lerp(1.2f, 0.7f, Mathf.Clamp01(levelT));
 

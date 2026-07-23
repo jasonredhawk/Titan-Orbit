@@ -52,6 +52,8 @@ namespace TitanOrbit.ECS
             {
                 ClientTeamFlowState.ChooseUseExistingShip();
                 ClientTeamFlowState.ConfirmTeamChoice();
+                // Same Instantiates-gap hold as Join Team — resume also streams/binds the hull.
+                ClientJoinSettleCache.ArmPostTeamChoiceHold();
                 UnityEngine.Debug.Log("[RejoinShipResult] Resumed existing ship on team " + (TeamId)rpc.AssignedTeam + ".");
                 return;
             }

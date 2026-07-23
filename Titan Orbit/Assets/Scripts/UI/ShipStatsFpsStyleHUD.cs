@@ -15,6 +15,8 @@ namespace TitanOrbit.UI
     /// <para>
     /// [TITAN-ORBIT] Holds a last-good <see cref="ShipState"/> during GhostSpawnBacklog so asteroid→gem
     /// Instantiates do not flash the bars to 0/0 (same combat flicker class as the upgrade strip).
+    /// During gem deposit, the gems row prefers <see cref="MoonOrbitClientState"/> optimistic cargo
+    /// so it decrements by deposit-chunk size in sync with the metronome SFX.
     /// </para>
     /// </summary>
     public class ShipStatsFpsStyleHUD : MonoBehaviour
@@ -148,7 +150,18 @@ namespace TitanOrbit.UI
 
             UpdateRow(ref _rows[0], ship.Health, ship.MaxHealth, 0);
             UpdateRow(ref _rows[1], ship.CurrentEnergy, ship.MaxEnergy, 1);
-            UpdateRow(ref _rows[2], ship.CurrentGems, ship.GemCapacity, 2);
+
+            // --- Gems row ---
+            // [TITAN-ORBIT] While depositing, show metronome chunk cargo so the bar drops by
+            // ShipLevel (e.g. −5) with each beat — not ghost drip of ~1 gem per frame.
+            float displayGems = ship.CurrentGems;
+            if (MoonOrbitClientState.WantDepositGems &&
+                MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optimisticCargo))
+            {
+                displayGems = optimisticCargo;
+            }
+
+            UpdateRow(ref _rows[2], displayGems, ship.GemCapacity, 2);
             UpdateRow(ref _rows[3], ship.CurrentPeople, ship.PeopleCapacity, 3);
         }
 

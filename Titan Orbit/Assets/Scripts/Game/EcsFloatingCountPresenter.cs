@@ -30,7 +30,8 @@ namespace TitanOrbit.Game
     /// Gem-deposit audio is a wall-clock <b>metronome</b>. Local beats use
     /// <see cref="TickLocalDepositMetronome"/> (<see cref="MoonOrbitClientState"/> only — no NetworkId
     /// / dock ghost gates). Remotes use <see cref="TickRemoteGemDepositMetronomes"/> with toroidal
-    /// hear range. Deposit pitch stays in an audible band (not the pickup 0.01 curve).
+    /// hear range. Each beat uses the <b>actual</b> transfer amount for pitch (ship level, or leftover
+    /// cargo) and notifies the Orbit Menu Bank so UI stays locked to the SFX cadence.
     /// </para>
     /// </summary>
     public class EcsFloatingCountPresenter : MonoBehaviour
@@ -186,6 +187,7 @@ namespace TitanOrbit.Game
         /// Steady local deposit beat driven only by <see cref="MoonOrbitClientState.WantDepositGems"/>
         /// and cached local cargo. Does not require GhostOwner NetworkId matching, moon-dock ghost
         /// reads, or a hull proxy — those were the main reasons local beats went mostly silent.
+        /// Pitch and floating counts use the <b>actual</b> chunk (ship level, or leftover cargo).
         /// </summary>
         void TickLocalDepositMetronome()
         {
@@ -193,6 +195,7 @@ namespace TitanOrbit.Game
             if (!MoonOrbitClientState.WantDepositGems)
             {
                 _localDepositBeatTime = 0f;
+                MoonOrbitClientState.ClearOptimisticDepositCargo();
                 return;
             }
 
@@ -203,7 +206,14 @@ namespace TitanOrbit.Game
                 if (ship.IsDead || ship.AwaitingTeamSelection)
                     return;
 
-                _cachedLocalGems = ship.CurrentGems;
+                // [TITAN-ORBIT] While depositing, never let a lagging ghost *raise* cargo back up after
+                // a beat already subtracted a chunk — that would desync SFX, Bank UI, and ship stats.
+                // Ghost catching up (lower or equal) is fine via Min.
+                if (_cachedLocalGems < 0f)
+                    _cachedLocalGems = ship.CurrentGems;
+                else
+                    _cachedLocalGems = Mathf.Min(_cachedLocalGems, ship.CurrentGems);
+
                 _cachedLocalShipLevel = Mathf.Max(1f, ship.ShipLevel);
                 _cachedLocalTeam = ship.Team;
             }
@@ -227,17 +237,22 @@ namespace TitanOrbit.Game
             if (_localDepositBeatTime > 0f && now - _localDepositBeatTime < beatInterval)
                 return;
 
-            // --- Fire one audible metronome tick ---
+            // --- One audible metronome tick (amount = full level chunk or leftover) ---
+            // [TITAN-ORBIT] Never fake a full ShipLevel sound when only 3 gems remain — pitch
+            // must match the true transfer so the last beats feel correct.
             _localDepositBeatTime = now;
-            float gemValue = Mathf.Max(1f, _cachedLocalShipLevel);
-            TryGetLocalShipAnchor(out Transform anchor);
-            EmitGemDepositBeat(anchor, gemValue, _cachedLocalTeam, 1f);
+            float chunkAmount = GemEconomyConstants.GetDepositChunkAmount(
+                _cachedLocalShipLevel,
+                _cachedLocalGems);
+            if (chunkAmount <= 0.001f)
+                return;
 
-            // Estimate cargo drain between ECS refreshes so we stop soon after the hold empties
-            // even if GhostSpawnBacklog blocks TryGetLocalShipState for a moment.
-            _cachedLocalGems = Mathf.Max(
-                0f,
-                _cachedLocalGems - gemValue * GemEconomyConstants.DepositRatePerShipLevel * beatInterval);
+            TryGetLocalShipAnchor(out Transform anchor);
+            EmitGemDepositBeat(anchor, chunkAmount, _cachedLocalTeam, 1f);
+
+            // Estimate cargo after this beat, then publish to Orbit Menu + ship-stats HUD.
+            _cachedLocalGems = Mathf.Max(0f, _cachedLocalGems - chunkAmount);
+            MoonOrbitClientState.NotifyLocalDepositBeat(chunkAmount, _cachedLocalGems);
         }
 
         /// <summary>
@@ -801,7 +816,15 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
-                float gemValue = Mathf.Max(1f, state.ShipLevel);
+                float gemValue = GemEconomyConstants.GetDepositChunkAmount(
+                    state.ShipLevel,
+                    state.CurrentGems);
+                if (gemValue <= 0.001f)
+                {
+                    _ships[networkId] = snap;
+                    continue;
+                }
+
                 EmitGemDepositBeat(anchor, gemValue, state.Team, volumeScale);
                 snap.LastDepositSoundTime = now;
                 snap.ShipLevel = state.ShipLevel;
@@ -810,11 +833,11 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Single deposit metronome tick — consistent-pitch sound, plus floating count when a hull
-        /// proxy anchor exists.
+        /// Single deposit metronome tick — pitch matches the actual chunk amount (full ship-level
+        /// load or leftover cargo), plus floating count when a hull proxy anchor exists.
         /// </summary>
         /// <param name="anchor">Optional ship hull proxy (null = sound only).</param>
-        /// <param name="gemValue">Stable gem-value chunk for pitch/amount (usually ship level).</param>
+        /// <param name="gemValue">Actual gems this beat (ship level, or leftover — drives pitch).</param>
         /// <param name="team">Team tint for the floating count.</param>
         /// <param name="volumeScale">Proximity volume 0–1 from toroidal hear range.</param>
         static void EmitGemDepositBeat(Transform anchor, float gemValue, TeamId team, float volumeScale)

@@ -14,12 +14,14 @@ alwaysApply: true
 | **Ships** (`WithEntityAccess`, `EnsureShipProxies`, local-ship tag) | `ClientJoinSettleCache.ShouldSkipShipEntityQueries` |
 | **Map bodies** (planet / asteroid / gem / moon gathers) | `ClientJoinSettleCache.ShouldSkipMapBodyQueries` |
 
-`ShouldSkipShipEntityQueries` = Settling **OR** GhostSpawnBacklog (incl. post-ship hold) **OR** (TeamChoiceConfirmed and no local ship seed yet).
+`ShouldSkipShipEntityQueries` = Settling **OR** GhostSpawnBacklog (incl. post-ship hold) **OR** short post–TeamChoice hold (`ArmPostTeamChoiceHold`).
 
-Never reimplement backlog as GhostSpawnBuffer/PendingSpawnPlaceholder-only — that misses the hold and the TeamChoice→Instantiates gap (Player.log 2026-07-23).
+Never reimplement backlog as GhostSpawnBuffer/PendingSpawnPlaceholder-only — that misses the holds and the TeamChoice→Instantiates gap (Player.log 2026-07-23).
+
+**Do not** gate forever on `TeamChoiceConfirmed && !HasOwnedShipSeed` — that deadlocks spawn-wait ("Spawning your ship...") when Instantiates-hook seeding misses once (Editor.log 2026-07-23). Use the expiring TeamChoice hold + `LocalShipEntitySeed.TryRecoverOwnedShip` instead.
 
 ```csharp
-// Ships — Settling OR GhostSpawnBacklog (TeamChoice Instantiates window)
+// Ships — Settling OR GhostSpawnBacklog OR post–TeamChoice hold
 if (ClientJoinSettleCache.ShouldSkipShipEntityQueries) return;
 
 // Map bodies — TransformQuarantine OR Settling (quarantine is session-long on Windows)
@@ -35,6 +37,7 @@ if (ClientJoinSettleCache.ShouldSkipMapBodyQueries) return;
 5. `EntityManager.GetEntityTypeHandle()` + chunk walk in visualizer/systems — stale handle NRE kills Pending drain → bar stuck (Player.log 2026-07-22). Use `ToEntityArray` on Pending/SpawnRequest only.
 6. “Editor works so Windows is fine” — verify Windows Relay Player.log only.
 7. Treat removing these checks as cleanup/refactor — it is a **regression bug**.
+8. Permanent `TeamChoiceConfirmed && !HasOwnedShipSeed` ship skip — spawn-wait deadlock; use `ArmPostTeamChoiceHold` + seed recovery.
 
 ## Pre-edit checklist (any client system / hybrid bridge)
 

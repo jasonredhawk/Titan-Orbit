@@ -41,15 +41,34 @@ namespace TitanOrbit.ECS
         /// <summary>Stillness time required before moon landing progress begins or resumes.</summary>
         public const float MoonLandingApproachDelaySeconds = 0.5f;
 
-        /// <summary>Gems deposited per second scales with ship level × this factor.</summary>
+        /// <summary>
+        /// Historical gems/sec factor (<c>ShipLevel × 2</c>). Kept so docs and design notes still
+        /// match the discrete beat math: one full chunk every <see cref="GemDepositBeatIntervalSeconds"/>.
+        /// </summary>
         public const float DepositRatePerShipLevel = 2f;
 
         /// <summary>
-        /// Client deposit metronome period in seconds.
-        /// [TITAN-ORBIT] At rate <c>ShipLevel × DepositRatePerShipLevel</c>, one <c>ShipLevel</c>
-        /// of gems transfers every 0.5s — so the audible beat matches one gem-value chunk.
+        /// Server + client deposit metronome period in seconds.
+        /// [TITAN-ORBIT] Each beat moves one gem-value chunk (= <c>ShipLevel</c>, or the leftover
+        /// cargo if smaller). Average rate stays <c>ShipLevel × DepositRatePerShipLevel</c> gems/sec.
         /// </summary>
         public const float GemDepositBeatIntervalSeconds = 0.5f;
+
+        /// <summary>
+        /// Gems transferred on one deposit beat for this ship.
+        /// Full loads use <paramref name="shipLevel"/>; the last leftover uses remaining cargo so
+        /// pitch / floating counts / Bank UI all show the true amount — never a fake full chunk.
+        /// </summary>
+        /// <param name="shipLevel">Ship level (gem-value of one full deposit load).</param>
+        /// <param name="currentGems">Cargo remaining on the ship right now.</param>
+        /// <returns>Chunk size to move this beat (0 when empty).</returns>
+        public static float GetDepositChunkAmount(float shipLevel, float currentGems)
+        {
+            // --- One metronome load ---
+            // [TITAN-ORBIT] Level 5 with 50 cargo → 5. Level 5 with 3 left → 3 (correct leftover pitch).
+            float fullChunk = math.max(1f, shipLevel);
+            return math.min(fullChunk, math.max(0f, currentGems));
+        }
 
         /// <summary>
         /// Max toroidal distance (world units) at which a client still hears another ship's
@@ -457,6 +476,8 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Server: deposits ship cargo gems into friendly planets while docked at the gem moon.
+    /// Transfers happen on a <b>discrete metronome</b> (one ship-level chunk every
+    /// <see cref="GemEconomyConstants.GemDepositBeatIntervalSeconds"/>), matching client deposit SFX.
     /// Planet treasury levels up via <see cref="PlanetEconomyMath"/>; the player's spendable
     /// Bank (contributed gems) is always credited on the team's <b>home</b> planet ledger so
     /// orbit-store purchases work after depositing at any friendly moon.
@@ -468,12 +489,14 @@ namespace TitanOrbit.ECS
     {
         /// <summary>
         /// Fixed-step deposit pass: for each docked ship with deposit intent and cargo gems,
-        /// transfer into the docked planet and credit the home contributed-gems Bank.
+        /// transfer one metronome chunk into the docked planet and credit the home Bank.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             // --- Fixed timestep ---
+            // [UNITY] Same dt as other sim systems — we accumulate it into ShipDepositBeatTimer.
             float dt = SystemAPI.Time.DeltaTime;
+            float beatInterval = GemEconomyConstants.GemDepositBeatIntervalSeconds;
 
             foreach (var (shipState, shipInput, moonDock, shipEntity) in SystemAPI
                          .Query<RefRW<ShipState>, RefRO<ShipInput>, RefRO<ShipMoonDockState>>()
@@ -490,6 +513,12 @@ namespace TitanOrbit.ECS
                 bool wantDeposit = shipInput.ValueRO.WantDepositGems;
                 if (state.EntityManager.HasComponent<ShipDepositIntent>(shipEntity))
                     wantDeposit = state.EntityManager.GetComponentData<ShipDepositIntent>(shipEntity).WantDepositGems;
+
+                // --- Server metronome timer (separate from ghosted intent — StarshipGhost hash safe) ---
+                bool hasTimer = state.EntityManager.HasComponent<ShipDepositBeatTimer>(shipEntity);
+                ShipDepositBeatTimer timer = hasTimer
+                    ? state.EntityManager.GetComponentData<ShipDepositBeatTimer>(shipEntity)
+                    : default;
 
                 // --- GhostOwner.NetworkId keys the contributed-gems Bank row ---
                 int ownerNetworkId = 0;
@@ -511,39 +540,66 @@ namespace TitanOrbit.ECS
                             planetState.ValueRO))
                         continue;
 
-                    // --- Rate-limited transfer this tick ---
-                    float gemValue = math.max(1f, shipState.ValueRO.ShipLevel);
-                    float rate = gemValue * GemEconomyConstants.DepositRatePerShipLevel * dt;
-                    float amount = math.min(rate, shipState.ValueRO.CurrentGems);
-                    if (amount <= 0.001f)
-                        continue;
+                    // --- Metronome accumulator (first eligible tick deposits immediately) ---
+                    // [TITAN-ORBIT] Priming Accum to beatInterval matches the client metronome, which
+                    // fires on the first frame WantDepositGems is true (no half-second silence).
+                    if (timer.Accum <= 0f)
+                        timer.Accum = beatInterval;
 
-                    // --- Ship cargo ↓ ---
-                    var ship = shipState.ValueRO;
-                    ship.CurrentGems -= amount;
-                    shipState.ValueRW = ship;
+                    timer.Accum += dt;
 
-                    // --- Planet treasury ↑ (level-up math) ---
-                    var planet = planetState.ValueRO;
-                    int level = planet.PlanetLevel;
-                    float gems = planet.CurrentGems;
-                    PlanetEconomyMath.DepositGems(ref level, ref gems, amount);
-                    planet.PlanetLevel = level;
-                    planet.CurrentGems = gems;
-                    planetState.ValueRW = planet;
-
-                    // --- Personal Bank ↑ on the team's HOME ledger (store spend currency) ---
-                    // [TITAN-ORBIT] Do not gate on planet.IsHomePlanet alone — captured moons must
-                    // still credit Bank. MoonOrbitStoreSystem always spends from the home buffer.
-                    if (ownerNetworkId > 0 &&
-                        TryFindHomePlanetEntity(
-                            state.EntityManager,
-                            shipState.ValueRO.Team,
-                            planet.IsHomePlanet ? planetEntity : Entity.Null,
-                            out Entity homeEntity))
+                    // Catch-up while: usually 0–1 beat per fixed step; rare hitch may run 2+.
+                    while (timer.Accum >= beatInterval &&
+                           shipState.ValueRO.CurrentGems > 0.001f)
                     {
-                        ContributedGemsLogic.Add(state.EntityManager, homeEntity, ownerNetworkId, amount);
+                        timer.Accum -= beatInterval;
+
+                        // --- One gem-value chunk (or leftover cargo) ---
+                        float amount = GemEconomyConstants.GetDepositChunkAmount(
+                            shipState.ValueRO.ShipLevel,
+                            shipState.ValueRO.CurrentGems);
+                        if (amount <= 0.001f)
+                            break;
+
+                        // --- Ship cargo ↓ ---
+                        var ship = shipState.ValueRO;
+                        ship.CurrentGems -= amount;
+                        shipState.ValueRW = ship;
+
+                        // --- Planet treasury ↑ (level-up math) ---
+                        var planet = planetState.ValueRO;
+                        int level = planet.PlanetLevel;
+                        float gems = planet.CurrentGems;
+                        PlanetEconomyMath.DepositGems(ref level, ref gems, amount);
+                        planet.PlanetLevel = level;
+                        planet.CurrentGems = gems;
+                        planetState.ValueRW = planet;
+
+                        // --- Personal Bank ↑ on the team's HOME ledger (store spend currency) ---
+                        // [TITAN-ORBIT] Do not gate on planet.IsHomePlanet alone — captured moons must
+                        // still credit Bank. MoonOrbitStoreSystem always spends from the home buffer.
+                        if (ownerNetworkId > 0 &&
+                            TryFindHomePlanetEntity(
+                                state.EntityManager,
+                                shipState.ValueRO.Team,
+                                planet.IsHomePlanet ? planetEntity : Entity.Null,
+                                out Entity homeEntity))
+                        {
+                            ContributedGemsLogic.Add(state.EntityManager, homeEntity, ownerNetworkId, amount);
+                        }
                     }
+
+                    // Only one friendly docked moon can accept deposits for this ship.
+                    break;
+                }
+
+                // --- Persist beat timer / clear when deposit stopped ---
+                if (hasTimer)
+                {
+                    if (!wantDeposit || shipState.ValueRO.CurrentGems <= 0.001f)
+                        timer.Accum = 0f;
+
+                    state.EntityManager.SetComponentData(shipEntity, timer);
                 }
             }
         }
