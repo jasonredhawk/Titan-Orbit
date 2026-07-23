@@ -14,7 +14,8 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// One undirected same-team planet edge in the connection graph.
-    /// Written by <see cref="PlanetConnectionGraphSystem"/> after ownership changes.
+    /// Written by <see cref="PlanetConnectionGraphSystem"/> after ownership changes / timed rebuilds.
+    /// <see cref="CreationSequence"/> makes sticky edges deterministic when segments later cross.
     /// </summary>
     public struct PlanetConnectionEdgeElement : IBufferElementData
     {
@@ -26,11 +27,18 @@ namespace TitanOrbit.ECS
 
         /// <summary>Owning team for this edge.</summary>
         public TeamId Team;
+
+        /// <summary>
+        /// Monotonic create order for sticky history. Lower = created earlier; wins when two
+        /// same-team or enemy edges later intersect (first-created sticky wins).
+        /// </summary>
+        public uint CreationSequence;
     }
 
     /// <summary>
     /// One territory triangle — three same-team planets plus average level / gem multiplier.
-    /// Vertex world positions are resolved live (gem moons) when tinting asteroids or drawing.
+    /// Vertex world positions are resolved from planet centers when tinting asteroids or drawing.
+    /// Only formed when all three edges of the clique exist (lone edges stay visual-only).
     /// </summary>
     public struct PlanetConnectionTriangleElement : IBufferElementData
     {
@@ -47,7 +55,8 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server-only bookkeeping on the graph singleton: last ownership fingerprint and recompute timer.
+    /// Server-only bookkeeping on the graph singleton: last ownership fingerprint, recompute timer,
+    /// and the next sticky edge creation sequence.
     /// </summary>
     public struct PlanetConnectionGraphState : IComponentData
     {
@@ -56,10 +65,17 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Hash of (PlanetId, Ownership, PlanetLevel) across all planets — dirty when capture/level changes.
+        /// Planet centers are fixed, so moon pose is not part of the fingerprint.
         /// </summary>
         public uint OwnershipFingerprint;
 
         /// <summary>True while an animated one-planet-per-tick rebuild is in progress.</summary>
         public bool RebuildInProgress;
+
+        /// <summary>
+        /// Next <see cref="PlanetConnectionEdgeElement.CreationSequence"/> to assign on the server.
+        /// Persists across rebuilds so sticky “first created wins” stays stable.
+        /// </summary>
+        public uint NextEdgeSequence;
     }
 }

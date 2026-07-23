@@ -11,30 +11,24 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client presentation cache of territory triangles whose moon vertices match
-    /// <see cref="PlanetConnectionShapesVisual"/> (live moon proxies + same clock).
+    /// Client presentation cache of territory triangles whose vertices match
+    /// <see cref="PlanetConnectionShapesVisual"/> (planet centers).
     /// <para>
     /// [TITAN-ORBIT] Asteroid tint must use <b>this</b> cache — not ghosted server
-    /// <c>TerritoryTeam</c> / <c>TerritoryTeamsMask</c>. Server ownership runs on a different
-    /// graph side, coarser moon clock (~1 Hz, no tick fraction), and ECS moon math without
-    /// display proxies. That divergence made rocks the wrong colour relative to the fill
-    /// the player sees (localhost and dedicated). Server ghosts stay authoritative for
-    /// mining / destroy yellow gems only.
+    /// <c>TerritoryTeam</c> / <c>TerritoryTeamsMask</c> alone for colour match with the fill.
+    /// Server ghosts stay authoritative for mining / destroy yellow gems.
+    /// Planet centers (not moons) mean this cache only rebuilds when Client topology publishes.
     /// </para>
     /// Safe under Windows join quarantine: never gathers asteroids; only reads Client
-    /// topology + known moon/planet presentation data.
+    /// topology + known planet presentation data.
     /// </summary>
     public static class PlanetConnectionPresentationTriangles
     {
-        /// <summary>Match <see cref="PlanetConnectionShapesVisual"/> moon cache rate.</summary>
-        const float RebuildIntervalSeconds = 1f / 30f;
-
         static readonly List<PlanetConnectionGraphLogic.RuntimeTriangle> s_Managed =
             new List<PlanetConnectionGraphLogic.RuntimeTriangle>(32);
 
         static NativeArray<PlanetConnectionGraphLogic.RuntimeTriangle> s_Native;
         static int s_LastGraphRevision = -1;
-        static float s_NextRebuildUnscaled = -999f;
 
         /// <summary>
         /// Ensures the presentation runtime array is fresh, then returns a Persistent
@@ -58,7 +52,6 @@ namespace TitanOrbit.Game
             out byte mask,
             out TeamId primaryTeam)
         {
-            // --- Map size for toroidal PIT ---
             float mapW = ToroidalMap.GetMapWidth();
             float mapH = ToroidalMap.GetMapHeight();
             if (mapW < 1f) mapW = ToroidalMapEcs.MapWidth;
@@ -80,26 +73,22 @@ namespace TitanOrbit.Game
             s_Managed.Clear();
             DisposeNative();
             s_LastGraphRevision = -1;
-            s_NextRebuildUnscaled = -999f;
         }
 
-        /// <summary>Rebuilds when Client graph revision changes or the 30 Hz timer elapses.</summary>
+        /// <summary>Rebuilds only when Client graph revision changes (planet centers are fixed).</summary>
         static void EnsureFresh()
         {
             int revision = PlanetConnectionGraphCache.ClientPublishRevision;
-            if (revision == s_LastGraphRevision &&
-                Time.unscaledTime < s_NextRebuildUnscaled &&
-                s_Native.IsCreated)
+            if (revision == s_LastGraphRevision && s_Native.IsCreated)
                 return;
 
             Rebuild();
             s_LastGraphRevision = revision;
-            s_NextRebuildUnscaled = Time.unscaledTime + RebuildIntervalSeconds;
         }
 
         /// <summary>
-        /// Rebuilds moon-vertex runtime triangles from Client topology using the same
-        /// <see cref="PlanetConnectionShapesVisual.TryGetCanonicalMoonVertex"/> path as the drawer.
+        /// Rebuilds planet-center runtime triangles from Client topology using the same
+        /// <see cref="PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex"/> path as the drawer.
         /// </summary>
         static void Rebuild()
         {
@@ -122,19 +111,15 @@ namespace TitanOrbit.Game
             var em = world.EntityManager;
             var visualizer = EcsWorldVisualizer.Active;
 
-            // [TITAN-ORBIT] Same clock as PlanetConnectionShapesVisual (tick fraction ON).
-            if (!PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double moonElapsed, includeTickFraction: true))
-                moonElapsed = Time.timeAsDouble;
-
             for (int i = 0; i < triangles.Count; i++)
             {
                 var tri = triangles[i];
-                if (!PlanetConnectionShapesVisual.TryGetCanonicalMoonVertex(
-                        em, visualizer, tri.PlanetIdA, moonElapsed, out Vector3 aCanon) ||
-                    !PlanetConnectionShapesVisual.TryGetCanonicalMoonVertex(
-                        em, visualizer, tri.PlanetIdB, moonElapsed, out Vector3 bCanon) ||
-                    !PlanetConnectionShapesVisual.TryGetCanonicalMoonVertex(
-                        em, visualizer, tri.PlanetIdC, moonElapsed, out Vector3 cCanon))
+                if (!PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, tri.PlanetIdA, out Vector3 aCanon) ||
+                    !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, tri.PlanetIdB, out Vector3 bCanon) ||
+                    !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, tri.PlanetIdC, out Vector3 cCanon))
                     continue;
 
                 s_Managed.Add(new PlanetConnectionGraphLogic.RuntimeTriangle

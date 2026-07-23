@@ -680,6 +680,17 @@ namespace TitanOrbit.ECS
                         var unloadOutcome = DeliverUnload(ref planetState, t.Amount, team, planetTransform, planetSize);
                         planetStateById[t.TargetPlanetId] = planetState;
                         ecb.SetComponent(planetEntity, planetState);
+                        if (unloadOutcome == PeopleUnloadOutcome.Captured)
+                        {
+                            // [TITAN-ORBIT] Immediate client graph / minimap refresh — do not wait on
+                            // rate-limited planet ghost snapshots (MaxSendChunks + low Importance).
+                            PlanetOwnershipNetNotify.Send(
+                                ref ecb,
+                                planetState.PlanetId,
+                                team,
+                                planetState.Population,
+                                planetState.PlanetLevel);
+                        }
                         if (state.EntityManager.HasComponent<PlanetGrowthState>(planetEntity))
                         {
                             var growth = state.EntityManager.GetComponentData<PlanetGrowthState>(planetEntity);

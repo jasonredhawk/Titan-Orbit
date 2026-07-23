@@ -11,18 +11,14 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Draws semi-transparent team territory triangles in world space (vertices at each
-    /// planet's gem moon). Reads topology from <see cref="PlanetConnectionGraphCache"/> — never
-    /// runs planet/asteroid ECS gathers. Port of NGO <c>PlanetConnectionShapesVisual</c>.
+    /// [HYBRID] Draws semi-transparent team territory triangles and lone sticky edges in world
+    /// space (vertices at each <b>planet center</b>). Reads topology from
+    /// <see cref="PlanetConnectionGraphCache"/> — never runs planet/asteroid ECS gathers.
     /// <para>
-    /// [TITAN-ORBIT] Moon proxies live in <b>display</b> space (retiled near the ship). We always
-    /// wrap vertices to canonical XZ, unwrap B/C via shortest-path offsets from the anchor, then
-    /// retiling the whole triangle near the camera — so seams stretch across the wrap instead of
-    /// placing a vertex a full map away (or looking “high” on the play plane).
-    /// </para>
-    /// <para>
-    /// Moon world verts are cached (~30 Hz); each DrawShapes only retiles + draws. That keeps
-    /// camera callbacks cheap while moons still orbit smoothly enough for territory fill.
+    /// [TITAN-ORBIT] Planet centers (not gem moons) keep lines from crossing as moons orbit and
+    /// let us rebuild the draw cache only when topology publishes — not every frame / 30 Hz.
+    /// Vertices are wrapped to canonical XZ, unwrapped via shortest-path offsets from the anchor,
+    /// then retiled near the camera for seam-correct display.
     /// </para>
     /// Client presentation only.
     /// </summary>
@@ -41,9 +37,6 @@ namespace TitanOrbit.Game
         /// <summary>Border alpha (original ~0.22).</summary>
         [SerializeField] float triangleBorderAlpha = 0.22f;
 
-        /// <summary>How often moon canonical verts refresh (retile still runs every DrawShapes).</summary>
-        const float MoonCacheIntervalSeconds = 1f / 30f;
-
         /// <summary>Cached canonical triangle (anchor + B/C offsets + colours).</summary>
         struct CachedWorldTriangle
         {
@@ -54,9 +47,19 @@ namespace TitanOrbit.Game
             public Color Border;
         }
 
+        /// <summary>
+        /// Cached lone edge (not a triangle side) — anchor + shortest offset to the other planet.
+        /// </summary>
+        struct CachedWorldEdge
+        {
+            public Vector3 Anchor;
+            public Vector3 OffsetB;
+            public Color Color;
+        }
+
         readonly List<CachedWorldTriangle> _worldCache = new List<CachedWorldTriangle>(16);
+        readonly List<CachedWorldEdge> _edgeCache = new List<CachedWorldEdge>(16);
         int _lastGraphRevision = -1;
-        float _nextMoonCacheTime;
 
         /// <summary>
         /// Ensures a drawer exists under <c>PlanetConnectionSystems</c> when the client is in-game.
@@ -72,7 +75,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [UNITY] Shapes draw callback — fills + borders for every published triangle, plus wrap copies.
+        /// [UNITY] Shapes draw callback — fills + borders for every published triangle, lone edges,
+        /// plus wrap copies near seams. Retiles every frame; planet verts refresh only on topology.
         /// </summary>
         public override void DrawShapes(Camera cam)
         {
@@ -80,19 +84,21 @@ namespace TitanOrbit.Game
                 return;
 
             var triangles = PlanetConnectionGraphCache.CurrentTriangles;
-            if (triangles == null || triangles.Count == 0)
+            var edges = PlanetConnectionGraphCache.CurrentEdges;
+            int triCount = triangles?.Count ?? 0;
+            int edgeCount = edges?.Count ?? 0;
+            if (triCount == 0 && edgeCount == 0)
                 return;
 
-            // Refresh moon verts on topology change or ~30 Hz — not every camera callback.
+            // Planet centers are fixed — rebuild draw cache only when graph topology publishes.
             int revision = PlanetConnectionGraphCache.ClientPublishRevision;
-            if (revision != _lastGraphRevision || Time.unscaledTime >= _nextMoonCacheTime)
+            if (revision != _lastGraphRevision)
             {
                 RebuildWorldCache();
                 _lastGraphRevision = revision;
-                _nextMoonCacheTime = Time.unscaledTime + MoonCacheIntervalSeconds;
             }
 
-            if (_worldCache.Count == 0)
+            if (_worldCache.Count == 0 && _edgeCache.Count == 0)
                 return;
 
             World world = EcsGameBridge.GetVisualizationWorld();
@@ -121,16 +127,30 @@ namespace TitanOrbit.Game
                     c.y = triangleHeight;
                     DrawTriangleWithWraps(a, b, c, mapW, mapH, tri.Fill, tri.Border);
                 }
+
+                for (int i = 0; i < _edgeCache.Count; i++)
+                {
+                    var edge = _edgeCache[i];
+                    Vector3 a = ToroidalMap.GetDisplayPosition(edge.Anchor, referencePos);
+                    Vector3 b = a + edge.OffsetB;
+                    a.y = triangleHeight;
+                    b.y = triangleHeight;
+                    DrawEdgeWithWraps(a, b, mapW, mapH, edge.Color);
+                }
             }
         }
 
-        /// <summary>Resolves gem-moon vertices into canonical world space (expensive path).</summary>
+        /// <summary>Resolves planet-center vertices into canonical world space.</summary>
         void RebuildWorldCache()
         {
             _worldCache.Clear();
+            _edgeCache.Clear();
 
             var triangles = PlanetConnectionGraphCache.CurrentTriangles;
-            if (triangles == null || triangles.Count == 0)
+            var edges = PlanetConnectionGraphCache.CurrentEdges;
+            int triCount = triangles?.Count ?? 0;
+            int edgeCount = edges?.Count ?? 0;
+            if (triCount == 0 && edgeCount == 0)
                 return;
 
             World world = EcsGameBridge.GetVisualizationWorld();
@@ -139,15 +159,12 @@ namespace TitanOrbit.Game
             var em = world.EntityManager;
             var visualizer = EcsWorldVisualizer.Active;
 
-            if (!PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double moonElapsed, includeTickFraction: true))
-                moonElapsed = Time.timeAsDouble;
-
-            for (int i = 0; i < triangles.Count; i++)
+            for (int i = 0; i < triCount; i++)
             {
                 var tri = triangles[i];
-                if (!TryGetCanonicalMoonVertex(em, visualizer, tri.PlanetIdA, moonElapsed, out Vector3 aCanon) ||
-                    !TryGetCanonicalMoonVertex(em, visualizer, tri.PlanetIdB, moonElapsed, out Vector3 bCanon) ||
-                    !TryGetCanonicalMoonVertex(em, visualizer, tri.PlanetIdC, moonElapsed, out Vector3 cCanon))
+                if (!TryGetCanonicalPlanetVertex(em, visualizer, tri.PlanetIdA, out Vector3 aCanon) ||
+                    !TryGetCanonicalPlanetVertex(em, visualizer, tri.PlanetIdB, out Vector3 bCanon) ||
+                    !TryGetCanonicalPlanetVertex(em, visualizer, tri.PlanetIdC, out Vector3 cCanon))
                     continue;
 
                 int idA = tri.PlanetIdA, idB = tri.PlanetIdB, idC = tri.PlanetIdC;
@@ -175,11 +192,38 @@ namespace TitanOrbit.Game
                     Border = new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha),
                 });
             }
+
+            for (int i = 0; i < edgeCount; i++)
+            {
+                var edge = edges[i];
+                if (PlanetConnectionGraphLogic.EdgeIsTriangleSide(
+                        edge.PlanetIdA, edge.PlanetIdB, edge.Team, triangles))
+                    continue;
+
+                if (!TryGetCanonicalPlanetVertex(em, visualizer, edge.PlanetIdA, out Vector3 aCanon) ||
+                    !TryGetCanonicalPlanetVertex(em, visualizer, edge.PlanetIdB, out Vector3 bCanon))
+                    continue;
+
+                Vector3 anchor = aCanon;
+                Vector3 other = bCanon;
+                if (edge.PlanetIdB < edge.PlanetIdA)
+                {
+                    anchor = bCanon;
+                    other = aCanon;
+                }
+
+                Color baseColor = edge.Team.ToColor();
+                _edgeCache.Add(new CachedWorldEdge
+                {
+                    Anchor = anchor,
+                    OffsetB = ToroidalMap.ShortestWorldOffsetXZ(anchor, other),
+                    Color = new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha),
+                });
+            }
         }
 
         /// <summary>
-        /// Draws a triangle and ±map-tile copies only when a vertex sits near a wrap seam
-        /// (avoids 5× Shapes draws for every triangle every camera callback).
+        /// Draws a triangle and ±map-tile copies only when a vertex sits near a wrap seam.
         /// </summary>
         void DrawTriangleWithWraps(
             Vector3 a, Vector3 b, Vector3 c, float mapW, float mapH, Color fillColor, Color borderColor)
@@ -202,6 +246,28 @@ namespace TitanOrbit.Game
                 Vector3 off = offsets[i];
                 Draw.Triangle(a + off, b + off, c + off, fillColor);
                 Draw.TriangleBorder(a + off, b + off, c + off, triangleBorderThickness, borderColor);
+            }
+        }
+
+        /// <summary>Draws a lone edge line with optional seam wrap copies.</summary>
+        void DrawEdgeWithWraps(Vector3 a, Vector3 b, float mapW, float mapH, Color color)
+        {
+            Draw.Line(a, b, triangleBorderThickness, color);
+
+            if (!NeedsWrapCopies(a, b, a, mapW, mapH))
+                return;
+
+            Vector3[] offsets =
+            {
+                new Vector3(mapW, 0f, 0f),
+                new Vector3(-mapW, 0f, 0f),
+                new Vector3(0f, 0f, mapH),
+                new Vector3(0f, 0f, -mapH),
+            };
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                Vector3 off = offsets[i];
+                Draw.Line(a + off, b + off, triangleBorderThickness, color);
             }
         }
 
@@ -239,47 +305,41 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Moon world XZ wrapped into canonical toroidal space (Y forced to 0).
-        /// Prefers live moon proxy, else ECS planet pose + orbit math.
+        /// Planet core XZ wrapped into canonical toroidal space (Y forced to 0).
+        /// Uses hybrid visualizer planet pose (quarantine-safe) when available.
+        /// </summary>
+        public static bool TryGetCanonicalPlanetVertex(
+            EntityManager em,
+            EcsWorldVisualizer visualizer,
+            int planetId,
+            out Vector3 planetCanonical)
+        {
+            planetCanonical = default;
+            if (planetId == 0)
+                return false;
+
+            if (visualizer == null ||
+                !visualizer.TryGetPlanetPoseByPlanetId(
+                    em, planetId, out float3 planetPos, out _, out _))
+                return false;
+
+            planetPos.y = 0f;
+            Vector3 raw = new Vector3(planetPos.x, 0f, planetPos.z);
+            planetCanonical = ToroidalMap.WrapPosition(raw);
+            planetCanonical.y = 0f;
+            return true;
+        }
+
+        /// <summary>
+        /// [LEGACY] Old moon-vertex helper — territory connections now use
+        /// <see cref="TryGetCanonicalPlanetVertex"/>. Kept so any stray call sites still compile.
         /// </summary>
         public static bool TryGetCanonicalMoonVertex(
             EntityManager em,
             EcsWorldVisualizer visualizer,
             int planetId,
             double moonElapsed,
-            out Vector3 moonCanonical)
-        {
-            moonCanonical = default;
-            if (planetId == 0)
-                return false;
-
-            Vector3 raw;
-            if (PlanetGemMoonVisualRegistry.TryGetMoon(planetId, out var moonProxy) && moonProxy != null)
-            {
-                raw = moonProxy.MoonWorldPosition;
-            }
-            else if (visualizer != null &&
-                     visualizer.TryGetPlanetPoseByPlanetId(
-                         em, planetId, out float3 planetPos, out float scale, out PlanetState state))
-            {
-                float3 moon = PlanetOrbitMath.GetMoonWorldPosition(
-                    planetPos,
-                    math.max(0.25f, scale),
-                    state.PlanetLevel,
-                    state.PlanetId,
-                    moonElapsed,
-                    state.IsHomePlanet);
-                raw = new Vector3(moon.x, 0f, moon.z);
-            }
-            else
-            {
-                return false;
-            }
-
-            raw.y = 0f;
-            moonCanonical = ToroidalMap.WrapPosition(raw);
-            moonCanonical.y = 0f;
-            return true;
-        }
+            out Vector3 moonCanonical) =>
+            TryGetCanonicalPlanetVertex(em, visualizer, planetId, out moonCanonical);
     }
 }

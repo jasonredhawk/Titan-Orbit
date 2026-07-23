@@ -658,40 +658,63 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Picks starting ownership for non-home planets so each team gets up to
-        /// <paramref name="desiredPerTeam"/> owned neutrals.
+        /// One deferred starting capture: which neutral layout index a team will own, in deal order.
+        /// Applied one-at-a-time during map generation so sticky planet connections can rebuild
+        /// between captures (mimics players capturing over time).
+        /// </summary>
+        public struct StartingNeutralClaim
+        {
+            /// <summary>Index into the neutral layout list from <see cref="BuildNeutralPlanets"/>.</summary>
+            public int NeutralLayoutIndex;
+
+            /// <summary>Team that will receive this planet when the claim is applied.</summary>
+            public TeamId Team;
+        }
+
+        /// <summary>
+        /// Builds a round-robin starting-capture order so each team gets one neutral at a time
+        /// before the next round (TeamA, TeamB, … then TeamA again).
         /// <para>
-        /// If there are not enough neutrals for every team to reach the desired count, ownership is
-        /// spread as evenly as possible (e.g. want 4×4 but only 12 neutrals → 3 each). Any leftover
-        /// after the even floor is given to randomly chosen teams that currently have fewer.
-        /// Remaining planets stay <see cref="TeamId.None"/>.
+        /// [TITAN-ORBIT] On each team's turn they “choose” the closest still-available neutral to
+        /// their home (toroidal distance). Totals stay even across teams when neutrals are scarce
+        /// (same floor/remainder as the old instant assign). Leftover neutrals stay unowned.
         /// </para>
+        /// Callers spawn neutrals as <see cref="TeamId.None"/> first, then apply each claim over
+        /// successive sim ticks so <c>PlanetConnectionGraphSystem</c> can rebuild sticky edges
+        /// between captures (avoids wiring every pre-owned planet in one fingerprint update).
         /// </summary>
         /// <param name="desiredPerTeam">Designer setting (0 disables pre-ownership).</param>
         /// <param name="teamCount">Active teams this match (2–5).</param>
-        /// <param name="neutralCount">How many non-home planets were placed.</param>
-        /// <param name="rng">Match RNG — used to shuffle which planets/teams get leftovers.</param>
-        /// <param name="outOwnership">Length = neutralCount; filled with TeamA..E or None.</param>
-        public static void AssignStartingOwnedNeutralTeams(
+        /// <param name="homePositions">Home world XZ per team index 0..teamCount-1 (TeamA = 0).</param>
+        /// <param name="neutrals">Placed neutral layouts (positions used for closest-pick).</param>
+        /// <param name="mapW">Toroidal map width.</param>
+        /// <param name="mapH">Toroidal map height.</param>
+        /// <param name="rng">Match RNG — used only for remainder team picks when counts are uneven.</param>
+        /// <param name="outClaims">Cleared then filled in deal order (round-robin).</param>
+        public static void BuildStartingNeutralClaimOrder(
             int desiredPerTeam,
             int teamCount,
-            int neutralCount,
+            in NativeArray<float3> homePositions,
+            in NativeList<NeutralPlanetLayout> neutrals,
+            float mapW,
+            float mapH,
             ref Random rng,
-            NativeArray<TeamId> outOwnership)
+            ref NativeList<StartingNeutralClaim> outClaims)
         {
-            // --- Clear to neutral ---
-            for (int i = 0; i < outOwnership.Length; i++)
-                outOwnership[i] = TeamId.None;
+            outClaims.Clear();
 
-            if (desiredPerTeam <= 0 || teamCount < MinSupportedTeams || neutralCount <= 0)
+            if (desiredPerTeam <= 0 ||
+                teamCount < MinSupportedTeams ||
+                !neutrals.IsCreated ||
+                neutrals.Length <= 0 ||
+                !homePositions.IsCreated ||
+                homePositions.Length < teamCount)
                 return;
 
             teamCount = math.clamp(teamCount, MinSupportedTeams, MaxSupportedTeams);
-            if (outOwnership.Length < neutralCount)
-                neutralCount = outOwnership.Length;
+            int neutralCount = neutrals.Length;
 
-            // --- How many we can actually assign ---
-            // Cap at available neutrals; then split evenly across teams.
+            // --- How many each team should receive (even floor + random remainder) ---
             int totalDesired = desiredPerTeam * teamCount;
             int totalAssign = math.min(totalDesired, neutralCount);
             if (totalAssign <= 0)
@@ -700,13 +723,10 @@ namespace TitanOrbit.ECS
             int baseEach = totalAssign / teamCount;
             int remainder = totalAssign % teamCount;
 
-            // counts[t] = how many neutrals team (t+1) receives.
-            var counts = new NativeArray<int>(teamCount, Allocator.Temp);
+            var remaining = new NativeArray<int>(teamCount, Allocator.Temp);
             for (int t = 0; t < teamCount; t++)
-                counts[t] = baseEach;
+                remaining[t] = baseEach;
 
-            // --- Uneven leftovers → random teams that currently have fewer ---
-            // [TITAN-ORBIT] Fisher–Yates on team indices; first `remainder` teams get +1.
             if (remainder > 0)
             {
                 var teamOrder = new NativeArray<int>(teamCount, Allocator.Temp);
@@ -719,41 +739,57 @@ namespace TitanOrbit.ECS
                 }
 
                 for (int r = 0; r < remainder; r++)
-                    counts[teamOrder[r]]++;
+                    remaining[teamOrder[r]]++;
 
                 teamOrder.Dispose();
             }
 
-            // --- Build shuffled ownership slots, then assign to shuffled planet indices ---
-            var slots = new NativeList<TeamId>(totalAssign, Allocator.Temp);
-            for (int t = 0; t < teamCount; t++)
-            {
-                var team = (TeamId)(t + 1);
-                for (int n = 0; n < counts[t]; n++)
-                    slots.Add(team);
-            }
-
-            for (int i = slots.Length - 1; i > 0; i--)
-            {
-                int j = rng.NextInt(0, i + 1);
-                (slots[i], slots[j]) = (slots[j], slots[i]);
-            }
-
-            var planetOrder = new NativeArray<int>(neutralCount, Allocator.Temp);
+            // --- Available neutral indices (true until claimed in this deal) ---
+            var available = new NativeList<int>(neutralCount, Allocator.Temp);
             for (int i = 0; i < neutralCount; i++)
-                planetOrder[i] = i;
-            for (int i = neutralCount - 1; i > 0; i--)
+                available.Add(i);
+
+            // --- Round-robin deal: one planet per team per pass ---
+            // [TITAN-ORBIT] Closest-to-home pick mimics expanding from the homeworld first.
+            bool anyLeft = true;
+            while (anyLeft && available.Length > 0)
             {
-                int j = rng.NextInt(0, i + 1);
-                (planetOrder[i], planetOrder[j]) = (planetOrder[j], planetOrder[i]);
+                anyLeft = false;
+                for (int t = 0; t < teamCount; t++)
+                {
+                    if (remaining[t] <= 0 || available.Length == 0)
+                        continue;
+
+                    anyLeft = true;
+                    float3 homePos = homePositions[t];
+                    int bestAvailSlot = 0;
+                    float bestDist = float.MaxValue;
+                    for (int a = 0; a < available.Length; a++)
+                    {
+                        int nIdx = available[a];
+                        float d = ToroidalMapEcs.ToroidalDistance(
+                            homePos, neutrals[nIdx].Position, mapW, mapH);
+                        if (d < bestDist)
+                        {
+                            bestDist = d;
+                            bestAvailSlot = a;
+                        }
+                    }
+
+                    int chosen = available[bestAvailSlot];
+                    available.RemoveAtSwapBack(bestAvailSlot);
+                    remaining[t]--;
+
+                    outClaims.Add(new StartingNeutralClaim
+                    {
+                        NeutralLayoutIndex = chosen,
+                        Team = (TeamId)(t + 1),
+                    });
+                }
             }
 
-            for (int i = 0; i < slots.Length; i++)
-                outOwnership[planetOrder[i]] = slots[i];
-
-            counts.Dispose();
-            slots.Dispose();
-            planetOrder.Dispose();
+            remaining.Dispose();
+            available.Dispose();
         }
     }
 }

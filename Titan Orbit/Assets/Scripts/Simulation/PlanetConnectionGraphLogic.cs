@@ -7,10 +7,17 @@ using Unity.Mathematics;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Pure toroidal planet-connection graph math for same-team territory triangles.
-    /// Port of the NGO <c>PlanetConnectionSystem</c> rebuild rule: each owned planet forms one
-    /// triangle with its two closest teammates (lines may cross). Point-in-triangle uses
-    /// shortest-path unwrap so territories work across map seams.
+    /// Pure toroidal planet-connection graph math for same-team territory.
+    /// <para>
+    /// [TITAN-ORBIT] One global planar graph on <b>planet centers</b>: <b>no two lines ever cross</b>,
+    /// whether friendly or enemy. Sticky history wins — whoever created an edge first keeps it
+    /// (<see cref="Edge.CreationSequence"/>); a later team blocked by that segment cannot add the
+    /// crossing line and therefore cannot form triangles that need it. After sticky seed + cross
+    /// resolve, we greedily add every shorter same-team edge that still clears the whole map.
+    /// Planets may sit in many same-team triangles. Lone edges are visual-only; bonuses need a
+    /// filled 3-clique.
+    /// </para>
+    /// Point-in-triangle uses shortest-path unwrap so territories work across map seams.
     /// Shared by server authority (asteroid tint, mining, pop bonuses) and client prediction
     /// (friendly speed). Burst-safe — no managed allocations inside hot helpers.
     /// </summary>
@@ -41,8 +48,9 @@ namespace TitanOrbit.Simulation
             public int PlanetLevel;
 
             /// <summary>
-            /// Gem-moon XZ in canonical toroidal space (Y ignored) for nearest-neighbor edges.
-            /// [TITAN-ORBIT] Must be moon vertices, not planet centers — matches drawn triangles.
+            /// Planet-core XZ in canonical toroidal space (Y ignored) for nearest-neighbor edges.
+            /// [TITAN-ORBIT] Uses planet centers — not gem moons — so sticky non-crossing topology
+            /// stays stable as moons orbit (moons would constantly invalidate crossings).
             /// </summary>
             public float3 Position;
 
@@ -50,12 +58,19 @@ namespace TitanOrbit.Simulation
             public bool IsHomePlanet;
         }
 
-        /// <summary>Undirected same-team edge between two planet ids.</summary>
+        /// <summary>
+        /// Undirected same-team edge between two planet ids (part of the global non-crossing map).
+        /// <see cref="CreationSequence"/> is sticky history: lower = created earlier; wins when any
+        /// two edges (any teams) later intersect under current planet centers.
+        /// </summary>
         public struct Edge
         {
             public int PlanetIdA;
             public int PlanetIdB;
             public TeamId Team;
+
+            /// <summary>Monotonic create order for this world's graph (server or client cache).</summary>
+            public uint CreationSequence;
         }
 
         /// <summary>Territory triangle — three same-team planets plus bonus metadata.</summary>
@@ -74,8 +89,8 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Runtime triangle with live gem-moon vertices for point-in-triangle and drawing.
-        /// Topology comes from <see cref="Triangle"/>; positions update every tick as moons orbit.
+        /// Runtime triangle with planet-core vertices for point-in-triangle and drawing.
+        /// Topology comes from <see cref="Triangle"/>; positions are stable (planets do not drift).
         /// </summary>
         public struct RuntimeTriangle
         {
@@ -91,123 +106,87 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Clears and rebuilds edges/triangles for every team present in <paramref name="planets"/>.
-        /// Rule: for each owned planet P, connect to the two closest teammates and form (P,Q,R).
+        /// Clears and rebuilds the global non-crossing edge map, then same-team territory triangles.
+        /// <para>
+        /// Steps: (1) seed every sticky edge still owned by its team; (2) if any two edges cross
+        /// (friend or foe), drop the newer <see cref="Edge.CreationSequence"/>; (3) greedily add
+        /// every shorter same-team pair that does not cross <b>any</b> existing edge; (4) publish
+        /// every same-team 3-clique as a triangle.
+        /// </para>
         /// </summary>
         /// <param name="planets">All planets (neutral entries are skipped).</param>
         /// <param name="mapW">Toroidal map width.</param>
         /// <param name="mapH">Toroidal map height.</param>
+        /// <param name="previousEdges">Edges from the last rebuild (may be empty on first run).</param>
+        /// <param name="nextSequence">In/out monotonic sequence for newly created edges.</param>
         /// <param name="edges">Destination edge list (cleared).</param>
         /// <param name="triangles">Destination triangle list (cleared).</param>
         public static void RebuildFullGraph(
             in NativeArray<PlanetInput> planets,
             float mapW,
             float mapH,
+            in NativeList<Edge> previousEdges,
+            ref uint nextSequence,
             ref NativeList<Edge> edges,
             ref NativeList<Triangle> triangles)
         {
             edges.Clear();
             triangles.Clear();
-            if (!planets.IsCreated || planets.Length < 3)
+
+            // --- Need at least two owned planets somewhere to form a lone edge ---
+            if (!planets.IsCreated || planets.Length < 2)
                 return;
 
-            // --- Collect distinct non-None teams ---
-            // [TITAN-ORBIT] At most TeamA–TeamE (5). Fixed scratch avoids a HashSet.
-            TeamId t0 = TeamId.None, t1 = TeamId.None, t2 = TeamId.None, t3 = TeamId.None, t4 = TeamId.None;
-            int teamCount = 0;
-            for (int i = 0; i < planets.Length; i++)
+            // --- Phase 1: seed all sticky edges still valid (any team) ---
+            // [TITAN-ORBIT] Capture / team flip drops an edge when either endpoint leaves that team.
+            if (previousEdges.IsCreated)
             {
-                TeamId team = planets[i].Team;
-                if (team == TeamId.None)
-                    continue;
-                if (team == t0 || team == t1 || team == t2 || team == t3 || team == t4)
-                    continue;
-                if (teamCount == 0) t0 = team;
-                else if (teamCount == 1) t1 = team;
-                else if (teamCount == 2) t2 = team;
-                else if (teamCount == 3) t3 = team;
-                else if (teamCount == 4) t4 = team;
-                teamCount++;
-                if (teamCount >= 5)
-                    break;
+                for (int i = 0; i < previousEdges.Length; i++)
+                {
+                    var e = previousEdges[i];
+                    if (e.Team == TeamId.None)
+                        continue;
+                    if (!TeamOwnsPlanetId(planets, e.PlanetIdA, e.Team) ||
+                        !TeamOwnsPlanetId(planets, e.PlanetIdB, e.Team))
+                        continue;
+                    TryAddEdgeExact(ref edges, e);
+                }
             }
 
-            for (int ti = 0; ti < teamCount; ti++)
-            {
-                TeamId team = ti == 0 ? t0 : ti == 1 ? t1 : ti == 2 ? t2 : ti == 3 ? t3 : t4;
-                RebuildTeamGraph(planets, team, mapW, mapH, ref edges, ref triangles);
-            }
+            // --- Phase 2: resolve geometric crosses across the whole map — first-created wins ---
+            // [TITAN-ORBIT] Friendly vs friendly, enemy vs enemy, and friend vs enemy all count.
+            ResolveCrossingStickyEdges(planets, ref edges, mapW, mapH);
+
+            // --- Phase 3: pack every shorter same-team edge that clears every existing line ---
+            PackNonCrossingEdgesGreedy(planets, mapW, mapH, ref nextSequence, ref edges);
+
+            // --- Phase 4: publish same-team 3-cliques as territory triangles ---
+            PublishTrianglesForAllTeams(planets, ref edges, ref triangles);
         }
 
         /// <summary>
-        /// Adds edges/triangles for one team using each planet's two closest teammates.
-        /// <para>
-        /// [TITAN-ORBIT] For every owned planet P, find the two nearest teammates Q and R by
-        /// toroidal distance on <see cref="PlanetInput.Position"/> (gem-moon XZ), then form
-        /// triangle (P,Q,R). Several planets can propose the same three corners — 
-        /// <see cref="TryAddTriangle"/> and <see cref="TryAddEdge"/> dedupe by sorted planet ids
-        /// so we never store a duplicate.
-        /// </para>
-        /// <para>
-        /// Intentional (not mutual nearest-neighbor): a far capture still gets a triangle with
-        /// its two closest friends even when those friends prefer closer neighbors. Mutual
-        /// filtering left some captured planets with no connection at all.
-        /// </para>
+        /// True when segment AB properly intersects segment CD on the torus (XZ).
+        /// Shared endpoints are not a cross (caller should skip same-planet pairs).
         /// </summary>
-        public static void RebuildTeamGraph(
-            in NativeArray<PlanetInput> planets,
-            TeamId team,
+        public static bool SegmentsCrossToroidalXZ(
+            float3 a,
+            float3 b,
+            float3 c,
+            float3 d,
             float mapW,
-            float mapH,
-            ref NativeList<Edge> edges,
-            ref NativeList<Triangle> triangles)
+            float mapH)
         {
-            if (team == TeamId.None || !planets.IsCreated)
-                return;
-
-            // --- Count teammates ---
-            // Need at least three same-team planets to form any triangle.
-            int n = 0;
-            for (int i = 0; i < planets.Length; i++)
-            {
-                if (planets[i].Team == team)
-                    n++;
-            }
-
-            if (n < 3)
-                return;
-
-            // --- Compact teammate indices into a temp list ---
-            // [STANDARD] Allocator.Temp — freed before this method returns (Burst-friendly).
-            var indices = new NativeList<int>(n, Allocator.Temp);
-            for (int i = 0; i < planets.Length; i++)
-            {
-                if (planets[i].Team == team)
-                    indices.Add(i);
-            }
-
-            // --- One triangle per planet: connect P to its two closest teammates ---
-            // [TITAN-ORBIT] Distances use gem-moon positions (matches drawn lines), toroidal so
-            // neighbors across the map seam still win when they are truly closest.
-            for (int pi = 0; pi < indices.Length; pi++)
-            {
-                int pIdx = indices[pi];
-                FindTwoClosest(planets, indices, pIdx, mapW, mapH, out int qIdx, out int rIdx);
-                if (qIdx < 0 || rIdx < 0)
-                    continue;
-
-                var p = planets[pIdx];
-                var q = planets[qIdx];
-                var r = planets[rIdx];
-
-                // Edges + triangle; helpers no-op when the same undirected set already exists.
-                TryAddEdge(ref edges, p.PlanetId, q.PlanetId, team);
-                TryAddEdge(ref edges, p.PlanetId, r.PlanetId, team);
-                TryAddEdge(ref edges, q.PlanetId, r.PlanetId, team);
-                TryAddTriangle(ref triangles, p, q, r, team);
-            }
-
-            indices.Dispose();
+            // --- Local chart anchored at A ---
+            // [TITAN-ORBIT] Place B via shortest offset from A; place C from A; place D as
+            // C_local + shortest(C→D). Good for short connection segments relative to map size.
+            float2 a0 = float2.zero;
+            float3 offB = ToroidalMapEcs.ShortestOffsetXZ(a, b, mapW, mapH);
+            float3 offC = ToroidalMapEcs.ShortestOffsetXZ(a, c, mapW, mapH);
+            float3 offCD = ToroidalMapEcs.ShortestOffsetXZ(c, d, mapW, mapH);
+            float2 b0 = new float2(offB.x, offB.z);
+            float2 c0 = new float2(offC.x, offC.z);
+            float2 d0 = c0 + new float2(offCD.x, offCD.z);
+            return SegmentsCrossProper2D(a0, b0, c0, d0);
         }
 
         /// <summary>
@@ -298,7 +277,7 @@ namespace TitanOrbit.Simulation
         /// Used by <c>AsteroidTerritorySystem</c> so each rock is not tested twice per refresh.
         /// </summary>
         /// <param name="worldPos">Canonical wrapped XZ position.</param>
-        /// <param name="runtime">Live moon-vertex triangles.</param>
+        /// <param name="runtime">Live planet-center triangles.</param>
         /// <param name="mapW">Toroidal map width.</param>
         /// <param name="mapH">Toroidal map height.</param>
         /// <param name="mask">OR of every team bit that contains the point.</param>
@@ -527,67 +506,469 @@ namespace TitanOrbit.Simulation
         public static float GetCornerBonusStrength(float averageLevel) =>
             PerTrianglePlanetBonusFraction * averageLevel;
 
-        /// <summary>2D cross product (x*y components) for barycentric triangle tests.</summary>
+        /// <summary>
+        /// True when the undirected edge (a,b) is a side of any triangle in <paramref name="triangles"/>
+        /// for the same team — presentation skips drawing those edges twice (triangle border covers them).
+        /// </summary>
+        public static bool EdgeIsTriangleSide(
+            int planetIdA,
+            int planetIdB,
+            TeamId team,
+            in NativeList<Triangle> triangles)
+        {
+            if (!triangles.IsCreated || planetIdA == planetIdB)
+                return false;
+
+            CanonicalEdgeIds(planetIdA, planetIdB, out int a, out int b);
+            for (int i = 0; i < triangles.Length; i++)
+            {
+                var t = triangles[i];
+                if (t.Team != team)
+                    continue;
+                if (EdgeMatchesTriangleSide(a, b, t.PlanetIdA, t.PlanetIdB) ||
+                    EdgeMatchesTriangleSide(a, b, t.PlanetIdB, t.PlanetIdC) ||
+                    EdgeMatchesTriangleSide(a, b, t.PlanetIdC, t.PlanetIdA))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Managed-list overload for presentation (Shapes / minimap).</summary>
+        public static bool EdgeIsTriangleSide(
+            int planetIdA,
+            int planetIdB,
+            TeamId team,
+            System.Collections.Generic.IReadOnlyList<Triangle> triangles)
+        {
+            if (triangles == null || planetIdA == planetIdB)
+                return false;
+
+            CanonicalEdgeIds(planetIdA, planetIdB, out int a, out int b);
+            for (int i = 0; i < triangles.Count; i++)
+            {
+                var t = triangles[i];
+                if (t.Team != team)
+                    continue;
+                if (EdgeMatchesTriangleSide(a, b, t.PlanetIdA, t.PlanetIdB) ||
+                    EdgeMatchesTriangleSide(a, b, t.PlanetIdB, t.PlanetIdC) ||
+                    EdgeMatchesTriangleSide(a, b, t.PlanetIdC, t.PlanetIdA))
+                    return true;
+            }
+
+            return false;
+        }
+
+        // -------------------------------------------------------------------------
+        // Sticky rebuild helpers
+        // -------------------------------------------------------------------------
+
+        /// <summary>2D cross product (x*y components) for barycentric / orientation tests.</summary>
         static float Cross(float2 a, float2 b) => a.x * b.y - a.y * b.x;
 
-        /// <summary>Finds the two nearest teammates to <paramref name="pIdx"/> by toroidal distance.</summary>
-        static void FindTwoClosest(
-            in NativeArray<PlanetInput> planets,
-            in NativeList<int> teammateIndices,
-            int pIdx,
-            float mapW,
-            float mapH,
-            out int qIdx,
-            out int rIdx)
+        /// <summary>
+        /// Proper segment intersection in R2 (not merely touching at an endpoint).
+        /// Collinear overlaps are treated as non-crossing for connection purposes.
+        /// </summary>
+        static bool SegmentsCrossProper2D(float2 a, float2 b, float2 c, float2 d)
         {
-            qIdx = -1;
-            rIdx = -1;
-            float bestQ = float.MaxValue;
-            float bestR = float.MaxValue;
-            float3 pPos = planets[pIdx].Position;
+            // --- Shared / nearly-shared endpoints → not a cross ---
+            const float eps = 1e-4f;
+            if (math.distancesq(a, c) < eps * eps || math.distancesq(a, d) < eps * eps ||
+                math.distancesq(b, c) < eps * eps || math.distancesq(b, d) < eps * eps)
+                return false;
 
-            for (int i = 0; i < teammateIndices.Length; i++)
+            float o1 = Orient(a, b, c);
+            float o2 = Orient(a, b, d);
+            float o3 = Orient(c, d, a);
+            float o4 = Orient(c, d, b);
+
+            // Strict opposite orientations on both segments.
+            return (o1 * o2 < 0f) && (o3 * o4 < 0f);
+        }
+
+        /// <summary>Signed area orientation of triangle (a,b,c) in XZ plane.</summary>
+        static float Orient(float2 a, float2 b, float2 c) => Cross(b - a, c - a);
+
+        /// <summary>Sorts teammate indices ascending by planet id (deterministic fill order).</summary>
+        static void SortIndicesByPlanetId(in NativeArray<PlanetInput> planets, ref NativeList<int> indices)
+        {
+            // --- Insertion sort — n is small (owned planets per team) ---
+            for (int i = 1; i < indices.Length; i++)
             {
-                int idx = teammateIndices[i];
-                if (idx == pIdx)
-                    continue;
-
-                float d = ToroidalMapEcs.ToroidalDistance(pPos, planets[idx].Position, mapW, mapH);
-                if (d < bestQ)
+                int key = indices[i];
+                int keyId = planets[key].PlanetId;
+                int j = i - 1;
+                while (j >= 0 && planets[indices[j]].PlanetId > keyId)
                 {
-                    bestR = bestQ;
-                    rIdx = qIdx;
-                    bestQ = d;
-                    qIdx = idx;
+                    indices[j + 1] = indices[j];
+                    j--;
                 }
-                else if (d < bestR)
+
+                indices[j + 1] = key;
+            }
+        }
+
+        /// <summary>True when <paramref name="planetId"/> is currently owned by <paramref name="team"/>.</summary>
+        static bool TeamOwnsPlanetId(in NativeArray<PlanetInput> planets, int planetId, TeamId team)
+        {
+            for (int i = 0; i < planets.Length; i++)
+            {
+                var p = planets[i];
+                if (p.PlanetId == planetId && p.Team == team)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Drops newer sticky edges that geometrically cross older ones under current planet centers.
+        /// Compares every pair of edges — same team or enemy — so the map stays globally planar.
+        /// </summary>
+        static void ResolveCrossingStickyEdges(
+            in NativeArray<PlanetInput> planets,
+            ref NativeList<Edge> edges,
+            float mapW,
+            float mapH)
+        {
+            // --- Repeat until a full pass finds no crosses (n is small) ---
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (int i = 0; i < edges.Length; i++)
                 {
-                    bestR = d;
-                    rIdx = idx;
+                    for (int j = i + 1; j < edges.Length; j++)
+                    {
+                        var e0 = edges[i];
+                        var e1 = edges[j];
+
+                        // Shared planet id → T-junction / path, not a line cross.
+                        // (Different teams rarely share an endpoint — ownership is exclusive.)
+                        if (EdgesShareEndpoint(e0, e1))
+                            continue;
+
+                        if (!TryGetPlanetPosition(planets, e0.PlanetIdA, out float3 a) ||
+                            !TryGetPlanetPosition(planets, e0.PlanetIdB, out float3 b) ||
+                            !TryGetPlanetPosition(planets, e1.PlanetIdA, out float3 c) ||
+                            !TryGetPlanetPosition(planets, e1.PlanetIdB, out float3 d))
+                            continue;
+
+                        if (!SegmentsCrossToroidalXZ(a, b, c, d, mapW, mapH))
+                            continue;
+
+                        // [TITAN-ORBIT] First-created sticky edge wins — drop the newer sequence.
+                        int drop = e0.CreationSequence >= e1.CreationSequence ? i : j;
+                        edges.RemoveAtSwapBack(drop);
+                        changed = true;
+                        break;
+                    }
+
+                    if (changed)
+                        break;
                 }
             }
         }
 
-        /// <summary>Adds an undirected edge if missing.</summary>
-        static void TryAddEdge(ref NativeList<Edge> edges, int a, int b, TeamId team)
+        /// <summary>
+        /// Greedy planar packing across all teams: every same-team pair, shortest-first; add when
+        /// missing and the segment does not properly cross <b>any</b> existing edge (any team).
+        /// <para>
+        /// [TITAN-ORBIT] No per-planet degree cap. An enemy sticky line can permanently block a
+        /// teammate chord — that team simply cannot form triangles that need the blocked side.
+        /// Shared endpoints never count as a cross.
+        /// </para>
+        /// </summary>
+        static void PackNonCrossingEdgesGreedy(
+            in NativeArray<PlanetInput> planets,
+            float mapW,
+            float mapH,
+            ref uint nextSequence,
+            ref NativeList<Edge> edges)
         {
-            if (a == b)
-                return;
-            if (a > b)
+            // --- Count owned planets (pairs only among same team) ---
+            int owned = 0;
+            for (int i = 0; i < planets.Length; i++)
             {
-                int tmp = a;
-                a = b;
-                b = tmp;
+                if (planets[i].Team != TeamId.None)
+                    owned++;
             }
+
+            if (owned < 2)
+                return;
+
+            // Worst case: all owned planets on one team → n*(n-1)/2 pairs.
+            int pairCap = owned * (owned - 1) / 2;
+            var pairI = new NativeList<int>(pairCap, Allocator.Temp);
+            var pairJ = new NativeList<int>(pairCap, Allocator.Temp);
+            var pairTeam = new NativeList<TeamId>(pairCap, Allocator.Temp);
+            var pairDist = new NativeList<float>(pairCap, Allocator.Temp);
+
+            // --- Enumerate every unordered same-team pair ---
+            for (int i = 0; i < planets.Length; i++)
+            {
+                var a = planets[i];
+                if (a.Team == TeamId.None)
+                    continue;
+                for (int j = i + 1; j < planets.Length; j++)
+                {
+                    var b = planets[j];
+                    if (b.Team != a.Team)
+                        continue;
+
+                    float d = ToroidalMapEcs.ToroidalDistance(a.Position, b.Position, mapW, mapH);
+                    pairI.Add(i);
+                    pairJ.Add(j);
+                    pairTeam.Add(a.Team);
+                    pairDist.Add(d);
+                }
+            }
+
+            // --- Insertion-sort pairs by distance (nearest first) ---
+            // Deterministic: equal lengths keep enumeration order.
+            for (int i = 1; i < pairDist.Length; i++)
+            {
+                float keyD = pairDist[i];
+                int keyI = pairI[i];
+                int keyJ = pairJ[i];
+                TeamId keyT = pairTeam[i];
+                int k = i - 1;
+                while (k >= 0 && pairDist[k] > keyD)
+                {
+                    pairDist[k + 1] = pairDist[k];
+                    pairI[k + 1] = pairI[k];
+                    pairJ[k + 1] = pairJ[k];
+                    pairTeam[k + 1] = pairTeam[k];
+                    k--;
+                }
+
+                pairDist[k + 1] = keyD;
+                pairI[k + 1] = keyI;
+                pairJ[k + 1] = keyJ;
+                pairTeam[k + 1] = keyT;
+            }
+
+            // --- Add each edge that clears the global planar map ---
+            for (int p = 0; p < pairDist.Length; p++)
+            {
+                int aId = planets[pairI[p]].PlanetId;
+                int bId = planets[pairJ[p]].PlanetId;
+                TeamId team = pairTeam[p];
+                if (HasEdge(edges, aId, bId, team))
+                    continue;
+                if (EdgeWouldCrossAny(planets, edges, aId, bId, mapW, mapH))
+                    continue;
+
+                AddNewEdge(ref edges, aId, bId, team, ref nextSequence);
+            }
+
+            pairI.Dispose();
+            pairJ.Dispose();
+            pairTeam.Dispose();
+            pairDist.Dispose();
+        }
+
+        /// <summary>
+        /// Builds territory triangles for every team that has at least three planets.
+        /// </summary>
+        static void PublishTrianglesForAllTeams(
+            in NativeArray<PlanetInput> planets,
+            ref NativeList<Edge> edges,
+            ref NativeList<Triangle> triangles)
+        {
+            // [TITAN-ORBIT] At most TeamA–TeamE (5). Fixed scratch avoids a HashSet.
+            TeamId t0 = TeamId.None, t1 = TeamId.None, t2 = TeamId.None, t3 = TeamId.None, t4 = TeamId.None;
+            int teamCount = 0;
+            for (int i = 0; i < planets.Length; i++)
+            {
+                TeamId team = planets[i].Team;
+                if (team == TeamId.None)
+                    continue;
+                if (team == t0 || team == t1 || team == t2 || team == t3 || team == t4)
+                    continue;
+                if (teamCount == 0) t0 = team;
+                else if (teamCount == 1) t1 = team;
+                else if (teamCount == 2) t2 = team;
+                else if (teamCount == 3) t3 = team;
+                else if (teamCount == 4) t4 = team;
+                teamCount++;
+                if (teamCount >= 5)
+                    break;
+            }
+
+            for (int ti = 0; ti < teamCount; ti++)
+            {
+                TeamId team = ti == 0 ? t0 : ti == 1 ? t1 : ti == 2 ? t2 : ti == 3 ? t3 : t4;
+
+                int n = 0;
+                for (int i = 0; i < planets.Length; i++)
+                {
+                    if (planets[i].Team == team)
+                        n++;
+                }
+
+                if (n < 3)
+                    continue;
+
+                var indices = new NativeList<int>(n, Allocator.Temp);
+                for (int i = 0; i < planets.Length; i++)
+                {
+                    if (planets[i].Team == team)
+                        indices.Add(i);
+                }
+
+                SortIndicesByPlanetId(planets, ref indices);
+                BuildCliquesAsTriangles(planets, indices, team, ref edges, ref triangles);
+                indices.Dispose();
+            }
+        }
+
+        /// <summary>Forms one triangle for every triple of teammates that has all three edges.</summary>
+        static void BuildCliquesAsTriangles(
+            in NativeArray<PlanetInput> planets,
+            in NativeList<int> indices,
+            TeamId team,
+            ref NativeList<Edge> edges,
+            ref NativeList<Triangle> triangles)
+        {
+            if (indices.Length < 3)
+                return;
+
+            for (int i = 0; i < indices.Length; i++)
+            {
+                for (int j = i + 1; j < indices.Length; j++)
+                {
+                    for (int k = j + 1; k < indices.Length; k++)
+                    {
+                        var a = planets[indices[i]];
+                        var b = planets[indices[j]];
+                        var c = planets[indices[k]];
+                        if (!HasEdge(edges, a.PlanetId, b.PlanetId, team) ||
+                            !HasEdge(edges, b.PlanetId, c.PlanetId, team) ||
+                            !HasEdge(edges, a.PlanetId, c.PlanetId, team))
+                            continue;
+
+                        TryAddTriangle(ref triangles, a, b, c, team);
+                    }
+                }
+            }
+        }
+
+        /// <summary>Looks up a planet center position by id.</summary>
+        static bool TryGetPlanetPosition(in NativeArray<PlanetInput> planets, int planetId, out float3 pos)
+        {
+            pos = default;
+            for (int i = 0; i < planets.Length; i++)
+            {
+                if (planets[i].PlanetId != planetId)
+                    continue;
+                pos = planets[i].Position;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>True when two undirected edges share a planet id endpoint.</summary>
+        static bool EdgesShareEndpoint(in Edge a, in Edge b) =>
+            a.PlanetIdA == b.PlanetIdA || a.PlanetIdA == b.PlanetIdB ||
+            a.PlanetIdB == b.PlanetIdA || a.PlanetIdB == b.PlanetIdB;
+
+        /// <summary>True when undirected edge exists for this team.</summary>
+        static bool HasEdge(in NativeList<Edge> edges, int a, int b, TeamId team)
+        {
+            CanonicalEdgeIds(a, b, out int lo, out int hi);
+            for (int i = 0; i < edges.Length; i++)
+            {
+                var e = edges[i];
+                if (e.Team == team && e.PlanetIdA == lo && e.PlanetIdB == hi)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True if a new edge between a–b would properly cross <b>any</b> existing edge on the map
+        /// (any team). Shared endpoints are allowed and do not count as a cross.
+        /// </summary>
+        static bool EdgeWouldCrossAny(
+            in NativeArray<PlanetInput> planets,
+            in NativeList<Edge> edges,
+            int aId,
+            int bId,
+            float mapW,
+            float mapH)
+        {
+            if (!TryGetPlanetPosition(planets, aId, out float3 a) ||
+                !TryGetPlanetPosition(planets, bId, out float3 b))
+                return true;
 
             for (int i = 0; i < edges.Length; i++)
             {
                 var e = edges[i];
-                if (e.Team == team && e.PlanetIdA == a && e.PlanetIdB == b)
+                if (e.PlanetIdA == aId || e.PlanetIdA == bId ||
+                    e.PlanetIdB == aId || e.PlanetIdB == bId)
+                    continue;
+
+                if (!TryGetPlanetPosition(planets, e.PlanetIdA, out float3 c) ||
+                    !TryGetPlanetPosition(planets, e.PlanetIdB, out float3 d))
+                    continue;
+
+                if (SegmentsCrossToroidalXZ(a, b, c, d, mapW, mapH))
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>Adds a new edge with the next creation sequence (canonical id order).</summary>
+        static void AddNewEdge(
+            ref NativeList<Edge> edges,
+            int a,
+            int b,
+            TeamId team,
+            ref uint nextSequence)
+        {
+            if (a == b)
+                return;
+            CanonicalEdgeIds(a, b, out int lo, out int hi);
+            if (HasEdge(edges, lo, hi, team))
+                return;
+
+            uint seq = nextSequence;
+            nextSequence = seq + 1;
+            edges.Add(new Edge
+            {
+                PlanetIdA = lo,
+                PlanetIdB = hi,
+                Team = team,
+                CreationSequence = seq,
+            });
+        }
+
+        /// <summary>Adds an edge with its exact sequence if missing (sticky seed / restore).</summary>
+        static void TryAddEdgeExact(ref NativeList<Edge> edges, in Edge edge)
+        {
+            if (edge.PlanetIdA == edge.PlanetIdB)
+                return;
+
+            CanonicalEdgeIds(edge.PlanetIdA, edge.PlanetIdB, out int lo, out int hi);
+            for (int i = 0; i < edges.Length; i++)
+            {
+                var e = edges[i];
+                if (e.Team == edge.Team && e.PlanetIdA == lo && e.PlanetIdB == hi)
                     return;
             }
 
-            edges.Add(new Edge { PlanetIdA = a, PlanetIdB = b, Team = team });
+            edges.Add(new Edge
+            {
+                PlanetIdA = lo,
+                PlanetIdB = hi,
+                Team = edge.Team,
+                CreationSequence = edge.CreationSequence,
+            });
         }
 
         /// <summary>Adds a triangle if the three planet ids are not already present for this team.</summary>
@@ -625,6 +1006,28 @@ namespace TitanOrbit.Simulation
                 AverageLevel = avg,
                 GemBonusMultiplier = 1f + avg * PerLevelGemBonusFraction,
             });
+        }
+
+        /// <summary>Canonical undirected edge ids (lo ≤ hi).</summary>
+        static void CanonicalEdgeIds(int a, int b, out int lo, out int hi)
+        {
+            if (a <= b)
+            {
+                lo = a;
+                hi = b;
+            }
+            else
+            {
+                lo = b;
+                hi = a;
+            }
+        }
+
+        /// <summary>True when (a,b) matches undirected side (x,y).</summary>
+        static bool EdgeMatchesTriangleSide(int a, int b, int x, int y)
+        {
+            CanonicalEdgeIds(x, y, out int lo, out int hi);
+            return a == lo && b == hi;
         }
 
         /// <summary>Sorts three ints ascending in place.</summary>

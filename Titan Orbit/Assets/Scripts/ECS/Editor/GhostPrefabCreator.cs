@@ -143,14 +143,35 @@ namespace TitanOrbit.ECS.Editor
             Object.DestroyImmediate(go);
         }
 
-        /// <summary>Creates PlanetGhost (interpolated map ghost, no owner).</summary>
+        /// <summary>Creates PlanetGhost (interpolated map ghost — higher send rate than asteroids).</summary>
         static void CreatePlanetPrefab()
         {
             var go = new GameObject("PlanetGhost");
-            AddMapGhostRootComponents(go);
+            AddPlanetGhostRootComponents(go);
             go.AddComponent<TitanOrbit.ECS.Authoring.PlanetGhostAuthoring>();
             PrefabUtility.SaveAsPrefabAsset(go, "Assets/Prefabs/ECS/PlanetGhost.prefab");
             Object.DestroyImmediate(go);
+        }
+
+        /// <summary>
+        /// LinkedEntityGroup + GhostAuthoring for planets: Ownership / population must replicate
+        /// faster than asteroids so connection lines + minimap do not lag captures. Still below
+        /// ships (100). Paired with <see cref="PlanetOwnershipChangedRpc"/> for immediate UI.
+        /// </summary>
+        static void AddPlanetGhostRootComponents(GameObject go)
+        {
+            if (go.GetComponent<LinkedEntityGroupAuthoring>() == null)
+                go.AddComponent<LinkedEntityGroupAuthoring>();
+
+            var ghost = go.AddComponent<GhostAuthoringComponent>();
+            ghost.HasOwner = false;
+            ghost.SupportAutoCommandTarget = false;
+            ghost.DefaultGhostMode = GhostMode.Interpolated;
+            ghost.SupportedGhostModes = GhostModeMask.Interpolated;
+            ghost.OptimizationMode = GhostOptimizationMode.Static;
+            ghost.RollbackPredictionOnStructuralChanges = false;
+            ghost.Importance = 40;
+            ghost.MaxSendRate = 15;
         }
 
         /// <summary>Creates AsteroidGhost (interpolated map ghost, no owner).</summary>

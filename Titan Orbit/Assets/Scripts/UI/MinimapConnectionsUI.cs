@@ -3,6 +3,7 @@ using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using UnityEngine;
 using UnityEngine.UI;
@@ -10,17 +11,15 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// UGUI mesh drawer for minimap territory triangles (gem-moon vertices).
-    /// Uses <see cref="OnPopulateMesh"/> so triangles always render under the circular Mask —
+    /// UGUI mesh drawer for minimap territory triangles and lone sticky edges (planet-center vertices).
+    /// Uses <see cref="OnPopulateMesh"/> so geometry always renders under the circular Mask —
     /// no dependency on Shapes <c>ImmediateModePanel</c> registration.
-    /// When the minimap is expanded to the full map, also draws ±mapW / ±mapH wrap copies so
-    /// toroidal territories read correctly across seams.
+    /// When expanded, draws a 3×3 toroidal tile of each triangle/edge so seam-crossing links still
+    /// read next to planet blips on both sides of the wrap (same shortest-path chart as blips).
     /// Client presentation only.
     /// <para>
-    /// [TITAN-ORBIT] Moon world verts are cached (~30 Hz). The UI mesh still rebuilds every frame
-    /// while triangles exist so player-centered projection stays smooth (throttling the whole
-    /// rebuild made triangles look choppy as the ship moved). Projection + wrap copies are cheap;
-    /// moon ECS/proxy lookups were the hitch.
+    /// [TITAN-ORBIT] Planet centers are fixed — world verts rebuild only when graph topology
+    /// publishes. Projection still updates when the player/view moves.
     /// </para>
     /// </summary>
     [RequireComponent(typeof(RectTransform))]
@@ -29,14 +28,11 @@ namespace TitanOrbit.UI
         /// <summary>Fill alpha for minimap triangles.</summary>
         const float TriangleAlpha = 0.28f;
 
-        /// <summary>Border alpha for triangle outlines.</summary>
+        /// <summary>Border alpha for triangle outlines / lone edges.</summary>
         const float BorderAlpha = 0.85f;
 
         /// <summary>Border thickness in UI pixels.</summary>
         const float BorderThickness = 2.2f;
-
-        /// <summary>How often we refresh moon world verts (not the projection mesh).</summary>
-        const float MoonCacheIntervalSeconds = 1f / 30f;
 
         /// <summary>One triangle in canonical world space (anchor + shortest-path offsets for B/C).</summary>
         struct CachedWorldTriangle
@@ -48,16 +44,30 @@ namespace TitanOrbit.UI
             public Color Border;
         }
 
+        /// <summary>Lone edge (not a triangle side) in canonical world space.</summary>
+        struct CachedWorldEdge
+        {
+            public Vector3 Anchor;
+            public Vector3 OffsetB;
+            public Color Color;
+        }
+
         static Texture2D _whiteTex;
 
         MinimapController _minimap;
         readonly List<CachedWorldTriangle> _worldCache = new List<CachedWorldTriangle>(16);
+        readonly List<CachedWorldEdge> _edgeCache = new List<CachedWorldEdge>(16);
         int _lastGraphRevision = -1;
-        float _nextMoonCacheTime;
         int _lastDrawnCount = -1;
         Vector3 _lastPlayerPos;
         float _lastRadius = -1f;
         bool _lastExpanded;
+
+        /// <summary>Scratch X offsets for 3×3 toroidal tile copies (reused each mesh rebuild).</summary>
+        readonly float[] _wrapsX = new float[9];
+
+        /// <summary>Scratch Z offsets for 3×3 toroidal tile copies (reused each mesh rebuild).</summary>
+        readonly float[] _wrapsZ = new float[9];
 
         /// <summary>[UNITY] Disable raycasts; assign 1×1 white texture for UI mesh tinting.</summary>
         protected override void Awake()
@@ -77,24 +87,25 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Refresh moon verts on a short interval; dirty the mesh when the player/view moves or
-        /// moons update — not every idle frame (Scripts hitch on VertexHelper rebuild).
+        /// Dirties the UI mesh when topology publishes or the player/view moves.
+        /// Planet-center verts are cached; only projection changes with camera/player.
         /// </summary>
         void LateUpdate()
         {
             int revision = PlanetConnectionGraphCache.ClientPublishRevision;
-            int count = PlanetConnectionGraphCache.CurrentTriangles?.Count ?? 0;
+            int triCount = PlanetConnectionGraphCache.CurrentTriangles?.Count ?? 0;
+            int edgeCount = PlanetConnectionGraphCache.CurrentEdges?.Count ?? 0;
+            int count = triCount + edgeCount;
             bool topologyChanged = revision != _lastGraphRevision || count != _lastDrawnCount;
-            bool moonDue = Time.unscaledTime >= _nextMoonCacheTime;
-            bool moonRebuilt = false;
+            bool vertsRebuilt = false;
 
-            if (topologyChanged || (count > 0 && moonDue))
+            // Planet centers are fixed — only rebuild world verts when topology publishes.
+            if (topologyChanged)
             {
                 RebuildWorldCache();
                 _lastGraphRevision = revision;
                 _lastDrawnCount = count;
-                _nextMoonCacheTime = Time.unscaledTime + MoonCacheIntervalSeconds;
-                moonRebuilt = true;
+                vertsRebuilt = true;
             }
 
             if (_minimap == null)
@@ -108,28 +119,33 @@ namespace TitanOrbit.UI
                 Mathf.Abs(radius - _lastRadius) > 0.01f ||
                 expanded != _lastExpanded;
 
-            if (count > 0 && (topologyChanged || moonRebuilt || viewChanged))
+            bool hasGeom = _worldCache.Count > 0 || _edgeCache.Count > 0;
+            if (hasGeom && (topologyChanged || vertsRebuilt || viewChanged))
             {
                 _lastPlayerPos = playerPos;
                 _lastRadius = radius;
                 _lastExpanded = expanded;
                 SetVerticesDirty();
             }
-            else if (topologyChanged && count == 0)
+            else if (topologyChanged && !hasGeom)
             {
                 SetVerticesDirty();
             }
         }
 
         /// <summary>
-        /// Resolves gem-moon vertices into canonical world space once (expensive path).
+        /// Resolves planet-center vertices into canonical world space once (expensive path).
         /// </summary>
         void RebuildWorldCache()
         {
             _worldCache.Clear();
+            _edgeCache.Clear();
 
             var triangles = PlanetConnectionGraphCache.CurrentTriangles;
-            if (triangles == null || triangles.Count == 0)
+            var edges = PlanetConnectionGraphCache.CurrentEdges;
+            int triCount = triangles?.Count ?? 0;
+            int edgeCount = edges?.Count ?? 0;
+            if (triCount == 0 && edgeCount == 0)
                 return;
 
             World world = EcsGameBridge.GetVisualizationWorld();
@@ -138,18 +154,15 @@ namespace TitanOrbit.UI
             var em = world.EntityManager;
             var visualizer = EcsWorldVisualizer.Active;
 
-            if (!PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double moonElapsed, includeTickFraction: true))
-                moonElapsed = Time.timeAsDouble;
-
-            for (int i = 0; i < triangles.Count; i++)
+            for (int i = 0; i < triCount; i++)
             {
                 var tri = triangles[i];
-                if (!PlanetConnectionShapesVisual.TryGetCanonicalMoonVertex(
-                        em, visualizer, tri.PlanetIdA, moonElapsed, out Vector3 aCanon) ||
-                    !PlanetConnectionShapesVisual.TryGetCanonicalMoonVertex(
-                        em, visualizer, tri.PlanetIdB, moonElapsed, out Vector3 bCanon) ||
-                    !PlanetConnectionShapesVisual.TryGetCanonicalMoonVertex(
-                        em, visualizer, tri.PlanetIdC, moonElapsed, out Vector3 cCanon))
+                if (!PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, tri.PlanetIdA, out Vector3 aCanon) ||
+                    !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, tri.PlanetIdB, out Vector3 bCanon) ||
+                    !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, tri.PlanetIdC, out Vector3 cCanon))
                     continue;
 
                 int idA = tri.PlanetIdA, idB = tri.PlanetIdB, idC = tri.PlanetIdC;
@@ -177,10 +190,47 @@ namespace TitanOrbit.UI
                     Border = new Color(baseColor.r, baseColor.g, baseColor.b, BorderAlpha),
                 });
             }
+
+            // Lone sticky edges — skip sides already drawn as triangle borders.
+            for (int i = 0; i < edgeCount; i++)
+            {
+                var edge = edges[i];
+                if (PlanetConnectionGraphLogic.EdgeIsTriangleSide(
+                        edge.PlanetIdA, edge.PlanetIdB, edge.Team, triangles))
+                    continue;
+
+                if (!PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, edge.PlanetIdA, out Vector3 aCanon) ||
+                    !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, edge.PlanetIdB, out Vector3 bCanon))
+                    continue;
+
+                Vector3 anchor = aCanon;
+                Vector3 other = bCanon;
+                if (edge.PlanetIdB < edge.PlanetIdA)
+                {
+                    anchor = bCanon;
+                    other = aCanon;
+                }
+
+                Color baseColor = edge.Team.ToColor();
+                _edgeCache.Add(new CachedWorldEdge
+                {
+                    Anchor = anchor,
+                    OffsetB = ToroidalMap.ShortestWorldOffsetXZ(anchor, other),
+                    Color = new Color(baseColor.r, baseColor.g, baseColor.b, BorderAlpha),
+                });
+            }
         }
 
         /// <summary>
-        /// [UNITY] Projects cached world triangles into panel space (cheap — no moon lookups).
+        /// [UNITY] Projects cached world triangles / lone edges into panel space (cheap — no ECS).
+        /// <para>
+        /// Anchor uses the same toroidal shortest delta as planet blips. When expanded, each
+        /// triangle/edge is also drawn on the 8 neighboring map tiles (3×3) by shifting in
+        /// <b>panel</b> space — not re-wrapping — so seam links extend past the circle edge next
+        /// to the wrap-side planet blips.
+        /// </para>
         /// </summary>
         protected override void OnPopulateMesh(VertexHelper vh)
         {
@@ -188,7 +238,7 @@ namespace TitanOrbit.UI
 
             if (_minimap == null)
                 _minimap = GetComponentInParent<MinimapController>();
-            if (_minimap == null || _worldCache.Count == 0)
+            if (_minimap == null || (_worldCache.Count == 0 && _edgeCache.Count == 0))
                 return;
 
             Rect rect = GetPixelAdjustedRect();
@@ -202,33 +252,43 @@ namespace TitanOrbit.UI
             float mapW = ToroidalMap.GetMapWidth();
             float mapH = ToroidalMap.GetMapHeight();
 
-            // --- Wrap copies only when expanded to (near) full map ---
-            // [TITAN-ORBIT] Compact minimap rarely needs seam copies; 5× verts was a Scripts hitch.
+            // --- 3×3 tile copies when showing (near) the full map ---
+            // [TITAN-ORBIT] Compact minimap: primary tile only (Scripts hitch if we always 9×).
             bool needWrapCopies = _minimap.IsExpanded ||
                                   radius >= 0.45f * Mathf.Min(mapW, mapH);
-            int wrapCount = needWrapCopies ? 5 : 1;
-            Vector3[] wrapOffsets =
+            int wrapCount = needWrapCopies ? 9 : 1;
+            // (0,0) first, then 8 neighbors — reuse instance scratch (no per-mesh alloc).
+            _wrapsX[0] = 0f;
+            _wrapsZ[0] = 0f;
+            if (needWrapCopies)
             {
-                Vector3.zero,
-                new Vector3(mapW, 0f, 0f),
-                new Vector3(-mapW, 0f, 0f),
-                new Vector3(0f, 0f, mapH),
-                new Vector3(0f, 0f, -mapH),
-            };
+                int wi = 1;
+                for (int ox = -1; ox <= 1; ox++)
+                {
+                    for (int oz = -1; oz <= 1; oz++)
+                    {
+                        if (ox == 0 && oz == 0)
+                            continue;
+                        _wrapsX[wi] = ox * mapW;
+                        _wrapsZ[wi] = oz * mapH;
+                        wi++;
+                    }
+                }
+            }
 
             for (int i = 0; i < _worldCache.Count; i++)
             {
                 var tri = _worldCache[i];
+                // Same chart as planet blips — then tile-shift in panel space for wrap copies.
+                _minimap.GetToroidalDeltaForMinimap(playerPos, tri.Anchor, out float baseDx, out float baseDz);
+
                 for (int w = 0; w < wrapCount; w++)
                 {
-                    Vector3 aWorld = tri.Anchor + wrapOffsets[w];
-                    Vector3 bWorld = aWorld + tri.OffsetB;
-                    Vector3 cWorld = aWorld + tri.OffsetC;
-
-                    if (!TryProject(rect, playerPos, radius, scale, aWorld, out Vector2 pa) ||
-                        !TryProject(rect, playerPos, radius, scale, bWorld, out Vector2 pb) ||
-                        !TryProject(rect, playerPos, radius, scale, cWorld, out Vector2 pc))
-                        continue;
+                    float ax = baseDx + _wrapsX[w];
+                    float az = baseDz + _wrapsZ[w];
+                    Vector2 pa = rect.center + new Vector2(ax * scale, az * scale);
+                    Vector2 pb = pa + new Vector2(tri.OffsetB.x * scale, tri.OffsetB.z * scale);
+                    Vector2 pc = pa + new Vector2(tri.OffsetC.x * scale, tri.OffsetC.z * scale);
 
                     if (!AnyNearPanel(rect, pa, pb, pc))
                         continue;
@@ -237,26 +297,31 @@ namespace TitanOrbit.UI
                     AddTriangleBorder(vh, pa, pb, pc, tri.Border, BorderThickness);
                 }
             }
+
+            for (int i = 0; i < _edgeCache.Count; i++)
+            {
+                var edge = _edgeCache[i];
+                _minimap.GetToroidalDeltaForMinimap(playerPos, edge.Anchor, out float baseDx, out float baseDz);
+
+                for (int w = 0; w < wrapCount; w++)
+                {
+                    float ax = baseDx + _wrapsX[w];
+                    float az = baseDz + _wrapsZ[w];
+                    Vector2 pa = rect.center + new Vector2(ax * scale, az * scale);
+                    Vector2 pb = pa + new Vector2(edge.OffsetB.x * scale, edge.OffsetB.z * scale);
+
+                    if (!AnyNearPanel(rect, pa, pb, pa))
+                        continue;
+
+                    AddLineQuad(vh, pa, pb, edge.Color, BorderThickness);
+                }
+            }
         }
 
-        /// <summary>Projects a world XZ point into this RawImage's local rect (player-centered).</summary>
-        bool TryProject(
-            Rect rect, Vector3 playerPos, float radius, float scale, Vector3 worldPos, out Vector2 panelPos)
-        {
-            panelPos = default;
-            if (_minimap == null || radius <= 0.001f)
-                return false;
-
-            Vector3 playerCanonical = ToroidalMap.WrapPosition(playerPos);
-            float dx = worldPos.x - playerCanonical.x;
-            float dz = worldPos.z - playerCanonical.z;
-            panelPos = rect.center + new Vector2(dx * scale, dz * scale);
-            return true;
-        }
-
-        /// <summary>True if any vertex is within a generous margin of the panel rect.</summary>
+        /// <summary>True if any vertex is within a generous margin of the panel rect (incl. off-edge wraps).</summary>
         static bool AnyNearPanel(Rect rect, Vector2 a, Vector2 b, Vector2 c)
         {
+            // Pad by a full panel so ±map tile copies just outside the circle still draw.
             float pad = Mathf.Max(rect.width, rect.height);
             Rect fat = Rect.MinMaxRect(rect.xMin - pad, rect.yMin - pad, rect.xMax + pad, rect.yMax + pad);
             return fat.Contains(a) || fat.Contains(b) || fat.Contains(c);

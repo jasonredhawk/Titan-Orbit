@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using Unity.Collections;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -301,5 +302,27 @@ namespace TitanOrbit.ECS
         /// 0 means the rock was killed this hit (hide proxy immediately).
         /// </summary>
         public float AsteroidHealthAfter;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: planet ownership flipped (capture or starting claim).
+    /// Planet ghosts use low Importance / MaxSendRate under MaxSendChunks caps, so territory
+    /// lines would lag several seconds on ghost snapshots alone. Clients apply this immediately
+    /// (optimistic) and rebuild the connection graph / minimap without waiting for the ghost.
+    /// Wire layout must match Linux headless.
+    /// </summary>
+    public struct PlanetOwnershipChangedRpc : IRpcCommand
+    {
+        /// <summary>Stable <see cref="PlanetState.PlanetId"/>.</summary>
+        public int PlanetId;
+
+        /// <summary>New owning team as byte (<see cref="TeamId"/>).</summary>
+        public byte Team;
+
+        /// <summary>Population after the flip (0 on capture).</summary>
+        public int Population;
+
+        /// <summary>Planet level at flip time (fingerprint / bonuses).</summary>
+        public int PlanetLevel;
     }
 }

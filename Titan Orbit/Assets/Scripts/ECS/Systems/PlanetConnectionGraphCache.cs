@@ -33,17 +33,12 @@ namespace TitanOrbit.ECS
     public static class PlanetConnectionGraphCache
     {
         /// <summary>
-        /// Reuse moon-vertex runtime triangles for this many moon-clock seconds unless topology changes.
-        /// </summary>
-        const double RuntimeMoonCacheSeconds = 0.2;
-
-        /// <summary>
         /// After leaving a friendly triangle, keep the presentation thruster boost this many seconds
         /// so edge / resim flicker does not blink engine scale every frame.
         /// </summary>
         const float LocalOwnerTerritoryStickySeconds = 0.5f;
 
-        /// <summary>One world's edges / triangles / home levels + throttled moon-vertex cache.</summary>
+        /// <summary>One world's edges / triangles / home levels + planet-center runtime cache.</summary>
         sealed class Side
         {
             public readonly List<PlanetConnectionGraphLogic.Edge> Edges;
@@ -51,7 +46,12 @@ namespace TitanOrbit.ECS
             public readonly int[] HomeLevelByTeam;
             public readonly List<PlanetConnectionGraphLogic.RuntimeTriangle> RuntimeCache;
             public NativeArray<PlanetConnectionGraphLogic.RuntimeTriangle> RuntimeNative;
-            public double RuntimeCacheMoonElapsed = -999.0;
+            public double RuntimeCacheStamp = -999.0;
+
+            /// <summary>
+            /// Next sticky <see cref="PlanetConnectionGraphLogic.Edge.CreationSequence"/> for this side.
+            /// </summary>
+            public uint NextEdgeSequence = 1;
 
             public Side(int edgeCap, int triCap)
             {
@@ -60,15 +60,17 @@ namespace TitanOrbit.ECS
                 HomeLevelByTeam = new int[6];
                 RuntimeCache = new List<PlanetConnectionGraphLogic.RuntimeTriangle>(triCap);
                 RuntimeNative = default;
+                NextEdgeSequence = 1;
             }
 
-            /// <summary>Clears topology + runtime moon vertices (disposes Persistent native).</summary>
+            /// <summary>Clears topology + runtime planet-center verts (disposes Persistent native).</summary>
             public void Clear()
             {
                 Edges.Clear();
                 Triangles.Clear();
                 RuntimeCache.Clear();
-                RuntimeCacheMoonElapsed = -999.0;
+                RuntimeCacheStamp = -999.0;
+                NextEdgeSequence = 1;
                 DisposeRuntimeNative();
                 for (int i = 0; i < HomeLevelByTeam.Length; i++)
                     HomeLevelByTeam[i] = 0;
@@ -98,6 +100,24 @@ namespace TitanOrbit.ECS
         static readonly Side Client = new Side(64, 32);
 
         /// <summary>
+        /// Optimistic Ownership overrides keyed by PlanetId — used while planet ghosts lag
+        /// MaxSendRate / Importance under snapshot chunk caps. Cleared when the ghost catches up.
+        /// </summary>
+        static readonly Dictionary<int, OwnershipOverride> s_ClientOwnershipOverrides =
+            new Dictionary<int, OwnershipOverride>(16);
+
+        /// <summary>True when the client graph must rebuild this tick (capture RPC / host mirror).</summary>
+        static bool s_ClientRebuildRequested;
+
+        /// <summary>One optimistic ownership patch until the Instantiated ghost matches.</summary>
+        struct OwnershipOverride
+        {
+            public TeamId Team;
+            public int Population;
+            public int PlanetLevel;
+        }
+
+        /// <summary>
         /// Sticky friendly-territory mult for the local predicted ship (client presentation).
         /// Written only on first-time predicting ticks — never from NetCode rollback/resim.
         /// </summary>
@@ -115,38 +135,121 @@ namespace TitanOrbit.ECS
         /// <summary>Presentation triangles (client side). Empty until client graph system publishes.</summary>
         public static IReadOnlyList<PlanetConnectionGraphLogic.Triangle> CurrentTriangles => Client.Triangles;
 
-        /// <summary>Presentation edges (client side).</summary>
+        /// <summary>Presentation edges (client side), including lone visual-only links.</summary>
         public static IReadOnlyList<PlanetConnectionGraphLogic.Edge> CurrentEdges => Client.Edges;
+
+        /// <summary>
+        /// Next sticky edge creation sequence on the client side (seeded into rebuild, updated on publish).
+        /// </summary>
+        public static uint ClientNextEdgeSequence => Client.NextEdgeSequence;
 
         /// <summary>Server-authoritative triangles for territory tint / mining.</summary>
         public static IReadOnlyList<PlanetConnectionGraphLogic.Triangle> ServerTriangles => Server.Triangles;
+
+        /// <summary>
+        /// Records an optimistic Ownership flip for the client graph fingerprint / rebuild.
+        /// Called from <see cref="PlanetOwnershipNetNotify"/> (RPC + host mirror).
+        /// </summary>
+        public static void SetClientOwnershipOverride(
+            int planetId,
+            TeamId team,
+            int population,
+            int planetLevel)
+        {
+            if (planetId == 0 || team == TeamId.None)
+                return;
+
+            s_ClientOwnershipOverrides[planetId] = new OwnershipOverride
+            {
+                Team = team,
+                Population = population < 0 ? 0 : population,
+                PlanetLevel = planetLevel < 1 ? 1 : planetLevel,
+            };
+            s_ClientRebuildRequested = true;
+        }
+
+        /// <summary>
+        /// Resolves client Ownership for graph rebuild: override wins until the ghost matches,
+        /// then the override is cleared.
+        /// </summary>
+        public static TeamId ResolveClientOwnership(int planetId, TeamId ghostTeam)
+        {
+            if (!s_ClientOwnershipOverrides.TryGetValue(planetId, out var ov))
+                return ghostTeam;
+
+            // Ghost caught up — drop the patch so later captures stay authoritative.
+            if (ghostTeam == ov.Team)
+            {
+                s_ClientOwnershipOverrides.Remove(planetId);
+                return ghostTeam;
+            }
+
+            return ov.Team;
+        }
+
+        /// <summary>
+        /// Optional population / level from an active override (when ghost still lags).
+        /// Returns false when no override is active for <paramref name="planetId"/>.
+        /// </summary>
+        public static bool TryGetClientOwnershipOverride(
+            int planetId,
+            out TeamId team,
+            out int population,
+            out int planetLevel)
+        {
+            if (s_ClientOwnershipOverrides.TryGetValue(planetId, out var ov))
+            {
+                team = ov.Team;
+                population = ov.Population;
+                planetLevel = ov.PlanetLevel;
+                return true;
+            }
+
+            team = TeamId.None;
+            population = 0;
+            planetLevel = 1;
+            return false;
+        }
+
+        /// <summary>
+        /// Consumes the one-shot client rebuild request from an ownership RPC / host mirror.
+        /// </summary>
+        public static bool ConsumeClientRebuildRequest()
+        {
+            bool requested = s_ClientRebuildRequested;
+            s_ClientRebuildRequested = false;
+            return requested;
+        }
 
         /// <summary>Publishes into the server-side lists (ServerSimulation only).</summary>
         public static void PublishServer(
             in NativeList<PlanetConnectionGraphLogic.Edge> edges,
             in NativeList<PlanetConnectionGraphLogic.Triangle> triangles,
-            in NativeArray<int> homeLevelByTeamIndex) =>
-            PublishInto(Server, edges, triangles, homeLevelByTeamIndex, isClient: false);
+            in NativeArray<int> homeLevelByTeamIndex,
+            uint nextEdgeSequence) =>
+            PublishInto(Server, edges, triangles, homeLevelByTeamIndex, nextEdgeSequence, isClient: false);
 
         /// <summary>Publishes into the client-side lists (ClientSimulation / presentation).</summary>
         public static void PublishClient(
             in NativeList<PlanetConnectionGraphLogic.Edge> edges,
             in NativeList<PlanetConnectionGraphLogic.Triangle> triangles,
-            in NativeArray<int> homeLevelByTeamIndex) =>
-            PublishInto(Client, edges, triangles, homeLevelByTeamIndex, isClient: true);
+            in NativeArray<int> homeLevelByTeamIndex,
+            uint nextEdgeSequence) =>
+            PublishInto(Client, edges, triangles, homeLevelByTeamIndex, nextEdgeSequence, isClient: true);
 
         /// <summary>Legacy alias — treats as client publish (presentation).</summary>
         public static void Publish(
             in NativeList<PlanetConnectionGraphLogic.Edge> edges,
             in NativeList<PlanetConnectionGraphLogic.Triangle> triangles,
             in NativeArray<int> homeLevelByTeamIndex) =>
-            PublishClient(edges, triangles, homeLevelByTeamIndex);
+            PublishClient(edges, triangles, homeLevelByTeamIndex, Client.NextEdgeSequence);
 
         static void PublishInto(
             Side side,
             in NativeList<PlanetConnectionGraphLogic.Edge> edges,
             in NativeList<PlanetConnectionGraphLogic.Triangle> triangles,
             in NativeArray<int> homeLevelByTeamIndex,
+            uint nextEdgeSequence,
             bool isClient)
         {
             side.Edges.Clear();
@@ -173,9 +276,12 @@ namespace TitanOrbit.ECS
                     side.HomeLevelByTeam[i] = homeLevelByTeamIndex[i];
             }
 
-            // Topology changed — invalidate moon-vertex cache so the next motor tick rebuilds.
+            // Sticky sequence persists across publishes so “first created wins” stays stable.
+            side.NextEdgeSequence = nextEdgeSequence == 0 ? 1u : nextEdgeSequence;
+
+            // Topology changed — invalidate planet-center runtime cache so the next motor tick rebuilds.
             side.RuntimeCache.Clear();
-            side.RuntimeCacheMoonElapsed = -999.0;
+            side.RuntimeCacheStamp = -999.0;
             side.DisposeRuntimeNative();
 
             if (isClient)
@@ -192,6 +298,8 @@ namespace TitanOrbit.ECS
             LocalOwnerTerritoryMult = 1f;
             s_StickyTerritoryMult = 1f;
             s_StickyTerritoryUntilMoonElapsed = -1.0;
+            s_ClientOwnershipOverrides.Clear();
+            s_ClientRebuildRequested = false;
             ClientPublishRevision++;
             ServerPublishRevision++;
         }
@@ -215,7 +323,7 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // --- Outside: keep latched boost briefly (edge / moon-vertex noise) ---
+            // --- Outside: keep latched boost briefly (edge flicker) ---
             if (moonElapsedSeconds < s_StickyTerritoryUntilMoonElapsed)
             {
                 LocalOwnerTerritoryMult = s_StickyTerritoryMult;
@@ -261,19 +369,19 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Returns a job-readable Persistent runtime-triangle array (do <b>not</b> Dispose).
-        /// Rebuilds moon vertices when topology or moon clock cache expires.
+        /// Rebuilds planet-center vertices when topology republishes (planets do not move).
         /// </summary>
         public static NativeArray<PlanetConnectionGraphLogic.RuntimeTriangle> GetRuntimeTrianglesNative(
             PlanetConnectionGraphSide sideKind,
             in NativeArray<PlanetMotorSnapshot> planets,
-            double moonElapsedSeconds)
+            double elapsedSeconds)
         {
             Side side = sideKind == PlanetConnectionGraphSide.Server ? Server : Client;
 
             if (side.Triangles.Count == 0)
             {
                 side.RuntimeCache.Clear();
-                side.RuntimeCacheMoonElapsed = moonElapsedSeconds;
+                side.RuntimeCacheStamp = elapsedSeconds;
                 // Keep a single empty Persistent array — do not Dispose/realloc every tick.
                 if (!side.RuntimeNative.IsCreated || side.RuntimeNative.Length != 0)
                 {
@@ -285,15 +393,17 @@ namespace TitanOrbit.ECS
                 return side.RuntimeNative;
             }
 
+            // Rebuild only when Publish cleared the cache (planets do not move).
             bool cacheFresh =
                 side.RuntimeCache.Count > 0 &&
                 side.RuntimeNative.IsCreated &&
-                math.abs(moonElapsedSeconds - side.RuntimeCacheMoonElapsed) < RuntimeMoonCacheSeconds;
+                side.RuntimeNative.Length == side.RuntimeCache.Count;
 
             if (!cacheFresh)
             {
-                RebuildRuntimeCache(side, planets, moonElapsedSeconds);
+                RebuildRuntimeCache(side, planets);
                 side.SyncRuntimeNativeFromCache();
+                side.RuntimeCacheStamp = elapsedSeconds;
             }
 
             return side.RuntimeNative;
@@ -306,10 +416,10 @@ namespace TitanOrbit.ECS
         public static NativeList<PlanetConnectionGraphLogic.RuntimeTriangle> BuildRuntimeTriangles(
             PlanetConnectionGraphSide sideKind,
             in NativeArray<PlanetMotorSnapshot> planets,
-            double moonElapsedSeconds,
+            double elapsedSeconds,
             Allocator allocator)
         {
-            var native = GetRuntimeTrianglesNative(sideKind, planets, moonElapsedSeconds);
+            var native = GetRuntimeTrianglesNative(sideKind, planets, elapsedSeconds);
             var list = new NativeList<PlanetConnectionGraphLogic.RuntimeTriangle>(native.Length, allocator);
             for (int i = 0; i < native.Length; i++)
                 list.Add(native[i]);
@@ -319,15 +429,14 @@ namespace TitanOrbit.ECS
         /// <summary>Legacy — builds from <b>client</b> side (predicted motor / presentation).</summary>
         public static NativeList<PlanetConnectionGraphLogic.RuntimeTriangle> BuildRuntimeTriangles(
             in NativeArray<PlanetMotorSnapshot> planets,
-            double moonElapsedSeconds,
+            double elapsedSeconds,
             Allocator allocator) =>
-            BuildRuntimeTriangles(PlanetConnectionGraphSide.Client, planets, moonElapsedSeconds, allocator);
+            BuildRuntimeTriangles(PlanetConnectionGraphSide.Client, planets, elapsedSeconds, allocator);
 
-        /// <summary>Recomputes moon vertices into the side's managed runtime cache.</summary>
+        /// <summary>Recomputes planet-center vertices into the side's managed runtime cache.</summary>
         static void RebuildRuntimeCache(
             Side side,
-            in NativeArray<PlanetMotorSnapshot> planets,
-            double moonElapsedSeconds)
+            in NativeArray<PlanetMotorSnapshot> planets)
         {
             side.RuntimeCache.Clear();
             for (int i = 0; i < side.Triangles.Count; i++)
@@ -338,27 +447,9 @@ namespace TitanOrbit.ECS
                     !TryFindPlanet(planets, t.PlanetIdC, out var pc))
                     continue;
 
-                float3 va = WrapMoonCanonical(PlanetOrbitMath.GetMoonWorldPosition(
-                    pa.Transform.Position,
-                    math.max(0.25f, pa.Transform.Scale),
-                    pa.Planet.PlanetLevel,
-                    pa.Planet.PlanetId,
-                    moonElapsedSeconds,
-                    pa.Planet.IsHomePlanet));
-                float3 vb = WrapMoonCanonical(PlanetOrbitMath.GetMoonWorldPosition(
-                    pb.Transform.Position,
-                    math.max(0.25f, pb.Transform.Scale),
-                    pb.Planet.PlanetLevel,
-                    pb.Planet.PlanetId,
-                    moonElapsedSeconds,
-                    pb.Planet.IsHomePlanet));
-                float3 vc = WrapMoonCanonical(PlanetOrbitMath.GetMoonWorldPosition(
-                    pc.Transform.Position,
-                    math.max(0.25f, pc.Transform.Scale),
-                    pc.Planet.PlanetLevel,
-                    pc.Planet.PlanetId,
-                    moonElapsedSeconds,
-                    pc.Planet.IsHomePlanet));
+                float3 va = WrapPlanetCanonical(pa.Transform.Position);
+                float3 vb = WrapPlanetCanonical(pb.Transform.Position);
+                float3 vc = WrapPlanetCanonical(pc.Transform.Position);
 
                 side.RuntimeCache.Add(new PlanetConnectionGraphLogic.RuntimeTriangle
                 {
@@ -373,8 +464,6 @@ namespace TitanOrbit.ECS
                     PlanetIdC = t.PlanetIdC,
                 });
             }
-
-            side.RuntimeCacheMoonElapsed = moonElapsedSeconds;
         }
 
         static bool TryFindPlanet(
@@ -397,10 +486,11 @@ namespace TitanOrbit.ECS
             return false;
         }
 
-        static float3 WrapMoonCanonical(float3 moonWorld)
+        /// <summary>Planet core XZ wrapped into canonical toroidal space (Y forced to 0).</summary>
+        static float3 WrapPlanetCanonical(float3 planetWorld)
         {
-            moonWorld.y = 0f;
-            return ToroidalMapEcs.Wrap(moonWorld);
+            planetWorld.y = 0f;
+            return ToroidalMapEcs.Wrap(planetWorld);
         }
     }
 }

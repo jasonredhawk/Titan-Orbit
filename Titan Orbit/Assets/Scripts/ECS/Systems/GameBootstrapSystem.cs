@@ -68,20 +68,33 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Server procedural map spawn: rolls layout from <see cref="MapGenerationLogic"/>, instantiates
-    /// planets and asteroids incrementally, updates loading progress on <see cref="MapStateSingleton"/>.
+    /// planets and asteroids incrementally, then applies starting neutral captures one-at-a-time in
+    /// round-robin order so sticky planet connections can rebuild between claims.
+    /// Updates loading progress on <see cref="MapStateSingleton"/>.
     /// Spawns multiple bodies per sim tick so large asteroid fields (400–800+) do not take minutes on
     /// dedicated servers or block remote clients waiting for ghost replication.
+    /// Runs before <see cref="PlanetConnectionGraphSystem"/> so each claim dirties the graph in the
+    /// same tick after ownership flips.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateBefore(typeof(PlanetConnectionGraphSystem))]
     public partial struct MapGenerationSystem : ISystem
     {
         /// <summary>How many planets/asteroids to instantiate per server sim tick during map build.</summary>
         const int SpawnsPerSimulationTick = 32;
+
+        /// <summary>
+        /// How many starting neutral claims to apply per sim tick.
+        /// Keep at 1 so sticky non-crossing edges rebuild between captures.
+        /// </summary>
+        const int StartingClaimsPerSimulationTick = 1;
+
         enum Phase : byte
         {
             Idle,
             Spawning,
+            ClaimingStartingNeutrals,
             Finalizing,
             Done,
         }
@@ -102,6 +115,12 @@ namespace TitanOrbit.ECS
             public int Level;
             public float GemValue;
             public byte ShipFamilyConfigIndex;
+
+            /// <summary>
+            /// Index into the neutral layout / planet-id lookup when <see cref="Kind"/> is NeutralPlanet.
+            /// -1 for homes and asteroids.
+            /// </summary>
+            public int NeutralLayoutIndex;
         }
 
         Phase _phase;
@@ -111,10 +130,13 @@ namespace TitanOrbit.ECS
         int _spawnIndex;
         int _nextNeutralPlanetId;
         int _totalSpawnSteps;
+        int _claimIndex;
         Entity _mapEntity;
 
         NativeList<PendingSpawn> _spawnQueue;
         NativeList<MapLayoutEntryElement> _layoutEntries;
+        NativeList<MapGenerationLogic.StartingNeutralClaim> _claimQueue;
+        NativeList<int> _neutralPlanetIdsByLayoutIndex;
 
         public void OnCreate(ref SystemState state)
         {
@@ -162,6 +184,13 @@ namespace TitanOrbit.ECS
             {
                 case Phase.Spawning:
                     if (SpawnBatch(ref state))
+                        _phase = Phase.ClaimingStartingNeutrals;
+                    break;
+                case Phase.ClaimingStartingNeutrals:
+                    // --- One (or few) ownership flips per tick — mimics live capture timing ---
+                    // [TITAN-ORBIT] PlanetConnectionGraphSystem runs after this system and rebuilds
+                    // sticky edges when the ownership fingerprint changes.
+                    if (ApplyStartingNeutralClaimBatch(ref state))
                         _phase = Phase.Finalizing;
                     break;
                 case Phase.Finalizing:
@@ -234,20 +263,43 @@ namespace TitanOrbit.ECS
                     Scale = new float3(home.Scale),
                     Team = team,
                     Level = home.Level,
+                    NeutralLayoutIndex = -1,
                 });
             }
 
             MapGenerationLogic.BuildNeutralPlanets(_config, _rolled, ref _rng, planetPlacements, neutralLayouts);
 
-            // --- Optional: pre-own some neutrals so capture testing does not require transports ---
-            // [TITAN-ORBIT] Even spread when neutrals < desired×teams (see AssignStartingOwnedNeutralTeams).
-            var startingOwnership = new NativeArray<TeamId>(neutralLayouts.Length, Allocator.Temp);
-            MapGenerationLogic.AssignStartingOwnedNeutralTeams(
+            // --- Round-robin starting claims (applied after spawn, one per tick) ---
+            // [TITAN-ORBIT] Neutrals spawn as TeamId.None; each team then “captures” the closest
+            // available neutral to its home, one team at a time, so sticky connections form like
+            // live play instead of wiring every pre-owned planet in a single graph rebuild.
+            if (_claimQueue.IsCreated)
+                _claimQueue.Dispose();
+            _claimQueue = new NativeList<MapGenerationLogic.StartingNeutralClaim>(
+                math.max(8, _config.StartingOwnedNeutralPlanetsPerTeam * _rolled.TeamCount),
+                Allocator.Persistent);
+
+            var homePositions = new NativeArray<float3>(_rolled.TeamCount, Allocator.Temp);
+            for (int i = 0; i < homeLayouts.Length && i < homePositions.Length; i++)
+                homePositions[i] = homeLayouts[i].Position;
+
+            MapGenerationLogic.BuildStartingNeutralClaimOrder(
                 _config.StartingOwnedNeutralPlanetsPerTeam,
                 _rolled.TeamCount,
-                neutralLayouts.Length,
+                homePositions,
+                neutralLayouts,
+                _rolled.MapWidth,
+                _rolled.MapHeight,
                 ref _rng,
-                startingOwnership);
+                ref _claimQueue);
+            homePositions.Dispose();
+            _claimIndex = 0;
+
+            if (_neutralPlanetIdsByLayoutIndex.IsCreated)
+                _neutralPlanetIdsByLayoutIndex.Dispose();
+            _neutralPlanetIdsByLayoutIndex = new NativeList<int>(neutralLayouts.Length, Allocator.Persistent);
+            for (int i = 0; i < neutralLayouts.Length; i++)
+                _neutralPlanetIdsByLayoutIndex.Add(0);
 
             for (int i = 0; i < neutralLayouts.Length; i++)
             {
@@ -258,12 +310,12 @@ namespace TitanOrbit.ECS
                     Position = neutral.Position,
                     Scale = new float3(neutral.Scale),
                     Level = neutral.Level,
-                    Team = startingOwnership[i],
+                    // Spawn unowned — claim phase assigns Team later.
+                    Team = TeamId.None,
+                    NeutralLayoutIndex = i,
                     ShipFamilyConfigIndex = (byte)(1 + _rng.NextInt(0, PlanetShipFamilyAssignment.NonHomeFamilySlotCount)),
                 });
             }
-
-            startingOwnership.Dispose();
 
             MapGenerationLogic.BuildAsteroids(_config, _rolled, ref _rng, planetPlacements, asteroidLayouts);
             for (int i = 0; i < asteroidLayouts.Length; i++)
@@ -275,6 +327,7 @@ namespace TitanOrbit.ECS
                     Position = asteroid.Position,
                     Scale = asteroid.Scale,
                     GemValue = asteroid.GemValue,
+                    NeutralLayoutIndex = -1,
                 });
             }
 
@@ -283,7 +336,8 @@ namespace TitanOrbit.ECS
             asteroidLayouts.Dispose();
             planetPlacements.Dispose();
 
-            _totalSpawnSteps = math.max(1, _spawnQueue.Length);
+            // Loading bar covers body spawn + deferred starting captures.
+            _totalSpawnSteps = math.max(1, _spawnQueue.Length + _claimQueue.Length);
             SetLoadingProgress(ref state, 0, _totalSpawnSteps);
             return _spawnQueue.IsCreated;
         }
@@ -306,6 +360,92 @@ namespace TitanOrbit.ECS
             return _spawnIndex >= _spawnQueue.Length;
         }
 
+        /// <summary>
+        /// Applies up to <see cref="StartingClaimsPerSimulationTick"/> starting neutral captures.
+        /// Each flip changes <see cref="PlanetState.Ownership"/> so the connection graph rebuilds
+        /// sticky edges as if players captured planets over time.
+        /// </summary>
+        /// <returns>True when every queued starting claim has been applied.</returns>
+        bool ApplyStartingNeutralClaimBatch(ref SystemState state)
+        {
+            if (!_claimQueue.IsCreated || _claimIndex >= _claimQueue.Length)
+            {
+                SetLoadingProgress(ref state, _totalSpawnSteps, _totalSpawnSteps);
+                return true;
+            }
+
+            int batchEnd = math.min(_claimQueue.Length, _claimIndex + StartingClaimsPerSimulationTick);
+            var claimEcb = new EntityCommandBuffer(Allocator.Temp);
+            while (_claimIndex < batchEnd)
+            {
+                var claim = _claimQueue[_claimIndex];
+                _claimIndex++;
+
+                if (claim.Team == TeamId.None ||
+                    claim.NeutralLayoutIndex < 0 ||
+                    !_neutralPlanetIdsByLayoutIndex.IsCreated ||
+                    claim.NeutralLayoutIndex >= _neutralPlanetIdsByLayoutIndex.Length)
+                    continue;
+
+                int planetId = _neutralPlanetIdsByLayoutIndex[claim.NeutralLayoutIndex];
+                if (planetId == 0)
+                    continue;
+
+                // --- Find the spawned planet ghost by PlanetId and flip ownership ---
+                bool applied = false;
+                int claimedLevel = 1;
+                foreach (var planet in SystemAPI.Query<RefRW<PlanetState>>().WithAll<PlanetTag>())
+                {
+                    if (planet.ValueRO.PlanetId != planetId)
+                        continue;
+                    if (planet.ValueRO.IsHomePlanet)
+                        break;
+
+                    planet.ValueRW.Ownership = claim.Team;
+                    claimedLevel = math.max(1, planet.ValueRO.PlanetLevel);
+                    applied = true;
+
+                    // Keep layout buffer metadata in sync for session / lobby consumers.
+                    for (int i = 0; i < _layoutEntries.Length; i++)
+                    {
+                        var entry = _layoutEntries[i];
+                        if (entry.PlanetId != planetId)
+                            continue;
+                        entry.Team = claim.Team;
+                        _layoutEntries[i] = entry;
+                        break;
+                    }
+
+                    break;
+                }
+
+                if (!applied)
+                {
+                    UnityEngine.Debug.LogWarning(
+                        $"[MapGeneration] Starting claim skipped — planetId {planetId} for {claim.Team} not found.");
+                }
+                else
+                {
+                    // [TITAN-ORBIT] Same immediate client notify as live captures — starting neutrals
+                    // must wire sticky lines without waiting on rate-limited planet ghosts.
+                    PlanetOwnershipNetNotify.Send(
+                        ref claimEcb,
+                        planetId,
+                        claim.Team,
+                        0,
+                        claimedLevel);
+                }
+            }
+
+            claimEcb.Playback(state.EntityManager);
+            claimEcb.Dispose();
+
+            int completed = _spawnQueue.IsCreated ? _spawnQueue.Length : 0;
+            completed += _claimIndex;
+            SetLoadingProgress(ref state, completed, _totalSpawnSteps);
+            return _claimIndex >= _claimQueue.Length;
+        }
+
         /// <summary>Instantiates one prefab from the pending queue entry.</summary>
         void SpawnQueuedEntity(ref SystemState state, in PendingSpawn pending)
         {
@@ -324,16 +464,23 @@ namespace TitanOrbit.ECS
                         ref _nextNeutralPlanetId, 0);
                     break;
                 case SpawnKind.NeutralPlanet:
-                    // Pending.Team may be a starting owner (test assist) or TeamId.None (true neutral).
+                    // Always spawn as unowned; starting claims flip Ownership later (round-robin).
+                    int planetId = _nextNeutralPlanetId;
                     _layoutEntries.Add(new MapLayoutEntryElement
                     {
                         EntityKind = 2,
                         Position = pending.Position,
                         Scale = pending.Scale.x,
-                        Team = pending.Team,
-                        PlanetId = _nextNeutralPlanetId,
+                        Team = TeamId.None,
+                        PlanetId = planetId,
                     });
-                    SpawnPlanet(ref state, pending.Position, pending.Team, false, pending.Scale.x, pending.Level,
+                    if (pending.NeutralLayoutIndex >= 0 &&
+                        pending.NeutralLayoutIndex < _neutralPlanetIdsByLayoutIndex.Length)
+                    {
+                        _neutralPlanetIdsByLayoutIndex[pending.NeutralLayoutIndex] = planetId;
+                    }
+
+                    SpawnPlanet(ref state, pending.Position, TeamId.None, false, pending.Scale.x, pending.Level,
                         ref _nextNeutralPlanetId, pending.ShipFamilyConfigIndex);
                     break;
                 case SpawnKind.Asteroid:
@@ -384,10 +531,11 @@ namespace TitanOrbit.ECS
             mapState.AsteroidCount = asteroidCount;
             em.SetComponentData(_mapEntity, mapState);
 
+            int claimCount = _claimQueue.IsCreated ? _claimQueue.Length : 0;
             UnityEngine.Debug.Log(
                 $"[MapGeneration] Map generated. Size: {_rolled.MapWidth:F0}x{_rolled.MapHeight:F0}, " +
                 $"Teams: {_rolled.TeamCount}, Neutrals: {neutralCount}, Asteroids: {asteroidCount}, " +
-                $"LoadingSteps: {_totalSpawnSteps}, Seed: {_rolled.Seed}");
+                $"StartingClaims: {claimCount}, LoadingSteps: {_totalSpawnSteps}, Seed: {_rolled.Seed}");
 
             DisposeNativeCollections();
         }
@@ -406,6 +554,8 @@ namespace TitanOrbit.ECS
         {
             if (_layoutEntries.IsCreated) _layoutEntries.Dispose();
             if (_spawnQueue.IsCreated) _spawnQueue.Dispose();
+            if (_claimQueue.IsCreated) _claimQueue.Dispose();
+            if (_neutralPlanetIdsByLayoutIndex.IsCreated) _neutralPlanetIdsByLayoutIndex.Dispose();
         }
 
         /// <summary>Fresh map generation must not inherit player ships from a prior match on the same server world.</summary>

@@ -11,7 +11,7 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server: assigns asteroid territory ownership from point-in-triangle tests against the
-    /// current planet-connection graph (gem-moon vertices). Port of NGO
+    /// current planet-connection graph (planet-center vertices). Port of NGO
     /// <c>AsteroidTerritoryHighlighter</c>, extended for multi-team overlap.
     /// <para>
     /// Writes ghosted <see cref="AsteroidState.TerritoryTeamsMask"/> (all owning teams) and

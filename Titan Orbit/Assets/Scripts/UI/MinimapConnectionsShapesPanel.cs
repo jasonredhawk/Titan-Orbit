@@ -3,17 +3,22 @@ using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using UnityEngine;
 
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Shapes immediate-mode panel for minimap territory triangles between allied planets.
-    /// Vertices sit at each planet's gem moon (same topology as world
+    /// Shapes immediate-mode panel for minimap territory triangles and lone sticky edges between
+    /// allied planets. Vertices sit at each planet center (same topology as world
     /// <see cref="PlanetConnectionShapesVisual"/>). Reads <see cref="PlanetConnectionGraphCache"/>
     /// only — never planet/asteroid ECS gathers. Parent circular Mask clips draws to the disc.
+    /// When expanded, draws a 3×3 toroidal tile of each link (same chart as planet blips).
     /// Client presentation only.
+    /// <para>
+    /// Prefer <see cref="MinimapConnectionsUI"/> under the Mask — this panel is a Shapes fallback.
+    /// </para>
     /// </summary>
     public class MinimapConnectionsShapesPanel : ImmediateModePanel
     {
@@ -23,7 +28,7 @@ namespace TitanOrbit.UI
         /// <summary>Border thickness in UI pixels.</summary>
         [SerializeField] float triangleBorderThickness = 2.5f;
 
-        /// <summary>Border alpha for triangle outlines.</summary>
+        /// <summary>Border alpha for triangle outlines / lone edges.</summary>
         [SerializeField] float triangleBorderAlpha = 0.75f;
 
         /// <summary>Cached parent minimap for player position / projection helpers.</summary>
@@ -76,7 +81,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// [UNITY] Shapes draw callback — projects each published triangle into panel space.
+        /// [UNITY] Shapes draw callback — projects each published triangle / lone edge into panel space.
         /// </summary>
         public override void DrawPanelShapes(Rect rect, ImCanvasContext ctx)
         {
@@ -89,7 +94,10 @@ namespace TitanOrbit.UI
                 return;
 
             var triangles = PlanetConnectionGraphCache.CurrentTriangles;
-            if (triangles == null || triangles.Count == 0)
+            var edges = PlanetConnectionGraphCache.CurrentEdges;
+            int triCount = triangles?.Count ?? 0;
+            int edgeCount = edges?.Count ?? 0;
+            if (triCount == 0 && edgeCount == 0)
                 return;
 
             World world = EcsGameBridge.GetVisualizationWorld();
@@ -104,22 +112,19 @@ namespace TitanOrbit.UI
             float scaleX = displayHalf / radius;
             float scaleZ = displayHalf / radius;
 
-            if (!PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double moonElapsed, includeTickFraction: true))
-                moonElapsed = Time.timeAsDouble;
-
             Draw.ResetAllDrawStates();
             Draw.ThicknessSpace = ThicknessSpace.Pixels;
             Draw.LineGeometry = LineGeometry.Flat2D;
 
-            for (int i = 0; i < triangles.Count; i++)
+            for (int i = 0; i < triCount; i++)
             {
                 var tri = triangles[i];
-                if (!PlanetConnectionShapesVisual.TryGetCanonicalMoonVertex(
-                        em, visualizer, tri.PlanetIdA, moonElapsed, out Vector3 aCanon) ||
-                    !PlanetConnectionShapesVisual.TryGetCanonicalMoonVertex(
-                        em, visualizer, tri.PlanetIdB, moonElapsed, out Vector3 bCanon) ||
-                    !PlanetConnectionShapesVisual.TryGetCanonicalMoonVertex(
-                        em, visualizer, tri.PlanetIdC, moonElapsed, out Vector3 cCanon))
+                if (!PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, tri.PlanetIdA, out Vector3 aCanon) ||
+                    !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, tri.PlanetIdB, out Vector3 bCanon) ||
+                    !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, tri.PlanetIdC, out Vector3 cCanon))
                     continue;
 
                 int idA = tri.PlanetIdA, idB = tri.PlanetIdB, idC = tri.PlanetIdC;
@@ -152,6 +157,38 @@ namespace TitanOrbit.UI
 
                 Draw.Triangle(pa, pb, pc, fillColor);
                 Draw.TriangleBorder(pa, pb, pc, triangleBorderThickness, borderColor);
+            }
+
+            // Lone sticky edges (triangle sides already have TriangleBorder).
+            for (int i = 0; i < edgeCount; i++)
+            {
+                var edge = edges[i];
+                if (PlanetConnectionGraphLogic.EdgeIsTriangleSide(
+                        edge.PlanetIdA, edge.PlanetIdB, edge.Team, triangles))
+                    continue;
+
+                if (!PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, edge.PlanetIdA, out Vector3 aCanon) ||
+                    !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
+                        em, visualizer, edge.PlanetIdB, out Vector3 bCanon))
+                    continue;
+
+                Vector3 anchor = aCanon;
+                Vector3 other = bCanon;
+                if (edge.PlanetIdB < edge.PlanetIdA)
+                {
+                    anchor = bCanon;
+                    other = aCanon;
+                }
+
+                Vector3 bOff = ToroidalMap.ShortestWorldOffsetXZ(anchor, other);
+                if (!TryProjectWorldToMinimap(rect, playerPos, radius, anchor, out Vector2 pa))
+                    continue;
+
+                Vector2 pb = pa + new Vector2(bOff.x * scaleX, bOff.z * scaleZ);
+                Color baseColor = edge.Team.ToColor();
+                Color lineColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha);
+                Draw.Line(pa, pb, triangleBorderThickness, lineColor);
             }
         }
 

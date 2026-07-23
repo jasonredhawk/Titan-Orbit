@@ -11,19 +11,23 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server: rebuilds same-team planet connection edges/triangles when ownership or levels change.
+    /// Topology uses <b>planet centers</b> (not gem moons) so sticky non-crossing links stay stable.
+    /// One global planar map: <b>no line may cross any other</b> (friend or foe). First-created sticky
+    /// edges win; blocked teams simply cannot add the crossing chord / triangle side.
     /// Publishes topology to ECS buffers on <see cref="PlanetConnectionGraphTag"/> and to the
     /// <b>server</b> side of <see cref="PlanetConnectionGraphCache"/> (never the client lists —
     /// host would race and wipe TerritoryTeam / flicker triangles).
-    /// Applies stacked corner pop/growth bonuses onto <see cref="PlanetGrowthState"/>.
-    /// World: ServerSimulation. Poll interval matches NGO (~3s) plus immediate dirty rebuilds.
+    /// Applies stacked corner pop/growth bonuses onto <see cref="PlanetGrowthState"/> from
+    /// <b>triangles only</b> (lone edges are visual-only).
+    /// World: ServerSimulation.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PeopleTransportSimulationSystem))]
     public partial struct PlanetConnectionGraphSystem : ISystem
     {
-        /// <summary>[TITAN-ORBIT] NGO recomputeInterval — also refreshes AverageLevel after upgrades.</summary>
-        const float RecomputeIntervalSeconds = 3f;
+        /// <summary>[TITAN-ORBIT] Soft fallback when only ghost-level fields drift without an ownership RPC.</summary>
+        const float RecomputeIntervalSeconds = 1f;
 
         /// <summary>Creates the graph singleton + buffers once on server boot.</summary>
         public void OnCreate(ref SystemState state)
@@ -42,11 +46,14 @@ namespace TitanOrbit.ECS
                 LastRebuildElapsed = -999f,
                 OwnershipFingerprint = 0,
                 RebuildInProgress = false,
+                NextEdgeSequence = 1,
             });
         }
 
         /// <summary>
-        /// Detects capture/level dirty or 3s timer, then rebuilds the full graph and planet bonuses.
+        /// Detects capture/level dirty or soft timer, then rebuilds the sticky non-crossing graph
+        /// and triangle-only planet bonuses. Captures also fire <see cref="PlanetOwnershipChangedRpc"/>
+        /// so clients do not wait on rate-limited planet ghosts.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -61,21 +68,14 @@ namespace TitanOrbit.ECS
                 mapH = math.max(100f, map.MapHeight);
             }
 
-            // --- Moon clock for gem-moon vertex positions (nearest-neighbor = moons, not cores) ---
-            int hz = 0;
-            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
-                hz = tickRate.SimulationTickRate;
-            double moonElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
-                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
-                : SystemAPI.Time.ElapsedTime;
-
-            // --- Collect planet inputs + fingerprint (server may query freely) ---
+            // --- Collect planet-center inputs + fingerprint (server may query freely) ---
+            // [TITAN-ORBIT] Centers (not moons) — topology must not churn as moons orbit.
             var planetInputs = new NativeList<PlanetConnectionGraphLogic.PlanetInput>(32, Allocator.Temp);
             foreach (var (planet, transform) in SystemAPI
                          .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
                          .WithAll<PlanetTag>())
             {
-                planetInputs.Add(MakeMoonVertexInput(planet.ValueRO, transform.ValueRO, moonElapsed, mapW, mapH));
+                planetInputs.Add(MakePlanetCenterInput(planet.ValueRO, transform.ValueRO, mapW, mapH));
             }
 
             uint fingerprint = ComputeFingerprint(planetInputs.AsArray());
@@ -87,17 +87,42 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // --- Rebuild topology ---
+            // --- Seed sticky previous edges from the ECS buffer ---
+            var edgeBuf = SystemAPI.GetSingletonBuffer<PlanetConnectionEdgeElement>();
+            var previous = new NativeList<PlanetConnectionGraphLogic.Edge>(edgeBuf.Length, Allocator.Temp);
+            for (int i = 0; i < edgeBuf.Length; i++)
+            {
+                var e = edgeBuf[i];
+                previous.Add(new PlanetConnectionGraphLogic.Edge
+                {
+                    PlanetIdA = e.PlanetIdA,
+                    PlanetIdB = e.PlanetIdB,
+                    Team = e.Team,
+                    CreationSequence = e.CreationSequence,
+                });
+            }
+
+            // --- Rebuild topology (sticky + non-crossing + clique triangles) ---
             var edges = new NativeList<PlanetConnectionGraphLogic.Edge>(64, Allocator.Temp);
             var triangles = new NativeList<PlanetConnectionGraphLogic.Triangle>(32, Allocator.Temp);
+            uint nextSequence = graphState.ValueRO.NextEdgeSequence;
+            if (nextSequence == 0)
+                nextSequence = 1;
             PlanetConnectionGraphLogic.RebuildFullGraph(
-                planetInputs.AsArray(), mapW, mapH, ref edges, ref triangles);
+                planetInputs.AsArray(),
+                mapW,
+                mapH,
+                previous,
+                ref nextSequence,
+                ref edges,
+                ref triangles);
 
             var homeLevels = new NativeArray<int>(6, Allocator.Temp);
             PlanetConnectionGraphLogic.FillHomeLevels(planetInputs.AsArray(), ref homeLevels);
 
             // --- Write ECS buffers ---
-            var edgeBuf = SystemAPI.GetSingletonBuffer<PlanetConnectionEdgeElement>();
+            // Re-fetch edge buffer after other singleton access so the DynamicBuffer stays valid.
+            edgeBuf = SystemAPI.GetSingletonBuffer<PlanetConnectionEdgeElement>();
             var triBuf = SystemAPI.GetSingletonBuffer<PlanetConnectionTriangleElement>();
             edgeBuf.Clear();
             triBuf.Clear();
@@ -109,6 +134,7 @@ namespace TitanOrbit.ECS
                     PlanetIdA = e.PlanetIdA,
                     PlanetIdB = e.PlanetIdB,
                     Team = e.Team,
+                    CreationSequence = e.CreationSequence,
                 });
             }
 
@@ -129,9 +155,9 @@ namespace TitanOrbit.ECS
             // --- Publish server-side cache only ---
             // [TITAN-ORBIT] Host runs ClientSimulation too — a shared list would race with
             // PlanetConnectionGraphClientSystem and wipe TerritoryTeam / flicker triangles.
-            PlanetConnectionGraphCache.PublishServer(edges, triangles, homeLevels);
+            PlanetConnectionGraphCache.PublishServer(edges, triangles, homeLevels, nextSequence);
 
-            // --- Reset then stack corner pop/growth bonuses ---
+            // --- Reset then stack corner pop/growth bonuses (triangles only) ---
             foreach (var growth in SystemAPI.Query<RefRW<PlanetGrowthState>>().WithAll<PlanetTag>())
                 growth.ValueRW.ConnectionBonusFraction = 0f;
 
@@ -158,20 +184,44 @@ namespace TitanOrbit.ECS
             graphState.ValueRW.LastRebuildElapsed = now;
             graphState.ValueRW.OwnershipFingerprint = fingerprint;
             graphState.ValueRW.RebuildInProgress = false;
+            graphState.ValueRW.NextEdgeSequence = nextSequence;
 
+            previous.Dispose();
             edges.Dispose();
             triangles.Dispose();
             homeLevels.Dispose();
             planetInputs.Dispose();
         }
 
-        /// <summary>Cheap dirty hash of ownership + level per planet id.</summary>
+        /// <summary>
+        /// Cheap dirty hash of ownership + level per planet id.
+        /// Sorts by PlanetId first so query / HashSet order never masks a real ownership change.
+        /// </summary>
         static uint ComputeFingerprint(NativeArray<PlanetConnectionGraphLogic.PlanetInput> planets)
         {
-            uint h = 2166136261u;
-            for (int i = 0; i < planets.Length; i++)
+            // --- Sort copy by PlanetId (stable dirty detection) ---
+            int n = planets.Length;
+            var order = new NativeArray<int>(n, Allocator.Temp);
+            for (int i = 0; i < n; i++)
+                order[i] = i;
+            for (int i = 1; i < n; i++)
             {
-                var p = planets[i];
+                int key = order[i];
+                int keyId = planets[key].PlanetId;
+                int j = i - 1;
+                while (j >= 0 && planets[order[j]].PlanetId > keyId)
+                {
+                    order[j + 1] = order[j];
+                    j--;
+                }
+
+                order[j + 1] = key;
+            }
+
+            uint h = 2166136261u;
+            for (int oi = 0; oi < n; oi++)
+            {
+                var p = planets[order[oi]];
                 h ^= (uint)p.PlanetId;
                 h *= 16777619u;
                 h ^= (uint)p.Team;
@@ -180,51 +230,48 @@ namespace TitanOrbit.ECS
                 h *= 16777619u;
             }
 
+            order.Dispose();
             return h;
         }
 
         /// <summary>
         /// Builds a graph input whose <see cref="PlanetConnectionGraphLogic.PlanetInput.Position"/> is the
-        /// gem-moon vertex wrapped to canonical toroidal XZ (not the planet core).
+        /// planet core wrapped to canonical toroidal XZ (not the gem moon).
         /// </summary>
-        static PlanetConnectionGraphLogic.PlanetInput MakeMoonVertexInput(
+        static PlanetConnectionGraphLogic.PlanetInput MakePlanetCenterInput(
             in PlanetState planet,
             in LocalTransform transform,
-            double moonElapsed,
             float mapW,
             float mapH)
         {
-            float3 moon = PlanetOrbitMath.GetMoonWorldPosition(
-                transform.Position,
-                math.max(0.25f, transform.Scale),
-                math.max(1, planet.PlanetLevel),
-                planet.PlanetId,
-                moonElapsed,
-                planet.IsHomePlanet);
-            moon.y = 0f;
-            moon = ToroidalMapEcs.Wrap(moon, mapW, mapH);
+            float3 center = transform.Position;
+            center.y = 0f;
+            center = ToroidalMapEcs.Wrap(center, mapW, mapH);
             return new PlanetConnectionGraphLogic.PlanetInput
             {
                 PlanetId = planet.PlanetId,
                 Team = planet.Ownership,
                 PlanetLevel = math.max(1, planet.PlanetLevel),
-                Position = moon,
+                Position = center,
                 IsHomePlanet = planet.IsHomePlanet,
             };
         }
     }
 
     /// <summary>
-    /// Client: rebuilds the same connection topology from Instantiated planet snapshots and publishes
-    /// to <see cref="PlanetConnectionGraphCache"/> for predicted territory speed + Shapes drawing.
-    /// Never uses planet archetype gathers under TransformQuarantine.
-    /// World: ClientSimulation.
+    /// Client: rebuilds the same sticky non-crossing topology from Instantiated planet snapshots
+    /// and publishes to <see cref="PlanetConnectionGraphCache"/> for predicted territory speed +
+    /// Shapes drawing (triangles and lone edges). Never uses planet archetype gathers under
+    /// TransformQuarantine. Ownership flips arrive via <see cref="PlanetOwnershipChangedRpc"/> so
+    /// lines/minimap do not wait on rate-limited planet ghosts. World: ClientSimulation.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct PlanetConnectionGraphClientSystem : ISystem
     {
-        const float RecomputeIntervalSeconds = 3f;
+        /// <summary>[TITAN-ORBIT] Soft fallback if an ownership RPC was missed; dirty + RPC cover captures.</summary>
+        const float RecomputeIntervalSeconds = 1f;
+
         float _lastRebuildElapsed;
         uint _lastFingerprint;
 
@@ -236,8 +283,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Rebuilds graph from registry Collect when ownership dirty or every 3s.
-        /// Skips during join Settling / GhostSpawnBacklog so Instantiates windows stay quiet.
+        /// Rebuilds graph from registry Collect when ownership dirty, forced by capture RPC,
+        /// or on the soft timer. Seeds sticky edges from the client cache. Skips during join
+        /// Settling / GhostSpawnBacklog so Instantiates windows stay quiet.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -255,15 +303,7 @@ namespace TitanOrbit.ECS
                 mapH = math.max(100f, map.MapHeight);
             }
 
-            // --- Moon clock (match server / world drawer) ---
-            int hz = 0;
-            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
-                hz = tickRate.SimulationTickRate;
-            double moonElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
-                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
-                : SystemAPI.Time.ElapsedTime;
-
-            // --- Quarantine-safe planet snapshots ---
+            // --- Quarantine-safe planet snapshots (centers, not moons) ---
             NativeList<PlanetMotorSnapshot> snaps =
                 ClientJoinSettleCache.TransformQuarantine
                     ? PlanetMotorSnapshotCollection.CollectFromClientRegistry(ref state, Allocator.Temp)
@@ -273,66 +313,115 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < snaps.Length; i++)
             {
                 var s = snaps[i];
-                // Same moon-vertex helper as server (MakeMoonVertexInput is on the server struct —
-                // duplicate the wrap here so client stays in TitanOrbit.ECS without cross-calls).
-                float3 moon = PlanetOrbitMath.GetMoonWorldPosition(
-                    s.Transform.Position,
-                    math.max(0.25f, s.Transform.Scale),
-                    math.max(1, s.Planet.PlanetLevel),
-                    s.Planet.PlanetId,
-                    moonElapsed,
-                    s.Planet.IsHomePlanet);
-                moon.y = 0f;
-                moon = ToroidalMapEcs.Wrap(moon, mapW, mapH);
+                float3 center = s.Transform.Position;
+                center.y = 0f;
+                center = ToroidalMapEcs.Wrap(center, mapW, mapH);
+
+                // [TITAN-ORBIT] Read override before Resolve (Resolve clears it when ghost catches up).
+                bool hasOverride = PlanetConnectionGraphCache.TryGetClientOwnershipOverride(
+                    s.Planet.PlanetId, out _, out _, out int ovLevel);
+                TeamId team = PlanetConnectionGraphCache.ResolveClientOwnership(
+                    s.Planet.PlanetId, s.Planet.Ownership);
+                int level = math.max(1, s.Planet.PlanetLevel);
+                if (hasOverride && team != s.Planet.Ownership)
+                    level = ovLevel;
+
                 inputs.Add(new PlanetConnectionGraphLogic.PlanetInput
                 {
                     PlanetId = s.Planet.PlanetId,
-                    Team = s.Planet.Ownership,
-                    PlanetLevel = math.max(1, s.Planet.PlanetLevel),
-                    Position = moon,
+                    Team = team,
+                    PlanetLevel = level,
+                    Position = center,
                     IsHomePlanet = s.Planet.IsHomePlanet,
                 });
             }
 
-            uint fingerprint = 2166136261u;
-            for (int i = 0; i < inputs.Length; i++)
-            {
-                var p = inputs[i];
-                fingerprint ^= (uint)p.PlanetId;
-                fingerprint *= 16777619u;
-                fingerprint ^= (uint)p.Team;
-                fingerprint *= 16777619u;
-                fingerprint ^= (uint)p.PlanetLevel;
-                fingerprint *= 16777619u;
-            }
-
+            uint fingerprint = ComputeClientFingerprint(inputs.AsArray());
+            bool forced = PlanetConnectionGraphCache.ConsumeClientRebuildRequest();
             bool dirty = fingerprint != _lastFingerprint;
             bool timed = (now - _lastRebuildElapsed) >= RecomputeIntervalSeconds;
-            if (!dirty && !timed)
+            if (!dirty && !timed && !forced)
             {
                 inputs.Dispose();
                 snaps.Dispose();
                 return;
             }
 
+            // --- Seed sticky previous edges from the client cache ---
+            var cachedEdges = PlanetConnectionGraphCache.CurrentEdges;
+            var previous = new NativeList<PlanetConnectionGraphLogic.Edge>(
+                cachedEdges != null ? cachedEdges.Count : 0, Allocator.Temp);
+            if (cachedEdges != null)
+            {
+                for (int i = 0; i < cachedEdges.Count; i++)
+                    previous.Add(cachedEdges[i]);
+            }
+
             var edges = new NativeList<PlanetConnectionGraphLogic.Edge>(64, Allocator.Temp);
             var triangles = new NativeList<PlanetConnectionGraphLogic.Triangle>(32, Allocator.Temp);
+            uint nextSequence = PlanetConnectionGraphCache.ClientNextEdgeSequence;
+            if (nextSequence == 0)
+                nextSequence = 1;
             PlanetConnectionGraphLogic.RebuildFullGraph(
-                inputs.AsArray(), mapW, mapH, ref edges, ref triangles);
+                inputs.AsArray(),
+                mapW,
+                mapH,
+                previous,
+                ref nextSequence,
+                ref edges,
+                ref triangles);
 
             var homeLevels = new NativeArray<int>(6, Allocator.Temp);
             PlanetConnectionGraphLogic.FillHomeLevels(inputs.AsArray(), ref homeLevels);
             // Client presentation / predicted motor — never overwrite the server-side lists.
-            PlanetConnectionGraphCache.PublishClient(edges, triangles, homeLevels);
+            PlanetConnectionGraphCache.PublishClient(edges, triangles, homeLevels, nextSequence);
 
             _lastFingerprint = fingerprint;
             _lastRebuildElapsed = now;
 
+            previous.Dispose();
             edges.Dispose();
             triangles.Dispose();
             homeLevels.Dispose();
             inputs.Dispose();
             snaps.Dispose();
+        }
+
+        /// <summary>Order-stable FNV of (PlanetId, Team, Level) — same as server.</summary>
+        static uint ComputeClientFingerprint(NativeArray<PlanetConnectionGraphLogic.PlanetInput> planets)
+        {
+            int n = planets.Length;
+            var order = new NativeArray<int>(n, Allocator.Temp);
+            for (int i = 0; i < n; i++)
+                order[i] = i;
+            for (int i = 1; i < n; i++)
+            {
+                int key = order[i];
+                int keyId = planets[key].PlanetId;
+                int j = i - 1;
+                while (j >= 0 && planets[order[j]].PlanetId > keyId)
+                {
+                    order[j + 1] = order[j];
+                    j--;
+                }
+
+                order[j + 1] = key;
+            }
+
+            uint h = 2166136261u;
+            for (int oi = 0; oi < n; oi++)
+            {
+                var p = planets[order[oi]];
+                h ^= (uint)p.PlanetId;
+                h *= 16777619u;
+                h ^= (uint)p.Team;
+                h *= 16777619u;
+                h ^= (uint)p.PlanetLevel;
+                h *= 16777619u;
+            }
+
+            order.Dispose();
+            return h;
         }
     }
 }

@@ -49,7 +49,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// How many non-home planets each team starts owning (0 = all stay neutral).
-        /// Capped/evened against available neutrals at spawn time.
+        /// Applied round-robin after spawn (one claim per tick) so sticky connections rebuild
+        /// between captures. Capped/evened against available neutrals.
         /// </summary>
         public int StartingOwnedNeutralPlanetsPerTeam;
 

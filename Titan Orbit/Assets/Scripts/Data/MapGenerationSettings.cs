@@ -45,9 +45,10 @@ namespace TitanOrbit.Data
         public int maxNeutralPlanets = 27;
         [Tooltip(
             "How many non-home (neutral) planets each team starts owning. 0 = all neutrals stay unowned. " +
+            "Claims are applied round-robin during map generation (each team gets one closest-to-home " +
+            "neutral per pass) so planet-connection lines form like live captures. " +
             "If there are not enough neutrals for every team to get this many, ownership is spread evenly " +
-            "(e.g. 4 wanted × 4 teams but only 12 neutrals → 3 each). Leftover neutrals after an even split " +
-            "go to randomly chosen teams that have fewer.")]
+            "(e.g. 4 wanted × 4 teams but only 12 neutrals → 3 each). Leftover neutrals stay unowned.")]
         [Min(0)]
         public int startingOwnedNeutralPlanetsPerTeam = 0;
         public float minPlanetSize = 9f;
