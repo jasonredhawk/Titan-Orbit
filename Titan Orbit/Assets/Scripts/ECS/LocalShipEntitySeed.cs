@@ -26,6 +26,14 @@ namespace TitanOrbit.ECS
         public static Entity SeededShip { get; private set; }
 
         /// <summary>
+        /// True when Instantiates already recorded a locally owned ship (seeded or pending).
+        /// Used by <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> to cover the
+        /// TeamChoiceResult → ship Instantiates gap (suppress lifts before the hull exists).
+        /// </summary>
+        public static bool HasOwnedShipSeed =>
+            SeededShip != Entity.Null || s_PendingOwnedShip != Entity.Null;
+
+        /// <summary>
         /// Owned ship seen at Instantiates even if Join Team confirm had not latched yet.
         /// Promoted into <see cref="SeededShip"/> when suppress clears.
         /// </summary>

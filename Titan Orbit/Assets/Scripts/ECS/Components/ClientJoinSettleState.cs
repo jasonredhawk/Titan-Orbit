@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using Unity.Entities;
 using Unity.NetCode;
 
@@ -69,11 +70,16 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] True when ship <c>ToEntityArray</c> / <c>WithEntityAccess</c> must not run.
-        /// Covers Settling and the post–Join Team Instantiates window (Settling stays OFF).
-        /// Prefer this over hand-rolling <c>Settling || GhostSpawnBacklog</c> so TeamChoice
-        /// Crash!!! gates stay one-liners (see titan-orbit-teamchoice-crash-hardstop.mdc).
+        /// Covers Settling, the post–Join Team Instantiates window (Settling stays OFF), and the
+        /// gap after <see cref="ClientTeamFlowState.TeamChoiceConfirmed"/> before the local ship
+        /// Instantiates (Player.log 2026-07-23 TeamChoiceResult → Crash!!!).
+        /// Prefer this over hand-rolling flags so TeamChoice Crash!!! gates stay one-liners
+        /// (see titan-orbit-teamchoice-crash-hardstop.mdc).
         /// </summary>
-        public static bool ShouldSkipShipEntityQueries => Settling || GhostSpawnBacklog;
+        public static bool ShouldSkipShipEntityQueries =>
+            Settling ||
+            GhostSpawnBacklog ||
+            (ClientTeamFlowState.TeamChoiceConfirmed && !LocalShipEntitySeed.HasOwnedShipSeed);
 
         /// <summary>
         /// [TITAN-ORBIT] True when client code must not gather planets / asteroids / gems / moons
@@ -99,7 +105,7 @@ namespace TitanOrbit.ECS
         /// GhostSpawnBacklog true forever → no hybrid ship, HUD stuck on "Spawning your ship...".
         /// </para>
         /// </summary>
-        const int PostShipInstantiateHoldFrames = 5;
+        const int PostShipInstantiateHoldFrames = 15;
 
         /// <summary>Remaining frames of ship Instantiates hold (counts down once per Unity frame).</summary>
         static int s_PostShipInstantiateHoldRemaining;

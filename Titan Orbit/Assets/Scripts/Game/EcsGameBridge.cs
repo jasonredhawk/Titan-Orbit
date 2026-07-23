@@ -297,6 +297,11 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipState(out ShipState state)
         {
             state = default;
+            // [TITAN-ORBIT] HUD Update after TeamChoiceResult must not ToEntityArray ships while
+            // GhostSpawn Instantiates / pre-seed gap is active (Player.log 2026-07-23 Crash!!!).
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
@@ -950,6 +955,11 @@ namespace TitanOrbit.Game
         static bool TryGetLocalOwnedShipEntity(EntityManager em, out Entity shipEntity)
         {
             shipEntity = Entity.Null;
+            // [TITAN-ORBIT] Callers may omit the gate — never gather ships during Instantiates /
+            // TeamChoice pre-seed (see ShouldSkipShipEntityQueries).
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             using var query = em.CreateEntityQuery(typeof(GhostOwnerIsLocal), typeof(ShipTag));
             using var entities = query.ToEntityArray(Allocator.Temp);
             for (int i = 0; i < entities.Length; i++)

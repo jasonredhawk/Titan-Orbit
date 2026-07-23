@@ -31,6 +31,11 @@ namespace TitanOrbit.ECS
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            // [TITAN-ORBIT] Asteroid PhysicsCollider writes during Settling / TransformQuarantine
+            // Instantiates are Crash!!!-adjacent — cull is cosmetic; wait until map gathers are safe.
+            if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return;
+
             EnsureNoCollideBlob();
 
             foreach (var collider in SystemAPI

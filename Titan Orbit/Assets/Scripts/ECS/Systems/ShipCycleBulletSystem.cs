@@ -48,6 +48,10 @@ namespace TitanOrbit.ECS
             // [NETCODE] World.IsServer — NetCode extension; client must one-shot-guard prediction.
             if (!state.World.IsServer())
             {
+                // [TITAN-ORBIT] TeamChoice Instantiates — skip client ship Query until safe.
+                if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                    return;
+
                 var networkTime = SystemAPI.GetSingleton<NetworkTime>();
                 if (!networkTime.IsFirstTimeFullyPredictingTick)
                     return;

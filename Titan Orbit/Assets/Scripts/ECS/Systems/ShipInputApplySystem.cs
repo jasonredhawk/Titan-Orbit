@@ -33,6 +33,11 @@ namespace TitanOrbit.ECS
             if (!ShipPendingInput.HasValue)
                 return;
 
+            // [TITAN-ORBIT] TeamChoice Instantiates window — ship Query during GhostSpawnBacklog /
+            // pre-seed gap Crash!!! (Player.log 2026-07-23). Input stays in ShipPendingInput.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
             var cmd = ShipPendingInput.Latest;
 
             // [NETCODE] GhostOwnerIsLocal — NetCode's tag for the connection-owned ghost.

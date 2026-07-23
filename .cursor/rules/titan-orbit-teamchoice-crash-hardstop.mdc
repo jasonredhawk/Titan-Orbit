@@ -14,6 +14,10 @@ alwaysApply: true
 | **Ships** (`WithEntityAccess`, `EnsureShipProxies`, local-ship tag) | `ClientJoinSettleCache.ShouldSkipShipEntityQueries` |
 | **Map bodies** (planet / asteroid / gem / moon gathers) | `ClientJoinSettleCache.ShouldSkipMapBodyQueries` |
 
+`ShouldSkipShipEntityQueries` = Settling **OR** GhostSpawnBacklog (incl. post-ship hold) **OR** (TeamChoiceConfirmed and no local ship seed yet).
+
+Never reimplement backlog as GhostSpawnBuffer/PendingSpawnPlaceholder-only — that misses the hold and the TeamChoice→Instantiates gap (Player.log 2026-07-23).
+
 ```csharp
 // Ships — Settling OR GhostSpawnBacklog (TeamChoice Instantiates window)
 if (ClientJoinSettleCache.ShouldSkipShipEntityQueries) return;

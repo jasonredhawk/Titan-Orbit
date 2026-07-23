@@ -18,7 +18,6 @@ namespace TitanOrbit.ECS
         EntityQuery _taggedShipQuery;
         EntityQuery _shipOwnerQuery;
         EntityQuery _shipLocalOwnerQuery;
-        EntityQuery _placeholderQuery;
 
         /// <summary>Caches small ship queries (never map-body full scans).</summary>
         public void OnCreate(ref SystemState state)
@@ -32,13 +31,22 @@ namespace TitanOrbit.ECS
             _shipLocalOwnerQuery = state.GetEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<GhostOwnerIsLocal>());
-            _placeholderQuery = state.GetEntityQuery(ComponentType.ReadOnly<PendingSpawnPlaceholder>());
         }
 
         /// <summary>Each sim tick: strip or apply LocalPlayerShipTag for the owned ship.</summary>
         public void OnUpdate(ref SystemState state)
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
+
+            // --- Ship Instantiates / TeamChoice gap (before any ship ToEntityArray) ---
+            // [TITAN-ORBIT] Player.log 2026-07-23: TeamChoiceResult lifts suppress then ship
+            // gathers Crash!!!. ShouldSkipShipEntityQueries covers Settling, GhostSpawnBacklog
+            // (incl. post-ship hold), and TeamChoiceConfirmed-before-local-ship-seed.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            {
+                ecb.Dispose();
+                return;
+            }
 
             // --- Team / rejoin gate ---
             // [TITAN-ORBIT] Until TeamChoiceConfirmed, strip tags instead of early-return — a prior
@@ -51,18 +59,6 @@ namespace TitanOrbit.ECS
                 tagged.Dispose();
 
                 ecb.Playback(state.EntityManager);
-                ecb.Dispose();
-                return;
-            }
-
-            // --- Ship Instantiates settle (post Join Team) ---
-            // [TITAN-ORBIT] Player.log 2026-07-18 20:51: TeamChoiceResult → Crash!!! in ship
-            // WithEntityAccess while Settling stays OFF (JoinSettleCompleted). Skip while GhostSpawn
-            // still has Instantiates backlog; use ToEntityArray on the tiny ship set afterward.
-            // Prefer cache flag (same backlog the join gate publishes every frame).
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog ||
-                HasGhostSpawnBacklog(ref state))
-            {
                 ecb.Dispose();
                 return;
             }
@@ -111,17 +107,6 @@ namespace TitanOrbit.ECS
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
-        }
-
-        /// <summary>True while GhostSpawn Instantiates / placeholders are still draining.</summary>
-        bool HasGhostSpawnBacklog(ref SystemState state)
-        {
-            if (SystemAPI.TryGetSingletonEntity<GhostSpawnQueue>(out Entity spawnQueue) &&
-                state.EntityManager.HasBuffer<GhostSpawnBuffer>(spawnQueue) &&
-                state.EntityManager.GetBuffer<GhostSpawnBuffer>(spawnQueue).Length > 0)
-                return true;
-
-            return !_placeholderQuery.IsEmptyIgnoreFilter;
         }
 
         /// <summary>Reads NetworkId from the in-game client connection entity.</summary>

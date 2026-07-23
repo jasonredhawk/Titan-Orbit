@@ -17,11 +17,8 @@ namespace TitanOrbit.ECS
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ClientCommandTargetSystem : ISystem
     {
-        /// <summary>Ships are few — safe to ToEntityArray (unlike map-body gathers).</summary>
+        /// <summary>Ships are few — safe to ToEntityArray after Instantiates settle (unlike map bodies).</summary>
         EntityQuery _shipQuery;
-
-        /// <summary>GhostSpawn Instantiates backlog (placeholders).</summary>
-        EntityQuery _placeholderQuery;
 
         /// <summary>Requires an in-game client connection before binding the command target.</summary>
         public void OnCreate(ref SystemState state)
@@ -30,7 +27,6 @@ namespace TitanOrbit.ECS
             _shipQuery = state.GetEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<GhostOwner>());
-            _placeholderQuery = state.GetEntityQuery(ComponentType.ReadOnly<PendingSpawnPlaceholder>());
         }
 
         /// <summary>
@@ -42,11 +38,12 @@ namespace TitanOrbit.ECS
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 return;
 
-            // --- Skip while GhostSpawn Instantiates settle ---
-            // [TITAN-ORBIT] Settling alone is NOT enough after JoinSettleCompleted: TeamChoice ship
-            // Instantiates no longer flip Settling ON (that path Crash!!!'d). Player.log 2026-07-18
-            // 20:51: TeamChoiceResult → Crash!!! in WithEntityAccess GetEntityDataPtrRO.
-            if (ClientJoinSettleCache.Settling || HasGhostSpawnBacklog(ref state))
+            // --- Skip while ship Instantiates / TeamChoice gap ---
+            // [TITAN-ORBIT] Player.log 2026-07-18 / 2026-07-23: TeamChoiceResult → Crash!!! on
+            // ship ToEntityArray. Settling stays OFF after JoinSettleCompleted. Do NOT reimplement
+            // backlog as buffer/placeholder-only — that misses ArmPostShipInstantiateHold and the
+            // TeamChoiceConfirmed → local-ship Instantiates gap. Use ShouldSkipShipEntityQueries.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
                 return;
 
             int localNetworkId = GetLocalNetworkId(ref state);
@@ -80,20 +77,6 @@ namespace TitanOrbit.ECS
                 if (cmd.ValueRO.targetEntity != shipEntity)
                     cmd.ValueRW = new CommandTarget { targetEntity = shipEntity };
             }
-        }
-
-        /// <summary>
-        /// True while GhostSpawn still has queued Instantiates or placeholders — unsafe for ship
-        /// entity iteration right after Join Team.
-        /// </summary>
-        bool HasGhostSpawnBacklog(ref SystemState state)
-        {
-            if (SystemAPI.TryGetSingletonEntity<GhostSpawnQueue>(out Entity spawnQueue) &&
-                state.EntityManager.HasBuffer<GhostSpawnBuffer>(spawnQueue) &&
-                state.EntityManager.GetBuffer<GhostSpawnBuffer>(spawnQueue).Length > 0)
-                return true;
-
-            return !_placeholderQuery.IsEmptyIgnoreFilter;
         }
 
         /// <summary>Reads this client's NetworkId from the in-game connection.</summary>
