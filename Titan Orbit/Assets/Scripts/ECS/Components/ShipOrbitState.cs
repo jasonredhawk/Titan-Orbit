@@ -26,7 +26,8 @@ namespace TitanOrbit.ECS
         [GhostField] public bool InOrbitRing;
 
         /// <summary>
-        /// [TITAN-ORBIT] True when passive orbit motor is steering the ship (no thrust input, no fire).
+        /// [TITAN-ORBIT] True when passive orbit motor is steering the ship (no thrust input).
+        /// Fire does not cancel orbit — weapons are locked while <see cref="InOrbitRing"/>.
         /// Used by HUD to show orbit-mode indicator.
         /// </summary>
         [GhostField] public bool UsingOrbitMotor;

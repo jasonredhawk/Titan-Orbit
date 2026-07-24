@@ -25,8 +25,22 @@ namespace TitanOrbit.Simulation
         public const float GemDrainPerSecondWhenShieldDown = 20f;
         public const float GemSpawnInterval = 0.25f;
         public const float GemSpawnMinValue = 2f;
+        /// <summary>
+        /// Hard combat kick when thrusting/firing into an enemy/neutral moon shield (world units/s).
+        /// </summary>
         public const float EnemyShieldRepelMinSpeed = 8f;
+        /// <summary>Hard combat kick upper clamp — deeper penetration uses this speed.</summary>
         public const float EnemyShieldRepelMaxSpeed = 22f;
+
+        /// <summary>
+        /// Soft outward slide while passively coasting on the planet orbit ring (world units/s).
+        /// [TITAN-ORBIT] Moons share the ship orbit ring. The hard 8–22 kick every tick destroyed the
+        /// ~0.8 orbit motor on neutral/enemy planets (friendly moons skip repel) and felt like
+        /// stepped ring motion. Soft caps stay near orbit speed so the coast stays continuous.
+        /// </summary>
+        public const float SoftOrbitShieldOutMinSpeed = 0.7f;
+        /// <summary>Soft orbit-coast outward upper clamp (still far below hard combat kick).</summary>
+        public const float SoftOrbitShieldOutMaxSpeed = 1.8f;
 
         /// <summary>[TITAN-ORBIT] Max shield HP scales linearly with planet level.</summary>
         public static float GetMaxShieldForLevel(int planetLevel) =>

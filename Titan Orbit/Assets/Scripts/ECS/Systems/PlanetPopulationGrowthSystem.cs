@@ -89,7 +89,7 @@ namespace TitanOrbit.ECS
                     continue;
 
                 // [TITAN-ORBIT] Rate from effective max (bonus already baked into maxPop) — do not
-                // multiply by (1+bonus) again, or territory planets would refill faster than 60s.
+                // multiply by (1+bonus) again, or territory planets would refill faster than FullRefillSeconds.
                 float rate = PlanetPopulationMath.GetGrowthRatePerSecond(maxPop);
                 if (rate <= 0f)
                     continue;

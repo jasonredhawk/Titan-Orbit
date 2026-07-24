@@ -21,20 +21,31 @@ namespace TitanOrbit.Simulation
         /// [TITAN-ORBIT] Seconds for a planet to grow from 0 to its current max population at the
         /// passive rate. Growth = maxPop / FullRefillSeconds people per second, so larger / higher-level
         /// planets add more people per second but still take this long to refill.
+        /// Longer refill leaves a freshly captured (empty) planet vulnerable to recapture before it
+        /// can stock defenders again.
         /// </summary>
-        public const float FullRefillSeconds = 60f;
+        public const float FullRefillSeconds = 120f;
 
         /// <summary>
-        /// Max population from legacy Planet formula: size × level^1.5 (rounded to int).
+        /// [TITAN-ORBIT] Exponent on planet level in the max-population formula
+        /// (<c>size × level^PopulationLevelExponent</c>). Higher than the old 1.5 so late-game
+        /// planets hold more people relative to a few fully loaded high-level ships.
+        /// </summary>
+        public const float PopulationLevelExponent = 1.7f;
+
+        /// <summary>
+        /// Max population: size × level^<see cref="PopulationLevelExponent"/> (rounded to int).
+        /// Example at level 6 (6^1.7 ≈ 21.0): size 15 → ~315, size 20 home → ~421.
         /// </summary>
         /// <param name="planetSize">World/visual scale of the planet (minimum 0.25).</param>
         /// <param name="planetLevel">Planet level (minimum 1).</param>
         public static int GetMaxPopulation(float planetSize, int planetLevel)
         {
-            // --- Legacy cap formula: size × level^1.5 ---
+            // --- Cap formula: size × level^1.7 ---
+            // [TITAN-ORBIT] Raised from level^1.5 so top planets outscale a small late-game raid fleet.
             planetSize = Mathf.Max(0.25f, planetSize);
             int level = Mathf.Max(1, planetLevel);
-            return Mathf.RoundToInt(planetSize * Mathf.Pow(level, 1.5f));
+            return Mathf.RoundToInt(planetSize * Mathf.Pow(level, PopulationLevelExponent));
         }
 
         /// <summary>

@@ -28,6 +28,10 @@ namespace TitanOrbit.Game
     /// ghost energy lagged — optimistic “HP Left: 0” on asteroids the server had not killed.
     /// </para>
     /// <para>
+    /// [TITAN-ORBIT] No anticipation while <see cref="ShipOrbitState.InOrbitRing"/> — matches
+    /// server <see cref="BulletSimulationSystem"/> weapons lock in planet orbit rings.
+    /// </para>
+    /// <para>
     /// [UNITY] LateUpdate after <see cref="EcsWorldVisualizer"/> (66000) so the hull / bank pose
     /// is published; velocity uses kinematics or hull pose-delta.
     /// </para>
@@ -130,6 +134,13 @@ namespace TitanOrbit.Game
             ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
 
             if (!fireHeld)
+                return;
+
+            // --- Orbit ring: no cosmetic tracers ---
+            // [TITAN-ORBIT] Server rejects Fire while InOrbitRing. Skip anticipation so the player
+            // does not see muzzle flashes / tracers the authority will never spawn.
+            if (world.EntityManager.HasComponent<ShipOrbitState>(shipEntity) &&
+                world.EntityManager.GetComponentData<ShipOrbitState>(shipEntity).InOrbitRing)
                 return;
 
             // --- Sync predicted energy with ghost (before planning fire) ---

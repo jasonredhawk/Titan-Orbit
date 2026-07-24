@@ -206,13 +206,19 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when firing or moving too fast to count as a calm landing approach.
+        /// True when moving too fast to count as a calm landing approach.
+        /// Fire is ignored — moons sit in the planet orbit ring where weapons are locked, so
+        /// holding shoot must not cancel a calm dock.
         /// </summary>
+        /// <param name="input">Ship input (thrust / fire); fire is intentionally unused here.</param>
+        /// <param name="speed">Current planar speed in world units/s.</param>
+        /// <returns>True when landing progress should not accumulate this tick.</returns>
         static bool IsDisruptingLanding(in ShipInput input, float speed)
         {
-            if (input.Fire.IsSet)
-                return true;
-
+            // [TITAN-ORBIT] Fire used to count as disruption, but BulletSimulationSystem rejects
+            // shots while InOrbitRing — keeping the Fire check made moon dock feel broken when
+            // the player held shoot. Speed alone decides calm approach.
+            _ = input;
             return speed > MaxLandingSpeed;
         }
     }

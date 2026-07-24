@@ -117,15 +117,16 @@ namespace TitanOrbit.ECS
 
             // --- Orbit ring detection (toroidal) ---
             // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,
-            // load/unload never starts. Thrust or fire cancels passive orbit motor only — ring flag
-            // stays true while still inside the annulus (tractor / HUD / dwell can still see it).
+            // load/unload never starts. Thrust cancels the passive orbit motor only — Fire does
+            // not (weapons are locked in the ring by BulletSimulationSystem). Ring flag stays
+            // true while still inside the annulus (tractor / HUD / dwell can still see it).
             // While moon-docking (approach / land), skip the orbit motor so radial pull cannot yank
             // the hull out of the dock sphere mid-landing.
             bool inOrbitRing = TryFindOrbitPlanet(
                 transform.Position, mapW, mapH, in planets,
                 out PlanetState orbitPlanetState, out LocalTransform orbitPlanetTransform);
             bool moonDocking = moonDock.MoonPlanetId != 0 && !input.Thrust;
-            bool useOrbit = inOrbitRing && !input.Thrust && !input.Fire.IsSet && !moonDocking;
+            bool useOrbit = inOrbitRing && !input.Thrust && !moonDocking;
 
             // --- Friendly territory speed (1 + 0.05 × homeLevel) — NGO FriendlyTerritoryMovementMultiplier ---
             // [TITAN-ORBIT] Must match on client prediction + server or reconciliation fights the boost.
@@ -146,7 +147,9 @@ namespace TitanOrbit.ECS
             if (useOrbit)
             {
                 // --- Passive orbit blend (replaces thrust/coast this tick) ---
-                // [TITAN-ORBIT] Continuous lerp toward tangential velocity — Starblast pillar 3.
+                // [TITAN-ORBIT] Continuous lerp toward the shared ring speed — Starblast pillar 3.
+                // Same GetOrbitRingSpeed as gem-moon kinematics. Do NOT multiply by territoryMult:
+                // friendly boost is for thrust flight only; scaling orbit made ships lap the moon.
                 PlanetOrbitMath.BuildOrbitMotorParams(
                     transform.Position,
                     orbitPlanetTransform.Position,
@@ -158,7 +161,6 @@ namespace TitanOrbit.ECS
                     out float3 desiredVel,
                     out float alignRate);
                 desiredVel.y = 0f;
-                desiredVel *= territoryMult;
                 float t = math.saturate(alignRate * dt);
                 vel = math.lerp(vel, desiredVel, t);
                 vel.y = 0f;
@@ -179,8 +181,11 @@ namespace TitanOrbit.ECS
                 ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
             }
 
-            // --- Enemy moon shield repel (deterministic; moons have no physics colliders) ---
+            // --- Enemy / neutral moon shield (deterministic; moons have no physics colliders) ---
             // [TITAN-ORBIT] Must run on client prediction + server — never client-only VFX push.
+            // Moons share the ship orbit ring. Hard 8–22 kicks during passive coast made neutral/
+            // enemy rings feel stepped (friendly moons skip entirely). Soften only while useOrbit;
+            // thrust / moon-dock approach still get the full combat boot (Fire no longer exits orbit).
             PlanetGemMoonCombatLogic.ApplyShieldRepelIfNeeded(
                 transform.Position,
                 ref vel,
@@ -188,7 +193,8 @@ namespace TitanOrbit.ECS
                 in planets,
                 mapW,
                 mapH,
-                elapsedSeconds);
+                elapsedSeconds,
+                softenForPassiveOrbit: useOrbit);
 
             vel.y = 0f;
             physicsVelocity = new PhysicsVelocity

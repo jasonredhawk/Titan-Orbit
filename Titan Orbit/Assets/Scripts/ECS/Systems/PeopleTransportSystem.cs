@@ -255,7 +255,9 @@ namespace TitanOrbit.ECS
         {
             if (!orbit.InOrbitRing || orbitPlanetId == 0 || orbit.OrbitPlanetId != orbitPlanetId)
                 return false;
-            if (input.Thrust || input.Fire.IsSet)
+            // [TITAN-ORBIT] Thrust breaks dwell (player is flying). Fire is ignored — weapons are
+            // locked in the orbit ring, so holding shoot must not block people load/unload.
+            if (input.Thrust)
                 return false;
             if (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.01f)
                 return false;
@@ -791,7 +793,9 @@ namespace TitanOrbit.ECS
         {
             if (ship.IsDead || ship.AwaitingTeamSelection)
                 return false;
-            if (input.Thrust || input.Fire.IsSet)
+            // [TITAN-ORBIT] Same as CanTransferPeople — thrust cancels unload dwell; Fire does not
+            // (orbit-ring weapons lock; holding shoot must not starve unload).
+            if (input.Thrust)
                 return false;
             if (!orbit.InOrbitRing || orbit.OrbitPlanetId != sourcePlanetId)
                 return false;

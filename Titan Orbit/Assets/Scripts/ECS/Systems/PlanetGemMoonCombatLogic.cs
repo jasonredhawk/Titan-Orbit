@@ -10,8 +10,10 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Gem-moon combat helpers shared by bullet damage (server) and predicted shield repel (client+server).
     /// Shield absorption and moon gem drain run from <see cref="BulletSimulationSystem"/>.
-    /// Enemy shield push uses the same planet snapshots as <see cref="ShipPhysicsDriveLogic"/> so
+    /// Enemy/neutral shield push uses the same planet snapshots as <see cref="ShipPhysicsDriveLogic"/> so
     /// prediction stays deterministic — never a client-only GameObject force.
+    /// Passiveive orbit-ring coast uses a soft slide so ring motion stays continuous; thrust/fire keep
+    /// the hard combat kick.
     /// </summary>
     public static class PlanetGemMoonCombatLogic
     {
@@ -78,6 +80,10 @@ namespace TitanOrbit.ECS
         /// <param name="mapW">Toroidal map width.</param>
         /// <param name="mapH">Toroidal map height.</param>
         /// <param name="elapsedSeconds">Sim time for moon orbital phase.</param>
+        /// <param name="softenForPassiveOrbit">
+        /// True when the shared motor is in passive orbit-ring coast (<c>useOrbit</c>).
+        /// Soft slide keeps ring motion continuous; hard kick stays for thrust/fire into the shell.
+        /// </param>
         public static void ApplyShieldRepelIfNeeded(
             float3 shipPos,
             ref float3 velocity,
@@ -85,7 +91,8 @@ namespace TitanOrbit.ECS
             in NativeArray<PlanetMotorSnapshot> planets,
             float mapW,
             float mapH,
-            double elapsedSeconds)
+            double elapsedSeconds,
+            bool softenForPassiveOrbit = false)
         {
             shipPos.y = 0f;
 
@@ -96,6 +103,7 @@ namespace TitanOrbit.ECS
                 var moon = snapshot.Moon;
 
                 // --- Skip dead shields and friendly moons ---
+                // [TITAN-ORBIT] Neutral ownership is always hostile — same gate as bullet damage.
                 if (moon.CurrentShield <= 0.001f)
                     continue;
                 if (IsTeamFriendlyToMoon(planet.Ownership, shipTeam))
@@ -108,6 +116,8 @@ namespace TitanOrbit.ECS
 
                 // --- Moon on the map tile nearest the ship (toroidal unwrap) ---
                 // [TITAN-ORBIT] GetMoonWorldPositionNear uses ShortestOffsetXZ — required across seams.
+                // Moons ride the same ship orbit ring (<see cref="PlanetOrbitMath.GetShipOrbitRingOffset"/>),
+                // so coasting ships will enter this shell once per revolution on enemy/neutral planets.
                 float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
                     shipPos,
                     snapshot.Transform.Position,
@@ -131,21 +141,43 @@ namespace TitanOrbit.ECS
                 else
                     dir = math.normalize(dir);
 
-                // Deeper penetration → stronger kick (clamped between min/max repel speeds).
+                // Deeper penetration → stronger response (soft or hard clamp range).
                 float penetration = math.clamp(1f - dist / math.max(0.0001f, shieldRadius), 0f, 1f);
-                float repelSpeed = math.lerp(
-                    PlanetGemMoonMath.EnemyShieldRepelMinSpeed,
-                    PlanetGemMoonMath.EnemyShieldRepelMaxSpeed,
-                    penetration);
-                float3 outwardVel = dir * repelSpeed;
-                outwardVel.y = 0f;
 
                 // Cancel any velocity component still diving into the shield.
                 float inward = math.dot(velocity, -dir);
                 if (inward > 0f)
                     velocity += dir * inward;
 
-                velocity += outwardVel;
+                if (softenForPassiveOrbit)
+                {
+                    // --- Soft orbit-coast slide (neutral / enemy rings) ---
+                    // [TITAN-ORBIT] Hard path used velocity += 8..22 every tick. Orbit target speed is
+                    // ~0.8, so one graze left the hull on a multi-tick ramp that fought the orbit
+                    // lerp and looked like stepped motion around the ring. Friendly moons never hit
+                    // this path — that is why home/team rings felt smooth.
+                    // Soft path raises the outward component up to a near-orbit cap (set-up-to, not
+                    // add) so the shield still nudges you off the moon without breaking coast.
+                    float softOut = math.lerp(
+                        PlanetGemMoonMath.SoftOrbitShieldOutMinSpeed,
+                        PlanetGemMoonMath.SoftOrbitShieldOutMaxSpeed,
+                        penetration);
+                    float outwardAlong = math.dot(velocity, dir);
+                    if (outwardAlong < softOut)
+                        velocity += dir * (softOut - outwardAlong);
+                }
+                else
+                {
+                    // --- Hard combat kick (thrust / fire / not in passive orbit motor) ---
+                    // [TITAN-ORBIT] Additive kick — intentional boot when diving into enemy shields.
+                    float repelSpeed = math.lerp(
+                        PlanetGemMoonMath.EnemyShieldRepelMinSpeed,
+                        PlanetGemMoonMath.EnemyShieldRepelMaxSpeed,
+                        penetration);
+                    velocity += dir * repelSpeed;
+                }
+
+                velocity.y = 0f;
             }
         }
     }

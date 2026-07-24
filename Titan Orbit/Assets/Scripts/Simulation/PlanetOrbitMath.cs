@@ -7,6 +7,10 @@ namespace TitanOrbit.Simulation
     /// Planet orbit ring geometry for ship passive orbit, gem-moon placement, and decorative level bands.
     /// Ring membership and <see cref="BuildOrbitMotorParams"/> use toroidal distance/offset so
     /// wraparound seams stay correct while ships fly unbounded (see titan-orbit-toroidal-map rule).
+    /// <para>
+    /// [TITAN-ORBIT] <see cref="GetOrbitRingSpeed"/> is the single tangential speed for a planet's
+    /// ring — ships (passive motor) and gem moons (analytic offset) both use it so they co-orbit.
+    /// </para>
     /// </summary>
     public static class PlanetOrbitMath
     {
@@ -28,7 +32,10 @@ namespace TitanOrbit.Simulation
         /// How quickly velocity steers toward ideal orbit. Matches legacy orbitCaptureResponsiveness.
         /// </summary>
         const float OrbitCaptureResponsiveness = 3.5f;
-        /// <summary>Base tangential speed. Matches legacy Starship.orbitSpeed.</summary>
+        /// <summary>
+        /// Base tangential speed at the orbit-ring centerline (world units/s).
+        /// [TITAN-ORBIT] Ships and gem moons share this ring speed — one value per planet ring.
+        /// </summary>
         const float BaseOrbitSpeed = 0.8f;
 
         /// <summary>
@@ -80,23 +87,40 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Tangential orbit speed at <paramref name="radius"/>.
-        /// [LEGACY] Same curve as Starship.GetOrbitTargetSpeed: larger planets and closer (inner)
-        /// orbits move faster — not a centerline peak.
+        /// Canonical tangential speed for a planet's ship/moon orbit ring (centerline).
+        /// Larger planets get a slightly faster ring; position inside the thin annulus does
+        /// <b>not</b> change speed — ships and moons must share one speed so they co-orbit.
         /// </summary>
-        public static float GetTargetSpeed(float planetSize, float radius, float innerWorld, float outerWorld, float centerWorld)
+        /// <param name="planetSize">Planet uniform scale (world radius proxy).</param>
+        /// <returns>Clockwise tangential speed in world units/sec at the ring centerline.</returns>
+        public static float GetOrbitRingSpeed(float planetSize)
         {
-            _ = centerWorld;
-            float clampedRadius = math.clamp(radius, innerWorld, outerWorld);
-            // 0 at outer edge of the band, 1 near the inner edge (toward the planet).
-            float radiusFactor = math.saturate(math.unlerp(outerWorld, innerWorld, clampedRadius));
-
+            // --- Size curve (same endpoints as legacy Starship.GetOrbitTargetSpeed) ---
+            // [TITAN-ORBIT] Intentionally ignores radius-within-band. Old 0.7–1.6× inner/outer
+            // multiplier made ships lap or lag the moon while both rode the same ring.
             const float minSize = 9f;
             const float maxSize = 18f;
             float sizeNorm = math.clamp((planetSize - minSize) / (maxSize - minSize), 0f, 1f);
             float sizeMultiplier = math.lerp(0.8f, 1.4f, sizeNorm);
-            float radiusMultiplier = math.lerp(0.7f, 1.6f, radiusFactor);
-            return BaseOrbitSpeed * sizeMultiplier * radiusMultiplier;
+            return BaseOrbitSpeed * sizeMultiplier;
+        }
+
+        /// <summary>
+        /// Tangential orbit speed for this planet's ring. Prefer <see cref="GetOrbitRingSpeed"/>.
+        /// Extra radius args are ignored so older call sites stay source-compatible.
+        /// </summary>
+        public static float GetTargetSpeed(
+            float planetSize,
+            float radius,
+            float innerWorld,
+            float outerWorld,
+            float centerWorld)
+        {
+            _ = radius;
+            _ = innerWorld;
+            _ = outerWorld;
+            _ = centerWorld;
+            return GetOrbitRingSpeed(planetSize);
         }
 
         /// <summary>
@@ -114,8 +138,9 @@ namespace TitanOrbit.Simulation
             float phaseOffsetRadians,
             double elapsedSeconds)
         {
-            GetRingRadiiWorld(planetSize, planetLevel, out float innerWorld, out float outerWorld, out float centerWorld);
-            float speed = GetTargetSpeed(planetSize, centerWorld, innerWorld, outerWorld, centerWorld);
+            GetRingRadiiWorld(planetSize, planetLevel, out _, out _, out float centerWorld);
+            // [TITAN-ORBIT] Same GetOrbitRingSpeed as the ship motor — one ω for this ring radius.
+            float speed = GetOrbitRingSpeed(planetSize);
             float omega = centerWorld > 0.001f ? speed / centerWorld : 0f;
             // θ decreases with time → clockwise on XZ when looking down +Y (matches ship orbit motor).
             float theta = phaseOffsetRadians - omega * (float)elapsedSeconds;
@@ -161,9 +186,9 @@ namespace TitanOrbit.Simulation
         {
             // --- Match GetShipOrbitRingOffset kinematics ---
             // Position = (cos θ, 0, sin θ) * centerWorld where θ = phase − ω t.
-            // d/dt → (sin θ, 0, −cos θ) * speed  (clockwise tangent × target speed).
-            GetRingRadiiWorld(planetSize, planetLevel, out float innerWorld, out float outerWorld, out float centerWorld);
-            float speed = GetTargetSpeed(planetSize, centerWorld, innerWorld, outerWorld, centerWorld);
+            // d/dt → (sin θ, 0, −cos θ) * speed  (clockwise tangent × ring speed).
+            GetRingRadiiWorld(planetSize, planetLevel, out _, out _, out float centerWorld);
+            float speed = GetOrbitRingSpeed(planetSize);
             float omega = centerWorld > 0.001f ? speed / centerWorld : 0f;
             float phase = GetShipOrbitPhaseOffset(planetId);
             float theta = phase - omega * (float)elapsedSeconds;
@@ -254,9 +279,13 @@ namespace TitanOrbit.Simulation
             // Perpendicular on XZ: (x,z) → (z, -x) is clockwise when looking down +Y.
             float3 tangent = new float3(radial.z, 0f, -radial.x);
 
-            float targetSpeed = GetTargetSpeed(planetSize, dist, innerWorld, outerWorld, centerWorld);
+            // --- Same ring speed as the gem moon on this planet ---
+            // [TITAN-ORBIT] GetOrbitRingSpeed is the single source of truth for this ring radius.
+            // Do not scale by position-in-band or territory — that made ships drift vs the moon.
+            float targetSpeed = GetOrbitRingSpeed(planetSize);
 
             // --- Soft radial pull toward ring centerline (legacy orbitRadiusPullStrength) ---
+            // Keeps the hull on the centerline; does not change the tangential ring speed.
             float radiusError = dist - centerWorld;
             float3 radialCorrection = float3.zero;
             if (math.abs(radiusError) > 0.02f)

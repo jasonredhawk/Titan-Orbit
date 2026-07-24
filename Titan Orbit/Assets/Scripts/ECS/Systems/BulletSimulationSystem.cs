@@ -20,6 +20,11 @@ namespace TitanOrbit.ECS
     /// fires, then the next mount in sequence (0→1→2→…→0). Empty mount buffer = unarmed.
     /// </para>
     /// <para>
+    /// [TITAN-ORBIT] Ships cannot fire while <see cref="ShipOrbitState.InOrbitRing"/> is true —
+    /// orbit rings are movement / people-transport / tractor zones only. Client anticipation
+    /// mirrors this gate in <c>ClientLocalBulletVfxBridge</c>.
+    /// </para>
+    /// <para>
     /// Starblast-style hardening vs asteroid tunneling:
     /// (1) same-frame spawn collide on the first <c>vel*dt</c> segment (not a bare point test —
     /// wing muzzles inside side rocks must not count); (2) substep advance when travel is large
@@ -179,9 +184,19 @@ namespace TitanOrbit.ECS
                     continue;
 
                 // --- Per-barrel cooldown tick (independent cadences) ---
+                // [TITAN-ORBIT] Cooldowns keep ticking in the ring so leaving orbit does not dump
+                // a stale "all barrels ready" volley the moment Fire becomes legal again.
                 ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
 
                 if (!input.ValueRO.Fire.IsSet)
+                    continue;
+
+                // --- Orbit ring: weapons locked ---
+                // [TITAN-ORBIT] InOrbitRing is written by ShipPhysicsDriveLogic (toroidal annulus).
+                // Fire input may still be held (player mashing shoot) — ignore it here; thrust
+                // remains the only way to leave the passive orbit motor.
+                if (SystemAPI.HasComponent<ShipOrbitState>(entity) &&
+                    SystemAPI.GetComponentRO<ShipOrbitState>(entity).ValueRO.InOrbitRing)
                     continue;
 
                 // --- Volley vs energy-queue round-robin ---
