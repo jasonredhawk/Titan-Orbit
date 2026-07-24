@@ -101,7 +101,7 @@ namespace TitanOrbit.Game
         {
             // --- Join gate: proxies incomplete during Instantiates storms ---
             // [TITAN-ORBIT] Settling / GhostSpawnBacklog — skip prediction; HitRpc still destroys tracers.
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
             {
                 Obstacles.Clear();
                 return false;

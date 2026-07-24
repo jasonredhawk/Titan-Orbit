@@ -15,12 +15,26 @@ namespace TitanOrbit.Game
     /// Reads ShipKinematics velocity and ShipInput.Thrust from the visualization ECS world each LateUpdate;
     /// does not drive simulation. Attached by EcsWorldVisualizer when spawning ship hull proxies.
     /// Cosmetic smoothing of particle emission is intentional — never applied to ship transform position.
+    /// <para>
+    /// Prefabs must load via <c>Resources.Load</c> in player builds — SampleScene often leaves the
+    /// propulsion bank empty and falls back to <see cref="LoadDefaultSettings"/>. Editor-only
+    /// AssetDatabase paths return null on Windows clients, which left ships with no flames.
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(90)]
     public class ShipPropulsionVisualApplier : MonoBehaviour
     {
+        /// <summary>
+        /// [EDITOR] Archanor source path — used only when iterating in the Editor before Resources import.
+        /// </summary>
         const string DefaultJetFlamePath =
             "Assets/Archanor/Sci-Fi Arsenal/Sci-Fi Effects/Prefabs/Interactive/JetFlame/V2/ModularJetFlame2.prefab";
+
+        /// <summary>
+        /// [UNITY] Name for <see cref="Resources.Load"/> — asset lives at
+        /// <c>Assets/Resources/ModularJetFlame2.prefab</c> so Windows/WebGL builds include it.
+        /// </summary>
+        const string DefaultJetFlameResourcesName = "ModularJetFlame2";
 
         const float EngineSpeedThreshold = 0.5f;
         const float EngineEmissionRate = 18f;
@@ -65,13 +79,20 @@ namespace TitanOrbit.Game
         bool _lastThrusterActive;
         float _thrusterVfxBlend;
 
-        /// <summary>Default VFX settings with jet-flame bank for color-matched thrusters.</summary>
+        /// <summary>
+        /// Builds default VFX settings with a jet-flame bank for color-matched thrusters.
+        /// Called from <see cref="EcsWorldVisualizer"/> Awake when the scene bank is empty.
+        /// Player builds require <c>Resources/ModularJetFlame2</c>; without it the bank stays empty
+        /// and LateUpdate never animates (ships look thrust-less).
+        /// </summary>
         public static Settings LoadDefaultSettings()
         {
+            // --- Resolve shared flame prefab (Editor + player) ---
             GameObject defaultFlame = LoadDefaultJetFlamePrefab();
             var bank = new List<ThrusterVfxColorPrefab>();
             if (defaultFlame != null)
             {
+                // [TITAN-ORBIT] Same ModularJetFlame2 for every team color until per-color banks exist.
                 bank.Add(new ThrusterVfxColorPrefab { colorName = "Blue", prefab = defaultFlame });
                 bank.Add(new ThrusterVfxColorPrefab { colorName = "Green", prefab = defaultFlame });
                 bank.Add(new ThrusterVfxColorPrefab { colorName = "Purple", prefab = defaultFlame });
@@ -81,8 +102,12 @@ namespace TitanOrbit.Game
 
             return new Settings
             {
+                // [TITAN-ORBIT] Leave engineVfxPrefab null — Engine_* mounts use identity local
+                // rotation, so the ModularJetFlame prefab faces forward (wrong). Only Thruster_*
+                // mounts get flames, with thrusterVfxLocalEuler yaw 180 so jets point aft.
                 engineVfxPrefab = null,
-                thrusterVfxPrefab = null,
+                // [TITAN-ORBIT] Fallback when a thruster mount has no color-bank match.
+                thrusterVfxPrefab = defaultFlame,
                 useThrusterVfxForAcceleration = true,
                 thrusterJetFlameBank = bank,
                 thrusterVfxLocalOffset = new Vector3(0f, 0f, -0.2f),
@@ -92,18 +117,38 @@ namespace TitanOrbit.Game
             };
         }
 
+        /// <summary>
+        /// Loads the default ModularJetFlame2 prefab for thruster Instantiates.
+        /// Prefers Resources (ships in Windows/WebGL builds); Editor can fall back to AssetDatabase.
+        /// </summary>
+        /// <returns>Flame prefab, or null if neither Resources nor Editor path resolves.</returns>
         static GameObject LoadDefaultJetFlamePrefab()
         {
+            // [UNITY] Resources.Load — asset must live under Assets/Resources/ to be in player builds.
+            // SampleScene often serializes an empty thrusterJetFlameBank; Awake then calls LoadDefaultSettings.
+            GameObject fromResources = Resources.Load<GameObject>(DefaultJetFlameResourcesName);
+            if (fromResources != null)
+                return fromResources;
+
 #if UNITY_EDITOR
+            // [EDITOR] Iteration fallback when Resources copy is missing during local work.
             return UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>(DefaultJetFlamePath);
 #else
+            // [TITAN-ORBIT] Player with no Resources/ModularJetFlame2 — thrusters stay dark.
             return null;
 #endif
         }
 
-        /// <summary>Links this applier to a ship entity and rebuilds particle instances from chassis transforms.</summary>
+        /// <summary>
+        /// Links this applier to a ship ghost entity and rebuilds particle instances from chassis mounts.
+        /// Called by <see cref="EcsWorldVisualizer"/> after the hybrid hull proxy is Instantiated.
+        /// </summary>
+        /// <param name="shipEntity">ECS ship ghost this proxy follows.</param>
+        /// <param name="familyPrefix">Chassis family name for mount parsing (e.g. AstroEagle).</param>
+        /// <param name="settings">Flame prefabs and blend knobs from the visualizer.</param>
         public void Bind(Entity shipEntity, string familyPrefix, Settings settings)
         {
+            // --- Cache binding ---
             _shipEntity = shipEntity;
             if (!string.IsNullOrWhiteSpace(familyPrefix))
                 _familyPrefix = familyPrefix.Trim();
@@ -117,7 +162,11 @@ namespace TitanOrbit.Game
 
         void OnDestroy() => ClearVfxInstances();
 
-        /// <summary>Instantiates engine/thruster prefabs at ChassisComponentStats transform sites.</summary>
+        /// <summary>
+        /// Instantiates engine/thruster flame prefabs at <see cref="ChassisComponentStats"/> mount sites.
+        /// Sets <c>_initialized</c> only when at least one particle instance was created — otherwise
+        /// LateUpdate exits early and the ship stays without thrust VFX.
+        /// </summary>
         void RebuildVfx()
         {
             ClearVfxInstances();
@@ -125,8 +174,10 @@ namespace TitanOrbit.Game
             _lastThrusterActive = false;
             _thrusterVfxBlend = 0f;
 
+            // --- Find Engine_* / Thruster_* mounts on the hybrid hull ---
             var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix);
 
+            // --- Engine mounts (main rear jets on AstroEagle-style hulls) ---
             if (_settings.engineVfxPrefab != null)
             {
                 foreach (Transform t in stats.engineTransforms)
@@ -138,6 +189,7 @@ namespace TitanOrbit.Game
                     go.transform.localPosition = Vector3.zero;
                     go.transform.localRotation = Quaternion.identity;
                     go.transform.localScale = Vector3.one;
+                    // [HYBRID] URP material fixups so Sci-Fi Arsenal particles render in player builds.
                     VfxUrpCompat.PrepareVfxInstance(go);
                     _engineVfxInstances.Add(go);
                     CollectParticleSystems(go, _engineParticleSystems);
@@ -168,12 +220,17 @@ namespace TitanOrbit.Game
             _initialized = _engineVfxInstances.Count > 0 || _thrusterVfxInstances.Count > 0;
         }
 
+        /// <summary>
+        /// Each frame: read ECS velocity + thrust input and drive particle emission / scale.
+        /// Runs after ship proxy transforms have been synced for the frame.
+        /// </summary>
         void LateUpdate()
         {
+            // --- Guard: no prefab instances or unbound entity ---
             if (!_initialized || _shipEntity == Entity.Null)
                 return;
 
-            // [TITAN-ORBIT] Read presentation/visualization world — not raw predicted sim.
+            // [TITAN-ORBIT] Visualization world — presentation pose path, not a second motor.
             var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return;
@@ -182,6 +239,7 @@ namespace TitanOrbit.Game
             if (!em.Exists(_shipEntity))
                 return;
 
+            // --- Dead ships: kill emission immediately ---
             if (em.HasComponent<ShipState>(_shipEntity))
             {
                 var ship = em.GetComponentData<ShipState>(_shipEntity);
@@ -202,9 +260,12 @@ namespace TitanOrbit.Game
                 speed = math.length(vel);
             }
 
+            // [NETCODE] ShipInput.Thrust — same flag the predicted motor uses for forward thrust.
             bool thrusting = em.HasComponent<ShipInput>(_shipEntity)
                 && em.GetComponentData<ShipInput>(_shipEntity).Thrust;
 
+            // Engines: on whenever the ship is moving above the idle threshold.
+            // Thrusters: by default only while accelerating (moving + thrust held).
             bool moving = speed >= EngineSpeedThreshold;
             bool accelerating = moving && thrusting;
             bool showThrusters = _settings.useThrusterVfxForAcceleration ? accelerating : moving;

@@ -291,7 +291,9 @@ namespace TitanOrbit.ECS
         {
             // --- Join safety: skip while planets/ships are still Instantiating ---
             // [TITAN-ORBIT] Registry Collect is quarantine-safe; still avoid empty thrash during settle.
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+            // [TITAN-ORBIT] Use ShouldSkipShipEntityQueries — includes post–TeamChoice hold that
+            // GhostSpawnBacklog alone used to miss before it was folded into ComputeGhostSpawnBacklog.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
                 return;
 
             float now = (float)SystemAPI.Time.ElapsedTime;

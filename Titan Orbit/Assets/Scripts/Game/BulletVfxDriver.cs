@@ -178,7 +178,7 @@ namespace TitanOrbit.Game
 
             // [TITAN-ORBIT] Skip Instantiates during join Instantiates storm / post–Join Team backlog.
             // TransformQuarantine stays on for the session — that alone must NOT block bullets.
-            bool blockInstantiates = ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog;
+            bool blockInstantiates = ClientJoinSettleCache.ShouldSkipShipEntityQueries;
 
             PrunePredictedReconcileState();
 

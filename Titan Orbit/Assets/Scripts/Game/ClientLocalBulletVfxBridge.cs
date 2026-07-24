@@ -103,8 +103,8 @@ namespace TitanOrbit.Game
                 !TitanOrbitSessionManager.IsClientGameplayReady(world))
                 return;
 
-            // Skip Instantiates window — driver also gates; avoid queueing anticipation during join.
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+            // Skip Instantiates / TeamChoice window — driver also gates; avoid ship gathers.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
                 return;
 
             if (MoonOrbitClientState.IsOrbitMenuVisible)

@@ -31,7 +31,7 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Settling OR GhostSpawnBacklog — quarantine must not hide beams for the
             // whole session, but ship ToEntityArray during post–Join Team Instantiates Crash!!!
             // (Settling stays OFF after JoinSettleCompleted; backlog covers the ship Instantiates window).
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
             {
                 VisibilityByPair.Clear();
                 return;

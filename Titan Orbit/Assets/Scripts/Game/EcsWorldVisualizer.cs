@@ -256,6 +256,12 @@ namespace TitanOrbit.Game
             if (bulletVfxBank != null)
                 BulletVisualScale.ActiveUpgradeVisualScaleMultiplier =
                     bulletVfxBank.UpgradeVisualScaleMultiplier;
+            // --- Propulsion jet flames (player builds need Resources) ---
+            // [TITAN-ORBIT] SampleScene often serializes an empty thrusterJetFlameBank. Awake must
+            // load ModularJetFlame2 via Resources (Windows) — AssetDatabase-only defaults left
+            // thrusters dark in player builds while Editor still showed flames.
+            // Do not require engineVfxPrefab: defaults intentionally leave it null so only
+            // Thruster_* mounts get aft-oriented flames.
             if (propulsionVfxSettings.thrusterJetFlameBank == null ||
                 propulsionVfxSettings.thrusterJetFlameBank.Count == 0)
             {

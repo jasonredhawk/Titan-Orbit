@@ -123,7 +123,7 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Settling OR GhostSpawnBacklog. TransformQuarantine is session-long on
             // Windows — beams must draw after settle using gem proxies (never full gem ToEntityArray).
             // Ship ToEntityArray during post–Join Team Instantiates → Crash!!! (2026-07-19).
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
                 return;
 
             // --- Visualization ECS world (client presentation) ---

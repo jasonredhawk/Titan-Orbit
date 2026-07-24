@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 namespace TitanOrbit.Input
@@ -7,6 +9,11 @@ namespace TitanOrbit.Input
     /// [UNITY] Cross-platform player input — New Input System actions plus keyboard/mouse fallbacks.
     /// Feeds ShipInputBridge with move, shoot, aim world position, and toggle flags (space brakes, gem expel).
     /// Client only — server has no player input handler.
+    ///
+    /// [TITAN-ORBIT] Left mouse is both "fire weapon" and "click UI". When the pointer sits over a
+    /// raycastable HUD control (e.g. the bottom ship ability upgrade bar), we clear ShootPressed so
+    /// buying an upgrade does not also shoot. Paired with ShipInputBridge / ClientLocalBulletVfxBridge,
+    /// which both read ShootPressed.
     /// </summary>
     public class PlayerInputHandler : MonoBehaviour
     {
@@ -24,6 +31,17 @@ namespace TitanOrbit.Input
 
         // Input values
         private bool shootPressed;
+
+        /// <summary>
+        /// Reused each frame for UI hit-tests so Update does not allocate a new List.
+        /// EventSystem.RaycastAll fills this with every Graphic under the pointer that has raycastTarget.
+        /// </summary>
+        private readonly List<RaycastResult> _uiRaycastHits = new List<RaycastResult>(8);
+
+        /// <summary>
+        /// Reused PointerEventData for the UI raycast. Created lazily once EventSystem exists.
+        /// </summary>
+        private PointerEventData _uiPointerEventData;
         private bool moveForwardPressed;
         private bool rocketPressed;
         private bool minePressed;
@@ -140,14 +158,23 @@ namespace TitanOrbit.Input
             if (cycleBulletAction != null) cycleBulletAction.Disable();
         }
 
+        /// <summary>
+        /// Samples shoot / thrust / brakes / rocket / mine every frame.
+        /// After raw shoot is computed, mouse-origin fire is cleared when the pointer is over UI
+        /// so HUD clicks (ability upgrades, etc.) do not fire the weapon.
+        /// </summary>
         private void Update()
         {
-            // --- Per-frame refresh ---
+            // --- Resolve touch vs desktop input path ---
+            // TouchUiActive means MobileInputHandler owns shoot zones; desktop uses LMB / Shoot action.
             MobileInputHandler mobile = MobileInputHandler.Resolve();
             bool useTouchUi = mobile != null && mobile.TouchUiActive;
 
             if (useTouchUi)
             {
+                // --- Touch / forced-touch shoot ---
+                // Dedicated on-screen shoot button must keep working even though it is UI.
+                // Mouse/action fire (editor hybrid, right-half LMB) still respects the UI gate below.
                 bool actionShoot = shootAction != null && shootAction.IsPressed();
                 bool editorRightHalfMouseShoot = false;
                 if (MobileInputHandler.ForceTouchSteer && Mouse.current != null && Mouse.current.leftButton.isPressed)
@@ -155,7 +182,12 @@ namespace TitanOrbit.Input
                     float edge = Screen.width * mobile.RightScreenSplit;
                     editorRightHalfMouseShoot = Mouse.current.position.ReadValue().x >= edge;
                 }
-                shootPressed = mobile.ShootButtonPressed || actionShoot || editorRightHalfMouseShoot;
+                bool dedicatedShootButton = mobile.ShootButtonPressed;
+                shootPressed = dedicatedShootButton || actionShoot || editorRightHalfMouseShoot;
+
+                // Drop mouse/action fire when over raycastable UI; never silence the dedicated shoot button.
+                if (shootPressed && !dedicatedShootButton && IsPointerOverUi())
+                    shootPressed = false;
 
                 // Phones: thrust only in outer left-drag zone; desktop: legacy on-screen joystick deflection.
                 bool anchorThrust = mobile.LeftThrustFromAnchor;
@@ -167,6 +199,8 @@ namespace TitanOrbit.Input
             }
             else
             {
+                // --- Desktop shoot (LMB / Shoot action) ---
+                // Left mouse is shared with UGUI buttons — see IsPointerOverUi gate after this block.
                 if (shootAction != null)
                     shootPressed = shootAction.IsPressed();
                 else if (Mouse.current != null)
@@ -174,16 +208,55 @@ namespace TitanOrbit.Input
                 else
                     shootPressed = false;
 
+                // [TITAN-ORBIT] Upgrade bar / any raycastTarget Graphic under the cursor blocks fire.
+                if (shootPressed && IsPointerOverUi())
+                    shootPressed = false;
+
                 moveForwardPressed = Mouse.current != null && Mouse.current.rightButton.isPressed;
             }
 
-            // CTRL toggles space brakes (when on: ship slows when not holding move; when off: ship floats)
+            // --- Space brakes toggle (Left Ctrl) ---
+            // When on: ship slows when not holding move; when off: ship floats.
             if (Keyboard.current != null && Keyboard.current.leftCtrlKey.wasPressedThisFrame)
                 spaceBrakesEnabled = !spaceBrakesEnabled;
 
-            // Optional: FireRocket / PlaceMine actions; fallback is Q / E in Starship
+            // --- Optional secondary actions ---
+            // FireRocket / PlaceMine from the action map; Starship may also use Q / E fallbacks elsewhere.
             rocketPressed = rocketAction != null && rocketAction.IsPressed();
             minePressed = mineAction != null && mineAction.IsPressed();
+        }
+
+        /// <summary>
+        /// True when the mouse pointer is over a UGUI element that accepts raycasts
+        /// (Button Image with raycastTarget, etc.).
+        ///
+        /// Used to share left-click between gameplay fire and HUD without firing through buttons.
+        /// Uses EventSystem.RaycastAll at the mouse position — more reliable with the New Input System
+        /// than the no-arg IsPointerOverGameObject() overload (which often returns false incorrectly).
+        /// </summary>
+        /// <returns>True if at least one UI graphic is under the mouse; false if no mouse, no EventSystem, or clear sky.</returns>
+        private bool IsPointerOverUi()
+        {
+            // --- Guards ---
+            // EventSystem — Unity's UI hit-test hub (created by scene or EnsureEventSystem helpers).
+            var eventSystem = EventSystem.current;
+            if (eventSystem == null || Mouse.current == null)
+                return false;
+
+            // --- Build pointer sample at current mouse screen position ---
+            // PointerEventData — the payload EventSystem raycasts expect (screen pos in pixels).
+            if (_uiPointerEventData == null)
+                _uiPointerEventData = new PointerEventData(eventSystem);
+            else
+                _uiPointerEventData.Reset();
+
+            _uiPointerEventData.position = Mouse.current.position.ReadValue();
+
+            // --- Raycast all UI under the pointer ---
+            // Any hit means a Graphic with raycastTarget=true is under the cursor (upgrade buttons, etc.).
+            _uiRaycastHits.Clear();
+            eventSystem.RaycastAll(_uiPointerEventData, _uiRaycastHits);
+            return _uiRaycastHits.Count > 0;
         }
 
         /// <summary>

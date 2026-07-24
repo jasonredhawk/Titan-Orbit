@@ -107,7 +107,7 @@ namespace TitanOrbit.Game
 
             // [TITAN-ORBIT] Instantiates GO flights only when Settling AND GhostSpawnBacklog are
             // clear — TeamChoice ship Instantiates keeps Settling OFF; backlog covers that window.
-            if (!ClientJoinSettleCache.Settling && !ClientJoinSettleCache.GhostSpawnBacklog)
+            if (!ClientJoinSettleCache.ShouldSkipShipEntityQueries)
                 DrainSpawns();
 
             DrainPoses();

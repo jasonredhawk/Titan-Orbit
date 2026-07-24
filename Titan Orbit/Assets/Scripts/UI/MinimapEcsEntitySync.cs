@@ -95,7 +95,7 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] During GhostSpawn Instantiates the loading screen owns the UI
             // (Settling). After Join Team, Settling stays OFF but GhostSpawnBacklog covers the
             // ship Instantiates window — SyncShips ToEntityArray then Crash!!! (2026-07-19).
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
                 return;
 
             // --- Per-frame refresh ---

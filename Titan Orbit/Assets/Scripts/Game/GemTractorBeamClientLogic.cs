@@ -65,12 +65,12 @@ namespace TitanOrbit.Game
             AssignedGemsByShip.Clear();
             // StickyLocksByShip intentionally persists across frames (unlocked only when out of range).
 
-            // [TITAN-ORBIT] Skip while Settling OR GhostSpawnBacklog.
-            // TransformQuarantine stays ON all session on Windows and must NOT suppress beams
-            // (gems come from hybrid proxies — no full gem gather). But ship ToEntityArray during
-            // post–Join Team Instantiates (Settling OFF, GhostSpawnBacklog ON) → Crash!!!
-            // See titan-orbit-windows-join-crash.mdc #11 / 2026-07-19 TeamChoiceResult.
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+            // [TITAN-ORBIT] Skip while ShouldSkipShipEntityQueries (Settling / GhostSpawnBacklog /
+            // post–TeamChoice hold). TransformQuarantine stays ON all session and must NOT suppress
+            // beams (gems from hybrid proxies). Hand-rolled Settling||GhostSpawnBacklog missed the
+            // TeamChoice hold → ship ToEntityArray Crash!!! (Player.log 2026-07-23).
+            // See titan-orbit-teamchoice-crash-hardstop.mdc.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
                 return;
 
             var world = EcsGameBridge.GetVisualizationWorld();

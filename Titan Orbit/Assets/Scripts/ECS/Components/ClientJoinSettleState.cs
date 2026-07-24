@@ -158,23 +158,34 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Arms the short post–ship Instantiates hold. Call from
         /// <c>LocalShipEntitySeed.NotifyShipInstantiated</c> only — not from map Instantiates.
+        /// Immediately publishes <see cref="GhostSpawnBacklog"/> so same-frame LateUpdate
+        /// paths that still check the backlog bit (not only <see cref="ShouldSkipShipEntityQueries"/>)
+        /// do not fail-open.
         /// </summary>
         public static void ArmPostShipInstantiateHold()
         {
             s_PostShipInstantiateHoldRemaining = PostShipInstantiateHoldFrames;
+            // [TITAN-ORBIT] Publish now — do not wait for the next join-gate / GhostSpawn refresh.
+            GhostSpawnBacklog = true;
         }
 
         /// <summary>
         /// Arms the short TeamChoice → ship Instantiates gap hold.
-        /// Call from TeamChoice / rejoin success handlers after <see cref="ClientTeamFlowState.ConfirmTeamChoice"/>.
+        /// Call from TeamChoice / rejoin handlers <b>before</b> <see cref="ClientTeamFlowState.ConfirmTeamChoice"/>
+        /// lifts suppress. Immediately sets <see cref="GhostSpawnBacklog"/> true.
+        /// Player.log 2026-07-23: hold was armed but not folded into GhostSpawnBacklog → same-frame
+        /// LateUpdate (gem tractor ship <c>ToEntityArray</c>) Crash!!!.
         /// </summary>
         public static void ArmPostTeamChoiceHold()
         {
             s_PostTeamChoiceHoldRemaining = PostTeamChoiceHoldFrames;
+            // [TITAN-ORBIT] Publish now — do not wait for join-gate / GhostSpawn refresh.
+            GhostSpawnBacklog = true;
         }
 
         /// <summary>
-        /// Queue/placeholder non-empty <b>or</b> recent <b>ship</b> Instantiates hold.
+        /// Queue/placeholder non-empty <b>or</b> recent <b>ship</b> Instantiates hold
+        /// <b>or</b> post–TeamChoice Instantiates gap hold.
         /// Call from the join gate and from <c>TitanOrbitGhostSpawnBacklogRefreshSystem</c>.
         /// Hold decrements at most once per Unity frame even when both callers run.
         /// </summary>
@@ -183,20 +194,22 @@ namespace TitanOrbit.ECS
         public static bool ComputeGhostSpawnBacklog(bool queueOrPlaceholdersNonEmpty)
         {
             // --- One hold tick per rendered frame ---
-            // [TITAN-ORBIT] Hold is armed only by ArmPostShipInstantiateHold (TeamChoice ship),
-            // so late map Instantiates at 1/frame cannot pin GhostSpawnBacklog forever.
+            // [TITAN-ORBIT] Ship hold: ArmPostShipInstantiateHold only (not map Instantiates).
+            // TeamChoice hold: ArmPostTeamChoiceHold — MUST be part of GhostSpawnBacklog so every
+            // Settling||GhostSpawnBacklog gate covers TeamChoiceResult (2026-07-23 Crash!!!).
             int frame = UnityEngine.Time.frameCount;
             if (s_PostShipInstantiateHoldTickFrame != frame)
             {
                 s_PostShipInstantiateHoldTickFrame = frame;
                 if (s_PostShipInstantiateHoldRemaining > 0)
                     s_PostShipInstantiateHoldRemaining--;
-                // TeamChoice hold ticks on the same frame cadence (shared tick frame).
                 if (s_PostTeamChoiceHoldRemaining > 0)
                     s_PostTeamChoiceHoldRemaining--;
             }
 
-            return queueOrPlaceholdersNonEmpty || s_PostShipInstantiateHoldRemaining > 0;
+            return queueOrPlaceholdersNonEmpty ||
+                   s_PostShipInstantiateHoldRemaining > 0 ||
+                   s_PostTeamChoiceHoldRemaining > 0;
         }
 
         /// <summary>

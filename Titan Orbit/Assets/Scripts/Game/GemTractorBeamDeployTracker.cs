@@ -48,7 +48,7 @@ namespace TitanOrbit.Game
             _lastUpdateFrame = Time.frameCount;
 
             // [TITAN-ORBIT] Settling OR GhostSpawnBacklog — ship queries unsafe during Instantiates.
-            if (ClientJoinSettleCache.Settling || ClientJoinSettleCache.GhostSpawnBacklog)
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
             {
                 StateByPair.Clear();
                 return;

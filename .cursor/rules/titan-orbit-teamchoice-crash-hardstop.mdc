@@ -14,11 +14,13 @@ alwaysApply: true
 | **Ships** (`WithEntityAccess`, `EnsureShipProxies`, local-ship tag) | `ClientJoinSettleCache.ShouldSkipShipEntityQueries` |
 | **Map bodies** (planet / asteroid / gem / moon gathers) | `ClientJoinSettleCache.ShouldSkipMapBodyQueries` |
 
-`ShouldSkipShipEntityQueries` = Settling **OR** GhostSpawnBacklog (incl. post-ship hold) **OR** short post–TeamChoice hold (`ArmPostTeamChoiceHold`).
+`ShouldSkipShipEntityQueries` = Settling **OR** GhostSpawnBacklog.
 
-Never reimplement backlog as GhostSpawnBuffer/PendingSpawnPlaceholder-only — that misses the holds and the TeamChoice→Instantiates gap (Player.log 2026-07-23).
+`GhostSpawnBacklog` **must** include: queue/placeholders **+** post-ship Instantiates hold **+** post–TeamChoice hold. `ArmPostTeamChoiceHold` must set `GhostSpawnBacklog = true` **immediately** (before `ConfirmTeamChoice`). Hand-rolled `Settling || GhostSpawnBacklog` that misses the TeamChoice fold → Crash!!! (Player.log 2026-07-23). Prefer `ShouldSkipShipEntityQueries` everywhere.
 
-**Do not** gate forever on `TeamChoiceConfirmed && !HasOwnedShipSeed` — that deadlocks spawn-wait ("Spawning your ship...") when Instantiates-hook seeding misses once (Editor.log 2026-07-23). Use the expiring TeamChoice hold + `LocalShipEntitySeed.TryRecoverOwnedShip` instead.
+Never reimplement backlog as GhostSpawnBuffer/PendingSpawnPlaceholder-only.
+
+**Do not** gate forever on `TeamChoiceConfirmed && !HasOwnedShipSeed` — spawn-wait deadlock; use expiring `ArmPostTeamChoiceHold` + `LocalShipEntitySeed.TryRecoverOwnedShip`.
 
 ```csharp
 // Ships — Settling OR GhostSpawnBacklog OR post–TeamChoice hold

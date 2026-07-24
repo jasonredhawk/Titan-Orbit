@@ -43,11 +43,12 @@ namespace TitanOrbit.ECS
         {
             if (rpc.Success != 0)
             {
-                // [TITAN-ORBIT] Team assigned — unblock local player control and close team picker.
-                ClientTeamFlowState.ConfirmTeamChoice();
-                // Cover TeamChoice → ship Instantiates gap (Settling stays OFF). Expires so a missed
-                // Instantiates-hook seed can recover without deadlocking spawn-wait UI.
+                // [TITAN-ORBIT] Arm ship-query hold BEFORE ConfirmTeamChoice lifts suppress.
+                // Same-frame LateUpdate (gem tractor / minimap) used to see Settling OFF +
+                // GhostSpawnBacklog false and ToEntityArray ships → Crash!!! (2026-07-23).
+                // Arm publishes GhostSpawnBacklog immediately; hold expires so spawn-wait can recover.
                 ClientJoinSettleCache.ArmPostTeamChoiceHold();
+                ClientTeamFlowState.ConfirmTeamChoice();
                 UnityEngine.Debug.Log($"[TeamChoiceResult] Assigned to {(TeamId)rpc.AssignedTeam} (networkId={rpc.NetworkId}).");
             }
             else
