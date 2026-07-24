@@ -110,8 +110,14 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipDepositIntent());
 
-            // --- Server-only deposit metronome timer (not ghosted — keeps StarshipGhost hash stable) ---
-            // [TITAN-ORBIT] Clients drive deposit SFX with wall-clock; only the server sim needs Accum.
+            // --- Ghosted deposit beat feedback (SFX / Orbit Menu follow BeatSequence) ---
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipDepositFeedback>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipDepositFeedback());
+
+            // --- Server-only deposit metronome timer (not ghosted) ---
+            // [TITAN-ORBIT] Clients present from ShipDepositFeedback; only the server sim needs Accum.
             if (state.World.IsServer())
             {
                 foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()

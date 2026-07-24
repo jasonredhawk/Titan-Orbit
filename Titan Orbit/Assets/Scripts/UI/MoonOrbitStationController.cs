@@ -10,12 +10,24 @@ namespace TitanOrbit.UI
     /// Shows/hides the moon orbit station menu when the local ship lands on a friendly gem moon.
     /// Opens <see cref="OrbitStationUI"/> with the docked store planet and the team's home planet id
     /// (needed for Bank / contributed-gem RPC polls). Client-only presentation controller.
+    /// <para>
+    /// [TITAN-ORBIT] Deposit intent stays on while truly docked. Failed ECS reads and brief
+    /// <c>LandingProgress</c> dips use hysteresis — they must not call <see cref="HideMenuImmediate"/>
+    /// (that cleared <see cref="MoonOrbitClientState.WantDepositGems"/> and silenced server deposits
+    /// + SFX in both Editor and Windows).
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(50)]
     public class MoonOrbitStationController : MonoBehaviour
     {
         /// <summary>Seconds after landing completes before the orbit menu appears (cinematic pause).</summary>
         const float MenuDelayAfterLandingSeconds = 0.5f;
+
+        /// <summary>
+        /// Consecutive bad dock frames required before hide while a dock session is active.
+        /// Prevents one-frame LandingProgress / planet-cache gaps from killing deposit.
+        /// </summary>
+        const float UndockHysteresisSeconds = 0.75f;
 
         /// <summary>
         /// [UNITY] Ensures one controller exists after scene load so moon dock can open the store
@@ -42,17 +54,16 @@ namespace TitanOrbit.UI
         bool _menuVisible;
 
         /// <summary>
-        /// When &gt; 0, we first observed a "should hide" condition at this <see cref="Time.time"/>.
-        /// Brief ECS read gaps (GhostSpawnBacklog) must not clear deposit intent / close the menu.
+        /// When &gt; 0, first observed soft-undock / read-fail at this <see cref="Time.time"/>.
+        /// Hard leave (thrust / dead) bypasses hysteresis.
         /// </summary>
-        float _hidePendingSince = -1f;
+        float _undockPendingSince = -1f;
 
-        /// <summary>
-        /// Seconds to tolerate failed local-ship / dock reads before actually hiding.
-        /// [TITAN-ORBIT] HideMenu clears <see cref="MoonOrbitClientState.WantDepositGems"/> — a one-frame
-        /// miss used to silence the deposit metronome and stop auto-deposit.
-        /// </summary>
-        const float HideGraceSeconds = 0.4f;
+        /// <summary>Last known docked moon planet id while this dock session is active.</summary>
+        int _latchedMoonPlanetId;
+
+        /// <summary>Last known home planet id for Bank RPC while this dock session is active.</summary>
+        int _latchedHomePlanetId;
 
         /// <summary>
         /// Each frame: if the local ship is fully landed on a friendly moon (and not thrusting),
@@ -67,44 +78,87 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            // --- Require a living local ship with a team ---
-            if (!EcsGameBridge.TryGetLocalShipState(out var ship) ||
-                ship.Team == TeamId.None ||
-                ship.AwaitingTeamSelection ||
-                ship.IsDead)
-            {
-                RequestHideMenu();
-                return;
-            }
-
-            // --- Require moon dock progress complete ---
-            if (!EcsGameBridge.TryGetLocalShipMoonDockState(out var moonDock) ||
-                moonDock.MoonPlanetId == 0 ||
-                moonDock.LandingProgress < GemEconomyConstants.MoonLandingCompleteThreshold)
-            {
-                RequestHideMenu();
-                return;
-            }
-
-            // --- Friendly ownership only (enemy moons have no store) ---
-            if (!EcsGameBridge.TryGetPlanetStateByPlanetId(moonDock.MoonPlanetId, out var planet) ||
-                planet.Ownership != ship.Team)
-            {
-                RequestHideMenu();
-                return;
-            }
-
-            // --- Thrust undocks / dismisses the menu (hard leave — no grace) ---
+            // --- Hard leave: thrust always undocks ---
             if (EcsGameBridge.TryGetLocalShipInput(out var input) && input.Thrust)
             {
                 HideMenuImmediate();
                 return;
             }
 
-            // Still docked — cancel any pending hide from a brief read gap.
-            _hidePendingSince = -1f;
+            // --- Resolve living local ship (tagged path works during GhostSpawnBacklog) ---
+            if (!EcsGameBridge.TryGetLocalShipState(out var ship))
+            {
+                // Read miss — keep deposit while a dock session is active.
+                if (_menuVisible || _landingCompleteTime >= 0f)
+                {
+                    MaybeHideAfterHysteresis();
+                    return;
+                }
 
-            // --- First frame of completed landing: start timer + apply auto-deposit preference ---
+                return;
+            }
+
+            if (ship.Team == TeamId.None || ship.AwaitingTeamSelection || ship.IsDead)
+            {
+                HideMenuImmediate();
+                return;
+            }
+
+            // --- Moon dock component ---
+            if (!EcsGameBridge.TryGetLocalShipMoonDockState(out var moonDock))
+            {
+                if (_menuVisible || _landingCompleteTime >= 0f)
+                {
+                    MaybeHideAfterHysteresis();
+                    return;
+                }
+
+                return;
+            }
+
+            // Hard undock: moon cleared.
+            if (moonDock.MoonPlanetId == 0)
+            {
+                HideMenuImmediate();
+                return;
+            }
+
+            // Soft undock: landing progress dipped — hysteresis while session active.
+            if (moonDock.LandingProgress < GemEconomyConstants.MoonLandingCompleteThreshold)
+            {
+                if (_menuVisible || _landingCompleteTime >= 0f)
+                {
+                    MaybeHideAfterHysteresis();
+                    return;
+                }
+
+                return;
+            }
+
+            _latchedMoonPlanetId = moonDock.MoonPlanetId;
+
+            // --- Friendly ownership ---
+            if (!EcsGameBridge.TryGetPlanetStateByPlanetId(moonDock.MoonPlanetId, out var planet))
+            {
+                if (_menuVisible || _landingCompleteTime >= 0f)
+                {
+                    MaybeHideAfterHysteresis();
+                    return;
+                }
+
+                return;
+            }
+
+            if (planet.Ownership != ship.Team)
+            {
+                HideMenuImmediate();
+                return;
+            }
+
+            // Still docked — cancel pending soft-undock.
+            _undockPendingSince = -1f;
+
+            // --- First frame of completed landing: start timer + apply auto-deposit once ---
             if (_landingCompleteTime < 0f)
             {
                 _landingCompleteTime = Time.time;
@@ -112,15 +166,14 @@ namespace TitanOrbit.UI
                     OrbitDockSidebarPanelUI.AutoDepositGemsPrefsKey,
                     OrbitDockSidebarPanelUI.AutoDepositGemsDefaultEnabled) != 0;
                 MoonOrbitRpcClient.SetWantDepositGems(autoDeposit);
-                // Pre-create UI during the landing pause so opening the menu does not hitch the camera.
                 GetOrCreateUi();
             }
 
             bool shouldShow = Time.time >= _landingCompleteTime + MenuDelayAfterLandingSeconds;
             if (shouldShow && !_menuVisible)
             {
-                // Home planet id drives Bank (contributed gems) RPC — must be > 0 or sidebar stays 0.
                 int homePlanetId = ResolveHomePlanetId(ship.Team, planet, moonDock.MoonPlanetId);
+                _latchedHomePlanetId = homePlanetId;
                 GetOrCreateUi().ShowFromEcs(moonDock.MoonPlanetId, homePlanetId);
                 _menuVisible = true;
             }
@@ -131,22 +184,18 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Starts/continues a short grace timer before <see cref="HideMenuImmediate"/>.
-        /// Ignores one-frame ECS lookup failures so deposit SFX and auto-deposit stay on.
+        /// Starts/continues soft-undock hysteresis. Only hides after
+        /// <see cref="UndockHysteresisSeconds"/> of consecutive bad dock frames.
         /// </summary>
-        void RequestHideMenu()
+        void MaybeHideAfterHysteresis()
         {
-            // --- Grace before hide ---
             if (_landingCompleteTime < 0f && !_menuVisible)
-            {
-                // Never docked this session — nothing to clear.
                 return;
-            }
 
-            if (_hidePendingSince < 0f)
-                _hidePendingSince = Time.time;
+            if (_undockPendingSince < 0f)
+                _undockPendingSince = Time.time;
 
-            if (Time.time - _hidePendingSince < HideGraceSeconds)
+            if (Time.time - _undockPendingSince < UndockHysteresisSeconds)
                 return;
 
             HideMenuImmediate();
@@ -159,9 +208,11 @@ namespace TitanOrbit.UI
         void HideMenuImmediate()
         {
             // --- HideMenuImmediate ---
-            _hidePendingSince = -1f;
+            _undockPendingSince = -1f;
             MoonOrbitRpcClient.SetWantDepositGems(false);
             _landingCompleteTime = -1f;
+            _latchedMoonPlanetId = 0;
+            _latchedHomePlanetId = 0;
             if (!_menuVisible)
                 return;
             if (_ui != null)
@@ -169,13 +220,9 @@ namespace TitanOrbit.UI
             _menuVisible = false;
         }
 
-        /// <summary>Legacy name kept for any external callers — same as immediate hide.</summary>
-        void HideMenu() => HideMenuImmediate();
-
         /// <summary>Returns the cached <see cref="OrbitStationUI"/>, creating it on first use.</summary>
         OrbitStationUI GetOrCreateUi()
         {
-            // --- Compute value ---
             if (_ui == null)
                 _ui = OrbitStationUI.GetOrCreate();
             return _ui;
@@ -186,19 +233,12 @@ namespace TitanOrbit.UI
         /// Prefers <see cref="EcsGameBridge.TryGetHomePlanetIdForTeam"/> (replicated IsHomePlanet);
         /// if that fails while docked on the home moon, uses the docked planet id as a fallback.
         /// </summary>
-        /// <param name="team">Local ship team.</param>
-        /// <param name="dockedPlanet">Planet state for the moon we are docked on.</param>
-        /// <param name="dockedPlanetId">PlanetId of that docked planet.</param>
-        /// <returns>Home planet id, or 0 if unknown (Bank cannot refresh).</returns>
         static int ResolveHomePlanetId(TeamId team, in PlanetState dockedPlanet, int dockedPlanetId)
         {
-            // --- Primary: quarantine-safe bridge lookup (IsHomePlanet, not HomePlanetTag) ---
-            // [TITAN-ORBIT] HomePlanetTag is server-only — querying it on the client always returned 0,
-            // so RequestContributedGems never ran and the GEM DEPOSITS Bank stayed at 0.
+            // [TITAN-ORBIT] HomePlanetTag is server-only — querying it on the client always returned 0.
             if (EcsGameBridge.TryGetHomePlanetIdForTeam(team, out int homePlanetId) && homePlanetId > 0)
                 return homePlanetId;
 
-            // --- Fallback: docked moon is already the home capital ---
             if (dockedPlanet.IsHomePlanet && dockedPlanetId > 0)
                 return dockedPlanetId;
 

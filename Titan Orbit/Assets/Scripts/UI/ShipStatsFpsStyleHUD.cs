@@ -153,12 +153,18 @@ namespace TitanOrbit.UI
 
             // --- Gems row ---
             // [TITAN-ORBIT] While depositing, show metronome chunk cargo so the bar drops by
-            // ShipLevel (e.g. −5) with each beat — not ghost drip of ~1 gem per frame.
+            // ShipLevel with each beat — not ghost drip. Ignore a false optimistic 0 while ghost
+            // still has cargo (bad seed).
             float displayGems = ship.CurrentGems;
             if (MoonOrbitClientState.WantDepositGems &&
-                MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optimisticCargo))
+                MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optimisticCargo) &&
+                !(optimisticCargo <= 0.001f && ship.CurrentGems > 0.001f))
             {
                 displayGems = optimisticCargo;
+            }
+            else if (MoonOrbitClientState.WantDepositGems)
+            {
+                MoonOrbitClientState.EnsureOptimisticDepositCargoSeed(ship.CurrentGems);
             }
 
             UpdateRow(ref _rows[2], displayGems, ship.GemCapacity, 2);

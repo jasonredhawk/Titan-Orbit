@@ -594,6 +594,16 @@ namespace TitanOrbit.ECS
                         {
                             ContributedGemsLogic.Add(state.EntityManager, homeEntity, ownerNetworkId, amount);
                         }
+
+                        // --- Ghosted presentation beat (clients SFX / Ship↓ / Bank↑ from this) ---
+                        // [NETCODE] BeatSequence++ tells every client a real chunk transferred.
+                        if (state.EntityManager.HasComponent<ShipDepositFeedback>(shipEntity))
+                        {
+                            var feedback = state.EntityManager.GetComponentData<ShipDepositFeedback>(shipEntity);
+                            feedback.LastChunkAmount = amount;
+                            feedback.BeatSequence += 1u;
+                            state.EntityManager.SetComponentData(shipEntity, feedback);
+                        }
                     }
 
                     // Only one friendly docked moon can accept deposits for this ship.

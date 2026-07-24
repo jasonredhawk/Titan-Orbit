@@ -145,16 +145,70 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Metronome beat — bump Bank by the actual chunk so GEM DEPOSITS ticks with the SFX.
+        /// Metronome beat — snap Ship cargo ↓ and Bank ↑ together from optimistic state already
+        /// bumped in <see cref="MoonOrbitClientState.NotifyLocalDepositBeat"/> (same stack as SFX).
         /// Hooked from the main <see cref="OrbitStationUI"/> OnEnable/OnDisable.
         /// </summary>
         void OnLocalDepositBeatForBank(float chunkAmount)
         {
             if (chunkAmount <= 0.001f)
                 return;
-            contributedGems += chunkAmount;
-            lastReceivedGems = contributedGems;
-            RefreshSidebar();
+
+            // NotifyLocalDepositBeat already added chunkAmount to OptimisticDepositBankGems.
+            if (MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+                contributedGems = optBank;
+            else
+            {
+                // Fallback if optimistic Bank was cleared mid-event (deposit toggle race).
+                contributedGems += chunkAmount;
+                MoonOrbitClientState.RememberContributedGems(contributedGems);
+                MoonOrbitClientState.EnsureOptimisticDepositBankSeed(contributedGems);
+            }
+
+            // Beat-only deposit row refresh — avoid full RefreshSidebar (store rebuild / auto-deposit
+            // re-apply) which could race the numbers off the audible tick.
+            RefreshDepositFlowFromMetronome();
+        }
+
+        /// <summary>
+        /// Writes Ship + Bank sidebar numbers from optimistic metronome state in one paint.
+        /// Planet progress may still come from ECS (cosmetic under the Bank banner).
+        /// </summary>
+        void RefreshDepositFlowFromMetronome()
+        {
+            if (!_moonDockLayoutActive || orbitDockSidebar == null)
+                return;
+
+            float shipGems = 0f;
+            bool haveGhost = EcsGameBridge.TryGetLocalShipState(out var shipState);
+            float ghostGems = haveGhost ? shipState.CurrentGems : 0f;
+
+            if (MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optCargo) &&
+                !(optCargo <= 0.001f && ghostGems > 0.001f))
+                shipGems = optCargo;
+            else if (haveGhost)
+                shipGems = ghostGems;
+
+            float bankGems = contributedGems;
+            if (MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+            {
+                bankGems = optBank;
+                contributedGems = optBank;
+            }
+
+            float planetGems = 0f;
+            int planetLevel = 1;
+            int storePlanetId = OrbitStationEcsContext.StorePlanetId;
+            if (storePlanetId <= 0 && currentPlanet != null)
+                storePlanetId = currentPlanet.PlanetId;
+            if (storePlanetId > 0 &&
+                EcsGameBridge.TryGetPlanetStateByPlanetId(storePlanetId, out var planetState))
+            {
+                planetGems = planetState.CurrentGems;
+                planetLevel = Mathf.Max(1, planetState.PlanetLevel);
+            }
+
+            orbitDockSidebar.RefreshDepositStatus(shipGems, bankGems, planetGems, planetLevel);
         }
 
         partial void OnOrbitStationEcsHide()

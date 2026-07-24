@@ -27,11 +27,12 @@ namespace TitanOrbit.Game
     /// <c>ToEntityArray</c> — so it still works under session-long <see cref="ClientJoinSettleCache.TransformQuarantine"/>.
     /// </para>
     /// <para>
-    /// Gem-deposit audio is a wall-clock <b>metronome</b>. Local beats use
-    /// <see cref="TickLocalDepositMetronome"/> (<see cref="MoonOrbitClientState"/> only — no NetworkId
-    /// / dock ghost gates). Remotes use <see cref="TickRemoteGemDepositMetronomes"/> with toroidal
-    /// hear range. Each beat uses the <b>actual</b> transfer amount for pitch (ship level, or leftover
-    /// cargo) and notifies the Orbit Menu Bank so UI stays locked to the SFX cadence.
+    /// Gem-deposit audio follows the <b>server</b> metronome via ghosted
+    /// <see cref="ShipDepositFeedback.BeatSequence"/>. Local beats use
+    /// <see cref="TickLocalDepositMetronome"/> (tagged ship read). Remotes use
+    /// <see cref="TickRemoteGemDepositMetronomes"/> with toroidal hear range. Each beat uses the
+    /// server <see cref="ShipDepositFeedback.LastChunkAmount"/> for pitch and notifies Orbit Menu
+    /// Ship/Bank so UI stays locked to real deposits.
     /// </para>
     /// </summary>
     public class EcsFloatingCountPresenter : MonoBehaviour
@@ -52,16 +53,10 @@ namespace TitanOrbit.Game
             public bool IsDead;
             public int ShipLevel;
             /// <summary>
-            /// Unscaled <see cref="Time.time"/> of the last deposit metronome beat for this ship.
-            /// Keeps each depositing hull on a steady cadence independent of NetCode snapshot jitter.
+            /// Last observed <see cref="ShipDepositFeedback.BeatSequence"/> for this remote ship.
+            /// Advances → one remote deposit SFX tick (server-driven).
             /// </summary>
-            public float LastDepositSoundTime;
-            /// <summary>
-            /// Keep playing remote deposit beats until this time after we observed cargo drain while
-            /// docked. Bridges gaps between ghost <c>CurrentGems</c> snapshots so the metronome
-            /// does not go silent between NetCode updates.
-            /// </summary>
-            public float DepositAudioLatchedUntil;
+            public uint LastDepositBeatSequence;
         }
 
         readonly Dictionary<int, ShipSnapshot> _ships = new Dictionary<int, ShipSnapshot>();
@@ -88,16 +83,16 @@ namespace TitanOrbit.Game
         bool _primed;
 
         /// <summary>
-        /// Wall-clock time of the last <b>local</b> deposit metronome beat.
-        /// Independent of the per-ship snapshot dictionary so local SFX cannot desync from NetworkId matching.
+        /// Last consumed <see cref="ShipDepositFeedback.BeatSequence"/> for the local ship.
+        /// 0 means “not primed yet” — first observed sequence is latched without playing (join mid-deposit).
         /// </summary>
-        float _localDepositBeatTime;
+        uint _localDepositBeatSequence;
 
-        /// <summary>Last known local cargo — refreshed from ECS when safe; estimated down between beats.</summary>
+        /// <summary>True after the first local feedback sample this in-game session.</summary>
+        bool _localDepositBeatPrimed;
+
+        /// <summary>Last known local cargo — seeded from ghost; estimated down on each server beat.</summary>
         float _cachedLocalGems = -1f;
-
-        /// <summary>Last known local ship level for deposit pitch (defaults to 1).</summary>
-        float _cachedLocalShipLevel = 1f;
 
         /// <summary>Last known local team for deposit floating-count tint.</summary>
         TeamId _cachedLocalTeam = TeamId.None;
@@ -129,13 +124,13 @@ namespace TitanOrbit.Game
             if (!EcsGameBridge.IsNetworkInGame())
             {
                 _primed = false;
-                _localDepositBeatTime = 0f;
+                _localDepositBeatSequence = 0;
+                _localDepositBeatPrimed = false;
                 _cachedLocalGems = -1f;
                 return;
             }
 
-            // --- Local deposit metronome (no ship ToEntityArray) ---
-            // [TITAN-ORBIT] Must not wait on ShouldSkipShipEntityQueries — backlog would mute deposits.
+            // --- Local deposit beats from ghosted ShipDepositFeedback (tagged ship read) ---
             TickLocalDepositMetronome();
 
             var world = EcsGameBridge.GetVisualizationWorld();
@@ -184,75 +179,80 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Steady local deposit beat driven only by <see cref="MoonOrbitClientState.WantDepositGems"/>
-        /// and cached local cargo. Does not require GhostOwner NetworkId matching, moon-dock ghost
-        /// reads, or a hull proxy — those were the main reasons local beats went mostly silent.
-        /// Pitch and floating counts use the <b>actual</b> chunk (ship level, or leftover cargo).
+        /// Local deposit presentation driven by ghosted <see cref="ShipDepositFeedback"/>.
+        /// Fires SFX + Orbit Menu Ship/Bank only when the server increments <c>BeatSequence</c>
+        /// (real chunk transfer). Tagged ship reads stay safe during Instantiates backlog.
         /// </summary>
         void TickLocalDepositMetronome()
         {
-            // --- Gate on immediate client deposit toggle ---
+            // --- Clear optimistic UI only when deposit intent turns off ---
             if (!MoonOrbitClientState.WantDepositGems)
             {
-                _localDepositBeatTime = 0f;
-                MoonOrbitClientState.ClearOptimisticDepositCargo();
+                if (MoonOrbitClientState.TryGetOptimisticDepositCargo(out _) ||
+                    MoonOrbitClientState.TryGetOptimisticDepositBank(out _))
+                    MoonOrbitClientState.ClearOptimisticDepositCargo();
                 return;
             }
 
-            // --- Refresh cargo/level from ECS when ship queries are safe ---
-            if (!ClientJoinSettleCache.ShouldSkipShipEntityQueries &&
-                EcsGameBridge.TryGetLocalShipState(out ShipState ship))
+            // --- Seed cargo / team from tagged ShipState when available ---
+            if (EcsGameBridge.TryGetLocalShipState(out ShipState ship))
             {
                 if (ship.IsDead || ship.AwaitingTeamSelection)
                     return;
 
-                // [TITAN-ORBIT] While depositing, never let a lagging ghost *raise* cargo back up after
-                // a beat already subtracted a chunk — that would desync SFX, Bank UI, and ship stats.
-                // Ghost catching up (lower or equal) is fine via Min.
+                // Seed once from ghost. While depositing, only follow ghost down when it is clearly
+                // behind our estimate — never Min(cache, 0) from a stale empty snapshot (that stuck
+                // the Orbit Menu Ship column at 0).
                 if (_cachedLocalGems < 0f)
                     _cachedLocalGems = ship.CurrentGems;
-                else
-                    _cachedLocalGems = Mathf.Min(_cachedLocalGems, ship.CurrentGems);
+                else if (ship.CurrentGems + 0.51f < _cachedLocalGems)
+                    _cachedLocalGems = ship.CurrentGems;
 
-                _cachedLocalShipLevel = Mathf.Max(1f, ship.ShipLevel);
+                MoonOrbitClientState.EnsureOptimisticDepositCargoSeed(_cachedLocalGems);
                 _cachedLocalTeam = ship.Team;
             }
-            else if (_cachedLocalGems < 0f)
+
+            // --- Server beat feedback (tagged LocalPlayerShipTag) ---
+            if (!EcsGameBridge.TryGetLocalShipDepositFeedback(out ShipDepositFeedback feedback))
+                return;
+
+            // First sample this session: latch without playing (avoid join mid-deposit burst).
+            if (!_localDepositBeatPrimed)
             {
-                // First beat before any cache: try a direct read anyway (tiny tagged lookup).
-                if (!EcsGameBridge.TryGetLocalShipState(out ship))
-                    return;
-                if (ship.IsDead || ship.AwaitingTeamSelection)
-                    return;
-                _cachedLocalGems = ship.CurrentGems;
-                _cachedLocalShipLevel = Mathf.Max(1f, ship.ShipLevel);
-                _cachedLocalTeam = ship.Team;
+                _localDepositBeatPrimed = true;
+                _localDepositBeatSequence = feedback.BeatSequence;
+                return;
             }
 
-            if (_cachedLocalGems <= 0.001f)
+            if (feedback.BeatSequence == _localDepositBeatSequence)
                 return;
 
-            float now = Time.time;
-            float beatInterval = GemEconomyConstants.GemDepositBeatIntervalSeconds;
-            if (_localDepositBeatTime > 0f && now - _localDepositBeatTime < beatInterval)
-                return;
+            uint missed = feedback.BeatSequence - _localDepositBeatSequence;
+            _localDepositBeatSequence = feedback.BeatSequence;
 
-            // --- One audible metronome tick (amount = full level chunk or leftover) ---
-            // [TITAN-ORBIT] Never fake a full ShipLevel sound when only 3 gems remain — pitch
-            // must match the true transfer so the last beats feel correct.
-            _localDepositBeatTime = now;
-            float chunkAmount = GemEconomyConstants.GetDepositChunkAmount(
-                _cachedLocalShipLevel,
-                _cachedLocalGems);
+            float chunkAmount = feedback.LastChunkAmount;
             if (chunkAmount <= 0.001f)
                 return;
 
+            // Multi-beat hitch: prefer authoritative ghost cargo for the UI estimate.
+            if (missed > 1u && EcsGameBridge.TryGetLocalShipState(out ship))
+                _cachedLocalGems = ship.CurrentGems;
+
+            // --- Atomic beat: SFX + optimistic Ship/Bank + Orbit Menu ---
             TryGetLocalShipAnchor(out Transform anchor);
             EmitGemDepositBeat(anchor, chunkAmount, _cachedLocalTeam, 1f);
 
-            // Estimate cargo after this beat, then publish to Orbit Menu + ship-stats HUD.
-            _cachedLocalGems = Mathf.Max(0f, _cachedLocalGems - chunkAmount);
-            MoonOrbitClientState.NotifyLocalDepositBeat(chunkAmount, _cachedLocalGems);
+            if (_cachedLocalGems >= 0f)
+            {
+                float cargoAfter = Mathf.Max(0f, _cachedLocalGems - chunkAmount);
+                _cachedLocalGems = cargoAfter;
+                MoonOrbitClientState.NotifyLocalDepositBeat(chunkAmount, cargoAfter, updateCargo: true);
+            }
+            else
+            {
+                // No cargo baseline yet — bump Bank only; Ship column keeps reading ghost CurrentGems.
+                MoonOrbitClientState.NotifyLocalDepositBeat(chunkAmount, 0f, updateCargo: false);
+            }
         }
 
         /// <summary>
@@ -452,7 +452,7 @@ namespace TitanOrbit.Game
                     }
                 }
 
-                // Preserve metronome phase + remote deposit latch across cargo snapshot writes.
+                // Preserve remote deposit BeatSequence across cargo snapshot writes.
                 _ships[networkId] = new ShipSnapshot
                 {
                     People = state.CurrentPeople,
@@ -460,8 +460,7 @@ namespace TitanOrbit.Game
                     Health = state.Health,
                     IsDead = state.IsDead,
                     ShipLevel = state.ShipLevel,
-                    LastDepositSoundTime = snap.LastDepositSoundTime,
-                    DepositAudioLatchedUntil = snap.DepositAudioLatchedUntil,
+                    LastDepositBeatSequence = snap.LastDepositBeatSequence,
                 };
             }
         }
@@ -685,14 +684,11 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Nearby <b>remote</b> deposit metronome. Local beats are owned by
-        /// <see cref="TickLocalDepositMetronome"/> so this loop skips <see cref="GhostOwnerIsLocal"/>.
-        /// Remotes use ghost intent when present, otherwise a short cargo-drain latch while docked.
+        /// Nearby <b>remote</b> deposit SFX driven by ghosted <see cref="ShipDepositFeedback"/>.
+        /// Local beats are owned by <see cref="TickLocalDepositMetronome"/> (skips local owner).
         /// </summary>
         void TickRemoteGemDepositMetronomes(EntityManager em)
         {
-            float now = Time.time;
-            float beatInterval = GemEconomyConstants.GemDepositBeatIntervalSeconds;
             float hearRange = GemEconomyConstants.GemDepositHearRange;
             float fullVolumeRange = GemEconomyConstants.GemDepositHearFullVolumeRange;
             float mapW = math.max(100f, ToroidalMapEcs.MapWidth);
@@ -705,9 +701,7 @@ namespace TitanOrbit.Game
             if (!hasListener)
                 return;
 
-            // --- Tiny ship query (safe after ShouldSkipShipEntityQueries) ---
-            // [TITAN-ORBIT] Throttle: CreateEntityQuery + ToEntityArray every Update was paid while
-            // flying even when no one is depositing. HitRpc floats do not need this path.
+            // Throttle: ship gather is fine after ShouldSkipShipEntityQueries; keep cheap when idle.
             if ((Time.frameCount % 3) != 0)
                 return;
 
@@ -715,11 +709,11 @@ namespace TitanOrbit.Game
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<ShipState>(),
                 ComponentType.ReadOnly<GhostOwner>(),
-                ComponentType.ReadOnly<ShipMoonDockState>());
+                ComponentType.ReadOnly<ShipDepositFeedback>());
             using var entities = shipQuery.ToEntityArray(Allocator.Temp);
             using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
             using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
-            using var moonDocks = shipQuery.ToComponentDataArray<ShipMoonDockState>(Allocator.Temp);
+            using var feedbacks = shipQuery.ToComponentDataArray<ShipDepositFeedback>(Allocator.Temp);
 
             for (int i = 0; i < shipStates.Length; i++)
             {
@@ -734,9 +728,8 @@ namespace TitanOrbit.Game
                     continue;
 
                 var state = shipStates[i];
-                var moonDock = moonDocks[i];
+                var feedback = feedbacks[i];
 
-                // --- Snapshot row (previous gems still valid — PollShips has not overwritten yet) ---
                 if (!_ships.TryGetValue(networkId, out ShipSnapshot snap))
                 {
                     snap = new ShipSnapshot
@@ -746,38 +739,22 @@ namespace TitanOrbit.Game
                         Health = state.Health,
                         IsDead = state.IsDead,
                         ShipLevel = state.ShipLevel,
+                        LastDepositBeatSequence = feedback.BeatSequence,
                     };
                     _ships[networkId] = snap;
                     continue;
                 }
 
-                bool docked = moonDock.MoonPlanetId != 0 &&
-                              moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
-                bool canDeposit = !state.IsDead &&
-                                  !state.AwaitingTeamSelection &&
-                                  docked &&
-                                  state.CurrentGems > 0.001f;
-
-                if (!canDeposit)
+                if (feedback.BeatSequence == snap.LastDepositBeatSequence)
                 {
-                    snap.DepositAudioLatchedUntil = 0f;
+                    snap.ShipLevel = state.ShipLevel;
                     _ships[networkId] = snap;
                     continue;
                 }
 
-                // --- Actively depositing? Intent ghost, else cargo-drain latch ---
-                bool wantDeposit =
-                    em.HasComponent<ShipDepositIntent>(shipEntity) &&
-                    em.GetComponentData<ShipDepositIntent>(shipEntity).WantDepositGems;
-
-                float gemsDelta = state.CurrentGems - snap.Gems;
-                if (gemsDelta < -0.01f)
-                    snap.DepositAudioLatchedUntil = now + 1.0f;
-
-                if (!wantDeposit && snap.DepositAudioLatchedUntil > now)
-                    wantDeposit = true;
-
-                if (!wantDeposit)
+                snap.LastDepositBeatSequence = feedback.BeatSequence;
+                float gemValue = feedback.LastChunkAmount;
+                if (gemValue <= 0.001f || state.IsDead)
                 {
                     _ships[networkId] = snap;
                     continue;
@@ -809,24 +786,7 @@ namespace TitanOrbit.Game
                     ? 1f
                     : 1f - Mathf.InverseLerp(fullVolumeRange, hearRange, dist);
 
-                if (snap.LastDepositSoundTime > 0f &&
-                    now - snap.LastDepositSoundTime < beatInterval)
-                {
-                    _ships[networkId] = snap;
-                    continue;
-                }
-
-                float gemValue = GemEconomyConstants.GetDepositChunkAmount(
-                    state.ShipLevel,
-                    state.CurrentGems);
-                if (gemValue <= 0.001f)
-                {
-                    _ships[networkId] = snap;
-                    continue;
-                }
-
                 EmitGemDepositBeat(anchor, gemValue, state.Team, volumeScale);
-                snap.LastDepositSoundTime = now;
                 snap.ShipLevel = state.ShipLevel;
                 _ships[networkId] = snap;
             }
@@ -843,7 +803,9 @@ namespace TitanOrbit.Game
         static void EmitGemDepositBeat(Transform anchor, float gemValue, TeamId team, float volumeScale)
         {
             // Sound does not require a hull proxy — local deposit must tick even if GO sync lags.
-            AudioManager.Instance?.PlayGemDepositSound(gemValue, volumeScale);
+            // [TITAN-ORBIT] Use GetOrFind so Windows player builds still hear deposits if Awake
+            // order left Instance unset for a frame (Editor often had the singleton already hot).
+            AudioManager.GetOrFind()?.PlayGemDepositSound(gemValue, volumeScale);
 
             if (anchor == null || WorldFloatingCountManager.Instance == null)
                 return;

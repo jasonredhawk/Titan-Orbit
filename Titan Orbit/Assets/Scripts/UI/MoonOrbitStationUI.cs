@@ -166,6 +166,7 @@ namespace TitanOrbit.UI
 
             RefreshFromEcs();
             _gemsRequestAccum += Time.deltaTime;
+            // Keep polling while depositing — OnContributedGemsReceived soft-reconciles only.
             if (_gemsRequestAccum >= 1.5f)
             {
                 _gemsRequestAccum = 0f;
@@ -186,13 +187,19 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Metronome beat — bump Bank by the actual chunk so GEM DEPOSITS ticks with the SFX.
+        /// Metronome beat — snap Ship ↓ and Bank ↑ from optimistic state in the same stack as SFX.
         /// </summary>
         void OnLocalDepositBeat(float chunkAmount)
         {
             if (chunkAmount <= 0.001f)
                 return;
-            _contributedGems += chunkAmount;
+
+            // NotifyLocalDepositBeat already added chunkAmount to OptimisticDepositBankGems.
+            if (MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+                _contributedGems = optBank;
+            else
+                _contributedGems += chunkAmount;
+
             RefreshGemDepositFlow();
         }
 
@@ -235,11 +242,27 @@ namespace TitanOrbit.UI
 
         public void OnContributedGemsReceived(float amount)
         {
-            // --- Authoritative Bank snap from server ---
-            _contributedGems = amount;
+            // --- Authoritative Bank from server ---
+            // [TITAN-ORBIT] While depositing, soft-reconcile into metronome Bank — never snap the
+            // GEM DEPOSITS column to the RPC poll clock (that desynced it from Ship ↓ / SFX).
+            MoonOrbitClientState.RememberContributedGems(amount);
+            if (MoonOrbitClientState.WantDepositGems)
+            {
+                MoonOrbitClientState.EnsureOptimisticDepositBankSeed(amount);
+                MoonOrbitClientState.ApplyAuthoritativeBankBaseline(amount);
+                if (MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+                    _contributedGems = optBank;
+                else
+                    _contributedGems = amount;
+            }
+            else
+            {
+                _contributedGems = amount;
+            }
+
             RefreshGemDepositFlow();
             if (_gemsText != null)
-                _gemsText.text = $"Bank: {amount:0} gems";
+                _gemsText.text = $"Bank: {_contributedGems:0} gems";
         }
 
         /// <summary>
@@ -250,10 +273,30 @@ namespace TitanOrbit.UI
         {
             // --- Resolve ship cargo (prefer metronome estimate while depositing) ---
             float shipGems = 0f;
-            if (MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optimisticCargo))
+            bool haveGhost = EcsGameBridge.TryGetLocalShipState(out var ship);
+            float ghostGems = haveGhost ? ship.CurrentGems : 0f;
+
+            if (MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optimisticCargo) &&
+                !(optimisticCargo <= 0.001f && ghostGems > 0.001f))
                 shipGems = optimisticCargo;
-            else if (EcsGameBridge.TryGetLocalShipState(out var ship))
-                shipGems = ship.CurrentGems;
+            else if (haveGhost)
+            {
+                shipGems = ghostGems;
+                if (MoonOrbitClientState.WantDepositGems)
+                    MoonOrbitClientState.EnsureOptimisticDepositCargoSeed(ghostGems);
+            }
+
+            // --- Bank (prefer metronome estimate while depositing) ---
+            float bankGems = _contributedGems;
+            if (MoonOrbitClientState.WantDepositGems)
+            {
+                MoonOrbitClientState.EnsureOptimisticDepositBankSeed(_contributedGems);
+                if (MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+                {
+                    bankGems = optBank;
+                    _contributedGems = optBank;
+                }
+            }
 
             // --- Planet treasury progress under the Bank banner ---
             float planetGems = 0f;
@@ -264,7 +307,7 @@ namespace TitanOrbit.UI
                 planetLevel = Mathf.Max(1, planet.PlanetLevel);
             }
 
-            _sidebar?.RefreshDepositStatus(shipGems, _contributedGems, planetGems, planetLevel);
+            _sidebar?.RefreshDepositStatus(shipGems, bankGems, planetGems, planetLevel);
         }
 
         void RefreshFromEcs()

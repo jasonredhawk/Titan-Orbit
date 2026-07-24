@@ -49,6 +49,67 @@ namespace TitanOrbit.Game
             PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();
             s_PlanetStateCacheFrame = -1;
+            InvalidateLocalPlayerShipFrameCache();
+        }
+
+        // --- Per-frame local ship cache (avoids N× CreateEntityQuery in HUD / dock / deposit) ---
+
+        /// <summary>Frame stamp for <see cref="s_LocalPlayerShipEntity"/>.</summary>
+        static int s_LocalPlayerShipCacheFrame = -1;
+
+        /// <summary>Cached local ship entity for this frame (ClientWorld / prediction world).</summary>
+        static Entity s_LocalPlayerShipEntity;
+
+        /// <summary>World used when <see cref="s_LocalPlayerShipEntity"/> was resolved.</summary>
+        static World s_LocalPlayerShipCacheWorld;
+
+        /// <summary>Clears the per-frame local-ship entity cache (Play Mode / leave in-game).</summary>
+        static void InvalidateLocalPlayerShipFrameCache()
+        {
+            s_LocalPlayerShipCacheFrame = -1;
+            s_LocalPlayerShipEntity = Entity.Null;
+            s_LocalPlayerShipCacheWorld = null;
+        }
+
+        /// <summary>
+        /// Resolves the local player ship entity once per frame via <see cref="LocalPlayerShipTag"/>.
+        /// Callers then <c>GetComponentData</c> — avoids CreateEntityQuery per HUD/dock/deposit read
+        /// (MoonOrbitStationController + presenter were allocating several queries every Update).
+        /// </summary>
+        static bool TryGetCachedLocalPlayerShipEntity(out EntityManager em, out Entity shipEntity)
+        {
+            em = default;
+            shipEntity = Entity.Null;
+
+            var world = GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            em = world.EntityManager;
+
+            if (s_LocalPlayerShipCacheFrame == Time.frameCount &&
+                s_LocalPlayerShipCacheWorld == world &&
+                s_LocalPlayerShipEntity != Entity.Null &&
+                em.Exists(s_LocalPlayerShipEntity) &&
+                em.HasComponent<LocalPlayerShipTag>(s_LocalPlayerShipEntity))
+            {
+                shipEntity = s_LocalPlayerShipEntity;
+                return true;
+            }
+
+            s_LocalPlayerShipCacheFrame = Time.frameCount;
+            s_LocalPlayerShipCacheWorld = world;
+            s_LocalPlayerShipEntity = Entity.Null;
+
+            using (var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag)))
+            {
+                if (tagged.CalculateEntityCount() != 1)
+                    return false;
+                s_LocalPlayerShipEntity = tagged.GetSingletonEntity();
+            }
+
+            shipEntity = s_LocalPlayerShipEntity;
+            return shipEntity != Entity.Null;
         }
 
         // --- World selection ---
@@ -303,26 +364,34 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Full <see cref="ShipState"/> for HUD and UI — tries LocalPlayerShipTag, ownership, CommandTarget, NetworkId.
+        /// <para>
+        /// [TITAN-ORBIT] Tiny <see cref="LocalPlayerShipTag"/> singleton read stays allowed during
+        /// <see cref="ClientJoinSettleCache.GhostSpawnBacklog"/> (gem Instantiates on Windows).
+        /// Broad ship gathers stay gated — without the tagged path, deposit metronome / orbit menu
+        /// could not seed cargo and deposit SFX went silent on the Windows client.
+        /// </para>
         /// </summary>
         public static bool TryGetLocalShipState(out ShipState state)
         {
             state = default;
-            // [TITAN-ORBIT] HUD Update after TeamChoiceResult must not ToEntityArray ships while
-            // GhostSpawn Instantiates / pre-seed gap is active (Player.log 2026-07-23 Crash!!!).
-            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
-                return false;
+
+            // --- One tagged entity resolve per frame, then component read ---
+            if (TryGetCachedLocalPlayerShipEntity(out var em, out var shipEntity) &&
+                em.HasComponent<ShipState>(shipEntity))
+            {
+                state = em.GetComponentData<ShipState>(shipEntity);
+                return true;
+            }
 
             var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
-            var em = world.EntityManager;
-            using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipState));
-            if (tagged.CalculateEntityCount() > 0)
-            {
-                state = tagged.GetSingleton<ShipState>();
-                return true;
-            }
+            em = world.EntityManager;
+
+            // [TITAN-ORBIT] Broader ownership / NetworkId gathers Crash!!! during Instantiates.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
 
             if (TryGetLocalOwnedShipEntity(em, out var ownedShip) &&
                 em.HasComponent<ShipState>(ownedShip))
@@ -443,16 +512,31 @@ namespace TitanOrbit.Game
             return false;
         }
 
-        /// <summary>Moon landing cinematic progress — used by dock visual applier and camera follow.</summary>
+        /// <summary>
+        /// Moon landing cinematic progress — used by dock visual applier and camera follow.
+        /// Prefers a tiny <see cref="LocalPlayerShipTag"/> read so Windows gem Instantiates
+        /// (<see cref="ClientJoinSettleCache.GhostSpawnBacklog"/>) do not blank dock / deposit.
+        /// </summary>
         public static bool TryGetLocalShipMoonDockState(out ShipMoonDockState moonDock)
         {
             moonDock = default;
+
+            if (TryGetCachedLocalPlayerShipEntity(out var em, out var shipEntity) &&
+                em.HasComponent<ShipMoonDockState>(shipEntity))
+            {
+                moonDock = em.GetComponentData<ShipMoonDockState>(shipEntity);
+                return true;
+            }
+
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
-            var em = world.EntityManager;
-            if (TryGetLocalShipEntity(em, out var shipEntity) &&
+            em = world.EntityManager;
+            if (TryGetLocalShipEntity(em, out shipEntity) &&
                 em.HasComponent<ShipMoonDockState>(shipEntity))
             {
                 moonDock = em.GetComponentData<ShipMoonDockState>(shipEntity);
@@ -472,16 +556,30 @@ namespace TitanOrbit.Game
             return TryGetLocalShipEntity(world.EntityManager, out shipEntity);
         }
 
-        /// <summary>Last applied <see cref="ShipInput"/> on the local ship ghost (client prediction world).</summary>
+        /// <summary>
+        /// Last applied <see cref="ShipInput"/> on the local ship ghost (client prediction world).
+        /// Prefers <see cref="LocalPlayerShipTag"/> so thrust-to-undock still works during gem Instantiates.
+        /// </summary>
         public static bool TryGetLocalShipInput(out ShipInput input)
         {
             input = default;
+
+            if (TryGetCachedLocalPlayerShipEntity(out var em, out var shipEntity) &&
+                em.HasComponent<ShipInput>(shipEntity))
+            {
+                input = em.GetComponentData<ShipInput>(shipEntity);
+                return true;
+            }
+
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
-            var em = world.EntityManager;
-            if (TryGetLocalShipEntity(em, out var shipEntity) &&
+            em = world.EntityManager;
+            if (TryGetLocalShipEntity(em, out shipEntity) &&
                 em.HasComponent<ShipInput>(shipEntity))
             {
                 input = em.GetComponentData<ShipInput>(shipEntity);
@@ -534,15 +632,112 @@ namespace TitanOrbit.Game
         public static bool TryGetLocalShipDepositIntent(out bool wantDepositGems)
         {
             wantDepositGems = false;
+
+            if (TryGetCachedLocalPlayerShipEntity(out var em, out var shipEntity) &&
+                em.HasComponent<ShipDepositIntent>(shipEntity))
+            {
+                wantDepositGems = em.GetComponentData<ShipDepositIntent>(shipEntity).WantDepositGems;
+                return true;
+            }
+
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             var world = GetLocalPlayerShipWorld();
             if (world == null || !world.IsCreated)
                 return false;
 
-            var em = world.EntityManager;
-            if (TryGetLocalShipEntity(em, out var shipEntity) &&
+            em = world.EntityManager;
+            if (TryGetLocalShipEntity(em, out shipEntity) &&
                 em.HasComponent<ShipDepositIntent>(shipEntity))
             {
                 wantDepositGems = em.GetComponentData<ShipDepositIntent>(shipEntity).WantDepositGems;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Ghosted deposit metronome feedback for the local ship (server BeatSequence / chunk).
+        /// Prefers cached <see cref="LocalPlayerShipTag"/> entity so Instantiates do not blank SFX.
+        /// </summary>
+        public static bool TryGetLocalShipDepositFeedback(out ShipDepositFeedback feedback)
+        {
+            feedback = default;
+
+            if (TryGetCachedLocalPlayerShipEntity(out var em, out var shipEntity) &&
+                em.HasComponent<ShipDepositFeedback>(shipEntity))
+            {
+                feedback = em.GetComponentData<ShipDepositFeedback>(shipEntity);
+                return true;
+            }
+
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
+            var world = GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            em = world.EntityManager;
+            if (TryGetLocalShipEntity(em, out shipEntity) &&
+                em.HasComponent<ShipDepositFeedback>(shipEntity))
+            {
+                feedback = em.GetComponentData<ShipDepositFeedback>(shipEntity);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Resolves the local ship entity for deposit intent writes.
+        /// Client: prefers <see cref="LocalPlayerShipTag"/> (safe during GhostSpawnBacklog).
+        /// Server (Local Host): matches <see cref="GhostOwner.NetworkId"/> — server ships never
+        /// get <see cref="LocalPlayerShipTag"/> (that tag is client-only).
+        /// </summary>
+        public static bool TryGetLocalShipEntityTagged(World world, out Entity shipEntity)
+        {
+            shipEntity = Entity.Null;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+
+            // --- Client prediction world: tiny tagged lookup ---
+            if (world.IsClient())
+            {
+                using (var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag)))
+                {
+                    if (tagged.CalculateEntityCount() == 1)
+                    {
+                        shipEntity = tagged.GetSingletonEntity();
+                        return true;
+                    }
+                }
+
+                if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                    return false;
+
+                return TryGetLocalShipEntity(em, out shipEntity);
+            }
+
+            // --- Server world (Local Host): NetworkId match — no LocalPlayerShipTag here ---
+            int localId = GetLocalNetworkId(ClientWorld);
+            if (localId <= 0)
+                localId = GetLocalNetworkId(world);
+            if (localId <= 0)
+                return false;
+
+            using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner));
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            for (int i = 0; i < owners.Length; i++)
+            {
+                if (owners[i].NetworkId != localId)
+                    continue;
+                shipEntity = entities[i];
                 return true;
             }
 
@@ -625,6 +820,7 @@ namespace TitanOrbit.Game
                     ResetRemoteMapLoadTracking();
                 s_WasNetworkInGame = false;
                 ResetRemoteMapLoadTracking();
+                InvalidateLocalPlayerShipFrameCache();
                 return false;
             }
 

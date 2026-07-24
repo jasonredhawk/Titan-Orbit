@@ -327,6 +327,8 @@ namespace TitanOrbit.UI
         {
             lastReceivedGems = gems;
             pendingGemsRequest = false;
+            // Keep metronome Bank seed in sync with the latest authoritative total.
+            MoonOrbitClientState.RememberContributedGems(gems);
             var ui = UnityEngine.Object.FindFirstObjectByType<OrbitStationUI>();
             if (ui != null) ui.RefreshFromReceivedGems();
         }
@@ -480,8 +482,10 @@ namespace TitanOrbit.UI
                 RefreshSlots();
                 RefreshEquipmentSlots();
             }
-            // Periodically request contributed gems so deposits show up without closing/reopening
-            if (contributedGemsRequestAccum >= ContributedGemsRequestInterval && HomePlanetStoreSystem.Instance != null)
+            // Periodically request contributed gems (soft-reconcile while depositing — never skip
+            // entirely or Bank freezes if a beat was missed).
+            if (contributedGemsRequestAccum >= ContributedGemsRequestInterval &&
+                HomePlanetStoreSystem.Instance != null)
             {
                 contributedGemsRequestAccum = 0f;
                 HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
@@ -646,6 +650,9 @@ namespace TitanOrbit.UI
                 }
             }
             contributedGems = lastReceivedGems;
+            MoonOrbitClientState.RememberContributedGems(contributedGems);
+            // One-shot auto-deposit apply on open (not every sidebar refresh — that raced Windows SFX).
+            ApplyAutoDepositPreferenceToShip();
             EnsurePanelExists();
             EnterMoonDockLayout();
             if (rootPanel != null)
@@ -696,7 +703,25 @@ namespace TitanOrbit.UI
 
         public void RefreshFromReceivedGems()
         {
-            contributedGems = lastReceivedGems;
+            // --- Authoritative Bank from RPC / live ledger ---
+            // [TITAN-ORBIT] While the deposit metronome is driving Ship+Bank, do not snap the
+            // displayed Bank to the server clock (that made GEM DEPOSITS rise independently of
+            // the audible chunk). Soft-reconcile into optimistic Bank instead.
+            if (MoonOrbitClientState.WantDepositGems)
+            {
+                MoonOrbitClientState.EnsureOptimisticDepositBankSeed(lastReceivedGems);
+                // RPC path may correct a late/stale seed; per-frame live ledger must not.
+                MoonOrbitClientState.ApplyAuthoritativeBankBaseline(lastReceivedGems);
+                if (MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+                    contributedGems = optBank;
+                else
+                    contributedGems = lastReceivedGems;
+            }
+            else
+            {
+                contributedGems = lastReceivedGems;
+            }
+
             RefreshStoreLabels();
         }
 
@@ -3128,8 +3153,21 @@ namespace TitanOrbit.UI
 
         private void RefreshStoreLabels()
         {
-            // Server is source of truth (Show() was zeroing contributedGems while pendingGemsRequest blocked syncing).
-            contributedGems = lastReceivedGems;
+            // --- Bank label + sidebar ---
+            // Prefer metronome optimistic Bank while depositing so GEM DEPOSITS stays in phase
+            // with Ship cargo drops and SFX (not the 0.35s / 1s poll clocks).
+            if (MoonOrbitClientState.WantDepositGems &&
+                MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+            {
+                contributedGems = optBank;
+            }
+            else
+            {
+                // Server is source of truth when not mid-deposit metronome.
+                // (Show() was zeroing contributedGems while pendingGemsRequest blocked syncing.)
+                contributedGems = lastReceivedGems;
+            }
+
             if (gemsText != null)
             {
                 gemsText.text = $"Your contributed gems: {contributedGems:F0}";
@@ -3293,24 +3331,67 @@ namespace TitanOrbit.UI
             if (!_moonDockLayoutActive || orbitDockSidebar == null)
                 return;
 
+            // --- Bank (GEM DEPOSITS) ---
+            // [TITAN-ORBIT] While depositing, Bank ticks from server ShipDepositFeedback beats
+            // (NotifyLocalDepositBeat). Live ledger must not paint independently — soft-reconcile only.
             float bankBalance = contributedGems;
+            bool depositingSynced = MoonOrbitClientState.WantDepositGems;
+
             if (OrbitStationEcsContext.HomePlanetId > 0 &&
                 EcsGameBridge.TryGetContributedGems(OrbitStationEcsContext.HomePlanetId, out float liveBank))
             {
-                bankBalance = liveBank;
-                if (Mathf.Abs(liveBank - lastReceivedGems) > 0.01f)
-                    OnContributedGemsReceived(liveBank);
+                MoonOrbitClientState.RememberContributedGems(liveBank);
+
+                if (depositingSynced)
+                {
+                    MoonOrbitClientState.EnsureOptimisticDepositBankSeed(contributedGems);
+                    // Per-frame live: epsilon snap only. Late RPC baseline uses ApplyAuthoritativeBankBaseline.
+                    MoonOrbitClientState.ReconcileOptimisticDepositBank(liveBank);
+                    if (MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+                    {
+                        bankBalance = optBank;
+                        contributedGems = optBank;
+                    }
+                    else
+                    {
+                        bankBalance = contributedGems;
+                    }
+                }
+                else
+                {
+                    bankBalance = liveBank;
+                    if (Mathf.Abs(liveBank - lastReceivedGems) > 0.01f)
+                        OnContributedGemsReceived(liveBank);
+                }
+            }
+            else if (depositingSynced)
+            {
+                MoonOrbitClientState.EnsureOptimisticDepositBankSeed(contributedGems);
+                if (MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+                {
+                    bankBalance = optBank;
+                    contributedGems = optBank;
+                }
             }
 
+            // --- Ship cargo (prefer metronome estimate while depositing) ---
+            // Prefer optimistic only when it is a real seeded value — never stick on a false 0
+            // while the ghost still reports cargo (seed bug / Instantiates gap).
             float shipGems = 0f;
+            bool haveGhostShip = EcsGameBridge.TryGetLocalShipState(out var shipState);
+            float ghostShipGems = haveGhostShip ? shipState.CurrentGems : 0f;
+
             if (MoonOrbitClientState.WantDepositGems &&
-                MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optimisticCargo))
+                MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optimisticCargo) &&
+                !(optimisticCargo <= 0.001f && ghostShipGems > 0.001f))
             {
                 shipGems = optimisticCargo;
             }
-            else if (EcsGameBridge.TryGetLocalShipState(out var shipState))
+            else if (haveGhostShip)
             {
-                shipGems = shipState.CurrentGems;
+                shipGems = ghostShipGems;
+                if (MoonOrbitClientState.WantDepositGems)
+                    MoonOrbitClientState.EnsureOptimisticDepositCargoSeed(ghostShipGems);
             }
 
             float planetGems = 0f;
@@ -3324,8 +3405,20 @@ namespace TitanOrbit.UI
                 planetLevel = Mathf.Max(1, planetState.PlanetLevel);
             }
 
+            // While depositing with a valid optimistic pair, keep Ship+Bank from the same beat.
+            if (depositingSynced &&
+                MoonOrbitClientState.TryGetOptimisticDepositCargo(out float beatCargo) &&
+                MoonOrbitClientState.TryGetOptimisticDepositBank(out float beatBank) &&
+                !(beatCargo <= 0.001f && ghostShipGems > 0.001f))
+            {
+                shipGems = beatCargo;
+                bankBalance = beatBank;
+                contributedGems = beatBank;
+            }
+
             orbitDockSidebar.RefreshDepositStatus(shipGems, bankBalance, planetGems, planetLevel);
-            ApplyAutoDepositPreferenceToShip();
+            // Do NOT re-apply auto-deposit every sidebar refresh — that spammed SetWantDepositGems
+            // RPCs and could race HideMenu / metronome clear on the Windows client.
             orbitDockSidebar.RefreshAutoDepositToggle(GetSavedAutoDepositGems());
             float maxPower = shipUpgradeTree != null ? shipUpgradeTree.GetMaxDisplayPower() : 0.001f;
             orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxPower);

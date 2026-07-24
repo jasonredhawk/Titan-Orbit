@@ -268,6 +268,18 @@ namespace TitanOrbit.Audio
         }
 
         /// <summary>
+        /// Resolves the live singleton even if Awake order left <see cref="Instance"/> null
+        /// (player builds can destroy/recreate boot scenes differently than the Editor).
+        /// </summary>
+        public static AudioManager GetOrFind()
+        {
+            if (Instance != null)
+                return Instance;
+            Instance = FindFirstObjectByType<AudioManager>();
+            return Instance;
+        }
+
+        /// <summary>
         /// Gem-deposit metronome beat. Pitch follows <paramref name="gemValue"/> — the actual gems
         /// moved this beat (usually ship level; leftover cargo uses the smaller amount so the last
         /// ticks are not a fake full-load pitch). Optional <paramref name="volumeScale"/> applies
@@ -285,6 +297,14 @@ namespace TitanOrbit.Audio
             if (volumeScale <= 0.001f || gemCollectSound == null)
                 return;
 
+            // Ensure sources exist even if Start() has not run yet (first deposit beat mid-frame).
+            if (sfxSource == null)
+            {
+                sfxSource = gameObject.AddComponent<AudioSource>();
+                sfxSource.playOnAwake = false;
+                sfxSource.outputAudioMixerGroup = sfxGroup;
+            }
+
             EnsureGemSoundPool();
             float volume = GetSFXVolume(gemVolume * Mathf.Clamp01(volumeScale));
             if (volume <= 0.001f)
@@ -296,19 +316,21 @@ namespace TitanOrbit.Audio
 
             if (gemSoundSources == null || gemSoundSources.Length == 0)
             {
-                if (sfxSource != null)
-                {
-                    sfxSource.pitch = pitch;
-                    sfxSource.PlayOneShot(gemCollectSound, volume);
-                    sfxSource.pitch = 1f;
-                }
+                sfxSource.pitch = pitch;
+                sfxSource.PlayOneShot(gemCollectSound, volume);
+                sfxSource.pitch = 1f;
                 return;
             }
 
             AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
             nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;
             if (src == null)
+            {
+                sfxSource.pitch = pitch;
+                sfxSource.PlayOneShot(gemCollectSound, volume);
+                sfxSource.pitch = 1f;
                 return;
+            }
 
             src.pitch = pitch;
             src.PlayOneShot(gemCollectSound, volume);

@@ -93,6 +93,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Sets <see cref="ShipInput.WantDepositGems"/> and <see cref="ShipDepositIntent"/> on the
         /// local player's ship in the given world (ClientWorld prediction and/or ServerWorld host).
+        /// Uses tagged ship lookup so Instantiates backlog cannot skip the intent write.
         /// </summary>
         static void ApplyWantDepositOnWorld(World world, bool wantDeposit)
         {
@@ -100,7 +101,9 @@ namespace TitanOrbit.UI
             if (world == null || !world.IsCreated)
                 return;
 
-            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out var shipEntity))
+            // [TITAN-ORBIT] Prefer LocalPlayerShipTag — TryGetLocalShipEntity is gated off during
+            // GhostSpawnBacklog and previously left server ShipDepositIntent stuck false on Local Host.
+            if (!EcsGameBridge.TryGetLocalShipEntityTagged(world, out var shipEntity))
                 return;
 
             var em = world.EntityManager;
