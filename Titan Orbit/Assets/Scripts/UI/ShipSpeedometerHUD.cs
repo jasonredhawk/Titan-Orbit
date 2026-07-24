@@ -31,6 +31,12 @@ namespace TitanOrbit.UI
     /// Reads <see cref="ShipMotorConfig"/> (after client+server <see cref="ShipStatApplySystem"/>),
     /// <see cref="ShipKinematics"/>, weapon config, and reconstructed chassis stats from the visualization world.
     /// <para>
+    /// [TITAN-ORBIT] Friendly territory triangles multiply thrust + max speed in
+    /// <see cref="ShipPhysicsDriveLogic"/> but do <b>not</b> rewrite <see cref="ShipMotorConfig"/>.
+    /// This HUD multiplies display max / accel by <see cref="PlanetConnectionGraphCache.LocalOwnerTerritoryMult"/>
+    /// so the bar and SPD line match the boosted cruise the motor already applies.
+    /// </para>
+    /// <para>
     /// Presentation-only — never writes ECS. Numbers use fixed-width formatting so TMP does not
     /// reflow when signs / decimals flicker (that "blinking" layout shift).
     /// </para>
@@ -520,6 +526,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Display MaxSpeed: prefer live motor (client ShipStatApply), fall back to chassis moveSpeed
         /// if motor still looks like StarshipGhostAuthoring bake (35) while chassis is ~13.
+        /// Does <b>not</b> include territory boost — call <see cref="ResolveTerritoryMovementMult"/> after.
         /// </summary>
         static float ResolveDisplayMaxSpeed(in ShipMotorConfig motor, in ShipComponentAbilityStats effectiveStats)
         {
@@ -532,6 +539,13 @@ namespace TitanOrbit.UI
 
             return motorMax;
         }
+
+        /// <summary>
+        /// Sticky friendly-triangle movement multiplier for the local owner (1 when outside).
+        /// Same cache that grows engine/thruster meshes and that predicted drive publishes.
+        /// </summary>
+        static float ResolveTerritoryMovementMult() =>
+            Mathf.Max(1f, PlanetConnectionGraphCache.LocalOwnerTerritoryMult);
 
         /// <summary>Planar speed magnitude — top-down game ignores Y velocity.</summary>
         static float GetHorizontalSpeed(in ShipKinematics kinematics)
@@ -684,16 +698,26 @@ namespace TitanOrbit.UI
             float maxSpd = ResolveDisplayMaxSpeed(motor, effectiveStats);
             // Bake default MaxSpeed=35 while chassis is ~13 — motor not applied yet this frame.
             bool motorLooksBaked = chassisMove > 0.1f && motor.MaxSpeed > chassisMove * 1.35f;
-            speedSlider.value = Mathf.Clamp01(cur / maxSpd);
+
+            // --- Friendly territory boost (same mult as ShipPhysicsDriveLogic) ---
+            // [TITAN-ORBIT] Motor multiplies MaxSpeed / EngineThrust at drive time only; chassis
+            // ShipMotorConfig stays unboosted. Without this, the bar saturates early and SPD
+            // shows e.g. 13.5/13.5 "at max" while kinematics are still climbing past chassis cruise.
+            float territoryMult = ResolveTerritoryMovementMult();
+            maxSpd *= territoryMult;
+
+            speedSlider.value = Mathf.Clamp01(cur / Mathf.Max(0.01f, maxSpd));
 
             float mass = GetMovementMass(ship, motor);
-            // [TITAN-ORBIT] F/m — same a = EngineThrust/mass the motor uses below MaxSpeed.
-            float maxFwd = Mathf.Max(0.01f, motor.EngineThrust / Mathf.Max(ShipMassLogic.MinMass, mass));
+            // [TITAN-ORBIT] F/m — same a = (EngineThrust × territory)/mass the motor uses below MaxSpeed.
+            float thrustForDisplay = motor.EngineThrust * territoryMult;
+            float maxFwd = Mathf.Max(0.01f, thrustForDisplay / Mathf.Max(ShipMassLogic.MinMass, mass));
             if (motorLooksBaked && effectiveStats.accelerationCap > 0.1f)
             {
                 maxFwd = Mathf.Max(
                     0.01f,
                     effectiveStats.accelerationCap * ShipPropulsionAggregation.EngineThrustVisibility
+                        * territoryMult
                     / Mathf.Max(ShipMassLogic.MinMass, mass));
             }
 
@@ -774,10 +798,16 @@ namespace TitanOrbit.UI
             if (atCruise)
                 displayCur = maxSpd;
 
+            // [TITAN-ORBIT] Brief territory tag so the raised max reads as a boost, not a chassis change.
+            string territoryTag = territoryMult > 1.001f
+                ? $"  ·  <color=#AAEEDD>×{FormatFixed1(territoryMult, 4)} terr</color>"
+                : string.Empty;
+
             string spdLine;
             if (atCruise)
             {
-                spdLine = $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  ·  <color=#AAAAAA>at max</color>";
+                spdLine =
+                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  ·  <color=#AAAAAA>at max</color>{territoryTag}";
             }
             else
             {
@@ -785,7 +815,7 @@ namespace TitanOrbit.UI
                 float tMax = remaining / maxFwd;
                 tMax = Mathf.Clamp(tMax, 0f, 99.9f);
                 spdLine =
-                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  ·  max in <color=#AAEEDD>{FormatFixed1(tMax, 4)}s</color>";
+                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  ·  max in <color=#AAEEDD>{FormatFixed1(tMax, 4)}s</color>{territoryTag}";
             }
 
             string stopPart = cur > 0.35f

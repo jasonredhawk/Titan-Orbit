@@ -79,14 +79,18 @@ namespace TitanOrbit.ECS
             var homeLevels = new NativeArray<int>(6, Allocator.TempJob);
             PlanetConnectionGraphCache.CopyHomeLevels(PlanetConnectionGraphSide.Client, ref homeLevels);
 
-            // --- Presentation thruster mult: first predicting tick only + sticky hold ---
+            // --- Presentation thruster / HUD mult: first predicting tick only + sticky hold ---
             // [NETCODE] Rollback/resim re-runs this system; writing LocalOwnerTerritoryMult every
             // resim tick made engine/thruster meshes blink while inside a triangle.
+            // [TITAN-ORBIT] Only publish when the local ship was found. A missing query used to
+            // push rawMult=1 every tick and start sticky exit — engine scale / speedometer max
+            // blinked while still inside a friendly fill.
             bool publishPresentationMult = !SystemAPI.TryGetSingleton<NetworkTime>(out var nt) ||
                                            nt.IsFirstTimeFullyPredictingTick;
             if (publishPresentationMult)
             {
                 float localMult = 1f;
+                bool foundLocalShip = false;
                 foreach (var (lt, ship) in SystemAPI
                              .Query<RefRO<LocalTransform>, RefRO<ShipState>>()
                              .WithAll<ShipTag, GhostOwnerIsLocal, Simulate>())
@@ -98,10 +102,12 @@ namespace TitanOrbit.ECS
                         homeLevels,
                         mapW,
                         mapH);
+                    foundLocalShip = true;
                     break;
                 }
 
-                PlanetConnectionGraphCache.UpdateLocalOwnerTerritoryMult(localMult, moonElapsed);
+                if (foundLocalShip)
+                    PlanetConnectionGraphCache.UpdateLocalOwnerTerritoryMult(localMult, moonElapsed);
             }
 
             var job = new ShipPhysicsDriveJob

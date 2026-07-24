@@ -19,7 +19,9 @@ namespace TitanOrbit.Game
     /// <c>TriangleBorder</c> opposite side (that Euclidean chord invented mid-map crosses).
     /// Published triangles are already short-embeddable; we fill them only. Borders come from the
     /// full edge list as Billboard lines (Flat2D is invisible from a top-down XZ camera).
-    /// Vertices are canonical XZ → shortest offsets → camera retile for seams.
+    /// Vertices are canonical XZ → shortest offsets from a short-embed anchor → camera retile for seams.
+    /// Ship / asteroid membership uses the same short-embed charts in
+    /// <see cref="PlanetConnectionGraphLogic.PointInTriangleXZ"/> (not a VertexA-only unwrap).
     /// </para>
     /// Client presentation only.
     /// </summary>

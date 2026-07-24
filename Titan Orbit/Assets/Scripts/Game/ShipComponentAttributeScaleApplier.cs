@@ -111,9 +111,15 @@ namespace TitanOrbit.Game
             var attrs = em.GetComponentData<ShipAttributeUpgradeState>(_shipEntity);
 
             // --- Territory thruster grow (sticky cache from predicted drive) ---
+            // [TITAN-ORBIT] LocalOwnerTerritoryMult is only published for the local owner.
+            // Prefer GhostOwnerIsLocal, but also accept LocalPlayerShipTag — NetCode can briefly
+            // disable GhostOwnerIsLocal around Instantiates while the tag still marks our hull.
             float territoryMult = 1f;
-            if (em.HasComponent<GhostOwnerIsLocal>(_shipEntity) &&
-                em.IsComponentEnabled<GhostOwnerIsLocal>(_shipEntity))
+            bool isLocalOwner =
+                (em.HasComponent<GhostOwnerIsLocal>(_shipEntity) &&
+                 em.IsComponentEnabled<GhostOwnerIsLocal>(_shipEntity)) ||
+                em.HasComponent<LocalPlayerShipTag>(_shipEntity);
+            if (isLocalOwner)
                 territoryMult = PlanetConnectionGraphCache.LocalOwnerTerritoryMult;
 
             // Skip when neither upgrades nor a meaningful territory step changed.

@@ -369,7 +369,15 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Returns a job-readable Persistent runtime-triangle array (do <b>not</b> Dispose).
-        /// Rebuilds planet-center vertices when topology republishes (planets do not move).
+        /// Rebuilds planet-center vertices when topology republishes, or when a prior rebuild
+        /// was incomplete (some triangle planets were not in the snapshot list yet).
+        /// <para>
+        /// [TITAN-ORBIT] Client prediction under TransformQuarantine uses Instantiates-registry
+        /// planet Collect. The first motor tick after <see cref="PublishClient"/> can race a
+        /// still-partial registry: if we freeze a short RuntimeCache then, drawn fills (hybrid
+        /// proxies) show a triangle while FriendlyTerritoryMovementMultiplier always returns 1 —
+        /// no speed boost, no engine grow. Treat RuntimeCache.Count != Triangles.Count as stale.
+        /// </para>
         /// </summary>
         public static NativeArray<PlanetConnectionGraphLogic.RuntimeTriangle> GetRuntimeTrianglesNative(
             PlanetConnectionGraphSide sideKind,
@@ -393,16 +401,26 @@ namespace TitanOrbit.ECS
                 return side.RuntimeNative;
             }
 
-            // Rebuild only when Publish cleared the cache (planets do not move).
-            bool cacheFresh =
-                side.RuntimeCache.Count > 0 &&
+            // --- Fresh only when every topology triangle resolved to planet-center verts ---
+            // Planets do not move, so we do not rebuild every tick once complete. Incomplete
+            // caches (Publish cleared + partial Collect) must retry until Count matches.
+            bool cacheComplete =
+                side.RuntimeCache.Count == side.Triangles.Count &&
                 side.RuntimeNative.IsCreated &&
                 side.RuntimeNative.Length == side.RuntimeCache.Count;
 
-            if (!cacheFresh)
+            if (!cacheComplete)
             {
+                int prevResolved = side.RuntimeCache.Count;
                 RebuildRuntimeCache(side, planets);
-                side.SyncRuntimeNativeFromCache();
+                // Avoid Persistent realloc every predicted tick while still waiting on planets.
+                if (side.RuntimeCache.Count != prevResolved ||
+                    !side.RuntimeNative.IsCreated ||
+                    side.RuntimeNative.Length != side.RuntimeCache.Count)
+                {
+                    side.SyncRuntimeNativeFromCache();
+                }
+
                 side.RuntimeCacheStamp = elapsedSeconds;
             }
 

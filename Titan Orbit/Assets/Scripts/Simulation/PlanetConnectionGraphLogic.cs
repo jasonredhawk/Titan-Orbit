@@ -19,7 +19,8 @@ namespace TitanOrbit.Simulation
     /// drawers never invent a long opposite-side chord. Lone edges are visual-only; bonuses need a
     /// filled embeddable triangle.
     /// </para>
-    /// Point-in-triangle uses shortest-path unwrap so territories work across map seams.
+    /// Point-in-triangle tests short-embed charts (same geodesic disk the fill draws), not a
+    /// VertexA-only Euclidean unwrap that can disagree across seams.
     /// Shared by server authority (asteroid tint, mining, pop bonuses) and client prediction
     /// (friendly speed). Burst-safe — no managed allocations inside hot helpers.
     /// </summary>
@@ -242,9 +243,23 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// True when <paramref name="worldPos"/> lies inside the triangle after toroidal unwrap
-        /// (anchor A at origin, B/C/P as shortest offsets from A).
+        /// True when <paramref name="worldPos"/> lies inside the same short-embed territory fill
+        /// that <c>PlanetConnectionShapesVisual</c> draws (geodesic triangle on the XZ torus).
+        /// <para>
+        /// [TITAN-ORBIT] Do <b>not</b> always unwrap from <paramref name="vertexA"/>. The drawer
+        /// picks a corner where chart(BC) ≈ Shortest(B,C); anchoring PIT at a different corner
+        /// builds a Euclidean triangle that uses the <b>long</b> way for one side — boost then
+        /// fires in the wrong region (often outside the tinted fill, or missing inside it).
+        /// Ship positions may be unbounded; verts are canonical-wrapped — ShortestOffset handles both.
+        /// Display retile / seam wrap-copies are presentation only; membership is this chart test.
+        /// </para>
         /// </summary>
+        /// <param name="worldPos">Ship or asteroid world pose (Y ignored; need not be wrapped).</param>
+        /// <param name="vertexA">Canonical planet-center A.</param>
+        /// <param name="vertexB">Canonical planet-center B.</param>
+        /// <param name="vertexC">Canonical planet-center C.</param>
+        /// <param name="mapW">Toroidal map width from MapStateSingleton / ToroidalMapEcs.</param>
+        /// <param name="mapH">Toroidal map height.</param>
         public static bool PointInTriangleXZ(
             float3 worldPos,
             float3 vertexA,
@@ -253,12 +268,51 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
-            // --- Unwrap into local XZ with A at origin ---
-            // [TITAN-ORBIT] Same as NGO PointInTriangleXZCanonical — required across seams.
+            // --- Every short-embed chart (matches drawn fill) ---
+            // Published triangles are graph-gated as short-embeddable from at least one corner.
+            // Testing all valid charts keeps membership identical to the geodesic disk the player sees.
+            // No VertexA-only fallback: that chart can use a long opposite side and disagree with the tint.
+            return PointInShortEmbedChart(worldPos, vertexA, vertexB, vertexC, mapW, mapH) ||
+                   PointInShortEmbedChart(worldPos, vertexB, vertexA, vertexC, mapW, mapH) ||
+                   PointInShortEmbedChart(worldPos, vertexC, vertexA, vertexB, mapW, mapH);
+        }
+
+        /// <summary>
+        /// True when <paramref name="worldPos"/> is inside the Euclidean triangle formed by
+        /// shortest offsets from <paramref name="anchor"/> to <paramref name="p"/> / <paramref name="q"/>,
+        /// and that chart is a short embedding (opposite side ≈ toroidal Shortest).
+        /// </summary>
+        static bool PointInShortEmbedChart(
+            float3 worldPos,
+            float3 anchor,
+            float3 p,
+            float3 q,
+            float mapW,
+            float mapH)
+        {
+            if (!TryShortEmbedFromAnchor(anchor, p, q, mapW, mapH))
+                return false;
+            return PointInAnchorChart(worldPos, anchor, p, q, mapW, mapH);
+        }
+
+        /// <summary>
+        /// Barycentric point-in-triangle in the A-anchored shortest-offset chart on the torus.
+        /// Does not require the chart to be short-embeddable (caller decides).
+        /// </summary>
+        static bool PointInAnchorChart(
+            float3 worldPos,
+            float3 anchor,
+            float3 vertexB,
+            float3 vertexC,
+            float mapW,
+            float mapH)
+        {
+            // --- Unwrap into local XZ with anchor at origin (ShortestOffset — seam-safe) ---
+            // [TITAN-ORBIT] Ship may be many map-widths away; verts stay in [-half, half).
             float2 a = float2.zero;
-            float3 offB = ToroidalMapEcs.ShortestOffsetXZ(vertexA, vertexB, mapW, mapH);
-            float3 offC = ToroidalMapEcs.ShortestOffsetXZ(vertexA, vertexC, mapW, mapH);
-            float3 offP = ToroidalMapEcs.ShortestOffsetXZ(vertexA, worldPos, mapW, mapH);
+            float3 offB = ToroidalMapEcs.ShortestOffsetXZ(anchor, vertexB, mapW, mapH);
+            float3 offC = ToroidalMapEcs.ShortestOffsetXZ(anchor, vertexC, mapW, mapH);
+            float3 offP = ToroidalMapEcs.ShortestOffsetXZ(anchor, worldPos, mapW, mapH);
             float2 b = new float2(offB.x, offB.z);
             float2 c = new float2(offC.x, offC.z);
             float2 p = new float2(offP.x, offP.z);
