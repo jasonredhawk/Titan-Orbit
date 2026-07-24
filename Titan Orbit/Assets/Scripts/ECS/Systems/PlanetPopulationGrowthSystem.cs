@@ -40,9 +40,11 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Server-authoritative passive population growth on planets toward level-based caps.
-    /// Uses fractional accumulator in <see cref="PlanetGrowthState"/> for smooth growth; replicates
-    /// integer <see cref="PlanetState.Population"/> to clients. Pauses briefly after hostile
-    /// population events (attacks). Runs after people transport sim updates orbit counts.
+    /// Rate is a fixed fraction of the effective max (empty → full in
+    /// <see cref="PlanetPopulationMath.FullRefillSeconds"/>). Uses fractional accumulator in
+    /// <see cref="PlanetGrowthState"/> for smooth growth; replicates integer
+    /// <see cref="PlanetState.Population"/> to clients. Pauses briefly after hostile population
+    /// events (attacks). Runs after people transport sim updates orbit counts.
     /// World: ServerSimulation.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -86,7 +88,9 @@ namespace TitanOrbit.ECS
                     PlanetPopulationMath.PopulationGrowthPauseAfterAttackSeconds)
                     continue;
 
-                float rate = PlanetPopulationMath.GetGrowthRatePerSecond(planet.PlanetLevel) * (1f + bonus);
+                // [TITAN-ORBIT] Rate from effective max (bonus already baked into maxPop) — do not
+                // multiply by (1+bonus) again, or territory planets would refill faster than 60s.
+                float rate = PlanetPopulationMath.GetGrowthRatePerSecond(maxPop);
                 if (rate <= 0f)
                     continue;
 

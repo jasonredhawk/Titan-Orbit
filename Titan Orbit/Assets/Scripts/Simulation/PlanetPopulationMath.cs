@@ -6,8 +6,9 @@ namespace TitanOrbit.Simulation
     /// <summary>
     /// Planet population cap and passive growth formulas shared by server ECS
     /// (<see cref="ECS.Systems.PlanetPopulationGrowthSystem"/>) and legacy planet code.
-    /// Max population scales with planet size and level; growth rate doubles each level.
-    /// Pure math — Burst-friendly via Unity.Mathematics where possible.
+    /// Max population scales with planet size and level; passive growth is a fixed fraction of that
+    /// cap so every planet takes the same time to refill from empty (see
+    /// <see cref="FullRefillSeconds"/>). Pure math — Burst-friendly via Unity.Mathematics where possible.
     /// </summary>
     public static class PlanetPopulationMath
     {
@@ -15,6 +16,13 @@ namespace TitanOrbit.Simulation
         /// [TITAN-ORBIT] Seconds to pause passive growth after hostile people unload on a planet.
         /// </summary>
         public const float PopulationGrowthPauseAfterAttackSeconds = 1f;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Seconds for a planet to grow from 0 to its current max population at the
+        /// passive rate. Growth = maxPop / FullRefillSeconds people per second, so larger / higher-level
+        /// planets add more people per second but still take this long to refill.
+        /// </summary>
+        public const float FullRefillSeconds = 60f;
 
         /// <summary>
         /// Max population from legacy Planet formula: size × level^1.5 (rounded to int).
@@ -30,18 +38,18 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Passive growth for every planet: 1 person / 5 sec at level 1; rate doubles each level.
-        /// Bigger home worlds repopulate faster only because they have higher level and max cap.
+        /// Passive growth rate so empty → full always takes <see cref="FullRefillSeconds"/>.
+        /// Pass the effective max (after territory / connection bonuses) so a boosted cap still
+        /// refills in the same wall-clock time — rate scales with that larger max.
         /// </summary>
-        /// <param name="planetLevel">Planet level (clamped to at least 1).</param>
-        /// <returns>People added per second at this level.</returns>
-        public static float GetGrowthRatePerSecond(int planetLevel)
+        /// <param name="maxPopulation">Effective population cap for this planet (minimum 1).</param>
+        /// <returns>People added per second toward the cap.</returns>
+        public static float GetGrowthRatePerSecond(int maxPopulation)
         {
-            // --- Exponential growth: doubles each level from 0.2/s at L1 ---
-            int level = math.max(1, planetLevel);
-            int exponent = math.max(0, level - 1);
-            // [TITAN-ORBIT] 2^(level-1) / 5 — doubles growth each level from 0.2/s at L1.
-            return math.pow(2f, exponent) / 5f;
+            // --- Percent-of-cap growth: 1/FullRefillSeconds of max per second ---
+            // [TITAN-ORBIT] Replaces the old 2^(level-1)/5 curve, which made high levels refill in seconds.
+            int maxPop = math.max(1, maxPopulation);
+            return maxPop / FullRefillSeconds;
         }
 
         /// <summary>
