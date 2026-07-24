@@ -5,21 +5,24 @@ using TitanOrbit.Game;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
+using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// UGUI mesh drawer for minimap territory triangles and lone sticky edges (planet-center vertices).
+    /// UGUI mesh drawer for minimap territory fills and sticky edges (planet-center vertices).
     /// Uses <see cref="OnPopulateMesh"/> so geometry always renders under the circular Mask —
     /// no dependency on Shapes <c>ImmediateModePanel</c> registration.
-    /// When expanded, draws a 3×3 toroidal tile of each triangle/edge so seam-crossing links still
+    /// When expanded, draws a 3×3 toroidal tile of each fill/edge so seam-crossing links still
     /// read next to planet blips on both sides of the wrap (same shortest-path chart as blips).
     /// Client presentation only.
     /// <para>
-    /// [TITAN-ORBIT] Planet centers are fixed — world verts rebuild only when graph topology
-    /// publishes. Projection still updates when the player/view moves.
+    /// [TITAN-ORBIT] Every visible line is a shortest-path graph edge — never a Euclidean triangle
+    /// opposite side. Fills pick the short-embeddable corner nearest the player at mesh time so
+    /// compact minimap does not drop the fill when a fixed anchor sits off-circle. Borders come
+    /// from the full edge list (nearer endpoint as anchor).
     /// </para>
     /// </summary>
     [RequireComponent(typeof(RectTransform))]
@@ -34,21 +37,27 @@ namespace TitanOrbit.UI
         /// <summary>Border thickness in UI pixels.</summary>
         const float BorderThickness = 2.2f;
 
-        /// <summary>One triangle in canonical world space (anchor + shortest-path offsets for B/C).</summary>
+        /// <summary>
+        /// Canonical planet corners for a published fill. Chart (which corner is the draw anchor)
+        /// is chosen at mesh time from the player — a fixed embed anchor can sit off the compact
+        /// minimap while an edge near the player still draws, leaving a lone line.
+        /// </summary>
         struct CachedWorldTriangle
         {
-            public Vector3 Anchor;
-            public Vector3 OffsetB;
-            public Vector3 OffsetC;
+            public Vector3 PosA;
+            public Vector3 PosB;
+            public Vector3 PosC;
             public Color Fill;
-            public Color Border;
         }
 
-        /// <summary>Lone edge (not a triangle side) in canonical world space.</summary>
+        /// <summary>
+        /// Both endpoints of a graph edge. Draw anchor = endpoint nearer the player so compact
+        /// minimap keeps local chords on-screen.
+        /// </summary>
         struct CachedWorldEdge
         {
-            public Vector3 Anchor;
-            public Vector3 OffsetB;
+            public Vector3 PosA;
+            public Vector3 PosB;
             public Color Color;
         }
 
@@ -154,6 +163,7 @@ namespace TitanOrbit.UI
             var em = world.EntityManager;
             var visualizer = EcsWorldVisualizer.Active;
 
+            // --- Store canonical corners; draw-time picks the chart nearest the player ---
             for (int i = 0; i < triCount; i++)
             {
                 var tri = triangles[i];
@@ -165,71 +175,42 @@ namespace TitanOrbit.UI
                         em, visualizer, tri.PlanetIdC, out Vector3 cCanon))
                     continue;
 
-                int idA = tri.PlanetIdA, idB = tri.PlanetIdB, idC = tri.PlanetIdC;
-                Vector3 anchor = aCanon, bPos = bCanon, cPos = cCanon;
-                if (idB <= idA && idB <= idC)
-                {
-                    anchor = bCanon;
-                    bPos = aCanon;
-                    cPos = cCanon;
-                }
-                else if (idC <= idA && idC <= idB)
-                {
-                    anchor = cCanon;
-                    bPos = aCanon;
-                    cPos = bCanon;
-                }
-
                 Color baseColor = tri.Team.ToColor();
                 _worldCache.Add(new CachedWorldTriangle
                 {
-                    Anchor = anchor,
-                    OffsetB = ToroidalMap.ShortestWorldOffsetXZ(anchor, bPos),
-                    OffsetC = ToroidalMap.ShortestWorldOffsetXZ(anchor, cPos),
+                    PosA = aCanon,
+                    PosB = bCanon,
+                    PosC = cCanon,
                     Fill = new Color(baseColor.r, baseColor.g, baseColor.b, TriangleAlpha),
-                    Border = new Color(baseColor.r, baseColor.g, baseColor.b, BorderAlpha),
                 });
             }
 
-            // Lone sticky edges — skip sides already drawn as triangle borders.
+            // --- Both endpoints; draw-time picks the nearer endpoint as anchor ---
             for (int i = 0; i < edgeCount; i++)
             {
                 var edge = edges[i];
-                if (PlanetConnectionGraphLogic.EdgeIsTriangleSide(
-                        edge.PlanetIdA, edge.PlanetIdB, edge.Team, triangles))
-                    continue;
-
                 if (!PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
                         em, visualizer, edge.PlanetIdA, out Vector3 aCanon) ||
                     !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
                         em, visualizer, edge.PlanetIdB, out Vector3 bCanon))
                     continue;
 
-                Vector3 anchor = aCanon;
-                Vector3 other = bCanon;
-                if (edge.PlanetIdB < edge.PlanetIdA)
-                {
-                    anchor = bCanon;
-                    other = aCanon;
-                }
-
                 Color baseColor = edge.Team.ToColor();
                 _edgeCache.Add(new CachedWorldEdge
                 {
-                    Anchor = anchor,
-                    OffsetB = ToroidalMap.ShortestWorldOffsetXZ(anchor, other),
+                    PosA = aCanon,
+                    PosB = bCanon,
                     Color = new Color(baseColor.r, baseColor.g, baseColor.b, BorderAlpha),
                 });
             }
         }
 
         /// <summary>
-        /// [UNITY] Projects cached world triangles / lone edges into panel space (cheap — no ECS).
+        /// [UNITY] Projects cached world triangles / edges into panel space (cheap — no ECS).
         /// <para>
-        /// Anchor uses the same toroidal shortest delta as planet blips. When expanded, each
-        /// triangle/edge is also drawn on the 8 neighboring map tiles (3×3) by shifting in
-        /// <b>panel</b> space — not re-wrapping — so seam links extend past the circle edge next
-        /// to the wrap-side planet blips.
+        /// Compact minimap: each fill uses the short-embeddable corner <b>nearest the player</b>
+        /// so the triangle stays on-screen with its edges. Expanded: same chart plus 3×3 tile
+        /// copies in panel space for seam blips.
         /// </para>
         /// </summary>
         protected override void OnPopulateMesh(VertexHelper vh)
@@ -279,36 +260,51 @@ namespace TitanOrbit.UI
             for (int i = 0; i < _worldCache.Count; i++)
             {
                 var tri = _worldCache[i];
-                // Same chart as planet blips — then tile-shift in panel space for wrap copies.
-                _minimap.GetToroidalDeltaForMinimap(playerPos, tri.Anchor, out float baseDx, out float baseDz);
+                // Nearest short-embeddable corner → fill stays with local edges on compact view.
+                if (!TryPickNearestEmbedChart(
+                        playerPos, tri.PosA, tri.PosB, tri.PosC, mapW, mapH,
+                        out Vector3 anchor, out Vector3 offsetB, out Vector3 offsetC))
+                    continue;
+
+                _minimap.GetToroidalDeltaForMinimap(playerPos, anchor, out float baseDx, out float baseDz);
 
                 for (int w = 0; w < wrapCount; w++)
                 {
                     float ax = baseDx + _wrapsX[w];
                     float az = baseDz + _wrapsZ[w];
                     Vector2 pa = rect.center + new Vector2(ax * scale, az * scale);
-                    Vector2 pb = pa + new Vector2(tri.OffsetB.x * scale, tri.OffsetB.z * scale);
-                    Vector2 pc = pa + new Vector2(tri.OffsetC.x * scale, tri.OffsetC.z * scale);
+                    Vector2 pb = pa + new Vector2(offsetB.x * scale, offsetB.z * scale);
+                    Vector2 pc = pa + new Vector2(offsetC.x * scale, offsetC.z * scale);
 
                     if (!AnyNearPanel(rect, pa, pb, pc))
                         continue;
 
                     AddTriangle(vh, pa, pb, pc, tri.Fill);
-                    AddTriangleBorder(vh, pa, pb, pc, tri.Border, BorderThickness);
                 }
             }
 
             for (int i = 0; i < _edgeCache.Count; i++)
             {
                 var edge = _edgeCache[i];
-                _minimap.GetToroidalDeltaForMinimap(playerPos, edge.Anchor, out float baseDx, out float baseDz);
+                // Nearer endpoint as anchor — same reason as triangle chart pick.
+                Vector3 anchor = edge.PosA;
+                Vector3 other = edge.PosB;
+                if (ToroidalMap.ToroidalDistance(playerPos, edge.PosB) <
+                    ToroidalMap.ToroidalDistance(playerPos, edge.PosA))
+                {
+                    anchor = edge.PosB;
+                    other = edge.PosA;
+                }
+
+                Vector3 offsetB = ToroidalMap.ShortestWorldOffsetXZ(anchor, other);
+                _minimap.GetToroidalDeltaForMinimap(playerPos, anchor, out float baseDx, out float baseDz);
 
                 for (int w = 0; w < wrapCount; w++)
                 {
                     float ax = baseDx + _wrapsX[w];
                     float az = baseDz + _wrapsZ[w];
                     Vector2 pa = rect.center + new Vector2(ax * scale, az * scale);
-                    Vector2 pb = pa + new Vector2(edge.OffsetB.x * scale, edge.OffsetB.z * scale);
+                    Vector2 pb = pa + new Vector2(offsetB.x * scale, offsetB.z * scale);
 
                     if (!AnyNearPanel(rect, pa, pb, pa))
                         continue;
@@ -316,6 +312,111 @@ namespace TitanOrbit.UI
                     AddLineQuad(vh, pa, pb, edge.Color, BorderThickness);
                 }
             }
+        }
+
+        /// <summary>
+        /// Among short-embeddable corner charts, picks the one whose anchor is nearest the player
+        /// (toroidal distance). Keeps compact-minimap fills from vanishing when a fixed id-order
+        /// anchor sits outside the circle while a nearby edge still draws.
+        /// </summary>
+        static bool TryPickNearestEmbedChart(
+            Vector3 playerPos,
+            Vector3 posA,
+            Vector3 posB,
+            Vector3 posC,
+            float mapW,
+            float mapH,
+            out Vector3 anchor,
+            out Vector3 offsetB,
+            out Vector3 offsetC)
+        {
+            anchor = default;
+            offsetB = default;
+            offsetC = default;
+
+            float3 a = new float3(posA.x, 0f, posA.z);
+            float3 b = new float3(posB.x, 0f, posB.z);
+            float3 c = new float3(posC.x, 0f, posC.z);
+
+            float bestDist = float.MaxValue;
+            bool found = false;
+
+            // Try each corner as chart origin; keep the nearest valid short-embed.
+            TryConsiderEmbedCorner(playerPos, posA, posB, posC, a, b, c, mapW, mapH,
+                ref bestDist, ref found, ref anchor, ref offsetB, ref offsetC);
+            TryConsiderEmbedCorner(playerPos, posB, posA, posC, b, a, c, mapW, mapH,
+                ref bestDist, ref found, ref anchor, ref offsetB, ref offsetC);
+            TryConsiderEmbedCorner(playerPos, posC, posA, posB, c, a, b, mapW, mapH,
+                ref bestDist, ref found, ref anchor, ref offsetB, ref offsetC);
+
+            if (found)
+                return true;
+
+            // Fallback: nearest corner even if embed check is strict (published tris should embed).
+            float dA = ToroidalMap.ToroidalDistance(playerPos, posA);
+            float dB = ToroidalMap.ToroidalDistance(playerPos, posB);
+            float dC = ToroidalMap.ToroidalDistance(playerPos, posC);
+            if (dA <= dB && dA <= dC)
+            {
+                anchor = posA;
+                offsetB = ToroidalMap.ShortestWorldOffsetXZ(posA, posB);
+                offsetC = ToroidalMap.ShortestWorldOffsetXZ(posA, posC);
+            }
+            else if (dB <= dA && dB <= dC)
+            {
+                anchor = posB;
+                offsetB = ToroidalMap.ShortestWorldOffsetXZ(posB, posA);
+                offsetC = ToroidalMap.ShortestWorldOffsetXZ(posB, posC);
+            }
+            else
+            {
+                anchor = posC;
+                offsetB = ToroidalMap.ShortestWorldOffsetXZ(posC, posA);
+                offsetC = ToroidalMap.ShortestWorldOffsetXZ(posC, posB);
+            }
+
+            return true;
+        }
+
+        /// <summary>Updates the best chart if this corner short-embeds and is nearer the player.</summary>
+        static void TryConsiderEmbedCorner(
+            Vector3 playerPos,
+            Vector3 anchorCanon,
+            Vector3 pCanon,
+            Vector3 qCanon,
+            float3 anchor,
+            float3 p,
+            float3 q,
+            float mapW,
+            float mapH,
+            ref float bestDist,
+            ref bool found,
+            ref Vector3 outAnchor,
+            ref Vector3 outOffsetB,
+            ref Vector3 outOffsetC)
+        {
+            float3 offP = ToroidalMapEcs.ShortestOffsetXZ(anchor, p, mapW, mapH);
+            float3 offQ = ToroidalMapEcs.ShortestOffsetXZ(anchor, q, mapW, mapH);
+            float2 P = new float2(offP.x, offP.z);
+            float2 Q = new float2(offQ.x, offQ.z);
+            if (math.abs(P.x * Q.y - P.y * Q.x) < 1e-3f)
+                return;
+
+            float3 shortQP = ToroidalMapEcs.ShortestOffsetXZ(q, p, mapW, mapH);
+            float2 chartQP = P - Q;
+            float2 geodesicQP = new float2(shortQP.x, shortQP.z);
+            if (math.lengthsq(chartQP - geodesicQP) > 0.25f)
+                return;
+
+            float dist = ToroidalMap.ToroidalDistance(playerPos, anchorCanon);
+            if (found && dist >= bestDist)
+                return;
+
+            found = true;
+            bestDist = dist;
+            outAnchor = anchorCanon;
+            outOffsetB = new Vector3(offP.x, 0f, offP.z);
+            outOffsetC = new Vector3(offQ.x, 0f, offQ.z);
         }
 
         /// <summary>True if any vertex is within a generous margin of the panel rect (incl. off-edge wraps).</summary>
@@ -335,15 +436,6 @@ namespace TitanOrbit.UI
             vh.AddVert(b, color, Vector2.zero);
             vh.AddVert(c, color, Vector2.zero);
             vh.AddTriangle(i, i + 1, i + 2);
-        }
-
-        /// <summary>Appends three thin quads as a triangle border.</summary>
-        static void AddTriangleBorder(
-            VertexHelper vh, Vector2 a, Vector2 b, Vector2 c, Color color, float thickness)
-        {
-            AddLineQuad(vh, a, b, color, thickness);
-            AddLineQuad(vh, b, c, color, thickness);
-            AddLineQuad(vh, c, a, color, thickness);
         }
 
         /// <summary>One border segment as a screen-aligned quad of width <paramref name="thickness"/>.</summary>

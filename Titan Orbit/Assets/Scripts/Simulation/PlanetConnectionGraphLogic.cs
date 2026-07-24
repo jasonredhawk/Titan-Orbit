@@ -3,6 +3,7 @@ using TitanOrbit.Generation;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace TitanOrbit.Simulation
 {
@@ -10,12 +11,13 @@ namespace TitanOrbit.Simulation
     /// Pure toroidal planet-connection graph math for same-team territory.
     /// <para>
     /// [TITAN-ORBIT] One global planar graph on <b>planet centers</b>: <b>no two lines ever cross</b>,
-    /// whether friendly or enemy. Sticky history wins — whoever created an edge first keeps it
-    /// (<see cref="Edge.CreationSequence"/>); a later team blocked by that segment cannot add the
-    /// crossing line and therefore cannot form triangles that need it. After sticky seed + cross
-    /// resolve, we greedily add every shorter same-team edge that still clears the whole map.
-    /// Planets may sit in many same-team triangles. Lone edges are visual-only; bonuses need a
-    /// filled 3-clique.
+    /// whether friendly or enemy (proper intersections <b>and</b> collinear overlaps). Sticky history
+    /// wins — whoever created an edge first keeps it (<see cref="Edge.CreationSequence"/>); a later
+    /// team blocked by that segment cannot add the conflicting line. After sticky seed + resolve +
+    /// greedy pack, a final strip pass guarantees planarity. Territory fills publish only for
+    /// <b>short-embeddable</b> 3-cliques (all three sides are shortest geodesics in one chart) so
+    /// drawers never invent a long opposite-side chord. Lone edges are visual-only; bonuses need a
+    /// filled embeddable triangle.
     /// </para>
     /// Point-in-triangle uses shortest-path unwrap so territories work across map seams.
     /// Shared by server authority (asteroid tint, mining, pop bonuses) and client prediction
@@ -108,10 +110,11 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// Clears and rebuilds the global non-crossing edge map, then same-team territory triangles.
         /// <para>
-        /// Steps: (1) seed every sticky edge still owned by its team; (2) if any two edges cross
-        /// (friend or foe), drop the newer <see cref="Edge.CreationSequence"/>; (3) greedily add
-        /// every shorter same-team pair that does not cross <b>any</b> existing edge; (4) publish
-        /// every same-team 3-clique as a triangle.
+        /// Steps: (1) seed every sticky edge still owned by its team; (2) if any two edges conflict
+        /// (proper cross or collinear overlap, friend or foe), drop the newer
+        /// <see cref="Edge.CreationSequence"/>; (3) greedily add every shorter same-team pair that
+        /// clears <b>any</b> existing edge; (4) strip again so planarity is guaranteed even if pack
+        /// missed once; (5) publish only <b>short-embeddable</b> same-team 3-cliques as triangles.
         /// </para>
         /// </summary>
         /// <param name="planets">All planets (neutral entries are skipped).</param>
@@ -153,20 +156,31 @@ namespace TitanOrbit.Simulation
                 }
             }
 
-            // --- Phase 2: resolve geometric crosses across the whole map — first-created wins ---
+            // --- Phase 2: resolve geometric conflicts across the whole map — first-created wins ---
             // [TITAN-ORBIT] Friendly vs friendly, enemy vs enemy, and friend vs enemy all count.
             ResolveCrossingStickyEdges(planets, ref edges, mapW, mapH);
 
             // --- Phase 3: pack every shorter same-team edge that clears every existing line ---
             PackNonCrossingEdgesGreedy(planets, mapW, mapH, ref nextSequence, ref edges);
 
-            // --- Phase 4: publish same-team 3-cliques as territory triangles ---
-            PublishTrianglesForAllTeams(planets, ref edges, ref triangles);
+            // --- Phase 4: hard guarantee — strip any remaining conflicts (oracle / pack miss) ---
+            StripAllCrossingEdges(planets, ref edges, mapW, mapH);
+            ValidateNoCrossings(planets, edges, mapW, mapH);
+
+            // --- Phase 5: publish only short-embeddable same-team 3-cliques as territory triangles ---
+            PublishTrianglesForAllTeams(planets, mapW, mapH, ref edges, ref triangles);
         }
 
         /// <summary>
         /// True when segment AB properly intersects segment CD on the torus (XZ).
         /// Shared endpoints are not a cross (caller should skip same-planet pairs).
+        /// <para>
+        /// [TITAN-ORBIT] Each connection is a <b>shortest-path</b> chord (≤ half map per axis).
+        /// A single A-anchored chart is not enough: two seam-crossing chords can miss each other
+        /// in that chart (classic torus generators) and then the greedy pack would allow a real
+        /// friend/foe cross after capture. We fix AB as its shortest lift from A, then test CD
+        /// against all 3×3 periodic images of that short segment in the covering plane.
+        /// </para>
         /// </summary>
         public static bool SegmentsCrossToroidalXZ(
             float3 a,
@@ -176,17 +190,55 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
-            // --- Local chart anchored at A ---
-            // [TITAN-ORBIT] Place B via shortest offset from A; place C from A; place D as
-            // C_local + shortest(C→D). Good for short connection segments relative to map size.
+            // --- Fix AB as the shortest lift with A at the origin ---
             float2 a0 = float2.zero;
             float3 offB = ToroidalMapEcs.ShortestOffsetXZ(a, b, mapW, mapH);
+            float2 b0 = new float2(offB.x, offB.z);
+
+            // --- CD as a short segment; try every neighboring tile relative to A ---
+            // [TITAN-ORBIT] cBase is one lift of C near A; dDelta is always the shortest C→D.
+            // Shifting (cBase, cBase+dDelta) by (±mapW, ±mapH) covers every way CD can sit
+            // next to AB on the torus without enumerating lifts of AB itself.
             float3 offC = ToroidalMapEcs.ShortestOffsetXZ(a, c, mapW, mapH);
             float3 offCD = ToroidalMapEcs.ShortestOffsetXZ(c, d, mapW, mapH);
-            float2 b0 = new float2(offB.x, offB.z);
-            float2 c0 = new float2(offC.x, offC.z);
-            float2 d0 = c0 + new float2(offCD.x, offCD.z);
-            return SegmentsCrossProper2D(a0, b0, c0, d0);
+            float2 cBase = new float2(offC.x, offC.z);
+            float2 dDelta = new float2(offCD.x, offCD.z);
+
+            for (int ox = -1; ox <= 1; ox++)
+            {
+                for (int oz = -1; oz <= 1; oz++)
+                {
+                    float2 c0 = cBase + new float2(ox * mapW, oz * mapH);
+                    float2 d0 = c0 + dDelta;
+                    // Proper cross OR collinear interior overlap — both are illegal on the map.
+                    if (SegmentsConflict2D(a0, b0, c0, d0))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when three planet centers form a triangle whose three shortest geodesics embed as a
+        /// simple Euclidean triangle in at least one corner-anchored chart.
+        /// <para>
+        /// [TITAN-ORBIT] A 3-clique of short edges on a torus is not always a disk: the opposite side
+        /// in an A-anchored chart can be the <b>long</b> way around. Publishing those as fills made
+        /// <c>TriangleBorder</c> draw a fake chord that crossed other lines. We only fill when
+        /// chart(BC) ≈ Shortest(B,C) for some anchor.
+        /// </para>
+        /// </summary>
+        public static bool IsShortEmbeddableTriangle(
+            float3 a,
+            float3 b,
+            float3 c,
+            float mapW,
+            float mapH)
+        {
+            return TryShortEmbedFromAnchor(a, b, c, mapW, mapH) ||
+                   TryShortEmbedFromAnchor(b, a, c, mapW, mapH) ||
+                   TryShortEmbedFromAnchor(c, a, b, mapW, mapH);
         }
 
         /// <summary>
@@ -508,7 +560,8 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// True when the undirected edge (a,b) is a side of any triangle in <paramref name="triangles"/>
-        /// for the same team — presentation skips drawing those edges twice (triangle border covers them).
+        /// for the same team. Kept for callers that still want to know; primary drawers now draw
+        /// every graph edge as a shortest line (fills no longer invent opposite-side borders).
         /// </summary>
         public static bool EdgeIsTriangleSide(
             int planetIdA,
@@ -567,12 +620,23 @@ namespace TitanOrbit.Simulation
         static float Cross(float2 a, float2 b) => a.x * b.y - a.y * b.x;
 
         /// <summary>
+        /// True when two segments conflict in R2: proper intersection <b>or</b> collinear interior
+        /// overlap. Shared endpoints alone are not a conflict (T-junction / path).
+        /// </summary>
+        static bool SegmentsConflict2D(float2 a, float2 b, float2 c, float2 d)
+        {
+            if (SegmentsCrossProper2D(a, b, c, d))
+                return true;
+            return SegmentsOverlapCollinear2D(a, b, c, d);
+        }
+
+        /// <summary>
         /// Proper segment intersection in R2 (not merely touching at an endpoint).
-        /// Collinear overlaps are treated as non-crossing for connection purposes.
+        /// Collinear cases are handled separately by <see cref="SegmentsOverlapCollinear2D"/>.
         /// </summary>
         static bool SegmentsCrossProper2D(float2 a, float2 b, float2 c, float2 d)
         {
-            // --- Shared / nearly-shared endpoints → not a cross ---
+            // --- Shared / nearly-shared endpoints → not a proper cross ---
             const float eps = 1e-4f;
             if (math.distancesq(a, c) < eps * eps || math.distancesq(a, d) < eps * eps ||
                 math.distancesq(b, c) < eps * eps || math.distancesq(b, d) < eps * eps)
@@ -587,8 +651,132 @@ namespace TitanOrbit.Simulation
             return (o1 * o2 < 0f) && (o3 * o4 < 0f);
         }
 
+        /// <summary>
+        /// True when AB and CD are (nearly) collinear and their interiors overlap on the line.
+        /// Endpoint-only touch (T-junction / shared vertex) returns false.
+        /// </summary>
+        static bool SegmentsOverlapCollinear2D(float2 a, float2 b, float2 c, float2 d)
+        {
+            const float orientEps = 1e-3f;
+            float o1 = Orient(a, b, c);
+            float o2 = Orient(a, b, d);
+            float o3 = Orient(c, d, a);
+            float o4 = Orient(c, d, b);
+            if (math.abs(o1) > orientEps || math.abs(o2) > orientEps ||
+                math.abs(o3) > orientEps || math.abs(o4) > orientEps)
+                return false;
+
+            // --- Project onto the dominant axis of AB ---
+            float2 ab = b - a;
+            bool useX = math.abs(ab.x) >= math.abs(ab.y);
+            float a0 = useX ? a.x : a.y;
+            float b0 = useX ? b.x : b.y;
+            float c0 = useX ? c.x : c.y;
+            float d0 = useX ? d.x : d.y;
+            if (a0 > b0)
+            {
+                float tmp = a0;
+                a0 = b0;
+                b0 = tmp;
+            }
+
+            if (c0 > d0)
+            {
+                float tmp = c0;
+                c0 = d0;
+                d0 = tmp;
+            }
+
+            // Strict interior overlap (touching only at an endpoint is allowed).
+            const float overlapEps = 1e-3f;
+            float left = math.max(a0, c0);
+            float right = math.min(b0, d0);
+            return right - left > overlapEps;
+        }
+
         /// <summary>Signed area orientation of triangle (a,b,c) in XZ plane.</summary>
         static float Orient(float2 a, float2 b, float2 c) => Cross(b - a, c - a);
+
+        /// <summary>
+        /// True when shortest geodesics AB, AC, BC all match the A-anchored Euclidean triangle
+        /// (chart BC ≈ Shortest(B,C)) and the triangle has non-zero area.
+        /// </summary>
+        static bool TryShortEmbedFromAnchor(
+            float3 anchor,
+            float3 p,
+            float3 q,
+            float mapW,
+            float mapH)
+        {
+            float3 offP = ToroidalMapEcs.ShortestOffsetXZ(anchor, p, mapW, mapH);
+            float3 offQ = ToroidalMapEcs.ShortestOffsetXZ(anchor, q, mapW, mapH);
+            float2 P = new float2(offP.x, offP.z);
+            float2 Q = new float2(offQ.x, offQ.z);
+
+            // Degenerate (collinear / zero area) — not a fillable territory triangle.
+            const float areaEps = 1e-3f;
+            if (math.abs(Cross(P, Q)) < areaEps)
+                return false;
+
+            // Chart vector Q→P must equal the shortest geodesic Q→P on the torus.
+            float3 shortQP = ToroidalMapEcs.ShortestOffsetXZ(q, p, mapW, mapH);
+            float2 chartQP = P - Q;
+            float2 geodesicQP = new float2(shortQP.x, shortQP.z);
+            const float matchEps = 0.5f;
+            return math.lengthsq(chartQP - geodesicQP) <= matchEps * matchEps;
+        }
+
+        /// <summary>
+        /// Final planarity pass after greedy pack — same first-created wins rule as sticky resolve.
+        /// [TITAN-ORBIT] Guarantees zero conflicts remain even if pack's oracle missed once.
+        /// </summary>
+        static void StripAllCrossingEdges(
+            in NativeArray<PlanetInput> planets,
+            ref NativeList<Edge> edges,
+            float mapW,
+            float mapH) =>
+            ResolveCrossingStickyEdges(planets, ref edges, mapW, mapH);
+
+        /// <summary>
+        /// Debug assertion: after strip, no two edges without a shared endpoint may conflict.
+        /// Call sites are stripped in non-Editor / non-development builds.
+        /// </summary>
+        /// <remarks>
+        /// [STANDARD] No <c>in</c>/<c>ref</c> params so <see cref="System.Diagnostics.ConditionalAttribute"/>
+        /// can strip call sites outside Editor / development builds.
+        /// </remarks>
+        [System.Diagnostics.Conditional("UNITY_EDITOR")]
+        [System.Diagnostics.Conditional("DEVELOPMENT_BUILD")]
+        static void ValidateNoCrossings(
+            NativeArray<PlanetInput> planets,
+            NativeList<Edge> edges,
+            float mapW,
+            float mapH)
+        {
+            for (int i = 0; i < edges.Length; i++)
+            {
+                for (int j = i + 1; j < edges.Length; j++)
+                {
+                    var e0 = edges[i];
+                    var e1 = edges[j];
+                    if (EdgesShareEndpoint(e0, e1))
+                        continue;
+                    if (!TryGetPlanetPosition(planets, e0.PlanetIdA, out float3 a) ||
+                        !TryGetPlanetPosition(planets, e0.PlanetIdB, out float3 b) ||
+                        !TryGetPlanetPosition(planets, e1.PlanetIdA, out float3 c) ||
+                        !TryGetPlanetPosition(planets, e1.PlanetIdB, out float3 d))
+                        continue;
+                    if (!SegmentsCrossToroidalXZ(a, b, c, d, mapW, mapH))
+                        continue;
+
+                    Debug.LogError(
+                        "[PlanetConnection] ValidateNoCrossings failed after strip — " +
+                        $"edge ({e0.PlanetIdA}-{e0.PlanetIdB} seq={e0.CreationSequence}) conflicts with " +
+                        $"({e1.PlanetIdA}-{e1.PlanetIdB} seq={e1.CreationSequence}).");
+                    return;
+                }
+            }
+        }
 
         /// <summary>Sorts teammate indices ascending by planet id (deterministic fill order).</summary>
         static void SortIndicesByPlanetId(in NativeArray<PlanetInput> planets, ref NativeList<int> indices)
@@ -623,8 +811,9 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Drops newer sticky edges that geometrically cross older ones under current planet centers.
-        /// Compares every pair of edges — same team or enemy — so the map stays globally planar.
+        /// Drops newer sticky edges that geometrically conflict with older ones under current planet
+        /// centers (proper cross or collinear interior overlap). Compares every pair — same team or
+        /// enemy — so the map stays globally planar.
         /// </summary>
         static void ResolveCrossingStickyEdges(
             in NativeArray<PlanetInput> planets,
@@ -726,16 +915,29 @@ namespace TitanOrbit.Simulation
             }
 
             // --- Insertion-sort pairs by distance (nearest first) ---
-            // Deterministic: equal lengths keep enumeration order.
+            // Deterministic ties: equal length → lower min planet id, then max id.
             for (int i = 1; i < pairDist.Length; i++)
             {
                 float keyD = pairDist[i];
                 int keyI = pairI[i];
                 int keyJ = pairJ[i];
                 TeamId keyT = pairTeam[i];
+                int keyLo = math.min(planets[keyI].PlanetId, planets[keyJ].PlanetId);
+                int keyHi = math.max(planets[keyI].PlanetId, planets[keyJ].PlanetId);
                 int k = i - 1;
-                while (k >= 0 && pairDist[k] > keyD)
+                while (k >= 0)
                 {
+                    float dK = pairDist[k];
+                    if (dK < keyD)
+                        break;
+                    if (math.abs(dK - keyD) <= 1e-6f)
+                    {
+                        int loK = math.min(planets[pairI[k]].PlanetId, planets[pairJ[k]].PlanetId);
+                        int hiK = math.max(planets[pairI[k]].PlanetId, planets[pairJ[k]].PlanetId);
+                        if (loK < keyLo || (loK == keyLo && hiK <= keyHi))
+                            break;
+                    }
+
                     pairDist[k + 1] = pairDist[k];
                     pairI[k + 1] = pairI[k];
                     pairJ[k + 1] = pairJ[k];
@@ -771,9 +973,12 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Builds territory triangles for every team that has at least three planets.
+        /// Only short-embeddable 3-cliques are published (edges still remain for non-fillable ones).
         /// </summary>
         static void PublishTrianglesForAllTeams(
             in NativeArray<PlanetInput> planets,
+            float mapW,
+            float mapH,
             ref NativeList<Edge> edges,
             ref NativeList<Triangle> triangles)
         {
@@ -819,16 +1024,21 @@ namespace TitanOrbit.Simulation
                 }
 
                 SortIndicesByPlanetId(planets, ref indices);
-                BuildCliquesAsTriangles(planets, indices, team, ref edges, ref triangles);
+                BuildCliquesAsTriangles(planets, indices, team, mapW, mapH, ref edges, ref triangles);
                 indices.Dispose();
             }
         }
 
-        /// <summary>Forms one triangle for every triple of teammates that has all three edges.</summary>
+        /// <summary>
+        /// Forms one triangle for every short-embeddable triple of teammates that has all three edges.
+        /// Non-embeddable 3-cliques keep their edges (drawn as shortest lines) but get no fill/PIT.
+        /// </summary>
         static void BuildCliquesAsTriangles(
             in NativeArray<PlanetInput> planets,
             in NativeList<int> indices,
             TeamId team,
+            float mapW,
+            float mapH,
             ref NativeList<Edge> edges,
             ref NativeList<Triangle> triangles)
         {
@@ -847,6 +1057,10 @@ namespace TitanOrbit.Simulation
                         if (!HasEdge(edges, a.PlanetId, b.PlanetId, team) ||
                             !HasEdge(edges, b.PlanetId, c.PlanetId, team) ||
                             !HasEdge(edges, a.PlanetId, c.PlanetId, team))
+                            continue;
+
+                        // [TITAN-ORBIT] Skip fills that would invent a long opposite-side chord.
+                        if (!IsShortEmbeddableTriangle(a.Position, b.Position, c.Position, mapW, mapH))
                             continue;
 
                         TryAddTriangle(ref triangles, a, b, c, team);
@@ -890,8 +1104,8 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// True if a new edge between a–b would properly cross <b>any</b> existing edge on the map
-        /// (any team). Shared endpoints are allowed and do not count as a cross.
+        /// True if a new edge between a–b would conflict with <b>any</b> existing edge on the map
+        /// (any team) — proper cross or collinear interior overlap. Shared endpoints are allowed.
         /// </summary>
         static bool EdgeWouldCrossAny(
             in NativeArray<PlanetInput> planets,

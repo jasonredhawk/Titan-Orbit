@@ -10,14 +10,15 @@ using UnityEngine;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Shapes immediate-mode panel for minimap territory triangles and lone sticky edges between
-    /// allied planets. Vertices sit at each planet center (same topology as world
+    /// Shapes immediate-mode panel for minimap territory fills and sticky edges between allied
+    /// planets. Vertices sit at each planet center (same topology as world
     /// <see cref="PlanetConnectionShapesVisual"/>). Reads <see cref="PlanetConnectionGraphCache"/>
     /// only — never planet/asteroid ECS gathers. Parent circular Mask clips draws to the disc.
-    /// When expanded, draws a 3×3 toroidal tile of each link (same chart as planet blips).
     /// Client presentation only.
     /// <para>
     /// Prefer <see cref="MinimapConnectionsUI"/> under the Mask — this panel is a Shapes fallback.
+    /// Same draw contract: fill-only triangles; every graph edge as a shortest line (no
+    /// <c>TriangleBorder</c> opposite-side chords).
     /// </para>
     /// </summary>
     public class MinimapConnectionsShapesPanel : ImmediateModePanel
@@ -153,20 +154,15 @@ namespace TitanOrbit.UI
 
                 Color baseColor = tri.Team.ToColor();
                 Color fillColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleAlpha);
-                Color borderColor = new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha);
 
+                // Fill only — borders come from shortest graph edges below.
                 Draw.Triangle(pa, pb, pc, fillColor);
-                Draw.TriangleBorder(pa, pb, pc, triangleBorderThickness, borderColor);
             }
 
-            // Lone sticky edges (triangle sides already have TriangleBorder).
+            // Every graph edge as a shortest line (triangle sides included).
             for (int i = 0; i < edgeCount; i++)
             {
                 var edge = edges[i];
-                if (PlanetConnectionGraphLogic.EdgeIsTriangleSide(
-                        edge.PlanetIdA, edge.PlanetIdB, edge.Team, triangles))
-                    continue;
-
                 if (!PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(
                         em, visualizer, edge.PlanetIdA, out Vector3 aCanon) ||
                     !PlanetConnectionShapesVisual.TryGetCanonicalPlanetVertex(

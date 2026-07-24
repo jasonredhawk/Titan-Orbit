@@ -11,14 +11,15 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Draws semi-transparent team territory triangles and lone sticky edges in world
-    /// space (vertices at each <b>planet center</b>). Reads topology from
+    /// [HYBRID] Draws semi-transparent team territory fills and sticky edges in world space
+    /// (vertices at each <b>planet center</b>). Reads topology from
     /// <see cref="PlanetConnectionGraphCache"/> — never runs planet/asteroid ECS gathers.
     /// <para>
-    /// [TITAN-ORBIT] Planet centers (not gem moons) keep lines from crossing as moons orbit and
-    /// let us rebuild the draw cache only when topology publishes — not every frame / 30 Hz.
-    /// Vertices are wrapped to canonical XZ, unwrapped via shortest-path offsets from the anchor,
-    /// then retiled near the camera for seam-correct display.
+    /// [TITAN-ORBIT] Every visible line is a shortest-path embedding of a graph edge — never a
+    /// <c>TriangleBorder</c> opposite side (that Euclidean chord invented mid-map crosses).
+    /// Published triangles are already short-embeddable; we fill them only. Borders come from the
+    /// full edge list as Billboard lines (Flat2D is invisible from a top-down XZ camera).
+    /// Vertices are canonical XZ → shortest offsets → camera retile for seams.
     /// </para>
     /// Client presentation only.
     /// </summary>
@@ -28,27 +29,32 @@ namespace TitanOrbit.Game
         /// <summary>Y height of the flat triangle fill (slightly below the play plane).</summary>
         [SerializeField] float triangleHeight = -0.6f;
 
+        /// <summary>
+        /// How far above the fill to draw edge lines (meters). Same Y as the fill lets the
+        /// transparent triangle win the depth test and hide every border.
+        /// </summary>
+        [SerializeField] float edgeHeightAboveFill = 0.08f;
+
         /// <summary>Fill alpha for territory triangles (original ~0.04).</summary>
         [SerializeField] float triangleAlpha = 0.04f;
 
-        /// <summary>Border thickness in meters.</summary>
-        [SerializeField] float triangleBorderThickness = 0.15f;
+        /// <summary>Edge thickness in meters (triangle sides + lone edges).</summary>
+        [SerializeField] float triangleBorderThickness = 0.2f;
 
-        /// <summary>Border alpha (original ~0.22).</summary>
-        [SerializeField] float triangleBorderAlpha = 0.22f;
+        /// <summary>Edge alpha — slightly stronger than the old TriangleBorder so lines read over fill.</summary>
+        [SerializeField] float triangleBorderAlpha = 0.35f;
 
-        /// <summary>Cached canonical triangle (anchor + B/C offsets + colours).</summary>
+        /// <summary>Cached short-embeddable fill (anchor + B/C shortest offsets + colour).</summary>
         struct CachedWorldTriangle
         {
             public Vector3 Anchor;
             public Vector3 OffsetB;
             public Vector3 OffsetC;
             public Color Fill;
-            public Color Border;
         }
 
         /// <summary>
-        /// Cached lone edge (not a triangle side) — anchor + shortest offset to the other planet.
+        /// Cached graph edge — anchor + shortest offset to the other planet (includes triangle sides).
         /// </summary>
         struct CachedWorldEdge
         {
@@ -75,8 +81,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [UNITY] Shapes draw callback — fills + borders for every published triangle, lone edges,
-        /// plus wrap copies near seams. Retiles every frame; planet verts refresh only on topology.
+        /// [UNITY] Shapes draw callback — fills for embeddable triangles, shortest lines for every
+        /// graph edge, plus wrap copies near seams. Retiles every frame; verts refresh on topology.
         /// </summary>
         public override void DrawShapes(Camera cam)
         {
@@ -110,12 +116,14 @@ namespace TitanOrbit.Game
             {
                 Draw.ResetAllDrawStates();
                 Draw.ThicknessSpace = ThicknessSpace.Meters;
-                Draw.LineGeometry = LineGeometry.Flat2D;
+                Draw.BlendMode = ShapesBlendMode.Transparent;
 
                 Vector3 referencePos = ResolveDisplayReference(cam, em);
                 float mapW = ToroidalMap.GetMapWidth();
                 float mapH = ToroidalMap.GetMapHeight();
+                float edgeY = triangleHeight + edgeHeightAboveFill;
 
+                // --- Fills only (borders come from the edge pass — never TriangleBorder) ---
                 for (int i = 0; i < _worldCache.Count; i++)
                 {
                     var tri = _worldCache[i];
@@ -125,16 +133,21 @@ namespace TitanOrbit.Game
                     a.y = triangleHeight;
                     b.y = triangleHeight;
                     c.y = triangleHeight;
-                    DrawTriangleWithWraps(a, b, c, mapW, mapH, tri.Fill, tri.Border);
+                    DrawTriangleFillWithWraps(a, b, c, mapW, mapH, tri.Fill);
                 }
 
+                // --- Every graph edge as a shortest chord ---
+                // [TITAN-ORBIT] Flat2D lines lie in a plane that is edge-on to our top-down XZ
+                // camera (zero visible thickness). Billboard matches Shapes' 3D default; gem beams
+                // use Volumetric3D for the same reason. Slightly above fill so depth doesn't hide them.
+                Draw.LineGeometry = LineGeometry.Billboard;
                 for (int i = 0; i < _edgeCache.Count; i++)
                 {
                     var edge = _edgeCache[i];
                     Vector3 a = ToroidalMap.GetDisplayPosition(edge.Anchor, referencePos);
                     Vector3 b = a + edge.OffsetB;
-                    a.y = triangleHeight;
-                    b.y = triangleHeight;
+                    a.y = edgeY;
+                    b.y = edgeY;
                     DrawEdgeWithWraps(a, b, mapW, mapH, edge.Color);
                 }
             }
@@ -159,6 +172,7 @@ namespace TitanOrbit.Game
             var em = world.EntityManager;
             var visualizer = EcsWorldVisualizer.Active;
 
+            // --- Short-embeddable fills (graph already filtered non-embeddable cliques) ---
             for (int i = 0; i < triCount; i++)
             {
                 var tri = triangles[i];
@@ -167,20 +181,11 @@ namespace TitanOrbit.Game
                     !TryGetCanonicalPlanetVertex(em, visualizer, tri.PlanetIdC, out Vector3 cCanon))
                     continue;
 
-                int idA = tri.PlanetIdA, idB = tri.PlanetIdB, idC = tri.PlanetIdC;
-                Vector3 anchor = aCanon, bPos = bCanon, cPos = cCanon;
-                if (idB <= idA && idB <= idC)
-                {
-                    anchor = bCanon;
-                    bPos = aCanon;
-                    cPos = cCanon;
-                }
-                else if (idC <= idA && idC <= idB)
-                {
-                    anchor = cCanon;
-                    bPos = aCanon;
-                    cPos = bCanon;
-                }
+                if (!TryPickShortEmbedAnchor(
+                        aCanon, bCanon, cCanon,
+                        tri.PlanetIdA, tri.PlanetIdB, tri.PlanetIdC,
+                        out Vector3 anchor, out Vector3 bPos, out Vector3 cPos))
+                    continue;
 
                 Color baseColor = tri.Team.ToColor();
                 _worldCache.Add(new CachedWorldTriangle
@@ -189,17 +194,13 @@ namespace TitanOrbit.Game
                     OffsetB = ToroidalMap.ShortestWorldOffsetXZ(anchor, bPos),
                     OffsetC = ToroidalMap.ShortestWorldOffsetXZ(anchor, cPos),
                     Fill = new Color(baseColor.r, baseColor.g, baseColor.b, triangleAlpha),
-                    Border = new Color(baseColor.r, baseColor.g, baseColor.b, triangleBorderAlpha),
                 });
             }
 
+            // --- All graph edges as shortest lines (do not skip triangle sides) ---
             for (int i = 0; i < edgeCount; i++)
             {
                 var edge = edges[i];
-                if (PlanetConnectionGraphLogic.EdgeIsTriangleSide(
-                        edge.PlanetIdA, edge.PlanetIdB, edge.Team, triangles))
-                    continue;
-
                 if (!TryGetCanonicalPlanetVertex(em, visualizer, edge.PlanetIdA, out Vector3 aCanon) ||
                     !TryGetCanonicalPlanetVertex(em, visualizer, edge.PlanetIdB, out Vector3 bCanon))
                     continue;
@@ -223,13 +224,110 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Draws a triangle and ±map-tile copies only when a vertex sits near a wrap seam.
+        /// Picks a corner where the triangle is short-embeddable so fill offsets match graph edges.
+        /// Falls back to lowest planet-id anchor if embed check fails (should be rare — graph gated).
         /// </summary>
-        void DrawTriangleWithWraps(
-            Vector3 a, Vector3 b, Vector3 c, float mapW, float mapH, Color fillColor, Color borderColor)
+        static bool TryPickShortEmbedAnchor(
+            Vector3 aCanon,
+            Vector3 bCanon,
+            Vector3 cCanon,
+            int idA,
+            int idB,
+            int idC,
+            out Vector3 anchor,
+            out Vector3 bPos,
+            out Vector3 cPos)
+        {
+            float mapW = ToroidalMap.GetMapWidth();
+            float mapH = ToroidalMap.GetMapHeight();
+            float3 a = new float3(aCanon.x, 0f, aCanon.z);
+            float3 b = new float3(bCanon.x, 0f, bCanon.z);
+            float3 c = new float3(cCanon.x, 0f, cCanon.z);
+
+            if (PlanetConnectionGraphLogic.IsShortEmbeddableTriangle(a, b, c, mapW, mapH))
+            {
+                // Prefer the embeddable chart: try lowest-id corner first (stable), then others.
+                if (TryAnchorIfEmbeds(aCanon, bCanon, cCanon, a, b, c, mapW, mapH,
+                        out anchor, out bPos, out cPos))
+                    return true;
+                if (TryAnchorIfEmbeds(bCanon, aCanon, cCanon, b, a, c, mapW, mapH,
+                        out anchor, out bPos, out cPos))
+                    return true;
+                if (TryAnchorIfEmbeds(cCanon, aCanon, bCanon, c, a, b, mapW, mapH,
+                        out anchor, out bPos, out cPos))
+                    return true;
+            }
+
+            // Fallback: lowest planet id (same as old drawer) — fill may be skipped if offsets fail.
+            anchor = aCanon;
+            bPos = bCanon;
+            cPos = cCanon;
+            if (idB <= idA && idB <= idC)
+            {
+                anchor = bCanon;
+                bPos = aCanon;
+                cPos = cCanon;
+            }
+            else if (idC <= idA && idC <= idB)
+            {
+                anchor = cCanon;
+                bPos = aCanon;
+                cPos = bCanon;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// If <paramref name="anchor"/> yields a short-embeddable chart for the other two verts,
+        /// writes that chart and returns true.
+        /// </summary>
+        static bool TryAnchorIfEmbeds(
+            Vector3 anchorCanon,
+            Vector3 pCanon,
+            Vector3 qCanon,
+            float3 anchor,
+            float3 p,
+            float3 q,
+            float mapW,
+            float mapH,
+            out Vector3 outAnchor,
+            out Vector3 outB,
+            out Vector3 outC)
+        {
+            outAnchor = default;
+            outB = default;
+            outC = default;
+
+            // Reuse the public embed check on the full triple; then verify this corner works by
+            // matching chart(PQ) to Shortest(P,Q) — same criterion as graph logic.
+            float3 offP = ToroidalMapEcs.ShortestOffsetXZ(anchor, p, mapW, mapH);
+            float3 offQ = ToroidalMapEcs.ShortestOffsetXZ(anchor, q, mapW, mapH);
+            float2 P = new float2(offP.x, offP.z);
+            float2 Q = new float2(offQ.x, offQ.z);
+            if (math.abs(P.x * Q.y - P.y * Q.x) < 1e-3f)
+                return false;
+
+            float3 shortQP = ToroidalMapEcs.ShortestOffsetXZ(q, p, mapW, mapH);
+            float2 chartQP = P - Q;
+            float2 geodesicQP = new float2(shortQP.x, shortQP.z);
+            if (math.lengthsq(chartQP - geodesicQP) > 0.25f)
+                return false;
+
+            outAnchor = anchorCanon;
+            outB = pCanon;
+            outC = qCanon;
+            return true;
+        }
+
+        /// <summary>
+        /// Draws a fill-only triangle and ±map-tile copies when near a wrap seam.
+        /// Borders are drawn separately from the edge list (shortest chords only).
+        /// </summary>
+        void DrawTriangleFillWithWraps(
+            Vector3 a, Vector3 b, Vector3 c, float mapW, float mapH, Color fillColor)
         {
             Draw.Triangle(a, b, c, fillColor);
-            Draw.TriangleBorder(a, b, c, triangleBorderThickness, borderColor);
 
             if (!NeedsWrapCopies(a, b, c, mapW, mapH))
                 return;
@@ -245,16 +343,20 @@ namespace TitanOrbit.Game
             {
                 Vector3 off = offsets[i];
                 Draw.Triangle(a + off, b + off, c + off, fillColor);
-                Draw.TriangleBorder(a + off, b + off, c + off, triangleBorderThickness, borderColor);
             }
         }
 
-        /// <summary>Draws a lone edge line with optional seam wrap copies.</summary>
+        /// <summary>
+        /// Draws a graph edge line with optional seam wrap copies.
+        /// Caller must set <see cref="Draw.LineGeometry"/> to Billboard (or Volumetric3D) first.
+        /// </summary>
         void DrawEdgeWithWraps(Vector3 a, Vector3 b, float mapW, float mapH, Color color)
         {
-            Draw.Line(a, b, triangleBorderThickness, color);
+            // [SHAPES] None caps — Round/Square can look odd on short territory chords.
+            Draw.Line(a, b, triangleBorderThickness, LineEndCap.None, color);
 
-            if (!NeedsWrapCopies(a, b, a, mapW, mapH))
+            // Pass b twice so NeedsWrapCopies still checks both endpoints + the AB span.
+            if (!NeedsWrapCopies(a, b, b, mapW, mapH))
                 return;
 
             Vector3[] offsets =
@@ -267,25 +369,62 @@ namespace TitanOrbit.Game
             for (int i = 0; i < offsets.Length; i++)
             {
                 Vector3 off = offsets[i];
-                Draw.Line(a + off, b + off, triangleBorderThickness, color);
+                Draw.Line(a + off, b + off, triangleBorderThickness, LineEndCap.None, color);
             }
         }
 
-        /// <summary>True when any vertex is within a margin of a map edge (seam-visible case).</summary>
+        /// <summary>
+        /// True when wrap-tile copies are needed: a vertex near the periodic seam, or a side that
+        /// itself uses the toroidal wrap (shortest ≠ Euclidean in canonical space).
+        /// </summary>
         static bool NeedsWrapCopies(Vector3 a, Vector3 b, Vector3 c, float mapW, float mapH)
         {
+            // ~8% of the smaller map side — enough for seam-adjacent fills without firing mid-map.
             float margin = math.max(20f, 0.08f * math.min(mapW, mapH));
-            return NearEdge(a, mapW, mapH, margin) ||
-                   NearEdge(b, mapW, mapH, margin) ||
-                   NearEdge(c, mapW, mapH, margin);
+            return NearSeam(a, mapW, mapH, margin) ||
+                   NearSeam(b, mapW, mapH, margin) ||
+                   NearSeam(c, mapW, mapH, margin) ||
+                   SideWrapsToroidally(a, b) ||
+                   SideWrapsToroidally(b, c) ||
+                   SideWrapsToroidally(c, a);
         }
 
-        /// <summary>Canonical XZ near 0 or map extent.</summary>
-        static bool NearEdge(Vector3 p, float mapW, float mapH, float margin)
+        /// <summary>
+        /// True when canonical XZ is within <paramref name="margin"/> of a wrap seam.
+        /// <para>
+        /// [TITAN-ORBIT] <see cref="ToroidalMap.WrapPosition"/> returns
+        /// <c>[-halfW, halfW) × [-halfH, halfH)</c>. Comparing against <c>[0, mapW]</c> falsely
+        /// fired wrap copies across most of the left half of the map.
+        /// </para>
+        /// </summary>
+        static bool NearSeam(Vector3 p, float mapW, float mapH, float margin)
         {
             Vector3 w = ToroidalMap.WrapPosition(p);
-            return w.x < margin || w.x > mapW - margin ||
-                   w.z < margin || w.z > mapH - margin;
+            float halfW = mapW * 0.5f;
+            float halfH = mapH * 0.5f;
+
+            // Distance to the identified edges x=±halfW / z=±halfH (0 on the seam, half at center).
+            float distToSeamX = halfW - math.abs(w.x);
+            float distToSeamZ = halfH - math.abs(w.z);
+            return distToSeamX < margin || distToSeamZ < margin;
+        }
+
+        /// <summary>
+        /// True when the shortest toroidal path between two points differs from the straight
+        /// Euclidean segment in canonical space — i.e. the connection wraps a seam.
+        /// </summary>
+        static bool SideWrapsToroidally(Vector3 a, Vector3 b)
+        {
+            Vector3 wa = ToroidalMap.WrapPosition(a);
+            Vector3 wb = ToroidalMap.WrapPosition(b);
+            Vector3 euclidean = wb - wa;
+            euclidean.y = 0f;
+            Vector3 shortest = ToroidalMap.ShortestWorldOffsetXZ(wa, wb);
+
+            // [STANDARD] Any tile-period difference means the short chord is not the canonical line.
+            const float eps = 1f;
+            return math.abs(euclidean.x - shortest.x) > eps ||
+                   math.abs(euclidean.z - shortest.z) > eps;
         }
 
         /// <summary>
