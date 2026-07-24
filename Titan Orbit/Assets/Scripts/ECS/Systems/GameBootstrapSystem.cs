@@ -224,6 +224,15 @@ namespace TitanOrbit.ECS
             mapState.BlueprintSeed = (int)_rolled.Seed;
             mapState.LoadingProgress = 0.05f;
             mapState.LoadingComplete = false;
+            // --- Publish match counts immediately (before spawn batches) ---
+            // [TITAN-ORBIT] LoadingTotalSteps is written below for the loading bar. If GoInGame /
+            // MapSessionMetaRpc fires mid-spawn with steps>0 but TeamCount still 0, the client
+            // latches teams=0 and MapSessionMetaSent blocks catch-up → "Preparing teams..." forever
+            // on dedicated/remote joins (Editor.log 2026-07-23: steps=342 teams=0 then Finalize).
+            // FinalizeGeneration overwrites neutrals/asteroids with exact spawned counts.
+            mapState.TeamCount = _rolled.TeamCount;
+            mapState.NeutralPlanetCount = _rolled.NeutralPlanetCount;
+            mapState.AsteroidCount = _rolled.AsteroidCount;
             em.SetComponentData(_mapEntity, mapState);
             // --- ToroidalMapEcs.SetMapSize also mirrors into ToroidalMap (minimap twin) ---
             Generation.ToroidalMapEcs.SetMapSize(_rolled.MapWidth, _rolled.MapHeight);

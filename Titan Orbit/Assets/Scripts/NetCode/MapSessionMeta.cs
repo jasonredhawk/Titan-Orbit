@@ -90,12 +90,28 @@ namespace TitanOrbit.NetCode
         /// <param name="rpc">Server-authored match totals.</param>
         public static void Apply(in MapSessionMetaRpc rpc)
         {
-            LoadingTotalSteps = Mathf.Max(0, rpc.LoadingTotalSteps);
-            TeamCount = Mathf.Max(0, rpc.TeamCount);
-            NeutralPlanetCount = Mathf.Max(0, rpc.NeutralPlanetCount);
-            AsteroidCount = Mathf.Max(0, rpc.AsteroidCount);
-            MapWidth = Mathf.Max(0f, rpc.MapWidth);
-            MapHeight = Mathf.Max(0f, rpc.MapHeight);
+            // --- Merge payload (never downgrade a good team count to 0) ---
+            // [TITAN-ORBIT] A mid-spawn RPC with steps>0 teams=0 used to wipe Join Team UI.
+            // Prefer the richer of previous latch vs this RPC.
+            int nextSteps = Mathf.Max(0, rpc.LoadingTotalSteps);
+            int nextTeams = Mathf.Max(0, rpc.TeamCount);
+            int nextNeutrals = Mathf.Max(0, rpc.NeutralPlanetCount);
+            int nextAsteroids = Mathf.Max(0, rpc.AsteroidCount);
+
+            if (nextSteps > 0)
+                LoadingTotalSteps = Mathf.Max(LoadingTotalSteps, nextSteps);
+            if (nextTeams > 0)
+                TeamCount = nextTeams;
+            if (nextNeutrals > 0)
+                NeutralPlanetCount = nextNeutrals;
+            if (nextAsteroids > 0)
+                AsteroidCount = nextAsteroids;
+
+            if (rpc.MapWidth > 0f)
+                MapWidth = rpc.MapWidth;
+            if (rpc.MapHeight > 0f)
+                MapHeight = rpc.MapHeight;
+
             HasMeta = LoadingTotalSteps > 0 || TeamCount > 0 || NeutralPlanetCount > 0 || AsteroidCount > 0 || HasMapSize;
 
             // --- Keep toroidal helpers aligned with the rolled match ---
@@ -355,13 +371,17 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// When map totals exist, send meta once per NetworkStreamInGame connection.
+        /// When map totals exist (including TeamCount), send meta once per in-game connection.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
                 return;
-            if (!mapState.LoadingComplete && mapState.LoadingTotalSteps <= 0)
+
+            // --- Wait until counts are real ---
+            // [TITAN-ORBIT] LoadingTotalSteps alone is not enough — BeginGeneration publishes steps
+            // before TeamCount historically, and a teams=0 RPC + MapSessionMetaSent stuck Join Team.
+            if (mapState.LoadingTotalSteps <= 0 || mapState.TeamCount <= 0)
                 return;
 
             var meta = new MapSessionMetaRpc

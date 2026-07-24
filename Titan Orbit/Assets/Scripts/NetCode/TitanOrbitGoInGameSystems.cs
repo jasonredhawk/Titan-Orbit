@@ -77,10 +77,13 @@ namespace TitanOrbit.NetCode
 
             // --- Optional map meta for this join ---
             // [TITAN-ORBIT] MapStateSingleton is often not a replicated ghost; send totals once here.
+            // Require TeamCount > 0 so we never latch steps=N teams=0 mid-spawn (catch-up cannot
+            // repair after MapSessionMetaSent — Join Team UI then sticks on "Preparing teams...").
             bool hasMeta = false;
             MapSessionMetaRpc meta = default;
             if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
-                (mapState.LoadingComplete || mapState.LoadingTotalSteps > 0))
+                mapState.LoadingTotalSteps > 0 &&
+                mapState.TeamCount > 0)
             {
                 meta = new MapSessionMetaRpc
                 {
