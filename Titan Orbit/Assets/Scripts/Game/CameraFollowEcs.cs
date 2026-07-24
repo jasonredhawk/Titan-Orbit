@@ -6,8 +6,8 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Top-down camera hard-locks to <see cref="ShipDisplayPose"/> (NetCode presentation pose).
     /// [TITAN-ORBIT] No SmoothDamp chase — NetCode is the only smoothing owner for flight feel.
-    /// Moon-dock cinematic still overrides with a hard lock. Client only; order 67001 after
-    /// <see cref="ShipVisualSyncSystem"/> fills the pose.
+    /// Moon-dock cinematic overrides with a hard lock on the ship hull (including surface spin while
+    /// docked). Client only; order 67001 after <see cref="ShipVisualSyncSystem"/> fills the pose.
     /// </summary>
     [DefaultExecutionOrder(67001)]
     public class CameraFollowEcs : MonoBehaviour
@@ -48,11 +48,12 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Resolves world follow position. Moon-dock cinematic overrides presentation when active
-        /// (stable moon anchor while parked — not the spinning surface hull).
+        /// (ship hull through landing, surface spin, and takeoff).
         /// </summary>
         static bool TryResolveFollowTarget(out Vector3 targetPos)
         {
-            // [HYBRID] Moon dock GameObject applier overrides during landing/dock/takeoff.
+            // [HYBRID] Moon dock GameObject applier overrides during landing/dock/takeoff —
+            // follow the spinning hull, not the moon center.
             if (ShipMoonDockVisualApplier.TryGetLocalFollowPosition(out targetPos))
                 return true;
 

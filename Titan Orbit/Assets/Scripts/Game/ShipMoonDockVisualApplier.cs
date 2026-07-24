@@ -14,10 +14,10 @@ namespace TitanOrbit.Game
     /// thrusting away. Reads <see cref="ShipMoonDockState"/> from the visualization ECS world.
     /// When active, <see cref="EcsWorldVisualizer"/> skips transform sync
     /// (<see cref="ShouldSkipTransformSync"/>).
-    /// Provides a stable local camera follow override via <see cref="TryGetLocalFollowPosition"/> —
-    /// once landed the camera tracks the moon center (not the spinning surface point) so co-orbit
-    /// attach + surface spin cannot jerk the hard-lock follow. Cosmetic only; server dock state is
-    /// owned by <see cref="ShipMoonDockSystem"/>.
+    /// Provides a local camera follow override via <see cref="TryGetLocalFollowPosition"/> —
+    /// the gameplay camera stays on the ship hull through approach, surface spin, and takeoff so the
+    /// view rides with the docked ship instead of locking to the moon center. Cosmetic only; server
+    /// dock state is owned by <see cref="ShipMoonDockSystem"/>.
     /// </summary>
     [DefaultExecutionOrder(100)]
     public class ShipMoonDockVisualApplier : MonoBehaviour
@@ -35,8 +35,9 @@ namespace TitanOrbit.Game
         const float LandingDurationSeconds = 1f;
 
         /// <summary>
-        /// Soft follow rate toward the moon anchor while docked (1/s). [TITAN-ORBIT] Presentation only —
-        /// not a second flight motor; hides tick-fraction / registry jitter from the hard-lock camera.
+        /// Soft follow rate when easing the camera onto a new dock target (1/s). [TITAN-ORBIT]
+        /// Presentation only — not a second flight motor. Used if a soft catch-up is requested;
+        /// ship follow during dock normally hard-locks so surface spin stays visible.
         /// </summary>
         const float DockCameraFollowCatchUp = 14f;
 
@@ -61,7 +62,7 @@ namespace TitanOrbit.Game
         Quaternion _takeoffStartRotation;
         float _takeoffStartScale;
 
-        // --- Stable camera anchor (moon-centered while docked) ---
+        // --- Camera follow override (ship hull while dock cinematic owns the proxy) ---
         bool _dockCameraFollowValid;
         Vector3 _dockCameraFollowPosition;
 
@@ -72,8 +73,9 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Visual follow point for the local player while landing/docked/taking off.
-        /// Prefers the moon-stable anchor so <see cref="CameraFollowEcs"/> does not hard-lock to
-        /// surface spin or flicker onto planar ECS attach beside the moon.
+        /// Returns the ship proxy position so <see cref="CameraFollowEcs"/> rides with the hull
+        /// (including moon surface spin) instead of locking to the moon center or flickering onto
+        /// the planar ECS attach pose beside the moon.
         /// </summary>
         public static bool TryGetLocalFollowPosition(out Vector3 position)
         {
@@ -83,14 +85,14 @@ namespace TitanOrbit.Game
                 return false;
             }
 
-            // [HYBRID] Moon-stable anchor while dock cinematic is driving presentation.
+            // [HYBRID] Published ship-hull anchor while dock cinematic is driving presentation.
             if (s_localInstance._dockCameraFollowValid)
             {
                 position = s_localInstance._dockCameraFollowPosition;
                 return true;
             }
 
-            // Takeoff (or pre-anchor frames): follow the proxy hull itself.
+            // Pre-anchor frames: follow the proxy hull itself.
             if (s_localInstance.ShouldSkipTransformSync)
             {
                 position = s_localInstance.transform.position;
@@ -255,7 +257,7 @@ namespace TitanOrbit.Game
             if (_isTakeoffAnimating)
             {
                 UpdateTakeoffAnimation(em);
-                // Follow the lerping hull during takeoff (not the parked moon anchor).
+                // Follow the lerping hull during takeoff.
                 SetDockCameraFollow(transform.position, softCatchUp: false);
                 _wasControllingTransform = true;
                 _wasLandingVisualActive = false;
@@ -287,7 +289,7 @@ namespace TitanOrbit.Game
 
             if (!TryResolveMoonPose(moonDock.MoonPlanetId, out Vector3 moonPos, out Vector3 spinAxis, out float moonBodyRadius))
             {
-                // Keep last good camera anchor if the moon proxy blips for a frame.
+                // Keep last good ship follow anchor if the moon proxy blips for a frame.
                 _wasControllingTransform = false;
                 _wasLandingVisualActive = false;
                 _wasMoonDockEngaged = moonDockEngaged;
@@ -321,7 +323,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Drives proxy pose onto the moon surface and publishes a stable camera follow anchor.
+        /// Drives proxy pose onto the moon surface and publishes a ship-hull camera follow anchor.
         /// </summary>
         void ApplyLandingAnimation(ShipMoonDockState moonDock, Vector3 moonPos, Vector3 spinAxis, float moonBodyRadius)
         {
@@ -334,8 +336,7 @@ namespace TitanOrbit.Game
 
             // --- Cosmetic surface spin (approach + fully landed) ---
             // [TITAN-ORBIT] Same 9°/s as PlanetGemMoonVisualProxy so the hull rides the spinning
-            // mesh. Camera follows moon *center* once parked (below), so surface spin does not jerk
-            // the hard-lock follow the way locking to the hull did.
+            // mesh. Camera hard-locks to this hull (below) so the view spins with the docked ship.
             // Approach ramps spin with eased progress; fully landed uses full rate.
             float spinWeight = fullyLanded ? 1f : eased;
             float spinStep = SpinSpeedDegPerSec * Time.deltaTime * spinWeight;
@@ -362,12 +363,10 @@ namespace TitanOrbit.Game
                 transform.localScale = Vector3.one * Mathf.Lerp(_landingStartScale, dockedScale, eased);
             }
 
-            // --- Camera: ship during approach, moon center once parked ---
-            // Moon center rides the smooth tick-fraction orbit without surface-spin radius.
-            if (fullyLanded)
-                SetDockCameraFollow(moonPos, softCatchUp: true);
-            else
-                SetDockCameraFollow(transform.position, softCatchUp: false);
+            // --- Camera: always follow the ship hull (approach + parked surface spin) ---
+            // [TITAN-ORBIT] Intentional: we used to soft-lock to moon center once landed so spin
+            // would not move the camera; players prefer riding the hull with the moon instead.
+            SetDockCameraFollow(transform.position, softCatchUp: false);
         }
 
         /// <summary>
