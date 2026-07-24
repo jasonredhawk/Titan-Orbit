@@ -58,9 +58,10 @@ namespace TitanOrbit.ECS
     /// <see cref="PeopleTransportSpawnRpc"/> for client VFX. Does not Instantiate the old
     /// PeopleTransportGhost — that flooded Windows GhostSpawn and kicked clients to the main menu.
     /// <para>
-    /// [TITAN-ORBIT] One person = one transport sphere. Load count =
-    /// <c>min(shipLevel, planetLevel)</c> (L6 ship at L3 planet → 3 load spheres). Unload count =
-    /// ship level only (L6 ship → 6 unload spheres). Never pack multiple people into one sphere.
+    /// [TITAN-ORBIT] One batch = one transport sphere carrying <c>Amount</c> people (scaled up).
+    /// Load batch = <c>min(shipLevel, planetLevel)</c> (L6 ship at L3 planet → one +3 load).
+    /// Unload batch = ship level only (L6 ship → one +6 unload). Packing into a single sphere
+    /// cuts spawn/pose RPC traffic and client Instantiates vs N separate +1 flights.
     /// </para>
     /// </summary>
     // [ECS/DOTS] Drive is in PredictedFixedStepSimulationSystemGroup — UpdateAfter that type from
@@ -156,9 +157,9 @@ namespace TitanOrbit.ECS
                 int maxPop = PlanetPopulationMath.GetMaxPopulation(planetSize, planetState.PlanetLevel);
                 int halfCap = math.max(1, maxPop / 2);
 
-                // --- Load vs unload batch sizes (people/sec + concurrent spheres) ---
-                // [TITAN-ORBIT] Load = min(ship, planet). L6 ship at L3 planet → 3 load spheres.
-                // Unload = ship level only. L6 ship → 6 unload spheres (planet level does not cap).
+                // --- Load vs unload batch sizes (people/sec + people per packed sphere) ---
+                // [TITAN-ORBIT] Load = min(ship, planet). L6 ship at L3 planet → one +3 transport.
+                // Unload = ship level only. L6 ship → one +6 transport (planet level does not cap).
                 int shipLevel = math.max(1, shipState.ValueRO.ShipLevel);
                 int planetLevel = math.max(1, planetState.PlanetLevel);
                 float loadChunk = math.max(1f, math.min(shipLevel, planetLevel));
@@ -278,10 +279,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Spawns one load transport per person (amount = concurrent spheres for this tick).
-        /// Planet pays immediately; the ship gains crew only when each sphere delivers.
+        /// Spawns one packed load transport carrying <paramref name="amount"/> people.
+        /// Planet pays immediately; the ship gains crew only when the sphere delivers.
         /// </summary>
-        /// <param name="amount">People to launch this tick — one sphere each (clamped to
+        /// <param name="amount">People packed into this single sphere (clamped to
         /// <c>min(shipLevel, planetLevel)</c> and capacity/surplus by the caller).</param>
         static bool TryDispatchLoad(
             ref EntityCommandBuffer ecb,
@@ -303,21 +304,17 @@ namespace TitanOrbit.ECS
             if (amount <= 0)
                 return false;
 
-            // --- Base spawn on planet surface toward the ship ---
-            float3 baseSpawn = PeopleTransportMath.GetPlanetSurfaceSpawnToward(planetPos, planetSize, shipPos, mapW, mapH);
+            // --- Spawn on planet surface toward the ship ---
+            float3 spawnPos = PeopleTransportMath.GetPlanetSurfaceSpawnToward(planetPos, planetSize, shipPos, mapW, mapH);
             float3 targetPos = shipPos;
-            float3 loadDir = ToroidalMapEcs.ToroidalDirection(baseSpawn, targetPos, mapW, mapH);
-            baseSpawn += loadDir * 0.2f;
+            float3 loadDir = ToroidalMapEcs.ToroidalDirection(spawnPos, targetPos, mapW, mapH);
+            spawnPos += loadDir * 0.2f;
 
-            // --- One sphere per person (fan sideways so they do not stack as one blob) ---
-            // [TITAN-ORBIT] Old path packed amount into a single transport — players saw "1 transport"
-            // even when min(ship, planet) was 3+.
-            for (int i = 0; i < amount; i++)
-            {
-                float3 spawnPos = OffsetTransportSpawn(baseSpawn, targetPos, i, amount, mapW, mapH);
-                SpawnTransport(ref ecb, spawnPos, targetPos, 1, shipNetworkId, planetId, 0,
-                    shipNetworkId, true, team, now, mapW, mapH);
-            }
+            // --- One packed sphere for the whole batch ---
+            // [TITAN-ORBIT] Amount drives visual scale, HP, and ±N floating text. One spawn/pose
+            // RPC stream instead of N × +1 flights (less bandwidth + fewer client Instantiates).
+            SpawnTransport(ref ecb, spawnPos, targetPos, amount, shipNetworkId, planetId, 0,
+                shipNetworkId, true, team, now, mapW, mapH);
 
             // [TITAN-ORBIT] Planet pays immediately; ship gains only on DeliverLoad (transitory vessel).
             planet.Population -= amount;
@@ -326,11 +323,11 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Spawns one unload transport per person and immediately removes that crew from the ship.
-        /// Planet population rises only when each sphere lands (<see cref="DeliverUnload"/>).
-        /// Floating −1 is shown per sphere by client VFX at spawn.
+        /// Spawns one packed unload transport and immediately removes that crew from the ship.
+        /// Planet population rises only when the sphere lands (<see cref="DeliverUnload"/>).
+        /// Floating −Amount is shown by client VFX at spawn.
         /// </summary>
-        /// <param name="amount">People to launch this tick — one sphere each (caller uses ship level).</param>
+        /// <param name="amount">People packed into this single sphere (caller uses ship level).</param>
         static bool TryDispatchUnload(
             ref EntityCommandBuffer ecb,
             ref ShipState ship,
@@ -353,57 +350,22 @@ namespace TitanOrbit.ECS
             if (amount <= 0)
                 return false;
 
+            // --- Clamp to crew still aboard (caller usually already did this) ---
+            int send = math.min(amount, ship.CurrentPeople);
+            if (send <= 0)
+                return false;
+
             // --- Target = planet surface; spawn = planet-facing ship flank (not ship forward / nose) ---
             float3 targetPos = PeopleTransportMath.GetPlanetSurfaceToward(planetPos, planetSize, shipPos, mapW, mapH);
-            float3 baseSpawn = PeopleTransportMath.GetShipUnloadSpawnToward(
+            float3 spawnPos = PeopleTransportMath.GetShipUnloadSpawnToward(
                 shipPos, shipHullRadius, planetPos, mapW, mapH);
 
-            // --- One sphere per person ---
-            int launched = 0;
-            for (int i = 0; i < amount; i++)
-            {
-                if (ship.CurrentPeople <= 0)
-                    break;
-
-                float3 spawnPos = OffsetTransportSpawn(baseSpawn, targetPos, i, amount, mapW, mapH);
-                SpawnTransport(ref ecb, spawnPos, targetPos, 1, 0, planetId,
-                    planetId, shipNetworkId, false, team, now, mapW, mapH);
-                // [TITAN-ORBIT] Debit ship now — people are in the temporary vessel, not aboard.
-                ship.CurrentPeople -= 1;
-                launched++;
-            }
-
-            return launched > 0;
-        }
-
-        /// <summary>
-        /// Spreads multi-person launches along a planar side axis so concurrent spheres stay readable.
-        /// </summary>
-        /// <param name="baseSpawn">Unfanned spawn point on the load/unload flank.</param>
-        /// <param name="targetPos">Flight destination (defines forward; side is perpendicular on XZ).</param>
-        /// <param name="index">0-based index within this tick's batch.</param>
-        /// <param name="count">Total spheres in this tick's batch.</param>
-        static float3 OffsetTransportSpawn(
-            float3 baseSpawn,
-            float3 targetPos,
-            int index,
-            int count,
-            float mapW,
-            float mapH)
-        {
-            if (count <= 1)
-                return baseSpawn;
-
-            // --- Planar side vector (perpendicular to flight on XZ) ---
-            float3 along = ToroidalMapEcs.ToroidalDirection(baseSpawn, targetPos, mapW, mapH);
-            float3 side = math.normalizesafe(new float3(-along.z, 0f, along.x), new float3(1f, 0f, 0f));
-
-            // Center the fan around the base point (−1, 0, +1 for three spheres).
-            float centered = index - (count - 1) * 0.5f;
-            const float spacing = 0.4f;
-            float3 spawned = baseSpawn + side * (centered * spacing);
-            spawned.y = 0f;
-            return spawned;
+            // --- One packed sphere for the whole batch ---
+            SpawnTransport(ref ecb, spawnPos, targetPos, send, 0, planetId,
+                planetId, shipNetworkId, false, team, now, mapW, mapH);
+            // [TITAN-ORBIT] Debit ship now — people are in the temporary vessel, not aboard.
+            ship.CurrentPeople -= send;
+            return true;
         }
 
         /// <summary>

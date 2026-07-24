@@ -46,8 +46,11 @@ namespace TitanOrbit.Simulation
         public const float PeopleAmountScaleMin = 1f;
         public const float PeopleAmountScaleMax = 12f;
         public const float VisualScaleMinMultiplier = 0.9f;
-        /// <summary>Legacy max was 2.1 (not 2.7) — keeps floats near the prefab's 0.25 base size.</summary>
-        public const float VisualScaleMaxMultiplier = 2.1f;
+        /// <summary>
+        /// Max scale at <see cref="PeopleAmountScaleMax"/>. Raised above the old 2.1 so packed
+        /// +N spheres (e.g. L6 unload = one +6) read clearly larger than a lone +1.
+        /// </summary>
+        public const float VisualScaleMaxMultiplier = 2.7f;
 
         public static float EffectiveVisualTravelSeconds =>
             TargetVisualTravelSeconds * VisualTravelDurationMultiplier / VisualTravelSpeedBonus;
@@ -83,9 +86,9 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Multiplier on the prefab's authored localScale from carried people amount.
-        /// Dispatch launches one sphere per person (<c>amount</c> usually 1). Load concurrency is
-        /// <c>min(ship, planet)</c>; unload concurrency is ship level. Larger amounts still scale up
-        /// if a single sphere ever carries more than one person.
+        /// Dispatch packs each load/unload batch into one sphere: load Amount =
+        /// <c>min(ship, planet)</c>, unload Amount = ship level. Higher Amount → larger visual
+        /// (e.g. +1 ≈ 0.9×, +6 ≈ 1.7×, +12 ≈ 2.7× on the prefab's 0.25 base scale).
         /// </summary>
         public static float GetVisualScaleMultiplier(float peopleAmount)
         {

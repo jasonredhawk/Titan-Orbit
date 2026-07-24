@@ -26,13 +26,13 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Fractional accumulator toward the next load batch.
-        /// Batch size is <c>min(shipLevel, planetLevel)</c> people (one transport sphere each).
+        /// Batch size is <c>min(shipLevel, planetLevel)</c> people packed into one transport sphere.
         /// </summary>
         public float LoadAccumulator;
 
         /// <summary>
         /// Fractional accumulator toward the next unload batch.
-        /// Batch size is ship level only (one transport sphere per person).
+        /// Batch size is ship level only — one packed transport sphere carrying that many people.
         /// </summary>
         public float UnloadAccumulator;
     }
