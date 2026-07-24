@@ -9,10 +9,10 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Client-side moon landing presentation: animates the ship proxy from flight pose onto the moon
-    /// surface (scale shrink + continuous surface spin matching the moon mesh), and reverses when
-    /// thrusting away. Reads <see cref="ShipMoonDockState"/> from the visualization ECS world.
-    /// When active, <see cref="EcsWorldVisualizer"/> skips transform sync
+    /// Client-side moon landing presentation: animates the ship proxy from flight pose onto the
+    /// closest moon-surface point (any latitude), then spins that contact with the moon mesh, and
+    /// reverses when thrusting away. Reads <see cref="ShipMoonDockState"/> from the visualization
+    /// ECS world. When active, <see cref="EcsWorldVisualizer"/> skips transform sync
     /// (<see cref="ShouldSkipTransformSync"/>).
     /// Provides a local camera follow override via <see cref="TryGetLocalFollowPosition"/> —
     /// the gameplay camera stays on the ship hull through approach, surface spin, and takeoff so the
@@ -52,7 +52,7 @@ namespace TitanOrbit.Game
         Quaternion _landingStartRotation;
         float _landingStartScale;
 
-        // Surface contact direction on the moon spin plane (rotates with the moon mesh while docked).
+        // Unit vector moon-center → hull contact (keeps latitude; spins around moon axis while docked).
         Vector3 _landingSurfaceDir;
 
         // Takeoff animation.
@@ -122,7 +122,7 @@ namespace TitanOrbit.Game
             _wasControllingTransform && !_isTakeoffAnimating && _landingSurfaceDir.sqrMagnitude > 0.0001f;
 
         /// <summary>
-        /// Current contact direction on the moon spin plane (unit vector from moon center toward hull).
+        /// Unit vector from moon center toward the hull contact (any latitude, not equator-only).
         /// Valid while <see cref="IsDrivingMoonDockPresentation"/> is true.
         /// </summary>
         public Vector3 LandingSurfaceDir => _landingSurfaceDir;
@@ -162,7 +162,9 @@ namespace TitanOrbit.Game
         /// When true, use <paramref name="preservedSurfaceDir"/> instead of deriving contact from
         /// the new proxy's (often planar ECS) transform.
         /// </param>
-        /// <param name="preservedSurfaceDir">Prior hull contact direction on the moon spin plane.</param>
+        /// <param name="preservedSurfaceDir">
+        /// Prior hull contact direction (full 3D — latitude + longitude on the moon sphere).
+        /// </param>
         void SeedFullyLandedPresentation(EntityManager em, bool preserveSurfaceDir, Vector3 preservedSurfaceDir)
         {
             if (_shipEntity == Entity.Null || !em.Exists(_shipEntity) ||
@@ -181,20 +183,17 @@ namespace TitanOrbit.Game
             // --- Instant landed state (skip approach lerp / takeoff flags) ---
             RefreshBaselineScale();
 
-            // Prefer the old hull's spinning contact dir so purchase keeps the same surface pose.
-            // Fallback: derive from current transform (first land / missing preserve).
+            // Prefer the old hull's spinning contact dir so purchase keeps the same surface pose
+            // (same latitude + longitude). Fallback: closest surface point from current transform.
             if (preserveSurfaceDir && preservedSurfaceDir.sqrMagnitude > 0.0001f)
             {
-                // [TITAN-ORBIT] Re-project onto the live spin plane in case the moon axis drifted
-                // a frame between DestroyProxy and CreateShipProxy.
-                Vector3 projected = Vector3.ProjectOnPlane(preservedSurfaceDir, spinAxis);
-                _landingSurfaceDir = projected.sqrMagnitude > 0.0001f
-                    ? projected.normalized
-                    : ComputeSurfaceDirection(transform.position, moonPos, spinAxis);
+                // [TITAN-ORBIT] Keep the full 3D contact. Do NOT ProjectOnPlane(spinAxis) — that
+                // used to force the equator and wipe the parked latitude after a chassis rebuild.
+                _landingSurfaceDir = preservedSurfaceDir.normalized;
             }
             else
             {
-                _landingSurfaceDir = ComputeSurfaceDirection(transform.position, moonPos, spinAxis);
+                _landingSurfaceDir = ComputeClosestSurfaceDirection(transform.position, moonPos, spinAxis);
             }
 
             _landingStartPosition = moonPos + _landingSurfaceDir *
@@ -313,17 +312,25 @@ namespace TitanOrbit.Game
             _wasMoonDockEngaged = false;
         }
 
+        /// <summary>
+        /// Captures the flight pose at the start of a landing cinematic and picks the closest
+        /// moon-surface contact direction from the ship's current world position.
+        /// </summary>
+        /// <param name="moonPos">Moon center in world space.</param>
+        /// <param name="spinAxis">Moon mesh spin axis (unit); used only if contact is degenerate.</param>
         void CaptureLandingStartPose(Vector3 moonPos, Vector3 spinAxis)
         {
             RefreshBaselineScale();
             _landingStartPosition = transform.position;
             _landingStartRotation = transform.rotation;
             _landingStartScale = transform.localScale.x;
-            _landingSurfaceDir = ComputeSurfaceDirection(transform.position, moonPos, spinAxis);
+            // [TITAN-ORBIT] Closest point on the sphere — keeps the ship's approach latitude.
+            _landingSurfaceDir = ComputeClosestSurfaceDirection(transform.position, moonPos, spinAxis);
         }
 
         /// <summary>
-        /// Drives proxy pose onto the moon surface and publishes a ship-hull camera follow anchor.
+        /// Drives proxy pose onto the moon surface (at the captured latitude) and publishes a
+        /// ship-hull camera follow anchor.
         /// </summary>
         void ApplyLandingAnimation(ShipMoonDockState moonDock, Vector3 moonPos, Vector3 spinAxis, float moonBodyRadius)
         {
@@ -336,8 +343,10 @@ namespace TitanOrbit.Game
 
             // --- Cosmetic surface spin (approach + fully landed) ---
             // [TITAN-ORBIT] Same 9°/s as PlanetGemMoonVisualProxy so the hull rides the spinning
-            // mesh. Camera hard-locks to this hull (below) so the view spins with the docked ship.
-            // Approach ramps spin with eased progress; fully landed uses full rate.
+            // mesh. Rotating the contact dir around spinAxis preserves latitude (polar angle) while
+            // advancing longitude — a mid-latitude land stays on that parallel, not the equator.
+            // Camera hard-locks to this hull (below). Approach ramps spin with eased progress;
+            // fully landed uses full rate.
             float spinWeight = fullyLanded ? 1f : eased;
             float spinStep = SpinSpeedDegPerSec * Time.deltaTime * spinWeight;
             if (Mathf.Abs(spinStep) > 0.0001f)
@@ -447,19 +456,45 @@ namespace TitanOrbit.Game
             }
         }
 
-        static Vector3 ComputeSurfaceDirection(Vector3 shipPosition, Vector3 moonPos, Vector3 spinAxis)
+        /// <summary>
+        /// Closest unit direction from moon center to the ship — the sphere's nearest surface point.
+        /// Keeps latitude (angle from the spin axis); spin later rotates this vector around
+        /// <paramref name="spinAxis"/> so the hull rides a parallel, not only the equator.
+        /// </summary>
+        /// <param name="shipPosition">Ship proxy world position at capture / seed time.</param>
+        /// <param name="moonPos">Moon center world position.</param>
+        /// <param name="spinAxis">
+        /// Moon spin axis (unit). Used only for the rare degenerate case when the ship sits nearly
+        /// on the moon center (no reliable radial direction).
+        /// </param>
+        /// <returns>Unit vector moon-center → closest surface contact.</returns>
+        static Vector3 ComputeClosestSurfaceDirection(Vector3 shipPosition, Vector3 moonPos, Vector3 spinAxis)
         {
+            // [STANDARD] Closest point on a sphere = moon center + R * normalize(ship - moon).
+            // We return only the unit radial; callers multiply by (moon radius + ship radius).
             Vector3 dir = shipPosition - moonPos;
-            dir = Vector3.ProjectOnPlane(dir, spinAxis);
-            if (dir.sqrMagnitude < 0.0001f)
-                dir = Vector3.Cross(spinAxis, Vector3.forward);
-            if (dir.sqrMagnitude < 0.0001f)
-                dir = Vector3.Cross(spinAxis, Vector3.right);
-            return dir.normalized;
+            if (dir.sqrMagnitude > 0.0001f)
+                return dir.normalized;
+
+            // Degenerate: ship almost at moon center — pick an equatorial fallback so spin has a ring.
+            Vector3 equatorial = Vector3.ProjectOnPlane(Vector3.forward, spinAxis);
+            if (equatorial.sqrMagnitude < 0.0001f)
+                equatorial = Vector3.ProjectOnPlane(Vector3.right, spinAxis);
+            if (equatorial.sqrMagnitude < 0.0001f)
+                equatorial = Vector3.right;
+            return equatorial.normalized;
         }
 
+        /// <summary>
+        /// Docked hull orientation: up = outward surface normal, forward = circumferential spin
+        /// tangent so the ship faces along the parallel it rides (works at any latitude).
+        /// </summary>
+        /// <param name="surfaceNormal">Unit moon-center → contact (any latitude).</param>
+        /// <param name="spinAxis">Moon mesh spin axis (unit).</param>
         static Quaternion ComputeDockedRotation(Vector3 surfaceNormal, Vector3 spinAxis)
         {
+            // Circumferential tangent = direction the contact point moves under moon spin.
+            // Near the poles Cross(spinAxis, normal) shrinks — fall back to a stable look axis.
             Vector3 tangent = Vector3.Cross(spinAxis, surfaceNormal);
             if (tangent.sqrMagnitude < 0.0001f)
                 tangent = Vector3.Cross(surfaceNormal, Vector3.forward);
