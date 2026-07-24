@@ -11,6 +11,8 @@ namespace TitanOrbit.Simulation
     /// own distance/power; pull speed comes from that wing (not a global gem-mass base speed).
     /// Wings collect via <see cref="GemTractorBeamAssignment"/>: sticky locks, unique gems first,
     /// and spare beams may assist (stack pull) only when there are more wings than free gems.
+    /// Stacked assists use diminishing returns — primary full strength, each extra
+    /// <see cref="AdditionalTractorBeamPullScale"/> of its own strength (not a linear sum).
     /// </summary>
     public static class GemTractorBeamMath
     {
@@ -27,6 +29,14 @@ namespace TitanOrbit.Simulation
         public const float GameplayPullSpeedScale = 0.38f;
         public const float MinGameplayPullSpeed = 0.75f;
         public const float MaxGameplayPullSpeed = 5.5f;
+
+        /// <summary>
+        /// [TITAN-ORBIT] When several beams pull one gem, the primary lock contributes 100% of its
+        /// pull speed and each additional assist contributes this fraction of <em>its own</em> speed.
+        /// Equal beams: 1 → 100%, 2 → 125%, 3 → 150% (not 200% / 300%).
+        /// Used by server <c>GemTractorBeamSystem</c> and client pull presentation so both match.
+        /// </summary>
+        public const float AdditionalTractorBeamPullScale = 0.25f;
 
         /// <summary>MaxGems → search radius (m). Wing1 with maxGems=8 → 3m in normal space.</summary>
         public const float MaxGemsToSearchRadius = SearchRadiusNormal / 8f;
@@ -114,6 +124,8 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Final pull speed for a gem assigned to a wing: wing attraction speed × mild mass factor.
+        /// Does <b>not</b> apply multi-beam stacking — callers multiply by
+        /// <see cref="StackedBeamPullScale"/> when several wings share one gem.
         /// </summary>
         public static float ResolvePullSpeedFromWing(
             float wingAttractionSpeed,
@@ -121,6 +133,19 @@ namespace TitanOrbit.Simulation
             float gemSize) =>
             math.max(0f, wingAttractionSpeed) *
             ComputeGemMassPullFactor(ResolveGemSizeForPull(gemValue, gemSize));
+
+        /// <summary>
+        /// Multi-beam stack weight for one wing's contribution toward a shared gem.
+        /// </summary>
+        /// <param name="isPrimary">
+        /// True for the gem's primary lock (ghost <c>TractorWingIndex</c> / sticky owner).
+        /// False for spare-wing assists that only join when no unique free gem is left.
+        /// </param>
+        /// <returns>
+        /// 1.0 for the primary beam; <see cref="AdditionalTractorBeamPullScale"/> for each assist.
+        /// </returns>
+        public static float StackedBeamPullScale(bool isPrimary) =>
+            isPrimary ? 1f : AdditionalTractorBeamPullScale;
 
         /// <summary>
         /// Resolves authored tractor stats, falling back to maxGems conversion when distance/power are unset.

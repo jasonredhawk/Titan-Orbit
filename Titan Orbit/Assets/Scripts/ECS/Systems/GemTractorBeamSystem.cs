@@ -17,7 +17,8 @@ namespace TitanOrbit.ECS
     /// velocity and pose integrate in the same tick.
     /// Matching uses <see cref="GemTractorBeamAssignment"/>: sticky wing locks, primary fill so
     /// many gems keep many wings busy, and spare-wing assists that stack pull only when there
-    /// are more beams than distinct gems in range.
+    /// are more beams than distinct gems in range. Stacked pull uses diminishing assists
+    /// (<see cref="GemTractorBeamMath.StackedBeamPullScale"/>): primary 100%, each extra 25%.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -144,7 +145,10 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Writes <see cref="GemMotionState"/> lock fields for assigned gems; after deploy completes,
-        /// sums pull velocity from every wing on that gem (primary + spare assists).
+        /// builds pull velocity from every wing on that gem (primary + spare assists).
+        /// Primary contributes full wing pull; each assist adds
+        /// <see cref="GemTractorBeamMath.AdditionalTractorBeamPullScale"/> of its own strength
+        /// so three equal beams ≈ 150% rather than 300%.
         /// </summary>
         void ApplyLockAndPull(
             Entity shipEntity,
@@ -223,8 +227,11 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                // --- Stacked pull: each locked wing adds its own force toward its tip ---
+                // --- Stacked pull (diminishing assists) ---
                 // Spare assists only exist when AssignWings phase-3 ran (more beams than free gems).
+                // [TITAN-ORBIT] Primary wing = 100% of its pull; each additional = 25% of its own
+                // (GemTractorBeamMath.AdditionalTractorBeamPullScale). Direction still aims at
+                // each wing tip so multi-beam gems drift toward the cluster, not a single point.
                 float3 gemPos = gemTransform.ValueRO.Position;
                 float3 velocity = float3.zero;
                 for (int wi = 0; wi < wingList.Count; wi++)
@@ -233,11 +240,14 @@ namespace TitanOrbit.ECS
                     float pullSpeed = ResolveWingPullSpeed(
                         wingIndex, wings, shipLevel, inOrbit,
                         gemState.ValueRO.Value, gemState.ValueRO.Size);
+                    // Primary lock gets full strength; assists are the "additional" beams.
+                    bool isPrimary = wingIndex == primaryWing;
+                    float stackScale = GemTractorBeamMath.StackedBeamPullScale(isPrimary);
                     float3 pullTarget = ResolvePullTarget(shipTransform, wings, wingIndex);
                     float3 toWing = GemTractorBeamMath.ToroidalDirection(gemPos, pullTarget, mapW, mapH);
                     if (math.lengthsq(toWing) < 0.0001f)
                         continue;
-                    velocity += toWing * pullSpeed;
+                    velocity += toWing * (pullSpeed * stackScale);
                 }
 
                 if (math.lengthsq(velocity) < 0.0001f)

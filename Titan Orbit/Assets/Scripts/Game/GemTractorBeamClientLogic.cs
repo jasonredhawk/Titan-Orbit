@@ -563,7 +563,8 @@ namespace TitanOrbit.Game
             float mapW = ToroidalMapEcs.MapWidth;
             float mapH = ToroidalMapEcs.MapHeight;
             // --- Stack assist wings when local assignment matches this ghost lock ---
-            // Server sums spare-beam forces; client mirrors that so GO motion does not under-pull.
+            // [TITAN-ORBIT] Mirror server diminishing stack: primary 100%, each assist 25% of its
+            // own pull (GemTractorBeamMath.StackedBeamPullScale) so GO motion matches authority.
             float3 velocity = float3.zero;
             int shipIndex = shipEntity.Index;
             RebuildAssignmentCache();
@@ -591,10 +592,12 @@ namespace TitanOrbit.Game
                     }
 
                     float speed = GemTractorBeamMath.ResolvePullSpeedFromWing(attract, gemValue, gemSize);
+                    // Ghost TractorWingIndex is the authoritative primary (same as server pull math).
+                    float stackScale = GemTractorBeamMath.StackedBeamPullScale(wi == wingIndex);
                     float3 toWing = GemTractorBeamMath.ToroidalDirection(gemLogicalPos, target, mapW, mapH);
                     if (math.lengthsq(toWing) < 0.0001f)
                         continue;
-                    velocity += toWing * speed;
+                    velocity += toWing * (speed * stackScale);
                     any = true;
                 }
 

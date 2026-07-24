@@ -33,9 +33,11 @@ namespace TitanOrbit.Game
         [SerializeField] float pulseWidthAmplitude = 0.06f;
         [SerializeField] float pulseAlphaAmplitude = 0.14f;
         [SerializeField] float pulseSpeed = 2f;
-        [SerializeField] float alphaAtShip = 0.72f;
-        [SerializeField] float alphaAtGem = 0.16f;
-        [SerializeField] float alphaExtendLine = 0.85f;
+        // [TITAN-ORBIT] Alphas = prior defaults at half opacity (50% more transparent / see-through).
+        // ship 0.72→0.36, gem 0.16→0.08, extend 0.85→0.425.
+        [SerializeField] float alphaAtShip = 0.36f;
+        [SerializeField] float alphaAtGem = 0.08f;
+        [SerializeField] float alphaExtendLine = 0.425f;
         [SerializeField] float extendLineThickness = 0.07f;
         [SerializeField] Color bonusBeamTint = new Color(1f, 0.92f, 0.35f, 1f);
         [SerializeField] bool gameplayCamerasOnly = true;

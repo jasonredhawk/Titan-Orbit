@@ -26,8 +26,12 @@ namespace TitanOrbit.ECS
         /// <summary>Hull-center pickup radius when ship has no wing tractor buffers.</summary>
         public const float GemPickupRange = 2.5f;
 
-        /// <summary>Collect gems at the wing when tractor-pulled (legacy Gem.collectRadius ~0.6).</summary>
-        public const float GemWingCollectRadius = 0.65f;
+        /// <summary>
+        /// Collect gems near the wing tip when tractor-pulled.
+        /// Effective radius = this + gem.Size × 0.25 so larger gems still touch slightly earlier.
+        /// Kept tight so gems ride into the wing before cargo absorb (was 0.65 — felt far from the tip).
+        /// </summary>
+        public const float GemWingCollectRadius = 0.25f;
 
         /// <summary>Legacy planet interaction radius (deposit uses moon dock instead).</summary>
         public const float PlanetInteractionRange = 20f;
@@ -455,6 +459,9 @@ namespace TitanOrbit.ECS
         {
             float3 gemPos = gemTransform.Position;
 
+            // --- Wing-tip collect (preferred when ship has tractor buffers) ---
+            // [TITAN-ORBIT] Absorb only when the gem is near a wing tip — not hull-center range —
+            // so tractor beams can finish pulling gems in close before cargo takes them.
             if (hasWings)
             {
                 var wings = em.GetBuffer<ShipWingTractorBeamElement>(shipEntity);

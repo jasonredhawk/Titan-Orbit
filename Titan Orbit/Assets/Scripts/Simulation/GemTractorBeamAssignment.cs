@@ -13,7 +13,8 @@ namespace TitanOrbit.Simulation
     /// 2. <b>Primary fill</b> — free wings claim unclaimed gems first (shortest pairs), so a gem
     ///    field keeps as many wings busy as there are distinct gems in range.
     /// 3. <b>Assist</b> — only leftover free wings (no unique gem left) may join an already-locked
-    ///    gem and stack pull. Never steal a sticky lock.
+    ///    gem and stack pull (primary 100% + each assist 25% via
+    ///    <see cref="GemTractorBeamMath.StackedBeamPullScale"/>). Never steal a sticky lock.
     /// </para>
     /// </summary>
     public static class GemTractorBeamAssignment
