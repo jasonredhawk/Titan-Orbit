@@ -13,7 +13,7 @@ namespace TitanOrbit.Game
     /// Hot path is <see cref="TryCreateGemVisual"/> → pool Rent (no Instantiates).
     /// Cold path is <see cref="TryCreateGemVisualRaw"/> (Instantiates + strip + shared tint)
     /// used only when the pool must grow. Render only — sim value lives on ECS <c>GemState</c>.
-    /// Local ClientGemBurstPresenter VFX is disabled; gems appear from ghost Instantiates only.
+    /// Gem GOs are created only after networked gem ghosts Instantiates (server pose/velocity).
     /// </para>
     /// </summary>
     public static class GemVisualApplier

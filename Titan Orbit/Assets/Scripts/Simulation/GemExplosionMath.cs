@@ -84,8 +84,8 @@ namespace TitanOrbit.Simulation
         /// Keeps burst motion radially outward from the asteroid center on XZ.
         /// <para>
         /// [TITAN-ORBIT] Spawn offset and launch velocity already share one unit dir on the server.
-        /// Client presentation follows ghost pose/velocity (no second integrator). This helper remains
-        /// for spawn validation or debug — not for soft-reconcile presentation hacks.
+        /// Client presentation integrates ghosted Velocity between LT samples (same damping);
+        /// this helper is for spawn validation / debug radial clamps, not inventing a local burst.
         /// </para>
         /// </summary>
         /// <param name="position">Current gem logical (or display) position.</param>

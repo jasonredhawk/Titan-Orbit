@@ -5,13 +5,12 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Former immediate local gem explosion VFX — <b>disabled</b>.
+    /// [HYBRID] Former immediate local gem explosion VFX — <b>disabled by design</b>.
     /// <para>
-    /// Local burst + ghost handoff caused visible gem count pops (combine/split) and mid-flight
-    /// direction flips while Instantiates lagged. Gems now appear only as networked ghost proxies
-    /// driven by <see cref="GemClientMotionApplier"/> from interpolated LocalTransform /
-    /// <see cref="GemKinematics"/>. Asteroid hide still happens immediately in
-    /// <see cref="EcsWorldVisualizer"/>.
+    /// Gems are server-authoritative: pose, speed, and direction come from ghosted
+    /// <see cref="LocalTransform"/> / <see cref="GemKinematics"/>. The client waits for gem
+    /// ghost Instantiates, then <see cref="GemClientMotionApplier"/> presents that data.
+    /// No client-side invent of gem shells before the server spawn arrives.
     /// </para>
     /// APIs remain as no-ops so older call sites and debug isolators compile safely.
     /// </summary>

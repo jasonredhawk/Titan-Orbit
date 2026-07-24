@@ -665,7 +665,8 @@ namespace TitanOrbit.ECS
     /// <see cref="GemExplosionSettings"/>) that sum to leftover <see cref="AsteroidState.RemainingGems"/>,
     /// with original NGO explosion speed, damping, and tumble. Schedules a timed respawn
     /// (<see cref="AsteroidSpawning.ScheduleRespawn"/>) then destroys the entity.
-    /// Clients present gems only after ghost Instantiates (no local ClientGemBurstPresenter VFX).
+    /// Clients present gems only after gem ghosts Instantiates, driven by ghosted
+    /// <see cref="GemKinematics"/> / LocalTransform (no client-invented burst VFX).
     /// <para>
     /// [TITAN-ORBIT] Despawn triggers on <see cref="AsteroidState.IsDestroyed"/> <b>or</b>
     /// <c>Health &lt;= 0</c> (belt-and-suspenders for bullet kills). Missing Gem prefab must not

@@ -143,11 +143,8 @@ namespace TitanOrbit.Game
         int _newWorldBodyProxiesThisFrame;
 
         /// <summary>
-        /// <summary>
         /// Asteroid entities already handled for kill hide (HitRpc or IsDestroyed detect).
-        /// Prevents double-hide work; gem VFX no longer uses this flag.
-        /// </summary>
-        /// Prevents double local bursts while the ghost still exists for a few frames.
+        /// Prevents double-hide work. Gem visuals come from networked gem Instantiates only.
         /// </summary>
         readonly HashSet<Entity> _asteroidBurstFired = new HashSet<Entity>();
 
@@ -345,7 +342,8 @@ namespace TitanOrbit.Game
         /// <para>
         /// [TITAN-ORBIT] Server destroys the rock the same tick it sets IsDestroyed; clients often
         /// never observe Health≤0 / IsDestroyed before ghost despawn. HitRpc is the reliable kill
-        /// signal. Gem visuals appear later from networked gem Instantiates (no local burst).
+        /// signal. Gem visuals wait for networked gem Instantiates — server owns pose/velocity;
+        /// the client does not invent a local burst.
         /// </para>
         /// </summary>
         /// <param name="entity">Asteroid ghost entity whose proxy should hide.</param>
@@ -364,8 +362,7 @@ namespace TitanOrbit.Game
             // until NetCode despawn (ship bounce on empty space / pose step with stable FPS).
             ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
 
-            // Gem visuals wait for ghost Instantiates — no ClientGemBurstPresenter dual path
-            // (local VFX caused combine/split count pops and mid-flight direction flips).
+            // Gem GOs appear only after gem ghosts Instantiates (server GemKinematics / LocalTransform).
             return true;
         }
 
@@ -594,7 +591,7 @@ namespace TitanOrbit.Game
                 alive.Add(entity);
 
                 // --- World-body / gem pose ---
-                // Gems: GemClientMotionApplier owns position (follows interpolated ghost LT/Velocity).
+                // Gems: GemClientMotionApplier owns position from ghosted LocalTransform + GemKinematics.
                 // Other bodies: snap to toroidal display of LocalTransform.
                 if (isGem)
                 {
@@ -746,7 +743,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// When a client asteroid ghost reports <see cref="AsteroidState.IsDestroyed"/>, hide the
-        /// rock immediately. Gem visuals wait for networked gem Instantiates (no local burst).
+        /// rock immediately. Gem visuals wait for networked gem Instantiates (server pose/velocity).
         /// Also refreshes <see cref="_asteroidLastKnown"/> for despawn-without-flag cases.
         /// Per-entity HasComponent only — no full asteroid ToEntityArray.
         /// </summary>
@@ -755,7 +752,7 @@ namespace TitanOrbit.Game
             if (ClientJoinSettleCache.Settling)
                 return;
 
-            // Walk asteroid proxy keys only (not ships/planets/gems). Bullet kills already burst
+            // Walk asteroid proxy keys only (not ships/planets/gems). Bullet kills already hide
             // via TryHideAsteroidProxyFromHitRpc — this is the ram / missed-RPC fallback.
             foreach (Entity entity in _asteroidProxyEntities)
             {
@@ -793,7 +790,7 @@ namespace TitanOrbit.Game
                 // Same phantom-hull cull as HitRpc hide (ram / missed-RPC destroy path).
                 ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
 
-                // No local gem VFX — wait for networked gem ghosts (authoritative pose/velocity).
+                // No client-invented gem VFX — wait for server gem ghosts + GemClientMotionApplier.
             }
         }
 
@@ -970,9 +967,10 @@ namespace TitanOrbit.Game
                 scale = GemVisualApplier.ComputeVisualScale(math.max(0.25f, state.Value));
                 Vector3 displayPos = GetVisualPosition(entity, lt.Position);
 
-                // --- Network gem proxy from ghost only ---
-                // [TITAN-ORBIT] No local burst / handoff. Count and motion come from Instantiates
-                // gem ghosts + GemClientMotionApplier (interpolated LocalTransform / GemKinematics).
+                // --- Network gem proxy from Instantiates ghost only ---
+                // [TITAN-ORBIT] No ClientGemBurstPresenter invent. Count/pose/velocity come from
+                // server gem ghosts; GemClientMotionApplier presents ghosted LocalTransform +
+                // GemKinematics between snapshots.
                 if (!GemVisualApplier.TryCreateGemVisual(
                         gemVisualPrefab, state.Value, state.IsBonusGem, out go))
                 {
@@ -994,8 +992,6 @@ namespace TitanOrbit.Game
                 RegisterProxyKind(entity, ProxyVisualKind.Gem);
                 go.transform.localScale = Vector3.one * scale;
                 GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, state.Value));
-
-                // --- Pose strictly from ghost LocalTransform ---
                 go.transform.SetPositionAndRotation(displayPos, lt.Rotation);
 
                 var motion = go.GetComponent<GemClientMotionApplier>();
@@ -1003,6 +999,7 @@ namespace TitanOrbit.Game
                     motion = go.AddComponent<GemClientMotionApplier>();
                 motion.Bind(entity, lt.Position);
 
+                // Seed from server kinematics so the GO coasts immediately if LT snapshots lag.
                 if (em.HasComponent<GemKinematics>(entity))
                 {
                     var kin = em.GetComponentData<GemKinematics>(entity);
@@ -1648,11 +1645,12 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Max networked gem GO Instantiates per frame from the urgent queue.
-        /// Destroy bursts can enqueue many ghosts at once — Instantiating all of them in one
-        /// <see cref="SyncAllProxies"/> call hitchs the client (scene blink). Cap at 1 per frame.
+        /// Max networked gem GO proxies per frame from the urgent Instantiates queue.
+        /// GhostSpawn Instantiates stays 1/frame (join-crash invariant). Once a gem ghost exists,
+        /// we may Rent several pool GOs per frame so a small destroy burst becomes visible
+        /// within a split second — still server-driven (no local invent).
         /// </summary>
-        const int MaxUrgentGemProxiesPerFrame = 1;
+        const int MaxUrgentGemProxiesPerFrame = 4;
 
         /// <summary>
         /// Creates GameObject proxies for gems that Instantiated this frame (from

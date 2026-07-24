@@ -39,7 +39,7 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new GemKinematics());
 
                 // --- Burst index + tractor lock (ghosted) ---
-                // [NETCODE] Clients hand off local VFX by BurstIndex and time beam pull from lock tick.
+                // [NETCODE] Clients present beam pull from ghost lock fields (no invented assignment).
                 AddComponent(entity, new GemMotionState { Phase = GemMotionState.PhaseCoast });
             }
         }
