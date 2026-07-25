@@ -12,8 +12,8 @@ Match rotation is handled inside the server process. Lifecycle rules:
 | **Players connected** | Match keeps running and stays `IsOpen=1`. Idle teardown does **not** run. |
 | **Last player leaves** (0 connections) | Empty-idle countdown **starts/resets from that moment**. Orphan ships wiped; map stays until timeout. |
 | **Empty for 30 minutes** (`emptyMatchRecreateSeconds`) | In-process recreate: new Relay + lobby, wipe ships, same process (only when **0 players**). |
-| **After N empty in-process recreates** (`maxInProcessEmptyRecreates`, default **6**) | **Exit the process** (still empty only) so systemd/Edgegap starts a fresh binary. Prevents overnight Unity wedges after endless Relay/lobby churn. |
-| **Main thread hung** (`mainThreadHangQuitSeconds`, default **90**) | Background watchdog hard-exits so the host can restart (sim already frozen). |
+| **After N idle empty recreates** (`maxInProcessEmptyRecreates`, default **24** ≈ 12h) | **Exit the process** (0 players only) so systemd/Edgegap starts fresh. Counts **only** `empty_match_recreate` — not stale/self-heal/heartbeat (those must keep repairing). |
+| **Main thread hung** (`mainThreadHangQuitSeconds`, default **300**; paused during recreate) | Background watchdog hard-exits so the host can restart (sim already frozen). |
 | **Age ~30 minutes** while occupied + IsLatest + not full (`ageThresholdSeconds`) | Spawn a successor process as the new `IsLatest`. **Demote** this lobby (`IsLatest=0`) but **keep `IsOpen=1`** so conquest maps stay on Join Game. |
 | **Lobby full** (max players) | Close listing (`IsOpen=0`) and spawn successor capacity. |
 
@@ -61,7 +61,7 @@ Notes:
 - Dedicated auto-boot is gated by `--titanOrbitDedicated=1` (and batchmode/nographics for editor-less runs).
 - The process can spawn additional match server processes using the same executable path it is running from.
 - Override idle/age with `--emptyMatchRecreateSeconds=` and `--ageThresholdSeconds=` (defaults: 1800 each).
-- Process recycle: `--maxInProcessEmptyRecreates=6` (0 = unlimited in-process). Hang quit: `--mainThreadHangQuitSeconds=90` (0 = disable).
+- Process recycle: `--maxInProcessEmptyRecreates=24` (0 = unlimited; counts idle `empty_match_recreate` only). Hang quit: `--mainThreadHangQuitSeconds=300` (0 = disable).
 - Use `Restart=always` so recycle / hang exits come back automatically.
 
 ## What to monitor

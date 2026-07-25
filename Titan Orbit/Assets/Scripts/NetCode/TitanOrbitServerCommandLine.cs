@@ -30,19 +30,20 @@ namespace TitanOrbit.NetCode
         public const int DefaultStaleLobbyRecreateSeconds = 120;
 
         /// <summary>
-        /// After this many successful in-process empty recreates in one process lifetime, exit so
-        /// systemd/Edgegap starts a fresh binary. Proven 2026-07-25: endless overnight recreate
-        /// eventually wedges Unity (Join Game empty, SSH hang) while systemd still reports active.
-        /// <c>0</c> disables process recycle (legacy unlimited in-process recreate).
+        /// After this many successful <b>30-minute idle</b> in-process recreates
+        /// (<c>empty_match_recreate</c> only) in one process lifetime, exit so systemd/Edgegap
+        /// starts a fresh binary. Does <b>not</b> count stale/self-heal/heartbeat recreates —
+        /// those must keep repairing availability without exiting.
+        /// Default 24 ≈ 12 hours of continuous empty idle (24 × 30 min).
+        /// <c>0</c> disables process recycle.
         /// </summary>
-        public const int DefaultMaxInProcessEmptyRecreates = 6;
+        public const int DefaultMaxInProcessEmptyRecreates = 24;
 
         /// <summary>
         /// If the Unity main thread stops ticking for this many seconds, hard-exit so the host
-        /// restarts. Coroutines cannot detect a deadlocked main thread — a background watchdog can.
-        /// <c>0</c> disables hang quit.
+        /// restarts. Paused during Relay/lobby recreate. <c>0</c> disables hang quit.
         /// </summary>
-        public const int DefaultMainThreadHangQuitSeconds = 90;
+        public const int DefaultMainThreadHangQuitSeconds = 300;
 
         public int MaxPlayers { get; private set; } = DefaultMaxPlayers;
         public ushort ServerPort { get; private set; } = DefaultServerPort;

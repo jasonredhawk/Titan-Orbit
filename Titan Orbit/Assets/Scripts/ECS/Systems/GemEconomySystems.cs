@@ -1,3 +1,4 @@
+using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
@@ -792,7 +793,11 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Spawns min–max gems (clamped by remaining value) whose values sum to <paramref name="remaining"/>.
+        /// Spawns gems whose values sum to <paramref name="remaining"/>.
+        /// Count starts from designer min–max, then rises when needed so each piece stays at or
+        /// below <see cref="GemExplosionSettings.MaxGemUnitValue"/> (musical piano-width cap).
+        /// Multi-gem bursts use <see cref="GemChordValues"/> so pickups form a C-major chord
+        /// (dyad / triad / maj7) instead of N copies of the same pitch.
         /// </summary>
         static void SpawnAsteroidDestructionGems(
             EntityCommandBuffer ecb,
@@ -805,12 +810,22 @@ namespace TitanOrbit.ECS
             bool isBonusGem)
         {
             var rng = Random.CreateFromIndex(seed);
-            int count = GemExplosionMath.ResolveGemCount(
-                remaining, settings.MinGemCount, settings.MaxGemCount, ref rng);
+            // [TITAN-ORBIT] Unit cap keeps each pickup on the 55 white-key SFX ladder.
+            int count = GemExplosionMath.ResolveGemCountForUnitCap(
+                remaining,
+                settings.MinGemCount,
+                settings.MaxGemCount,
+                settings.MaxGemUnitValue,
+                ref rng);
+
+            // --- Chord-tone values (C / C+G / C+E+G / …) summing to remaining ---
+            // [TITAN-ORBIT] Equal split made every gem the same note; chord fill makes consume SFX harmonic.
+            var chordValues = new float[count];
+            GemChordValues.Fill(remaining, count, settings.MaxGemUnitValue, chordValues);
 
             for (int i = 0; i < count; i++)
             {
-                float value = GemExplosionMath.ValuePerGem(remaining, count, i);
+                float value = chordValues[i];
                 if (value < GemEconomyConstants.MinGemSpawnValue)
                     continue;
                 GemSpawning.Spawn(

@@ -27,10 +27,10 @@ namespace TitanOrbit.NetCode
     ///   until empty-idle timeout or a real game-end condition (e.g. team wins).
     /// - When the last player leaves, orphan ship ghosts are wiped immediately so a new joiner
     ///   cannot be offered a previous player's ship via NetworkId reuse.
-    /// - After N successful in-process empty recreates (default 6), exit the process so
-    ///   systemd/Edgegap starts a fresh binary — endless overnight Relay/lobby churn can wedge
-    ///   Unity while the OS still reports the process as running (Join Game empty + SSH hang).
-    /// - A background-thread hang watchdog hard-exits if the Unity main thread stops ticking.
+    /// - After N successful 30‑minute idle recreates only (default 24 ≈ 12h empty), exit so
+    ///   systemd/Edgegap starts a fresh binary. Stale/self-heal/heartbeat/match-request must
+    ///   NOT exit — that made Join Game empty more often (2026-07-25 regression).
+    /// - Hang watchdog hard-exits if Update stops ticking; paused during Relay/lobby recreate.
     /// </summary>
     public class TitanOrbitDedicatedServerHost : MonoBehaviour
     {
@@ -96,6 +96,12 @@ namespace TitanOrbit.NetCode
 
         /// <summary>Set when we intentionally exit so the hang thread does not race another Exit.</summary>
         volatile bool _processExitRequested;
+
+        /// <summary>
+        /// [TITAN-ORBIT] 1 while Relay/lobby recreate is in flight — hang watchdog must not kill
+        /// a healthy process blocked on UGS/Relay awaits (false "no game" exits).
+        /// </summary>
+        int _hangWatchdogPausedFlag;
 
         /// <summary>Called from <see cref="TitanOrbitSessionManager"/> after heartbeat-driven recreate.</summary>
         public static void NotifyLobbyReplacedFromSession(string newLobbyId, long createdAtEpochSeconds, bool isLatest)
@@ -206,34 +212,17 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Called after a successful empty in-process recreate (rotation, self-heal, match request,
-        /// or heartbeat failure). Used to decide when to recycle the OS process.
+        /// Pauses or resumes the main-thread hang watchdog. Session manager sets this around
+        /// <c>RecreateDedicatedMatchAsync</c> so long UGS/Relay awaits are not treated as a hang.
         /// </summary>
-        /// <param name="reason">Logged recreate reason for TitanOrbitDedicatedServer.log.</param>
-        public static void NoteSuccessfulEmptyInProcessRecreateFromSession(string reason)
+        /// <param name="paused">True while recreate is in progress.</param>
+        public static void SetHangWatchdogPaused(bool paused)
         {
-            if (s_Instance != null)
-                s_Instance.NoteSuccessfulEmptyInProcessRecreate(reason);
-        }
-
-        /// <summary>
-        /// True when the empty-recreate cap is hit and the next empty action should exit the process.
-        /// Callers must already know the match is empty (0 NetCode players).
-        /// </summary>
-        public static bool IsEmptyProcessRecycleDue()
-        {
-            return s_Instance != null && s_Instance.ShouldRecycleProcessInsteadOfInProcessEmptyRecreate();
-        }
-
-        /// <summary>
-        /// Closes lobby and exits when <see cref="IsEmptyProcessRecycleDue"/>; otherwise no-op.
-        /// </summary>
-        /// <param name="reason">Logged recycle reason.</param>
-        public static Task ExitForEmptyProcessRecycleIfDueAsync(string reason)
-        {
-            if (s_Instance == null || !s_Instance.ShouldRecycleProcessInsteadOfInProcessEmptyRecreate())
-                return Task.CompletedTask;
-            return s_Instance.ExitForProcessRecycleAsync(reason);
+            if (s_Instance == null)
+                return;
+            Volatile.Write(ref s_Instance._hangWatchdogPausedFlag, paused ? 1 : 0);
+            if (!paused)
+                s_Instance.StampMainThreadHeartbeat();
         }
 
         IEnumerator RotationLoop()
@@ -298,19 +287,24 @@ namespace TitanOrbit.NetCode
                 }
 
                 // In-process recreate — skip while a process handoff is in flight (Relay churn).
-                // [TITAN-ORBIT] Only when playerCount==0 (gated above). After N successes, exit so
-                // systemd/Edgegap boots a fresh binary — never tears down an occupied match.
+                // [TITAN-ORBIT] Only when playerCount==0 (gated above). Process recycle counts ONLY
+                // empty_match_recreate (30‑min idle) — never stale/self-heal (those must repair
+                // without exiting, or Join Game goes empty more often).
                 if ((pendingEmptyRecreate || pendingStaleRecreate) && !_handoffInProgress &&
                     TitanOrbitSessionManager.Instance != null)
                 {
                     string reason = pendingStaleRecreate ? "stale_lobby_recreate" : "empty_match_recreate";
-                    if (ShouldRecycleProcessInsteadOfInProcessEmptyRecreate())
+                    bool isIdleEmptyRecreate = reason == "empty_match_recreate";
+                    if (isIdleEmptyRecreate && ShouldRecycleProcessInsteadOfInProcessEmptyRecreate())
                     {
                         yield return ExitForProcessRecycleCoroutine(reason + "_process_recycle");
                         yield break;
                     }
 
-                    yield return RunInProcessRecreateCoroutine(reason, forceIsLatest: true, countAsEmptyRecycle: true);
+                    yield return RunInProcessRecreateCoroutine(
+                        reason,
+                        forceIsLatest: true,
+                        countAsEmptyRecycle: isIdleEmptyRecreate);
                 }
 
                 yield return wait;
@@ -370,22 +364,14 @@ namespace TitanOrbit.NetCode
                 if (!_localLobbyUnjoinableSinceUtc.HasValue)
                     _localLobbyUnjoinableSinceUtc = DateTime.UtcNow;
 
-                // [TITAN-ORBIT] playerCount already verified 0 above — safe to recycle or recreate.
-                if (ShouldRecycleProcessInsteadOfInProcessEmptyRecreate())
-                {
-                    await ExitForProcessRecycleAsync("self_heal_process_recycle");
-                    return;
-                }
-
+                // [TITAN-ORBIT] Self-heal must ALWAYS try in-process recreate — never exit here.
+                // Exiting when there is already no joinable lobby made Join Game empty more often.
                 Debug.LogWarning("[TitanOrbitDedicatedServerHost] Self-heal: no joinable latest lobby in UGS; recreating.");
                 DedicatedServerFileLog.Append("self_heal", "self_heal_no_joinable_latest lobby=" + _activeLobbyId);
 
                 var result = await TitanOrbitSessionManager.Instance.RecreateDedicatedMatchAsync(_config, forceIsLatest: true);
                 if (result != null)
-                {
                     NotifyLobbyReplaced(result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
-                    NoteSuccessfulEmptyInProcessRecreate("self_heal_no_joinable_latest");
-                }
             }
             catch (Exception e)
             {
@@ -684,19 +670,10 @@ namespace TitanOrbit.NetCode
                 if (playerCount > 0)
                     return;
 
-                // [TITAN-ORBIT] Empty-only path — recycle instead of endless in-process recreate.
-                if (ShouldRecycleProcessInsteadOfInProcessEmptyRecreate())
-                {
-                    await ExitForProcessRecycleAsync("match_request_process_recycle");
-                    return;
-                }
-
+                // [TITAN-ORBIT] Match request must recreate in-process — never exit (would empty Join Game).
                 var result = await TitanOrbitSessionManager.Instance.RecreateDedicatedMatchAsync(_config, forceIsLatest: true);
                 if (result != null)
-                {
                     NotifyLobbyReplaced(result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
-                    NoteSuccessfulEmptyInProcessRecreate("match_request");
-                }
             }
             catch (Exception e)
             {
@@ -925,9 +902,8 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// True when this empty host has already done enough in-process recreates and should
-        /// exit so the orchestrator starts a fresh binary. Never true while players are connected
-        /// because callers only invoke empty-idle / self-heal / match-request paths at playerCount 0.
+        /// True when this empty host has already done enough <c>empty_match_recreate</c> cycles
+        /// and should exit for a fresh binary. Only consulted on the 30‑minute idle path.
         /// </summary>
         bool ShouldRecycleProcessInsteadOfInProcessEmptyRecreate()
         {
@@ -939,18 +915,26 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Increments the empty-recreate counter and logs progress toward process recycle.
+        /// Increments the idle-empty recreate counter (only call for <c>empty_match_recreate</c>).
         /// </summary>
-        /// <param name="reason">Why this recreate ran.</param>
+        /// <param name="reason">Why this recreate ran (should be empty_match_recreate).</param>
         void NoteSuccessfulEmptyInProcessRecreate(string reason)
         {
             // --- NoteSuccessfulEmptyInProcessRecreate ---
+            // [TITAN-ORBIT] Guard: never let stale/self-heal reasons inflate the recycle counter.
+            if (!string.Equals(reason, "empty_match_recreate", StringComparison.Ordinal))
+            {
+                DedicatedServerFileLog.Append(
+                    "self_heal",
+                    "Ignoring non-idle recreate for process-recycle counter reason=" + reason);
+                return;
+            }
+
             _successfulEmptyInProcessRecreates++;
             int max = _config != null ? _config.MaxInProcessEmptyRecreates : 0;
             DedicatedServerFileLog.Append(
                 "self_heal",
-                "Empty in-process recreate ok reason=" + reason +
-                " count=" + _successfulEmptyInProcessRecreates +
+                "Idle empty_match_recreate ok count=" + _successfulEmptyInProcessRecreates +
                 (max > 0 ? ("/" + max + " then process recycle") : " (unlimited)"));
         }
 
@@ -1026,6 +1010,10 @@ namespace TitanOrbit.NetCode
                     Thread.Sleep(Math.Max(1000, pollSeconds * 1000));
                     if (_processExitRequested)
                         break;
+
+                    // [TITAN-ORBIT] Recreate / UGS awaits — do not treat as hang.
+                    if (Volatile.Read(ref _hangWatchdogPausedFlag) != 0)
+                        continue;
 
                     int started = _hostingStartedUnixSeconds;
                     int last = Volatile.Read(ref _mainThreadHeartbeatUnixSeconds);

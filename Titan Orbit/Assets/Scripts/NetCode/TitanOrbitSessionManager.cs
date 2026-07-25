@@ -1099,6 +1099,8 @@ namespace TitanOrbit.NetCode
             }
 
             _recreateDedicatedMatchInProgress = true;
+            // [TITAN-ORBIT] Pause hang watchdog — Relay/UGS awaits can stall Update stamps.
+            TitanOrbitDedicatedServerHost.SetHangWatchdogPaused(true);
             string oldLobbyId = _activeLobbyId;
             bool publishAsLatest = forceIsLatest || config.IsLatest;
             try
@@ -1187,6 +1189,7 @@ namespace TitanOrbit.NetCode
             finally
             {
                 _recreateDedicatedMatchInProgress = false;
+                TitanOrbitDedicatedServerHost.SetHangWatchdogPaused(false);
             }
         }
 
@@ -1828,17 +1831,8 @@ namespace TitanOrbit.NetCode
                             !_recreateDedicatedMatchInProgress &&
                             _serverConfig != null)
                         {
-                            // [TITAN-ORBIT] Empty-only. Prefer process recycle once the empty-recreate cap is hit.
-                            if (TitanOrbitDedicatedServerHost.IsEmptyProcessRecycleDue())
-                            {
-                                Task recycleTask =
-                                    TitanOrbitDedicatedServerHost.ExitForEmptyProcessRecycleIfDueAsync(
-                                        "heartbeat_process_recycle");
-                                while (!recycleTask.IsCompleted)
-                                    yield return null;
-                                yield break;
-                            }
-
+                            // [TITAN-ORBIT] Empty-only. Always in-process recreate — do not exit on
+                            // heartbeat failure (that closed the only lobby and worsened Join Game empty).
                             Debug.LogWarning("[TitanOrbitSessionManager] Heartbeat failed " +
                                              _consecutiveHeartbeatFailures + " times; recreating lobby.");
                             DedicatedServerFileLog.Append("heartbeat",
@@ -1852,8 +1846,6 @@ namespace TitanOrbit.NetCode
                                 var result = recreateTask.Result;
                                 TitanOrbitDedicatedServerHost.NotifyLobbyReplacedFromSession(
                                     result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
-                                TitanOrbitDedicatedServerHost.NoteSuccessfulEmptyInProcessRecreateFromSession(
-                                    "heartbeat_failure_recreate");
                             }
                         }
                     }
