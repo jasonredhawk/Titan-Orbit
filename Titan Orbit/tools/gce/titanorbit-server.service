@@ -22,7 +22,9 @@ ExecStartPre=+/bin/bash -c 'W=/home/jason/titanorbit-server/TitanOrbitLinux1/run
 # Logs: journalctl -u titanorbit-server -f  (Unity -logFile /dev/stdout via wrapper)
 #   tail -f .../Player.log  (may be empty when using stdout wrapper)
 ExecStart=/home/jason/titanorbit-server/TitanOrbitLinux1/run_titanorbit_server.sh -batchmode -nographics --titanOrbitDedicated=1 --maxPlayers=60 --serverPort=7777 --relayProtocol=udp --serverListenAddress=0.0.0.0 --isLatest=1 --emptyMatchRecreateSeconds=1800 --staleLobbyRecreateSeconds=120 --waitNetworkManagerSeconds=180 --serverExecutablePath=/home/jason/titanorbit-server/TitanOrbitLinux1/TitanOrbitServer
-Restart=on-failure
+# [TITAN-ORBIT] always — empty process recycle / hang watchdog exit with code 1 must come back.
+# on-failure alone misses some clean exits and left overnight Join Game empty after wedges.
+Restart=always
 RestartSec=10
 KillSignal=SIGINT
 TimeoutStopSec=30

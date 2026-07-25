@@ -29,6 +29,21 @@ namespace TitanOrbit.NetCode
         /// <summary>When our lobby is closed or heartbeat-stale and empty, recreate after this many seconds (faster than empty idle refresh).</summary>
         public const int DefaultStaleLobbyRecreateSeconds = 120;
 
+        /// <summary>
+        /// After this many successful in-process empty recreates in one process lifetime, exit so
+        /// systemd/Edgegap starts a fresh binary. Proven 2026-07-25: endless overnight recreate
+        /// eventually wedges Unity (Join Game empty, SSH hang) while systemd still reports active.
+        /// <c>0</c> disables process recycle (legacy unlimited in-process recreate).
+        /// </summary>
+        public const int DefaultMaxInProcessEmptyRecreates = 6;
+
+        /// <summary>
+        /// If the Unity main thread stops ticking for this many seconds, hard-exit so the host
+        /// restarts. Coroutines cannot detect a deadlocked main thread — a background watchdog can.
+        /// <c>0</c> disables hang quit.
+        /// </summary>
+        public const int DefaultMainThreadHangQuitSeconds = 90;
+
         public int MaxPlayers { get; private set; } = DefaultMaxPlayers;
         public ushort ServerPort { get; private set; } = DefaultServerPort;
         public string RelayProtocol { get; private set; } = "dtls";
@@ -38,6 +53,18 @@ namespace TitanOrbit.NetCode
         public long AgeThresholdSeconds { get; private set; } = DefaultAgeThresholdSeconds;
         /// <summary>Fast recreate when our published lobby is closed or heartbeat-stale while the server is empty.</summary>
         public int StaleLobbyRecreateSeconds { get; private set; } = DefaultStaleLobbyRecreateSeconds;
+
+        /// <summary>
+        /// Max successful empty in-process recreates before process exit (orchestrator restart).
+        /// See <see cref="DefaultMaxInProcessEmptyRecreates"/>.
+        /// </summary>
+        public int MaxInProcessEmptyRecreates { get; private set; } = DefaultMaxInProcessEmptyRecreates;
+
+        /// <summary>
+        /// Main-thread hang hard-exit threshold in seconds. See <see cref="DefaultMainThreadHangQuitSeconds"/>.
+        /// </summary>
+        public int MainThreadHangQuitSeconds { get; private set; } = DefaultMainThreadHangQuitSeconds;
+
         /// <summary>Optional absolute path to headless binary for <c>SpawnNextMatch</c> (GCE when auto-resolve fails).</summary>
         public string ServerExecutablePath { get; private set; }
         public int BootMaxAttempts { get; private set; } = 15;
@@ -59,6 +86,10 @@ namespace TitanOrbit.NetCode
             config.EmptyMatchRecreateSeconds = Mathf.Max(60, GetArgInt("emptyMatchRecreateSeconds", DefaultEmptyMatchRecreateSeconds));
             config.AgeThresholdSeconds = Mathf.Max(60, GetArgInt("ageThresholdSeconds", DefaultAgeThresholdSeconds));
             config.StaleLobbyRecreateSeconds = Mathf.Max(30, GetArgInt("staleLobbyRecreateSeconds", DefaultStaleLobbyRecreateSeconds));
+            // [TITAN-ORBIT] 0 = unlimited in-process empty recreates (not recommended for 24/7 hosts).
+            config.MaxInProcessEmptyRecreates = Mathf.Max(0, GetArgInt("maxInProcessEmptyRecreates", DefaultMaxInProcessEmptyRecreates));
+            // [TITAN-ORBIT] 0 = disable background hang watchdog.
+            config.MainThreadHangQuitSeconds = Mathf.Max(0, GetArgInt("mainThreadHangQuitSeconds", DefaultMainThreadHangQuitSeconds));
             string exePath = GetArgString("serverExecutablePath", null);
             config.ServerExecutablePath = string.IsNullOrWhiteSpace(exePath) ? null : exePath.Trim();
             config.BootMaxAttempts = Mathf.Max(1, GetArgInt("bootMaxAttempts", 15));

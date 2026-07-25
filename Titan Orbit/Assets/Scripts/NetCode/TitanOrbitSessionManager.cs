@@ -1105,13 +1105,19 @@ namespace TitanOrbit.NetCode
             {
                 var prep = await PrepareDedicatedRelayAsync(config);
                 if (prep == null)
+                {
+                    DedicatedServerFileLog.Append("lobby", "Match recreate FAILED: PrepareDedicatedRelay returned null");
                     return null;
+                }
 
                 prep.IsLatest = publishAsLatest;
 
                 var serverWorld = ClientServerBootstrap.ServerWorld;
                 if (serverWorld == null || !serverWorld.IsCreated)
+                {
+                    DedicatedServerFileLog.Append("lobby", "Match recreate FAILED: ServerWorld missing");
                     return null;
+                }
 
                 TitanOrbitRelayState.SetServerRelay(prep.Relay);
                 await ClearNetworkConnectionsAsync(serverWorld);
@@ -1141,7 +1147,13 @@ namespace TitanOrbit.NetCode
                     publishAsLatest,
                     prep.HostAllocationId);
                 if (prep.Lobby == null)
+                {
+                    // [TITAN-ORBIT] Old lobby still open — do not close it after a failed create.
+                    DedicatedServerFileLog.Append(
+                        "lobby",
+                        "Match recreate FAILED: CreateDedicatedLobby returned null oldLobby=" + oldLobbyId);
                     return null;
+                }
 
                 _activeLobbyId = prep.Lobby.Id;
                 _consecutiveHeartbeatFailures = 0;
@@ -1155,6 +1167,15 @@ namespace TitanOrbit.NetCode
                     Debug.LogWarning("[TitanOrbitSessionManager] Could not delete old lobby: " + deleteEx.Message);
                 }
 
+                // [TITAN-ORBIT] Recreate does not re-run boot's "Dedicated server live" line — log the
+                // new lobby id here so overnight gaps are visible in TitanOrbitDedicatedServer.log.
+                DedicatedServerFileLog.Append(
+                    "lobby",
+                    "Match recreated lobby=" + prep.Lobby.Id +
+                    " name=" + (prep.Lobby.Name ?? "") +
+                    " isLatest=" + publishAsLatest +
+                    " closedOld=" + oldLobbyId +
+                    " relay=" + prep.JoinCode);
                 Debug.Log("[TitanOrbitSessionManager] Match recreated: " + prep.Lobby.Id + " isLatest=" + publishAsLatest);
                 return new DedicatedMatchRecreateResult
                 {
@@ -1807,6 +1828,17 @@ namespace TitanOrbit.NetCode
                             !_recreateDedicatedMatchInProgress &&
                             _serverConfig != null)
                         {
+                            // [TITAN-ORBIT] Empty-only. Prefer process recycle once the empty-recreate cap is hit.
+                            if (TitanOrbitDedicatedServerHost.IsEmptyProcessRecycleDue())
+                            {
+                                Task recycleTask =
+                                    TitanOrbitDedicatedServerHost.ExitForEmptyProcessRecycleIfDueAsync(
+                                        "heartbeat_process_recycle");
+                                while (!recycleTask.IsCompleted)
+                                    yield return null;
+                                yield break;
+                            }
+
                             Debug.LogWarning("[TitanOrbitSessionManager] Heartbeat failed " +
                                              _consecutiveHeartbeatFailures + " times; recreating lobby.");
                             DedicatedServerFileLog.Append("heartbeat",
@@ -1820,6 +1852,8 @@ namespace TitanOrbit.NetCode
                                 var result = recreateTask.Result;
                                 TitanOrbitDedicatedServerHost.NotifyLobbyReplacedFromSession(
                                     result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
+                                TitanOrbitDedicatedServerHost.NoteSuccessfulEmptyInProcessRecreateFromSession(
+                                    "heartbeat_failure_recreate");
                             }
                         }
                     }

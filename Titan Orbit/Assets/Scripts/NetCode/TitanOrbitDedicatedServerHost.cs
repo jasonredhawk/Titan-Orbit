@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 using TitanOrbit.Diagnostics;
 using Unity.Services.Lobbies;
@@ -26,6 +27,10 @@ namespace TitanOrbit.NetCode
     ///   until empty-idle timeout or a real game-end condition (e.g. team wins).
     /// - When the last player leaves, orphan ship ghosts are wiped immediately so a new joiner
     ///   cannot be offered a previous player's ship via NetworkId reuse.
+    /// - After N successful in-process empty recreates (default 6), exit the process so
+    ///   systemd/Edgegap starts a fresh binary — endless overnight Relay/lobby churn can wedge
+    ///   Unity while the OS still reports the process as running (Join Game empty + SSH hang).
+    /// - A background-thread hang watchdog hard-exits if the Unity main thread stops ticking.
     /// </summary>
     public class TitanOrbitDedicatedServerHost : MonoBehaviour
     {
@@ -36,6 +41,18 @@ namespace TitanOrbit.NetCode
         const float SelfHealPollIntervalSeconds = 30f;
         /// <summary>After a full handoff fails, wait before starting another (avoids spawn spam every 3s).</summary>
         const float HandoffFailureCooldownSeconds = 300f;
+
+        /// <summary>
+        /// [TITAN-ORBIT] How often the background hang thread samples the main-thread stamp.
+        /// Shorter than <see cref="TitanOrbitServerCommandLine.MainThreadHangQuitSeconds"/>.
+        /// </summary>
+        const int HangWatchdogPollSeconds = 15;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Ignore hang checks until the main thread has stamped at least once and
+        /// this many seconds have passed since hosting started (boot / Relay allocate is slow).
+        /// </summary>
+        const int HangWatchdogBootGraceSeconds = 120;
 
         static TitanOrbitDedicatedServerHost s_Instance;
 
@@ -57,6 +74,28 @@ namespace TitanOrbit.NetCode
         Coroutine _netcodeHealthCoroutine;
         Coroutine _selfHealCoroutine;
         Coroutine _handoffCoroutine;
+
+        /// <summary>
+        /// Successful empty in-process recreates this process lifetime. When it reaches
+        /// <see cref="TitanOrbitServerCommandLine.MaxInProcessEmptyRecreates"/>, the next empty
+        /// idle triggers process exit instead of another Relay/lobby swap.
+        /// </summary>
+        int _successfulEmptyInProcessRecreates;
+
+        /// <summary>
+        /// [STANDARD] Unix seconds of last Unity main-thread Update. Written from Update;
+        /// read from the hang watchdog background thread. 0 = not stamped yet.
+        /// </summary>
+        int _mainThreadHeartbeatUnixSeconds;
+
+        /// <summary>Unix seconds when <see cref="StartHosting"/> ran (hang boot grace).</summary>
+        int _hostingStartedUnixSeconds;
+
+        /// <summary>Background hang-watchdog thread (null when disabled).</summary>
+        Thread _hangWatchdogThread;
+
+        /// <summary>Set when we intentionally exit so the hang thread does not race another Exit.</summary>
+        volatile bool _processExitRequested;
 
         /// <summary>Called from <see cref="TitanOrbitSessionManager"/> after heartbeat-driven recreate.</summary>
         public static void NotifyLobbyReplacedFromSession(string newLobbyId, long createdAtEpochSeconds, bool isLatest)
@@ -115,6 +154,10 @@ namespace TitanOrbit.NetCode
             _matchIsLatest = isLatest;
             _emptySinceUtc = DateTime.UtcNow;
             _localLobbyUnjoinableSinceUtc = null;
+            _successfulEmptyInProcessRecreates = 0;
+            _processExitRequested = false;
+            _hostingStartedUnixSeconds = CurrentUnixSeconds();
+            StampMainThreadHeartbeat();
 
             if (_rotationCoroutine != null) StopCoroutine(_rotationCoroutine);
             if (_presenceCoroutine != null) StopCoroutine(_presenceCoroutine);
@@ -127,9 +170,23 @@ namespace TitanOrbit.NetCode
             _matchRequestCoroutine = StartCoroutine(MatchRequestWatchdogLoop());
             _netcodeHealthCoroutine = StartCoroutine(NetcodeHealthLoop());
             _selfHealCoroutine = StartCoroutine(JoinableLobbySelfHealLoop());
+            EnsureHangWatchdogStarted();
 
-            DedicatedServerFileLog.Append("lobby", "Dedicated host loops started lobbyId=" + lobbyId + " isLatest=" + isLatest);
+            DedicatedServerFileLog.Append(
+                "lobby",
+                "Dedicated host loops started lobbyId=" + lobbyId +
+                " isLatest=" + isLatest +
+                " maxInProcessEmptyRecreates=" + _config.MaxInProcessEmptyRecreates +
+                " mainThreadHangQuitSeconds=" + _config.MainThreadHangQuitSeconds);
             Debug.Log("[TitanOrbitDedicatedServerHost] Hosting loops started for lobby " + lobbyId);
+        }
+
+        /// <summary>
+        /// [UNITY] Main-thread tick stamp for the hang watchdog. Must stay cheap — no ECS queries.
+        /// </summary>
+        void Update()
+        {
+            StampMainThreadHeartbeat();
         }
 
         public void NotifyLobbyReplaced(string newLobbyId, long createdAtEpochSeconds, bool isLatest)
@@ -142,6 +199,41 @@ namespace TitanOrbit.NetCode
             _spawnedFromFull = false;
             _emptySinceUtc = DateTime.UtcNow;
             _localLobbyUnjoinableSinceUtc = null;
+            DedicatedServerFileLog.Append(
+                "lobby",
+                "Lobby replaced id=" + newLobbyId + " isLatest=" + isLatest +
+                " emptyInProcessRecreates=" + _successfulEmptyInProcessRecreates);
+        }
+
+        /// <summary>
+        /// Called after a successful empty in-process recreate (rotation, self-heal, match request,
+        /// or heartbeat failure). Used to decide when to recycle the OS process.
+        /// </summary>
+        /// <param name="reason">Logged recreate reason for TitanOrbitDedicatedServer.log.</param>
+        public static void NoteSuccessfulEmptyInProcessRecreateFromSession(string reason)
+        {
+            if (s_Instance != null)
+                s_Instance.NoteSuccessfulEmptyInProcessRecreate(reason);
+        }
+
+        /// <summary>
+        /// True when the empty-recreate cap is hit and the next empty action should exit the process.
+        /// Callers must already know the match is empty (0 NetCode players).
+        /// </summary>
+        public static bool IsEmptyProcessRecycleDue()
+        {
+            return s_Instance != null && s_Instance.ShouldRecycleProcessInsteadOfInProcessEmptyRecreate();
+        }
+
+        /// <summary>
+        /// Closes lobby and exits when <see cref="IsEmptyProcessRecycleDue"/>; otherwise no-op.
+        /// </summary>
+        /// <param name="reason">Logged recycle reason.</param>
+        public static Task ExitForEmptyProcessRecycleIfDueAsync(string reason)
+        {
+            if (s_Instance == null || !s_Instance.ShouldRecycleProcessInsteadOfInProcessEmptyRecreate())
+                return Task.CompletedTask;
+            return s_Instance.ExitForProcessRecycleAsync(reason);
         }
 
         IEnumerator RotationLoop()
@@ -206,11 +298,19 @@ namespace TitanOrbit.NetCode
                 }
 
                 // In-process recreate — skip while a process handoff is in flight (Relay churn).
+                // [TITAN-ORBIT] Only when playerCount==0 (gated above). After N successes, exit so
+                // systemd/Edgegap boots a fresh binary — never tears down an occupied match.
                 if ((pendingEmptyRecreate || pendingStaleRecreate) && !_handoffInProgress &&
                     TitanOrbitSessionManager.Instance != null)
                 {
                     string reason = pendingStaleRecreate ? "stale_lobby_recreate" : "empty_match_recreate";
-                    yield return RunInProcessRecreateCoroutine(reason, forceIsLatest: true);
+                    if (ShouldRecycleProcessInsteadOfInProcessEmptyRecreate())
+                    {
+                        yield return ExitForProcessRecycleCoroutine(reason + "_process_recycle");
+                        yield break;
+                    }
+
+                    yield return RunInProcessRecreateCoroutine(reason, forceIsLatest: true, countAsEmptyRecycle: true);
                 }
 
                 yield return wait;
@@ -270,12 +370,22 @@ namespace TitanOrbit.NetCode
                 if (!_localLobbyUnjoinableSinceUtc.HasValue)
                     _localLobbyUnjoinableSinceUtc = DateTime.UtcNow;
 
+                // [TITAN-ORBIT] playerCount already verified 0 above — safe to recycle or recreate.
+                if (ShouldRecycleProcessInsteadOfInProcessEmptyRecreate())
+                {
+                    await ExitForProcessRecycleAsync("self_heal_process_recycle");
+                    return;
+                }
+
                 Debug.LogWarning("[TitanOrbitDedicatedServerHost] Self-heal: no joinable latest lobby in UGS; recreating.");
                 DedicatedServerFileLog.Append("self_heal", "self_heal_no_joinable_latest lobby=" + _activeLobbyId);
 
                 var result = await TitanOrbitSessionManager.Instance.RecreateDedicatedMatchAsync(_config, forceIsLatest: true);
                 if (result != null)
+                {
                     NotifyLobbyReplaced(result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
+                    NoteSuccessfulEmptyInProcessRecreate("self_heal_no_joinable_latest");
+                }
             }
             catch (Exception e)
             {
@@ -394,23 +504,52 @@ namespace TitanOrbit.NetCode
             _handoffCoroutine = null;
         }
 
-        IEnumerator RunInProcessRecreateCoroutine(string reason, bool forceIsLatest)
+        /// <summary>
+        /// Runs <see cref="TitanOrbitSessionManager.RecreateDedicatedMatchAsync"/> on the main thread
+        /// (coroutine). Caller must already have verified the match is empty when
+        /// <paramref name="countAsEmptyRecycle"/> is true.
+        /// </summary>
+        /// <param name="reason">Logged recreate reason.</param>
+        /// <param name="forceIsLatest">Force new lobby IsLatest=1.</param>
+        /// <param name="countAsEmptyRecycle">
+        /// When true, increments the empty-recreate counter used for process recycle.
+        /// </param>
+        IEnumerator RunInProcessRecreateCoroutine(string reason, bool forceIsLatest, bool countAsEmptyRecycle = false)
         {
             // --- RunInProcessRecreateCoroutine ---
             if (IsRecreateInProgress() || TitanOrbitSessionManager.Instance == null)
                 yield break;
 
-            DedicatedServerFileLog.Append("self_heal", "In-process recreate reason=" + reason + " forceLatest=" + forceIsLatest);
+            DedicatedServerFileLog.Append(
+                "self_heal",
+                "In-process recreate reason=" + reason +
+                " forceLatest=" + forceIsLatest +
+                " emptyRecreateCount=" + _successfulEmptyInProcessRecreates);
             Task<TitanOrbitSessionManager.DedicatedMatchRecreateResult> recreateTask =
                 TitanOrbitSessionManager.Instance.RecreateDedicatedMatchAsync(_config, forceIsLatest);
             while (!recreateTask.IsCompleted)
                 yield return null;
 
-            if (!recreateTask.IsFaulted && recreateTask.Result != null)
+            if (recreateTask.IsFaulted)
+            {
+                DedicatedServerFileLog.Append(
+                    "self_heal",
+                    "In-process recreate FAULT reason=" + reason,
+                    recreateTask.Exception);
+                yield break;
+            }
+
+            if (recreateTask.Result != null)
             {
                 var result = recreateTask.Result;
                 NotifyLobbyReplaced(result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
                 _spawnedFromAge = false;
+                if (countAsEmptyRecycle)
+                    NoteSuccessfulEmptyInProcessRecreate(reason);
+            }
+            else
+            {
+                DedicatedServerFileLog.Append("self_heal", "In-process recreate returned null reason=" + reason);
             }
         }
 
@@ -545,9 +684,19 @@ namespace TitanOrbit.NetCode
                 if (playerCount > 0)
                     return;
 
+                // [TITAN-ORBIT] Empty-only path — recycle instead of endless in-process recreate.
+                if (ShouldRecycleProcessInsteadOfInProcessEmptyRecreate())
+                {
+                    await ExitForProcessRecycleAsync("match_request_process_recycle");
+                    return;
+                }
+
                 var result = await TitanOrbitSessionManager.Instance.RecreateDedicatedMatchAsync(_config, forceIsLatest: true);
                 if (result != null)
+                {
                     NotifyLobbyReplaced(result.LobbyId, result.CreatedAtEpochSeconds, result.IsLatest);
+                    NoteSuccessfulEmptyInProcessRecreate("match_request");
+                }
             }
             catch (Exception e)
             {
@@ -644,6 +793,8 @@ namespace TitanOrbit.NetCode
                     $"--emptyMatchRecreateSeconds={_config.EmptyMatchRecreateSeconds} " +
                     $"--ageThresholdSeconds={_config.AgeThresholdSeconds} " +
                     $"--staleLobbyRecreateSeconds={_config.StaleLobbyRecreateSeconds} " +
+                    $"--maxInProcessEmptyRecreates={_config.MaxInProcessEmptyRecreates} " +
+                    $"--mainThreadHangQuitSeconds={_config.MainThreadHangQuitSeconds} " +
                     $"--waitNetworkManagerSeconds={_config.WaitNetworkManagerSeconds} " +
                     $"--isLatest={(nextIsLatest ? 1 : 0)}";
 
@@ -773,9 +924,173 @@ namespace TitanOrbit.NetCode
             return false;
         }
 
+        /// <summary>
+        /// True when this empty host has already done enough in-process recreates and should
+        /// exit so the orchestrator starts a fresh binary. Never true while players are connected
+        /// because callers only invoke empty-idle / self-heal / match-request paths at playerCount 0.
+        /// </summary>
+        bool ShouldRecycleProcessInsteadOfInProcessEmptyRecreate()
+        {
+            // --- ShouldRecycleProcessInsteadOfInProcessEmptyRecreate ---
+            // [TITAN-ORBIT] 0 = unlimited in-process (legacy / debug).
+            if (_config == null || _config.MaxInProcessEmptyRecreates <= 0)
+                return false;
+            return _successfulEmptyInProcessRecreates >= _config.MaxInProcessEmptyRecreates;
+        }
+
+        /// <summary>
+        /// Increments the empty-recreate counter and logs progress toward process recycle.
+        /// </summary>
+        /// <param name="reason">Why this recreate ran.</param>
+        void NoteSuccessfulEmptyInProcessRecreate(string reason)
+        {
+            // --- NoteSuccessfulEmptyInProcessRecreate ---
+            _successfulEmptyInProcessRecreates++;
+            int max = _config != null ? _config.MaxInProcessEmptyRecreates : 0;
+            DedicatedServerFileLog.Append(
+                "self_heal",
+                "Empty in-process recreate ok reason=" + reason +
+                " count=" + _successfulEmptyInProcessRecreates +
+                (max > 0 ? ("/" + max + " then process recycle") : " (unlimited)"));
+        }
+
+        /// <summary>
+        /// Closes the current lobby listing and exits so systemd/Edgegap can restart a clean process.
+        /// Only called from empty-server paths.
+        /// </summary>
+        /// <param name="reason">Watchdog / recycle reason string for the file log.</param>
+        IEnumerator ExitForProcessRecycleCoroutine(string reason)
+        {
+            // --- ExitForProcessRecycleCoroutine ---
+            Task exitTask = ExitForProcessRecycleAsync(reason);
+            while (!exitTask.IsCompleted)
+                yield return null;
+        }
+
+        /// <summary>
+        /// Async variant of process recycle exit (self-heal / match-request paths).
+        /// </summary>
+        /// <param name="reason">Logged exit reason.</param>
+        async Task ExitForProcessRecycleAsync(string reason)
+        {
+            // --- ExitForProcessRecycleAsync ---
+            DedicatedServerFileLog.Append(
+                "watchdog",
+                "Process recycle after empty recreates count=" + _successfulEmptyInProcessRecreates +
+                " max=" + (_config != null ? _config.MaxInProcessEmptyRecreates : -1) +
+                " reason=" + reason);
+            Debug.LogWarning("[TitanOrbitDedicatedServerHost] " + reason +
+                             " — exiting empty process for orchestrator restart.");
+            await CloseLobbyAndExitAsync(_activeLobbyId, reason);
+        }
+
+        /// <summary>
+        /// Starts a background thread that hard-exits if Unity's main thread stops ticking.
+        /// Coroutines cannot detect a deadlocked main thread; this can.
+        /// </summary>
+        void EnsureHangWatchdogStarted()
+        {
+            // --- EnsureHangWatchdogStarted ---
+            if (_config == null || _config.MainThreadHangQuitSeconds <= 0)
+                return;
+            if (_hangWatchdogThread != null && _hangWatchdogThread.IsAlive)
+                return;
+
+            int hangSeconds = _config.MainThreadHangQuitSeconds;
+            int bootGrace = HangWatchdogBootGraceSeconds;
+            int pollSeconds = HangWatchdogPollSeconds;
+
+            _hangWatchdogThread = new Thread(() => HangWatchdogThreadMain(hangSeconds, bootGrace, pollSeconds))
+            {
+                IsBackground = true,
+                Name = "TitanOrbitMainThreadHangWatchdog"
+            };
+            _hangWatchdogThread.Start();
+            DedicatedServerFileLog.Append(
+                "watchdog",
+                "Main-thread hang watchdog started hangQuitSeconds=" + hangSeconds +
+                " bootGraceSeconds=" + bootGrace);
+        }
+
+        /// <summary>
+        /// Background loop: if main-thread Update stamps go stale, <see cref="Environment.Exit"/>.
+        /// </summary>
+        void HangWatchdogThreadMain(int hangSeconds, int bootGraceSeconds, int pollSeconds)
+        {
+            // --- HangWatchdogThreadMain ---
+            try
+            {
+                Thread.Sleep(Math.Max(1000, bootGraceSeconds * 1000));
+                while (!_processExitRequested)
+                {
+                    Thread.Sleep(Math.Max(1000, pollSeconds * 1000));
+                    if (_processExitRequested)
+                        break;
+
+                    int started = _hostingStartedUnixSeconds;
+                    int last = Volatile.Read(ref _mainThreadHeartbeatUnixSeconds);
+                    int now = CurrentUnixSeconds();
+                    if (started <= 0 || last <= 0)
+                        continue;
+                    if (now - started < bootGraceSeconds)
+                        continue;
+
+                    int age = now - last;
+                    if (age < hangSeconds)
+                        continue;
+
+                    // [TITAN-ORBIT] Main thread wedged — Application.Quit may never run. Hard exit.
+                    try
+                    {
+                        DedicatedServerFileLog.Append(
+                            "watchdog",
+                            "Main-thread hang detected ageSeconds=" + age +
+                            " limit=" + hangSeconds + "; Environment.Exit(1)");
+                    }
+                    catch
+                    {
+                        // [STANDARD] Best-effort log — exit even if file IO fails.
+                    }
+
+                    _processExitRequested = true;
+                    Environment.Exit(1);
+                }
+            }
+            catch (ThreadAbortException)
+            {
+                // [STANDARD] Process teardown.
+            }
+            catch (Exception e)
+            {
+                try
+                {
+                    DedicatedServerFileLog.Append("watchdog", "Hang watchdog thread error: " + e.Message);
+                }
+                catch
+                {
+                    // ignore
+                }
+            }
+        }
+
+        /// <summary>Stamps unix seconds for the hang watchdog (main thread only).</summary>
+        void StampMainThreadHeartbeat()
+        {
+            Volatile.Write(ref _mainThreadHeartbeatUnixSeconds, CurrentUnixSeconds());
+        }
+
+        /// <summary>UTC unix seconds as int (watchdog-friendly, no DateTime on hot path).</summary>
+        static int CurrentUnixSeconds()
+        {
+            return (int)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        }
+
         static async Task CloseLobbyAndExitAsync(string lobbyId, string reason)
         {
             // --- CloseLobbyAndExitAsync ---
+            if (s_Instance != null)
+                s_Instance._processExitRequested = true;
+
             if (TitanOrbitSessionManager.Instance != null)
                 await TitanOrbitSessionManager.Instance.CloseLobbyForNewJoinersAsync(lobbyId, reason);
             DedicatedServerFileLog.Append("watchdog", reason + "; exiting process.");
@@ -784,6 +1099,7 @@ namespace TitanOrbit.NetCode
 
         void OnApplicationQuit()
         {
+            _processExitRequested = true;
             if (!string.IsNullOrWhiteSpace(_activeLobbyId) && TitanOrbitSessionManager.Instance != null)
                 _ = TitanOrbitSessionManager.Instance.CloseLobbyForNewJoinersAsync(_activeLobbyId, "process_exit");
         }
