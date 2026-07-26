@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
@@ -10,7 +11,7 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Owns people-transport GameObject VFX (load / unload).
+    /// Owns people-transport GameObject VFX (load / unload) and the arrive transfer SFX.
     /// <para>
     /// Server remains authoritative: non-ghost transport entities move, take bullet hits, and
     /// deliver people. This driver only Instantiates cosmetic spheres and mirrors
@@ -18,6 +19,11 @@ namespace TitanOrbit.Game
     /// Between pose RPCs the sphere dead-reckons with the last server velocity — it does
     /// <b>not</b> independently magnet-chase a local ship pose (that caused Windows clients to
     /// fly toward a stale orbit point).
+    /// </para>
+    /// <para>
+    /// On <see cref="PeopleTransportPoseStatus.Consumed"/> we play the people transfer one-shot
+    /// through <see cref="AudioManager"/> (pitch scales with N / <see cref="Flight.Amount"/>),
+    /// matching the legacy NGO ClientRpc timing that fired on delivery — not on spawn.
     /// </para>
     /// <para>
     /// Windows-safe: no map-body <c>ToEntityArray</c>, Instantiates 1/frame after settle.
@@ -201,7 +207,13 @@ namespace TitanOrbit.Game
             ApplyPoseToFlight(index, in pose);
         }
 
-        /// <summary>Snaps / ends one flight from an authoritative pose update.</summary>
+        /// <summary>
+        /// Snaps / ends one flight from an authoritative pose update.
+        /// On Consumed: shows the arrive +N float and plays the people transfer SFX
+        /// (load vs unload + N-based pitch) before destroying the cosmetic sphere.
+        /// </summary>
+        /// <param name="index">Index into <see cref="_flights"/>.</param>
+        /// <param name="pose">Latest pose / end packet from the VFX bridge.</param>
         void ApplyPoseToFlight(int index, in PeopleTransportVfxBridge.PoseUpdate pose)
         {
             if (index < 0 || index >= _flights.Count)
@@ -211,10 +223,16 @@ namespace TitanOrbit.Game
             if (f.Sequence != pose.Sequence)
                 return;
 
+            // --- Consumed: delivery complete (legacy NGO timing for float + SFX) ---
+            // [NETCODE] Consumed arrives via PeopleTransportPoseRpc after the server applies people.
+            // [TITAN-ORBIT] Pitch math lives in AudioManager.PlayPeopleLoad/UnloadSound(amount) —
+            // higher N → slightly lower pitch. Destroyed (shot down) stays silent like before.
             if (pose.Status == PeopleTransportPoseStatus.Consumed)
             {
                 if (f.Go != null)
                     ShowPeoplePopupAt(f.Go.transform.position, f.Amount, (TeamId)f.Team, in f);
+
+                PlayPeopleArriveSound(in f);
                 DestroyFlightAt(index, showArrivePopup: false);
                 return;
             }
@@ -351,6 +369,28 @@ namespace TitanOrbit.Game
             TryGetNearbyPlanetAvoidance(in flight, worldPosition, out Vector3 avoidCenter, out float avoidRadius);
             WorldFloatingCountManager.Instance.ShowFloatingCountAtWorldPosition(
                 worldPosition, channel, signedAmount, team, avoidCenter, avoidRadius);
+        }
+
+        /// <summary>
+        /// Plays the people transfer one-shot at arrive (Consumed).
+        /// Load and unload share one clip; <see cref="AudioManager"/> picks base pitch from
+        /// direction and scales further by N (<see cref="Flight.Amount"/>).
+        /// </summary>
+        /// <param name="flight">Flight that just delivered — Amount and IsLoad drive pitch.</param>
+        static void PlayPeopleArriveSound(in Flight flight)
+        {
+            // --- Arrive transfer SFX ---
+            // [HYBRID] Presentation-only — server never plays audio in headless builds.
+            // [TITAN-ORBIT] GetOrFind matches gem deposit: Windows player Awake order can leave
+            // AudioManager.Instance null for a frame even when the component is in the scene.
+            var audio = AudioManager.GetOrFind();
+            if (audio == null)
+                return;
+
+            if (flight.IsLoad != 0)
+                audio.PlayPeopleLoadSound(flight.Amount);
+            else
+                audio.PlayPeopleUnloadSound(flight.Amount);
         }
 
         /// <summary>

@@ -285,11 +285,22 @@ namespace TitanOrbit.Audio
             PlaySFX(miningSound, miningVolume);
         }
 
+        /// <summary>
+        /// People-load transfer sting (planet → ship delivery). Pitch uses a slightly higher
+        /// base than unload, then shifts down as <paramref name="amount"/> (N) grows.
+        /// Called from <c>PeopleTransportVfxDriver</c> on Consumed — not from server sim.
+        /// </summary>
+        /// <param name="amount">People transferred (N). Mapped 1…10 → pitch offset.</param>
         public void PlayPeopleLoadSound(float amount)
         {
             PlayPeopleTransferSound(amount, true);
         }
 
+        /// <summary>
+        /// People-unload transfer sting (ship → planet delivery). Lower base pitch than load;
+        /// larger N still pushes pitch down within <see cref="peoplePitchMin"/>…<see cref="peoplePitchMax"/>.
+        /// </summary>
+        /// <param name="amount">People transferred (N). Mapped 1…10 → pitch offset.</param>
         public void PlayPeopleUnloadSound(float amount)
         {
             PlayPeopleTransferSound(amount, false);
@@ -415,22 +426,34 @@ namespace TitanOrbit.Audio
             src.PlayOneShot(clip, volume);
         }
 
+        /// <summary>
+        /// Shared people load/unload one-shot. Uses the gem pool so overlapping transfers keep
+        /// their own pitch. Original NGO formula: load base 1.12 / unload 0.92, then
+        /// InverseLerp(1,10,N) → offset +0.16…−0.12 (bigger N = lower pitch).
+        /// </summary>
+        /// <param name="amount">People count N for pitch scaling.</param>
+        /// <param name="isLoad">True = load (planet→ship), false = unload (ship→planet).</param>
         private void PlayPeopleTransferSound(float amount, bool isLoad)
         {
-            // --- PlayPeopleTransferSound ---
-            if (peopleTransferSound == null) return;
+            // --- People transfer one-shot (N-scaled pitch) ---
+            if (peopleTransferSound == null)
+                return;
+
             EnsureGemSoundPool();
             if (gemSoundSources == null || gemSoundSources.Length == 0)
             {
+                // Pool not ready — still play the clip without custom pitch.
                 PlaySFX(peopleTransferSound, peopleVolume);
                 return;
             }
 
+            // [TITAN-ORBIT] N 1 → highest offset, N ≥ 10 → lowest. Load sits above unload.
             float normalized = Mathf.InverseLerp(1f, 10f, Mathf.Max(0f, amount));
             float basePitch = isLoad ? 1.12f : 0.92f;
             float amountPitchOffset = Mathf.Lerp(0.16f, -0.12f, normalized);
             float pitch = Mathf.Clamp(basePitch + amountPitchOffset, peoplePitchMin, peoplePitchMax);
 
+            // Round-robin so two arrivals in one frame do not overwrite each other's pitch.
             AudioSource src = gemSoundSources[nextGemSoundIndex % gemSoundSources.Length];
             nextGemSoundIndex = (nextGemSoundIndex + 1) % gemSoundSources.Length;
             if (src != null)
