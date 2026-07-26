@@ -32,9 +32,11 @@ namespace TitanOrbit.UI
     /// <see cref="ShipKinematics"/>, weapon config, and reconstructed chassis stats from the visualization world.
     /// <para>
     /// [TITAN-ORBIT] Friendly territory triangles multiply thrust + max speed in
-    /// <see cref="ShipPhysicsDriveLogic"/> but do <b>not</b> rewrite <see cref="ShipMotorConfig"/>.
+    /// <see cref="ShipPhysicsDriveLogic"/> (<c>1 + 0.05 × homePlanetLevel</c> — not a ship
+    /// MovementSpeed attribute) but do <b>not</b> rewrite <see cref="ShipMotorConfig"/>.
     /// This HUD multiplies display max / accel by <see cref="PlanetConnectionGraphCache.LocalOwnerTerritoryMult"/>
-    /// so the bar and SPD line match the boosted cruise the motor already applies.
+    /// (sticky, same hold as <see cref="ShipTerritoryBoostLatch"/>) so the bar and SPD line match
+    /// the boosted cruise the motor already applies.
     /// </para>
     /// <para>
     /// Presentation-only — never writes ECS. Numbers use fixed-width formatting so TMP does not

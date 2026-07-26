@@ -33,6 +33,14 @@ namespace TitanOrbit.Simulation
         public const float PerLevelGemBonusFraction = 0.05f;
 
         /// <summary>
+        /// After leaving a friendly triangle, keep the latched movement multiplier this many seconds
+        /// (motor + presentation) so edge / brief PIT misses do not chop thrust every tick.
+        /// [TITAN-ORBIT] Shared by <c>ShipTerritoryBoostLatch</c> and presentation sticky hold —
+        /// ship MovementSpeed attributes are <b>not</b> required for this boost.
+        /// </summary>
+        public const float TerritoryBoostStickySeconds = 0.5f;
+
+        /// <summary>
         /// [TITAN-ORBIT] Original balance: +5% max pop and growth per triangle average level, stacked
         /// onto each corner planet.
         /// </summary>
@@ -495,6 +503,11 @@ namespace TitanOrbit.Simulation
         /// Friendly territory movement multiplier: <c>1 + 0.05 × homeLevel</c> when the ship sits
         /// inside a triangle owned by <paramref name="shipTeam"/>; otherwise 1.
         /// Overlaps with a stronger enemy triangle still count as friendly.
+        /// <para>
+        /// [TITAN-ORBIT] This is <b>not</b> a ship MovementSpeed attribute upgrade — chassis stats
+        /// set base MaxSpeed; territory multiplies at drive time. Callers should sticky-latch via
+        /// <c>ShipTerritoryBoostLatch</c> so edge flicker does not chop thrust.
+        /// </para>
         /// </summary>
         public static float FriendlyTerritoryMovementMultiplier(
             float3 shipPos,

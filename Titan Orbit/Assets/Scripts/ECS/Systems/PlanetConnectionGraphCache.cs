@@ -26,8 +26,11 @@ namespace TitanOrbit.ECS
     /// Server and client each publish into their own lists so listen-server cannot race.
     /// Presentation (Shapes / minimap / thruster scale) always reads the <see cref="PlanetConnectionGraphSide.Client"/> side.
     /// <para>
-    /// Runtime moon-vertex arrays are <see cref="Allocator.Persistent"/> and reused across drive ticks
-    /// (no TempJob NativeList alloc every predicted step). Callers must <b>not</b> Dispose them.
+    /// Runtime planet-center triangle verts are baked at <see cref="PublishServer"/> /
+    /// <see cref="PublishClient"/> from the same <see cref="PlanetConnectionGraphLogic.PlanetInput"/>
+    /// list used to rebuild topology — so drawn fills and motor point-in-triangle share verts
+    /// immediately (no wait on per-tick motor Collect). Persistent native arrays are reused across
+    /// drive ticks; callers must <b>not</b> Dispose them.
     /// </para>
     /// </summary>
     public static class PlanetConnectionGraphCache
@@ -35,8 +38,10 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// After leaving a friendly triangle, keep the presentation thruster boost this many seconds
         /// so edge / resim flicker does not blink engine scale every frame.
+        /// Matches motor <see cref="ShipTerritoryBoostLatch"/> / GraphLogic sticky.
         /// </summary>
-        const float LocalOwnerTerritoryStickySeconds = 0.5f;
+        const float LocalOwnerTerritoryStickySeconds =
+            PlanetConnectionGraphLogic.TerritoryBoostStickySeconds;
 
         /// <summary>One world's edges / triangles / home levels + planet-center runtime cache.</summary>
         sealed class Side
@@ -221,35 +226,57 @@ namespace TitanOrbit.ECS
             return requested;
         }
 
-        /// <summary>Publishes into the server-side lists (ServerSimulation only).</summary>
+        /// <summary>
+        /// Publishes into the server-side lists (ServerSimulation only) and bakes runtime triangle
+        /// verts from <paramref name="planets"/> so motor PIT matches topology immediately.
+        /// </summary>
         public static void PublishServer(
             in NativeList<PlanetConnectionGraphLogic.Edge> edges,
             in NativeList<PlanetConnectionGraphLogic.Triangle> triangles,
             in NativeArray<int> homeLevelByTeamIndex,
-            uint nextEdgeSequence) =>
-            PublishInto(Server, edges, triangles, homeLevelByTeamIndex, nextEdgeSequence, isClient: false);
+            uint nextEdgeSequence,
+            in NativeArray<PlanetConnectionGraphLogic.PlanetInput> planets) =>
+            PublishInto(
+                Server, edges, triangles, homeLevelByTeamIndex, nextEdgeSequence, planets, isClient: false);
 
-        /// <summary>Publishes into the client-side lists (ClientSimulation / presentation).</summary>
+        /// <summary>
+        /// Publishes into the client-side lists (ClientSimulation / presentation) and bakes runtime
+        /// triangle verts from <paramref name="planets"/>.
+        /// </summary>
         public static void PublishClient(
             in NativeList<PlanetConnectionGraphLogic.Edge> edges,
             in NativeList<PlanetConnectionGraphLogic.Triangle> triangles,
             in NativeArray<int> homeLevelByTeamIndex,
-            uint nextEdgeSequence) =>
-            PublishInto(Client, edges, triangles, homeLevelByTeamIndex, nextEdgeSequence, isClient: true);
+            uint nextEdgeSequence,
+            in NativeArray<PlanetConnectionGraphLogic.PlanetInput> planets) =>
+            PublishInto(
+                Client, edges, triangles, homeLevelByTeamIndex, nextEdgeSequence, planets, isClient: true);
 
-        /// <summary>Legacy alias — treats as client publish (presentation).</summary>
+        /// <summary>Legacy alias — treats as client publish without baking verts (fallback rebuild).</summary>
         public static void Publish(
             in NativeList<PlanetConnectionGraphLogic.Edge> edges,
             in NativeList<PlanetConnectionGraphLogic.Triangle> triangles,
             in NativeArray<int> homeLevelByTeamIndex) =>
-            PublishClient(edges, triangles, homeLevelByTeamIndex, Client.NextEdgeSequence);
+            PublishInto(
+                Client,
+                edges,
+                triangles,
+                homeLevelByTeamIndex,
+                Client.NextEdgeSequence,
+                default,
+                isClient: true);
 
+        /// <summary>
+        /// Copies topology + home levels, then bakes planet-center <see cref="RuntimeTriangle"/> verts
+        /// from the same PlanetInput list the graph rebuild used (planets do not drift).
+        /// </summary>
         static void PublishInto(
             Side side,
             in NativeList<PlanetConnectionGraphLogic.Edge> edges,
             in NativeList<PlanetConnectionGraphLogic.Triangle> triangles,
             in NativeArray<int> homeLevelByTeamIndex,
             uint nextEdgeSequence,
+            in NativeArray<PlanetConnectionGraphLogic.PlanetInput> planets,
             bool isClient)
         {
             side.Edges.Clear();
@@ -279,15 +306,90 @@ namespace TitanOrbit.ECS
             // Sticky sequence persists across publishes so “first created wins” stays stable.
             side.NextEdgeSequence = nextEdgeSequence == 0 ? 1u : nextEdgeSequence;
 
-            // Topology changed — invalidate planet-center runtime cache so the next motor tick rebuilds.
-            side.RuntimeCache.Clear();
-            side.RuntimeCacheStamp = -999.0;
-            side.DisposeRuntimeNative();
+            // --- Bake runtime verts from graph PlanetInput (primary path) ---
+            // [TITAN-ORBIT] Do not wait for per-tick PlanetMotorSnapshot Collect — under client
+            // TransformQuarantine a partial registry used to leave RuntimeCache short while hybrid
+            // drawers still showed fills → FriendlyTerritoryMovementMultiplier always returned 1.
+            BakeRuntimeCacheFromPlanetInputs(side, planets);
 
             if (isClient)
                 ClientPublishRevision++;
             else
                 ServerPublishRevision++;
+        }
+
+        /// <summary>
+        /// Builds complete runtime triangles from PlanetInput centers already used for topology.
+        /// Syncs Persistent native for the motor job. Incomplete only if a triangle planet id is
+        /// missing from <paramref name="planets"/> (should not happen on a normal rebuild).
+        /// </summary>
+        static void BakeRuntimeCacheFromPlanetInputs(
+            Side side,
+            in NativeArray<PlanetConnectionGraphLogic.PlanetInput> planets)
+        {
+            side.RuntimeCache.Clear();
+            side.RuntimeCacheStamp = -999.0;
+
+            if (side.Triangles.Count == 0)
+            {
+                side.DisposeRuntimeNative();
+                side.RuntimeNative = new NativeArray<PlanetConnectionGraphLogic.RuntimeTriangle>(
+                    0, Allocator.Persistent);
+                return;
+            }
+
+            for (int i = 0; i < side.Triangles.Count; i++)
+            {
+                var t = side.Triangles[i];
+                if (!TryFindPlanetInput(planets, t.PlanetIdA, out var pa) ||
+                    !TryFindPlanetInput(planets, t.PlanetIdB, out var pb) ||
+                    !TryFindPlanetInput(planets, t.PlanetIdC, out var pc))
+                    continue;
+
+                // Positions are already canonical-wrapped by graph rebuild helpers.
+                float3 va = pa.Position;
+                float3 vb = pb.Position;
+                float3 vc = pc.Position;
+                va.y = 0f;
+                vb.y = 0f;
+                vc.y = 0f;
+
+                side.RuntimeCache.Add(new PlanetConnectionGraphLogic.RuntimeTriangle
+                {
+                    VertexA = va,
+                    VertexB = vb,
+                    VertexC = vc,
+                    Team = t.Team,
+                    GemBonusMultiplier = t.GemBonusMultiplier,
+                    AverageLevel = t.AverageLevel,
+                    PlanetIdA = t.PlanetIdA,
+                    PlanetIdB = t.PlanetIdB,
+                    PlanetIdC = t.PlanetIdC,
+                });
+            }
+
+            side.SyncRuntimeNativeFromCache();
+        }
+
+        /// <summary>Looks up a graph PlanetInput by PlanetId.</summary>
+        static bool TryFindPlanetInput(
+            in NativeArray<PlanetConnectionGraphLogic.PlanetInput> planets,
+            int planetId,
+            out PlanetConnectionGraphLogic.PlanetInput input)
+        {
+            input = default;
+            if (!planets.IsCreated || planetId == 0)
+                return false;
+
+            for (int i = 0; i < planets.Length; i++)
+            {
+                if (planets[i].PlanetId != planetId)
+                    continue;
+                input = planets[i];
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>Clears both sides (leave session / domain reload).</summary>
@@ -305,8 +407,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Updates the local-owner presentation thruster mult with enter/exit sticky hold.
-        /// Call only from <c>NetworkTime.IsFirstTimeFullyPredictingTick</c> — resim must not write this.
+        /// Updates the local-owner presentation thruster mult with enter/exit sticky hold
+        /// (<see cref="PlanetConnectionGraphLogic.TerritoryBoostStickySeconds"/> — same window as
+        /// motor <see cref="ShipTerritoryBoostLatch"/>). Call only from
+        /// <c>NetworkTime.IsFirstTimeFullyPredictingTick</c> — resim must not write this.
         /// </summary>
         /// <param name="rawMult">Instant point-in-triangle result (1 or 1+0.05×homeLevel).</param>
         /// <param name="moonElapsedSeconds">Shared moon orbit clock (sticky expiry).</param>
@@ -369,15 +473,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Returns a job-readable Persistent runtime-triangle array (do <b>not</b> Dispose).
-        /// Rebuilds planet-center vertices when topology republishes, or when a prior rebuild
-        /// was incomplete (some triangle planets were not in the snapshot list yet).
-        /// <para>
-        /// [TITAN-ORBIT] Client prediction under TransformQuarantine uses Instantiates-registry
-        /// planet Collect. The first motor tick after <see cref="PublishClient"/> can race a
-        /// still-partial registry: if we freeze a short RuntimeCache then, drawn fills (hybrid
-        /// proxies) show a triangle while FriendlyTerritoryMovementMultiplier always returns 1 —
-        /// no speed boost, no engine grow. Treat RuntimeCache.Count != Triangles.Count as stale.
-        /// </para>
+        /// Primary path: verts already baked at publish from graph PlanetInput.
+        /// Fallback: rebuild from motor planet snapshots only when the bake was incomplete
+        /// (RuntimeCache.Count != Triangles.Count) — e.g. legacy Publish without planets.
         /// </summary>
         public static NativeArray<PlanetConnectionGraphLogic.RuntimeTriangle> GetRuntimeTrianglesNative(
             PlanetConnectionGraphSide sideKind,
@@ -401,9 +499,7 @@ namespace TitanOrbit.ECS
                 return side.RuntimeNative;
             }
 
-            // --- Fresh only when every topology triangle resolved to planet-center verts ---
-            // Planets do not move, so we do not rebuild every tick once complete. Incomplete
-            // caches (Publish cleared + partial Collect) must retry until Count matches.
+            // --- Prefer publish bake; fallback Collect only when bake missed a vertex ---
             bool cacheComplete =
                 side.RuntimeCache.Count == side.Triangles.Count &&
                 side.RuntimeNative.IsCreated &&
@@ -413,7 +509,6 @@ namespace TitanOrbit.ECS
             {
                 int prevResolved = side.RuntimeCache.Count;
                 RebuildRuntimeCache(side, planets);
-                // Avoid Persistent realloc every predicted tick while still waiting on planets.
                 if (side.RuntimeCache.Count != prevResolved ||
                     !side.RuntimeNative.IsCreated ||
                     side.RuntimeNative.Length != side.RuntimeCache.Count)

@@ -100,6 +100,20 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipOrbitState());
 
+            // --- Friendly-triangle speed sticky latch (not ghosted; motor recomputes each tick) ---
+            // [TITAN-ORBIT] Without this, IJobEntity ShipPhysicsDriveJob skips ships missing the
+            // component and territory boost never applies on older prefabs.
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipTerritoryBoostLatch>()
+                         .WithEntityAccess())
+            {
+                ecb.AddComponent(entity, new ShipTerritoryBoostLatch
+                {
+                    LatchedMult = 1f,
+                    HoldUntilElapsed = -1.0,
+                });
+            }
+
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipMoonDockState>()
                          .WithEntityAccess())

@@ -99,6 +99,12 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipAttributeUpgradeState());
                 AddComponent(entity, new ShipWeaponState());
                 AddComponent(entity, new ShipOrbitState());
+                // [TITAN-ORBIT] Sticky friendly-triangle thrust latch — not a MovementSpeed attribute.
+                AddComponent(entity, new ShipTerritoryBoostLatch
+                {
+                    LatchedMult = 1f,
+                    HoldUntilElapsed = -1.0,
+                });
                 AddComponent(entity, new ShipMoonDockState());
                 AddComponent(entity, new ShipDepositIntent());
                 // [NETCODE] Server bumps BeatSequence each deposit chunk; clients play SFX/UI from it.

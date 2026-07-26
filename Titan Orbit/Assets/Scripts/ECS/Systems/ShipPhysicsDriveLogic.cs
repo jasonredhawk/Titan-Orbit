@@ -17,7 +17,9 @@ namespace TitanOrbit.ECS
     /// velocity (bounce is not overwritten blindly).
     /// [TITAN-ORBIT] Also detects planet orbit rings (toroidal distance), blends passive orbit
     /// velocity when coasting, writes <see cref="ShipOrbitState"/> for people-transport dwell /
-    /// HUD, and applies enemy moon shield repel. Paired with <see cref="ShipPhysicsDriveSystem"/>
+    /// HUD, applies enemy moon shield repel, and latches friendly-triangle speed
+    /// (<c>1 + 0.05 × homePlanetLevel</c> — not a ship MovementSpeed attribute) via
+    /// <see cref="ShipTerritoryBoostLatch"/>. Paired with <see cref="ShipPhysicsDriveSystem"/>
     /// and <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
     /// </summary>
     public static class ShipPhysicsDriveLogic
@@ -27,6 +29,11 @@ namespace TitanOrbit.ECS
         /// Units: deceleration in world-units/s² applied against velocity.
         /// </summary>
         const float CoastFriction = 4.5f;
+
+        /// <summary>
+        /// Raw PIT mult must exceed this to count as "inside" (avoids float noise around 1.0).
+        /// </summary>
+        const float TerritoryBoostInsideEpsilon = 1.001f;
 
         /// <summary>
         /// Applies player input before <see cref="Unity.Physics.Systems.PhysicsSystemGroup"/>.
@@ -40,14 +47,16 @@ namespace TitanOrbit.ECS
         /// <param name="physicsDamping">Cleared so package damping cannot fight motor curves.</param>
         /// <param name="transform">Position (read) and yaw (write); position integration is physics-owned.</param>
         /// <param name="orbitState">Replicated orbit ring context for HUD and people transports.</param>
+        /// <param name="territoryLatch">Sticky friendly-triangle mult (client + server, not ghosted).</param>
         /// <param name="planets">Main-thread planet snapshots shared by all ships this tick.</param>
         /// <param name="dt">Fixed prediction step delta time.</param>
         /// <param name="mapW">Toroidal map width.</param>
         /// <param name="mapH">Toroidal map height.</param>
         /// <param name="elapsedSeconds">
-        /// Shared moon orbit clock (<c>PlanetGemMoonOrbitClock</c> / ServerTick seconds) for shield repel phase.
+        /// Shared moon orbit clock (<c>PlanetGemMoonOrbitClock</c> / ServerTick seconds) for shield repel
+        /// phase and territory sticky expiry.
         /// </param>
-        /// <param name="territoryTriangles">Live moon-vertex triangles for friendly speed boost; may be empty.</param>
+        /// <param name="territoryTriangles">Baked planet-center triangles for friendly speed boost; may be empty.</param>
         /// <param name="homeLevelByTeam">Home planet level indexed by <c>TeamId</c> byte (length ≥ 6).</param>
         public static void Step(
             in ShipInput input,
@@ -58,6 +67,7 @@ namespace TitanOrbit.ECS
             ref PhysicsDamping physicsDamping,
             ref LocalTransform transform,
             ref ShipOrbitState orbitState,
+            ref ShipTerritoryBoostLatch territoryLatch,
             in NativeArray<PlanetMotorSnapshot> planets,
             float dt,
             float mapW,
@@ -76,6 +86,7 @@ namespace TitanOrbit.ECS
                 physicsVelocity = PhysicsVelocity.Zero;
                 physicsDamping = default;
                 orbitState = default;
+                ClearTerritoryBoostLatch(ref territoryLatch);
                 return;
             }
 
@@ -99,6 +110,7 @@ namespace TitanOrbit.ECS
                     elapsedSeconds);
                 physicsDamping = default;
                 orbitState = default;
+                ClearTerritoryBoostLatch(ref territoryLatch);
                 return;
             }
 
@@ -128,15 +140,19 @@ namespace TitanOrbit.ECS
             bool moonDocking = moonDock.MoonPlanetId != 0 && !input.Thrust;
             bool useOrbit = inOrbitRing && !input.Thrust && !moonDocking;
 
-            // --- Friendly territory speed (1 + 0.05 × homeLevel) — NGO FriendlyTerritoryMovementMultiplier ---
-            // [TITAN-ORBIT] Must match on client prediction + server or reconciliation fights the boost.
-            float territoryMult = PlanetConnectionGraphLogic.FriendlyTerritoryMovementMultiplier(
+            // --- Friendly territory speed (1 + 0.05 × homeLevel) — not ship MovementSpeed attributes ---
+            // [TITAN-ORBIT] Instant PIT can flicker at edges; latch matches presentation sticky so
+            // client prediction + server authority keep the same cruise boost. Must match on both
+            // worlds or reconciliation fights the boost.
+            float rawTerritoryMult = PlanetConnectionGraphLogic.FriendlyTerritoryMovementMultiplier(
                 transform.Position,
                 shipState.Team,
                 territoryTriangles,
                 homeLevelByTeam,
                 mapW,
                 mapH);
+            float territoryMult = ApplyTerritoryBoostLatch(
+                ref territoryLatch, rawTerritoryMult, elapsedSeconds);
             float thrust = motor.EngineThrust * territoryMult;
             float maxSpeed = motor.MaxSpeed * territoryMult;
 
@@ -213,6 +229,50 @@ namespace TitanOrbit.ECS
                 InOrbitRing = inOrbitRing,
                 UsingOrbitMotor = useOrbit,
             };
+        }
+
+        /// <summary>
+        /// Sticky-holds friendly territory mult for
+        /// <see cref="PlanetConnectionGraphLogic.TerritoryBoostStickySeconds"/> after exit so
+        /// edge / brief PIT misses do not chop EngineThrust and MaxSpeed every tick.
+        /// Same hold window as presentation <c>LocalOwnerTerritoryMult</c>.
+        /// </summary>
+        /// <param name="latch">Per-ship latch written this tick (predicted, not ghosted).</param>
+        /// <param name="rawMult">Instant point-in-triangle result (1 or 1+0.05×homeLevel).</param>
+        /// <param name="elapsedSeconds">Shared moon orbit clock used for sticky expiry.</param>
+        /// <returns>Mult to apply to thrust and max speed this tick (≥ 1).</returns>
+        public static float ApplyTerritoryBoostLatch(
+            ref ShipTerritoryBoostLatch latch,
+            float rawMult,
+            double elapsedSeconds)
+        {
+            rawMult = math.max(1f, rawMult);
+
+            // --- Inside friendly fill: refresh latch ---
+            if (rawMult > TerritoryBoostInsideEpsilon)
+            {
+                latch.LatchedMult = rawMult;
+                latch.HoldUntilElapsed =
+                    elapsedSeconds + PlanetConnectionGraphLogic.TerritoryBoostStickySeconds;
+                return rawMult;
+            }
+
+            // --- Outside: keep latched boost briefly (edge / cache flicker) ---
+            if (elapsedSeconds < latch.HoldUntilElapsed &&
+                latch.LatchedMult > TerritoryBoostInsideEpsilon)
+            {
+                return latch.LatchedMult;
+            }
+
+            ClearTerritoryBoostLatch(ref latch);
+            return 1f;
+        }
+
+        /// <summary>Resets sticky territory boost (death, team select, moon dock park).</summary>
+        public static void ClearTerritoryBoostLatch(ref ShipTerritoryBoostLatch latch)
+        {
+            latch.LatchedMult = 1f;
+            latch.HoldUntilElapsed = -1.0;
         }
 
         /// <summary>

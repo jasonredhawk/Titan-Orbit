@@ -35,15 +35,16 @@ namespace TitanOrbit.ECS
         /// <summary>Read-only planet snapshots collected before ScheduleParallel.</summary>
         [ReadOnly] public NativeArray<PlanetMotorSnapshot> Planets;
 
-        /// <summary>Live moon-vertex territory triangles (may be empty).</summary>
+        /// <summary>Baked planet-center territory triangles (may be empty).</summary>
         [ReadOnly] public NativeArray<RuntimeTriangle> TerritoryTriangles;
 
         /// <summary>Home planet level per TeamId byte index (length ≥ 6).</summary>
         [ReadOnly] public NativeArray<int> HomeLevelByTeam;
 
         /// <summary>
-        /// Per-ship motor tick. Writes velocity, yaw, and <see cref="ShipOrbitState"/>.
-        /// Position stays physics-owned except while fully moon-docked (surface attach).
+        /// Per-ship motor tick. Writes velocity, yaw, <see cref="ShipOrbitState"/>, and
+        /// <see cref="ShipTerritoryBoostLatch"/>. Position stays physics-owned except while fully
+        /// moon-docked (surface attach).
         /// </summary>
         void Execute(
             RefRO<ShipInput> input,
@@ -53,7 +54,8 @@ namespace TitanOrbit.ECS
             RefRW<PhysicsVelocity> physicsVelocity,
             RefRW<PhysicsDamping> physicsDamping,
             RefRW<LocalTransform> transform,
-            RefRW<ShipOrbitState> orbitState)
+            RefRW<ShipOrbitState> orbitState,
+            RefRW<ShipTerritoryBoostLatch> territoryLatch)
         {
             ShipPhysicsDriveLogic.Step(
                 input.ValueRO,
@@ -64,6 +66,7 @@ namespace TitanOrbit.ECS
                 ref physicsDamping.ValueRW,
                 ref transform.ValueRW,
                 ref orbitState.ValueRW,
+                ref territoryLatch.ValueRW,
                 in Planets,
                 Dt,
                 MapW,

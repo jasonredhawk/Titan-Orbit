@@ -152,10 +152,12 @@ namespace TitanOrbit.ECS
                 });
             }
 
-            // --- Publish server-side cache only ---
+            // --- Publish server-side cache only (bake runtime verts from planetInputs) ---
             // [TITAN-ORBIT] Host runs ClientSimulation too — a shared list would race with
             // PlanetConnectionGraphClientSystem and wipe TerritoryTeam / flicker triangles.
-            PlanetConnectionGraphCache.PublishServer(edges, triangles, homeLevels, nextSequence);
+            // Baking verts here means motor PIT matches drawn fills without waiting on Collect.
+            PlanetConnectionGraphCache.PublishServer(
+                edges, triangles, homeLevels, nextSequence, planetInputs.AsArray());
 
             // --- Reset then stack corner pop/growth bonuses (triangles only) ---
             foreach (var growth in SystemAPI.Query<RefRW<PlanetGrowthState>>().WithAll<PlanetTag>())
@@ -375,8 +377,10 @@ namespace TitanOrbit.ECS
 
             var homeLevels = new NativeArray<int>(6, Allocator.Temp);
             PlanetConnectionGraphLogic.FillHomeLevels(inputs.AsArray(), ref homeLevels);
-            // Client presentation / predicted motor — never overwrite the server-side lists.
-            PlanetConnectionGraphCache.PublishClient(edges, triangles, homeLevels, nextSequence);
+            // Client presentation / predicted motor — bake verts from the same inputs used for topology.
+            // Never overwrite the server-side lists (host dual-world race).
+            PlanetConnectionGraphCache.PublishClient(
+                edges, triangles, homeLevels, nextSequence, inputs.AsArray());
 
             _lastFingerprint = fingerprint;
             _lastRebuildElapsed = now;
