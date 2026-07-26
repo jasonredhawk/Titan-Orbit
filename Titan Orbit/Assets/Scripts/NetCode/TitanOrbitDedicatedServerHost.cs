@@ -27,10 +27,13 @@ namespace TitanOrbit.NetCode
     ///   until empty-idle timeout or a real game-end condition (e.g. team wins).
     /// - When the last player leaves, orphan ship ghosts are wiped immediately so a new joiner
     ///   cannot be offered a previous player's ship via NetworkId reuse.
-    /// - After N successful 30‑minute idle recreates only (default 24 ≈ 12h empty), exit so
+    /// - After N successful 30‑minute idle recreates only (default 6 ≈ 3h empty), exit so
     ///   systemd/Edgegap starts a fresh binary. Stale/self-heal/heartbeat/match-request must
     ///   NOT exit — that made Join Game empty more often (2026-07-25 regression).
+    /// - Empty process also exits on sustained STRUGGLING netdiag or RSS over budget (memory
+    ///   reclaim for IL2CPP — in-process lobby swap does not free the map ServerWorld).
     /// - Hang watchdog hard-exits if Update stops ticking; paused during Relay/lobby recreate.
+    /// - Periodic memory/entity logs correlate RSS with recreate count vs load spikes.
     /// </summary>
     public class TitanOrbitDedicatedServerHost : MonoBehaviour
     {
@@ -39,6 +42,8 @@ namespace TitanOrbit.NetCode
         const float SpawnRetryDelaySeconds = 10f;
         const float SuccessorPollIntervalSeconds = 3f;
         const float SelfHealPollIntervalSeconds = 30f;
+        /// <summary>How often we evaluate RSS / struggling empty-recycle (seconds).</summary>
+        const float MemoryHealthPollSeconds = 15f;
         /// <summary>After a full handoff fails, wait before starting another (avoids spawn spam every 3s).</summary>
         const float HandoffFailureCooldownSeconds = 300f;
 
@@ -74,6 +79,10 @@ namespace TitanOrbit.NetCode
         Coroutine _netcodeHealthCoroutine;
         Coroutine _selfHealCoroutine;
         Coroutine _handoffCoroutine;
+        Coroutine _memoryHealthCoroutine;
+
+        /// <summary>Unix seconds of last periodic memory log (throttles MemoryLogIntervalSeconds).</summary>
+        int _lastMemoryLogUnixSeconds;
 
         /// <summary>
         /// Successful empty in-process recreates this process lifetime. When it reaches
@@ -170,12 +179,14 @@ namespace TitanOrbit.NetCode
             if (_matchRequestCoroutine != null) StopCoroutine(_matchRequestCoroutine);
             if (_netcodeHealthCoroutine != null) StopCoroutine(_netcodeHealthCoroutine);
             if (_selfHealCoroutine != null) StopCoroutine(_selfHealCoroutine);
+            if (_memoryHealthCoroutine != null) StopCoroutine(_memoryHealthCoroutine);
 
             _rotationCoroutine = StartCoroutine(RotationLoop());
             _presenceCoroutine = StartCoroutine(LobbyPresenceWatchdogLoop());
             _matchRequestCoroutine = StartCoroutine(MatchRequestWatchdogLoop());
             _netcodeHealthCoroutine = StartCoroutine(NetcodeHealthLoop());
             _selfHealCoroutine = StartCoroutine(JoinableLobbySelfHealLoop());
+            _memoryHealthCoroutine = StartCoroutine(MemoryHealthLoop());
             EnsureHangWatchdogStarted();
 
             DedicatedServerFileLog.Append(
@@ -183,8 +194,18 @@ namespace TitanOrbit.NetCode
                 "Dedicated host loops started lobbyId=" + lobbyId +
                 " isLatest=" + isLatest +
                 " maxInProcessEmptyRecreates=" + _config.MaxInProcessEmptyRecreates +
-                " mainThreadHangQuitSeconds=" + _config.MainThreadHangQuitSeconds);
+                " mainThreadHangQuitSeconds=" + _config.MainThreadHangQuitSeconds +
+                " rssRecycleMb=" + _config.RssRecycleMb +
+                " strugglingSamplesBeforeRecycle=" + _config.StrugglingSamplesBeforeRecycle +
+                " memoryLogIntervalSeconds=" + _config.MemoryLogIntervalSeconds);
             Debug.Log("[TitanOrbitDedicatedServerHost] Hosting loops started for lobby " + lobbyId);
+
+            // [TITAN-ORBIT] Boot baseline — compare later logs for recreate-linked RSS climb.
+            DedicatedServerMemoryTelemetry.LogSnapshot(
+                "host_start",
+                emptyInProcessRecreates: 0,
+                playerCount: 0);
+            _lastMemoryLogUnixSeconds = CurrentUnixSeconds();
         }
 
         /// <summary>
@@ -295,8 +316,25 @@ namespace TitanOrbit.NetCode
                 {
                     string reason = pendingStaleRecreate ? "stale_lobby_recreate" : "empty_match_recreate";
                     bool isIdleEmptyRecreate = reason == "empty_match_recreate";
+
+                    // [TITAN-ORBIT] Prefer process recycle over another Relay swap when already thrashing
+                    // or over RSS budget (2026-07-26: recreate during STRUGGLING did not save the VM).
+                    if (isIdleEmptyRecreate && TryGetEmptyPressureRecycleReason(out string pressureReason))
+                    {
+                        DedicatedServerMemoryTelemetry.LogSnapshot(
+                            "before_recycle_" + pressureReason,
+                            _successfulEmptyInProcessRecreates,
+                            playerCount: 0);
+                        yield return ExitForProcessRecycleCoroutine(pressureReason);
+                        yield break;
+                    }
+
                     if (isIdleEmptyRecreate && ShouldRecycleProcessInsteadOfInProcessEmptyRecreate())
                     {
+                        DedicatedServerMemoryTelemetry.LogSnapshot(
+                            "before_recycle_idle_count",
+                            _successfulEmptyInProcessRecreates,
+                            playerCount: 0);
                         yield return ExitForProcessRecycleCoroutine(reason + "_process_recycle");
                         yield break;
                     }
@@ -700,6 +738,82 @@ namespace TitanOrbit.NetCode
             }
         }
 
+        /// <summary>
+        /// Periodic RSS/entity telemetry plus empty-process recycle on RSS budget or sustained
+        /// STRUGGLING. Never exits while players are connected.
+        /// </summary>
+        IEnumerator MemoryHealthLoop()
+        {
+            // --- MemoryHealthLoop ---
+            var wait = new WaitForSeconds(MemoryHealthPollSeconds);
+            while (true)
+            {
+                yield return wait;
+                if (_processExitRequested || IsRecreateInProgress() || _handoffInProgress)
+                    continue;
+                if (TitanOrbitSessionManager.Instance == null || _config == null)
+                    continue;
+
+                int playerCount = TitanOrbitSessionManager.Instance.GetServerConnectedPlayerCount();
+
+                // --- Periodic telemetry (occupied or empty) ---
+                int logInterval = _config.MemoryLogIntervalSeconds;
+                int now = CurrentUnixSeconds();
+                if (logInterval > 0 && now - _lastMemoryLogUnixSeconds >= logInterval)
+                {
+                    DedicatedServerMemoryTelemetry.LogSnapshot(
+                        "periodic",
+                        _successfulEmptyInProcessRecreates,
+                        playerCount);
+                    _lastMemoryLogUnixSeconds = now;
+                }
+
+                // --- Empty-only pressure recycle ---
+                if (playerCount > 0)
+                    continue;
+
+                if (TryGetEmptyPressureRecycleReason(out string reason))
+                {
+                    DedicatedServerMemoryTelemetry.LogSnapshot(
+                        "before_recycle_" + reason,
+                        _successfulEmptyInProcessRecreates,
+                        playerCount: 0);
+                    yield return ExitForProcessRecycleCoroutine(reason);
+                    yield break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Evaluates RSS / struggling empty-recycle (not idle-recreate count — that path is in RotationLoop).
+        /// </summary>
+        /// <param name="reason">Exit reason for the file log when true.</param>
+        /// <returns>True when this empty process should exit now.</returns>
+        bool TryGetEmptyPressureRecycleReason(out string reason)
+        {
+            // --- TryGetEmptyPressureRecycleReason ---
+            reason = null;
+            if (_config == null)
+                return false;
+
+            if (DedicatedServerMemoryTelemetry.ShouldRecycleEmptyDueToRss(_config.RssRecycleMb))
+            {
+                DedicatedServerMemoryTelemetry.TryReadProcessMemoryMb(out int rssMb, out _);
+                reason = "rss_recycle_" + rssMb + "mb_ge_" + _config.RssRecycleMb;
+                return true;
+            }
+
+            if (DedicatedServerMemoryTelemetry.ShouldRecycleEmptyDueToStruggling(
+                    _config.StrugglingSamplesBeforeRecycle))
+            {
+                reason = "struggling_recycle_streak_" +
+                         DedicatedServerMemoryTelemetry.ConsecutiveStrugglingSamples;
+                return true;
+            }
+
+            return false;
+        }
+
         static bool IsRecreateInProgress()
         {
             return TitanOrbitSessionManager.Instance != null &&
@@ -772,6 +886,9 @@ namespace TitanOrbit.NetCode
                     $"--staleLobbyRecreateSeconds={_config.StaleLobbyRecreateSeconds} " +
                     $"--maxInProcessEmptyRecreates={_config.MaxInProcessEmptyRecreates} " +
                     $"--mainThreadHangQuitSeconds={_config.MainThreadHangQuitSeconds} " +
+                    $"--rssRecycleMb={_config.RssRecycleMb} " +
+                    $"--strugglingSamplesBeforeRecycle={_config.StrugglingSamplesBeforeRecycle} " +
+                    $"--memoryLogIntervalSeconds={_config.MemoryLogIntervalSeconds} " +
                     $"--waitNetworkManagerSeconds={_config.WaitNetworkManagerSeconds} " +
                     $"--isLatest={(nextIsLatest ? 1 : 0)}";
 
@@ -936,6 +1053,13 @@ namespace TitanOrbit.NetCode
                 "self_heal",
                 "Idle empty_match_recreate ok count=" + _successfulEmptyInProcessRecreates +
                 (max > 0 ? ("/" + max + " then process recycle") : " (unlimited)"));
+
+            // [TITAN-ORBIT] Correlate RSS with recreate count (climb per recreate vs sudden spike).
+            DedicatedServerMemoryTelemetry.LogSnapshot(
+                "after_idle_recreate",
+                _successfulEmptyInProcessRecreates,
+                playerCount: 0);
+            _lastMemoryLogUnixSeconds = CurrentUnixSeconds();
         }
 
         /// <summary>

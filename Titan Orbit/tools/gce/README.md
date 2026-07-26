@@ -155,7 +155,8 @@ The headless server publishes **Unity Gaming Services (UGS) lobbies** so clients
 |---------|------|--------|
 | Boot | systemd starts | Relay + lobby (`IsLatest=1`, `IsOpen=1`) + heartbeat every 15s |
 | Empty recreate | 0 players for `--emptyMatchRecreateSeconds` (default 1800s; countdown starts when last player leaves) | In-process new Relay + lobby — **never while players are connected** |
-| Empty process recycle | After `--maxInProcessEmptyRecreates` (default **24**) successful **idle** `empty_match_recreate` only | **Exit process** (0 players) so systemd `Restart=always` boots fresh — does **not** count stale/self-heal |
+| Empty process recycle | Idle recreates ≥ `--maxInProcessEmptyRecreates` (default **6**), or RSS ≥ `--rssRecycleMb` (default **3500**), or sustained STRUGGLING (`--strugglingSamplesBeforeRecycle=3`) | **Exit process** (0 players) → systemd `Restart=always` |
+| Memory telemetry | Every `--memoryLogIntervalSeconds` (default **60**) + after each idle recreate | `memory` lines: `rssMb`, `emptyRecreates`, `rssDeltaMb`, entity counts |
 | Main-thread hang | Update stamps stale for `--mainThreadHangQuitSeconds` (default **300**; paused during recreate) | Background watchdog `Environment.Exit(1)` → systemd restart |
 | Stale lobby | Our lobby closed or heartbeat-stale while empty (`--staleLobbyRecreateSeconds=120`) | In-process recreate as latest |
 | Self-heal | No joinable `IsLatest` lobby in UGS while this server is empty | Immediate in-process recreate (never exits — repairing availability) |

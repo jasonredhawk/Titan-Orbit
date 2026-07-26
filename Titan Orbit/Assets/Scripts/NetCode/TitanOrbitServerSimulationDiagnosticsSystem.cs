@@ -88,6 +88,9 @@ namespace TitanOrbit.NetCode
             Debug.Log(line);
             DedicatedServerFileLog.Append("netdiag-server", line);
 
+            // [TITAN-ORBIT] Feed empty-process recycle (RSS/struggling) — host exits only when 0 players.
+            DedicatedServerMemoryTelemetry.ReportSimHealthSample(catchUpPercent, avgFrameMs, verdict);
+
             // --- Reset window ---
             _periodStartElapsed = elapsed;
             _periodStartTick = networkTime.ServerTick;

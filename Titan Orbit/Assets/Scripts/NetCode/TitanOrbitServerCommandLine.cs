@@ -32,18 +32,35 @@ namespace TitanOrbit.NetCode
         /// <summary>
         /// After this many successful <b>30-minute idle</b> in-process recreates
         /// (<c>empty_match_recreate</c> only) in one process lifetime, exit so systemd/Edgegap
-        /// starts a fresh binary. Does <b>not</b> count stale/self-heal/heartbeat recreates —
-        /// those must keep repairing availability without exiting.
-        /// Default 24 ≈ 12 hours of continuous empty idle (24 × 30 min).
-        /// <c>0</c> disables process recycle.
+        /// starts a fresh binary. Does <b>not</b> count stale/self-heal/heartbeat recreates.
+        /// Default 6 ≈ 3 hours of continuous empty idle — Unity IL2CPP needs process recycle
+        /// for real memory reclaim (in-process lobby swap does not free the map ServerWorld).
+        /// <c>0</c> disables count-based recycle.
         /// </summary>
-        public const int DefaultMaxInProcessEmptyRecreates = 24;
+        public const int DefaultMaxInProcessEmptyRecreates = 6;
 
         /// <summary>
         /// If the Unity main thread stops ticking for this many seconds, hard-exit so the host
         /// restarts. Paused during Relay/lobby recreate. <c>0</c> disables hang quit.
         /// </summary>
         public const int DefaultMainThreadHangQuitSeconds = 300;
+
+        /// <summary>
+        /// When empty, exit if WorkingSet RSS reaches this many MiB. Proven 2026-07-26: host
+        /// went STRUGGLING then SSH-dead without a hang-watchdog trip. <c>0</c> disables.
+        /// Default 3500 suits ~8 GiB VMs with headroom for the OS.
+        /// </summary>
+        public const int DefaultRssRecycleMb = 3500;
+
+        /// <summary>
+        /// When empty, exit after this many consecutive ~10s netdiag windows that look overloaded
+        /// (catch-up ≥ 50% or avg frame ≥ 50 ms). Default 3 ≈ 30s of sustained thrash.
+        /// <c>0</c> disables struggling recycle.
+        /// </summary>
+        public const int DefaultStrugglingSamplesBeforeRecycle = 3;
+
+        /// <summary>How often to append RSS/entity telemetry while hosting (seconds). <c>0</c> = off.</summary>
+        public const int DefaultMemoryLogIntervalSeconds = 60;
 
         public int MaxPlayers { get; private set; } = DefaultMaxPlayers;
         public ushort ServerPort { get; private set; } = DefaultServerPort;
@@ -65,6 +82,18 @@ namespace TitanOrbit.NetCode
         /// Main-thread hang hard-exit threshold in seconds. See <see cref="DefaultMainThreadHangQuitSeconds"/>.
         /// </summary>
         public int MainThreadHangQuitSeconds { get; private set; } = DefaultMainThreadHangQuitSeconds;
+
+        /// <summary>Empty-process RSS recycle budget (MiB). See <see cref="DefaultRssRecycleMb"/>.</summary>
+        public int RssRecycleMb { get; private set; } = DefaultRssRecycleMb;
+
+        /// <summary>
+        /// Consecutive struggling netdiag samples before empty-process exit.
+        /// See <see cref="DefaultStrugglingSamplesBeforeRecycle"/>.
+        /// </summary>
+        public int StrugglingSamplesBeforeRecycle { get; private set; } = DefaultStrugglingSamplesBeforeRecycle;
+
+        /// <summary>Periodic memory/entity log interval. See <see cref="DefaultMemoryLogIntervalSeconds"/>.</summary>
+        public int MemoryLogIntervalSeconds { get; private set; } = DefaultMemoryLogIntervalSeconds;
 
         /// <summary>Optional absolute path to headless binary for <c>SpawnNextMatch</c> (GCE when auto-resolve fails).</summary>
         public string ServerExecutablePath { get; private set; }
@@ -91,6 +120,10 @@ namespace TitanOrbit.NetCode
             config.MaxInProcessEmptyRecreates = Mathf.Max(0, GetArgInt("maxInProcessEmptyRecreates", DefaultMaxInProcessEmptyRecreates));
             // [TITAN-ORBIT] 0 = disable background hang watchdog.
             config.MainThreadHangQuitSeconds = Mathf.Max(0, GetArgInt("mainThreadHangQuitSeconds", DefaultMainThreadHangQuitSeconds));
+            // [TITAN-ORBIT] 0 = disable RSS-based empty recycle / struggling recycle / memory log.
+            config.RssRecycleMb = Mathf.Max(0, GetArgInt("rssRecycleMb", DefaultRssRecycleMb));
+            config.StrugglingSamplesBeforeRecycle = Mathf.Max(0, GetArgInt("strugglingSamplesBeforeRecycle", DefaultStrugglingSamplesBeforeRecycle));
+            config.MemoryLogIntervalSeconds = Mathf.Max(0, GetArgInt("memoryLogIntervalSeconds", DefaultMemoryLogIntervalSeconds));
             string exePath = GetArgString("serverExecutablePath", null);
             config.ServerExecutablePath = string.IsNullOrWhiteSpace(exePath) ? null : exePath.Trim();
             config.BootMaxAttempts = Mathf.Max(1, GetArgInt("bootMaxAttempts", 15));

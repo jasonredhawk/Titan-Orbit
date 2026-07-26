@@ -12,8 +12,11 @@ Match rotation is handled inside the server process. Lifecycle rules:
 | **Players connected** | Match keeps running and stays `IsOpen=1`. Idle teardown does **not** run. |
 | **Last player leaves** (0 connections) | Empty-idle countdown **starts/resets from that moment**. Orphan ships wiped; map stays until timeout. |
 | **Empty for 30 minutes** (`emptyMatchRecreateSeconds`) | In-process recreate: new Relay + lobby, wipe ships, same process (only when **0 players**). |
-| **After N idle empty recreates** (`maxInProcessEmptyRecreates`, default **24** ≈ 12h) | **Exit the process** (0 players only) so systemd/Edgegap starts fresh. Counts **only** `empty_match_recreate` — not stale/self-heal/heartbeat (those must keep repairing). |
+| **After N idle empty recreates** (`maxInProcessEmptyRecreates`, default **6** ≈ 3h) | **Exit the process** (0 players only) so systemd/Edgegap starts fresh. Counts **only** `empty_match_recreate`. |
+| **RSS over budget** (`rssRecycleMb`, default **3500**) while empty | Exit for fresh process (IL2CPP reclaim). |
+| **Sustained STRUGGLING** (`strugglingSamplesBeforeRecycle`, default **3** ≈ 30s) while empty | Exit — hang watchdog alone misses slow thrash (Update still ticks). |
 | **Main thread hung** (`mainThreadHangQuitSeconds`, default **300**; paused during recreate) | Background watchdog hard-exits so the host can restart (sim already frozen). |
+| **Memory telemetry** (`memoryLogIntervalSeconds`, default **60**) | `memory` lines in `TitanOrbitDedicatedServer.log`: rssMb, entity counts, emptyRecreates, rssDeltaMb. |
 | **Age ~30 minutes** while occupied + IsLatest + not full (`ageThresholdSeconds`) | Spawn a successor process as the new `IsLatest`. **Demote** this lobby (`IsLatest=0`) but **keep `IsOpen=1`** so conquest maps stay on Join Game. |
 | **Lobby full** (max players) | Close listing (`IsOpen=0`) and spawn successor capacity. |
 
@@ -61,8 +64,9 @@ Notes:
 - Dedicated auto-boot is gated by `--titanOrbitDedicated=1` (and batchmode/nographics for editor-less runs).
 - The process can spawn additional match server processes using the same executable path it is running from.
 - Override idle/age with `--emptyMatchRecreateSeconds=` and `--ageThresholdSeconds=` (defaults: 1800 each).
-- Process recycle: `--maxInProcessEmptyRecreates=24` (0 = unlimited; counts idle `empty_match_recreate` only). Hang quit: `--mainThreadHangQuitSeconds=300` (0 = disable).
-- Use `Restart=always` so recycle / hang exits come back automatically.
+- Process recycle: `--maxInProcessEmptyRecreates=6`, `--rssRecycleMb=3500`, `--strugglingSamplesBeforeRecycle=3`, `--memoryLogIntervalSeconds=60` (0 disables each). Hang quit: `--mainThreadHangQuitSeconds=300`.
+- Use `Restart=always` so recycle / hang / RSS exits come back automatically.
+- Grep overnight logs: `grep memory TitanOrbitDedicatedServer.log` (watch `rssMb` vs `emptyRecreates` / `rssDeltaMb`).
 
 ## What to monitor
 
