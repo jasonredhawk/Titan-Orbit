@@ -137,6 +137,12 @@ namespace TitanOrbit.Game
         bool _hasToroidalReference;
 
         /// <summary>
+        /// Planet id the local ship is orbiting or moon-docked on this frame (0 = none).
+        /// That planet uses force-nearest display tiles so the ring does not lag across seams.
+        /// </summary>
+        int _forceNearestPlanetId;
+
+        /// <summary>
         /// New planet/asteroid/gem proxies created this frame (reset in SyncAllProxies).
         /// Used with <see cref="ClientJoinSettleCache.Settling"/> to rate-limit Instantiates.
         /// </summary>
@@ -470,6 +476,8 @@ namespace TitanOrbit.Game
             ToroidalDisplay.BeginFrame();
             ToroidalDisplay.SyncMapSize(em);
             _hasToroidalReference = ToroidalDisplay.TryGetReferencePosition(out _toroidalReference);
+            // Planet the local ship is glued to (orbit ring / moon dock) — force-nearest tile.
+            _forceNearestPlanetId = ResolveForceNearestPlanetId(em);
 
             // --- Map bodies: drain baked Pending / existing SpawnRequest only ---
             // [TITAN-ORBIT] Player.log 2026-07-18 21:18: MarkSpawnRequestQuery over unqueued
@@ -1130,7 +1138,10 @@ namespace TitanOrbit.Game
             Transform go,
             float scale)
         {
-            // --- Local = logical wrapped; remote = hysteresis tile near logical ship ---
+            // --- Local = unbounded sim; remote = hysteresis tile near local ship ---
+            // [TITAN-ORBIT] Do not Wrap the local hull. Continuum re-unwrap lives only in the
+            // moon-dock takeoff cinematic (ShipMoonDockVisualApplier) — running it every frame
+            // fought soft-track and added presentation lag.
             Vector3 pos = isLocalPlayerShip
                 ? (Vector3)lt.Position
                 : GetVisualPosition(entity, em, lt.Position);
@@ -1140,6 +1151,40 @@ namespace TitanOrbit.Game
 
             if (isLocalPlayerShip)
                 ShipDisplayPose.SetLocalPose(pos, rot);
+        }
+
+        /// <summary>
+        /// Planet id the local ship should keep force-nearest-tiled (active orbit or moon dock).
+        /// </summary>
+        /// <param name="em">Visualization-world EntityManager.</param>
+        /// <returns>Planet id, or 0 when the local ship is free-flying.</returns>
+        int ResolveForceNearestPlanetId(EntityManager em)
+        {
+            // --- No local ship yet (loading / team select) ---
+            if (!TryResolveLocalPlayerShipEntityCached(em, out Entity localShip) ||
+                localShip == Entity.Null ||
+                !em.Exists(localShip))
+            {
+                return 0;
+            }
+
+            // --- Moon dock wins (ship is glued to that planet's moon) ---
+            if (em.HasComponent<ShipMoonDockState>(localShip))
+            {
+                int dockPlanetId = em.GetComponentData<ShipMoonDockState>(localShip).MoonPlanetId;
+                if (dockPlanetId != 0)
+                    return dockPlanetId;
+            }
+
+            // --- Passive orbit ring — keep planet + ring + moon on the ship's tile ---
+            if (em.HasComponent<ShipOrbitState>(localShip))
+            {
+                var orbit = em.GetComponentData<ShipOrbitState>(localShip);
+                if (orbit.InOrbitRing && orbit.OrbitPlanetId != 0)
+                    return orbit.OrbitPlanetId;
+            }
+
+            return 0;
         }
 
         /// <summary>
@@ -1205,6 +1250,8 @@ namespace TitanOrbit.Game
         /// [TITAN-ORBIT] Local ship stays at its real (unbounded) pose. Every other body picks its
         /// own nearest map-tile copy relative to that ship, with per-entity hysteresis so planets
         /// and asteroids reposition individually — not as one global blink when crossing a seam.
+        /// The planet the local ship is orbiting / moon-docked on uses a tight hysteresis margin
+        /// so the ring follows across seams without ForceNearest midpoint flicker.
         /// </summary>
         /// <param name="forceLogical">When true, skip display unwrap (rare debug / special cases).</param>
         Vector3 GetVisualPosition(Entity entity, EntityManager em, float3 logicalPos, bool forceLogical = false)
@@ -1216,6 +1263,15 @@ namespace TitanOrbit.Game
                 return logicalPos;
 
             _hasToroidalReference = true;
+            if (ShouldForceNearestPlanetTile(em, entity))
+            {
+                int planetId = em.HasComponent<PlanetState>(entity)
+                    ? em.GetComponentData<PlanetState>(entity).PlanetId
+                    : 0;
+                return ToroidalDisplay.ToDisplayPositionForOrbitPlanet(
+                    entity, planetId, logicalPos, _toroidalReference);
+            }
+
             return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
         }
 
@@ -1226,7 +1282,27 @@ namespace TitanOrbit.Game
                 return logicalPos;
 
             _hasToroidalReference = true;
+
+            // --- Orbit / dock planet: tight hysteresis via cached planet visual key ---
+            if (_forceNearestPlanetId != 0 &&
+                _proxyPlanetVisuals.TryGetValue(entity, out var planetKey) &&
+                planetKey.PlanetId == _forceNearestPlanetId)
+            {
+                return ToroidalDisplay.ToDisplayPositionForOrbitPlanet(
+                    entity, _forceNearestPlanetId, logicalPos, _toroidalReference);
+            }
+
             return ToroidalDisplay.ToDisplayPositionWithHysteresis(entity, logicalPos, _toroidalReference);
+        }
+
+        /// <summary>
+        /// True when this entity is the planet the local ship is orbiting or moon-docked on.
+        /// </summary>
+        bool ShouldForceNearestPlanetTile(EntityManager em, Entity entity)
+        {
+            if (_forceNearestPlanetId == 0 || !em.HasComponent<PlanetState>(entity))
+                return false;
+            return em.GetComponentData<PlanetState>(entity).PlanetId == _forceNearestPlanetId;
         }
 
         /// <summary>

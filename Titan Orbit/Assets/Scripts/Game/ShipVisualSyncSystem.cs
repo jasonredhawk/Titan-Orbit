@@ -1,6 +1,7 @@
 using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Shared;
 using Unity.Entities;
@@ -200,6 +201,8 @@ namespace TitanOrbit.Game
 
             var lt = EntityManager.GetComponentData<LocalTransform>(localShip);
             // --- Unbounded sim pose — ship never wraps; camera follows this ---
+            // [TITAN-ORBIT] Continuum re-unwrap for seam moon-dock is owned by
+            // ShipMoonDockVisualApplier takeoff — not here every frame (fought soft-track / lag).
             float3 targetPos = lt.Position;
             quaternion targetRot = lt.Rotation;
 

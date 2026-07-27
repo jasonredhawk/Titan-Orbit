@@ -18,6 +18,10 @@ namespace TitanOrbit.ECS
     /// matches authority — except the Windows client under
     /// <see cref="ClientJoinSettleCache.TransformQuarantine"/> skips the obstacle gather
     /// (full planet/asteroid queries Crash!!! after TeamChoice; Player.log 2026-07-22).
+    /// Moons use per-ship <see cref="PlanetOrbitMath.GetMoonWorldPositionNear"/> when the hull
+    /// is on a different tile than the canonical kinematic collider — treating the canonical
+    /// moon as a toroidal obstacle falsely looked like center-overlap and shoved ships every
+    /// tick (stepped orbit / post-dock snap toward the original tile).
     /// Presentation still draws bodies via <c>ToroidalDisplay</c>; this system
     /// only adjusts ship <see cref="LocalTransform"/> / <see cref="PhysicsVelocity"/>.
     /// Pipeline: Drive → Physics → ToroidalWorldCollision (this) → Planar → KinematicsSync.
@@ -115,8 +119,21 @@ namespace TitanOrbit.ECS
                 });
             }
 
-            // --- Gem-moon kinematic hulls (orbiting planets) ---
-            // [TITAN-ORBIT] Moon LocalTransform is logical orbit pose — same seam gap as planets.
+            // --- Gem-moon snapshots (canonical collider pose + planet data for Near unwrap) ---
+            // [TITAN-ORBIT] Moon colliders stay on the canonical tile (one shared kinematic hull).
+            // Ships on a duplicate tile are toroidally "on top of" that hull (shortest dist ≈ 0)
+            // while Euclidean-far — the old path shoved the ship every tick (stepped orbit and
+            // post-dock snap toward the original tile). Resolve moons per-ship via Near pose below.
+            var moons = new NativeList<MoonObstacle>(16, Allocator.Temp);
+            double elapsed = 0.0;
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            if (SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime))
+                elapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false);
+            else
+                elapsed = state.World.Time.ElapsedTime;
+
             foreach (var (moonTransform, planetRef) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRO<PlanetGemMoonColliderPlanetRef>>()
                          .WithAll<PlanetGemMoonColliderTag>())
@@ -131,17 +148,22 @@ namespace TitanOrbit.ECS
                 var planetLt = state.EntityManager.GetComponentData<LocalTransform>(planetEntity);
                 float planetScale = math.max(0.25f, planetLt.Scale);
 
-                obstacles.Add(new WorldSphere
+                moons.Add(new MoonObstacle
                 {
-                    Position = moonTransform.ValueRO.Position,
+                    CanonicalPosition = moonTransform.ValueRO.Position,
+                    PlanetPosition = planetLt.Position,
+                    PlanetScale = planetScale,
+                    PlanetLevel = planetStateData.PlanetLevel,
+                    PlanetId = planetStateData.PlanetId,
                     Radius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(
                         planetScale, planetStateData.IsHomePlanet),
                 });
             }
 
-            if (obstacles.Length == 0)
+            if (obstacles.Length == 0 && moons.Length == 0)
             {
                 obstacles.Dispose();
+                moons.Dispose();
                 return;
             }
 
@@ -171,6 +193,35 @@ namespace TitanOrbit.ECS
                     }
                 }
 
+                // --- Moons: PhysX on canonical tile; Near Euclidean when ship is on another tile ---
+                for (int i = 0; i < moons.Length; i++)
+                {
+                    MoonObstacle moon = moons[i];
+                    // Same tile as the kinematic collider — Unity Physics already owns the contact.
+                    if (!ShipToroidalWorldCollisionLogic.NeedsToroidalResolve(
+                            shipPos, moon.CanonicalPosition, mapW, mapH))
+                        continue;
+
+                    // [TITAN-ORBIT] Same Near unwrap as dock attach / shield repel — bounce stays
+                    // on the duplicate continuum instead of shoving toward the canonical moon.
+                    float3 moonNear = PlanetOrbitMath.GetMoonWorldPositionNear(
+                        shipPos,
+                        moon.PlanetPosition,
+                        moon.PlanetScale,
+                        moon.PlanetLevel,
+                        moon.PlanetId,
+                        elapsed,
+                        mapW,
+                        mapH);
+                    if (ShipToroidalWorldCollisionLogic.TryResolveShipVsNearWorldSphere(
+                            ref shipPos, ref shipVel, shipRadius,
+                            moonNear, moon.Radius,
+                            ShipToroidalWorldCollisionLogic.WorldRestitution))
+                    {
+                        anyHit = true;
+                    }
+                }
+
                 if (!anyHit)
                     continue;
 
@@ -185,6 +236,32 @@ namespace TitanOrbit.ECS
             }
 
             obstacles.Dispose();
+            moons.Dispose();
+        }
+
+        /// <summary>
+        /// Per-planet gem-moon obstacle: canonical collider pose plus data to rebuild a Near copy
+        /// for each ship on a different map tile.
+        /// </summary>
+        struct MoonObstacle
+        {
+            /// <summary>Kinematic collider LocalTransform (canonical tile).</summary>
+            public float3 CanonicalPosition;
+
+            /// <summary>Parent planet logical position (canonical).</summary>
+            public float3 PlanetPosition;
+
+            /// <summary>Planet uniform scale (world radius proxy).</summary>
+            public float PlanetScale;
+
+            /// <summary>Planet level (ring radii API).</summary>
+            public int PlanetLevel;
+
+            /// <summary>Planet id — seeds moon orbit phase.</summary>
+            public int PlanetId;
+
+            /// <summary>Moon hull radius in world units (home scale already applied).</summary>
+            public float Radius;
         }
     }
 }

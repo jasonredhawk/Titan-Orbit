@@ -1,21 +1,18 @@
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
-using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
-using Unity.Entities;
 using Unity.Mathematics;
-using Unity.NetCode;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Gem-moon visual child of a planet GameObject proxy. Positions moon from
-    /// <see cref="PlanetOrbitMath"/> / ECS planet pose using <see cref="PlanetGemMoonOrbitClock"/>
-    /// (NetCode ServerTick seconds), spins mesh cosmetically, and wires orbit zone, matrix shield,
-    /// and stats label children. Render only — moon combat/shield sim is server ECS.
-    /// Must stay on the same orbit clock as <c>PlanetGemMoonColliderSyncSystem</c> or players hit an
-    /// invisible moon elsewhere on the ring.
+    /// [HYBRID] Gem-moon visual child of a planet GameObject proxy. Positions the moon as
+    /// parent-planet display pose + shared ring offset (<see cref="PlanetGemMoonMath.GetMoonOrbitOffset"/>)
+    /// on the <see cref="PlanetGemMoonOrbitClock"/> (NetCode ServerTick seconds), spins the mesh
+    /// cosmetically, and wires orbit zone, matrix shield, and stats label children. Render only —
+    /// moon combat/shield sim is server ECS. Staying glued to the planet proxy tile keeps the moon
+    /// on the same hysteresis copy as the orbit ring across toroidal seams.
     /// </summary>
     public class PlanetGemMoonVisualProxy : MonoBehaviour
     {
@@ -243,7 +240,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [UNITY] LateUpdate — moon orbit position from sim time + toroidal nearest copy; mesh spin cosmetic.
+        /// [UNITY] LateUpdate — moon rides the parent planet proxy tile + analytic ring offset;
+        /// mesh spin is cosmetic only.
         /// </summary>
         void LateUpdate()
         {
@@ -256,64 +254,19 @@ namespace TitanOrbit.Game
                 ? orbitElapsed
                 : Time.timeAsDouble;
 
-            // --- Moon world position: ECS pose when available, else analytic offset ---
-            if (TryResolveMoonWorldPosition(elapsed, out float3 moonPos))
-                _moonRoot.position = new Vector3(moonPos.x, moonPos.y, moonPos.z);
-            else
-            {
-                var offset = PlanetGemMoonMath.GetMoonOrbitOffset(_planetSize, _planetLevel, _isHome, _planetId, elapsed);
-                _moonRoot.position = transform.position + new Vector3(offset.x, offset.y, offset.z);
-            }
+            // --- Moon on the same display tile as the planet proxy ---
+            // [TITAN-ORBIT] Parent <see cref="transform"/> is already hysteresis-tiled by
+            // <c>EcsWorldVisualizer</c>. Offset with the shared ring formula so the moon, orbit
+            // ring, and planet stay glued. Independent GetMoonWorldPositionNear (no hysteresis)
+            // used to jump a full map width while the planet lagged — stepped orbit across seams.
+            var offset = PlanetGemMoonMath.GetMoonOrbitOffset(
+                _planetSize, _planetLevel, _isHome, _planetId, elapsed);
+            _moonRoot.position = transform.position + new Vector3(offset.x, offset.y, offset.z);
 
             _moonRoot.rotation = Quaternion.identity;
             float3 spinAxisLocal = PlanetOrbitMath.GetLevelBandsSpinAxisLocal();
             Vector3 spinAxisWorld = transform.TransformDirection(new Vector3(spinAxisLocal.x, spinAxisLocal.y, spinAxisLocal.z));
             _moonSpinVisual.Rotate(spinAxisWorld, SpinSpeed * Time.deltaTime, Space.World);
-        }
-
-        bool TryResolveMoonWorldPosition(double elapsed, out float3 moonPos)
-        {
-            moonPos = default;
-            if (_planetId <= 0)
-                return false;
-
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
-            World world = null;
-            if (ClientServerBootstrap.ServerWorld != null && ClientServerBootstrap.ServerWorld.IsCreated)
-                world = ClientServerBootstrap.ServerWorld;
-            else if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
-                world = ClientServerBootstrap.ClientWorld;
-
-            if (world != null && world.IsCreated)
-            {
-                ToroidalDisplay.SyncMapSize(world.EntityManager);
-                mapW = ToroidalMapEcs.MapWidth;
-                mapH = ToroidalMapEcs.MapHeight;
-            }
-
-            if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(_planetId, out float3 logicalPlanet, out float planetScale, out var planetState))
-                return false;
-
-            // --- Classic: moon on tile nearest logical local ship (matches planet proxy tiles) ---
-            float3 reference = default;
-            if (ToroidalDisplay.TryGetReferencePosition(out var refV3))
-                reference = new float3(refV3.x, 0f, refV3.z);
-            else if (EcsGameBridge.TryGetLocalShipPosition(out var shipPos))
-                reference = new float3(shipPos.x, 0f, shipPos.z);
-            else
-                reference = new float3(transform.position.x, 0f, transform.position.z);
-
-            moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
-                reference,
-                logicalPlanet,
-                math.max(0.25f, planetScale),
-                planetState.PlanetLevel,
-                _planetId,
-                elapsed,
-                mapW,
-                mapH);
-            return true;
         }
     }
 }

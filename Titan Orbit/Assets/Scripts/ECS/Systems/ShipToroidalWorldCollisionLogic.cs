@@ -137,5 +137,70 @@ namespace TitanOrbit.ECS
             shipVel = vel;
             return true;
         }
+
+        /// <summary>
+        /// Euclidean ship↔sphere depenetration in unbounded sim space (no toroidal early-out).
+        /// Use when the obstacle was already placed on the ship's map tile via
+        /// <see cref="PlanetOrbitMath.GetMoonWorldPositionNear"/> — Unity Physics still sees only
+        /// the canonical moon collider a full map width away, so same-tile PhysX cannot bounce.
+        /// </summary>
+        /// <param name="shipPos">Ship position — written when depenetrating.</param>
+        /// <param name="shipVel">Ship linear velocity — written when reflecting.</param>
+        /// <param name="shipRadius">Ship hull sphere radius.</param>
+        /// <param name="bodyPos">Obstacle center already unwrapped near the ship.</param>
+        /// <param name="bodyRadius">Obstacle sphere radius.</param>
+        /// <param name="restitution">Bounce coefficient (typically <see cref="WorldRestitution"/>).</param>
+        /// <returns>True when a penetration was resolved this call.</returns>
+        public static bool TryResolveShipVsNearWorldSphere(
+            ref float3 shipPos,
+            ref float3 shipVel,
+            float shipRadius,
+            float3 bodyPos,
+            float bodyRadius,
+            float restitution)
+        {
+            // --- Planar Euclidean separation (body already on the ship's tile) ---
+            // [TITAN-ORBIT] Do not call NeedsToroidalResolve / ShortestOffset here — Near placement
+            // already chose the correct copy. Toroidal shortest to the *canonical* moon would look
+            // like center-overlap and shove the hull every tick (stepped orbit / dock snap-back).
+            float3 offset = bodyPos - shipPos;
+            offset.y = 0f;
+            float dist = math.length(offset);
+            float minDist = math.max(0.01f, shipRadius + bodyRadius);
+            if (dist >= minDist)
+                return false;
+
+            // --- Separation normal: from body toward ship ---
+            float3 normal;
+            if (dist < 1e-5f)
+            {
+                float3 planarVel = new float3(shipVel.x, 0f, shipVel.z);
+                if (math.lengthsq(planarVel) > 1e-6f)
+                    normal = -math.normalize(planarVel);
+                else
+                    normal = new float3(1f, 0f, 0f);
+            }
+            else
+            {
+                normal = -offset / dist;
+            }
+
+            // --- Depenetrate in unbounded space (stay on the Near tile) ---
+            float penetration = minDist - dist;
+            shipPos += normal * penetration;
+            shipPos.y = 0f;
+
+            float3 vel = shipVel;
+            vel.y = 0f;
+            float vn = math.dot(vel, normal);
+            if (vn < 0f)
+            {
+                float e = math.saturate(restitution);
+                vel -= normal * vn * (1f + e);
+            }
+
+            shipVel = vel;
+            return true;
+        }
     }
 }

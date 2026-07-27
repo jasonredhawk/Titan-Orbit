@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -32,7 +33,19 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             // --- Map size for toroidal orbit / shield / territory math ---
-            GetMapSize(ref state, out float mapW, out float mapH);
+            // [TITAN-ORBIT] Prefer ToroidalMapEcs (clients get size from MapSessionMetaRpc —
+            // MapStateSingleton often never ghosts). Wrong period (hardcoded 1000) made
+            // ShortestOffset / triangle PIT fail on duplicate tiles → stepped orbit + no boost.
+            // No per-tick CreateEntityQuery — that alloc showed up as drive hitch / lag.
+            float mapW = math.max(100f, ToroidalMapEcs.MapWidth);
+            float mapH = math.max(100f, ToroidalMapEcs.MapHeight);
+            if (SystemAPI.TryGetSingleton(out MapStateSingleton mapState) &&
+                mapState.MapWidth >= 100f &&
+                mapState.MapHeight >= 100f)
+            {
+                mapW = mapState.MapWidth;
+                mapH = mapState.MapHeight;
+            }
 
             // [ECS/DOTS] TempJob planet snapshot — disposed after the parallel job completes.
             var planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);
@@ -70,21 +83,6 @@ namespace TitanOrbit.ECS
             state.Dependency = planets.Dispose(state.Dependency);
             // territory is Persistent cache — never Dispose here.
             state.Dependency = homeLevels.Dispose(state.Dependency);
-        }
-
-        /// <summary>
-        /// Reads toroidal map dimensions from <see cref="MapStateSingleton"/>, or 1000×1000 fallback.
-        /// </summary>
-        static void GetMapSize(ref SystemState state, out float mapW, out float mapH)
-        {
-            mapW = 1000f;
-            mapH = 1000f;
-            using var query = state.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<MapStateSingleton>());
-            if (query.TryGetSingleton<MapStateSingleton>(out var map))
-            {
-                mapW = math.max(100f, map.MapWidth);
-                mapH = math.max(100f, map.MapHeight);
-            }
         }
     }
 }

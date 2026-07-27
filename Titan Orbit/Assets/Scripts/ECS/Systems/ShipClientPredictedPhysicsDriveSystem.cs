@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
@@ -46,7 +47,18 @@ namespace TitanOrbit.ECS
                 return;
 
             // --- Map size for toroidal orbit / shield math (same source as server) ---
-            GetMapSize(ref state, out float mapW, out float mapH);
+            // [TITAN-ORBIT] Prefer ToroidalMapEcs (MapSessionMeta on dedicated clients —
+            // MapStateSingleton often missing). Hardcoded 1000 broke seam orbit + territory boost.
+            // Inline SystemAPI here (not a static helper) — source-gen only works in OnUpdate.
+            float mapW = math.max(100f, ToroidalMapEcs.MapWidth);
+            float mapH = math.max(100f, ToroidalMapEcs.MapHeight);
+            if (SystemAPI.TryGetSingleton(out MapStateSingleton mapState) &&
+                mapState.MapWidth >= 100f &&
+                mapState.MapHeight >= 100f)
+            {
+                mapW = mapState.MapWidth;
+                mapH = mapState.MapHeight;
+            }
 
             // --- Planet snapshots (orbit ring + moon shield) ---
             // [ECS/DOTS] TempJob list — disposed after the parallel job completes.
@@ -124,21 +136,6 @@ namespace TitanOrbit.ECS
             state.Dependency = planets.Dispose(state.Dependency);
             // territory is Persistent cache — never Dispose here.
             state.Dependency = homeLevels.Dispose(state.Dependency);
-        }
-
-        /// <summary>
-        /// Reads toroidal map dimensions from <see cref="MapStateSingleton"/>, or 1000×1000 fallback.
-        /// </summary>
-        static void GetMapSize(ref SystemState state, out float mapW, out float mapH)
-        {
-            mapW = 1000f;
-            mapH = 1000f;
-            using var query = state.EntityManager.CreateEntityQuery(ComponentType.ReadOnly<MapStateSingleton>());
-            if (query.TryGetSingleton<MapStateSingleton>(out var map))
-            {
-                mapW = math.max(100f, map.MapWidth);
-                mapH = math.max(100f, map.MapHeight);
-            }
         }
     }
 }

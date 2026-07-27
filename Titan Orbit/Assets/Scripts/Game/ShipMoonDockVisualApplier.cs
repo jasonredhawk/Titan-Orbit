@@ -1,4 +1,6 @@
 using TitanOrbit.ECS;
+using TitanOrbit.Generation;
+using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -432,13 +434,25 @@ namespace TitanOrbit.Game
             _isTakeoffAnimating = true;
         }
 
-        /// <summary>Lerps proxy back to ECS LocalTransform flight pose over LandingDurationSeconds.</summary>
+        /// <summary>
+        /// Lerps proxy back to ECS LocalTransform flight pose over LandingDurationSeconds.
+        /// Keeps the end pose on the same unbounded map-tile continuum as the cinematic start
+        /// so a seam dock cannot yank the hull back to the canonical tile mid-takeoff.
+        /// </summary>
         void UpdateTakeoffAnimation(EntityManager em)
         {
             var lt = em.GetComponentData<LocalTransform>(_shipEntity);
             float flightScale = Mathf.Max(0.25f, lt.Scale) * BodyCollisionMath.ShipPresentationScale;
 
+            // --- Flight end pose (local = unbounded sim; remotes = hysteresis near local) ---
             Vector3 endPosition = GetShipVisualPosition(em, lt.Position);
+
+            // --- Stay in the duplicate space the landing cinematic used ---
+            // [TITAN-ORBIT] Landing placed the hull on the display-space moon (+N map tiles).
+            // If sim/ghost briefly sits on another tile image, GetDisplayPosition re-unwraps the
+            // end toward takeoff start so camera/ship do not lerp a full map width "home".
+            endPosition = ToroidalMap.GetDisplayPosition(endPosition, _takeoffStartPosition);
+
             Quaternion endRotation = lt.Rotation;
             float endScale = flightScale;
 
@@ -448,6 +462,11 @@ namespace TitanOrbit.Game
             transform.position = Vector3.Lerp(_takeoffStartPosition, endPosition, eased);
             transform.rotation = Quaternion.Slerp(_takeoffStartRotation, endRotation, eased);
             transform.localScale = Vector3.one * Mathf.Lerp(_takeoffStartScale, endScale, eased);
+
+            // [HYBRID] Keep the pose bus on the takeoff hull so CameraFollow / ToroidalDisplay
+            // reference do not drop to a divergent sim tile for one frame at completion.
+            if (s_localInstance == this)
+                ShipDisplayPose.SetLocalPose(transform.position, transform.rotation);
 
             if (_takeoffProgress >= 1f)
             {

@@ -144,13 +144,38 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Tight hysteresis for the planet the local ship is orbiting / moon-docked on.
+        /// Default body hysteresis is 0.35× map (sticky across seams). Orbit needs a much
+        /// smaller margin so the ring follows the unbounded hull, but not zero (ForceNearest
+        /// flickered at the tile midpoint when map size was wrong — looked like stepped orbit).
+        /// </summary>
+        const float OrbitPlanetSwitchMarginFraction = 0.06f;
+
+        /// <summary>
         /// Per-entity tile with hysteresis so each planet/asteroid keeps its current copy until another
         /// tile is clearly closer. Bodies switch one-by-one as the ship flies — not a global blink.
         /// </summary>
         public static Vector3 ToDisplayPositionWithHysteresis(
             Entity entity,
             Vector3 logicalPosition,
-            Vector3 referencePosition)
+            Vector3 referencePosition) =>
+            ToDisplayPositionWithHysteresis(entity, logicalPosition, referencePosition, 0.35f);
+
+        /// <summary>
+        /// Per-entity tile hysteresis with an explicit switch margin (fraction of min map side).
+        /// </summary>
+        /// <param name="entity">Body entity whose tile memory we update.</param>
+        /// <param name="logicalPosition">Canonical / logical body position.</param>
+        /// <param name="referencePosition">Usually the local ship unbounded pose.</param>
+        /// <param name="switchMarginFraction">
+        /// How much closer the candidate tile must be before switching (0.35 default for world bodies;
+        /// use <see cref="OrbitPlanetSwitchMarginFraction"/> for the orbited planet).
+        /// </param>
+        public static Vector3 ToDisplayPositionWithHysteresis(
+            Entity entity,
+            Vector3 logicalPosition,
+            Vector3 referencePosition,
+            float switchMarginFraction)
         {
             if (!s_EntityTiles.TryGetValue(entity, out var tile))
                 tile = (int.MinValue, int.MinValue);
@@ -161,7 +186,10 @@ namespace TitanOrbit.Game
                 logicalPosition,
                 referencePosition,
                 ref tileK,
-                ref tileM);
+                ref tileM,
+                ToroidalMapEcs.MapWidth,
+                ToroidalMapEcs.MapHeight,
+                switchMarginFraction);
 
             if (tile.k != int.MinValue && (tileK != tile.k || tileM != tile.m))
                 s_TileSwitchesThisFrame++;
@@ -174,7 +202,15 @@ namespace TitanOrbit.Game
         public static Vector3 ToDisplayPositionWithHysteresis(
             int stableKey,
             Vector3 logicalPosition,
-            Vector3 referencePosition)
+            Vector3 referencePosition) =>
+            ToDisplayPositionWithHysteresis(stableKey, logicalPosition, referencePosition, 0.35f);
+
+        /// <summary>Keyed hysteresis with explicit switch margin.</summary>
+        public static Vector3 ToDisplayPositionWithHysteresis(
+            int stableKey,
+            Vector3 logicalPosition,
+            Vector3 referencePosition,
+            float switchMarginFraction)
         {
             if (!s_KeyedTiles.TryGetValue(stableKey, out var tile))
                 tile = (int.MinValue, int.MinValue);
@@ -185,12 +221,38 @@ namespace TitanOrbit.Game
                 logicalPosition,
                 referencePosition,
                 ref tileK,
-                ref tileM);
+                ref tileM,
+                ToroidalMapEcs.MapWidth,
+                ToroidalMapEcs.MapHeight,
+                switchMarginFraction);
 
             if (tile.k != int.MinValue && (tileK != tile.k || tileM != tile.m))
                 s_TileSwitchesThisFrame++;
 
             s_KeyedTiles[stableKey] = (tileK, tileM);
+            return display;
+        }
+
+        /// <summary>
+        /// Places the orbited / moon-docked planet with tight hysteresis and keeps both entity and
+        /// planet-id tile dictionaries in sync (one write path — avoids double ForceNearest cost).
+        /// </summary>
+        public static Vector3 ToDisplayPositionForOrbitPlanet(
+            Entity entity,
+            int planetId,
+            Vector3 logicalPosition,
+            Vector3 referencePosition)
+        {
+            Vector3 display = ToDisplayPositionWithHysteresis(
+                entity,
+                logicalPosition,
+                referencePosition,
+                OrbitPlanetSwitchMarginFraction);
+
+            // --- Mirror into keyed memory for moon-dock fallbacks (same tile, no second nearest) ---
+            if (planetId != 0 && s_EntityTiles.TryGetValue(entity, out var tile))
+                s_KeyedTiles[planetId] = tile;
+
             return display;
         }
 

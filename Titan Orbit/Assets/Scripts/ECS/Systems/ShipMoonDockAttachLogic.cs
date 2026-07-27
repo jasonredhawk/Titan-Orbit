@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -123,17 +124,21 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Reads map size from <see cref="MapStateSingleton"/> (1000×1000 fallback).
+        /// Reads toroidal map size. Prefers <see cref="ToroidalMapEcs"/> (session meta on clients),
+        /// then <see cref="MapStateSingleton"/> when present. Hardcoded 1000 alone broke seam math
+        /// when the rolled map was not 1000×1000.
         /// </summary>
         public static void GetMapSize(EntityManager em, out float mapW, out float mapH)
         {
-            mapW = 1000f;
-            mapH = 1000f;
+            mapW = math.max(100f, ToroidalMapEcs.MapWidth);
+            mapH = math.max(100f, ToroidalMapEcs.MapHeight);
             using var query = em.CreateEntityQuery(ComponentType.ReadOnly<MapStateSingleton>());
-            if (query.TryGetSingleton<MapStateSingleton>(out var map))
+            if (query.TryGetSingleton<MapStateSingleton>(out var map) &&
+                map.MapWidth >= 100f &&
+                map.MapHeight >= 100f)
             {
-                mapW = math.max(100f, map.MapWidth);
-                mapH = math.max(100f, map.MapHeight);
+                mapW = map.MapWidth;
+                mapH = map.MapHeight;
             }
         }
     }
