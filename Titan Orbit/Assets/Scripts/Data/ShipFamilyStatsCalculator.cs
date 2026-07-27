@@ -44,9 +44,17 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Core scan: instantiate prefab if needed, match children, sum scaled stats, apply propulsion rules.
+        /// Core scan: instantiate prefab if needed, match children, sum scaled stats.
+        /// When <paramref name="applyPropulsionAndWeaponRules"/> is true (default), applies shared
+        /// propulsion aggregation, weapon projectile-speed max, and family fallbacks.
+        /// Pass false when the caller will append extra components (e.g. moon-store engines)
+        /// and re-run aggregation on the combined list.
         /// </summary>
-        public static SumResult SumFromPrefabHierarchy(GameObject prefab, ShipFamilyDefinition family, int shipLevel = 1)
+        public static SumResult SumFromPrefabHierarchy(
+            GameObject prefab,
+            ShipFamilyDefinition family,
+            int shipLevel = 1,
+            bool applyPropulsionAndWeaponRules = true)
         {
             // --- SumFromPrefabHierarchy ---
             var result = new SumResult
@@ -103,28 +111,8 @@ namespace TitanOrbit.Data
                     result.PerComponentStats.Add(scaled);
                 }
 
-                // [TITAN-ORBIT] Engines/thrusters share one move-speed pool — replace naive sum here.
-                result.TotalStats = ShipPropulsionAggregation.ApplyPropulsionToSummedStats(
-                    result.TotalStats,
-                    result.MatchedComponentIds,
-                    result.PerComponentStats,
-                    shipLevel);
-                // [TITAN-ORBIT] Bullet speed is per-projectile — max across weapons, never N× sum.
-                result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponProjectileSpeedToSummedStats(
-                    result.TotalStats,
-                    result.MatchedComponentIds,
-                    result.PerComponentStats);
-                // [TITAN-ORBIT] Per-bullet damage lives on each mount — hull sum stays for power score.
-                result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponFirePowerToSummedStats(
-                    result.TotalStats,
-                    result.MatchedComponentIds,
-                    result.PerComponentStats);
-                // [TITAN-ORBIT] Per-barrel cadence lives on each mount — hull sum stays for power score.
-                result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponFireRateToSummedStats(
-                    result.TotalStats,
-                    result.MatchedComponentIds,
-                    result.PerComponentStats);
-                result.TotalStats = family.ApplyStatFallbacks(result.TotalStats);
+                if (applyPropulsionAndWeaponRules)
+                    ApplySharedAggregationRules(ref result, family, shipLevel);
             }
             finally
             {
@@ -133,6 +121,80 @@ namespace TitanOrbit.Data
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// Appends moon-store-purchased components onto a prefab sum, then re-runs shared aggregation.
+        /// Propulsion parts use max primary + half moveSpeedPerLevel for extras (not naive full-speed add).
+        /// </summary>
+        public static SumResult AppendExtraComponentsAndAggregate(
+            SumResult prefabSum,
+            ShipFamilyDefinition family,
+            IReadOnlyList<string> extraComponentIds,
+            int shipLevel = 1)
+        {
+            // --- Append store extras then re-aggregate ---
+            if (family == null)
+                return prefabSum;
+
+            // Start from a raw (pre-aggregation) copy when possible — caller should pass
+            // SumFromPrefabHierarchy(..., applyPropulsionAndWeaponRules: false).
+            var result = prefabSum;
+            if (result.MatchedComponentIds == null)
+                result.MatchedComponentIds = new List<string>();
+            if (result.PerComponentStats == null)
+                result.PerComponentStats = new List<ShipComponentAbilityStats>();
+
+            if (extraComponentIds != null)
+            {
+                for (int i = 0; i < extraComponentIds.Count; i++)
+                {
+                    string componentId = extraComponentIds[i];
+                    if (string.IsNullOrWhiteSpace(componentId))
+                        continue;
+                    if (!family.TryGetStatsForComponent(componentId, out ShipComponentAbilityStats stats))
+                        continue;
+
+                    // [TITAN-ORBIT] Store buys have no prefab transform scale — use catalog base stats.
+                    result.TotalStats.AddInPlace(stats);
+                    result.MatchedComponentIds.Add(componentId);
+                    result.PerComponentStats.Add(stats);
+                }
+            }
+
+            ApplySharedAggregationRules(ref result, family, shipLevel);
+            return result;
+        }
+
+        /// <summary>
+        /// Shared post-sum rules: propulsion pool, weapon projectile speed max, fire power/rate notes, fallbacks.
+        /// </summary>
+        public static void ApplySharedAggregationRules(ref SumResult result, ShipFamilyDefinition family, int shipLevel)
+        {
+            // --- Propulsion + weapon aggregation ---
+            // [TITAN-ORBIT] Engines/thrusters share one move-speed pool — replace naive sum here.
+            result.TotalStats = ShipPropulsionAggregation.ApplyPropulsionToSummedStats(
+                result.TotalStats,
+                result.MatchedComponentIds,
+                result.PerComponentStats,
+                shipLevel);
+            // [TITAN-ORBIT] Bullet speed is per-projectile — max across weapons, never N× sum.
+            result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponProjectileSpeedToSummedStats(
+                result.TotalStats,
+                result.MatchedComponentIds,
+                result.PerComponentStats);
+            // [TITAN-ORBIT] Per-bullet damage lives on each mount — hull sum stays for power score.
+            result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponFirePowerToSummedStats(
+                result.TotalStats,
+                result.MatchedComponentIds,
+                result.PerComponentStats);
+            // [TITAN-ORBIT] Per-barrel cadence lives on each mount — hull sum stays for power score.
+            result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponFireRateToSummedStats(
+                result.TotalStats,
+                result.MatchedComponentIds,
+                result.PerComponentStats);
+            if (family != null)
+                result.TotalStats = family.ApplyStatFallbacks(result.TotalStats);
         }
 
         /// <summary>Maps a baked <see cref="ShipFamilyPowerScoreBreakdown"/> back into ability-stat fields.</summary>

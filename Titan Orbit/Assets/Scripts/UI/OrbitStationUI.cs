@@ -4294,6 +4294,15 @@ namespace TitanOrbit.UI
                 return;
             if (string.IsNullOrWhiteSpace(componentId))
                 return;
+            // [TITAN-ORBIT] ECS orbit context — do not require NGO NetworkObject.IsSpawned
+            // (LegacyNetcodeStubs always report false and silently blocked all component buys).
+            if (OrbitStationEcsContext.UseEcsStoreRpc)
+            {
+                HomePlanetStoreSystem.Instance.PurchaseComponentServerRpc(0, 0, componentId);
+                pendingGemsRequest = true;
+                HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+                return;
+            }
             var homeNo = currentHomePlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (homeNo == null || !homeNo.IsSpawned)
                 return;
@@ -5403,6 +5412,15 @@ namespace TitanOrbit.UI
         private void OnCardSpinClick()
         {
             if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null) return;
+            // [TITAN-ORBIT] ECS path — skip NGO NetworkObject gates (stubs always fail IsSpawned).
+            if (OrbitStationEcsContext.UseEcsStoreRpc)
+            {
+                CardShopSystem.Instance.CardSpinServerRpc(0, 0);
+                pendingGemsRequest = true;
+                if (HomePlanetStoreSystem.Instance != null)
+                    HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+                return;
+            }
             var planetNo = currentPlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (planetNo == null || !planetNo.IsSpawned) return;
             var shipNo = currentShip.GetComponent<Unity.Netcode.NetworkObject>();
@@ -5418,6 +5436,14 @@ namespace TitanOrbit.UI
             if (cardEntries == null || index < 0 || index >= cardEntries.Length) return;
             CardData card = cardEntries[index];
             if (card == null) return;
+            if (OrbitStationEcsContext.UseEcsStoreRpc)
+            {
+                CardShopSystem.Instance.PurchaseCardServerRpc(0, 0, card.GetStableCardId());
+                pendingGemsRequest = true;
+                if (HomePlanetStoreSystem.Instance != null)
+                    HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+                return;
+            }
             var planetNo = currentPlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (planetNo == null || !planetNo.IsSpawned) return;
             var shipNo = currentShip.GetComponent<Unity.Netcode.NetworkObject>();

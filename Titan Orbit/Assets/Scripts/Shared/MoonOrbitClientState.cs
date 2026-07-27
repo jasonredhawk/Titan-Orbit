@@ -56,14 +56,25 @@ namespace TitanOrbit.Core
         public static string PendingStoreMessage;
 
         /// <summary>
-        /// Called from MoonOrbitRpcClientSystem when ContributedGemsResultRpc arrives.
+        /// Last card-spin offer ids (client mirror). Empty string = no card in that offer slot.
+        /// Filled by MoonOrbitRpcClientSystem or Local Host direct apply.
+        /// </summary>
+        static readonly string[] s_spinOfferCardIds = { string.Empty, string.Empty, string.Empty };
+
+        /// <summary>True when a new spin offer arrived and orbit UI should rebuild offer tiles.</summary>
+        public static bool PendingSpinOfferReceived { get; private set; }
+
+        /// <summary>True when the offer was consumed (take card) and UI should clear offer tiles.</summary>
+        public static bool PendingSpinOfferConsumed { get; private set; }
+
+        /// <summary>Called from MoonOrbitRpcClientSystem when ContributedGemsResultRpc arrives.
         /// Also remembers the amount for optimistic Bank seeding on the next deposit session.
         /// </summary>
         public static void SetContributedGems(float amount)
         {
             PendingContributedGems = amount;
             if (amount >= 0f)
-                LastKnownContributedGems = amount;
+                ApplyAuthoritativeBankAmount(amount);
         }
 
         /// <summary>
@@ -73,7 +84,23 @@ namespace TitanOrbit.Core
         public static void RememberContributedGems(float amount)
         {
             if (amount >= 0f)
-                LastKnownContributedGems = amount;
+                ApplyAuthoritativeBankAmount(amount);
+        }
+
+        /// <summary>
+        /// Updates <see cref="LastKnownContributedGems"/>. When the ledger drops (orbit-store spend),
+        /// snaps optimistic Bank down so GEM DEPOSITS falls immediately. Does <b>not</b> snap when
+        /// live merely lags behind optimistic deposit beats (live still rising or flat).
+        /// </summary>
+        static void ApplyAuthoritativeBankAmount(float amount)
+        {
+            // --- Detect store spend: authority fell vs last known ledger ---
+            // Deposit metronome keeps optimistic ahead of live — that is NOT a spend.
+            // Prices are tens of gems, so a 1-gem threshold ignores float noise.
+            if (LastKnownContributedGems > 0f && amount < LastKnownContributedGems - 1f)
+                SnapOptimisticBankDownToAuthority(amount);
+
+            LastKnownContributedGems = amount;
         }
 
         /// <summary>
@@ -122,9 +149,10 @@ namespace TitanOrbit.Core
 
         /// <summary>
         /// Soft-reconcile authoritative Bank into the optimistic value while depositing.
-        /// Never snaps the display from the live ledger alone: live jumps on the server metronome
-        /// and would make Bank rise independently of the client SFX beat. Only lock to authority
+        /// Never snaps the display <b>up</b> from the live ledger alone: live jumps on the server
+        /// metronome and would make Bank rise independently of the client SFX beat. Only lock up
         /// when live is within ~half a gem of optimistic (caught up / float noise).
+        /// Spends are handled by <see cref="ApplyAuthoritativeBankAmount"/> (ledger drop vs last known).
         /// </summary>
         /// <param name="authoritativeBank">Server / RPC contributed-gems amount.</param>
         public static void ReconcileOptimisticDepositBank(float authoritativeBank)
@@ -133,9 +161,8 @@ namespace TitanOrbit.Core
             if (OptimisticDepositBankGems < 0f)
                 return;
 
-            // [TITAN-ORBIT] Abs epsilon only — do NOT adopt live when it is a full chunk ahead.
-            // That was the "Bank goes up independently" bug on Local Host (live ledger ticks on
-            // the server fixed step while Ship/SFX tick on the client wall-clock metronome).
+            // [TITAN-ORBIT] Abs epsilon only for catch-up — do NOT adopt live when it is a full
+            // chunk ahead (Bank rising independently of the client deposit metronome).
             float delta = authoritativeBank - OptimisticDepositBankGems;
             if (Mathf.Abs(delta) <= 0.51f)
                 OptimisticDepositBankGems = Mathf.Max(0f, authoritativeBank);
@@ -145,6 +172,7 @@ namespace TitanOrbit.Core
         /// RPC / one-shot Bank reply while depositing. Corrects a <b>late baseline</b> (we seeded
         /// 0 or a stale total before the first contributed-gems reply) without adopting every
         /// mid-deposit live tick. Preserves gems already added by client metronome beats.
+        /// Ledger drops (store purchases) snap optimistic Bank via <see cref="ApplyAuthoritativeBankAmount"/>.
         /// </summary>
         /// <param name="authoritativeBank">Contributed-gems amount from RPC.</param>
         public static void ApplyAuthoritativeBankBaseline(float authoritativeBank)
@@ -152,6 +180,13 @@ namespace TitanOrbit.Core
             RememberContributedGems(authoritativeBank);
             if (OptimisticDepositBankGems < 0f)
                 return;
+
+            // Spend path already snapped optimistic ≤ authority.
+            if (OptimisticDepositBankGems <= authoritativeBank + 0.51f)
+            {
+                ReconcileOptimisticDepositBank(authoritativeBank);
+                return;
+            }
 
             // How many gems the client metronome already painted on top of our seed.
             float addedByBeats = OptimisticDepositBankGems - s_OptimisticBankSeedBaseline;
@@ -166,6 +201,27 @@ namespace TitanOrbit.Core
             }
 
             ReconcileOptimisticDepositBank(authoritativeBank);
+        }
+
+        /// <summary>
+        /// When server Bank is lower than optimistic (store purchase), snap optimistic down.
+        /// Returns true when a snap happened.
+        /// </summary>
+        static bool SnapOptimisticBankDownToAuthority(float authoritativeBank)
+        {
+            if (OptimisticDepositBankGems < 0f || authoritativeBank < 0f)
+                return false;
+
+            // Authority lower than optimistic → spend (or correction). Adopt immediately.
+            if (authoritativeBank < OptimisticDepositBankGems - 0.01f)
+            {
+                OptimisticDepositBankGems = Mathf.Max(0f, authoritativeBank);
+                // Keep seed ≤ optimistic so later deposit beats do not inflate from a stale high seed.
+                s_OptimisticBankSeedBaseline = Mathf.Min(s_OptimisticBankSeedBaseline, OptimisticDepositBankGems);
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -238,6 +294,48 @@ namespace TitanOrbit.Core
             if (string.IsNullOrEmpty(message))
                 return false;
             PendingStoreMessage = null;
+            return true;
+        }
+
+        /// <summary>
+        /// Stores three spin-offer card ids and flags the orbit UI to refresh offer tiles.
+        /// </summary>
+        public static void SetSpinOffer(string cardId0, string cardId1, string cardId2, bool success)
+        {
+            // --- Spin offer mirror ---
+            s_spinOfferCardIds[0] = cardId0 ?? string.Empty;
+            s_spinOfferCardIds[1] = cardId1 ?? string.Empty;
+            s_spinOfferCardIds[2] = cardId2 ?? string.Empty;
+            if (success)
+                PendingSpinOfferReceived = true;
+            else
+                PendingSpinOfferConsumed = true;
+        }
+
+        /// <summary>Reads one spin-offer card id (null when empty / out of range).</summary>
+        public static string GetSpinOfferCardId(int index)
+        {
+            if ((uint)index >= 3u)
+                return null;
+            string s = s_spinOfferCardIds[index];
+            return string.IsNullOrEmpty(s) ? null : s;
+        }
+
+        /// <summary>UI one-shot: returns true if a new spin offer should rebuild tiles.</summary>
+        public static bool TryConsumeSpinOfferReceived()
+        {
+            if (!PendingSpinOfferReceived)
+                return false;
+            PendingSpinOfferReceived = false;
+            return true;
+        }
+
+        /// <summary>UI one-shot: returns true if the spin offer was cleared after take-card.</summary>
+        public static bool TryConsumeSpinOfferConsumed()
+        {
+            if (!PendingSpinOfferConsumed)
+                return false;
+            PendingSpinOfferConsumed = false;
             return true;
         }
 

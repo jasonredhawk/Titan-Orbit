@@ -37,11 +37,15 @@ namespace TitanOrbit.ECS
         [GhostField] public int ChassisIndex;
     }
 
-    /// <summary>One equipped card id in the ship's card buffer (supports multiple slots).</summary>
+    /// <summary>
+    /// One equipped upgrade card in the ship's card buffer (supports multiple slots).
+    /// [NETCODE] Uses a stable string id (same as <see cref="Data.CardData.GetStableCardId"/>) so
+    /// orbit spin/take and UI sync do not need a separate int registry.
+    /// </summary>
     public struct EquippedCardElement : IBufferElementData
     {
-        /// <summary>Catalog card id from ship component data.</summary>
-        [GhostField] public int CardId;
+        /// <summary>Catalog card id from the ship family deck (e.g. AstroEagle_Engine_2_L).</summary>
+        [GhostField] public FixedString64Bytes CardId;
     }
 
     /// <summary>One equipped store item with remaining charges (rockets, shields, etc.).</summary>

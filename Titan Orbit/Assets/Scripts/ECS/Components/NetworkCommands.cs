@@ -96,7 +96,8 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Client purchases a non-ship store item at a home planet moon store.
+    /// [NETCODE] Client purchases a non-ship store item at a home planet moon store
+    /// (drones / rockets / mines — not ship-family components).
     /// </summary>
     public struct PurchaseStoreItemCommand : IRpcCommand
     {
@@ -105,6 +106,76 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Opaque item type id from store catalog.</summary>
         public int ItemType;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client purchases a ship-family extra component by stable component id.
+    /// Fills one equipment slot; server validates gems, empty slot, and catalog entry.
+    /// </summary>
+    public struct PurchaseStoreComponentCommand : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Home planet id hosting the store.</summary>
+        public int HomePlanetId;
+
+        /// <summary>[TITAN-ORBIT] Stable component id from ShipFamilyDefinition (e.g. Engine_02).</summary>
+        public FixedString64Bytes ComponentId;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client pays for a card spin at the docked store planet (three weighted offers).
+    /// </summary>
+    public struct CardSpinCommand : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Planet id of the moon store where the player is docked.</summary>
+        public int StorePlanetId;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client takes one card from the current spin offer into an empty card slot (spin already paid).
+    /// </summary>
+    public struct TakeSpinCardCommand : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Planet id of the docked store (ownership / origin checks).</summary>
+        public int StorePlanetId;
+
+        /// <summary>[TITAN-ORBIT] Stable card id that must be in the server pending offer.</summary>
+        public FixedString64Bytes CardId;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client removes an equipped upgrade card at the given slot index (free discard).
+    /// </summary>
+    public struct RemoveEquippedCardCommand : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Index into the ship's EquippedCardElement buffer.</summary>
+        public int SlotIndex;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client removes an equipped store item / component at the given slot index (free discard).
+    /// </summary>
+    public struct RemoveEquippedEquipmentCommand : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Index into the ship's EquippedEquipmentElement buffer.</summary>
+        public int SlotIndex;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → purchasing client: three card ids from a paid spin (empty string = empty slot).
+    /// </summary>
+    public struct CardSpinOfferRpc : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Offer slot 0 stable card id.</summary>
+        public FixedString64Bytes CardId0;
+
+        /// <summary>[TITAN-ORBIT] Offer slot 1 stable card id.</summary>
+        public FixedString64Bytes CardId1;
+
+        /// <summary>[TITAN-ORBIT] Offer slot 2 stable card id.</summary>
+        public FixedString64Bytes CardId2;
+
+        /// <summary>[STANDARD] 1 = offer filled, 0 = spin failed / empty pool.</summary>
+        public byte Success;
     }
 
     /// <summary>[NETCODE] Server success/failure reply for orbit store purchases.</summary>

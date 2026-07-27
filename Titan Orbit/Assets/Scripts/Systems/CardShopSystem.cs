@@ -20,6 +20,12 @@ namespace TitanOrbit.Systems
         public static event Action ClientSpinOfferReceived;
         public static event Action ClientSpinOfferConsumed;
 
+        /// <summary>Raises <see cref="ClientSpinOfferReceived"/> for ECS / Local Host spin results.</summary>
+        public static void RaiseClientSpinOfferReceived() => ClientSpinOfferReceived?.Invoke();
+
+        /// <summary>Raises <see cref="ClientSpinOfferConsumed"/> after take-card clears the offer.</summary>
+        public static void RaiseClientSpinOfferConsumed() => ClientSpinOfferConsumed?.Invoke();
+
         PlanetShipFamilyConfig _planetShipFamilyConfig;
 
         void Awake()
@@ -334,16 +340,45 @@ namespace TitanOrbit.Systems
             return pool;
         }
 
-        public string GetClientSpinOfferCardId(int index) => null;
+        public string GetClientSpinOfferCardId(int index) => MoonOrbitClientState.GetSpinOfferCardId(index);
 
-        public CardData GetCardByIdForShip(Starship ship, string cardId) => null;
+        public CardData GetCardByIdForShip(Starship ship, string cardId)
+        {
+            // --- GetCardByIdForShip ---
+            if (string.IsNullOrEmpty(cardId))
+                return null;
+
+            var family = GetShipFamilyForShip(ship);
+            if (family != null)
+            {
+                var fromFamily = ShipStatApplyLogic.FindCardInFamily(family, cardId);
+                if (fromFamily != null)
+                    return fromFamily;
+            }
+
+            return ShipStatApplyLogic.FindCardAnywhere(cardId);
+        }
 
         public void CardSpinServerRpc(ulong planetNetworkId, ulong shipNetworkId)
         {
-            Debug.LogWarning("[CardShopSystem] Card spin is not available in ECS yet.");
+            // --- CardSpinServerRpc ---
+            int storePlanetId = OrbitStationEcsContext.StorePlanetId;
+            if (storePlanetId <= 0)
+                return;
+
+            MoonOrbitRpcClient.CardSpin(storePlanetId);
+            MoonOrbitRpcClient.RequestContributedGems(OrbitStationEcsContext.HomePlanetId);
         }
 
-        public void PurchaseCardServerRpc(ulong planetNetworkId, ulong shipNetworkId, string cardId) { }
+        public void PurchaseCardServerRpc(ulong planetNetworkId, ulong shipNetworkId, string cardId)
+        {
+            // --- PurchaseCardServerRpc ---
+            int storePlanetId = OrbitStationEcsContext.StorePlanetId;
+            if (storePlanetId <= 0 || string.IsNullOrEmpty(cardId))
+                return;
+
+            MoonOrbitRpcClient.TakeSpinCard(storePlanetId, cardId);
+        }
 
         public void PurchaseChassisServerRpc(ulong planetNetworkId, ulong shipNetworkId, string chassisId, int tierLevel)
         {

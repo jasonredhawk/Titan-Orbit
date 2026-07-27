@@ -149,6 +149,8 @@ namespace TitanOrbit.ECS
             {
                 if (!state.EntityManager.HasBuffer<EquippedEquipmentElement>(entity))
                     ecb.AddBuffer<EquippedEquipmentElement>(entity);
+                if (!state.EntityManager.HasBuffer<EquippedCardElement>(entity))
+                    ecb.AddBuffer<EquippedCardElement>(entity);
             }
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()

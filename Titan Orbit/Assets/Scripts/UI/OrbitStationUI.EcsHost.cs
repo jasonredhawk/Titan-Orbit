@@ -138,10 +138,39 @@ namespace TitanOrbit.UI
                 OnContributedGemsReceived(gems);
 
             if (MoonOrbitClientState.TryConsumeStoreMessage(out string message))
+            {
                 Debug.LogWarning($"[OrbitStationStore] {message}");
+                // [TITAN-ORBIT] Purchase / remove results — rebuild slots immediately (don't wait for poll).
+                _ecsShipView?.InvalidateLoadoutCache();
+                // Refresh Bank after spend (Local Host already updated ledger; dedicated needs a pull).
+                if (OrbitStationEcsContext.HomePlanetId > 0)
+                    MoonOrbitRpcClient.RequestContributedGems(OrbitStationEcsContext.HomePlanetId);
+                RefreshAll();
+            }
+
+            // [TITAN-ORBIT] Spin offer / take-card events — rebuild offer tiles + card slots.
+            if (MoonOrbitClientState.TryConsumeSpinOfferReceived())
+            {
+                TitanOrbit.Systems.CardShopSystem.RaiseClientSpinOfferReceived();
+                RefreshStoreLabels();
+                RefreshSlots();
+            }
+
+            if (MoonOrbitClientState.TryConsumeSpinOfferConsumed())
+            {
+                TitanOrbit.Systems.CardShopSystem.RaiseClientSpinOfferConsumed();
+                _ecsShipView?.InvalidateLoadoutCache();
+                RefreshStoreLabels();
+                RefreshSlots();
+            }
 
             if (_ecsShipView != null && _ecsStorePlanetId > 0)
+            {
+                // [TITAN-ORBIT] Sync ship view every frame for dock state, but only rebuild
+                // equipment/card lists when store RPCs fire (RefreshAll) or every ~0.25s —
+                // SyncLoadoutBuffers used to scan ServerWorld buffers every Update and felt laggy.
                 _ecsShipView.SyncFromEcs(_ecsStorePlanetId);
+            }
         }
 
         /// <summary>

@@ -1,5 +1,4 @@
 using TitanOrbit.Core;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -7,10 +6,10 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Client-side handler for moon orbit store RPC replies — contributed gem balance and purchase
-    /// results. Consumes ephemeral RPC entities spawned by the server and writes into
-    /// <see cref="MoonOrbitClientState"/> for <see cref="UI.OrbitStationUI"/>. World: ClientSimulation.
-    /// Paired with server handlers in <see cref="MoonOrbitStoreSystem"/>.
+    /// Client-side handler for moon orbit store RPC replies — contributed gem balance, purchase
+    /// results, and card-spin offers. Consumes ephemeral RPC entities spawned by the server and
+    /// writes into <see cref="MoonOrbitClientState"/> for <see cref="UI.OrbitStationUI"/>.
+    /// World: ClientSimulation. Paired with server handlers in <see cref="MoonOrbitStoreSystem"/>.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -31,8 +30,19 @@ namespace TitanOrbit.ECS
             // --- Store purchase success/failure messages ---
             foreach (var (result, entity) in SystemAPI.Query<RefRO<OrbitStoreResultRpc>>().WithEntityAccess())
             {
-                if (result.ValueRO.Success == 0 && !result.ValueRO.Message.IsEmpty)
+                if (!result.ValueRO.Message.IsEmpty)
                     MoonOrbitClientState.SetStoreMessage(result.ValueRO.Message.ToString());
+                ecb.DestroyEntity(entity);
+            }
+
+            // --- Card spin offer (three ids) ---
+            foreach (var (result, entity) in SystemAPI.Query<RefRO<CardSpinOfferRpc>>().WithEntityAccess())
+            {
+                MoonOrbitClientState.SetSpinOffer(
+                    result.ValueRO.CardId0.ToString(),
+                    result.ValueRO.CardId1.ToString(),
+                    result.ValueRO.CardId2.ToString(),
+                    result.ValueRO.Success != 0);
                 ecb.DestroyEntity(entity);
             }
 

@@ -23,6 +23,12 @@ namespace TitanOrbit.ECS
         /// Client re-applies motor when attribute RPCs land without a level change.
         /// </summary>
         public int AppliedAttributeSum;
+
+        /// <summary>
+        /// Fingerprint of equipped store components + cards at last apply.
+        /// Orbit purchases / removes change loadout without level/branch change — this forces re-apply.
+        /// </summary>
+        public int AppliedEquipmentFingerprint;
     }
 
     /// <summary>
@@ -227,14 +233,25 @@ namespace TitanOrbit.ECS
             if (!TryResolveChassisId(team, shipLevel, branchIndex, out string chassisId))
                 return;
 
-            if (!TryGetBaseStatsForChassis(chassisId, shipLevel, out ShipComponentAbilityStats summed))
-                return;
+            // --- Chassis baseline (level-1 sum) ---
+            // When moon-store equipment includes ship components, rebuild chassis+store together so
+            // engines use max primary + half moveSpeedPerLevel extras (not naive full-speed add).
+            ShipComponentAbilityStats summed;
+            if (!TryGetBaseStatsWithStoreComponents(em, shipEntity, chassisId, out summed))
+            {
+                if (!TryGetBaseStatsForChassis(chassisId, shipLevel, out summed))
+                    return;
+            }
 
             // [TITAN-ORBIT] Level scaling curve applied before attribute multipliers.
             // Keep a pre-attribute copy so bullet VFX baselines reset on chassis swap without
             // baking attribute FirePower boosts into ReferenceBullet* (that made tracers huge).
             ShipComponentAbilityStats chassisBaseline =
                 ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, shipLevel);
+
+            // --- Equipped upgrade cards (flat / multiplier modifiers on top of chassis+store) ---
+            TryAddEquippedCardStatModifiers(em, shipEntity, chassisId, ref chassisBaseline);
+
             ShipComponentAbilityStats effective = chassisBaseline;
 
             // --- Detect chassis identity change (level / branch / id) before we overwrite bookkeeping ---
@@ -259,6 +276,8 @@ namespace TitanOrbit.ECS
                 attributeSum = SumAttributeLevels(attrs);
                 ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, attrs);
             }
+
+            int equipmentFingerprint = ComputeEquippedLoadoutFingerprint(em, shipEntity);
 
             // --- ShipState caps (health, gems, energy, people) — server / authoritative only ---
             // [NETCODE] Client must not overwrite ghosted ShipState; snapshot owns Health/caps.
@@ -419,6 +438,7 @@ namespace TitanOrbit.ECS
                 AppliedShipLevel = shipLevel,
                 AppliedBranchIndex = branchIndex,
                 AppliedAttributeSum = attributeSum,
+                AppliedEquipmentFingerprint = equipmentFingerprint,
             };
             if (em.HasComponent<ShipChassisState>(shipEntity))
                 em.SetComponentData(shipEntity, chassisState);
@@ -426,6 +446,183 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(shipEntity, chassisState);
             else
                 em.AddComponentData(shipEntity, chassisState);
+        }
+
+        /// <summary>
+        /// Hash of equipped store components + cards. Orbit purchases call ApplyToShip immediately;
+        /// ShipStatApplySystem does <b>not</b> poll this every frame (that ToString/buffer walk lagged).
+        /// Kept for diagnostics and future dirty-bit hooks.
+        /// </summary>
+        public static int ComputeEquippedLoadoutFingerprint(EntityManager em, Entity shipEntity)
+        {
+            // --- Fingerprint equipment + cards ---
+            unchecked
+            {
+                int hash = 17;
+                if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
+                {
+                    var buf = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
+                    hash = hash * 31 + buf.Length;
+                    for (int i = 0; i < buf.Length; i++)
+                    {
+                        var e = buf[i];
+                        hash = hash * 31 + e.ItemType;
+                        hash = hash * 31 + e.RemainingCharges;
+                        hash = hash * 31 + e.ComponentId.GetHashCode();
+                    }
+                }
+
+                if (em.HasBuffer<EquippedCardElement>(shipEntity))
+                {
+                    var cards = em.GetBuffer<EquippedCardElement>(shipEntity);
+                    hash = hash * 31 + cards.Length;
+                    for (int i = 0; i < cards.Length; i++)
+                        hash = hash * 31 + cards[i].CardId.GetHashCode();
+                }
+
+                return hash;
+            }
+        }
+
+        /// <summary>
+        /// Rebuilds level-1 chassis stats including moon-store ship components, with correct
+        /// propulsion aggregation (max engine + half per-level for extras).
+        /// Returns false when there are no store ShipComponent rows (caller uses chassis-only path).
+        /// </summary>
+        static bool TryGetBaseStatsWithStoreComponents(
+            EntityManager em,
+            Entity shipEntity,
+            string chassisId,
+            out ShipComponentAbilityStats baseStats)
+        {
+            baseStats = default;
+            if (!em.HasBuffer<EquippedEquipmentElement>(shipEntity))
+                return false;
+
+            var buf = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
+            var extraIds = new System.Collections.Generic.List<string>(4);
+            for (int i = 0; i < buf.Length; i++)
+            {
+                var e = buf[i];
+                if ((StoreItemType)e.ItemType != StoreItemType.ShipComponent)
+                    continue;
+                string id = e.ComponentId.ToString();
+                if (!string.IsNullOrWhiteSpace(id))
+                    extraIds.Add(id);
+            }
+
+            if (extraIds.Count == 0)
+                return false;
+
+            var config = Config;
+            if (config == null || string.IsNullOrEmpty(chassisId))
+                return false;
+
+            var tier = config.GetTierEntryForChassisId(chassisId);
+            if (tier?.prefab == null)
+                return false;
+            if (!TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family) || family == null)
+                return false;
+
+            // Raw prefab sum (no propulsion yet) → append store parts → shared aggregation.
+            var raw = ShipFamilyStatsCalculator.SumFromPrefabHierarchy(
+                tier.prefab, family, shipLevel: 1, applyPropulsionAndWeaponRules: false);
+            var merged = ShipFamilyStatsCalculator.AppendExtraComponentsAndAggregate(
+                raw, family, extraIds, shipLevel: 1);
+            if (ShipComponentAbilityStatsMath.IsAllZero(merged.TotalStats))
+                return false;
+
+            baseStats = merged.TotalStats;
+            return true;
+        }
+
+        /// <summary>
+        /// Adds flat CardData stat modifiers from equipped upgrade cards onto the chassis baseline.
+        /// </summary>
+        static void TryAddEquippedCardStatModifiers(
+            EntityManager em,
+            Entity shipEntity,
+            string chassisId,
+            ref ShipComponentAbilityStats baseline)
+        {
+            // --- Equipped upgrade cards ---
+            if (!em.HasBuffer<EquippedCardElement>(shipEntity))
+                return;
+            if (!TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family) || family == null)
+                return;
+
+            var cards = em.GetBuffer<EquippedCardElement>(shipEntity);
+            for (int i = 0; i < cards.Length; i++)
+            {
+                string cardId = cards[i].CardId.ToString();
+                if (string.IsNullOrWhiteSpace(cardId))
+                    continue;
+
+                CardData card = FindCardInFamily(family, cardId);
+                if (card == null)
+                    continue;
+
+                // [TITAN-ORBIT] CardData flat adds + combat multipliers (pre-ECS card cache parity).
+                baseline.moveSpeed += card.movementSpeedAdd;
+                baseline.turnSpeed += card.rotationSpeedAdd;
+                baseline.healthCap += card.maxHealthAdd;
+                baseline.healthRegen += card.healthRegenAdd;
+                baseline.energyCap += card.energyCapacityAdd;
+                baseline.energyRegen += card.energyRegenAdd;
+                baseline.maxGems += card.gemCapacityAdd;
+                baseline.maxPeople += card.peopleCapacityAdd;
+
+                if (card.damageMultiplier > 0.01f && !Mathf.Approximately(card.damageMultiplier, 1f))
+                    baseline.firePower *= card.damageMultiplier;
+                if (card.fireRateMultiplier > 0.01f && !Mathf.Approximately(card.fireRateMultiplier, 1f))
+                    baseline.fireRate *= card.fireRateMultiplier;
+                if (card.bulletSpeedMultiplier > 0.01f && !Mathf.Approximately(card.bulletSpeedMultiplier, 1f))
+                    baseline.bulletSpeed *= card.bulletSpeedMultiplier;
+            }
+        }
+
+        /// <summary>Looks up a CardData by stable id inside one ship family's upgrade deck.</summary>
+        public static CardData FindCardInFamily(ShipFamilyDefinition family, string cardId)
+        {
+            if (family == null || string.IsNullOrEmpty(cardId))
+                return null;
+
+            foreach (var card in family.GetUpgradeCards())
+            {
+                if (card == null)
+                    continue;
+                if (string.Equals(card.GetStableCardId(), cardId, System.StringComparison.OrdinalIgnoreCase))
+                    return card;
+                if (string.Equals(card.cardId, cardId, System.StringComparison.OrdinalIgnoreCase))
+                    return card;
+                if (string.Equals(card.name, cardId, System.StringComparison.OrdinalIgnoreCase))
+                    return card;
+            }
+
+            return null;
+        }
+
+        /// <summary>Looks up a CardData across all families in PlanetShipFamilyConfig (fallback).</summary>
+        public static CardData FindCardAnywhere(string cardId)
+        {
+            if (string.IsNullOrEmpty(cardId))
+                return null;
+
+            var config = Config;
+            if (config?.families == null)
+                return null;
+
+            for (int i = 0; i < config.families.Count; i++)
+            {
+                var def = config.families[i]?.shipFamilyDefinition;
+                if (def == null)
+                    continue;
+                var card = FindCardInFamily(def, cardId);
+                if (card != null)
+                    return card;
+            }
+
+            return null;
         }
 
         /// <summary>

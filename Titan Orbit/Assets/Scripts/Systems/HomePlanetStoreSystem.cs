@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
@@ -12,7 +11,7 @@ namespace TitanOrbit.Systems
     /// <summary>
     /// Legacy orbit-store purchase façade for <see cref="OrbitStationUI"/>. NGO ServerRpc names
     /// are preserved for minimal UI diff; implementations forward to <see cref="MoonOrbitRpcClient"/>
-    /// ECS commands (server-authoritative). Component purchases log not-implemented until ported.
+    /// ECS commands (server-authoritative), including component purchases.
     /// </summary>
     public class HomePlanetStoreSystem : MonoBehaviour
     {
@@ -69,11 +68,17 @@ namespace TitanOrbit.Systems
         }
 
         /// <summary>
-        /// [LEGACY] Component-by-id purchase — not wired to ECS store yet.
+        /// Purchases a ship-family extra component by stable id into an empty equipment slot.
         /// </summary>
         public void PurchaseComponentServerRpc(ulong homePlanetNetworkId, ulong shipNetworkId, string componentId)
         {
-            Debug.LogWarning($"[HomePlanetStoreSystem] Component purchase '{componentId}' is not available in ECS yet.");
+            // --- PurchaseComponentServerRpc ---
+            int homePlanetId = OrbitStationEcsContext.HomePlanetId;
+            if (homePlanetId <= 0 || string.IsNullOrWhiteSpace(componentId))
+                return;
+
+            MoonOrbitRpcClient.PurchaseStoreComponent(homePlanetId, componentId);
+            MoonOrbitRpcClient.RequestContributedGems(homePlanetId);
         }
     }
 }

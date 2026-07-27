@@ -11,8 +11,9 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Client glue for moon-orbit store actions: contributed-gems queries, deposit toggle,
-    /// and ship upgrade-tree purchases. UI calls these static helpers; they either write the
-    /// Local Host <c>ServerWorld</c> directly or send NetCode RPCs from <c>ClientWorld</c>.
+    /// ship upgrade-tree purchases, drones/support items, extra components, card spin/take,
+    /// and loadout remove. UI calls these static helpers; they either write the Local Host
+    /// <c>ServerWorld</c> directly or send NetCode RPCs from <c>ClientWorld</c>.
     /// Deposit toggle also updates <see cref="MoonOrbitClientState"/> immediately so local SFX
     /// can metronome without waiting for ghost replication.
     /// </summary>
@@ -211,7 +212,7 @@ namespace TitanOrbit.UI
                 }
             }
 
-            var world = EcsGameBridge.ServerWorld ?? EcsGameBridge.ClientWorld;
+            var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
                 return;
 
@@ -221,10 +222,37 @@ namespace TitanOrbit.UI
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
 
+        /// <summary>
+        /// Purchases a drone / rocket / mine pack at the home planet store.
+        /// Local Host applies on ServerWorld; dedicated clients SendRpc from ClientWorld only.
+        /// </summary>
         public static void PurchaseStoreItem(int homePlanetId, StoreItemType itemType)
         {
             // --- PurchaseStoreItem ---
-            var world = EcsGameBridge.ServerWorld ?? EcsGameBridge.ClientWorld;
+            if (homePlanetId <= 0)
+                return;
+
+            if (EcsGameBridge.IsLocalHost())
+            {
+                var server = EcsGameBridge.ServerWorld;
+                if (server == null || !server.IsCreated)
+                    return;
+
+                int networkId = EcsGameBridge.GetLocalNetworkId();
+                if (networkId <= 0)
+                    return;
+
+                bool ok = MoonOrbitStoreSystem.TryPurchaseStoreItemForNetworkId(
+                    server.EntityManager, networkId, homePlanetId, (int)itemType, out var message);
+                if (!message.IsEmpty)
+                    MoonOrbitClientState.SetStoreMessage(message.ToString());
+                if (!ok)
+                    Debug.LogWarning($"[MoonOrbit] Store item failed: {message}");
+                RequestContributedGems(homePlanetId);
+                return;
+            }
+
+            var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
                 return;
 
@@ -235,6 +263,215 @@ namespace TitanOrbit.UI
                 HomePlanetId = homePlanetId,
                 ItemType = (int)itemType,
             });
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        /// <summary>
+        /// Purchases a ship-family extra component by stable id into an empty equipment slot.
+        /// </summary>
+        public static void PurchaseStoreComponent(int homePlanetId, string componentId)
+        {
+            // --- PurchaseStoreComponent ---
+            if (homePlanetId <= 0 || string.IsNullOrWhiteSpace(componentId))
+                return;
+
+            if (EcsGameBridge.IsLocalHost())
+            {
+                var server = EcsGameBridge.ServerWorld;
+                if (server == null || !server.IsCreated)
+                    return;
+
+                int networkId = EcsGameBridge.GetLocalNetworkId();
+                if (networkId <= 0)
+                    return;
+
+                bool ok = MoonOrbitStoreSystem.TryPurchaseStoreComponentForNetworkId(
+                    server.EntityManager, networkId, homePlanetId, componentId, out var message);
+                if (!message.IsEmpty)
+                    MoonOrbitClientState.SetStoreMessage(message.ToString());
+                if (!ok)
+                    Debug.LogWarning($"[MoonOrbit] Component purchase failed: {message}");
+                RequestContributedGems(homePlanetId);
+                return;
+            }
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new PurchaseStoreComponentCommand
+            {
+                HomePlanetId = homePlanetId,
+                ComponentId = componentId,
+            });
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        /// <summary>
+        /// Pays for a card spin at the docked store planet and fills three offer slots.
+        /// </summary>
+        public static void CardSpin(int storePlanetId)
+        {
+            // --- CardSpin ---
+            if (storePlanetId <= 0)
+                return;
+
+            if (EcsGameBridge.IsLocalHost())
+            {
+                var server = EcsGameBridge.ServerWorld;
+                if (server == null || !server.IsCreated)
+                    return;
+
+                int networkId = EcsGameBridge.GetLocalNetworkId();
+                if (networkId <= 0)
+                    return;
+
+                bool ok = MoonOrbitStoreSystem.TryCardSpinForNetworkId(
+                    server.EntityManager,
+                    networkId,
+                    storePlanetId,
+                    out var a,
+                    out var b,
+                    out var c,
+                    out var message);
+                if (!message.IsEmpty)
+                    MoonOrbitClientState.SetStoreMessage(message.ToString());
+                if (ok)
+                {
+                    MoonOrbitClientState.SetSpinOffer(
+                        a.ToString(), b.ToString(), c.ToString(), success: true);
+                }
+                else
+                    Debug.LogWarning($"[MoonOrbit] Card spin failed: {message}");
+                RequestContributedGems(OrbitStationEcsContext.HomePlanetId);
+                return;
+            }
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new CardSpinCommand { StorePlanetId = storePlanetId });
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        /// <summary>
+        /// Takes one card from the current spin offer into an empty card slot (spin already paid).
+        /// </summary>
+        public static void TakeSpinCard(int storePlanetId, string cardId)
+        {
+            // --- TakeSpinCard ---
+            if (storePlanetId <= 0 || string.IsNullOrEmpty(cardId))
+                return;
+
+            if (EcsGameBridge.IsLocalHost())
+            {
+                var server = EcsGameBridge.ServerWorld;
+                if (server == null || !server.IsCreated)
+                    return;
+
+                int networkId = EcsGameBridge.GetLocalNetworkId();
+                if (networkId <= 0)
+                    return;
+
+                bool ok = MoonOrbitStoreSystem.TryTakeSpinCardForNetworkId(
+                    server.EntityManager, networkId, storePlanetId, cardId, out var message);
+                if (!message.IsEmpty)
+                    MoonOrbitClientState.SetStoreMessage(message.ToString());
+                if (ok)
+                    MoonOrbitClientState.SetSpinOffer(string.Empty, string.Empty, string.Empty, success: false);
+                if (!ok)
+                    Debug.LogWarning($"[MoonOrbit] Take card failed: {message}");
+                return;
+            }
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new TakeSpinCardCommand
+            {
+                StorePlanetId = storePlanetId,
+                CardId = cardId,
+            });
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        /// <summary>Removes an equipped upgrade card at the given buffer index (free discard).</summary>
+        public static void RemoveEquippedCard(int slotIndex)
+        {
+            // --- RemoveEquippedCard ---
+            if (slotIndex < 0)
+                return;
+
+            if (EcsGameBridge.IsLocalHost())
+            {
+                var server = EcsGameBridge.ServerWorld;
+                if (server == null || !server.IsCreated)
+                    return;
+
+                int networkId = EcsGameBridge.GetLocalNetworkId();
+                if (networkId <= 0)
+                    return;
+
+                bool ok = MoonOrbitStoreSystem.TryRemoveEquippedCardForNetworkId(
+                    server.EntityManager, networkId, slotIndex, out var message);
+                if (!message.IsEmpty)
+                    MoonOrbitClientState.SetStoreMessage(message.ToString());
+                if (!ok)
+                    Debug.LogWarning($"[MoonOrbit] Remove card failed: {message}");
+                return;
+            }
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new RemoveEquippedCardCommand { SlotIndex = slotIndex });
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        /// <summary>Removes an equipped store item / component at the given buffer index (free discard).</summary>
+        public static void RemoveEquippedEquipment(int slotIndex)
+        {
+            // --- RemoveEquippedEquipment ---
+            if (slotIndex < 0)
+                return;
+
+            if (EcsGameBridge.IsLocalHost())
+            {
+                var server = EcsGameBridge.ServerWorld;
+                if (server == null || !server.IsCreated)
+                    return;
+
+                int networkId = EcsGameBridge.GetLocalNetworkId();
+                if (networkId <= 0)
+                    return;
+
+                bool ok = MoonOrbitStoreSystem.TryRemoveEquippedEquipmentForNetworkId(
+                    server.EntityManager, networkId, slotIndex, out var message);
+                if (!message.IsEmpty)
+                    MoonOrbitClientState.SetStoreMessage(message.ToString());
+                if (!ok)
+                    Debug.LogWarning($"[MoonOrbit] Remove equipment failed: {message}");
+                return;
+            }
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new RemoveEquippedEquipmentCommand { SlotIndex = slotIndex });
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
     }

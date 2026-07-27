@@ -4,7 +4,9 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Game;
+using TitanOrbit.Systems;
 using TitanOrbit.UI;
+using Unity.Entities;
 using UnityEngine;
 
 namespace TitanOrbit.Entities
@@ -34,6 +36,9 @@ namespace TitanOrbit.Entities
 
         public List<CardData> EquippedCards { get; } = new List<CardData>();
         public List<EquippedEquipmentEntry> EquippedEquipment { get; } = new List<EquippedEquipmentEntry>();
+
+        /// <summary>Last loadout fingerprint — skip buffer rebuild when equipment/cards unchanged.</summary>
+        int _lastLoadoutFingerprint = int.MinValue;
 
         /// <summary>Singleton accessor — finds existing view or creates the DontDestroyOnLoad adapter.</summary>
         public static Starship GetOrCreate()
@@ -106,14 +111,28 @@ namespace TitanOrbit.Entities
             }
         }
 
-        /// <summary>Copies equipped equipment buffer from visualization ECS world into legacy lists.</summary>
+        /// <summary>
+        /// Copies equipped equipment + card buffers from ECS into legacy lists for orbit UI.
+        /// Local Host reads ServerWorld so purchases applied directly there show immediately
+        /// (ghost buffer replication can lag one snapshot behind the menu refresh).
+        /// Skips rebuild when the equipment fingerprint is unchanged (avoids lag while menu is open).
+        /// </summary>
         void SyncLoadoutBuffers()
         {
             // --- SyncLoadoutBuffers ---
-            EquippedCards.Clear();
-            EquippedEquipment.Clear();
+            // [TITAN-ORBIT] Prefer authoritative ServerWorld on Local Host for store inventory.
+            World world = null;
+            if (EcsGameBridge.IsLocalHost() &&
+                EcsGameBridge.ServerWorld != null &&
+                EcsGameBridge.ServerWorld.IsCreated)
+            {
+                world = EcsGameBridge.ServerWorld;
+            }
+            else
+            {
+                world = EcsGameBridge.GetVisualizationWorld();
+            }
 
-            var world = EcsGameBridge.GetVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return;
 
@@ -121,6 +140,15 @@ namespace TitanOrbit.Entities
                 return;
 
             var em = world.EntityManager;
+            int fingerprint = ShipStatApplyLogic.ComputeEquippedLoadoutFingerprint(em, shipEntity);
+            if (fingerprint == _lastLoadoutFingerprint)
+                return;
+
+            _lastLoadoutFingerprint = fingerprint;
+            EquippedCards.Clear();
+            EquippedEquipment.Clear();
+
+            // --- Equipment (drones / rockets / mines / ship components) ---
             if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
             {
                 var buffer = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
@@ -135,7 +163,30 @@ namespace TitanOrbit.Entities
                     });
                 }
             }
+
+            // --- Upgrade cards ---
+            if (em.HasBuffer<EquippedCardElement>(shipEntity))
+            {
+                var cards = em.GetBuffer<EquippedCardElement>(shipEntity);
+                for (int i = 0; i < cards.Length; i++)
+                {
+                    string cardId = cards[i].CardId.ToString();
+                    if (string.IsNullOrWhiteSpace(cardId))
+                        continue;
+
+                    CardData card = null;
+                    if (CardShopSystem.Instance != null)
+                        card = CardShopSystem.Instance.GetCardByIdForShip(this, cardId);
+                    if (card == null)
+                        card = ShipStatApplyLogic.FindCardAnywhere(cardId);
+                    if (card != null)
+                        EquippedCards.Add(card);
+                }
+            }
         }
+
+        /// <summary>Forces next SyncLoadoutBuffers to rebuild lists (after purchase / remove).</summary>
+        public void InvalidateLoadoutCache() => _lastLoadoutFingerprint = int.MinValue;
 
         /// <summary>Returns true when a ship component id is already in the equipped equipment buffer.</summary>
         public bool HasComponentEquipped(string componentId)
@@ -161,10 +212,21 @@ namespace TitanOrbit.Entities
             MoonOrbitRpcClient.SetWantDepositGems(wantDeposit);
         }
 
-        public void RemoveCardServerRpc(int slotIndex) { }
+        /// <summary>Requests server removal of an equipped upgrade card (free discard).</summary>
+        public void RemoveCardServerRpc(int slotIndex)
+        {
+            MoonOrbitRpcClient.RemoveEquippedCard(slotIndex);
+        }
 
-        public void RemoveEquipmentServerRpc(int slotIndex) { }
+        /// <summary>Requests server removal of an equipped store item / component (free discard).</summary>
+        public void RemoveEquipmentServerRpc(int slotIndex)
+        {
+            MoonOrbitRpcClient.RemoveEquippedEquipment(slotIndex);
+        }
 
+        /// <summary>
+        /// [LEGACY] Component placement editor — not wired to ECS yet (buy uses default placement).
+        /// </summary>
         public void UpdateEquippedComponentPlacementServerRpc(
             int slotIndex,
             float localPosX,

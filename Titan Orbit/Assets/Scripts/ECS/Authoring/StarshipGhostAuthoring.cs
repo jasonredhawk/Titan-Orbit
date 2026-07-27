@@ -67,6 +67,10 @@ namespace TitanOrbit.ECS.Authoring
                     BranchIndex = 0,
                     ChassisIndex = 0,
                 });
+                // [NETCODE] Loadout buffers must be baked so GhostFields replicate. Runtime-only
+                // AddBuffer from ShipEnsureComponentsSystem does not register them on the ghost.
+                AddBuffer<EquippedEquipmentElement>(entity);
+                AddBuffer<EquippedCardElement>(entity);
                 AddComponent(entity, new ShipMotorConfig
                 {
                     EngineThrust = authoring.EngineThrust,

@@ -53,6 +53,9 @@ namespace TitanOrbit.ECS
                     attrSum = ShipStatApplyLogic.SumAttributeLevels(em.GetComponentData<ShipAttributeUpgradeState>(entity));
 
                 // [STANDARD] Apply stats on first spawn or when level/branch/attrs change.
+                // [TITAN-ORBIT] Do NOT poll EquippedEquipment fingerprints every tick — that buffer
+                // walk + FixedString.ToString on every ship caused menu-open lag. Orbit purchases
+                // call ApplyToShip immediately via MoonOrbitStoreSystem.ReapplyShipStats.
                 bool needsApply = !em.HasComponent<ShipChassisState>(entity);
                 if (!needsApply)
                 {
