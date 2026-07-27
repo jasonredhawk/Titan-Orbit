@@ -10,38 +10,125 @@ namespace TitanOrbit.Generation
     /// so combat, docking, mining, and beams work across seams. Display helpers pick the
     /// nearest map-tile copy of a logical point relative to a reference (usually the local ship)
     /// so GameObject proxies do not jump a full map width when the owner wraps.
-    /// Map size is set from <see cref="TitanOrbit.ECS.MapStateSingleton"/> at match bootstrap.
+    /// Map size is set from <see cref="TitanOrbit.ECS.MapStateSingleton"/> at match bootstrap
+    /// or from <c>MapSessionMetaRpc</c> on dedicated clients — never invented as a silent default.
     /// Burst-safe: pure static math, no managed allocations.
     /// </summary>
     public static class ToroidalMapEcs
     {
-        // [TITAN-ORBIT] Defaults until MapGenerationSettings bake or runtime singleton sets size.
-        static float s_MapWidth = 1000f;
-        static float s_MapHeight = 1000f;
+        /// <summary>
+        /// Smallest side length we treat as a real rolled map (world units).
+        /// Below this, size is considered missing — callers must skip toroidal math, not invent a period.
+        /// </summary>
+        public const float MinValidMapSize = 100f;
 
-        /// <summary>Current world width in Unity units (XZ plane).</summary>
+        // [TITAN-ORBIT] 0 = unset. Never seed 1000×1000 — a wrong period looks fine near the
+        // map center but breaks seam reach, tractor lock, gem pickup, and display retile.
+        static float s_MapWidth;
+        static float s_MapHeight;
+
+        /// <summary>Current world width in Unity units (XZ plane). 0 until <see cref="SetMapSize"/>.</summary>
         public static float MapWidth => s_MapWidth;
 
-        /// <summary>Current world height in Unity units (XZ plane).</summary>
+        /// <summary>Current world height in Unity units (XZ plane). 0 until <see cref="SetMapSize"/>.</summary>
         public static float MapHeight => s_MapHeight;
 
+        /// <summary>True when both axes look like a real rolled map (≥ <see cref="MinValidMapSize"/>).</summary>
+        public static bool HasValidMapSize => IsValidMapSize(s_MapWidth, s_MapHeight);
+
         /// <summary>
-        /// Called when map generation completes or settings load — clamps to minimum 100 units.
+        /// True when both dimensions look like a real rolled map (not missing / not inventing).
         /// </summary>
+        public static bool IsValidMapSize(float width, float height) =>
+            width >= MinValidMapSize && height >= MinValidMapSize;
+
+        /// <summary>
+        /// Called when map generation completes or session meta arrives.
+        /// Ignores invalid sizes — does <b>not</b> invent a fallback period.
+        /// </summary>
+        /// <param name="width">Rolled map width in world units (≥ <see cref="MinValidMapSize"/>).</param>
+        /// <param name="height">Rolled map height in world units (≥ <see cref="MinValidMapSize"/>).</param>
         public static void SetMapSize(float width, float height)
         {
-            // --- Clamp designer input to playable minimum ---
-            s_MapWidth = math.max(100f, width);
-            s_MapHeight = math.max(100f, height);
+            // --- Reject missing / garbage sizes (do not invent 1000 or 100) ---
+            if (!IsValidMapSize(width, height))
+                return;
+
+            s_MapWidth = width;
+            s_MapHeight = height;
 
             // --- Keep Vector3 twin in lockstep (minimap / UI) ---
             ToroidalMap.SetMapSize(s_MapWidth, s_MapHeight);
         }
 
         /// <summary>
+        /// Clears cached size when leaving a match so the next join cannot reuse a stale period.
+        /// </summary>
+        public static void ClearMapSize()
+        {
+            s_MapWidth = 0f;
+            s_MapHeight = 0f;
+            ToroidalMap.ClearMapSize();
+        }
+
+        /// <summary>
+        /// Reads the latched cache when valid.
+        /// </summary>
+        /// <param name="mapW">Width when true; otherwise 0.</param>
+        /// <param name="mapH">Height when true; otherwise 0.</param>
+        /// <returns>False when size has not been set yet — caller must skip toroidal work.</returns>
+        public static bool TryGetMapSize(out float mapW, out float mapH)
+        {
+            if (!HasValidMapSize)
+            {
+                mapW = 0f;
+                mapH = 0f;
+                return false;
+            }
+
+            mapW = s_MapWidth;
+            mapH = s_MapHeight;
+            return true;
+        }
+
+        /// <summary>
+        /// Picks the map period for toroidal gameplay / presentation math.
+        /// Prefers an authoritative <paramref name="preferredWidth"/> / <paramref name="preferredHeight"/>
+        /// (from <c>MapStateSingleton</c> or session meta) over the static cache.
+        /// Returns false when neither source is valid — never invents 1000×1000.
+        /// </summary>
+        /// <param name="preferredWidth">
+        /// Authoritative width when ≥ <see cref="MinValidMapSize"/>; otherwise ignored.
+        /// </param>
+        /// <param name="preferredHeight">
+        /// Authoritative height when ≥ <see cref="MinValidMapSize"/>; otherwise ignored.
+        /// </param>
+        /// <param name="mapW">Resolved width when true; otherwise 0.</param>
+        /// <param name="mapH">Resolved height when true; otherwise 0.</param>
+        /// <returns>True when a real rolled period is available.</returns>
+        public static bool ResolveMapSize(
+            float preferredWidth,
+            float preferredHeight,
+            out float mapW,
+            out float mapH)
+        {
+            // --- Prefer caller’s rolled size (MapState / session meta) ---
+            if (IsValidMapSize(preferredWidth, preferredHeight))
+            {
+                mapW = preferredWidth;
+                mapH = preferredHeight;
+                return true;
+            }
+
+            // --- Fall back only to a previously latched real size ---
+            return TryGetMapSize(out mapW, out mapH);
+        }
+
+        /// <summary>
         /// Wraps a world position into canonical toroidal space using explicit map dimensions.
         /// Valid range: X in <c>[-halfW, halfW)</c>, Z in <c>[-halfH, halfH)</c>. Y unchanged.
         /// [TITAN-ORBIT] Prefer this overload inside Burst systems that already read MapStateSingleton.
+        /// Caller must pass a real rolled size (≥ <see cref="MinValidMapSize"/>).
         /// </summary>
         public static float3 Wrap(float3 position, float mapWidth, float mapHeight)
         {
@@ -63,21 +150,34 @@ namespace TitanOrbit.Generation
             return position;
         }
 
-        /// <summary>Wrap using cached <see cref="MapWidth"/> / <see cref="MapHeight"/>.</summary>
-        public static float3 Wrap(float3 position) => Wrap(position, s_MapWidth, s_MapHeight);
+        /// <summary>
+        /// Wrap using cached <see cref="MapWidth"/> / <see cref="MapHeight"/>.
+        /// No-op (returns input) when size is not latched yet.
+        /// </summary>
+        public static float3 Wrap(float3 position)
+        {
+            if (!HasValidMapSize)
+                return position;
+            return Wrap(position, s_MapWidth, s_MapHeight);
+        }
 
         /// <summary>
         /// Shortest XZ offset from <paramref name="from"/> toward <paramref name="to"/> on the torus.
         /// Result length is at most half a map side on each axis. Y is zeroed.
+        /// Caller must pass a real rolled size; tiny/zero sizes only get epsilon protection (no invented period).
         /// </summary>
         public static float3 ShortestOffsetXZ(float3 from, float3 to, float mapWidth, float mapHeight)
         {
+            // --- Divide-by-zero guard only (do not invent a playable 1000 / 100 period) ---
+            float w = math.max(1e-3f, mapWidth);
+            float h = math.max(1e-3f, mapHeight);
+
             // --- Periodic delta: subtract nearest whole map tile ---
             // [TITAN-ORBIT] Same formula as minimap / GemTractorBeamVisual neighbor tiles.
             float dx = to.x - from.x;
             float dz = to.z - from.z;
-            dx -= math.round(dx / mapWidth) * mapWidth;
-            dz -= math.round(dz / mapHeight) * mapHeight;
+            dx -= math.round(dx / w) * w;
+            dz -= math.round(dz / h) * h;
             return new float3(dx, 0f, dz);
         }
 
@@ -117,9 +217,15 @@ namespace TitanOrbit.Generation
             return new float3(logicalPos.x + k * mapWidth, logicalPos.y, logicalPos.z + m * mapHeight);
         }
 
-        /// <summary>Overload using cached map size.</summary>
-        public static float3 GetDisplayPosition(float3 logicalPos, float3 referencePos) =>
-            GetDisplayPosition(logicalPos, referencePos, s_MapWidth, s_MapHeight);
+        /// <summary>
+        /// Overload using cached map size. Returns logical position unchanged when size is unset.
+        /// </summary>
+        public static float3 GetDisplayPosition(float3 logicalPos, float3 referencePos)
+        {
+            if (!HasValidMapSize)
+                return logicalPos;
+            return GetDisplayPosition(logicalPos, referencePos, s_MapWidth, s_MapHeight);
+        }
 
         /// <summary>
         /// Like <see cref="GetDisplayPosition"/> but keeps the same map tile until another tile is
@@ -176,14 +282,19 @@ namespace TitanOrbit.Generation
                 logicalPos.z + tileM * mapHeight);
         }
 
-        /// <summary>Overload using cached map dimensions.</summary>
+        /// <summary>
+        /// Overload using cached map dimensions. Returns logical position when size is unset.
+        /// </summary>
         public static float3 GetDisplayPositionWithHysteresis(
             float3 logicalPos,
             float3 referencePos,
             ref int tileK,
             ref int tileM,
-            float switchMarginFraction = 0.35f) =>
-            GetDisplayPositionWithHysteresis(
+            float switchMarginFraction = 0.35f)
+        {
+            if (!HasValidMapSize)
+                return logicalPos;
+            return GetDisplayPositionWithHysteresis(
                 logicalPos,
                 referencePos,
                 ref tileK,
@@ -191,5 +302,6 @@ namespace TitanOrbit.Generation
                 s_MapWidth,
                 s_MapHeight,
                 switchMarginFraction);
+        }
     }
 }

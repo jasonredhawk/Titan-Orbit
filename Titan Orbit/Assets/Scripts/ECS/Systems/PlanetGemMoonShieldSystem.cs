@@ -113,13 +113,18 @@ namespace TitanOrbit.ECS
                 ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
                 : SystemAPI.Time.ElapsedTime;
 
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
-            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
+            // Missing map period → skip moon shield regen geometry (never invent 1000).
+            float preferredW = 0f;
+            float preferredH = 0f;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
+                ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
             {
-                mapW = mapState.MapWidth;
-                mapH = mapState.MapHeight;
+                preferredW = mapState.MapWidth;
+                preferredH = mapState.MapHeight;
             }
+
+            if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
+                return;
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 

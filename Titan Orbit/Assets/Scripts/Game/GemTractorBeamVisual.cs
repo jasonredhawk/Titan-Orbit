@@ -132,8 +132,9 @@ namespace TitanOrbit.Game
                 return;
 
             var em = world.EntityManager;
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
+            // --- Rolled map period before reach / draw math ---
+            if (!ToroidalDisplay.ResolveMapSize(em, out float mapW, out float mapH))
+                return;
 
             using var shipQuery = em.CreateEntityQuery(typeof(ShipTag), typeof(ShipState), typeof(LocalTransform));
             using var ships = shipQuery.ToEntityArray(Unity.Collections.Allocator.Temp);

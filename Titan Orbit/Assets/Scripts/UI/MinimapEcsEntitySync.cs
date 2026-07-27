@@ -143,23 +143,34 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] Prefer MapSessionMetaCache — same as ToroidalDisplay.SyncMapSize.
             // Creating a MapStateSingleton query every LateUpdate while flying was wasted work:
             // we early-out on unchanged size only AFTER paying CreateEntityQuery.
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
+            // Never invent a period — only apply when a real rolled size is available.
+            float mapW = 0f;
+            float mapH = 0f;
+            bool haveSize = false;
             if (MapSessionMetaCache.HasMapSize)
             {
                 mapW = MapSessionMetaCache.MapWidth;
                 mapH = MapSessionMetaCache.MapHeight;
+                haveSize = true;
+            }
+            else if (ToroidalMapEcs.TryGetMapSize(out mapW, out mapH))
+            {
+                haveSize = true;
             }
             else
             {
                 using var mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
                 if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
-                    map.MapWidth >= 100f && map.MapHeight >= 100f)
+                    ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
                 {
                     mapW = map.MapWidth;
                     mapH = map.MapHeight;
+                    haveSize = true;
                 }
             }
+
+            if (!haveSize)
+                return;
 
             if (mapW == _lastMapWidth && mapH == _lastMapHeight)
                 return;

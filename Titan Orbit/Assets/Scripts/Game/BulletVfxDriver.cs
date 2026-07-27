@@ -723,7 +723,7 @@ namespace TitanOrbit.Game
                 OwnerTeam = req.OwnerTeam,
                 BankIndex = bankIndex,
                 ScaleMultiplier = scaleMul,
-                MountIndex = req.MountIndex < 0 ? 0 : req.MountIndex,
+                MountIndex = req.MountIndex,
                 IsDisplaySpace = req.IsDisplaySpace,
                 IsAnticipation = req.IsAnticipation,
                 // Only anticipations need order; server-only tracers keep 0.

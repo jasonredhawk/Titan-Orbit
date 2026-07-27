@@ -64,36 +64,51 @@ namespace TitanOrbit.Game
         /// Syncs map size so tile math matches the rolled map.
         /// Prefers <see cref="NetCode.MapSessionMetaCache"/> — avoids
         /// <c>CreateEntityQuery</c> every presentation frame (was paid on both visualizer + minimap).
+        /// No-op when neither session meta nor MapState has a real period (never invents 1000×1000).
         /// </summary>
         public static void SyncMapSize(EntityManager em)
         {
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
-
             // --- Hot path: session meta already latched after MapSessionMetaRpc ---
             // [TITAN-ORBIT] CreateEntityQuery every LateUpdate was invisible in bodiesMs (it ran
             // before phase timers) and is a known DOTS alloc/cost anti-pattern while flying.
             if (NetCode.MapSessionMetaCache.HasMapSize)
             {
-                mapW = NetCode.MapSessionMetaCache.MapWidth;
-                mapH = NetCode.MapSessionMetaCache.MapHeight;
-                NetCode.MapSessionMetaCache.ApplyMapSizeToToroidalHelpers(mapW, mapH);
+                NetCode.MapSessionMetaCache.ApplyMapSizeToToroidalHelpers(
+                    NetCode.MapSessionMetaCache.MapWidth,
+                    NetCode.MapSessionMetaCache.MapHeight);
                 return;
             }
 
-            // --- Cold path before meta arrives (loading only) ---
-            if (em != default)
-            {
-                using var mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
-                if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
-                    map.MapWidth >= 100f && map.MapHeight >= 100f)
-                {
-                    mapW = map.MapWidth;
-                    mapH = map.MapHeight;
-                }
-            }
+            // --- Cold path before meta arrives (loading / local host) ---
+            if (em == default)
+                return;
 
-            NetCode.MapSessionMetaCache.ApplyMapSizeToToroidalHelpers(mapW, mapH);
+            using var mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
+            if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
+                ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
+            {
+                NetCode.MapSessionMetaCache.ApplyMapSizeToToroidalHelpers(map.MapWidth, map.MapHeight);
+            }
+            // else: size still missing — leave helpers unset; callers must skip toroidal work.
+        }
+
+        /// <summary>
+        /// Ensures toroidal helpers match the rolled map, then returns width/height for beam math.
+        /// Call before any client gem tractor reach / pull / deploy check.
+        /// <para>
+        /// [TITAN-ORBIT] Returns false when size is not latched yet — never invents a 1000 period.
+        /// Wrap-tile beams with a wrong period look broken while the map center still works.
+        /// </para>
+        /// </summary>
+        /// <param name="em">Client visualization world EntityManager (may be default).</param>
+        /// <param name="mapW">Resolved map width when true; otherwise 0.</param>
+        /// <param name="mapH">Resolved map height when true; otherwise 0.</param>
+        /// <returns>True when a real rolled period is available.</returns>
+        public static bool ResolveMapSize(EntityManager em, out float mapW, out float mapH)
+        {
+            // --- Latch session meta / MapState into ToroidalMapEcs when present ---
+            SyncMapSize(em);
+            return ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
         }
 
         /// <summary>
@@ -180,6 +195,10 @@ namespace TitanOrbit.Game
             if (!s_EntityTiles.TryGetValue(entity, out var tile))
                 tile = (int.MinValue, int.MinValue);
 
+            // Missing map period → leave logical pose (never invent a tile period).
+            if (!ToroidalMapEcs.HasValidMapSize)
+                return logicalPosition;
+
             int tileK = tile.k;
             int tileM = tile.m;
             float3 display = ToroidalMapEcs.GetDisplayPositionWithHysteresis(
@@ -214,6 +233,10 @@ namespace TitanOrbit.Game
         {
             if (!s_KeyedTiles.TryGetValue(stableKey, out var tile))
                 tile = (int.MinValue, int.MinValue);
+
+            // Missing map period → leave logical pose (never invent a tile period).
+            if (!ToroidalMapEcs.HasValidMapSize)
+                return logicalPosition;
 
             int tileK = tile.k;
             int tileM = tile.m;

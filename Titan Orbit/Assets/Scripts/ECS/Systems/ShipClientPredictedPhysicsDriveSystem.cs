@@ -48,17 +48,20 @@ namespace TitanOrbit.ECS
 
             // --- Map size for toroidal orbit / shield math (same source as server) ---
             // [TITAN-ORBIT] Prefer ToroidalMapEcs (MapSessionMeta on dedicated clients —
-            // MapStateSingleton often missing). Hardcoded 1000 broke seam orbit + territory boost.
-            // Inline SystemAPI here (not a static helper) — source-gen only works in OnUpdate.
-            float mapW = math.max(100f, ToroidalMapEcs.MapWidth);
-            float mapH = math.max(100f, ToroidalMapEcs.MapHeight);
+            // MapStateSingleton often missing). Missing size → skip this tick (never invent 1000).
+            float preferredW = 0f;
+            float preferredH = 0f;
             if (SystemAPI.TryGetSingleton(out MapStateSingleton mapState) &&
-                mapState.MapWidth >= 100f &&
-                mapState.MapHeight >= 100f)
+                ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
             {
-                mapW = mapState.MapWidth;
-                mapH = mapState.MapHeight;
+                preferredW = mapState.MapWidth;
+                preferredH = mapState.MapHeight;
             }
+
+            if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
+                return;
+            if (ToroidalMapEcs.IsValidMapSize(preferredW, preferredH))
+                ToroidalMapEcs.SetMapSize(mapW, mapH);
 
             // --- Planet snapshots (orbit ring + moon shield) ---
             // [ECS/DOTS] TempJob list — disposed after the parallel job completes.

@@ -66,13 +66,18 @@ namespace TitanOrbit.ECS
             }
 
             // --- Map size (SystemAPI only valid in OnUpdate, not static helpers) ---
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
-            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var map))
+            // Missing size → skip territory update (never invent 1000).
+            float preferredW = 0f;
+            float preferredH = 0f;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) &&
+                ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
             {
-                mapW = math.max(100f, map.MapWidth);
-                mapH = math.max(100f, map.MapHeight);
+                preferredW = map.MapWidth;
+                preferredH = map.MapHeight;
             }
+
+            if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
+                return;
 
             // --- Planet snapshots for moon vertex positions ---
             using var planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.Temp);

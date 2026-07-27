@@ -99,6 +99,34 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Finds a category index by designer <see cref="Category.categoryName"/> (case-insensitive).
+        /// Used by drones: Fighter → "Bullets", Mining → "Laserbolt".
+        /// </summary>
+        /// <param name="categoryName">Row name from the bank Inspector.</param>
+        /// <param name="index">Zero-based category index when found.</param>
+        /// <returns>True when a matching non-empty category exists.</returns>
+        public bool TryGetCategoryIndexByName(string categoryName, out int index)
+        {
+            index = 0;
+            if (categories == null || string.IsNullOrWhiteSpace(categoryName))
+                return false;
+
+            for (int i = 0; i < categories.Count; i++)
+            {
+                var cat = categories[i];
+                if (cat == null || string.IsNullOrEmpty(cat.categoryName))
+                    continue;
+                if (string.Equals(cat.categoryName, categoryName, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    index = i;
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Per-category global scale relative to the bank knob. Missing/zero serializes as 1 (100%).
         /// </summary>
         /// <param name="index">Category index (<c>RuntimeBulletIndex</c>).</param>

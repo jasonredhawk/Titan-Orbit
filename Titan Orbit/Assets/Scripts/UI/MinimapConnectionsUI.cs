@@ -230,8 +230,8 @@ namespace TitanOrbit.UI
             float radius = Mathf.Max(1f, _minimap.MinimapRadius);
             float displayHalf = _minimap.DisplaySize * 0.5f;
             float scale = displayHalf / radius;
-            float mapW = ToroidalMap.GetMapWidth();
-            float mapH = ToroidalMap.GetMapHeight();
+            if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))
+                return;
 
             // --- 3×3 tile copies when showing (near) the full map ---
             // [TITAN-ORBIT] Compact minimap: primary tile only (Scripts hitch if we always 9×).

@@ -51,8 +51,9 @@ namespace TitanOrbit.Game
             var em = world.EntityManager;
             float dt = Time.deltaTime;
             var touched = new HashSet<long>(VisibilityByPair.Count);
-            float mapW = Generation.ToroidalMapEcs.MapWidth;
-            float mapH = Generation.ToroidalMapEcs.MapHeight;
+            // --- Rolled map period for eligibility / fade ---
+            if (!ToroidalDisplay.ResolveMapSize(em, out float mapW, out float mapH))
+                return;
 
             using var shipQuery = em.CreateEntityQuery(
                 typeof(ECS.ShipTag),

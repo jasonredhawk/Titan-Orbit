@@ -68,8 +68,9 @@ namespace TitanOrbit.Game
             // Quarantine-safe: hybrid gem proxies only.
             GemTractorBeamClientLogic.CollectGemProxies(em, GemScratch);
 
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
+            // --- Rolled map period for local VFX fallback reach ---
+            if (!ToroidalDisplay.ResolveMapSize(em, out float mapW, out float mapH))
+                return;
 
             // --- Ghost locks (authoritative deploy clock) ---
             for (int gi = 0; gi < GemScratch.Count; gi++)

@@ -7,36 +7,73 @@ namespace TitanOrbit.Generation
     /// math for legacy GameObject and UI code that does not use Unity.Mathematics.
     /// Lives in TitanOrbit.Shared (with ToroidalMapEcs) so ECS bootstrap and NetCode RPCs can set size.
     /// Prefer <see cref="ToroidalMapEcs"/> in ECS systems.
+    /// Size starts unset (0) — never invents a silent 1000×1000 period.
     /// </summary>
     public static class ToroidalMap
     {
-        /// <summary>Current map width in world units (set at match bootstrap).</summary>
-        private static float mapWidth = 1000f;
-
-        /// <summary>Current map height in world units (set at match bootstrap).</summary>
-        private static float mapHeight = 1000f;
+        // [TITAN-ORBIT] 0 = unset until match bootstrap / MapSessionMetaRpc. Wrong period → seam bugs.
+        private static float mapWidth;
+        private static float mapHeight;
 
         /// <summary>
         /// Updates cached map dimensions after procedural generation rolls map size.
+        /// Ignores invalid sizes — does not invent a fallback period.
         /// </summary>
         public static void SetMapSize(float width, float height)
         {
+            if (!ToroidalMapEcs.IsValidMapSize(width, height))
+                return;
+
             mapWidth = width;
             mapHeight = height;
         }
 
-        /// <summary>Cached map width for minimap and legacy distance helpers.</summary>
+        /// <summary>
+        /// Clears cached size when leaving a match so the next join cannot reuse a stale period.
+        /// </summary>
+        public static void ClearMapSize()
+        {
+            mapWidth = 0f;
+            mapHeight = 0f;
+        }
+
+        /// <summary>True when both axes look like a real rolled map.</summary>
+        public static bool HasValidMapSize => ToroidalMapEcs.IsValidMapSize(mapWidth, mapHeight);
+
+        /// <summary>
+        /// Reads the latched cache when valid.
+        /// </summary>
+        /// <returns>False when size has not been set yet — caller must skip toroidal UI math.</returns>
+        public static bool TryGetMapSize(out float width, out float height)
+        {
+            if (!HasValidMapSize)
+            {
+                width = 0f;
+                height = 0f;
+                return false;
+            }
+
+            width = mapWidth;
+            height = mapHeight;
+            return true;
+        }
+
+        /// <summary>Cached map width for minimap and legacy distance helpers (0 until set).</summary>
         public static float GetMapWidth() => mapWidth;
 
-        /// <summary>Cached map height for minimap and legacy distance helpers.</summary>
+        /// <summary>Cached map height for minimap and legacy distance helpers (0 until set).</summary>
         public static float GetMapHeight() => mapHeight;
 
         /// <summary>
         /// Returns the toroidal copy of <paramref name="logicalPos"/> closest to
         /// <paramref name="cameraPos"/>. Supports the ship flying arbitrarily far from origin.
+        /// Returns logical position unchanged when map size is unset.
         /// </summary>
         public static Vector3 GetDisplayPosition(Vector3 logicalPos, Vector3 cameraPos)
         {
+            if (!HasValidMapSize)
+                return logicalPos;
+
             // --- Same integer-tile formula as ToroidalMapEcs.GetDisplayPosition ---
             float dx = cameraPos.x - logicalPos.x;
             float dz = cameraPos.z - logicalPos.z;
@@ -48,6 +85,7 @@ namespace TitanOrbit.Generation
         /// <summary>
         /// Like <see cref="GetDisplayPosition"/> but keeps the same map tile until another tile is
         /// clearly closer — avoids pops near tile boundaries. Initialize tiles with int.MinValue.
+        /// Returns logical position unchanged when map size is unset.
         /// </summary>
         public static Vector3 GetDisplayPositionWithHysteresis(
             Vector3 logicalPos,
@@ -56,6 +94,9 @@ namespace TitanOrbit.Generation
             ref int tileM,
             float switchMarginFraction = 0.35f)
         {
+            if (!HasValidMapSize)
+                return logicalPos;
+
             // --- Candidate tile ---
             float dx = referencePos.x - logicalPos.x;
             float dz = referencePos.z - logicalPos.z;
@@ -99,9 +140,13 @@ namespace TitanOrbit.Generation
         /// <summary>
         /// Wraps a position into canonical toroidal space:
         /// X in <c>[-halfWidth, halfWidth)</c>, Z in <c>[-halfHeight, halfHeight)</c>.
+        /// Returns input unchanged when map size is unset.
         /// </summary>
         public static Vector3 WrapPosition(Vector3 position)
         {
+            if (!HasValidMapSize)
+                return position;
+
             // --- [UNITY] Mathf.Repeat maps into [0, length); then recenter ---
             float halfWidth = mapWidth / 2f;
             float halfHeight = mapHeight / 2f;
@@ -114,12 +159,16 @@ namespace TitanOrbit.Generation
 
         /// <summary>
         /// Shortest XZ offset from A to B on the torus (works for arbitrary world coordinates).
+        /// Returns Euclidean XZ delta when map size is unset (caller should skip when possible).
         /// </summary>
         public static Vector3 ShortestWorldOffsetXZ(Vector3 worldA, Vector3 worldB)
         {
-            // --- Periodic delta ---
             float dx = worldB.x - worldA.x;
             float dz = worldB.z - worldA.z;
+            if (!HasValidMapSize)
+                return new Vector3(dx, 0f, dz);
+
+            // --- Periodic delta ---
             dx -= Mathf.Round(dx / mapWidth) * mapWidth;
             dz -= Mathf.Round(dz / mapHeight) * mapHeight;
             return new Vector3(dx, 0f, dz);
@@ -146,12 +195,16 @@ namespace TitanOrbit.Generation
         /// <summary>
         /// Shortest signed XZ offset as Vector2 for UI / point-in-triangle helpers.
         /// Result x in (-mapWidth/2, mapWidth/2], z in (-mapHeight/2, mapHeight/2].
+        /// Returns raw delta when map size is unset.
         /// </summary>
         public static Vector2 ShortestOffsetXZ(Vector3 fromCanonical, Vector3 toCanonical)
         {
-            // --- Clamp-style wrap (equivalent to round-subtract when |delta| is within one map) ---
             float dx = toCanonical.x - fromCanonical.x;
             float dz = toCanonical.z - fromCanonical.z;
+            if (!HasValidMapSize)
+                return new Vector2(dx, dz);
+
+            // --- Clamp-style wrap (equivalent to round-subtract when |delta| is within one map) ---
             float halfW = mapWidth / 2f;
             float halfH = mapHeight / 2f;
             if (dx > halfW) dx -= mapWidth;

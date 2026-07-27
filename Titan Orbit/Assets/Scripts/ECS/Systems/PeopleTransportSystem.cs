@@ -82,13 +82,12 @@ namespace TitanOrbit.ECS
             // dropped to the main menu when orbit spawned PeopleTransportGhost floods.
             float dt = SystemAPI.Time.DeltaTime;
             float now = (float)SystemAPI.Time.ElapsedTime;
-            float mapW = 1000f;
-            float mapH = 1000f;
-            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var map))
-            {
-                mapW = math.max(100f, map.MapWidth);
-                mapH = math.max(100f, map.MapHeight);
-            }
+            // [TITAN-ORBIT] Missing map size = skip transports this tick (do not invent 1000×1000).
+            if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) ||
+                !ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
+                return;
+            float mapW = map.MapWidth;
+            float mapH = map.MapHeight;
 
             var planetById = new NativeHashMap<int, Entity>(32, Allocator.Temp);
             var planetStateById = new NativeHashMap<int, PlanetState>(32, Allocator.Temp);
@@ -480,13 +479,12 @@ namespace TitanOrbit.ECS
             // --- System OnUpdate ---
             float dt = SystemAPI.Time.DeltaTime;
             float now = (float)SystemAPI.Time.ElapsedTime;
-            float mapW = 1000f;
-            float mapH = 1000f;
-            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var map))
-            {
-                mapW = math.max(100f, map.MapWidth);
-                mapH = math.max(100f, map.MapHeight);
-            }
+            // [TITAN-ORBIT] Missing map size = skip transport sim this tick (do not invent 1000×1000).
+            if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) ||
+                !ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
+                return;
+            float mapW = map.MapWidth;
+            float mapH = map.MapHeight;
 
             var planetById = new NativeHashMap<int, Entity>(32, Allocator.Temp);
             var planetStateById = new NativeHashMap<int, PlanetState>(32, Allocator.Temp);

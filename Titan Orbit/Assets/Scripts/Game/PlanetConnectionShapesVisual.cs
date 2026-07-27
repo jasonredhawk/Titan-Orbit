@@ -121,8 +121,8 @@ namespace TitanOrbit.Game
                 Draw.BlendMode = ShapesBlendMode.Transparent;
 
                 Vector3 referencePos = ResolveDisplayReference(cam, em);
-                float mapW = ToroidalMap.GetMapWidth();
-                float mapH = ToroidalMap.GetMapHeight();
+                if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))
+                    return;
                 float edgeY = triangleHeight + edgeHeightAboveFill;
 
                 // --- Fills only (borders come from the edge pass — never TriangleBorder) ---
@@ -240,8 +240,13 @@ namespace TitanOrbit.Game
             out Vector3 bPos,
             out Vector3 cPos)
         {
-            float mapW = ToroidalMap.GetMapWidth();
-            float mapH = ToroidalMap.GetMapHeight();
+            if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))
+            {
+                anchor = default;
+                bPos = default;
+                cPos = default;
+                return false;
+            }
             float3 a = new float3(aCanon.x, 0f, aCanon.z);
             float3 b = new float3(bCanon.x, 0f, bCanon.z);
             float3 c = new float3(cCanon.x, 0f, cCanon.z);

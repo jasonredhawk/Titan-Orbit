@@ -186,10 +186,11 @@ namespace TitanOrbit.UI
         private static void GetToroidalDelta(Vector3 from, Vector3 to, out float dx, out float dz)
         {
             // --- Periodic shortest-path delta (matches ToroidalMap / ToroidalMapEcs) ---
-            float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
-            float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
+            // Missing map size → Euclidean delta (caller should prefer skipping when unset).
             dx = to.x - from.x;
             dz = to.z - from.z;
+            if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))
+                return;
             dx -= mapW * Mathf.Round(dx / mapW);
             dz -= mapH * Mathf.Round(dz / mapH);
         }

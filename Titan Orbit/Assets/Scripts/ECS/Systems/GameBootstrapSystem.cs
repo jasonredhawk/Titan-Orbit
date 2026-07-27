@@ -34,7 +34,8 @@ namespace TitanOrbit.ECS
                 MaxPlayersPerTeam = 20,
             });
             state.EntityManager.SetComponentData(entity, new MatchStateSingleton());
-            state.EntityManager.SetComponentData(entity, new MapStateSingleton { MapWidth = 1000f, MapHeight = 1000f });
+            // [TITAN-ORBIT] Size stays 0 until map generation rolls a real period — never invent 1000×1000.
+            state.EntityManager.SetComponentData(entity, new MapStateSingleton { MapWidth = 0f, MapHeight = 0f });
             state.EntityManager.AddBuffer<BulletElement>(entity);
             state.EntityManager.AddBuffer<BulletSpawnEventElement>(entity);
             state.EntityManager.AddBuffer<BulletHitEventElement>(entity);

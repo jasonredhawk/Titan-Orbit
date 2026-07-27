@@ -415,21 +415,24 @@ namespace TitanOrbit.ECS
                 targetLevel,
                 targetBranchIndex);
 
-            ShipMoonDockAttachLogic.GetMapSize(em, out float mapW, out float mapH);
-            double moonElapsed = 0.0;
-            using (var tickQuery = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkTime>()))
-            using (var rateQuery = em.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>()))
+            // Re-pin docked ship after upgrade — skip when map size is missing (never invent 1000).
+            if (ShipMoonDockAttachLogic.TryGetMapSize(em, out float mapW, out float mapH))
             {
-                int hz = 0;
-                if (rateQuery.TryGetSingleton<ClientServerTickRate>(out var tickRate))
-                    hz = tickRate.SimulationTickRate;
-                if (tickQuery.TryGetSingleton<NetworkTime>(out var networkTime))
-                    moonElapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(
-                        networkTime, hz, includeTickFraction: false);
-            }
+                double moonElapsed = 0.0;
+                using (var tickQuery = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkTime>()))
+                using (var rateQuery = em.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>()))
+                {
+                    int hz = 0;
+                    if (rateQuery.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                        hz = tickRate.SimulationTickRate;
+                    if (tickQuery.TryGetSingleton<NetworkTime>(out var networkTime))
+                        moonElapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(
+                            networkTime, hz, includeTickFraction: false);
+                }
 
-            ShipMoonDockAttachLogic.TryReattachFullyDockedShip(
-                em, shipEntity, mapW, mapH, moonElapsed);
+                ShipMoonDockAttachLogic.TryReattachFullyDockedShip(
+                    em, shipEntity, mapW, mapH, moonElapsed);
+            }
 
             message = debugFree ? "Debug ship selected." : "Ship upgraded.";
             return true;

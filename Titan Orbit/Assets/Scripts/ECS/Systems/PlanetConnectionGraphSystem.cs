@@ -60,13 +60,18 @@ namespace TitanOrbit.ECS
             float now = (float)SystemAPI.Time.ElapsedTime;
             var graphState = SystemAPI.GetSingletonRW<PlanetConnectionGraphState>();
 
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
-            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var map))
+            // Missing map period → skip graph rebuild (never invent 1000).
+            float preferredW = 0f;
+            float preferredH = 0f;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) &&
+                ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
             {
-                mapW = math.max(100f, map.MapWidth);
-                mapH = math.max(100f, map.MapHeight);
+                preferredW = map.MapWidth;
+                preferredH = map.MapHeight;
             }
+
+            if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
+                return;
 
             // --- Collect planet-center inputs + fingerprint (server may query freely) ---
             // [TITAN-ORBIT] Centers (not moons) — topology must not churn as moons orbit.
@@ -260,52 +265,54 @@ namespace TitanOrbit.ECS
         }
     }
 
-    /// <summary>
-    /// Client: rebuilds the same sticky non-crossing topology from Instantiated planet snapshots
-    /// and publishes to <see cref="PlanetConnectionGraphCache"/> for predicted territory speed +
-    /// Shapes drawing (triangles and lone edges). Never uses planet archetype gathers under
-    /// TransformQuarantine. Ownership flips arrive via <see cref="PlanetOwnershipChangedRpc"/> so
-    /// lines/minimap do not wait on rate-limited planet ghosts. World: ClientSimulation.
-    /// </summary>
-    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
-    [UpdateInGroup(typeof(SimulationSystemGroup))]
-    public partial struct PlanetConnectionGraphClientSystem : ISystem
-    {
-        /// <summary>[TITAN-ORBIT] Soft fallback if an ownership RPC was missed; dirty + RPC cover captures.</summary>
-        const float RecomputeIntervalSeconds = 1f;
-
-        float _lastRebuildElapsed;
-        uint _lastFingerprint;
-
-        /// <summary>Resets timers when the client system is created.</summary>
-        public void OnCreate(ref SystemState state)
-        {
-            _lastRebuildElapsed = -999f;
-            _lastFingerprint = 0;
-        }
-
         /// <summary>
-        /// Rebuilds graph from registry Collect when ownership dirty, forced by capture RPC,
-        /// or on the soft timer. Seeds sticky edges from the client cache. Skips during join
-        /// Settling / GhostSpawnBacklog so Instantiates windows stay quiet.
+        /// Client: rebuilds the same sticky non-crossing topology from Instantiated planet snapshots
+        /// and publishes to <see cref="PlanetConnectionGraphCache"/> for predicted territory speed +
+        /// Shapes drawing (triangles and lone edges). Never uses planet archetype gathers under
+        /// TransformQuarantine. Ownership flips arrive via <see cref="PlanetOwnershipChangedRpc"/> so
+        /// lines/minimap do not wait on rate-limited planet ghosts. World: ClientSimulation.
         /// </summary>
-        public void OnUpdate(ref SystemState state)
+        [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+        [UpdateInGroup(typeof(SimulationSystemGroup))]
+        public partial struct PlanetConnectionGraphClientSystem : ISystem
         {
-            // --- Join safety: skip while planets/ships are still Instantiating ---
-            // [TITAN-ORBIT] Registry Collect is quarantine-safe; still avoid empty thrash during settle.
-            // [TITAN-ORBIT] Use ShouldSkipShipEntityQueries — includes post–TeamChoice hold that
-            // GhostSpawnBacklog alone used to miss before it was folded into ComputeGhostSpawnBacklog.
-            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
-                return;
+            float _lastRebuildElapsed;
+            uint _lastFingerprint;
 
-            float now = (float)SystemAPI.Time.ElapsedTime;
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
-            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var map))
+            /// <summary>Resets timers when the client system is created.</summary>
+            public void OnCreate(ref SystemState state)
             {
-                mapW = math.max(100f, map.MapWidth);
-                mapH = math.max(100f, map.MapHeight);
+                _lastRebuildElapsed = -999f;
+                _lastFingerprint = 0;
             }
+
+            /// <summary>
+            /// Rebuilds graph from registry Collect when ownership dirty or forced by capture RPC.
+            /// Seeds sticky edges from the client cache. Skips during join Settling /
+            /// GhostSpawnBacklog so Instantiates windows stay quiet.
+            /// </summary>
+            public void OnUpdate(ref SystemState state)
+            {
+                // --- Join safety: skip while planets/ships are still Instantiating ---
+                // [TITAN-ORBIT] Registry Collect is quarantine-safe; still avoid empty thrash during settle.
+                // [TITAN-ORBIT] Use ShouldSkipShipEntityQueries — includes post–TeamChoice hold that
+                // GhostSpawnBacklog alone used to miss before it was folded into ComputeGhostSpawnBacklog.
+                if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                    return;
+
+                float now = (float)SystemAPI.Time.ElapsedTime;
+                // Missing map period → skip client graph rebuild (never invent 1000).
+            float preferredW = 0f;
+            float preferredH = 0f;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) &&
+                ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
+            {
+                preferredW = map.MapWidth;
+                preferredH = map.MapHeight;
+            }
+
+            if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
+                return;
 
             // --- Quarantine-safe planet snapshots (centers, not moons) ---
             NativeList<PlanetMotorSnapshot> snaps =
@@ -343,8 +350,12 @@ namespace TitanOrbit.ECS
             uint fingerprint = ComputeClientFingerprint(inputs.AsArray());
             bool forced = PlanetConnectionGraphCache.ConsumeClientRebuildRequest();
             bool dirty = fingerprint != _lastFingerprint;
-            bool timed = (now - _lastRebuildElapsed) >= RecomputeIntervalSeconds;
-            if (!dirty && !timed && !forced)
+            // --- Skip identical topology republish ---
+            // [TITAN-ORBIT] Timed rebuild used to PublishClient every 1s even when fingerprint
+            // matched. That bumped ClientPublishRevision → EcsWorldVisualizer re-ran PIT for
+            // every asteroid (~2 ms hitch, debug 94b4b4). Soft timer is unnecessary when dirty
+            // + ownership RPC already cover real changes.
+            if (!dirty && !forced)
             {
                 inputs.Dispose();
                 snaps.Dispose();

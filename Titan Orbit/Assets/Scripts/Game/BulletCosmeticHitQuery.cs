@@ -79,8 +79,9 @@ namespace TitanOrbit.Game
         static readonly List<Obstacle> Obstacles = new List<Obstacle>(512);
         static readonly List<Entity> ProxyScratch = new List<Entity>(512);
         static int s_LastRefreshFrame = -1;
-        static float s_MapW = 1000f;
-        static float s_MapH = 1000f;
+        // [TITAN-ORBIT] 0 = unset — never invent 1000×1000 for cosmetic hit tests.
+        static float s_MapW;
+        static float s_MapH;
 
         /// <summary>Read-only view of the last rebuilt obstacle list.</summary>
         public static IReadOnlyList<Obstacle> CurrentObstacles => Obstacles;
@@ -126,7 +127,9 @@ namespace TitanOrbit.Game
                 return false;
 
             // --- Map size for toroidal unwrap ---
-            ResolveMapSize(em);
+            // Missing size → skip cosmetic prediction (HitRpc still destroys tracers).
+            if (!TryResolveMapSize(em))
+                return false;
 
             // Scratch only — do not keep EntityManager queries alive across frames.
             visualizer.CopyLiveProxyEntities(ProxyScratch);
@@ -397,24 +400,38 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        /// <summary>Reads map size from singleton, session meta, or ToroidalMapEcs defaults.</summary>
-        static void ResolveMapSize(EntityManager em)
+        /// <summary>
+        /// Reads map size from MapState, session meta, or ToroidalMapEcs cache.
+        /// Returns false when missing — never invents a period.
+        /// </summary>
+        static bool TryResolveMapSize(EntityManager em)
         {
-            s_MapW = math.max(100f, ToroidalMapEcs.MapWidth);
-            s_MapH = math.max(100f, ToroidalMapEcs.MapHeight);
-
             using var mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
             if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
-                map.MapWidth >= 100f && map.MapHeight >= 100f)
+                ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
             {
                 s_MapW = map.MapWidth;
                 s_MapH = map.MapHeight;
+                return true;
             }
-            else if (MapSessionMetaCache.HasMapSize)
+
+            if (MapSessionMetaCache.HasMapSize)
             {
                 s_MapW = MapSessionMetaCache.MapWidth;
                 s_MapH = MapSessionMetaCache.MapHeight;
+                return true;
             }
+
+            if (ToroidalMapEcs.TryGetMapSize(out float w, out float h))
+            {
+                s_MapW = w;
+                s_MapH = h;
+                return true;
+            }
+
+            s_MapW = 0f;
+            s_MapH = 0f;
+            return false;
         }
 
         /// <summary>Clears cache when leaving a match / disabling the VFX driver.</summary>

@@ -78,8 +78,10 @@ namespace TitanOrbit.Game
                 return;
 
             var em = world.EntityManager;
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
+            // --- Rolled map period (never invent 1000) ---
+            // [TITAN-ORBIT] Wrong period → wrap-tile assignment fails while main-tile still works.
+            if (!ToroidalDisplay.ResolveMapSize(em, out float mapW, out float mapH))
+                return;
 
             // --- Ships: tiny query, but still unsafe during GhostSpawnBacklog Instantiates ---
             using var shipQuery = em.CreateEntityQuery(
@@ -560,8 +562,10 @@ namespace TitanOrbit.Game
                 gemSize = gemState.Size;
             }
 
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
+            float mapW;
+            float mapH;
+            if (!ToroidalDisplay.ResolveMapSize(em, out mapW, out mapH))
+                return false;
             // --- Stack assist wings when local assignment matches this ghost lock ---
             // [TITAN-ORBIT] Mirror server diminishing stack: primary 100%, each assist 25% of its
             // own pull (GemTractorBeamMath.StackedBeamPullScale) so GO motion matches authority.

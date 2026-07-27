@@ -166,12 +166,20 @@ namespace TitanOrbit.Game
             }
 
             // --- Toroidal display (ship reference) — same as other world bodies ---
-            Vector3 displayPos;
-            if (ToroidalDisplay.TryGetReferencePosition(out var reference))
-                displayPos = ToroidalDisplay.ToDisplayPositionWithHysteresis(_entity, _logicalPos, reference);
-            else
-                displayPos = new Vector3(_logicalPos.x, _logicalPos.y, _logicalPos.z);
+            // [TITAN-ORBIT] Latch rolled map size before retile. Missing size → skip display
+            // update (never invent 1000 — wrap-tile gems would land on the wrong copy).
+            if (!ToroidalDisplay.ResolveMapSize(default, out _, out _))
+                return;
 
+            if (!ToroidalDisplay.TryGetReferencePosition(out var reference))
+            {
+                // No ship/camera yet — leave the GO where it is (do not snap to canonical logical,
+                // which would teleport wrap-tile gems onto the main map tile).
+                return;
+            }
+
+            Vector3 displayPos = ToroidalDisplay.ToDisplayPositionWithHysteresis(
+                _entity, _logicalPos, reference);
             transform.position = displayPos;
 
             if (math.lengthsq(_angularVelocity) > 0.0001f)

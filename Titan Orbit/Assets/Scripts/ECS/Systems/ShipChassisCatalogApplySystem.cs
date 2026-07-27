@@ -103,12 +103,13 @@ namespace TitanOrbit.ECS
             // --- Pass 2: structural changes (buffers, colliders, tracking component) ---
             // Server-only moon re-pin after collider swap (client TransformQuarantine forbids planet gather).
             bool serverReattach = state.World.IsServer();
-            float mapW = 1000f;
-            float mapH = 1000f;
+            float mapW = 0f;
+            float mapH = 0f;
             double moonElapsed = SystemAPI.Time.ElapsedTime;
+            bool haveMapSize = false;
             if (serverReattach)
             {
-                ShipMoonDockAttachLogic.GetMapSize(em, out mapW, out mapH);
+                haveMapSize = ShipMoonDockAttachLogic.TryGetMapSize(em, out mapW, out mapH);
                 int hz = 0;
                 if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
                     hz = tickRate.SimulationTickRate;
@@ -127,7 +128,8 @@ namespace TitanOrbit.ECS
                 TryApplyCatalogData(em, config, catalog, work.Entity, ship, work.BranchIndex);
 
                 // [TITAN-ORBIT] New hull collider while docked can Physics-eject the ship — re-pin.
-                if (serverReattach)
+                // Skip when map size is missing (do not invent a period for moon attach math).
+                if (serverReattach && haveMapSize)
                 {
                     ShipMoonDockAttachLogic.TryReattachFullyDockedShip(
                         em, work.Entity, mapW, mapH, moonElapsed);

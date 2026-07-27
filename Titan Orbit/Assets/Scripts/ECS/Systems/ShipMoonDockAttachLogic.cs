@@ -125,20 +125,48 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Reads toroidal map size. Prefers <see cref="ToroidalMapEcs"/> (session meta on clients),
-        /// then <see cref="MapStateSingleton"/> when present. Hardcoded 1000 alone broke seam math
-        /// when the rolled map was not 1000×1000.
+        /// then <see cref="MapStateSingleton"/> when present.
+        /// Returns false when size is missing — never invents 1000×1000.
+        /// </summary>
+        /// <returns>True when a real rolled period is available.</returns>
+        public static bool TryGetMapSize(EntityManager em, out float mapW, out float mapH)
+        {
+            if (ToroidalMapEcs.TryGetMapSize(out mapW, out mapH))
+            {
+                using var query = em.CreateEntityQuery(ComponentType.ReadOnly<MapStateSingleton>());
+                if (query.TryGetSingleton<MapStateSingleton>(out var map) &&
+                    ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
+                {
+                    mapW = map.MapWidth;
+                    mapH = map.MapHeight;
+                }
+                return true;
+            }
+
+            using var fallbackQuery = em.CreateEntityQuery(ComponentType.ReadOnly<MapStateSingleton>());
+            if (fallbackQuery.TryGetSingleton<MapStateSingleton>(out var fallback) &&
+                ToroidalMapEcs.IsValidMapSize(fallback.MapWidth, fallback.MapHeight))
+            {
+                mapW = fallback.MapWidth;
+                mapH = fallback.MapHeight;
+                return true;
+            }
+
+            mapW = 0f;
+            mapH = 0f;
+            return false;
+        }
+
+        /// <summary>
+        /// Legacy wrapper — prefer <see cref="TryGetMapSize"/>. Writes 0,0 when size is missing
+        /// (does not invent a period).
         /// </summary>
         public static void GetMapSize(EntityManager em, out float mapW, out float mapH)
         {
-            mapW = math.max(100f, ToroidalMapEcs.MapWidth);
-            mapH = math.max(100f, ToroidalMapEcs.MapHeight);
-            using var query = em.CreateEntityQuery(ComponentType.ReadOnly<MapStateSingleton>());
-            if (query.TryGetSingleton<MapStateSingleton>(out var map) &&
-                map.MapWidth >= 100f &&
-                map.MapHeight >= 100f)
+            if (!TryGetMapSize(em, out mapW, out mapH))
             {
-                mapW = map.MapWidth;
-                mapH = map.MapHeight;
+                mapW = 0f;
+                mapH = 0f;
             }
         }
     }

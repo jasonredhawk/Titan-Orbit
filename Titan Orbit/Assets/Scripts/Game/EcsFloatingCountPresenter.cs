@@ -691,8 +691,9 @@ namespace TitanOrbit.Game
         {
             float hearRange = GemEconomyConstants.GemDepositHearRange;
             float fullVolumeRange = GemEconomyConstants.GemDepositHearFullVolumeRange;
-            float mapW = math.max(100f, ToroidalMapEcs.MapWidth);
-            float mapH = math.max(100f, ToroidalMapEcs.MapHeight);
+            // Missing map period → skip remote deposit SFX distance (never invent 1000).
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return;
 
             // --- Listener pose for remote proximity ---
             bool hasListener =

@@ -73,14 +73,18 @@ namespace TitanOrbit.ECS
             // --- Map size ---
             // Prefer MapStateSingleton when present (server / ghost); else ToroidalMapEcs cache
             // (client often gets size from MapSessionMetaRpc into that static).
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
+            // Missing size → skip (never invent 1000).
+            float preferredW = 0f;
+            float preferredH = 0f;
             if (SystemAPI.TryGetSingleton(out MapStateSingleton mapState) &&
-                mapState.MapWidth >= 100f && mapState.MapHeight >= 100f)
+                ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
             {
-                mapW = mapState.MapWidth;
-                mapH = mapState.MapHeight;
+                preferredW = mapState.MapWidth;
+                preferredH = mapState.MapHeight;
             }
+
+            if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
+                return;
 
             // --- Gather obstacles (no nested SystemAPI.Query) ---
             // [ECS/DOTS] Idiomatic foreach must not nest; copy centers/radii then walk ships.

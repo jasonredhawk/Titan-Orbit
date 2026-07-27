@@ -1,4 +1,7 @@
+using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
+using TitanOrbit.Entities;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -47,15 +50,48 @@ namespace TitanOrbit.ECS
         static readonly ShipWeaponFireLogic.MountShot[] s_ShotScratch =
             new ShipWeaponFireLogic.MountShot[ShipWeaponFireLogic.MaxShotsPerTick];
 
+        /// <summary>
+        /// Derived drone hit spheres for this tick (no drone ghosts — pose from equipment + ship).
+        /// </summary>
+        static readonly List<DroneHitTarget> s_DroneHitTargets = new List<DroneHitTarget>(64);
+
+        static readonly List<int> s_DroneRearScratch = new List<int>(8);
+        static readonly List<int> s_DroneShieldScratch = new List<int>(8);
+        static readonly List<int> s_DroneEnemyIdsScratch = new List<int>(16);
+        static readonly Dictionary<int, float3> s_DroneEnemyPos = new Dictionary<int, float3>(16);
+        static readonly Dictionary<int, DroneSwarmPositioning.ShieldAssignment> s_DroneShieldAssign =
+            new Dictionary<int, DroneSwarmPositioning.ShieldAssignment>(8);
+
+        /// <summary>Equipment slot of the winning drone hit (−1 when not a drone).</summary>
+        static int s_BestDroneSlot = -1;
+
+        /// <summary>Throttles expensive shield-sphere rebuilds.</summary>
+        static int s_DroneHitRebuildCounter;
+
+        EntityQuery _droneShipQuery;
+        EntityQuery _allShipQuery;
+
         /// <summary>Require bullet singleton before ticking.</summary>
         public void OnCreate(ref SystemState state)
         {
             // [ECS/DOTS] RequireForUpdate — system skips OnUpdate until a bullet singleton exists.
             state.RequireForUpdate<ActiveBulletsTag>();
 
+            _droneShipQuery = state.GetEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadOnly<ShipState>(),
+                ComponentType.ReadOnly<LocalTransform>(),
+                ComponentType.ReadOnly<GhostOwner>(),
+                ComponentType.ReadOnly<EquippedEquipmentElement>());
+            _allShipQuery = state.GetEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadOnly<ShipState>(),
+                ComponentType.ReadOnly<LocalTransform>(),
+                ComponentType.ReadOnly<GhostOwner>());
+
             // [TITAN-ORBIT] Pull Upgrade Visual Scale Multiplier from the single Resources bank
             // so ScaleMultiplier on spawns matches designer Inspector values (client + server).
-            var vfxBank = TitanOrbit.Data.BulletVfxBank.LoadDefault();
+            var vfxBank = BulletVfxBank.LoadDefault();
             if (vfxBank != null)
                 BulletVisualScale.ActiveUpgradeVisualScaleMultiplier = vfxBank.UpgradeVisualScaleMultiplier;
         }
@@ -93,12 +129,31 @@ namespace TitanOrbit.ECS
                 : serverElapsed;
 
             // [TITAN-ORBIT] Map size for toroidal unwrap during swept collision tests.
-            float mapW = 1000f;
-            float mapH = 1000f;
-            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
+            // Missing size = skip this tick (do not invent 1000×1000).
+            if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) ||
+                !ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
+                return;
+            float mapW = mapState.MapWidth;
+            float mapH = mapState.MapHeight;
+
+            // --- Derived shield drone spheres (throttle — full rebuild is expensive) ---
+            // [TITAN-ORBIT] Only needed when live bullets exist; rebuild every N ticks and reuse.
+            double droneTime = moonElapsed;
+            DroneSwarmSimTime.Publish(droneTime);
+            s_DroneHitRebuildCounter++;
+            bool needDroneHits = bullets.Length > 0;
+            if (needDroneHits && (s_DroneHitTargets.Count == 0 || (s_DroneHitRebuildCounter % 3) == 0))
             {
-                mapW = math.max(100f, mapState.MapWidth);
-                mapH = math.max(100f, mapState.MapHeight);
+                using var droneShips = _droneShipQuery.ToEntityArray(Allocator.Temp);
+                using var allShips = _allShipQuery.ToEntityArray(Allocator.Temp);
+                DroneSwarmHitScan.RebuildTargets(
+                    state.EntityManager, droneShips, allShips, droneTime, mapW, mapH,
+                    s_DroneHitTargets, s_DroneRearScratch, s_DroneShieldScratch,
+                    s_DroneEnemyIdsScratch, s_DroneEnemyPos, s_DroneShieldAssign);
+            }
+            else if (!needDroneHits)
+            {
+                s_DroneHitTargets.Clear();
             }
 
             // --- Phase A: advance existing bullets (substepped sweeps) ---
@@ -358,6 +413,10 @@ namespace TitanOrbit.ECS
             Asteroid = 4,
             /// <summary>Enemy people transport.</summary>
             Transport = 5,
+            /// <summary>
+            /// Derived drone body (shield / fighter / mining). Damages equipment RemainingCharges.
+            /// </summary>
+            Drone = 6,
         }
 
         /// <summary>
@@ -405,6 +464,7 @@ namespace TitanOrbit.ECS
             float3 bestHit = to;
             var bestKind = BulletHitKind.None;
             Entity bestEntity = Entity.Null;
+            s_BestDroneSlot = -1;
 
             // --- Planets + gem-moon shields ---
             foreach (var (planetState, planetTransform, moonState, planetEntity) in SystemAPI
@@ -523,6 +583,18 @@ namespace TitanOrbit.ECS
                 bestEntity = transportEntity;
             }
 
+            // --- Derived drones (shield wall / escort bodies) ---
+            // [TITAN-ORBIT] No PhysX — sphere tests vs EvaluateSlotPose centers rebuilt this tick.
+            if (DroneSwarmHitScan.TryKeepNearestDroneHit(
+                    in b, from, to, mapW, mapH, s_DroneHitTargets,
+                    ref bestT, ref bestHit, out int droneIdx))
+            {
+                DroneHitTarget hitDrone = s_DroneHitTargets[droneIdx];
+                bestKind = BulletHitKind.Drone;
+                bestEntity = hitDrone.ShipEntity;
+                s_BestDroneSlot = hitDrone.SlotIndex;
+            }
+
             // --- No intersection ---
             if (bestKind == BulletHitKind.None || bestEntity == Entity.Null)
                 return false;
@@ -606,6 +678,14 @@ namespace TitanOrbit.ECS
                     else
                         state.EntityManager.SetComponentData(bestEntity, t);
 
+                    return true;
+                }
+
+                case BulletHitKind.Drone:
+                {
+                    // Equipment RemainingCharges is the ghosted drone HP (store GetDroneMaxHp).
+                    DroneSwarmHitScan.ApplyDamageToDroneSlot(
+                        state.EntityManager, bestEntity, s_BestDroneSlot, b.Damage);
                     return true;
                 }
 

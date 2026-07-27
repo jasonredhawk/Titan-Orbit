@@ -52,8 +52,9 @@ namespace TitanOrbit.ECS
                 ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
                 : SystemAPI.Time.ElapsedTime;
 
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
+            // Missing map period → skip moon dock this tick (never invent 1000).
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return;
             float approachDelayRequired = GemEconomyConstants.MoonLandingApproachDelaySeconds;
 
             foreach (var (shipTransform, shipInput, shipKinematics, shipState, moonDock, physicsVelocity) in SystemAPI

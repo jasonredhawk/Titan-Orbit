@@ -52,10 +52,13 @@ namespace TitanOrbit.Game
             out byte mask,
             out TeamId primaryTeam)
         {
-            float mapW = ToroidalMap.GetMapWidth();
-            float mapH = ToroidalMap.GetMapHeight();
-            if (mapW < 1f) mapW = ToroidalMapEcs.MapWidth;
-            if (mapH < 1f) mapH = ToroidalMapEcs.MapHeight;
+            if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH) &&
+                !ToroidalMapEcs.TryGetMapSize(out mapW, out mapH))
+            {
+                mask = 0;
+                primaryTeam = TeamId.None;
+                return;
+            }
 
             var runtime = GetRuntimeNative();
             PlanetConnectionGraphLogic.GetTerritoryOwnershipAtPosition(

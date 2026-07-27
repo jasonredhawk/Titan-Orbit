@@ -619,8 +619,8 @@ namespace TitanOrbit.Game
             if (!TryGetPlanetPoseByPlanetId(sourcePlanetId, out float3 planetPos, out float planetScale, out var planetState))
                 return false;
 
-            float mapW = math.max(100f, ToroidalMapEcs.MapWidth);
-            float mapH = math.max(100f, ToroidalMapEcs.MapHeight);
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return false;
             float planetSize = math.max(0.5f, planetScale);
             eligible = PeopleTransportSimulationSystem.IsShipEligibleForLoad(
                 shipState, shipInput, shipOrbit, moonDock, shipTransform.Position, planetPos,

@@ -137,13 +137,21 @@ namespace TitanOrbit.ECS
             // [NETCODE] ServerTick seconds — matches client shrink / despawn (not World.Time).
             float spawnServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
                 state.EntityManager, SystemAPI.Time.ElapsedTime);
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
-            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
+            // --- Map period (seam mining) ---
+            // [TITAN-ORBIT] Prefer MapStateSingleton; skip tick if size is missing (never invent 1000).
+            float preferredW = 0f;
+            float preferredH = 0f;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
+                ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
             {
-                mapW = mapState.MapWidth;
-                mapH = mapState.MapHeight;
+                preferredW = mapState.MapWidth;
+                preferredH = mapState.MapHeight;
             }
+
+            if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
+                return;
+            if (ToroidalMapEcs.IsValidMapSize(preferredW, preferredH))
+                ToroidalMapEcs.SetMapSize(mapW, mapH);
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
@@ -377,9 +385,25 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
+            // --- Map period for wing / hull collect radius ---
+            // [TITAN-ORBIT] Same prefer pattern as MiningSystem / GemTractorBeamSystem — missing
+            // size → skip (never invent 1000; wrong period breaks wrap-seam pickup).
+            // Resolve map size BEFORE the EntityCommandBuffer so a missing map does not leak an ECB.
+            float preferredW = 0f;
+            float preferredH = 0f;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
+                ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
+            {
+                preferredW = mapState.MapWidth;
+                preferredH = mapState.MapHeight;
+            }
+
+            if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
+                return;
+            if (ToroidalMapEcs.IsValidMapSize(preferredW, preferredH))
+                ToroidalMapEcs.SetMapSize(mapW, mapH);
+
             var ecb = new EntityCommandBuffer(Allocator.Temp);
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
 
             foreach (var (shipTransform, shipState, shipEntity) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRW<ShipState>>()

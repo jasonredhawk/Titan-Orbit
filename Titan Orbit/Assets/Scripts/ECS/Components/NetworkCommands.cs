@@ -338,6 +338,7 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// [TITAN-ORBIT] Weapon mount index for this shot (0-based). Local clients reproject
         /// the tracer onto the matching live barrel so multi-cannon volleys do not snap to muzzle 0.
+        /// Use <c>-1</c> for non-weapon origins (drone swarm) so VFX keep server SpawnPosition.
         /// </summary>
         public int MountIndex;
     }

@@ -59,11 +59,31 @@ namespace TitanOrbit.ECS
         /// <summary>Scratch: gemId → all wing indices pulling it this tick (primary + assists).</summary>
         readonly Dictionary<int, List<int>> _wingsByGem = new Dictionary<int, List<int>>(16);
 
+        /// <summary>Reused across ticks — avoid per-tick HashSet alloc (was a multi-ms GC hitch).</summary>
+        readonly HashSet<long> _activePairsScratch = new HashSet<long>();
+
+        /// <summary>Reused deploy-start set inside <see cref="BuildAssignment"/>.</summary>
+        readonly HashSet<int> _deployStartedScratch = new HashSet<int>();
+
         /// <summary>Assigns gems, writes lock state, applies pull velocity before motion integrate.</summary>
         protected override void OnUpdate()
         {
-            float mapW = ToroidalMapEcs.MapWidth;
-            float mapH = ToroidalMapEcs.MapHeight;
+            // --- Map period for seam reach ---
+            // [TITAN-ORBIT] Prefer MapStateSingleton (same as MiningSystem / ShipPhysicsDrive).
+            // Missing size → skip this tick (never invent 1000 — wrap-tile lock fails with wrong period).
+            float preferredW = 0f;
+            float preferredH = 0f;
+            if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
+                ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
+            {
+                preferredW = mapState.MapWidth;
+                preferredH = mapState.MapHeight;
+            }
+
+            if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
+                return;
+            if (ToroidalMapEcs.IsValidMapSize(preferredW, preferredH))
+                ToroidalMapEcs.SetMapSize(mapW, mapH);
             double now = SystemAPI.Time.ElapsedTime;
             uint serverTick = 0;
             if (SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime) &&
@@ -72,7 +92,8 @@ namespace TitanOrbit.ECS
                 serverTick = networkTime.ServerTick.TickIndexForValidTick;
             }
 
-            var activePairs = new HashSet<long>();
+            _activePairsScratch.Clear();
+            var activePairs = _activePairsScratch;
             _gemsLockedThisFrame.Clear();
 
             // --- Per ship: assign gems to wings, write locks, apply pull velocity ---
@@ -400,7 +421,8 @@ namespace TitanOrbit.ECS
                 _filteredScratch,
                 _gemBeamCountScratch);
 
-            var deployStarted = new HashSet<int>();
+            _deployStartedScratch.Clear();
+            var deployStarted = _deployStartedScratch;
             for (int i = 0; i < _pairScratch.Count; i++)
             {
                 var pair = _pairScratch[i];

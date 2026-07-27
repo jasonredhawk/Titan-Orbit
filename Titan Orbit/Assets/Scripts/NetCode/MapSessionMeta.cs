@@ -85,7 +85,7 @@ namespace TitanOrbit.NetCode
         /// <summary>
         /// Applies RPC payload to the cache. Called from the client receive system.
         /// Also pushes size into <see cref="ToroidalMapEcs"/> / <see cref="ToroidalMap"/> so display
-        /// and minimap do not keep the 1000×1000 default (which leaves huge empty wrap gaps).
+        /// and minimap use the rolled period (never invent a silent default).
         /// </summary>
         /// <param name="rpc">Server-authored match totals.</param>
         public static void Apply(in MapSessionMetaRpc rpc)
@@ -121,17 +121,21 @@ namespace TitanOrbit.NetCode
 
         /// <summary>
         /// Writes width/height into both ECS and Vector3 toroidal static caches.
+        /// No-op when size is invalid — does not invent a 100 / 1000 period.
         /// </summary>
         public static void ApplyMapSizeToToroidalHelpers(float width, float height)
         {
-            float w = Mathf.Max(100f, width);
-            float h = Mathf.Max(100f, height);
-            ToroidalMapEcs.SetMapSize(w, h);
-            ToroidalMap.SetMapSize(w, h);
+            // --- Only latch a real rolled period ---
+            if (!ToroidalMapEcs.IsValidMapSize(width, height))
+                return;
+
+            ToroidalMapEcs.SetMapSize(width, height);
+            ToroidalMap.SetMapSize(width, height);
         }
 
         /// <summary>
         /// Clears latched meta when disconnecting / returning to menu.
+        /// Also clears toroidal helper caches so the next join cannot reuse a stale period.
         /// </summary>
         public static void Clear()
         {
@@ -142,6 +146,7 @@ namespace TitanOrbit.NetCode
             AsteroidCount = 0;
             MapWidth = 0f;
             MapHeight = 0f;
+            ToroidalMapEcs.ClearMapSize();
         }
 
         /// <summary>

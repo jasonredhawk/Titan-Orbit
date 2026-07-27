@@ -1,3 +1,4 @@
+using TitanOrbit.Generation;
 using Unity.Mathematics;
 
 namespace TitanOrbit.Simulation
@@ -129,17 +130,25 @@ namespace TitanOrbit.Simulation
         /// [TITAN-ORBIT] Spawn offset and launch velocity already share one unit dir on the server.
         /// Client presentation integrates ghosted Velocity between LT samples (same damping);
         /// this helper is for spawn validation / debug radial clamps, not inventing a local burst.
+        /// Uses <see cref="ToroidalMapEcs.ShortestOffsetXZ"/> so a gem that sits on the
+        /// opposite wrap copy of the burst center still aims outward (not the long way across the map).
         /// </para>
         /// </summary>
         /// <param name="position">Current gem logical (or display) position.</param>
         /// <param name="burstCenter">Asteroid center used for the explosion (same space as position).</param>
         /// <param name="velocity">Current velocity; Y is forced to 0.</param>
+        /// <param name="mapW">Toroidal map width (from MapState / session meta).</param>
+        /// <param name="mapH">Toroidal map height.</param>
         /// <returns>Velocity of the same speed aimed away from <paramref name="burstCenter"/> on XZ.</returns>
-        public static float3 EnsureOutwardBurstVelocity(float3 position, float3 burstCenter, float3 velocity)
+        public static float3 EnsureOutwardBurstVelocity(
+            float3 position,
+            float3 burstCenter,
+            float3 velocity,
+            float mapW,
+            float mapH)
         {
-            // --- Radial from asteroid center to gem (XZ only) ---
-            float3 radial = position - burstCenter;
-            radial.y = 0f;
+            // --- Radial from asteroid center to gem (shortest path on torus) ---
+            float3 radial = ToroidalMapEcs.ShortestOffsetXZ(burstCenter, position, mapW, mapH);
             float radialLenSq = math.lengthsq(radial);
             if (radialLenSq < 1e-6f)
             {
@@ -157,6 +166,29 @@ namespace TitanOrbit.Simulation
                 return float3.zero;
 
             // Same speed, always away from the rock — kills inward / opposite-side glitches.
+            return outward * speed;
+        }
+
+        /// <summary>
+        /// Overload using cached <see cref="ToroidalMapEcs"/> map size when latched.
+        /// Prefer the explicit mapW/mapH overload when MapState / session meta is available.
+        /// When size is unset, uses Euclidean radial (no invented period).
+        /// </summary>
+        public static float3 EnsureOutwardBurstVelocity(float3 position, float3 burstCenter, float3 velocity)
+        {
+            if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return EnsureOutwardBurstVelocity(position, burstCenter, velocity, mapW, mapH);
+
+            // --- No period latched yet: planar Euclidean outward (skip wrap math) ---
+            float3 radial = position - burstCenter;
+            radial.y = 0f;
+            if (math.lengthsq(radial) < 1e-8f)
+                return float3.zero;
+            float3 outward = math.normalize(radial);
+            float3 planarVel = new float3(velocity.x, 0f, velocity.z);
+            float speed = math.length(planarVel);
+            if (speed < 1e-6f)
+                return float3.zero;
             return outward * speed;
         }
 

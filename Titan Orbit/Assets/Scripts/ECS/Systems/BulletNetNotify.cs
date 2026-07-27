@@ -28,7 +28,7 @@ namespace TitanOrbit.ECS
             float3 spawnPos = bullet.Position;
             float3 velocity = bullet.Velocity;
             velocity.y = 0f;
-            int safeMount = mountIndex < 0 ? 0 : mountIndex;
+            int safeMount = mountIndex; // Keep -1 for drone / world spawns (no barrel reproject).
 
             var req = new BulletVfxBridge.SpawnRequest
             {

@@ -166,12 +166,17 @@ namespace TitanOrbit.Game
             if (!req.IsAnticipation && !IsLocalOwner(req.OwnerNetworkId))
                 return false;
 
+            // [TITAN-ORBIT] MountIndex < 0 = world spawn (drone swarm) — keep server pose/velocity.
+            // MountIndex >= 0 reprojects onto the matching live weapon barrel for local feel.
+            if (req.MountIndex < 0)
+                return false;
+
             if (!em.HasComponent<ShipWeaponConfig>(shipEntity))
                 return false;
 
             // [TITAN-ORBIT] Use the spawn's MountIndex — hardcoding 0 snapped every volley bullet
             // onto the first barrel after upgrade-tree multi-cannon hulls landed.
-            int mountIndex = req.MountIndex < 0 ? 0 : req.MountIndex;
+            int mountIndex = req.MountIndex;
             if (!TryResolveMuzzle(em, shipEntity, mountIndex, out float3 origin, out float3 forward,
                     out bool displaySpace, out float3 shipVel))
                 return false;

@@ -34,18 +34,20 @@ namespace TitanOrbit.ECS
         {
             // --- Map size for toroidal orbit / shield / territory math ---
             // [TITAN-ORBIT] Prefer ToroidalMapEcs (clients get size from MapSessionMetaRpc —
-            // MapStateSingleton often never ghosts). Wrong period (hardcoded 1000) made
-            // ShortestOffset / triangle PIT fail on duplicate tiles → stepped orbit + no boost.
-            // No per-tick CreateEntityQuery — that alloc showed up as drive hitch / lag.
-            float mapW = math.max(100f, ToroidalMapEcs.MapWidth);
-            float mapH = math.max(100f, ToroidalMapEcs.MapHeight);
+            // MapStateSingleton often never ghosts). Missing size → skip this tick (never invent 1000).
+            float preferredW = 0f;
+            float preferredH = 0f;
             if (SystemAPI.TryGetSingleton(out MapStateSingleton mapState) &&
-                mapState.MapWidth >= 100f &&
-                mapState.MapHeight >= 100f)
+                ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
             {
-                mapW = mapState.MapWidth;
-                mapH = mapState.MapHeight;
+                preferredW = mapState.MapWidth;
+                preferredH = mapState.MapHeight;
             }
+
+            if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
+                return;
+            if (ToroidalMapEcs.IsValidMapSize(preferredW, preferredH))
+                ToroidalMapEcs.SetMapSize(mapW, mapH);
 
             // [ECS/DOTS] TempJob planet snapshot — disposed after the parallel job completes.
             var planets = PlanetMotorSnapshotCollection.Collect(ref state, Allocator.TempJob);

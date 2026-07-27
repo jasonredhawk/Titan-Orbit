@@ -119,6 +119,18 @@ namespace TitanOrbit.Game
         /// </summary>
         readonly Dictionary<Entity, TeamId> _proxyAsteroidTerritory = new Dictionary<Entity, TeamId>();
 
+        /// <summary>
+        /// [TITAN-ORBIT] Client topology revision last used for asteroid tint PIT.
+        /// Full PIT for every rock on every PublishClient was ~2+ ms — revision + budget instead.
+        /// </summary>
+        int _lastAsteroidTintGraphRevision = int.MinValue;
+
+        /// <summary>Viewer team latched with <see cref="_lastAsteroidTintGraphRevision"/>.</summary>
+        TeamId _lastAsteroidTintViewerTeam = TeamId.None;
+
+        /// <summary>Max asteroid territory PIT evaluations per visual sync frame.</summary>
+        const int MaxAsteroidTerritoryTintsPerFrame = 24;
+
         /// <summary>Cached local ship entity for dedicated-client weapon VFX (avoids per-frame query).</summary>
         Entity _cachedDedicatedLocalShipEntity;
         /// <summary>Cached local ship entity for transform sync and camera pose feed.</summary>
@@ -126,6 +138,12 @@ namespace TitanOrbit.Game
 
         /// <summary>Guards VR / multi-camera double onBeforeRender in the same frame.</summary>
         int _lastVisualSyncFrame = -1;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Process-wide latch so duplicate EcsWorldVisualizer instances cannot both
+        /// SyncAllProxies the same frame (duplicate instances were interleaving work).
+        /// </summary>
+        static int s_GlobalVisualSyncFrame = -1;
 
         /// <summary>
         /// [TITAN-ORBIT] Local-ship (or camera) XZ used as toroidal display reference this frame.
@@ -297,6 +315,10 @@ namespace TitanOrbit.Game
             Application.onBeforeRender -= OnBeforeRenderSync;
             if (Active == this)
                 Active = null;
+
+            // Force full asteroid tint recompute next enable (viewer team / graph may change).
+            _lastAsteroidTintGraphRevision = int.MinValue;
+            _lastAsteroidTintViewerTeam = TeamId.None;
         }
 
         /// <summary>
@@ -450,16 +472,48 @@ namespace TitanOrbit.Game
         /// [HYBRID] Per-frame proxy sync — reads presentation transforms, spawns/destroys GameObjects, applies VFX.
         /// Invoked from Application.onBeforeRender (not LateUpdate) so presentation cache is ready.
         /// </summary>
-        void OnBeforeRenderSync() => SyncAllProxies();
+        void OnBeforeRenderSync()
+        {
+            TryBecomeActiveIfPreferred();
+            if (Active != this)
+                return;
+            SyncAllProxies();
+        }
 
         /// <summary>Fallback when onBeforeRender does not fire (some batch/headless paths).</summary>
-        void LateUpdate() => SyncAllProxies();
+        void LateUpdate()
+        {
+            TryBecomeActiveIfPreferred();
+            if (Active != this)
+                return;
+            SyncAllProxies();
+        }
+
+        /// <summary>
+        /// If Active is missing or empty while this instance owns hybrids, take Active.
+        /// Prevents a leftover empty visualizer from starving the real map proxy owner.
+        /// </summary>
+        void TryBecomeActiveIfPreferred()
+        {
+            if (Active == this)
+                return;
+            if (Active == null || Active._proxies.Count == 0)
+            {
+                if (_proxies.Count > 0 || ClientJoinSettleCache.Settling)
+                    Active = this;
+            }
+        }
 
         void SyncAllProxies()
         {
+            // --- One sync per frame across all visualizer instances ---
+            if (s_GlobalVisualSyncFrame == Time.frameCount)
+                return;
             if (_lastVisualSyncFrame == Time.frameCount)
                 return;
+            s_GlobalVisualSyncFrame = Time.frameCount;
             _lastVisualSyncFrame = Time.frameCount;
+
             var world = PickVisualizationWorld();
             if (world == null || !world.IsCreated)
                 return;
@@ -567,6 +621,31 @@ namespace TitanOrbit.Game
         /// </summary>
         void SyncExistingWorldBodyProxyTransforms(EntityManager em, HashSet<Entity> alive)
         {
+            // --- Asteroid territory tint: only when topology / viewer team changes ---
+            // [TITAN-ORBIT] Presentation triangles use planet centers (not moons), so revision
+            // is stable between graph publishes. Running PIT for every rock every frame cost
+            // ~2.3 ms with ~236 asteroids — budget + revision invalidate instead.
+            TeamId viewerTeam = TeamId.None;
+            if (TryResolveLocalPlayerShipEntityCached(em, out var localShip) &&
+                localShip != Entity.Null &&
+                em.Exists(localShip) &&
+                em.HasComponent<ShipState>(localShip))
+            {
+                viewerTeam = em.GetComponentData<ShipState>(localShip).Team;
+            }
+
+            int graphRevision = PlanetConnectionGraphCache.ClientPublishRevision;
+            if (graphRevision != _lastAsteroidTintGraphRevision ||
+                viewerTeam != _lastAsteroidTintViewerTeam)
+            {
+                _lastAsteroidTintGraphRevision = graphRevision;
+                _lastAsteroidTintViewerTeam = viewerTeam;
+                // Invalidate applied tints so rocks re-enter the budgeted uncached queue.
+                _proxyAsteroidTerritory.Clear();
+            }
+
+            int tintBudget = MaxAsteroidTerritoryTintsPerFrame;
+
             foreach (var kv in _proxies)
             {
                 Entity entity = kv.Key;
@@ -650,10 +729,15 @@ namespace TitanOrbit.Game
                 if (kind == ProxyVisualKind.Planet)
                     RefreshPlanetProxyAppearanceIfChanged(em, entity, go, scale);
 
-                // --- Asteroid territory tint (triangle ownership) ---
-                // [TITAN-ORBIT] Client PIT vs drawn triangles — not ghosted server TerritoryTeam.
-                if (kind == ProxyVisualKind.Asteroid)
-                    RefreshAsteroidTerritoryTintIfChanged(em, entity, go, lt.Position);
+                // --- Asteroid territory tint (budgeted PIT) ---
+                // Untinted / invalidated rocks only; MaxAsteroidTerritoryTintsPerFrame per sync.
+                if (kind == ProxyVisualKind.Asteroid &&
+                    !_proxyAsteroidTerritory.ContainsKey(entity) &&
+                    tintBudget > 0)
+                {
+                    RefreshAsteroidTerritoryTintIfChanged(em, entity, go, lt.Position, viewerTeam);
+                    tintBudget--;
+                }
             }
         }
 
@@ -667,21 +751,12 @@ namespace TitanOrbit.Game
         /// <param name="entity">Asteroid ghost already in <see cref="_proxies"/>.</param>
         /// <param name="go">Hybrid asteroid GameObject root.</param>
         /// <param name="logicalPos">Ghost <see cref="LocalTransform.Position"/> (pre-display retile).</param>
+        /// <param name="viewerTeam">Local player team (resolved once per sync by caller).</param>
         void RefreshAsteroidTerritoryTintIfChanged(
-            EntityManager em, Entity entity, GameObject go, float3 logicalPos)
+            EntityManager em, Entity entity, GameObject go, float3 logicalPos, TeamId viewerTeam)
         {
             if (go == null || !em.Exists(entity))
                 return;
-
-            // --- Viewer team (local ship) for overlap → own-colour preference ---
-            TeamId viewerTeam = TeamId.None;
-            if (TryResolveLocalPlayerShipEntityCached(em, out var localShip) &&
-                localShip != Entity.Null &&
-                em.Exists(localShip) &&
-                em.HasComponent<ShipState>(localShip))
-            {
-                viewerTeam = em.GetComponentData<ShipState>(localShip).Team;
-            }
 
             // --- Canonical XZ (same space as moon verts / drawn fill topology) ---
             // [TITAN-ORBIT] Do not use display-retiled proxy position — wrap copies would
@@ -696,7 +771,6 @@ namespace TitanOrbit.Game
                 mask, primary, viewerTeam);
 
             // --- Skip before GetComponentInChildren / material writes ---
-            // Re-evaluates when moons move (~30 Hz cache) or Join Team sets viewerTeam.
             if (_proxyAsteroidTerritory.TryGetValue(entity, out var applied) && applied == displayTeam)
                 return;
 
@@ -1190,6 +1264,9 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Resolves and caches local player ship entity — LocalPlayerShipTag first, then GhostOwner NetworkId.
         /// Returns false while team/rejoin flow suppresses control so map-load orphans do not drive camera.
+        /// While <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>, never runs ship
+        /// <c>ToEntityArray</c> / <c>ToComponentDataArray</c> — only Instantiates-hook seed or cache
+        /// (asteroid tint calls this from map-body sync after Join Team).
         /// </summary>
         bool TryResolveLocalPlayerShipEntityCached(EntityManager em, out Entity localShipEntity)
         {
@@ -1201,6 +1278,36 @@ namespace TitanOrbit.Game
                 _cachedLocalPlayerShipEntity = Entity.Null;
                 LocalPlayerShipProxy = null;
                 LocalPlayerShipVisualRoot = null;
+                return false;
+            }
+
+            // --- Instantiates / post–TeamChoice hold: no ship archetype gather ---
+            // [TITAN-ORBIT] Player.log 2026-07-27: TeamChoiceResult → SyncExistingWorldBodyProxyTransforms
+            // → RefreshAsteroidTerritoryTintIfChanged → this method → ToComponentDataArray<GhostOwner>
+            // → GatherComponentDataWithoutFilter → Crash!!!. EnsureShipProxies was already gated, but
+            // map-body sync still called this every asteroid. Prefer seed (no gather) or bail.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            {
+                // Seeded local ship is a known Entity — Exists/HasComponent are safe; ToEntityArray is not.
+                if (LocalShipEntitySeed.TryGetSeededShip(em, out var seeded) &&
+                    seeded != Entity.Null &&
+                    em.Exists(seeded) &&
+                    em.HasComponent<ShipTag>(seeded))
+                {
+                    localShipEntity = seeded;
+                    _cachedLocalPlayerShipEntity = seeded;
+                    return true;
+                }
+
+                // Cache hit only — never fall through to CreateEntityQuery + ToEntityArray below.
+                if (_cachedLocalPlayerShipEntity != Entity.Null &&
+                    em.Exists(_cachedLocalPlayerShipEntity) &&
+                    em.HasComponent<ShipTag>(_cachedLocalPlayerShipEntity))
+                {
+                    localShipEntity = _cachedLocalPlayerShipEntity;
+                    return true;
+                }
+
                 return false;
             }
 
@@ -1327,6 +1434,12 @@ namespace TitanOrbit.Game
                 !em.Exists(shipEntity) ||
                 !em.HasComponent<LocalTransform>(shipEntity))
                 return;
+
+            // --- Warm local-ship cache without archetype gather ---
+            // [TITAN-ORBIT] TryResolveLocalPlayerShipEntityCached skips ToEntityArray during
+            // ShouldSkipShipEntityQueries; seeding the cache here lets tint / force-nearest reuse
+            // the known entity once Instantiates-hook fires.
+            _cachedLocalPlayerShipEntity = shipEntity;
 
             alive.Add(shipEntity);
 
@@ -2153,6 +2266,11 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Gem proxies — value-scaled via <see cref="GemVisualApplier"/> with end-of-life shrink;
         /// registers diameter for tractor beam.
+        /// <para>
+        /// [LEGACY] Not called from <see cref="SyncAllProxies"/> under TransformQuarantine
+        /// (Pending/SpawnRequest + urgent Instantiates own gem creates). Kept for catch-up
+        /// tooling — must match the urgent path: <see cref="GemClientMotionApplier"/> owns pose.
+        /// </para>
         /// </summary>
         void DrawGems(EntityManager em, HashSet<Entity> alive)
         {
@@ -2180,8 +2298,7 @@ namespace TitanOrbit.Game
                 if (_proxies.TryGetValue(entity, out var go) && go != null)
                 {
                     alive.Add(entity);
-                    go.transform.position = GetVisualPosition(entity, lt.Position);
-                    go.transform.rotation = lt.Rotation;
+                    // Scale / diameter only — GemClientMotionApplier owns display pose (wrap tiles).
                     go.transform.localScale = Vector3.one * scale;
                     GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, state.Value));
                     continue;
@@ -2191,7 +2308,7 @@ namespace TitanOrbit.Game
                 if (!TryConsumeWorldBodyProxyBudget())
                     continue;
 
-                // DrawGems catch-up — same pool Rent as urgent Instantiates path.
+                // DrawGems catch-up — same pool Rent + motion applier as urgent Instantiates path.
                 GemVisualPool.EnsurePrefab(gemVisualPrefab);
                 if (!GemVisualApplier.TryCreateGemVisual(
                         gemVisualPrefab, state.Value, state.IsBonusGem, out go))
@@ -2209,10 +2326,20 @@ namespace TitanOrbit.Game
                 _proxies[entity] = go;
                 RegisterProxyKind(entity, ProxyVisualKind.Gem);
                 alive.Add(entity);
-                go.transform.position = GetVisualPosition(entity, lt.Position);
-                go.transform.rotation = lt.Rotation;
+                Vector3 displayPos = GetVisualPosition(entity, lt.Position);
+                go.transform.SetPositionAndRotation(displayPos, lt.Rotation);
                 go.transform.localScale = Vector3.one * scale;
                 GemVisualDiameterRegistry.SetDiameter(entity, GemVisualApplier.ReadWorldDiameter(go, state.Value));
+
+                var motion = go.GetComponent<GemClientMotionApplier>();
+                if (motion == null)
+                    motion = go.AddComponent<GemClientMotionApplier>();
+                motion.Bind(entity, lt.Position);
+                if (em.HasComponent<GemKinematics>(entity))
+                {
+                    var kin = em.GetComponentData<GemKinematics>(entity);
+                    motion.SeedVelocity(kin.Velocity, kin.AngularVelocity);
+                }
             }
         }
 

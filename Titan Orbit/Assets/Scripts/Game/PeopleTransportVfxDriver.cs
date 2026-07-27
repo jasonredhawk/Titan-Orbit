@@ -122,8 +122,9 @@ namespace TitanOrbit.Game
                 return;
 
             float dt = math.min(0.05f, math.max(0f, Time.deltaTime));
-            float mapW = math.max(100f, ToroidalMapEcs.MapWidth);
-            float mapH = math.max(100f, ToroidalMapEcs.MapHeight);
+            // Missing map period → skip display unwrap (never invent 1000).
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return;
 
             if (!ToroidalDisplay.TryGetReferencePosition(out Vector3 reference))
                 reference = Vector3.zero;
