@@ -30,8 +30,9 @@ namespace TitanOrbit.NetCode
     /// - After N successful 30‑minute idle recreates only (default 6 ≈ 3h empty), exit so
     ///   systemd/Edgegap starts a fresh binary. Stale/self-heal/heartbeat/match-request must
     ///   NOT exit — that made Join Game empty more often (2026-07-25 regression).
-    /// - Empty process also exits on sustained STRUGGLING netdiag or RSS over budget (memory
-    ///   reclaim for IL2CPP — in-process lobby swap does not free the map ServerWorld).
+    /// - Empty process recycle: spawn a new IsLatest sibling FIRST, wait until its lobby is
+    ///   browseable, then close this lobby and exit 0 (no Join Game gap; no duplicate Unity
+    ///   under systemd Restart=on-failure). Hang / crash still exit 1 for restart.
     /// - Hang watchdog hard-exits if Update stops ticking; paused during Relay/lobby recreate.
     /// - Periodic memory/entity logs correlate RSS with recreate count vs load spikes.
     /// </summary>
@@ -1063,33 +1064,102 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Closes the current lobby listing and exits so systemd/Edgegap can restart a clean process.
-        /// Only called from empty-server paths.
+        /// Empty-process recycle with zero Join Game gap: spawn a fresh IsLatest successor first,
+        /// wait until its UGS lobby is browseable, then close this lobby and exit.
+        /// Exit code 0 on success so systemd <c>Restart=on-failure</c> does not start a duplicate
+        /// Unity (the sibling is now the live server). On handoff failure, demote-keep-open and
+        /// exit 1 so systemd cold-restarts while the old listing still bridges briefly.
         /// </summary>
-        /// <param name="reason">Watchdog / recycle reason string for the file log.</param>
+        /// <param name="reason">Logged recycle reason (rss / struggling / idle count).</param>
         IEnumerator ExitForProcessRecycleCoroutine(string reason)
         {
             // --- ExitForProcessRecycleCoroutine ---
-            Task exitTask = ExitForProcessRecycleAsync(reason);
-            while (!exitTask.IsCompleted)
-                yield return null;
-        }
-
-        /// <summary>
-        /// Async variant of process recycle exit (self-heal / match-request paths).
-        /// </summary>
-        /// <param name="reason">Logged exit reason.</param>
-        async Task ExitForProcessRecycleAsync(string reason)
-        {
-            // --- ExitForProcessRecycleAsync ---
             DedicatedServerFileLog.Append(
                 "watchdog",
-                "Process recycle after empty recreates count=" + _successfulEmptyInProcessRecreates +
-                " max=" + (_config != null ? _config.MaxInProcessEmptyRecreates : -1) +
-                " reason=" + reason);
+                "Empty recycle handoff starting reason=" + reason +
+                " emptyRecreates=" + _successfulEmptyInProcessRecreates +
+                " — spawn successor BEFORE closing lobby (no Join Game gap)");
             Debug.LogWarning("[TitanOrbitDedicatedServerHost] " + reason +
-                             " — exiting empty process for orchestrator restart.");
-            await CloseLobbyAndExitAsync(_activeLobbyId, reason);
+                             " — spawning successor before process recycle.");
+
+            DedicatedServerMemoryTelemetry.LogSnapshot(
+                "before_recycle_handoff",
+                _successfulEmptyInProcessRecreates,
+                playerCount: 0);
+
+            string closingLobbyId = _activeLobbyId;
+            bool handoffComplete = false;
+
+            // --- Spawn → wait → close (same pattern as age rotation, empty-only) ---
+            for (int attempt = 1; attempt <= MaxSpawnAttemptsPerHandoff && !handoffComplete; attempt++)
+            {
+                if (!TrySpawnNextMatch(nextIsLatest: true))
+                {
+                    DedicatedServerFileLog.Append(
+                        "watchdog",
+                        "Recycle SpawnNextMatch failed attempt=" + attempt + "/" + MaxSpawnAttemptsPerHandoff);
+                    yield return new WaitForSeconds(SpawnRetryDelaySeconds);
+                    continue;
+                }
+
+                Task<bool> waitTask = WaitForSuccessorLobbyAsync(
+                    closingLobbyId,
+                    requireLatest: true,
+                    TimeSpan.FromSeconds(SuccessorWaitSecondsPerSpawnAttempt));
+                while (!waitTask.IsCompleted)
+                    yield return null;
+
+                if (waitTask.IsFaulted || !waitTask.Result)
+                {
+                    DedicatedServerFileLog.Append(
+                        "watchdog",
+                        "Recycle successor wait failed attempt=" + attempt + "/" + MaxSpawnAttemptsPerHandoff);
+                    yield return new WaitForSeconds(SpawnRetryDelaySeconds);
+                    continue;
+                }
+
+                // Successor is browseable — safe to close ours (Join Game still has the new lobby).
+                if (TitanOrbitSessionManager.Instance != null && !string.IsNullOrWhiteSpace(closingLobbyId))
+                {
+                    Task closeTask = TitanOrbitSessionManager.Instance.CloseLobbyForNewJoinersAsync(
+                        closingLobbyId,
+                        reason + "_handoff_complete");
+                    while (!closeTask.IsCompleted)
+                        yield return null;
+                }
+
+                handoffComplete = true;
+                DedicatedServerFileLog.Append(
+                    "watchdog",
+                    "Recycle handoff complete reason=" + reason +
+                    " closedOld=" + closingLobbyId +
+                    " — exiting 0 (sibling is live; systemd must be Restart=on-failure)");
+            }
+
+            _processExitRequested = true;
+
+            if (handoffComplete)
+            {
+                // [TITAN-ORBIT] Exit 0 → with Restart=on-failure systemd does NOT start a second Unity.
+                Application.Quit(0);
+                yield break;
+            }
+
+            // --- Fallback: bridge with demoted open lobby, then cold restart (exit 1) ---
+            DedicatedServerFileLog.Append(
+                "watchdog",
+                "Recycle handoff FAILED reason=" + reason +
+                " — demote_keep_open then exit 1 for systemd cold restart");
+            if (TitanOrbitSessionManager.Instance != null && !string.IsNullOrWhiteSpace(closingLobbyId))
+            {
+                Task demoteTask = TitanOrbitSessionManager.Instance.DemoteFromLatestKeepOpenAsync(
+                    closingLobbyId,
+                    reason + "_handoff_fallback_overlap");
+                while (!demoteTask.IsCompleted)
+                    yield return null;
+            }
+
+            Application.Quit(1);
         }
 
         /// <summary>

@@ -1159,6 +1159,14 @@ namespace TitanOrbit.NetCode
 
                 _activeLobbyId = prep.Lobby.Id;
                 _consecutiveHeartbeatFailures = 0;
+
+                // [TITAN-ORBIT] Publish order matters for Join Game: create+assign new lobby BEFORE
+                // closing the old one so browse never sees a moment with zero open listings.
+                DedicatedServerFileLog.Append(
+                    "lobby",
+                    "Match recreate published NEW lobby first id=" + prep.Lobby.Id +
+                    " — closing old next id=" + oldLobbyId);
+
                 await CloseLobbyForNewJoinersAsync(oldLobbyId, "empty_match_recreate");
                 try
                 {

@@ -12,10 +12,11 @@ Match rotation is handled inside the server process. Lifecycle rules:
 | **Players connected** | Match keeps running and stays `IsOpen=1`. Idle teardown does **not** run. |
 | **Last player leaves** (0 connections) | Empty-idle countdown **starts/resets from that moment**. Orphan ships wiped; map stays until timeout. |
 | **Empty for 30 minutes** (`emptyMatchRecreateSeconds`) | In-process recreate: new Relay + lobby, wipe ships, same process (only when **0 players**). |
-| **After N idle empty recreates** (`maxInProcessEmptyRecreates`, default **6** ≈ 3h) | **Exit the process** (0 players only) so systemd/Edgegap starts fresh. Counts **only** `empty_match_recreate`. |
-| **RSS over budget** (`rssRecycleMb`, default **3500**) while empty | Exit for fresh process (IL2CPP reclaim). |
-| **Sustained STRUGGLING** (`strugglingSamplesBeforeRecycle`, default **3** ≈ 30s) while empty | Exit — hang watchdog alone misses slow thrash (Update still ticks). |
-| **Main thread hung** (`mainThreadHangQuitSeconds`, default **300**; paused during recreate) | Background watchdog hard-exits so the host can restart (sim already frozen). |
+| **Empty process recycle** (RSS / struggling / idle count) | Spawn new IsLatest sibling **first**, wait until browseable, then close old + exit **0**. systemd must be `Restart=on-failure` so a second Unity is not started. Handoff failure → demote-keep-open + exit 1 (cold restart with brief overlap). |
+| **In-process idle recreate** | Create new lobby **before** closing old (no zero-lobby window). |
+| **RSS over budget** (`rssRecycleMb`, default **3500**) while empty | Triggers empty recycle handoff above. |
+| **Sustained STRUGGLING** (`strugglingSamplesBeforeRecycle`, default **3** ≈ 30s) while empty | Triggers empty recycle handoff above. |
+| **Main thread hung** (`mainThreadHangQuitSeconds`, default **300**; paused during recreate) | Background watchdog hard-exits code 1 so systemd restarts. |
 | **Memory telemetry** (`memoryLogIntervalSeconds`, default **60**) | `memory` lines in `TitanOrbitDedicatedServer.log`: rssMb, entity counts, emptyRecreates, rssDeltaMb. |
 | **Age ~30 minutes** while occupied + IsLatest + not full (`ageThresholdSeconds`) | Spawn a successor process as the new `IsLatest`. **Demote** this lobby (`IsLatest=0`) but **keep `IsOpen=1`** so conquest maps stay on Join Game. |
 | **Lobby full** (max players) | Close listing (`IsOpen=0`) and spawn successor capacity. |
@@ -65,7 +66,8 @@ Notes:
 - The process can spawn additional match server processes using the same executable path it is running from.
 - Override idle/age with `--emptyMatchRecreateSeconds=` and `--ageThresholdSeconds=` (defaults: 1800 each).
 - Process recycle: `--maxInProcessEmptyRecreates=6`, `--rssRecycleMb=3500`, `--strugglingSamplesBeforeRecycle=3`, `--memoryLogIntervalSeconds=60` (0 disables each). Hang quit: `--mainThreadHangQuitSeconds=300`.
-- Use `Restart=always` so recycle / hang / RSS exits come back automatically.
+- systemd: **`Restart=on-failure`** (not `always`). Successful empty handoff exits **0** with a live sibling; exit **1** still restarts after crashes.
+- Grep handoff / gaps: `grep -E 'Recycle handoff|published NEW lobby first|memory' TitanOrbitDedicatedServer.log`
 - Grep overnight logs: `grep memory TitanOrbitDedicatedServer.log` (watch `rssMb` vs `emptyRecreates` / `rssDeltaMb`).
 
 ## What to monitor
