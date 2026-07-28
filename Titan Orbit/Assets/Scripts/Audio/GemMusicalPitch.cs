@@ -3,13 +3,15 @@ using UnityEngine;
 namespace TitanOrbit.Audio
 {
     /// <summary>
-    /// Maps gem cargo / deposit amounts onto a C-major white-key piano ladder for SFX pitch.
-    /// Shared by deposit metronome and gem collect (asteroid pickup) so both use the same clip language.
+    /// Maps gem cargo / deposit amounts onto a full chromatic piano for SFX pitch
+    /// (all 88 keys: white and black / semitones). Shared by deposit metronome and gem
+    /// collect (asteroid pickup) so both use the same clip language.
     /// <para>
-    /// [TITAN-ORBIT] Designed for 55 white keys: value 1 = highest C, value 55 = lowest key.
-    /// Within each octave cycle the note names are C, D, E, F, G, A, B; value 8 = C exactly one
-    /// octave lower (pitch ÷ 2). Pitch uses true equal temperament from the value-1 root —
-    /// <c>pitch = pitchForValue1 × 2^(−semitones/12)</c> — so shifting the root up moves every
+    /// [TITAN-ORBIT] Designed for a standard 88-key piano span: value 1 = highest C (C8),
+    /// value 88 = lowest A (A0). Each gem-value step is exactly one semitone — including
+    /// sharps/flats — so the ladder has finer resolution than the old white-keys-only map.
+    /// Pitch uses true equal temperament from the value-1 root —
+    /// <c>pitch = pitchForValue1 × 2^(−(value−1)/12)</c> — so shifting the root up moves every
     /// note by the same factor (intervals stay correct). The low bookend is only a floor clamp,
     /// not a stretch target (stretching min/max unevenly would squash the scale).
     /// </para>
@@ -17,23 +19,23 @@ namespace TitanOrbit.Audio
     public static class GemMusicalPitch
     {
         /// <summary>
-        /// [TITAN-ORBIT] Game piano width in white keys. Value 1..55 map to distinct keys;
-        /// larger amounts clamp to the bottom key (world gems are sim-split to stay ≤ 55).
+        /// [TITAN-ORBIT] Full piano width in chromatic keys (A0…C8). Value 1..88 map to
+        /// distinct pitches; larger amounts clamp to the bottom key (world gems are sim-split
+        /// to stay ≤ 88).
         /// </summary>
-        public const int WhiteKeyCount = 55;
-
-        /// <summary>Notes per C-major octave cycle (C D E F G A B).</summary>
-        public const int NotesPerOctave = 7;
+        public const int PianoKeyCount = 88;
 
         /// <summary>
-        /// Semitone offsets from C for each scale degree (equal temperament).
-        /// Index 0 = C, 1 = D, 2 = E, 3 = F, 4 = G, 5 = A, 6 = B.
-        /// Used as semitones <b>down</b> from the top C so higher gem value → lower pitch.
+        /// Legacy alias for <see cref="PianoKeyCount"/>. Prefer <see cref="PianoKeyCount"/>.
         /// </summary>
-        static readonly int[] DegreeSemitonesFromC = { 0, 2, 4, 5, 7, 9, 11 };
+        public const int WhiteKeyCount = PianoKeyCount;
+
+        /// <summary>Semitones in one octave (equal temperament). Value N+12 = one octave below N.</summary>
+        public const int NotesPerOctave = 12;
 
         /// <summary>
-        /// Converts a gem amount into an <see cref="AudioSource.pitch"/> multiplier on the white-key ladder.
+        /// Converts a gem amount into an <see cref="AudioSource.pitch"/> multiplier on the
+        /// chromatic piano ladder.
         /// </summary>
         /// <param name="gemAmount">
         /// Gem value for this SFX (deposit chunk or cargo delta). Rounded to an integer key;
@@ -43,18 +45,18 @@ namespace TitanOrbit.Audio
         /// Pitch at value 1 (highest C / root). Every other key is tuned from this with equal temperament.
         /// Unity AudioClip pitch clamps at 3 — keep this ≤ 3.
         /// </param>
-        /// <param name="pitchForValue55">
+        /// <param name="pitchForLowestKey">
         /// Lowest allowed pitch (floor). Does not compress the scale — notes that would go lower
         /// play at this floor. Raise/lower it by the <b>same factor</b> as <paramref name="pitchForValue1"/>
         /// when shifting the whole piano up or down.
         /// </param>
         /// <returns>Pitch multiplier for <see cref="AudioSource.pitch"/> (always &gt; 0).</returns>
-        public static float ResolvePitch(float gemAmount, float pitchForValue1, float pitchForValue55)
+        public static float ResolvePitch(float gemAmount, float pitchForValue1, float pitchForLowestKey)
         {
             // --- Normalize designer bookends ---
             // [STANDARD] Guard against zero/negative inspector values (Unity pitch must be > 0).
             float rootPitch = Mathf.Max(0.0001f, pitchForValue1);
-            float pitchFloor = Mathf.Max(0.0001f, pitchForValue55);
+            float pitchFloor = Mathf.Max(0.0001f, pitchForLowestKey);
             // If someone swaps min/max in the Inspector, keep value 1 as the high root.
             if (pitchFloor > rootPitch)
             {
@@ -63,17 +65,17 @@ namespace TitanOrbit.Audio
                 rootPitch = swap;
             }
 
-            // --- Amount → white-key index (0 = highest C, 54 = lowest key) ---
+            // --- Amount → chromatic key index (0 = highest C / C8, 87 = lowest A / A0) ---
             int value = Mathf.RoundToInt(gemAmount);
             if (value < 1)
                 value = 1;
-            if (value > WhiteKeyCount)
-                value = WhiteKeyCount;
+            if (value > PianoKeyCount)
+                value = PianoKeyCount;
 
             int keyIndex = value - 1;
 
             // --- True equal temperament from the root C ---
-            // [TITAN-ORBIT] value 1 → root; value 2 (D) → root × 2^(-2/12); value 8 (C) → root / 2.
+            // [TITAN-ORBIT] value 1 → root; value 2 (C#) → root × 2^(-1/12); value 13 (C) → root / 2.
             // Same multiply on root + floor = equal shift of the whole piano; intervals stay exact.
             float semitonesDown = SemitonesDownFromTopC(keyIndex);
             float pitch = rootPitch * Mathf.Pow(2f, -semitonesDown / 12f);
@@ -86,20 +88,17 @@ namespace TitanOrbit.Audio
         }
 
         /// <summary>
-        /// Semitones <b>down</b> from the highest C for a white-key index (0..54).
-        /// Value 1 → 0; value 2 (D) → 2; value 8 (C) → 12 (one octave lower).
+        /// Semitones <b>down</b> from the highest C for a chromatic key index (0..87).
+        /// Value 1 → 0; value 2 (C#) → 1; value 13 (C one octave lower) → 12.
         /// </summary>
-        /// <param name="keyIndex">Zero-based white-key index (value − 1).</param>
+        /// <param name="keyIndex">Zero-based chromatic key index (value − 1).</param>
         /// <returns>Non-negative semitone distance below the top C.</returns>
         public static float SemitonesDownFromTopC(int keyIndex)
         {
-            // --- Degree + octave ---
-            // [TITAN-ORBIT] C D E F G A B, then wrap; each full cycle adds one octave of drop.
-            int safeIndex = Mathf.Max(0, keyIndex);
-            int degree = safeIndex % NotesPerOctave;
-            int octaveDown = safeIndex / NotesPerOctave;
-            int degreeSemitone = DegreeSemitonesFromC[degree];
-            return degreeSemitone + (12 * octaveDown);
+            // --- Chromatic piano ---
+            // [TITAN-ORBIT] Every gem-value step is one semitone (white + black keys).
+            // Index 0 = C8; index 87 = A0 — the standard 88-key span.
+            return Mathf.Max(0, keyIndex);
         }
     }
 }

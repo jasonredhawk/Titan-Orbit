@@ -3,35 +3,35 @@ using Unity.Mathematics;
 namespace TitanOrbit
 {
     /// <summary>
-    /// Splits a total gem amount into per-entity values whose white-key pitches form a C-major chord.
+    /// Splits a total gem amount into per-entity values whose chromatic pitches form a C-major chord.
     /// Used by asteroid destroy bursts (server) and multi-gem collect SFX (client) so explode → consume
     /// stays musically consistent.
     /// <para>
-    /// [TITAN-ORBIT] Value N maps to the same C D E F G A B ladder as audio pitch
-    /// (see gem musical pitch helper): degree = (round(value) − 1) mod 7.
-    /// Chord templates: 2 = root+fifth (C,G), 3 = major triad (C,E,G), 4 = major 7th (C,E,G,B),
-    /// 5+ = triad stacked with extra octave copies. Exact sum is preserved; the last voice may
-    /// absorb a few units of remainder so the economy stays exact.
+    /// [TITAN-ORBIT] Value N maps to the same chromatic piano as audio pitch
+    /// (see gem musical pitch helper): semitone = (round(value) − 1) mod 12.
+    /// Chord templates use chromatic degrees from C: 2 = root+fifth (C,G), 3 = major triad (C,E,G),
+    /// 4 = major 7th (C,E,G,B), 5+ = triad stacked with extra octave copies. Exact sum is preserved;
+    /// the last voice may absorb a few units of remainder so the economy stays exact.
     /// </para>
     /// </summary>
     public static class GemChordValues
     {
-        /// <summary>Matches the musical piano-width cap (white keys 1..55).</summary>
-        public const int DefaultMaxUnitValue = 55;
+        /// <summary>Matches the musical piano-width cap (chromatic keys 1..88).</summary>
+        public const int DefaultMaxUnitValue = 88;
 
-        /// <summary>C major scale degrees: C=0, D=1, E=2, F=3, G=4, A=5, B=6.</summary>
-        public const int NotesPerOctave = 7;
+        /// <summary>Semitones per octave (equal temperament). Value N+12 is the same note one octave lower.</summary>
+        public const int NotesPerOctave = 12;
 
         /// <summary>Hard cap on burst / chord voices (matches gem explosion absolute max).</summary>
         public const int AbsoluteMaxVoices = 10;
 
-        // --- Chord templates (scale degrees within one octave) ---
-        // [TITAN-ORBIT] Root+fifth power dyad when only two gems explode.
-        static readonly int[] DegreesDyad = { 0, 4 };
-        // Major triad — the default “pretty” asteroid dump.
-        static readonly int[] DegreesTriad = { 0, 2, 4 };
-        // Major 7th when four gems explode.
-        static readonly int[] DegreesMaj7 = { 0, 2, 4, 6 };
+        // --- Chord templates (chromatic semitone degrees from C within one octave) ---
+        // [TITAN-ORBIT] Root+fifth power dyad when only two gems explode (C=0, G=7).
+        static readonly int[] DegreesDyad = { 0, 7 };
+        // Major triad — the default “pretty” asteroid dump (C=0, E=4, G=7).
+        static readonly int[] DegreesTriad = { 0, 4, 7 };
+        // Major 7th when four gems explode (C=0, E=4, G=7, B=11).
+        static readonly int[] DegreesMaj7 = { 0, 4, 7, 11 };
 
         /// <summary>
         /// Writes <paramref name="count"/> gem values into <paramref name="values"/> that sum to
@@ -39,7 +39,7 @@ namespace TitanOrbit
         /// </summary>
         /// <param name="remaining">Total asteroid leftover (or cargo delta) to split.</param>
         /// <param name="count">How many gem entities / chord voices (1..AbsoluteMaxVoices).</param>
-        /// <param name="maxUnitValue">Per-gem cap (default 55). Each written value is clamped to this.</param>
+        /// <param name="maxUnitValue">Per-gem cap (default 88). Each written value is clamped to this.</param>
         /// <param name="values">
         /// Destination length ≥ count. Only indices [0, count) are written.
         /// </param>
@@ -83,12 +83,12 @@ namespace TitanOrbit
                 if (octave > maxOctave)
                     octave = maxOctave;
 
-                // value = octave*7 + degree + 1  →  (value-1) % 7 == degree
+                // value = octave*12 + degree + 1  →  (value-1) % 12 == degree
                 float v = octave * NotesPerOctave + degree + 1;
                 values[i] = math.clamp(v, 1f, unit);
             }
 
-            // --- Match exact total while preferring ±7 steps (keeps scale degree) ---
+            // --- Match exact total while preferring ±12 steps (keeps chromatic chord degree) ---
             float sum = Sum(values, count);
             float diff = total - sum;
             const int maxAdjustIters = 64;
@@ -131,7 +131,7 @@ namespace TitanOrbit
             }
 
             // --- Exact sum: put leftover crumbs on the last voice (may leave the chord by a few steps) ---
-            // [TITAN-ORBIT] Economy must sum exactly; a 1–6 unit nudge on the last note is worth it.
+            // [TITAN-ORBIT] Economy must sum exactly; a 1–11 unit nudge on the last note is worth it.
             sum = Sum(values, count);
             values[count - 1] += total - sum;
 
@@ -173,7 +173,7 @@ namespace TitanOrbit
         /// come from multiple unit-capped gems (amount &gt; max unit).
         /// </summary>
         /// <param name="amount">Cargo gems gained this frame.</param>
-        /// <param name="maxUnitValue">Piano-width / sim unit cap (default 55).</param>
+        /// <param name="maxUnitValue">Piano-width / sim unit cap (default 88).</param>
         public static int VoiceCountForCollect(float amount, float maxUnitValue = DefaultMaxUnitValue)
         {
             float unit = math.max(1f, maxUnitValue);

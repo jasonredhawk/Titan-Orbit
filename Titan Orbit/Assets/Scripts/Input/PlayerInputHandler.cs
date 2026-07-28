@@ -177,10 +177,14 @@ namespace TitanOrbit.Input
                 // Mouse/action fire (editor hybrid, right-half LMB) still respects the UI gate below.
                 bool actionShoot = shootAction != null && shootAction.IsPressed();
                 bool editorRightHalfMouseShoot = false;
-                if (MobileInputHandler.ForceTouchSteer && Mouse.current != null && Mouse.current.leftButton.isPressed)
+                if (MobileInputHandler.ForceTouchSteer &&
+                    Mouse.current != null &&
+                    Mouse.current.leftButton.isPressed &&
+                    TryReadFiniteMouseScreenPosition(out Vector2 shootMouse))
                 {
+                    // Right half of the Game view = fire (left half owns stick / aim).
                     float edge = Screen.width * mobile.RightScreenSplit;
-                    editorRightHalfMouseShoot = Mouse.current.position.ReadValue().x >= edge;
+                    editorRightHalfMouseShoot = shootMouse.x >= edge;
                 }
                 bool dedicatedShootButton = mobile.ShootButtonPressed;
                 shootPressed = dedicatedShootButton || actionShoot || editorRightHalfMouseShoot;
@@ -240,7 +244,8 @@ namespace TitanOrbit.Input
             // --- Guards ---
             // EventSystem — Unity's UI hit-test hub (created by scene or EnsureEventSystem helpers).
             var eventSystem = EventSystem.current;
-            if (eventSystem == null || Mouse.current == null)
+            // [TITAN-ORBIT] Skip UI hit-test when MPPM reports NaN mouse (unfocused Player 2 Game view).
+            if (eventSystem == null || !TryReadFiniteMouseScreenPosition(out Vector2 pointerScreen))
                 return false;
 
             // --- Build pointer sample at current mouse screen position ---
@@ -250,7 +255,7 @@ namespace TitanOrbit.Input
             else
                 _uiPointerEventData.Reset();
 
-            _uiPointerEventData.position = Mouse.current.position.ReadValue();
+            _uiPointerEventData.position = pointerScreen;
 
             // --- Raycast all UI under the pointer ---
             // Any hit means a Graphic with raycastTarget=true is under the cursor (upgrade buttons, etc.).
@@ -260,31 +265,63 @@ namespace TitanOrbit.Input
         }
 
         /// <summary>
-        /// Get mouse cursor world position (for ship rotation - ship faces toward cursor)
+        /// Get mouse cursor world position (for ship rotation — ship faces toward cursor).
+        /// When the pointer is unavailable (common on MPPM Player 2 while that Game view is
+        /// unfocused), returns this handler's transform position so callers can fall back to
+        /// "keep current facing" instead of spamming ScreenPointToRay with NaNs.
         /// </summary>
+        /// <param name="cam">Gameplay camera used to unproject screen pixels onto the XZ plane.</param>
+        /// <returns>World point on the play plane under the cursor, or <see cref="Transform.position"/> if aim is unavailable.</returns>
         public Vector3 GetMouseWorldPosition(UnityEngine.Camera cam)
         {
-            // --- Compute value ---
-            if (cam == null) return transform.position;
+            // Prefer the bool API so call sites can leave AimPlanarDir at zero (keep ship facing).
+            if (TryGetMouseWorldPosition(cam, out Vector3 worldPos))
+                return worldPos;
+            return transform.position;
+        }
+
+        /// <summary>
+        /// Unprojects a valid pointer onto the Y=0 play plane for ship aim.
+        /// Returns false when there is no usable camera/pointer — callers should keep prior aim
+        /// (zero AimPlanarDir → motor uses current forward; see ShipPhysicsDriveLogic.AimWorldPoint).
+        ///
+        /// [TITAN-ORBIT] Multiplayer Play Mode Player 2 often reports Mouse.position as NaN while
+        /// that virtual player's Game view is not focused. ScreenPointToRay then logs
+        /// "Screen position out of view frustum (screen pos -nan(ind), -nan(ind))" every frame.
+        /// We refuse the raycast until the sample is finite.
+        /// </summary>
+        /// <param name="cam">Gameplay camera (must have a finite transform / projection).</param>
+        /// <param name="worldPos">Hit point on the ground plane when true; undefined when false.</param>
+        /// <returns>True when <paramref name="worldPos"/> is a usable aim point.</returns>
+        public bool TryGetMouseWorldPosition(UnityEngine.Camera cam, out Vector3 worldPos)
+        {
+            worldPos = default;
+
+            // --- Guards: camera must exist and be numerically usable ---
+            // [UNITY] A broken camera matrix (NaN position from a bad follow target) also breaks
+            // ScreenPointToRay; skip until CameraFollowEcs has a real ship pose.
+            if (cam == null || !IsFiniteVec3(cam.transform.position))
+                return false;
 
             MobileInputHandler mobile = MobileInputHandler.Resolve();
             bool useTouchUi = mobile != null && mobile.TouchUiActive;
 
             if (useTouchUi)
             {
+                // --- Touch / left-drag aim (phones + ForceTouchSteer in Editor) ---
                 if (mobile.TryGetLeftDragAimWorldPoint(cam, transform, out Vector3 leftAim))
-                    return leftAim;
-
-                if (mobile.TryGetAimScreenPosition(cam, out Vector2 aimScreen))
                 {
-                    Ray aimRay = cam.ScreenPointToRay(new Vector3(aimScreen.x, aimScreen.y, 0f));
-                    Plane groundPlane = new Plane(Vector3.up, Vector3.zero);
-                    if (groundPlane.Raycast(aimRay, out float aimDist))
-                        return aimRay.GetPoint(aimDist);
+                    worldPos = leftAim;
+                    return true;
                 }
+
+                if (mobile.TryGetAimScreenPosition(cam, out Vector2 aimScreen) &&
+                    TryScreenToPlayPlane(cam, aimScreen, out worldPos))
+                    return true;
 
                 if (mobile.JoystickDeflectedBeyondDeadZone())
                 {
+                    // Aim along camera-relative stick on the XZ plane (no screen unproject needed).
                     Vector2 joy = mobile.JoystickInput;
                     Vector3 f = cam.transform.forward;
                     f.y = 0f;
@@ -296,31 +333,76 @@ namespace TitanOrbit.Input
                     r.y = 0f;
                     r.Normalize();
                     Vector3 flat = (r * joy.x + f * joy.y).normalized;
-                    return transform.position + flat * 10f;
+                    worldPos = transform.position + flat * 10f;
+                    return true;
                 }
 
-                // Editor / hybrid: keep mouse aim when touch HUD is forced on but pointer is mouse.
-                if (Mouse.current != null)
-                {
-                    Vector2 hybridMouse = Mouse.current.position.ReadValue();
-                    Ray hybridRay = cam.ScreenPointToRay(new Vector3(hybridMouse.x, hybridMouse.y, 0f));
-                    Plane hybridPlane = new Plane(Vector3.up, Vector3.zero);
-                    if (hybridPlane.Raycast(hybridRay, out float hybridDist))
-                        return hybridRay.GetPoint(hybridDist);
-                }
+                // Editor / hybrid: mouse aim while touch HUD is forced on.
+                if (TryReadFiniteMouseScreenPosition(out Vector2 hybridMouse) &&
+                    TryScreenToPlayPlane(cam, hybridMouse, out worldPos))
+                    return true;
 
-                return transform.position;
+                return false;
             }
 
-            if (Mouse.current == null) return transform.position;
+            // --- Desktop mouse aim ---
+            if (!TryReadFiniteMouseScreenPosition(out Vector2 mousePos))
+                return false;
 
-            Vector2 mousePos = Mouse.current.position.ReadValue();
-            Ray ray = cam.ScreenPointToRay(new Vector3(mousePos.x, mousePos.y, 0));
-            Plane plane = new Plane(Vector3.up, Vector3.zero);
-            if (plane.Raycast(ray, out float distance))
-                return ray.GetPoint(distance);
-            return transform.position;
+            return TryScreenToPlayPlane(cam, mousePos, out worldPos);
         }
+
+        /// <summary>
+        /// Reads Mouse.current.position only when both axes are finite numbers.
+        /// [TITAN-ORBIT] MPPM virtual players report NaN until their Game view owns the pointer.
+        /// </summary>
+        /// <param name="screenPos">Pixel coordinates in the Game view when true.</param>
+        /// <returns>False when there is no mouse device or the sample is NaN/Infinity.</returns>
+        static bool TryReadFiniteMouseScreenPosition(out Vector2 screenPos)
+        {
+            screenPos = default;
+            if (Mouse.current == null)
+                return false;
+
+            Vector2 raw = Mouse.current.position.ReadValue();
+            if (!IsFiniteVec2(raw))
+                return false;
+
+            screenPos = raw;
+            return true;
+        }
+
+        /// <summary>
+        /// Casts a screen-pixel ray onto the Y=0 play plane (top-down flight ground).
+        /// Never calls ScreenPointToRay with non-finite screen coords.
+        /// </summary>
+        /// <param name="cam">Camera that owns the pixel space.</param>
+        /// <param name="screenPos">Pixel position (origin bottom-left in Input System space).</param>
+        /// <param name="worldPos">Intersection with Y=0 when the ray hits the plane.</param>
+        /// <returns>True when the ray hits the ground plane.</returns>
+        static bool TryScreenToPlayPlane(UnityEngine.Camera cam, Vector2 screenPos, out Vector3 worldPos)
+        {
+            worldPos = default;
+            if (!IsFiniteVec2(screenPos))
+                return false;
+
+            // [UNITY] ScreenPointToRay logs "out of view frustum" if x/y are NaN — guard above.
+            Ray ray = cam.ScreenPointToRay(new Vector3(screenPos.x, screenPos.y, 0f));
+            Plane plane = new Plane(Vector3.up, Vector3.zero);
+            if (!plane.Raycast(ray, out float distance))
+                return false;
+
+            worldPos = ray.GetPoint(distance);
+            return IsFiniteVec3(worldPos);
+        }
+
+        /// <summary>[STANDARD] True when both components are real numbers (not NaN / Infinity).</summary>
+        static bool IsFiniteVec2(Vector2 v) =>
+            float.IsFinite(v.x) && float.IsFinite(v.y);
+
+        /// <summary>[STANDARD] True when all three components are real numbers (not NaN / Infinity).</summary>
+        static bool IsFiniteVec3(Vector3 v) =>
+            float.IsFinite(v.x) && float.IsFinite(v.y) && float.IsFinite(v.z);
 
     }
 }

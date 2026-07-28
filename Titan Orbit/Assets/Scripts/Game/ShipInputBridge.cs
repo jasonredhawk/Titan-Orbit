@@ -87,9 +87,10 @@ namespace TitanOrbit.Game
             var cam = _cachedCamera;
             float2 aimDir = float2.zero;
             // [HYBRID] Prefer presentation pose (already synced) before ECS ship queries.
-            if (cam != null)
+            // [TITAN-ORBIT] TryGet… — MPPM Player 2 often has NaN mouse until that Game view is focused;
+            // leaving aimDir at zero keeps current facing (ShipPhysicsDriveLogic.AimWorldPoint).
+            if (cam != null && _input.TryGetMouseWorldPosition(cam, out Vector3 aimWorld))
             {
-                Vector3 aimWorld = _input.GetMouseWorldPosition(cam);
                 Vector3 shipPos = Vector3.zero;
                 if (ShipDisplayPose.HasLocalPose)
                     shipPos = ShipDisplayPose.LocalPosition;

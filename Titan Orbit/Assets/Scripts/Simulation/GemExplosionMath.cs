@@ -7,8 +7,8 @@ namespace TitanOrbit.Simulation
     /// Shared asteroid gem-burst math for server spawn and client immediate presentation.
     /// Tunables come from <see cref="Data.GemExplosionSettings"/> (Editor ScriptableObject).
     /// Defaults match mature NGO <c>GemSpawner</c> / <c>Gem</c> (speed 2.2, damping 0.5, tumble ±1.5).
-    /// <see cref="ResolveGemCountForUnitCap"/> keeps each spawned gem ≤ MaxGemUnitValue (55)
-    /// so pickup SFX stays on the musical white-key ladder. Multi-gem value splits use
+    /// <see cref="ResolveGemCountForUnitCap"/> keeps each spawned gem ≤ MaxGemUnitValue (88)
+    /// so pickup SFX stays on the chromatic piano ladder. Multi-gem value splits use
     /// <see cref="GemChordValues"/> (C-major dyad / triad / maj7) instead of equal copies.
     /// </summary>
     public static class GemExplosionMath
@@ -50,14 +50,14 @@ namespace TitanOrbit.Simulation
         /// Like <see cref="ResolveGemCount"/>, but raises the count when needed so each equal-split
         /// gem stays at or below <paramref name="maxUnitValue"/> (the musical piano-width cap).
         /// <para>
-        /// [TITAN-ORBIT] Keeps world pickups on the 55 white-key SFX ladder — a 100-value dump
-        /// becomes several ≤55 gems instead of one inaudibly low note.
+        /// [TITAN-ORBIT] Keeps world pickups on the 88-key chromatic SFX ladder — a 200-value dump
+        /// becomes several ≤88 gems instead of one inaudibly low note.
         /// </para>
         /// </summary>
         /// <param name="remaining">Total gem value to split across entities.</param>
         /// <param name="minCount">Designer minimum burst count.</param>
         /// <param name="maxCount">Designer maximum burst count (before unit-cap raise).</param>
-        /// <param name="maxUnitValue">Max value per gem entity (default 55 = piano width).</param>
+        /// <param name="maxUnitValue">Max value per gem entity (default 88 = full piano).</param>
         /// <param name="rng">Deterministic spawn RNG.</param>
         /// <returns>Gem entity count in [1, AbsoluteMaxGemCount].</returns>
         public static int ResolveGemCountForUnitCap(
@@ -71,7 +71,7 @@ namespace TitanOrbit.Simulation
             int count = ResolveGemCount(remaining, minCount, maxCount, ref rng);
 
             // --- Raise count so equal split respects the unit cap ---
-            // [TITAN-ORBIT] maxUnitValue matches GemMusicalPitch.WhiteKeyCount (55) by default.
+            // [TITAN-ORBIT] maxUnitValue matches GemMusicalPitch.PianoKeyCount (88) by default.
             float unit = math.max(0.0001f, maxUnitValue);
             if (remaining > unit)
             {

@@ -834,7 +834,7 @@ namespace TitanOrbit.ECS
             bool isBonusGem)
         {
             var rng = Random.CreateFromIndex(seed);
-            // [TITAN-ORBIT] Unit cap keeps each pickup on the 55 white-key SFX ladder.
+            // [TITAN-ORBIT] Unit cap keeps each pickup on the 88-key chromatic SFX ladder.
             int count = GemExplosionMath.ResolveGemCountForUnitCap(
                 remaining,
                 settings.MinGemCount,

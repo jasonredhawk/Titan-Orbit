@@ -25,9 +25,9 @@ namespace TitanOrbit.Data
         [Range(1, 10)]
         public int MaxGemCount = 3;
 
-        [Tooltip("Max value per spawned gem entity. Default 55 = musical white-key piano width (value 1..55). Larger leftover dumps spawn more gems so each piece stays on the audible ladder.")]
+        [Tooltip("Max value per spawned gem entity. Default 88 = full chromatic piano (value 1..88, white + black keys). Larger leftover dumps spawn more gems so each piece stays on the audible ladder.")]
         [Min(1f)]
-        public float MaxGemUnitValue = 55f;
+        public float MaxGemUnitValue = 88f;
 
         [Header("Burst launch (original NGO GemSpawner)")]
         [Tooltip("Base outward speed in world units/sec. Scene-tuned original was often 1.5; code default 2.2.")]
@@ -93,7 +93,7 @@ namespace TitanOrbit.Data
             MaxGemCount = Mathf.Clamp(MaxGemCount, 1, 10);
             if (MaxGemCount < MinGemCount)
                 MaxGemCount = MinGemCount;
-            // [TITAN-ORBIT] Piano-width default is 55; never allow a zero/negative unit cap.
+            // [TITAN-ORBIT] Piano-width default is 88 (chromatic); never allow a zero/negative unit cap.
             MaxGemUnitValue = Mathf.Max(1f, MaxGemUnitValue);
             if (SpeedRandomMax < SpeedRandomMin)
                 SpeedRandomMax = SpeedRandomMin;

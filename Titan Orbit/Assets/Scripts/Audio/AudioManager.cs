@@ -7,7 +7,7 @@ namespace TitanOrbit.Audio
     /// Central client audio hub for music and gameplay SFX.
     /// Owns pooled <see cref="AudioSource"/>s for weapons, gems, and impacts so overlapping
     /// one-shots can use different pitches without fighting a single source.
-    /// Gem deposit and gem collect share <see cref="GemMusicalPitch"/> (C-major white-key ladder)
+    /// Gem deposit and gem collect share <see cref="GemMusicalPitch"/> (chromatic 88-key piano)
     /// and the same <see cref="gemCollectSound"/> clip — only volume / proximity differ.
     /// Multi-gem collect batches play a C-major chord via <see cref="GemChordValues"/>.
     /// Singleton with DontDestroyOnLoad — UI and hybrid presenters call into <see cref="Instance"/>.
@@ -85,9 +85,9 @@ namespace TitanOrbit.Audio
         [Tooltip("Weapon fire pitch clamp. Bigger bullet / faster shot uses values in this range.")]
         [SerializeField] private float weaponPitchMin = 0.01f;
         [SerializeField] private float weaponPitchMax = 1f;
-        [Tooltip("Pitch floor for very low ladder keys. Shift this by the SAME factor as Gem Pitch Max (e.g. both ×1.5) so C–B intervals stay true.")]
+        [Tooltip("Pitch floor for very low piano keys. Shift this by the SAME factor as Gem Pitch Max (e.g. both ×1.5) so chromatic intervals stay true.")]
         [SerializeField] private float gemPitchMin = 0.15f;
-        [Tooltip("Pitch at gem value 1 (highest C / ET root). Value 8 = this÷2. Unity AudioClip clamps at 3 — default is that ceiling (equal ×1.5 shift from old max 2).")]
+        [Tooltip("Pitch at gem value 1 (highest C / ET root). Value 13 = this÷2 (one octave). Unity AudioClip clamps at 3 — default is that ceiling.")]
         [SerializeField] private float gemPitchMax = 3f;
         [Tooltip("People load/unload pitch clamp after base pitch and amount offset.")]
         [SerializeField] private float peoplePitchMin = 0.01f;
@@ -249,17 +249,17 @@ namespace TitanOrbit.Audio
 
         /// <summary>
         /// Gem collect / consume SFX when cargo rises (asteroid gems, mine pickups).
-        /// Pitch uses the same C-major white-key ladder as deposit (<see cref="GemMusicalPitch"/>).
+        /// Pitch uses the same chromatic piano ladder as deposit (<see cref="GemMusicalPitch"/>).
         /// When the cargo jump is larger than one piano-width unit (batched multi-gem pickup),
         /// plays a C-major chord via <see cref="GemChordValues"/> so it matches explode splits.
         /// </summary>
-        /// <param name="amount">Cargo gems gained this frame (drives which white key / chord).</param>
+        /// <param name="amount">Cargo gems gained this frame (drives which piano key / chord).</param>
         public void PlayGemCollectSound(float amount)
         {
             // --- Single note vs chord ---
-            // [TITAN-ORBIT] Individual gem pickups (amount ≤ 55) keep one pitch — burst gems are
+            // [TITAN-ORBIT] Individual gem pickups (amount ≤ 88) keep one pitch — burst gems are
             // already chord-toned, so scooping them in sequence layers a chord in the pool.
-            // A single ghost frame that batches several large gems (amount > 55) reconstructs the chord.
+            // A single ghost frame that batches several large gems (amount > 88) reconstructs the chord.
             int voices = GemChordValues.VoiceCountForCollect(amount, GemChordValues.DefaultMaxUnitValue);
             if (voices <= 1)
             {
@@ -325,7 +325,7 @@ namespace TitanOrbit.Audio
 
         /// <summary>
         /// Gem-deposit metronome beat. Pitch follows <paramref name="gemValue"/> on the shared
-        /// C-major white-key ladder (same math as collect). Leftover cargo uses the smaller chunk
+        /// chromatic piano ladder (same math as collect). Leftover cargo uses the smaller chunk
         /// so the last ticks are not a fake full-load pitch. Optional <paramref name="volumeScale"/>
         /// applies proximity falloff for other players' deposits (1 = full, 0 = silent).
         /// </summary>
@@ -335,7 +335,7 @@ namespace TitanOrbit.Audio
         {
             // --- Deposit metronome one-shot ---
             // [TITAN-ORBIT] Same musical pitch as PlayGemCollectSound — gemPitchMax = value-1 C root
-            // (true ET; value 8 = half pitch). gemPitchMin is a floor only. Leftover loads pitch
+            // (true ET; value 13 = half pitch). gemPitchMin is a floor only. Leftover loads pitch
             // as the smaller chunk (e.g. 3 gems on a level-5 ship → pitch as 3).
             PlayGemMusicalSFX(gemCollectSound, gemValue, gemVolume, volumeScale);
         }
@@ -370,11 +370,11 @@ namespace TitanOrbit.Audio
         }
 
         /// <summary>
-        /// Plays a gem one-shot on the shared musical white-key ladder.
+        /// Plays a gem one-shot on the shared chromatic piano ladder.
         /// Used by both deposit metronome and collect / consume SFX.
         /// </summary>
         /// <param name="clip">Usually <see cref="gemCollectSound"/>.</param>
-        /// <param name="gemAmount">Gem value → white key (1 = highest C, 55 = lowest).</param>
+        /// <param name="gemAmount">Gem value → piano key (1 = highest C, 88 = lowest A).</param>
         /// <param name="clipVolumeMultiplier">Mix slider for gems before global SFX volume.</param>
         /// <param name="volumeScale">Extra 0–1 scale (remote deposit proximity).</param>
         private void PlayGemMusicalSFX(
