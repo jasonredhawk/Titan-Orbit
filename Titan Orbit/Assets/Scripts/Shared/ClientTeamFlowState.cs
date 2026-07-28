@@ -24,14 +24,50 @@ namespace TitanOrbit.Core
         static bool _teamPickRequested;
         static bool _rejoinEligibilityLocked;
 
+        /// <summary>
+        /// [TITAN-ORBIT] TeamChoiceResult armed the Instantiates hold but Confirm is waiting for
+        /// the next frame. While set, <see cref="ShouldSuppressLocalPlayerControl"/> stays true so
+        /// same-frame systems that check suppress before <c>ShouldSkipShipEntityQueries</c> cannot
+        /// open ship gathers. Flushed by <c>ClientDeferredTeamChoiceConfirmSystem</c>.
+        /// </summary>
+        static bool _deferredConfirmPending;
+
         public static bool HasRequestedTeamPick => _teamPickRequested;
         public static bool IsRejoinEligibilityLocked => _rejoinEligibilityLocked;
+
+        /// <summary>
+        /// True while Join Team / resume ack is latched but Confirm is deferred one frame
+        /// (Windows TeamChoice Crash!!! same-frame gather guard).
+        /// </summary>
+        public static bool HasDeferredTeamChoiceConfirmPending => _deferredConfirmPending;
 
         public static void ConfirmTeamChoice()
         {
             // --- Server acknowledged team — unlock normal play ---
+            _deferredConfirmPending = false;
             TeamChoiceConfirmed = true;
             LockRejoinEligibility();
+        }
+
+        /// <summary>
+        /// Queue Confirm for the next frame after <see cref="ClientJoinSettleCache.ArmPostTeamChoiceHold"/>.
+        /// Keeps suppress on for the remainder of the TeamChoiceResult frame.
+        /// </summary>
+        public static void RequestDeferredConfirmTeamChoice()
+        {
+            // --- Do not unlock suppress until the next InitializationSystemGroup tick ---
+            _deferredConfirmPending = true;
+            LockRejoinEligibility();
+        }
+
+        /// <summary>
+        /// Applies a pending deferred Confirm. No-op when nothing is queued or already confirmed.
+        /// </summary>
+        public static void FlushDeferredConfirmTeamChoice()
+        {
+            if (!_deferredConfirmPending)
+                return;
+            ConfirmTeamChoice();
         }
 
         public static void Reset()
@@ -41,6 +77,7 @@ namespace TitanOrbit.Core
             RejoinChoice = RejoinShipChoice.NotApplicable;
             _teamPickRequested = false;
             _rejoinEligibilityLocked = false;
+            _deferredConfirmPending = false;
         }
 
         /// <summary>Call when the player clicks a team button (before server ack).</summary>
@@ -88,6 +125,7 @@ namespace TitanOrbit.Core
             // --- Fresh spawn path — player must pick team again ---
             RejoinChoice = RejoinShipChoice.StartFresh;
             TeamChoiceConfirmed = false;
+            _deferredConfirmPending = false;
         }
 
         public static void ResetRejoinChoiceToPending()

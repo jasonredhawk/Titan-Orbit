@@ -51,10 +51,12 @@ namespace TitanOrbit.ECS
             if (rpc.Choice == 1)
             {
                 ClientTeamFlowState.ChooseUseExistingShip();
-                // Arm before Confirm — same-frame LateUpdate must see GhostSpawnBacklog true.
+                // Arm + defer Confirm — same TeamChoice Crash!!! guard as TeamChoiceResultClientSystem.
                 ClientJoinSettleCache.ArmPostTeamChoiceHold();
-                ClientTeamFlowState.ConfirmTeamChoice();
-                UnityEngine.Debug.Log("[RejoinShipResult] Resumed existing ship on team " + (TeamId)rpc.AssignedTeam + ".");
+                ClientTeamFlowState.RequestDeferredConfirmTeamChoice();
+                UnityEngine.Debug.Log(
+                    "[RejoinShipResult] Resumed existing ship on team " + (TeamId)rpc.AssignedTeam +
+                    ". Confirm deferred 1 frame (join-crash guard).");
                 return;
             }
 

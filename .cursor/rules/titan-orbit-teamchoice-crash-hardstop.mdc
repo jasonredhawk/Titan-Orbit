@@ -14,9 +14,9 @@ alwaysApply: true
 | **Ships** (`WithEntityAccess`, `EnsureShipProxies`, local-ship tag) | `ClientJoinSettleCache.ShouldSkipShipEntityQueries` |
 | **Map bodies** (planet / asteroid / gem / moon gathers) | `ClientJoinSettleCache.ShouldSkipMapBodyQueries` |
 
-`ShouldSkipShipEntityQueries` = Settling **OR** GhostSpawnBacklog.
+`ShouldSkipShipEntityQueries` = Settling **OR** GhostSpawnBacklog **OR** deferred TeamChoice Confirm pending.
 
-`GhostSpawnBacklog` **must** include: queue/placeholders **+** post-ship Instantiates hold **+** post–TeamChoice hold. `ArmPostTeamChoiceHold` must set `GhostSpawnBacklog = true` **immediately** (before `ConfirmTeamChoice`). Hand-rolled `Settling || GhostSpawnBacklog` that misses the TeamChoice fold → Crash!!! (Player.log 2026-07-23). Prefer `ShouldSkipShipEntityQueries` everywhere.
+`GhostSpawnBacklog` **must** include: queue/placeholders **+** post-ship Instantiates hold **+** post–TeamChoice hold. `ArmPostTeamChoiceHold` must set `GhostSpawnBacklog = true` **immediately**, and Confirm must be **deferred one frame** (`RequestDeferredConfirmTeamChoice` → `ClientDeferredTeamChoiceConfirmSystem`). Same-frame Confirm after Arm still Crash!!! (Player.log 2026-07-28). Hand-rolled `Settling || GhostSpawnBacklog` that misses the TeamChoice fold → Crash!!! (Player.log 2026-07-23). Prefer `ShouldSkipShipEntityQueries` everywhere.
 
 Never reimplement backlog as GhostSpawnBuffer/PendingSpawnPlaceholder-only.
 
@@ -46,5 +46,8 @@ if (ClientJoinSettleCache.ShouldSkipMapBodyQueries) return;
 - [ ] New/changed client ECS query uses `ShouldSkipShipEntityQueries` or `ShouldSkipMapBodyQueries`?
 - [ ] No Settling-only early-out for ships or map bodies?
 - [ ] `RequireForUpdate<ShipTag>` systems: first run is often **exactly** TeamChoice Instantiates — gate before any map gather.
+- [ ] Ran `powershell -File tools/verify-join-crash-gates.ps1` (exit 0) before claiming Windows-client-safe?
 
 If unsure → skip the query; do not ship ungated. Detail + ownership file list: `titan-orbit-windows-join-crash.mdc`.
+
+**Before every Windows client build:** run `tools/verify-join-crash-gates.ps1`. Exit `1` = do not ship. Smoke-test Join Team on Windows Relay anyway — static scan ≠ Player.log.

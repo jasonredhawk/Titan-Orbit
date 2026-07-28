@@ -170,6 +170,7 @@ Before finishing:
 - [ ] Pending/SpawnRequest drain still runs during Settling (budgeted)?
 - [ ] Would a “helpful” agent removing “redundant” `TransformQuarantine` / `GhostSpawnBacklog` checks break join? If yes, keep the checks and a comment citing this rule.
 - [ ] Did I verify against **Windows client** Player.log assumptions, not Editor-only success?
+- [ ] Ran `powershell -File tools/verify-join-crash-gates.ps1` with exit 0?
 
 ---
 

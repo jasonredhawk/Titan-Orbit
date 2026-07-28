@@ -49,6 +49,14 @@ namespace TitanOrbit.Game
         bool _wasLandingVisualActive;
         bool _wasMoonDockEngaged;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Once the cinematic has reached the docked surface pose, keep owning the
+        /// proxy until hard undock (MoonPlanetId cleared / takeoff). Soft LandingProgress dips or
+        /// a one-frame moon-pose miss must not release control — EcsWorldVisualizer would write
+        /// full flight <c>localScale</c> and the next land pass would shrink 1.0→0.24 again.
+        /// </summary>
+        bool _presentationFullyLandedLatch;
+
         // Landing animation start pose (captured when each landing sequence begins).
         Vector3 _landingStartPosition;
         Quaternion _landingStartRotation;
@@ -56,6 +64,12 @@ namespace TitanOrbit.Game
 
         // Unit vector moon-center → hull contact (keeps latitude; spins around moon axis while docked).
         Vector3 _landingSurfaceDir;
+
+        // --- Last resolved moon pose (hold through brief registry / planet-cache misses) ---
+        bool _hasLastMoonPose;
+        Vector3 _lastMoonPos;
+        Vector3 _lastSpinAxis = Vector3.up;
+        float _lastMoonBodyRadius = 0.5f;
 
         // Takeoff animation.
         bool _isTakeoffAnimating;
@@ -207,6 +221,11 @@ namespace TitanOrbit.Game
             _wasLandingVisualActive = true;
             _wasMoonDockEngaged = true;
             _wasControllingTransform = true;
+            _presentationFullyLandedLatch = true;
+            _hasLastMoonPose = true;
+            _lastMoonPos = moonPos;
+            _lastSpinAxis = spinAxis;
+            _lastMoonBodyRadius = moonBodyRadius;
 
             ApplyLandingAnimation(moonDock, moonPos, spinAxis, moonBodyRadius);
         }
@@ -249,9 +268,19 @@ namespace TitanOrbit.Game
             // to drop ShouldSkipTransformSync and show the planar ECS pose at full flight scale.
             bool approachReady = moonDock.LandingApproachDelay + 0.0001f >= GemEconomyConstants.MoonLandingApproachDelaySeconds;
             bool fullyLanded = moonDock.LandingProgress + 0.0001f >= GemEconomyConstants.MoonLandingCompleteThreshold;
-            bool landingVisualActive = moonDockEngaged
-                && moonDock.LandingProgress > 0.001f
-                && (approachReady || fullyLanded);
+
+            // --- Client presentation latch ---
+            // [TITAN-ORBIT] Mirror the server fully-landed latch for cosmetics. Once we have shown
+            // the docked surface pose, soft LandingProgress dips (ghost blips / brief zone fights
+            // before the server lock) must not release the proxy to EcsWorldVisualizer.
+            if (!moonDockEngaged)
+                _presentationFullyLandedLatch = false;
+            else if (fullyLanded)
+                _presentationFullyLandedLatch = true;
+
+            bool landingVisualActive = moonDockEngaged && (
+                _presentationFullyLandedLatch ||
+                (moonDock.LandingProgress > 0.001f && (approachReady || fullyLanded)));
             UpdateLocalInstanceRegistration(em);
 
             // --- Takeoff reverse animation (when moon dock disengages) ---
@@ -285,19 +314,41 @@ namespace TitanOrbit.Game
                 _wasControllingTransform = false;
                 _wasLandingVisualActive = false;
                 _wasMoonDockEngaged = moonDockEngaged;
+                _hasLastMoonPose = false;
                 return;
             }
 
+            // --- Resolve moon pose (live registry / ECS, else last good frame) ---
             if (!TryResolveMoonPose(moonDock.MoonPlanetId, out Vector3 moonPos, out Vector3 spinAxis, out float moonBodyRadius))
             {
-                // Keep last good ship follow anchor if the moon proxy blips for a frame.
-                _wasControllingTransform = false;
-                _wasLandingVisualActive = false;
-                _wasMoonDockEngaged = moonDockEngaged;
-                return;
+                // [TITAN-ORBIT] One-frame moon proxy / planet-cache miss used to clear
+                // _wasControllingTransform. Visualizer then wrote full flight scale; next frame
+                // CaptureLandingStartPose + shrink-to-surface replayed the land cinematic.
+                // Hold the last good moon pose and keep owning the proxy instead.
+                if (_hasLastMoonPose && (_wasControllingTransform || _presentationFullyLandedLatch))
+                {
+                    moonPos = _lastMoonPos;
+                    spinAxis = _lastSpinAxis;
+                    moonBodyRadius = _lastMoonBodyRadius;
+                }
+                else
+                {
+                    // No pose yet — do not claim control (approach has not captured a start pose).
+                    _wasMoonDockEngaged = moonDockEngaged;
+                    return;
+                }
+            }
+            else
+            {
+                _lastMoonPos = moonPos;
+                _lastSpinAxis = spinAxis;
+                _lastMoonBodyRadius = moonBodyRadius;
+                _hasLastMoonPose = true;
             }
 
-            if (!_wasLandingVisualActive)
+            // Only capture the flight→surface start pose when a new landing sequence begins.
+            // Latched fully-landed frames must not re-capture (would bake full flight scale as start).
+            if (!_wasLandingVisualActive && !_presentationFullyLandedLatch)
                 CaptureLandingStartPose(moonPos, spinAxis);
 
             ApplyLandingAnimation(moonDock, moonPos, spinAxis, moonBodyRadius);
@@ -312,6 +363,8 @@ namespace TitanOrbit.Game
             _wasControllingTransform = false;
             _wasLandingVisualActive = false;
             _wasMoonDockEngaged = false;
+            _presentationFullyLandedLatch = false;
+            _hasLastMoonPose = false;
         }
 
         /// <summary>
@@ -340,8 +393,11 @@ namespace TitanOrbit.Game
             float contactRadius = moonBodyRadius + shipRadius;
 
             float progress = Mathf.Clamp01(moonDock.LandingProgress);
+            // [TITAN-ORBIT] Presentation latch wins over a soft progress dip so we stay pinned on
+            // the spinning surface (docked scale) instead of re-lerping flight→surface.
             float eased = GemMoonDockEaseInOut(progress);
-            bool fullyLanded = progress + 0.0001f >= GemEconomyConstants.MoonLandingCompleteThreshold;
+            bool fullyLanded = _presentationFullyLandedLatch ||
+                               progress + 0.0001f >= GemEconomyConstants.MoonLandingCompleteThreshold;
 
             // --- Cosmetic surface spin (approach + fully landed) ---
             // [TITAN-ORBIT] Same 9°/s as PlanetGemMoonVisualProxy so the hull rides the spinning
@@ -432,6 +488,9 @@ namespace TitanOrbit.Game
             _takeoffStartScale = transform.localScale.x;
             _takeoffProgress = 0f;
             _isTakeoffAnimating = true;
+            // Hard undock path — drop the fully-landed cosmetic latch so a future dock can re-capture.
+            _presentationFullyLandedLatch = false;
+            _hasLastMoonPose = false;
         }
 
         /// <summary>

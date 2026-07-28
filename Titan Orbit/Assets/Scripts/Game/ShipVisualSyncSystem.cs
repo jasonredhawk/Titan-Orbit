@@ -107,20 +107,24 @@ namespace TitanOrbit.Game
             // --- Frame stamp for LateUpdate readers ---
             GhostPresentationTransformCache.BeginPublish(UnityEngine.Time.frameCount);
 
-            // --- Join Instantiates storm: skip all ship queries (Windows Crash!!! path) ---
-            // [TITAN-ORBIT] Settling = initial map Instantiates. Do not touch ship queries here.
+            // --- Join / TeamChoice Instantiates: skip ship archetype gathers ---
+            // [TITAN-ORBIT] Settling-only is NOT enough after Join Team (Settling stays OFF).
+            // ShouldSkipShipEntityQueries = Settling OR GhostSpawnBacklog OR post–TeamChoice hold
+            // OR deferred Confirm. Remotes / BankPivot WithEntityAccess Crash!!! in that window
+            // (Player.log 2026-07-19 / 2026-07-28). Local pose still updates from a known entity.
+            bool skipShipGathers = ClientJoinSettleCache.ShouldSkipShipEntityQueries;
             if (ClientJoinSettleCache.Settling)
                 return;
 
             // --- Resolve local ship (safe during gem Instantiates / brief lookup misses) ---
             // [TITAN-ORBIT] EcsGameBridge.TryGetLocalShipEntity returns false while
-            // GhostSpawnBacklog (ToEntityArray gate) OR while team suppress is on. Neither is a
+            // ShouldSkipShipEntityQueries OR while team suppress is on. Neither is a
             // despawn. ResetSession every miss wiped ~283 tiles → whole-map blink.
             // Keep using the cached ship entity whenever it still exists (not only during backlog).
-            bool backlog = ClientJoinSettleCache.GhostSpawnBacklog;
             bool teamSuppress = ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
             Entity localShip = Entity.Null;
-            bool resolved = EcsGameBridge.TryGetLocalShipEntityOnWorld(World, out localShip);
+            bool resolved = !skipShipGathers &&
+                            EcsGameBridge.TryGetLocalShipEntityOnWorld(World, out localShip);
             if (!resolved &&
                 !teamSuppress &&
                 _smoothShipEntity != Entity.Null &&
@@ -131,8 +135,8 @@ namespace TitanOrbit.Game
                 resolved = true;
             }
 
-            // --- Instantiates-hook seed (post–Join Team ship while backlog gates bridge lookup) ---
-            // [TITAN-ORBIT] Without a seed, backlog leaves hasPose=false then camera snaps on first pose.
+            // --- Instantiates-hook seed (post–Join Team ship while gathers are gated) ---
+            // [TITAN-ORBIT] Without a seed, hold leaves hasPose=false then camera snaps on first pose.
             if (!resolved &&
                 !teamSuppress &&
                 LocalShipEntitySeed.TryGetSeededShip(EntityManager, out var seededShip))
@@ -141,9 +145,10 @@ namespace TitanOrbit.Game
                 resolved = true;
             }
 
-            // --- Remotes: skip WithEntityAccess while GhostSpawnBacklog ---
-            // [TITAN-ORBIT] Player.log 2026-07-19: ship WithEntityAccess during Instantiates → Crash!!!.
-            if (!backlog)
+            // --- Remotes: never WithEntityAccess while ShouldSkipShipEntityQueries ---
+            // [TITAN-ORBIT] Player.log 2026-07-19 / 2026-07-28: hand-rolled GhostSpawnBacklog alone
+            // missed deferred Confirm / TeamChoice hold folds. Use the helper API.
+            if (!skipShipGathers)
             {
                 foreach (var (lt, entity) in SystemAPI
                              .Query<RefRO<LocalTransform>>()
@@ -163,7 +168,7 @@ namespace TitanOrbit.Game
                 if (UnityEngine.Time.frameCount % 60 == 0)
                 {
                     Debug.Log(
-                        $"[AsteroidDestroy] ShipVisualSync backlog: localShipCached={resolved} " +
+                        $"[AsteroidDestroy] ShipVisualSync skipGathers: localShipCached={resolved} " +
                         $"entityIndex={localShip.Index} frameDtMs={UnityEngine.Time.deltaTime * 1000f:F1}");
                 }
             }
@@ -172,7 +177,7 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Owned by PeopleTransportVisualSyncSystem (UpdateAfter this).
 
             // --- Local owner: GetComponentData on known entity — no ship gather ---
-            PublishLocalShipDisplayPose(localShip, skipBankPivotQuery: backlog);
+            PublishLocalShipDisplayPose(localShip, skipBankPivotQuery: skipShipGathers);
         }
 
         /// <summary>
@@ -181,8 +186,9 @@ namespace TitanOrbit.Game
         /// </summary>
         /// <param name="localShip">Local player ship entity, or Null when not spawned.</param>
         /// <param name="skipBankPivotQuery">
-        /// When true (GhostSpawnBacklog), skip the BankPivot <c>WithEntityAccess</c> walk — still
-        /// write ship LocalToWorld + ShipDisplayPose so the camera keeps tracking.
+        /// When true (<see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>), skip the
+        /// BankPivot <c>WithEntityAccess</c> walk — still write ship LocalToWorld + ShipDisplayPose
+        /// so the camera keeps tracking.
         /// </param>
         void PublishLocalShipDisplayPose(Entity localShip, bool skipBankPivotQuery = false)
         {
@@ -274,7 +280,7 @@ namespace TitanOrbit.Game
             var shipLtw = new LocalToWorld { Value = displayLt.ToMatrix() };
             EntityManager.SetComponentData(localShip, shipLtw);
 
-            // --- Bank pivots: full query is unsafe during GhostSpawnBacklog Instantiates ---
+            // --- Bank pivots: full query is unsafe during ShouldSkipShipEntityQueries Instantiates ---
             // Camera already has ShipDisplayPose; pivot LTW can wait a frame.
             if (skipBankPivotQuery)
                 return;
@@ -343,7 +349,8 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Backlog: gem Instantiates after asteroid destroy. Suppress: map visible
             // before TeamChoiceConfirmed. Both used to call ResetSession every frame (Editor.log).
             if (ClientJoinSettleCache.GhostSpawnBacklog ||
-                ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+                ClientTeamFlowState.ShouldSuppressLocalPlayerControl() ||
+                ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending)
             {
                 _missingShipFrames = 0;
                 return;

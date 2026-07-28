@@ -83,7 +83,10 @@ namespace TitanOrbit.ECS
         public static bool ShouldSkipShipEntityQueries =>
             Settling ||
             GhostSpawnBacklog ||
-            s_PostTeamChoiceHoldRemaining > 0;
+            s_PostTeamChoiceHoldRemaining > 0 ||
+            // [TITAN-ORBIT] Deferred Confirm keeps suppress on; also fold into the helper so
+            // hand-rolled GhostSpawnBacklog-only checks are not the only line of defense.
+            ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending;
 
         /// <summary>
         /// [TITAN-ORBIT] True when client code must not gather planets / asteroids / gems / moons

@@ -15,7 +15,10 @@ namespace TitanOrbit.ECS
     /// keeps orbiting the planet ring, so a pure world-space stillness check would clear landing
     /// after a few seconds (felt like the orbit ring "booting" the ship). Hull co-orbit attach
     /// lives in shared <see cref="ShipPhysicsDriveLogic"/> so client prediction matches.
-    /// Runs before <see cref="GemDepositSystem"/> so deposit sees the latest dock flags.
+    /// Fully-landed ships also ignore other friendly moon dock zones whose spheres briefly overlap
+    /// when planet orbit rings cross — stealing the dock used to reset LandingProgress and replay
+    /// the client grow/shrink land cinematic. Runs before <see cref="GemDepositSystem"/> so deposit
+    /// sees the latest dock flags.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -103,6 +106,17 @@ namespace TitanOrbit.ECS
                         if (planetState.ValueRO.Ownership != shipState.ValueRO.Team)
                             continue;
 
+                        // --- Fully-landed planet lock ---
+                        // [TITAN-ORBIT] Moons ride planet orbit rings. When two rings cross, another
+                        // friendly moon's dock sphere can briefly contain this hull. Query order used
+                        // to "steal" the dock: reset LandingProgress to 0, switch MoonPlanetId, then
+                        // climb 0→1 again. Client scale is 24% docked vs full flight — that replay
+                        // looked like the ship growing, shrinking, and re-landing on the moon while
+                        // the orbit menu stayed open (UI soft-undock hysteresis). Thrust is the only
+                        // intentional undock, so ignore every other moon until then.
+                        if (fullyLandedLatch && planetState.ValueRO.PlanetId != landedPlanetId)
+                            continue;
+
                         float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
                         // [TITAN-ORBIT] Near-tile moon — same unwrap as motor attach / combat.
                         float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
@@ -135,7 +149,11 @@ namespace TitanOrbit.ECS
                         if (dist <= zoneRadius)
                             inMoonZone = true;
 
-                        if (landedPlanetId != 0 && landedPlanetId != planetState.ValueRO.PlanetId)
+                        // Planet switch only during approach — never after the fully-landed latch.
+                        // (The latch skip above already blocks other moons; this guards progress.)
+                        if (!fullyLandedLatch &&
+                            landedPlanetId != 0 &&
+                            landedPlanetId != planetState.ValueRO.PlanetId)
                         {
                             landingProgress = 0f;
                             approachDelay = 0f;

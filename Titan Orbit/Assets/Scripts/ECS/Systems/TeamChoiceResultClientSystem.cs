@@ -43,13 +43,17 @@ namespace TitanOrbit.ECS
         {
             if (rpc.Success != 0)
             {
-                // [TITAN-ORBIT] Arm ship-query hold BEFORE ConfirmTeamChoice lifts suppress.
-                // Same-frame LateUpdate (gem tractor / minimap) used to see Settling OFF +
-                // GhostSpawnBacklog false and ToEntityArray ships → Crash!!! (2026-07-23).
-                // Arm publishes GhostSpawnBacklog immediately; hold expires so spawn-wait can recover.
+                // [TITAN-ORBIT] Arm ship-query hold, then DEFER Confirm to the next frame.
+                // Player.log 2026-07-28: Confirm in the same frame as TeamChoiceResult still
+                // Crash!!!'d — same-frame systems that check suppress before ShouldSkip opened
+                // ship gathers while GhostSpawn Instantiates the new hull. Arm publishes
+                // GhostSpawnBacklog immediately; deferred Confirm keeps suppress on for the rest
+                // of this frame. Flush: ClientDeferredTeamChoiceConfirmSystem.
                 ClientJoinSettleCache.ArmPostTeamChoiceHold();
-                ClientTeamFlowState.ConfirmTeamChoice();
-                UnityEngine.Debug.Log($"[TeamChoiceResult] Assigned to {(TeamId)rpc.AssignedTeam} (networkId={rpc.NetworkId}).");
+                ClientTeamFlowState.RequestDeferredConfirmTeamChoice();
+                UnityEngine.Debug.Log(
+                    $"[TeamChoiceResult] Assigned to {(TeamId)rpc.AssignedTeam} (networkId={rpc.NetworkId}). " +
+                    "Confirm deferred 1 frame (join-crash guard).");
             }
             else
             {

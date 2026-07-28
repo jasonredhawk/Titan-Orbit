@@ -1,0 +1,37 @@
+---
+description: Before any client ECS/Game/UI edit — mandatory TeamChoice Crash!!! gates (run verify script)
+globs: Titan Orbit/Assets/Scripts/{ECS,Game,UI,Camera,NetCode}/**/*.cs
+alwaysApply: false
+---
+
+# Client ECS edit → Join Team Crash!!! gate (MANDATORY)
+
+Windows client dies with native `Crash!!!` after **Join Team** when ship/map gathers run during Instantiates while `Settling` is OFF. Editor Play Mode often survives. **Rules already exist** (`titan-orbit-teamchoice-crash-hardstop.mdc`) — agents still delete the gates as “cleanup.”
+
+## Before you finish ANY edit in this glob
+
+1. If you added/changed a client `ToEntityArray` / `WithEntityAccess` / `ToComponentDataArray` / broad `foreach` over **ships** or **map bodies**, you MUST early-out with the helper API (copy exactly):
+
+```csharp
+if (ClientJoinSettleCache.ShouldSkipShipEntityQueries) return; // ships / EnsureShipProxies
+if (ClientJoinSettleCache.ShouldSkipMapBodyQueries) return;    // planets/asteroids/gems/moons
+```
+
+2. **Forbidden “fixes”**
+   - Gate on `Settling` alone
+   - Remove `TransformQuarantine` / `GhostSpawnBacklog` / `ShouldSkip*` as redundant
+   - Re-enable `TransformSystemGroup`
+   - Raise GhostSpawn Instantiates above **1/frame**
+   - Starve-escape loading at 0 map proxies
+
+3. **Verify before claiming done** (from repo root):
+
+```powershell
+powershell -File tools/verify-join-crash-gates.ps1
+```
+
+Exit code `1` = do not ship a Windows client build.
+
+4. If unsure whether a gather is safe → **skip the query**. Do not ship ungated.
+
+Full ownership list + Player.log checklist: `titan-orbit-windows-join-crash.mdc`.
