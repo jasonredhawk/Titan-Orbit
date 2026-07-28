@@ -36,6 +36,8 @@ namespace TitanOrbit.Simulation
         /// <summary>
         /// Max population: size × level^<see cref="PopulationLevelExponent"/> (rounded to int).
         /// Example at level 6 (6^1.7 ≈ 21.0): size 15 → ~315, size 20 home → ~421.
+        /// This is the <b>base</b> cap before triangle connection bonuses — see
+        /// <see cref="GetEffectiveMaxPopulation"/> for the live gameplay ceiling.
         /// </summary>
         /// <param name="planetSize">World/visual scale of the planet (minimum 0.25).</param>
         /// <param name="planetLevel">Planet level (minimum 1).</param>
@@ -46,6 +48,51 @@ namespace TitanOrbit.Simulation
             planetSize = Mathf.Max(0.25f, planetSize);
             int level = Mathf.Max(1, planetLevel);
             return Mathf.RoundToInt(planetSize * Mathf.Pow(level, PopulationLevelExponent));
+        }
+
+        /// <summary>
+        /// Effective population cap after stacking triangle connection bonuses.
+        /// Matches server growth: <c>round(baseMax × (1 + bonusFraction))</c>, at least 1.
+        /// </summary>
+        /// <param name="planetSize">World/visual scale of the planet (minimum 0.25).</param>
+        /// <param name="planetLevel">Planet level (minimum 1).</param>
+        /// <param name="connectionBonusFraction">
+        /// Stacked corner bonus from territory triangles (0 = no bonus). Same value as
+        /// <c>PlanetGrowthState.ConnectionBonusFraction</c> on the server.
+        /// </param>
+        /// <returns>Gameplay max population the planet can hold right now.</returns>
+        public static int GetEffectiveMaxPopulation(
+            float planetSize,
+            int planetLevel,
+            float connectionBonusFraction)
+        {
+            // --- Base cap × (1 + triangle bonus) ---
+            // [TITAN-ORBIT] Same formula as PlanetPopulationGrowthSystem — keep label + sim in sync.
+            int baseMax = GetMaxPopulation(planetSize, planetLevel);
+            float bonus = math.max(0f, connectionBonusFraction);
+            return math.max(1, (int)math.round(baseMax * (1f + bonus)));
+        }
+
+        /// <summary>
+        /// Splits effective max into base size/level cap and the additive bonus people from triangles.
+        /// Used by world planet labels: current on top, then <c>base + bonus</c> underneath.
+        /// </summary>
+        /// <param name="planetSize">World/visual scale of the planet.</param>
+        /// <param name="planetLevel">Planet level.</param>
+        /// <param name="connectionBonusFraction">Stacked triangle bonus fraction (0 = none).</param>
+        /// <param name="baseMax">Size × level cap with no territory bonus.</param>
+        /// <param name="bonusAmount">Extra people from connections (<c>effective − base</c>, ≥ 0).</param>
+        public static void GetMaxPopulationBreakdown(
+            float planetSize,
+            int planetLevel,
+            float connectionBonusFraction,
+            out int baseMax,
+            out int bonusAmount)
+        {
+            // --- Breakdown for HUD: base + bonus people ---
+            baseMax = GetMaxPopulation(planetSize, planetLevel);
+            int effective = GetEffectiveMaxPopulation(planetSize, planetLevel, connectionBonusFraction);
+            bonusAmount = math.max(0, effective - baseMax);
         }
 
         /// <summary>

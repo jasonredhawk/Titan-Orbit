@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
@@ -248,6 +249,10 @@ namespace TitanOrbit.Game
         /// <param name="hitPoint">Contact point in the same space as from/to.</param>
         /// <param name="hitKind">Which obstacle category was hit (asteroid / planet / …).</param>
         /// <param name="hitEntity">Hybrid-proxy entity for the hit body (Null if none).</param>
+        /// <param name="damageFilter">
+        /// [TITAN-ORBIT] Matches server <c>BulletDamageFilter</c> so mining tracers pass through
+        /// ships and fighter tracers pass through asteroids.
+        /// </param>
         public static bool TryHitSegment(
             float3 from,
             float3 to,
@@ -256,7 +261,8 @@ namespace TitanOrbit.Game
             bool isDisplaySpace,
             out float3 hitPoint,
             out ObstacleKind hitKind,
-            out Entity hitEntity)
+            out Entity hitEntity,
+            byte damageFilter = 0)
         {
             hitPoint = to;
             hitKind = ObstacleKind.Asteroid;
@@ -277,11 +283,14 @@ namespace TitanOrbit.Game
             bool any = false;
             float3 delta = to - from;
             float deltaLenSq = math.lengthsq(delta);
+            var filter = (BulletDamageFilter)damageFilter;
 
             for (int i = 0; i < Obstacles.Count; i++)
             {
                 var o = Obstacles[i];
                 if (!PassesTeamFilter(in o, ownerTeam, ownerNetworkId))
+                    continue;
+                if (!PassesDamageFilter(filter, o.Kind))
                     continue;
 
                 bool hit;
@@ -398,6 +407,28 @@ namespace TitanOrbit.Game
 
             // Planet absorb + asteroid mining — always test.
             return true;
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Mirrors server <c>BulletSimulationSystem.AllowsHitKind</c> for cosmetic tracers.
+        /// Planets always block; mining skips ships/moons; fighters skip asteroids/moons.
+        /// </summary>
+        static bool PassesDamageFilter(BulletDamageFilter filter, ObstacleKind kind)
+        {
+            if (kind == ObstacleKind.Planet)
+                return true;
+
+            switch (filter)
+            {
+                case BulletDamageFilter.Everything:
+                    return true;
+                case BulletDamageFilter.AsteroidsOnly:
+                    return kind == ObstacleKind.Asteroid;
+                case BulletDamageFilter.ShipsOnly:
+                    return kind == ObstacleKind.Ship;
+                default:
+                    return true;
+            }
         }
 
         /// <summary>

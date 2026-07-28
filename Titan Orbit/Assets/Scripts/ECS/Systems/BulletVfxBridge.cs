@@ -37,6 +37,10 @@ namespace TitanOrbit.ECS
             public bool IsAnticipation;
             /// <summary>True when positions are already in display/world space (skip toroidal unwrap).</summary>
             public bool IsDisplaySpace;
+            /// <summary>
+            /// [TITAN-ORBIT] Matches server <c>BulletElement.DamageFilter</c> for cosmetic pass-through.
+            /// </summary>
+            public byte DamageFilter;
         }
 
         /// <summary>Authoritative impact — destroy matching tracer and play impact VFX.</summary>

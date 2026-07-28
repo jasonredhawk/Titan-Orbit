@@ -57,6 +57,13 @@ namespace TitanOrbit.ECS
         /// <summary>Uses left before the item is consumed or removed.</summary>
         [GhostField] public int RemainingCharges;
 
+        /// <summary>
+        /// Ship level at purchase time for leveled drones (fighter / mining / shield).
+        /// [TITAN-ORBIT] Damage, HP, cost, and visual size use this fixed level — drones do not
+        /// auto-upgrade when the ship levels. Non-drone items store 0 (ignored).
+        /// </summary>
+        [GhostField] public int ItemLevel;
+
         /// <summary>Stable component id string for stat lookup in ShipPartCatalog.</summary>
         [GhostField] public FixedString64Bytes ComponentId;
     }

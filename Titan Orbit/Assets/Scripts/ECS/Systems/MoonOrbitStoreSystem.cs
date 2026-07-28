@@ -482,7 +482,7 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            float cost = StoreItemData.GetPrice(itemType);
+            float cost = StoreItemData.GetPrice(itemType, ship.ShipLevel);
             if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
             {
                 message = "Not enough contributed gems.";
@@ -929,12 +929,18 @@ namespace TitanOrbit.ECS
             }
 
             int charges = StoreItemData.IsDrone(itemType)
-                ? StoreItemData.GetDroneMaxHp(itemType)
+                ? StoreItemData.GetDroneMaxHp(itemType, math.max(1, shipLevel))
                 : StoreItemData.GetPackSize(itemType);
+            // [TITAN-ORBIT] All drones lock purchase level to the ship's current level.
+            // Damage/HP/cost/size already used this level; store it so stats stay fixed after buy.
+            int itemLevel = StoreItemData.IsLeveledDrone(itemType)
+                ? math.max(1, shipLevel)
+                : 0;
             buffer.Add(new EquippedEquipmentElement
             {
                 ItemType = (int)itemType,
                 RemainingCharges = math.max(1, charges),
+                ItemLevel = itemLevel,
                 ComponentId = default,
             });
             return true;

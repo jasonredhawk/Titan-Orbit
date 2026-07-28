@@ -152,6 +152,56 @@ namespace TitanOrbit.ECS
         public static IReadOnlyList<PlanetConnectionGraphLogic.Triangle> ServerTriangles => Server.Triangles;
 
         /// <summary>
+        /// Stacked triangle corner bonus fraction for one planet — same math the server writes into
+        /// <c>PlanetGrowthState.ConnectionBonusFraction</c>. Presentation reads the client graph;
+        /// listen-server falls back to the server list when the client side is still empty.
+        /// </summary>
+        /// <param name="planetId">Stable <see cref="PlanetState.PlanetId"/> to sum corners for.</param>
+        /// <returns>
+        /// Sum of <see cref="PlanetConnectionGraphLogic.GetCornerBonusStrength"/> over every triangle
+        /// that includes this planet. 0 when the planet is not a triangle corner (or graph is empty).
+        /// </returns>
+        public static float GetStackedConnectionBonusFraction(int planetId)
+        {
+            // --- Prefer client triangles (HUD / world labels) ---
+            // [TITAN-ORBIT] ConnectionBonusFraction is server-only on PlanetGrowthState — clients
+            // recompute from the published graph so planet labels can show base + bonus max.
+            if (planetId == 0)
+                return 0f;
+
+            float bonus = SumCornerBonusFraction(Client.Triangles, planetId);
+
+            // --- Host fallback: client publish can lag one frame behind server ---
+            if (bonus <= 0f && Client.Triangles.Count == 0 && Server.Triangles.Count > 0)
+                bonus = SumCornerBonusFraction(Server.Triangles, planetId);
+
+            return bonus;
+        }
+
+        /// <summary>
+        /// Sums <see cref="PlanetConnectionGraphLogic.GetCornerBonusStrength"/> for every triangle
+        /// that lists <paramref name="planetId"/> as a corner.
+        /// </summary>
+        static float SumCornerBonusFraction(
+            IReadOnlyList<PlanetConnectionGraphLogic.Triangle> triangles,
+            int planetId)
+        {
+            if (triangles == null || triangles.Count == 0)
+                return 0f;
+
+            float bonus = 0f;
+            for (int i = 0; i < triangles.Count; i++)
+            {
+                var t = triangles[i];
+                if (t.PlanetIdA != planetId && t.PlanetIdB != planetId && t.PlanetIdC != planetId)
+                    continue;
+                bonus += PlanetConnectionGraphLogic.GetCornerBonusStrength(t.AverageLevel);
+            }
+
+            return bonus;
+        }
+
+        /// <summary>
         /// Records an optimistic Ownership flip for the client graph fingerprint / rebuild.
         /// Called from <see cref="PlanetOwnershipNetNotify"/> (RPC + host mirror).
         /// </summary>

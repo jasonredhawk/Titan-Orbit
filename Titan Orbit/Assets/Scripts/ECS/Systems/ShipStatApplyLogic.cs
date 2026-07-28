@@ -468,6 +468,7 @@ namespace TitanOrbit.ECS
                         var e = buf[i];
                         hash = hash * 31 + e.ItemType;
                         hash = hash * 31 + e.RemainingCharges;
+                        hash = hash * 31 + e.ItemLevel;
                         hash = hash * 31 + e.ComponentId.GetHashCode();
                     }
                 }

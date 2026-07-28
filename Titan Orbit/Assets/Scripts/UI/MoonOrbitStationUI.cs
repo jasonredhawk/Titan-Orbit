@@ -42,6 +42,15 @@ namespace TitanOrbit.UI
         bool _visible;
         readonly List<int> _nextTargets = new List<int>(4);
 
+        /// <summary>Store row bindings so <see cref="RefreshStore"/> can update level-scaled prices.</summary>
+        sealed class StoreRowBinding
+        {
+            public StoreItemType ItemType;
+            public TextMeshProUGUI Label;
+        }
+
+        readonly List<StoreRowBinding> _storeRows = new List<StoreRowBinding>(8);
+
         public UpgradeTree UpgradeTree => upgradeTree;
         public float ContributedGems => _contributedGems;
         public int StorePlanetId => _storePlanetId;
@@ -361,6 +370,7 @@ namespace TitanOrbit.UI
                 _sidebar = null;
                 _shipTree = null;
                 _gemsText = null;
+                _storeRows.Clear();
                 BuildUi();
             }
         }
@@ -481,6 +491,7 @@ namespace TitanOrbit.UI
 
         void BuildStorePanel(Transform parent)
         {
+            _storeRows.Clear();
             var scrollGo = new GameObject("StoreScroll");
             scrollGo.transform.SetParent(parent, false);
             var scrollRt = scrollGo.AddComponent<RectTransform>();
@@ -531,11 +542,8 @@ namespace TitanOrbit.UI
             for (int i = 0; i < items.Length; i++)
             {
                 var item = items[i];
-                float price = StoreItemData.GetPrice(item);
-                string desc = StoreItemData.GetDescription(item);
-                string label = string.IsNullOrEmpty(desc)
-                    ? $"{StoreItemData.GetDisplayName(item)} — {price:0}g"
-                    : $"{StoreItemData.GetDisplayName(item)} — {price:0}g\n<size=12>{desc}</size>";
+                // Initial label uses level 1; RefreshStore rewrites with live ShipLevel.
+                string label = FormatStoreRowLabel(item, 1);
                 var btn = CreateButton(parent, label, Vector2.zero);
                 var le = btn.gameObject.AddComponent<LayoutElement>();
                 le.preferredHeight = 52f;
@@ -545,7 +553,26 @@ namespace TitanOrbit.UI
                     MoonOrbitRpcClient.PurchaseStoreItem(_homePlanetId, (StoreItemType)captured);
                     MoonOrbitRpcClient.RequestContributedGems(_homePlanetId);
                 });
+
+                // --- Keep label ref for level/price refresh ---
+                var tmp = btn.GetComponentInChildren<TextMeshProUGUI>();
+                if (tmp != null)
+                    _storeRows.Add(new StoreRowBinding { ItemType = item, Label = tmp });
             }
+        }
+
+        /// <summary>Builds the store button caption for the ship's current level.</summary>
+        static string FormatStoreRowLabel(StoreItemType item, int shipLevel)
+        {
+            int level = Mathf.Max(1, shipLevel);
+            float price = StoreItemData.GetPrice(item, level);
+            string name = StoreItemData.IsLeveledDrone(item)
+                ? StoreItemData.GetDisplayName(item, level)
+                : StoreItemData.GetDisplayName(item);
+            string desc = StoreItemData.GetDescription(item, level);
+            return string.IsNullOrEmpty(desc)
+                ? $"{name} — {price:0}g"
+                : $"{name} — {price:0}g\n<size=12>{desc}</size>";
         }
 
         void OnNavSelected(OrbitDockSidebarPanelUI.NavTarget target)
@@ -575,7 +602,15 @@ namespace TitanOrbit.UI
 
         void RefreshStore()
         {
-            // Store buttons are static; contributed gems refresh handles affordability display.
+            // --- Rewrite combat-drone rows with the live ship level (price + damage text) ---
+            int level = Mathf.Max(1, ShipLevel);
+            for (int i = 0; i < _storeRows.Count; i++)
+            {
+                var row = _storeRows[i];
+                if (row?.Label == null)
+                    continue;
+                row.Label.text = FormatStoreRowLabel(row.ItemType, level);
+            }
         }
 
         #region IOrbitStationHost

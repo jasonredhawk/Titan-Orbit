@@ -58,6 +58,8 @@ namespace TitanOrbit.Entities
         public const float PresentationLiftY = 0.28f;
 
         // --- Combat tuning (legacy DroneSwarmController defaults) ---
+        // [TITAN-ORBIT] Per-shot damage is NOT here — fighter/mining use
+        // StoreItemData.GetCombatDroneDamage(purchaseLevel). Fire rate / range stay constant.
 
         /// <summary>Fighter shots per second.</summary>
         public const float FighterFireRate = 1.2f;

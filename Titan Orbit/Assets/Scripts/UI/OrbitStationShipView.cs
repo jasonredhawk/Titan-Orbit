@@ -160,6 +160,7 @@ namespace TitanOrbit.Entities
                         itemType = e.ItemType,
                         componentId = e.ComponentId.ToString(),
                         remainingCharges = e.RemainingCharges,
+                        itemLevel = e.ItemLevel,
                     });
                 }
             }

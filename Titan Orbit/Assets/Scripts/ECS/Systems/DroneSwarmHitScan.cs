@@ -32,6 +32,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>GhostOwner.NetworkId — own bullets never hit own drones.</summary>
         public int OwnerNetworkId;
+
+        /// <summary>
+        /// Hit-sphere radius multiplier from purchase level
+        /// (<see cref="StoreItemData.GetDroneVisualScale"/>). Level 6 ≈ 1.0 (authored radius).
+        /// </summary>
+        public float HitRadiusScale;
     }
 
     /// <summary>
@@ -154,6 +160,9 @@ namespace TitanOrbit.ECS
                     };
                     var pose = DroneSwarmPositioning.EvaluateSlotPose(
                         StoreItemType.ShieldDrone, slot, in ctx);
+                    int droneLevel = math.max(1, buf[slot].ItemLevel > 0
+                        ? buf[slot].ItemLevel
+                        : StoreItemData.DroneReferenceMaxLevel);
                     targetsOut.Add(new DroneHitTarget
                     {
                         ShipEntity = ship,
@@ -161,6 +170,7 @@ namespace TitanOrbit.ECS
                         Position = new float3(pose.WorldPosition.x, DroneSwarmLogic.FixedY, pose.WorldPosition.z),
                         Team = team,
                         OwnerNetworkId = ownerNetId,
+                        HitRadiusScale = StoreItemData.GetDroneVisualScale(droneLevel),
                     });
                 }
             }
@@ -186,7 +196,6 @@ namespace TitanOrbit.ECS
                 return false;
 
             bool improved = false;
-            float radius = DroneSwarmPositioning.DroneHitSphereRadius;
 
             for (int i = 0; i < targets.Count; i++)
             {
@@ -196,6 +205,10 @@ namespace TitanOrbit.ECS
                     continue;
                 if (b.OwnerNetworkId > 0 && t.OwnerNetworkId == b.OwnerNetworkId)
                     continue;
+
+                // --- Level-scaled hit sphere (matches visual size) ---
+                float radius = DroneSwarmPositioning.DroneHitSphereRadius
+                    * math.max(0.25f, t.HitRadiusScale > 0.01f ? t.HitRadiusScale : 1f);
 
                 if (!BulletCollision.SegmentHitsSphereToroidal(
                         from, to, t.Position, radius, mapW, mapH, out float3 hit))

@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -48,6 +49,13 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Per-shot visual scale carried to impact VFX.</summary>
         public float ScaleMultiplier;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Collision / damage mask. Ship guns use <see cref="BulletDamageFilter.Everything"/>;
+        /// mining drones use <see cref="BulletDamageFilter.AsteroidsOnly"/>; fighters use
+        /// <see cref="BulletDamageFilter.ShipsOnly"/>.
+        /// </summary>
+        public BulletDamageFilter DamageFilter;
     }
 
     /// <summary>

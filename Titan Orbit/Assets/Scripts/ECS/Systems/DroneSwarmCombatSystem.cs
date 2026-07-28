@@ -24,6 +24,12 @@ namespace TitanOrbit.ECS
     /// (<c>TitanOrbit.Entities</c>).
     /// </para>
     /// <para>
+    /// [TITAN-ORBIT] Combat drones fire at purchase-level damage from
+    /// <see cref="StoreItemData.GetCombatDroneDamage"/> (not ship <c>BulletDamage</c>).
+    /// Mining bolts use <see cref="BulletDamageFilter.AsteroidsOnly"/>; fighters use
+    /// <see cref="BulletDamageFilter.ShipsOnly"/> — Starblast-style pass-through.
+    /// </para>
+    /// <para>
     /// World: ServerSimulation. Runs after <see cref="BulletSimulationSystem"/> so ship volleys
     /// resolve first; drone bullets advance on the next tick.
     /// </para>
@@ -191,7 +197,8 @@ namespace TitanOrbit.ECS
                 shipVel.y = 0f;
                 int ownerNetId = ghostOwner.NetworkId;
                 byte ownerTeam = (byte)shipState.Team;
-                float damage = math.max(0.5f, weaponCfg.BulletDamage);
+                // [TITAN-ORBIT] Combat drones use their purchase ItemLevel damage — NOT ship BulletDamage.
+                // Range / lifetime still borrow the hull weapon config so bolts travel a sensible distance.
                 float maxDist = math.max(10f, weaponCfg.BulletMaxDistance);
                 float lifetime = math.max(0.1f, weaponCfg.BulletLifetime);
                 int rearCount = math.max(1, _rearSlots.Count);
@@ -253,6 +260,17 @@ namespace TitanOrbit.ECS
                     float bulletSpeed = isFighter ? DroneSwarmLogic.FighterBulletSpeed : DroneSwarmLogic.MiningBulletSpeed;
                     int bankIndex = isFighter ? _fighterBankIndex : _miningBankIndex;
 
+                    // --- Per-drone leveled damage (purchase ItemLevel, not live ship guns) ---
+                    // ItemLevel 0 = legacy drone (pre-leveling) — treat as reference max for damage.
+                    int droneLevel = buf[slot].ItemLevel > 0
+                        ? buf[slot].ItemLevel
+                        : StoreItemData.DroneReferenceMaxLevel;
+                    float damage = math.max(0.05f, StoreItemData.GetCombatDroneDamage(droneLevel));
+                    // [TITAN-ORBIT] Starblast-style target filters — mining ignores ships; fighters ignore rocks.
+                    var damageFilter = isFighter
+                        ? BulletDamageFilter.ShipsOnly
+                        : BulletDamageFilter.AsteroidsOnly;
+
                     int cooldownKey = (entity.Index << 16) ^ (slot & 0xFFFF);
                     if (_nextFireTime.TryGetValue(cooldownKey, out float next) && now < next)
                         continue;
@@ -294,6 +312,7 @@ namespace TitanOrbit.ECS
                         Sequence = sequence,
                         BankIndex = math.max(0, bankIndex),
                         ScaleMultiplier = DroneSwarmLogic.DroneBulletVisualScale,
+                        DamageFilter = damageFilter,
                     };
 
                     spawnEvents.Add(new BulletSpawnEventElement

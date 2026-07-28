@@ -3521,10 +3521,18 @@ namespace TitanOrbit.UI
                 }
                 else
                 {
-                    price = StoreItemData.GetPrice(card.supportItem);
+                    price = StoreItemData.GetPrice(card.supportItem, shipLevel);
                     int count = CountSupportItem(currentShip, card.supportItem);
                     canBuy = currentShip != null && contributedGems >= price && currentShip.HasEmptyEquipmentSlot;
-                    subline = count > 0 ? $"\u00d7{count} owned" : StoreItemData.GetDescription(card.supportItem);
+                    string supportDesc = StoreItemData.GetDescription(card.supportItem, shipLevel);
+                    string supportName = StoreItemData.IsLeveledDrone(card.supportItem)
+                        ? StoreItemData.GetDisplayName(card.supportItem, shipLevel)
+                        : null;
+                    if (card.titleText != null && supportName != null)
+                        card.titleText.text = supportName;
+                    if (card.descriptionText != null && StoreItemData.IsLeveledDrone(card.supportItem))
+                        card.descriptionText.text = supportDesc;
+                    subline = count > 0 ? $"\u00d7{count} owned" : supportDesc;
                 }
 
                 if (card.sublineText != null)
@@ -3839,12 +3847,13 @@ namespace TitanOrbit.UI
             Color cardColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
                 StoreItemData.GetAbilityColorStatIndex(itemType), 0.92f);
 
+            int shipLevel = currentShip != null ? Mathf.Max(1, currentShip.ShipLevel) : 1;
             CreateMoonDockEquipmentItemTile(
                 parent,
                 "Support_" + itemType,
                 cardColor,
                 OrbitDockSidebarPanelUI.EquipmentAccent,
-                $"{StoreItemData.GetPrice(itemType):F0}g",
+                $"{StoreItemData.GetPrice(itemType, shipLevel):F0}g",
                 componentStatLayout: false,
                 out GameObject root,
                 out _,
@@ -3859,9 +3868,13 @@ namespace TitanOrbit.UI
                 out Image buyImg);
 
             if (titleTmp != null)
-                titleTmp.text = StoreItemData.GetShortDisplayName(itemType);
+            {
+                titleTmp.text = StoreItemData.IsLeveledDrone(itemType)
+                    ? StoreItemData.GetDisplayName(itemType, shipLevel)
+                    : StoreItemData.GetShortDisplayName(itemType);
+            }
             if (descriptionTmp != null)
-                descriptionTmp.text = StoreItemData.GetDescription(itemType);
+                descriptionTmp.text = StoreItemData.GetDescription(itemType, shipLevel);
             ApplyMoonDockEquipmentTileIcon(iconImg, iconGlyph, null, StoreItemData.GetIconGlyph(itemType));
 
             _moonDockStoreCards.Add(new MoonDockStoreCardBinding
@@ -5228,6 +5241,13 @@ namespace TitanOrbit.UI
                     equipmentTitleTexts[index].text = ShipComponentStoreData.GetDisplayName(componentEntry);
                 else if (entry.IsShipComponent)
                     equipmentTitleTexts[index].text = ShipComponentStoreData.FormatComponentId(entry.ComponentId);
+                else if (StoreItemData.IsLeveledDrone(itemType))
+                {
+                    int titleLevel = entry.itemLevel > 0
+                        ? entry.itemLevel
+                        : StoreItemData.DroneReferenceMaxLevel;
+                    equipmentTitleTexts[index].text = StoreItemData.GetDisplayName(itemType, titleLevel);
+                }
                 else
                     equipmentTitleTexts[index].text = StoreItemData.GetShortDisplayName(itemType);
             }
@@ -5244,7 +5264,10 @@ namespace TitanOrbit.UI
                 else
                 {
                     equipmentDescTexts[index].richText = false;
-                    equipmentDescTexts[index].text = StoreItemData.GetDescription(itemType);
+                    int droneLevel = entry.itemLevel > 0
+                        ? entry.itemLevel
+                        : StoreItemData.DroneReferenceMaxLevel;
+                    equipmentDescTexts[index].text = StoreItemData.GetDescription(itemType, droneLevel);
                 }
             }
 
@@ -5258,8 +5281,17 @@ namespace TitanOrbit.UI
                 }
                 else if (filled && StoreItemData.IsDrone(itemType))
                 {
-                    int maxHp = StoreItemData.GetDroneMaxHp(itemType);
-                    slotUi.sublineText.text = $"{entry.remainingCharges}/{maxHp} HP";
+                    int droneLevel = entry.itemLevel > 0
+                        ? entry.itemLevel
+                        : StoreItemData.DroneReferenceMaxLevel;
+                    int maxHp = StoreItemData.GetDroneMaxHp(itemType, droneLevel);
+                    if (StoreItemData.IsLeveledDrone(itemType))
+                    {
+                        slotUi.sublineText.text =
+                            $"Lv.{droneLevel} · {entry.remainingCharges}/{maxHp} HP";
+                    }
+                    else
+                        slotUi.sublineText.text = $"{entry.remainingCharges}/{maxHp} HP";
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else if (filled && !entry.IsShipComponent)

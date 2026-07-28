@@ -46,6 +46,7 @@ namespace TitanOrbit.ECS
                     MountIndex = r.MountIndex,
                     IsAnticipation = false,
                     IsDisplaySpace = false,
+                    DamageFilter = r.DamageFilter,
                 });
                 ecb.DestroyEntity(entity);
             }

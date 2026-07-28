@@ -67,10 +67,10 @@ namespace TitanOrbit.ECS
 
                 // [TITAN-ORBIT] Max population scales with planet visual size and upgrade level.
                 // ConnectionBonusFraction stacks triangle corner bonuses (original SetConnectionBonuses).
+                // Shared helper keeps server growth and planet world labels on the same formula.
                 float planetSize = math.max(0.5f, transform.ValueRO.Scale);
-                int baseMaxPop = PlanetPopulationMath.GetMaxPopulation(planetSize, planet.PlanetLevel);
-                float bonus = math.max(0f, growth.ConnectionBonusFraction);
-                int maxPop = math.max(1, (int)math.round(baseMaxPop * (1f + bonus)));
+                int maxPop = PlanetPopulationMath.GetEffectiveMaxPopulation(
+                    planetSize, planet.PlanetLevel, growth.ConnectionBonusFraction);
                 float maxPopF = maxPop;
 
                 SyncFractionalPopulation(ref planet, ref growth);

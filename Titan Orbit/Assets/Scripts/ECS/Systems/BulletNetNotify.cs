@@ -45,6 +45,7 @@ namespace TitanOrbit.ECS
                 MountIndex = safeMount,
                 IsAnticipation = false,
                 IsDisplaySpace = false,
+                DamageFilter = (byte)bullet.DamageFilter,
             };
 
             // --- Host in-process (Editor / listen-server) ---
@@ -66,6 +67,7 @@ namespace TitanOrbit.ECS
                 BankIndex = bullet.BankIndex,
                 ScaleMultiplier = bullet.ScaleMultiplier > 0f ? bullet.ScaleMultiplier : 1f,
                 MountIndex = safeMount,
+                DamageFilter = (byte)bullet.DamageFilter,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }

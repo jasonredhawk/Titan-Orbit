@@ -60,6 +60,8 @@ namespace TitanOrbit.Game
             public bool IsAnticipation;
             /// <summary>Monotonic fire order for FIFO adopt (RemoveAtSwap shuffles list indices).</summary>
             public int AnticipationOrder;
+            /// <summary>[TITAN-ORBIT] Cosmetic collide filter (mining / fighter pass-through).</summary>
+            public byte DamageFilter;
             public ClientBulletStretchVisual Stretch;
         }
 
@@ -728,6 +730,7 @@ namespace TitanOrbit.Game
                 IsAnticipation = req.IsAnticipation,
                 // Only anticipations need order; server-only tracers keep 0.
                 AnticipationOrder = req.IsAnticipation ? _nextAnticipationOrder++ : 0,
+                DamageFilter = req.DamageFilter,
                 Stretch = stretch,
             };
 
@@ -799,7 +802,8 @@ namespace TitanOrbit.Game
                 t.IsDisplaySpace,
                 out hitPoint,
                 out hitKind,
-                out hitEntity);
+                out hitEntity,
+                t.DamageFilter);
         }
 
         /// <summary>

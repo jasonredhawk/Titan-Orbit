@@ -8,19 +8,49 @@ using UnityEngine.Rendering;
 
 namespace TitanOrbit.Game
 {
-    /// <summary>World-space ship family title and population above the planet body.</summary>
+    /// <summary>
+    /// World-space label floating above a planet body: ship family name (title) plus population.
+    /// Layout reads top-to-bottom as <b>current people</b>, then the population <b>capacity</b>
+    /// (base size/level max, and when territory triangles apply, <c>base + bonus</c>).
+    /// Client / hybrid presentation only — reads replicated <see cref="PlanetState"/> and the
+    /// published connection graph; never drives sim. Paired with <see cref="WorldBodyVisualApplier"/>
+    /// (adds this component) and <see cref="PlanetPopulationMath"/> for cap formulas.
+    /// </summary>
     public class PlanetWorldStatsLabel : MonoBehaviour
     {
+        /// <summary>[UNITY] Sorting order so planet text draws above world meshes.</summary>
         const int TextSortingOrder = 5001;
+
+        /// <summary>Large font for the live population count (top line).</summary>
         const float CurrentFontSize = 36f;
+
+        /// <summary>Smaller font for the capacity line under current (base, or base + bonus).</summary>
         const float MaxFontSize = CurrentFontSize * (21f / 33f);
+
+        /// <summary>Ship family title uses the same size as the capacity line.</summary>
         const float TitleFontSize = MaxFontSize;
+
+        /// <summary>Local-space gap between family title and the population stack.</summary>
         const float TitleGapLocal = 2f;
+
+        /// <summary>Local-space gap between current and capacity lines.</summary>
         const float ValueLineGapLocal = 0.5f;
+
+        /// <summary>TMP outline width for readability over busy planet textures.</summary>
         const float OutlineWidth = 0.2f;
+
+        /// <summary>TMP face dilate paired with outline so glyphs stay solid.</summary>
         const float FaceDilate = 0.12f;
+
+        /// <summary>Capacity-line alpha vs full team color (current stays opaque).</summary>
+        const float MaxLineAlpha = 0.6f;
+
+        /// <summary>Slightly brighter alpha on the <c>+ bonus</c> span so the extra capacity reads as a boost.</summary>
+        const float BonusSpanAlpha = 0.9f;
+
         static readonly int RenderQueueOverlay = (int)RenderQueue.Overlay;
 
+        /// <summary>[TITAN-ORBIT] Stable planet id from <see cref="PlanetState.PlanetId"/> — set by Configure.</summary>
         [SerializeField] int planetId;
 
         Transform _labelRoot;
@@ -29,6 +59,7 @@ namespace TitanOrbit.Game
 
         static PlanetShipFamilyConfig _shipFamilyConfig;
 
+        /// <summary>One vertical stack: current people on top, capacity (max) underneath.</summary>
         struct StatRow
         {
             public Transform Root;
@@ -36,15 +67,21 @@ namespace TitanOrbit.Game
             public TextMeshPro MaxText;
         }
 
+        /// <summary>
+        /// Binds this label to a planet id, builds missing TMP children, and refreshes once.
+        /// Called from <see cref="WorldBodyVisualApplier"/> when the hybrid planet proxy spawns.
+        /// </summary>
+        /// <param name="id">Stable <see cref="PlanetState.PlanetId"/> for ECS lookups.</param>
         public void Configure(int id)
         {
-            // --- Configure ---
+            // --- Bind id and build / refresh label ---
             planetId = id;
             EnsureLabel();
             Refresh();
             ApplyLayout();
         }
 
+        /// <summary>Creates the label hierarchy once, or recovers children after domain reload / reparent.</summary>
         void EnsureLabel()
         {
             // --- Ensure setup ---
@@ -60,6 +97,10 @@ namespace TitanOrbit.Game
             KeepLabelOnPlanetRoot();
         }
 
+        /// <summary>
+        /// Re-wires references if PlanetStatsLabel already exists under this planet (Play Mode recompile).
+        /// </summary>
+        /// <returns>True when title + population TMP children were found and materials applied.</returns>
         bool TryRecoverExistingLabel()
         {
             // --- Attempt resolution ---
@@ -91,6 +132,9 @@ namespace TitanOrbit.Game
             if (_titleText == null || _populationRow.CurrentText == null || _populationRow.MaxText == null)
                 return false;
 
+            // Capacity line uses rich text for "base + bonus" coloring.
+            _populationRow.MaxText.richText = true;
+
             ApplyReadableTextMaterial(_titleText);
             ApplyReadableTextMaterial(_populationRow.CurrentText);
             ApplyReadableTextMaterial(_populationRow.MaxText);
@@ -98,6 +142,7 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>Destroys old single-line PopulationText / previous PlanetStatsLabel before rebuilding.</summary>
         void CleanupLegacyLabels()
         {
             // --- CleanupLegacyLabels ---
@@ -114,6 +159,9 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Registers the label with <see cref="PlanetSpinVisualProxy"/> so spin does not rotate the text.
+        /// </summary>
         void KeepLabelOnPlanetRoot()
         {
             // --- KeepLabelOnPlanetRoot ---
@@ -125,6 +173,7 @@ namespace TitanOrbit.Game
                 spin.KeepOnPlanetRoot(_labelRoot);
         }
 
+        /// <summary>Creates the flat billboard root (rotated for top-down camera, flipped Y for TMP).</summary>
         static Transform CreateLabelRoot(string name, Transform parent)
         {
             // --- Create instance ---
@@ -139,6 +188,7 @@ namespace TitanOrbit.Game
             return go.transform;
         }
 
+        /// <summary>Removes the old people icon if a prior build left one under PopulationRow.</summary>
         static void RemoveLegacyPopulationIcon(Transform populationRow)
         {
             // --- RemoveLegacyPopulationIcon ---
@@ -150,6 +200,7 @@ namespace TitanOrbit.Game
                 Object.Destroy(icon.gameObject);
         }
 
+        /// <summary>Builds Current (large) + Max (capacity) TMP children under one row root.</summary>
         StatRow CreatePopulationRow(Transform parent, string rowName)
         {
             // --- Create instance ---
@@ -158,6 +209,8 @@ namespace TitanOrbit.Game
 
             var currentText = CreateValueText(rowGo.transform, "Current", CurrentFontSize, Color.white);
             var maxText = CreateValueText(rowGo.transform, "Max", MaxFontSize, Color.white);
+            // [TITAN-ORBIT] Rich text lets "base + bonus" tint the boost span without a third TMP.
+            maxText.richText = true;
 
             return new StatRow
             {
@@ -167,6 +220,7 @@ namespace TitanOrbit.Game
             };
         }
 
+        /// <summary>Creates a centered bold TextMeshPro child for title or population digits.</summary>
         static TextMeshPro CreateValueText(Transform parent, string name, float fontSize, Color color)
         {
             // --- Create instance ---
@@ -185,6 +239,7 @@ namespace TitanOrbit.Game
             return tmp;
         }
 
+        /// <summary>Snaps the label root to the planet surface via shared world-body layout helpers.</summary>
         void ApplyLayout()
         {
             // --- Apply changes ---
@@ -195,6 +250,7 @@ namespace TitanOrbit.Game
             WorldBodyLabelLayout.ApplySnugPlanetLabel(_labelRoot, transform);
         }
 
+        /// <summary>Stacks current above capacity inside the population row (local Y).</summary>
         static void LayoutStatRow(ref StatRow row)
         {
             // --- LayoutStatRow ---
@@ -223,6 +279,7 @@ namespace TitanOrbit.Game
                 0f);
         }
 
+        /// <summary>Preferred height of the current + gap + capacity stack.</summary>
         static float GetStatRowHeight(StatRow row)
         {
             // --- Compute value ---
@@ -232,6 +289,10 @@ namespace TitanOrbit.Game
             return row.CurrentText.preferredHeight + ValueLineGapLocal + row.MaxText.preferredHeight;
         }
 
+        /// <summary>
+        /// Centers title (optional) and population row as one block on the planet label root.
+        /// </summary>
+        /// <param name="showTitle">False when this planet has no ship family name.</param>
         void LayoutLabelBlock(bool showTitle)
         {
             // --- LayoutLabelBlock ---
@@ -267,6 +328,7 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>Resolves TMP default font, then project fallback assets.</summary>
         static TMP_FontAsset ResolveFont()
         {
             // --- Resolve value ---
@@ -285,6 +347,7 @@ namespace TitanOrbit.Game
 #endif
         }
 
+        /// <summary>Enables outline + dilate and pushes the material into the Overlay queue.</summary>
         static void ApplyReadableTextMaterial(TMP_Text text)
         {
             // --- Apply changes ---
@@ -311,12 +374,14 @@ namespace TitanOrbit.Game
                 renderer.sortingOrder = TextSortingOrder;
         }
 
+        /// <summary>Returns <paramref name="color"/> with a replaced alpha channel.</summary>
         static Color WithAlpha(Color color, float alpha)
         {
             color.a = alpha;
             return color;
         }
 
+        /// <summary>Lazy-loads the ship-family ScriptableObject used for planet title names.</summary>
         static PlanetShipFamilyConfig ShipFamilyConfig
         {
             get
@@ -331,6 +396,9 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Resolves the display title for this planet's ship family (designer name or camel-split id).
+        /// </summary>
         static string ResolveShipFamilyTitle(in PlanetState state)
         {
             // --- Resolve value ---
@@ -355,6 +423,28 @@ namespace TitanOrbit.Game
             return DisplayNameFormatting.SplitCamelCase(familyId.Trim());
         }
 
+        /// <summary>
+        /// Formats the capacity line under current population.
+        /// No bonus → just the base max digits. With triangle bonus → <c>base + bonus</c>
+        /// (no words — large current above / smaller capacity below already reads as now vs max).
+        /// </summary>
+        /// <param name="baseMax">Size × level cap with no territory boost.</param>
+        /// <param name="bonusAmount">Extra people from connection triangles (≥ 0).</param>
+        /// <param name="teamColor">Owning team tint for rich-text spans.</param>
+        static string FormatCapacityLine(int baseMax, int bonusAmount, Color teamColor)
+        {
+            // --- Plain base only when no triangle boost ---
+            if (bonusAmount <= 0)
+                return baseMax.ToString();
+
+            // --- "175 + 25": base dimmer, +bonus a bit brighter so the boost is obvious ---
+            // [TITAN-ORBIT] No "bonus" / "current" labels — hierarchy + the plus sign teach the meaning.
+            string baseHex = ColorUtility.ToHtmlStringRGBA(WithAlpha(teamColor, MaxLineAlpha));
+            string bonusHex = ColorUtility.ToHtmlStringRGBA(WithAlpha(teamColor, BonusSpanAlpha));
+            return $"<color=#{baseHex}>{baseMax}</color> <color=#{bonusHex}>+ {bonusAmount}</color>";
+        }
+
+        /// <summary>[UNITY] Per-frame refresh so population and triangle bonuses stay live.</summary>
         void LateUpdate()
         {
             // --- Per-frame refresh ---
@@ -365,6 +455,9 @@ namespace TitanOrbit.Game
             ApplyLayout();
         }
 
+        /// <summary>
+        /// Pulls planet state + triangle bonus, then writes title / current / capacity text and layout.
+        /// </summary>
         void Refresh()
         {
             // --- Refresh ---
@@ -372,31 +465,48 @@ namespace TitanOrbit.Game
                 return;
 
             EnsureLabel();
-            if (_titleText == null || _populationRow.CurrentText == null)
+            if (_titleText == null || _populationRow.CurrentText == null || _populationRow.MaxText == null)
                 return;
 
             RemoveLegacyPopulationIcon(_populationRow.Root);
 
+            // [HYBRID] Replicated PlanetState — Population is the live count clients already trust.
             if (!EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
                 return;
 
+            // Prefer ECS scale when available (proxy lossyScale can drift from sim).
             float planetScale = transform.lossyScale.x;
             if (EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out float ecsScale, out _))
                 planetScale = ecsScale;
 
-            int maxPopulation = PlanetPopulationMath.GetMaxPopulation(planetScale, state.PlanetLevel);
+            // --- Capacity: base from size/level, bonus from client connection triangles ---
+            // [TITAN-ORBIT] PlanetGrowthState.ConnectionBonusFraction is server-only; we recompute
+            // the same stacked corner bonus from PlanetConnectionGraphCache for the label.
+            float bonusFraction = PlanetConnectionGraphCache.GetStackedConnectionBonusFraction(planetId);
+            PlanetPopulationMath.GetMaxPopulationBreakdown(
+                planetScale,
+                state.PlanetLevel,
+                bonusFraction,
+                out int baseMax,
+                out int bonusAmount);
+
             Color teamColor = state.Ownership.ToColor();
 
+            // --- Family title (optional) ---
             string familyTitle = ResolveShipFamilyTitle(state);
             bool hasTitle = !string.IsNullOrEmpty(familyTitle);
             _titleText.gameObject.SetActive(hasTitle);
             _titleText.text = hasTitle ? familyTitle : string.Empty;
             _titleText.color = teamColor;
 
+            // --- Population: large current on top, capacity (base or base + bonus) below ---
             _populationRow.CurrentText.text = state.Population.ToString();
-            _populationRow.MaxText.text = maxPopulation.ToString();
             _populationRow.CurrentText.color = teamColor;
-            _populationRow.MaxText.color = WithAlpha(teamColor, 0.6f);
+
+            _populationRow.MaxText.richText = true;
+            _populationRow.MaxText.text = FormatCapacityLine(baseMax, bonusAmount, teamColor);
+            // Vertex color still sets default tint when rich-text spans are absent (no-bonus case).
+            _populationRow.MaxText.color = WithAlpha(teamColor, MaxLineAlpha);
 
             LayoutLabelBlock(hasTitle);
         }

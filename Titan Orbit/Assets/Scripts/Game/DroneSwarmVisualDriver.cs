@@ -25,7 +25,8 @@ namespace TitanOrbit.Game
     /// </para>
     /// <para>
     /// Combat fire is server-only (<c>DroneSwarmCombatSystem</c>). Shield block walls use the same
-    /// sorted-enemy assignment as server hit-scan.
+    /// sorted-enemy assignment as server hit-scan. Mesh uniform scale follows
+    /// <see cref="StoreItemData.GetDroneVisualScale"/> (level 6 = prefab size 1.0).
     /// </para>
     /// </summary>
     public sealed class DroneSwarmVisualDriver : MonoBehaviour
@@ -54,6 +55,8 @@ namespace TitanOrbit.Game
         {
             public int SlotIndex;
             public StoreItemType ItemType;
+            /// <summary>Purchase level — drives <see cref="StoreItemData.GetDroneVisualScale"/>.</summary>
+            public int ItemLevel;
             public GameObject Instance;
             public float BuzzPhase;
         }
@@ -478,7 +481,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Layout hash: item types for living drones only (charges &gt; 0). HP ticks do not rebuild.
+        /// Layout hash: item types + purchase levels for living drones. HP ticks do not rebuild.
         /// </summary>
         static int ComputeLayoutFingerprint(DynamicBuffer<EquippedEquipmentElement> buf)
         {
@@ -495,6 +498,7 @@ namespace TitanOrbit.Game
                     living++;
                     fp = fp * 31 + i;
                     fp = fp * 31 + e.ItemType;
+                    fp = fp * 31 + e.ItemLevel;
                 }
 
                 return living == 0 ? 0 : fp;
@@ -521,11 +525,11 @@ namespace TitanOrbit.Game
                 var type = (StoreItemType)e.ItemType;
                 if (!StoreItemData.IsDrone(type) || e.RemainingCharges <= 0)
                     continue;
-                SpawnVisual(group, i, type, networkId);
+                SpawnVisual(group, i, type, networkId, e.ItemLevel);
             }
         }
 
-        void SpawnVisual(ShipDroneGroup group, int slotIndex, StoreItemType itemType, int networkId)
+        void SpawnVisual(ShipDroneGroup group, int slotIndex, StoreItemType itemType, int networkId, int itemLevel)
         {
             GameObject prefab = GetPrefab(itemType);
             if (prefab == null || group.Hub == null)
@@ -540,10 +544,17 @@ namespace TitanOrbit.Game
             instance.name = $"{itemType}_Slot{slotIndex}";
             StripPhysicsAndNetwork(instance);
 
+            // --- Level-based size (prefab authored for reference max level = scale 1) ---
+            // ItemLevel 0 = legacy equipment bought before leveling — keep full size.
+            int level = itemLevel > 0 ? itemLevel : StoreItemData.DroneReferenceMaxLevel;
+            float visualScale = StoreItemData.GetDroneVisualScale(level);
+            instance.transform.localScale = Vector3.one * visualScale;
+
             group.Visuals.Add(new SlotVisual
             {
                 SlotIndex = slotIndex,
                 ItemType = itemType,
+                ItemLevel = level,
                 Instance = instance,
                 BuzzPhase = DroneSwarmLogic.DeterministicBasePhaseRad(networkId, slotIndex, itemType),
             });
@@ -691,6 +702,10 @@ namespace TitanOrbit.Game
                     * DroneSwarmLogic.BuzzAmplitude * BuzzVerticalFraction;
                 local.y = DroneSwarmLogic.PresentationLiftY + buzzY;
                 v.Instance.transform.localPosition = local;
+
+                // Keep level scale even if something else resets localScale on the prefab root.
+                float visualScale = StoreItemData.GetDroneVisualScale(Mathf.Max(1, v.ItemLevel));
+                v.Instance.transform.localScale = Vector3.one * visualScale;
 
                 ApplyFacing(v, pose.WorldPosition, basisPos, forward, ownerTeam, networkId, dt, isLocalOwner);
                 group.Visuals[i] = v;

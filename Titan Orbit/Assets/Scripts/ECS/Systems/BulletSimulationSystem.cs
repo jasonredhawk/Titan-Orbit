@@ -486,28 +486,33 @@ namespace TitanOrbit.ECS
 
                 // Friendly moons do not absorb — bullets pass through to rocks/ships behind.
                 var attackerTeam = (TeamId)b.OwnerTeam;
-                if (PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.ValueRO.Ownership, attackerTeam))
-                    continue;
-
-                float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
-                    planetSize,
-                    planetState.ValueRO.IsHomePlanet,
-                    moonState.ValueRO.CurrentShield);
-
-                if (BulletCollision.SegmentHitsMoonNear(
-                        from, to, planetPos, planetSize,
-                        planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, moonElapsed,
-                        planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out float3 moonHit) &&
-                    TryKeepNearestHit(from, to, moonHit, ref bestT, ref bestHit))
+                // [TITAN-ORBIT] Filtered drones skip moon HP (mining/fighter are rocks-only or ships-only).
+                if (AllowsHitKind(b.DamageFilter, BulletHitKind.Moon) &&
+                    !PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.ValueRO.Ownership, attackerTeam))
                 {
-                    bestKind = BulletHitKind.Moon;
-                    bestEntity = planetEntity;
+                    float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                        planetSize,
+                        planetState.ValueRO.IsHomePlanet,
+                        moonState.ValueRO.CurrentShield);
+
+                    if (BulletCollision.SegmentHitsMoonNear(
+                            from, to, planetPos, planetSize,
+                            planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, moonElapsed,
+                            planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out float3 moonHit) &&
+                        TryKeepNearestHit(from, to, moonHit, ref bestT, ref bestHit))
+                    {
+                        bestKind = BulletHitKind.Moon;
+                        bestEntity = planetEntity;
+                    }
                 }
             }
 
             // --- Enemy ships only (pass through self + friendly team) ---
             // [TITAN-ORBIT] Same-team skip covers allies; OwnerNetworkId covers own hull even if
             // Team is briefly unset during Join Team / respawn (muzzle sits inside own radius).
+            // Mining drones skip ships entirely (AsteroidsOnly).
+            if (AllowsHitKind(b.DamageFilter, BulletHitKind.Ship))
+            {
             foreach (var (shipState, shipTransform, shipEntity) in SystemAPI
                          .Query<RefRO<ShipState>, RefRO<LocalTransform>>()
                          .WithAll<ShipTag>()
@@ -533,8 +538,12 @@ namespace TitanOrbit.ECS
                 bestKind = BulletHitKind.Ship;
                 bestEntity = shipEntity;
             }
+            }
 
             // --- Asteroids ---
+            // [TITAN-ORBIT] Fighter drones skip rocks (ShipsOnly) — bolts pass through asteroids.
+            if (AllowsHitKind(b.DamageFilter, BulletHitKind.Asteroid))
+            {
             foreach (var (asteroidState, asteroidTransform, asteroidEntity) in SystemAPI
                          .Query<RefRO<AsteroidState>, RefRO<LocalTransform>>()
                          .WithAll<AsteroidTag>()
@@ -555,8 +564,11 @@ namespace TitanOrbit.ECS
                 bestKind = BulletHitKind.Asteroid;
                 bestEntity = asteroidEntity;
             }
+            }
 
             // --- Enemy people transports ---
+            if (AllowsHitKind(b.DamageFilter, BulletHitKind.Transport))
+            {
             foreach (var (transport, transform, transportEntity) in SystemAPI
                          .Query<RefRO<PeopleTransportState>, RefRO<LocalTransform>>()
                          .WithAll<PeopleTransportTag>()
@@ -582,10 +594,13 @@ namespace TitanOrbit.ECS
                 bestKind = BulletHitKind.Transport;
                 bestEntity = transportEntity;
             }
+            }
 
             // --- Derived drones (shield wall / escort bodies) ---
             // [TITAN-ORBIT] No PhysX — sphere tests vs EvaluateSlotPose centers rebuilt this tick.
-            if (DroneSwarmHitScan.TryKeepNearestDroneHit(
+            // Mining bolts pass through enemy drones; fighters can still clip escort HP.
+            if (AllowsHitKind(b.DamageFilter, BulletHitKind.Drone) &&
+                DroneSwarmHitScan.TryKeepNearestDroneHit(
                     in b, from, to, mapW, mapH, s_DroneHitTargets,
                     ref bestT, ref bestHit, out int droneIdx))
             {
@@ -718,6 +733,35 @@ namespace TitanOrbit.ECS
             bestT = t;
             bestHit = candidateHit;
             return true;
+        }
+
+        /// <summary>
+        /// Whether this bullet's <see cref="BulletDamageFilter"/> may collide with / damage
+        /// the given hit kind. Planets always block (solid world). Mining drones skip ships;
+        /// fighters skip asteroids — Starblast-style pass-through.
+        /// </summary>
+        static bool AllowsHitKind(BulletDamageFilter filter, BulletHitKind kind)
+        {
+            // --- Planet bodies always block (no HP) ---
+            if (kind == BulletHitKind.Planet)
+                return true;
+
+            switch (filter)
+            {
+                case BulletDamageFilter.Everything:
+                    return true;
+
+                case BulletDamageFilter.AsteroidsOnly:
+                    // Mining: rocks only. Pass through ships, drones, transports, moons.
+                    return kind == BulletHitKind.Asteroid;
+
+                case BulletDamageFilter.ShipsOnly:
+                    // Fighter: enemy ships + their drones. Pass through asteroids / transports / moons.
+                    return kind == BulletHitKind.Ship || kind == BulletHitKind.Drone;
+
+                default:
+                    return true;
+            }
         }
     }
 }

@@ -13,6 +13,10 @@ namespace TitanOrbit.Entities
         public int itemType;
         public string componentId;
         public int remainingCharges;
+        /// <summary>
+        /// Purchase level for fighter/mining/shield drones (ship level at buy time). 0 for other items.
+        /// </summary>
+        public int itemLevel;
 
         // --- Local transform (ship hull space) ---
         public float localPosX;
