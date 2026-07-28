@@ -33,6 +33,16 @@ namespace TitanOrbit.Game
         StatRow _gemRow;
         StatRow _shieldRow;
 
+        int _cachedCurrentGems = int.MinValue;
+        int _cachedMaxGems = int.MinValue;
+        int _cachedCurrentShield = int.MinValue;
+        int _cachedMaxShield = int.MinValue;
+
+        static readonly Color GemsColor = ParseHexColor(GemsColorHex);
+        static readonly Color GemsMaxColor = ParseHexColor(GemsMaxColorHex);
+        static readonly Color ShieldColor = ParseHexColor(ShieldColorHex);
+        static readonly Color ShieldMaxColor = ParseHexColor(ShieldMaxColorHex);
+
         struct StatRow
         {
             public Transform Root;
@@ -270,22 +280,28 @@ namespace TitanOrbit.Game
 
         void LateUpdate()
         {
-            ApplyLayout();
-            Refresh();
+            // Dirty Refresh skips ApplyLayout when gem/shield digits unchanged.
+            if (Refresh())
+                ApplyLayout();
         }
 
-        void Refresh()
+        /// <summary>
+        /// Updates gem/shield TMP only when values change.
+        /// [TITAN-ORBIT] Per-frame ParseHexColor + .text on every moon was ~1.4ms (Profiler 41220).
+        /// </summary>
+        /// <returns>True when layout should run.</returns>
+        bool Refresh()
         {
             // --- Refresh ---
             if (planetId == 0)
-                return;
+                return false;
 
             EnsureLabel();
             if (_gemRow.CurrentText == null || _shieldRow.CurrentText == null)
-                return;
+                return false;
 
             if (!EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
-                return;
+                return false;
 
             int currentGems = Mathf.RoundToInt(state.CurrentGems);
             int maxGems = Mathf.RoundToInt(PlanetEconomyMath.GetMaxGemsForLevel(state.PlanetLevel));
@@ -303,19 +319,32 @@ namespace TitanOrbit.Game
                 currentShield = maxShield;
             }
 
+            if (_cachedCurrentGems == currentGems &&
+                _cachedMaxGems == maxGems &&
+                _cachedCurrentShield == currentShield &&
+                _cachedMaxShield == maxShield)
+            {
+                return false;
+            }
+
+            _cachedCurrentGems = currentGems;
+            _cachedMaxGems = maxGems;
+            _cachedCurrentShield = currentShield;
+            _cachedMaxShield = maxShield;
+
             _gemRow.CurrentText.text = currentGems.ToString();
             _gemRow.MaxText.text = maxGems.ToString();
-            _gemRow.CurrentText.color = ParseHexColor(GemsColorHex);
-            _gemRow.MaxText.color = ParseHexColor(GemsMaxColorHex);
+            _gemRow.CurrentText.color = GemsColor;
+            _gemRow.MaxText.color = GemsMaxColor;
 
             _shieldRow.CurrentText.text = currentShield.ToString();
             _shieldRow.MaxText.text = maxShield.ToString();
-            _shieldRow.CurrentText.color = ParseHexColor(ShieldColorHex);
-            _shieldRow.MaxText.color = ParseHexColor(ShieldMaxColorHex);
+            _shieldRow.CurrentText.color = ShieldColor;
+            _shieldRow.MaxText.color = ShieldMaxColor;
 
             LayoutLabelBlock(ref _gemRow, ref _shieldRow);
+            return true;
         }
-
         static class GemMoonLabelIcons
         {
             const string GemIconPath =

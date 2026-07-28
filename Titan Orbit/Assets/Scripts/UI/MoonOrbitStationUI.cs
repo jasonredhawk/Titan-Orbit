@@ -39,6 +39,14 @@ namespace TitanOrbit.UI
         int _homePlanetId;
         float _contributedGems;
         float _gemsRequestAccum;
+        /// <summary>
+        /// Accrual for throttled full ECS refresh (tree/store). Deposit digits update every frame /
+        /// on beat — rebuilding the ship tree every Update was a major Orbit Menu hitch.
+        /// </summary>
+        float _fullUiRefreshAccum;
+        const float FullUiRefreshIntervalSeconds = 0.25f;
+        int _lastFullRefreshShipLevel = int.MinValue;
+        int _lastFullRefreshBranch = int.MinValue;
         bool _visible;
         readonly List<int> _nextTargets = new List<int>(4);
 
@@ -173,7 +181,29 @@ namespace TitanOrbit.UI
             if (!_visible)
                 return;
 
-            RefreshFromEcs();
+            // --- Deposit column: live while depositing (metronome + ghost cargo) ---
+            // [TITAN-ORBIT] Do NOT call full RefreshFromEcs every frame — that rewrote store TMP,
+            // refreshed the whole ship tree visual state, and repainted sidebar every Update,
+            // which made the 0.5s deposit metronome feel choppy (GC + main-thread hitch).
+            RefreshGemDepositFlow();
+
+            // --- Tree / store: throttle unless level/branch changed ---
+            bool needImmediateFull = false;
+            if (EcsGameBridge.TryGetLocalShipState(out var ship))
+            {
+                int lvl = Mathf.Max(1, ship.ShipLevel);
+                int branch = Mathf.Max(0, ship.BranchIndex);
+                if (lvl != _lastFullRefreshShipLevel || branch != _lastFullRefreshBranch)
+                    needImmediateFull = true;
+            }
+
+            _fullUiRefreshAccum += Time.deltaTime;
+            if (needImmediateFull || _fullUiRefreshAccum >= FullUiRefreshIntervalSeconds)
+            {
+                _fullUiRefreshAccum = 0f;
+                RefreshFromEcs();
+            }
+
             _gemsRequestAccum += Time.deltaTime;
             // Keep polling while depositing — OnContributedGemsReceived soft-reconciles only.
             if (_gemsRequestAccum >= 1.5f)
@@ -327,6 +357,8 @@ namespace TitanOrbit.UI
             // [NETCODE] BranchIndex is ghosted on ShipState (not only loadout).
             ShipLevel = Mathf.Max(1, ship.ShipLevel);
             BranchIndex = Mathf.Max(0, ship.BranchIndex);
+            _lastFullRefreshShipLevel = ShipLevel;
+            _lastFullRefreshBranch = BranchIndex;
 
             if (EcsGameBridge.TryGetPlanetStateByPlanetId(_storePlanetId, out var storePlanet))
                 StorePlanetLevel = Mathf.Max(1, storePlanet.PlanetLevel);
@@ -609,7 +641,9 @@ namespace TitanOrbit.UI
                 var row = _storeRows[i];
                 if (row?.Label == null)
                     continue;
-                row.Label.text = FormatStoreRowLabel(row.ItemType, level);
+                string label = FormatStoreRowLabel(row.ItemType, level);
+                if (row.Label.text != label)
+                    row.Label.text = label;
             }
         }
 

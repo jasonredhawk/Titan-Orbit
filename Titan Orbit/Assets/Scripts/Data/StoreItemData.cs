@@ -98,8 +98,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Uniform mesh / hit-sphere scale. Prefab size is authored for reference max level
-        /// (scale 1.0). Level 1 is smaller (~0.44×); levels above reference clamp at 1.0.
+        /// Level size multiplier applied on top of the drone prefab's authored localScale.
+        /// 1.0 at <see cref="DroneReferenceMaxLevel"/> (same visual size as before leveling);
+        /// smaller at lower levels (~0.44 at level 1). Levels above reference clamp at 1.0.
         /// </summary>
         public static float GetDroneVisualScale(int itemLevel)
         {

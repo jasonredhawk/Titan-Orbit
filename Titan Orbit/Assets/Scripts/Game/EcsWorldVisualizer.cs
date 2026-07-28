@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Stopwatch = System.Diagnostics.Stopwatch;
 using TitanOrbit;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
@@ -605,6 +606,7 @@ namespace TitanOrbit.Game
             // Incremental counts maintained in RegisterProxyKind / DestroyProxy.
             WorldBodyProxyCount = _worldBodyProxyCountCached;
             MapLoadingProxyCount = _mapLoadingProxyCountCached;
+
         }
 
         /// <summary>

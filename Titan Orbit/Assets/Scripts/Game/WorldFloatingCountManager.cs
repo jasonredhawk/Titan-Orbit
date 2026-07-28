@@ -9,6 +9,8 @@ namespace TitanOrbit.Game
     /// <summary>
     /// [HYBRID] Client-side world floating +/- popups with per-channel visibility toggles.
     /// Spawned by EcsFloatingCountPresenter on replicated state deltas. Singleton accessed via Instance.
+    /// Pools <see cref="FloatingCountPopup"/> GameObjects so deposit metronome / gem pickups do not
+    /// Allocate+Destroy a new GO every beat (Profiler Instantiates under floating counts).
     /// </summary>
     public class WorldFloatingCountManager : MonoBehaviour
     {
@@ -55,6 +57,11 @@ namespace TitanOrbit.Game
         [SerializeField] Color floatingCountHealthPositiveColor = new Color(0.2f, 0.9f, 0.3f, 1f);
         [SerializeField] Color floatingCountHealthNegativeColor = new Color(0.95f, 0.25f, 0.2f, 1f);
         [SerializeField] Color floatingCountImpactForceColor = new Color(1f, 0.75f, 0.2f, 1f);
+
+        /// <summary>Inactive popups ready for reuse (deposit metronome / pickups).</summary>
+        readonly Stack<FloatingCountPopup> _popupPool = new Stack<FloatingCountPopup>(16);
+
+        Camera _cachedCamera;
 
         public FloatingCountChannelVisibility FloatingCountVisibility => floatingCountVisibility;
 
@@ -389,15 +396,16 @@ namespace TitanOrbit.Game
             if (string.IsNullOrEmpty(message) || shipAnchor == null)
                 return;
 
-            if (Camera.main == null)
+            if (_cachedCamera == null)
+                _cachedCamera = Camera.main;
+            if (_cachedCamera == null)
                 return;
 
-            var go = new GameObject(popupName);
+            var popup = RentPopup(popupName);
             ComputeShipFollowSpawn(shipAnchor, out float screenUpOffset, out Vector3 initialMotionOffset);
-            go.transform.position = shipAnchor.position;
-            ApplyShipFollowTransformScale(go.transform, shipAnchor);
+            popup.transform.position = shipAnchor.position;
+            ApplyShipFollowTransformScale(popup.transform, shipAnchor);
 
-            var popup = go.AddComponent<FloatingCountPopup>();
             popup.Initialize(
                 message,
                 icon,
@@ -430,7 +438,9 @@ namespace TitanOrbit.Game
         {
             if (string.IsNullOrEmpty(message))
                 return;
-            if (Camera.main == null)
+            if (_cachedCamera == null)
+                _cachedCamera = Camera.main;
+            if (_cachedCamera == null)
                 return;
 
             // --- Place outside planet (or other body) when needed ---
@@ -439,13 +449,12 @@ namespace TitanOrbit.Game
             if (avoidRadius > 0.01f)
                 spawnPos = PlaceOutsideAvoidSphere(worldPosition, avoidCenter, avoidRadius, out outwardBias);
 
-            var go = new GameObject(popupName);
-            go.transform.position = spawnPos;
+            var popup = RentPopup(popupName);
+            popup.transform.position = spawnPos;
             // [TITAN-ORBIT] Ship-attached popups inherit hull lossyScale (~ShipPresentationScale).
             // World popups must match that scale or TMP at shipFloatingFontSize looks huge.
-            go.transform.localScale = Vector3.one * BodyCollisionMath.ShipPresentationScale;
+            popup.transform.localScale = Vector3.one * BodyCollisionMath.ShipPresentationScale;
 
-            var popup = go.AddComponent<FloatingCountPopup>();
             popup.Initialize(
                 message,
                 icon,
@@ -461,6 +470,39 @@ namespace TitanOrbit.Game
                 followScreenUpOffset: 0f,
                 // Bias the first rise frame away from the planet so fade-up stays in empty space.
                 initialWorldMotionOffset: outwardBias);
+        }
+
+        /// <summary>Takes a pooled popup or creates one; wires recycle callback.</summary>
+        FloatingCountPopup RentPopup(string popupName)
+        {
+            FloatingCountPopup popup = null;
+            while (_popupPool.Count > 0 && popup == null)
+                popup = _popupPool.Pop();
+
+            if (popup == null)
+            {
+                var go = new GameObject(popupName);
+                popup = go.AddComponent<FloatingCountPopup>();
+            }
+            else
+            {
+                popup.gameObject.name = popupName;
+                popup.gameObject.SetActive(true);
+            }
+
+            popup.OnFinished = ReturnPopup;
+            return popup;
+        }
+
+        /// <summary>Deactivates and stacks a finished popup for reuse.</summary>
+        void ReturnPopup(FloatingCountPopup popup)
+        {
+            if (popup == null)
+                return;
+            popup.OnFinished = null;
+            popup.gameObject.SetActive(false);
+            popup.transform.SetParent(transform, false);
+            _popupPool.Push(popup);
         }
 
         /// <summary>

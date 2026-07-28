@@ -25,8 +25,8 @@ namespace TitanOrbit.Game
     /// </para>
     /// <para>
     /// Combat fire is server-only (<c>DroneSwarmCombatSystem</c>). Shield block walls use the same
-    /// sorted-enemy assignment as server hit-scan. Mesh uniform scale follows
-    /// <see cref="StoreItemData.GetDroneVisualScale"/> (level 6 = prefab size 1.0).
+    /// sorted-enemy assignment as server hit-scan. Mesh scale =
+    /// prefab localScale × <see cref="StoreItemData.GetDroneVisualScale"/> (L6 mul = 1.0).
     /// </para>
     /// </summary>
     public sealed class DroneSwarmVisualDriver : MonoBehaviour
@@ -57,6 +57,11 @@ namespace TitanOrbit.Game
             public StoreItemType ItemType;
             /// <summary>Purchase level — drives <see cref="StoreItemData.GetDroneVisualScale"/>.</summary>
             public int ItemLevel;
+            /// <summary>
+            /// Prefab root localScale captured at spawn (before level mul).
+            /// [TITAN-ORBIT] Level mul is applied on top of this — never replace with Vector3.one.
+            /// </summary>
+            public Vector3 PrefabLocalScale;
             public GameObject Instance;
             public float BuzzPhase;
         }
@@ -355,7 +360,8 @@ namespace TitanOrbit.Game
                     _groupsByNetId.Remove(id);
                 }
             }
-        }
+        
+}
 
         /// <summary>
         /// Loads drone mesh prefab. Player builds use Resources copies under Assets/Resources/;
@@ -544,17 +550,21 @@ namespace TitanOrbit.Game
             instance.name = $"{itemType}_Slot{slotIndex}";
             StripPhysicsAndNetwork(instance);
 
-            // --- Level-based size (prefab authored for reference max level = scale 1) ---
-            // ItemLevel 0 = legacy equipment bought before leveling — keep full size.
+            // --- Level-based size ---
+            // [TITAN-ORBIT] Prefab localScale is the authored max-level size. Multiply by
+            // GetDroneVisualScale (1.0 at L6, smaller at L1) — do NOT force Vector3.one.
+            // ItemLevel 0 = legacy equipment — keep full prefab size.
             int level = itemLevel > 0 ? itemLevel : StoreItemData.DroneReferenceMaxLevel;
-            float visualScale = StoreItemData.GetDroneVisualScale(level);
-            instance.transform.localScale = Vector3.one * visualScale;
+            Vector3 prefabScale = instance.transform.localScale;
+            float levelMul = StoreItemData.GetDroneVisualScale(level);
+            instance.transform.localScale = prefabScale * levelMul;
 
             group.Visuals.Add(new SlotVisual
             {
                 SlotIndex = slotIndex,
                 ItemType = itemType,
                 ItemLevel = level,
+                PrefabLocalScale = prefabScale,
                 Instance = instance,
                 BuzzPhase = DroneSwarmLogic.DeterministicBasePhaseRad(networkId, slotIndex, itemType),
             });
@@ -703,9 +713,9 @@ namespace TitanOrbit.Game
                 local.y = DroneSwarmLogic.PresentationLiftY + buzzY;
                 v.Instance.transform.localPosition = local;
 
-                // Keep level scale even if something else resets localScale on the prefab root.
-                float visualScale = StoreItemData.GetDroneVisualScale(Mathf.Max(1, v.ItemLevel));
-                v.Instance.transform.localScale = Vector3.one * visualScale;
+                // Prefab authored size × level mul (L6 = 1.0 → same as pre-leveling drones).
+                float levelMul = StoreItemData.GetDroneVisualScale(Mathf.Max(1, v.ItemLevel));
+                v.Instance.transform.localScale = v.PrefabLocalScale * levelMul;
 
                 ApplyFacing(v, pose.WorldPosition, basisPos, forward, ownerTeam, networkId, dt, isLocalOwner);
                 group.Visuals[i] = v;

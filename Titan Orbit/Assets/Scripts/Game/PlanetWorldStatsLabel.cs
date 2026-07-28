@@ -18,6 +18,22 @@ namespace TitanOrbit.Game
     /// </summary>
     public class PlanetWorldStatsLabel : MonoBehaviour
     {
+        /// <summary>Last painted population — skip TMP writes when unchanged.</summary>
+        int _cachedPopulation = int.MinValue;
+        int _cachedBaseMax = int.MinValue;
+        int _cachedBonusAmount = int.MinValue;
+        TeamId _cachedTeam;
+        int _cachedFamilyConfigIndex = int.MinValue;
+        bool _cachedIsHomePlanet;
+        bool _hasCachedPaint;
+        string _cachedTitle;
+        bool _legacyIconRemoved;
+        /// <summary>
+        /// True after label TMP children are wired and materials applied once.
+        /// [TITAN-ORBIT] EnsureLabel used to re-enter TryRecoverExistingLabel every LateUpdate and
+        /// call fontMaterial (TMP instance alloc) ×3 per planet → ~16KB GC (Profiler frame 2224).
+        /// </summary>
+        bool _labelReady;
         /// <summary>[UNITY] Sorting order so planet text draws above world meshes.</summary>
         const int TextSortingOrder = 5001;
 
@@ -84,9 +100,20 @@ namespace TitanOrbit.Game
         /// <summary>Creates the label hierarchy once, or recovers children after domain reload / reparent.</summary>
         void EnsureLabel()
         {
+            // --- Already ready — skip Find / fontMaterial (hot LateUpdate path) ---
+            if (_labelReady &&
+                _labelRoot != null &&
+                _titleText != null &&
+                _populationRow.CurrentText != null &&
+                _populationRow.MaxText != null)
+                return;
+
             // --- Ensure setup ---
             if (TryRecoverExistingLabel())
+            {
+                _labelReady = true;
                 return;
+            }
 
             CleanupLegacyLabels();
 
@@ -95,6 +122,7 @@ namespace TitanOrbit.Game
             _populationRow = CreatePopulationRow(_labelRoot, "PopulationRow");
 
             KeepLabelOnPlanetRoot();
+            _labelReady = true;
         }
 
         /// <summary>
@@ -444,44 +472,53 @@ namespace TitanOrbit.Game
             return $"<color=#{baseHex}>{baseMax}</color> <color=#{bonusHex}>+ {bonusAmount}</color>";
         }
 
-        /// <summary>[UNITY] Per-frame refresh so population and triangle bonuses stay live.</summary>
+        /// <summary>
+        /// [UNITY] Per-frame refresh so population and triangle bonuses stay live.
+        /// Dirty-checks TMP writes — assigning .text every frame rebuilt meshes + GC
+        /// (~4ms / 93KB across labels, Profiler frame 41220).
+        /// </summary>
         void LateUpdate()
         {
             // --- Per-frame refresh ---
             if (planetId == 0)
                 return;
 
-            Refresh();
-            ApplyLayout();
+            bool dirty = Refresh();
+            if (dirty)
+                ApplyLayout();
         }
 
         /// <summary>
-        /// Pulls planet state + triangle bonus, then writes title / current / capacity text and layout.
+        /// Pulls planet state + triangle bonus, then writes title / current / capacity when dirty.
         /// </summary>
-        void Refresh()
+        /// <returns>True when TMP / layout need ApplyLayout.</returns>
+        bool Refresh()
         {
             // --- Refresh ---
             if (planetId == 0)
-                return;
+                return false;
 
             EnsureLabel();
             if (_titleText == null || _populationRow.CurrentText == null || _populationRow.MaxText == null)
-                return;
+                return false;
 
-            RemoveLegacyPopulationIcon(_populationRow.Root);
+            if (!_legacyIconRemoved)
+            {
+                RemoveLegacyPopulationIcon(_populationRow.Root);
+                _legacyIconRemoved = true;
+            }
 
             // [HYBRID] Replicated PlanetState — Population is the live count clients already trust.
             if (!EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
-                return;
+                return false;
 
             // Prefer ECS scale when available (proxy lossyScale can drift from sim).
+            // Pose is frame-cached in EcsGameBridge — cheap after the first label this frame.
             float planetScale = transform.lossyScale.x;
             if (EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out float ecsScale, out _))
                 planetScale = ecsScale;
 
             // --- Capacity: base from size/level, bonus from client connection triangles ---
-            // [TITAN-ORBIT] PlanetGrowthState.ConnectionBonusFraction is server-only; we recompute
-            // the same stacked corner bonus from PlanetConnectionGraphCache for the label.
             float bonusFraction = PlanetConnectionGraphCache.GetStackedConnectionBonusFraction(planetId);
             PlanetPopulationMath.GetMaxPopulationBreakdown(
                 planetScale,
@@ -490,25 +527,47 @@ namespace TitanOrbit.Game
                 out int baseMax,
                 out int bonusAmount);
 
-            Color teamColor = state.Ownership.ToColor();
+            // --- Dirty check BEFORE ResolveShipFamilyTitle ---
+            // [TITAN-ORBIT] Resolve used Trim()/SplitCamelCase every LateUpdate × N planets → ~15KB GC
+            // (Profiler frame 5199). Family title only depends on id/config/home — not live population.
+            if (_hasCachedPaint &&
+                _cachedPopulation == state.Population &&
+                _cachedBaseMax == baseMax &&
+                _cachedBonusAmount == bonusAmount &&
+                _cachedTeam == state.Ownership &&
+                _cachedFamilyConfigIndex == state.ShipFamilyConfigIndex &&
+                _cachedIsHomePlanet == state.IsHomePlanet)
+            {
+                return false;
+            }
 
-            // --- Family title (optional) ---
             string familyTitle = ResolveShipFamilyTitle(state);
             bool hasTitle = !string.IsNullOrEmpty(familyTitle);
+
+            _hasCachedPaint = true;
+            _cachedPopulation = state.Population;
+            _cachedBaseMax = baseMax;
+            _cachedBonusAmount = bonusAmount;
+            _cachedTeam = state.Ownership;
+            _cachedFamilyConfigIndex = state.ShipFamilyConfigIndex;
+            _cachedIsHomePlanet = state.IsHomePlanet;
+            _cachedTitle = familyTitle;
+
+            Color teamColor = state.Ownership.ToColor();
+
             _titleText.gameObject.SetActive(hasTitle);
             _titleText.text = hasTitle ? familyTitle : string.Empty;
             _titleText.color = teamColor;
 
-            // --- Population: large current on top, capacity (base or base + bonus) below ---
             _populationRow.CurrentText.text = state.Population.ToString();
             _populationRow.CurrentText.color = teamColor;
 
             _populationRow.MaxText.richText = true;
             _populationRow.MaxText.text = FormatCapacityLine(baseMax, bonusAmount, teamColor);
-            // Vertex color still sets default tint when rich-text spans are absent (no-bonus case).
             _populationRow.MaxText.color = WithAlpha(teamColor, MaxLineAlpha);
 
             LayoutLabelBlock(hasTitle);
+            return true;
         }
     }
 }

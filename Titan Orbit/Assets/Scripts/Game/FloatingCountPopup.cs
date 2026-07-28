@@ -1,3 +1,4 @@
+using System;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -7,6 +8,8 @@ namespace TitanOrbit.Game
     /// <summary>
     /// [HYBRID] Runtime-created world-space popup: rises on the play plane, billboards to camera,
     /// fades in then out. Spawned by <see cref="WorldFloatingCountManager"/> — cosmetic feedback only.
+    /// Supports recycle into a pool (see <see cref="OnFinished"/>) so deposit metronome beats do not
+    /// Instantiate/Destroy a new GO every 0.5s.
     /// </summary>
     public class FloatingCountPopup : MonoBehaviour
     {
@@ -27,6 +30,14 @@ namespace TitanOrbit.Game
         Transform followAnchor;
         float followScreenUpOffset;
         Vector3 worldMotionOffset;
+        bool _materialReady;
+        Camera _cachedCamera;
+
+        /// <summary>
+        /// Invoked when the popup finishes — manager returns it to the pool.
+        /// Null = Destroy (legacy / non-pooled spawn).
+        /// </summary>
+        public Action<FloatingCountPopup> OnFinished;
 
         void EnsureTextAndIcon()
         {
@@ -82,7 +93,7 @@ namespace TitanOrbit.Game
             if (tmpText == null)
             {
                 Debug.LogWarning("FloatingCountPopup: TMP_Text missing; cannot initialize popup text.");
-                Destroy(gameObject);
+                Finish();
                 return;
             }
 
@@ -90,16 +101,18 @@ namespace TitanOrbit.Game
             lifetime = Mathf.Max(0.1f, duration);
             this.riseSpeed = Mathf.Max(0.15f, riseSpeed);
             lateralVelocity = Vector3.zero;
+            if (_cachedCamera == null)
+                _cachedCamera = Camera.main;
+            var cam = _cachedCamera;
             if (lateralDriftSpeedMax > 0.0001f)
             {
-                var cam = Camera.main;
                 Vector3 rise = GetRiseDirectionOnPlayPlane(cam);
                 Vector3 lateral = Vector3.Cross(Vector3.up, rise);
                 if (lateral.sqrMagnitude < 1e-8f)
                     lateral = Vector3.right;
                 lateral.Normalize();
-                float mag = Random.Range(lateralDriftSpeedMax * 0.35f, lateralDriftSpeedMax);
-                lateralVelocity = lateral * mag * (Random.value < 0.5f ? -1f : 1f);
+                float mag = UnityEngine.Random.Range(lateralDriftSpeedMax * 0.35f, lateralDriftSpeedMax);
+                lateralVelocity = lateral * mag * (UnityEngine.Random.value < 0.5f ? -1f : 1f);
             }
 
             elapsed = 0f;
@@ -130,7 +143,13 @@ namespace TitanOrbit.Game
             tmpText.enableWordWrapping = false;
             tmpText.richText = false;
             tmpText.color = baseColor;
-            ApplyReadableTextMaterial(tmpText);
+            // fontMaterial allocates a material instance — only once per pooled popup.
+            if (!_materialReady)
+            {
+                ApplyReadableTextMaterial(tmpText);
+                _materialReady = true;
+            }
+
             tmpText.ForceMeshUpdate();
 
             if (iconSprite != null && iconRenderer != null)
@@ -189,14 +208,16 @@ namespace TitanOrbit.Game
         {
             if (lifetime <= 0f)
             {
-                Destroy(gameObject);
+                Finish();
                 return;
             }
 
             elapsed += Time.deltaTime;
             float t = Mathf.Clamp01(elapsed / lifetime);
 
-            var cam = Camera.main;
+            if (_cachedCamera == null)
+                _cachedCamera = Camera.main;
+            var cam = _cachedCamera;
             Vector3 motion = GetRiseDirectionOnPlayPlane(cam) * riseSpeed * Time.deltaTime;
             if (lateralVelocity.sqrMagnitude > 0f)
                 motion += lateralVelocity * Time.deltaTime;
@@ -226,7 +247,7 @@ namespace TitanOrbit.Game
                 iconRenderer.color = c;
 
             if (elapsed >= lifetime)
-                Destroy(gameObject);
+                Finish();
         }
 
         void LateUpdate()
@@ -250,11 +271,26 @@ namespace TitanOrbit.Game
             if (followAnchor == null)
                 return;
 
-            var cam = Camera.main;
-            Vector3 playUp = GetRiseDirectionOnPlayPlane(cam);
+            if (_cachedCamera == null)
+                _cachedCamera = Camera.main;
+            Vector3 playUp = GetRiseDirectionOnPlayPlane(_cachedCamera);
             Vector3 basePos = followAnchor.position + playUp * followScreenUpOffset;
             basePos.y = followAnchor.position.y;
             transform.position = basePos + worldMotionOffset;
+        }
+
+        /// <summary>Returns to pool via <see cref="OnFinished"/>, or Destroys when not pooled.</summary>
+        void Finish()
+        {
+            lifetime = 0f;
+            followAnchor = null;
+            if (OnFinished != null)
+            {
+                OnFinished.Invoke(this);
+                return;
+            }
+
+            Destroy(gameObject);
         }
     }
 }

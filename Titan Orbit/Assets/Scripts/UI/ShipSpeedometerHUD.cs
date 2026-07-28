@@ -49,6 +49,13 @@ namespace TitanOrbit.UI
         const float HudLayoutScale = 1.6f;
         const float AsteroidCollisionNormalSpeedRetention = 0.93f;
 
+        /// <summary>
+        /// Cached LocalPlayerShipTag query — CreateEntityQuery every LateUpdate was ~3ms
+        /// (Profiler frame 1539 post-label-fix).
+        /// </summary>
+        EntityQuery _hudTaggedQuery;
+        World _hudTaggedQueryWorld;
+
         /// <summary>Treat as "at max" when within this fraction of motor MaxSpeed (cruise lock / float noise).</summary>
         const float AtMaxSpeedFraction = 0.985f;
 
@@ -116,6 +123,25 @@ namespace TitanOrbit.UI
 
         /// <summary>Last applied corner position — avoid rewriting RectTransform every LateUpdate (sub-pixel shimmer).</summary>
         Vector2 _lastAppliedAnchoredPos = new Vector2(float.NaN, float.NaN);
+
+        /// <summary>Cached RectTransform on rootPanel — GetComponent every LateUpdate is wasteful.</summary>
+        RectTransform _rootRect;
+
+        /// <summary>
+        /// Cached upgrade-bar HUD for bottom-left stack offset.
+        /// [TITAN-ORBIT] FindFirstObjectByType every LateUpdate was ~2.5ms + GC (Profiler frame 5199).
+        /// </summary>
+        ShipAttributeUpgradeHUD _cachedUpgradeBar;
+        bool _triedUpgradeBarLookup;
+        float _lastUpgradeBoost = float.NaN;
+
+        /// <summary>Cached chassis id string — FixedString.ToString() every LateUpdate allocates.</summary>
+        string _cachedChassisId;
+        Entity _statsCacheShipEntity;
+        int _statsCacheShipLevel = int.MinValue;
+        int _statsCacheBranch = int.MinValue;
+        ShipComponentAbilityStats _statsCacheEffective;
+        ShipAttributeUpgradeState _statsCacheAttrs;
 
         void Start()
         {
@@ -366,10 +392,17 @@ namespace TitanOrbit.UI
         {
             if (placement != SpeedometerPlacement.BottomLeft)
                 return 0f;
-            var upgradeBar = Object.FindFirstObjectByType<ShipAttributeUpgradeHUD>();
-            if (upgradeBar == null)
+
+            // --- Resolve upgrade bar once (not every LateUpdate) ---
+            if (!_triedUpgradeBarLookup)
+            {
+                _triedUpgradeBarLookup = true;
+                _cachedUpgradeBar = Object.FindFirstObjectByType<ShipAttributeUpgradeHUD>();
+            }
+
+            if (_cachedUpgradeBar == null)
                 return 0f;
-            return upgradeBar.GetUpgradeStripReserveHeight() + stackGapAboveUpgradeBar;
+            return _cachedUpgradeBar.GetUpgradeStripReserveHeight() + stackGapAboveUpgradeBar;
         }
 
         void ApplyPlacement(RectTransform rootRect)
@@ -377,8 +410,16 @@ namespace TitanOrbit.UI
             // --- Corner anchor + margin (stack above upgrade bar when bottom-left) ---
             // Round to whole canvas units and skip writes when unchanged — continuous rewrites
             // shimmer in windowed Game views the same way the upgrade strip did.
+            float boost = GetBottomLeftStackYBoost();
+            // Skip full anchor rewrite when only boost is stable and position already applied.
+            if (!float.IsNaN(_lastUpgradeBoost) &&
+                Mathf.Abs(boost - _lastUpgradeBoost) < 0.5f &&
+                !float.IsNaN(_lastAppliedAnchoredPos.x))
+                return;
+            _lastUpgradeBoost = boost;
+
             float h = Mathf.Round(horizontalMargin);
-            float v = Mathf.Round(verticalMargin + GetBottomLeftStackYBoost());
+            float v = Mathf.Round(verticalMargin + boost);
             Vector2 pos;
             switch (placement)
             {
@@ -422,7 +463,17 @@ namespace TitanOrbit.UI
         /// ShipStatApplyLogic does (chassis sum + level curve + attribute multipliers) for ram rating
         /// and as a sanity fallback if motor MaxSpeed still looks like bake defaults.
         /// </summary>
-        static bool TryGetLocalShipHudData(
+
+        void OnDestroy()
+        {
+            if (_hudTaggedQuery != default)
+            {
+                _hudTaggedQuery.Dispose();
+                _hudTaggedQuery = default;
+            }
+            _hudTaggedQueryWorld = null;
+        }
+        bool TryGetLocalShipHudData(
             out ShipState ship,
             out ShipMotorConfig motor,
             out ShipKinematics kinematics,
@@ -444,20 +495,24 @@ namespace TitanOrbit.UI
             var em = world.EntityManager;
 
             // --- Tiny tagged lookup first (safe during GhostSpawnBacklog) ---
-            // [TITAN-ORBIT] TryGetLocalShipEntity scans all ships and is gated off during Instantiates.
-            // LocalPlayerShipTag is a singleton-style tag — CalculateEntityCount/GetSingletonEntity only.
-            using (var tagged = em.CreateEntityQuery(
-                       typeof(LocalPlayerShipTag),
-                       typeof(ShipState),
-                       typeof(ShipMotorConfig),
-                       typeof(ShipKinematics)))
+            // [TITAN-ORBIT] Cache the EntityQuery — recreating it every LateUpdate was ~3ms.
+            if (_hudTaggedQueryWorld != world || _hudTaggedQuery == default)
             {
-                if (tagged.CalculateEntityCount() == 1)
-                {
-                    shipEntity = tagged.GetSingletonEntity();
-                    return FillHudDataFromEntity(
-                        em, shipEntity, out ship, out motor, out kinematics, out weapon, out effectiveStats);
-                }
+                if (_hudTaggedQuery != default)
+                    _hudTaggedQuery.Dispose();
+                _hudTaggedQuery = em.CreateEntityQuery(
+                    typeof(LocalPlayerShipTag),
+                    typeof(ShipState),
+                    typeof(ShipMotorConfig),
+                    typeof(ShipKinematics));
+                _hudTaggedQueryWorld = world;
+            }
+
+            if (_hudTaggedQuery.CalculateEntityCount() == 1)
+            {
+                shipEntity = _hudTaggedQuery.GetSingletonEntity();
+                return FillHudDataFromEntity(
+                    em, shipEntity, out ship, out motor, out kinematics, out weapon, out effectiveStats);
             }
 
             // --- Broader resolve (skipped during Settling / GhostSpawnBacklog — Crash!!! risk) ---
@@ -472,7 +527,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>Reads motor/kinematics/weapon/stats from a resolved ship entity.</summary>
-        static bool FillHudDataFromEntity(
+        bool FillHudDataFromEntity(
             EntityManager em,
             Entity shipEntity,
             out ShipState ship,
@@ -504,9 +559,34 @@ namespace TitanOrbit.UI
             if (em.HasComponent<ShipLoadoutState>(shipEntity))
                 branchIndex = em.GetComponentData<ShipLoadoutState>(shipEntity).BranchIndex;
 
+            // Reuse cached chassis/effective stats when ship identity + level + branch + attrs unchanged.
+            // ChassisId.ToString() + catalog lookups every LateUpdate were ~13KB GC (Profiler 5199).
+            ShipAttributeUpgradeState attrs = default;
+            bool hasAttrs = em.HasComponent<ShipAttributeUpgradeState>(shipEntity);
+            if (hasAttrs)
+                attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+
+            if (_statsCacheShipEntity == shipEntity &&
+                _statsCacheShipLevel == ship.ShipLevel &&
+                _statsCacheBranch == branchIndex &&
+                (!hasAttrs || AttrsEqual(attrs, _statsCacheAttrs)))
+            {
+                effectiveStats = _statsCacheEffective;
+                return true;
+            }
+
             string chassisId = null;
             if (em.HasComponent<ShipChassisState>(shipEntity))
-                chassisId = em.GetComponentData<ShipChassisState>(shipEntity).ChassisId.ToString();
+            {
+                var chassis = em.GetComponentData<ShipChassisState>(shipEntity);
+                if (_statsCacheShipEntity == shipEntity && _cachedChassisId != null)
+                    chassisId = _cachedChassisId;
+                else
+                {
+                    chassisId = chassis.ChassisId.ToString();
+                    _cachedChassisId = chassisId;
+                }
+            }
 
             if (string.IsNullOrEmpty(chassisId))
                 ShipStatApplyLogic.TryResolveChassisId(ship.Team, ship.ShipLevel, branchIndex, out chassisId);
@@ -515,15 +595,30 @@ namespace TitanOrbit.UI
                 ShipStatApplyLogic.TryGetBaseStatsForChassis(chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))
             {
                 effectiveStats = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, ship.ShipLevel);
-                if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
-                {
-                    var attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+                if (hasAttrs)
                     ShipAttributeUpgradeLogic.ApplyMultipliers(ref effectiveStats, attrs);
-                }
             }
 
+            _statsCacheShipEntity = shipEntity;
+            _statsCacheShipLevel = ship.ShipLevel;
+            _statsCacheBranch = branchIndex;
+            _statsCacheAttrs = attrs;
+            _statsCacheEffective = effectiveStats;
             return true;
         }
+
+        /// <summary>True when all attribute investment levels match (HUD cache key).</summary>
+        static bool AttrsEqual(in ShipAttributeUpgradeState a, in ShipAttributeUpgradeState b) =>
+            a.FirePower == b.FirePower &&
+            a.BulletSpeed == b.BulletSpeed &&
+            a.MaxHealth == b.MaxHealth &&
+            a.HealthRegen == b.HealthRegen &&
+            a.EnergyCapacity == b.EnergyCapacity &&
+            a.EnergyRegen == b.EnergyRegen &&
+            a.MovementSpeed == b.MovementSpeed &&
+            a.RotationSpeed == b.RotationSpeed &&
+            a.GemCapacity == b.GemCapacity &&
+            a.PeopleCapacity == b.PeopleCapacity;
 
         /// <summary>
         /// Display MaxSpeed: prefer live motor (client ShipStatApply), fall back to chassis moveSpeed
@@ -618,6 +713,7 @@ namespace TitanOrbit.UI
 
         void LateUpdate()
         {
+
             // --- Early out when disabled or UI not built ---
             if (!speedometerEnabled)
             {
@@ -630,7 +726,9 @@ namespace TitanOrbit.UI
                 BuildUIIfNeeded();
             if (rootPanel == null || speedSlider == null || speedLabel == null || accelGreenFill == null || accelRedFill == null
                 || speedTickLabels == null || accelTickLabels == null)
+            {
                 return;
+            }
 
             bool hasShip = TryGetLocalShipHudData(
                 out ShipState ship,
@@ -677,7 +775,12 @@ namespace TitanOrbit.UI
             // --- Visibility and layout refresh ---
             rootPanel.SetActive(show);
             if (placement == SpeedometerPlacement.BottomLeft)
-                ApplyPlacement(rootPanel.GetComponent<RectTransform>());
+            {
+                if (_rootRect == null)
+                    _rootRect = rootPanel.GetComponent<RectTransform>();
+                if (_rootRect != null)
+                    ApplyPlacement(_rootRect);
+            }
 
             if (!show)
             {
@@ -792,7 +895,9 @@ namespace TitanOrbit.UI
 
             // --- Body text at ~10 Hz — bars still update every frame ---
             if (Time.unscaledTime < nextTextRebuildTime)
+            {
                 return;
+            }
             nextTextRebuildTime = Time.unscaledTime + 0.1f;
 
             // Clamp displayed speed for text so we never show 13.6/13.5 from float noise.

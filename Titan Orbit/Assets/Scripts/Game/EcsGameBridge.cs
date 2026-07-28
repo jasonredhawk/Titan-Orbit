@@ -48,6 +48,7 @@ namespace TitanOrbit.Game
             PlanetConnectionGraphCache.Clear();
             PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();
+            s_PlanetPoseByIdCache.Clear();
             s_PlanetStateCacheFrame = -1;
             InvalidateLocalPlayerShipFrameCache();
         }
@@ -272,6 +273,17 @@ namespace TitanOrbit.Game
                 return false;
 
             var em = world.EntityManager;
+
+            // --- Hot path: frame-cached local ship entity (avoid CreateEntityQuery every aim sample) ---
+            // Profiler: ShipInputBridge.Update self ~4ms was dominated by repeated ship queries.
+            if (TryGetCachedLocalPlayerShipEntity(out var cachedEm, out var cachedShip) &&
+                cachedEm == em &&
+                em.Exists(cachedShip) &&
+                em.HasComponent<LocalTransform>(cachedShip))
+            {
+                transform = em.GetComponentData<LocalTransform>(cachedShip);
+                return true;
+            }
 
             // --- Fallback chain: explicit tag → NetCode local owner → command target → network id ---
             if (TryGetShipTransform(em, ComponentType.ReadOnly<LocalPlayerShipTag>(), out transform))
@@ -1519,6 +1531,7 @@ namespace TitanOrbit.Game
             PlanetConnectionGraphCache.Clear();
             PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();
+            s_PlanetPoseByIdCache.Clear();
             s_PlanetStateCacheFrame = -1;
             GemTractorBeamVisibilityTracker.Clear();
         }
@@ -1981,6 +1994,17 @@ namespace TitanOrbit.Game
             if (planetId == 0)
                 return false;
 
+            EnsurePlanetStateCacheForFrame();
+            if (s_PlanetPoseByIdCache.TryGetValue(planetId, out var pose) && pose.HasMoon)
+            {
+                moonState = pose.Moon;
+                return true;
+            }
+
+            // Cache already rebuilt this frame — missing moon means none (skip N× proxy walks).
+            if (s_PlanetStateCacheFrame == Time.frameCount)
+                return false;
+
             if (IsLocalHost() && TryFindPlanetGemMoonState(ServerWorld, planetId, out moonState))
                 return true;
 
@@ -2024,6 +2048,24 @@ namespace TitanOrbit.Game
         /// <summary>One PlanetState snapshot per planet id — rebuilt once per frame for labels/UI.</summary>
         static readonly Dictionary<int, PlanetState> s_PlanetStateByIdCache = new Dictionary<int, PlanetState>(32);
 
+        /// <summary>
+        /// Pose + optional gem-moon combat snapshot per planet id — same frame stamp as state cache.
+        /// [TITAN-ORBIT] PlanetWorldStatsLabel used to call TryGetPlanetPoseByPlanetId per planet
+        /// every LateUpdate; on Local Host that re-walked all hybrid proxies (or CreateEntityQuery)
+        /// once per label (~11×) → ~4ms + GC (Profiler frame 41220).
+        /// </summary>
+        struct PlanetPoseCacheEntry
+        {
+            public float3 Position;
+            public float Scale;
+            public PlanetGemMoonState Moon;
+            public bool HasMoon;
+            public bool HasPose;
+        }
+
+        static readonly Dictionary<int, PlanetPoseCacheEntry> s_PlanetPoseByIdCache =
+            new Dictionary<int, PlanetPoseCacheEntry>(32);
+
         /// <summary>Frame stamp for <see cref="s_PlanetStateByIdCache"/> (avoids N× CreateEntityQuery).</summary>
         static int s_PlanetStateCacheFrame = -1;
 
@@ -2042,6 +2084,7 @@ namespace TitanOrbit.Game
 
             s_PlanetStateCacheFrame = Time.frameCount;
             s_PlanetStateByIdCache.Clear();
+            s_PlanetPoseByIdCache.Clear();
 
             // Prefer authoritative server on Local Host; else client visualization world.
             if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
@@ -2050,7 +2093,10 @@ namespace TitanOrbit.Game
                 FillPlanetStateCacheFromWorld(ClientWorld, allowFullQuery: false);
         }
 
-        /// <summary>Fills <see cref="s_PlanetStateByIdCache"/> from one world (server full query or client-safe).</summary>
+        /// <summary>
+        /// Fills state + pose (+ gem-moon) caches from one world.
+        /// One query/walk per frame — not one per PlanetWorldStatsLabel.
+        /// </summary>
         static void FillPlanetStateCacheFromWorld(World world, bool allowFullQuery)
         {
             var em = world.EntityManager;
@@ -2060,13 +2106,29 @@ namespace TitanOrbit.Game
                  !ClientJoinSettleCache.TransformQuarantine &&
                  !ClientJoinSettleCache.GhostSpawnBacklog))
             {
-                using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState));
+                using var query = em.CreateEntityQuery(
+                    typeof(PlanetTag), typeof(PlanetState), typeof(LocalTransform));
                 using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+                using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+                using var entities = query.ToEntityArray(Allocator.Temp);
                 for (int i = 0; i < states.Length; i++)
                 {
                     var s = states[i];
-                    if (s.PlanetId != 0)
-                        s_PlanetStateByIdCache[s.PlanetId] = s;
+                    if (s.PlanetId == 0)
+                        continue;
+                    s_PlanetStateByIdCache[s.PlanetId] = s;
+                    var entry = new PlanetPoseCacheEntry
+                    {
+                        Position = transforms[i].Position,
+                        Scale = math.max(0.25f, transforms[i].Scale),
+                        HasPose = true,
+                    };
+                    if (em.HasComponent<PlanetGemMoonState>(entities[i]))
+                    {
+                        entry.Moon = em.GetComponentData<PlanetGemMoonState>(entities[i]);
+                        entry.HasMoon = true;
+                    }
+                    s_PlanetPoseByIdCache[s.PlanetId] = entry;
                 }
 
                 return;
@@ -2085,8 +2147,23 @@ namespace TitanOrbit.Game
                     !em.HasComponent<PlanetState>(entity))
                     continue;
                 var s = em.GetComponentData<PlanetState>(entity);
-                if (s.PlanetId != 0)
-                    s_PlanetStateByIdCache[s.PlanetId] = s;
+                if (s.PlanetId == 0)
+                    continue;
+                s_PlanetStateByIdCache[s.PlanetId] = s;
+                var entry = new PlanetPoseCacheEntry { HasPose = false };
+                if (em.HasComponent<LocalTransform>(entity))
+                {
+                    var lt = em.GetComponentData<LocalTransform>(entity);
+                    entry.Position = lt.Position;
+                    entry.Scale = math.max(0.25f, lt.Scale);
+                    entry.HasPose = true;
+                }
+                if (em.HasComponent<PlanetGemMoonState>(entity))
+                {
+                    entry.Moon = em.GetComponentData<PlanetGemMoonState>(entity);
+                    entry.HasMoon = true;
+                }
+                s_PlanetPoseByIdCache[s.PlanetId] = entry;
             }
         }
 
@@ -2193,6 +2270,22 @@ namespace TitanOrbit.Game
             scale = 1f;
             state = default;
             if (planetId == 0)
+                return false;
+
+            // --- Once-per-frame cache (labels / HUD) ---
+            // After Ensure runs, never fall through to TryFindPlanetPose (full proxy walk /
+            // CreateEntityQuery) per label — that made Local Host worse when cache missed a pose.
+            EnsurePlanetStateCacheForFrame();
+            if (s_PlanetPoseByIdCache.TryGetValue(planetId, out var pose) && pose.HasPose)
+            {
+                position = pose.Position;
+                scale = pose.Scale;
+                if (!s_PlanetStateByIdCache.TryGetValue(planetId, out state))
+                    state = default;
+                return true;
+            }
+
+            if (s_PlanetStateCacheFrame == Time.frameCount)
                 return false;
 
             if (IsLocalHost() && TryFindPlanetPose(ServerWorld, planetId, out position, out scale, out state))

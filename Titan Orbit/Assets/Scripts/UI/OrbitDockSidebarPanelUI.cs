@@ -320,23 +320,30 @@ namespace TitanOrbit.UI
         {
             // --- RefreshDepositStatus ---
             EnsureBuilt();
-            if (_shipGemsValueText != null)
-                _shipGemsValueText.text = shipGems.ToString("F0");
-            if (_bankValueText != null)
-                _bankValueText.text = bankBalance.ToString("F0");
+
+            // Dirty-check TMP — Orbit Menu called this every frame while open (ToString GC).
+            string shipStr = shipGems.ToString("F0");
+            string bankStr = bankBalance.ToString("F0");
+            if (_shipGemsValueText != null && _shipGemsValueText.text != shipStr)
+                _shipGemsValueText.text = shipStr;
+            if (_bankValueText != null && _bankValueText.text != bankStr)
+                _bankValueText.text = bankStr;
 
             if (_planetProgressText == null)
                 return;
 
             planetLevel = Mathf.Max(1, planetLevel);
+            string planetStr;
             if (planetLevel >= PlanetEconomyMath.MaxPlanetLevel)
+                planetStr = $"Planet L{planetLevel} · max";
+            else
             {
-                _planetProgressText.text = $"Planet L{planetLevel} · max";
-                return;
+                float maxGems = PlanetEconomyMath.GetMaxGemsForLevel(planetLevel);
+                planetStr = $"Planet L{planetLevel} · {planetGems:F0}/{maxGems:F0}";
             }
 
-            float maxGems = PlanetEconomyMath.GetMaxGemsForLevel(planetLevel);
-            _planetProgressText.text = $"Planet L{planetLevel} · {planetGems:F0}/{maxGems:F0}";
+            if (_planetProgressText.text != planetStr)
+                _planetProgressText.text = planetStr;
         }
 
         public void RefreshCurrentShip(Action<ShipUpgradeTreeNodeUI, float> populateNode, float maxPower)

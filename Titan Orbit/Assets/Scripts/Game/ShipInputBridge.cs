@@ -1,5 +1,6 @@
 using System.Reflection;
 using TitanOrbit.Core;
+using TitanOrbit.Shared;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Input;
@@ -27,6 +28,7 @@ namespace TitanOrbit.Game
 
         PlayerInputHandler _input;
         BulletVfxBank _bank;
+        Camera _cachedCamera;
 
         /// <summary>
         /// Client-side display index for floating text. Advanced on each B press so the label
@@ -79,14 +81,19 @@ namespace TitanOrbit.Game
         ShipInput BuildInput(bool cyclePressedThisFrame)
         {
             // --- Build data ---
-            var cam = UnityEngine.Camera.main;
+            // Cache Camera.main — looking it up every frame was part of a ~4ms Update (Profiler 41220).
+            if (_cachedCamera == null)
+                _cachedCamera = UnityEngine.Camera.main;
+            var cam = _cachedCamera;
             float2 aimDir = float2.zero;
-            // [HYBRID] Aim from the same ECS pose the motor uses — avoids presentation/sim mismatch jitter.
+            // [HYBRID] Prefer presentation pose (already synced) before ECS ship queries.
             if (cam != null)
             {
                 Vector3 aimWorld = _input.GetMouseWorldPosition(cam);
                 Vector3 shipPos = Vector3.zero;
-                if (!EcsGameBridge.TryGetLocalShipPosition(out shipPos))
+                if (ShipDisplayPose.HasLocalPose)
+                    shipPos = ShipDisplayPose.LocalPosition;
+                else if (!EcsGameBridge.TryGetLocalShipPosition(out shipPos))
                     shipPos = Vector3.zero;
                 Vector3 toAim = aimWorld - shipPos;
                 toAim.y = 0f;

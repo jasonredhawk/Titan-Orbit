@@ -513,7 +513,10 @@ namespace Unity.NetCode
                     //and predictDelta is negative (client is too far ahead)
                     if (predictDelta < 0.0f)
                     {
-                        SystemAPI.GetSingleton<NetDebug>().LogError($"Large serverTick prediction error encountered! The serverTick rolled back to {curPredict.ToFixedString()} (a delta of {predictDelta} ticks)! Common causes: a) Poor client and / or server performance, b) network instability, c) Application.runInBackground is not correctly set (to true).");
+                        // [TITAN-ORBIT] Intentionally silent: LogError here emitted a full stack trace
+                        // every few frames while the client was behind, flooding the Editor console and
+                        // making hitch worse. The predictTargetTick snap below is what recovers time.
+                        // Diagnose lag via Profiler / frameDt — not this Burst log spam.
                     }
                     netTimeData.predictTargetTick = curPredict;
                     netTimeData.subPredictTargetTick = 0;

@@ -88,6 +88,7 @@ namespace TitanOrbit.Game
                     continue;
 
                 long key = PairKey(shipEntity.Index, gem.Entity.Index);
+                bool isNew = !StateByPair.ContainsKey(key);
                 active.Add(key);
                 StateByPair[key] = new DeployState
                 {

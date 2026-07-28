@@ -137,6 +137,7 @@ namespace TitanOrbit.Game
                 for (int i = 0; i < stale.Count; i++)
                     StickyLocksByShip.Remove(stale[i]);
             }
+
         }
 
         /// <summary>
