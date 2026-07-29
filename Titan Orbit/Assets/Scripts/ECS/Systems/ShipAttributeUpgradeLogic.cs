@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -117,9 +118,21 @@ namespace TitanOrbit.ECS
 
             // --- Deduct gems and bump attribute level ---
             ship.CurrentGems -= cost;
+            // [TITAN-ORBIT] Spending the last gems while hull is already 0 is lethal (dual-resource death).
+            float h = ship.Health;
+            float g = ship.CurrentGems;
+            bool dead = ship.IsDead;
+            ShipDamageLogic.TryMarkDeadIfHullAndGemsDepleted(ref h, ref g, ref dead);
+            ship.Health = h;
+            ship.CurrentGems = g;
+            ship.IsDead = dead;
             IncrementAttribute(ref attrs, attributeIndex);
             em.SetComponentData(shipEntity, ship);
             em.SetComponentData(shipEntity, attrs);
+
+            // Spent last gems at 0 hull — death recording / respawn will handle cleanup.
+            if (ship.IsDead)
+                return true;
 
             int branch = 0;
             if (em.HasComponent<ShipLoadoutState>(shipEntity))

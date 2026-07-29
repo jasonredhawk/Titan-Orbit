@@ -71,7 +71,10 @@ namespace TitanOrbit.ECS
 
         static Material CreateHullMaterial()
         {
+            // [PHYSICS] CollideRaiseCollisionEvents — ship↔asteroid / ship↔ship contacts stream
+            // into ICollisionEventsJob for ramming damage (OR'd with the other body's flags).
             var material = Material.Default;
+            material.CollisionResponse = CollisionResponsePolicy.CollideRaiseCollisionEvents;
             material.Restitution = 0.15f;
             material.Friction = 0.05f;
             return material;

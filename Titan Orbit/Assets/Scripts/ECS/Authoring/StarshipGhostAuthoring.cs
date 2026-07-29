@@ -128,7 +128,10 @@ namespace TitanOrbit.ECS.Authoring
             void BakeShipPhysicsBody(Entity shipEntity, float mass)
             {
                 float radius = BodyCollisionMath.GetShipHullRadiusWorld(1f);
+                // [PHYSICS] Raise collision events so server ramming can see real hull contacts
+                // (not proximity). Combined with world materials via flag OR.
                 var material = Unity.Physics.Material.Default;
+                material.CollisionResponse = Unity.Physics.CollisionResponsePolicy.CollideRaiseCollisionEvents;
                 material.Restitution = 0.15f;
                 material.Friction = 0.05f;
 

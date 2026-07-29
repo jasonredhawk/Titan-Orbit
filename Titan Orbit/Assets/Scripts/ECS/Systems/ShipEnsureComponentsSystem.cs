@@ -138,6 +138,13 @@ namespace TitanOrbit.ECS
                              .WithNone<ShipDepositBeatTimer>()
                              .WithEntityAccess())
                     ecb.AddComponent(entity, new ShipDepositBeatTimer());
+
+                // --- Server-only ramming contact sticky bookkeeping ---
+                foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>().WithEntityAccess())
+                {
+                    if (!state.EntityManager.HasBuffer<ShipRamContactElement>(entity))
+                        ecb.AddBuffer<ShipRamContactElement>(entity);
+                }
             }
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()

@@ -391,6 +391,8 @@ namespace TitanOrbit.ECS
                 motor.BrakeDeceleration = ShipMassLogic.DefaultBrakeDeceleration;
                 motor.HullMassReference = hullMassReference;
                 motor.ChassisReferenceHealth = referenceHealth;
+                // [TITAN-ORBIT] Ram/grind damage rating — level-scaled family sum (HUD uses the same field).
+                motor.RammingPower = Mathf.Max(0f, effective.rammingPower);
                 em.SetComponentData(shipEntity, motor);
             }
 

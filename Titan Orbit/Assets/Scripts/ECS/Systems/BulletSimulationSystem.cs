@@ -116,7 +116,7 @@ namespace TitanOrbit.ECS
             // [UNITY] World elapsed — shield hit timestamps / regen cooldowns (not moon orbit phase).
             double serverElapsed = SystemAPI.Time.ElapsedTime;
 
-            // [NETCODE] ECB for spawn/hit RPCs — playback after buffer mutations.
+            // [NETCODE] ECB for spawn/hit RPCs + ship gem expulsion — playback after buffer mutations.
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             // --- Shared orbit clock for moon hit tests ---
@@ -132,9 +132,21 @@ namespace TitanOrbit.ECS
             // Missing size = skip this tick (do not invent 1000×1000).
             if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) ||
                 !ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight))
+            {
+                ecb.Dispose();
                 return;
+            }
+
             float mapW = mapState.MapWidth;
             float mapH = mapState.MapHeight;
+
+            // Gem prefab for cargo spill after hull breaks (optional — damage still applies).
+            Entity gemPrefab = Entity.Null;
+            if (SystemAPI.TryGetSingleton<GamePrefabs>(out var gamePrefabs))
+                gemPrefab = gamePrefabs.Gem;
+
+            float gemSpawnServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
+                state.EntityManager, serverElapsed);
 
             // --- Derived shield drone spheres (throttle — full rebuild is expensive) ---
             // [TITAN-ORBIT] Only needed when live bullets exist; rebuild every N ticks and reuse.
@@ -184,7 +196,8 @@ namespace TitanOrbit.ECS
                     float t1 = (s + 1) / (float)substeps;
                     float3 next = math.lerp(startPos, endPos, t1);
                     if (TryResolveBulletHit(
-                            ref state, in b, cursor, next, mapW, mapH, moonElapsed, serverElapsed,
+                            ref state, ecb, gemPrefab, gemSpawnServerTime,
+                            in b, cursor, next, mapW, mapH, moonElapsed, serverElapsed,
                             out hitPoint, out asteroidHealthAfter))
                     {
                         hit = true;
@@ -371,7 +384,8 @@ namespace TitanOrbit.ECS
                     // with no aim (player saw forward tracers; side asteroids died).
                     float3 firstEnd = fireOrigin + bulletVel * dt;
                     bool spawnHit = TryResolveBulletHit(
-                        ref state, in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
+                        ref state, ecb, gemPrefab, gemSpawnServerTime,
+                        in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
                         out float3 spawnHitPoint, out float spawnAsteroidHealthAfter);
 
                     if (spawnHit)
@@ -430,6 +444,9 @@ namespace TitanOrbit.ECS
         /// </para>
         /// </summary>
         /// <param name="state">Server system state (vitals write / transport destroy).</param>
+        /// <param name="ecb">Structural buffer for RPCs and ship gem expulsion spawns.</param>
+        /// <param name="gemPrefab"><see cref="GamePrefabs.Gem"/> or Null when unavailable.</param>
+        /// <param name="gemSpawnServerTime">Server elapsed for gem lifetime stamps.</param>
         /// <param name="b">Bullet dealing damage (OwnerTeam / Damage).</param>
         /// <param name="from">Segment start (unbounded XZ).</param>
         /// <param name="to">Segment end (unbounded XZ). Equal to <paramref name="from"/> = point test.</param>
@@ -444,6 +461,9 @@ namespace TitanOrbit.ECS
         /// <returns>True when this segment scored a hit and applied damage (or planet block).</returns>
         bool TryResolveBulletHit(
             ref SystemState state,
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
+            float gemSpawnServerTime,
             in BulletElement b,
             float3 from,
             float3 to,
@@ -643,15 +663,57 @@ namespace TitanOrbit.ECS
 
                 case BulletHitKind.Ship:
                 {
+                    // [TITAN-ORBIT] Hull first, then gem spill (50% rules); death only when both empty.
                     var writable = SystemAPI.GetComponentRW<ShipState>(bestEntity);
-                    writable.ValueRW.Health -= b.Damage;
-                    if (writable.ValueRW.Health <= 0f)
-                        writable.ValueRW.IsDead = true;
-                    if (state.EntityManager.HasComponent<ShipVitalsState>(bestEntity))
+                    ref var ship = ref writable.ValueRW;
+
+                    // Fully moon-docked ships are immune (same as legacy Starship).
+                    bool moonImmune = false;
+                    if (state.EntityManager.HasComponent<ShipMoonDockState>(bestEntity))
+                    {
+                        var moonDock = state.EntityManager.GetComponentData<ShipMoonDockState>(bestEntity);
+                        moonImmune = moonDock.MoonPlanetId != 0 &&
+                                     moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
+                    }
+
+                    float health = ship.Health;
+                    float gems = ship.CurrentGems;
+                    bool isDead = ship.IsDead;
+                    var result = ShipDamageLogic.ApplyHullAndGemDamage(
+                        ref health,
+                        ref gems,
+                        ref isDead,
+                        b.Damage,
+                        ship.Team,
+                        (TeamId)b.OwnerTeam,
+                        gemExpulsionPerHullDamage: 0f,
+                        isImmune: moonImmune);
+
+                    ship.Health = health;
+                    ship.CurrentGems = gems;
+                    ship.IsDead = isDead;
+
+                    if (result.AppliedHullDamage &&
+                        state.EntityManager.HasComponent<ShipVitalsState>(bestEntity))
                     {
                         var vitals = state.EntityManager.GetComponentData<ShipVitalsState>(bestEntity);
-                        vitals.LastHullDamageTime = SystemAPI.Time.ElapsedTime;
+                        vitals.LastHullDamageTime = serverElapsed;
                         state.EntityManager.SetComponentData(bestEntity, vitals);
+                    }
+
+                    if (result.GemsToExpel > 0.0001f &&
+                        state.EntityManager.HasComponent<LocalTransform>(bestEntity))
+                    {
+                        float3 shipPos = state.EntityManager.GetComponentData<LocalTransform>(bestEntity).Position;
+                        // Legacy bullet expulsion intensity default was 0.5.
+                        ShipGemExpulsion.SpawnFromDamage(
+                            ecb,
+                            gemPrefab,
+                            shipPos,
+                            result.GemsToExpel,
+                            intensity: 0.5f,
+                            salt: (uint)(bestEntity.Index * 19349663) ^ (uint)(serverElapsed * 1000.0),
+                            gemSpawnServerTime);
                     }
 
                     return true;

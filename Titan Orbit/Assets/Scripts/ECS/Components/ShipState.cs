@@ -13,7 +13,10 @@ namespace TitanOrbit.ECS
     public struct ShipState : IComponentData
     {
         // --- Type members ---
-        /// <summary>[TITAN-ORBIT] Current hull points; lethal at zero (server sets IsDead).</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Current hull points. Hitting zero alone does not kill — death requires
+        /// hull and <see cref="CurrentGems"/> both depleted (<see cref="TitanOrbit.Simulation.ShipDamageLogic"/>).
+        /// </summary>
         [GhostField] public float Health;
 
         /// <summary>[TITAN-ORBIT] Maximum hull from chassis stats + attribute upgrades.</summary>
@@ -51,7 +54,9 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Maximum population cargo capacity.</summary>
         [GhostField] public int PeopleCapacity;
 
-        /// <summary>[TITAN-ORBIT] True after lethal damage; movement and weapons disabled until respawn.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] True after hull and cargo are both empty; movement and weapons disabled until respawn.
+        /// </summary>
         [GhostField] public bool IsDead;
 
         /// <summary>[TITAN-ORBIT] True at spawn until RequestTeamCommand assigns a team.</summary>
@@ -87,6 +92,12 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Level-1 max health used to soften movement mass at higher ship levels.</summary>
         public float ChassisReferenceHealth;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Summed family ramming power at the current ship level. Written by
+        /// <see cref="ShipStatApplyLogic"/>; read by asteroid ram/grind damage on the server.
+        /// </summary>
+        public float RammingPower;
     }
 
     /// <summary>

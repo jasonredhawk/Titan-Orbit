@@ -41,6 +41,12 @@ namespace TitanOrbit.ECS
 
             /// <summary>World-space collision radius.</summary>
             public float Radius;
+
+            /// <summary>Obstacle entity (asteroid or planet) — used for server ramming queue.</summary>
+            public Entity Entity;
+
+            /// <summary>1 when this sphere is a living asteroid (ramming damage); 0 for planets.</summary>
+            public byte IsAsteroid;
         }
 
         /// <summary>
@@ -90,12 +96,17 @@ namespace TitanOrbit.ECS
             // [ECS/DOTS] Idiomatic foreach must not nest; copy centers/radii then walk ships.
             var obstacles = new NativeList<WorldSphere>(128, Allocator.Temp);
 
-            foreach (var planetTransform in SystemAPI.Query<RefRO<LocalTransform>>().WithAll<PlanetTag>())
+            foreach (var (planetTransform, planetEntity) in SystemAPI
+                         .Query<RefRO<LocalTransform>>()
+                         .WithAll<PlanetTag>()
+                         .WithEntityAccess())
             {
                 obstacles.Add(new WorldSphere
                 {
                     Position = planetTransform.ValueRO.Position,
                     Radius = BodyCollisionMath.GetPlanetBodyRadiusWorld(planetTransform.ValueRO.Scale),
+                    Entity = planetEntity,
+                    IsAsteroid = 0,
                 });
             }
 
@@ -120,6 +131,8 @@ namespace TitanOrbit.ECS
                 {
                     Position = asteroidTransform.ValueRO.Position,
                     Radius = BodyCollisionMath.GetAsteroidBodyRadiusWorld(asteroidTransform.ValueRO.Scale),
+                    Entity = entity,
+                    IsAsteroid = 1,
                 });
             }
 
@@ -171,10 +184,18 @@ namespace TitanOrbit.ECS
                 return;
             }
 
+            // --- Server: queue real cross-seam asteroid penetrations for ramming damage ---
+            // PhysX never sees these pairs; CollisionEvents miss them. Only enqueue when
+            // TryResolve actually depenetrated (true collision), never for flybys.
+            DynamicBuffer<PendingRamContactElement> ramQueue = default;
+            bool enqueueRam = state.World.IsServer() &&
+                              SystemAPI.TryGetSingletonBuffer(out ramQueue);
+
             // --- Resolve each predicted/simulated ship ---
-            foreach (var (transform, velocity, physicsCollider, shipState) in SystemAPI
+            foreach (var (transform, velocity, physicsCollider, shipState, shipEntity) in SystemAPI
                          .Query<RefRW<LocalTransform>, RefRW<PhysicsVelocity>, RefRO<PhysicsCollider>, RefRO<ShipState>>()
-                         .WithAll<ShipTag, Simulate>())
+                         .WithAll<ShipTag, Simulate>()
+                         .WithEntityAccess())
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                     continue;
@@ -188,12 +209,35 @@ namespace TitanOrbit.ECS
                 for (int i = 0; i < obstacles.Length; i++)
                 {
                     WorldSphere body = obstacles[i];
+                    float3 posBefore = shipPos;
+                    float3 velBefore = shipVel;
                     if (ShipToroidalWorldCollisionLogic.TryResolveShipVsWorldSphere(
                             ref shipPos, ref shipVel, shipRadius,
                             body.Position, body.Radius,
                             mapW, mapH, ShipToroidalWorldCollisionLogic.WorldRestitution))
                     {
                         anyHit = true;
+
+                        // --- Cross-seam asteroid ram (server only) ---
+                        if (enqueueRam && body.IsAsteroid != 0 && body.Entity != Entity.Null)
+                        {
+                            float3 offset = ToroidalMapEcs.ShortestOffsetXZ(posBefore, body.Position, mapW, mapH);
+                            float dist = math.length(offset);
+                            float3 outward = dist > 1e-5f
+                                ? offset / dist
+                                : new float3(0f, 0f, 1f);
+                            float3 planarVel = new float3(velBefore.x, 0f, velBefore.z);
+                            float closing = math.max(0f, -math.dot(planarVel, outward));
+                            ramQueue.Add(new PendingRamContactElement
+                            {
+                                Ship = shipEntity,
+                                Other = body.Entity,
+                                OtherIsShip = 0,
+                                NormalShipFromOther = outward,
+                                ClosingSpeed = closing,
+                                EstimatedImpulse = closing * 10f,
+                            });
+                        }
                     }
                 }
 

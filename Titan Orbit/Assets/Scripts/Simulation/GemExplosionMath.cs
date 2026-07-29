@@ -118,9 +118,28 @@ namespace TitanOrbit.Simulation
             float speedRandomMax,
             ref Random rng)
         {
+            return BurstVelocity(dir, explosionSpeed, speedRandomMin, speedRandomMax, intensity: 1f, ref rng);
+        }
+
+        /// <summary>
+        /// Burst launch with expulsion intensity (0..1). Used when gems spill from a damaged ship —
+        /// big ram / big bullet excess launches farther; grind chips use a soft intensity.
+        /// Speed scale lerps ~0.35× → ~1.75× of the base explosion speed.
+        /// </summary>
+        /// <param name="intensity">0 = soft spit, 1 = hard eject (clamped).</param>
+        public static float3 BurstVelocity(
+            float3 dir,
+            float explosionSpeed,
+            float speedRandomMin,
+            float speedRandomMax,
+            float intensity,
+            ref Random rng)
+        {
             float lo = math.min(speedRandomMin, speedRandomMax);
             float hi = math.max(speedRandomMin, speedRandomMax);
-            float speed = explosionSpeed * rng.NextFloat(lo, hi);
+            float t = math.saturate(intensity);
+            float speedScale = math.lerp(0.35f, 1.75f, t);
+            float speed = explosionSpeed * speedScale * rng.NextFloat(lo, hi);
             return dir * speed;
         }
 

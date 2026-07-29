@@ -691,24 +691,24 @@ namespace TitanOrbit.UI
                 ship.CurrentGems,
                 baseMass);
 
-            float familyRammingPower = effectiveStats.rammingPower > 0f
-                ? effectiveStats.rammingPower
-                : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower;
+            // Prefer motor.RammingPower (server-applied) when present; else rebuild from family stats.
+            float familyRammingPower = motor.RammingPower > 0f
+                ? motor.RammingPower
+                : (effectiveStats.rammingPower > 0f
+                    ? effectiveStats.rammingPower
+                    : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower);
             ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRammingPower);
             massFactor = ShipComponentRammingSuggestions.ComputeMassDamageFactor(ramMass, hullBaseline);
-            float selfMassFactor = ShipComponentRammingSuggestions.ComputeSelfMassDamageFactor(ramMass, hullBaseline);
 
-            float deltaNormalSpeed = (1f + AsteroidCollisionNormalSpeedRetention) * Mathf.Max(0f, inboundSpeed);
-            float speedFactor = deltaNormalSpeed / ShipComponentRammingSuggestions.ReferenceImpactSpeed;
-
-            asteroidDamage = Mathf.Max(0f, ramRating * massFactor * speedFactor);
-            selfDamage = Mathf.Max(
-                0f,
-                ramRating * selfMassFactor * speedFactor * ShipComponentRammingSuggestions.SelfToAsteroidDamageRatio);
-
-            float selfCap = ship.MaxHealth * ShipComponentRammingSuggestions.MaxSelfImpactDamageFractionOfMaxHealth;
-            if (selfCap > 0f)
-                selfDamage = Mathf.Min(selfDamage, selfCap);
+            // [TITAN-ORBIT] Same helpers as ShipAsteroidRammingDamageSystem — HUD cannot drift.
+            float restitution = Mathf.Approximately(AsteroidCollisionNormalSpeedRetention,
+                ShipComponentRammingSuggestions.MaxAsteroidRestitutionForDamage)
+                ? ShipComponentRammingSuggestions.MaxAsteroidRestitutionForDamage
+                : AsteroidCollisionNormalSpeedRetention;
+            asteroidDamage = ShipComponentRammingSuggestions.ComputeImpactDamage(
+                ramRating, ramMass, hullBaseline, inboundSpeed, restitution);
+            selfDamage = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
+                ramRating, ramMass, hullBaseline, inboundSpeed, restitution);
         }
 
         void LateUpdate()

@@ -1,3 +1,4 @@
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.NetCode;
 
@@ -7,12 +8,17 @@ namespace TitanOrbit.ECS
     /// Server-authoritative health and energy regeneration from ship-family vitals config.
     /// Runs each simulation tick before <see cref="BulletSimulationSystem"/> so regen applies
     /// before shots consume energy. Skips dead ships and ships awaiting team selection.
+    /// <para>
+    /// [TITAN-ORBIT] Dual-resource death: if hull and cargo are both empty, mark dead
+    /// <b>before</b> hull regen so a 0/0 frame cannot heal out of death (legacy Starship order).
+    /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateBefore(typeof(BulletSimulationSystem))]
     public partial struct ShipVitalsRegenSystem : ISystem
     {
+        /// <summary>Regen pass for every living ship with vitals config.</summary>
         public void OnUpdate(ref SystemState state)
         {
             float dt = SystemAPI.Time.DeltaTime;
@@ -29,6 +35,20 @@ namespace TitanOrbit.ECS
                     continue;
 
                 ref var s = ref ship.ValueRW;
+
+                // --- Death latch before regen ---
+                // Deposit / combat may leave Health=0 and Gems=0 without setting IsDead yet.
+                float health = s.Health;
+                float gems = s.CurrentGems;
+                bool isDead = s.IsDead;
+                if (ShipDamageLogic.TryMarkDeadIfHullAndGemsDepleted(ref health, ref gems, ref isDead))
+                {
+                    s.Health = health;
+                    s.CurrentGems = gems;
+                    s.IsDead = isDead;
+                    continue;
+                }
+
                 var cfg = vitals.ValueRO;
 
                 // --- Energy regen (always active when below max) ---
@@ -40,6 +60,8 @@ namespace TitanOrbit.ECS
                 }
 
                 // --- Health regen (delayed after last hull damage) ---
+                // Allowed while cargo remains even if hull is briefly 0 — ship can recover hull
+                // before gems are fully stripped.
                 if (s.Health < s.MaxHealth && cfg.HealthRegenPerSecond > 0f)
                 {
                     float delay = UnityEngine.Mathf.Max(0f, cfg.HealthRegenDelayAfterDamage);

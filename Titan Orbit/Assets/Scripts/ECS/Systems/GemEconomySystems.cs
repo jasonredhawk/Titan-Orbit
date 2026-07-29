@@ -252,7 +252,8 @@ namespace TitanOrbit.ECS
     /// Server: applies original-style linear/angular damping and integrates gem pose from
     /// <see cref="GemKinematics"/>. Gems are scripted movers — not Unity Physics bodies.
     /// Runs <b>after</b> <see cref="GemTractorBeamSystem"/> so tractor velocity and pose stay
-    /// same-tick coherent. Skips linear damping while <see cref="GemMotionState.PhaseTractor"/>.
+    /// same-tick coherent. Skips linear damping only while a live tractor lock is active
+    /// (<see cref="GemMotionState.PhaseTractor"/> and non-zero <see cref="GemMotionState.TractorShipId"/>).
     /// Tunables: <see cref="GemExplosionSettings"/> (Editor).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -282,11 +283,19 @@ namespace TitanOrbit.ECS
                 if (hasMotion)
                 {
                     motionRo = SystemAPI.GetComponent<GemMotionState>(entity);
-                    underTractor = motionRo.Phase == GemMotionState.PhaseTractor;
+                    // [TITAN-ORBIT] Skip damping only for a live lock (phase + ship id).
+                    // PhaseTractor alone with ShipId 0 was a stuck state: constant velocity forever.
+                    underTractor = motionRo.Phase == GemMotionState.PhaseTractor &&
+                                   motionRo.TractorShipId != 0;
+                    if (motionRo.Phase == GemMotionState.PhaseTractor && motionRo.TractorShipId == 0)
+                    {
+                        motionRo.Phase = GemMotionState.PhaseCoast;
+                        SystemAPI.SetComponent(entity, motionRo);
+                    }
                 }
 
                 // --- Linear velocity ---
-                // [TITAN-ORBIT] Tractor owns constant pull speed — damping would fight the beam.
+                // [TITAN-ORBIT] Live tractor owns constant pull speed — damping would fight the beam.
                 float3 vel = underTractor
                     ? kin.Velocity
                     : GemExplosionMath.IntegrateLinearVelocity(
@@ -596,6 +605,14 @@ namespace TitanOrbit.ECS
                         // --- Ship cargo ↓ ---
                         var ship = shipState.ValueRO;
                         ship.CurrentGems -= amount;
+                        // [TITAN-ORBIT] Depositing the last gems while hull is already 0 is lethal.
+                        float h = ship.Health;
+                        float g = ship.CurrentGems;
+                        bool dead = ship.IsDead;
+                        ShipDamageLogic.TryMarkDeadIfHullAndGemsDepleted(ref h, ref g, ref dead);
+                        ship.Health = h;
+                        ship.CurrentGems = g;
+                        ship.IsDead = dead;
                         shipState.ValueRW = ship;
 
                         // --- Planet treasury ↑ (level-up math) ---
@@ -877,6 +894,10 @@ namespace TitanOrbit.ECS
         /// <param name="burstIndex">
         /// Asteroid-burst slot (0..N-1) for client VFX handoff. Mining nuggets leave 0.
         /// </param>
+        /// <param name="burstIntensity">
+        /// 0..1 launch hardness for damage expulsion (1 = asteroid-burst default). Ignored when
+        /// <paramref name="burst"/> is false.
+        /// </param>
         public static void Spawn(
             EntityCommandBuffer ecb,
             Entity gemPrefab,
@@ -887,7 +908,8 @@ namespace TitanOrbit.ECS
             float spawnServerTime,
             GemExplosionSettings settings = null,
             byte burstIndex = 0,
-            bool isBonusGem = false)
+            bool isBonusGem = false,
+            float burstIntensity = 1f)
         {
             if (value <= 0f)
                 return;
@@ -924,12 +946,13 @@ namespace TitanOrbit.ECS
 
             if (burst)
             {
-                // --- Original NGO GemSpawner launch + tumble ---
+                // --- Original NGO GemSpawner launch + tumble (intensity scales ship-damage spills) ---
                 float3 vel = GemExplosionMath.BurstVelocity(
                     spawnDir,
                     settings.AsteroidExplosionSpeed,
                     settings.SpeedRandomMin,
                     settings.SpeedRandomMax,
+                    burstIntensity,
                     ref rng);
                 float3 ang = GemExplosionMath.BurstAngularVelocity(settings.AngularSpeedMax, ref rng);
                 ecb.SetComponent(gem, new GemKinematics { Velocity = vel, AngularVelocity = ang });
@@ -941,6 +964,52 @@ namespace TitanOrbit.ECS
                 float3 ang = GemExplosionMath.BurstAngularVelocity(settings.AngularSpeedMax * 0.35f, ref rng);
                 ecb.SetComponent(gem, new GemKinematics { Velocity = spawnDir * speed, AngularVelocity = ang });
             }
+        }
+    }
+
+    /// <summary>
+    /// Server helper: spawn one world gem from ship cargo after <see cref="ShipDamageLogic"/>
+    /// deducted the value. Legacy NGO spawned a single gem sized to the hit's expelled value
+    /// (larger damage → larger gem via sqrt(value) scale in <see cref="GemSpawning"/>).
+    /// </summary>
+    public static class ShipGemExpulsion
+    {
+        /// <summary>
+        /// Instantiates a burst gem at the ship position. No-op when value or prefab is invalid.
+        /// Cargo must already be deducted by the damage/deposit caller.
+        /// </summary>
+        /// <param name="ecb">Structural changes for this sim tick.</param>
+        /// <param name="gemPrefab">From <see cref="GamePrefabs.Gem"/>.</param>
+        /// <param name="shipPosition">Ship sim center (logical / unbounded).</param>
+        /// <param name="gemValue">Expelled cargo value (&gt; MinGemSpawnValue).</param>
+        /// <param name="intensity">0..1 launch hardness (ram impact high, grind / bullets softer).</param>
+        /// <param name="salt">Deterministic RNG salt (entity index + tick).</param>
+        /// <param name="spawnServerTime">Server elapsed seconds for lifetime.</param>
+        public static void SpawnFromDamage(
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
+            float3 shipPosition,
+            float gemValue,
+            float intensity,
+            uint salt,
+            float spawnServerTime)
+        {
+            if (gemPrefab == Entity.Null || gemValue < GemEconomyConstants.MinGemSpawnValue)
+                return;
+
+            // [TITAN-ORBIT] One gem per hit — value drives size (sqrt) and musical pitch.
+            GemSpawning.Spawn(
+                ecb,
+                gemPrefab,
+                shipPosition,
+                gemValue,
+                salt,
+                burst: true,
+                spawnServerTime,
+                settings: null,
+                burstIndex: 0,
+                isBonusGem: false,
+                burstIntensity: math.saturate(intensity));
         }
     }
 }

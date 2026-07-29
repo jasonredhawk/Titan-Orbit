@@ -170,6 +170,11 @@ namespace TitanOrbit.ECS
         /// Primary contributes full wing pull; each assist adds
         /// <see cref="GemTractorBeamMath.AdditionalTractorBeamPullScale"/> of its own strength
         /// so three equal beams ≈ 150% rather than 300%.
+        /// <para>
+        /// [TITAN-ORBIT] <see cref="GemMotionState.PhaseTractor"/> is applied only after a non-zero
+        /// pull velocity replaces <see cref="GemKinematics"/> — otherwise Coast keeps linear damping
+        /// so damage-spill gems do not fly forever.
+        /// </para>
         /// </summary>
         void ApplyLockAndPull(
             Entity shipEntity,
@@ -223,7 +228,11 @@ namespace TitanOrbit.ECS
 
                 bool pullActive = IsPullPhysicsActive(deploy, now);
 
-                // --- Ghost lock — primary wing only (assists are local to server pull math) ---
+                // --- Ghost lock fields (beam VFX) — always while assigned ---
+                // [TITAN-ORBIT] PhaseTractor is set ONLY after we overwrite GemKinematics with a
+                // real pull velocity. Setting Tractor phase first then failing the pull left
+                // damage-spill burst speed intact while GemMotionSystem skipped damping → gems
+                // flew forever with "no friction."
                 if (EntityManager.HasComponent<GemMotionState>(gemEntity))
                 {
                     var motion = EntityManager.GetComponentData<GemMotionState>(gemEntity);
@@ -232,6 +241,7 @@ namespace TitanOrbit.ECS
                     motion.TractorLockTick = deploy.LockTick != 0 ? deploy.LockTick : serverTick;
                     motion.TractorExtendDuration = deploy.ExtendDuration;
 
+                    // Deploy / no pull yet: Coast so linear damping still bleeds burst speed.
                     if (!pullActive)
                     {
                         if (motion.Phase == GemMotionState.PhaseTractor)
@@ -240,7 +250,7 @@ namespace TitanOrbit.ECS
                         continue;
                     }
 
-                    motion.Phase = GemMotionState.PhaseTractor;
+                    // Defer PhaseTractor write until pull velocity is applied (below).
                     EntityManager.SetComponentData(gemEntity, motion);
                 }
                 else if (!pullActive)
@@ -271,17 +281,39 @@ namespace TitanOrbit.ECS
                     velocity += toWing * (pullSpeed * stackScale);
                 }
 
+                // --- No usable pull this tick: stay Coast so burst / leftover speed can damp ---
                 if (math.lengthsq(velocity) < 0.0001f)
-                    continue;
+                {
+                    if (EntityManager.HasComponent<GemMotionState>(gemEntity))
+                    {
+                        var motion = EntityManager.GetComponentData<GemMotionState>(gemEntity);
+                        if (motion.Phase == GemMotionState.PhaseTractor)
+                        {
+                            motion.Phase = GemMotionState.PhaseCoast;
+                            EntityManager.SetComponentData(gemEntity, motion);
+                        }
+                    }
 
+                    continue;
+                }
+
+                // --- Active pull: replace kinematics (kills damage-spill burst) + Tractor phase ---
                 var kin = gemKinematics.ValueRO;
                 kin.Velocity = velocity;
                 gemKinematics.ValueRW = kin;
+
+                if (EntityManager.HasComponent<GemMotionState>(gemEntity))
+                {
+                    var motion = EntityManager.GetComponentData<GemMotionState>(gemEntity);
+                    motion.Phase = GemMotionState.PhaseTractor;
+                    EntityManager.SetComponentData(gemEntity, motion);
+                }
             }
         }
 
         /// <summary>
         /// Clears tractor ghost fields on gems that were not locked this frame so clients stop pulling.
+        /// Restores Coast so <see cref="GemMotionSystem"/> linear damping applies again.
         /// </summary>
         void ClearStaleTractorLocks()
         {
@@ -297,6 +329,7 @@ namespace TitanOrbit.ECS
                 if (m.TractorShipId == 0 && m.Phase != GemMotionState.PhaseTractor)
                     continue;
 
+                // --- Unlock → Coast (never leave PhaseTractor without a ship id) ---
                 m.TractorShipId = 0;
                 m.TractorWingIndex = 0;
                 m.TractorLockTick = 0;
