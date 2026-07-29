@@ -1,6 +1,7 @@
 using TitanOrbit.Core;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Physics;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -57,7 +58,8 @@ namespace TitanOrbit.ECS
                     prefabs.Asteroid,
                     pending.Position,
                     pending.Scale,
-                    pending.GemValue);
+                    pending.GemValue,
+                    pending.MaxHealth);
                 buffer.RemoveAt(i);
             }
         }
@@ -86,20 +88,23 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Instantiates one asteroid ghost at <paramref name="position"/> with uniform scale and full gem capacity.
+        /// Instantiates one asteroid ghost at <paramref name="position"/> with uniform scale,
+        /// gem capacity, and max Health (HP may differ from gems via AsteroidSettings ratios).
         /// </summary>
         /// <param name="em">Server EntityManager.</param>
         /// <param name="asteroidPrefab">Ghost prefab from <see cref="GamePrefabs.Asteroid"/>.</param>
         /// <param name="position">World position (Y forced to 0).</param>
         /// <param name="uniformScale">LocalTransform scale (map gen uses cmax of non-uniform layout).</param>
-        /// <param name="gemValue">Full mineable value and health for the fresh rock.</param>
+        /// <param name="gemValue">Full mineable gem capacity (MaxGems / RemainingGems).</param>
+        /// <param name="maxHealth">Full combat Health (may differ from gemValue).</param>
         /// <returns>New asteroid entity, or Null if the prefab is missing.</returns>
         public static Entity Spawn(
             EntityManager em,
             Entity asteroidPrefab,
             float3 position,
             float uniformScale,
-            float gemValue)
+            float gemValue,
+            float maxHealth)
         {
             if (asteroidPrefab == Entity.Null)
                 return Entity.Null;
@@ -109,20 +114,31 @@ namespace TitanOrbit.ECS
             position.y = 0f;
             float scale = math.max(0.01f, uniformScale);
             float gems = math.max(GemEconomyConstants.MinGemSpawnValue, gemValue);
+            float health = math.max(1f, maxHealth);
 
             Entity e = em.Instantiate(asteroidPrefab);
             em.SetComponentData(e, LocalTransform.FromPositionRotationScale(position, quaternion.identity, scale));
 
-            // --- Mineable state ---
-            // MaxGems is server-only so destroy→respawn can restore capacity after RemainingGems hits 0.
+            // --- Surface friction from AsteroidSettings (Inspector) ---
+            // Prefab bake uses defaults; replace so live Friction edits apply to new rocks.
+            // Do not Dispose the prefab's shared blob — only swap this entity's reference.
+            var frictionCollider = AsteroidColliderMaterialLogic.CreateFromSettingsCache();
+            if (em.HasComponent<PhysicsCollider>(e))
+                em.SetComponentData(e, new PhysicsCollider { Value = frictionCollider });
+            else
+                em.AddComponentData(e, new PhysicsCollider { Value = frictionCollider });
+
+            // --- Mineable + combat state ---
+            // MaxGems / MaxHealth are server-only so destroy→respawn restores both capacities.
             var asteroidState = new AsteroidState
             {
                 RemainingGems = gems,
-                Health = gems,
+                Health = health,
                 IsDestroyed = false,
                 TerritoryTeam = TeamId.None,
                 TerritoryTeamsMask = 0,
                 MaxGems = gems,
+                MaxHealth = health,
                 LastInteractTeam = TeamId.None,
             };
             if (em.HasComponent<AsteroidState>(e))
@@ -143,6 +159,7 @@ namespace TitanOrbit.ECS
         /// <param name="position">Destroy pose.</param>
         /// <param name="uniformScale">Scale to restore.</param>
         /// <param name="gemValue">MaxGems to restore (not RemainingGems, which is often 0).</param>
+        /// <param name="maxHealth">MaxHealth to restore (not current Health, which is often 0).</param>
         /// <param name="nowElapsed">Current server ElapsedTime.</param>
         /// <param name="delaySeconds">Seconds until spawn (settings default 30).</param>
         public static void ScheduleRespawn(
@@ -150,6 +167,7 @@ namespace TitanOrbit.ECS
             float3 position,
             float uniformScale,
             float gemValue,
+            float maxHealth,
             double nowElapsed,
             float delaySeconds)
         {
@@ -159,6 +177,7 @@ namespace TitanOrbit.ECS
                 Position = position,
                 Scale = math.max(0.01f, uniformScale),
                 GemValue = math.max(GemEconomyConstants.MinGemSpawnValue, gemValue),
+                MaxHealth = math.max(1f, maxHealth),
                 RespawnAtElapsedTime = nowElapsed + math.max(1.0, delaySeconds),
             });
         }

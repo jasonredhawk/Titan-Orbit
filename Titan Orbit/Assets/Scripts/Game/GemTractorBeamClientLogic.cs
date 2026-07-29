@@ -16,6 +16,8 @@ namespace TitanOrbit.Game
     /// Mirrors server <see cref="GemTractorBeamAssignment"/> (sticky locks, primary fill, spare
     /// assists). Authoritative pull velocity still comes from ghosted <see cref="GemMotionState"/>.
     /// [TITAN-ORBIT] Gems come from hybrid proxies — never a full gem <c>ToEntityArray</c>.
+    /// Damage-spill self-pickup penalty uses ghosted <see cref="GemState.ExcludePickupNetworkId"/>
+    /// so beams do not draw to gems the local ship cannot yet reclaim (matches server tractor skip).
     /// </summary>
     public static class GemTractorBeamClientLogic
     {
@@ -99,6 +101,10 @@ namespace TitanOrbit.Game
             if (GemProxyScratch.Count == 0)
                 return;
 
+            // Same SpawnServerTime clock as server GemSelfPickupBlock (not Unity Time.time).
+            float nowServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
+                em, Time.timeAsDouble);
+
             var liveShipIndices = new HashSet<int>(ships.Length);
             for (int si = 0; si < ships.Length; si++)
             {
@@ -109,12 +115,19 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
+                // GhostOwner.NetworkId — matches GemState.ExcludePickupNetworkId on damage spills.
+                int shipNetworkId = 0;
+                if (em.HasComponent<GhostOwner>(ships[si]))
+                    shipNetworkId = em.GetComponentData<GhostOwner>(ships[si]).NetworkId;
+
                 var wings = em.HasBuffer<ShipWingTractorBeamElement>(ships[si])
                     ? em.GetBuffer<ShipWingTractorBeamElement>(ships[si])
                     : default;
 
                 BuildForShip(
                     ships[si].Index,
+                    shipNetworkId,
+                    nowServerTime,
                     shipStates[si],
                     shipOrbits[si].InOrbitRing,
                     shipTransforms[si],
@@ -201,8 +214,14 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Builds wing↔gem pairs for one ship into the frame caches. Skips gems blocked by
+        /// <see cref="GemSelfPickupBlock"/> for this ship's NetworkId (no beam during penalty).
+        /// </summary>
         static void BuildForShip(
             int shipIndex,
+            int shipNetworkId,
+            float nowServerTime,
             in ShipState shipState,
             bool inOrbit,
             in LocalTransform shipTransform,
@@ -225,6 +244,10 @@ namespace TitanOrbit.Game
 
                     for (int gi = 0; gi < gems.Count; gi++)
                     {
+                        // [TITAN-ORBIT] No beam to own damage-spill during SelfPickupBlockSeconds.
+                        if (GemSelfPickupBlock.IsBlockedForShip(gems[gi].State, shipNetworkId, nowServerTime))
+                            continue;
+
                         float3 gemPos = gems[gi].Transform.Position;
                         float dist = GemTractorBeamMath.ToroidalDistance(gemPos, wingPos, mapW, mapH);
                         if (dist > searchRadius)
@@ -250,6 +273,9 @@ namespace TitanOrbit.Game
 
                 for (int gi = 0; gi < gems.Count; gi++)
                 {
+                    if (GemSelfPickupBlock.IsBlockedForShip(gems[gi].State, shipNetworkId, nowServerTime))
+                        continue;
+
                     float3 gemPos = gems[gi].Transform.Position;
                     float dist = GemTractorBeamMath.ToroidalDistance(gemPos, origin, mapW, mapH);
                     if (dist > searchRadius)
@@ -394,8 +420,21 @@ namespace TitanOrbit.Game
         {
             if (!IsShipEligibleForBeam(shipState))
                 return false;
-            if (em.HasComponent<GemState>(gemEntity) && !IsGemEligibleForBeam(em.GetComponentData<GemState>(gemEntity)))
-                return false;
+            if (em.HasComponent<GemState>(gemEntity))
+            {
+                var gemState = em.GetComponentData<GemState>(gemEntity);
+                if (!IsGemEligibleForBeam(gemState))
+                    return false;
+
+                // Mirror BuildForShip — no candidate range during damage-spill self-pickup block.
+                int shipNetworkId = 0;
+                if (em.HasComponent<GhostOwner>(shipEntity))
+                    shipNetworkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+                float nowServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
+                    em, Time.timeAsDouble);
+                if (GemSelfPickupBlock.IsBlockedForShip(gemState, shipNetworkId, nowServerTime))
+                    return false;
+            }
 
             int shipLevel = math.max(1, shipState.ShipLevel);
             bool inOrbit = TryGetInOrbit(em, shipEntity);
@@ -712,6 +751,11 @@ namespace TitanOrbit.Game
             return true;
         }
 
+        /// <summary>
+        /// Gem has value and is not mid-deposit. Self-pickup penalty is ship-specific — checked
+        /// in <see cref="BuildForShip"/> / <see cref="IsWithinCandidateRange"/> via
+        /// <see cref="GemSelfPickupBlock"/>, not here (other ships may still beam the same gem).
+        /// </summary>
         public static bool IsGemEligibleForBeam(in GemState gem) =>
             gem.Value > 0.001f && gem.DepositTeam == TeamId.None;
 

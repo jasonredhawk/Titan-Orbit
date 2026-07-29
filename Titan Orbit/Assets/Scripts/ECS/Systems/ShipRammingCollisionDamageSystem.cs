@@ -528,6 +528,12 @@ namespace TitanOrbit.ECS
 
             if (result.GemsToExpel > 0.0001f)
             {
+                // [TITAN-ORBIT] Stamp GhostOwner.NetworkId so this ship cannot reclaim spilled gems
+                // until GemExplosionSettings.SelfPickupBlockSeconds elapses.
+                int sourceNetworkId = 0;
+                if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                    sourceNetworkId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+
                 ShipGemExpulsion.SpawnFromDamage(
                     ecb,
                     gemPrefab,
@@ -535,7 +541,8 @@ namespace TitanOrbit.ECS
                     result.GemsToExpel,
                     expulsionIntensity,
                     salt: (uint)(shipEntity.Index * 73856093) ^ (uint)(now * 1000.0),
-                    spawnServerTime);
+                    spawnServerTime,
+                    sourceNetworkId);
             }
         }
     }

@@ -69,8 +69,12 @@ namespace TitanOrbit.Data
         public int minAsteroidClusters = 8;
         [Tooltip("Each map rolls a random cluster count in this range (inclusive).")]
         public int maxAsteroidClusters = 35;
-        [Tooltip("Gem value range rolled per asteroid (drives size and remaining gems).")]
+        [Tooltip(
+            "LEGACY — asteroid Size / HP / gems are now driven by Assets/Data/AsteroidSettings.asset " +
+            "(MinSize–MaxSize, HealthPerSize, GemsPerSize). These fields are unused for spawn math " +
+            "but kept so old scenes do not lose serialized data.")]
         public float minAsteroidGemValue = 1f;
+        [Tooltip("LEGACY — see AsteroidSettings.asset for gem capacity (Size × GemsPerSize).")]
         public float maxAsteroidGemValue = 70f;
         public float minAsteroidSpacing = 1.5f;
     }

@@ -86,6 +86,14 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float GemShrinkDurationSeconds = 3f;
 
+        [Header("Damage expulsion (ship cargo spill)")]
+        [Tooltip(
+            "Seconds after a ship spills gems from damage before THAT ship may tractor or pick them up. " +
+            "Other ships can take them immediately. 0 = no penalty. Default 2 makes reclaiming your " +
+            "own spilled cargo a real fight risk.")]
+        [Min(0f)]
+        public float SelfPickupBlockSeconds = 2f;
+
         /// <summary>Clamps min/max so Max ≥ Min and both stay in 1–10; keeps unit value ≥ 1.</summary>
         public void ClampCounts()
         {
@@ -102,6 +110,7 @@ namespace TitanOrbit.Data
             GemShrinkDurationSeconds = Mathf.Max(0f, GemShrinkDurationSeconds);
             if (GemShrinkDurationSeconds > GemLifetimeSeconds)
                 GemShrinkDurationSeconds = GemLifetimeSeconds;
+            SelfPickupBlockSeconds = Mathf.Max(0f, SelfPickupBlockSeconds);
         }
 
         void OnValidate() => ClampCounts();

@@ -20,8 +20,44 @@ namespace TitanOrbit.ECS
         /// <summary>Home planets use a larger gem-moon influence radius for map spacing math.</summary>
         public const float HomeGemMoonScaleMultiplier = 1.5f;
 
-        const float MinAsteroidRadius = 0.35f;
-        const float MaxAsteroidRadius = MinAsteroidRadius * 10f;
+        /// <summary>
+        /// Burst-safe asteroid body tuning snapshot (copied from <c>AsteroidSettings</c> before layout).
+        /// Size is a designer unit; visual scale and HP/gems are derived from the ratios.
+        /// </summary>
+        public struct AsteroidBodyTuning
+        {
+            /// <summary>Rolled Size lower bound.</summary>
+            public float MinSize;
+
+            /// <summary>Rolled Size upper bound.</summary>
+            public float MaxSize;
+
+            /// <summary>Max Health = Size × this.</summary>
+            public float HealthPerSize;
+
+            /// <summary>Gem capacity = Size × this.</summary>
+            public float GemsPerSize;
+
+            /// <summary>Uniform mesh scale at MinSize (before jitter).</summary>
+            public float VisualScaleAtMinSize;
+
+            /// <summary>Uniform mesh scale at MaxSize (before jitter).</summary>
+            public float VisualScaleAtMaxSize;
+
+            /// <summary>Largest visual scale — used for planet-ring overlap clearance.</summary>
+            public float MaxVisualRadius => math.max(VisualScaleAtMinSize, VisualScaleAtMaxSize);
+        }
+
+        /// <summary>Legacy defaults when no <c>AsteroidSettings</c> asset is loaded (size≈old gem range).</summary>
+        public static AsteroidBodyTuning DefaultAsteroidBodyTuning => new AsteroidBodyTuning
+        {
+            MinSize = 1f,
+            MaxSize = 70f,
+            HealthPerSize = 1f,
+            GemsPerSize = 1f,
+            VisualScaleAtMinSize = 0.35f,
+            VisualScaleAtMaxSize = 3.5f,
+        };
 
         /// <summary>One planet's world position and clearance ring for overlap tests during placement.</summary>
         public struct PlanetPlacement
@@ -59,12 +95,17 @@ namespace TitanOrbit.ECS
             public int Level;
         }
 
-        /// <summary>Spawn layout for one asteroid — scale is non-uniform for visual variety.</summary>
+        /// <summary>
+        /// Spawn layout for one asteroid — scale is non-uniform for visual variety.
+        /// <see cref="GemValue"/> and <see cref="MaxHealth"/> come from designer Size × ratios
+        /// in <see cref="AsteroidBodyTuning"/> (not 1:1 with each other unless ratios match).
+        /// </summary>
         public struct AsteroidLayout
         {
             public float3 Position;
             public float3 Scale;
             public float GemValue;
+            public float MaxHealth;
         }
 
         /// <summary>Non-zero seed for one match when MapGenerationSettings.seed is 0 (random each play).</summary>
@@ -204,12 +245,14 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Fills asteroid clusters around sector-sampled centers; gem value scales visual size.
+        /// Fills asteroid clusters around sector-sampled centers.
+        /// Size (from <paramref name="body"/>) drives visual scale, HP, and gems via ratios.
         /// Retries placement so we reach the rolled target count even when planet rings are dense.
         /// </summary>
         public static void BuildAsteroids(
             in MapGenerationConfig config,
             in RolledParameters rolled,
+            in AsteroidBodyTuning body,
             ref Random rng,
             NativeList<PlanetPlacement> planetPlacements,
             NativeList<AsteroidLayout> output)
@@ -220,13 +263,10 @@ namespace TitanOrbit.ECS
 
             var asteroidPositions = new NativeList<float3>(rolled.AsteroidCount, Allocator.Temp);
             int perCluster = (int)math.ceil((float)rolled.AsteroidCount / math.max(1, rolled.AsteroidClusterCount));
-            var clusterCenters = PickAsteroidClusterCenters(
-                config, rolled, planetPlacements, rolled.AsteroidClusterCount, ref rng);
-
-            float gemLo = math.min(config.MinAsteroidGemValue, config.MaxAsteroidGemValue);
-            float gemHi = math.max(config.MinAsteroidGemValue, config.MaxAsteroidGemValue);
-            float gemSpan = math.max(0.001f, gemHi - gemLo);
             float minSpacing = math.max(0.25f, config.MinAsteroidSpacing);
+            float clearanceRadius = math.max(0.1f, body.MaxVisualRadius);
+            var clusterCenters = PickAsteroidClusterCenters(
+                config, rolled, planetPlacements, rolled.AsteroidClusterCount, clearanceRadius, ref rng);
 
             // --- Primary pass: place near cluster centers ---
             // [TITAN-ORBIT] Each slot gets several attempts; a single overlap used to skip the slot
@@ -237,8 +277,8 @@ namespace TitanOrbit.ECS
                 for (int i = 0; i < perCluster && output.Length < rolled.AsteroidCount; i++)
                 {
                     if (!TryPlaceAsteroidNearCenter(
-                            config, rolled, planetPlacements, asteroidPositions, center, perCluster,
-                            minSpacing, gemLo, gemHi, gemSpan, ref rng, output))
+                            config, rolled, body, planetPlacements, asteroidPositions, center, perCluster,
+                            minSpacing, clearanceRadius, ref rng, output))
                     {
                         // Keep trying other clusters; fill pass below covers shortfall.
                     }
@@ -260,10 +300,10 @@ namespace TitanOrbit.ECS
                     if (IsTooCloseToAny(position, minSpacing, asteroidPositions))
                         continue;
                     if (OverlapsPlanetOrbitRings(
-                            config, planetPlacements, rolled.MapWidth, rolled.MapHeight, position, MaxAsteroidRadius))
+                            config, planetPlacements, rolled.MapWidth, rolled.MapHeight, position, clearanceRadius))
                         continue;
 
-                    AppendAsteroidLayout(position, gemLo, gemHi, gemSpan, ref rng, asteroidPositions, output);
+                    AppendAsteroidLayout(position, body, ref rng, asteroidPositions, output);
                     placed = true;
                     break;
                 }
@@ -282,14 +322,13 @@ namespace TitanOrbit.ECS
         static bool TryPlaceAsteroidNearCenter(
             in MapGenerationConfig config,
             in RolledParameters rolled,
+            in AsteroidBodyTuning body,
             NativeList<PlanetPlacement> planetPlacements,
             NativeList<float3> asteroidPositions,
             float3 center,
             int perCluster,
             float minSpacing,
-            float gemLo,
-            float gemHi,
-            float gemSpan,
+            float clearanceRadius,
             ref Random rng,
             NativeList<AsteroidLayout> output)
         {
@@ -300,29 +339,41 @@ namespace TitanOrbit.ECS
                 if (IsTooCloseToAny(position, minSpacing, asteroidPositions))
                     continue;
                 if (OverlapsPlanetOrbitRings(
-                        config, planetPlacements, rolled.MapWidth, rolled.MapHeight, position, MaxAsteroidRadius))
+                        config, planetPlacements, rolled.MapWidth, rolled.MapHeight, position, clearanceRadius))
                     continue;
 
-                AppendAsteroidLayout(position, gemLo, gemHi, gemSpan, ref rng, asteroidPositions, output);
+                AppendAsteroidLayout(position, body, ref rng, asteroidPositions, output);
                 return true;
             }
 
             return false;
         }
 
-        /// <summary>Writes one asteroid layout entry and records its position for spacing tests.</summary>
+        /// <summary>
+        /// Rolls designer Size, derives gems/HP/visual scale from <paramref name="body"/> ratios,
+        /// applies per-axis jitter, and records the position for spacing tests.
+        /// </summary>
         static void AppendAsteroidLayout(
             float3 position,
-            float gemLo,
-            float gemHi,
-            float gemSpan,
+            in AsteroidBodyTuning body,
             ref Random rng,
             NativeList<float3> asteroidPositions,
             NativeList<AsteroidLayout> output)
         {
             asteroidPositions.Add(position);
-            float gemValue = rng.NextFloat(gemLo, gemHi);
-            float linearScale = math.lerp(MinAsteroidRadius, MaxAsteroidRadius, (gemValue - gemLo) / gemSpan);
+
+            // --- Designer Size first (drives HP, gems, and visual scale) ---
+            float sizeLo = math.min(body.MinSize, body.MaxSize);
+            float sizeHi = math.max(body.MinSize, body.MaxSize);
+            float size = rng.NextFloat(sizeLo, sizeHi);
+            float sizeSpan = math.max(0.001f, sizeHi - sizeLo);
+            float t = math.saturate((size - sizeLo) / sizeSpan);
+
+            float gemValue = math.max(0.25f, size * math.max(0f, body.GemsPerSize));
+            float maxHealth = math.max(1f, size * math.max(0.01f, body.HealthPerSize));
+            float linearScale = math.lerp(body.VisualScaleAtMinSize, body.VisualScaleAtMaxSize, t);
+
+            // Slight non-uniform mesh so rocks do not look identical.
             float3 scale = new float3(
                 linearScale * (0.8f + rng.NextFloat() * 0.4f),
                 linearScale * (0.9f + rng.NextFloat() * 0.2f),
@@ -333,6 +384,7 @@ namespace TitanOrbit.ECS
                 Position = position,
                 Scale = scale,
                 GemValue = gemValue,
+                MaxHealth = maxHealth,
             });
         }
 
@@ -596,6 +648,7 @@ namespace TitanOrbit.ECS
             in RolledParameters rolled,
             NativeList<PlanetPlacement> planetPlacements,
             int clusterCount,
+            float asteroidClearanceRadius,
             ref Random rng,
             Allocator allocator = Allocator.Temp)
         {
@@ -604,6 +657,7 @@ namespace TitanOrbit.ECS
             float halfH = rolled.MapHeight * 0.5f;
             float sectorWidth = math.PI * 2f / math.max(1, clusterCount);
             float sectorJitter = sectorWidth * 0.85f;
+            float clearance = math.max(0.1f, asteroidClearanceRadius);
 
             for (int c = 0; c < clusterCount; c++)
             {
@@ -619,7 +673,7 @@ namespace TitanOrbit.ECS
                         math.cos(angle) * radial * halfW,
                         0f,
                         math.sin(angle) * radial * halfH);
-                    if (!OverlapsPlanetOrbitRings(config, planetPlacements, rolled.MapWidth, rolled.MapHeight, candidate, MaxAsteroidRadius))
+                    if (!OverlapsPlanetOrbitRings(config, planetPlacements, rolled.MapWidth, rolled.MapHeight, candidate, clearance))
                     {
                         chosen = candidate;
                         found = true;
@@ -630,7 +684,7 @@ namespace TitanOrbit.ECS
                 centers[c] = found
                     ? chosen
                     : GetRandomMapPositionAvoidingPlanetRings(
-                        config, rolled.MapWidth, rolled.MapHeight, planetPlacements, MaxAsteroidRadius, ref rng);
+                        config, rolled.MapWidth, rolled.MapHeight, planetPlacements, clearance, ref rng);
             }
 
             return centers;

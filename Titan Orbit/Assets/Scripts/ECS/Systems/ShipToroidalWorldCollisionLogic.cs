@@ -80,6 +80,10 @@ namespace TitanOrbit.ECS
         /// <param name="mapW">Map width.</param>
         /// <param name="mapH">Map height.</param>
         /// <param name="restitution">Bounce coefficient (typically <see cref="WorldRestitution"/>).</param>
+        /// <param name="friction">
+        /// Tangential grip (0 = ice). Asteroids pass <c>AsteroidSettings.Friction</c>; planets pass 0.
+        /// </param>
+        /// <param name="dt">Fixed step for friction damping (ignored when friction ≤ 0).</param>
         /// <returns>True when a penetration was resolved this call.</returns>
         public static bool TryResolveShipVsWorldSphere(
             ref float3 shipPos,
@@ -89,7 +93,9 @@ namespace TitanOrbit.ECS
             float bodyRadius,
             float mapW,
             float mapH,
-            float restitution)
+            float restitution,
+            float friction = 0f,
+            float dt = 0f)
         {
             // --- Same tile: leave to Unity Physics ---
             // [TITAN-ORBIT] Avoids double-bounce near the origin where Euclidean contacts already work.
@@ -133,6 +139,10 @@ namespace TitanOrbit.ECS
                 float e = math.saturate(restitution);
                 vel -= normal * vn * (1f + e);
             }
+
+            // --- Asteroid grip across seams (PhysX never sees this pair) ---
+            if (friction > 0f)
+                vel = AsteroidColliderMaterialLogic.ApplyTangentialFriction(vel, normal, friction, dt);
 
             shipVel = vel;
             return true;

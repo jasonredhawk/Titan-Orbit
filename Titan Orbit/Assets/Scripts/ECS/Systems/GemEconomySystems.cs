@@ -412,6 +412,10 @@ namespace TitanOrbit.ECS
             if (ToroidalMapEcs.IsValidMapSize(preferredW, preferredH))
                 ToroidalMapEcs.SetMapSize(mapW, mapH);
 
+            // --- Same timeline as GemState.SpawnServerTime / self-pickup block stamps ---
+            float nowServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
+                state.EntityManager, SystemAPI.Time.ElapsedTime);
+
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             foreach (var (shipTransform, shipState, shipEntity) in SystemAPI
@@ -426,6 +430,10 @@ namespace TitanOrbit.ECS
                 if (capacityLeft <= 0.001f)
                     continue;
 
+                int shipNetworkId = 0;
+                if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                    shipNetworkId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+
                 bool hasWings = state.EntityManager.HasBuffer<ShipWingTractorBeamElement>(shipEntity) &&
                                 state.EntityManager.GetBuffer<ShipWingTractorBeamElement>(shipEntity).Length > 0;
 
@@ -434,6 +442,10 @@ namespace TitanOrbit.ECS
                              .WithAll<GemTag>()
                              .WithEntityAccess())
                 {
+                    // [TITAN-ORBIT] Damage-spill penalty — source ship cannot reclaim yet.
+                    if (GemSelfPickupBlock.IsBlockedForShip(gemState.ValueRO, shipNetworkId, nowServerTime))
+                        continue;
+
                     if (!IsWithinPickupRange(
                             state.EntityManager,
                             shipEntity,
@@ -810,19 +822,25 @@ namespace TitanOrbit.ECS
                 }
 
                 // --- Schedule respawn (original AsteroidRespawnManager.ScheduleRespawn) ---
-                // Prefer MaxGems. If unset: mining leaves Health full / RemainingGems 0; bullet
-                // kills leave Health 0 / RemainingGems full — max() covers both.
+                // Prefer MaxGems / MaxHealth. Fallbacks cover older rocks that only had HP=gems.
                 float restoreGems = a.MaxGems;
                 if (restoreGems < GemEconomyConstants.MinGemSpawnValue)
                     restoreGems = math.max(a.Health, remaining);
                 if (restoreGems < GemEconomyConstants.MinGemSpawnValue)
                     restoreGems = 1f;
 
+                float restoreHealth = a.MaxHealth;
+                if (restoreHealth < 1f)
+                    restoreHealth = math.max(a.Health, restoreGems);
+                if (restoreHealth < 1f)
+                    restoreHealth = 1f;
+
                 AsteroidSpawning.ScheduleRespawn(
                     respawnBuffer,
                     pos,
                     asteroidTransform.ValueRO.Scale,
                     restoreGems,
+                    restoreHealth,
                     now,
                     settings.AsteroidRespawnDelaySeconds);
 
@@ -898,6 +916,12 @@ namespace TitanOrbit.ECS
         /// 0..1 launch hardness for damage expulsion (1 = asteroid-burst default). Ignored when
         /// <paramref name="burst"/> is false.
         /// </param>
+        /// <param name="excludePickupNetworkId">
+        /// Damage-spill source ship NetworkId, or 0 for free gems (mining / asteroid burst).
+        /// </param>
+        /// <param name="excludePickupUntilServerTime">
+        /// ServerTick-timeline seconds when that ship may collect again (0 = no exclusion).
+        /// </param>
         public static void Spawn(
             EntityCommandBuffer ecb,
             Entity gemPrefab,
@@ -909,7 +933,9 @@ namespace TitanOrbit.ECS
             GemExplosionSettings settings = null,
             byte burstIndex = 0,
             bool isBonusGem = false,
-            float burstIntensity = 1f)
+            float burstIntensity = 1f,
+            int excludePickupNetworkId = 0,
+            float excludePickupUntilServerTime = 0f)
         {
             if (value <= 0f)
                 return;
@@ -931,6 +957,10 @@ namespace TitanOrbit.ECS
                 DepositTeam = TeamId.None,
                 SpawnServerTime = spawnServerTime,
                 IsBonusGem = isBonusGem,
+                // [TITAN-ORBIT] Damage-spill self-pickup penalty (ghosted — client hides beams too).
+                // Mining / asteroid bursts leave these 0.
+                ExcludePickupNetworkId = excludePickupNetworkId,
+                ExcludePickupUntilServerTime = excludePickupUntilServerTime,
             });
 
             // --- Motion phase + burst slot (ghosted for client handoff / tractor lock) ---
@@ -985,6 +1015,10 @@ namespace TitanOrbit.ECS
         /// <param name="intensity">0..1 launch hardness (ram impact high, grind / bullets softer).</param>
         /// <param name="salt">Deterministic RNG salt (entity index + tick).</param>
         /// <param name="spawnServerTime">Server elapsed seconds for lifetime.</param>
+        /// <param name="sourceShipNetworkId">
+        /// <see cref="GhostOwner.NetworkId"/> of the spilling ship — blocked from reclaim until
+        /// <see cref="GemExplosionSettings.SelfPickupBlockSeconds"/> elapses.
+        /// </param>
         public static void SpawnFromDamage(
             EntityCommandBuffer ecb,
             Entity gemPrefab,
@@ -992,10 +1026,23 @@ namespace TitanOrbit.ECS
             float gemValue,
             float intensity,
             uint salt,
-            float spawnServerTime)
+            float spawnServerTime,
+            int sourceShipNetworkId)
         {
             if (gemPrefab == Entity.Null || gemValue < GemEconomyConstants.MinGemSpawnValue)
                 return;
+
+            // --- Self-pickup penalty stamp ---
+            // [TITAN-ORBIT] Other ships may take the gem immediately; the source cannot until delay.
+            var settings = GemExplosionSettingsCache.ResolveOrDefault();
+            settings.ClampCounts();
+            float blockUntil = 0f;
+            int excludeId = 0;
+            if (sourceShipNetworkId > 0 && settings.SelfPickupBlockSeconds > 0f)
+            {
+                excludeId = sourceShipNetworkId;
+                blockUntil = spawnServerTime + settings.SelfPickupBlockSeconds;
+            }
 
             // [TITAN-ORBIT] One gem per hit — value drives size (sqrt) and musical pitch.
             GemSpawning.Spawn(
@@ -1006,10 +1053,34 @@ namespace TitanOrbit.ECS
                 salt,
                 burst: true,
                 spawnServerTime,
-                settings: null,
+                settings: settings,
                 burstIndex: 0,
                 isBonusGem: false,
-                burstIntensity: math.saturate(intensity));
+                burstIntensity: math.saturate(intensity),
+                excludePickupNetworkId: excludeId,
+                excludePickupUntilServerTime: blockUntil);
+        }
+    }
+
+    /// <summary>
+    /// Shared check: damage-spilled gems block the source ship from pickup / tractor until the
+    /// stamped <see cref="GemState.ExcludePickupUntilServerTime"/>.
+    /// </summary>
+    public static class GemSelfPickupBlock
+    {
+        /// <summary>
+        /// True when <paramref name="shipNetworkId"/> is the expelling ship and the penalty window
+        /// has not elapsed yet on the SpawnServerTime timeline.
+        /// </summary>
+        public static bool IsBlockedForShip(in GemState gem, int shipNetworkId, float nowServerTime)
+        {
+            if (shipNetworkId <= 0 || gem.ExcludePickupNetworkId <= 0)
+                return false;
+            if (shipNetworkId != gem.ExcludePickupNetworkId)
+                return false;
+            if (gem.ExcludePickupUntilServerTime <= 0f)
+                return false;
+            return nowServerTime < gem.ExcludePickupUntilServerTime;
         }
     }
 }

@@ -705,6 +705,12 @@ namespace TitanOrbit.ECS
                         state.EntityManager.HasComponent<LocalTransform>(bestEntity))
                     {
                         float3 shipPos = state.EntityManager.GetComponentData<LocalTransform>(bestEntity).Position;
+                        // [TITAN-ORBIT] Stamp GhostOwner.NetworkId so the hit ship cannot reclaim
+                        // spilled gems until GemExplosionSettings.SelfPickupBlockSeconds elapses.
+                        int sourceNetworkId = 0;
+                        if (state.EntityManager.HasComponent<GhostOwner>(bestEntity))
+                            sourceNetworkId = state.EntityManager.GetComponentData<GhostOwner>(bestEntity).NetworkId;
+
                         // Legacy bullet expulsion intensity default was 0.5.
                         ShipGemExpulsion.SpawnFromDamage(
                             ecb,
@@ -713,7 +719,8 @@ namespace TitanOrbit.ECS
                             result.GemsToExpel,
                             intensity: 0.5f,
                             salt: (uint)(bestEntity.Index * 19349663) ^ (uint)(serverElapsed * 1000.0),
-                            gemSpawnServerTime);
+                            gemSpawnServerTime,
+                            sourceNetworkId);
                     }
 
                     return true;

@@ -96,6 +96,10 @@ namespace TitanOrbit.ECS
             var activePairs = _activePairsScratch;
             _gemsLockedThisFrame.Clear();
 
+            // --- Same timeline as GemState.SpawnServerTime / self-pickup block stamps ---
+            float nowServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
+                EntityManager, now);
+
             // --- Per ship: assign gems to wings, write locks, apply pull velocity ---
             foreach (var (shipTransform, shipState, shipOrbit, moonDock, shipEntity) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRO<ShipState>, RefRO<ShipOrbitState>, RefRO<ShipMoonDockState>>()
@@ -123,6 +127,8 @@ namespace TitanOrbit.ECS
                 var wings = EntityManager.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
                 BuildAssignment(
                     shipEntity,
+                    shipNetworkId,
+                    nowServerTime,
                     shipTransform.ValueRO,
                     inOrbit,
                     shipLevel,
@@ -136,6 +142,7 @@ namespace TitanOrbit.ECS
                 ApplyLockAndPull(
                     shipEntity,
                     shipNetworkId,
+                    nowServerTime,
                     shipTransform.ValueRO,
                     inOrbit,
                     shipLevel,
@@ -179,6 +186,7 @@ namespace TitanOrbit.ECS
         void ApplyLockAndPull(
             Entity shipEntity,
             int shipNetworkId,
+            float nowServerTime,
             in LocalTransform shipTransform,
             bool inOrbit,
             int shipLevel,
@@ -214,7 +222,8 @@ namespace TitanOrbit.ECS
                          .WithAll<GemTag>()
                          .WithEntityAccess())
             {
-                if (!PassesGemEligibility(gemState.ValueRO))
+                // Re-check self-pickup block (BuildAssignment already filtered; keep Apply safe).
+                if (!PassesGemEligibility(gemState.ValueRO, shipNetworkId, nowServerTime))
                     continue;
                 if (!_wingsByGem.TryGetValue(gemEntity.Index, out var wingList) || wingList.Count == 0)
                     continue;
@@ -379,6 +388,8 @@ namespace TitanOrbit.ECS
         /// </summary>
         void BuildAssignment(
             Entity shipEntity,
+            int shipNetworkId,
+            float nowServerTime,
             in LocalTransform shipTransform,
             bool inOrbit,
             int shipLevel,
@@ -399,7 +410,8 @@ namespace TitanOrbit.ECS
             {
                 _stickyLocksByShip.Remove(shipIndex);
                 BuildFallbackAssignment(
-                    shipEntity, shipTransform, inOrbit, mapW, mapH, now, serverTick, activePairs);
+                    shipEntity, shipNetworkId, nowServerTime, shipTransform, inOrbit, mapW, mapH, now,
+                    serverTick, activePairs);
                 return;
             }
 
@@ -421,7 +433,7 @@ namespace TitanOrbit.ECS
                              .WithAll<GemTag>()
                              .WithEntityAccess())
                 {
-                    if (!PassesGemEligibility(gemState.ValueRO))
+                    if (!PassesGemEligibility(gemState.ValueRO, shipNetworkId, nowServerTime))
                         continue;
 
                     float3 gemPos = gemTransform.ValueRO.Position;
@@ -477,6 +489,8 @@ namespace TitanOrbit.ECS
         /// <summary>Ships without wing buffers pull the single closest gem to hull center.</summary>
         void BuildFallbackAssignment(
             Entity shipEntity,
+            int shipNetworkId,
+            float nowServerTime,
             in LocalTransform shipTransform,
             bool inOrbit,
             float mapW,
@@ -496,7 +510,7 @@ namespace TitanOrbit.ECS
                          .WithAll<GemTag>()
                          .WithEntityAccess())
             {
-                if (!PassesGemEligibility(gemState.ValueRO))
+                if (!PassesGemEligibility(gemState.ValueRO, shipNetworkId, nowServerTime))
                     continue;
 
                 float3 gemPos = gemTransform.ValueRO.Position;
@@ -573,8 +587,14 @@ namespace TitanOrbit.ECS
             return true;
         }
 
-        static bool PassesGemEligibility(in GemState gem) =>
-            gem.Value > 0.001f && gem.DepositTeam == TeamId.None;
+        /// <summary>
+        /// Loose gem with value, not already depositing, and not in the source ship's
+        /// damage-spill self-pickup penalty window.
+        /// </summary>
+        static bool PassesGemEligibility(in GemState gem, int shipNetworkId, float nowServerTime) =>
+            gem.Value > 0.001f &&
+            gem.DepositTeam == TeamId.None &&
+            !GemSelfPickupBlock.IsBlockedForShip(gem, shipNetworkId, nowServerTime);
 
         static long PairKey(int shipIndex, int gemIndex) => ((long)shipIndex << 32) | (uint)gemIndex;
     }

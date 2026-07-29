@@ -72,6 +72,12 @@ namespace TitanOrbit.ECS
         public float MaxGems;
 
         /// <summary>
+        /// [TITAN-ORBIT] Original max Health at spawn (server-only). Independent of MaxGems when
+        /// <c>AsteroidSettings</c> HealthPerSize ≠ GemsPerSize. Respawn restores Health from this.
+        /// </summary>
+        public float MaxHealth;
+
+        /// <summary>
         /// [TITAN-ORBIT] Server-only: last ship team that mined or shot this rock. Destroy bonus
         /// yellow gems require this team to be in <see cref="TerritoryTeamsMask"/> (friendly only).
         /// Not ghosted — clients do not need it for presentation.
@@ -109,6 +115,20 @@ namespace TitanOrbit.ECS
         /// destroy yield inside a friendly triangle — NGO <c>isBonusGem</c>.
         /// </summary>
         [GhostField] public bool IsBonusGem;
+
+        /// <summary>
+        /// [TITAN-ORBIT] <see cref="GhostOwner.NetworkId"/> of the ship that spilled this gem from
+        /// damage, or 0 if free for everyone (mining / asteroid burst). Ghosted so client tractor
+        /// VFX can hide beams during the self-pickup penalty (server already skips pull/pickup).
+        /// Paired with <see cref="ExcludePickupUntilServerTime"/>.
+        /// </summary>
+        [GhostField] public int ExcludePickupNetworkId;
+
+        /// <summary>
+        /// [TITAN-ORBIT] SpawnServerTime-timeline seconds when the expelling ship may collect /
+        /// show tractor beams again. 0 = no exclusion. Ghosted with <see cref="ExcludePickupNetworkId"/>.
+        /// </summary>
+        [GhostField] public float ExcludePickupUntilServerTime;
     }
 
     /// <summary>
@@ -118,7 +138,7 @@ namespace TitanOrbit.ECS
     public struct AsteroidRespawnQueueTag : IComponentData { }
 
     /// <summary>
-    /// [TITAN-ORBIT] One scheduled asteroid respawn — same position/scale/gem value as the destroyed rock.
+    /// [TITAN-ORBIT] One scheduled asteroid respawn — same position/scale/gems/HP as the destroyed rock.
     /// Original NGO <c>AsteroidRespawnManager.PendingRespawn</c> (default delay 30s).
     /// </summary>
     public struct PendingAsteroidRespawnElement : IBufferElementData
@@ -129,8 +149,11 @@ namespace TitanOrbit.ECS
         /// <summary>Uniform LocalTransform scale for the fresh asteroid.</summary>
         public float Scale;
 
-        /// <summary>Full gem capacity / health restored on respawn (<see cref="AsteroidState.MaxGems"/>).</summary>
+        /// <summary>Full gem capacity restored on respawn (<see cref="AsteroidState.MaxGems"/>).</summary>
         public float GemValue;
+
+        /// <summary>Full Health restored on respawn (<see cref="AsteroidState.MaxHealth"/>).</summary>
+        public float MaxHealth;
 
         /// <summary>Server ElapsedTime when this entry is due to spawn.</summary>
         public double RespawnAtElapsedTime;

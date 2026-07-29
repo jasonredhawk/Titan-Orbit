@@ -41,13 +41,11 @@ namespace TitanOrbit.ECS.Authoring
 
                 // --- Static physics collider ---
                 // [PHYSICS] WorldStatic layer — collides with Ship layer only (see TitanOrbitPhysicsLayers).
-                // [TITAN-ORBIT] Restitution ~0.5 for bounce off asteroid clusters.
-                var material = Unity.Physics.Material.Default;
-                material.Restitution = 0.5f;
-                var collider = Unity.Physics.SphereCollider.Create(
-                    new SphereGeometry { Center = float3.zero, Radius = BodyCollisionMath.AsteroidMeshBaseRadius },
-                    TitanOrbitPhysicsLayers.WorldStatic,
-                    material);
+                // [TITAN-ORBIT] Friction / restitution match AsteroidSettings defaults; runtime spawn
+                // rebuilds from AsteroidSettingsCache so Inspector tweaks apply without rebake.
+                var collider = AsteroidColliderMaterialLogic.CreateWorldStaticSphere(
+                    AsteroidColliderMaterialLogic.DefaultFriction,
+                    AsteroidColliderMaterialLogic.DefaultRestitution);
                 AddBlobAsset(ref collider, out _);
                 AddComponent(entity, new PhysicsCollider { Value = collider });
                 AddSharedComponent(entity, new PhysicsWorldIndex(0));

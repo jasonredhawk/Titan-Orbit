@@ -191,6 +191,17 @@ namespace TitanOrbit.ECS
             bool enqueueRam = state.World.IsServer() &&
                               SystemAPI.TryGetSingletonBuffer(out ramQueue);
 
+            // --- Asteroid grip (Inspector AsteroidSettings.Friction) for cross-seam resolves ---
+            float asteroidFriction = 0f;
+            float fixedDt = SystemAPI.Time.DeltaTime;
+            if (fixedDt <= 0f)
+                fixedDt = 1f / 60f;
+            {
+                var asteroidSettings = TitanOrbit.Data.AsteroidSettingsCache.ResolveOrDefault();
+                asteroidSettings.ClampValues();
+                asteroidFriction = asteroidSettings.Friction;
+            }
+
             // --- Resolve each predicted/simulated ship ---
             foreach (var (transform, velocity, physicsCollider, shipState, shipEntity) in SystemAPI
                          .Query<RefRW<LocalTransform>, RefRW<PhysicsVelocity>, RefRO<PhysicsCollider>, RefRO<ShipState>>()
@@ -211,10 +222,12 @@ namespace TitanOrbit.ECS
                     WorldSphere body = obstacles[i];
                     float3 posBefore = shipPos;
                     float3 velBefore = shipVel;
+                    float bodyFriction = body.IsAsteroid != 0 ? asteroidFriction : 0f;
                     if (ShipToroidalWorldCollisionLogic.TryResolveShipVsWorldSphere(
                             ref shipPos, ref shipVel, shipRadius,
                             body.Position, body.Radius,
-                            mapW, mapH, ShipToroidalWorldCollisionLogic.WorldRestitution))
+                            mapW, mapH, ShipToroidalWorldCollisionLogic.WorldRestitution,
+                            bodyFriction, fixedDt))
                     {
                         anyHit = true;
 

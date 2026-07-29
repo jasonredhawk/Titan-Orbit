@@ -115,6 +115,7 @@ namespace TitanOrbit.ECS
             public TeamId Team;
             public int Level;
             public float GemValue;
+            public float MaxHealth;
             public byte ShipFamilyConfigIndex;
 
             /// <summary>
@@ -327,7 +328,9 @@ namespace TitanOrbit.ECS
                 });
             }
 
-            MapGenerationLogic.BuildAsteroids(_config, _rolled, ref _rng, planetPlacements, asteroidLayouts);
+            var asteroidBody = ResolveAsteroidBodyTuning();
+            MapGenerationLogic.BuildAsteroids(
+                _config, _rolled, asteroidBody, ref _rng, planetPlacements, asteroidLayouts);
             for (int i = 0; i < asteroidLayouts.Length; i++)
             {
                 var asteroid = asteroidLayouts[i];
@@ -337,6 +340,7 @@ namespace TitanOrbit.ECS
                     Position = asteroid.Position,
                     Scale = asteroid.Scale,
                     GemValue = asteroid.GemValue,
+                    MaxHealth = asteroid.MaxHealth,
                     NeutralLayoutIndex = -1,
                 });
             }
@@ -502,7 +506,8 @@ namespace TitanOrbit.ECS
                         Position = pending.Position,
                         Scale = uniformScale,
                     });
-                    SpawnAsteroid(ref state, pending.Position, pending.Scale, pending.GemValue);
+                    SpawnAsteroid(
+                        ref state, pending.Position, pending.Scale, pending.GemValue, pending.MaxHealth);
                     break;
                 }
             }
@@ -617,21 +622,40 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Instantiates one asteroid from the map queue with full gem capacity (including MaxGems for respawn).
+        /// Instantiates one asteroid from the map queue with gem capacity and max Health from
+        /// <see cref="AsteroidSettings"/> ratios (via layout).
         /// </summary>
-        void SpawnAsteroid(ref SystemState state, float3 pos, float3 scale, float gemValue)
+        void SpawnAsteroid(ref SystemState state, float3 pos, float3 scale, float gemValue, float maxHealth)
         {
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Asteroid == Entity.Null)
                 return;
 
             // --- Shared spawn path (same as timed respawn) ---
-            // [TITAN-ORBIT] MaxGems is stored so destroy→respawn restores the original capacity.
             AsteroidSpawning.Spawn(
                 state.EntityManager,
                 prefabs.Asteroid,
                 pos,
                 math.cmax(scale),
-                gemValue);
+                gemValue,
+                maxHealth);
+        }
+
+        /// <summary>
+        /// Copies <see cref="AsteroidSettingsCache"/> into a Burst-safe layout tuning struct.
+        /// </summary>
+        static MapGenerationLogic.AsteroidBodyTuning ResolveAsteroidBodyTuning()
+        {
+            var settings = AsteroidSettingsCache.ResolveOrDefault();
+            settings.ClampValues();
+            return new MapGenerationLogic.AsteroidBodyTuning
+            {
+                MinSize = settings.MinSize,
+                MaxSize = settings.MaxSize,
+                HealthPerSize = settings.HealthPerSize,
+                GemsPerSize = settings.GemsPerSize,
+                VisualScaleAtMinSize = settings.VisualScaleAtMinSize,
+                VisualScaleAtMaxSize = settings.VisualScaleAtMaxSize,
+            };
         }
 
         static void SetOrAddComponent<T>(EntityManager em, Entity e, T value) where T : unmanaged, IComponentData
