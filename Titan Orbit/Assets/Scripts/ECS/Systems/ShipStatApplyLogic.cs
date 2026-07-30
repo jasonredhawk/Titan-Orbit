@@ -19,6 +19,11 @@ namespace TitanOrbit.ECS
         public int AppliedShipLevel;
         public int AppliedBranchIndex;
         /// <summary>
+        /// [TITAN-ORBIT] Last applied <see cref="ShipState.ShipFamilyConfigIndex"/> so switching
+        /// from AstroEagle to a captured-neutral family re-runs ApplyToShip at the same level/branch.
+        /// </summary>
+        public byte AppliedShipFamilyConfigIndex;
+        /// <summary>
         /// Sum of ghosted <see cref="ShipAttributeUpgradeState"/> levels at last apply.
         /// Client re-applies motor when attribute RPCs land without a level change.
         /// </summary>
@@ -70,52 +75,80 @@ namespace TitanOrbit.ECS
         public static void InvalidateConfigCache() => s_config = null;
 
         /// <summary>
-        /// Maps team + ship level + branch index to a chassis id string from the home-planet ladder.
-        /// When <paramref name="allowFallback"/> is true and the slot is empty, falls back to the
-        /// starter chassis (index 0). Purchase validation should pass false so missing L7/MEGA
-        /// slots do not silently become Hawk.
+        /// Maps ship family + level + branch to a chassis id from <see cref="PlanetShipFamilyConfig"/>.
+        /// Home family index 0 is AstroEagle; captured-neutral purchases write a non-zero index onto
+        /// <see cref="ShipState.ShipFamilyConfigIndex"/> so this resolves Cosmic Shark / etc.
+        /// When <paramref name="allowFallback"/> is true and the slot is empty, falls back to that
+        /// family's starter chassis (linear index 0). Purchase validation should pass false so missing
+        /// L7/MEGA slots do not silently become the starter hull.
         /// </summary>
+        /// <param name="team">Ship team (unused for ladder pick; kept for call-site compatibility).</param>
+        /// <param name="shipLevel">Upgrade ladder level 1–7.</param>
+        /// <param name="branchIndex">Branch within that level (0-based).</param>
+        /// <param name="chassisId">Resolved chassis string (e.g. CosmicShark_01), or null on failure.</param>
+        /// <param name="allowFallback">When true, empty ladder slots fall back to family starter.</param>
+        /// <param name="shipFamilyConfigIndex">
+        /// Index into PlanetShipFamilyConfig.families. Prefer the ghosted value on <see cref="ShipState"/>.
+        /// </param>
         public static bool TryResolveChassisId(
             TeamId team,
             int shipLevel,
             int branchIndex,
             out string chassisId,
-            bool allowFallback = true)
+            bool allowFallback = true,
+            int shipFamilyConfigIndex = -1)
         {
             chassisId = null;
             var config = Config;
             if (config == null)
                 return false;
 
-            // [TITAN-ORBIT] Home planet id drives which ship-family ladder slot is used.
-            int homePlanetId = FindHomePlanetIdForTeam(team);
-            if (homePlanetId <= 0)
-                homePlanetId = 0;
+            // --- Resolve family slot ---
+            // [TITAN-ORBIT] Negative / unset → home AstroEagle (legacy callers + fresh spawns).
+            int familyIndex = shipFamilyConfigIndex >= 0
+                ? shipFamilyConfigIndex
+                : PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+            bool isHomeFamily = familyIndex == PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+
+            // [TITAN-ORBIT] planetId argument is only used when configIndex is invalid; pass 0 for home
+            // and a synthetic non-home id otherwise so ResolveConfigIndex does not force AstroEagle.
+            int planetIdHint = isHomeFamily ? 0 : 100;
 
             chassisId = config.GetChassisIdForLadderSlot(
-                homePlanetId,
+                planetIdHint,
                 shipLevel,
                 branchIndex,
-                isHomePlanet: true,
-                shipFamilyConfigIndex: PlanetShipFamilyAssignment.HomeFamilyConfigIndex);
+                isHomePlanet: isHomeFamily,
+                shipFamilyConfigIndex: familyIndex);
 
             // [STANDARD] Starter hull only — never map a missing MEGA/L7 click onto Hawk by accident.
             if (string.IsNullOrEmpty(chassisId) && allowFallback)
             {
                 chassisId = config.GetChassisIdForPlanetAndIndex(
-                    0, 0, isHomePlanet: true, shipFamilyConfigIndex: PlanetShipFamilyAssignment.HomeFamilyConfigIndex);
+                    planetIdHint, 0, isHomePlanet: isHomeFamily, shipFamilyConfigIndex: familyIndex);
             }
 
             return !string.IsNullOrEmpty(chassisId);
         }
 
         /// <summary>
-        /// [TITAN-ORBIT] Default home planet id when team-specific lookup is unavailable.
-        /// Bootstrap assigns planet 1 as the generic home for any non-None team.
+        /// Overload that reads <see cref="ShipState.ShipFamilyConfigIndex"/> from the ship entity.
+        /// Prefer this from systems that already hold the ship entity.
         /// </summary>
-        static int FindHomePlanetIdForTeam(TeamId team)
+        public static bool TryResolveChassisId(
+            EntityManager em,
+            Entity shipEntity,
+            TeamId team,
+            int shipLevel,
+            int branchIndex,
+            out string chassisId,
+            bool allowFallback = true)
         {
-            return team != TeamId.None ? 1 : 0;
+            int familyIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+            if (em.Exists(shipEntity) && em.HasComponent<ShipState>(shipEntity))
+                familyIndex = em.GetComponentData<ShipState>(shipEntity).ShipFamilyConfigIndex;
+
+            return TryResolveChassisId(team, shipLevel, branchIndex, out chassisId, allowFallback, familyIndex);
         }
 
         /// <summary>
@@ -230,7 +263,14 @@ namespace TitanOrbit.ECS
             bool queueStructuralChanges,
             bool writeGhostedShipState = true)
         {
-            if (!TryResolveChassisId(team, shipLevel, branchIndex, out string chassisId))
+            // --- Family from ship ghost ---
+            // [TITAN-ORBIT] Captured-neutral moon purchases stamp ShipFamilyConfigIndex; resolve with it
+            // so Cosmic Shark / etc. stats apply instead of always AstroEagle.
+            int familyIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+            if (em.Exists(shipEntity) && em.HasComponent<ShipState>(shipEntity))
+                familyIndex = em.GetComponentData<ShipState>(shipEntity).ShipFamilyConfigIndex;
+
+            if (!TryResolveChassisId(team, shipLevel, branchIndex, out string chassisId, allowFallback: true, familyIndex))
                 return;
 
             // --- Chassis baseline (level-1 sum) ---
@@ -439,6 +479,7 @@ namespace TitanOrbit.ECS
                 ChassisId = chassisId,
                 AppliedShipLevel = shipLevel,
                 AppliedBranchIndex = branchIndex,
+                AppliedShipFamilyConfigIndex = (byte)familyIndex,
                 AppliedAttributeSum = attributeSum,
                 AppliedEquipmentFingerprint = equipmentFingerprint,
             };

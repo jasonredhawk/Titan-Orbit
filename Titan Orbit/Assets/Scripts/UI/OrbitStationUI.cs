@@ -6132,9 +6132,20 @@ namespace TitanOrbit.UI
 
         private Planet GetShipUpgradeStorePlanet()
         {
+            // --- Prefer ECS moon-dock store planet ---
+            // [TITAN-ORBIT] Captured neutrals must keep their ShipFamilyConfigIndex tree (Cosmic Shark…).
+            // Falling back to currentHomePlanet forced AstroEagle whenever the store view looked like a home.
+            if (OrbitStationEcsContext.IsActive && _ecsStorePlanetView != null && _ecsStorePlanetId > 0)
+            {
+                if (_ecsStorePlanetView.PlanetId != _ecsStorePlanetId)
+                    _ecsStorePlanetView.PlanetId = _ecsStorePlanetId;
+                return _ecsStorePlanetView;
+            }
+
             if (currentShip == null) return null;
             if (currentPlanet != null)
             {
+                // [TITAN-ORBIT] HomePlanet is a Planet subclass — only treat as home when AssignedTeam matches.
                 bool isHome = currentPlanet is HomePlanet hp && hp.AssignedTeam == currentShip.ShipTeam;
                 bool isCaptured = !isHome && currentPlanet.TeamOwnership == currentShip.ShipTeam;
                 if (isHome || isCaptured)

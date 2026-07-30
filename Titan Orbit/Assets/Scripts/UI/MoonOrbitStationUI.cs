@@ -888,11 +888,33 @@ namespace TitanOrbit.UI
             {
                 // Menu can open briefly before team is known — still resolve home family ladder.
                 return ShipStatApplyLogic.TryResolveChassisId(
-                    TeamId.TeamA, level, branchIndex, out chassisId, allowFallback: false);
+                    TeamId.TeamA,
+                    level,
+                    branchIndex,
+                    out chassisId,
+                    allowFallback: false,
+                    shipFamilyConfigIndex: PlanetShipFamilyAssignment.HomeFamilyConfigIndex);
+            }
+
+            // Prefer the docked store planet's family so the tree matches Cosmic Shark / etc.
+            int familyIndex = ship.ShipFamilyConfigIndex;
+            int storePlanetId = OrbitStationEcsContext.StorePlanetId;
+            if (storePlanetId > 0 &&
+                EcsGameBridge.TryGetPlanetStateByPlanetId(storePlanetId, out var planet))
+            {
+                if (planet.IsHomePlanet)
+                    familyIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+                else if (planet.ShipFamilyConfigIndex > 0)
+                    familyIndex = planet.ShipFamilyConfigIndex;
             }
 
             return ShipStatApplyLogic.TryResolveChassisId(
-                ship.Team, level, branchIndex, out chassisId, allowFallback: false);
+                ship.Team,
+                level,
+                branchIndex,
+                out chassisId,
+                allowFallback: false,
+                shipFamilyConfigIndex: familyIndex);
         }
 
         /// <summary>

@@ -99,15 +99,26 @@ namespace TitanOrbit.UI
 
             Instance = this;
             MoonOrbitClientState.SetOrbitMenuVisible(true);
+            // [TITAN-ORBIT] Pass store + home explicitly so Show does not rediscover a wrong HomePlanet
+            // via AllHomePlanets and treat the docked captured moon as AstroEagle.
+            currentHomePlanet = _ecsHomePlanetView;
+            _lastHomePlanetLookupTime = Time.time;
             Show(_ecsShipView, _ecsStorePlanetView);
         }
 
         static T GetOrCreatePlanetView<T>(string objectName) where T : Planet
         {
-            // --- Reuse existing view or create DontDestroyOnLoad shell ---
-            var existing = Object.FindFirstObjectByType<T>();
-            if (existing != null)
-                return existing;
+            // --- Reuse existing named view or create DontDestroyOnLoad shell ---
+            // [TITAN-ORBIT] Do NOT use FindFirstObjectByType<Planet>() — HomePlanet subclasses
+            // Planet, so the store-planet view would steal the home adapter and the Orbit Menu
+            // would always resolve AstroEagle for captured neutrals.
+            var named = GameObject.Find(objectName);
+            if (named != null)
+            {
+                var existing = named.GetComponent<T>();
+                if (existing != null)
+                    return existing;
+            }
 
             var go = new GameObject(objectName);
             Object.DontDestroyOnLoad(go);

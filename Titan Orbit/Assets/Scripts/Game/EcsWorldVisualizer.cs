@@ -835,7 +835,8 @@ namespace TitanOrbit.Game
                 key.PlanetLevel,
                 key.PlanetId,
                 scale,
-                materialsChanged);
+                materialsChanged,
+                state.ShipFamilyConfigIndex);
 
             _proxyPlanetVisuals[entity] = key;
         }
@@ -1022,7 +1023,8 @@ namespace TitanOrbit.Game
                         state.PlanetLevel,
                         state.PlanetId,
                         scale,
-                        out go))
+                        out go,
+                        state.ShipFamilyConfigIndex))
                 {
                     go = CreatePrimitivePlanetProxy(state.Ownership);
                 }
@@ -1461,17 +1463,27 @@ namespace TitanOrbit.Game
             TeamId team = TeamId.None;
             int shipLevel = 1;
             int branchIndex = 0;
+            int shipFamilyConfigIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
             if (em.HasComponent<ShipState>(shipEntity))
             {
                 var ship = em.GetComponentData<ShipState>(shipEntity);
                 team = ship.Team;
                 shipLevel = Mathf.Max(1, ship.ShipLevel);
                 branchIndex = Mathf.Max(0, ship.BranchIndex);
+                shipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
             }
 
             string chassisId = null;
             if (team != TeamId.None)
-                ShipStatApplyLogic.TryResolveChassisId(team, shipLevel, branchIndex, out chassisId);
+            {
+                ShipStatApplyLogic.TryResolveChassisId(
+                    team,
+                    shipLevel,
+                    branchIndex,
+                    out chassisId,
+                    allowFallback: true,
+                    shipFamilyConfigIndex: shipFamilyConfigIndex);
+            }
 
             var lt = em.GetComponentData<LocalTransform>(shipEntity);
             float scale = Mathf.Max(0.25f, lt.Scale) * shipVisualScale;
@@ -1576,17 +1588,27 @@ namespace TitanOrbit.Game
                 TeamId team = TeamId.None;
                 int shipLevel = 1;
                 int branchIndex = 0;
+                int shipFamilyConfigIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
                 if (em.HasComponent<ShipState>(entity))
                 {
                     var ship = em.GetComponentData<ShipState>(entity);
                     team = ship.Team;
                     shipLevel = Mathf.Max(1, ship.ShipLevel);
                     branchIndex = Mathf.Max(0, ship.BranchIndex);
+                    shipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
                 }
 
                 string chassisId = null;
                 if (team != TeamId.None)
-                    ShipStatApplyLogic.TryResolveChassisId(team, shipLevel, branchIndex, out chassisId);
+                {
+                    ShipStatApplyLogic.TryResolveChassisId(
+                        team,
+                        shipLevel,
+                        branchIndex,
+                        out chassisId,
+                        allowFallback: true,
+                        shipFamilyConfigIndex: shipFamilyConfigIndex);
+                }
 
                 // [TITAN-ORBIT] Chassis swap while moon-docked: keep the old hull's spinning
                 // surface contact so the new ship appears glued to the same moon pose.
@@ -2199,7 +2221,8 @@ namespace TitanOrbit.Game
                         state.PlanetLevel,
                         state.PlanetId,
                         scale,
-                        out go))
+                        out go,
+                        state.ShipFamilyConfigIndex))
                 {
                     go = CreatePrimitivePlanetProxy(state.Ownership);
                     _proxies[entity] = go;

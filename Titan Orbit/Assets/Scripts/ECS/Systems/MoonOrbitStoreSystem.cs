@@ -364,8 +364,22 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
+            // --- Adopt store planet's ship family ---
+            // [TITAN-ORBIT] Home → AstroEagle (index 0). Captured neutrals keep the family rolled at
+            // spawn; buying here switches the ship onto that family's upgrade tree (not AstroEagle).
+            byte storeFamilyIndex = storePlanet.IsHomePlanet
+                ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex
+                : (storePlanet.ShipFamilyConfigIndex > 0
+                    ? storePlanet.ShipFamilyConfigIndex
+                    : PlanetShipFamilyAssignment.HomeFamilyConfigIndex);
+
             if (!ShipStatApplyLogic.TryResolveChassisId(
-                    ship.Team, targetLevel, targetBranchIndex, out _, allowFallback: false))
+                    ship.Team,
+                    targetLevel,
+                    targetBranchIndex,
+                    out _,
+                    allowFallback: false,
+                    shipFamilyConfigIndex: storeFamilyIndex))
             {
                 message = "No chassis for that upgrade slot.";
                 return false;
@@ -383,6 +397,7 @@ namespace TitanOrbit.ECS
 
             ship.ShipLevel = targetLevel;
             ship.BranchIndex = targetBranchIndex;
+            ship.ShipFamilyConfigIndex = storeFamilyIndex;
             em.SetComponentData(shipEntity, ship);
 
             if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
@@ -886,7 +901,8 @@ namespace TitanOrbit.ECS
         {
             family = null;
             int branch = ship.BranchIndex;
-            if (!ShipStatApplyLogic.TryResolveChassisId(ship.Team, ship.ShipLevel, branch, out string chassisId))
+            if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em, shipEntity, ship.Team, ship.ShipLevel, branch, out string chassisId))
                 return false;
             return ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out family) && family != null;
         }

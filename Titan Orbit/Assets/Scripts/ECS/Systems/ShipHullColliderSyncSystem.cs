@@ -118,7 +118,13 @@ namespace TitanOrbit.ECS
 
         static bool NeedsHullSync(EntityManager em, Entity entity, in ShipState ship, int branchIndex)
         {
-            if (!ShipStatApplyLogic.TryResolveChassisId(ship.Team, ship.ShipLevel, branchIndex, out string chassisId))
+            if (!ShipStatApplyLogic.TryResolveChassisId(
+                    ship.Team,
+                    ship.ShipLevel,
+                    branchIndex,
+                    out string chassisId,
+                    allowFallback: true,
+                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
                 return false;
 
             if (!em.HasComponent<ShipHullColliderState>(entity))
@@ -138,7 +144,13 @@ namespace TitanOrbit.ECS
             in ShipState ship,
             int branchIndex)
         {
-            if (!ShipStatApplyLogic.TryResolveChassisId(ship.Team, ship.ShipLevel, branchIndex, out string chassisId))
+            if (!ShipStatApplyLogic.TryResolveChassisId(
+                    ship.Team,
+                    ship.ShipLevel,
+                    branchIndex,
+                    out string chassisId,
+                    allowFallback: true,
+                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
                 return;
 
             var tier = config.GetTierEntryForChassisId(chassisId);

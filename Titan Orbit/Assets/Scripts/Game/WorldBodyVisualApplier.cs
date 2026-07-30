@@ -46,7 +46,8 @@ namespace TitanOrbit.Game
             int planetLevel,
             int planetId,
             float worldScale,
-            out GameObject instance)
+            out GameObject instance,
+            int shipFamilyConfigIndex = -1)
         {
             instance = null;
             GameObject prefab = isHome ? homePrefab : neutralPrefab;
@@ -59,7 +60,7 @@ namespace TitanOrbit.Game
             instance.name = isHome ? "HomePlanetProxy" : "PlanetTagProxy";
             StripForProxy(instance);
             RemoveUiChildren(instance);
-            ApplyPlanetMaterial(instance, materialPool, isHome, team, planetId);
+            ApplyPlanetMaterial(instance, materialPool, isHome, team, planetId, shipFamilyConfigIndex);
             instance.transform.localScale = Vector3.one * Mathf.Max(0.25f, worldScale);
 
             EnsurePlanetSpin(instance);
@@ -72,7 +73,8 @@ namespace TitanOrbit.Game
             var moon = instance.GetComponent<PlanetGemMoonVisualProxy>();
             if (moon == null)
                 moon = instance.AddComponent<PlanetGemMoonVisualProxy>();
-            Material moonMaterial = CreateGemMoonMaterial(instance, materialPool, isHome, team, planetId);
+            Material moonMaterial = CreateGemMoonMaterial(
+                instance, materialPool, isHome, team, planetId, shipFamilyConfigIndex);
             moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial, team);
             EnsureOrbitRingVisual(instance, worldScale, planetLevel, team, isHome, planetId);
             return true;
@@ -97,6 +99,9 @@ namespace TitanOrbit.Game
         /// <param name="materialsChanged">
         /// True when home/team identity changed (capture). Level-only updates skip material rebuild.
         /// </param>
+        /// <param name="shipFamilyConfigIndex">
+        /// Ghosted family index for neutral skins from <see cref="PlanetShipFamilyConfig"/>.
+        /// </param>
         public static void RefreshPlanetVisualAppearance(
             GameObject instance,
             PlanetMaterialPool materialPool,
@@ -105,7 +110,8 @@ namespace TitanOrbit.Game
             int planetLevel,
             int planetId,
             float worldScale,
-            bool materialsChanged)
+            bool materialsChanged,
+            int shipFamilyConfigIndex = -1)
         {
             // --- Guard ---
             // [STANDARD] Caller may hold a destroyed Unity object if prune raced this frame.
@@ -117,7 +123,7 @@ namespace TitanOrbit.Game
             // --- Surface material (capture / home identity only) ---
             // [TITAN-ORBIT] Level-up does not change the planet surface — only ring band count.
             if (materialsChanged)
-                ApplyPlanetMaterial(instance, materialPool, isHome, team, planetId);
+                ApplyPlanetMaterial(instance, materialPool, isHome, team, planetId, shipFamilyConfigIndex);
 
             // --- Moon (orbit radius uses level; shield/tint uses team) ---
             // [HYBRID] Pass null material on level-only refresh so Configure keeps the existing mat.
@@ -125,7 +131,7 @@ namespace TitanOrbit.Game
             if (moon != null)
             {
                 Material moonMaterial = materialsChanged
-                    ? CreateGemMoonMaterial(instance, materialPool, isHome, team, planetId)
+                    ? CreateGemMoonMaterial(instance, materialPool, isHome, team, planetId, shipFamilyConfigIndex)
                     : null;
                 moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial, team);
             }
@@ -181,11 +187,12 @@ namespace TitanOrbit.Game
             PlanetMaterialPool pool,
             bool isHome,
             TeamId team,
-            int planetId)
+            int planetId,
+            int shipFamilyConfigIndex = -1)
         {
             Material baseMat = TryGetPlanetSurfaceMaterial(planetRoot);
             if (baseMat == null)
-                baseMat = ResolvePlanetMaterial(pool, isHome, team, planetId);
+                baseMat = ResolvePlanetMaterial(pool, isHome, team, planetId, shipFamilyConfigIndex);
             if (baseMat == null)
                 return null;
 
@@ -193,7 +200,8 @@ namespace TitanOrbit.Game
 
             if (!isHome && team != TeamId.None && pool != null)
             {
-                Material neutralMat = ResolvePlanetMaterial(pool, isHome: false, TeamId.None, planetId);
+                Material neutralMat = ResolvePlanetMaterial(
+                    pool, isHome: false, TeamId.None, planetId, shipFamilyConfigIndex);
                 if (neutralMat != null)
                 {
                     Color neutralBase = GetMaterialColor(neutralMat);
@@ -407,23 +415,52 @@ namespace TitanOrbit.Game
             sgt.DirtyMesh();
         }
 
-        public static void ApplyPlanetMaterial(GameObject root, PlanetMaterialPool pool, bool isHome, TeamId team, int planetId)
+        public static void ApplyPlanetMaterial(
+            GameObject root,
+            PlanetMaterialPool pool,
+            bool isHome,
+            TeamId team,
+            int planetId,
+            int shipFamilyConfigIndex = -1)
         {
             // --- Apply changes ---
-            Material mat = ResolvePlanetMaterial(pool, isHome, team, planetId);
+            Material mat = ResolvePlanetMaterial(pool, isHome, team, planetId, shipFamilyConfigIndex);
             if (mat == null)
                 return;
             ApplyMaterialToSgtPlanets(root, mat);
         }
 
-        static Material ResolvePlanetMaterial(PlanetMaterialPool pool, bool isHome, TeamId team, int planetId)
+        /// <summary>
+        /// Picks the planet surface material. Homes use tropical water by team.
+        /// Neutrals prefer the material authored on <see cref="PlanetShipFamilyConfig"/> for
+        /// <paramref name="shipFamilyConfigIndex"/> so each ship family has a recognizable skin;
+        /// falls back to <c>planetId % pool</c> when the entry has no material assigned.
+        /// </summary>
+        static Material ResolvePlanetMaterial(
+            PlanetMaterialPool pool,
+            bool isHome,
+            TeamId team,
+            int planetId,
+            int shipFamilyConfigIndex = -1)
         {
             // --- Resolve value ---
             if (pool == null)
                 return null;
 
+            // Homes keep team tropical water — family skin is for neutrals / captured planets.
             if (isHome && team != TeamId.None)
                 return pool.GetMaterial(TeamToTropicalIndex(team), useWaterList: true);
+
+            // --- Family skin from PlanetShipFamilyConfig ---
+            if (shipFamilyConfigIndex > 0)
+            {
+                var familyConfig = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+                Material familyMat = familyConfig != null
+                    ? familyConfig.GetPlanetMaterialForConfigIndex(shipFamilyConfigIndex)
+                    : null;
+                if (familyMat != null)
+                    return familyMat;
+            }
 
             int seed = planetId != 0 ? planetId : 17;
             int index = Mathf.Abs(seed) % Mathf.Max(1, pool.Materials?.Count ?? 1);

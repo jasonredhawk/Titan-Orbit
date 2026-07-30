@@ -62,6 +62,7 @@ namespace TitanOrbit.ECS
                     var chassis = em.GetComponentData<ShipChassisState>(entity);
                     needsApply = chassis.AppliedShipLevel != ship.ValueRO.ShipLevel
                         || chassis.AppliedBranchIndex != branch
+                        || chassis.AppliedShipFamilyConfigIndex != ship.ValueRO.ShipFamilyConfigIndex
                         || chassis.AppliedAttributeSum != attrSum;
                 }
 
@@ -98,6 +99,7 @@ namespace TitanOrbit.ECS
                     var chassis = em.GetComponentData<ShipChassisState>(entity);
                     if (chassis.AppliedShipLevel == ship.ValueRO.ShipLevel
                         && chassis.AppliedBranchIndex == branch
+                        && chassis.AppliedShipFamilyConfigIndex == ship.ValueRO.ShipFamilyConfigIndex
                         && chassis.AppliedAttributeSum == attrSum)
                         continue;
                 }

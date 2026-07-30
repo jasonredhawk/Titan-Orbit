@@ -150,7 +150,13 @@ namespace TitanOrbit.ECS
             in ShipState ship,
             int branchIndex)
         {
-            if (!ShipStatApplyLogic.TryResolveChassisId(ship.Team, ship.ShipLevel, branchIndex, out string chassisId))
+            if (!ShipStatApplyLogic.TryResolveChassisId(
+                    ship.Team,
+                    ship.ShipLevel,
+                    branchIndex,
+                    out string chassisId,
+                    allowFallback: true,
+                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
                 return false;
 
             // Catalog entry OR tier prefab is enough — wings can live-bake from the prefab alone.
@@ -188,7 +194,13 @@ namespace TitanOrbit.ECS
             in ShipState ship,
             int branchIndex)
         {
-            if (!ShipStatApplyLogic.TryResolveChassisId(ship.Team, ship.ShipLevel, branchIndex, out string chassisId))
+            if (!ShipStatApplyLogic.TryResolveChassisId(
+                    ship.Team,
+                    ship.ShipLevel,
+                    branchIndex,
+                    out string chassisId,
+                    allowFallback: true,
+                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
                 return;
 
             catalog.TryGetEntry(chassisId, out var entry);

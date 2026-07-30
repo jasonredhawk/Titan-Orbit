@@ -5,7 +5,9 @@ namespace TitanOrbit.Data
     /// Constants for procedural planet generation: which <see cref="PlanetShipFamilyConfig"/> list index
     /// each planet receives. Home planets always get index 0 (AstroEagle starter family); neutral and
     /// captured planets cycle through the remaining eleven USC families. Written at planet spawn by
-    /// <see cref="ECS.MapGenerationLogic"/>; read by orbit station UI and chassis unlock resolution.
+    /// <see cref="ECS.Systems.GameBootstrapSystem"/> into <c>PlanetState.ShipFamilyConfigIndex</c>;
+    /// read by orbit station UI, chassis unlock resolution, and neutral planet skins
+    /// (<see cref="PlanetShipFamilyConfig.ShipFamilyEntry.planetMaterial"/>).
     /// Shared client/server — indices must stay stable across builds.
     /// </summary>
     public static class PlanetShipFamilyAssignment

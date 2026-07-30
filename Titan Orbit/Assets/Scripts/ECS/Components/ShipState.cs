@@ -36,6 +36,14 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField] public int BranchIndex;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Which <see cref="Data.PlanetShipFamilyConfig"/> list index this ship is flying
+        /// (0 = AstroEagle home family). Set to the docked planet's <c>ShipFamilyConfigIndex</c> when
+        /// buying a hull at a captured neutral so stats / visuals / Orbit Menu match that family's tree —
+        /// not always AstroEagle. Ghosted so clients resolve the same chassis as the server.
+        /// </summary>
+        [GhostField] public byte ShipFamilyConfigIndex;
+
         /// <summary>[TITAN-ORBIT] Gems currently stored in the ship cargo hold.</summary>
         [GhostField] public float CurrentGems;
 

@@ -592,7 +592,15 @@ namespace TitanOrbit.UI
             }
 
             if (string.IsNullOrEmpty(chassisId))
-                ShipStatApplyLogic.TryResolveChassisId(ship.Team, ship.ShipLevel, branchIndex, out chassisId);
+            {
+                ShipStatApplyLogic.TryResolveChassisId(
+                    ship.Team,
+                    ship.ShipLevel,
+                    branchIndex,
+                    out chassisId,
+                    allowFallback: true,
+                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex);
+            }
 
             if (!string.IsNullOrEmpty(chassisId) &&
                 ShipStatApplyLogic.TryGetBaseStatsForChassis(chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))

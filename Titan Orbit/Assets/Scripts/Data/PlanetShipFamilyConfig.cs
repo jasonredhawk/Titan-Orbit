@@ -6,19 +6,24 @@ using TitanOrbit.Core;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// ScriptableObject mapping each planet to a <see cref="ShipFamilyDefinition"/>. Home planet (id 0) always
-    /// resolves to AstroEagle; captured planets rotate through non-home families. Prefabs, chassis ids, unlock
-    /// tiers, and gem costs all come from each family's <c>upgradeTree</c>. Paired with
-    /// <see cref="PlanetShipFamilyAssignment"/> for procedural planet generation indices.
+    /// ScriptableObject mapping each planet to a <see cref="ShipFamilyDefinition"/> and optional planet skin.
+    /// Home planet (id 0) always resolves to AstroEagle; neutrals / captured planets use indices 1–11 rolled
+    /// at spawn into <c>PlanetState.ShipFamilyConfigIndex</c>. Prefabs, chassis ids, unlock tiers, and gem
+    /// costs come from each family's <c>upgradeTree</c>. <see cref="ShipFamilyEntry.planetMaterial"/> ties
+    /// that family to a recognizable CW PLANETS surface so players can spot the ship tree from the planet
+    /// look even when neutral placement is randomized. Paired with <see cref="PlanetShipFamilyAssignment"/>.
     /// </summary>
     [CreateAssetMenu(fileName = "PlanetShipFamilyConfig", menuName = "Titan Orbit/Planet Ship Family Config")]
     public class PlanetShipFamilyConfig : ScriptableObject
     {
-        /// <summary>One planet → one ship family binding in the config list.</summary>
+        /// <summary>
+        /// One config-list slot: ship family + optional world-skin material for neutrals that roll this index.
+        /// Index 0 is reserved for home / AstroEagle (homes still use tropical water materials by team).
+        /// </summary>
         [Serializable]
         public class ShipFamilyEntry
         {
-            [Tooltip("Planet ID this family is for. 0 = home. 1, 2, 3... = captured planets.")]
+            [Tooltip("List-slot label only (0 = home). Runtime neutrals use ShipFamilyConfigIndex, not this id.")]
             public int planetId;
 
             [Tooltip("Ship family definition. Prefabs and unlock tiers come from its upgradeTree.")]
@@ -26,6 +31,11 @@ namespace TitanOrbit.Data
 
             [Tooltip("Optional display name; when empty, familyId from shipFamilyDefinition is used.")]
             public string familyName;
+
+            [Tooltip(
+                "Neutral / captured planet surface material for this family. Homes ignore this and use " +
+                "PlanetMaterialPool water materials by team. Leave empty to fall back to planetId % pool.")]
+            public Material planetMaterial;
         }
 
         [Tooltip("Ordered list: index 0 = home planet family, index 1 = planet 1, etc.")]
@@ -66,6 +76,19 @@ namespace TitanOrbit.Data
                 return null;
             configIndex = Mathf.Clamp(configIndex, 0, families.Count - 1);
             return families[configIndex];
+        }
+
+        /// <summary>
+        /// Planet surface material authored on the family entry at <paramref name="configIndex"/>.
+        /// Returns null for missing entries or when the designer left <see cref="ShipFamilyEntry.planetMaterial"/> empty
+        /// (caller should fall back to <see cref="PlanetMaterialPool"/>).
+        /// </summary>
+        /// <param name="configIndex">Index into <see cref="families"/> (same as ghosted ShipFamilyConfigIndex).</param>
+        public Material GetPlanetMaterialForConfigIndex(int configIndex)
+        {
+            // --- Resolve authored skin ---
+            ShipFamilyEntry entry = GetFamilyByConfigIndex(configIndex);
+            return entry != null ? entry.planetMaterial : null;
         }
 
         /// <summary>Resolves config list index for a planet. Home planets always use AstroEagle (index 0).</summary>

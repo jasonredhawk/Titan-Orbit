@@ -84,29 +84,29 @@ namespace TitanOrbit.Entities
             SyncLoadoutBuffers();
         }
 
-        /// <summary>Resolves <see cref="CurrentChassisId"/> from planet family config and upgrade-tree ladder slot.</summary>
+        /// <summary>
+        /// Resolves <see cref="CurrentChassisId"/> from the ship's ghosted family + ladder slot.
+        /// Uses <see cref="ShipState.ShipFamilyConfigIndex"/> (not the store planet) so the "current hull"
+        /// identity stays correct while browsing another family's tree at a captured moon.
+        /// </summary>
         void ResolveChassisId(int storePlanetId)
         {
             // --- Resolve value ---
             CurrentChassisId = null;
             var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            if (config == null)
+                return;
 
-            if (config != null && storePlanetId > 0)
-            {
-                bool isHomePlanet = false;
-                int configIndex = -1;
-                if (EcsGameBridge.TryGetPlanetStateByPlanetId(storePlanetId, out var planetState))
-                {
-                    isHomePlanet = planetState.IsHomePlanet;
-                    if (planetState.IsHomePlanet)
-                        configIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
-                    else if (planetState.ShipFamilyConfigIndex > 0)
-                        configIndex = planetState.ShipFamilyConfigIndex;
-                }
+            // Ship's owned family (0 = AstroEagle until a captured-planet purchase).
+            int familyIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+            if (EcsGameBridge.TryGetLocalShipState(out var shipState))
+                familyIndex = shipState.ShipFamilyConfigIndex;
 
-                CurrentChassisId = config.GetChassisIdForLadderSlot(
-                    storePlanetId, ShipLevel, BranchIndex, isHomePlanet, configIndex);
-            }
+            bool isHomeFamily = familyIndex == PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+            int planetIdHint = isHomeFamily ? 0 : Mathf.Max(1, storePlanetId);
+
+            CurrentChassisId = config.GetChassisIdForLadderSlot(
+                planetIdHint, ShipLevel, BranchIndex, isHomeFamily, familyIndex);
         }
 
         /// <summary>
