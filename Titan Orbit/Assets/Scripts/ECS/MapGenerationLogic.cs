@@ -309,7 +309,22 @@ namespace TitanOrbit.ECS
                 }
 
                 if (!placed)
-                    break; // Map too full — publish whatever we placed.
+                {
+                    // --- Density failure ---
+                    // [TITAN-ORBIT] Small map + large planet rings / clearance can exhaust free
+                    // tiles before we hit RolledParameters.AsteroidCount. Callers must publish
+                    // output.Length (actual) as LoadingTotalSteps — never the rolled target —
+                    // or the client loading bar hangs below the 92% Join Team gate.
+                    UnityEngine.Debug.LogWarning(
+                        "[MapGenerationLogic] Asteroid fill aborted — map too full. " +
+                        "placed=" + output.Length + "/" + rolled.AsteroidCount +
+                        " map=" + rolled.MapWidth.ToString("F0") + "x" + rolled.MapHeight.ToString("F0") +
+                        " planets=" + planetPlacements.Length +
+                        " minSpacing=" + minSpacing.ToString("F2") +
+                        " clearance=" + clearanceRadius.ToString("F2") +
+                        " seed=" + rolled.Seed);
+                    break;
+                }
             }
 
             clusterCenters.Dispose();

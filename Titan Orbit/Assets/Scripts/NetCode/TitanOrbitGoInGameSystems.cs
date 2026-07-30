@@ -75,13 +75,15 @@ namespace TitanOrbit.NetCode
         {
             var commandBuffer = new EntityCommandBuffer(Allocator.Temp);
 
-            // --- Optional map meta for this join ---
-            // [TITAN-ORBIT] MapStateSingleton is often not a replicated ghost; send totals once here.
-            // Require TeamCount > 0 so we never latch steps=N teams=0 mid-spawn (catch-up cannot
-            // repair after MapSessionMetaSent — Join Team UI then sticks on "Preparing teams...").
+            // --- Map meta only after FinalizeGeneration ---
+            // [TITAN-ORBIT] MapStateSingleton is often not a replicated ghost; send body totals once.
+            // Wait for LoadingComplete so we never latch rolled / claim-inflated N mid-spawn
+            // (underfill + Max latch → proxies never reach 92% → Join Team hang).
+            // TeamCount alone is not enough — steps must be the final planet+asteroid body count.
             bool hasMeta = false;
             MapSessionMetaRpc meta = default;
             if (SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
+                mapState.LoadingComplete &&
                 mapState.LoadingTotalSteps > 0 &&
                 mapState.TeamCount > 0)
             {

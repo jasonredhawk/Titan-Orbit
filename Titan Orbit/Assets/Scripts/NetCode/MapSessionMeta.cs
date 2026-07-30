@@ -24,6 +24,8 @@ namespace TitanOrbit.NetCode
     {
         /// <summary>
         /// [TITAN-ORBIT] How many planet+asteroid GameObjects the client should build (loading "/ N").
+        /// Body count only (homes + neutrals + asteroids) — never starting-claim ticks.
+        /// Sent only after <see cref="MapStateSingleton.LoadingComplete"/>.
         /// </summary>
         public int LoadingTotalSteps;
 
@@ -90,22 +92,24 @@ namespace TitanOrbit.NetCode
         /// <param name="rpc">Server-authored match totals.</param>
         public static void Apply(in MapSessionMetaRpc rpc)
         {
-            // --- Merge payload (never downgrade a good team count to 0) ---
-            // [TITAN-ORBIT] A mid-spawn RPC with steps>0 teams=0 used to wipe Join Team UI.
-            // Prefer the richer of previous latch vs this RPC.
+            // --- Authoritative replace for body totals (never Max-latch an inflated N) ---
+            // [TITAN-ORBIT] Old Max(LoadingTotalSteps) kept a mid-gen / claim-inflated denominator
+            // forever after asteroid underfill — proxies capped below 92% → Join Team hang.
+            // Server now sends only after LoadingComplete; still replace so a corrected rebroadcast wins.
+            // Never wipe a good TeamCount with 0 (historical "Preparing teams..." deadlock).
             int nextSteps = Mathf.Max(0, rpc.LoadingTotalSteps);
             int nextTeams = Mathf.Max(0, rpc.TeamCount);
-            int nextNeutrals = Mathf.Max(0, rpc.NeutralPlanetCount);
-            int nextAsteroids = Mathf.Max(0, rpc.AsteroidCount);
 
             if (nextSteps > 0)
-                LoadingTotalSteps = Mathf.Max(LoadingTotalSteps, nextSteps);
+            {
+                LoadingTotalSteps = nextSteps;
+                // Body recipe travels with steps — allow zeros (empty asteroid field is valid).
+                NeutralPlanetCount = Mathf.Max(0, rpc.NeutralPlanetCount);
+                AsteroidCount = Mathf.Max(0, rpc.AsteroidCount);
+            }
+
             if (nextTeams > 0)
                 TeamCount = nextTeams;
-            if (nextNeutrals > 0)
-                NeutralPlanetCount = nextNeutrals;
-            if (nextAsteroids > 0)
-                AsteroidCount = nextAsteroids;
 
             if (rpc.MapWidth > 0f)
                 MapWidth = rpc.MapWidth;
@@ -165,7 +169,9 @@ namespace TitanOrbit.NetCode
                 return false;
 
             var mapState = query.GetSingleton<MapStateSingleton>();
-            if (!mapState.LoadingComplete && mapState.LoadingTotalSteps <= 0)
+            // --- Lobby / heartbeat: prefer finalized body recipe only ---
+            // [TITAN-ORBIT] Mid-gen steps used to advertise rolled targets before underfill.
+            if (!mapState.LoadingComplete || mapState.LoadingTotalSteps <= 0 || mapState.TeamCount <= 0)
                 return false;
 
             meta = new MapSessionMetaRpc
@@ -177,7 +183,7 @@ namespace TitanOrbit.NetCode
                 MapWidth = mapState.MapWidth,
                 MapHeight = mapState.MapHeight,
             };
-            return mapState.LoadingComplete || meta.LoadingTotalSteps > 0;
+            return true;
         }
 
         /// <summary>
@@ -376,17 +382,20 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// When map totals exist (including TeamCount), send meta once per in-game connection.
+        /// After FinalizeGeneration, send body-count meta once per in-game connection that lacks
+        /// <see cref="MapSessionMetaSent"/> (GoInGame arrived before the map finished).
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState))
                 return;
 
-            // --- Wait until counts are real ---
-            // [TITAN-ORBIT] LoadingTotalSteps alone is not enough — BeginGeneration publishes steps
-            // before TeamCount historically, and a teams=0 RPC + MapSessionMetaSent stuck Join Team.
-            if (mapState.LoadingTotalSteps <= 0 || mapState.TeamCount <= 0)
+            // --- Wait for FinalizeGeneration ---
+            // [TITAN-ORBIT] LoadingComplete means AsteroidCount / LoadingTotalSteps are actual placed
+            // bodies (not rolled targets, not claim ticks). Sending earlier caused Join Team hangs.
+            if (!mapState.LoadingComplete ||
+                mapState.LoadingTotalSteps <= 0 ||
+                mapState.TeamCount <= 0)
                 return;
 
             var meta = new MapSessionMetaRpc
@@ -413,7 +422,8 @@ namespace TitanOrbit.NetCode
                     "[MapSessionMeta] Server catch-up sent steps=" + meta.LoadingTotalSteps +
                     " teams=" + meta.TeamCount +
                     " neutrals=" + meta.NeutralPlanetCount +
-                    " asteroids=" + meta.AsteroidCount);
+                    " asteroids=" + meta.AsteroidCount +
+                    " (finalize)");
             }
 
             commandBuffer.Playback(state.EntityManager);

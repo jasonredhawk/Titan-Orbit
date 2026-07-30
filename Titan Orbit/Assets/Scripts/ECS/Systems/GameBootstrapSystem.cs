@@ -71,7 +71,11 @@ namespace TitanOrbit.ECS
     /// Server procedural map spawn: rolls layout from <see cref="MapGenerationLogic"/>, instantiates
     /// planets and asteroids incrementally, then applies starting neutral captures one-at-a-time in
     /// round-robin order so sticky planet connections can rebuild between claims.
-    /// Updates loading progress on <see cref="MapStateSingleton"/>.
+    /// <para>
+    /// Loading contract: <see cref="MapStateSingleton.LoadingTotalSteps"/> is the planet+asteroid
+    /// body count only (never claim ticks). Meta RPC waits for <c>LoadingComplete</c> so clients
+    /// never latch a rolled overestimate after asteroid underfill.
+    /// </para>
     /// Spawns multiple bodies per sim tick so large asteroid fields (400–800+) do not take minutes on
     /// dedicated servers or block remote clients waiting for ghost replication.
     /// Runs before <see cref="PlanetConnectionGraphSystem"/> so each claim dirties the graph in the
@@ -226,15 +230,16 @@ namespace TitanOrbit.ECS
             mapState.BlueprintSeed = (int)_rolled.Seed;
             mapState.LoadingProgress = 0.05f;
             mapState.LoadingComplete = false;
-            // --- Publish match counts immediately (before spawn batches) ---
-            // [TITAN-ORBIT] LoadingTotalSteps is written below for the loading bar. If GoInGame /
-            // MapSessionMetaRpc fires mid-spawn with steps>0 but TeamCount still 0, the client
-            // latches teams=0 and MapSessionMetaSent blocks catch-up → "Preparing teams..." forever
-            // on dedicated/remote joins (Editor.log 2026-07-23: steps=342 teams=0 then Finalize).
-            // FinalizeGeneration overwrites neutrals/asteroids with exact spawned counts.
+            // --- Publish TeamCount + map size early; body counts wait for layout ---
+            // [TITAN-ORBIT] Do NOT publish rolled AsteroidCount / LoadingTotalSteps as final meta yet.
+            // BuildAsteroids can underfill on dense small maps; GoInGame must not latch an inflated N
+            // (client Max-latch + MapSessionMetaSent blocked catch-up → Join Team hang).
+            // MapSessionMetaRpc is gated on LoadingComplete — see TitanOrbitGoInGameServerSystem.
             mapState.TeamCount = _rolled.TeamCount;
-            mapState.NeutralPlanetCount = _rolled.NeutralPlanetCount;
-            mapState.AsteroidCount = _rolled.AsteroidCount;
+            mapState.NeutralPlanetCount = 0;
+            mapState.AsteroidCount = 0;
+            mapState.LoadingTotalSteps = 0;
+            mapState.LoadingCompletedSteps = 0;
             em.SetComponentData(_mapEntity, mapState);
             // --- ToroidalMapEcs.SetMapSize also mirrors into ToroidalMap (minimap twin) ---
             Generation.ToroidalMapEcs.SetMapSize(_rolled.MapWidth, _rolled.MapHeight);
@@ -250,9 +255,8 @@ namespace TitanOrbit.ECS
 
             _nextNeutralPlanetId = 100;
             int estimatedEntries = _rolled.TeamCount + _rolled.NeutralPlanetCount + _rolled.AsteroidCount;
-            // Publish total spawn steps immediately so loading UI never treats "completed so far" as 100%.
-            _totalSpawnSteps = math.max(1, estimatedEntries);
-            SetLoadingProgress(ref state, 0, _totalSpawnSteps);
+            // Capacity hint for native lists only — not the client loading denominator.
+            _totalSpawnSteps = 0;
             _layoutEntries = new NativeList<MapLayoutEntryElement>(math.max(16, estimatedEntries), Allocator.Persistent);
             _spawnQueue = new NativeList<PendingSpawn>(math.max(16, estimatedEntries), Allocator.Persistent);
 
@@ -345,14 +349,34 @@ namespace TitanOrbit.ECS
                 });
             }
 
+            // --- Authoritative body counts (actual placed — not rolled targets) ---
+            // [TITAN-ORBIT] LoadingTotalSteps MUST equal planet+asteroid GameObject proxy count.
+            // Starting-claim ticks must NOT inflate N — proxies never count claims, and
+            // B/(B+C) < 0.92 permanently blocks Join Team after underfill.
+            int neutralCount = neutralLayouts.Length;
+            int asteroidCount = asteroidLayouts.Length;
+            int bodyCount = _spawnQueue.Length;
+            _totalSpawnSteps = math.max(1, bodyCount);
+
+            mapState = em.GetComponentData<MapStateSingleton>(_mapEntity);
+            mapState.NeutralPlanetCount = neutralCount;
+            mapState.AsteroidCount = asteroidCount;
+            em.SetComponentData(_mapEntity, mapState);
+            SetLoadingProgress(ref state, 0, _totalSpawnSteps);
+
+            if (asteroidCount < _rolled.AsteroidCount)
+            {
+                UnityEngine.Debug.LogWarning(
+                    $"[MapGeneration] Asteroid underfill: placed {asteroidCount}/{_rolled.AsteroidCount} " +
+                    $"on {_rolled.MapWidth:F0}x{_rolled.MapHeight:F0} with {homeLayouts.Length + neutralCount} planets " +
+                    $"(seed {_rolled.Seed}). LoadingSteps={_totalSpawnSteps} (bodies only).");
+            }
+
             homeLayouts.Dispose();
             neutralLayouts.Dispose();
             asteroidLayouts.Dispose();
             planetPlacements.Dispose();
 
-            // Loading bar covers body spawn + deferred starting captures.
-            _totalSpawnSteps = math.max(1, _spawnQueue.Length + _claimQueue.Length);
-            SetLoadingProgress(ref state, 0, _totalSpawnSteps);
             return _spawnQueue.IsCreated;
         }
 
@@ -384,6 +408,7 @@ namespace TitanOrbit.ECS
         {
             if (!_claimQueue.IsCreated || _claimIndex >= _claimQueue.Length)
             {
+                // Bodies already spawned — keep LoadingTotalSteps = body count (not claim ticks).
                 SetLoadingProgress(ref state, _totalSpawnSteps, _totalSpawnSteps);
                 return true;
             }
@@ -454,9 +479,10 @@ namespace TitanOrbit.ECS
             claimEcb.Playback(state.EntityManager);
             claimEcb.Dispose();
 
-            int completed = _spawnQueue.IsCreated ? _spawnQueue.Length : 0;
-            completed += _claimIndex;
-            SetLoadingProgress(ref state, completed, _totalSpawnSteps);
+            // --- Claims do not advance LoadingTotalSteps ---
+            // [TITAN-ORBIT] Client denominator N = hybrid GO bodies only. Stay parked at 100% of
+            // body steps while ownership flips finish, then Finalize sets LoadingComplete.
+            SetLoadingProgress(ref state, _totalSpawnSteps, _totalSpawnSteps);
             return _claimIndex >= _claimQueue.Length;
         }
 
@@ -535,12 +561,18 @@ namespace TitanOrbit.ECS
                 }
             }
 
-            SetLoadingProgress(ref state, _totalSpawnSteps, _totalSpawnSteps);
+            // --- Body-only denominator (homes + neutrals + asteroids) ---
+            // [TITAN-ORBIT] Equals MapSessionMetaRpc.LoadingTotalSteps / client proxy N.
+            int bodySteps = math.max(1, _rolled.TeamCount + neutralCount + asteroidCount);
+            _totalSpawnSteps = bodySteps;
+            SetLoadingProgress(ref state, bodySteps, bodySteps);
+
             var mapState = em.GetComponentData<MapStateSingleton>(_mapEntity);
             mapState.LoadingComplete = true;
             // --- Match metadata (stable for the life of this map) ---
             // [TITAN-ORBIT] Clients often never see MapStateSingleton as a ghost entity, so these
             // counts are also sent via MapSessionMetaRpc and written into the UGS lobby for Join Game.
+            // GoInGame / catch-up send only after LoadingComplete so clients never latch rolled N.
             mapState.TeamCount = _rolled.TeamCount;
             mapState.NeutralPlanetCount = neutralCount;
             mapState.AsteroidCount = asteroidCount;
@@ -549,8 +581,11 @@ namespace TitanOrbit.ECS
             int claimCount = _claimQueue.IsCreated ? _claimQueue.Length : 0;
             UnityEngine.Debug.Log(
                 $"[MapGeneration] Map generated. Size: {_rolled.MapWidth:F0}x{_rolled.MapHeight:F0}, " +
-                $"Teams: {_rolled.TeamCount}, Neutrals: {neutralCount}, Asteroids: {asteroidCount}, " +
-                $"StartingClaims: {claimCount}, LoadingSteps: {_totalSpawnSteps}, Seed: {_rolled.Seed}");
+                $"Teams: {_rolled.TeamCount}, Neutrals: {neutralCount}, Asteroids: {asteroidCount}" +
+                (asteroidCount < _rolled.AsteroidCount
+                    ? $" (rolled {_rolled.AsteroidCount})"
+                    : string.Empty) +
+                $", StartingClaims: {claimCount}, LoadingSteps: {bodySteps} (bodies only), Seed: {_rolled.Seed}");
 
             DisposeNativeCollections();
         }
