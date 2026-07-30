@@ -9,10 +9,12 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server-only: respawns destroyed ships at their team's home planet after
-    /// <see cref="RespawnDelaySeconds"/>. Triggered when <see cref="ShipDeathState.RespawnAtTime"/>
-    /// is reached. Resets vitals, cargo, velocity, and orbit state; removes ShipDeathState.
-    /// Runs after <see cref="BulletSimulationSystem"/> so death is fully processed first.
+    /// Server-only: respawns destroyed ships on their team's home orbit ring after
+    /// <see cref="RespawnDelaySeconds"/>. Spawn angle is random but outside the gem-moon dock
+    /// zone so the Orbit Menu does not open immediately. Triggered when
+    /// <see cref="ShipDeathState.RespawnAtTime"/> is reached. Resets vitals, cargo, velocity, and
+    /// orbit state; removes ShipDeathState. Runs after <see cref="BulletSimulationSystem"/> so
+    /// death is fully processed first.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -25,7 +27,15 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             // --- System OnUpdate ---
+            // [TITAN-ORBIT] Death timer still uses World.Time; moon exclusion needs ServerTick orbit clock.
             float now = (float)SystemAPI.Time.ElapsedTime;
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            double orbitElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
+                : SystemAPI.Time.ElapsedTime;
+
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             foreach (var (shipState, deathState, kinematics, orbitState, territoryLatch, physicsVelocity, transform, entity) in SystemAPI
@@ -40,8 +50,10 @@ namespace TitanOrbit.ECS
                 if (now < deathState.ValueRO.RespawnAtTime)
                     continue;
 
-                // [TITAN-ORBIT] Shared with rejoin resume — always home, never last death position.
-                float3 spawnPos = ShipHomeSpawnLogic.FindHomeSpawnPosition(state.EntityManager, shipState.ValueRO.Team);
+                // [TITAN-ORBIT] Random home orbit-ring spawn — shared with rejoin / Join Team.
+                // Never last death position; never inside the gem-moon dock zone (Orbit Menu).
+                float3 spawnPos = ShipHomeSpawnLogic.FindHomeSpawnPosition(
+                    state.EntityManager, shipState.ValueRO.Team, orbitElapsed);
                 RespawnShip(
                     ref shipState.ValueRW,
                     ref kinematics.ValueRW,

@@ -15,6 +15,8 @@ namespace TitanOrbit.Data
     /// lerps from VisualScaleAtMinSize → VisualScaleAtMaxSize. Example: Size 50,
     /// HealthPerSize 3, GemsPerSize 0.5 → 150 HP and 25 gem capacity.
     /// Contact <see cref="Friction"/> controls how sticky rams/grinds feel against the rock.
+    /// Cosmetic tumble uses <see cref="MinSpinSpeed"/>–<see cref="MaxSpinSpeed"/>
+    /// (<see cref="Game.AsteroidSpinVisualProxy"/>) — presentation only, not sim physics.
     /// </para>
     /// </summary>
     [CreateAssetMenu(
@@ -73,6 +75,22 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float Friction = 1.5f;
 
+        [Header("Visual spin (presentation)")]
+        [Tooltip(
+            "Lower bound for cosmetic tumble rate in degrees per second. " +
+            "Each hybrid asteroid proxy rolls a random speed in [MinSpinSpeed, MaxSpinSpeed] " +
+            "and a random 3D axis. Default 20 matches the old hardcoded floor. " +
+            "Set both to 0 to freeze all rocks. Client visuals only — not physics / NetCode.")]
+        [Min(0f)]
+        public float MinSpinSpeed = 20f;
+
+        [Tooltip(
+            "Upper bound for cosmetic tumble rate in degrees per second. " +
+            "Clamped to ≥ MinSpinSpeed. Default 50 matches the old hardcoded ceiling. " +
+            "Client visuals only — not physics / NetCode.")]
+        [Min(0f)]
+        public float MaxSpinSpeed = 50f;
+
         /// <summary>Keeps ranges ordered and ratios non-negative after Inspector edits.</summary>
         public void ClampValues()
         {
@@ -83,6 +101,8 @@ namespace TitanOrbit.Data
             VisualScaleAtMinSize = Mathf.Max(0.01f, VisualScaleAtMinSize);
             VisualScaleAtMaxSize = Mathf.Max(0.01f, VisualScaleAtMaxSize);
             Friction = Mathf.Max(0f, Friction);
+            MinSpinSpeed = Mathf.Max(0f, MinSpinSpeed);
+            MaxSpinSpeed = Mathf.Max(MinSpinSpeed, MaxSpinSpeed);
         }
 
         void OnValidate() => ClampValues();

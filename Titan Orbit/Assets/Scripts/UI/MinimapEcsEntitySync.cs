@@ -358,6 +358,12 @@ namespace TitanOrbit.UI
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
                 return;
 
+            // [TITAN-ORBIT] Suppress clear is not enough — ship ToEntityArray during Instantiates
+            // Crash!!! (Player.log 2026-07-30 Confirm flush). Parent LateUpdate also gates, but
+            // keep the helper self-contained so future callers cannot omit ShouldSkip.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
             int localId = EcsGameBridge.GetLocalNetworkId();
             if (localId <= 0)
                 return;

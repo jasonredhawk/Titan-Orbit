@@ -2342,8 +2342,15 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// [NETCODE] Team picker UI calls this to send <see cref="RequestTeamCommand"/> RPC.
+        /// [NETCODE] Team picker UI calls this to request a team assignment and ship spawn.
         /// Requires client in-game with active network connection.
+        /// <para>
+        /// [TITAN-ORBIT] Local Host queues the command directly on <c>ServerWorld</c> with
+        /// <see cref="ReceiveRpcCommandRequest"/> so <see cref="TeamManagementSystem"/> runs without
+        /// IPC. Under join Instantiates load, client→server <see cref="SendRpcCommandRequest"/> can
+        /// occasionally never arrive — Console shows RequestTeam, no TeamManagement spawn, UI stuck
+        /// on "Spawning your ship..." (Editor.log 2026-07-30). Dedicated clients still SendRpc.
+        /// </para>
         /// </summary>
         /// <param name="team">Requested team assignment.</param>
         public void RequestTeam(TitanOrbit.Core.TeamId team)
@@ -2367,12 +2374,26 @@ namespace TitanOrbit.NetCode
                 return;
             }
 
-            // --- Build and send team-pick RPC ---
+            // --- Optimistic UI latch ---
             // Block late-arriving ship ghosts from opening the rejoin screen after a normal team pick.
-            ClientTeamFlowState.NotifyTeamPickRequested();
+            ClientTeamFlowState.NotifyTeamPickRequested(team);
 
-            var em = world.EntityManager;
             int networkId = GetLocalNetworkId(world);
+
+            // --- Local Host: inject onto ServerWorld (no IPC) ---
+            // [TITAN-ORBIT] Same idea as MoonOrbitRpcClient Local Host bypass — SendRpc under
+            // Instantiates pressure can drop; TeamManagement never sees ReceiveRpcCommandRequest.
+            // Inline Local Host check (avoid NetCode→Game asmdef cycle via EcsGameBridge).
+            if (IsLocalHostWorldsReady() && TryEnqueueLocalHostTeamRequest(networkId, team))
+            {
+                Debug.Log(
+                    $"[TitanOrbitSessionManager] RequestTeam {team} (networkId={networkId}) " +
+                    "enqueued on ServerWorld (Local Host — skip IPC).");
+                return;
+            }
+
+            // --- Dedicated / remote / Local Host fallback: ClientWorld SendRpc ---
+            var em = world.EntityManager;
             var entity = em.CreateEntity();
             em.AddComponentData(entity, new RequestTeamCommand
             {
@@ -2381,6 +2402,81 @@ namespace TitanOrbit.NetCode
             });
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
             Debug.Log($"[TitanOrbitSessionManager] RequestTeam {team} (networkId={networkId}).");
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Creates a <see cref="RequestTeamCommand"/> already tagged with
+        /// <see cref="ReceiveRpcCommandRequest"/> on the server world so
+        /// <see cref="TeamManagementSystem"/> processes it on the next server tick without
+        /// waiting for transport delivery.
+        /// </summary>
+        /// <param name="networkId">Local player's NetCode network id.</param>
+        /// <param name="team">Requested team.</param>
+        /// <returns>True when the server connection was found and the RPC entity was created.</returns>
+        static bool TryEnqueueLocalHostTeamRequest(int networkId, TitanOrbit.Core.TeamId team)
+        {
+            // --- Resolve ServerWorld ---
+            var server = ClientServerBootstrap.ServerWorld;
+            if (server == null || !server.IsCreated)
+                return false;
+            if (networkId <= 0)
+                return false;
+
+            var em = server.EntityManager;
+
+            // --- Find this player's connection entity on the server ---
+            // [NETCODE] TeamManagementSystem needs SourceConnection for CommandTarget + result RPC.
+            Entity connection = Entity.Null;
+            using (var query = em.CreateEntityQuery(
+                       ComponentType.ReadOnly<NetworkId>(),
+                       ComponentType.ReadOnly<NetworkStreamInGame>()))
+            using (var entities = query.ToEntityArray(Allocator.Temp))
+            using (var ids = query.ToComponentDataArray<NetworkId>(Allocator.Temp))
+            {
+                for (int i = 0; i < ids.Length; i++)
+                {
+                    if (ids[i].Value != networkId)
+                        continue;
+                    connection = entities[i];
+                    break;
+                }
+            }
+
+            if (connection == Entity.Null)
+            {
+                Debug.LogWarning(
+                    "[TitanOrbitSessionManager] Local Host team enqueue: no server NetworkStreamInGame " +
+                    $"for networkId={networkId} — falling back to ClientWorld SendRpc.");
+                return false;
+            }
+
+            // --- Mimic a delivered RPC (ReceiveRpcCommandRequest already present) ---
+            var rpcEntity = em.CreateEntity();
+            em.AddComponentData(rpcEntity, new RequestTeamCommand
+            {
+                NetworkId = networkId,
+                RequestedTeam = (byte)team,
+            });
+            em.AddComponentData(rpcEntity, new ReceiveRpcCommandRequest { SourceConnection = connection });
+            return true;
+        }
+
+        /// <summary>
+        /// True when this process has both ClientWorld and ServerWorld ready for Local Host play.
+        /// Mirrors <c>EcsGameBridge.IsLocalHost</c> without referencing the Game assembly.
+        /// </summary>
+        static bool IsLocalHostWorldsReady()
+        {
+            // Dedicated Relay clients never inject onto a local ServerWorld.
+            if (IsDedicatedOnlineClient)
+                return false;
+
+            var client = ClientServerBootstrap.ClientWorld;
+            var server = ClientServerBootstrap.ServerWorld;
+            return client != null && client.IsCreated &&
+                   server != null && server.IsCreated &&
+                   IsClientGameplayReady(client) &&
+                   IsClientConnectionReady(server);
         }
 
         static int GetLocalNetworkId(World world)

@@ -116,8 +116,10 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Frames to skip ship gathers after TeamChoice / rejoin confirm while the ship ghost
-        /// Instantiates. Expires so a missed Instantiates-hook seed can still recover via a tiny
-        /// ship query once Instantiates are idle.
+        /// Instantiates. Also keeps deferred Confirm (suppress) latched for this many frames —
+        /// Player.log 2026-07-30: unlocking suppress after only 1 frame still Crash!!!'d.
+        /// Expires so a missed Instantiates-hook seed can still recover via a tiny ship query
+        /// once Instantiates are idle.
         /// </summary>
         const int PostTeamChoiceHoldFrames = 45;
 
@@ -129,6 +131,14 @@ namespace TitanOrbit.ECS
 
         /// <summary><see cref="UnityEngine.Time.frameCount"/> of the last hold tick (dedupe dual callers).</summary>
         static int s_PostShipInstantiateHoldTickFrame = -1;
+
+        /// <summary>
+        /// True while <see cref="ArmPostTeamChoiceHold"/> is still counting down.
+        /// <see cref="ClientDeferredTeamChoiceConfirmSystem"/> keeps Confirm (and suppress) deferred
+        /// until this clears so suppress-only ship paths cannot open mid-Instantiates
+        /// (Player.log 2026-07-30: 1-frame Confirm flush → Crash!!!).
+        /// </summary>
+        public static bool IsPostTeamChoiceHoldActive => s_PostTeamChoiceHoldRemaining > 0;
 
         /// <summary>Updates settle + quarantine flags from the join gate system.</summary>
         public static void Set(

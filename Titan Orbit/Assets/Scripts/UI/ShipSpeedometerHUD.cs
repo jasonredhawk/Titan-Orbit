@@ -508,6 +508,12 @@ namespace TitanOrbit.UI
                 _hudTaggedQueryWorld = world;
             }
 
+            // --- Instantiates / post–TeamChoice hold: no tagged CalculateEntityCount ---
+            // [TITAN-ORBIT] Broader resolve is gated below; tagged count must also skip
+            // (Player.log 2026-07-30 Confirm flush → Crash!!!).
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             if (_hudTaggedQuery.CalculateEntityCount() == 1)
             {
                 shipEntity = _hudTaggedQuery.GetSingletonEntity();
@@ -516,9 +522,6 @@ namespace TitanOrbit.UI
             }
 
             // --- Broader resolve (skipped during Settling / GhostSpawnBacklog — Crash!!! risk) ---
-            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
-                return false;
-
             if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out shipEntity))
                 return false;
 

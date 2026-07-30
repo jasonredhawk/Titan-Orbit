@@ -91,6 +91,27 @@ namespace TitanOrbit.Game
         /// </summary>
         bool _latchedHasShipThisSession;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Realtime when Join Team latched <see cref="ClientTeamFlowState.HasRequestedTeamPick"/>.
+        /// Used to detect lost RequestTeam / missing TeamChoiceResult (Editor.log hang 2026-07-30).
+        /// </summary>
+        float _teamPickRequestedAt = -1f;
+
+        /// <summary>How many automatic RequestTeam resends we have attempted this pick.</summary>
+        int _teamPickRetryCount;
+
+        /// <summary>Seconds to wait for TeamChoiceResult before clearing spawn-wait and retrying.</summary>
+        const float TeamPickResultTimeoutSeconds = 3f;
+
+        /// <summary>Max automatic retries after a TeamChoiceResult timeout (then re-enable manual pick).</summary>
+        const int TeamPickMaxAutoRetries = 2;
+
+        /// <summary>
+        /// Shown on the team panel after spawn-wait timeouts exhaust auto-retries.
+        /// Cleared when the player picks again or Confirm arrives.
+        /// </summary>
+        string _teamPickTimeoutHint;
+
         void Awake()
         {
             Debug.Log("[NceGameFlow] Awake on " + gameObject.name + " enabled=" + enabled);
@@ -723,6 +744,74 @@ namespace TitanOrbit.Game
             TitanOrbitSessionManager.Instance.RequestTeam(team);
         }
 
+        /// <summary>
+        /// [TITAN-ORBIT] If Join Team was clicked but <see cref="TeamChoiceResultRpc"/> never arrives,
+        /// clear the in-flight latch and retry (then re-enable buttons). Prevents soft-lock on
+        /// "Spawning your ship..." when RequestTeam is lost under Local Host IPC load.
+        /// Does <b>not</b> fire while Confirm is deferred through the post–TeamChoice Instantiates
+        /// hold — that is a successful result waiting for Crash!!!-safe unlock, not a lost RPC.
+        /// </summary>
+        /// <param name="teamPickInFlight">True while pick requested and not yet confirmed.</param>
+        /// <param name="teamConfirmed">True after deferred Confirm flushed.</param>
+        void TickTeamPickTimeoutWatchdog(bool teamPickInFlight, bool teamConfirmed)
+        {
+            // --- Success / idle / Instantiates-hold defer: reset or wait without retry ---
+            // [TITAN-ORBIT] Deferred Confirm keeps TeamChoiceConfirmed false for ~PostTeamChoiceHold
+            // frames after a successful TeamChoiceResult. Treating that as a lost RPC would
+            // ClearTeamPickRequest + re-send RequestTeam while the ship is Instantiating.
+            if (teamConfirmed ||
+                !teamPickInFlight ||
+                ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending)
+            {
+                _teamPickRequestedAt = -1f;
+                if (teamConfirmed || !IsInGameFlow())
+                {
+                    _teamPickRetryCount = 0;
+                    if (teamConfirmed)
+                        _teamPickTimeoutHint = null;
+                }
+                return;
+            }
+
+            // --- Rising edge of in-flight pick ---
+            if (_teamPickRequestedAt < 0f)
+            {
+                _teamPickRequestedAt = Time.realtimeSinceStartup;
+                _teamPickTimeoutHint = null;
+                return;
+            }
+
+            if (Time.realtimeSinceStartup - _teamPickRequestedAt < TeamPickResultTimeoutSeconds)
+                return;
+
+            // --- Timeout: no TeamChoiceResult within window ---
+            // Clear the optimistic latch so UI can leave "Spawning..." (caller recomputes flags).
+            var team = ClientTeamFlowState.LastRequestedTeam;
+            ClientTeamFlowState.ClearTeamPickRequest();
+            _teamPickRequestedAt = -1f;
+
+            if (_teamPickRetryCount < TeamPickMaxAutoRetries &&
+                team != TeamId.None &&
+                TitanOrbitSessionManager.Instance != null)
+            {
+                _teamPickRetryCount++;
+                Debug.LogWarning(
+                    $"[NceGameFlow] TeamChoiceResult timed out after {TeamPickResultTimeoutSeconds:0.#}s — " +
+                    $"auto-retry RequestTeam {team} (attempt {_teamPickRetryCount}/{TeamPickMaxAutoRetries}).");
+                // RequestTeam re-latches HasRequestedTeamPick — spawn-wait continues.
+                TitanOrbitSessionManager.Instance.RequestTeam(team);
+                return;
+            }
+
+            // --- Exhausted auto-retries: return player to team buttons ---
+            _teamPickRetryCount = 0;
+            _teamPickTimeoutHint = "Team join timed out — click a team again.";
+            _statusMessage = _teamPickTimeoutHint;
+            Debug.LogError(
+                "[NceGameFlow] TeamChoiceResult timed out after retries. " +
+                "RequestTeam may have been lost; choose a team again.");
+        }
+
         IEnumerator WaitAndStartLocalPlay()
         {
             float deadline = Time.realtimeSinceStartup + 20f;
@@ -970,6 +1059,17 @@ namespace TitanOrbit.Game
             bool hasShip = hasShipLive || _latchedHasShipThisSession;
             bool teamConfirmed = ClientTeamFlowState.TeamChoiceConfirmed;
             bool teamPickInFlight = ClientTeamFlowState.HasRequestedTeamPick && !teamConfirmed;
+
+            // --- Spawn-wait watchdog (lost RequestTeam / missing TeamChoiceResult) ---
+            // [TITAN-ORBIT] Failed sessions: RequestTeam logged, no TeamManagement spawn, UI stuck on
+            // "Spawning your ship..." forever because HasRequestedTeamPick never cleared. Retry then
+            // re-enable team buttons so the player is not soft-locked.
+            // Run BEFORE showTeam / showSpawnWait so ClearTeamPickRequest / auto-retry re-latch
+            // are reflected in the same frame (otherwise buttons stay disabled one frame late,
+            // and final timeout still painted "Spawning your ship...").
+            TickTeamPickTimeoutWatchdog(teamPickInFlight, teamConfirmed);
+            teamPickInFlight = ClientTeamFlowState.HasRequestedTeamPick && !teamConfirmed;
+
             bool showRejoinChoice = connected && mapReady && hasRejoinableShip &&
                                     ClientTeamFlowState.IsRejoinChoicePending &&
                                     !teamConfirmed && !ClientTeamFlowState.HasRequestedTeamPick;
@@ -1032,7 +1132,9 @@ namespace TitanOrbit.Game
                             : showTeamCountWait
                                 ? "Preparing teams..."
                             : showTeam
-                                ? "Choose a team to spawn your ship."
+                                ? (!string.IsNullOrEmpty(_teamPickTimeoutHint)
+                                    ? _teamPickTimeoutHint
+                                    : "Choose a team to spawn your ship.")
                             : showSpawnWait
                                 ? "Spawning your ship..."
                                 : "Choose a team.";

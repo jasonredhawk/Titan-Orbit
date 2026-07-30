@@ -3,13 +3,14 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Physics;
 using Unity.Physics.Systems;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// After Unity Physics solves contacts, bleeds ship tangential (slide) velocity on
+    /// After Unity Physics exports contacts, bleeds ship tangential (slide) velocity on
     /// ship↔asteroid collision events using <see cref="AsteroidSettings.Friction"/>.
     /// Same-tile PhysX often still feels icy because the ship hull uses Friction 0.05 with
     /// GeometricMean combine — this pass makes the Inspector slider feel immediate for rams/grinds.
@@ -17,9 +18,23 @@ namespace TitanOrbit.ECS
     /// Runs on ServerSimulation and ClientSimulation (predicted) so grip matches. Uses the
     /// CollisionEvent stream only — no asteroid <c>ToEntityArray</c> (join-crash safe).
     /// </para>
+    /// <para>
+    /// [PHYSICS] Must run in <see cref="AfterPhysicsSystemGroup"/> (after
+    /// <see cref="ExportPhysicsWorld"/>). Writing <see cref="PhysicsVelocity"/> between
+    /// BuildPhysicsWorld and Export throws
+    /// "changing … velocity … on dynamic entities during physics step". Unity's own
+    /// DisplayCollisionEventsSystem uses the same AfterPhysics slot for event jobs.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] On the client, skip while <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>
+    /// (Settling / GhostSpawnBacklog / post–TeamChoice hold). ShipTag ComponentLookup during
+    /// TeamChoice Instantiates Crash!!! — server always applies friction.
+    /// </para>
+    /// Pipeline: Drive → PhysicsSimulation → Export → Friction (this) → Toroidal / Planar / Kinematics.
     /// </summary>
-    [UpdateInGroup(typeof(PhysicsSystemGroup))]
-    [UpdateAfter(typeof(PhysicsSimulationGroup))]
+    // [PHYSICS] AfterPhysicsSystemGroup sits after ExportPhysicsWorld inside PhysicsSystemGroup.
+    // Do NOT UpdateAfter(PhysicsSimulationGroup) alone — that window forbids ECS velocity writes.
+    [UpdateInGroup(typeof(AfterPhysicsSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipAsteroidContactFrictionSystem : ISystem
     {
@@ -32,10 +47,19 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Reads designer friction, then applies tangential damping to every ship in an
-        /// asteroid collision event this tick.
+        /// asteroid collision event this tick. Safe to write <see cref="PhysicsVelocity"/>
+        /// here because ExportPhysicsWorld has already finished.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
+            // --- Join-crash gate (client only) ---
+            // [TITAN-ORBIT] Collision-event ComponentLookup on ShipTag still touches ship
+            // archetypes. During TeamChoice Instantiates Settling is OFF but GhostSpawnBacklog
+            // is ON — ungated ship lookups Crash!!! (Player.log 2026-07-19 / 07-22).
+            // Server always applies friction. Skip a few client frames; prediction resumes after.
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
             // --- Designer slider ---
             var settings = AsteroidSettingsCache.ResolveOrDefault();
             settings.ClampValues();
@@ -48,6 +72,8 @@ namespace TitanOrbit.ECS
                 dt = 1f / 60f;
 
             // --- Collision-event job (no full asteroid gather) ---
+            // [PHYSICS] ICollisionEventsJob is still valid in AfterPhysicsSystemGroup (same as
+            // Unity's DisplayCollisionEventsSystem). Writing Velocities here is legal post-Export.
             var shipLookup = SystemAPI.GetComponentLookup<ShipTag>(true);
             var asteroidLookup = SystemAPI.GetComponentLookup<AsteroidTag>(true);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
@@ -61,7 +87,7 @@ namespace TitanOrbit.ECS
                 DeltaTime = dt,
             }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), state.Dependency);
 
-            // Need velocities written before later systems (toroidal / kinematics) read them.
+            // Need velocities written before OrderLast systems (toroidal / planar / kinematics).
             state.Dependency.Complete();
         }
 

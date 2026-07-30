@@ -25,10 +25,18 @@ namespace TitanOrbit.Core
         static bool _rejoinEligibilityLocked;
 
         /// <summary>
-        /// [TITAN-ORBIT] TeamChoiceResult armed the Instantiates hold but Confirm is waiting for
-        /// the next frame. While set, <see cref="ShouldSuppressLocalPlayerControl"/> stays true so
-        /// same-frame systems that check suppress before <c>ShouldSkipShipEntityQueries</c> cannot
-        /// open ship gathers. Flushed by <c>ClientDeferredTeamChoiceConfirmSystem</c>.
+        /// Last team the player clicked. Used by spawn-wait timeout retry when
+        /// <see cref="TeamChoiceResultRpc"/> never arrives (lost RequestTeam).
+        /// </summary>
+        public static TeamId LastRequestedTeam { get; private set; } = TeamId.None;
+
+        /// <summary>
+        /// [TITAN-ORBIT] TeamChoiceResult armed the Instantiates hold but Confirm is waiting until
+        /// that hold expires (not merely the next frame). While set,
+        /// <see cref="ShouldSuppressLocalPlayerControl"/> stays true so systems that check suppress
+        /// before <c>ShouldSkipShipEntityQueries</c> cannot open ship gathers mid-Instantiates.
+        /// Flushed by <c>ClientDeferredTeamChoiceConfirmSystem</c> after the hold countdown.
+        /// Player.log 2026-07-30: 1-frame-only defer → Crash!!! on Confirm flush.
         /// </summary>
         static bool _deferredConfirmPending;
 
@@ -36,8 +44,8 @@ namespace TitanOrbit.Core
         public static bool IsRejoinEligibilityLocked => _rejoinEligibilityLocked;
 
         /// <summary>
-        /// True while Join Team / resume ack is latched but Confirm is deferred one frame
-        /// (Windows TeamChoice Crash!!! same-frame gather guard).
+        /// True while Join Team / resume ack is latched but Confirm is still deferred through the
+        /// post–TeamChoice Instantiates hold (Windows TeamChoice Crash!!! gather guard).
         /// </summary>
         public static bool HasDeferredTeamChoiceConfirmPending => _deferredConfirmPending;
 
@@ -50,12 +58,12 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// Queue Confirm for the next frame after <see cref="ClientJoinSettleCache.ArmPostTeamChoiceHold"/>.
-        /// Keeps suppress on for the remainder of the TeamChoiceResult frame.
+        /// Queue Confirm until <c>ClientDeferredTeamChoiceConfirmSystem</c> sees the post–TeamChoice
+        /// Instantiates hold expire. Keeps suppress on for that whole Instantiates window.
         /// </summary>
         public static void RequestDeferredConfirmTeamChoice()
         {
-            // --- Do not unlock suppress until the next InitializationSystemGroup tick ---
+            // --- Do not unlock suppress until the Instantiates hold finishes ---
             _deferredConfirmPending = true;
             LockRejoinEligibility();
         }
@@ -78,13 +86,17 @@ namespace TitanOrbit.Core
             _teamPickRequested = false;
             _rejoinEligibilityLocked = false;
             _deferredConfirmPending = false;
+            LastRequestedTeam = TeamId.None;
         }
 
         /// <summary>Call when the player clicks a team button (before server ack).</summary>
-        public static void NotifyTeamPickRequested()
+        /// <param name="team">Team the player requested — stored for timeout retry.</param>
+        public static void NotifyTeamPickRequested(TeamId team = TeamId.None)
         {
             // --- Optimistic team pick — block late rejoin prompts ---
             _teamPickRequested = true;
+            if (team != TeamId.None)
+                LastRequestedTeam = team;
             LockRejoinEligibility();
         }
 
@@ -95,6 +107,7 @@ namespace TitanOrbit.Core
             if (TeamChoiceConfirmed)
                 return;
             _teamPickRequested = false;
+            // Keep LastRequestedTeam so a watchdog can resend the same pick.
         }
 
         static void LockRejoinEligibility() => _rejoinEligibilityLocked = true;

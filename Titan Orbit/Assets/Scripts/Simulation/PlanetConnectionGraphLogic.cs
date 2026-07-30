@@ -15,9 +15,10 @@ namespace TitanOrbit.Simulation
     /// wins — whoever created an edge first keeps it (<see cref="Edge.CreationSequence"/>); a later
     /// team blocked by that segment cannot add the conflicting line. After sticky seed + resolve +
     /// greedy pack, a final strip pass guarantees planarity. Territory fills publish only for
-    /// <b>short-embeddable</b> 3-cliques (all three sides are shortest geodesics in one chart) so
-    /// drawers never invent a long opposite-side chord. Lone edges are visual-only; bonuses need a
-    /// filled embeddable triangle.
+    /// <b>short-embeddable facial</b> 3-cliques (all three sides are shortest geodesics in one chart,
+    /// and no other same-team planet sits inside) so drawers never invent a long opposite-side chord
+    /// and never stack overlapping fills when an interior capture subdivides a larger triangle.
+    /// Lone edges are visual-only; bonuses need a filled embeddable face.
     /// </para>
     /// Point-in-triangle tests short-embed charts (same geodesic disk the fill draws), not a
     /// VertexA-only Euclidean unwrap that can disagree across seams.
@@ -123,7 +124,8 @@ namespace TitanOrbit.Simulation
         /// (proper cross or collinear overlap, friend or foe), drop the newer
         /// <see cref="Edge.CreationSequence"/>; (3) greedily add every shorter same-team pair that
         /// clears <b>any</b> existing edge; (4) strip again so planarity is guaranteed even if pack
-        /// missed once; (5) publish only <b>short-embeddable</b> same-team 3-cliques as triangles.
+        /// missed once; (5) publish only <b>short-embeddable facial</b> same-team 3-cliques as
+        /// triangles (empty interior — outer shells drop when an inner planet subdivides them).
         /// </para>
         /// </summary>
         /// <param name="planets">All planets (neutral entries are skipped).</param>
@@ -1040,7 +1042,8 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Builds territory triangles for every team that has at least three planets.
-        /// Only short-embeddable 3-cliques are published (edges still remain for non-fillable ones).
+        /// Only short-embeddable <b>facial</b> 3-cliques are published (edges still remain for
+        /// non-fillable ones). Nested outer shells are culled after clique discovery.
         /// </summary>
         static void PublishTrianglesForAllTeams(
             in NativeArray<PlanetInput> planets,
@@ -1097,9 +1100,23 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Forms one triangle for every short-embeddable triple of teammates that has all three edges.
+        /// Forms territory fills for every short-embeddable triple of teammates that has all three
+        /// edges, then drops any triangle that still has another same-team planet in its interior.
+        /// <para>
+        /// [TITAN-ORBIT] Without the empty-interior cull, capturing planet D inside triangle ABC
+        /// while D connects to A/B/C publishes ABD + BCD + CAD <b>and</b> keeps ABC — same region
+        /// drawn twice (more opaque fill) and corner pop bonuses stacked on the outer shell.
+        /// Planar faces are only the small triangles; the outer 3-clique is not a face once D exists.
         /// Non-embeddable 3-cliques keep their edges (drawn as shortest lines) but get no fill/PIT.
+        /// </para>
         /// </summary>
+        /// <param name="planets">All planet inputs (used for positions of this team's members).</param>
+        /// <param name="indices">Sorted indices into <paramref name="planets"/> for this team only.</param>
+        /// <param name="team">Owning team for the edges / triangles being published.</param>
+        /// <param name="mapW">Toroidal map width (point-in-triangle + short-embed checks).</param>
+        /// <param name="mapH">Toroidal map height.</param>
+        /// <param name="edges">Global non-crossing edge list (read-only here).</param>
+        /// <param name="triangles">Destination list; this team appends then may remove nested shells.</param>
         static void BuildCliquesAsTriangles(
             in NativeArray<PlanetInput> planets,
             in NativeList<int> indices,
@@ -1112,6 +1129,11 @@ namespace TitanOrbit.Simulation
             if (indices.Length < 3)
                 return;
 
+            // --- Where this team's triangles start in the shared list ---
+            // Cull only touches entries we add below so other teams' faces stay intact.
+            int teamTriStart = triangles.Length;
+
+            // --- Phase A: every short-embeddable 3-clique (graph may still include nested shells) ---
             for (int i = 0; i < indices.Length; i++)
             {
                 for (int j = i + 1; j < indices.Length; j++)
@@ -1133,6 +1155,75 @@ namespace TitanOrbit.Simulation
                         TryAddTriangle(ref triangles, a, b, c, team);
                     }
                 }
+            }
+
+            // --- Phase B: keep facial triangles only (empty same-team interior) ---
+            CullTrianglesWithInteriorTeammates(planets, indices, mapW, mapH, teamTriStart, ref triangles);
+        }
+
+        /// <summary>
+        /// Removes this team's triangles that contain another owned teammate inside the fill.
+        /// Corners of the triangle itself are ignored. Enemy planets inside do <b>not</b> cull —
+        /// multi-team overlap is intentional elsewhere.
+        /// <para>
+        /// [TITAN-ORBIT] Runs after clique discovery on each rebuild (including planet capture).
+        /// Edges pack in the same <see cref="RebuildFullGraph"/> pass before this runs, so an
+        /// interior capture that connects to the three corners already has ABD/BCD/CAD candidates
+        /// when ABC is culled — no lasting hole, and no stacked opaque fill / corner bonus.
+        /// Order of remaining triangles does not matter (swap-back removal).
+        /// </para>
+        /// </summary>
+        /// <param name="planets">Full planet array (positions for PIT).</param>
+        /// <param name="indices">This team's planet indices into <paramref name="planets"/>.</param>
+        /// <param name="mapW">Toroidal map width.</param>
+        /// <param name="mapH">Toroidal map height.</param>
+        /// <param name="teamTriStart">First index in <paramref name="triangles"/> owned by this pass.</param>
+        /// <param name="triangles">Mutable triangle list; entries in <c>[teamTriStart, Length)</c> may drop.</param>
+        static void CullTrianglesWithInteriorTeammates(
+            in NativeArray<PlanetInput> planets,
+            in NativeList<int> indices,
+            float mapW,
+            float mapH,
+            int teamTriStart,
+            ref NativeList<Triangle> triangles)
+        {
+            // Need at least one candidate triangle and a fourth teammate that could sit inside it.
+            if (triangles.Length <= teamTriStart || indices.Length < 4)
+                return;
+
+            // --- Walk newest→oldest so RemoveAtSwapBack never skips an unchecked entry ---
+            for (int t = triangles.Length - 1; t >= teamTriStart; t--)
+            {
+                var tri = triangles[t];
+
+                // --- Resolve the three corner centers (canonical planet positions) ---
+                if (!TryGetPlanetPosition(planets, tri.PlanetIdA, out float3 va) ||
+                    !TryGetPlanetPosition(planets, tri.PlanetIdB, out float3 vb) ||
+                    !TryGetPlanetPosition(planets, tri.PlanetIdC, out float3 vc))
+                    continue;
+
+                // --- Any other teammate inside this fill? Then this is a nested shell, not a face ---
+                bool hasInteriorTeammate = false;
+                for (int i = 0; i < indices.Length; i++)
+                {
+                    var p = planets[indices[i]];
+
+                    // Skip the three corners — they lie on the boundary by definition.
+                    if (p.PlanetId == tri.PlanetIdA ||
+                        p.PlanetId == tri.PlanetIdB ||
+                        p.PlanetId == tri.PlanetIdC)
+                        continue;
+
+                    // [TITAN-ORBIT] Same geodesic PIT the fill / ship boost use — seam-safe on the torus.
+                    if (PointInTriangleXZ(p.Position, va, vb, vc, mapW, mapH))
+                    {
+                        hasInteriorTeammate = true;
+                        break;
+                    }
+                }
+
+                if (hasInteriorTeammate)
+                    triangles.RemoveAtSwapBack(t);
             }
         }
 

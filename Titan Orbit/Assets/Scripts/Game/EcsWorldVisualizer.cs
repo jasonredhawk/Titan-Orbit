@@ -292,6 +292,15 @@ namespace TitanOrbit.Game
             {
                 propulsionVfxSettings = ShipPropulsionVisualApplier.LoadDefaultSettings();
             }
+            else
+            {
+                // [TITAN-ORBIT] Scene may serialize useThrusterVfxForAcceleration:0 / zeroed
+                // transition knobs. Thrusters are always input-driven in code now; still repair
+                // zeroed blend speed so flames do not pop or stick.
+                propulsionVfxSettings.useThrusterVfxForAcceleration = true;
+                if (propulsionVfxSettings.thrusterVfxTransitionSpeed <= 0.01f)
+                    propulsionVfxSettings.thrusterVfxTransitionSpeed = 3f;
+            }
         }
 
         /// <summary>
@@ -708,10 +717,10 @@ namespace TitanOrbit.Game
                     t.position = displayPos;
 
                 // --- Rotation: asteroids must NOT be overwritten ---
-                // [TITAN-ORBIT] AsteroidSpinVisualProxy.LateUpdate rotates the ROOT every frame.
-                // Writing ECS LocalTransform.Rotation every frame dirtied every asteroid Transform
-                // while flying because spun rotation ≠ ECS rot. Planets spin a child pivot
-                // (PlanetSpinVisualProxy) — root rot can stay from ECS.
+                // [TITAN-ORBIT] AsteroidSpinVisualProxy tumbles a child pivot (SgtPlanet migrated
+                // under it). Writing ECS LocalTransform.Rotation onto the root is unnecessary and
+                // used to fight root-level spin before the pivot migration. Planets also spin a
+                // child pivot (PlanetSpinVisualProxy) — root rot can stay from ECS.
                 if (kind != ProxyVisualKind.Asteroid)
                 {
                     Quaternion displayRot = lt.Rotation;

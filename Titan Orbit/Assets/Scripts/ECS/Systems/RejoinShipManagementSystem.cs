@@ -12,9 +12,10 @@ namespace TitanOrbit.ECS
     /// Server-side handler for reconnect / rejoin ship RPCs. When a player reconnects mid-match,
     /// they can resume their existing ship (<see cref="ResumeExistingShipCommand"/>) or abandon
     /// it and pick a fresh team (<see cref="AbandonShipForRejoinCommand"/>). Updates CommandTarget
-    /// so NetCode routes input to the correct ghost. On resume, the ship is teleported to the
-    /// team's home planet (same offset as new spawn / death respawn) with cleared velocity so
-    /// reconnect never continues from the disconnect location. Runs after TeamManagementSystem.
+    /// so NetCode routes input to the correct ghost. On resume, the ship is teleported to a
+    /// random point on the team's home orbit ring (same helper as new spawn / death respawn,
+    /// outside the moon dock zone) with cleared velocity so reconnect never continues from the
+    /// disconnect location. Runs after TeamManagementSystem.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -79,9 +80,16 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // --- Teleport to home (never resume at last disconnect position) ---
-            // [TITAN-ORBIT] Same home offset as TeamManagementSystem / ShipRespawnSystem.
-            float3 homePos = ShipHomeSpawnLogic.FindHomeSpawnPosition(em, shipState.Team);
+            // --- Teleport to home orbit ring (never resume at last disconnect position) ---
+            // [TITAN-ORBIT] Same random ring spawn as TeamManagementSystem / ShipRespawnSystem,
+            // excluding the gem-moon dock zone so reconnect does not open the Orbit Menu.
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            double orbitElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
+                : SystemAPI.Time.ElapsedTime;
+            float3 homePos = ShipHomeSpawnLogic.FindHomeSpawnPosition(em, shipState.Team, orbitElapsed);
             if (em.HasComponent<LocalTransform>(ship))
             {
                 var transform = em.GetComponentData<LocalTransform>(ship);

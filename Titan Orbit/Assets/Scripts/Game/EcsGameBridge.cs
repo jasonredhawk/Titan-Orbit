@@ -88,6 +88,28 @@ namespace TitanOrbit.Game
 
             em = world.EntityManager;
 
+            // --- Instantiates / post–TeamChoice hold: no ship archetype gather ---
+            // [TITAN-ORBIT] CalculateEntityCount / GetSingletonEntity still walk ship chunks.
+            // Player.log 2026-07-30: Confirm flush unlocked suppress → HUD/cache paths hit this
+            // while GhostSpawn Instantiates → Crash!!!. Prefer Instantiates-hook seed only.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            {
+                if (LocalShipEntitySeed.TryGetSeededShip(em, out var seeded) &&
+                    seeded != Entity.Null &&
+                    em.Exists(seeded) &&
+                    em.HasComponent<ShipTag>(seeded) &&
+                    em.HasComponent<LocalPlayerShipTag>(seeded))
+                {
+                    shipEntity = seeded;
+                    s_LocalPlayerShipCacheFrame = Time.frameCount;
+                    s_LocalPlayerShipCacheWorld = world;
+                    s_LocalPlayerShipEntity = seeded;
+                    return true;
+                }
+
+                return false;
+            }
+
             if (s_LocalPlayerShipCacheFrame == Time.frameCount &&
                 s_LocalPlayerShipCacheWorld == world &&
                 s_LocalPlayerShipEntity != Entity.Null &&
@@ -436,7 +458,12 @@ namespace TitanOrbit.Game
 
             var em = world.EntityManager;
 
-            // --- Tiny tagged lookup first (safe during GhostSpawnBacklog) ---
+            // --- Instantiates / post–TeamChoice hold: no tagged CalculateEntityCount ---
+            // [TITAN-ORBIT] Same Crash!!! window as TryGetCachedLocalPlayerShipEntity (2026-07-30).
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
+            // --- Tiny tagged lookup first (safe after Instantiates idle) ---
             // [TITAN-ORBIT] TryGetLocalShipEntity scans all ships and is gated off during Instantiates
             // (asteroid destroy → gem ghosts). Without this path, ShipAttributeUpgradeHUD set attrs
             // to default and flashed empty tick marks every burst.
@@ -503,6 +530,11 @@ namespace TitanOrbit.Game
                 return false;
 
             var em = world.EntityManager;
+
+            // --- Instantiates / post–TeamChoice hold: no tagged CalculateEntityCount ---
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
             using var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipOrbitState));
             if (tagged.CalculateEntityCount() > 0)
             {
@@ -720,6 +752,14 @@ namespace TitanOrbit.Game
             // --- Client prediction world: tiny tagged lookup ---
             if (world.IsClient())
             {
+                // [TITAN-ORBIT] CalculateEntityCount during Instantiates Crash!!! (Player.log 2026-07-30).
+                if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                {
+                    if (LocalShipEntitySeed.TryGetSeededShip(em, out shipEntity))
+                        return shipEntity != Entity.Null;
+                    return false;
+                }
+
                 using (var tagged = em.CreateEntityQuery(typeof(LocalPlayerShipTag), typeof(ShipTag)))
                 {
                     if (tagged.CalculateEntityCount() == 1)
@@ -728,9 +768,6 @@ namespace TitanOrbit.Game
                         return true;
                     }
                 }
-
-                if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
-                    return false;
 
                 return TryGetLocalShipEntity(em, out shipEntity);
             }

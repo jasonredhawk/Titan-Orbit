@@ -34,6 +34,7 @@ namespace TitanOrbit.ECS
 
             // --- Drain team-pick RPC queue ---
             // [NETCODE] ReceiveRpcCommandRequest pairs each RPC entity with its source connection.
+            // Local Host may inject these directly (no IPC) — see TitanOrbitSessionManager.RequestTeam.
             foreach (var (cmd, req, entity) in SystemAPI.Query<RefRO<RequestTeamCommand>, RefRO<ReceiveRpcCommandRequest>>().WithEntityAccess())
             {
                 int networkId = cmd.ValueRO.NetworkId;
@@ -42,6 +43,9 @@ namespace TitanOrbit.ECS
 
                 var connection = req.ValueRO.SourceConnection;
                 var requested = (TeamId)cmd.ValueRO.RequestedTeam;
+
+                // [TITAN-ORBIT] Log before spawn so lost-RPC hangs are distinguishable from spawn failures.
+                LogReceived(networkId, requested);
 
                 ecb.DestroyEntity(entity);
 
@@ -180,20 +184,16 @@ namespace TitanOrbit.ECS
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Ship == Entity.Null)
                 return false;
 
-            // --- Resolve spawn position near home planet from map layout ---
-            float3 spawnPos = float3.zero;
-            if (SystemAPI.TryGetSingletonBuffer<MapLayoutEntryElement>(out var layout))
-            {
-                for (int i = 0; i < layout.Length; i++)
-                {
-                    var entry = layout[i];
-                    if (entry.EntityKind == 1 && entry.Team == team)
-                    {
-                        spawnPos = entry.Position + new float3(ShipHomeSpawnLogic.HomeSpawnOffsetX, 0f, 0f);
-                        break;
-                    }
-                }
-            }
+            // --- Resolve spawn on home orbit ring (outside moon dock zone) ---
+            // [TITAN-ORBIT] Same helper as death respawn / rejoin — random ring angle, not fixed +X.
+            // Moon exclusion uses PlanetGemMoonOrbitClock so the wedge tracks the live moon.
+            int hz = 0;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
+                hz = tickRate.SimulationTickRate;
+            double orbitElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
+                : SystemAPI.Time.ElapsedTime;
+            float3 spawnPos = ShipHomeSpawnLogic.FindHomeSpawnPosition(em, team, orbitElapsed);
 
             var ship = ecb.Instantiate(prefabs.Ship);
             ecb.SetComponent(ship, new ShipState
@@ -224,6 +224,12 @@ namespace TitanOrbit.ECS
 
             LogSpawned(networkId, team, spawnPos);
             return true;
+        }
+
+        [BurstDiscard]
+        static void LogReceived(int networkId, TeamId team)
+        {
+            UnityEngine.Debug.Log($"[TeamManagementSystem] Received RequestTeam networkId={networkId} team={team}.");
         }
 
         [BurstDiscard]

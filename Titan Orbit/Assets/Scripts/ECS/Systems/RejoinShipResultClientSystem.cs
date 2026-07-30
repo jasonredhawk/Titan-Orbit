@@ -56,7 +56,7 @@ namespace TitanOrbit.ECS
                 ClientTeamFlowState.RequestDeferredConfirmTeamChoice();
                 UnityEngine.Debug.Log(
                     "[RejoinShipResult] Resumed existing ship on team " + (TeamId)rpc.AssignedTeam +
-                    ". Confirm deferred 1 frame (join-crash guard).");
+                    ". Confirm deferred until post-TeamChoice Instantiates hold expires (join-crash guard).");
                 return;
             }
 

@@ -5,20 +5,28 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using Unity.Entities;
 using Unity.Mathematics;
-using Unity.Transforms;
+using Unity.NetCode;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-side engine and thruster jet VFX on ship GameObject proxies (ported from legacy Starship).
-    /// Reads ShipKinematics velocity and ShipInput.Thrust from the visualization ECS world each LateUpdate;
-    /// does not drive simulation. Attached by EcsWorldVisualizer when spawning ship hull proxies.
+    /// Thruster flames follow the <b>held thrust button</b>, not hull speed. Local owner reads
+    /// <see cref="ShipPendingInput"/> (written every Unity Update); remotes read ghosted
+    /// <see cref="ShipInput.Thrust"/>. Does not drive simulation.
+    /// Attached by <see cref="EcsWorldVisualizer"/> when spawning ship hull proxies.
     /// Cosmetic smoothing of particle emission is intentional — never applied to ship transform position.
     /// <para>
     /// Prefabs must load via <c>Resources.Load</c> in player builds — SampleScene often leaves the
     /// propulsion bank empty and falls back to <see cref="LoadDefaultSettings"/>. Editor-only
     /// AssetDatabase paths return null on Windows clients, which left ships with no flames.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Grinding an asteroid can zero velocity while the button stays down. Also,
+    /// asteroid chips often spawn gem ghosts → <c>GhostSpawnBacklog</c> →
+    /// <see cref="ShipInputApplySystem"/> skips copying pending input onto the ghost, so
+    /// <see cref="ShipInput.Thrust"/> can read false mid-grind. Pending input stays true — use it.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(90)]
@@ -54,6 +62,11 @@ namespace TitanOrbit.Game
         {
             public GameObject engineVfxPrefab;
             public GameObject thrusterVfxPrefab;
+            /// <summary>
+            /// Kept for scene serialization compatibility. Thruster jets always follow the held
+            /// thrust button now; coast-only lighting from this flag was removed (grind at v≈0
+            /// looked idle while the player was still pushing).
+            /// </summary>
             public bool useThrusterVfxForAcceleration;
             public List<ThrusterVfxColorPrefab> thrusterJetFlameBank;
             public Vector3 thrusterVfxLocalOffset;
@@ -221,7 +234,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Each frame: read ECS velocity + thrust input and drive particle emission / scale.
+        /// Each frame: read held thrust (and optional coast speed) and drive particle emission / scale.
         /// Runs after ship proxy transforms have been synced for the frame.
         /// </summary>
         void LateUpdate()
@@ -247,11 +260,18 @@ namespace TitanOrbit.Game
                 {
                     SetEngineVfxActive(false, 0f);
                     SetThrusterVfxBlend(0f);
+                    _lastEngineMoving = false;
+                    _lastThrusterActive = false;
                     return;
                 }
             }
 
-            // --- Derive motion state from ECS kinematics + input ---
+            // --- Held thrust (button), not hull speed ---
+            // [TITAN-ORBIT] Must stay lit while grinding (v≈0) and while GhostSpawnBacklog skips
+            // ShipInputApplySystem — see ResolveThrustHeld.
+            bool thrusting = ResolveThrustHeld(em);
+
+            // Speed only for optional engine coast glow — never gates thruster jets.
             float speed = 0f;
             if (em.HasComponent<ShipKinematics>(_shipEntity))
             {
@@ -260,29 +280,53 @@ namespace TitanOrbit.Game
                 speed = math.length(vel);
             }
 
-            // [NETCODE] ShipInput.Thrust — same flag the predicted motor uses for forward thrust.
-            bool thrusting = em.HasComponent<ShipInput>(_shipEntity)
-                && em.GetComponentData<ShipInput>(_shipEntity).Thrust;
-
-            // Engines: on whenever the ship is moving above the idle threshold.
-            // Thrusters: by default only while accelerating (moving + thrust held).
             bool moving = speed >= EngineSpeedThreshold;
-            bool accelerating = moving && thrusting;
-            bool showThrusters = _settings.useThrusterVfxForAcceleration ? accelerating : moving;
+            bool engineActive = moving || thrusting;
+            // [TITAN-ORBIT] Thrusters = thrust button only. Do not AND with moving (grind bug).
+            bool showThrusters = thrusting;
             float targetThrusterBlend = showThrusters ? 1f : 0f;
             float transitionSpeed = Mathf.Max(0.01f, _settings.thrusterVfxTransitionSpeed);
             // [TITAN-ORBIT] Cosmetic blend — acceptable on VFX only, not ship transform.
             _thrusterVfxBlend = Mathf.MoveTowards(_thrusterVfxBlend, targetThrusterBlend, transitionSpeed * Time.deltaTime);
             bool thrusterTransitionActive = Mathf.Abs(_thrusterVfxBlend - targetThrusterBlend) > 0.0001f;
 
-            if (moving == _lastEngineMoving && showThrusters == _lastThrusterActive && !thrusterTransitionActive)
+            // --- Skip particle writes when nothing changed ---
+            if (engineActive == _lastEngineMoving && showThrusters == _lastThrusterActive && !thrusterTransitionActive)
                 return;
 
-            _lastEngineMoving = moving;
+            _lastEngineMoving = engineActive;
             _lastThrusterActive = showThrusters;
 
-            SetEngineVfxActive(moving, moving ? EngineEmissionRate : 0f);
+            SetEngineVfxActive(engineActive, engineActive ? EngineEmissionRate : 0f);
             SetThrusterVfxBlend(_thrusterVfxBlend);
+        }
+
+        /// <summary>
+        /// Whether this ship should show thrust jets right now.
+        /// Local owner: <see cref="ShipPendingInput"/> (live mouse/key hold from
+        /// <see cref="ShipInputBridge"/>). Remotes: ghosted <see cref="ShipInput.Thrust"/>.
+        /// </summary>
+        /// <param name="em">Visualization world entity manager for this proxy's ship.</param>
+        /// <returns>True while the thrust control is held (local) or replicated as thrusting (remote).</returns>
+        bool ResolveThrustHeld(EntityManager em)
+        {
+            // --- Local owner: prefer pending input (Unity Update button state) ---
+            // [NETCODE] GhostOwnerIsLocal — this machine's predicted ship.
+            // [TITAN-ORBIT] LocalPlayerShipTag — hybrid host fallback when GhostOwnerIsLocal lags.
+            // [TITAN-ORBIT] ShipInputApplySystem skips under ShouldSkipShipEntityQueries
+            // (GhostSpawnBacklog). Grinding chips asteroids → gem Instantiates → backlog → ghost
+            // ShipInput.Thrust can sit false while the player still holds the button. Pending stays true.
+            bool isLocalOwner =
+                em.HasComponent<GhostOwnerIsLocal>(_shipEntity) ||
+                em.HasComponent<LocalPlayerShipTag>(_shipEntity);
+            if (isLocalOwner && ShipPendingInput.HasValue)
+                return ShipPendingInput.Latest.Thrust;
+
+            // --- Remotes / fallback: ghost input component ---
+            if (em.HasComponent<ShipInput>(_shipEntity))
+                return em.GetComponentData<ShipInput>(_shipEntity).Thrust;
+
+            return false;
         }
 
         void SetEngineVfxActive(bool active, float emissionRate)

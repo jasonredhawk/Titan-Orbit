@@ -291,11 +291,22 @@ namespace TitanOrbit.Game
             float target = Mathf.Max(0.25f, worldScale);
             instance.transform.localScale = Vector3.one * target;
             instance.transform.position = worldPosition;
-            ApplyAsteroidSurfaceVariation(instance, worldPosition, target);
+
+            // --- Spin pivot first, then surface variation ---
+            // [HYBRID] AsteroidSpinVisualProxy migrates root SgtPlanet under AsteroidSpinPivot.
+            // ApplyAsteroidSurfaceVariation uses GetComponentInChildren — it must run AFTER
+            // migrate so tiling / bump / displacement hit the visible body, not a destroyed root.
             EnsureAsteroidSpin(instance, worldPosition);
+            ApplyAsteroidSurfaceVariation(instance, worldPosition, target);
             return true;
         }
 
+        /// <summary>
+        /// Attaches <see cref="AsteroidSpinVisualProxy"/> and seeds a random tumble axis/speed
+        /// from <paramref name="worldPosition"/>. Safe to call when the component already exists.
+        /// </summary>
+        /// <param name="root">Hybrid asteroid proxy root.</param>
+        /// <param name="worldPosition">Spawn position used as a stable RNG seed.</param>
         public static void EnsureAsteroidSpin(GameObject root, Vector3 worldPosition)
         {
             // --- Ensure setup ---

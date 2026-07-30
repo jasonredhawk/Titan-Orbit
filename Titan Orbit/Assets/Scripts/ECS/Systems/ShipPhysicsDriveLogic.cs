@@ -25,12 +25,6 @@ namespace TitanOrbit.ECS
     public static class ShipPhysicsDriveLogic
     {
         /// <summary>
-        /// Soft coast drag when not thrusting, braking, or in passive orbit (high friction / low agility).
-        /// Units: deceleration in world-units/s² applied against velocity.
-        /// </summary>
-        const float CoastFriction = 4.5f;
-
-        /// <summary>
         /// Raw PIT mult must exceed this to count as "inside" (avoids float noise around 1.0).
         /// </summary>
         const float TerritoryBoostInsideEpsilon = 1.001f;
@@ -468,8 +462,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Continuous thrust, coast friction, and space-brake deceleration on the XZ plane.
+        /// Continuous thrust and optional space-brake deceleration on the XZ plane.
         /// Skipped entirely on ticks where passive orbit motor owns velocity.
+        /// When <paramref name="spaceBrakes"/> is false and the player is not thrusting,
+        /// velocity is left alone (frictionless coast — Left Ctrl / AIR BRAKES toggle).
         /// </summary>
         static void ApplyThrustCoastAndBrakes(
             ref float3 vel,
@@ -514,7 +510,9 @@ namespace TitanOrbit.ECS
             }
             else if (spaceBrakes && math.lengthsq(vel) > 0.001f)
             {
-                // Space brakes: authored continuous deceleration toward stop.
+                // --- Space brakes ON (default) ---
+                // [TITAN-ORBIT] Hard authored deceleration toward stop when not thrusting.
+                // Toggle: Left Ctrl (desktop) or AIR BRAKES button (mobile).
                 float brakeAccel = math.max(0.5f, brakeDeceleration);
                 float3 brake = -math.normalize(vel) * brakeAccel * dt;
                 if (math.lengthsq(brake) >= math.lengthsq(vel))
@@ -522,15 +520,8 @@ namespace TitanOrbit.ECS
                 else
                     vel += brake;
             }
-            else if (math.lengthsq(vel) > 0.001f)
-            {
-                // Coast friction: ships bleed speed without thrust (predictable, high-friction feel).
-                float3 drag = -math.normalize(vel) * CoastFriction * dt;
-                if (math.lengthsq(drag) >= math.lengthsq(vel))
-                    vel = float3.zero;
-                else
-                    vel += drag;
-            }
+            // else: space brakes OFF → frictionless coast (keep velocity; no CoastFriction).
+            // PlayerInputHandler documents this as "float endlessly" when SpaceBrakesEnabled is false.
 
             vel.y = 0f;
 

@@ -74,33 +74,39 @@ namespace TitanOrbit.Data
         // Cargo pickup (absorb into ship) — separate from tractor search reach
         // -------------------------------------------------------------------------
 
-        [Header("Cargo pickup zone")]
+        [Header("Cargo pickup zone (no tractor lock required)")]
         [Tooltip(
-            "Base collect radius at each wing tip (world units). " +
+            "Instant cargo absorb radius at each wing tip (world units) — same idea as Hull Pickup Range, " +
+            "but measured from the wing tip instead of the hull center. " +
             "Effective wing pickup = WingCollectRadius + gem.Size × GemSizeCollectFactor. " +
-            "Tractor beams pull gems into this zone; flying a wing tip over a gem also absorbs. " +
-            "Legacy default was 0.25 (tight to the tip). Raise to vacuum gems more easily.")]
+            "Does NOT require a tractor beam connection: if a gem is inside this sphere " +
+            "(fly a tip over it, or a beam finishes pulling it in), cargo consumes it immediately. " +
+            "Tractor search reach is separate (wing distance × RangeMultiplier). " +
+            "Legacy default 0.25 (tight to the tip). Raise to scoop more easily near wings.")]
         [Min(0.01f)]
         public float WingCollectRadius = 0.25f;
 
         [Tooltip(
             "Extra wing-tip pickup radius per unit of gem.Size. " +
-            "Larger gems touch the wing slightly earlier. Legacy default 0.25.")]
+            "Larger gems touch the wing slightly earlier. Legacy default 0.25. " +
+            "Still no tractor lock required — size only widens the absorb sphere.")]
         [Min(0f)]
         public float GemSizeCollectFactor = 0.25f;
 
         [Tooltip(
-            "Hull-center pickup radius (world units). Used when the ship has no wing buffers, " +
-            "and also when AlsoUseHullPickupWithWings is ON so flying the body over gems " +
-            "absorbs them without waiting for a wing tip / tractor. Legacy no-wing default 2.5.")]
+            "Instant cargo absorb radius from the hull center (world units). " +
+            "Same rule as Wing Collect Radius: no tractor lock needed — distance alone consumes. " +
+            "Used when the ship has no wing buffers, and also when AlsoUseHullPickupWithWings is ON. " +
+            "Legacy no-wing default 2.5.")]
         [Min(0.01f)]
         public float HullPickupRange = 2.5f;
 
         [Tooltip(
             "ON: ships with wings also absorb gems within HullPickupRange of the hull center " +
-            "(in addition to wing-tip zones). Lets you fly over gem piles and scoop them " +
-            "instantly without a tractor lock. " +
-            "OFF: only wing tips collect (old tight design — tractor must finish the pull).")]
+            "(in addition to wing-tip WingCollectRadius zones). Both zones are instant pickup — " +
+            "no tractor lock required. " +
+            "OFF: only wing-tip collect radii absorb (hull fly-over ignored); tip pickup still " +
+            "works without a beam.")]
         public bool AlsoUseHullPickupWithWings = true;
 
         /// <summary>
