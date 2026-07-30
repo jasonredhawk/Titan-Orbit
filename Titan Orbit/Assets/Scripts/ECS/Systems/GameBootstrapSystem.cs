@@ -120,6 +120,7 @@ namespace TitanOrbit.ECS
             public int Level;
             public float GemValue;
             public float MaxHealth;
+            public float Size;
             public byte ShipFamilyConfigIndex;
 
             /// <summary>
@@ -345,6 +346,7 @@ namespace TitanOrbit.ECS
                     Scale = asteroid.Scale,
                     GemValue = asteroid.GemValue,
                     MaxHealth = asteroid.MaxHealth,
+                    Size = asteroid.Size,
                     NeutralLayoutIndex = -1,
                 });
             }
@@ -533,7 +535,8 @@ namespace TitanOrbit.ECS
                         Scale = uniformScale,
                     });
                     SpawnAsteroid(
-                        ref state, pending.Position, pending.Scale, pending.GemValue, pending.MaxHealth);
+                        ref state, pending.Position, pending.Scale, pending.GemValue, pending.MaxHealth,
+                        pending.Size);
                     break;
                 }
             }
@@ -660,7 +663,7 @@ namespace TitanOrbit.ECS
         /// Instantiates one asteroid from the map queue with gem capacity and max Health from
         /// <see cref="AsteroidSettings"/> ratios (via layout).
         /// </summary>
-        void SpawnAsteroid(ref SystemState state, float3 pos, float3 scale, float gemValue, float maxHealth)
+        void SpawnAsteroid(ref SystemState state, float3 pos, float3 scale, float gemValue, float maxHealth, float size)
         {
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Asteroid == Entity.Null)
                 return;
@@ -672,7 +675,8 @@ namespace TitanOrbit.ECS
                 pos,
                 math.cmax(scale),
                 gemValue,
-                maxHealth);
+                maxHealth,
+                size);
         }
 
         /// <summary>

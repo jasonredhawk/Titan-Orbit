@@ -59,7 +59,8 @@ namespace TitanOrbit.ECS
                     pending.Position,
                     pending.Scale,
                     pending.GemValue,
-                    pending.MaxHealth);
+                    pending.MaxHealth,
+                    pending.Size);
                 buffer.RemoveAt(i);
             }
         }
@@ -67,7 +68,7 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Shared asteroid Instantiates helper for map bootstrap and timed respawn.
-    /// Writes <see cref="AsteroidState"/> with full RemainingGems / Health / MaxGems.
+    /// Writes <see cref="AsteroidState"/> with full RemainingGems / Health / MaxGems / Size.
     /// </summary>
     public static class AsteroidSpawning
     {
@@ -89,7 +90,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Instantiates one asteroid ghost at <paramref name="position"/> with uniform scale,
-        /// gem capacity, and max Health (HP may differ from gems via AsteroidSettings ratios).
+        /// gem capacity, max Health, and designer Size (HP may differ from gems via AsteroidSettings ratios).
         /// </summary>
         /// <param name="em">Server EntityManager.</param>
         /// <param name="asteroidPrefab">Ghost prefab from <see cref="GamePrefabs.Asteroid"/>.</param>
@@ -97,6 +98,7 @@ namespace TitanOrbit.ECS
         /// <param name="uniformScale">LocalTransform scale (map gen uses cmax of non-uniform layout).</param>
         /// <param name="gemValue">Full mineable gem capacity (MaxGems / RemainingGems).</param>
         /// <param name="maxHealth">Full combat Health (may differ from gemValue).</param>
+        /// <param name="size">Designer Size for bounce mass / respawn restore. ≤0 derives from maxHealth.</param>
         /// <returns>New asteroid entity, or Null if the prefab is missing.</returns>
         public static Entity Spawn(
             EntityManager em,
@@ -104,7 +106,8 @@ namespace TitanOrbit.ECS
             float3 position,
             float uniformScale,
             float gemValue,
-            float maxHealth)
+            float maxHealth,
+            float size = 0f)
         {
             if (asteroidPrefab == Entity.Null)
                 return Entity.Null;
@@ -116,11 +119,24 @@ namespace TitanOrbit.ECS
             float gems = math.max(GemEconomyConstants.MinGemSpawnValue, gemValue);
             float health = math.max(1f, maxHealth);
 
+            // --- Designer Size (virtual collision mass + respawn identity) ---
+            // Prefer the explicit Size from map gen / pending respawn. Older callers that only
+            // pass MaxHealth recover Size ≈ MaxHealth / HealthPerSize so bounce still works.
+            float designerSize = size;
+            if (designerSize <= 0f)
+            {
+                var settings = TitanOrbit.Data.AsteroidSettingsCache.ResolveOrDefault();
+                settings.ClampValues();
+                designerSize = health / math.max(0.01f, settings.HealthPerSize);
+            }
+            designerSize = math.max(0.01f, designerSize);
+
             Entity e = em.Instantiate(asteroidPrefab);
             em.SetComponentData(e, LocalTransform.FromPositionRotationScale(position, quaternion.identity, scale));
 
             // --- Surface friction from AsteroidSettings (Inspector) ---
             // Prefab bake uses defaults; replace so live Friction edits apply to new rocks.
+            // PhysX restitution is 0 — custom ShipCollisionImpulseLogic owns bounce.
             // Do not Dispose the prefab's shared blob — only swap this entity's reference.
             var frictionCollider = AsteroidColliderMaterialLogic.CreateFromSettingsCache();
             if (em.HasComponent<PhysicsCollider>(e))
@@ -130,10 +146,12 @@ namespace TitanOrbit.ECS
 
             // --- Mineable + combat state ---
             // MaxGems / MaxHealth are server-only so destroy→respawn restores both capacities.
+            // Size is ghosted so clients predict the same collision mass.
             var asteroidState = new AsteroidState
             {
                 RemainingGems = gems,
                 Health = health,
+                Size = designerSize,
                 IsDestroyed = false,
                 TerritoryTeam = TeamId.None,
                 TerritoryTeamsMask = 0,
@@ -160,6 +178,7 @@ namespace TitanOrbit.ECS
         /// <param name="uniformScale">Scale to restore.</param>
         /// <param name="gemValue">MaxGems to restore (not RemainingGems, which is often 0).</param>
         /// <param name="maxHealth">MaxHealth to restore (not current Health, which is often 0).</param>
+        /// <param name="size">Designer Size to restore (bounce mass identity).</param>
         /// <param name="nowElapsed">Current server ElapsedTime.</param>
         /// <param name="delaySeconds">Seconds until spawn (settings default 30).</param>
         public static void ScheduleRespawn(
@@ -168,16 +187,26 @@ namespace TitanOrbit.ECS
             float uniformScale,
             float gemValue,
             float maxHealth,
+            float size,
             double nowElapsed,
             float delaySeconds)
         {
             position.y = 0f;
+            float restoreSize = size;
+            if (restoreSize <= 0f)
+            {
+                var settings = TitanOrbit.Data.AsteroidSettingsCache.ResolveOrDefault();
+                settings.ClampValues();
+                restoreSize = math.max(1f, maxHealth) / math.max(0.01f, settings.HealthPerSize);
+            }
+
             buffer.Add(new PendingAsteroidRespawnElement
             {
                 Position = position,
                 Scale = math.max(0.01f, uniformScale),
                 GemValue = math.max(GemEconomyConstants.MinGemSpawnValue, gemValue),
                 MaxHealth = math.max(1f, maxHealth),
+                Size = math.max(0.01f, restoreSize),
                 RespawnAtElapsedTime = nowElapsed + math.max(1.0, delaySeconds),
             });
         }

@@ -165,6 +165,12 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipPeopleTransferState());
 
+            // --- Pre-physics velocity snapshot for mass-aware bounce ---
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipPreCollisionVelocity>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipPreCollisionVelocity());
+
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
         }

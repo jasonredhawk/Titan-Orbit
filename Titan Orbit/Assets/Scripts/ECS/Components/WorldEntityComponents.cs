@@ -48,6 +48,13 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] Hull points — asteroids can be shot for faster mining.</summary>
         [GhostField] public float Health;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Designer Size rolled at spawn (drives HP, gems, visual scale, and
+        /// virtual collision mass for ship bounce). Ghosted so client prediction uses the same
+        /// mass as the server when applying <c>ShipCollisionImpulseLogic</c>.
+        /// </summary>
+        [GhostField] public float Size;
+
         /// <summary>[TITAN-ORBIT] True after destruction; entity may be destroyed next tick.</summary>
         [GhostField] public bool IsDestroyed;
 
@@ -154,6 +161,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>Full Health restored on respawn (<see cref="AsteroidState.MaxHealth"/>).</summary>
         public float MaxHealth;
+
+        /// <summary>Designer Size restored on respawn (<see cref="AsteroidState.Size"/>).</summary>
+        public float Size;
 
         /// <summary>Server ElapsedTime when this entry is due to spawn.</summary>
         public double RespawnAtElapsedTime;

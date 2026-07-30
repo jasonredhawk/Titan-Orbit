@@ -15,6 +15,8 @@ namespace TitanOrbit.Data
     /// lerps from VisualScaleAtMinSize → VisualScaleAtMaxSize. Example: Size 50,
     /// HealthPerSize 3, GemsPerSize 0.5 → 150 HP and 25 gem capacity.
     /// Contact <see cref="Friction"/> controls how sticky rams/grinds feel against the rock.
+    /// <see cref="CollisionMassPerSize"/> and <see cref="BounceRestitution"/> drive mass-aware
+    /// ship bounce (rocks stay static; virtual mass still shapes rebound).
     /// Cosmetic tumble uses <see cref="MinSpinSpeed"/>–<see cref="MaxSpinSpeed"/>
     /// (<see cref="Game.AsteroidSpinVisualProxy"/>) — presentation only, not sim physics.
     /// </para>
@@ -75,6 +77,21 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float Friction = 1.5f;
 
+        [Header("Collision bounce (mass-aware)")]
+        [Tooltip(
+            "Virtual collision mass = Size × this. Asteroids stay static (do not slide), but " +
+            "this mass still shapes ship rebound: light ships bounce hard off heavy rocks; " +
+            "heavy ships get a softer kick off pebbles. Default 1 ≈ Size 10 rock has mass 10.")]
+        [Min(0.01f)]
+        public float CollisionMassPerSize = 1f;
+
+        [Tooltip(
+            "Coefficient of restitution for custom ship↔asteroid bounce (0 = inelastic stick along " +
+            "the normal, 1 = perfectly elastic). PhysX asteroid restitution is 0 so this system " +
+            "owns bounce — raise toward 0.7 for snappier rebounds, lower toward 0.3 for heavier feel.")]
+        [Range(0f, 1f)]
+        public float BounceRestitution = 0.55f;
+
         [Header("Visual spin (presentation)")]
         [Tooltip(
             "Lower bound for cosmetic tumble rate in degrees per second. " +
@@ -101,8 +118,20 @@ namespace TitanOrbit.Data
             VisualScaleAtMinSize = Mathf.Max(0.01f, VisualScaleAtMinSize);
             VisualScaleAtMaxSize = Mathf.Max(0.01f, VisualScaleAtMaxSize);
             Friction = Mathf.Max(0f, Friction);
+            CollisionMassPerSize = Mathf.Max(0.01f, CollisionMassPerSize);
+            BounceRestitution = Mathf.Clamp01(BounceRestitution);
             MinSpinSpeed = Mathf.Max(0f, MinSpinSpeed);
             MaxSpinSpeed = Mathf.Max(MinSpinSpeed, MaxSpinSpeed);
+        }
+
+        /// <summary>
+        /// Virtual collision mass for ship bounce from designer Size.
+        /// Rocks do not move; mass only shapes the ship's rebound impulse.
+        /// </summary>
+        public float ComputeCollisionMass(float size)
+        {
+            ClampValues();
+            return Mathf.Max(0.5f, size * CollisionMassPerSize);
         }
 
         void OnValidate() => ClampValues();

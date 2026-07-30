@@ -104,6 +104,7 @@ namespace TitanOrbit.ECS
         {
             public float3 Position;
             public float3 Scale;
+            public float Size;
             public float GemValue;
             public float MaxHealth;
         }
@@ -398,6 +399,7 @@ namespace TitanOrbit.ECS
             {
                 Position = position,
                 Scale = scale,
+                Size = size,
                 GemValue = gemValue,
                 MaxHealth = maxHealth,
             });

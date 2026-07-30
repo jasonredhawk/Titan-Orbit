@@ -11,7 +11,7 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Predicted ship↔planet / asteroid / gem-moon bounce across toroidal map seams.
+    /// Predicted ship↔planet / asteroid / gem-moon / ship bounce across toroidal map seams.
     /// Runs after Unity Physics integrates hulls and before
     /// <see cref="ShipPlanarPhysicsConstraintSystem"/> flattens tilt. Same math on
     /// ServerSimulation and ClientSimulation (<see cref="Simulate"/>) so NetCode prediction
@@ -24,7 +24,7 @@ namespace TitanOrbit.ECS
     /// tick (stepped orbit / post-dock snap toward the original tile).
     /// Presentation still draws bodies via <c>ToroidalDisplay</c>; this system
     /// only adjusts ship <see cref="LocalTransform"/> / <see cref="PhysicsVelocity"/>.
-    /// Pipeline: Drive → Physics → ToroidalWorldCollision (this) → Planar → KinematicsSync.
+    /// Pipeline: Drive → Physics → Bounce → Friction → ToroidalWorldCollision (this) → Planar → KinematicsSync.
     /// </summary>
     // OrderLast: after default-slot PhysicsSystemGroup. Avoid UpdateAfter(PhysicsSystemGroup) —
     // ClientWorld sorter warns when that group is not a PredictedFixedStep sibling.
@@ -47,6 +47,20 @@ namespace TitanOrbit.ECS
 
             /// <summary>1 when this sphere is a living asteroid (ramming damage); 0 for planets.</summary>
             public byte IsAsteroid;
+
+            /// <summary>Designer Size for asteroid virtual collision mass (0 for planets).</summary>
+            public float AsteroidSize;
+        }
+
+        /// <summary>One simulated ship snapshot for cross-seam ship↔ship resolve.</summary>
+        struct ShipSphere
+        {
+            public Entity Entity;
+            public float3 Position;
+            public float3 Velocity;
+            public float Radius;
+            public float CollisionMass;
+            public bool Dirty;
         }
 
         /// <summary>
@@ -61,6 +75,7 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Collects world spheres once, then resolves each simulated living ship against them
         /// with toroidal math when Unity Physics cannot see the contact (different map tile).
+        /// Also resolves cross-seam ship↔ship pairs with two-body mass-aware impulse.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -77,9 +92,6 @@ namespace TitanOrbit.ECS
                 return;
 
             // --- Map size ---
-            // Prefer MapStateSingleton when present (server / ghost); else ToroidalMapEcs cache
-            // (client often gets size from MapSessionMetaRpc into that static).
-            // Missing size → skip (never invent 1000).
             float preferredW = 0f;
             float preferredH = 0f;
             if (SystemAPI.TryGetSingleton(out MapStateSingleton mapState) &&
@@ -92,8 +104,18 @@ namespace TitanOrbit.ECS
             if (!ToroidalMapEcs.ResolveMapSize(preferredW, preferredH, out float mapW, out float mapH))
                 return;
 
+            // --- Designer asteroid bounce mass / restitution ---
+            var asteroidSettings = TitanOrbit.Data.AsteroidSettingsCache.ResolveOrDefault();
+            asteroidSettings.ClampValues();
+            float asteroidFriction = asteroidSettings.Friction;
+            float asteroidMassPerSize = asteroidSettings.CollisionMassPerSize;
+            float asteroidBounceRestitution = asteroidSettings.BounceRestitution;
+
+            float fixedDt = SystemAPI.Time.DeltaTime;
+            if (fixedDt <= 0f)
+                fixedDt = 1f / 60f;
+
             // --- Gather obstacles (no nested SystemAPI.Query) ---
-            // [ECS/DOTS] Idiomatic foreach must not nest; copy centers/radii then walk ships.
             var obstacles = new NativeList<WorldSphere>(128, Allocator.Temp);
 
             foreach (var (planetTransform, planetEntity) in SystemAPI
@@ -107,13 +129,11 @@ namespace TitanOrbit.ECS
                     Radius = BodyCollisionMath.GetPlanetBodyRadiusWorld(planetTransform.ValueRO.Scale),
                     Entity = planetEntity,
                     IsAsteroid = 0,
+                    AsteroidSize = 0f,
                 });
             }
 
             // --- Asteroids (skip dead / client-culled ghosts) ---
-            // [TITAN-ORBIT] HitRpc hides the mesh immediately. Ghost Health can lag (logs:
-            // hidden:true dead:false) so Health/IsDestroyed alone is not enough — also skip
-            // AsteroidClientCulledTag and rocks with no solid PhysicsCollider.
             foreach (var (asteroidTransform, asteroidState, entity) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRO<AsteroidState>>()
                          .WithAll<AsteroidTag>()
@@ -123,7 +143,6 @@ namespace TitanOrbit.ECS
                     continue;
                 if (state.EntityManager.HasComponent<AsteroidClientCulledTag>(entity))
                     continue;
-                // [TITAN-ORBIT] Isolation toggle — F3 in ClientStutterIsolator.
                 if (TitanOrbitDebugFlags.IsolateDisableAsteroidShipCollision)
                     continue;
 
@@ -133,14 +152,11 @@ namespace TitanOrbit.ECS
                     Radius = BodyCollisionMath.GetAsteroidBodyRadiusWorld(asteroidTransform.ValueRO.Scale),
                     Entity = entity,
                     IsAsteroid = 1,
+                    AsteroidSize = math.max(0.01f, asteroidState.ValueRO.Size),
                 });
             }
 
-            // --- Gem-moon snapshots (canonical collider pose + planet data for Near unwrap) ---
-            // [TITAN-ORBIT] Moon colliders stay on the canonical tile (one shared kinematic hull).
-            // Ships on a duplicate tile are toroidally "on top of" that hull (shortest dist ≈ 0)
-            // while Euclidean-far — the old path shoved the ship every tick (stepped orbit and
-            // post-dock snap toward the original tile). Resolve moons per-ship via Near pose below.
+            // --- Gem-moon snapshots ---
             var moons = new NativeList<MoonObstacle>(16, Allocator.Temp);
             double elapsed = 0.0;
             int hz = 0;
@@ -177,61 +193,83 @@ namespace TitanOrbit.ECS
                 });
             }
 
-            if (obstacles.Length == 0 && moons.Length == 0)
-            {
-                obstacles.Dispose();
-                moons.Dispose();
-                return;
-            }
-
-            // --- Server: queue real cross-seam asteroid penetrations for ramming damage ---
-            // PhysX never sees these pairs; CollisionEvents miss them. Only enqueue when
-            // TryResolve actually depenetrated (true collision), never for flybys.
-            DynamicBuffer<PendingRamContactElement> ramQueue = default;
-            bool enqueueRam = state.World.IsServer() &&
-                              SystemAPI.TryGetSingletonBuffer(out ramQueue);
-
-            // --- Asteroid grip (Inspector AsteroidSettings.Friction) for cross-seam resolves ---
-            float asteroidFriction = 0f;
-            float fixedDt = SystemAPI.Time.DeltaTime;
-            if (fixedDt <= 0f)
-                fixedDt = 1f / 60f;
-            {
-                var asteroidSettings = TitanOrbit.Data.AsteroidSettingsCache.ResolveOrDefault();
-                asteroidSettings.ClampValues();
-                asteroidFriction = asteroidSettings.Friction;
-            }
-
-            // --- Resolve each predicted/simulated ship ---
-            foreach (var (transform, velocity, physicsCollider, shipState, shipEntity) in SystemAPI
-                         .Query<RefRW<LocalTransform>, RefRW<PhysicsVelocity>, RefRO<PhysicsCollider>, RefRO<ShipState>>()
+            // --- Ship snapshots for world + ship↔ship seam resolve ---
+            var ships = new NativeList<ShipSphere>(16, Allocator.Temp);
+            foreach (var (transform, velocity, physicsCollider, shipState, motor, shipEntity) in SystemAPI
+                         .Query<RefRO<LocalTransform>, RefRO<PhysicsVelocity>, RefRO<PhysicsCollider>,
+                             RefRO<ShipState>, RefRO<ShipMotorConfig>>()
                          .WithAll<ShipTag, Simulate>()
                          .WithEntityAccess())
             {
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                     continue;
 
-                float3 shipPos = transform.ValueRO.Position;
-                float3 shipVel = velocity.ValueRO.Linear;
-                float shipRadius = ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
-                    physicsCollider.ValueRO, transform.ValueRO.Scale);
+                // Prefer current PhysicsVelocity (post same-tile bounce/friction when those ran).
+                // Seam-only contacts never hit PhysX, so this is still the post-drive velocity.
+                float3 lin = velocity.ValueRO.Linear;
+                float baseMass = motor.ValueRO.Mass > 0f ? motor.ValueRO.Mass : ShipMassLogic.DefaultBaseMass;
+                float collisionMass = ShipMassLogic.ComputeRammingMass(
+                    motor.ValueRO.HullMassReference,
+                    shipState.ValueRO.MaxHealth,
+                    motor.ValueRO.ChassisReferenceHealth,
+                    shipState.ValueRO.CurrentGems,
+                    baseMass);
 
+                ships.Add(new ShipSphere
+                {
+                    Entity = shipEntity,
+                    Position = transform.ValueRO.Position,
+                    Velocity = lin,
+                    Radius = ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
+                        physicsCollider.ValueRO, transform.ValueRO.Scale),
+                    CollisionMass = collisionMass,
+                    Dirty = false,
+                });
+            }
+
+            if (obstacles.Length == 0 && moons.Length == 0 && ships.Length == 0)
+            {
+                obstacles.Dispose();
+                moons.Dispose();
+                ships.Dispose();
+                return;
+            }
+
+            DynamicBuffer<PendingRamContactElement> ramQueue = default;
+            bool enqueueRam = state.World.IsServer() &&
+                              SystemAPI.TryGetSingletonBuffer(out ramQueue);
+
+            // --- Resolve each ship vs world spheres / moons ---
+            for (int s = 0; s < ships.Length; s++)
+            {
+                ShipSphere ship = ships[s];
+                float3 shipPos = ship.Position;
+                float3 shipVel = ship.Velocity;
                 bool anyHit = false;
+
                 for (int i = 0; i < obstacles.Length; i++)
                 {
                     WorldSphere body = obstacles[i];
                     float3 posBefore = shipPos;
                     float3 velBefore = shipVel;
                     float bodyFriction = body.IsAsteroid != 0 ? asteroidFriction : 0f;
+                    float bodyMass = body.IsAsteroid != 0
+                        ? ShipCollisionImpulseLogic.ComputeAsteroidCollisionMass(
+                            body.AsteroidSize, asteroidMassPerSize)
+                        : 0f;
+                    float restitution = body.IsAsteroid != 0
+                        ? asteroidBounceRestitution
+                        : ShipToroidalWorldCollisionLogic.WorldRestitution;
+
                     if (ShipToroidalWorldCollisionLogic.TryResolveShipVsWorldSphere(
-                            ref shipPos, ref shipVel, shipRadius,
+                            ref shipPos, ref shipVel, ship.Radius,
                             body.Position, body.Radius,
-                            mapW, mapH, ShipToroidalWorldCollisionLogic.WorldRestitution,
-                            bodyFriction, fixedDt))
+                            mapW, mapH, restitution,
+                            bodyFriction, fixedDt,
+                            ship.CollisionMass, bodyMass))
                     {
                         anyHit = true;
 
-                        // --- Cross-seam asteroid ram (server only) ---
                         if (enqueueRam && body.IsAsteroid != 0 && body.Entity != Entity.Null)
                         {
                             float3 offset = ToroidalMapEcs.ShortestOffsetXZ(posBefore, body.Position, mapW, mapH);
@@ -243,7 +281,7 @@ namespace TitanOrbit.ECS
                             float closing = math.max(0f, -math.dot(planarVel, outward));
                             ramQueue.Add(new PendingRamContactElement
                             {
-                                Ship = shipEntity,
+                                Ship = ship.Entity,
                                 Other = body.Entity,
                                 OtherIsShip = 0,
                                 NormalShipFromOther = outward,
@@ -254,17 +292,13 @@ namespace TitanOrbit.ECS
                     }
                 }
 
-                // --- Moons: PhysX on canonical tile; Near Euclidean when ship is on another tile ---
                 for (int i = 0; i < moons.Length; i++)
                 {
                     MoonObstacle moon = moons[i];
-                    // Same tile as the kinematic collider — Unity Physics already owns the contact.
                     if (!ShipToroidalWorldCollisionLogic.NeedsToroidalResolve(
                             shipPos, moon.CanonicalPosition, mapW, mapH))
                         continue;
 
-                    // [TITAN-ORBIT] Same Near unwrap as dock attach / shield repel — bounce stays
-                    // on the duplicate continuum instead of shoving toward the canonical moon.
                     float3 moonNear = PlanetOrbitMath.GetMoonWorldPositionNear(
                         shipPos,
                         moon.PlanetPosition,
@@ -275,7 +309,7 @@ namespace TitanOrbit.ECS
                         mapW,
                         mapH);
                     if (ShipToroidalWorldCollisionLogic.TryResolveShipVsNearWorldSphere(
-                            ref shipPos, ref shipVel, shipRadius,
+                            ref shipPos, ref shipVel, ship.Radius,
                             moonNear, moon.Radius,
                             ShipToroidalWorldCollisionLogic.WorldRestitution))
                     {
@@ -286,18 +320,61 @@ namespace TitanOrbit.ECS
                 if (!anyHit)
                     continue;
 
-                // --- Write back ship pose / velocity ---
-                var lt = transform.ValueRO;
-                lt.Position = shipPos;
-                transform.ValueRW = lt;
+                ship.Position = shipPos;
+                ship.Velocity = shipVel;
+                ship.Dirty = true;
+                ships[s] = ship;
+            }
 
-                var pv = velocity.ValueRO;
-                pv.Linear = shipVel;
-                velocity.ValueRW = pv;
+            // --- Cross-seam ship↔ship (PhysX misses different-tile pairs) ---
+            for (int i = 0; i < ships.Length; i++)
+            {
+                for (int j = i + 1; j < ships.Length; j++)
+                {
+                    ShipSphere a = ships[i];
+                    ShipSphere b = ships[j];
+                    float3 posA = a.Position;
+                    float3 velA = a.Velocity;
+                    float3 posB = b.Position;
+                    float3 velB = b.Velocity;
+
+                    if (!ShipToroidalWorldCollisionLogic.TryResolveShipVsShip(
+                            ref posA, ref velA, a.Radius, a.CollisionMass,
+                            ref posB, ref velB, b.Radius, b.CollisionMass,
+                            mapW, mapH,
+                            ShipCollisionImpulseLogic.DefaultShipShipRestitution))
+                        continue;
+
+                    a.Position = posA;
+                    a.Velocity = velA;
+                    a.Dirty = true;
+                    b.Position = posB;
+                    b.Velocity = velB;
+                    b.Dirty = true;
+                    ships[i] = a;
+                    ships[j] = b;
+                }
+            }
+
+            // --- Write back dirty ships ---
+            for (int s = 0; s < ships.Length; s++)
+            {
+                ShipSphere ship = ships[s];
+                if (!ship.Dirty)
+                    continue;
+
+                var lt = state.EntityManager.GetComponentData<LocalTransform>(ship.Entity);
+                lt.Position = ship.Position;
+                state.EntityManager.SetComponentData(ship.Entity, lt);
+
+                var pv = state.EntityManager.GetComponentData<PhysicsVelocity>(ship.Entity);
+                pv.Linear = ship.Velocity;
+                state.EntityManager.SetComponentData(ship.Entity, pv);
             }
 
             obstacles.Dispose();
             moons.Dispose();
+            ships.Dispose();
         }
 
         /// <summary>

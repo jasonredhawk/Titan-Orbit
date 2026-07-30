@@ -41,8 +41,9 @@ namespace TitanOrbit.ECS.Authoring
 
                 // --- Static physics collider ---
                 // [PHYSICS] WorldStatic layer — collides with Ship layer only (see TitanOrbitPhysicsLayers).
-                // [TITAN-ORBIT] Friction / restitution match AsteroidSettings defaults; runtime spawn
-                // rebuilds from AsteroidSettingsCache so Inspector tweaks apply without rebake.
+                // [TITAN-ORBIT] Friction from AsteroidSettings; PhysX restitution is 0 so
+                // ShipCollisionImpulseLogic owns mass-aware bounce. Runtime spawn rebuilds from
+                // AsteroidSettingsCache so Inspector friction tweaks apply without rebake.
                 var collider = AsteroidColliderMaterialLogic.CreateWorldStaticSphere(
                     AsteroidColliderMaterialLogic.DefaultFriction,
                     AsteroidColliderMaterialLogic.DefaultRestitution);

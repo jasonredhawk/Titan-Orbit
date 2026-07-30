@@ -863,6 +863,7 @@ namespace TitanOrbit.ECS
                     asteroidTransform.ValueRO.Scale,
                     restoreGems,
                     restoreHealth,
+                    a.Size,
                     now,
                     settings.AsteroidRespawnDelaySeconds);
 

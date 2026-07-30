@@ -80,6 +80,9 @@ namespace TitanOrbit.ECS.Authoring
                     Mass = authoring.Mass,
                     RecoilDecayPerSecond = authoring.RecoilDecayPerSecond,
                 });
+                // [TITAN-ORBIT] Pre-physics velocity snapshot for mass-aware bounce (not ghosted —
+                // local predicted / server sim only; rewritten every fixed step).
+                AddComponent(entity, new ShipPreCollisionVelocity());
                 AddComponent(entity, new ShipWeaponConfig
                 {
                     FireRate = authoring.FireRate,
@@ -132,7 +135,9 @@ namespace TitanOrbit.ECS.Authoring
                 // (not proximity). Combined with world materials via flag OR.
                 var material = Unity.Physics.Material.Default;
                 material.CollisionResponse = Unity.Physics.CollisionResponsePolicy.CollideRaiseCollisionEvents;
-                material.Restitution = 0.15f;
+                // [TITAN-ORBIT] Restitution 0 — ShipCollisionImpulseLogic owns bounce (mass-aware).
+                // PhysX still depenetrates and raises collision events for the custom impulse pass.
+                material.Restitution = 0f;
                 material.Friction = 0.05f;
 
                 var collider = Unity.Physics.SphereCollider.Create(

@@ -13,8 +13,11 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class AsteroidColliderMaterialLogic
     {
-        /// <summary>Bake / fallback restitution when settings do not override bounce.</summary>
-        public const float DefaultRestitution = 0.5f;
+        /// <summary>
+        /// Bake / fallback PhysX restitution. Always 0 — custom
+        /// <c>ShipCollisionImpulseLogic</c> owns bounce so mass ratios are correct.
+        /// </summary>
+        public const float DefaultRestitution = 0f;
 
         /// <summary>
         /// Default friction when no <see cref="AsteroidSettings"/> asset is loaded.
@@ -27,16 +30,18 @@ namespace TitanOrbit.ECS
         /// Creates a WorldStatic sphere collider with the given surface friction.
         /// Uses <see cref="Material.CombinePolicy.Maximum"/> so asteroid grip is not killed by the
         /// ship's GeometricMean combine with Friction 0.05.
+        /// PhysX restitution stays 0 — bounce is applied after Export by the impulse systems.
         /// </summary>
         /// <param name="friction">Designer friction from <see cref="AsteroidSettings.Friction"/>.</param>
-        /// <param name="restitution">Bounce (typical 0.5).</param>
+        /// <param name="restitution">Ignored for bounce feel (forced to 0); kept for API compatibility.</param>
         public static BlobAssetReference<Collider> CreateWorldStaticSphere(
             float friction,
             float restitution = DefaultRestitution)
         {
             var material = Material.Default;
             material.Friction = math.max(0f, friction);
-            material.Restitution = math.saturate(restitution);
+            // [TITAN-ORBIT] Always 0 — mass-aware bounce is not PhysX restitution.
+            material.Restitution = 0f;
             // [PHYSICS] Maximum — combined friction = max(ship, asteroid) instead of sqrt(0.05×μ).
             material.FrictionCombinePolicy = Material.CombinePolicy.Maximum;
             material.RestitutionCombinePolicy = Material.CombinePolicy.GeometricMean;

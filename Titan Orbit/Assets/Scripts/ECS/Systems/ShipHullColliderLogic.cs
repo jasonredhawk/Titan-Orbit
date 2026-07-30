@@ -75,7 +75,8 @@ namespace TitanOrbit.ECS
             // into ICollisionEventsJob for ramming damage (OR'd with the other body's flags).
             var material = Material.Default;
             material.CollisionResponse = CollisionResponsePolicy.CollideRaiseCollisionEvents;
-            material.Restitution = 0.15f;
+            // [TITAN-ORBIT] Restitution 0 — custom mass-aware bounce owns normal response.
+            material.Restitution = 0f;
             material.Friction = 0.05f;
             return material;
         }
