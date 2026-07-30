@@ -5,11 +5,13 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Loads map generation settings at play time so asset edits apply without rebaking the ECS subscene.
-    /// Asset path: Assets/Data/MapGenerationSettings.asset
+    /// Sole asset: <c>Assets/Resources/MapGenerationSettings.asset</c> — Editor and player builds
+    /// both use <see cref="Resources.Load"/> (no Data/ duplicate).
     /// </summary>
     public class MapGenerationSettingsLoader : MonoBehaviour
     {
-        const string DefaultAssetPath = "Assets/Data/MapGenerationSettings.asset";
+        /// <summary>[UNITY] Name passed to <see cref="Resources.Load"/> (no folder / extension).</summary>
+        const string ResourcesLoadName = "MapGenerationSettings";
 
         [SerializeField] MapGenerationSettings settings;
 
@@ -33,18 +35,17 @@ namespace TitanOrbit.Game
 
             Debug.LogWarning(
                 "[MapGenerationSettingsLoader] No MapGenerationSettings found. " +
-                $"Create one via Titan Orbit > Create Map Generation Settings Asset (expected at {DefaultAssetPath}), " +
+                $"Create one via Titan Orbit > Create Map Generation Settings Asset " +
+                $"(expected at Assets/Resources/{ResourcesLoadName}.asset), " +
                 "or run Titan Orbit > Setup NetCode Game (Full).");
         }
 
+        /// <summary>
+        /// [UNITY] Loads the single Resources asset — same path in Editor Play Mode and player builds.
+        /// </summary>
         static MapGenerationSettings TryLoadDefaultAsset()
         {
-            // --- Attempt resolution ---
-#if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<MapGenerationSettings>(DefaultAssetPath);
-#else
-            return null;
-#endif
+            return Resources.Load<MapGenerationSettings>(ResourcesLoadName);
         }
     }
 }

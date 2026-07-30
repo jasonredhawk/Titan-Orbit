@@ -11,9 +11,12 @@ namespace TitanOrbit.Simulation
     /// [TITAN-ORBIT] Restored from original NGO <c>GemTractorBeamSettings</c>: each wing has its
     /// own distance/power; pull speed comes from that wing (not a global gem-mass base speed).
     /// Wings collect via <see cref="GemTractorBeamAssignment"/>: sticky locks, unique gems first,
-    /// and spare beams may assist (stack pull) only when there are more wings than free gems.
+    /// and spare beams may assist (stack pull) only when there are more wings than free gems,
+    /// capped by designer <c>TractorBeamSettings.MaxCooperatingBeams</c>.
     /// Stacked assists use diminishing returns — primary full strength, each extra
-    /// <see cref="AdditionalTractorBeamPullScale"/> of its own strength (not a linear sum).
+    /// <see cref="AdditionalTractorBeamPullScale"/> (or settings AssistPullScale) of its own
+    /// strength (not a linear sum). Global range/power multipliers live on TractorBeamSettings
+    /// and are applied by ECS/Game call sites after these formulas.
     /// </summary>
     public static class GemTractorBeamMath
     {
@@ -137,6 +140,8 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Multi-beam stack weight for one wing's contribution toward a shared gem.
+        /// Uses the legacy constant <see cref="AdditionalTractorBeamPullScale"/> (0.25).
+        /// Prefer the overload that takes designer AssistPullScale from TractorBeamSettings.
         /// </summary>
         /// <param name="isPrimary">
         /// True for the gem's primary lock (ghost <c>TractorWingIndex</c> / sticky owner).
@@ -146,7 +151,28 @@ namespace TitanOrbit.Simulation
         /// 1.0 for the primary beam; <see cref="AdditionalTractorBeamPullScale"/> for each assist.
         /// </returns>
         public static float StackedBeamPullScale(bool isPrimary) =>
-            isPrimary ? 1f : AdditionalTractorBeamPullScale;
+            StackedBeamPullScale(isPrimary, AdditionalTractorBeamPullScale);
+
+        /// <summary>
+        /// Multi-beam stack weight with a designer-tunable assist fraction.
+        /// </summary>
+        /// <param name="isPrimary">True for the gem's primary lock; false for assists.</param>
+        /// <param name="assistPullScale">
+        /// Fraction of an assist wing's own pull that stacks onto the gem (settings default 0.25).
+        /// Clamped to [0, 1] so bad Inspector values cannot invert or explode pull.
+        /// </param>
+        /// <returns>1.0 for primary; clamped <paramref name="assistPullScale"/> for assists.</returns>
+        public static float StackedBeamPullScale(bool isPrimary, float assistPullScale)
+        {
+            if (isPrimary)
+                return 1f;
+            // [STANDARD] Clamp — callers may pass raw ScriptableObject fields.
+            if (assistPullScale < 0f)
+                return 0f;
+            if (assistPullScale > 1f)
+                return 1f;
+            return assistPullScale;
+        }
 
         /// <summary>
         /// Resolves authored tractor stats, falling back to maxGems conversion when distance/power are unset.

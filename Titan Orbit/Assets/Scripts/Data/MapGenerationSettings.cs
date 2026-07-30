@@ -5,9 +5,10 @@ namespace TitanOrbit.Data
     // --- Type members ---
     /// <summary>
     /// Inspector-tunable bounds for procedural map generation. Each match rolls random values within
-    /// these ranges on the server via <see cref="ECS.MapGenerationLogic"/>. ScriptableObject loaded
-    /// through <see cref="MapGenerationSettingsCache"/> at boot. Pair with
-    /// <see cref="Game.MapGenerationSettingsLoader"/> for runtime assignment.
+    /// these ranges on the server via <see cref="ECS.MapGenerationLogic"/>. Sole asset:
+    /// <c>Assets/Resources/MapGenerationSettings.asset</c>, loaded through
+    /// <see cref="MapGenerationSettingsCache"/> at boot (Editor + player via <c>Resources.Load</c>).
+    /// Pair with <see cref="Game.MapGenerationSettingsLoader"/> for scene assignment.
     /// </summary>
     [CreateAssetMenu(fileName = "MapGenerationSettings", menuName = "Titan Orbit/Map Generation Settings")]
     public class MapGenerationSettings : ScriptableObject
@@ -70,11 +71,11 @@ namespace TitanOrbit.Data
         [Tooltip("Each map rolls a random cluster count in this range (inclusive).")]
         public int maxAsteroidClusters = 35;
         [Tooltip(
-            "LEGACY — asteroid Size / HP / gems are now driven by Assets/Data/AsteroidSettings.asset " +
+            "LEGACY — asteroid Size / HP / gems are now driven by Assets/Resources/AsteroidSettings.asset " +
             "(MinSize–MaxSize, HealthPerSize, GemsPerSize). These fields are unused for spawn math " +
             "but kept so old scenes do not lose serialized data.")]
         public float minAsteroidGemValue = 1f;
-        [Tooltip("LEGACY — see AsteroidSettings.asset for gem capacity (Size × GemsPerSize).")]
+        [Tooltip("LEGACY — see Assets/Resources/AsteroidSettings.asset for gem capacity (Size × GemsPerSize).")]
         public float maxAsteroidGemValue = 70f;
         public float minAsteroidSpacing = 1.5f;
     }

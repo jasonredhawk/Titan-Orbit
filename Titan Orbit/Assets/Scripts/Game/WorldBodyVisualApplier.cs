@@ -17,7 +17,8 @@ namespace TitanOrbit.Game
     /// </summary>
     public static class WorldBodyVisualApplier
     {
-        const string DefaultPlanetPoolPath = "Assets/Data/PlanetMaterialPool.asset";
+        /// <summary>[UNITY] Name passed to <see cref="Resources.Load"/> (no folder / extension).</summary>
+        const string ResourcesLoadName = "PlanetMaterialPool";
 
         /// <summary>MonoBehaviour types removed so proxies never run legacy planet sim.</summary>
         static readonly HashSet<string> StripComponentNames = new HashSet<string>
@@ -501,14 +502,13 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// [UNITY] Loads the sole Resources pool — same path in Editor Play Mode and player builds.
+        /// </summary>
         public static PlanetMaterialPool LoadDefaultMaterialPool()
         {
             // --- LoadDefaultMaterialPool ---
-#if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<PlanetMaterialPool>(DefaultPlanetPoolPath);
-#else
-            return null;
-#endif
+            return Resources.Load<PlanetMaterialPool>(ResourcesLoadName);
         }
     }
 }

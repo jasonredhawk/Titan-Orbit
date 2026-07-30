@@ -32,8 +32,7 @@ namespace TitanOrbit.ECS.Editor
 
             var catalog = AssetDatabase.LoadAssetAtPath<ShipChassisVisualCatalog>(CatalogResourcePath);
             var planetConfig = Resources.Load<PlanetShipFamilyConfig>(PlanetConfigResourcePath)
-                ?? Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig")
-                ?? Resources.Load<PlanetShipFamilyConfig>("Data/PlanetShipFamilyConfig");
+                ?? Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
 
             if (planetConfig == null)
             {

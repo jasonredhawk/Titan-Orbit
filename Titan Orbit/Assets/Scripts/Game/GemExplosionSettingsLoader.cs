@@ -6,11 +6,13 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Loads <see cref="GemExplosionSettings"/> at play time so Inspector edits apply without
     /// rebaking SubScenes. Place on NceGameRoot (same pattern as MapGenerationSettingsLoader).
-    /// Asset path: Assets/Data/GemExplosionSettings.asset
+    /// Sole asset: <c>Assets/Resources/GemExplosionSettings.asset</c> — Editor and player builds
+    /// both use <see cref="Resources.Load"/> (no Data/ duplicate).
     /// </summary>
     public class GemExplosionSettingsLoader : MonoBehaviour
     {
-        const string DefaultAssetPath = "Assets/Data/GemExplosionSettings.asset";
+        /// <summary>[UNITY] Name passed to <see cref="Resources.Load"/> (no folder / extension).</summary>
+        const string ResourcesLoadName = "GemExplosionSettings";
 
         [SerializeField] GemExplosionSettings settings;
 
@@ -31,18 +33,17 @@ namespace TitanOrbit.Game
 
             Debug.LogWarning(
                 "[GemExplosionSettingsLoader] No GemExplosionSettings found. " +
-                $"Create one via Assets → Create → Titan Orbit → Gem Explosion Settings " +
-                $"(expected at {DefaultAssetPath}). Using code defaults until then.");
+                $"Create one via TitanOrbit → Create Gem Explosion Settings Asset " +
+                $"(expected at Assets/Resources/{ResourcesLoadName}.asset). Using code defaults until then.");
             GemExplosionSettingsCache.ResolveOrDefault();
         }
 
+        /// <summary>
+        /// [UNITY] Loads the single Resources asset — same path in Editor Play Mode and player builds.
+        /// </summary>
         static GemExplosionSettings TryLoadDefaultAsset()
         {
-#if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<GemExplosionSettings>(DefaultAssetPath);
-#else
-            return Resources.Load<GemExplosionSettings>("GemExplosionSettings");
-#endif
+            return Resources.Load<GemExplosionSettings>(ResourcesLoadName);
         }
     }
 }

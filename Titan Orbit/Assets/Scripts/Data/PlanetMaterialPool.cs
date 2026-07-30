@@ -4,9 +4,11 @@ using System.Collections.Generic;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// CW PLANETS pack material lists for procedural planet visuals. Neutral planets draw from
-    /// <see cref="Materials"/>; home planets prefer <see cref="WaterMaterials"/> (tropical water
-    /// + atmosphere). Used by map generation and <see cref="Game.PlanetSpinVisualProxy"/>.
+    /// CW PLANETS pack material lists for procedural planet visuals. Sole asset:
+    /// <c>Assets/Resources/PlanetMaterialPool.asset</c> (Editor + player via <c>Resources.Load</c>).
+    /// Neutral planets draw from <see cref="Materials"/>; home planets prefer
+    /// <see cref="WaterMaterials"/> (tropical water + atmosphere). Used by map generation and
+    /// <see cref="Game.PlanetSpinVisualProxy"/>.
     /// </summary>
     [CreateAssetMenu(fileName = "PlanetMaterialPool", menuName = "Titan Orbit/Planet Material Pool")]
     public class PlanetMaterialPool : ScriptableObject

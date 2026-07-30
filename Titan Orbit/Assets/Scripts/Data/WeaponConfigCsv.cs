@@ -10,11 +10,11 @@ namespace TitanOrbit.Data
     /// <summary>
     /// [EDITOR] Import/export <see cref="WeaponConfig"/> cannon rows to CSV for spreadsheet editing.
     /// Uses invariant culture for floats so Excel locales do not break parsing. Default path:
-    /// Assets/Data/WeaponConfigs.csv.
+    /// a designer-chosen CSV path (import/export menus default under Assets/).
     /// </summary>
     public static class WeaponConfigCsv
     {
-        public const string DefaultCsvPath = "Assets/Data/WeaponConfigs.csv";
+        public const string DefaultCsvPath = "Assets/Resources/WeaponConfigs.csv";
 
         private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
 

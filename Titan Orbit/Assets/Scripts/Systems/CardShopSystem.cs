@@ -66,8 +66,6 @@ namespace TitanOrbit.Systems
                     return _planetShipFamilyConfig;
 
                 _planetShipFamilyConfig = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
-                if (_planetShipFamilyConfig == null)
-                    _planetShipFamilyConfig = Resources.Load<PlanetShipFamilyConfig>("Data/PlanetShipFamilyConfig");
                 return _planetShipFamilyConfig;
             }
         }

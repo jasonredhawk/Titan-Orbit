@@ -18,13 +18,13 @@ namespace TitanOrbit.Data
     {
         /// <summary>
         /// Fallback when no <see cref="ShipRammingSettings"/> asset is loaded.
-        /// Prefer editing Assets/Data/ShipRammingSettings.asset in the Inspector.
+        /// Prefer editing Assets/Resources/ShipRammingSettings.asset in the Inspector.
         /// </summary>
         public const float DefaultGlobalDamageMultiplier = 0.5f;
 
         /// <summary>
         /// Fallback self-to-target ratio when no settings asset is loaded.
-        /// Prefer editing Assets/Data/ShipRammingSettings.asset in the Inspector.
+        /// Prefer editing Assets/Resources/ShipRammingSettings.asset in the Inspector.
         /// </summary>
         public const float DefaultSelfToAsteroidDamageRatio = 2f;
 

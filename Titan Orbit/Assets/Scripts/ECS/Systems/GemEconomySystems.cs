@@ -24,13 +24,18 @@ namespace TitanOrbit.ECS
         /// <summary>Gem value mined per second while in range.</summary>
         public const float MiningRate = 5f;
 
-        /// <summary>Hull-center pickup radius when ship has no wing tractor buffers.</summary>
+        /// <summary>
+        /// Hull-center pickup radius when ship has no wing tractor buffers.
+        /// Runtime override: <see cref="TractorBeamSettings.HullPickupRange"/>.
+        /// </summary>
         public const float GemPickupRange = 2.5f;
 
         /// <summary>
         /// Collect gems near the wing tip when tractor-pulled.
         /// Effective radius = this + gem.Size × 0.25 so larger gems still touch slightly earlier.
         /// Kept tight so gems ride into the wing before cargo absorb (was 0.65 — felt far from the tip).
+        /// Runtime override: <see cref="TractorBeamSettings.WingCollectRadius"/> /
+        /// <see cref="TractorBeamSettings.GemSizeCollectFactor"/>.
         /// </summary>
         public const float GemWingCollectRadius = 0.25f;
 
@@ -92,7 +97,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Fallback explosion speed when <see cref="GemExplosionSettings"/> is missing.
-        /// Prefer the ScriptableObject (Assets/Data/GemExplosionSettings.asset).
+        /// Prefer the ScriptableObject (Assets/Resources/GemExplosionSettings.asset).
         /// </summary>
         public const float AsteroidExplosionSpeed = GemExplosionMath.DefaultExplosionSpeed;
 
@@ -493,6 +498,11 @@ namespace TitanOrbit.ECS
             ecb.Dispose();
         }
 
+        /// <summary>
+        /// True when the gem is inside a cargo absorb zone for this ship.
+        /// Uses <see cref="TractorBeamSettings"/> wing-tip and optional hull radii so designers
+        /// can widen fly-over scoop without changing tractor search reach.
+        /// </summary>
         static bool IsWithinPickupRange(
             EntityManager em,
             Entity shipEntity,
@@ -504,14 +514,15 @@ namespace TitanOrbit.ECS
             float mapH)
         {
             float3 gemPos = gemTransform.Position;
+            var pickupSettings = TractorBeamSettingsCache.ResolveOrDefault();
 
-            // --- Wing-tip collect (preferred when ship has tractor buffers) ---
-            // [TITAN-ORBIT] Absorb only when the gem is near a wing tip — not hull-center range —
-            // so tractor beams can finish pulling gems in close before cargo takes them.
+            // --- Wing-tip collect (tractor destination + tip fly-over) ---
+            // [TITAN-ORBIT] Effective radius = WingCollectRadius + gem.Size × GemSizeCollectFactor.
+            // Tractor beams pull gems into this zone; cargo absorbs when the tip (or hull) touches.
             if (hasWings)
             {
                 var wings = em.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
-                float collectRadius = GemEconomyConstants.GemWingCollectRadius + gemState.Size * 0.25f;
+                float collectRadius = pickupSettings.ResolveWingCollectRadius(gemState.Size);
                 for (int wi = 0; wi < wings.Length; wi++)
                 {
                     float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wi]);
@@ -519,11 +530,22 @@ namespace TitanOrbit.ECS
                         return true;
                 }
 
+                // --- Optional hull scoop while wings exist ---
+                // [TITAN-ORBIT] When ON, flying the body over gem piles absorbs without waiting
+                // for a wing tip / tractor lock. When OFF, only tip zones collect (tight old feel).
+                if (pickupSettings.AlsoUseHullPickupWithWings)
+                {
+                    return GemTractorBeamMath.ToroidalDistance(
+                               gemPos, shipTransform.Position, mapW, mapH) <=
+                           pickupSettings.HullPickupRange;
+                }
+
                 return false;
             }
 
+            // --- No wings: hull-center only ---
             return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
-                   GemEconomyConstants.GemPickupRange;
+                   pickupSettings.HullPickupRange;
         }
     }
 

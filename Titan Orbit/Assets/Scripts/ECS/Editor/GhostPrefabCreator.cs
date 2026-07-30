@@ -19,8 +19,8 @@ namespace TitanOrbit.ECS.Editor
     /// </summary>
     public static class GhostPrefabCreator
     {
-        /// <summary>Project path for the shared map-generation ScriptableObject.</summary>
-        const string MapGenerationSettingsPath = "Assets/Data/MapGenerationSettings.asset";
+        /// <summary>Sole project path for the shared map-generation ScriptableObject (Resources).</summary>
+        const string MapGenerationSettingsPath = "Assets/Resources/MapGenerationSettings.asset";
 
         /// <summary>Menu entry — creates all ECS ghost prefabs and the registry asset.</summary>
         [MenuItem("Titan Orbit/Create Ghost Prefabs")]
@@ -251,7 +251,7 @@ namespace TitanOrbit.ECS.Editor
         [MenuItem("Titan Orbit/Create Map Generation Settings Asset")]
         public static void CreateMapGenerationSettingsMenuItem()
         {
-            EnsureDirectory("Assets/Data");
+            EnsureDirectory("Assets/Resources");
             var asset = EnsureMapGenerationSettingsAsset();
             Selection.activeObject = asset;
             EditorGUIUtility.PingObject(asset);

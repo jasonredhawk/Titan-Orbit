@@ -32,8 +32,8 @@ namespace TitanOrbit.ECS.Editor
         const string DefaultAsteroidPath = "Assets/Prefabs/Asteroid.prefab";
         const string DefaultGemPath = "Assets/Prefabs/Gem.prefab";
         const string DefaultPeopleTransportPath = "Assets/Prefabs/PeopleTransport.prefab";
-        const string DefaultPlanetMaterialPoolPath = "Assets/Data/PlanetMaterialPool.asset";
-        const string DefaultMapGenerationSettingsPath = "Assets/Data/MapGenerationSettings.asset";
+        const string DefaultPlanetMaterialPoolPath = "Assets/Resources/PlanetMaterialPool.asset";
+        const string DefaultMapGenerationSettingsPath = "Assets/Resources/MapGenerationSettings.asset";
         const string DefaultBulletVfxBankPath = BulletVfxBank.ResourcesAssetPath;
 
         [MenuItem("Titan Orbit/Create Bullet VFX Bank")]

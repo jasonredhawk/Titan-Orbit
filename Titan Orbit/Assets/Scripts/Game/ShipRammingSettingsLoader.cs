@@ -6,11 +6,13 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Loads <see cref="ShipRammingSettings"/> at play time so Inspector edits apply without
     /// rebaking SubScenes. Place on NceGameRoot (same pattern as GemExplosionSettingsLoader).
-    /// Asset path: Assets/Data/ShipRammingSettings.asset
+    /// Sole asset: <c>Assets/Resources/ShipRammingSettings.asset</c> — Editor and player builds
+    /// both use <see cref="Resources.Load"/> (no Data/ duplicate).
     /// </summary>
     public class ShipRammingSettingsLoader : MonoBehaviour
     {
-        const string DefaultAssetPath = "Assets/Data/ShipRammingSettings.asset";
+        /// <summary>[UNITY] Name passed to <see cref="Resources.Load"/> (no folder / extension).</summary>
+        const string ResourcesLoadName = "ShipRammingSettings";
 
         /// <summary>[UNITY] Drag the ShipRammingSettings asset here, or leave empty to auto-load.</summary>
         [SerializeField] ShipRammingSettings settings;
@@ -36,18 +38,16 @@ namespace TitanOrbit.Game
             Debug.LogWarning(
                 "[ShipRammingSettingsLoader] No ShipRammingSettings found. " +
                 $"Create one via Assets → Create → Titan Orbit → Ship Ramming Settings " +
-                $"(expected at {DefaultAssetPath}). Using code defaults until then.");
+                $"(expected at Assets/Resources/{ResourcesLoadName}.asset). Using code defaults until then.");
             ShipRammingSettingsCache.ResolveOrDefault();
         }
 
-        /// <summary>Editor AssetDatabase path, or Resources load in player builds.</summary>
+        /// <summary>
+        /// [UNITY] Loads the single Resources asset — same path in Editor Play Mode and player builds.
+        /// </summary>
         static ShipRammingSettings TryLoadDefaultAsset()
         {
-#if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<ShipRammingSettings>(DefaultAssetPath);
-#else
-            return Resources.Load<ShipRammingSettings>("ShipRammingSettings");
-#endif
+            return Resources.Load<ShipRammingSettings>(ResourcesLoadName);
         }
     }
 }

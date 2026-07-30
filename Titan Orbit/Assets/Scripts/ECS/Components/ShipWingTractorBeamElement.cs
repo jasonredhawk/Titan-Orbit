@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -82,19 +83,31 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] Computes effective search radius and attraction speed for one wing at the
-        /// given ship level, with orbit-zone bonus when applicable.
+        /// given ship level, with orbit-zone bonus when applicable, then applies global
+        /// <see cref="TractorBeamSettings"/> range/power multipliers so server and client
+        /// share one resolution path.
         /// </summary>
         /// <param name="wing">Baked wing stats.</param>
         /// <param name="shipLevel">Current ship upgrade level.</param>
         /// <param name="inOrbitZone">True when ship is inside a friendly orbit ring (range bonus).</param>
-        /// <param name="searchRadius">Output effective pickup radius.</param>
-        /// <param name="attractionSpeed">Output gameplay pull speed toward this wing (power-based).</param>
+        /// <param name="searchRadius">Output effective search radius (after settings multiplier).</param>
+        /// <param name="attractionSpeed">Output gameplay pull speed toward this wing (after multiplier).</param>
         public static void GetTractorParams(
             in ShipWingTractorBeamElement wing,
             int shipLevel,
             bool inOrbitZone,
             out float searchRadius,
-            out float attractionSpeed) =>
-            GemTractorBeamMath.GetWingTractorParams(wing.ToParams(), shipLevel, inOrbitZone, out searchRadius, out attractionSpeed);
+            out float attractionSpeed)
+        {
+            // --- Per-wing authored stats (level + orbit) ---
+            GemTractorBeamMath.GetWingTractorParams(
+                wing.ToParams(), shipLevel, inOrbitZone, out searchRadius, out attractionSpeed);
+
+            // --- Designer global multipliers (TractorBeamSettings asset) ---
+            // [TITAN-ORBIT] Applied here so every GetTractorParams caller (server pull, client VFX)
+            // stays matched without sprinkling ApplyReachAndPower at each call site.
+            TractorBeamSettingsCache.ApplyReachAndPower(ref searchRadius, ref attractionSpeed);
+        }
     }
 }
+

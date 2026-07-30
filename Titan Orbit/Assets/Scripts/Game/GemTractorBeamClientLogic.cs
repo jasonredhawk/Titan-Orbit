@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
@@ -13,8 +14,9 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// [HYBRID] Client-side wing-to-gem assignment for tractor beam <em>visuals</em>.
-    /// Mirrors server <see cref="GemTractorBeamAssignment"/> (sticky locks, primary fill, spare
-    /// assists). Authoritative pull velocity still comes from ghosted <see cref="GemMotionState"/>.
+    /// Mirrors server <see cref="GemTractorBeamAssignment"/> + <see cref="TractorBeamSettings"/>
+    /// (primary sticky, primary fill, spare assists capped by MaxCooperatingBeams).
+    /// Authoritative pull velocity still comes from ghosted <see cref="GemMotionState"/>.
     /// [TITAN-ORBIT] Gems come from hybrid proxies — never a full gem <c>ToEntityArray</c>.
     /// Damage-spill self-pickup penalty uses ghosted <see cref="GemState.ExcludePickupNetworkId"/>
     /// so beams do not draw to gems the local ship cannot yet reclaim (matches server tractor skip).
@@ -38,7 +40,10 @@ namespace TitanOrbit.Game
         static readonly Dictionary<int, List<GemTractorBeamAssignment.Pair>> PairsByShip =
             new Dictionary<int, List<GemTractorBeamAssignment.Pair>>(32);
         static readonly Dictionary<int, HashSet<int>> AssignedGemsByShip = new Dictionary<int, HashSet<int>>(32);
-        /// <summary>Sticky wing→gem locks per ship — survives rotation until out of that wing's range.</summary>
+        /// <summary>
+        /// Sticky wing→gem locks per ship — survives rotation until out of that wing's range.
+        /// When TractorBeamSettings.PrimaryStickyOnly is on, only primary pairs persist here.
+        /// </summary>
         static readonly Dictionary<int, Dictionary<int, int>> StickyLocksByShip =
             new Dictionary<int, Dictionary<int, int>>(32);
         static readonly List<GemTractorBeamAssignment.Candidate> CandidateScratch =
@@ -267,6 +272,7 @@ namespace TitanOrbit.Game
                 // --- No wings: single hull-center beam (legacy fallback) ---
                 StickyLocksByShip.Remove(shipIndex);
                 GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out float searchRadius, out _);
+                TractorBeamSettingsCache.ApplyReach(ref searchRadius);
                 float3 origin = shipTransform.Position;
                 int closestGemIndex = -1;
                 float closestDist = float.MaxValue;
@@ -320,13 +326,17 @@ namespace TitanOrbit.Game
             }
 
             // --- Same sticky / primary / assist matching as server ---
+            // [TITAN-ORBIT] Tunables from TractorBeamSettings must match GemTractorBeamSystem.
+            var beamSettings = TractorBeamSettingsCache.ResolveOrDefault();
             GemTractorBeamAssignment.AssignWings(
                 CandidateScratch,
                 wings.Length,
                 stickyLocks,
                 PairScratch,
                 FilteredScratch,
-                GemBeamCountScratch);
+                GemBeamCountScratch,
+                beamSettings.PrimaryStickyOnly,
+                beamSettings.MaxCooperatingBeams);
 
             if (PairScratch.Count == 0)
                 return;
@@ -590,6 +600,7 @@ namespace TitanOrbit.Game
             else
             {
                 GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out _, out wingAttraction);
+                TractorBeamSettingsCache.ApplyPower(ref wingAttraction);
                 pullTarget = shipTransform.Position;
             }
 
@@ -607,8 +618,9 @@ namespace TitanOrbit.Game
             if (!ToroidalDisplay.ResolveMapSize(em, out mapW, out mapH))
                 return false;
             // --- Stack assist wings when local assignment matches this ghost lock ---
-            // [TITAN-ORBIT] Mirror server diminishing stack: primary 100%, each assist 25% of its
-            // own pull (GemTractorBeamMath.StackedBeamPullScale) so GO motion matches authority.
+            // [TITAN-ORBIT] Mirror server diminishing stack: primary 100%, each assist =
+            // AssistPullScale (TractorBeamSettings) so GO motion matches authority.
+            float assistScale = TractorBeamSettingsCache.ResolveOrDefault().AssistPullScale;
             float3 velocity = float3.zero;
             int shipIndex = shipEntity.Index;
             RebuildAssignmentCache();
@@ -637,7 +649,7 @@ namespace TitanOrbit.Game
 
                     float speed = GemTractorBeamMath.ResolvePullSpeedFromWing(attract, gemValue, gemSize);
                     // Ghost TractorWingIndex is the authoritative primary (same as server pull math).
-                    float stackScale = GemTractorBeamMath.StackedBeamPullScale(wi == wingIndex);
+                    float stackScale = GemTractorBeamMath.StackedBeamPullScale(wi == wingIndex, assistScale);
                     float3 toWing = GemTractorBeamMath.ToroidalDirection(gemLogicalPos, target, mapW, mapH);
                     if (math.lengthsq(toWing) < 0.0001f)
                         continue;

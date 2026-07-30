@@ -5,9 +5,10 @@ namespace TitanOrbit.Data
     /// <summary>
     /// [UNITY] Designer-tunable asteroid body feel: size range, hit points per size, and gems per size.
     /// Edit this asset in the Inspector — no code changes needed for balance tweaks.
-    /// Create via Assets → Create → Titan Orbit → Asteroid Settings
-    /// (default path Assets/Data/AsteroidSettings.asset). Loaded at play by
-    /// <see cref="Game.AsteroidSettingsLoader"/>.
+    /// Sole asset: <c>Assets/Resources/AsteroidSettings.asset</c>
+    /// (Create via Assets → Create → Titan Orbit → Asteroid Settings).
+    /// Loaded at play by <see cref="Game.AsteroidSettingsLoader"/> via <c>Resources.Load</c>
+    /// so Editor and player builds share one file — no Data/ duplicate.
     /// <para>
     /// Pipeline: each asteroid rolls a designer <b>Size</b> in [MinSize, MaxSize], then
     /// HP = Size × HealthPerSize, gems = Size × GemsPerSize, and visual LocalTransform scale

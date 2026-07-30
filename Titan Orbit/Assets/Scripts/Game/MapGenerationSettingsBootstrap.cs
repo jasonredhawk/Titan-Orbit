@@ -11,12 +11,12 @@ namespace TitanOrbit.Game
     /// </summary>
     static class MapGenerationSettingsBootstrap
     {
-        /// <summary>Default designer asset when no <see cref="MapGenerationSettingsLoader"/> is in scene.</summary>
-        const string DefaultAssetPath = "Assets/Data/MapGenerationSettings.asset";
+        /// <summary>[UNITY] Name passed to <see cref="Resources.Load"/> (no folder / extension).</summary>
+        const string ResourcesLoadName = "MapGenerationSettings";
 
         /// <summary>
         /// [UNITY] BeforeSceneLoad — first chance to populate the static cache for ECS bootstrap.
-        /// Priority: existing cache → scene loader → editor default asset.
+        /// Priority: existing cache → scene loader → Resources default asset.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void RegisterSettings()
@@ -32,12 +32,10 @@ namespace TitanOrbit.Game
                 return;
             }
 
-#if UNITY_EDITOR
-            // [EDITOR] Play Mode without loader still gets project default asset.
-            var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<MapGenerationSettings>(DefaultAssetPath);
+            // [UNITY] Same Resources asset for Editor Play Mode, Windows player, and headless server.
+            var asset = Resources.Load<MapGenerationSettings>(ResourcesLoadName);
             if (asset != null)
                 MapGenerationSettingsCache.Settings = asset;
-#endif
         }
     }
 }

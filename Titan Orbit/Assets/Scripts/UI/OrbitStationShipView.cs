@@ -90,8 +90,6 @@ namespace TitanOrbit.Entities
             // --- Resolve value ---
             CurrentChassisId = null;
             var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
-            if (config == null)
-                config = Resources.Load<PlanetShipFamilyConfig>("Data/PlanetShipFamilyConfig");
 
             if (config != null && storePlanetId > 0)
             {

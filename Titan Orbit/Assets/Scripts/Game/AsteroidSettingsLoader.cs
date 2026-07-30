@@ -6,11 +6,13 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Loads <see cref="AsteroidSettings"/> at play time so Inspector edits apply without
     /// rebaking SubScenes. Place on NceGameRoot (same pattern as ShipRammingSettingsLoader).
-    /// Asset path: Assets/Data/AsteroidSettings.asset
+    /// Sole asset: <c>Assets/Resources/AsteroidSettings.asset</c> — Editor and player builds
+    /// both use <see cref="Resources.Load"/> (no Data/ duplicate).
     /// </summary>
     public class AsteroidSettingsLoader : MonoBehaviour
     {
-        const string DefaultAssetPath = "Assets/Data/AsteroidSettings.asset";
+        /// <summary>[UNITY] Name passed to <see cref="Resources.Load"/> (no folder / extension).</summary>
+        const string ResourcesLoadName = "AsteroidSettings";
 
         /// <summary>[UNITY] Drag the AsteroidSettings asset here, or leave empty to auto-load.</summary>
         [SerializeField] AsteroidSettings settings;
@@ -36,18 +38,16 @@ namespace TitanOrbit.Game
             Debug.LogWarning(
                 "[AsteroidSettingsLoader] No AsteroidSettings found. " +
                 $"Create one via Assets → Create → Titan Orbit → Asteroid Settings " +
-                $"(expected at {DefaultAssetPath}). Using code defaults until then.");
+                $"(expected at Assets/Resources/{ResourcesLoadName}.asset). Using code defaults until then.");
             AsteroidSettingsCache.ResolveOrDefault();
         }
 
-        /// <summary>Editor AssetDatabase path, or Resources load in player builds.</summary>
+        /// <summary>
+        /// [UNITY] Loads the single Resources asset — same path in Editor Play Mode and player builds.
+        /// </summary>
         static AsteroidSettings TryLoadDefaultAsset()
         {
-#if UNITY_EDITOR
-            return UnityEditor.AssetDatabase.LoadAssetAtPath<AsteroidSettings>(DefaultAssetPath);
-#else
-            return Resources.Load<AsteroidSettings>("AsteroidSettings");
-#endif
+            return Resources.Load<AsteroidSettings>(ResourcesLoadName);
         }
     }
 }

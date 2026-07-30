@@ -6,12 +6,13 @@ namespace TitanOrbit.Editor
 {
     /// <summary>
     /// [EDITOR] Menu command to populate <see cref="PlanetMaterialPool"/> from the CW Space Graphics
-    /// Toolkit PLANETS pack. Creates the asset under Assets/Data if missing. Designer runs once
-    /// after importing planet materials — not used at runtime.
+    /// Toolkit PLANETS pack. Creates the asset under Assets/Resources if missing. Designer runs once
+    /// after importing planet materials — runtime loads it via <c>Resources.Load</c>.
     /// </summary>
     public static class PlanetMaterialPoolEditor
     {
         const string PLANETS_MATERIALS_PATH = "Assets/Plugins/CW/SpaceGraphicsToolkit/Packs/PLANETS/Materials";
+        const string PoolAssetPath = "Assets/Resources/PlanetMaterialPool.asset";
 
         [MenuItem("Titan Orbit/Populate Planet Material Pool From CW Pack")]
         public static void PopulateFromCWPack()
@@ -24,14 +25,14 @@ namespace TitanOrbit.Editor
                 return;
             }
 
-            // --- Load or create PlanetMaterialPool asset ---
-            var pool = AssetDatabase.LoadAssetAtPath<PlanetMaterialPool>("Assets/Data/PlanetMaterialPool.asset");
+            // --- Load or create PlanetMaterialPool asset (Resources only) ---
+            var pool = AssetDatabase.LoadAssetAtPath<PlanetMaterialPool>(PoolAssetPath);
             if (pool == null)
             {
-                if (!AssetDatabase.IsValidFolder("Assets/Data"))
-                    AssetDatabase.CreateFolder("Assets", "Data");
+                if (!AssetDatabase.IsValidFolder("Assets/Resources"))
+                    AssetDatabase.CreateFolder("Assets", "Resources");
                 pool = ScriptableObject.CreateInstance<PlanetMaterialPool>();
-                AssetDatabase.CreateAsset(pool, "Assets/Data/PlanetMaterialPool.asset");
+                AssetDatabase.CreateAsset(pool, PoolAssetPath);
             }
 
             // --- Fill surface materials from pack ---

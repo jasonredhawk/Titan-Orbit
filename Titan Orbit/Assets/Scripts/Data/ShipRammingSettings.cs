@@ -5,9 +5,10 @@ namespace TitanOrbit.Data
     /// <summary>
     /// [UNITY] Designer-tunable ramming damage balance. Edit this asset in the Inspector —
     /// no code changes needed for GlobalDamageMultiplier / SelfToAsteroidDamageRatio.
-    /// Create via Assets → Create → Titan Orbit → Ship Ramming Settings
-    /// (default path Assets/Data/ShipRammingSettings.asset). Loaded at play by
-    /// <see cref="Game.ShipRammingSettingsLoader"/>. Formulas live in
+    /// Sole asset: <c>Assets/Resources/ShipRammingSettings.asset</c>
+    /// (Create via Assets → Create → Titan Orbit → Ship Ramming Settings).
+    /// Loaded at play by <see cref="Game.ShipRammingSettingsLoader"/> via <c>Resources.Load</c>
+    /// so Editor and player builds share one file — no Data/ duplicate. Formulas live in
     /// <see cref="ShipComponentRammingSuggestions"/> so HUD and server stay matched.
     /// </summary>
     [CreateAssetMenu(

@@ -58,12 +58,12 @@ namespace TitanOrbit.ECS
             }
         }
 
+        /// <summary>
+        /// [UNITY] Sole load path — <c>Assets/Resources/PlanetShipFamilyConfig.asset</c>.
+        /// </summary>
         static PlanetShipFamilyConfig LoadConfig()
         {
-            var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
-            if (config != null)
-                return config;
-            return Resources.Load<PlanetShipFamilyConfig>("Data/PlanetShipFamilyConfig");
+            return Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
         }
 
         /// <summary>Clears cached config — call after hot-reload or editor asset changes.</summary>

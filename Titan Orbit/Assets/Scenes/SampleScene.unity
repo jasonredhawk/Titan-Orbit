@@ -8632,6 +8632,7 @@ GameObject:
   - component: {fileID: 1418200283}
   - component: {fileID: 1418200284}
   - component: {fileID: 1418200285}
+  - component: {fileID: 1418200286}
   m_Layer: 0
   m_Name: NceGameRoot
   m_TagString: Untagged
@@ -8943,6 +8944,19 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.AsteroidSettingsLoader
   settings: {fileID: 11400000, guid: 55f3d47787ee0f94093dff675c5b41a6, type: 2}
+--- !u!114 &1418200286
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1418200267}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f2803b00f0dbb574398f4631402dfcef, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.TractorBeamSettingsLoader
+  settings: {fileID: 11400000, guid: 7b669d058c070ac4f90ade8695debe09, type: 2}
 --- !u!1 &1427633624
 GameObject:
   m_ObjectHideFlags: 0

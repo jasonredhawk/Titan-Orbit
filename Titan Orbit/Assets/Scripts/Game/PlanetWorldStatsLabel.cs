@@ -418,8 +418,6 @@ namespace TitanOrbit.Game
                     return _shipFamilyConfig;
 
                 _shipFamilyConfig = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
-                if (_shipFamilyConfig == null)
-                    _shipFamilyConfig = Resources.Load<PlanetShipFamilyConfig>("Data/PlanetShipFamilyConfig");
                 return _shipFamilyConfig;
             }
         }

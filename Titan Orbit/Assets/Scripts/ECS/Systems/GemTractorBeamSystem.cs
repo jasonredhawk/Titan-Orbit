@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
@@ -15,10 +16,12 @@ namespace TitanOrbit.ECS
     /// Writes ghosted <see cref="GemMotionState"/> lock fields so clients present the same pull
     /// without inventing wing assignment. Runs <b>before</b> <see cref="GemMotionSystem"/> so
     /// velocity and pose integrate in the same tick.
-    /// Matching uses <see cref="GemTractorBeamAssignment"/>: sticky wing locks, primary fill so
-    /// many gems keep many wings busy, and spare-wing assists that stack pull only when there
-    /// are more beams than distinct gems in range. Stacked pull uses diminishing assists
-    /// (<see cref="GemTractorBeamMath.StackedBeamPullScale"/>): primary 100%, each extra 25%.
+    /// Matching uses <see cref="GemTractorBeamAssignment"/> + <see cref="TractorBeamSettings"/>:
+    /// sticky primary locks (assists re-target when PrimaryStickyOnly), primary fill so many gems
+    /// keep many wings busy, and spare-wing assists capped by MaxCooperatingBeams. Stacked pull
+    /// uses diminishing assists (<see cref="GemTractorBeamMath.StackedBeamPullScale"/>): primary
+    /// 100%, each extra AssistPullScale (default 25%). Range/power multipliers apply via
+    /// <see cref="ShipWingTractorBeamPose.GetTractorParams"/>.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -50,7 +53,8 @@ namespace TitanOrbit.ECS
         readonly HashSet<int> _gemsLockedThisFrame = new HashSet<int>();
         /// <summary>
         /// Sticky wing→gem locks per ship entity index. Survives ship rotation until the gem
-        /// leaves that wing's search radius.
+        /// leaves that wing's search radius. When TractorBeamSettings.PrimaryStickyOnly is on,
+        /// only primary pairs are stored here (assists re-match every tick).
         /// </summary>
         readonly Dictionary<int, Dictionary<int, int>> _stickyLocksByShip =
             new Dictionary<int, Dictionary<int, int>>(16);
@@ -174,9 +178,8 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Writes <see cref="GemMotionState"/> lock fields for assigned gems; after deploy completes,
         /// builds pull velocity from every wing on that gem (primary + spare assists).
-        /// Primary contributes full wing pull; each assist adds
-        /// <see cref="GemTractorBeamMath.AdditionalTractorBeamPullScale"/> of its own strength
-        /// so three equal beams ≈ 150% rather than 300%.
+        /// Primary contributes full wing pull; each assist adds AssistPullScale (settings,
+        /// default 25%) of its own strength so three equal beams ≈ 150% rather than 300%.
         /// <para>
         /// [TITAN-ORBIT] <see cref="GemMotionState.PhaseTractor"/> is applied only after a non-zero
         /// pull velocity replaces <see cref="GemKinematics"/> — otherwise Coast keeps linear damping
@@ -268,10 +271,10 @@ namespace TitanOrbit.ECS
                 }
 
                 // --- Stacked pull (diminishing assists) ---
-                // Spare assists only exist when AssignWings phase-3 ran (more beams than free gems).
-                // [TITAN-ORBIT] Primary wing = 100% of its pull; each additional = 25% of its own
-                // (GemTractorBeamMath.AdditionalTractorBeamPullScale). Direction still aims at
-                // each wing tip so multi-beam gems drift toward the cluster, not a single point.
+                // Spare assists only exist when AssignWings phase-3 ran (more beams than free gems)
+                // and MaxCooperatingBeams > 1. Primary = 100%; each assist = AssistPullScale.
+                // Direction still aims at each wing tip so multi-beam gems drift toward the cluster.
+                float assistScale = TractorBeamSettingsCache.ResolveOrDefault().AssistPullScale;
                 float3 gemPos = gemTransform.ValueRO.Position;
                 float3 velocity = float3.zero;
                 for (int wi = 0; wi < wingList.Count; wi++)
@@ -282,7 +285,7 @@ namespace TitanOrbit.ECS
                         gemState.ValueRO.Value, gemState.ValueRO.Size);
                     // Primary lock gets full strength; assists are the "additional" beams.
                     bool isPrimary = wingIndex == primaryWing;
-                    float stackScale = GemTractorBeamMath.StackedBeamPullScale(isPrimary);
+                    float stackScale = GemTractorBeamMath.StackedBeamPullScale(isPrimary, assistScale);
                     float3 pullTarget = ResolvePullTarget(shipTransform, wings, wingIndex);
                     float3 toWing = GemTractorBeamMath.ToroidalDirection(gemPos, pullTarget, mapW, mapH);
                     if (math.lengthsq(toWing) < 0.0001f)
@@ -369,7 +372,9 @@ namespace TitanOrbit.ECS
             }
             else
             {
+                // --- No wing buffer: legacy max-gems tier + designer power multiplier ---
                 GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out _, out wingAttraction);
+                TractorBeamSettingsCache.ApplyPower(ref wingAttraction);
             }
 
             return GemTractorBeamMath.ResolvePullSpeedFromWing(wingAttraction, gemValue, gemSize);
@@ -458,13 +463,17 @@ namespace TitanOrbit.ECS
             }
 
             // --- Sticky + primary fill + spare assists (shared with client VFX) ---
+            // [TITAN-ORBIT] Tunables from TractorBeamSettings: primary-only sticky + cooperate cap.
+            var beamSettings = TractorBeamSettingsCache.ResolveOrDefault();
             GemTractorBeamAssignment.AssignWings(
                 _candidateScratch,
                 wingCount,
                 stickyLocks,
                 _pairScratch,
                 _filteredScratch,
-                _gemBeamCountScratch);
+                _gemBeamCountScratch,
+                beamSettings.PrimaryStickyOnly,
+                beamSettings.MaxCooperatingBeams);
 
             _deployStartedScratch.Clear();
             var deployStarted = _deployStartedScratch;
@@ -499,7 +508,9 @@ namespace TitanOrbit.ECS
             uint serverTick,
             HashSet<long> activePairs)
         {
+            // --- Hull-center fallback reach (legacy ships without wing buffers) ---
             GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out float searchRadius, out _);
+            TractorBeamSettingsCache.ApplyReach(ref searchRadius);
             float3 origin = shipTransform.Position;
 
             Entity closest = Entity.Null;

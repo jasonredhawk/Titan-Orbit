@@ -37,7 +37,7 @@ namespace TitanOrbit.Editor.Build
         static readonly string[] GameplayMaterialRoots =
         {
             "Assets/Plugins/CW/SpaceGraphicsToolkit/Packs/PLANETS/Materials",
-            "Assets/Data/PlanetMaterialPool.asset",
+            "Assets/Resources/PlanetMaterialPool.asset",
             "Assets/Prefabs/Starship.prefab",
             "Assets/Prefabs/Asteroid.prefab",
             "Assets/Prefabs/Ships",

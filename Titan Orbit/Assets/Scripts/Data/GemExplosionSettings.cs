@@ -4,9 +4,10 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// [UNITY] Designer-tunable asteroid gem burst, asteroid respawn delay, and gem lifetime.
-    /// Create via Assets → Create → Titan Orbit → Gem Explosion Settings (default path
-    /// Assets/Data/GemExplosionSettings.asset). Loaded at play time by
-    /// <see cref="Game.GemExplosionSettingsLoader"/> so you can tweak without rebaking SubScenes.
+    /// Sole asset: <c>Assets/Resources/GemExplosionSettings.asset</c> (Create via Assets → Create →
+    /// Titan Orbit → Gem Explosion Settings, or TitanOrbit → Create Gem Explosion Settings Asset).
+    /// Loaded at play by <see cref="Game.GemExplosionSettingsLoader"/> via <c>Resources.Load</c>
+    /// so Editor and player builds share one file — no Data/ duplicate.
     /// Defaults match the mature NGO-era feel (speed ~2.2, drag 0.5, tumble ±1.5,
     /// asteroid respawn 30s, gem lifetime 20s with 3s shrink).
     /// </summary>
