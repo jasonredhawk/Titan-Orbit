@@ -196,7 +196,8 @@ namespace TitanOrbit.ECS
                 ss.MaxHealth,
                 motor.ChassisReferenceHealth,
                 ss.CurrentGems,
-                baseMass);
+                baseMass,
+                ss.CurrentPeople);
         }
 
         static void ApplyShipVsShip(

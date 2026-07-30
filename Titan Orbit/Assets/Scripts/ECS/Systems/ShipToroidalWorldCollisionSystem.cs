@@ -213,7 +213,8 @@ namespace TitanOrbit.ECS
                     shipState.ValueRO.MaxHealth,
                     motor.ValueRO.ChassisReferenceHealth,
                     shipState.ValueRO.CurrentGems,
-                    baseMass);
+                    baseMass,
+                    shipState.ValueRO.CurrentPeople);
 
                 ships.Add(new ShipSphere
                 {

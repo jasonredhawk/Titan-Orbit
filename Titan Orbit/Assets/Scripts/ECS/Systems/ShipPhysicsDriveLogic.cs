@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -52,6 +53,12 @@ namespace TitanOrbit.ECS
         /// </param>
         /// <param name="territoryTriangles">Baked planet-center triangles for friendly speed boost; may be empty.</param>
         /// <param name="homeLevelByTeam">Home planet level indexed by <c>TeamId</c> byte (length ≥ 6).</param>
+        /// <param name="loadSpeedWeightPerGem">From <see cref="ShipCargoMobilitySettings"/> — current-load MaxSpeed tax.</param>
+        /// <param name="loadSpeedWeightPerPerson">Current-load MaxSpeed tax weight for people aboard.</param>
+        /// <param name="loadTurnWeightPerGem">Current-load turn tax weight for gems aboard.</param>
+        /// <param name="loadTurnWeightPerPerson">Current-load turn tax weight for people aboard.</param>
+        /// <param name="loadMinSpeedMultiplier">Floor for current-load MaxSpeed multiplier.</param>
+        /// <param name="loadMinTurnMultiplier">Floor for current-load turn multiplier.</param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
@@ -68,7 +75,13 @@ namespace TitanOrbit.ECS
             float mapH,
             double elapsedSeconds,
             in NativeArray<RuntimeTriangle> territoryTriangles,
-            in NativeArray<int> homeLevelByTeam)
+            in NativeArray<int> homeLevelByTeam,
+            float loadSpeedWeightPerGem,
+            float loadSpeedWeightPerPerson,
+            float loadTurnWeightPerGem,
+            float loadTurnWeightPerPerson,
+            float loadMinSpeedMultiplier,
+            float loadMinTurnMultiplier)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -108,18 +121,34 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // --- Movement mass (HP bulk + gems) — must match on client and server ---
+            // --- Movement mass (HP bulk + gems + people) — must match on client and server ---
+            // [TITAN-ORBIT] Mass slows accel via F/m. MaxSpeed / turn also get a current-load tax
+            // below (capacity tax is already baked into ShipMotorConfig at stat apply).
             float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
             float movementMass = ShipMassLogic.ComputeMovementMass(
                 motor.HullMassReference,
                 shipState.MaxHealth,
                 motor.ChassisReferenceHealth,
                 shipState.CurrentGems,
-                baseMass);
+                baseMass,
+                shipState.CurrentPeople);
+
+            // --- Current-load MaxSpeed / turn (updates every tick as you collect) ---
+            ShipMobilityResolution.CurrentLoadMultipliers loadMul =
+                ShipMobilityResolution.ComputeCurrentLoadMultipliers(
+                    shipState.CurrentGems,
+                    shipState.CurrentPeople,
+                    loadSpeedWeightPerGem,
+                    loadSpeedWeightPerPerson,
+                    loadTurnWeightPerGem,
+                    loadTurnWeightPerPerson,
+                    loadMinSpeedMultiplier,
+                    loadMinTurnMultiplier);
+            float rotationSpeed = math.max(1f, motor.RotationSpeed * loadMul.TurnMultiplier);
 
             // --- Yaw: dt-capped slerp toward aim (never snap to mouse in one frame) ---
             AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
-            TryRotateTowardAim(ref transform, in aimWorldXz, motor.RotationSpeed, dt);
+            TryRotateTowardAim(ref transform, in aimWorldXz, rotationSpeed, dt);
 
             // --- Orbit ring detection (toroidal) ---
             // [TITAN-ORBIT] PeopleTransportDispatchSystem dwells on InOrbitRing; without this write,
@@ -148,7 +177,8 @@ namespace TitanOrbit.ECS
             float territoryMult = ApplyTerritoryBoostLatch(
                 ref territoryLatch, rawTerritoryMult, elapsedSeconds);
             float thrust = motor.EngineThrust * territoryMult;
-            float maxSpeed = motor.MaxSpeed * territoryMult;
+            // Capacity-taxed MaxSpeed × current-load tax × territory.
+            float maxSpeed = motor.MaxSpeed * loadMul.SpeedMultiplier * territoryMult;
 
             // --- Start from post-collision velocity (Unity Physics may have bounced us last tick) ---
             float3 vel = physicsVelocity.Linear;

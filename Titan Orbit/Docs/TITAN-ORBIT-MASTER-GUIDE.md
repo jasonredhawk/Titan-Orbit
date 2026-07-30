@@ -643,7 +643,8 @@ Extra game rules before/after motor:
 |-------|----------|
 | Dead or picking team | Zero velocity |
 | Landed on friendly moon, no thrust | Pin in place |
-| Effective mass | More HP + gems → slower acceleration |
+| Effective mass | More HP + current gems/people → slower acceleration (F/m) |
+| Capacity tax | High maxGems/maxPeople → lower MaxSpeed, accel, turn (empty hold) |
 | Orbit ring | Auto-orbit when coasting near planet |
 | Shield repel | Enemy moon shields push velocity outward (no physics collider) |
 

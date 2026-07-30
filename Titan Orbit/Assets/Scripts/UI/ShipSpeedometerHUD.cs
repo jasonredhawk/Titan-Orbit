@@ -39,6 +39,11 @@ namespace TitanOrbit.UI
     /// the boosted cruise the motor already applies.
     /// </para>
     /// <para>
+    /// [TITAN-ORBIT] <see cref="ShipMotorConfig"/> already includes the empty-hold capacity tax from
+    /// <see cref="ShipMobilityResolution"/>. Prefer those post-tax motor fields; bake-default
+    /// fallbacks re-apply the same tax so freighters never show untaxed chassis speeds.
+    /// </para>
+    /// <para>
     /// Presentation-only — never writes ECS. Numbers use fixed-width formatting so TMP does not
     /// reflow when signs / decimals flicker (that "blinking" layout shift).
     /// </para>
@@ -632,8 +637,9 @@ namespace TitanOrbit.UI
             a.PeopleCapacity == b.PeopleCapacity;
 
         /// <summary>
-        /// Display MaxSpeed: prefer live motor (client ShipStatApply), fall back to chassis moveSpeed
-        /// if motor still looks like StarshipGhostAuthoring bake (35) while chassis is ~13.
+        /// Display MaxSpeed: prefer post-tax <see cref="ShipMotorConfig.MaxSpeed"/>.
+        /// When motor still looks like bake defaults, rebuild from chassis moveSpeed and apply
+        /// the same capacity tax so the bar matches freighter / fighter feel.
         /// Does <b>not</b> include territory boost — call <see cref="ResolveTerritoryMovementMult"/> after.
         /// </summary>
         static float ResolveDisplayMaxSpeed(in ShipMotorConfig motor, in ShipComponentAbilityStats effectiveStats)
@@ -642,8 +648,21 @@ namespace TitanOrbit.UI
             float chassisMax = effectiveStats.moveSpeed > 0.1f ? effectiveStats.moveSpeed : 0f;
 
             // [TITAN-ORBIT] Before client apply runs (first frames), bake MaxSpeed=35 would empty the bar.
+            // Capacity tax is already inside motorMax after ApplyToShip; only tax the chassis fallback.
             if (chassisMax > 0.1f && motorMax > chassisMax * 1.35f)
-                return chassisMax;
+            {
+                float untaxedThrust = Mathf.Max(0.1f, effectiveStats.accelerationCap > 0f
+                    ? effectiveStats.accelerationCap
+                    : chassisMax) * ShipPropulsionAggregation.EngineThrustVisibility;
+                float untaxedTurn = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
+                    effectiveStats.turnSpeed);
+                return ShipMobilityResolution.ApplyCapacityTax(
+                    chassisMax,
+                    untaxedThrust,
+                    untaxedTurn,
+                    effectiveStats.maxGems,
+                    effectiveStats.maxPeople).MaxSpeed;
+            }
 
             return motorMax;
         }
@@ -664,7 +683,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Same movement mass the motor uses (hull bulk + gems) — not hull-reference alone.
+        /// Same movement mass the motor uses (hull bulk + gems + people) — not hull-reference alone.
         /// </summary>
         static float GetMovementMass(in ShipState ship, in ShipMotorConfig motor)
         {
@@ -674,7 +693,8 @@ namespace TitanOrbit.UI
                 ship.MaxHealth,
                 motor.ChassisReferenceHealth,
                 ship.CurrentGems,
-                baseMass);
+                baseMass,
+                ship.CurrentPeople);
         }
 
         /// <summary>Estimates asteroid ram damage from current speed and effective ramming stats.</summary>
@@ -700,7 +720,8 @@ namespace TitanOrbit.UI
                 ship.MaxHealth,
                 motor.ChassisReferenceHealth,
                 ship.CurrentGems,
-                baseMass);
+                baseMass,
+                ship.CurrentPeople);
 
             // Prefer motor.RammingPower (server-applied) when present; else rebuild from family stats.
             float familyRammingPower = motor.RammingPower > 0f
@@ -822,19 +843,35 @@ namespace TitanOrbit.UI
             float territoryMult = ResolveTerritoryMovementMult();
             maxSpd *= territoryMult;
 
+            // --- Current-load MaxSpeed tax (same as ShipPhysicsDriveLogic each tick) ---
+            // Capacity tax is already inside motor.MaxSpeed; collecting gems/people further
+            // lowers the live cruise cap — HUD must match or the bar lies at "full" while slow.
+            var loadMul = ShipMobilityResolution.ApplyCurrentLoadTax(ship.CurrentGems, ship.CurrentPeople);
+            maxSpd *= loadMul.SpeedMultiplier;
+
             speedSlider.value = Mathf.Clamp01(cur / Mathf.Max(0.01f, maxSpd));
 
             float mass = GetMovementMass(ship, motor);
             // [TITAN-ORBIT] F/m — same a = (EngineThrust × territory)/mass the motor uses below MaxSpeed.
+            // EngineThrust on motor is already capacity-taxed by ShipStatApplyLogic.
             float thrustForDisplay = motor.EngineThrust * territoryMult;
             float maxFwd = Mathf.Max(0.01f, thrustForDisplay / Mathf.Max(ShipMassLogic.MinMass, mass));
             if (motorLooksBaked && effectiveStats.accelerationCap > 0.1f)
             {
+                // --- Bake fallback: tax chassis accel the same way ApplyToShip would ---
+                float untaxedThrust = effectiveStats.accelerationCap
+                    * ShipPropulsionAggregation.EngineThrustVisibility;
+                float untaxedTurn = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
+                    effectiveStats.turnSpeed);
+                float taxedThrust = ShipMobilityResolution.ApplyCapacityTax(
+                    effectiveStats.moveSpeed,
+                    untaxedThrust,
+                    untaxedTurn,
+                    effectiveStats.maxGems,
+                    effectiveStats.maxPeople).EngineThrust;
                 maxFwd = Mathf.Max(
                     0.01f,
-                    effectiveStats.accelerationCap * ShipPropulsionAggregation.EngineThrustVisibility
-                        * territoryMult
-                    / Mathf.Max(ShipMassLogic.MinMass, mass));
+                    taxedThrust * territoryMult / Mathf.Max(ShipMassLogic.MinMass, mass));
             }
 
             float maxBrake = Mathf.Max(0.01f, motor.BrakeDeceleration > 0f

@@ -38,14 +38,21 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Shared stat-application pipeline: resolves a chassis id from team + level + branch, sums
-    /// ship-family component stats, applies attribute-upgrade multipliers, and writes the result
-    /// onto ShipState, ShipWeaponConfig, ShipMotorConfig, and ShipVitalsConfig. Called by
+    /// ship-family component stats, applies attribute-upgrade multipliers, taxes mobility from
+    /// gem/people capacity via <see cref="ShipMobilityResolution"/>, and writes the result onto
+    /// ShipState, ShipWeaponConfig, ShipMotorConfig, and ShipVitalsConfig. Called by
     /// ShipStatApplySystem (server + client prediction), ShipAttributeUpgradeLogic (purchase),
     /// and respawn/rejoin flows. Does not run movement — only updates numeric caps and motor tuning.
     /// <para>
     /// [NETCODE] <see cref="ShipMotorConfig"/> is not ghost-serialized. The client must run the same
     /// ApplyToShip path (motor/weapon/vitals only) or owner prediction keeps bake defaults
     /// (MaxSpeed=35) while the server uses chassis ~13 — HUD lies and prediction fights reconcile.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Capacity tax (empty-hold identity): high <c>maxGems</c> / <c>maxPeople</c> from
+    /// components automatically lower MaxSpeed, EngineThrust, and RotationSpeed using
+    /// <see cref="ShipCargoMobilitySettings"/> — people hit top speed harder, gems hit accel harder,
+    /// turn has separate gem/people weights. No Fighter/Miner/Transport role enum in the motor path.
     /// </para>
     /// </summary>
     public static class ShipStatApplyLogic
@@ -408,12 +415,26 @@ namespace TitanOrbit.ECS
             // --- Physics tuning (ShipPhysicsDriveSystem reads these) ---
             if (em.HasComponent<ShipMotorConfig>(shipEntity))
             {
+                // --- Untaxed motor inputs from chassis + attributes ---
                 float moveVal = Mathf.Max(0.1f, effective.moveSpeed);
                 float turnVal = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(effective.turnSpeed);
                 float thrust = Mathf.Max(0.1f, effective.accelerationCap > 0f
                     ? effective.accelerationCap
                     : moveVal);
                 thrust *= ShipPropulsionAggregation.EngineThrustVisibility;
+
+                // --- Capacity tax (empty-hold identity) ---
+                // [TITAN-ORBIT] GemCapacity / PeopleCapacity from summed components slow MaxSpeed,
+                // accel, and turn even when the hold is empty. People hit top speed harder; gems
+                // hit accel harder; turn has separate gem/people weights. See ShipCargoMobilitySettings.
+                float gemCap = Mathf.Max(0f, effective.maxGems);
+                float peopleCap = Mathf.Max(0f, effective.maxPeople);
+                ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyCapacityTax(
+                    moveVal,
+                    thrust,
+                    turnVal,
+                    gemCap,
+                    peopleCap);
 
                 // [TITAN-ORBIT] Mass reference uses level-1 health so upgrades change weight feel.
                 ShipComponentAbilityStats levelOneStats =
@@ -425,9 +446,9 @@ namespace TitanOrbit.ECS
                     ShipMassLogic.DefaultBaseMass);
 
                 var motor = em.GetComponentData<ShipMotorConfig>(shipEntity);
-                motor.MaxSpeed = moveVal;
-                motor.EngineThrust = thrust;
-                motor.RotationSpeed = turnVal;
+                motor.MaxSpeed = taxed.MaxSpeed;
+                motor.EngineThrust = taxed.EngineThrust;
+                motor.RotationSpeed = taxed.RotationSpeed;
                 motor.BrakeDeceleration = ShipMassLogic.DefaultBrakeDeceleration;
                 motor.HullMassReference = hullMassReference;
                 motor.ChassisReferenceHealth = referenceHealth;

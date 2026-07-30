@@ -72,18 +72,23 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [ECS/DOTS] Motor tuning derived from chassis stats. Not ghost-serialized — recomputed server-side
-    /// by <see cref="ShipStatApplyLogic"/> when level or branch changes. Read by movement job.
+    /// [ECS/DOTS] Motor tuning derived from chassis stats + capacity tax. Not ghost-serialized —
+    /// recomputed on server and client by <see cref="ShipStatApplyLogic"/> when level, branch,
+    /// attributes, or equipment change. Read by movement job.
+    /// <para>
+    /// [TITAN-ORBIT] MaxSpeed / EngineThrust / RotationSpeed already include the empty-hold
+    /// capacity tax from <see cref="TitanOrbit.Data.ShipMobilityResolution"/> (gem/people capacity).
+    /// </para>
     /// </summary>
     public struct ShipMotorConfig : IComponentData
     {
-        /// <summary>[PHYSICS] Engine force in Newtons (acceleration = thrust / mass).</summary>
+        /// <summary>[PHYSICS] Engine force in Newtons (acceleration = thrust / mass). Capacity-taxed.</summary>
         public float EngineThrust;
 
-        /// <summary>[TITAN-ORBIT] Top speed cap in world units per second.</summary>
+        /// <summary>[TITAN-ORBIT] Top speed cap in world units per second. Capacity-taxed.</summary>
         public float MaxSpeed;
 
-        /// <summary>[TITAN-ORBIT] Turn rate in degrees per second toward aim point.</summary>
+        /// <summary>[TITAN-ORBIT] Turn rate in degrees per second toward aim point. Capacity-taxed.</summary>
         public float RotationSpeed;
 
         /// <summary>[TITAN-ORBIT] Space-brake deceleration magnitude.</summary>

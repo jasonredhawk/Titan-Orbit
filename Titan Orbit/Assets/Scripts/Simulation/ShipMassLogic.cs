@@ -9,18 +9,31 @@ namespace TitanOrbit.Simulation
     /// <c>PhysicsMass</c> each fixed step before thrust runs.
     /// Bounce / energy transfer uses <see cref="ComputeRammingMass"/> (linear HP bulk) via
     /// <c>ShipCollisionImpulseLogic</c> so heavy hulls feel heavier on impact than in the motor.
+    /// <para>
+    /// [TITAN-ORBIT] Movement mass (HP bulk + current gems + current people) slows <b>acceleration
+    /// only</b> via F/m. Empty-hold MaxSpeed / turn identity comes from capacity tax in
+    /// <c>ShipMobilityResolution</c> — do not expect mass alone to lower top speed or yaw rate.
+    /// </para>
     /// </summary>
     public static class ShipMassLogic
     {
         public const float DefaultBaseMass = 1f;
         /// <summary>Scales authored chassis mass into movement reference.</summary>
         public const float HullMassScale = 0.7f;
-        /// <summary>Each gem adds this much movement mass.</summary>
+        /// <summary>Each gem currently carried adds this much movement mass.</summary>
         public const float MassPerGem = 0.01f;
+        /// <summary>
+        /// Each person currently carried adds this much movement mass.
+        /// [TITAN-ORBIT] Higher than <see cref="MassPerGem"/> so a full people hold ramps slower
+        /// than the same numeric gem count — secondary to capacity tax on MaxSpeed/turn.
+        /// </summary>
+        public const float MassPerPerson = 0.15f;
         /// <summary>Exponent &lt; 1 softens HP bulk for movement (0.4 = fourth-root scaling).</summary>
         public const float MovementHullBulkExponent = 0.4f;
         /// <summary>Gems count heavier for ramming collisions than for acceleration.</summary>
         public const float RammingGemMassScale = 2.5f;
+        /// <summary>People count heavier for ramming than for movement mass.</summary>
+        public const float RammingPersonMassScale = 2f;
         public const float DefaultBrakeDeceleration = 7f;
         public const float MinMass = 0.5f;
 
@@ -42,7 +55,7 @@ namespace TitanOrbit.Simulation
         public static float GetRammingBulkScale(float maxHealth, float chassisReferenceHealth) =>
             maxHealth / Mathf.Max(1f, chassisReferenceHealth);
 
-        /// <summary>Chassis component mass reference before HP bulk and gems.</summary>
+        /// <summary>Chassis component mass reference before HP bulk and cargo load.</summary>
         public static float ComputeHullMassReference(float componentMass, float baseMass = DefaultBaseMass)
         {
             float hull = componentMass > 0f ? componentMass : baseMass;
@@ -50,21 +63,25 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Mass used by the motor each tick (softened hull bulk + gem cargo).
-        /// Heavier mass → slower acceleration, same top speed cap.
+        /// Mass used by the motor each tick (softened hull bulk + current gems + current people).
+        /// Heavier mass → slower acceleration; MaxSpeed / turn stay on capacity tax + motor config.
         /// </summary>
+        /// <param name="currentPeople">Colonists currently aboard (0 when unused).</param>
         public static float ComputeMovementMass(
             float hullMassReference,
             float maxHealth,
             float chassisReferenceHealth,
             float currentGems,
-            float baseMass = DefaultBaseMass)
+            float baseMass = DefaultBaseMass,
+            float currentPeople = 0f)
         {
             float hullRef = hullMassReference > 0f
                 ? hullMassReference
                 : math.max(MinMass, baseMass * HullMassScale);
             float bulkScale = GetMovementBulkScale(maxHealth, chassisReferenceHealth);
-            return math.max(MinMass, hullRef * bulkScale + currentGems * MassPerGem);
+            float cargoMass = Mathf.Max(0f, currentGems) * MassPerGem
+                              + Mathf.Max(0f, currentPeople) * MassPerPerson;
+            return math.max(MinMass, hullRef * bulkScale + cargoMass);
         }
 
         /// <summary>Hull-only mass baseline for ramming damage calculations.</summary>
@@ -81,18 +98,21 @@ namespace TitanOrbit.Simulation
             return Mathf.Max(MinMass, hullRef * bulkScale);
         }
 
-        /// <summary>Total mass for ship-vs-ship ramming (hull + weighted gems).</summary>
+        /// <summary>Total mass for ship-vs-ship ramming (hull + weighted gems + people).</summary>
+        /// <param name="currentPeople">Colonists currently aboard (0 when unused).</param>
         public static float ComputeRammingMass(
             float hullMassReference,
             float maxHealth,
             float chassisReferenceHealth,
             float currentGems,
-            float baseMass = DefaultBaseMass)
+            float baseMass = DefaultBaseMass,
+            float currentPeople = 0f)
         {
             float hullMass = ComputeRammingHullMassBaseline(
                 hullMassReference, maxHealth, chassisReferenceHealth, baseMass);
-            float gemMass = currentGems * MassPerGem * Mathf.Max(1f, RammingGemMassScale);
-            return Mathf.Max(MinMass, hullMass + gemMass);
+            float gemMass = Mathf.Max(0f, currentGems) * MassPerGem * Mathf.Max(1f, RammingGemMassScale);
+            float peopleMass = Mathf.Max(0f, currentPeople) * MassPerPerson * Mathf.Max(1f, RammingPersonMassScale);
+            return Mathf.Max(MinMass, hullMass + gemMass + peopleMass);
         }
     }
 

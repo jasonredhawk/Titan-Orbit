@@ -954,7 +954,13 @@ Only if `integratePosition == true`. **Ships pass false.**
 
 ---
 
-**Mass** comes from `ShipMassLogic.ComputeMovementMass` — heavier (more HP, more gems) → slower acceleration, same top speed cap.
+**Mass** comes from `ShipMassLogic.ComputeMovementMass` — heavier (more HP, more **current** gems and people) → slower acceleration via F/m. Mass alone does **not** lower MaxSpeed or turn.
+
+**Capacity tax** (empty-hold identity) lives in `ShipMobilityResolution` + `ShipCargoMobilitySettings`: summed component `maxGems` / `maxPeople` automatically scale MaxSpeed, EngineThrust, and RotationSpeed before they land in `ShipMotorConfig`. People hit top speed harder; gems hit accel harder; turn has separate gem/people weights (same defaults for now). A freighter with a huge people hold is slow even when empty.
+
+**Current-load tax** uses the same MaxSpeed/turn weights on `CurrentGems` / `CurrentPeople` each motor tick (and on the speedometer). Accel when collecting still comes mainly from movement mass (F/m).
+
+**Per-level mobility drag** is also on that settings asset: `levelMaxSpeedPenaltyFractionPerLevel` (default 0.11), `levelTurnPenaltyFractionPerLevel` (default 0.11), `levelAccelPenaltyFractionPerLevel` (default 0). Set any to **0** to disable that level effect.
 
 ## 6.3 ShipMovementBurstLogic overlays
 
@@ -2614,7 +2620,9 @@ Child markers on visual prefab hierarchy → baked into dynamic buffers on ship 
 
 ### Sidebar: Volume 6 — Mass and acceleration
 
-Effective mass increases with HP and gems. **Same max speed**, lower acceleration. Players perceive "heavier ship" as slower **ramp-up**, not lower top speed. Tuning `EngineThrust` in data affects both light and heavy but heavy lags more — by design in `ShipMassLogic`.
+Effective mass increases with HP, current gems, and current people. Mass slows **ramp-up** (accel via F/m) only — it does not lower MaxSpeed or turn by itself.
+
+**Empty-hold capacity tax** (`ShipMobilityResolution` + `ShipCargoMobilitySettings`): large component `maxGems` / `maxPeople` automatically reduce MaxSpeed, EngineThrust, and RotationSpeed even when the hold is empty. People hit top speed harder; gems hit accel harder; turn has separate gem/people weights. **Per-level** MaxSpeed / turn / accel drag fractions live on the same asset (defaults 0.11 / 0.11 / 0 — set to 0 to disable). Tuning the settings asset changes freighter vs fighter feel without a role enum.
 
 ### Sidebar: Volume 7 — Interpolation vs extrapolation
 

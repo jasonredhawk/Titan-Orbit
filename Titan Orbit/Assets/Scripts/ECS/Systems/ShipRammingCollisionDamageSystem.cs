@@ -116,7 +116,7 @@ namespace TitanOrbit.ECS
                     motor.HullMassReference, ship.MaxHealth, motor.ChassisReferenceHealth, baseMass);
                 float ramMass = ShipMassLogic.ComputeRammingMass(
                     motor.HullMassReference, ship.MaxHealth, motor.ChassisReferenceHealth,
-                    ship.CurrentGems, baseMass);
+                    ship.CurrentGems, baseMass, ship.CurrentPeople);
 
                 // [TITAN-ORBIT] Rating from ShipFamilyDefinition component rammingPower (summed +
                 // level-scaled in ShipStatApplyLogic → motor.RammingPower). Not a flat constant.
@@ -393,7 +393,7 @@ namespace TitanOrbit.ECS
                 offMotor.HullMassReference, offShip.MaxHealth, offMotor.ChassisReferenceHealth, baseMass);
             float ramMass = ShipMassLogic.ComputeRammingMass(
                 offMotor.HullMassReference, offShip.MaxHealth, offMotor.ChassisReferenceHealth,
-                offShip.CurrentGems, baseMass);
+                offShip.CurrentGems, baseMass, offShip.CurrentPeople);
             float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(
                 offMotor.RammingPower);
 

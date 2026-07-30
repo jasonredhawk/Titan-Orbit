@@ -20,7 +20,8 @@ namespace TitanOrbit.Data
         public const int MinimumComponentGemPrice = 8;
 
         /// <summary>
-        /// Applies per-level growth to every stat field, including mobility penalty on move/turn at higher levels.
+        /// Applies per-level growth to every stat field, including optional mobility penalties
+        /// on move / accel / turn from <see cref="ShipCargoMobilitySettings"/> (0 = no level drag).
         /// <paramref name="shipLevel"/> 1 = base stats only; level 7 adds six steps of *PerLevel fields.
         /// <para>
         /// [TITAN-ORBIT] Intentional exception: <c>bulletSpeed</c> does <b>not</b> apply
@@ -33,9 +34,19 @@ namespace TitanOrbit.Data
         {
             int perLvl = Mathf.Max(0, shipLevel - 1);
             float moveAtLevel = stats.moveSpeed + stats.moveSpeedPerLevel * perLvl;
+            float accelAtLevel = stats.accelerationCap + stats.accelerationCapPerLevel * perLvl;
             float turnAtLevel = stats.turnSpeed + stats.turnSpeedPerLevel * perLvl;
 
-            // --- Linear growth on most stats; move/turn also pass through mobility penalty curve ---
+            // --- Level mobility drag from settings (0% = leave linear growth alone) ---
+            ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
+            float moveScaled = ShipPropulsionAggregation.ApplyShipLevelMobilityScale(
+                moveAtLevel, perLvl, mobility.levelMaxSpeedPenaltyFractionPerLevel);
+            float accelScaled = ShipPropulsionAggregation.ApplyShipLevelMobilityScale(
+                accelAtLevel, perLvl, mobility.levelAccelPenaltyFractionPerLevel);
+            float turnScaled = ShipPropulsionAggregation.ApplyShipLevelMobilityScale(
+                turnAtLevel, perLvl, mobility.levelTurnPenaltyFractionPerLevel);
+
+            // --- Linear growth on most stats; move/accel/turn use settings level penalties ---
             // bulletSpeed: base only (no perLvl) — see method summary.
             return new ShipComponentAbilityStats
             {
@@ -55,11 +66,11 @@ namespace TitanOrbit.Data
                 energyCapPerLevel = stats.energyCapPerLevel,
                 energyRegen = stats.energyRegen + stats.energyRegenPerLevel * perLvl,
                 energyRegenPerLevel = stats.energyRegenPerLevel,
-                moveSpeed = ShipPropulsionAggregation.ApplyShipLevelMobilityScale(moveAtLevel, perLvl),
+                moveSpeed = moveScaled,
                 moveSpeedPerLevel = stats.moveSpeedPerLevel,
-                accelerationCap = stats.accelerationCap + stats.accelerationCapPerLevel * perLvl,
+                accelerationCap = accelScaled,
                 accelerationCapPerLevel = stats.accelerationCapPerLevel,
-                turnSpeed = ShipPropulsionAggregation.ApplyShipLevelMobilityScale(turnAtLevel, perLvl),
+                turnSpeed = turnScaled,
                 turnSpeedPerLevel = stats.turnSpeedPerLevel,
                 maxGems = stats.maxGems + stats.maxGemsPerLevel * perLvl,
                 maxGemsPerLevel = stats.maxGemsPerLevel,

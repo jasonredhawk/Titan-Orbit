@@ -26,8 +26,18 @@ namespace TitanOrbit.Data
         /// <summary>Engine/thruster moveSpeedPerLevel and accelerationCapPerLevel are this fraction of base (20%).</summary>
         public const float PropulsionPerLevelFractionOfBase = 0.20f;
 
-        /// <summary>Per level after 1, mobility loses this fraction of the base stat (matches Starship).</summary>
-        public const float ShipLevelMobilityPenaltyFractionPerLevel = 0.11f;
+        /// <summary>
+        /// Legacy default MaxSpeed/turn level drag (11% per level after 1).
+        /// Prefer <see cref="ShipCargoMobilitySettings.levelMaxSpeedPenaltyFractionPerLevel"/> /
+        /// <see cref="ShipCargoMobilitySettings.levelTurnPenaltyFractionPerLevel"/> at runtime.
+        /// </summary>
+        public const float DefaultLevelMobilityPenaltyFractionPerLevel = 0.11f;
+
+        /// <summary>
+        /// Legacy default accel level drag (0% — accel only grew with *PerLevel).
+        /// Prefer <see cref="ShipCargoMobilitySettings.levelAccelPenaltyFractionPerLevel"/>.
+        /// </summary>
+        public const float DefaultLevelAccelPenaltyFractionPerLevel = 0f;
 
         /// <summary>
         /// Family-authored <see cref="ShipComponentAbilityStats.turnSpeed"/> uses small definition units;
@@ -124,11 +134,35 @@ namespace TitanOrbit.Data
             public float extraMoveSpeedFromPerLevel;
         }
 
+        /// <summary>
+        /// Applies a per-level mobility drag: <c>stat - stat × penaltyFraction × levelsAfterFirst</c>.
+        /// [TITAN-ORBIT] Fraction comes from <see cref="ShipCargoMobilitySettings"/> (0 = no effect).
+        /// Capacity tax in <see cref="ShipMobilityResolution"/> stacks after this when writing motor config.
+        /// </summary>
+        /// <param name="baseStat">Pre-penalty value (usually already includes *PerLevel growth).</param>
+        /// <param name="levelsAfterFirst">shipLevel − 1 (0 at level 1).</param>
+        /// <param name="penaltyFractionPerLevel">
+        /// From settings (e.g. 0.11). When ≤ 0, returns <paramref name="baseStat"/> unchanged.
+        /// </param>
+        public static float ApplyShipLevelMobilityScale(
+            float baseStat,
+            int levelsAfterFirst,
+            float penaltyFractionPerLevel)
+        {
+            if (levelsAfterFirst <= 0 || baseStat <= 0f || penaltyFractionPerLevel <= 0f)
+                return baseStat;
+            return baseStat - (baseStat * penaltyFractionPerLevel) * levelsAfterFirst;
+        }
+
+        /// <summary>
+        /// Overload using cached <see cref="ShipCargoMobilitySettings"/> MaxSpeed level penalty
+        /// (legacy callers that only scaled move).
+        /// </summary>
         public static float ApplyShipLevelMobilityScale(float baseStat, int levelsAfterFirst)
         {
-            if (levelsAfterFirst <= 0 || baseStat <= 0f)
-                return baseStat;
-            return baseStat - (baseStat * ShipLevelMobilityPenaltyFractionPerLevel) * levelsAfterFirst;
+            float fraction = ShipCargoMobilitySettingsCache.ResolveOrDefault()
+                .levelMaxSpeedPenaltyFractionPerLevel;
+            return ApplyShipLevelMobilityScale(baseStat, levelsAfterFirst, fraction);
         }
 
         /// <summary>
@@ -187,9 +221,13 @@ namespace TitanOrbit.Data
 
             if (result.primaryIndex >= 0)
             {
+                // [TITAN-ORBIT] Level MaxSpeed drag from ShipCargoMobilitySettings (0 = off).
+                float levelSpeedPenalty = ShipCargoMobilitySettingsCache.ResolveOrDefault()
+                    .levelMaxSpeedPenaltyFractionPerLevel;
                 float primaryMove = ApplyShipLevelMobilityScale(
                     perComponentStats[result.primaryIndex].moveSpeed,
-                    levelsAfterFirst);
+                    levelsAfterFirst,
+                    levelSpeedPenalty);
 
                 float summedExtraPerLevel = 0f;
                 for (int i = 0; i < count; i++)
@@ -219,6 +257,14 @@ namespace TitanOrbit.Data
                     0f,
                     GetPropulsionAccelerationContribution(comp, levelsAfterFirst));
             }
+
+            // [TITAN-ORBIT] Optional level accel drag (default 0 — legacy had no accel level penalty).
+            float levelAccelPenalty = ShipCargoMobilitySettingsCache.ResolveOrDefault()
+                .levelAccelPenaltyFractionPerLevel;
+            result.sumAcceleration = ApplyShipLevelMobilityScale(
+                result.sumAcceleration,
+                levelsAfterFirst,
+                levelAccelPenalty);
 
             result.topMoveSpeed = ApplyOverallPropulsionSpeedScale(result.topMoveSpeed);
             result.extraMoveSpeedFromPerLevel = ApplyOverallPropulsionSpeedScale(result.extraMoveSpeedFromPerLevel);

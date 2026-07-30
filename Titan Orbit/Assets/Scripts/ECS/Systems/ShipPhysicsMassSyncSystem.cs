@@ -7,8 +7,9 @@ using Unity.Physics;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Syncs each ship's <see cref="PhysicsMass"/> from gameplay movement mass (hull, HP bulk, gems)
-    /// before thrust runs. [NETCODE] Server and client must use identical mass during owner prediction.
+    /// Syncs each ship's <see cref="PhysicsMass"/> from gameplay movement mass
+    /// (hull, HP bulk, current gems, current people) before thrust runs.
+    /// [NETCODE] Server and client must use identical mass during owner prediction.
     /// Paired with <see cref="ShipPhysicsDriveLogic"/> which divides thrust by the same mass value.
     /// </summary>
     // OrderFirst: before drive systems. Do not UpdateBefore server-only or client-only drive types —
@@ -35,7 +36,8 @@ namespace TitanOrbit.ECS
                     shipState.ValueRO.MaxHealth,
                     motor.ValueRO.ChassisReferenceHealth,
                     shipState.ValueRO.CurrentGems,
-                    baseMass);
+                    baseMass,
+                    shipState.ValueRO.CurrentPeople);
 
                 movementMass = math.max(ShipMassLogic.MinMass, movementMass);
                 physicsMass.ValueRW = PhysicsMass.CreateDynamic(

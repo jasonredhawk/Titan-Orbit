@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -125,6 +126,9 @@ namespace TitanOrbit.ECS
                     PlanetConnectionGraphCache.UpdateLocalOwnerTerritoryMult(localMult, moonElapsed);
             }
 
+            // --- Current-load MaxSpeed / turn weights (must match server job) ---
+            ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
+
             var job = new ShipPhysicsDriveJob
             {
                 Dt = SystemAPI.Time.DeltaTime,
@@ -134,6 +138,12 @@ namespace TitanOrbit.ECS
                 Planets = planets.AsArray(),
                 TerritoryTriangles = territory,
                 HomeLevelByTeam = homeLevels,
+                LoadSpeedWeightPerGem = mobility.speedWeightPerGem,
+                LoadSpeedWeightPerPerson = mobility.speedWeightPerPerson,
+                LoadTurnWeightPerGem = mobility.turnWeightPerGem,
+                LoadTurnWeightPerPerson = mobility.turnWeightPerPerson,
+                LoadMinSpeedMultiplier = mobility.minSpeedMultiplier,
+                LoadMinTurnMultiplier = mobility.minTurnMultiplier,
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);

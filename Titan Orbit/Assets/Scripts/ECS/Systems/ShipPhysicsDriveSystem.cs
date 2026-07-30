@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using Unity.Collections;
 using Unity.Entities;
@@ -70,6 +71,9 @@ namespace TitanOrbit.ECS
             var homeLevels = new NativeArray<int>(6, Allocator.TempJob);
             PlanetConnectionGraphCache.CopyHomeLevels(PlanetConnectionGraphSide.Server, ref homeLevels);
 
+            // --- Current-load MaxSpeed / turn weights (Burst job cannot read ScriptableObject) ---
+            ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
+
             // [NETCODE] Fixed-step dt from PredictedFixedStepSimulationSystemGroup — not frame delta.
             var job = new ShipPhysicsDriveJob
             {
@@ -80,6 +84,12 @@ namespace TitanOrbit.ECS
                 Planets = planets.AsArray(),
                 TerritoryTriangles = territory,
                 HomeLevelByTeam = homeLevels,
+                LoadSpeedWeightPerGem = mobility.speedWeightPerGem,
+                LoadSpeedWeightPerPerson = mobility.speedWeightPerPerson,
+                LoadTurnWeightPerGem = mobility.turnWeightPerGem,
+                LoadTurnWeightPerPerson = mobility.turnWeightPerPerson,
+                LoadMinSpeedMultiplier = mobility.minSpeedMultiplier,
+                LoadMinTurnMultiplier = mobility.minTurnMultiplier,
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);

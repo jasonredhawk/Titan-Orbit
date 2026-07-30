@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Burst;
 using Unity.Collections;
@@ -15,6 +16,8 @@ namespace TitanOrbit.ECS
     /// owner-predicted ghosts; server runs all simulated ships.
     /// Planet snapshots + map size + territory triangles are collected once on the main thread so
     /// every ship shares the same toroidal orbit / shield / territory inputs this tick.
+    /// Current-load MaxSpeed / turn weights are copied from <see cref="ShipCargoMobilitySettings"/>
+    /// on the main thread (Burst cannot read ScriptableObjects).
     /// </summary>
     [BurstCompile]
     [WithAll(typeof(ShipTag), typeof(Simulate))]
@@ -40,6 +43,14 @@ namespace TitanOrbit.ECS
 
         /// <summary>Home planet level per TeamId byte index (length ≥ 6).</summary>
         [ReadOnly] public NativeArray<int> HomeLevelByTeam;
+
+        // --- Current-load MaxSpeed / turn tax (from ShipCargoMobilitySettings, main-thread copy) ---
+        public float LoadSpeedWeightPerGem;
+        public float LoadSpeedWeightPerPerson;
+        public float LoadTurnWeightPerGem;
+        public float LoadTurnWeightPerPerson;
+        public float LoadMinSpeedMultiplier;
+        public float LoadMinTurnMultiplier;
 
         /// <summary>
         /// Per-ship motor tick. Writes velocity, yaw, <see cref="ShipOrbitState"/>, and
@@ -73,7 +84,13 @@ namespace TitanOrbit.ECS
                 MapH,
                 Elapsed,
                 in TerritoryTriangles,
-                in HomeLevelByTeam);
+                in HomeLevelByTeam,
+                LoadSpeedWeightPerGem,
+                LoadSpeedWeightPerPerson,
+                LoadTurnWeightPerGem,
+                LoadTurnWeightPerPerson,
+                LoadMinSpeedMultiplier,
+                LoadMinTurnMultiplier);
         }
     }
 }
