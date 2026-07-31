@@ -84,18 +84,20 @@ namespace TitanOrbit.Data
             return BulletSpeedV1 * v;
         }
 
+        /// <summary>Per-level fire power — float only (no RoundToInt; small increments must survive).</summary>
         public static float GetSuggestedFirePowerPerLevel(int version) =>
-            Mathf.Max(0f, Mathf.RoundToInt(GetSuggestedFirePower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase));
+            Mathf.Max(0f, GetSuggestedFirePower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase);
 
+        /// <summary>Per-level bullet speed — float only (no RoundToInt).</summary>
         public static float GetSuggestedBulletSpeedPerLevel(int version) =>
-            Mathf.Max(0f, Mathf.RoundToInt(GetSuggestedBulletSpeed(version) * ShipPropulsionAggregation.PerLevelFractionOfBase));
+            Mathf.Max(0f, GetSuggestedBulletSpeed(version) * ShipPropulsionAggregation.PerLevelFractionOfBase);
 
         /// <summary>Weapon Cannon fire-power per ship level (same fraction rule as bullets).</summary>
         public static float GetSuggestedCannonFirePowerPerLevel(int version)
         {
             int v = Mathf.Max(1, version);
             float power = CannonFirePowerV1 * v;
-            return Mathf.Max(0f, Mathf.RoundToInt(power * ShipPropulsionAggregation.PerLevelFractionOfBase));
+            return Mathf.Max(0f, power * ShipPropulsionAggregation.PerLevelFractionOfBase);
         }
 
         /// <summary>Weapon Cannon bullet-speed per ship level (same fraction rule as bullets).</summary>
@@ -103,7 +105,7 @@ namespace TitanOrbit.Data
         {
             int v = Mathf.Max(1, version);
             float speed = CannonBulletSpeedV1 * v;
-            return Mathf.Max(0f, Mathf.RoundToInt(speed * ShipPropulsionAggregation.PerLevelFractionOfBase));
+            return Mathf.Max(0f, speed * ShipPropulsionAggregation.PerLevelFractionOfBase);
         }
 
         public static float ComputeSustainedEnergyDrain(float firePower, float fireRate) =>
@@ -205,8 +207,9 @@ namespace TitanOrbit.Data
             return PeopleCapacityV1 * v;
         }
 
+        /// <summary>Per ship-level people growth — float only (no RoundToInt).</summary>
         public static float GetSuggestedPeopleCapacityPerLevel(int version) =>
-            Mathf.Max(0f, Mathf.RoundToInt(GetSuggestedPeopleCapacity(version) * ShipPropulsionAggregation.PerLevelFractionOfBase));
+            Mathf.Max(0f, GetSuggestedPeopleCapacity(version) * ShipPropulsionAggregation.PerLevelFractionOfBase);
     }
 
     /// <summary>

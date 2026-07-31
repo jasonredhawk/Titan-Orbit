@@ -92,6 +92,37 @@ namespace TitanOrbit.Data
             return s;
         }
 
+        /// <summary>
+        /// Effective fraction used when *PerLevel fields are still zero (override, propulsion 0.2, else 0.25).
+        /// </summary>
+        public float ResolvePerLevelFraction()
+        {
+            if (perLevelFractionOverride > 0.0001f)
+                return perLevelFractionOverride;
+            return IsPropulsionPartType(partType)
+                ? ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase
+                : ShipPropulsionAggregation.PerLevelFractionOfBase;
+        }
+
+        /// <summary>
+        /// Writes filled *PerLevel values into <see cref="baseAtVersion1"/> and
+        /// <see cref="perVersionIncrement"/> when they are still zero so the Inspector matches
+        /// what Scan / <see cref="EvaluateAtVersion"/> already applies (and what ShipFamilyDefinition shows).
+        /// </summary>
+        public void EnsureAuthoredPerLevelFilled()
+        {
+            float frac = ResolvePerLevelFraction();
+            FillPerLevelIfZero(ref baseAtVersion1, frac);
+            FillPerLevelIfZero(ref perVersionIncrement, frac);
+
+            // [TITAN-ORBIT] Weapons never grow fire rate per ship level.
+            if (ShipFamilyPartTypes.IsWeapon(partType))
+            {
+                baseAtVersion1.fireRatePerLevel = 0f;
+                perVersionIncrement.fireRatePerLevel = 0f;
+            }
+        }
+
         static bool IsPropulsionPartType(string type) => ShipFamilyPartTypes.IsPropulsion(type);
 
         static void AddScaled(ref ShipComponentAbilityStats target, ShipComponentAbilityStats source, float factor)
@@ -130,7 +161,11 @@ namespace TitanOrbit.Data
             target.maxPeoplePerLevel += source.maxPeoplePerLevel * factor;
         }
 
-        static void FillPerLevelIfZero(ref ShipComponentAbilityStats s, float frac)
+        /// <summary>
+        /// Fills each *PerLevel from its base × <paramref name="frac"/> when the PerLevel is still zero.
+        /// Used by <see cref="EvaluateAtVersion"/> and by the Inspector so authored rows match Scan.
+        /// </summary>
+        public static void FillPerLevelIfZero(ref ShipComponentAbilityStats s, float frac)
         {
             if (s.firePowerPerLevel == 0f && s.firePower != 0f) s.firePowerPerLevel = s.firePower * frac;
             if (s.bulletSpeedPerLevel == 0f && s.bulletSpeed != 0f) s.bulletSpeedPerLevel = s.bulletSpeed * frac;
@@ -148,15 +183,18 @@ namespace TitanOrbit.Data
                 s.tractorBeamDistancePerLevel = s.tractorBeamDistance * frac;
             if (s.tractorBeamPowerPerLevel == 0f && s.tractorBeamPower != 0f)
                 s.tractorBeamPowerPerLevel = s.tractorBeamPower * frac;
+            // [TITAN-ORBIT] No RoundToInt — small bases (e.g. maxPeople=2 × 0.25) must stay fractional
+            // so attribute mesh grow and Scan curves keep the true percent-of-base step.
             if (s.maxPeoplePerLevel == 0f && s.maxPeople != 0f)
-                s.maxPeoplePerLevel = Mathf.Max(0f, Mathf.RoundToInt(s.maxPeople * frac));
+                s.maxPeoplePerLevel = s.maxPeople * frac;
         }
     }
 
     /// <summary>
     /// Project-wide shared asset: discovered component name inventory, AI-assisted classification,
-    /// per-name propulsion VFX flags/scales, and part-type calc profiles used by every
-    /// <see cref="ShipFamilyDefinition"/> Scan / Populate button.
+    /// per-name propulsion VFX flags/scales, part-type calc profiles used by every
+    /// <see cref="ShipFamilyDefinition"/> Scan / Populate button, and the global attribute
+    /// mesh-grow dampener (<see cref="globalUpgradeScaleMultiplier"/>).
     /// Place under Resources as <c>ShipFamilyPartCalcProfileSet</c> for runtime VFX fallback.
     /// </summary>
     [CreateAssetMenu(
@@ -166,7 +204,18 @@ namespace TitanOrbit.Data
     {
         public const string ResourcesAssetName = "ShipFamilyPartCalcProfileSet";
 
+        /// <summary>Default global mesh-grow dampener when the field is unset / missing on old assets.</summary>
+        public const float DefaultGlobalUpgradeScaleMultiplier = 0.25f;
+
         static readonly Regex FirstDigitRegex = new Regex(@"\d+", RegexOptions.Compiled);
+
+        [Header("Attribute mesh grow (presentation)")]
+        [Tooltip(
+            "GlobalUpgradeScaleMultiplier — multiplies ALL bottom-bar upgrade mesh growth on every " +
+            "component (after per-part 1/N sharing). 1 = full growth, 0.25 = 25% of that growth, 0 = no grow. " +
+            "Does not affect combat stats or whole-ship tier scale.")]
+        [Range(0f, 2f)]
+        public float globalUpgradeScaleMultiplier = DefaultGlobalUpgradeScaleMultiplier;
 
         [Header("Name inventory — one row per unique prefab part name (Discover & Classify)")]
         [Tooltip("Inventory of prefab suffixes (Wing_2, Thrusters_Big…). Each maps into a Part Profile group via partType. Count is large; that is expected.")]
@@ -841,6 +890,8 @@ namespace TitanOrbit.Data
                 };
             }
 
+            // Bake *PerLevel into the row so Inspector / Scan see the same numbers.
+            profile.EnsureAuthoredPerLevelFilled();
             return profile;
         }
 

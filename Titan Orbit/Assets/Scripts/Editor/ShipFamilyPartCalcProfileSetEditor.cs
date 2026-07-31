@@ -109,6 +109,9 @@ namespace TitanOrbit.Editor
                 "• Name Mappings = inventory of unique prefab part names (sorted A→Z).\n" +
                 "• Part Profiles = shared stats per group:\n" +
                 "  Cockpit, Weapon Bullet, Weapon Cannon, Wing, Engine/Thrust, Tail, Hull.\n\n" +
+                "Attribute mesh grow: Global Upgrade Scale Multiplier (top of the asset, default 0.25) " +
+                "dampens ALL bottom-bar upgrade mesh growth on every component after per-part 1/N sharing. " +
+                "Presentation only — not combat stats.\n\n" +
                 "Engine + thrusters share Engine/Thrust stats (VFX only on thruster mounts).\n" +
                 "Fin merges into Tail. Guns → Weapon Bullet; cannons/missiles → Weapon Cannon.\n" +
                 "Covers/plates stay in their group with contributesAbilityStats off and VFX off.\n\n" +
@@ -178,7 +181,38 @@ namespace TitanOrbit.Editor
                 }
             }
 
+            if (GUILayout.Button("Fill Empty Per-Level Fields On All Profiles"))
+            {
+                // --- Bake EvaluateAtVersion PerLevel fills into the asset ---
+                // [EDITOR] Profiles often store 0 for *PerLevel and fill at Scan time; this writes
+                // the same numbers into the rows so they match ShipFamilyDefinition.
+                Undo.RecordObject(set, "Fill Profile Per-Level Fields");
+                int filled = 0;
+                if (set.partProfiles != null)
+                {
+                    for (int i = 0; i < set.partProfiles.Count; i++)
+                    {
+                        var p = set.partProfiles[i];
+                        if (p == null)
+                            continue;
+                        p.EnsureAuthoredPerLevelFilled();
+                        filled++;
+                    }
+                }
+
+                EditorUtility.SetDirty(set);
+                EditorUtility.DisplayDialog(
+                    "Per-Level Fields",
+                    $"Filled empty *PerLevel on {filled} Part Profile row(s) from base × fraction.",
+                    "OK");
+            }
+
             EditorGUILayout.Space(8);
+            EditorGUILayout.HelpBox(
+                "Part Profiles: Default Categories filter which stats appear under Base At Version 1 " +
+                "and Per Version Increment (including *Per Level). Empty Per Level fields auto-fill " +
+                "from base × fraction when you expand a row (same math as Scan).",
+                MessageType.None);
             DrawDefaultInspector();
             if (GUI.changed)
                 set.InvalidateLookups();

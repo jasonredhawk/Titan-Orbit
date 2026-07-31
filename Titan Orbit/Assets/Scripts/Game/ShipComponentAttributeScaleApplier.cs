@@ -9,9 +9,15 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-side component mesh scaling on ship proxies when bottom-bar attribute upgrades change,
-    /// and when the ship is inside a friendly territory triangle (engine/thruster grow like a speed
-    /// upgrade — NGO feel). Watches ShipAttributeUpgradeState + territory multiplier on the linked
-    /// ship entity. Attached by EcsWorldVisualizer; <b>cosmetic only</b>.
+    /// and when the ship is inside a friendly territory triangle (Engine/Thrust mounts grow like a
+    /// speed upgrade — NGO feel). Watches ShipAttributeUpgradeState + territory multiplier on the
+    /// linked ship entity. Attached by EcsWorldVisualizer; <b>cosmetic only</b>.
+    /// <para>
+    /// Growth rates come from <c>ShipFamilyPartCalcProfileSet.asset</c> Part Profiles
+    /// (<c>perLevel / base</c> via <see cref="ShipComponentAttributeScaleLogic.BuildRatesFromProfileSet"/>).
+    /// Multiple drivers on one part share growth (<c>1/N</c> each) and add — they do not multiply.
+    /// Tail mounts grow from RotationSpeed; Engine and Thruster buckets share MovementSpeed.
+    /// </para>
     /// <para>
     /// Territory mult is <see cref="PlanetConnectionGraphCache.LocalOwnerTerritoryMult"/> — sticky and
     /// written only on first-time predicting ticks so NetCode resim / triangle-edge noise cannot
@@ -30,16 +36,24 @@ namespace TitanOrbit.Game
         /// <summary>Ignore tiny float noise; only re-apply on clear boosted↔normal transitions.</summary>
         const float TerritoryMultApplyEpsilon = 0.02f;
 
+        /// <summary>Linked ship ghost entity — source of ShipAttributeUpgradeState.</summary>
         Entity _shipEntity;
+        /// <summary>USC family prefix for legacy token filter (e.g. AstroEagle).</summary>
         string _familyPrefix = "AstroEagle";
-        bool _hasWeaponComponentEnergy;
         bool _initialized;
+
+        /// <summary>
+        /// Cached ProfileSet <c>perLevel/base</c> fractions per part group (version 1).
+        /// Rebuilt on Bind / RebuildCache — not every LateUpdate.
+        /// </summary>
+        ShipComponentAttributeScaleLogic.ProfileScaleRates _rates;
 
         ShipComponentAttributeScaleLogic.ScaleGroup _cockpit;
         ShipComponentAttributeScaleLogic.ScaleGroup _wing;
         ShipComponentAttributeScaleLogic.ScaleGroup _weapon;
         ShipComponentAttributeScaleLogic.ScaleGroup _engine;
         ShipComponentAttributeScaleLogic.ScaleGroup _thruster;
+        ShipComponentAttributeScaleLogic.ScaleGroup _tail;
         ShipComponentAttributeScaleLogic.ScaleGroup _part;
 
         ShipAttributeUpgradeState _lastApplied;
@@ -51,27 +65,33 @@ namespace TitanOrbit.Game
         /// </summary>
         ShipPropulsionVisualApplier _propulsionVisual;
 
-        /// <summary>Links to ship entity, caches chassis transform groups, applies initial scale.</summary>
+        /// <summary>Links to ship entity, caches chassis transform groups + ProfileSet rates, applies initial scale.</summary>
         public void Bind(Entity shipEntity, string familyPrefix, ShipFamilyDefinition family)
         {
             _shipEntity = shipEntity;
             if (!string.IsNullOrWhiteSpace(familyPrefix))
                 _familyPrefix = familyPrefix.Trim();
-            _hasWeaponComponentEnergy = ShipComponentAttributeScaleLogic.FamilyHasWeaponComponentEnergy(family);
+            // Family is unused for rates — ProfileSet Part Profiles are the shared source of truth.
+            _ = family;
             _lastApplied = default;
             _lastTerritoryMult = -1f;
             RebuildCache();
         }
 
-        /// <summary>Scans hull hierarchy for component transforms and stores base scales/positions.</summary>
+        /// <summary>Scans hull hierarchy, loads ProfileSet rates, stores base scales/positions.</summary>
         void RebuildCache()
         {
+            // --- ProfileSet percent-of-base rates (version 1) ---
+            // [TITAN-ORBIT] EvaluateAtVersion fills *PerLevel when zero — same as Scan.
+            var profileSet = ShipFamilyPartCalcProfileSet.LoadShared();
+            _rates = ShipComponentAttributeScaleLogic.BuildRatesFromProfileSet(profileSet);
+
             var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix);
 
             // --- Legacy USC modules only for attribute grow ---
             // [TITAN-ORBIT] FromTransform uses ProfileSet (EngineComp, CockpitCover, Body→Hull…).
-            // Bottom-bar mesh scale must match the old Family_Wing / Family_Engine switch labels
-            // or every ability tick grows cosmetics that never used to scale.
+            // Bottom-bar mesh scale must match classic Family_Wing / Family_Engine / Family_Tail
+            // tokens or every ability tick grows cosmetics that never used to scale.
             _cockpit = ShipComponentAttributeScaleLogic.BuildGroup(
                 ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
                     stats.cockpitTransforms, _familyPrefix, "Cockpit"));
@@ -85,6 +105,10 @@ namespace TitanOrbit.Game
             _thruster = ShipComponentAttributeScaleLogic.BuildGroup(
                 ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
                     stats.thrusterTransforms, _familyPrefix, "Thruster"));
+            // Tail + Fin share the Tail Part Profile (turnSpeed → RotationSpeed).
+            _tail = ShipComponentAttributeScaleLogic.BuildGroup(
+                ChassisComponentStats.FilterLegacyTailAttributeScaleTransforms(
+                    stats.tailTransforms, _familyPrefix));
             _part = ShipComponentAttributeScaleLogic.BuildGroup(
                 ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
                     stats.partTransforms, _familyPrefix, "Part"));
@@ -111,6 +135,7 @@ namespace TitanOrbit.Game
                 ref _weapon,
                 ref _engine,
                 ref _thruster,
+                ref _tail,
                 ref _part);
 
             _initialized = _cockpit.Transforms.Count > 0
@@ -118,6 +143,7 @@ namespace TitanOrbit.Game
                 || _weapon.Transforms.Count > 0
                 || _engine.Transforms.Count > 0
                 || _thruster.Transforms.Count > 0
+                || _tail.Transforms.Count > 0
                 || _part.Transforms.Count > 0;
 
             TryApplyAttributeScale(force: true);
@@ -179,13 +205,14 @@ namespace TitanOrbit.Game
             _lastTerritoryMult = territoryMult;
             ShipComponentAttributeScaleLogic.Apply(
                 attrs,
+                _rates,
                 _cockpit,
                 _wing,
                 _weapon,
                 _engine,
                 _thruster,
+                _tail,
                 _part,
-                _hasWeaponComponentEnergy,
                 territoryMult);
 
             // --- Keep thruster jets alive after mount scale ---

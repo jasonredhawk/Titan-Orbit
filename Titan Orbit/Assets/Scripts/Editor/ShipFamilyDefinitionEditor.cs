@@ -1001,8 +1001,9 @@ namespace TitanOrbit.Editor
         private static float PerLevelFromBase(float baseValue) =>
             baseValue * ShipPropulsionAggregation.PerLevelFractionOfBase;
 
+        /// <summary>People PerLevel from base × 25% — float only (no RoundToInt).</summary>
         private static float PerLevelPeopleFromBase(float maxPeople) =>
-            Mathf.Max(0, Mathf.RoundToInt(PerLevelFromBase(maxPeople)));
+            Mathf.Max(0f, PerLevelFromBase(maxPeople));
 
         private static ShipComponentAbilityStats SuggestStatsForComponent(
             string componentId,

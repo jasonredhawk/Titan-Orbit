@@ -11,7 +11,7 @@ namespace TitanOrbit.Data
     /// <para>
     /// [TITAN-ORBIT] <see cref="FromTransform"/> classifies with Part Calc ProfileSet (mass + VFX).
     /// Attribute mesh grow must call <see cref="FilterLegacyAttributeScaleTransforms"/> so only
-    /// classic USC tokens (Wing/Engine/Thruster/Cockpit/Part) scale — not Body/Cover/EngineComp.
+    /// classic USC tokens (Wing/Engine/Thruster/Cockpit/Tail/Fin/Part) scale — not Body/Cover/EngineComp.
     /// </para>
     /// </summary>
     public class ChassisComponentStats
@@ -48,6 +48,11 @@ namespace TitanOrbit.Data
         public List<Transform> thrusterVfxTransforms = new List<Transform>();
         public List<Transform> cockpitTransforms = new List<Transform>();
         public List<Transform> wingTransforms = new List<Transform>();
+        /// <summary>
+        /// Tail + Fin mounts for RotationSpeed attribute mesh grow (shared Tail Part Profile).
+        /// Mass still uses separate <see cref="tailCount"/> / <see cref="finCount"/> buckets.
+        /// </summary>
+        public List<Transform> tailTransforms = new List<Transform>();
         public List<Transform> partTransforms = new List<Transform>();
 
         /// <summary>Sum of average local-scale factors across all engines — drives thrust VFX intensity.</summary>
@@ -396,18 +401,24 @@ namespace TitanOrbit.Data
 
             if (ShipFamilyPartTypes.IsTurn(type))
             {
-                if (!addToTotals)
-                    return;
-                // Fin keyword keeps separate mass bucket; both share Tail profile stats.
-                if (child.name.IndexOf("Fin", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                // --- Tail / Fin attribute-scale mounts ---
+                // [TITAN-ORBIT] Both share the Tail Part Profile (turnSpeed → RotationSpeed grow).
+                // Always collect transforms (like wings); mass totals only when addToTotals.
+                stats.tailTransforms.Add(child);
+
+                if (addToTotals)
                 {
-                    stats.finCount++;
-                    stats.finScaleTotal += scaleFactor;
-                }
-                else
-                {
-                    stats.tailCount++;
-                    stats.tailScaleTotal += scaleFactor;
+                    // Fin keyword keeps a separate mass bucket; both share Tail profile stats.
+                    if (child.name.IndexOf("Fin", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        stats.finCount++;
+                        stats.finScaleTotal += scaleFactor;
+                    }
+                    else
+                    {
+                        stats.tailCount++;
+                        stats.tailScaleTotal += scaleFactor;
+                    }
                 }
 
                 return;
@@ -546,12 +557,13 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Filters a transform list down to modules the pre–Part-Calc classifier would have scaled.
         /// ProfileSet maps EngineComp / CockpitCover / Tiny_Wing etc. into buckets for mass + VFX;
-        /// attribute mesh grow must stay on classic USC tokens (Wing, Engine, Thruster, Cockpit, Part)
-        /// or the whole ship swells on every ability upgrade.
+        /// attribute mesh grow must stay on classic USC tokens
+        /// (Wing, Engine, Thruster, Cockpit, Tail, Fin, Part) or the whole ship swells on every
+        /// ability upgrade.
         /// </summary>
         /// <param name="source">Transforms from <see cref="FromTransform"/> (may include ProfileSet extras).</param>
         /// <param name="familyPrefix">Family prefix used for USC <c>Family_Type_Index</c> parsing.</param>
-        /// <param name="legacyType">Expected old switch label: Wing, Engine, Thruster, Cockpit, or Part.</param>
+        /// <param name="legacyType">Expected old switch label: Wing, Engine, Thruster, Cockpit, Tail, Fin, or Part.</param>
         public static List<Transform> FilterLegacyAttributeScaleTransforms(
             List<Transform> source,
             string familyPrefix,
@@ -567,6 +579,27 @@ namespace TitanOrbit.Data
                 if (t == null)
                     continue;
                 if (!MatchesLegacyAttributeScaleType(t.name, familyPrefix, legacyType))
+                    continue;
+                result.Add(t);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Filters Tail + Fin USC tokens from <see cref="tailTransforms"/> into one list for
+        /// RotationSpeed attribute mesh grow (shared Tail Part Profile).
+        /// </summary>
+        public static List<Transform> FilterLegacyTailAttributeScaleTransforms(
+            List<Transform> source,
+            string familyPrefix)
+        {
+            var result = FilterLegacyAttributeScaleTransforms(source, familyPrefix, "Tail");
+            List<Transform> fins = FilterLegacyAttributeScaleTransforms(source, familyPrefix, "Fin");
+            for (int i = 0; i < fins.Count; i++)
+            {
+                Transform t = fins[i];
+                if (t == null || result.Contains(t))
                     continue;
                 result.Add(t);
             }
