@@ -72,7 +72,10 @@ namespace TitanOrbit.NetCode
             sharedTickRate.MaxSimulationStepsPerFrame = TitanOrbitServerTickRateSystem.ClientMaxStepsPerFrame;
             sharedTickRate.MaxSimulationStepBatchSize = 1;
             sharedTickRate.PredictedFixedStepSimulationTickRatio = 1;
-            sharedTickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.Sleep;
+            // [NETCODE] TargetFrameRateMode is a server pacing knob. Auto matches package defaults
+            // (BusyWait in Editor/client builds). Do not force Sleep — that fights SessionManager /
+            // CrossPlatformManager targetFrameRate and triggers NetcodeServerRateManager spam.
+            sharedTickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.Auto;
             state.EntityManager.SetComponentData(sharedTickEntity, sharedTickRate);
         }
     }

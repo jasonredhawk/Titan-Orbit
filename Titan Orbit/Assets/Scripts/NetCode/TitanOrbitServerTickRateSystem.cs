@@ -13,6 +13,11 @@ namespace TitanOrbit.NetCode
     /// basics34 dedicated GCE: clients were stuck at <c>cmdAge≈18–21</c> with <c>simBatchMax≈13</c>
     /// — headless needs MaxSteps≥4 so the server can hold 60 Hz under hitch without starving.
     /// </para>
+    /// <para>
+    /// Frame pacing uses <see cref="ClientServerTickRate.FrameRateMode.Auto"/> (Sleep on dedicated
+    /// server, BusyWait in Editor / host). Forcing Sleep in Editor Local Host caused constant
+    /// NetcodeServerRateManager warnings when a frame ran 2 catch-up steps.
+    /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(InitializationSystemGroup), OrderFirst = true)]
@@ -88,7 +93,11 @@ namespace TitanOrbit.NetCode
             tickRate.MaxSimulationStepsPerFrame = maxSteps;
             tickRate.MaxSimulationStepBatchSize = 1;
             tickRate.PredictedFixedStepSimulationTickRatio = 1;
-            tickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.Sleep;
+            // [NETCODE] Sleep expects exactly 1 sim step per frame and owns Application.targetFrameRate
+            // (NetcodeServerRateManager warns otherwise). Auto → Sleep on dedicated server builds,
+            // BusyWait in Editor / client+server (Local Host). Forcing Sleep here flooded the
+            // console whenever Editor dual-world frames slipped past 1/60s with MaxSteps=2.
+            tickRate.TargetFrameRateMode = ClientServerTickRate.FrameRateMode.Auto;
 
             state.EntityManager.SetComponentData(tickEntity, tickRate);
         }
