@@ -342,7 +342,11 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        /// <summary>True when map is loaded, team flow allows control, and a local ship position resolves.</summary>
+        /// <summary>
+        /// True when map is loaded, team flow allows control, and a local ship position resolves.
+        /// Used by <c>NceGameFlowController</c> to dismiss the semi-transparent
+        /// "Spawning your ship..." lobby overlay after Join Team.
+        /// </summary>
         public static bool HasLocalPlayerShip()
         {
             if (!IsMapLoadingComplete() || ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
@@ -358,6 +362,16 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] After Join Team, seed is set the Instantiates frame; ShipDisplayPose may
             // not publish until ShipVisualSync runs. Treat seed as "have a ship" so spawn-wait UI
             // does not stick on "Spawning your ship..." for that gap.
+            // HasOwnedShipSeed covers pending Instantiates that happened under suppress before
+            // Confirm flushed — promote via TryGetSeededShip once control is allowed.
+            if (LocalShipEntitySeed.HasOwnedShipSeed)
+            {
+                var seededWorld = ClientWorld;
+                if (seededWorld != null && seededWorld.IsCreated &&
+                    LocalShipEntitySeed.TryGetSeededShip(seededWorld.EntityManager, out _))
+                    return true;
+            }
+
             var client = ClientWorld;
             if (client != null && client.IsCreated)
             {
@@ -938,6 +952,11 @@ namespace TitanOrbit.Game
             if (!IsNetworkInGame())
                 return false;
 
+            // --- Keep join-gate mirror fresh every UI tick ---
+            // [TITAN-ORBIT] Settling exit uses MapProxyBuildReady; publish even before complete latches.
+            ClientJoinSettleCache.SetMapProxyBuildReady(
+                IsMapProxyCountReady(out _, out _, out _));
+
             // --- Done ---
             if (IsMapLoadingComplete())
             {
@@ -1035,10 +1054,13 @@ namespace TitanOrbit.Game
             }
 
             // --- Local host: meta RPC may not have latched yet — read ServerWorld singleton ---
+            // [TITAN-ORBIT] Only use LoadingTotalSteps after LoadingComplete so mid-gen / claim
+            // inflated N (e.g. 255 then 315) cannot latch a denominator proxies never reach.
             if (IsLocalHost() &&
                 ServerWorld != null && ServerWorld.IsCreated &&
                 ServerWorld.EntityManager.CreateEntityQuery(typeof(MapStateSingleton))
                     .TryGetSingleton<MapStateSingleton>(out var map) &&
+                map.LoadingComplete &&
                 map.LoadingTotalSteps > 0)
             {
                 s_LatchedLoadingTotalSteps = map.LoadingTotalSteps;
@@ -1695,43 +1717,34 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Remote clients: dismiss loading when Instantiates settle is done <b>and</b> enough
-        /// planet/asteroid GameObject proxies exist (meta N). The loading screen exists to absorb
-        /// that GO Instantiates cost — do not open Join Team while the visualizer is still building.
+        /// Remote clients: dismiss loading when enough planet/asteroid GameObject proxies exist
+        /// (meta N). Settling idle is <b>not</b> required — distance-importance Instantiates can
+        /// trickle forever and used to leave Join Team unreachable at 314/315.
         /// </summary>
         static bool TryGetReplicatedMapLoadComplete(World _)
         {
-            // --- Still Instantiating ECS ghosts ---
-            // [TITAN-ORBIT] Cover ClientJoinSettle so Join Team does not open mid Instantiates flood.
-            if (ClientJoinSettleCache.Settling)
-                return false;
-
-            // Prefer the latch set after the first Settling exit (blocks post-team re-settle quirks).
-            if (!ClientJoinSettleCache.JoinSettleCompleted &&
-                ClientJoinSettleCache.InGameFrames < TitanOrbitClientJoinTransformGateSystem.MinInGameFramesBeforeExit)
-                return false;
-
             // --- GO map build (safe Dictionary count — no asteroid ToEntityArray) ---
+            // [TITAN-ORBIT] Proxy-ready alone unlocks Join Team; Settling exit is paired via
+            // ClientJoinSettleCache.MapProxyBuildReady in the join gate.
             return TryGetMapProxyBuildComplete();
         }
 
         /// <summary>
         /// True when hybrid planet/asteroid proxies are near the server meta total.
         /// Uses <see cref="EcsWorldVisualizer.MapLoadingProxyCount"/> only — never scans ECS bodies.
+        /// <para>
+        /// [TITAN-ORBIT] Does <b>not</b> require Settling OFF. GhostSpawn can keep Instantiates
+        /// trickling after the GO map is ready; blocking on Settling hung Local Host / Relay at
+        /// N-1/N. Still never completes at 0 proxies (Crash!!! 2026-07-19).
+        /// </para>
         /// </summary>
         static bool TryGetMapProxyBuildComplete()
         {
-            // --- Do not finish while GhostSpawn Instantiates are still draining ---
-            if (ClientJoinSettleCache.Settling)
-                return false;
+            bool proxyReady = IsMapProxyCountReady(out int proxies, out int total, out int readyAt);
+            // --- Mirror for ECS join gate (cannot reference this Game assembly) ---
+            ClientJoinSettleCache.SetMapProxyBuildReady(proxyReady);
 
-            int total = ResolveMapLoadingDenominator();
-            if (total <= 0)
-                return false;
-
-            int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
-            int readyAt = Mathf.Max(1, Mathf.CeilToInt(total * MapProxyReadyRatio));
-            if (proxies >= readyAt)
+            if (proxyReady)
             {
                 s_ProxyPlateauSince = -1f;
                 return true;
@@ -1741,7 +1754,8 @@ namespace TitanOrbit.Game
             // Player.log 2026-07-19: plateau 0/768 → dismiss → TeamChoice → Crash!!!.
             // MapBodyHybridVisualInstantiateHook queues SpawnRequest per Instantiates so proxies
             // should climb. If they stay at 0, keep the loading screen (safer than crashing).
-            if (ClientJoinSettleCache.JoinSettleCompleted &&
+            if (total > 0 &&
+                ClientJoinSettleCache.JoinSettleCompleted &&
                 TitanOrbitJoinLoadCounters.InstantiatesSession >= readyAt &&
                 proxies == 0 &&
                 s_ProxyPlateauSince < 0f)
@@ -1750,10 +1764,67 @@ namespace TitanOrbit.Game
                 Debug.LogWarning(
                     "[MapLoad] Proxy count still 0/" + total +
                     " after Instantiates settle — keeping loading screen. " +
-                    "Check TO_GhostSpawn_v13 hook + MapBodyHybridVisualSpawnRequest drain.");
+                    "Check TO_GhostSpawn_v15 hook + MapBodyHybridVisualSpawnRequest drain.");
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Proxy / meta gate for Join Team (and Settling exit). Independent of Settling idle.
+        /// </summary>
+        /// <param name="proxies">Current planet+asteroid GameObject proxy count.</param>
+        /// <param name="total">Latched meta denominator (0 if unknown).</param>
+        /// <param name="readyAt">ceil(total * 0.92), or 0 when total is unknown.</param>
+        /// <returns>True when proxies &gt;= readyAt and min in-game frames have elapsed.</returns>
+        public static bool IsMapProxyCountReady(out int proxies, out int total, out int readyAt)
+        {
+            proxies = EcsWorldVisualizer.MapLoadingProxyCount;
+            total = ResolveMapLoadingDenominator();
+            readyAt = total > 0 ? Mathf.Max(1, Mathf.CeilToInt(total * MapProxyReadyRatio)) : 0;
+
+            if (total <= 0 || readyAt <= 0 || proxies < readyAt)
+                return false;
+
+            // --- Guard Local Host early complete before GhostSpawn has run ---
+            // [TITAN-ORBIT] Min frames blocks "meta N + stale static proxies" false complete.
+            // InstantiatesSession/proxies climbing already imply GhostSpawn started; min frames
+            // still required so Join Team does not flash before the settle window opens.
+            if (ClientJoinSettleCache.InGameFrames <
+                TitanOrbitClientJoinTransformGateSystem.MinInGameFramesBeforeExit)
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Short stuck-load hint for the loading status line (no ECS asteroid gathers).
+        /// Empty when progress is healthy or meta is not ready yet.
+        /// </summary>
+        public static string GetMapLoadStuckHint()
+        {
+            if (!IsNetworkInGame() || IsMapLoadingComplete())
+                return string.Empty;
+
+            // --- Snapshot counts (IsMapProxyCountReady always fills outs) ---
+            IsMapProxyCountReady(out int proxies, out int total, out int readyAt);
+
+            if (total <= 0)
+                return "waiting for map meta";
+
+            if (proxies <= 0 && TitanOrbitJoinLoadCounters.InstantiatesSession <= 0)
+                return "waiting for Instantiates";
+
+            if (proxies <= 0)
+                return "proxies=0 (SpawnRequest drain?)";
+
+            if (proxies < readyAt)
+                return $"proxies {proxies}/{readyAt} (settling={ClientJoinSettleCache.Settling})";
+
+            if (ClientJoinSettleCache.Settling)
+                return "proxy-ready, exiting settle";
+
+            return string.Empty;
         }
 
         /// <summary>Length of ghost-replicated map layout buffer on the client (0 until finalize).</summary>

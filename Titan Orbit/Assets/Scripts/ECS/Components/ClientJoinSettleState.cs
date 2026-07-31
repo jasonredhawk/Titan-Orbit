@@ -69,6 +69,23 @@ namespace TitanOrbit.ECS
         public static bool GhostSpawnBacklog { get; private set; }
 
         /// <summary>
+        /// [TITAN-ORBIT] True when hybrid planet/asteroid GameObject proxies have reached the
+        /// Join Team ready ratio (~92% of meta N). Published from Game
+        /// (<c>EcsGameBridge</c> / <c>EcsWorldVisualizer</c>) because the join-gate system lives
+        /// in TitanOrbit.ECS and cannot reference Game assemblies.
+        /// Used to exit Settling while GhostSpawn still trickles distance-importance Instantiates
+        /// — without this, loading hangs at N-1/N forever (314/315 class hang).
+        /// </summary>
+        public static bool MapProxyBuildReady { get; private set; }
+
+        /// <summary>
+        /// Publishes whether the map GO build is ready for Join Team / Settling exit.
+        /// Call from the visualizer or loading bridge each frame while in-game.
+        /// </summary>
+        /// <param name="ready">True when proxies &gt;= readyAt and min in-game guards pass.</param>
+        public static void SetMapProxyBuildReady(bool ready) => MapProxyBuildReady = ready;
+
+        /// <summary>
         /// [TITAN-ORBIT] True when ship <c>ToEntityArray</c> / <c>WithEntityAccess</c> must not run.
         /// Covers Settling, GhostSpawnBacklog (incl. post-ship hold), and a short post–TeamChoice
         /// hold while the ship Instantiates (Settling stays OFF after JoinSettleCompleted).
@@ -86,6 +103,24 @@ namespace TitanOrbit.ECS
             s_PostTeamChoiceHoldRemaining > 0 ||
             // [TITAN-ORBIT] Deferred Confirm keeps suppress on; also fold into the helper so
             // hand-rolled GhostSpawnBacklog-only checks are not the only line of defense.
+            ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending;
+
+        /// <summary>
+        /// [TITAN-ORBIT] True when client predicted ship <b>simulation</b> (input apply, motor drive,
+        /// mass/kinematics sync) must pause — the short Crash!!! windows only.
+        /// <para>
+        /// Unlike <see cref="ShouldSkipShipEntityQueries"/>, this does <b>not</b> stay true for the
+        /// whole distance-importance Instantiates trickle after JoinSettleCompleted. Gating drive on
+        /// GhostSpawnBacklog froze the local ship after the loading-complete fix (map Instantiates
+        /// keep the queue non-empty while proxies are already ≥92%).
+        /// </para>
+        /// Still covers: Settling, post–TeamChoice hold, deferred Confirm, post-ship Instantiates hold.
+        /// Keep using <see cref="ShouldSkipShipEntityQueries"/> for ship archetype gathers.
+        /// </summary>
+        public static bool ShouldSkipShipSimulation =>
+            Settling ||
+            s_PostTeamChoiceHoldRemaining > 0 ||
+            s_PostShipInstantiateHoldRemaining > 0 ||
             ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending;
 
         /// <summary>
@@ -243,6 +278,7 @@ namespace TitanOrbit.ECS
             InGameFrames = 0;
             JoinSettleCompleted = false;
             GhostSpawnBacklog = false;
+            MapProxyBuildReady = false;
             s_PostShipInstantiateHoldRemaining = 0;
             s_PostTeamChoiceHoldRemaining = 0;
             s_PostShipInstantiateHoldTickFrame = -1;

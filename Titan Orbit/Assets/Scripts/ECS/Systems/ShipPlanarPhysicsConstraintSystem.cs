@@ -22,9 +22,10 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
-            // [TITAN-ORBIT] Client: skip during Settling / GhostSpawnBacklog (post–Join Team
-            // Instantiates). Server always flattens. Gate with IsClient() for Local Host.
-            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            // [TITAN-ORBIT] Client: skip TeamChoice / ship Instantiates holds only
+            // (ShouldSkipShipSimulation). Map Instantiates backlog must not freeze planar lock.
+            // IsClient() — Local Host shares settle statics with the server world.
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
             foreach (var (transform, velocity, shipState) in SystemAPI

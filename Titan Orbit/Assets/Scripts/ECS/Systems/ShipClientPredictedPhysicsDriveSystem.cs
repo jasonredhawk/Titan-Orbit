@@ -39,12 +39,13 @@ namespace TitanOrbit.ECS
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            // --- Skip ship Burst drive during Instantiates windows ---
-            // [TITAN-ORBIT] This world is ClientSimulation only. After Join Team, Settling stays OFF
-            // but GhostSpawnBacklog covers ship Instantiates — ScheduleParallel over fresh ship
-            // archetypes in that window Crash!!!'d (Player.log 2026-07-22 TeamChoiceResult).
-            // Thrust waits a few frames; server authority continues.
-            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            // --- Skip ship Burst drive during TeamChoice / ship Instantiates holds only ---
+            // [TITAN-ORBIT] ScheduleParallel over fresh ship archetypes Crash!!!'d during TeamChoice
+            // Instantiates (Player.log 2026-07-22). That window is ShouldSkipShipSimulation
+            // (Settling / TeamChoice hold / deferred Confirm / post-ship hold).
+            // Do NOT gate on ShouldSkipShipEntityQueries — map Instantiates keep GhostSpawnBacklog
+            // true after proxy-ready Join Team and froze the local ship forever.
+            if (ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
             // --- Map size for toroidal orbit / shield math (same source as server) ---

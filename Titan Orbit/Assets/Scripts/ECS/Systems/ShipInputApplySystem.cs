@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using Unity.Entities;
 using Unity.NetCode;
 
@@ -33,12 +34,30 @@ namespace TitanOrbit.ECS
             if (!ShipPendingInput.HasValue)
                 return;
 
-            // [TITAN-ORBIT] TeamChoice Instantiates window — ship Query during GhostSpawnBacklog /
-            // pre-seed gap Crash!!! (Player.log 2026-07-23). Input stays in ShipPendingInput.
-            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            // [TITAN-ORBIT] TeamChoice / ship Instantiates hold only — not map Instantiates trickle.
+            // Gating on ShouldSkipShipEntityQueries froze thrust after Join Team while asteroids
+            // kept GhostSpawnBacklog true (loading-complete proxy-ready exit).
+            if (ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
             var cmd = ShipPendingInput.Latest;
+
+            // --- Map Instantiates trickle: write seeded hull only (no ship Query) ---
+            // [TITAN-ORBIT] ShouldSkipShipEntityQueries stays true while placeholders drain;
+            // Query/WithEntityAccess is still unsafe — SetComponentData on the known seed is OK.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            {
+                if (LocalShipEntitySeed.TryGetSeededShip(state.EntityManager, out var seeded) &&
+                    seeded != Entity.Null &&
+                    state.EntityManager.HasComponent<ShipInput>(seeded))
+                {
+                    state.EntityManager.SetComponentData(seeded, cmd);
+                    if (cmd.CycleBullet.IsSet)
+                        ShipPendingInput.ConsumeCycleBulletLatch();
+                }
+
+                return;
+            }
 
             // [NETCODE] GhostOwnerIsLocal — NetCode's tag for the connection-owned ghost.
             foreach (var input in SystemAPI.Query<RefRW<ShipInput>>().WithAll<ShipTag, GhostOwnerIsLocal>())

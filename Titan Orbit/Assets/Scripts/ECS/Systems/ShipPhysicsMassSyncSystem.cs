@@ -20,10 +20,10 @@ namespace TitanOrbit.ECS
     {
         public void OnUpdate(ref SystemState state)
         {
-            // [TITAN-ORBIT] Client: skip ship entity walks during Settling / GhostSpawnBacklog
-            // (TeamChoice Instantiates window — Settling OFF). Server always syncs. IsClient()
-            // required — Local Host shares ClientJoinSettleCache with the server world.
-            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            // [TITAN-ORBIT] Client: skip during TeamChoice / ship Instantiates holds only
+            // (ShouldSkipShipSimulation). Map Instantiates backlog must not freeze mass sync or
+            // thrust feels stuck after Join Team. IsClient() — Local Host shares settle statics.
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
             foreach (var (motor, shipState, physicsMass, collider) in SystemAPI

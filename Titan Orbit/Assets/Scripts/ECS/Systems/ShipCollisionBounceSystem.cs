@@ -57,8 +57,9 @@ namespace TitanOrbit.ECS
         {
             // --- Join-crash gate (client only) ---
             // [TITAN-ORBIT] ShipTag lookups during TeamChoice Instantiates Crash!!! —
-            // Settling OFF but GhostSpawnBacklog ON. Server always bounces.
-            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            // use ShouldSkipShipSimulation (not full GhostSpawnBacklog / map Instantiates trickle).
+            // Server always bounces.
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
             // --- Designer asteroid bounce tuning ---

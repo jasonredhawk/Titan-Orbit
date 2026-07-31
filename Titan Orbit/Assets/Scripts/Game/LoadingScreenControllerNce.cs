@@ -5,9 +5,11 @@ using UnityEngine.UI;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Full-screen join overlay. One progress bar that always crawls while the client is
-    /// in-game and map load is not complete, then fills to 100% and yields to Join Team.
-    /// Does not count GameObject proxies or asteroid entities (those paths Crash!!! on Windows).
+    /// Full-screen join overlay. One progress bar driven by
+    /// <see cref="EcsGameBridge.TryGetJoinLoadProgress"/> (planet/asteroid GameObject proxies vs
+    /// server meta N). After a few seconds without proxy-ready, appends a stuck hint
+    /// (Settling / Instantiates / SpawnRequest) so Local Host hangs are diagnosable in-UI.
+    /// Does not gather asteroid entities (Crash!!! on Windows).
     /// </summary>
     public class LoadingScreenControllerNce : MonoBehaviour
     {
@@ -51,6 +53,14 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Seconds without proxy-ready before appending a stuck hint to the status line.
+        /// </summary>
+        const float StuckHintAfterSeconds = 8f;
+
+        /// <summary>Realtime when the bar last looked healthy (or when shown).</summary>
+        float _stuckWatchSince = -1f;
+
+        /// <summary>
         /// Per-frame: fill from <see cref="EcsGameBridge.TryGetJoinLoadProgress"/>
         /// (planet/asteroid GameObject proxies vs server meta N).
         /// </summary>
@@ -66,10 +76,33 @@ namespace TitanOrbit.Game
 
             if (_statusText != null)
             {
+                string baseStatus;
                 if (EcsGameBridge.TryGetMapLoadingStepCounts(out int done, out int total) && total > 0)
-                    _statusText.text = "Loading map... " + done + " / " + total;
+                    baseStatus = "Loading map... " + done + " / " + total;
                 else
-                    _statusText.text = "Loading map...";
+                    baseStatus = "Loading map...";
+
+                // --- Stuck hint after a few seconds (Settling vs Instantiates vs drain) ---
+                // [TITAN-ORBIT] 314/315 with Settling ON looked like a hang with no explanation.
+                bool proxyReady = EcsGameBridge.IsMapProxyCountReady(out _, out _, out _);
+                if (proxyReady || progress >= 0.99f)
+                {
+                    _stuckWatchSince = -1f;
+                    _statusText.text = baseStatus;
+                }
+                else
+                {
+                    if (_stuckWatchSince < 0f)
+                        _stuckWatchSince = Time.realtimeSinceStartup;
+
+                    string hint = string.Empty;
+                    if (Time.realtimeSinceStartup - _stuckWatchSince >= StuckHintAfterSeconds)
+                        hint = EcsGameBridge.GetMapLoadStuckHint();
+
+                    _statusText.text = string.IsNullOrEmpty(hint)
+                        ? baseStatus
+                        : baseStatus + " — " + hint;
+                }
             }
 
             ApplyProgress(progress);
@@ -80,6 +113,7 @@ namespace TitanOrbit.Game
         {
             BuildUi();
             ApplyProgress(0f);
+            _stuckWatchSince = Time.realtimeSinceStartup;
             if (_statusText != null)
                 _statusText.text = "Loading map...";
             if (_panelRoot != null)

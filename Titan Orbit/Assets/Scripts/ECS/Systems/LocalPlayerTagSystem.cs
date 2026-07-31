@@ -10,6 +10,11 @@ namespace TitanOrbit.ECS
     /// input and presentation code can find "my ship" quickly. Matches ships via CommandTarget,
     /// GhostOwner network id, or GhostOwnerIsLocal. While team/rejoin flow suppresses control,
     /// actively strips any existing local tags so map-load orphans cannot keep the tag.
+    /// <para>
+    /// [TITAN-ORBIT] During <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> we only
+    /// tag the Instantiates-hook <see cref="LocalShipEntitySeed"/> entity — no ship gathers
+    /// (Player.log 2026-07-23 TeamChoice Crash!!!).
+    /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -38,27 +43,43 @@ namespace TitanOrbit.ECS
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
-            // --- Ship Instantiates / TeamChoice gap (before any ship ToEntityArray) ---
-            // [TITAN-ORBIT] Player.log 2026-07-23: TeamChoiceResult lifts suppress then ship
-            // gathers Crash!!!. ShouldSkipShipEntityQueries covers Settling, GhostSpawnBacklog
-            // (incl. post-ship hold), and the short ArmPostTeamChoiceHold Instantiates gap.
-            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
-            {
-                ecb.Dispose();
-                return;
-            }
-
             // --- Team / rejoin gate ---
             // [TITAN-ORBIT] Until TeamChoiceConfirmed, strip tags instead of early-return — a prior
             // frame may have tagged a GhostOwner orphan during join before Pending latched.
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
             {
-                var tagged = _taggedShipQuery.ToEntityArray(Allocator.Temp);
-                for (int i = 0; i < tagged.Length; i++)
-                    ecb.RemoveComponent<LocalPlayerShipTag>(tagged[i]);
-                tagged.Dispose();
+                // [TITAN-ORBIT] Tiny tagged-ship query only (not all ShipTag). Safe enough while
+                // suppress is on; we must not leave orphan LocalPlayerShipTag through map load.
+                if (!ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                {
+                    var tagged = _taggedShipQuery.ToEntityArray(Allocator.Temp);
+                    for (int i = 0; i < tagged.Length; i++)
+                        ecb.RemoveComponent<LocalPlayerShipTag>(tagged[i]);
+                    tagged.Dispose();
+                    ecb.Playback(state.EntityManager);
+                }
 
-                ecb.Playback(state.EntityManager);
+                ecb.Dispose();
+                return;
+            }
+
+            // --- Ship Instantiates / TeamChoice gap: tag from Instantiates-hook seed only ---
+            // [TITAN-ORBIT] Player.log 2026-07-23: TeamChoiceResult lifts suppress then ship
+            // gathers Crash!!!. ShouldSkipShipEntityQueries covers Settling, GhostSpawnBacklog
+            // (incl. post-ship hold), and the short ArmPostTeamChoiceHold Instantiates gap.
+            // One-entity seed path keeps HUD / HasLocalPlayerShip caches warm without ToEntityArray.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            {
+                if (LocalShipEntitySeed.TryGetSeededShip(state.EntityManager, out var seeded) &&
+                    seeded != Entity.Null &&
+                    state.EntityManager.Exists(seeded) &&
+                    state.EntityManager.HasComponent<ShipTag>(seeded) &&
+                    !state.EntityManager.HasComponent<LocalPlayerShipTag>(seeded))
+                {
+                    ecb.AddComponent<LocalPlayerShipTag>(seeded);
+                    ecb.Playback(state.EntityManager);
+                }
+
                 ecb.Dispose();
                 return;
             }

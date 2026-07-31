@@ -53,11 +53,11 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             // --- Join-crash gate (client only) ---
-            // [TITAN-ORBIT] Collision-event ComponentLookup on ShipTag still touches ship
-            // archetypes. During TeamChoice Instantiates Settling is OFF but GhostSpawnBacklog
-            // is ON — ungated ship lookups Crash!!! (Player.log 2026-07-19 / 07-22).
-            // Server always applies friction. Skip a few client frames; prediction resumes after.
-            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            // [TITAN-ORBIT] Collision-event ComponentLookup on ShipTag during TeamChoice
+            // Instantiates Crash!!! (Player.log 2026-07-19 / 07-22). Gate with
+            // ShouldSkipShipSimulation — not map Instantiates GhostSpawnBacklog — so friction
+            // resumes after Join Team while asteroids still stream. Server always applies.
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
             // --- Designer slider ---

@@ -124,7 +124,11 @@ namespace Unity.NetCode
         // v7 requeue without map registration had the same baseline failure mode.
         // v13 = v12 + OnDelayedGhostInstantiate hook for map-body hybrid SpawnRequest (no asteroid scan).
         // v14 = v13 + prefer priority Instantiates (gems) among ready delayed ghosts — still 1/frame.
-        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v14_gemPriorityInstantiate";
+        // v15 = v14 + Instantiates predicted queue (ships) BEFORE interpolated (asteroids/planets/gems).
+        //       v14 priority only reordered within one queue; interpolated-first left Join Team ships
+        //       stuck behind 1/frame asteroid Instantiates → "Spawning your ship..." forever while
+        //       the server ship already received people transports (~50% when map stream still busy).
+        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v15_predictedBeforeInterpolated";
 
         // Touched in OnCreate so the linker cannot strip the marker.
         static char s_PatchIdTouch;
@@ -298,6 +302,10 @@ namespace Unity.NetCode
             // (ComputeWorldSpaceLocalToWorldJob) on Windows late-join with ~500 asteroids.
             // Keep Instantiates at 1/frame (join Crash!!! if raised). Prefer priority ghosts (gems)
             // among those already ready so destroy bursts are not stuck behind asteroid Instantiates.
+            // TITAN-ORBIT v15: drain PREDICTED before INTERPOLATED. Ships are predicted; asteroids/
+            // planets/gems are interpolated. When both queues have ready ghosts, interpolated-first
+            // (v14) spent every Instantiates slot on map bodies and left Join Team on
+            // "Spawning your ship..." while the server hull already ran people transports.
             const int k_MaxDelayedInstantiatesPerFrame = 1;
             int delayedInstantiatesThisFrame = 0;
             int successfulInstantiatesThisFrame = 0;
@@ -305,9 +313,9 @@ namespace Unity.NetCode
             if (delayedInstantiatesThisFrame < k_MaxDelayedInstantiatesPerFrame &&
                 TryInstantiateOnePreferPriority(
                     ref state,
-                    m_DelayedInterpolatedGhostSpawnQueue,
-                    interpolationTargetTick,
-                    GhostSpawnBuffer.Type.Interpolated,
+                    m_DelayedPredictedGhostSpawnQueue,
+                    predictionTargetTick,
+                    GhostSpawnBuffer.Type.Predicted,
                     prefabs,
                     ghostCollectionSingleton,
                     spawnedGhosts,
@@ -319,9 +327,9 @@ namespace Unity.NetCode
             if (delayedInstantiatesThisFrame < k_MaxDelayedInstantiatesPerFrame &&
                 TryInstantiateOnePreferPriority(
                     ref state,
-                    m_DelayedPredictedGhostSpawnQueue,
-                    predictionTargetTick,
-                    GhostSpawnBuffer.Type.Predicted,
+                    m_DelayedInterpolatedGhostSpawnQueue,
+                    interpolationTargetTick,
+                    GhostSpawnBuffer.Type.Interpolated,
                     prefabs,
                     ghostCollectionSingleton,
                     spawnedGhosts,

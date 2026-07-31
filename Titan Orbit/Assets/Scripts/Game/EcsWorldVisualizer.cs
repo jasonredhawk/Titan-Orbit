@@ -250,16 +250,36 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Zeros published loading / world-body proxy numerators.
-        /// Call on Play Mode enter and when leaving <c>NetworkStreamInGame</c>.
+        /// Zeros published loading / world-body proxy numerators <b>and</b> the Active instance
+        /// caches. Call on Play Mode enter and when leaving <c>NetworkStreamInGame</c>.
+        /// <para>
+        /// [TITAN-ORBIT] Without clearing <c>_mapLoadingProxyCountCached</c>, the next
+        /// <see cref="SyncAllProxies"/> republished a stale numerator across Play without Domain
+        /// Reload (false complete or wrong bar).
+        /// </para>
         /// </summary>
         public static void ResetLoadingProxyCounts()
         {
+            // --- Instance caches first (may still be Active this frame) ---
+            if (Active != null)
+                Active.ResetInstanceLoadingCounts();
+
             MapLoadingProxyCount = 0;
             WorldBodyProxyCount = 0;
             LocalPlayerShipVisualRoot = null;
             Active = null;
             s_GlobalVisualSyncFrame = -1;
+            ClientJoinSettleCache.SetMapProxyBuildReady(false);
+        }
+
+        /// <summary>
+        /// Zeros this visualizer's incremental proxy counters without destroying GameObjects.
+        /// Used on session reset / second Play so static publish cannot lie.
+        /// </summary>
+        void ResetInstanceLoadingCounts()
+        {
+            _mapLoadingProxyCountCached = 0;
+            _worldBodyProxyCountCached = 0;
         }
 
         /// <summary>Composite key for planet proxy rebuild — any field change forces new visual.</summary>
@@ -347,8 +367,15 @@ namespace TitanOrbit.Game
         void OnDisable()
         {
             Application.onBeforeRender -= OnBeforeRenderSync;
+            // --- Drop instance numerator so second Play cannot republish a stale cache ---
+            ResetInstanceLoadingCounts();
             if (Active == this)
+            {
                 Active = null;
+                MapLoadingProxyCount = 0;
+                WorldBodyProxyCount = 0;
+                ClientJoinSettleCache.SetMapProxyBuildReady(false);
+            }
 
             // Force full asteroid tint recompute next enable (viewer team / graph may change).
             _lastAsteroidTintGraphRevision = int.MinValue;
@@ -663,6 +690,11 @@ namespace TitanOrbit.Game
             WorldBodyProxyCount = _worldBodyProxyCountCached;
             MapLoadingProxyCount = _mapLoadingProxyCountCached;
 
+            // --- Join-gate mirror (ECS cannot reference Game) ---
+            // [TITAN-ORBIT] Publish after drain so Settling can exit on proxy-ready the next frame
+            // without waiting for GhostSpawn idle (314/315 hang).
+            ClientJoinSettleCache.SetMapProxyBuildReady(
+                EcsGameBridge.IsMapProxyCountReady(out _, out _, out _));
         }
 
         /// <summary>

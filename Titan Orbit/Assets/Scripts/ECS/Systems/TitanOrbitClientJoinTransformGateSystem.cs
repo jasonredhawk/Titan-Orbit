@@ -12,6 +12,11 @@ namespace TitanOrbit.ECS
     /// So while NetworkStreamInGame, TransformSystemGroup stays <b>OFF</b>. Ships render via hybrid
     /// GameObject proxies when <see cref="ClientJoinSettleCache.TransformQuarantine"/> is true.
     /// </para>
+    /// <para>
+    /// Settling also exits when <see cref="ClientJoinSettleCache.MapProxyBuildReady"/> (hybrid GO
+    /// proxies ≥ ~92% of meta N). Waiting for GhostSpawn idle forever left Join Team stuck at
+    /// 314/315 while distance-importance Instantiates trickled.
+    /// </para>
     /// World: ClientSimulation. Group: InitializationSystemGroup.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
@@ -92,16 +97,25 @@ namespace TitanOrbit.ECS
             // declare settle complete mid-stream (distance importance still trickles ghosts).
             int idleNeeded = IdleFramesRequired * 2;
 
-            // --- Exit only after Instantiates were seen (or hard timeout) ---
+            // --- Exit after Instantiates were seen + idle, OR map GO build ready, OR hard timeout ---
             // [TITAN-ORBIT] Editor Local Host previously exited Settling at MinInGameFrames with
             // spawnBuf=0 / placeholders=0 (SawSpawnActivity never set). Meta already showed N
             // (e.g. 248) so the loading bar froze at 0/N while Instantiates had not started yet.
             // Keep Settling ON until GhostSpawn actually creates placeholders/Instantiates, then
             // idle-clear — unless HardTimeoutFrames elapses (map stream truly stuck).
+            //
+            // MapProxyBuildReady: Game publishes when planet/asteroid GOs ≥ ~92% of meta N.
+            // Distance-importance Instantiates can keep placeholders non-empty forever — idle-clear
+            // alone left Join Team unreachable at 314/315. Proxy-ready exits Settling safely;
+            // TransformQuarantine stays on; GhostSpawnBacklog still tracks live queue.
+            bool proxyBuildReady = ClientJoinSettleCache.MapProxyBuildReady;
             bool canExit = hardTimeout ||
                            (minTime &&
                             settle.SawSpawnActivity != 0 &&
-                            settle.IdleClearFrames >= idleNeeded);
+                            settle.IdleClearFrames >= idleNeeded) ||
+                           (minTime &&
+                            settle.SawSpawnActivity != 0 &&
+                            proxyBuildReady);
 
             // --- Settling policy ---
             // [TITAN-ORBIT] Initial join: Settling while Instantiates backlog drains.
@@ -115,8 +129,8 @@ namespace TitanOrbit.ECS
             else
             {
                 shouldSettle = !canExit;
-                // Latch only when Instantiates were observed (or hard-timeout escape).
-                if (!shouldSettle && (settle.SawSpawnActivity != 0 || hardTimeout))
+                // Latch only when Instantiates were observed, proxy-ready, or hard-timeout escape.
+                if (!shouldSettle && (settle.SawSpawnActivity != 0 || hardTimeout || proxyBuildReady))
                     settle.JoinSettleCompleted = 1;
             }
 
@@ -152,6 +166,7 @@ namespace TitanOrbit.ECS
                         settle.InGameFrames + " idleClear=" + settle.IdleClearFrames +
                         " sawSpawn=" + settle.SawSpawnActivity +
                         " joinSettleCompleted=" + settle.JoinSettleCompleted +
+                        " proxyReady=" + proxyBuildReady +
                         (hardTimeout ? " (hard timeout)" : string.Empty));
                 }
             }

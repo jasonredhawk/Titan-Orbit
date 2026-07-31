@@ -35,8 +35,9 @@ namespace TitanOrbit.ECS
         {
             // --- Join-crash gate (client only) ---
             // [TITAN-ORBIT] Ship entity walks during TeamChoice Instantiates Crash!!! —
-            // Settling OFF but GhostSpawnBacklog ON. Server always snapshots.
-            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            // ShouldSkipShipSimulation covers that window; map Instantiates backlog must not
+            // freeze pre-collision snapshots. Server always snapshots.
+            if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipShipSimulation)
                 return;
 
             foreach (var (velocity, snapshot, shipState) in SystemAPI

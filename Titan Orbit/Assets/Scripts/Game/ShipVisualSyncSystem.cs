@@ -348,9 +348,11 @@ namespace TitanOrbit.Game
             // --- Gated lookup / Join Team UI — never thrash tiles ---
             // [TITAN-ORBIT] Backlog: gem Instantiates after asteroid destroy. Suppress: map visible
             // before TeamChoiceConfirmed. Both used to call ResetSession every frame (Editor.log).
-            if (ClientJoinSettleCache.GhostSpawnBacklog ||
-                ClientTeamFlowState.ShouldSuppressLocalPlayerControl() ||
-                ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending)
+            // Prefer ShouldSkipShipEntityQueries (includes post–TeamChoice hold + deferred Confirm)
+            // over GhostSpawnBacklog alone — a stale backlog=false during the hold used to start the
+            // despawn debounce and Clear() the Instantiates-hook seed before Confirm flushed.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries ||
+                ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
             {
                 _missingShipFrames = 0;
                 return;
