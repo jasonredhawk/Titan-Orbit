@@ -17,6 +17,12 @@ namespace TitanOrbit.Game
     /// written only on first-time predicting ticks so NetCode resim / triangle-edge noise cannot
     /// blink engine scale every frame.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Scaling thruster mounts also parents jet flame prefabs from
+    /// <see cref="ShipPropulsionVisualApplier"/>. After a territory step we call
+    /// <see cref="ShipPropulsionVisualApplier.ForceRefreshEmission"/> so flames re-<c>Play()</c>
+    /// without the player releasing thrust.
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(95)]
     public class ShipComponentAttributeScaleApplier : MonoBehaviour
@@ -38,6 +44,12 @@ namespace TitanOrbit.Game
 
         ShipAttributeUpgradeState _lastApplied;
         float _lastTerritoryMult = -1f;
+
+        /// <summary>
+        /// Cached propulsion applier on the same hull proxy. Null until first territory/upgrade apply
+        /// that needs a VFX refresh after mount scale.
+        /// </summary>
+        ShipPropulsionVisualApplier _propulsionVisual;
 
         /// <summary>Links to ship entity, caches chassis transform groups, applies initial scale.</summary>
         public void Bind(Entity shipEntity, string familyPrefix, ShipFamilyDefinition family)
@@ -128,6 +140,11 @@ namespace TitanOrbit.Game
             if (!force && attrsSame && territorySame)
                 return;
 
+            // --- Did territory (or first bind) actually step? ---
+            // [TITAN-ORBIT] Only this path rescales thruster mounts that parent jet particles.
+            // Upgrade-only applies can also move mounts, so refresh whenever we Apply.
+            bool territoryStepped = !territorySame;
+
             _lastApplied = attrs;
             _lastTerritoryMult = territoryMult;
             ShipComponentAttributeScaleLogic.Apply(
@@ -140,6 +157,27 @@ namespace TitanOrbit.Game
                 _part,
                 _hasWeaponComponentEnergy,
                 territoryMult);
+
+            // --- Keep thruster jets alive after mount scale ---
+            // [HYBRID] Propulsion LateUpdate (order 100) also self-heals stuck ParticleSystems;
+            // ForceRefresh makes the next pass skip its "unchanged" early-out immediately.
+            if (territoryStepped || force)
+                NotifyPropulsionAfterMountScale();
+        }
+
+        /// <summary>
+        /// Asks the sibling propulsion applier to re-apply emission after we mutated thruster/engine mounts.
+        /// Safe when propulsion is missing (proxy without jets).
+        /// </summary>
+        void NotifyPropulsionAfterMountScale()
+        {
+            // --- Lazy cache (same GameObject as this applier) ---
+            // [UNITY] GetComponent once — Bind/RebuildCache can run before propulsion Bind attaches.
+            if (_propulsionVisual == null)
+                _propulsionVisual = GetComponent<ShipPropulsionVisualApplier>();
+
+            if (_propulsionVisual != null)
+                _propulsionVisual.ForceRefreshEmission();
         }
 
         void LateUpdate() => TryApplyAttributeScale();

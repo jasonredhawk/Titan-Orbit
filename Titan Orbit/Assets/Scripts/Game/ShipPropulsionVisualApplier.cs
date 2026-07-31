@@ -28,8 +28,15 @@ namespace TitanOrbit.Game
     /// <see cref="ShipInputApplySystem"/> skips copying pending input onto the ghost, so
     /// <see cref="ShipInput.Thrust"/> can read false mid-grind. Pending input stays true — use it.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Friendly territory triangles grow thruster mounts via
+    /// <see cref="ShipComponentAttributeScaleApplier"/> (execution order 95). Parent scale changes
+    /// can stop Sci-Fi Arsenal <c>ParticleSystem</c>s even while thrust stays held. This applier
+    /// runs at order 100 (after scale) and re-<c>Play()</c>s stuck jets without requiring a
+    /// release/re-click of the thrust button.
+    /// </para>
     /// </summary>
-    [DefaultExecutionOrder(90)]
+    [DefaultExecutionOrder(100)]
     public class ShipPropulsionVisualApplier : MonoBehaviour
     {
         /// <summary>
@@ -93,6 +100,12 @@ namespace TitanOrbit.Game
         bool _lastEngineMoving;
         bool _lastThrusterActive;
         float _thrusterVfxBlend;
+
+        /// <summary>
+        /// Set by <see cref="ForceRefreshEmission"/> after thruster mount scale (territory triangle).
+        /// Next LateUpdate hard-restarts particle systems even if <c>isPlaying</c> still reads true.
+        /// </summary>
+        bool _forceRestartPending;
 
         /// <summary>
         /// Builds default VFX settings with a jet-flame bank for color-matched thrusters.
@@ -195,6 +208,7 @@ namespace TitanOrbit.Game
             _lastEngineMoving = false;
             _lastThrusterActive = false;
             _thrusterVfxBlend = 0f;
+            _forceRestartPending = false;
 
             // --- Find Engine_* / VFX-enabled thruster mounts on the hybrid hull ---
             // [TITAN-ORBIT] thrusterVfxTransforms = enablePropulsionVfx only
@@ -252,8 +266,26 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Forces emission / Play to re-apply on the next LateUpdate even when thrust state looks unchanged.
+        /// Called by <see cref="ShipComponentAttributeScaleApplier"/> after territory triangle enter/exit
+        /// rescales thruster mounts (parent scale can stop particle systems mid-flight).
+        /// </summary>
+        public void ForceRefreshEmission()
+        {
+            // --- Invalidate cached on/off so LateUpdate cannot early-out ---
+            // [TITAN-ORBIT] Flip latches so they never match the next real engine/thruster booleans.
+            _lastEngineMoving = !_lastEngineMoving;
+            _lastThrusterActive = !_lastThrusterActive;
+            // --- Hard restart on next apply ---
+            // Parent scale can leave ModularJetFlame with isPlaying==true but no visible emission.
+            _forceRestartPending = true;
+        }
+
+        /// <summary>
         /// Each frame: read held thrust (and optional coast speed) and drive particle emission / scale.
-        /// Runs after ship proxy transforms have been synced for the frame.
+        /// Runs after ship proxy transforms have been synced for the frame, and after
+        /// <see cref="ShipComponentAttributeScaleApplier"/> (order 95) so territory mount scale
+        /// cannot leave jets stopped for a full frame.
         /// </summary>
         void LateUpdate()
         {
@@ -308,15 +340,52 @@ namespace TitanOrbit.Game
             _thrusterVfxBlend = Mathf.MoveTowards(_thrusterVfxBlend, targetThrusterBlend, transitionSpeed * Time.deltaTime);
             bool thrusterTransitionActive = Mathf.Abs(_thrusterVfxBlend - targetThrusterBlend) > 0.0001f;
 
-            // --- Skip particle writes when nothing changed ---
-            if (engineActive == _lastEngineMoving && showThrusters == _lastThrusterActive && !thrusterTransitionActive)
+            // --- Stuck particles while input still held ---
+            // [TITAN-ORBIT] Territory AttributeScale (or any parent transform mutate) can stop
+            // ModularJetFlame ParticleSystems without clearing ShipPendingInput.Thrust. The old
+            // early-out trusted _lastThrusterActive alone → flames stayed dark until re-click.
+            bool thrusterVfxNeedsRestart =
+                _forceRestartPending ||
+                (showThrusters && AnyParticleStopped(_thrusterParticleSystems));
+            bool engineVfxNeedsRestart =
+                _forceRestartPending ||
+                (engineActive && AnyParticleStopped(_engineParticleSystems));
+
+            // --- Skip particle writes when nothing changed and jets are healthy ---
+            if (engineActive == _lastEngineMoving &&
+                showThrusters == _lastThrusterActive &&
+                !thrusterTransitionActive &&
+                !thrusterVfxNeedsRestart &&
+                !engineVfxNeedsRestart)
                 return;
 
             _lastEngineMoving = engineActive;
             _lastThrusterActive = showThrusters;
+            _forceRestartPending = false;
 
-            SetEngineVfxActive(engineActive, engineActive ? EngineEmissionRate : 0f);
-            SetThrusterVfxBlend(_thrusterVfxBlend);
+            // [TITAN-ORBIT] forceRestart clears + Play when territory scale (or similar) killed jets
+            // while isPlaying may still read true on some Sci-Fi Arsenal setups.
+            SetEngineVfxActive(engineActive, engineActive ? EngineEmissionRate : 0f, engineVfxNeedsRestart);
+            SetThrusterVfxBlend(_thrusterVfxBlend, thrusterVfxNeedsRestart);
+        }
+
+        /// <summary>
+        /// True when any listed particle system should be emitting but <c>isPlaying</c> is false.
+        /// Used to recover from parent-scale kills without a thrust button edge.
+        /// </summary>
+        /// <param name="systems">Cached engine or thruster particle systems on this proxy.</param>
+        /// <returns>True if at least one non-null system is not playing.</returns>
+        static bool AnyParticleStopped(List<ParticleSystem> systems)
+        {
+            for (int i = 0; i < systems.Count; i++)
+            {
+                ParticleSystem ps = systems[i];
+                // [UNITY] Destroyed systems leave null entries after ClearVfx / hull rebuild.
+                if (ps != null && !ps.isPlaying)
+                    return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -347,7 +416,15 @@ namespace TitanOrbit.Game
             return false;
         }
 
-        void SetEngineVfxActive(bool active, float emissionRate)
+        /// <summary>
+        /// Enables or disables engine jet instances and sets emission rate.
+        /// </summary>
+        /// <param name="active">True while coasting or thrusting (engine glow path).</param>
+        /// <param name="emissionRate">Particles per second when active; 0 when off.</param>
+        /// <param name="forceRestart">
+        /// When true, Stop+Clear+Play so a parent-scale kill cannot leave a zombie isPlaying state.
+        /// </param>
+        void SetEngineVfxActive(bool active, float emissionRate, bool forceRestart = false)
         {
             for (int i = 0; i < _engineVfxInstances.Count; i++)
             {
@@ -365,12 +442,24 @@ namespace TitanOrbit.Game
                 var emission = ps.emission;
                 emission.enabled = true;
                 emission.rateOverTime = emissionRate;
-                if (active && !ps.isPlaying)
+                // --- Play / restart ---
+                // [UNITY] Play() alone is enough when isPlaying is false. forceRestart handles
+                // territory mount scale leaving systems "playing" but emitting nothing.
+                if (active && forceRestart)
+                    RestartParticleSystem(ps);
+                else if (active && !ps.isPlaying)
                     ps.Play();
             }
         }
 
-        void SetThrusterVfxBlend(float blend)
+        /// <summary>
+        /// Drives thruster jet local scale and emission from the 0–1 blend (idle → full thrust).
+        /// </summary>
+        /// <param name="blend">Current cosmetic blend toward held thrust (1 = full jets).</param>
+        /// <param name="forceRestart">
+        /// When true, hard-restart particle systems after thruster mount scale changes.
+        /// </param>
+        void SetThrusterVfxBlend(float blend, bool forceRestart = false)
         {
             float idle = Mathf.Clamp01(_settings.thrusterVfxIdleScale);
             float scaleLerp = Mathf.Lerp(idle, 1f, blend);
@@ -399,9 +488,24 @@ namespace TitanOrbit.Game
                 var emission = ps.emission;
                 emission.enabled = true;
                 emission.rateOverTime = ThrusterEmissionRate * blend;
-                if (blend > 0.001f && !ps.isPlaying)
+                // --- Play / restart while blend is lit ---
+                if (blend > 0.001f && forceRestart)
+                    RestartParticleSystem(ps);
+                else if (blend > 0.001f && !ps.isPlaying)
                     ps.Play();
             }
+        }
+
+        /// <summary>
+        /// Hard-restarts a particle system so emission resumes after parent transform scale changes.
+        /// </summary>
+        /// <param name="ps">Non-null particle system on a jet instance.</param>
+        static void RestartParticleSystem(ParticleSystem ps)
+        {
+            // [UNITY] StopEmittingAndClear drops in-flight particles; Play starts a clean cycle.
+            // [TITAN-ORBIT] Needed when AttributeScale grows thruster mounts inside a territory triangle.
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            ps.Play();
         }
 
         /// <summary>Picks thruster prefab by color name embedded in transform name (e.g. "Thruster_Red").</summary>
