@@ -226,7 +226,13 @@ namespace TitanOrbit.Data
             if (string.IsNullOrEmpty(componentId)) return false;
             string id = componentId.TrimStart();
             if (id.StartsWith("Weapon", StringComparison.OrdinalIgnoreCase)) return true;
-            return ContainsIsolatedKeyword(id, "weapon");
+            if (ContainsIsolatedKeyword(id, "weapon")
+                || ContainsIsolatedKeyword(id, "gun")
+                || ContainsIsolatedKeyword(id, "cannon")
+                || ContainsIsolatedKeyword(id, "missile"))
+                return true;
+            string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
+            return ShipFamilyPartTypes.IsWeapon(partType);
         }
 
         public static bool IsThrusterComponent(string componentId)
@@ -254,8 +260,7 @@ namespace TitanOrbit.Data
             if (IsThrusterComponent(componentId) || IsEngineComponent(componentId))
                 return true;
             string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
-            return string.Equals(partType, "Engine", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(partType, "Thruster", StringComparison.OrdinalIgnoreCase);
+            return ShipFamilyPartTypes.IsPropulsion(partType);
         }
 
         static bool ContainsIsolatedKeyword(string s, string keyword)

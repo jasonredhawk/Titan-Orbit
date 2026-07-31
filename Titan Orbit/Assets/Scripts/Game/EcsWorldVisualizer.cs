@@ -1842,7 +1842,7 @@ namespace TitanOrbit.Game
                 familyPrefix = resolved.familyId;
             }
 
-            propulsionVisual.Bind(entity, familyPrefix, propulsionVfxSettings);
+            propulsionVisual.Bind(entity, familyPrefix, propulsionVfxSettings, bindFamily);
 
             var attributeScaleVisual = go.GetComponent<ShipComponentAttributeScaleApplier>();
             if (attributeScaleVisual == null)

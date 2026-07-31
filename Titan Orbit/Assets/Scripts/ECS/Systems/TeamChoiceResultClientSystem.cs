@@ -41,6 +41,18 @@ namespace TitanOrbit.ECS
         [BurstDiscard]
         static void LogResult(TeamChoiceResultRpc rpc)
         {
+            // --- Duplicate / Local Host already applied ---
+            // [TITAN-ORBIT] Local Host applies ClientTeamFlowState from TeamManagementSystem
+            // (no RPC). A late SendRpc must not re-Arm or ClearTeamPickRequest.
+            if (ClientTeamFlowState.TeamChoiceConfirmed
+                || ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending)
+            {
+                UnityEngine.Debug.Log(
+                    $"[TeamChoiceResult] Ignored duplicate (already confirmed/pending) " +
+                    $"networkId={rpc.NetworkId} success={rpc.Success}.");
+                return;
+            }
+
             if (rpc.Success != 0)
             {
                 // [TITAN-ORBIT] Arm ship-query hold, then DEFER Confirm until that hold expires.

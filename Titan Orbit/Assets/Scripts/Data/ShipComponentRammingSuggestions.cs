@@ -80,6 +80,26 @@ namespace TitanOrbit.Data
         /// <summary>Min seconds between grind damage pulses per asteroid contact (0.25 = 4 pulses/sec).</summary>
         public const float GrindPulseIntervalSeconds = 0.25f;
 
+        /// <summary>Ramming power at version 1 (cockpit) for Scan / ProfileSet seeds.</summary>
+        public const float RammingPowerV1 = 1f;
+
+        /// <summary>Ramming power added per version tier when scanning family assets.</summary>
+        public const float RammingPowerPerVersion = 0.12f;
+
+        /// <summary>Per-level ramming power as a fraction of base when scanning family assets.</summary>
+        public const float RammingPerLevelFractionOfBase = 0.25f;
+
+        /// <summary>Suggested cockpit rammingPower for Scan / ProfileSet at a version tier.</summary>
+        public static float GetSuggestedRammingPower(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return RammingPowerV1 + (v - 1) * RammingPowerPerVersion;
+        }
+
+        /// <summary>Suggested rammingPowerPerLevel for Scan / ProfileSet.</summary>
+        public static float GetSuggestedRammingPowerPerLevel(int version) =>
+            Mathf.Max(0f, Mathf.RoundToInt(GetSuggestedRammingPower(version) * RammingPerLevelFractionOfBase));
+
         /// <summary>
         /// Converts summed family-component <c>rammingPower</c> (from ShipFamilyDefinition entries,
         /// level-scaled via <c>ShipStatApplyLogic</c> → <c>ShipMotorConfig.RammingPower</c>) into a

@@ -71,8 +71,24 @@ namespace TitanOrbit.Data
         [Header("Default Stat Fallbacks")]
         public ShipComponentAbilityStats defaultFallbackStats;
 
+        [Header("Family Special Bonuses")]
+        [Tooltip("Multipliers applied after component sum. Identity = all 1s. This is how families differ from shared part profiles.")]
+        public ShipFamilySpecialBonuses specialBonuses = ShipFamilySpecialBonuses.Identity;
+
         [Header("Bullets")]
         public int bulletPrefabIndex = 0;
+
+        [Header("Menu Preview Camera")]
+        [Tooltip("Field of view for theatrical (3/4 hero) menu preview renders.")]
+        [Range(20f, 55f)]
+        public float menuPreviewTheatricalFieldOfView = 35f;
+
+        [Tooltip("Bounds padding multiplier when framing menu preview cameras (top-down and theatrical).")]
+        [Min(1f)]
+        public float menuPreviewBoundsPadding = 1.15f;
+
+        [Tooltip("Solid clear color behind menu preview renders (alpha usually 0 for transparent PNGs).")]
+        public Color menuPreviewBackgroundColor = new Color(0f, 0f, 0f, 0f);
 
         [Header("Components")]
         public List<ShipFamilyComponentEntry> components = new List<ShipFamilyComponentEntry>();
@@ -83,9 +99,20 @@ namespace TitanOrbit.Data
         [Header("Team Materials")]
         public List<ShipFamilyTeamMaterialSet> teamMaterials = new List<ShipFamilyTeamMaterialSet>();
 
+        [Header("Upgrade Card Deck (optional)")]
+        [Tooltip("Optional authored card deck. When null, runtime uses procedural defaults.")]
+        public CardDeckDefinition upgradeCardDeck;
+
+        [Header("Mass (editor)")]
+        [Tooltip("Sum of average localScale across chassis parts — used by editor mass tools.")]
+        public float TotalComponentMass;
+
         [NonSerialized] bool _lookupBuilt;
         [NonSerialized] readonly Dictionary<string, ShipComponentAbilityStats> _lookup = new Dictionary<string, ShipComponentAbilityStats>(StringComparer.OrdinalIgnoreCase);
         [NonSerialized] List<CardData> _runtimeProceduralCards;
+
+        /// <summary>Default hull mass scale matching legacy Starship HUD (component mass × 0.7).</summary>
+        public const float DefaultHullMassScale = 0.7f;
 
         /// <summary>
         /// Returns authored fallback stats, or the global baseline when the asset field is all zero.
@@ -106,6 +133,86 @@ namespace TitanOrbit.Data
             return ShipComponentAbilityStatsMath.WithZeroStatFallbacks(summedStats, GetEffectiveDefaultFallbackStats());
         }
 
+        /// <summary>Applies <see cref="specialBonuses"/> multipliers (identity when unset).</summary>
+        public ShipComponentAbilityStats ApplySpecialBonuses(ShipComponentAbilityStats summedStats)
+        {
+            return specialBonuses.Apply(summedStats);
+        }
+
+        /// <summary>Resets <see cref="defaultFallbackStats"/> to the global baseline.</summary>
+        public void ResetDefaultFallbackStatsToBaseline()
+        {
+            defaultFallbackStats = ShipFamilyDefaultFallbackStats.CreateBaseline();
+            InvalidateComponentStatsLookup();
+        }
+
+        /// <summary>Resets family special bonuses to 1× identity.</summary>
+        public void ResetSpecialBonusesToIdentity()
+        {
+            specialBonuses = ShipFamilySpecialBonuses.Identity;
+        }
+
+        /// <summary>
+        /// Zeroes disallowed ability fields per Stat Categories × part type.
+        /// Called from editor OnValidate and after Scan / Populate.
+        /// </summary>
+        public void EnforceComponentStatCategories()
+        {
+            if (components == null)
+                return;
+
+            for (int i = 0; i < components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = components[i];
+                if (entry == null)
+                    continue;
+                entry.EnsureStatCategories();
+                if (entry.statCategories.Count == 0)
+                    entry.statCategories = ShipFamilyComponentPartKey.InferDefaultStatCategories(entry.componentId);
+                entry.stats = ShipComponentAbilityStats.KeepOnlyAuthoringFields(
+                    entry.stats,
+                    entry.statCategories,
+                    entry.componentId);
+            }
+
+            InvalidateComponentStatsLookup();
+        }
+
+        /// <summary>Component mass from a chassis prefab hierarchy (average localScale sum).</summary>
+        public float ComputeComponentMassFromPrefab(GameObject prefab)
+        {
+            if (prefab == null)
+                return 0f;
+            string prefix = !string.IsNullOrWhiteSpace(familyId)
+                ? familyId.Trim()
+                : prefab.name;
+            return ChassisComponentStats.ComputeComponentMassFromTransform(prefab.transform, prefix);
+        }
+
+        /// <summary>HUD-style hull mass at level 1 with empty cargo.</summary>
+        public float ComputeHudHullMassFromPrefab(GameObject prefab) =>
+            Mathf.Max(0.5f, ComputeComponentMassFromPrefab(prefab) * DefaultHullMassScale);
+
+        /// <summary>HUD hull mass from the cached <see cref="TotalComponentMass"/>.</summary>
+        public float ComputeHudHullMassFromTotal() =>
+            Mathf.Max(0.5f, TotalComponentMass * DefaultHullMassScale);
+
+        /// <summary>Recomputes <see cref="TotalComponentMass"/> from the first upgrade-tree prefab with a hull.</summary>
+        public void RecalculateTotalComponentMass()
+        {
+            TotalComponentMass = 0f;
+            if (upgradeTree == null)
+                return;
+            for (int i = 0; i < upgradeTree.Count; i++)
+            {
+                var tier = upgradeTree[i];
+                if (tier?.prefab == null)
+                    continue;
+                TotalComponentMass = ComputeComponentMassFromPrefab(tier.prefab);
+                return;
+            }
+        }
+
         /// <summary>Team-tinted hull materials for visual proxies, or null when none are configured.</summary>
         public List<Material> GetMaterialsForTeam(TeamId team)
         {
@@ -124,9 +231,11 @@ namespace TitanOrbit.Data
             return null;
         }
 
-        /// <summary>Procedural card deck keyed to this family (lazy-created at first access).</summary>
+        /// <summary>Authored upgrade card deck when assigned; otherwise a procedural deck for this family.</summary>
         public IReadOnlyList<CardData> GetUpgradeCards()
         {
+            if (upgradeCardDeck != null && upgradeCardDeck.cards != null && upgradeCardDeck.cards.Count > 0)
+                return upgradeCardDeck.cards;
             return _runtimeProceduralCards ??= CardDeckRuntimeDefaults.CreateProceduralDeck(familyId);
         }
 
@@ -364,6 +473,17 @@ namespace TitanOrbit.Data
 #if UNITY_EDITOR
         void OnValidate()
         {
+            // Fresh serialized specialBonuses are all 0 — show 1× in the Inspector (Apply already treats 0 as 1).
+            if (specialBonuses.moveSpeedMul == 0f
+                && specialBonuses.accelerationMul == 0f
+                && specialBonuses.firePowerMul == 0f
+                && specialBonuses.maxGemsMul == 0f
+                && specialBonuses.healthCapMul == 0f)
+            {
+                specialBonuses = ShipFamilySpecialBonuses.Identity;
+            }
+
+            EnforceComponentStatCategories();
             InvalidateComponentStatsLookup();
             InvalidateGlobalMaxUpgradeTreeTurnSpeedCache();
             _runtimeProceduralCards = null;
@@ -380,10 +500,46 @@ namespace TitanOrbit.Data
         public GameObject prefab;
         public Sprite menuPreviewSprite;
         public List<ShipFamilyTeamMenuPreview> teamMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>();
+        public Sprite theatricalMenuPreviewSprite;
+        public List<ShipFamilyTeamMenuPreview> teamTheatricalMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>();
         public int minHomePlanetLevel = 1;
         public float powerScore;
+        public float powerScoreAtMaxLevel;
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
+        public float componentMass;
         public bool lockedInUpgradeTree;
+
+        /// <summary>Top-down menu sprite, preferring a team tint when available.</summary>
+        public Sprite GetMenuPreviewSprite(TeamManager.Team team = TeamManager.Team.None)
+        {
+            if (team != TeamManager.Team.None && teamMenuPreviewSprites != null)
+            {
+                for (int i = 0; i < teamMenuPreviewSprites.Count; i++)
+                {
+                    var entry = teamMenuPreviewSprites[i];
+                    if (entry != null && entry.team == team && entry.sprite != null)
+                        return entry.sprite;
+                }
+            }
+
+            return menuPreviewSprite;
+        }
+
+        /// <summary>Theatrical menu sprite, preferring a team tint when available.</summary>
+        public Sprite GetTheatricalMenuPreviewSprite(TeamManager.Team team = TeamManager.Team.None)
+        {
+            if (team != TeamManager.Team.None && teamTheatricalMenuPreviewSprites != null)
+            {
+                for (int i = 0; i < teamTheatricalMenuPreviewSprites.Count; i++)
+                {
+                    var entry = teamTheatricalMenuPreviewSprites[i];
+                    if (entry != null && entry.team == team && entry.sprite != null)
+                        return entry.sprite;
+                }
+            }
+
+            return theatricalMenuPreviewSprite != null ? theatricalMenuPreviewSprite : GetMenuPreviewSprite(team);
+        }
     }
 
     /// <summary>Team-specific menu sprite override for a chassis tier.</summary>

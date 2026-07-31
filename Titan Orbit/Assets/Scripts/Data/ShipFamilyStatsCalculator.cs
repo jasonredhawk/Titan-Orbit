@@ -194,7 +194,11 @@ namespace TitanOrbit.Data
                 result.MatchedComponentIds,
                 result.PerComponentStats);
             if (family != null)
+            {
                 result.TotalStats = family.ApplyStatFallbacks(result.TotalStats);
+                // [TITAN-ORBIT] Per-family special bonuses after aggregation + fallbacks.
+                result.TotalStats = family.ApplySpecialBonuses(result.TotalStats);
+            }
         }
 
         /// <summary>Maps a baked <see cref="ShipFamilyPowerScoreBreakdown"/> back into ability-stat fields.</summary>

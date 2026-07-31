@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace TitanOrbit.Data
@@ -40,6 +41,46 @@ namespace TitanOrbit.Data
         public bool HasDisplayStats => DisplayTotal > 0.01f;
 
         public float GetDisplayTotalForUi() => HasDisplayStats ? DisplayTotal : Total;
+
+        /// <summary>
+        /// Canonical total power score for upgrade-tree ordering.
+        /// Prefer display total when set; else legacy category total.
+        /// </summary>
+        public float GetUpgradeTreeSortPowerScore() =>
+            HasDisplayStats ? DisplayTotal : Total;
+
+        /// <summary>Compares two breakdowns for ascending total power score.</summary>
+        public static int CompareForUpgradeTreeSort(
+            ShipFamilyPowerScoreBreakdown a,
+            ShipFamilyPowerScoreBreakdown b)
+        {
+            int cmp = a.GetUpgradeTreeSortPowerScore().CompareTo(b.GetUpgradeTreeSortPowerScore());
+            if (cmp != 0)
+                return cmp;
+            return a.GetDisplayTotalForUi().CompareTo(b.GetDisplayTotalForUi());
+        }
+
+        /// <summary>Max attribute upgrades for a tier = minHomePlanetLevel.</summary>
+        public static int GetMaxUpgradeCountForTier(int minHomePlanetLevel) =>
+            Mathf.Max(0, minHomePlanetLevel);
+
+        /// <summary>Inflates summed stats by per-level × upgrade count (max-level preview).</summary>
+        public static ShipComponentAbilityStats ApplyMaxEffectiveLevels(ShipComponentAbilityStats stats, int upgradeCount)
+        {
+            stats.firePower += stats.firePowerPerLevel * upgradeCount;
+            stats.fireRate += stats.fireRatePerLevel * upgradeCount;
+            stats.rammingPower += stats.rammingPowerPerLevel * upgradeCount;
+            stats.healthCap += stats.healthCapPerLevel * upgradeCount;
+            stats.healthRegen += stats.healthRegenPerLevel * upgradeCount;
+            stats.energyCap += stats.energyCapPerLevel * upgradeCount;
+            stats.energyRegen += stats.energyRegenPerLevel * upgradeCount;
+            stats.moveSpeed += stats.moveSpeedPerLevel * upgradeCount;
+            stats.accelerationCap += stats.accelerationCapPerLevel * upgradeCount;
+            stats.turnSpeed += stats.turnSpeedPerLevel * upgradeCount;
+            stats.maxGems += stats.maxGemsPerLevel * upgradeCount;
+            stats.maxPeople += stats.maxPeoplePerLevel * upgradeCount;
+            return stats;
+        }
 
         /// <summary>Stat value for one bar segment (0–9); falls back to half-category split when display stats are unset.</summary>
         public float GetDisplayStatValue(int statIndex)
@@ -113,7 +154,12 @@ namespace TitanOrbit.Data
                 moveSpeed = s.moveSpeed,
                 turnSpeed = s.turnSpeed,
                 gemCap = s.maxGems,
-                peopleCap = s.maxPeople
+                peopleCap = s.maxPeople,
+                offense = s.firePower + s.bulletSpeed + s.fireRate + s.rammingPower,
+                defense = s.healthCap + s.healthRegen,
+                energy = s.energyCap + s.energyRegen,
+                mobility = s.moveSpeed + s.turnSpeed + s.accelerationCap,
+                capacity = s.maxGems + s.maxPeople
             };
         }
     }

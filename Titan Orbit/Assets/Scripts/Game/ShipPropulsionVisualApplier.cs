@@ -80,11 +80,13 @@ namespace TitanOrbit.Game
 
         Entity _shipEntity;
         string _familyPrefix = "AstroEagle";
+        ShipFamilyDefinition _family;
         Settings _settings;
         bool _initialized;
 
         readonly List<GameObject> _engineVfxInstances = new List<GameObject>();
         readonly List<GameObject> _thrusterVfxInstances = new List<GameObject>();
+        readonly List<float> _thrusterMountScales = new List<float>();
         readonly List<ParticleSystem> _engineParticleSystems = new List<ParticleSystem>();
         readonly List<ParticleSystem> _thrusterParticleSystems = new List<ParticleSystem>();
 
@@ -159,12 +161,18 @@ namespace TitanOrbit.Game
         /// <param name="shipEntity">ECS ship ghost this proxy follows.</param>
         /// <param name="familyPrefix">Chassis family name for mount parsing (e.g. AstroEagle).</param>
         /// <param name="settings">Flame prefabs and blend knobs from the visualizer.</param>
-        public void Bind(Entity shipEntity, string familyPrefix, Settings settings)
+        /// <param name="family">Optional family for baked per-mount VFX flags/scales.</param>
+        public void Bind(
+            Entity shipEntity,
+            string familyPrefix,
+            Settings settings,
+            ShipFamilyDefinition family = null)
         {
             // --- Cache binding ---
             _shipEntity = shipEntity;
             if (!string.IsNullOrWhiteSpace(familyPrefix))
                 _familyPrefix = familyPrefix.Trim();
+            _family = family;
 
             if (settings.thrusterJetFlameBank == null)
                 settings.thrusterJetFlameBank = new List<ThrusterVfxColorPrefab>();
@@ -183,12 +191,16 @@ namespace TitanOrbit.Game
         void RebuildVfx()
         {
             ClearVfxInstances();
+            _thrusterMountScales.Clear();
             _lastEngineMoving = false;
             _lastThrusterActive = false;
             _thrusterVfxBlend = 0f;
 
-            // --- Find Engine_* / Thruster_* mounts on the hybrid hull ---
-            var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix);
+            // --- Find Engine_* / VFX-enabled thruster mounts on the hybrid hull ---
+            // [TITAN-ORBIT] thrusterVfxTransforms = enablePropulsionVfx only
+            // (Thrusters_Big / Tiny_Thrusters yes; Thruster_Place / Cover no).
+            // thrusterTransforms is the attribute-scale group (includes covers) — not used for particles.
+            var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix, _family);
 
             // --- Engine mounts (main rear jets on AstroEagle-style hulls) ---
             if (_settings.engineVfxPrefab != null)
@@ -211,8 +223,9 @@ namespace TitanOrbit.Game
 
             if (_settings.HasAnyThrusterPrefab)
             {
-                foreach (Transform t in stats.thrusterTransforms)
+                for (int i = 0; i < stats.thrusterVfxTransforms.Count; i++)
                 {
+                    Transform t = stats.thrusterVfxTransforms[i];
                     if (t == null)
                         continue;
 
@@ -220,12 +233,17 @@ namespace TitanOrbit.Game
                     if (prefab == null)
                         continue;
 
+                    float mountScale = 1f;
+                    if (stats.thrusterVfxScales != null && i < stats.thrusterVfxScales.Count)
+                        mountScale = Mathf.Max(0.01f, stats.thrusterVfxScales[i]);
+
                     GameObject go = Instantiate(prefab, t);
                     go.transform.localPosition = _settings.thrusterVfxLocalOffset;
                     go.transform.localRotation = Quaternion.Euler(_settings.thrusterVfxLocalEuler);
-                    go.transform.localScale = Vector3.one * Mathf.Clamp01(_settings.thrusterVfxIdleScale);
+                    go.transform.localScale = Vector3.one * (Mathf.Clamp01(_settings.thrusterVfxIdleScale) * mountScale);
                     VfxUrpCompat.PrepareVfxInstance(go);
                     _thrusterVfxInstances.Add(go);
+                    _thrusterMountScales.Add(mountScale);
                     CollectParticleSystems(go, _thrusterParticleSystems);
                 }
             }
@@ -354,7 +372,8 @@ namespace TitanOrbit.Game
 
         void SetThrusterVfxBlend(float blend)
         {
-            float scaleLerp = Mathf.Lerp(Mathf.Clamp01(_settings.thrusterVfxIdleScale), 1f, blend);
+            float idle = Mathf.Clamp01(_settings.thrusterVfxIdleScale);
+            float scaleLerp = Mathf.Lerp(idle, 1f, blend);
 
             for (int i = 0; i < _thrusterVfxInstances.Count; i++)
             {
@@ -362,8 +381,11 @@ namespace TitanOrbit.Game
                 if (go == null)
                     continue;
 
-                go.transform.localScale = Vector3.one * scaleLerp;
-                bool visible = scaleLerp > 0.0005f;
+                // [TITAN-ORBIT] Per-mount scale from ProfileSet (Big / Tiny) × idle→thrust blend.
+                float mountScale = i < _thrusterMountScales.Count ? _thrusterMountScales[i] : 1f;
+                float finalScale = scaleLerp * Mathf.Max(0.01f, mountScale);
+                go.transform.localScale = Vector3.one * finalScale;
+                bool visible = finalScale > 0.0005f;
                 if (go.activeSelf != visible)
                     go.SetActive(visible);
             }

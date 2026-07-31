@@ -331,5 +331,37 @@ namespace TitanOrbit.Data
             float fireRate = Mathf.Max(0.01f, weaponStats.fireRate + weaponStats.fireRatePerLevel * Mathf.Max(0, firePowerUpgrades));
             return firePower * fireRate;
         }
+
+        /// <summary>
+        /// After Scan / Populate, rebalance Energy stats on weapon components from fire power + rate.
+        /// Cannons: cap ≈ one max Fire Power attribute shot. Bullets: short burst. Regen always
+        /// slower than sustained drain. Called from the ShipFamilyDefinition editor.
+        /// </summary>
+        public static void BalanceWeaponEnergyForComponents(List<ShipFamilyComponentEntry> components)
+        {
+            if (components == null)
+                return;
+
+            for (int i = 0; i < components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+                if (!ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
+                    continue;
+
+                ShipComponentAbilityStats stats = entry.stats;
+                string partType = ShipFamilyPartTypes.Normalize(
+                    ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(entry.componentId),
+                    entry.componentId);
+
+                if (string.Equals(partType, ShipFamilyPartTypes.WeaponCannon, System.StringComparison.OrdinalIgnoreCase))
+                    ShipComponentWeaponSuggestions.ApplyCannonBalancedEnergy(ref stats);
+                else
+                    ShipComponentWeaponSuggestions.ApplyBulletBalancedEnergy(ref stats);
+
+                entry.stats = stats;
+            }
+        }
     }
 }

@@ -31,7 +31,16 @@ namespace TitanOrbit.Data
         /// <summary>Cockpit transforms treated as forward-firing cannons for VFX.</summary>
         public List<Transform> cockpitCannonTransforms = new List<Transform>();
         public List<Transform> engineTransforms = new List<Transform>();
+        /// <summary>
+        /// All Thruster-group meshes for attribute upgrade grow (includes covers/plates/holders).
+        /// Not the same as <see cref="thrusterVfxTransforms"/> (jet particle mounts only).
+        /// </summary>
         public List<Transform> thrusterTransforms = new List<Transform>();
+        /// <summary>
+        /// Mounts that spawn propulsion jet particles (<c>enablePropulsionVfx</c> only).
+        /// Parallel to <see cref="thrusterVfxScales"/>.
+        /// </summary>
+        public List<Transform> thrusterVfxTransforms = new List<Transform>();
         public List<Transform> cockpitTransforms = new List<Transform>();
         public List<Transform> wingTransforms = new List<Transform>();
         public List<Transform> partTransforms = new List<Transform>();
@@ -69,22 +78,35 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Scans <paramref name="root"/> prefab hierarchy for USC-named children. Two-pass collection:
-        /// direct children contribute to counts/totals; recursive pass fills transform lists for VFX.
+        /// Per-mount propulsion VFX scale parallel to <see cref="thrusterVfxTransforms"/>
+        /// (from ProfileSet / family component bake). Defaults to 1 when unset.
+        /// </summary>
+        public List<float> thrusterVfxScales = new List<float>();
+
+        /// <summary>
+        /// Scans <paramref name="root"/> prefab hierarchy for USC-named children.
+        /// Direct children contribute to counts/totals; recursive pass fills transform lists;
+        /// thruster attribute-scale group is all partType Thruster; VFX mounts are separate.
         /// </summary>
         /// <param name="familyPrefix">Leading token before underscore, e.g. AstroEagle in AstroEagle_Engine_2.</param>
-        public static ChassisComponentStats FromTransform(Transform root, string familyPrefix = "AstroEagle")
+        /// <param name="family">Optional family for baked VFX flags; when null, uses ProfileSet / heuristics.</param>
+        public static ChassisComponentStats FromTransform(
+            Transform root,
+            string familyPrefix = "AstroEagle",
+            ShipFamilyDefinition family = null)
         {
             var stats = new ChassisComponentStats();
             if (root == null)
                 return stats;
 
             // --- Pass 1: direct children only → authoritative counts and scale totals ---
-            CollectComponentTransformsDirectOnly(root, stats, familyPrefix);
+            CollectComponentTransformsDirectOnly(root, stats, familyPrefix, family);
             // --- Pass 2: all descendants → transform lists without double-counting direct children ---
-            CollectComponentTransformsRecursive(root, stats, familyPrefix, addToTotals: false, rootForSkip: root);
+            CollectComponentTransformsRecursive(root, stats, familyPrefix, addToTotals: false, rootForSkip: root, family: family);
             // --- Pass 3: any transform whose name contains "Weapon" ---
             CollectWeaponTransformsRecursive(root, stats.weaponTransforms, stats.weaponScales);
+            // --- Pass 4: jet particle mounts only (does not clear thrusterTransforms scale group) ---
+            CollectPropulsionVfxMounts(root, stats, familyPrefix, family);
             return stats;
         }
 
@@ -118,7 +140,11 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>Inspects only immediate children of <paramref name="root"/> — populates counts and scale totals.</summary>
-        static void CollectComponentTransformsDirectOnly(Transform root, ChassisComponentStats stats, string familyPrefix)
+        static void CollectComponentTransformsDirectOnly(
+            Transform root,
+            ChassisComponentStats stats,
+            string familyPrefix,
+            ShipFamilyDefinition family)
         {
             if (root == null || stats == null)
                 return;
@@ -129,53 +155,12 @@ namespace TitanOrbit.Data
                 if (child == null)
                     continue;
 
-                string componentType = ParseComponentType(child.name, familyPrefix);
-                if (string.IsNullOrEmpty(componentType))
-                    componentType = ParseComponentTypeBySubstring(child.name);
+                string componentType = ResolveCanonicalPartType(child.name, familyPrefix);
                 if (string.IsNullOrEmpty(componentType))
                     continue;
 
                 float scaleFactor = GetScaleFactor(child);
-                switch (componentType)
-                {
-                    case "Engine":
-                        stats.engineCount++;
-                        stats.engineScaleTotal += scaleFactor;
-                        stats.engineScaleMax = Mathf.Max(stats.engineScaleMax, scaleFactor);
-                        stats.engineTransforms.Add(child);
-                        break;
-                    case "Thruster":
-                        stats.thrusterCount++;
-                        stats.thrusterScaleTotal += scaleFactor;
-                        stats.thrusterTransforms.Add(child);
-                        break;
-                    case "Wing":
-                        stats.wingCount++;
-                        stats.wingScaleTotal += scaleFactor;
-                        stats.wingTransforms.Add(child);
-                        break;
-                    case "Tail":
-                        stats.tailCount++;
-                        stats.tailScaleTotal += scaleFactor;
-                        break;
-                    case "Fin":
-                        stats.finCount++;
-                        stats.finScaleTotal += scaleFactor;
-                        break;
-                    case "Cockpit":
-                        stats.cockpitCount++;
-                        stats.cockpitScaleTotal += scaleFactor;
-                        stats.cockpitTransforms.Add(child);
-                        stats.cockpitCannonCount++;
-                        stats.cockpitCannonScaleTotal += scaleFactor;
-                        stats.cockpitCannonTransforms.Add(child);
-                        break;
-                    case "Part":
-                        stats.partCount++;
-                        stats.partScaleTotal += scaleFactor;
-                        stats.partTransforms.Add(child);
-                        break;
-                }
+                AddComponentByCanonicalType(child, componentType, scaleFactor, stats, addToTotals: true);
             }
         }
 
@@ -188,7 +173,8 @@ namespace TitanOrbit.Data
             ChassisComponentStats stats,
             string familyPrefix,
             bool addToTotals,
-            Transform rootForSkip = null)
+            Transform rootForSkip = null,
+            ShipFamilyDefinition family = null)
         {
             if (parent == null || stats == null)
                 return;
@@ -202,9 +188,7 @@ namespace TitanOrbit.Data
                 if (child == null)
                     continue;
 
-                string componentType = ParseComponentType(child.name, familyPrefix);
-                if (string.IsNullOrEmpty(componentType))
-                    componentType = ParseComponentTypeBySubstring(child.name);
+                string componentType = ResolveCanonicalPartType(child.name, familyPrefix);
 
                 if (!string.IsNullOrEmpty(componentType))
                 {
@@ -212,71 +196,248 @@ namespace TitanOrbit.Data
                     if (!skipAdd)
                     {
                         float scaleFactor = GetScaleFactor(child);
-                        if (addToTotals)
-                        {
-                            switch (componentType)
-                            {
-                                case "Engine":
-                                    stats.engineCount++;
-                                    stats.engineScaleTotal += scaleFactor;
-                                    stats.engineScaleMax = Mathf.Max(stats.engineScaleMax, scaleFactor);
-                                    stats.engineTransforms.Add(child);
-                                    break;
-                                case "Thruster":
-                                    stats.thrusterCount++;
-                                    stats.thrusterScaleTotal += scaleFactor;
-                                    stats.thrusterTransforms.Add(child);
-                                    break;
-                                case "Wing":
-                                    stats.wingCount++;
-                                    stats.wingScaleTotal += scaleFactor;
-                                    stats.wingTransforms.Add(child);
-                                    break;
-                                case "Tail":
-                                    stats.tailCount++;
-                                    stats.tailScaleTotal += scaleFactor;
-                                    break;
-                                case "Fin":
-                                    stats.finCount++;
-                                    stats.finScaleTotal += scaleFactor;
-                                    break;
-                                case "Cockpit":
-                                    stats.cockpitCount++;
-                                    stats.cockpitScaleTotal += scaleFactor;
-                                    stats.cockpitTransforms.Add(child);
-                                    stats.cockpitCannonCount++;
-                                    stats.cockpitCannonScaleTotal += scaleFactor;
-                                    stats.cockpitCannonTransforms.Add(child);
-                                    break;
-                                case "Part":
-                                    stats.partCount++;
-                                    stats.partScaleTotal += scaleFactor;
-                                    stats.partTransforms.Add(child);
-                                    break;
-                            }
-                        }
-                        else
-                        {
-                            switch (componentType)
-                            {
-                                case "Engine": stats.engineTransforms.Add(child); break;
-                                case "Thruster": stats.thrusterTransforms.Add(child); break;
-                                case "Wing": stats.wingTransforms.Add(child); break;
-                                case "Cockpit":
-                                    stats.cockpitTransforms.Add(child);
-                                    stats.cockpitCannonTransforms.Add(child);
-                                    break;
-                                case "Part": stats.partTransforms.Add(child); break;
-                            }
-                        }
+                        AddComponentByCanonicalType(child, componentType, scaleFactor, stats, addToTotals);
                     }
 
-                    CollectComponentTransformsRecursive(child, stats, familyPrefix, addToTotals, rootForSkip);
+                    CollectComponentTransformsRecursive(child, stats, familyPrefix, addToTotals, rootForSkip, family);
                     continue;
                 }
 
-                CollectComponentTransformsRecursive(child, stats, familyPrefix, addToTotals, rootForSkip);
+                CollectComponentTransformsRecursive(child, stats, familyPrefix, addToTotals, rootForSkip, family);
             }
+        }
+
+        /// <summary>
+        /// Fills <see cref="thrusterVfxTransforms"/> / <see cref="thrusterVfxScales"/> only.
+        /// Does <b>not</b> clear <see cref="thrusterTransforms"/> — covers stay in the scale group
+        /// while Place / Cover mounts stay dark for particles.
+        /// </summary>
+        static void CollectPropulsionVfxMounts(
+            Transform root,
+            ChassisComponentStats stats,
+            string familyPrefix,
+            ShipFamilyDefinition family)
+        {
+            if (root == null || stats == null)
+                return;
+
+            stats.thrusterVfxTransforms.Clear();
+            stats.thrusterVfxScales.Clear();
+
+            var profileSet = ShipFamilyPartCalcProfileSet.LoadShared();
+            var transforms = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                Transform t = transforms[i];
+                if (t == null || t == root)
+                    continue;
+
+                if (!TryGetComponentIdFromName(t.name, familyPrefix, out string componentId))
+                    continue;
+
+                float scale = 1f;
+                bool enable = false;
+
+                // Prefer baked family entry (populated by Scan).
+                if (family != null && family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry)
+                    && entry != null)
+                {
+                    enable = entry.enablePropulsionVfx;
+                    scale = entry.propulsionVfxScale > 0.0001f ? entry.propulsionVfxScale : 1f;
+                }
+                else if (profileSet != null)
+                {
+                    enable = profileSet.ShouldEnablePropulsionVfx(componentId, out scale);
+                }
+                else
+                {
+                    // Last resort: Engine/Thrust mounts that look like thrusters, not cosmetics.
+                    string type = ResolveCanonicalPartType(t.name, familyPrefix, profileSet);
+                    enable = ShipFamilyPartTypes.IsPropulsion(type)
+                        && IsThrusterLikeComponentId(componentId)
+                        && !ShipFamilyPartCalcProfileSet.IsCosmeticPartName(componentId);
+                }
+
+                if (!enable)
+                    continue;
+
+                stats.thrusterVfxTransforms.Add(t);
+                stats.thrusterVfxScales.Add(scale);
+            }
+        }
+
+        /// <summary>Resolves Family_Rest → Rest component id (strips Unity <c>(N)</c> duplicate suffix).</summary>
+        static bool TryGetComponentIdFromName(string name, string familyPrefix, out string componentId)
+        {
+            componentId = string.Empty;
+            if (string.IsNullOrEmpty(name))
+                return false;
+
+            // [UNITY] Hierarchy duplicates append " (1)" — strip so ids match ProfileSet keys.
+            string cleaned = name.Trim();
+            int paren = cleaned.LastIndexOf(" (", System.StringComparison.Ordinal);
+            if (paren > 0 && cleaned.EndsWith(")", System.StringComparison.Ordinal))
+                cleaned = cleaned.Substring(0, paren).Trim();
+
+            string normalized = ShipFamilyDefinition.NormalizeComponentId(cleaned);
+            if (!string.IsNullOrEmpty(familyPrefix)
+                && normalized.StartsWith(familyPrefix + "_", System.StringComparison.OrdinalIgnoreCase))
+            {
+                componentId = normalized.Substring(familyPrefix.Length + 1);
+                // Strip _L / _R symmetry suffixes for lookup consistency with Discover.
+                if (componentId.EndsWith("_L", System.StringComparison.OrdinalIgnoreCase)
+                    || componentId.EndsWith("_R", System.StringComparison.OrdinalIgnoreCase))
+                    componentId = componentId.Substring(0, componentId.Length - 2);
+                return !string.IsNullOrWhiteSpace(componentId);
+            }
+
+            // No prefix — use full normalized name as id.
+            componentId = normalized;
+            return !string.IsNullOrWhiteSpace(componentId);
+        }
+
+        /// <summary>
+        /// Canonical part type for counting (Thrusters_Big → Thruster via ProfileSet / alias).
+        /// </summary>
+        static string ResolveCanonicalPartType(string name, string familyPrefix) =>
+            ResolveCanonicalPartType(name, familyPrefix, ShipFamilyPartCalcProfileSet.LoadShared());
+
+        /// <summary>
+        /// Canonical part type for counting. ProfileSet mapping wins so Thruster Cover stays Thruster.
+        /// </summary>
+        static string ResolveCanonicalPartType(
+            string name,
+            string familyPrefix,
+            ShipFamilyPartCalcProfileSet profileSet)
+        {
+            if (TryGetComponentIdFromName(name, familyPrefix, out string componentId))
+            {
+                if (profileSet != null)
+                {
+                    string fromSet = profileSet.ResolvePartType(componentId);
+                    if (!string.IsNullOrEmpty(fromSet)
+                        && !string.Equals(fromSet, ShipFamilyPartTypes.Unmapped, System.StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(fromSet, ShipFamilyPartTypes.Ignore, System.StringComparison.OrdinalIgnoreCase))
+                        return ShipFamilyPartTypes.Normalize(fromSet, componentId);
+                }
+
+                string fromAbility = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
+                if (!string.IsNullOrEmpty(fromAbility))
+                    return ShipFamilyPartTypes.Normalize(fromAbility, componentId);
+            }
+
+            string parsed = ParseComponentType(name, familyPrefix);
+            if (string.IsNullOrEmpty(parsed))
+                parsed = ParseComponentTypeBySubstring(name);
+            if (string.IsNullOrEmpty(parsed))
+                return null;
+
+            return ShipFamilyPartTypes.Normalize(parsed, name);
+        }
+
+        /// <summary>
+        /// Buckets a chassis child into engine vs thruster scale lists, wing, cockpit, tail/fin mass, or hull.
+        /// </summary>
+        static void AddComponentByCanonicalType(
+            Transform child,
+            string componentType,
+            float scaleFactor,
+            ChassisComponentStats stats,
+            bool addToTotals)
+        {
+            if (child == null || stats == null || string.IsNullOrEmpty(componentType))
+                return;
+
+            string type = ShipFamilyPartTypes.Normalize(componentType, child.name);
+
+            if (ShipFamilyPartTypes.IsPropulsion(type))
+            {
+                // Same Part Profile; thruster-like names use thruster attribute-scale + VFX path.
+                if (IsThrusterLikeComponentId(child.name))
+                {
+                    if (addToTotals)
+                    {
+                        stats.thrusterCount++;
+                        stats.thrusterScaleTotal += scaleFactor;
+                    }
+                    stats.thrusterTransforms.Add(child);
+                }
+                else
+                {
+                    if (addToTotals)
+                    {
+                        stats.engineCount++;
+                        stats.engineScaleTotal += scaleFactor;
+                        stats.engineScaleMax = Mathf.Max(stats.engineScaleMax, scaleFactor);
+                    }
+                    stats.engineTransforms.Add(child);
+                }
+
+                return;
+            }
+
+            if (string.Equals(type, ShipFamilyPartTypes.Wing, System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (addToTotals)
+                {
+                    stats.wingCount++;
+                    stats.wingScaleTotal += scaleFactor;
+                }
+                stats.wingTransforms.Add(child);
+                return;
+            }
+
+            if (ShipFamilyPartTypes.IsTurn(type))
+            {
+                if (!addToTotals)
+                    return;
+                // Fin keyword keeps separate mass bucket; both share Tail profile stats.
+                if (child.name.IndexOf("Fin", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    stats.finCount++;
+                    stats.finScaleTotal += scaleFactor;
+                }
+                else
+                {
+                    stats.tailCount++;
+                    stats.tailScaleTotal += scaleFactor;
+                }
+
+                return;
+            }
+
+            if (string.Equals(type, ShipFamilyPartTypes.Cockpit, System.StringComparison.OrdinalIgnoreCase))
+            {
+                if (addToTotals)
+                {
+                    stats.cockpitCount++;
+                    stats.cockpitScaleTotal += scaleFactor;
+                    stats.cockpitCannonCount++;
+                    stats.cockpitCannonScaleTotal += scaleFactor;
+                }
+                stats.cockpitTransforms.Add(child);
+                stats.cockpitCannonTransforms.Add(child);
+                return;
+            }
+
+            if (ShipFamilyPartTypes.IsWeapon(type))
+                return; // Weapon mounts collected by name scan.
+
+            // Hull catch-all → part scale group.
+            if (addToTotals)
+            {
+                stats.partCount++;
+                stats.partScaleTotal += scaleFactor;
+            }
+            stats.partTransforms.Add(child);
+        }
+
+        static bool IsThrusterLikeComponentId(string nameOrId)
+        {
+            if (string.IsNullOrEmpty(nameOrId))
+                return false;
+            return nameOrId.IndexOf("Thruster", System.StringComparison.OrdinalIgnoreCase) >= 0
+                || nameOrId.IndexOf("Exhaust", System.StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>Finds transforms whose name contains "Weapon" (case-insensitive) at any depth.</summary>

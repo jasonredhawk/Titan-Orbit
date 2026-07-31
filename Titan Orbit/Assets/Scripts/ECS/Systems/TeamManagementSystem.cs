@@ -1,10 +1,10 @@
 using TitanOrbit.Core;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Transforms;
+using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
@@ -13,29 +13,38 @@ namespace TitanOrbit.ECS
     /// <see cref="RequestTeamCommand"/> RPCs from clients: validates roster caps, spawns ship ghost,
     /// replies with <see cref="TeamChoiceResultRpc"/>. Sets CommandTarget on the connection so NetCode
     /// routes input to the new ship. Paired with <see cref="TeamChoiceResultClientSystem"/>.
+    /// <para>
+    /// Managed <see cref="SystemBase"/> (not Burst ISystem) so Local Host can apply
+    /// <see cref="ClientTeamFlowState"/> directly — server→client RPC IPC drops under Instantiates
+    /// load (Editor: ship exists, Join Team times out). Request side already injects onto ServerWorld
+    /// via <c>TitanOrbitSessionManager.TryEnqueueLocalHostTeamRequest</c>.
+    /// </para>
     /// World: ServerSimulation. Group: SimulationSystemGroup.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    public partial struct TeamManagementSystem : ISystem
+    public partial class TeamManagementSystem : SystemBase
     {
-        public void OnCreate(ref SystemState state)
+        /// <summary>[ECS/DOTS] Require TeamStateSingleton before processing team picks.</summary>
+        protected override void OnCreate()
         {
-            state.RequireForUpdate<TeamStateSingleton>();
+            RequireForUpdate<TeamStateSingleton>();
         }
 
         /// <summary>
-        /// [NETCODE] Processes pending RequestTeamCommand RPCs: assign team, spawn ship, send result RPC.
+        /// [NETCODE] Processes pending RequestTeamCommand RPCs: assign team, spawn ship, send result.
         /// </summary>
-        public void OnUpdate(ref SystemState state)
+        protected override void OnUpdate()
         {
-            var em = state.EntityManager;
+            var em = EntityManager;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             // --- Drain team-pick RPC queue ---
             // [NETCODE] ReceiveRpcCommandRequest pairs each RPC entity with its source connection.
             // Local Host may inject these directly (no IPC) — see TitanOrbitSessionManager.RequestTeam.
-            foreach (var (cmd, req, entity) in SystemAPI.Query<RefRO<RequestTeamCommand>, RefRO<ReceiveRpcCommandRequest>>().WithEntityAccess())
+            foreach (var (cmd, req, entity) in SystemAPI
+                         .Query<RefRO<RequestTeamCommand>, RefRO<ReceiveRpcCommandRequest>>()
+                         .WithEntityAccess())
             {
                 int networkId = cmd.ValueRO.NetworkId;
                 if (networkId == 0 && em.HasComponent<NetworkId>(req.ValueRO.SourceConnection))
@@ -45,15 +54,17 @@ namespace TitanOrbit.ECS
                 var requested = (TeamId)cmd.ValueRO.RequestedTeam;
 
                 // [TITAN-ORBIT] Log before spawn so lost-RPC hangs are distinguishable from spawn failures.
-                LogReceived(networkId, requested);
+                Debug.Log($"[TeamManagementSystem] Received RequestTeam networkId={networkId} team={requested}.");
 
                 ecb.DestroyEntity(entity);
 
                 // [NETCODE] Duplicate team RPC (double-click / retry / auto-pick) — acknowledge so
                 // client UI advances. Do not spawn a second ship for the same NetworkId.
-                if (TryGetShipTeamForNetworkId(ref state, networkId, out var existingTeam))
+                if (TryGetShipTeamForNetworkId(networkId, out var existingTeam))
                 {
-                    LogExistingShipAck(networkId, existingTeam);
+                    Debug.Log(
+                        $"[TeamManagementSystem] TeamChoice ack existing ship networkId={networkId} " +
+                        $"team={existingTeam} (no new spawn).");
                     SendTeamChoiceResult(ecb, connection, networkId, existingTeam, success: true, default);
                     continue;
                 }
@@ -62,32 +73,37 @@ namespace TitanOrbit.ECS
                 bool ok = TryAssignTeam(ref teamState.ValueRW, requested, out var message);
 
                 if (ok)
-                    ok = TrySpawnPlayerShip(ref state, em, ecb, connection, networkId, requested);
+                    ok = TrySpawnPlayerShip(em, ecb, connection, networkId, requested);
 
                 if (!ok)
                 {
                     if (!message.IsEmpty)
-                        LogTeamAssignFailed(networkId, message);
+                        Debug.LogWarning(
+                            $"[TeamManagementSystem] Team assign failed for networkId={networkId}: {message}");
                     else
-                        LogSpawnFailed(networkId);
+                        Debug.LogError(
+                            $"[TeamManagementSystem] Cannot spawn ship for networkId={networkId}: " +
+                            "GamePrefabs.Ship is missing.");
                 }
 
-                var resultEntity = ecb.CreateEntity();
-                ecb.AddComponent(resultEntity, new TeamChoiceResultRpc
-                {
-                    NetworkId = networkId,
-                    AssignedTeam = (byte)(ok ? requested : TeamId.None),
-                    Success = (byte)(ok ? 1 : 0),
-                    Message = message,
-                });
-                ecb.AddComponent(resultEntity, new SendRpcCommandRequest { TargetConnection = connection });
+                SendTeamChoiceResult(
+                    ecb,
+                    connection,
+                    networkId,
+                    ok ? requested : TeamId.None,
+                    success: ok,
+                    message);
             }
 
             ecb.Playback(em);
             ecb.Dispose();
         }
 
-        /// <summary>[NETCODE] Queues a team-pick result RPC back to the requesting connection.</summary>
+        /// <summary>
+        /// [NETCODE] Delivers team-pick result to the client.
+        /// Local Host applies <see cref="ClientTeamFlowState"/> directly (no ClientWorld entity inject —
+        /// cross-world CreateEntity was ignored by the client RPC drain). Dedicated uses SendRpc.
+        /// </summary>
         static void SendTeamChoiceResult(
             EntityCommandBuffer ecb,
             Entity connection,
@@ -96,6 +112,11 @@ namespace TitanOrbit.ECS
             bool success,
             FixedString128Bytes message)
         {
+            // --- Local Host: apply client flow state immediately (no IPC) ---
+            if (TryApplyLocalHostTeamChoiceResult(networkId, team, success, message))
+                return;
+
+            // --- Dedicated / remote: normal server → client RPC ---
             var resultEntity = ecb.CreateEntity();
             ecb.AddComponent(resultEntity, new TeamChoiceResultRpc
             {
@@ -107,8 +128,54 @@ namespace TitanOrbit.ECS
             ecb.AddComponent(resultEntity, new SendRpcCommandRequest { TargetConnection = connection });
         }
 
+        /// <summary>
+        /// [TITAN-ORBIT] When ClientWorld + ServerWorld share a process, mirror
+        /// <see cref="TeamChoiceResultClientSystem"/> success/failure onto
+        /// <see cref="ClientTeamFlowState"/> without relying on RPC transport.
+        /// </summary>
+        /// <returns>True when Local Host path applied (caller should skip SendRpc).</returns>
+        static bool TryApplyLocalHostTeamChoiceResult(
+            int networkId,
+            TeamId team,
+            bool success,
+            FixedString128Bytes message)
+        {
+            var client = ClientServerBootstrap.ClientWorld;
+            var server = ClientServerBootstrap.ServerWorld;
+            if (client == null || !client.IsCreated || server == null || !server.IsCreated)
+                return false;
+
+            // Already confirmed / deferred — ignore duplicate retries.
+            if (ClientTeamFlowState.TeamChoiceConfirmed
+                || ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending)
+            {
+                Debug.Log(
+                    $"[TeamManagementSystem] Local Host TeamChoiceResult ignored (already confirmed/pending) " +
+                    $"networkId={networkId} team={team}.");
+                return true;
+            }
+
+            if (success)
+            {
+                // Same sequence as TeamChoiceResultClientSystem.LogResult (join-crash Instantiates hold).
+                ClientJoinSettleCache.ArmPostTeamChoiceHold();
+                ClientTeamFlowState.RequestDeferredConfirmTeamChoice();
+                Debug.Log(
+                    $"[TeamManagementSystem] Local Host TeamChoiceResult applied to ClientTeamFlowState " +
+                    $"(networkId={networkId} team={team}). Confirm deferred until Instantiates hold expires.");
+            }
+            else
+            {
+                ClientTeamFlowState.ClearTeamPickRequest();
+                Debug.LogWarning(
+                    $"[TeamManagementSystem] Local Host TeamChoiceResult failed networkId={networkId}: {message}");
+            }
+
+            return true;
+        }
+
         /// <summary>[NETCODE] True if this network id already owns a ship ghost; returns assigned team.</summary>
-        bool TryGetShipTeamForNetworkId(ref SystemState state, int networkId, out TeamId team)
+        bool TryGetShipTeamForNetworkId(int networkId, out TeamId team)
         {
             team = TeamId.None;
             if (networkId == 0)
@@ -179,14 +246,18 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// [NETCODE] Instantiates ship prefab, sets team/state, assigns GhostOwner and CommandTarget.
         /// </summary>
-        bool TrySpawnPlayerShip(ref SystemState state, EntityManager em, EntityCommandBuffer ecb, Entity connection, int networkId, TeamId team)
+        bool TrySpawnPlayerShip(
+            EntityManager em,
+            EntityCommandBuffer ecb,
+            Entity connection,
+            int networkId,
+            TeamId team)
         {
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Ship == Entity.Null)
                 return false;
 
             // --- Resolve spawn on home orbit ring (outside moon dock zone) ---
             // [TITAN-ORBIT] Same helper as death respawn / rejoin — random ring angle, not fixed +X.
-            // Moon exclusion uses PlanetGemMoonOrbitClock so the wedge tracks the live moon.
             int hz = 0;
             if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
                 hz = tickRate.SimulationTickRate;
@@ -222,39 +293,8 @@ namespace TitanOrbit.ECS
             else
                 ecb.AddComponent(connection, commandTarget);
 
-            LogSpawned(networkId, team, spawnPos);
+            Debug.Log($"[TeamManagementSystem] Spawned ship for networkId={networkId} team={team} at {spawnPos}.");
             return true;
-        }
-
-        [BurstDiscard]
-        static void LogReceived(int networkId, TeamId team)
-        {
-            UnityEngine.Debug.Log($"[TeamManagementSystem] Received RequestTeam networkId={networkId} team={team}.");
-        }
-
-        [BurstDiscard]
-        static void LogSpawned(int networkId, TeamId team, float3 spawnPos)
-        {
-            UnityEngine.Debug.Log($"[TeamManagementSystem] Spawned ship for networkId={networkId} team={team} at {spawnPos}.");
-        }
-
-        [BurstDiscard]
-        static void LogExistingShipAck(int networkId, TeamId team)
-        {
-            UnityEngine.Debug.Log(
-                $"[TeamManagementSystem] TeamChoice ack existing ship networkId={networkId} team={team} (no new spawn).");
-        }
-
-        [BurstDiscard]
-        static void LogTeamAssignFailed(int networkId, FixedString128Bytes message)
-        {
-            UnityEngine.Debug.LogWarning($"[TeamManagementSystem] Team assign failed for networkId={networkId}: {message}");
-        }
-
-        [BurstDiscard]
-        static void LogSpawnFailed(int networkId)
-        {
-            UnityEngine.Debug.LogError($"[TeamManagementSystem] Cannot spawn ship for networkId={networkId}: GamePrefabs.Ship is missing.");
         }
     }
 }
