@@ -681,7 +681,12 @@ namespace TitanOrbit.Data
             InvalidateLookups();
         }
 
-        /// <summary>Builds a default profile row for a part type from suggestion seed constants.</summary>
+        /// <summary>
+        /// Builds a default Part Profile row from suggestion seed constants.
+        /// Used by Ensure (missing groups only) and Reset Part Profiles (full rewrite).
+        /// Tail uses the merged Fin+Tail turn package with Turn Speed Per Level baked in.
+        /// </summary>
+        /// <param name="partType">Core group id (or legacy label — normalized first).</param>
         public static ShipFamilyPartCalcProfile CreateDefaultProfile(string partType)
         {
             string type = ShipFamilyPartTypes.Normalize(
@@ -711,14 +716,24 @@ namespace TitanOrbit.Data
             }
             else if (ShipFamilyPartTypes.IsTurn(type))
             {
+                // [TITAN-ORBIT] Fin folded into Tail — use Fin+Tail merged seeds, not Tail-only.
+                // Bake Turn Speed Per Level into the profile so the Inspector shows the curve
+                // (EvaluateAtVersion would also FillPerLevelIfZero, but designers edit these rows).
+                float turnV1 = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeed(1);
+                float turnPerVersion = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeed(2)
+                    - ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeed(1);
+                float turnPerLevelV1 = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(turnV1);
+                float turnPerLevelPerVersion = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(turnPerVersion);
+
                 profile.baseAtVersion1 = new ShipComponentAbilityStats
                 {
-                    turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedTailTurnSpeed(1),
+                    turnSpeed = turnV1,
+                    turnSpeedPerLevel = turnPerLevelV1,
                 };
                 profile.perVersionIncrement = new ShipComponentAbilityStats
                 {
-                    turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedTailTurnSpeed(2)
-                        - ShipComponentTurnSpeedSuggestions.GetSuggestedTailTurnSpeed(1),
+                    turnSpeed = turnPerVersion,
+                    turnSpeedPerLevel = turnPerLevelPerVersion,
                 };
             }
             else if (string.Equals(type, ShipFamilyPartTypes.WeaponBullet, StringComparison.OrdinalIgnoreCase))

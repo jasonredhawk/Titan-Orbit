@@ -209,25 +209,65 @@ namespace TitanOrbit.Data
             Mathf.Max(0f, Mathf.RoundToInt(GetSuggestedPeopleCapacity(version) * ShipPropulsionAggregation.PerLevelFractionOfBase));
     }
 
-    /// <summary>Scan/auto-populate turn speed for fins and tails (not thrusters).</summary>
+    /// <summary>
+    /// Scan / ProfileSet turn-speed seeds for the Tail Part Profile group.
+    /// <para>
+    /// [TITAN-ORBIT] Fin and Tail used to be separate part types with their own seeds
+    /// (<see cref="FinTurnSpeedPerVersion"/> + <see cref="TailTurnSpeedPerVersion"/>).
+    /// They now share the Tail profile; <see cref="GetSuggestedTurnSpeed"/> returns the
+    /// combined package so Reset / CreateDefaultProfile keep the old total turn budget.
+    /// Thrusters never author turn — only Tail (incl. Fin name mappings).
+    /// </para>
+    /// </summary>
     public static class ShipComponentTurnSpeedSuggestions
     {
+        /// <summary>
+        /// Scales raw per-version turn constants into gameplay units.
+        /// Same scale used historically for Fin/Tail component suggestions.
+        /// </summary>
         public const float ComponentTurnSpeedScale = 22f / 37f;
+
+        /// <summary>Legacy Fin per-version turn (pre-merge). Kept so merged totals stay auditable.</summary>
         public const float FinTurnSpeedPerVersion = 7f;
+
+        /// <summary>Legacy Tail per-version turn (pre-merge). Kept so merged totals stay auditable.</summary>
         public const float TailTurnSpeedPerVersion = 11f;
 
+        /// <summary>
+        /// Fin + Tail per-version raw constant after the Part Profile merge.
+        /// [TITAN-ORBIT] One Tail profile replaces two rows — use the sum, not Tail alone.
+        /// </summary>
+        public const float MergedTurnSpeedPerVersion = FinTurnSpeedPerVersion + TailTurnSpeedPerVersion;
+
+        /// <summary>Legacy Fin-only suggestion (version tier × scale). Prefer <see cref="GetSuggestedTurnSpeed"/> for new profiles.</summary>
         public static float GetSuggestedFinTurnSpeed(int version)
         {
             int v = Mathf.Max(1, version);
             return FinTurnSpeedPerVersion * v * ComponentTurnSpeedScale;
         }
 
+        /// <summary>Legacy Tail-only suggestion (version tier × scale). Prefer <see cref="GetSuggestedTurnSpeed"/> for new profiles.</summary>
         public static float GetSuggestedTailTurnSpeed(int version)
         {
             int v = Mathf.Max(1, version);
             return TailTurnSpeedPerVersion * v * ComponentTurnSpeedScale;
         }
 
+        /// <summary>
+        /// Canonical turn speed for the Tail Part Profile (Fin + Tail seeds).
+        /// Version 1 ≈ 10.70; each higher version adds another MergedTurnSpeedPerVersion × scale.
+        /// </summary>
+        /// <param name="version">1-based part version digit from the component id.</param>
+        public static float GetSuggestedTurnSpeed(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return MergedTurnSpeedPerVersion * v * ComponentTurnSpeedScale;
+        }
+
+        /// <summary>
+        /// Per ship-level turn growth from a base turn value (25% of base by default).
+        /// </summary>
+        /// <param name="baseTurnSpeed">Turn at the component's version tier (before ship upgrades).</param>
         public static float GetSuggestedTurnSpeedPerLevel(float baseTurnSpeed) =>
             baseTurnSpeed * ShipPropulsionAggregation.PerLevelFractionOfBase;
     }

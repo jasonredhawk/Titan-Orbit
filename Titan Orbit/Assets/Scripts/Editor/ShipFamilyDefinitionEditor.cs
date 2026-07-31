@@ -1110,14 +1110,11 @@ namespace TitanOrbit.Editor
                     break;
 
                 case ShipComponentStatCategory.Movement:
-                    if (string.Equals(type, "Tail", StringComparison.OrdinalIgnoreCase))
+                    // [TITAN-ORBIT] Fin and Tail share the merged Tail turn package (Fin+Tail seeds).
+                    if (string.Equals(type, "Tail", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(type, "Fin", StringComparison.OrdinalIgnoreCase))
                     {
-                        stats.turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedTailTurnSpeed(version);
-                        stats.turnSpeedPerLevel = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(stats.turnSpeed);
-                    }
-                    else if (string.Equals(type, "Fin", StringComparison.OrdinalIgnoreCase))
-                    {
-                        stats.turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(version);
+                        stats.turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeed(version);
                         stats.turnSpeedPerLevel = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(stats.turnSpeed);
                     }
                     else if (string.Equals(type, "Thruster", StringComparison.OrdinalIgnoreCase))
