@@ -928,8 +928,9 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Loading-bar fill (0–1). Driven by planet/asteroid GameObject proxies vs server meta N
-        /// so the bar covers real map-build cost. Soft crawl only until meta arrives (avoids a
-        /// stuck 0% before the first RPC). Never gathers asteroid entities.
+        /// so the bar covers real map-build cost. Soft crawl until meta arrives <b>and</b> until
+        /// GhostSpawn Instantiates / proxies start (avoids a frozen 0/N while the stream is still
+        /// quiet). Never gathers asteroid entities.
         /// </summary>
         public static bool TryGetJoinLoadProgress(out float progress)
         {
@@ -951,6 +952,22 @@ namespace TitanOrbit.Game
             if (total > 0)
             {
                 s_LatchedLoadingTotalSteps = total;
+
+                // --- Soft crawl while Instantiates have not started ---
+                // Local Host often latches meta N (server MapState / MapSessionMeta) before the
+                // client GhostSpawn queue fills. Showing hard 0/N looked like a permanent hang.
+                // Keep a gentle crawl until InstantiatesSession or proxies move; never dismiss.
+                if (proxies <= 0 && TitanOrbitJoinLoadCounters.InstantiatesSession <= 0)
+                {
+                    if (s_JoinLoadSmoothStart < 0f)
+                        s_JoinLoadSmoothStart = Time.realtimeSinceStartup;
+
+                    float waitElapsed = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
+                    float waitT = Mathf.Max(0f, waitElapsed) / JoinLoadSmoothSeconds;
+                    progress = (1f - Mathf.Exp(-2.2f * waitT)) * 0.12f;
+                    return true;
+                }
+
                 progress = Mathf.Clamp01((float)proxies / total);
                 return true;
             }
@@ -1563,6 +1580,8 @@ namespace TitanOrbit.Game
             // JoinSettleCompleted / TransformQuarantine are static — clear on session end so a second
             // Editor Play does not think Instantiates already finished.
             ClientJoinSettleCache.Clear();
+            // Stale MapLoadingProxyCount (e.g. 272 after prior Play) must not feed the next bar.
+            EcsWorldVisualizer.ResetLoadingProxyCounts();
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
             PlanetConnectionGraphCache.Clear();

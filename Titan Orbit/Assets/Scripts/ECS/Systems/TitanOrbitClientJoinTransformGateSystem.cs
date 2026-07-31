@@ -88,10 +88,20 @@ namespace TitanOrbit.ECS
 
             bool hardTimeout = settle.InGameFrames >= HardTimeoutFrames;
             bool minTime = settle.InGameFrames >= MinInGameFramesBeforeExit;
-            int idleNeeded = settle.SawSpawnActivity != 0
-                ? IdleFramesRequired * 2
-                : IdleFramesRequired;
-            bool canExit = hardTimeout || (minTime && settle.IdleClearFrames >= idleNeeded);
+            // [TITAN-ORBIT] After any Instantiates activity, require a longer idle so we do not
+            // declare settle complete mid-stream (distance importance still trickles ghosts).
+            int idleNeeded = IdleFramesRequired * 2;
+
+            // --- Exit only after Instantiates were seen (or hard timeout) ---
+            // [TITAN-ORBIT] Editor Local Host previously exited Settling at MinInGameFrames with
+            // spawnBuf=0 / placeholders=0 (SawSpawnActivity never set). Meta already showed N
+            // (e.g. 248) so the loading bar froze at 0/N while Instantiates had not started yet.
+            // Keep Settling ON until GhostSpawn actually creates placeholders/Instantiates, then
+            // idle-clear — unless HardTimeoutFrames elapses (map stream truly stuck).
+            bool canExit = hardTimeout ||
+                           (minTime &&
+                            settle.SawSpawnActivity != 0 &&
+                            settle.IdleClearFrames >= idleNeeded);
 
             // --- Settling policy ---
             // [TITAN-ORBIT] Initial join: Settling while Instantiates backlog drains.
@@ -105,7 +115,8 @@ namespace TitanOrbit.ECS
             else
             {
                 shouldSettle = !canExit;
-                if (!shouldSettle && settle.SawSpawnActivity != 0)
+                // Latch only when Instantiates were observed (or hard-timeout escape).
+                if (!shouldSettle && (settle.SawSpawnActivity != 0 || hardTimeout))
                     settle.JoinSettleCompleted = 1;
             }
 
@@ -139,7 +150,8 @@ namespace TitanOrbit.ECS
                         "[JoinSettle] Settling OFF — TransformSystemGroup stays OFF (quarantine; " +
                         "RE-ENABLE Crash!!!). Hybrid ship proxies remain. inGameFrames=" +
                         settle.InGameFrames + " idleClear=" + settle.IdleClearFrames +
-                        " joinSettleCompleted=1" +
+                        " sawSpawn=" + settle.SawSpawnActivity +
+                        " joinSettleCompleted=" + settle.JoinSettleCompleted +
                         (hardTimeout ? " (hard timeout)" : string.Empty));
                 }
             }

@@ -238,6 +238,30 @@ namespace TitanOrbit.Game
         /// </summary>
         public static int MapLoadingProxyCount { get; private set; }
 
+        /// <summary>
+        /// [UNITY] Clears static proxy counters when entering Play Mode without Domain Reload.
+        /// Without this, a prior session's <see cref="MapLoadingProxyCount"/> (e.g. 272) survives
+        /// and can lie to the loading bar until the first successful <see cref="SyncAllProxies"/>.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStaticProxyCountsForPlayMode()
+        {
+            ResetLoadingProxyCounts();
+        }
+
+        /// <summary>
+        /// Zeros published loading / world-body proxy numerators.
+        /// Call on Play Mode enter and when leaving <c>NetworkStreamInGame</c>.
+        /// </summary>
+        public static void ResetLoadingProxyCounts()
+        {
+            MapLoadingProxyCount = 0;
+            WorldBodyProxyCount = 0;
+            LocalPlayerShipVisualRoot = null;
+            Active = null;
+            s_GlobalVisualSyncFrame = -1;
+        }
+
         /// <summary>Composite key for planet proxy rebuild — any field change forces new visual.</summary>
         struct PlanetVisualKey : System.IEquatable<PlanetVisualKey>
         {
@@ -329,6 +353,24 @@ namespace TitanOrbit.Game
             // Force full asteroid tint recompute next enable (viewer team / graph may change).
             _lastAsteroidTintGraphRevision = int.MinValue;
             _lastAsteroidTintViewerTeam = TeamId.None;
+        }
+
+        /// <summary>
+        /// [UNITY] Drop static loading numerators when this visualizer is destroyed (Play Mode exit
+        /// without Domain Reload leaves statics otherwise).
+        /// </summary>
+        void ClearProxyCountStaticsIfOwner()
+        {
+            // --- Only clear if our instance counts were the published ones ---
+            // Avoid wiping a newer Active visualizer's totals mid-handoff.
+            if (Active != null && Active != this)
+                return;
+
+            MapLoadingProxyCount = 0;
+            WorldBodyProxyCount = 0;
+            LocalPlayerShipVisualRoot = null;
+            _mapLoadingProxyCountCached = 0;
+            _worldBodyProxyCountCached = 0;
         }
 
         /// <summary>
@@ -509,7 +551,12 @@ namespace TitanOrbit.Game
                 return;
             if (Active == null || Active._proxies.Count == 0)
             {
-                if (_proxies.Count > 0 || ClientJoinSettleCache.Settling)
+                // [TITAN-ORBIT] Claim Active while quarantined / settling even with 0 proxies so
+                // FlushPending + Pending drain still run under the loading screen. Premature
+                // Settling OFF used to leave Active unset when both instances had empty dicts.
+                if (_proxies.Count > 0 ||
+                    ClientJoinSettleCache.Settling ||
+                    ClientJoinSettleCache.TransformQuarantine)
                     Active = this;
             }
         }
@@ -2485,6 +2532,7 @@ namespace TitanOrbit.Game
             _proxyTeams.Clear();
             _proxyPlanetVisuals.Clear();
             _proxyAsteroidTerritory.Clear();
+            ClearProxyCountStaticsIfOwner();
         }
     }
 }
