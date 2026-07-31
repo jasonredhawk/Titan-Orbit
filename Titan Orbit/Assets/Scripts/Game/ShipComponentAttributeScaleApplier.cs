@@ -68,20 +68,50 @@ namespace TitanOrbit.Game
         {
             var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix);
 
-            _cockpit = ShipComponentAttributeScaleLogic.BuildGroup(stats.cockpitTransforms);
-            _wing = ShipComponentAttributeScaleLogic.BuildGroup(stats.wingTransforms);
+            // --- Legacy USC modules only for attribute grow ---
+            // [TITAN-ORBIT] FromTransform uses ProfileSet (EngineComp, CockpitCover, Body→Hull…).
+            // Bottom-bar mesh scale must match the old Family_Wing / Family_Engine switch labels
+            // or every ability tick grows cosmetics that never used to scale.
+            _cockpit = ShipComponentAttributeScaleLogic.BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.cockpitTransforms, _familyPrefix, "Cockpit"));
+            _wing = ShipComponentAttributeScaleLogic.BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.wingTransforms, _familyPrefix, "Wing"));
             _weapon = ShipComponentAttributeScaleLogic.BuildGroup(stats.weaponTransforms);
-            _engine = ShipComponentAttributeScaleLogic.BuildGroup(stats.engineTransforms);
-            _thruster = ShipComponentAttributeScaleLogic.BuildGroup(stats.thrusterTransforms);
-            _part = ShipComponentAttributeScaleLogic.BuildGroup(stats.partTransforms);
+            _engine = ShipComponentAttributeScaleLogic.BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.engineTransforms, _familyPrefix, "Engine"));
+            _thruster = ShipComponentAttributeScaleLogic.BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.thrusterTransforms, _familyPrefix, "Thruster"));
+            _part = ShipComponentAttributeScaleLogic.BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.partTransforms, _familyPrefix, "Part"));
 
+            // --- Optional Hull root (cockpit body grow) ---
+            // [TITAN-ORBIT] Some chassis put the body under a Hull node. Append then prune so we
+            // do not scale Hull and a nested cockpit child together (world scale would compound).
             Transform hull = transform.Find("Hull");
             if (hull != null)
             {
                 _cockpit.Transforms.Add(hull);
                 _cockpit.BaseScales.Add(hull.localScale);
                 _cockpit.BasePositions.Add(hull.localPosition);
+                ShipComponentAttributeScaleLogic.PruneNestedTransforms(ref _cockpit);
             }
+
+            // --- Cross-bucket nesting (Cover under Wing, EngineComp under Engine, …) ---
+            // [TITAN-ORBIT] Part Calc ProfileSet classifies many cosmetics into scale buckets.
+            // Scaling a child after its parent already grew multiplies in world space — felt like
+            // every ability upgrade made the whole ship swell. Outermost mounts only.
+            ShipComponentAttributeScaleLogic.PruneNestedAcrossGroups(
+                ref _cockpit,
+                ref _wing,
+                ref _weapon,
+                ref _engine,
+                ref _thruster,
+                ref _part);
 
             _initialized = _cockpit.Transforms.Count > 0
                 || _wing.Transforms.Count > 0

@@ -8,6 +8,11 @@ namespace TitanOrbit.Data
     /// (e.g. AstroEagle_Weapon, AstroEagle_Engine_2). Used by <see cref="ShipPropulsionVisualApplier"/>
     /// for engine VFX placement and <see cref="ShipComponentAttributeScaleApplier"/> for upgrade-driven
     /// mesh scaling. Not ECS data — built once from GameObject hierarchy at load or in editor.
+    /// <para>
+    /// [TITAN-ORBIT] <see cref="FromTransform"/> classifies with Part Calc ProfileSet (mass + VFX).
+    /// Attribute mesh grow must call <see cref="FilterLegacyAttributeScaleTransforms"/> so only
+    /// classic USC tokens (Wing/Engine/Thruster/Cockpit/Part) scale — not Body/Cover/EngineComp.
+    /// </para>
     /// </summary>
     public class ChassisComponentStats
     {
@@ -315,9 +320,11 @@ namespace TitanOrbit.Data
                 if (profileSet != null)
                 {
                     string fromSet = profileSet.ResolvePartType(componentId);
+                    // [TITAN-ORBIT] Ignore = designer opted out — do not fall through to Hull heuristics.
+                    if (string.Equals(fromSet, ShipFamilyPartTypes.Ignore, System.StringComparison.OrdinalIgnoreCase))
+                        return null;
                     if (!string.IsNullOrEmpty(fromSet)
-                        && !string.Equals(fromSet, ShipFamilyPartTypes.Unmapped, System.StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(fromSet, ShipFamilyPartTypes.Ignore, System.StringComparison.OrdinalIgnoreCase))
+                        && !string.Equals(fromSet, ShipFamilyPartTypes.Unmapped, System.StringComparison.OrdinalIgnoreCase))
                         return ShipFamilyPartTypes.Normalize(fromSet, componentId);
                 }
 
@@ -423,13 +430,48 @@ namespace TitanOrbit.Data
             if (ShipFamilyPartTypes.IsWeapon(type))
                 return; // Weapon mounts collected by name scan.
 
-            // Hull catch-all → part scale group.
-            if (addToTotals)
+            // --- Hull / Body / Cover / Armor / Part_* (ProfileSet catch-all) ---
+            // [TITAN-ORBIT] Mass totals still count every Hull piece for power-score scans.
+            // Attribute mesh grow must NOT — before Part Calc, only USC Part_* modules were in
+            // partTransforms. Dumping Body/Cover/Detail here made every ability upgrade swell the
+            // whole ship (and compound under already-scaled wings/engines).
+            if (addToTotals
+                && (string.Equals(type, ShipFamilyPartTypes.Hull, System.StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(type, "Part", System.StringComparison.OrdinalIgnoreCase)))
             {
                 stats.partCount++;
                 stats.partScaleTotal += scaleFactor;
             }
-            stats.partTransforms.Add(child);
+
+            // Only legacy Part_* modules get bottom-bar attribute scale (old case "Part").
+            if (IsLegacyPartModuleName(child.name))
+                stats.partTransforms.Add(child);
+        }
+
+        /// <summary>
+        /// True for USC filler modules (AstroEagle_Part_1, Part_2) — the only Hull names that
+        /// historically grew with gem/health attribute upgrades.
+        /// </summary>
+        static bool IsLegacyPartModuleName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+
+            // [UNITY] Hierarchy duplicates append " (1)".
+            string cleaned = name.Trim();
+            int paren = cleaned.LastIndexOf(" (", System.StringComparison.Ordinal);
+            if (paren > 0 && cleaned.EndsWith(")", System.StringComparison.Ordinal))
+                cleaned = cleaned.Substring(0, paren).Trim();
+
+            if (cleaned.StartsWith("Part_", System.StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (cleaned.IndexOf("_Part_", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            // Family_Part (no index) — rare but match old ParseComponentType "Part".
+            if (cleaned.EndsWith("_Part", System.StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return false;
         }
 
         static bool IsThrusterLikeComponentId(string nameOrId)
@@ -499,6 +541,59 @@ namespace TitanOrbit.Data
             if (n.IndexOf("_fin", System.StringComparison.Ordinal) >= 0 || n.StartsWith("fin_"))
                 return "Fin";
             return null;
+        }
+
+        /// <summary>
+        /// Filters a transform list down to modules the pre–Part-Calc classifier would have scaled.
+        /// ProfileSet maps EngineComp / CockpitCover / Tiny_Wing etc. into buckets for mass + VFX;
+        /// attribute mesh grow must stay on classic USC tokens (Wing, Engine, Thruster, Cockpit, Part)
+        /// or the whole ship swells on every ability upgrade.
+        /// </summary>
+        /// <param name="source">Transforms from <see cref="FromTransform"/> (may include ProfileSet extras).</param>
+        /// <param name="familyPrefix">Family prefix used for USC <c>Family_Type_Index</c> parsing.</param>
+        /// <param name="legacyType">Expected old switch label: Wing, Engine, Thruster, Cockpit, or Part.</param>
+        public static List<Transform> FilterLegacyAttributeScaleTransforms(
+            List<Transform> source,
+            string familyPrefix,
+            string legacyType)
+        {
+            var result = new List<Transform>();
+            if (source == null || string.IsNullOrEmpty(legacyType))
+                return result;
+
+            for (int i = 0; i < source.Count; i++)
+            {
+                Transform t = source[i];
+                if (t == null)
+                    continue;
+                if (!MatchesLegacyAttributeScaleType(t.name, familyPrefix, legacyType))
+                    continue;
+                result.Add(t);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// True when <paramref name="name"/> matches the old DirectOnly/Recursive switch label.
+        /// Uses the first USC token only when it is an exact known type — does not fall through
+        /// EngineComp1 → substring Engine (that path never ran before because the token was non-empty).
+        /// </summary>
+        public static bool MatchesLegacyAttributeScaleType(string name, string familyPrefix, string legacyType)
+        {
+            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(legacyType))
+                return false;
+
+            string token = ParseComponentType(name, familyPrefix);
+            if (!string.IsNullOrEmpty(token))
+            {
+                // Exact USC type token (AstroEagle_Wing_4 → Wing). Unknown tokens (EngineComp1) = no.
+                return string.Equals(token, legacyType, System.StringComparison.OrdinalIgnoreCase);
+            }
+
+            // No family prefix — substring fallback (same as old Collect when Parse returned null).
+            string bySub = ParseComponentTypeBySubstring(name);
+            return string.Equals(bySub, legacyType, System.StringComparison.OrdinalIgnoreCase);
         }
     }
 }
