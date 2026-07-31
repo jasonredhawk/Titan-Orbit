@@ -404,7 +404,17 @@ namespace TitanOrbit.Data
                 || n.IndexOf("Holder", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        /// <summary>Merges a discovered name into nameMappings without wiping existing assignments.</summary>
+        /// <summary>
+        /// Merges a discovered prefab part name into <see cref="nameMappings"/>.
+        /// <para>
+        /// [TITAN-ORBIT] Additive only: if the name already exists, we only append
+        /// <see cref="ShipFamilyPartNameMapping.seenInFamilies"/> — partType, VFX flags, notes,
+        /// and includeInPopulate are never overwritten. New names start as Unmapped (plus known-name seeds).
+        /// </para>
+        /// </summary>
+        /// <param name="discoveredName">Prefab suffix after family prefix strip.</param>
+        /// <param name="familyId">Optional family folder id recorded on seenInFamilies.</param>
+        /// <returns>Existing or newly created mapping, or null if the name is empty.</returns>
         public ShipFamilyPartNameMapping MergeDiscoveredName(string discoveredName, string familyId)
         {
             if (nameMappings == null)
@@ -414,6 +424,7 @@ namespace TitanOrbit.Data
             if (string.IsNullOrEmpty(key))
                 return null;
 
+            // --- Existing row: preserve classification; only note which family also uses it ---
             for (int i = 0; i < nameMappings.Count; i++)
             {
                 var existing = nameMappings[i];
@@ -427,6 +438,7 @@ namespace TitanOrbit.Data
                 return existing;
             }
 
+            // --- New row: Unmapped inventory entry (+ seed defaults for well-known names) ---
             var created = new ShipFamilyPartNameMapping
             {
                 discoveredName = key,
@@ -437,7 +449,7 @@ namespace TitanOrbit.Data
                 includeInPopulate = true,
             };
             AppendSeenFamily(created, familyId);
-            // Seed known specials from aliases / plan examples.
+            // Seed known specials from aliases / plan examples (first discover only).
             ApplySeedDefaultsForKnownName(created);
             nameMappings.Add(created);
             InvalidateLookups();
@@ -546,12 +558,22 @@ namespace TitanOrbit.Data
             }
         }
 
-        /// <summary>Ensures every mapped partType has a profile row (creates defaults when missing).</summary>
+        /// <summary>
+        /// Ensures every mapped partType has a Part Profile row.
+        /// <para>
+        /// [TITAN-ORBIT] Additive for stats: existing profile rows keep their baseAtVersion1 /
+        /// perVersionIncrement / categories. We only create missing core groups and rename legacy
+        /// labels (Thruster→Engine/Thrust, Fin→Tail). Use <see cref="ResetPartProfilesToCodeDefaults"/>
+        /// when you intentionally want code seeds to replace edited numbers.
+        /// </para>
+        /// </summary>
+        /// <returns>Count of newly created profile rows (0 when everything already existed).</returns>
         public int EnsureProfilesForMappedPartTypes()
         {
             if (partProfiles == null)
                 partProfiles = new List<ShipFamilyPartCalcProfile>();
 
+            // Migrate Name Mapping labels + sort A→Z (does not invent new classifications).
             NormalizeMappedPartTypesAndSort();
 
             var needed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -569,27 +591,52 @@ namespace TitanOrbit.Data
                 }
             }
 
-            // Drop / merge obsolete legacy profile rows (Thruster+Engine → Engine/Thrust, Fin → Tail, …).
+            // --- Keep existing core profiles (stats untouched); merge legacy type labels ---
+            // Prefer rows that already use the canonical label (hand-tuned Engine/Thrust) over
+            // leftover legacy seeds (Thruster → Engine/Thrust) so Ensure never clobbers edits.
             var kept = new Dictionary<string, ShipFamilyPartCalcProfile>(StringComparer.OrdinalIgnoreCase);
+
+            // Pass 1: already-canonical rows win.
             for (int i = 0; i < partProfiles.Count; i++)
             {
                 var p = partProfiles[i];
                 if (p == null || string.IsNullOrWhiteSpace(p.partType))
                     continue;
 
-                string normalized = ShipFamilyPartTypes.Normalize(p.partType, null);
-                bool isCore = IndexOfCoreProfile(normalized) < ShipFamilyPartTypes.CoreProfiles.Length;
-                if (!isCore)
+                string original = p.partType.Trim();
+                string normalized = ShipFamilyPartTypes.Normalize(original, null);
+                if (IndexOfCoreProfile(normalized) >= ShipFamilyPartTypes.CoreProfiles.Length)
+                    continue;
+                if (!string.Equals(original, normalized, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (kept.ContainsKey(normalized))
                     continue;
 
                 p.partType = normalized;
-                if (!kept.ContainsKey(normalized))
-                    kept[normalized] = p;
+                kept[normalized] = p;
+            }
+
+            // Pass 2: legacy labels fill gaps only (rename label; keep that row's numbers).
+            for (int i = 0; i < partProfiles.Count; i++)
+            {
+                var p = partProfiles[i];
+                if (p == null || string.IsNullOrWhiteSpace(p.partType))
+                    continue;
+
+                string normalized = ShipFamilyPartTypes.Normalize(p.partType.Trim(), null);
+                if (IndexOfCoreProfile(normalized) >= ShipFamilyPartTypes.CoreProfiles.Length)
+                    continue;
+                if (kept.ContainsKey(normalized))
+                    continue;
+
+                p.partType = normalized;
+                kept[normalized] = p;
             }
 
             partProfiles = new List<ShipFamilyPartCalcProfile>(kept.Values);
             InvalidateLookups();
 
+            // --- Create defaults only for groups that have no row yet ---
             int created = 0;
             foreach (string type in needed)
             {

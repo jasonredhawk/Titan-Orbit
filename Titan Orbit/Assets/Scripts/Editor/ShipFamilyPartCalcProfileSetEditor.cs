@@ -77,6 +77,11 @@ namespace TitanOrbit.Editor
     public class ShipFamilyPartCalcProfileSetEditor : UnityEditor.Editor
     {
         bool _reclassifyAll;
+        /// <summary>
+        /// When false (default), Apply Cursor Suggestions only fills Unmapped / empty rows so
+        /// manual Name Mapping edits survive Discover → re-import for new ship families.
+        /// </summary>
+        bool _overwriteExistingMappings;
         Vector2 _suggestionScroll;
         List<AiSuggestionRow> _pendingSuggestions;
         string _lastCursorPromptPath = string.Empty;
@@ -124,6 +129,14 @@ namespace TitanOrbit.Editor
             _reclassifyAll = EditorGUILayout.ToggleLeft(
                 "Include already-classified names when exporting for Cursor",
                 _reclassifyAll);
+            _overwriteExistingMappings = EditorGUILayout.ToggleLeft(
+                "Overwrite existing Name Mappings when applying Cursor suggestions",
+                _overwriteExistingMappings);
+            EditorGUILayout.HelpBox(
+                "Discover only adds new Name Mapping rows (and new Part Profiles via Ensure). " +
+                "Apply Cursor Suggestions skips already-classified names unless the overwrite toggle is on. " +
+                "Part Profiles are never replaced by Discover/Apply — only “Reset Part Calc Profiles” rewrites them.",
+                MessageType.None);
 
             if (GUILayout.Button("Discover All Ship Families & Export for Cursor", GUILayout.Height(34)))
                 DiscoverAndExportForCursor(set, forceReclassify: _reclassifyAll);
@@ -641,7 +654,7 @@ namespace TitanOrbit.Editor
 
             if (GUILayout.Button("Apply Cursor Suggestions", GUILayout.Height(28)))
             {
-                ApplySuggestions(set, _pendingSuggestions);
+                ApplySuggestions(set, _pendingSuggestions, overwriteExisting: _overwriteExistingMappings);
                 _pendingSuggestions = null;
             }
 
@@ -649,19 +662,56 @@ namespace TitanOrbit.Editor
                 _pendingSuggestions = null;
         }
 
-        static void ApplySuggestions(ShipFamilyPartCalcProfileSet set, List<AiSuggestionRow> rows)
+        /// <summary>
+        /// Writes Cursor classification rows into Name Mappings, then ensures missing Part Profiles exist.
+        /// <para>
+        /// [TITAN-ORBIT] Additive by default: if a discoveredName already has a classified mapping
+        /// (not Unmapped / Ignore / empty), we leave partType / VFX / notes alone so re-running
+        /// Discover → Cursor → Import for new families does not wipe manual edits. Pass
+        /// <paramref name="overwriteExisting"/> true only when you intentionally want Cursor to win.
+        /// Part Profiles are never overwritten here — <see cref="ShipFamilyPartCalcProfileSet.EnsureProfilesForMappedPartTypes"/>
+        /// only creates missing group rows.
+        /// </para>
+        /// </summary>
+        /// <param name="set">Shared ProfileSet asset being edited.</param>
+        /// <param name="rows">Imported suggestion rows (apply flag respected).</param>
+        /// <param name="overwriteExisting">When true, rewrite already-classified Name Mapping fields.</param>
+        static void ApplySuggestions(
+            ShipFamilyPartCalcProfileSet set,
+            List<AiSuggestionRow> rows,
+            bool overwriteExisting)
         {
             if (set == null || rows == null)
                 return;
+
+            // --- Apply pass ---
+            // [EDITOR] Undo groups the whole import so one Ctrl+Z reverts Apply.
             Undo.RecordObject(set, "Apply Cursor Part Classifications");
+            int applied = 0;
+            int skippedExisting = 0;
+
             for (int i = 0; i < rows.Count; i++)
             {
                 var row = rows[i];
                 if (row == null || !row.apply || string.IsNullOrWhiteSpace(row.discoveredName))
                     continue;
+
+                // MergeDiscoveredName adds a new Unmapped row or returns the existing one unchanged
+                // (except seenInFamilies). It never wipes partType / VFX on an existing row.
                 var mapping = set.MergeDiscoveredName(row.discoveredName, null);
                 if (mapping == null)
                     continue;
+
+                // --- Preserve manual / prior classifications ---
+                // [TITAN-ORBIT] Only empty / Unmapped rows accept Cursor fills on a normal Apply.
+                // Ignore and every real group (Cockpit, Wing, …) are treated as designer-owned.
+                if (!overwriteExisting && !IsOpenForSuggestionFill(mapping))
+                {
+                    skippedExisting++;
+                    continue;
+                }
+
+                // --- Write suggestion fields onto this Name Mapping ---
                 string rawType = string.IsNullOrWhiteSpace(row.partType) ? "Unmapped" : row.partType.Trim();
                 mapping.partType = string.Equals(rawType, "Ignore", StringComparison.OrdinalIgnoreCase)
                     || string.Equals(rawType, "Unmapped", StringComparison.OrdinalIgnoreCase)
@@ -673,12 +723,34 @@ namespace TitanOrbit.Editor
                 mapping.includeInPopulate = !string.Equals(mapping.partType, "Ignore", StringComparison.OrdinalIgnoreCase);
                 if (!string.IsNullOrEmpty(row.rationale))
                     mapping.notes = row.rationale;
+                applied++;
             }
 
-            set.EnsureProfilesForMappedPartTypes();
+            // --- Part Profiles: create missing groups only (never rewrite existing stats) ---
+            int profilesCreated = set.EnsureProfilesForMappedPartTypes();
             set.InvalidateLookups();
             EditorUtility.SetDirty(set);
             AssetDatabase.SaveAssets();
+
+            EditorUtility.DisplayDialog(
+                "Apply Complete",
+                $"Applied {applied} Name Mapping(s). " +
+                $"Skipped {skippedExisting} already-classified (overwrite off). " +
+                $"Created {profilesCreated} missing Part Profile row(s).",
+                "OK");
+        }
+
+        /// <summary>
+        /// True when a Name Mapping still needs classification — empty or Unmapped only.
+        /// Ignore and canonical groups are considered already set (do not overwrite).
+        /// </summary>
+        static bool IsOpenForSuggestionFill(ShipFamilyPartNameMapping mapping)
+        {
+            if (mapping == null)
+                return true;
+            if (string.IsNullOrWhiteSpace(mapping.partType))
+                return true;
+            return string.Equals(mapping.partType, "Unmapped", StringComparison.OrdinalIgnoreCase);
         }
 
         static List<AiSuggestionRow> ParseSuggestionsJson(string json)
