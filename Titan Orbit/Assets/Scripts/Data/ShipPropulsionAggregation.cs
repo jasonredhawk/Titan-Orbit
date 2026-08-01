@@ -60,17 +60,33 @@ namespace TitanOrbit.Data
             Mathf.Max(1f, turnDefinition) * TurnDefinitionToDegreesPerSecond;
 
         /// <summary>
-        /// Target visual bank angle (°): 0 turn rate → 0°, global max turn rate → <paramref name="maxBankDegrees"/>.
+        /// Target visual bank angle (°): 0 turn rate → 0°, enough turn rate → <paramref name="maxBankDegrees"/>.
+        /// <paramref name="sensitivity"/> scales how fast bank builds with yaw rate (1 = linear;
+        /// &gt;1 reaches max bank sooner — feels more responsive while turning).
         /// </summary>
+        /// <param name="signedAngularVelDegPerSec">Smoothed yaw rate (°/s); sign chooses bank direction.</param>
+        /// <param name="maxBankDegrees">Peak roll at (or before) full turn.</param>
+        /// <param name="globalMaxTurnDegPerSec">Reference max turn speed for the fleet (°/s).</param>
+        /// <param name="sensitivity">
+        /// Multiplier on turn fraction before clamp. Default 1 matches the old linear curve.
+        /// Tuned live via <c>EcsWorldVisualizer</c> → Ship Banking.
+        /// </param>
         public static float ComputeVisualBankTargetAngle(
             float signedAngularVelDegPerSec,
             float maxBankDegrees,
-            float globalMaxTurnDegPerSec)
+            float globalMaxTurnDegPerSec,
+            float sensitivity = 1f)
         {
+            // --- Guards ---
+            // No reference turn speed, or not turning → stay flat.
             if (globalMaxTurnDegPerSec <= 0f || Mathf.Abs(signedAngularVelDegPerSec) <= 0f)
                 return 0f;
 
-            float turnRatio = Mathf.Clamp01(Mathf.Abs(signedAngularVelDegPerSec) / globalMaxTurnDegPerSec);
+            // --- Turn fraction → bank ---
+            // [TITAN-ORBIT] sensitivity > 1 makes modest stick deflections lean harder without
+            // raising the peak roll (maxBankDegrees still clamps the result).
+            float turnRatio = Mathf.Clamp01(
+                Mathf.Abs(signedAngularVelDegPerSec) / globalMaxTurnDegPerSec * Mathf.Max(0f, sensitivity));
             return Mathf.Sign(signedAngularVelDegPerSec) * turnRatio * maxBankDegrees;
         }
 

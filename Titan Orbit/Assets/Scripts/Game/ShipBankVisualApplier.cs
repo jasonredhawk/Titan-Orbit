@@ -12,6 +12,11 @@ namespace TitanOrbit.Game
     /// Root transform yaw comes from ECS presentation sync; roll is applied on a BankPivot child so
     /// EcsWorldVisualizer does not overwrite it. Reads ShipKinematics for idle detection and yaw rate
     /// from proxy rotation. Suppressed during moon dock. Cosmetic only — no sim effect.
+    /// <para>
+    /// Tune Max Bank / Sensitivity / Smoothing on the scene <see cref="EcsWorldVisualizer"/>
+    /// (Ship Banking header). Those values publish into <see cref="ShipBankVisualSettingsCache"/>;
+    /// this component samples the cache each frame so Inspector tweaks apply without respawning.
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(85)]
     public class ShipBankVisualApplier : MonoBehaviour
@@ -21,8 +26,17 @@ namespace TitanOrbit.Game
         const float IdleVisualLinearSpeedThreshold = 0.12f;
         const float IdleBankAngularVelDeadbandDegPerSec = 18f;
 
-        [SerializeField] float maxBankAngle = ShipPropulsionAggregation.VisualBankReferenceMaxAngleDegrees;
-        [SerializeField] float bankSmoothing = 8f;
+        /// <summary>
+        /// Optional per-proxy override for peak roll (°). ≤ 0 means use
+        /// <see cref="ShipBankVisualSettingsCache.MaxBankAngleDegrees"/>.
+        /// </summary>
+        [SerializeField] float maxBankAngleOverride = -1f;
+
+        /// <summary>
+        /// Optional per-proxy override for smoothing. ≤ 0 means use
+        /// <see cref="ShipBankVisualSettingsCache.BankSmoothing"/>.
+        /// </summary>
+        [SerializeField] float bankSmoothingOverride = -1f;
 
         Entity _shipEntity;
         Transform _bankPivot;
@@ -33,14 +47,21 @@ namespace TitanOrbit.Game
         bool _bankingInitialized;
 
         /// <summary>Links to ship entity and ensures BankPivot hierarchy exists under the proxy root.</summary>
+        /// <param name="shipEntity">ECS ship ghost this proxy follows.</param>
+        /// <param name="maxBankDegrees">
+        /// Peak roll override (°). ≤ 0 keeps cache / Inspector defaults from EcsWorldVisualizer.
+        /// </param>
+        /// <param name="bankSmooth">
+        /// Smoothing override. ≤ 0 keeps cache / Inspector defaults.
+        /// </param>
         public void Bind(Entity shipEntity, float maxBankDegrees = -1f, float bankSmooth = -1f)
         {
             // --- Bind ---
             _shipEntity = shipEntity;
             if (maxBankDegrees > 0f)
-                maxBankAngle = maxBankDegrees;
+                maxBankAngleOverride = maxBankDegrees;
             if (bankSmooth > 0f)
-                bankSmoothing = bankSmooth;
+                bankSmoothingOverride = bankSmooth;
             EnsureBankPivotHierarchy();
             ResetBankingState();
         }
@@ -87,6 +108,7 @@ namespace TitanOrbit.Game
             _bankPivot = pivot;
         }
 
+        /// <summary>Clears smoothed yaw/bank so a fresh bind does not inherit the previous hull's lean.</summary>
         void ResetBankingState()
         {
             // --- ResetBankingState ---
@@ -99,6 +121,9 @@ namespace TitanOrbit.Game
                 _bankPivot.localRotation = Quaternion.identity;
         }
 
+        /// <summary>
+        /// [UNITY] After presentation pose is written: sample yaw rate, compute target bank, lerp roll.
+        /// </summary>
         void LateUpdate()
         {
             // --- Per-frame refresh ---
@@ -133,12 +158,25 @@ namespace TitanOrbit.Game
             }
 
             float dt = Time.deltaTime;
-            SampleBankAngularVelocity(dt);
-            ApplyVisualBanking(dt);
+            float smoothing = ResolveSmoothing();
+            SampleBankAngularVelocity(dt, smoothing);
+            ApplyVisualBanking(dt, smoothing);
         }
 
+        /// <summary>Peak roll from per-proxy override, else the visualizer-published cache.</summary>
+        float ResolveMaxBankAngle() =>
+            maxBankAngleOverride > 0f
+                ? maxBankAngleOverride
+                : ShipBankVisualSettingsCache.MaxBankAngleDegrees;
+
+        /// <summary>Smoothing from per-proxy override, else the visualizer-published cache.</summary>
+        float ResolveSmoothing() =>
+            bankSmoothingOverride > 0f
+                ? bankSmoothingOverride
+                : ShipBankVisualSettingsCache.BankSmoothing;
+
         /// <summary>Smooths yaw rate from proxy root rotation (presentation pose).</summary>
-        void SampleBankAngularVelocity(float dt)
+        void SampleBankAngularVelocity(float dt, float smoothing)
         {
             // --- SampleBankAngularVelocity ---
             float yawDeg = GetPlanarYawDegrees(transform.rotation);
@@ -154,11 +192,14 @@ namespace TitanOrbit.Game
             float instantAngularVel = Mathf.DeltaAngle(_prevBankYawDeg, yawDeg) / dt;
             _prevBankYawDeg = yawDeg;
 
-            float velT = 1f - Mathf.Exp(-bankSmoothing * dt);
+            float velT = 1f - Mathf.Exp(-smoothing * dt);
             _cachedBankAngularVelDegPerSec = Mathf.Lerp(_cachedBankAngularVelDegPerSec, instantAngularVel, velT);
         }
 
-        void ApplyVisualBanking(float dt)
+        /// <summary>
+        /// Maps smoothed yaw rate → target bank (via propulsion helper + sensitivity) and lerps the pivot.
+        /// </summary>
+        void ApplyVisualBanking(float dt, float smoothing)
         {
             // --- Apply changes ---
             if (!_bankingInitialized)
@@ -184,17 +225,20 @@ namespace TitanOrbit.Game
                 && Mathf.Abs(signedAngularVelDegPerSec) < IdleBankAngularVelDeadbandDegPerSec)
                 signedAngularVelDegPerSec = 0f;
 
+            // --- Target bank from turn rate + Inspector sensitivity ---
             float globalMaxTurnDegPerSec = ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond();
             float targetBankAngle = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
                 signedAngularVelDegPerSec,
-                maxBankAngle,
-                globalMaxTurnDegPerSec);
+                ResolveMaxBankAngle(),
+                globalMaxTurnDegPerSec,
+                ShipBankVisualSettingsCache.BankSensitivity);
 
-            float bankT = 1f - Mathf.Exp(-bankSmoothing * dt);
+            float bankT = 1f - Mathf.Exp(-smoothing * dt);
             _currentBankAngle = Mathf.Lerp(_currentBankAngle, targetBankAngle, bankT);
             _bankPivot.localRotation = Quaternion.Euler(0f, 0f, -_currentBankAngle);
         }
 
+        /// <summary>Planar yaw (degrees) from a world rotation — ignores pitch so bank tracks turn only.</summary>
         static float GetPlanarYawDegrees(Quaternion rotation)
         {
             // --- Compute value ---

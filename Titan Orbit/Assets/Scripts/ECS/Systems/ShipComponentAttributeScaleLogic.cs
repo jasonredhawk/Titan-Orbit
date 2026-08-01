@@ -1,39 +1,45 @@
 using System.Collections.Generic;
 using TitanOrbit.Data;
-using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
 using UnityEngine;
 
-namespace TitanOrbit.Game
+namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Maps bottom-bar attribute upgrade levels to per-component mesh scale factors on ship proxies.
+    /// Maps bottom-bar attribute upgrade levels to per-component scale factors on ship parts.
     /// Each chassis part group grows by its Part Profile <b>per-level percent of base</b>
     /// (<c>perLevel / base</c> from <c>ShipFamilyPartCalcProfileSet.asset</c>
     /// <c>EvaluateAtVersion(1)</c>). Multiple bottom-bar drivers on one part <b>share</b> growth
     /// (each contributes <c>1/N</c> of its percent) and are <b>added</b> — never multiplied —
     /// then <see cref="ShipFamilyPartCalcProfileSet.globalUpgradeScaleMultiplier"/> (default 0.25)
     /// dampens that growth on every part.
-    /// Used by <see cref="ShipComponentAttributeScaleApplier"/> — <b>presentation only</b>.
+    /// <para>
+    /// Used by:
+    /// <list type="bullet">
+    /// <item><see cref="Game.ShipComponentAttributeScaleApplier"/> — hybrid proxy mesh grow</item>
+    /// <item><see cref="ShipHullColliderLogic"/> — Unity Physics hull rebuild so colliders match</item>
+    /// </list>
+    /// </para>
     /// <para>
     /// Example: Wing has N=4 drivers, <c>healthCap=10</c>, <c>healthCapPerLevel=1</c> → one
     /// MaxHealth purchase grows the wing by +(10%/4)=+2.5%. Full single-driver feel returns when
     /// all N drivers are maxed at the same fraction (sum of shares ≈ one full percent curve).
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] This must never feed combat. Fire power / fire rate come from family Weapon
-    /// stats × <b>authored prefab</b> localScale (via <c>ShipWeaponMountCombatLogic</c>) plus ship
-    /// level and numeric attribute multipliers — not from these grown proxy meshes.
+    /// [TITAN-ORBIT] Scale factors grow visuals <b>and</b> the ECS <c>PhysicsCollider</c> compound
+    /// (same math on server + client). They must still never rewrite fire power / fire rate —
+    /// those come from family Weapon stats × <b>authored prefab</b> localScale
+    /// (via <c>ShipWeaponMountCombatLogic</c>) plus ship level and numeric attribute multipliers.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Whole-ship tier size (+10%/level) is <c>LocalTransform.Scale</c> /
-    /// <see cref="BodyCollisionMath.GetShipTierScale"/> — not this per-part grow. Attribute mesh
-    /// scale is only for bottom-bar upgrade feedback on top of that uniform hull size.
+    /// <see cref="BodyCollisionMath.GetShipTierScale"/> — not this per-part grow. Attribute
+    /// scale stacks on top of that uniform hull size.
     /// </para>
     /// <para>
     /// Keep driver field maps in sync with <c>Assets/Resources/ShipFamilyPartCalcProfileSet.asset</c>
     /// <c>partProfiles</c> rows. Do not use flat <c>ShipAttributeUpgradeLogic.MultiplierPerLevel</c>
-    /// for mesh size — that is combat/stat math only.
+    /// for mesh/collider size — that is combat/stat math only.
     /// </para>
     /// </summary>
     public static class ShipComponentAttributeScaleLogic
@@ -371,6 +377,7 @@ namespace TitanOrbit.Game
         /// <param name="rates">Per-group <c>perLevel/base</c> fractions from <see cref="BuildRatesFromProfileSet"/>.</param>
         /// <param name="territoryMovementMult">
         /// Friendly-triangle speed multiplier (usually 1). Scales Engine/Thrust meshes for territory feedback.
+        /// Presentation-only — pass 1 for physics collider bakes so server and client hulls match.
         /// </param>
         public static void Apply(
             in ShipAttributeUpgradeState attrs,
@@ -397,6 +404,7 @@ namespace TitanOrbit.Game
 
             // --- Territory speed feedback (Engine/Thrust mounts only) ---
             // [TITAN-ORBIT] Faster in friendly triangles → bigger propulsion meshes.
+            // Collider bake must pass 1 — territory is local-owner presentation, not sim size.
             float tMult = Mathf.Max(1f, territoryMovementMult);
             engineScale *= tMult;
             thrusterScale *= tMult;
@@ -411,9 +419,140 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Builds USC part groups under <paramref name="root"/>, then applies attribute scale factors.
+        /// Shared by hybrid proxy presentation and <see cref="ShipHullColliderLogic"/> so grown
+        /// meshes and Unity Physics child colliders use the same hierarchy transforms.
+        /// </summary>
+        /// <param name="root">Chassis prefab instance or hybrid hull proxy root.</param>
+        /// <param name="familyPrefix">USC family token (e.g. AstroEagle from AstroEagle_Wing_2).</param>
+        /// <param name="attrs">Ghosted bottom-bar upgrade levels on the ship entity.</param>
+        /// <param name="territoryMovementMult">
+        /// Pass 1 for collider bake. Presentation may pass friendly-triangle speed mult.
+        /// </param>
+        /// <returns>True when at least one part group was found and scaled.</returns>
+        public static bool ApplyToHierarchy(
+            Transform root,
+            string familyPrefix,
+            in ShipAttributeUpgradeState attrs,
+            float territoryMovementMult = 1f)
+        {
+            if (root == null)
+                return false;
+
+            // --- ProfileSet rates (version 1) ---
+            var profileSet = ShipFamilyPartCalcProfileSet.LoadShared();
+            ProfileScaleRates rates = BuildRatesFromProfileSet(profileSet);
+
+            // --- Classify mounts (same filters as ShipComponentAttributeScaleApplier) ---
+            string prefix = string.IsNullOrWhiteSpace(familyPrefix) ? "AstroEagle" : familyPrefix.Trim();
+            BuildGroupsFromHierarchy(
+                root,
+                prefix,
+                out ScaleGroup cockpit,
+                out ScaleGroup wing,
+                out ScaleGroup weapon,
+                out ScaleGroup engine,
+                out ScaleGroup thruster,
+                out ScaleGroup tail,
+                out ScaleGroup part);
+
+            bool any = (cockpit.Transforms != null && cockpit.Transforms.Count > 0)
+                || (wing.Transforms != null && wing.Transforms.Count > 0)
+                || (weapon.Transforms != null && weapon.Transforms.Count > 0)
+                || (engine.Transforms != null && engine.Transforms.Count > 0)
+                || (thruster.Transforms != null && thruster.Transforms.Count > 0)
+                || (tail.Transforms != null && tail.Transforms.Count > 0)
+                || (part.Transforms != null && part.Transforms.Count > 0);
+            if (!any)
+                return false;
+
+            Apply(
+                attrs,
+                rates,
+                cockpit,
+                wing,
+                weapon,
+                engine,
+                thruster,
+                tail,
+                part,
+                territoryMovementMult);
+            return true;
+        }
+
+        /// <summary>
+        /// Scans a chassis hierarchy into legacy USC attribute-scale groups (outermost mounts only).
+        /// </summary>
+        public static void BuildGroupsFromHierarchy(
+            Transform root,
+            string familyPrefix,
+            out ScaleGroup cockpit,
+            out ScaleGroup wing,
+            out ScaleGroup weapon,
+            out ScaleGroup engine,
+            out ScaleGroup thruster,
+            out ScaleGroup tail,
+            out ScaleGroup part)
+        {
+            cockpit = default;
+            wing = default;
+            weapon = default;
+            engine = default;
+            thruster = default;
+            tail = default;
+            part = default;
+            if (root == null)
+                return;
+
+            var stats = ChassisComponentStats.FromTransform(root, familyPrefix);
+
+            // [TITAN-ORBIT] Legacy USC tokens only — Body/Cover/EngineComp must not get a second grow.
+            cockpit = BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.cockpitTransforms, familyPrefix, "Cockpit"));
+            wing = BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.wingTransforms, familyPrefix, "Wing"));
+            weapon = BuildGroup(stats.weaponTransforms);
+            engine = BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.engineTransforms, familyPrefix, "Engine"));
+            thruster = BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.thrusterTransforms, familyPrefix, "Thruster"));
+            tail = BuildGroup(
+                ChassisComponentStats.FilterLegacyTailAttributeScaleTransforms(
+                    stats.tailTransforms, familyPrefix));
+            part = BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.partTransforms, familyPrefix, "Part"));
+
+            // --- Optional Hull root (cockpit body grow) ---
+            Transform hull = root.Find("Hull");
+            if (hull != null)
+            {
+                if (cockpit.Transforms == null)
+                    cockpit = BuildGroup(null);
+                cockpit.Transforms.Add(hull);
+                cockpit.BaseScales.Add(hull.localScale);
+                cockpit.BasePositions.Add(hull.localPosition);
+                PruneNestedTransforms(ref cockpit);
+            }
+
+            PruneNestedAcrossGroups(
+                ref cockpit,
+                ref wing,
+                ref weapon,
+                ref engine,
+                ref thruster,
+                ref tail,
+                ref part);
+        }
+
+        /// <summary>
         /// Derives per-group scale: shared <c>1/N</c> of each driver's percent-of-base growth, summed.
         /// </summary>
-        static void ComputeScaleFactors(
+        public static void ComputeScaleFactors(
             in ShipAttributeUpgradeState attrs,
             in ProfileScaleRates rates,
             out float cockpitScale,

@@ -285,9 +285,9 @@ namespace TitanOrbit.Data
         /// Propulsion move/accel ignore scale; turn and ramming are never scaled.
         /// <para>
         /// [TITAN-ORBIT] Call only with <b>chassis prefab</b> authored localScale (art lever for
-        /// mixed calibers on one hull). Do not pass live hybrid proxies after
-        /// <c>ShipComponentAttributeScaleApplier</c> has grown meshes — that scale is visual-only
-        /// and combat already applies Fire Power attributes as numeric multipliers.
+        /// mixed calibers on one hull). Do not pass live hybrid proxies after attribute mesh grow —
+        /// combat already applies Fire Power attributes as numeric multipliers (mesh/collider grow
+        /// is separate from firePower / fireRate).
         /// </para>
         /// </summary>
         public static ShipComponentAbilityStats ScaleStatsByTransform(

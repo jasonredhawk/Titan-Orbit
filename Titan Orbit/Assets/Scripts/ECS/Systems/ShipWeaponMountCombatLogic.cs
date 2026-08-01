@@ -18,9 +18,10 @@ namespace TitanOrbit.ECS
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Intentional: combat stats are read from a fresh Instantiates of the chassis
-    /// prefab — <b>never</b> from the live hybrid proxy. Bottom-bar attribute upgrades grow weapon
-    /// meshes via <c>ShipComponentAttributeScaleApplier</c> for looks only; that runtime scale must
-    /// not multiply firePower / fireRate again (attributes already apply via
+    /// prefab — <b>never</b> from the live hybrid proxy or attribute-grown meshes. Bottom-bar
+    /// upgrades grow weapon meshes (and PhysicsCollider children) via
+    /// <see cref="ShipComponentAttributeScaleLogic"/>; that runtime scale must not multiply
+    /// firePower / fireRate again (attributes already apply via
     /// <see cref="ShipAttributeUpgradeLogic.MultiplierPerLevel"/> on the numeric stats).
     /// </para>
     /// Paired with <see cref="ShipWeaponFireLogic"/> (volley + energy-queue round-robin) and

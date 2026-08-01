@@ -9,20 +9,31 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Rebuilds each ship's <see cref="PhysicsCollider"/> from its chassis visual prefab when level,
-    /// branch, or chassis id changes. Runs on server and client so prediction matches authority.
-    /// Paired with <see cref="ShipStatApplySystem"/> (stats) and hybrid hull proxies when EG is off.
+    /// branch, chassis id, or bottom-bar attribute upgrade sum changes. Runs on server and client
+    /// so prediction matches authority. Paired with <see cref="ShipStatApplySystem"/> (stats) and
+    /// hybrid hull proxies when EG is off.
+    /// <para>
+    /// [TITAN-ORBIT] Attribute mesh grow used to be presentation-only — grown wings/engines then
+    /// clipped through asteroids because the PhysicsCollider stayed at authored size. This system
+    /// rebuilds the compound with the same <see cref="ShipComponentAttributeScaleLogic"/> factors.
+    /// </para>
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ShipStatApplySystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
     public partial struct ShipHullColliderSyncSystem : ISystem
     {
+        /// <summary>Ship queued for a hull collider rebuild after the read-only query pass.</summary>
         struct PendingHullSync
         {
             public Entity Entity;
             public int BranchIndex;
         }
 
+        /// <summary>
+        /// Finds ships whose hull bake inputs changed, then swaps PhysicsCollider (and re-pins
+        /// docked moons on the server).
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
@@ -116,6 +127,9 @@ namespace TitanOrbit.ECS
             pending.Dispose();
         }
 
+        /// <summary>
+        /// True when chassis identity or attribute-upgrade sum differs from the last bake.
+        /// </summary>
         static bool NeedsHullSync(EntityManager em, Entity entity, in ShipState ship, int branchIndex)
         {
             if (!ShipStatApplyLogic.TryResolveChassisId(
@@ -127,6 +141,11 @@ namespace TitanOrbit.ECS
                     shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
                 return false;
 
+            int attributeSum = 0;
+            if (em.HasComponent<ShipAttributeUpgradeState>(entity))
+                attributeSum = ShipStatApplyLogic.SumAttributeLevels(
+                    em.GetComponentData<ShipAttributeUpgradeState>(entity));
+
             if (!em.HasComponent<ShipHullColliderState>(entity))
                 return true;
 
@@ -134,9 +153,14 @@ namespace TitanOrbit.ECS
             var chassisKey = new FixedString64Bytes(chassisId);
             return !applied.ChassisId.Equals(chassisKey)
                 || applied.AppliedShipLevel != ship.ShipLevel
-                || applied.AppliedBranchIndex != branchIndex;
+                || applied.AppliedBranchIndex != branchIndex
+                || applied.AppliedAttributeSum != attributeSum;
         }
 
+        /// <summary>
+        /// Builds the compound collider from the chassis prefab (with attribute grow) and stamps
+        /// <see cref="ShipHullColliderState"/>.
+        /// </summary>
         static void TrySyncHull(
             Entity entity,
             EntityManager em,
@@ -161,7 +185,18 @@ namespace TitanOrbit.ECS
             if (em.HasComponent<ShipMotorConfig>(entity))
                 motorMass = em.GetComponentData<ShipMotorConfig>(entity).Mass;
 
-            if (!ShipHullColliderLogic.TryApplyChassisCollider(em, entity, tier.prefab, motorMass))
+            // --- Attribute levels for part grow during bake ---
+            var attrs = default(ShipAttributeUpgradeState);
+            int attributeSum = 0;
+            if (em.HasComponent<ShipAttributeUpgradeState>(entity))
+            {
+                attrs = em.GetComponentData<ShipAttributeUpgradeState>(entity);
+                attributeSum = ShipStatApplyLogic.SumAttributeLevels(attrs);
+            }
+
+            string familyPrefix = ResolveFamilyPrefix(chassisId);
+            if (!ShipHullColliderLogic.TryApplyChassisCollider(
+                    em, entity, tier.prefab, motorMass, attrs, familyPrefix))
                 return;
 
             var hullState = new ShipHullColliderState
@@ -169,12 +204,24 @@ namespace TitanOrbit.ECS
                 ChassisId = new FixedString64Bytes(chassisId),
                 AppliedShipLevel = ship.ShipLevel,
                 AppliedBranchIndex = branchIndex,
+                AppliedAttributeSum = attributeSum,
             };
 
             if (em.HasComponent<ShipHullColliderState>(entity))
                 em.SetComponentData(entity, hullState);
             else
                 em.AddComponentData(entity, hullState);
+        }
+
+        /// <summary>USC family token from chassis id (AstroEagle_Tier2 → AstroEagle).</summary>
+        static string ResolveFamilyPrefix(string chassisId)
+        {
+            if (string.IsNullOrEmpty(chassisId))
+                return "AstroEagle";
+            int underscore = chassisId.IndexOf('_');
+            if (underscore > 0)
+                return chassisId.Substring(0, underscore);
+            return chassisId;
         }
     }
 }

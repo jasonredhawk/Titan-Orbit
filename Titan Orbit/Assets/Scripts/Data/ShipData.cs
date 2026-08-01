@@ -85,16 +85,20 @@ namespace TitanOrbit.Data
         /// <summary>Team-neutral tint multiplier on the visual proxy material.</summary>
         public Color shipColor = Color.white;
 
-        [Header("Banking (per-ship)")]
+        [Header("Banking (per-ship overrides — optional)")]
         /// <summary>
-        /// [TITAN-ORBIT] Maximum roll angle (degrees) for the fastest-turning ship at full stick deflection.
-        /// Slower hulls scale down toward ~35° via <see cref="ShipBankVisualApplier"/>.
+        /// [TITAN-ORBIT] Optional peak roll (°). Prefer the global knobs on scene
+        /// <c>EcsWorldVisualizer</c> → Ship Banking unless this hull needs a unique lean.
         /// </summary>
-        [Tooltip("Maximum roll angle (degrees) for the fastest-turning ship at full turn. Others scale down toward 35°.")]
+        [Tooltip(
+            "Optional peak roll (°). Leave at 111 and tune EcsWorldVisualizer → Ship Banking " +
+            "for the whole session instead.")]
         public float maxBankAngle = 111f;
 
-        /// <summary>How quickly visual roll catches up to the target bank angle (cosmetic only).</summary>
-        [Tooltip("How quickly roll catches up to the target.")]
+        /// <summary>
+        /// Optional smoothing override. Prefer <c>EcsWorldVisualizer</c> → Ship Banking → Smoothing.
+        /// </summary>
+        [Tooltip("Optional roll catch-up rate. Prefer EcsWorldVisualizer → Ship Banking for global feel.")]
         public float bankSmoothing = 8f;
     }
 }

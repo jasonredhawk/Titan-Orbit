@@ -90,6 +90,33 @@ namespace TitanOrbit.Game
         [Header("Ship Propulsion VFX")]
         [SerializeField] ShipPropulsionVisualApplier.Settings propulsionVfxSettings;
 
+        // --- Ship banking (cosmetic only; published to ShipBankVisualSettingsCache) ---
+
+        /// <summary>
+        /// Peak roll (°) at full turn when sensitivity is 1. Tune in Inspector under Ship Banking.
+        /// </summary>
+        [Header("Ship Banking (visual roll while turning)")]
+        [Tooltip(
+            "Peak roll angle in degrees at full turn (when Bank Sensitivity is 1). " +
+            "Raise for a deeper lean; does not affect turn rate or physics.")]
+        [SerializeField] [Range(15f, 160f)]
+        float shipBankMaxAngleDegrees = ShipPropulsionAggregation.VisualBankReferenceMaxAngleDegrees;
+
+        /// <summary>
+        /// Multiplier on turn-rate → bank. Default 1.35 is a bit more responsive than the old linear curve.
+        /// </summary>
+        [Tooltip(
+            "How sensitive banking is to yaw rate. 1 = linear (old feel). " +
+            "Higher values lean harder at partial turn stick — try 1.35–2.0.")]
+        [SerializeField] [Range(0.25f, 3f)]
+        float shipBankSensitivity = 1.35f;
+
+        /// <summary>Exponential catch-up for yaw sampling and roll lerp (higher = snappier).</summary>
+        [Tooltip(
+            "How quickly roll catches up to the target bank angle. Higher = snappier, lower = floatier.")]
+        [SerializeField] [Range(1f, 24f)]
+        float shipBankSmoothing = 8f;
+
         // --- Runtime proxy registries (entity → GameObject) ---
 
         /// <summary>All active ECS entity → visual proxy instances.</summary>
@@ -345,6 +372,32 @@ namespace TitanOrbit.Game
                 if (propulsionVfxSettings.thrusterVfxTransitionSpeed <= 0.01f)
                     propulsionVfxSettings.thrusterVfxTransitionSpeed = 3f;
             }
+
+            // --- Ship banking (cosmetic roll) ---
+            // [TITAN-ORBIT] Publish Inspector knobs so hybrid + EG bank paths share one feel.
+            PublishShipBankVisualSettings();
+        }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// [EDITOR] Live-publish banking knobs while scrubbing the Inspector in Play Mode.
+        /// </summary>
+        void OnValidate()
+        {
+            PublishShipBankVisualSettings();
+        }
+#endif
+
+        /// <summary>
+        /// Copies Max Bank / Sensitivity / Smoothing into <see cref="ShipBankVisualSettingsCache"/>
+        /// for <see cref="ShipBankVisualApplier"/> and Entities Graphics bank systems.
+        /// </summary>
+        void PublishShipBankVisualSettings()
+        {
+            ShipBankVisualSettingsCache.Publish(
+                shipBankMaxAngleDegrees,
+                shipBankSensitivity,
+                shipBankSmoothing);
         }
 
         /// <summary>
@@ -356,6 +409,8 @@ namespace TitanOrbit.Game
             // --- Singleton for quarantine-safe UI ---
             // [TITAN-ORBIT] Minimap walks this instance's proxy dictionary instead of ECS gathers.
             Active = this;
+            // [TITAN-ORBIT] Re-publish banking knobs in case Awake ran before serialized values settled.
+            PublishShipBankVisualSettings();
             Application.onBeforeRender += OnBeforeRenderSync;
 
             // --- Territory triangle world drawer (Shapes) ---

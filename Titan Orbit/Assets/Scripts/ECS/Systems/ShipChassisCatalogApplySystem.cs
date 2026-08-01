@@ -9,8 +9,10 @@ using UnityEngine;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Applies weapon mounts, wing tractor beams, and hull colliders when chassis/level/branch changes.
-    /// Runs on server and client so both worlds share the same sim attachment buffers.
+    /// Applies weapon mounts, wing tractor beams, and hull colliders when chassis/level/branch
+    /// changes (and, in Entities Graphics mode, when bottom-bar attribute sum changes so the
+    /// PhysicsCollider grows with part meshes). Runs on server and client so both worlds share
+    /// the same sim attachment buffers.
     /// Weapon and wing locals are preferred from a live prefab bake (hull-root unscaled) so fire
     /// muzzles and tractor reach match the visible upgrade-tree hull without requiring a manual
     /// catalog re-bake menu pass.
@@ -140,7 +142,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when chassis id / level / branch differs from the last applied <see cref="ShipHullColliderState"/>.
+        /// True when chassis id / level / branch differs from the last applied
+        /// <see cref="ShipHullColliderState"/>, or (Entities Graphics mode only) when bottom-bar
+        /// attribute sum changed and the hull collider must grow with the parts.
         /// </summary>
         static bool NeedsCatalogApply(
             EntityManager em,
@@ -165,6 +169,11 @@ namespace TitanOrbit.ECS
             if (!hasCatalog && !hasPrefab)
                 return false;
 
+            int attributeSum = 0;
+            if (em.HasComponent<ShipAttributeUpgradeState>(entity))
+                attributeSum = ShipStatApplyLogic.SumAttributeLevels(
+                    em.GetComponentData<ShipAttributeUpgradeState>(entity));
+
             if (!em.HasComponent<ShipHullColliderState>(entity))
                 return true;
 
@@ -175,11 +184,15 @@ namespace TitanOrbit.ECS
                 || applied.AppliedBranchIndex != branchIndex)
                 return true;
 
-            // [TITAN-ORBIT] Do NOT re-apply when wing buffer is empty for the same chassis.
-            // Many upgrade-tree hulls have zero WingTractorBeam mounts. The old check treated
-            // that as "stale" and called TryApplyCatalogData every frame → Object.Instantiate
-            // of the full chassis prefab on the server (and client after settle). That starved
-            // GhostSpawn Instantiates / hybrid map drain and left the loading bar stuck near 92%.
+            // --- Attribute grow → collider rebuild (EG only) ---
+            // [TITAN-ORBIT] ShipHullColliderSyncSystem early-outs when UseEntitiesGraphicsForShips
+            // is true, so this catalog path owns attribute hull rebuilds in EG mode. Hybrid mode
+            // leaves attribute dirty to ShipHullColliderSyncSystem to avoid double Instantiates.
+            // Do NOT treat empty wing buffers as stale (that Instantiates every frame → join stall).
+            if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips
+                && applied.AppliedAttributeSum != attributeSum)
+                return true;
+
             return false;
         }
 
@@ -220,13 +233,26 @@ namespace TitanOrbit.ECS
             // hull the client draws beams from. Stale catalog lists caused “beam shows, no pull.”
             ApplyWingTractorBeams(em, entity, entry, chassisPrefab);
 
+            // --- Attribute levels for hull collider part grow ---
+            var attrs = default(ShipAttributeUpgradeState);
+            int attributeSum = 0;
+            if (em.HasComponent<ShipAttributeUpgradeState>(entity))
+            {
+                attrs = em.GetComponentData<ShipAttributeUpgradeState>(entity);
+                attributeSum = ShipStatApplyLogic.SumAttributeLevels(attrs);
+            }
+
             if (chassisPrefab != null)
             {
                 float motorMass = 1f;
                 if (em.HasComponent<ShipMotorConfig>(entity))
                     motorMass = em.GetComponentData<ShipMotorConfig>(entity).Mass;
 
-                ShipHullColliderLogic.TryApplyChassisCollider(em, entity, chassisPrefab, motorMass);
+                // [TITAN-ORBIT] Bake hierarchy with same attribute scale as proxy meshes so
+                // grown wings/engines collide at their visible size (not authored-only).
+                string familyPrefix = ResolveFamilyPrefix(chassisId);
+                ShipHullColliderLogic.TryApplyChassisCollider(
+                    em, entity, chassisPrefab, motorMass, attrs, familyPrefix);
             }
 
             var hullState = new ShipHullColliderState
@@ -234,12 +260,24 @@ namespace TitanOrbit.ECS
                 ChassisId = new FixedString64Bytes(chassisId),
                 AppliedShipLevel = ship.ShipLevel,
                 AppliedBranchIndex = branchIndex,
+                AppliedAttributeSum = attributeSum,
             };
 
             if (em.HasComponent<ShipHullColliderState>(entity))
                 em.SetComponentData(entity, hullState);
             else
                 em.AddComponentData(entity, hullState);
+        }
+
+        /// <summary>USC family token from chassis id (AstroEagle_Tier2 → AstroEagle).</summary>
+        static string ResolveFamilyPrefix(string chassisId)
+        {
+            if (string.IsNullOrEmpty(chassisId))
+                return "AstroEagle";
+            int underscore = chassisId.IndexOf('_');
+            if (underscore > 0)
+                return chassisId.Substring(0, underscore);
+            return chassisId;
         }
 
         /// <summary>

@@ -9,6 +9,8 @@ namespace TitanOrbit.ECS
     /// Client-only visual roll banking for Entities Graphics ships. Applies cosmetic Z-roll on
     /// <see cref="ShipVisualBankPivotTag"/> children so hull meshes bank during turns without
     /// affecting physics yaw. Ported from <c>ShipBankVisualApplier</c> (hybrid proxy path).
+    /// Reads Max Bank / Sensitivity / Smoothing from <see cref="ShipBankVisualSettingsCache"/>
+    /// (published by <c>EcsWorldVisualizer</c> Inspector fields).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(PresentationSystemGroup))]
@@ -17,10 +19,15 @@ namespace TitanOrbit.ECS
     {
         const float IdleVisualLinearSpeedThreshold = 0.12f;
         const float IdleBankAngularVelDeadbandDegPerSec = 18f;
-        const float BankSmoothing = 8f;
 
+        /// <summary>
+        /// [ECS/DOTS] Presentation tick: sample yaw rate per bank pivot, map to target roll, lerp.
+        /// Skipped under TransformQuarantine (hybrid GO path owns bank instead).
+        /// </summary>
         protected override void OnUpdate()
         {
+            // --- Join / presentation gates ---
+            // [TITAN-ORBIT] Hybrid proxies draw ships while quarantined; EG bank would fight them.
             if (ClientJoinSettleCache.TransformQuarantine ||
                 !TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
                 return;
@@ -28,6 +35,11 @@ namespace TitanOrbit.ECS
             float dt = SystemAPI.Time.DeltaTime;
             if (dt <= 0f)
                 return;
+
+            // --- Designer knobs (Inspector → EcsWorldVisualizer → Ship Banking) ---
+            float maxBank = ShipBankVisualSettingsCache.MaxBankAngleDegrees;
+            float sensitivity = ShipBankVisualSettingsCache.BankSensitivity;
+            float smoothing = ShipBankVisualSettingsCache.BankSmoothing;
 
             foreach (var (pivotTag, bankState, pivotTransform, entity) in SystemAPI
                          .Query<RefRO<ShipVisualBankPivotTag>, RefRW<ShipVisualBankState>, RefRW<LocalTransform>>()
@@ -60,7 +72,7 @@ namespace TitanOrbit.ECS
 
                 var shipTransform = EntityManager.GetComponentData<LocalTransform>(shipEntity);
                 float yawDeg = GetPlanarYawDegrees(shipTransform.Rotation);
-                SampleYawRate(ref bankState.ValueRW, yawDeg, dt);
+                SampleYawRate(ref bankState.ValueRW, yawDeg, dt, smoothing);
 
                 float signedYawRate = bankState.ValueRO.SmoothedYawRateDegPerSec;
                 if (EntityManager.HasComponent<ShipKinematics>(shipEntity))
@@ -74,13 +86,15 @@ namespace TitanOrbit.ECS
                     }
                 }
 
+                // --- Target bank (same helper as hybrid ShipBankVisualApplier) ---
                 float globalMaxTurn = ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond();
                 float targetBank = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
                     signedYawRate,
-                    ShipPropulsionAggregation.VisualBankReferenceMaxAngleDegrees,
-                    globalMaxTurn);
+                    maxBank,
+                    globalMaxTurn,
+                    sensitivity);
 
-                float bankT = 1f - math.exp(-BankSmoothing * dt);
+                float bankT = 1f - math.exp(-smoothing * dt);
                 bankState.ValueRW.CurrentBankAngleDeg = math.lerp(
                     bankState.ValueRO.CurrentBankAngleDeg,
                     targetBank,
@@ -120,7 +134,12 @@ namespace TitanOrbit.ECS
             return moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.001f;
         }
 
-        static void SampleYawRate(ref ShipVisualBankState bankState, float yawDeg, float dt)
+        /// <summary>Exponentially smooths planar yaw rate (°/s) for stable bank targets.</summary>
+        /// <param name="bankState">Mutable yaw sample state on the pivot entity.</param>
+        /// <param name="yawDeg">Current planar yaw of the ship ghost.</param>
+        /// <param name="dt">Frame delta time (seconds).</param>
+        /// <param name="smoothing">Catch-up rate from <see cref="ShipBankVisualSettingsCache"/>.</param>
+        static void SampleYawRate(ref ShipVisualBankState bankState, float yawDeg, float dt, float smoothing)
         {
             if (!bankState.YawInitialized)
             {
@@ -134,7 +153,7 @@ namespace TitanOrbit.ECS
             float instantRate = DeltaAngleDegrees(bankState.PrevYawDeg, yawDeg) / dt;
             bankState.PrevYawDeg = yawDeg;
 
-            float velT = 1f - math.exp(-BankSmoothing * dt);
+            float velT = 1f - math.exp(-smoothing * dt);
             bankState.SmoothedYawRateDegPerSec = math.lerp(
                 bankState.SmoothedYawRateDegPerSec,
                 instantRate,

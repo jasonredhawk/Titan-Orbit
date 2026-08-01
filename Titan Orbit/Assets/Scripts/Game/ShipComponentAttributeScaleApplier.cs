@@ -11,17 +11,20 @@ namespace TitanOrbit.Game
     /// Client-side component mesh scaling on ship proxies when bottom-bar attribute upgrades change,
     /// and when the ship is inside a friendly territory triangle (Engine/Thrust mounts grow like a
     /// speed upgrade — NGO feel). Watches ShipAttributeUpgradeState + territory multiplier on the
-    /// linked ship entity. Attached by EcsWorldVisualizer; <b>cosmetic only</b>.
+    /// linked ship entity. Attached by EcsWorldVisualizer.
     /// <para>
     /// Growth rates come from <c>ShipFamilyPartCalcProfileSet.asset</c> Part Profiles
     /// (<c>perLevel / base</c> via <see cref="ShipComponentAttributeScaleLogic.BuildRatesFromProfileSet"/>).
     /// Multiple drivers on one part share growth (<c>1/N</c> each) and add — they do not multiply.
     /// Tail mounts grow from RotationSpeed; Engine and Thruster buckets share MovementSpeed.
+    /// The same factors rebuild the ECS <c>PhysicsCollider</c> via
+    /// <see cref="ShipHullColliderLogic"/> so grown parts collide at their visible size.
     /// </para>
     /// <para>
     /// Territory mult is <see cref="PlanetConnectionGraphCache.LocalOwnerTerritoryMult"/> — sticky and
     /// written only on first-time predicting ticks so NetCode resim / triangle-edge noise cannot
-    /// blink engine scale every frame.
+    /// blink engine scale every frame. Territory grow is presentation-only (colliders stay at
+    /// attribute size, not triangle-boosted size).
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Scaling thruster mounts also parents jet flame prefabs from
@@ -78,7 +81,10 @@ namespace TitanOrbit.Game
             RebuildCache();
         }
 
-        /// <summary>Scans hull hierarchy, loads ProfileSet rates, stores base scales/positions.</summary>
+        /// <summary>
+        /// Scans hull hierarchy via shared <see cref="ShipComponentAttributeScaleLogic.BuildGroupsFromHierarchy"/>
+        /// (same grouping as PhysicsCollider bake), loads ProfileSet rates, stores base scales/positions.
+        /// </summary>
         void RebuildCache()
         {
             // --- ProfileSet percent-of-base rates (version 1) ---
@@ -86,65 +92,26 @@ namespace TitanOrbit.Game
             var profileSet = ShipFamilyPartCalcProfileSet.LoadShared();
             _rates = ShipComponentAttributeScaleLogic.BuildRatesFromProfileSet(profileSet);
 
-            var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix);
+            // --- Same USC groups as ShipHullColliderLogic bake ---
+            // [TITAN-ORBIT] Shared helper keeps proxy mesh grow and collider child grow in lockstep.
+            ShipComponentAttributeScaleLogic.BuildGroupsFromHierarchy(
+                transform,
+                _familyPrefix,
+                out _cockpit,
+                out _wing,
+                out _weapon,
+                out _engine,
+                out _thruster,
+                out _tail,
+                out _part);
 
-            // --- Legacy USC modules only for attribute grow ---
-            // [TITAN-ORBIT] FromTransform uses ProfileSet (EngineComp, CockpitCover, Body→Hull…).
-            // Bottom-bar mesh scale must match classic Family_Wing / Family_Engine / Family_Tail
-            // tokens or every ability tick grows cosmetics that never used to scale.
-            _cockpit = ShipComponentAttributeScaleLogic.BuildGroup(
-                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
-                    stats.cockpitTransforms, _familyPrefix, "Cockpit"));
-            _wing = ShipComponentAttributeScaleLogic.BuildGroup(
-                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
-                    stats.wingTransforms, _familyPrefix, "Wing"));
-            _weapon = ShipComponentAttributeScaleLogic.BuildGroup(stats.weaponTransforms);
-            _engine = ShipComponentAttributeScaleLogic.BuildGroup(
-                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
-                    stats.engineTransforms, _familyPrefix, "Engine"));
-            _thruster = ShipComponentAttributeScaleLogic.BuildGroup(
-                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
-                    stats.thrusterTransforms, _familyPrefix, "Thruster"));
-            // Tail + Fin share the Tail Part Profile (turnSpeed → RotationSpeed).
-            _tail = ShipComponentAttributeScaleLogic.BuildGroup(
-                ChassisComponentStats.FilterLegacyTailAttributeScaleTransforms(
-                    stats.tailTransforms, _familyPrefix));
-            _part = ShipComponentAttributeScaleLogic.BuildGroup(
-                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
-                    stats.partTransforms, _familyPrefix, "Part"));
-
-            // --- Optional Hull root (cockpit body grow) ---
-            // [TITAN-ORBIT] Some chassis put the body under a Hull node. Append then prune so we
-            // do not scale Hull and a nested cockpit child together (world scale would compound).
-            Transform hull = transform.Find("Hull");
-            if (hull != null)
-            {
-                _cockpit.Transforms.Add(hull);
-                _cockpit.BaseScales.Add(hull.localScale);
-                _cockpit.BasePositions.Add(hull.localPosition);
-                ShipComponentAttributeScaleLogic.PruneNestedTransforms(ref _cockpit);
-            }
-
-            // --- Cross-bucket nesting (Cover under Wing, EngineComp under Engine, …) ---
-            // [TITAN-ORBIT] Part Calc ProfileSet classifies many cosmetics into scale buckets.
-            // Scaling a child after its parent already grew multiplies in world space — felt like
-            // every ability upgrade made the whole ship swell. Outermost mounts only.
-            ShipComponentAttributeScaleLogic.PruneNestedAcrossGroups(
-                ref _cockpit,
-                ref _wing,
-                ref _weapon,
-                ref _engine,
-                ref _thruster,
-                ref _tail,
-                ref _part);
-
-            _initialized = _cockpit.Transforms.Count > 0
-                || _wing.Transforms.Count > 0
-                || _weapon.Transforms.Count > 0
-                || _engine.Transforms.Count > 0
-                || _thruster.Transforms.Count > 0
-                || _tail.Transforms.Count > 0
-                || _part.Transforms.Count > 0;
+            _initialized = (_cockpit.Transforms != null && _cockpit.Transforms.Count > 0)
+                || (_wing.Transforms != null && _wing.Transforms.Count > 0)
+                || (_weapon.Transforms != null && _weapon.Transforms.Count > 0)
+                || (_engine.Transforms != null && _engine.Transforms.Count > 0)
+                || (_thruster.Transforms != null && _thruster.Transforms.Count > 0)
+                || (_tail.Transforms != null && _tail.Transforms.Count > 0)
+                || (_part.Transforms != null && _part.Transforms.Count > 0);
 
             TryApplyAttributeScale(force: true);
         }

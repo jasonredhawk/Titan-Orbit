@@ -14,13 +14,22 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Tracks which chassis visual prefab last built the ship's <see cref="PhysicsCollider"/>.
-    /// Compared each frame by <see cref="ShipHullColliderSyncSystem"/> so upgrades rebuild hull shape.
+    /// Compared each frame by <see cref="ShipHullColliderSyncSystem"/> so chassis and
+    /// bottom-bar attribute upgrades rebuild hull shape.
     /// </summary>
     public struct ShipHullColliderState : IComponentData
     {
+        /// <summary>Last chassis id whose prefab was baked into PhysicsCollider.</summary>
         public FixedString64Bytes ChassisId;
+        /// <summary>Last <see cref="ShipState.ShipLevel"/> used for chassis resolve.</summary>
         public int AppliedShipLevel;
+        /// <summary>Last upgrade-tree branch index used for chassis resolve.</summary>
         public int AppliedBranchIndex;
+        /// <summary>
+        /// Sum of ghosted <see cref="ShipAttributeUpgradeState"/> levels at last bake.
+        /// When this changes, part meshes and collider children must grow together.
+        /// </summary>
+        public int AppliedAttributeSum;
     }
 
     /// <summary>
@@ -45,24 +54,58 @@ namespace TitanOrbit.ECS
         /// Replaces the ship's physics collider with a compound built from the chassis prefab.
         /// Falls back to the existing collider when the prefab has no usable collider sources.
         /// <para>
-        /// [TITAN-ORBIT] Bake uses level-1 <see cref="BodyCollisionMath.ShipPresentationScale"/> only.
-        /// Whole-hull tier growth lives on <c>LocalTransform.Scale</c> (+10%/level via
-        /// <see cref="BodyCollisionMath.GetShipTierScale"/>) so PhysX / visual / muzzle stay aligned
-        /// without rebuilding a different mesh density per tier.
+        /// [TITAN-ORBIT] Bake uses level-1 <see cref="BodyCollisionMath.ShipPresentationScale"/> only
+        /// for the whole-hull presentation shrink. Tier growth lives on <c>LocalTransform.Scale</c>
+        /// (+10%/level via <see cref="BodyCollisionMath.GetShipTierScale"/>).
+        /// Bottom-bar attribute grow is applied to the temporary prefab hierarchy first
+        /// (<see cref="ShipComponentAttributeScaleLogic.ApplyToHierarchy"/>) so child collider
+        /// sizes/poses match the grown proxy meshes on server and client.
         /// </para>
         /// </summary>
+        /// <param name="em">World EntityManager (server or client).</param>
+        /// <param name="shipEntity">Ship ghost that owns PhysicsCollider.</param>
+        /// <param name="chassisPrefab">Upgrade-tree hull prefab for this chassis id.</param>
+        /// <param name="motorMass">Ship motor mass for PhysicsMass rebuild after collider swap.</param>
+        /// <param name="attrs">
+        /// Bottom-bar upgrade levels. Default (all zeros) = authored prefab size only.
+        /// </param>
+        /// <param name="familyPrefix">
+        /// USC family token for part classification (e.g. AstroEagle). Empty → parsed from prefab name.
+        /// </param>
+        /// <summary>Overload without attribute grow — authored prefab size only.</summary>
         public static bool TryApplyChassisCollider(
             EntityManager em,
             Entity shipEntity,
             GameObject chassisPrefab,
             float motorMass)
         {
+            var zeroAttrs = default(ShipAttributeUpgradeState);
+            return TryApplyChassisCollider(
+                em, shipEntity, chassisPrefab, motorMass, zeroAttrs, familyPrefix: null);
+        }
+
+        /// <summary>
+        /// Rebuilds the hull collider with bottom-bar attribute part grow applied to the bake hierarchy.
+        /// </summary>
+        public static bool TryApplyChassisCollider(
+            EntityManager em,
+            Entity shipEntity,
+            GameObject chassisPrefab,
+            float motorMass,
+            in ShipAttributeUpgradeState attrs,
+            string familyPrefix)
+        {
             if (chassisPrefab == null || !em.Exists(shipEntity))
                 return false;
 
             // Level-1 presentation bake — tier size is LocalTransform.Scale (see ShipStatApplyLogic).
             float presentationScale = BodyCollisionMath.ShipPresentationScale;
-            if (!TryBuildCompoundCollider(chassisPrefab, presentationScale, out var compound))
+            if (!TryBuildCompoundCollider(
+                    chassisPrefab,
+                    presentationScale,
+                    attrs,
+                    familyPrefix,
+                    out var compound))
                 return false;
 
             ReplacePhysicsCollider(em, shipEntity, compound, motorMass);
@@ -81,9 +124,15 @@ namespace TitanOrbit.ECS
             return material;
         }
 
+        /// <summary>
+        /// Instantiates the chassis, grows attribute-scale parts, then converts UnityEngine colliders
+        /// into a Unity Physics compound blob at presentation scale.
+        /// </summary>
         static bool TryBuildCompoundCollider(
             GameObject chassisPrefab,
             float presentationScale,
+            in ShipAttributeUpgradeState attrs,
+            string familyPrefix,
             out BlobAssetReference<PhysicsColliderBlob> compound)
         {
             compound = default;
@@ -92,10 +141,22 @@ namespace TitanOrbit.ECS
 
             try
             {
+                // --- Temp hierarchy (destroyed in finally) ---
+                // [UNITY] Instantiate so we can mutate localScale without dirtying the asset prefab.
                 instance = Object.Instantiate(chassisPrefab);
                 instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
                 instance.transform.localScale = Vector3.one;
                 var root = instance.transform;
+
+                // --- Bottom-bar attribute grow (same math as proxy meshes) ---
+                // [TITAN-ORBIT] Territory mult stays 1 — collider size is authoritative sim, not
+                // local-owner triangle feedback. Child Colliders then pick up grown lossyScale.
+                string prefix = ResolveFamilyPrefix(chassisPrefab, familyPrefix);
+                ShipComponentAttributeScaleLogic.ApplyToHierarchy(
+                    root,
+                    prefix,
+                    attrs,
+                    territoryMovementMult: 1f);
 
                 foreach (var collider in instance.GetComponentsInChildren<UnityEngine.Collider>(true))
                 {
@@ -137,6 +198,30 @@ namespace TitanOrbit.ECS
                 if (instance != null)
                     Object.Destroy(instance);
             }
+        }
+
+        /// <summary>
+        /// USC family token before the first underscore (AstroEagle_Wing_2 → AstroEagle).
+        /// Falls back to the prefab name, then AstroEagle.
+        /// </summary>
+        static string ResolveFamilyPrefix(GameObject chassisPrefab, string familyPrefix)
+        {
+            if (!string.IsNullOrWhiteSpace(familyPrefix))
+                return familyPrefix.Trim();
+
+            string name = chassisPrefab != null ? chassisPrefab.name : null;
+            if (string.IsNullOrEmpty(name))
+                return "AstroEagle";
+
+            // [UNITY] Prefab instances may be named "Hull (Clone)" — strip the clone suffix.
+            const string cloneSuffix = "(Clone)";
+            if (name.EndsWith(cloneSuffix))
+                name = name.Substring(0, name.Length - cloneSuffix.Length).TrimEnd();
+
+            int underscore = name.IndexOf('_');
+            if (underscore > 0)
+                return name.Substring(0, underscore);
+            return name;
         }
 
         /// <summary>
@@ -248,13 +333,20 @@ namespace TitanOrbit.ECS
                 }
                 case UnityEngine.MeshCollider meshCollider:
                 {
+                    // Convex only — non-convex MeshCollider cannot become a Unity Physics collider blob.
                     if (meshCollider.sharedMesh == null || !meshCollider.convex)
                         return false;
 
-                    blob = Unity.Physics.MeshCollider.Create(
-                        meshCollider.sharedMesh,
-                        TitanOrbitPhysicsLayers.Ship,
-                        HullMaterial);
+                    // --- Scale mesh verts to match grown part hierarchy ---
+                    // [PHYSICS] MeshCollider.Create(Mesh) ignores Transform lossyScale. Attribute
+                    // grow (and presentation bake) live in lossyScale — bake scaled verts so the
+                    // hull matches Box/Sphere/Capsule paths (size *= lossyScale * presentationScale).
+                    if (!TryCreateScaledConvexMesh(
+                            meshCollider.sharedMesh,
+                            lossyScale * presentationScale,
+                            out blob))
+                        return false;
+
                     childPose = new RigidTransform(orientation, position);
                     break;
                 }
@@ -262,6 +354,47 @@ namespace TitanOrbit.ECS
                     return false;
             }
 
+            return blob.IsCreated;
+        }
+
+        /// <summary>
+        /// Builds a convex Unity Physics mesh collider from <paramref name="mesh"/> with
+        /// per-axis <paramref name="scale"/> applied to every vertex (attribute grow + presentation).
+        /// </summary>
+        static bool TryCreateScaledConvexMesh(
+            Mesh mesh,
+            float3 scale,
+            out BlobAssetReference<PhysicsColliderBlob> blob)
+        {
+            blob = default;
+            if (mesh == null)
+                return false;
+
+            Vector3[] verts = mesh.vertices;
+            int[] tris = mesh.triangles;
+            if (verts == null || tris == null || verts.Length < 3 || tris.Length < 3)
+                return false;
+
+            // --- Copy + scale verts (Temp alloc — bake is infrequent: chassis / ability buy) ---
+            var nativeVerts = new NativeArray<float3>(verts.Length, Allocator.Temp);
+            for (int i = 0; i < verts.Length; i++)
+            {
+                Vector3 v = verts[i];
+                nativeVerts[i] = new float3(v.x * scale.x, v.y * scale.y, v.z * scale.z);
+            }
+
+            var nativeTris = new NativeArray<int3>(tris.Length / 3, Allocator.Temp);
+            for (int t = 0, i = 0; t < nativeTris.Length; t++, i += 3)
+                nativeTris[t] = new int3(tris[i], tris[i + 1], tris[i + 2]);
+
+            blob = Unity.Physics.MeshCollider.Create(
+                nativeVerts,
+                nativeTris,
+                TitanOrbitPhysicsLayers.Ship,
+                HullMaterial);
+
+            nativeVerts.Dispose();
+            nativeTris.Dispose();
             return blob.IsCreated;
         }
 
