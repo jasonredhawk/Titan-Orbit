@@ -73,9 +73,116 @@ namespace TitanOrbit.Editor.Build
         /// <summary>
         /// Windows standalone <b>client</b> (Player subtarget) for Join→GCE feel tests.
         /// Output: <c>BuildOutput/Client/windows/TitanOrbit.exe</c>. Debug log writes beside the exe.
+        /// <para>
+        /// [TITAN-ORBIT] After a Linux Dedicated Server build the Editor stays on Linux Server.
+        /// Building the Windows client without switching first can bake EntityScenes / SubScenes
+        /// with the wrong platform (Server defines, missing client Pending components) and produce
+        /// a player that late-joins badly. We switch to Windows Player first (same pattern as the
+        /// Linux server build) and resume BuildPlayer after domain reload when needed.
+        /// </para>
         /// </summary>
         [MenuItem("TitanOrbit/Build/Windows Client (Player)")]
         public static void BuildWindowsClient()
+        {
+            // --- Ensure active Editor platform is Windows Player (not leftover Linux Server) ---
+            if (!IsWindowsClientPlayerActiveTarget())
+            {
+                QueueWindowsClientBuildAfterPlatformSwitch();
+                return;
+            }
+
+            ExecuteWindowsClientBuild();
+        }
+
+        /// <summary>
+        /// True when the Editor is already on Windows standalone Player (client) subtarget.
+        /// </summary>
+        static bool IsWindowsClientPlayerActiveTarget()
+        {
+            return EditorUserBuildSettings.activeBuildTarget == BuildTarget.StandaloneWindows64
+                   && EditorUserBuildSettings.standaloneBuildSubtarget == StandaloneBuildSubtarget.Player;
+        }
+
+        /// <summary>
+        /// Writes a pending Windows client build marker, switches to Windows Player, and returns.
+        /// <see cref="ResumePendingWindowsClientBuildIfAny"/> runs BuildPlayer after reload.
+        /// </summary>
+        static void QueueWindowsClientBuildAfterPlatformSwitch()
+        {
+            // --- Persist request across domain reload ---
+            string path = GetPendingWindowsClientBuildPath();
+            try
+            {
+                File.WriteAllText(path, JsonUtility.ToJson(new PendingWindowsClientBuild { requested = true }));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError(
+                    "[TitanOrbitBuild] Could not write pending Windows client build state. " +
+                    "Switch to Windows Player in Build Profiles manually, then retry.\n" + ex);
+                return;
+            }
+
+            Debug.Log(
+                "[TitanOrbitBuild] Active Editor target is not Windows Player " +
+                $"(now: {EditorUserBuildSettings.activeBuildTarget} / {EditorUserBuildSettings.standaloneBuildSubtarget}). " +
+                "Switching platform so EntityScenes bake for the client, then resuming the " +
+                "Windows client build after scripts recompile.");
+
+            // --- Switch platform (triggers domain reload) ---
+            // [UNITY] Player subtarget — not Server — so UNITY_SERVER is not defined during bake.
+            EditorUserBuildSettings.standaloneBuildSubtarget = StandaloneBuildSubtarget.Player;
+            bool switched = EditorUserBuildSettings.SwitchActiveBuildTarget(
+                NamedBuildTarget.Standalone,
+                BuildTarget.StandaloneWindows64);
+
+            if (!switched)
+            {
+                ClearPendingWindowsClientBuild();
+                Debug.LogError(
+                    "[TitanOrbitBuild] SwitchActiveBuildTarget to Windows Player failed. " +
+                    "Open File → Build Profiles, select Windows Player, Switch Platform, then retry.");
+            }
+        }
+
+        /// <summary>
+        /// After every domain reload, resume a queued Windows client build if a pending request exists.
+        /// </summary>
+        [InitializeOnLoadMethod]
+        static void ResumePendingWindowsClientBuildIfAny()
+        {
+            EditorApplication.delayCall += TryExecutePendingWindowsClientBuild;
+        }
+
+        /// <summary>
+        /// Loads and clears the pending Windows client build file, then runs the client BuildPlayer.
+        /// </summary>
+        static void TryExecutePendingWindowsClientBuild()
+        {
+            string path = GetPendingWindowsClientBuildPath();
+            if (!File.Exists(path))
+                return;
+
+            ClearPendingWindowsClientBuild();
+
+            if (!IsWindowsClientPlayerActiveTarget())
+            {
+                Debug.LogError(
+                    "[TitanOrbitBuild] Expected Windows Player after platform switch, but Editor is still " +
+                    $"{EditorUserBuildSettings.activeBuildTarget} / {EditorUserBuildSettings.standaloneBuildSubtarget}. " +
+                    "Open File → Build Profiles → Windows → Player → Switch Platform, then retry.");
+                return;
+            }
+
+            Debug.Log("[TitanOrbitBuild] Resuming queued Windows client build after platform switch.");
+            ExecuteWindowsClientBuild();
+        }
+
+        /// <summary>
+        /// Runs <see cref="BuildPipeline.BuildPlayer"/> for the Windows client. Caller must already
+        /// have Windows Player as the active Editor target so SubScenes bake correctly.
+        /// </summary>
+        static void ExecuteWindowsClientBuild()
         {
             // --- Build data ---
             // [EDITOR] Player subtarget (not Server) — full client UI + graphics for H64 FPS test.
@@ -98,6 +205,18 @@ namespace TitanOrbit.Editor.Build
                 Debug.Log("[TitanOrbitBuild] Windows client OK. Run TitanOrbit.exe, Join→GCE.");
             else
                 Debug.LogError($"[TitanOrbitBuild] Windows client failed: {report.summary.result} — {report.summary.totalErrors} error(s).");
+        }
+
+        static string GetPendingWindowsClientBuildPath()
+        {
+            return Path.Combine(Path.GetTempPath(), "TitanOrbitPendingWindowsClientBuild.json");
+        }
+
+        static void ClearPendingWindowsClientBuild()
+        {
+            string path = GetPendingWindowsClientBuildPath();
+            if (File.Exists(path))
+                File.Delete(path);
         }
 
         [MenuItem("TitanOrbit/Build/Headless Server (Windows)")]
@@ -702,6 +821,17 @@ namespace TitanOrbit.Editor.Build
             string dir = Path.Combine(root, AndroidApkFolder);
             Directory.CreateDirectory(dir);
             return Path.Combine(dir, AndroidApkFileName);
+        }
+
+        /// <summary>
+        /// Serializable marker for a Windows client build that must survive domain reload after
+        /// switching away from Linux Dedicated Server (or any non-Windows-Player target).
+        /// </summary>
+        [Serializable]
+        class PendingWindowsClientBuild
+        {
+            /// <summary>True when a Windows client BuildPlayer should run after platform switch.</summary>
+            public bool requested;
         }
 
         /// <summary>

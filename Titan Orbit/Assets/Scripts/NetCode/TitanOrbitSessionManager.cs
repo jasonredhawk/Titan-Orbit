@@ -2378,6 +2378,15 @@ namespace TitanOrbit.NetCode
             // Block late-arriving ship ghosts from opening the rejoin screen after a normal team pick.
             ClientTeamFlowState.NotifyTeamPickRequested(team);
 
+            // --- Pre-arm ship Instantiates hold before the server can reply ---
+            // [TITAN-ORBIT] Player.log 2026-07-31: TeamChoiceResult → Crash!!! the same frame.
+            // Server spawn + TeamChoiceResultRpc often share one snapshot; GhostSpawn can
+            // Instantiates the hull *before* TeamChoiceResultClientSystem runs Arm. Predicted
+            // Burst drive then ScheduleParallel on a mid-Instantiates archetype → native Crash!!!.
+            // Arming here (Join Team click) closes that RTT/same-frame race. TeamChoiceResult
+            // re-Arms to keep Deferred Confirm suppressed for the full hold window.
+            ClientJoinSettleCache.ArmPostTeamChoiceHold();
+
             int networkId = GetLocalNetworkId(world);
 
             // --- Local Host: inject onto ServerWorld (no IPC) ---

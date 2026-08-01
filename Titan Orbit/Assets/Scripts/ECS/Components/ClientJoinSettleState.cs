@@ -103,7 +103,11 @@ namespace TitanOrbit.ECS
             s_PostTeamChoiceHoldRemaining > 0 ||
             // [TITAN-ORBIT] Deferred Confirm keeps suppress on; also fold into the helper so
             // hand-rolled GhostSpawnBacklog-only checks are not the only line of defense.
-            ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending;
+            ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending ||
+            // [TITAN-ORBIT] Player.log 2026-07-31: ship Instantiates can arrive in the same
+            // snapshot *before* TeamChoiceResult arms the hold → Burst Crash!!!. Gate from the
+            // Join Team click until Confirm flushes (covers that same-frame race).
+            IsTeamPickAwaitingConfirm;
 
         /// <summary>
         /// [TITAN-ORBIT] True when client predicted ship <b>simulation</b> (input apply, motor drive,
@@ -114,14 +118,26 @@ namespace TitanOrbit.ECS
         /// GhostSpawnBacklog froze the local ship after the loading-complete fix (map Instantiates
         /// keep the queue non-empty while proxies are already ≥92%).
         /// </para>
-        /// Still covers: Settling, post–TeamChoice hold, deferred Confirm, post-ship Instantiates hold.
+        /// Still covers: Settling, post–TeamChoice hold, deferred Confirm, post-ship Instantiates hold,
+        /// and the Join Team click → Confirm window (ship Instantiates race before Result Arm).
         /// Keep using <see cref="ShouldSkipShipEntityQueries"/> for ship archetype gathers.
         /// </summary>
         public static bool ShouldSkipShipSimulation =>
             Settling ||
             s_PostTeamChoiceHoldRemaining > 0 ||
             s_PostShipInstantiateHoldRemaining > 0 ||
-            ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending;
+            ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending ||
+            // [TITAN-ORBIT] Same 2026-07-31 race as ShouldSkipShipEntityQueries — PredictedFixedStep
+            // Burst drive can ScheduleParallel on the fresh hull before TeamChoiceResult runs Arm.
+            IsTeamPickAwaitingConfirm;
+
+        /// <summary>
+        /// True from Join Team click (<see cref="ClientTeamFlowState.HasRequestedTeamPick"/>) until
+        /// <see cref="ClientTeamFlowState.TeamChoiceConfirmed"/> — the whole ship Instantiates gap,
+        /// including frames where TeamChoiceResult has not armed the hold yet.
+        /// </summary>
+        static bool IsTeamPickAwaitingConfirm =>
+            ClientTeamFlowState.HasRequestedTeamPick && !ClientTeamFlowState.TeamChoiceConfirmed;
 
         /// <summary>
         /// [TITAN-ORBIT] True when client code must not gather planets / asteroids / gems / moons

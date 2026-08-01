@@ -55,13 +55,14 @@ namespace TitanOrbit.ECS
 
             if (rpc.Success != 0)
             {
-                // [TITAN-ORBIT] Arm ship-query hold, then DEFER Confirm until that hold expires.
+                // [TITAN-ORBIT] Re-Arm ship-query hold, then DEFER Confirm until that hold expires.
+                // RequestTeam already pre-Arms on Join Team click (Player.log 2026-07-31 race:
+                // ship Instantiates before this system runs). Re-Arm here so Deferred Confirm
+                // stays suppressed for a full PostTeamChoiceHoldFrames window after the ack.
                 // Player.log 2026-07-28: same-frame Confirm Crash!!!'d.
-                // Player.log 2026-07-30: next-frame-only Confirm flush still Crash!!!'d — suppress
-                // lifted while GhostSpawn Instantiates the hull; suppress-only gathers opened.
-                // Arm publishes GhostSpawnBacklog immediately; deferred Confirm keeps suppress on
-                // for the full PostTeamChoiceHoldFrames window. Flush:
-                // ClientDeferredTeamChoiceConfirmSystem (waits for hold clear).
+                // Player.log 2026-07-30: next-frame-only Confirm flush still Crash!!!'d.
+                // Arm publishes GhostSpawnBacklog immediately; deferred Confirm keeps suppress on.
+                // Flush: ClientDeferredTeamChoiceConfirmSystem (waits for hold clear).
                 ClientJoinSettleCache.ArmPostTeamChoiceHold();
                 ClientTeamFlowState.RequestDeferredConfirmTeamChoice();
                 UnityEngine.Debug.Log(
