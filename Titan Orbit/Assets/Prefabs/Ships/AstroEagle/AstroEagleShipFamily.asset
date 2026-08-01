@@ -98,7 +98,7 @@ MonoBehaviour:
       tractorBeamPower: 0
       tractorBeamPowerPerLevel: 0
       maxPeople: 2
-      maxPeoplePerLevel: 0
+      maxPeoplePerLevel: 0.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: cd7b456e48084a444b0c5869ca781107, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: cd7b456e48084a444b0c5869ca781107, type: 3}
@@ -169,7 +169,7 @@ MonoBehaviour:
       tractorBeamPower: 0
       tractorBeamPowerPerLevel: 0
       maxPeople: 2
-      maxPeoplePerLevel: 0
+      maxPeoplePerLevel: 0.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: cc4275dfd02b11142b40e76c65f09c6d, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: cc4275dfd02b11142b40e76c65f09c6d, type: 3}
@@ -875,11 +875,11 @@ MonoBehaviour:
       maxGems: 8
       maxGemsPerLevel: 2
       tractorBeamDistance: 3
-      tractorBeamDistancePerLevel: 0.75
-      tractorBeamPower: 4
+      tractorBeamDistancePerLevel: 0.5
+      tractorBeamPower: 5
       tractorBeamPowerPerLevel: 1
       maxPeople: 2
-      maxPeoplePerLevel: 0
+      maxPeoplePerLevel: 0.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: bfdc1c73a3cf76841b846bcdc2bb7be8, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: bfdc1c73a3cf76841b846bcdc2bb7be8, type: 3}
@@ -946,8 +946,8 @@ MonoBehaviour:
       maxGems: 16
       maxGemsPerLevel: 4
       tractorBeamDistance: 6
-      tractorBeamDistancePerLevel: 1.5
-      tractorBeamPower: 8
+      tractorBeamDistancePerLevel: 1.25
+      tractorBeamPower: 9
       tractorBeamPowerPerLevel: 2
       maxPeople: 4
       maxPeoplePerLevel: 1
@@ -1017,11 +1017,11 @@ MonoBehaviour:
       maxGems: 24
       maxGemsPerLevel: 6
       tractorBeamDistance: 9
-      tractorBeamDistancePerLevel: 2.25
-      tractorBeamPower: 12
+      tractorBeamDistancePerLevel: 2
+      tractorBeamPower: 13
       tractorBeamPowerPerLevel: 3
       maxPeople: 6
-      maxPeoplePerLevel: 2
+      maxPeoplePerLevel: 1.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: b65b968f6d3ef0b4faf20f4f86c6e58b, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: b65b968f6d3ef0b4faf20f4f86c6e58b, type: 3}
@@ -1088,8 +1088,8 @@ MonoBehaviour:
       maxGems: 32
       maxGemsPerLevel: 8
       tractorBeamDistance: 12
-      tractorBeamDistancePerLevel: 3
-      tractorBeamPower: 16
+      tractorBeamDistancePerLevel: 2.75
+      tractorBeamPower: 17
       tractorBeamPowerPerLevel: 4
       maxPeople: 8
       maxPeoplePerLevel: 2
@@ -1159,11 +1159,11 @@ MonoBehaviour:
       maxGems: 40
       maxGemsPerLevel: 10
       tractorBeamDistance: 15
-      tractorBeamDistancePerLevel: 3.75
-      tractorBeamPower: 20
+      tractorBeamDistancePerLevel: 3.5
+      tractorBeamPower: 21
       tractorBeamPowerPerLevel: 5
       maxPeople: 10
-      maxPeoplePerLevel: 2
+      maxPeoplePerLevel: 2.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 0254719097875634ab3f302cab4a48c4, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 0254719097875634ab3f302cab4a48c4, type: 3}
@@ -1301,7 +1301,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 1d52f0f31724db044b11d3584d1c549e, type: 3}
     minHomePlanetLevel: 2
     powerScore: 162.7156
-    powerScoreAtMaxLevel: 258.4734
+    powerScoreAtMaxLevel: 262.0734
     powerScoreBreakdown:
       offense: 21
       defense: 43.86019
@@ -1361,7 +1361,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 035c83706d87add499054bbe5ce76846, type: 3}
     minHomePlanetLevel: 2
     powerScore: 208.1837
-    powerScoreAtMaxLevel: 333.59055
+    powerScoreAtMaxLevel: 334.42303
     powerScoreBreakdown:
       offense: 45.127502
       defense: 42.941536
@@ -1421,7 +1421,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 7c4a157b73cb511458fcc9b0b8831c6f, type: 3}
     minHomePlanetLevel: 3
     powerScore: 212.11102
-    powerScoreAtMaxLevel: 379.84128
+    powerScoreAtMaxLevel: 384.33307
     powerScoreBreakdown:
       offense: 39.00004
       defense: 56.54792
@@ -1481,7 +1481,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 2c8b45e58600e4843bc4bb9ef84f6099, type: 3}
     minHomePlanetLevel: 3
     powerScore: 239.6943
-    powerScoreAtMaxLevel: 427.59622
+    powerScoreAtMaxLevel: 429.09622
     powerScoreBreakdown:
       offense: 37.000107
       defense: 38.504562
@@ -1541,7 +1541,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 20c0f9e060a2aae479738b9e79acfec5, type: 3}
     minHomePlanetLevel: 3
     powerScore: 229.1861
-    powerScoreAtMaxLevel: 428.20303
+    powerScoreAtMaxLevel: 429.0516
     powerScoreBreakdown:
       offense: 40.512993
       defense: 50.821774
@@ -1601,7 +1601,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 694bcb6631349e74b92803e59dfb594c, type: 3}
     minHomePlanetLevel: 4
     powerScore: 214.7558
-    powerScoreAtMaxLevel: 426.2579
+    powerScoreAtMaxLevel: 428.72083
     powerScoreBreakdown:
       offense: 39.12923
       defense: 36.34048
@@ -1661,7 +1661,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 6695101ca1cb8c748bc792551b705af7, type: 3}
     minHomePlanetLevel: 4
     powerScore: 285.82532
-    powerScoreAtMaxLevel: 572.46155
+    powerScoreAtMaxLevel: 582.4506
     powerScoreBreakdown:
       offense: 39
       defense: 70.27719
@@ -1721,7 +1721,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: c5595c22219d27f4b9054592ae82dd8f, type: 3}
     minHomePlanetLevel: 4
     powerScore: 270.95438
-    powerScoreAtMaxLevel: 552.4784
+    powerScoreAtMaxLevel: 552.57825
     powerScoreBreakdown:
       offense: 39.183807
       defense: 58.839314
@@ -1781,7 +1781,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 45f089a901dedbf4c94bffe2d1c1ea38, type: 3}
     minHomePlanetLevel: 4
     powerScore: 290.4418
-    powerScoreAtMaxLevel: 574.9373
+    powerScoreAtMaxLevel: 582.8676
     powerScoreBreakdown:
       offense: 78.08459
       defense: 58.86853
@@ -1841,7 +1841,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: eb5cba6f45aea34448993d9126b0e27a, type: 3}
     minHomePlanetLevel: 5
     powerScore: 263.46826
-    powerScoreAtMaxLevel: 575.7349
+    powerScoreAtMaxLevel: 580.40784
     powerScoreBreakdown:
       offense: 75.5272
       defense: 33.229256
@@ -1901,7 +1901,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 7cc8118669eef80449fa8d0084437714, type: 3}
     minHomePlanetLevel: 5
     powerScore: 311.10428
-    powerScoreAtMaxLevel: 723.81213
+    powerScoreAtMaxLevel: 726.31213
     powerScoreBreakdown:
       offense: 37.00025
       defense: 62.171665
@@ -1961,7 +1961,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: bbf6e5d4ff0462744a2e4351d64e9339, type: 3}
     minHomePlanetLevel: 5
     powerScore: 300.38626
-    powerScoreAtMaxLevel: 648.4027
+    powerScoreAtMaxLevel: 673.38904
     powerScoreBreakdown:
       offense: 39.12
       defense: 85.25545
@@ -2021,7 +2021,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: d89347a1fcac36d449b19f7870b0302e, type: 3}
     minHomePlanetLevel: 5
     powerScore: 292.01624
-    powerScoreAtMaxLevel: 623.2573
+    powerScoreAtMaxLevel: 628.2573
     powerScoreBreakdown:
       offense: 73.00021
       defense: 37.285713
@@ -2081,7 +2081,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: a18ea5542319bcd4697389d1757019c1, type: 3}
     minHomePlanetLevel: 5
     powerScore: 321.8013
-    powerScoreAtMaxLevel: 711.0029
+    powerScoreAtMaxLevel: 716.0437
     powerScoreBreakdown:
       offense: 75.120224
       defense: 45.794113
@@ -2141,7 +2141,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 141bc613c1c6cee4986bfa32f12428ee, type: 3}
     minHomePlanetLevel: 6
     powerScore: 301.18625
-    powerScoreAtMaxLevel: 702.062
+    powerScoreAtMaxLevel: 720.04565
     powerScoreBreakdown:
       offense: 75.12
       defense: 59.155445
@@ -2201,7 +2201,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 4922b732c4c3d8a4fa8e07ef8208f50a, type: 3}
     minHomePlanetLevel: 6
     powerScore: 480.66537
-    powerScoreAtMaxLevel: 1160.4183
+    powerScoreAtMaxLevel: 1163.4183
     powerScoreBreakdown:
       offense: 73.00021
       defense: 79.23214
@@ -2261,7 +2261,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: c750136a4b942fe4e91c2429d2342dc4, type: 3}
     minHomePlanetLevel: 6
     powerScore: 401.73193
-    powerScoreAtMaxLevel: 995.8683
+    powerScoreAtMaxLevel: 1008.1553
     powerScoreBreakdown:
       offense: 75.15976
       defense: 77.3437
@@ -2321,7 +2321,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: c2101fd8fc62ad940a772d7906e43060, type: 3}
     minHomePlanetLevel: 6
     powerScore: 406.1922
-    powerScoreAtMaxLevel: 1022.56635
+    powerScoreAtMaxLevel: 1022.22046
     powerScoreBreakdown:
       offense: 77.45739
       defense: 77.31459
@@ -2381,7 +2381,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: defba0386e258ed44b17a5c4a64ea4ed, type: 3}
     minHomePlanetLevel: 6
     powerScore: 391.5987
-    powerScoreAtMaxLevel: 911.8287
+    powerScoreAtMaxLevel: 914.82715
     powerScoreBreakdown:
       offense: 109.1844
       defense: 55.80771
@@ -2441,7 +2441,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 60a427a4c1251ba4b8272743a47030b1, type: 3}
     minHomePlanetLevel: 6
     powerScore: 347.96625
-    powerScoreAtMaxLevel: 888.80865
+    powerScoreAtMaxLevel: 901.0406
     powerScoreBreakdown:
       offense: 77.45494
       defense: 68.52566
