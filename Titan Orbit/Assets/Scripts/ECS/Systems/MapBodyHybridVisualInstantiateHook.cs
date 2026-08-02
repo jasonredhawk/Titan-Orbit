@@ -33,6 +33,7 @@ namespace TitanOrbit.Game
             s_PendingQueue.Clear();
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
+            AsteroidClientEntityRegistry.Clear();
             LocalShipEntitySeed.Clear();
             // --- Replace any prior handler (domain reload / play mode) ---
             TitanOrbitJoinLoadCounters.OnDelayedGhostInstantiate = OnDelayedGhostInstantiate;
@@ -122,6 +123,11 @@ namespace TitanOrbit.Game
             if (em.HasComponent<PlanetTag>(entity))
                 PlanetClientEntityRegistry.NotifyInstantiated(entity);
 
+            // --- Asteroids: track for loading-bar proxy rebuild (second Local Host) ---
+            // [TITAN-ORBIT] Registry walk is quarantine-safe; full asteroid ToEntityArray is not.
+            if (em.HasComponent<AsteroidTag>(entity))
+                AsteroidClientEntityRegistry.NotifyInstantiated(entity);
+
             // --- Gems: track for tractor beams + force an urgent visual (do not wait on asteroid drain) ---
             // [TITAN-ORBIT] Gem ghosts often already have baked Pending, so the early-return below
             // would skip SpawnRequest. They still need registry + urgent GO so destroy bursts
@@ -129,20 +135,18 @@ namespace TitanOrbit.Game
             if (em.HasComponent<GemTag>(entity))
             {
                 GemClientEntityRegistry.NotifyInstantiated(entity);
-                if (!em.HasComponent<MapBodyHybridVisualLinked>(entity) &&
-                    !s_PendingQueue.Contains(entity) &&
-                    !em.HasComponent<MapBodyHybridVisualSpawnRequest>(entity))
+                if (!s_PendingQueue.Contains(entity) &&
+                    !em.HasComponent<MapBodyHybridVisualSpawnRequest>(entity) &&
+                    !em.HasComponent<MapBodyHybridVisualPending>(entity))
                 {
-                    // Ensure drain sees this gem even if Pending was already consumed incorrectly.
-                    if (!em.HasComponent<MapBodyHybridVisualPending>(entity))
-                        s_PendingQueue.Add(entity);
+                    // Ensure drain sees this gem even if a prior Linked tag outlived the GO.
+                    s_PendingQueue.Add(entity);
                 }
                 return;
             }
 
-            // --- Already queued or already has a GameObject proxy ---
+            // --- Already in the drain queue (Pending / SpawnRequest) ---
             if (em.HasComponent<MapBodyHybridVisualSpawnRequest>(entity) ||
-                em.HasComponent<MapBodyHybridVisualLinked>(entity) ||
                 em.HasComponent<MapBodyHybridVisualPending>(entity))
                 return;
 
@@ -153,6 +157,9 @@ namespace TitanOrbit.Game
             if (!isMapBody)
                 return;
 
+            // [TITAN-ORBIT] Linked alone used to early-return forever. After a second Local Host /
+            // Play (Domain Reload off), Instantiates may not re-fire while hybrid GOs were cleared —
+            // loading stuck at 0/N with Linked orphans. Always queue SpawnRequest so drain can rebuild.
             if (!s_PendingQueue.Contains(entity))
                 s_PendingQueue.Add(entity);
         }
@@ -172,10 +179,17 @@ namespace TitanOrbit.Game
                 Entity entity = s_PendingQueue[i];
                 if (!em.Exists(entity))
                     continue;
+
+                // --- Already queued for drain (Pending bake or prior SpawnRequest) ---
                 if (em.HasComponent<MapBodyHybridVisualSpawnRequest>(entity) ||
-                    em.HasComponent<MapBodyHybridVisualLinked>(entity) ||
                     em.HasComponent<MapBodyHybridVisualPending>(entity))
                     continue;
+
+                // [TITAN-ORBIT] Do NOT skip MapBodyHybridVisualLinked here. Linked means "had a
+                // proxy once" — after second Local Host / Play (Domain Reload off) the GO dict
+                // can be empty while Linked remains on Instantiated ghosts. Skipping Linked
+                // left SpawnRequest empty forever → loading stuck at 0/N (proxyReady=False).
+                // Drain is idempotent: existing proxy → clear tags; missing proxy → create GO.
 
                 // [HYBRID] SpawnRequest is intentionally NOT a GhostComponent — safe runtime add.
                 em.AddComponentData(entity, new MapBodyHybridVisualSpawnRequest());

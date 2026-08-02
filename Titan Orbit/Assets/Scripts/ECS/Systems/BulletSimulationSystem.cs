@@ -701,6 +701,19 @@ namespace TitanOrbit.ECS
                         state.EntityManager.SetComponentData(bestEntity, vitals);
                     }
 
+                    // --- Kill attribution (last damager for ShipMatchStats.Kills) ---
+                    // [TITAN-ORBIT] Stamp whenever real damage landed so ShipDeathRecordingSystem
+                    // can credit the bullet owner even if death happens on a later gem-spill hit.
+                    if ((result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead) &&
+                        b.OwnerNetworkId > 0)
+                    {
+                        ShipMatchStatsLogic.SetLastDamager(
+                            state.EntityManager,
+                            bestEntity,
+                            b.OwnerNetworkId,
+                            (float)serverElapsed);
+                    }
+
                     if (result.GemsToExpel > 0.0001f &&
                         state.EntityManager.HasComponent<LocalTransform>(bestEntity))
                     {

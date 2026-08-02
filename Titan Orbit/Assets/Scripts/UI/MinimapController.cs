@@ -14,8 +14,9 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Minimap showing a larger region around the player (not full map).
-    /// Displays: player ship (cross blip), friendly/enemy ships (cross, team colors), planets, home planets, gem moons, asteroids.
-    /// Each team has its own color.
+    /// Displays: player/remote ships as team-colored Cross (X) blips, with a small colored circle
+    /// when that ship is their team's top killer (blue) / gem miner (red) / transporter (yellow).
+    /// Also planets, home planets, gem moons, and asteroids. Each team has its own color.
     /// Planet blips also draw a thin team-colored ring at the gem-moon / ship orbit radius
     /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>) so the orbit path is readable on the map.
     /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> caches, never map-body ECS gathers.
@@ -107,7 +108,29 @@ namespace TitanOrbit.UI
         private Dictionary<Transform, Image> blipImages = new Dictionary<Transform, Image>();
         private Dictionary<Transform, BlipType> blipTypes = new Dictionary<Transform, BlipType>();
         private Dictionary<Transform, float> bullseyePulseTime = new Dictionary<Transform, float>(); // Track pulse animation time for bullseye blips
-        
+
+        // --- Top-of-team role dots on ship Cross blips (anchor stats only — no ECS walks) ---
+        /// <summary>Child root under each ship blip for 0–3 small role circles.</summary>
+        readonly Dictionary<Transform, RectTransform> _shipRoleDotRoots = new Dictionary<Transform, RectTransform>();
+        /// <summary>Last role mask per ship (bit0 killer, bit1 miner, bit2 transporter).</summary>
+        readonly Dictionary<Transform, byte> _shipRoleDotMask = new Dictionary<Transform, byte>();
+        /// <summary>Per-team top NetworkIds recomputed from <see cref="cachedShips"/>.</summary>
+        readonly Dictionary<TeamId, TopOfTeamIds> _topOfTeam = new Dictionary<TeamId, TopOfTeamIds>();
+        /// <summary>Shared white circle sprite, tinted blue / red / yellow per role.</summary>
+        static Sprite _shipRoleDotSprite;
+        // [TITAN-ORBIT] Role colors: blue = killer, red = gems (miner), yellow = transports.
+        static readonly Color RoleDotKiller = new Color(0.35f, 0.55f, 1f, 0.95f);
+        static readonly Color RoleDotMiner = new Color(1f, 0.28f, 0.28f, 0.95f);
+        static readonly Color RoleDotTransporter = new Color(1f, 0.88f, 0.25f, 0.95f);
+
+        /// <summary>NetworkIds winning each match-stat category for one team (0 = none).</summary>
+        struct TopOfTeamIds
+        {
+            public int KillerNetworkId;
+            public int MinerNetworkId;
+            public int TransporterNetworkId;
+        }
+
         // Edge markers for planets outside visible area
         private Dictionary<Transform, RectTransform> edgeMarkers = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> edgeMarkerImages = new Dictionary<Transform, Image>();
@@ -929,6 +952,9 @@ namespace TitanOrbit.UI
 
         private void OnEnable()
         {
+            // Force role-dot rebuild next frame (size/color tweaks after script reload).
+            _shipRoleDotMask.Clear();
+
             if (isExpanded)
                 ApplyHideNonMinimapUi();
         }
@@ -1519,7 +1545,9 @@ namespace TitanOrbit.UI
                 blipTypes.Remove(t);
                 bullseyePulseTime.Remove(t); // Clean up pulse time tracking
                 planetBlipLayoutState.Remove(t);
-                
+                _shipRoleDotRoots.Remove(t);
+                _shipRoleDotMask.Remove(t);
+
                 // Also remove edge markers
                 if (edgeMarkers.TryGetValue(t, out var edgeRt) && edgeRt != null) Destroy(edgeRt.gameObject);
                 edgeMarkers.Remove(t);
@@ -1558,15 +1586,18 @@ namespace TitanOrbit.UI
                 markerEdgeMarkerImages.Remove(t);
             }
 
-            // Add new entities
-            EnsureBlip(playerTransform, () => CreateBlip(Color.white, playerBlipSize, BlipType.Cross), true);
+            // --- Top-of-team leaders (O(ships)) before drawing role dots ---
+            RecomputeTopOfTeamFromCachedShips();
+
+            // --- Local player Cross ---
+            TeamId playerTeam = playerAnchor.Team;
+            Color playerColor = playerTeam == TeamId.None ? Color.white : GetTeamColor(playerTeam);
+            EnsureBlip(playerTransform, () => CreateShipCrossBlip(playerTransform, playerColor, playerBlipSize), true);
             if (blips.TryGetValue(playerTransform, out var playerRt) && playerRt != null)
             {
                 playerRt.localEulerAngles = Vector3.zero;
-
-                TeamId playerTeam = playerAnchor.Team;
-                Color playerColor = playerTeam == TeamId.None ? Color.white : GetTeamColor(playerTeam);
                 UpdateBlip(playerTransform, playerColor, playerBlipSize);
+                UpdateShipRoleDots(playerAnchor);
             }
 
             // Show all ships (friendly and enemy, including AI) on the minimap
@@ -1579,19 +1610,21 @@ namespace TitanOrbit.UI
                     continue;
                 }
                 if (ship == playerAnchor || ship.IsDead) continue;
-                
+
                 // Calculate distance to check if ship is within visible area
                 Vector3 worldPos = ship.transform.position;
                 GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
-                
+
                 float dist = Mathf.Sqrt(dx * dx + dz * dz);
                 bool friendly = ship.Team == playerAnchor.Team && ship.Team != TeamId.None;
                 Color shipColor = friendly ? GetTeamColor(playerAnchor.Team) : GetEnemyColor(ship.Team);
-                
+
                 if (dist <= currentRadius)
                 {
                     // Show blip when within visible area
-                    EnsureBlip(ship.transform, () => CreateBlip(shipColor, 12f, BlipType.Cross));
+                    EnsureBlip(ship.transform, () => CreateShipCrossBlip(ship.transform, shipColor, 12f));
+                    UpdateBlip(ship.transform, shipColor, 12f);
+                    UpdateShipRoleDots(ship);
                     // Remove any old ship edge marker (markers only for planets)
                     RemoveShipEdgeMarker(ship.transform);
                 }
@@ -1916,6 +1949,222 @@ namespace TitanOrbit.UI
             rt.pivot = new Vector2(0.5f, 0.5f);
 
             return rt;
+        }
+
+        /// <summary>
+        /// Team-colored Cross blip plus an empty role-dot stack (filled later when this ship
+        /// leads killer / miner / transporter on their team).
+        /// </summary>
+        RectTransform CreateShipCrossBlip(Transform shipTransform, Color color, float size)
+        {
+            var rt = CreateBlip(color, size, BlipType.Cross);
+            if (rt == null || shipTransform == null)
+                return rt;
+
+            EnsureShipRoleDotRoot(shipTransform, rt);
+            return rt;
+        }
+
+        /// <summary>Attaches the RoleDots child under a ship Cross blip if missing.</summary>
+        void EnsureShipRoleDotRoot(Transform shipTransform, RectTransform blipRt)
+        {
+            if (shipTransform == null || blipRt == null)
+                return;
+            if (_shipRoleDotRoots.TryGetValue(shipTransform, out var existing) && existing != null)
+                return;
+
+            var dotsGo = new GameObject("RoleDots", typeof(RectTransform));
+            dotsGo.transform.SetParent(blipRt, false);
+            var dotsRt = dotsGo.GetComponent<RectTransform>();
+            dotsRt.anchorMin = new Vector2(1f, 1f);
+            dotsRt.anchorMax = new Vector2(1f, 1f);
+            dotsRt.pivot = new Vector2(0f, 1f);
+            dotsRt.anchoredPosition = new Vector2(1f, 1f);
+            dotsRt.sizeDelta = new Vector2(16f, 16f);
+            dotsGo.SetActive(false);
+            _shipRoleDotRoots[shipTransform] = dotsRt;
+        }
+
+        /// <summary>
+        /// Picks each team's top killer / miner / transporter from <see cref="cachedShips"/>.
+        /// Ties → lowest <see cref="MinimapBlipAnchor.OwnerNetworkId"/>. Zero scores never win.
+        /// </summary>
+        void RecomputeTopOfTeamFromCachedShips()
+        {
+            _topOfTeam.Clear();
+            if (cachedShips == null)
+                return;
+
+            var bestKillScore = new Dictionary<TeamId, int>(8);
+            var bestGemScore = new Dictionary<TeamId, int>(8);
+            var bestPeopleScore = new Dictionary<TeamId, int>(8);
+            var topsByTeam = new Dictionary<TeamId, TopOfTeamIds>(8);
+
+            for (int i = 0; i < cachedShips.Length; i++)
+            {
+                var ship = cachedShips[i];
+                if (ship == null || ship.IsDead || ship.Team == TeamId.None || ship.OwnerNetworkId <= 0)
+                    continue;
+
+                if (!topsByTeam.TryGetValue(ship.Team, out var tops))
+                    tops = default;
+
+                if (ship.Kills > 0)
+                {
+                    bestKillScore.TryGetValue(ship.Team, out int curScore);
+                    int curId = tops.KillerNetworkId;
+                    if (curId == 0 || IsBetterTop(ship.Kills, ship.OwnerNetworkId, curScore, curId))
+                    {
+                        tops.KillerNetworkId = ship.OwnerNetworkId;
+                        bestKillScore[ship.Team] = ship.Kills;
+                    }
+                }
+
+                if (ship.GemsDeposited > 0)
+                {
+                    bestGemScore.TryGetValue(ship.Team, out int curScore);
+                    int curId = tops.MinerNetworkId;
+                    if (curId == 0 || IsBetterTop(ship.GemsDeposited, ship.OwnerNetworkId, curScore, curId))
+                    {
+                        tops.MinerNetworkId = ship.OwnerNetworkId;
+                        bestGemScore[ship.Team] = ship.GemsDeposited;
+                    }
+                }
+
+                if (ship.PeopleDelivered > 0)
+                {
+                    bestPeopleScore.TryGetValue(ship.Team, out int curScore);
+                    int curId = tops.TransporterNetworkId;
+                    if (curId == 0 || IsBetterTop(ship.PeopleDelivered, ship.OwnerNetworkId, curScore, curId))
+                    {
+                        tops.TransporterNetworkId = ship.OwnerNetworkId;
+                        bestPeopleScore[ship.Team] = ship.PeopleDelivered;
+                    }
+                }
+
+                topsByTeam[ship.Team] = tops;
+            }
+
+            foreach (var kv in topsByTeam)
+                _topOfTeam[kv.Key] = kv.Value;
+        }
+
+        /// <summary>Higher score wins; equal score → lower NetworkId.</summary>
+        static bool IsBetterTop(int candidateScore, int candidateId, int currentScore, int currentId)
+        {
+            if (candidateScore > currentScore)
+                return true;
+            if (candidateScore < currentScore)
+                return false;
+            return candidateId < currentId;
+        }
+
+        /// <summary>
+        /// Shows up to three small circles next to the X: blue = top killer, red = top gem miner,
+        /// yellow = top transporter (per team, from match stats on the blip anchor).
+        /// </summary>
+        void UpdateShipRoleDots(MinimapBlipAnchor ship)
+        {
+            if (ship == null || ship.transform == null)
+                return;
+
+            // Hot-reload / blips created before role dots existed — attach the stack once.
+            if (!_shipRoleDotRoots.TryGetValue(ship.transform, out var dotsRoot) || dotsRoot == null)
+            {
+                if (!blips.TryGetValue(ship.transform, out var blipRt) || blipRt == null)
+                    return;
+                EnsureShipRoleDotRoot(ship.transform, blipRt);
+                if (!_shipRoleDotRoots.TryGetValue(ship.transform, out dotsRoot) || dotsRoot == null)
+                    return;
+            }
+
+            bool isKiller = false;
+            bool isMiner = false;
+            bool isTransporter = false;
+            if (ship.Team != TeamId.None &&
+                ship.OwnerNetworkId > 0 &&
+                _topOfTeam.TryGetValue(ship.Team, out var tops))
+            {
+                isKiller = tops.KillerNetworkId == ship.OwnerNetworkId;
+                isMiner = tops.MinerNetworkId == ship.OwnerNetworkId;
+                isTransporter = tops.TransporterNetworkId == ship.OwnerNetworkId;
+            }
+
+            byte mask = 0;
+            if (isKiller) mask |= 1;
+            if (isMiner) mask |= 2;
+            if (isTransporter) mask |= 4;
+
+            if (!_shipRoleDotMask.TryGetValue(ship.transform, out byte prevMask) || prevMask != mask)
+            {
+                for (int i = dotsRoot.childCount - 1; i >= 0; i--)
+                    Destroy(dotsRoot.GetChild(i).gameObject);
+
+                int slot = 0;
+                if (isKiller)
+                    AddRoleDot(dotsRoot, RoleDotKiller, ref slot);
+                if (isMiner)
+                    AddRoleDot(dotsRoot, RoleDotMiner, ref slot);
+                if (isTransporter)
+                    AddRoleDot(dotsRoot, RoleDotTransporter, ref slot);
+
+                _shipRoleDotMask[ship.transform] = mask;
+                dotsRoot.gameObject.SetActive(slot > 0);
+            }
+        }
+
+        /// <summary>Adds one tinted circle into the role-dot stack (stacked downward).</summary>
+        static void AddRoleDot(RectTransform dotsRoot, Color color, ref int slot)
+        {
+            if (dotsRoot == null)
+                return;
+
+            // Smaller than the Cross so the X stays readable; stacked downward beside it.
+            const float dotSize = 4f;
+            var go = new GameObject($"RoleDot_{slot}", typeof(RectTransform));
+            go.transform.SetParent(dotsRoot, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.sizeDelta = new Vector2(dotSize, dotSize);
+            rt.anchoredPosition = new Vector2(0f, -slot * (dotSize + 1f));
+            var img = go.AddComponent<Image>();
+            img.raycastTarget = false;
+            img.sprite = GetOrCreateShipRoleDotSprite();
+            img.color = color;
+            slot++;
+        }
+
+        /// <summary>Lazy-builds the shared white circle used for all role dots.</summary>
+        static Sprite GetOrCreateShipRoleDotSprite()
+        {
+            if (_shipRoleDotSprite != null)
+                return _shipRoleDotSprite;
+
+            const int size = 24;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            var pixels = new Color[size * size];
+            float cx = (size - 1) * 0.5f;
+            float cy = (size - 1) * 0.5f;
+            float rSq = (size * 0.48f) * (size * 0.48f);
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = x - cx;
+                    float dy = y - cy;
+                    pixels[y * size + x] = (dx * dx + dy * dy) <= rSq ? Color.white : Color.clear;
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply(false, true);
+            _shipRoleDotSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            _shipRoleDotSprite.name = "ShipRoleDot";
+            return _shipRoleDotSprite;
         }
 
         /// <summary>

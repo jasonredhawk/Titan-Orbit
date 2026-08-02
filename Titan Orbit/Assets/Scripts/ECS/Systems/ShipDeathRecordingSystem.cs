@@ -1,3 +1,4 @@
+using TitanOrbit.Core;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
@@ -13,6 +14,10 @@ namespace TitanOrbit.ECS
     /// [TITAN-ORBIT] Death requires hull <b>and</b> cargo depleted (<c>ShipDamageLogic</c>).
     /// Combat already expelled gems as world entities — do not silently zero leftover cargo here
     /// without a spawn (that was the ECS regression vs NGO). Clamp tiny leftovers only.
+    /// </para>
+    /// <para>
+    /// Also credits <see cref="ShipMatchStats.Kills"/> to the last damager from
+    /// <see cref="ShipCombatAttribution"/> (bullet / ram) when the killer is a different team.
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
@@ -36,6 +41,10 @@ namespace TitanOrbit.ECS
             {
                 if (!shipState.ValueRO.IsDead)
                     continue;
+
+                // --- Kill credit (once per death) ---
+                // [TITAN-ORBIT] Prefer enemy kills only — same-team / self / asteroid deaths skip.
+                CreditKillToLastDamager(state.EntityManager, entity, shipState.ValueRO.Team);
 
                 // --- Death cleanup: stop movement / people (gems should already be empty) ---
                 // Clamp only — world gem burst already happened during the killing damage pulses.
@@ -65,6 +74,66 @@ namespace TitanOrbit.ECS
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
+        }
+
+        /// <summary>
+        /// Credits one kill to <see cref="ShipCombatAttribution.LastDamagerNetworkId"/> when the
+        /// damager is a real other ship on a different team.
+        /// </summary>
+        static void CreditKillToLastDamager(EntityManager em, Entity victim, TeamId victimTeam)
+        {
+            // --- Read attribution ---
+            if (!em.HasComponent<ShipCombatAttribution>(victim))
+                return;
+
+            int killerNetworkId = em.GetComponentData<ShipCombatAttribution>(victim).LastDamagerNetworkId;
+            if (killerNetworkId <= 0)
+                return;
+
+            // --- Victim's own network id (reject self-kills / suicide credit) ---
+            int victimNetworkId = 0;
+            if (em.HasComponent<GhostOwner>(victim))
+                victimNetworkId = em.GetComponentData<GhostOwner>(victim).NetworkId;
+            if (victimNetworkId > 0 && victimNetworkId == killerNetworkId)
+                return;
+
+            // --- Prefer different-team kills ---
+            // Look up killer ship; skip if same team or unknown.
+            if (!TryFindShipByNetworkId(em, killerNetworkId, out Entity killerShip, out TeamId killerTeam))
+                return;
+            if (victimTeam == TeamId.None || killerTeam == TeamId.None || killerTeam == victimTeam)
+                return;
+
+            ShipMatchStatsLogic.TryAddOnShip(em, killerShip, kills: 1, gemsDeposited: 0, peopleDelivered: 0);
+        }
+
+        /// <summary>
+        /// Finds the ship entity owned by <paramref name="networkId"/>.
+        /// Rare path (once per death) — ship counts are small.
+        /// </summary>
+        static bool TryFindShipByNetworkId(
+            EntityManager em,
+            int networkId,
+            out Entity shipEntity,
+            out TeamId team)
+        {
+            shipEntity = Entity.Null;
+            team = TeamId.None;
+            using var query = em.CreateEntityQuery(typeof(ShipTag), typeof(GhostOwner), typeof(ShipState));
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (owners[i].NetworkId != networkId)
+                    continue;
+                shipEntity = entities[i];
+                team = states[i].Team;
+                return true;
+            }
+
+            return false;
         }
     }
 }

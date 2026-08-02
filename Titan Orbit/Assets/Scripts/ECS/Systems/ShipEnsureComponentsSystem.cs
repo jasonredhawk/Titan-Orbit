@@ -171,6 +171,23 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipPreCollisionVelocity());
 
+            // --- Match stats (ghosted) + combat attribution (server-only) ---
+            // [NETCODE] Prefer baking ShipMatchStats on the ghost prefab. This ensure path covers
+            // older SubScenes; if the component was never registered as a ghost field on the prefab,
+            // clients may still see zeros until the ship ghost is rebaked.
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipMatchStats>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipMatchStats());
+
+            if (state.World.IsServer())
+            {
+                foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                             .WithNone<ShipCombatAttribution>()
+                             .WithEntityAccess())
+                    ecb.AddComponent(entity, new ShipCombatAttribution());
+            }
+
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
         }

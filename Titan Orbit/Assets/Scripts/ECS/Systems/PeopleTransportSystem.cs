@@ -642,6 +642,23 @@ namespace TitanOrbit.ECS
                         var unloadOutcome = DeliverUnload(ref planetState, t.Amount, team, planetTransform, planetSize);
                         planetStateById[t.TargetPlanetId] = planetState;
                         ecb.SetComponent(planetEntity, planetState);
+
+                        // --- Match-long transporter score (minimap top transporter badge) ---
+                        // [TITAN-ORBIT] Credit the dispatching ship for every successful unload
+                        // (friendly reinforce, hostile drain, or capture) — people reached the planet.
+                        int peopleScore = (int)t.Amount;
+                        if (peopleScore > 0 &&
+                            t.SourceShipNetworkId > 0 &&
+                            shipByNetworkId.TryGetValue(t.SourceShipNetworkId, out Entity sourceShipEntity))
+                        {
+                            ShipMatchStatsLogic.TryAddOnShip(
+                                state.EntityManager,
+                                sourceShipEntity,
+                                kills: 0,
+                                gemsDeposited: 0,
+                                peopleDelivered: peopleScore);
+                        }
+
                         if (unloadOutcome == PeopleUnloadOutcome.Captured)
                         {
                             // [TITAN-ORBIT] Immediate client graph / minimap refresh — do not wait on

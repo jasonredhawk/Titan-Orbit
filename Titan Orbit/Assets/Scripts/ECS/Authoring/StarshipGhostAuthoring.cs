@@ -119,6 +119,11 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipDepositIntent());
                 // [NETCODE] Server bumps BeatSequence each deposit chunk; clients play SFX/UI from it.
                 AddComponent(entity, new ShipDepositFeedback());
+                // [NETCODE] Match-long kill/mine/transport scores — must be baked so GhostFields replicate.
+                // Runtime-only AddComponent would leave clients stuck at zero (same trap as ShipLoadoutState).
+                AddComponent(entity, new ShipMatchStats());
+                // [TITAN-ORBIT] Server-only last-damager for kill credit — not ghosted.
+                AddComponent(entity, new ShipCombatAttribution());
                 // [NETCODE] ShipInput is IInputComponentData — replicated from owner client each tick.
                 AddComponent(entity, new ShipInput());
                 AddComponent(entity, new ShipKinematics());

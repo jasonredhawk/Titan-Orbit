@@ -317,13 +317,7 @@ namespace TitanOrbit.UI
                 if (anchor.Kind == MinimapBlipKind.Ship && em.HasComponent<ShipState>(entity))
                 {
                     var ship = em.GetComponentData<ShipState>(entity);
-                    anchor.Team = ship.Team;
-                    anchor.IsDead = ship.IsDead;
-                    anchor.AwaitingTeamSelection = ship.AwaitingTeamSelection;
-                    // [TITAN-ORBIT] No local blip until Join Team / resume confirms.
-                    anchor.IsLocalPlayer = !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() &&
-                                           (em.HasComponent<LocalPlayerShipTag>(entity) ||
-                                            em.HasComponent<GhostOwnerIsLocal>(entity));
+                    ApplyShipAnchorPresentation(em, entity, anchor, ship, lt);
                     if (anchor.IsLocalPlayer)
                         _localPlayer = anchor;
                 }
@@ -400,17 +394,66 @@ namespace TitanOrbit.UI
                 var state = states[i];
                 var lt = transforms[i];
                 var anchor = GetOrCreateAnchor(entity, MinimapBlipKind.Ship);
-                anchor.Team = state.Team;
-                anchor.IsDead = state.IsDead;
-                anchor.AwaitingTeamSelection = state.AwaitingTeamSelection;
-                anchor.IsLocalPlayer = !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() &&
-                                       (em.HasComponent<LocalPlayerShipTag>(entity) ||
-                                        em.HasComponent<GhostOwnerIsLocal>(entity));
-                anchor.BodySize = math.max(0.25f, lt.Scale);
+                ApplyShipAnchorPresentation(em, entity, anchor, state, lt);
                 anchor.transform.position = lt.Position;
                 anchor.transform.localScale = Vector3.one * anchor.BodySize;
                 if (anchor.IsLocalPlayer)
                     _localPlayer = anchor;
+            }
+        }
+
+        /// <summary>
+        /// Copies ship ghost fields onto the minimap anchor for silhouette / cargo / badge rendering.
+        /// Controller reads anchors only — no ECS walks there.
+        /// </summary>
+        static void ApplyShipAnchorPresentation(
+            EntityManager em,
+            Entity entity,
+            MinimapBlipAnchor anchor,
+            ShipState ship,
+            LocalTransform lt)
+        {
+            // --- Core identity / team ---
+            anchor.Team = ship.Team;
+            anchor.IsDead = ship.IsDead;
+            anchor.AwaitingTeamSelection = ship.AwaitingTeamSelection;
+            // [TITAN-ORBIT] No local blip until Join Team / resume confirms.
+            anchor.IsLocalPlayer = !ClientTeamFlowState.ShouldSuppressLocalPlayerControl() &&
+                                   (em.HasComponent<LocalPlayerShipTag>(entity) ||
+                                    em.HasComponent<GhostOwnerIsLocal>(entity));
+            anchor.BodySize = math.max(0.25f, lt.Scale);
+
+            // --- Chassis ladder (kept on anchor for other UI; minimap uses Cross + role dots) ---
+            anchor.ShipLevel = ship.ShipLevel;
+            anchor.BranchIndex = ship.BranchIndex;
+            anchor.ShipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
+
+            // --- Live people cargo ---
+            anchor.CurrentPeople = ship.CurrentPeople;
+            anchor.PeopleCapacity = ship.PeopleCapacity;
+
+            // --- Facing (optional consumers; Cross blips stay axis-aligned) ---
+            float3 forward = math.mul(lt.Rotation, new float3(0f, 0f, 1f));
+            anchor.YawDegrees = math.degrees(math.atan2(forward.x, forward.z));
+
+            // --- Owner id (role-dot tie-break) ---
+            anchor.OwnerNetworkId = 0;
+            if (em.HasComponent<GhostOwner>(entity))
+                anchor.OwnerNetworkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
+
+            // --- Match-long scores for top killer / miner / transporter dots ---
+            if (em.HasComponent<ShipMatchStats>(entity))
+            {
+                var stats = em.GetComponentData<ShipMatchStats>(entity);
+                anchor.Kills = stats.Kills;
+                anchor.GemsDeposited = stats.GemsDeposited;
+                anchor.PeopleDelivered = stats.PeopleDelivered;
+            }
+            else
+            {
+                anchor.Kills = 0;
+                anchor.GemsDeposited = 0;
+                anchor.PeopleDelivered = 0;
             }
         }
 

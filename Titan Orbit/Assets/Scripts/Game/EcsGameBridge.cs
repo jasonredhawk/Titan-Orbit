@@ -42,9 +42,11 @@ namespace TitanOrbit.Game
         {
             ResetRemoteMapLoadTracking();
             s_WasNetworkInGame = false;
+            s_NotInGameFrames = 0;
             ClientJoinSettleCache.Clear();
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
+            AsteroidClientEntityRegistry.Clear();
             PlanetConnectionGraphCache.Clear();
             PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();
@@ -347,9 +349,17 @@ namespace TitanOrbit.Game
         /// Used by <c>NceGameFlowController</c> to dismiss the semi-transparent
         /// "Spawning your ship..." lobby overlay after Join Team.
         /// </summary>
-        public static bool HasLocalPlayerShip()
+                public static bool HasLocalPlayerShip()
         {
-            if (!IsMapLoadingComplete() || ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+            // --- Suppress until Join Team / resume Confirm ---
+            if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+                return false;
+
+            // --- Map latch only before team confirm ---
+            // [TITAN-ORBIT] After TeamChoiceConfirmed, do not require IsMapLoadingComplete.
+            // A brief NetworkStreamInGame gap used to TearDown + clear the latch and soft-lock
+            // the lobby on "Spawning your ship..." even when the hull already Instantiated.
+            if (!ClientTeamFlowState.TeamChoiceConfirmed && !IsMapLoadingComplete())
                 return false;
 
             // [TITAN-ORBIT] During GhostSpawnBacklog (e.g. gem Instantiates after asteroid destroy),
@@ -876,16 +886,38 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Statics survive "Play twice" when Domain Reload is off. Also, if nothing
             // called this while on the menu, the previous session's latch could still be true when
             // the next NetworkStreamInGame arrives — Join Team with no map.
-            bool inGame = IsNetworkInGame();
+            // --- Edge detect on NetworkStreamInGame (same signal as the join-gate system) ---
+            // [TITAN-ORBIT] Do NOT use IsClientGameplayReady here. That can briefly disagree with
+            // NetworkStreamInGame and fire a false "left session" → TearDownHybridProxies +
+            // ClientJoinSettleCache.Clear → Active starved → ships/moons frozen mid-match.
+            bool inGame = HasNetworkStreamInGame(ClientWorld);
             if (!inGame)
             {
+                // --- Debounced falling edge ---
+                // [TITAN-ORBIT] A 1-frame NetworkStreamInGame gap used to TearDownHybridProxies,
+                // Clear settle/registries, and drop the loading latch. Instantiates do not re-fire
+                // → loading stuck at 0/N or spawn-wait hang after Join Team. Require sustained leave.
                 if (s_WasNetworkInGame)
-                    ResetRemoteMapLoadTracking();
-                s_WasNetworkInGame = false;
-                ResetRemoteMapLoadTracking();
+                {
+                    s_NotInGameFrames++;
+                    if (s_NotInGameFrames >= LeaveSessionDebounceFrames)
+                    {
+                        Debug.Log(
+                            "[MapLoad] Session leave confirmed after " + s_NotInGameFrames +
+                            " frames without NetworkStreamInGame — resetting load tracking.");
+                        ResetRemoteMapLoadTracking();
+                        s_WasNetworkInGame = false;
+                        s_NotInGameFrames = 0;
+                    }
+                }
+                else
+                    s_NotInGameFrames = 0;
+
                 InvalidateLocalPlayerShipFrameCache();
                 return false;
             }
+
+            s_NotInGameFrames = 0;
 
             // Rising edge of in-game: drop complete-latch / settle-ish load flags for the new join.
             // Do NOT clear MapSessionMetaCache here — GoInGame meta RPC may already have applied.
@@ -1550,6 +1582,15 @@ namespace TitanOrbit.Game
         /// </summary>
         static bool s_WasNetworkInGame;
 
+        /// <summary>
+        /// Frames observed without <c>NetworkStreamInGame</c> while we still thought we were in-game.
+        /// TearDown only after this many consecutive frames (debounce false gaps).
+        /// </summary>
+        static int s_NotInGameFrames;
+
+        /// <summary>~0.5s at 60 FPS — long enough to ignore 1-frame connection query hiccups.</summary>
+        const int LeaveSessionDebounceFrames = 30;
+
         /// <summary>Last known team count for lobby UI — avoids flicker when home ghosts briefly desync.</summary>
         static int s_LatchedActiveTeamCount;
         /// <summary>
@@ -1602,10 +1643,12 @@ namespace TitanOrbit.Game
             // JoinSettleCompleted / TransformQuarantine are static — clear on session end so a second
             // Editor Play does not think Instantiates already finished.
             ClientJoinSettleCache.Clear();
-            // Stale MapLoadingProxyCount (e.g. 272 after prior Play) must not feed the next bar.
-            EcsWorldVisualizer.ResetLoadingProxyCounts();
+            LocalShipEntitySeed.Clear();
+            // Tear down hybrid GOs only on true leave-session — not a soft count reset.
+            EcsWorldVisualizer.TearDownHybridProxiesForSessionEnd();
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
+            AsteroidClientEntityRegistry.Clear();
             PlanetConnectionGraphCache.Clear();
             PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();

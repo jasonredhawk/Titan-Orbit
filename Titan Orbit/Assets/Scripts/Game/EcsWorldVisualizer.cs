@@ -221,6 +221,18 @@ namespace TitanOrbit.Game
         /// <summary>Reused prune list for dead proxy entities.</summary>
         readonly List<Entity> _removeScratch = new List<Entity>(64);
 
+        /// <summary>
+        /// Reused list for quarantine-safe planet/asteroid registry repair walks
+        /// (missing GO after second Local Host — never a full ECS map gather).
+        /// </summary>
+        readonly List<Entity> _registryRepairScratch = new List<Entity>(64);
+
+        /// <summary>
+        /// Max SpawnRequest tags added per frame from Instantiates registries when the GO dict
+        /// is missing a proxy. Keeps structural adds modest under Settling.
+        /// </summary>
+        const int MaxRegistryProxyRepairsPerFrame = 16;
+
         /// <summary>Incremental world-body count (planet/asteroid/gem/transport) — no full recount/frame.</summary>
         int _worldBodyProxyCountCached;
 
@@ -287,9 +299,31 @@ namespace TitanOrbit.Game
         /// </summary>
         public static void ResetLoadingProxyCounts()
         {
-            // --- Instance caches first (may still be Active this frame) ---
+            // --- Zero published numerators only (Play Mode enter / Domain Reload off) ---
+            // [TITAN-ORBIT] Do NOT Destroy hybrid GOs here. SubsystemRegistration and count resets
+            // used to call ClearAllProxies while a session was still alive → Active=null + empty
+            // registries → SyncAllProxies stopped → ships/moons frozen until quit Play.
+            // Full GO teardown is TearDownHybridProxiesForSessionEnd (leave NetworkStreamInGame).
             if (Active != null)
                 Active.ResetInstanceLoadingCounts();
+
+            MapLoadingProxyCount = 0;
+            WorldBodyProxyCount = 0;
+            LocalPlayerShipVisualRoot = null;
+            s_GlobalVisualSyncFrame = -1;
+            ClientJoinSettleCache.SetMapProxyBuildReady(false);
+            // Keep Active pointing at a live visualizer so LateUpdate sync does not starve.
+            // Callers that truly leave the session should call TearDownHybridProxiesForSessionEnd.
+        }
+
+        /// <summary>
+        /// Destroys every hybrid proxy GameObject and drops Active.
+        /// Call only when leaving <c>NetworkStreamInGame</c> / ending the match session.
+        /// </summary>
+        public static void TearDownHybridProxiesForSessionEnd()
+        {
+            if (Active != null)
+                Active.ClearAllProxiesForSessionReset();
 
             MapLoadingProxyCount = 0;
             WorldBodyProxyCount = 0;
@@ -300,8 +334,29 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Destroys every hybrid proxy GameObject and zeros incremental loading counts.
+        /// </summary>
+        void ClearAllProxiesForSessionReset()
+        {
+            // --- Snapshot keys (DestroyProxy mutates _proxies) ---
+            _removeScratch.Clear();
+            foreach (var kv in _proxies)
+                _removeScratch.Add(kv.Key);
+
+            for (int i = 0; i < _removeScratch.Count; i++)
+                DestroyProxy(_removeScratch[i]);
+
+            _proxies.Clear();
+            _proxyKinds.Clear();
+            _asteroidProxyEntities.Clear();
+            _asteroidBurstFired.Clear();
+            _asteroidLastKnown.Clear();
+            ResetInstanceLoadingCounts();
+        }
+
+        /// <summary>
         /// Zeros this visualizer's incremental proxy counters without destroying GameObjects.
-        /// Used on session reset / second Play so static publish cannot lie.
+        /// Used only when counts must be republished without tearing the GO map down.
         /// </summary>
         void ResetInstanceLoadingCounts()
         {
@@ -631,11 +686,21 @@ namespace TitanOrbit.Game
         {
             if (Active == this)
                 return;
-            if (Active == null || Active._proxies.Count == 0)
+
+            // --- Always reclaim when nobody is Active ---
+            // [TITAN-ORBIT] Session reset used to set Active=null while TransformQuarantine was
+            // briefly false (cache Clear). Then this method refused to reclaim → SyncAllProxies
+            // never ran → hybrid ships/planets/moons froze for the rest of Play Mode.
+            if (Active == null)
+            {
+                Active = this;
+                return;
+            }
+
+            if (Active._proxies.Count == 0)
             {
                 // [TITAN-ORBIT] Claim Active while quarantined / settling even with 0 proxies so
-                // FlushPending + Pending drain still run under the loading screen. Premature
-                // Settling OFF used to leave Active unset when both instances had empty dicts.
+                // FlushPending + Pending drain still run under the loading screen.
                 if (_proxies.Count > 0 ||
                     ClientJoinSettleCache.Settling ||
                     ClientJoinSettleCache.TransformQuarantine)
@@ -683,6 +748,10 @@ namespace TitanOrbit.Game
             // bar. Skipping drain until Settling OFF dumped all GO lag after 100% / Join Team.
             // Flush Instantiates-hook SpawnRequest queue first (Windows EntityScenes lack Pending).
             MapBodyHybridVisualInstantiateHook.FlushPending(em);
+            // --- Second Local Host: Linked/Pending orphans with no GO ---
+            // [TITAN-ORBIT] Registry walk only (Instantiates hook populated). Never ToEntityArray
+            // all asteroids/planets under TransformQuarantine.
+            RequeueMissingMapBodyProxiesFromRegistries(em);
             // [TITAN-ORBIT] Gems Instantiated this frame — create GO immediately (bypass asteroid budget).
             DrainUrgentGemProxies(em, alive);
             // Immediate local gem explosion when client sees IsDestroyed (do not wait Instantiates).
@@ -1029,6 +1098,80 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Budgeted repair: Instantiates registries know which planet/asteroid ghosts exist, but
+        /// the hybrid GO dictionary may be empty after a session reset (or Linked without Pending).
+        /// Adds <see cref="MapBodyHybridVisualSpawnRequest"/> so <see cref="DrainPendingWorldBodyProxies"/>
+        /// can rebuild — quarantine-safe (no full map <c>ToEntityArray</c>).
+        /// </summary>
+        /// <param name="em">Client / visualization EntityManager.</param>
+        void RequeueMissingMapBodyProxiesFromRegistries(EntityManager em)
+        {
+            // --- Only while the loading bar still needs map GOs ---
+            // After proxy-ready, do not keep AddComponent-ing SpawnRequest every frame.
+            if (EcsGameBridge.IsMapProxyCountReady(out _, out _, out _))
+                return;
+
+            int queued = 0;
+            queued += RequeueMissingFromRegistry(
+                em, isPlanetRegistry: true, MaxRegistryProxyRepairsPerFrame - queued);
+            if (queued < MaxRegistryProxyRepairsPerFrame)
+            {
+                RequeueMissingFromRegistry(
+                    em, isPlanetRegistry: false, MaxRegistryProxyRepairsPerFrame - queued);
+            }
+        }
+
+        /// <summary>
+        /// Walks one Instantiates registry and tags entities that exist but have no live GO proxy.
+        /// </summary>
+        /// <param name="em">Client EntityManager.</param>
+        /// <param name="isPlanetRegistry">True = planets; false = asteroids.</param>
+        /// <param name="budget">Max new SpawnRequest tags this call.</param>
+        /// <returns>How many SpawnRequest components were added.</returns>
+        int RequeueMissingFromRegistry(EntityManager em, bool isPlanetRegistry, int budget)
+        {
+            if (budget <= 0)
+                return 0;
+
+            var scratch = _registryRepairScratch;
+            if (isPlanetRegistry)
+                PlanetClientEntityRegistry.CopyLive(scratch);
+            else
+                AsteroidClientEntityRegistry.CopyLive(scratch);
+
+            int queued = 0;
+            for (int i = 0; i < scratch.Count && queued < budget; i++)
+            {
+                Entity entity = scratch[i];
+
+                // --- Drop dead registry entries (despawned between Instantiates and now) ---
+                if (entity == Entity.Null || !em.Exists(entity))
+                {
+                    if (isPlanetRegistry)
+                        PlanetClientEntityRegistry.NotifyDestroyed(entity);
+                    else
+                        AsteroidClientEntityRegistry.NotifyDestroyed(entity);
+                    continue;
+                }
+
+                // --- Already has a live GameObject ---
+                if (_proxies.TryGetValue(entity, out var go) && go != null)
+                    continue;
+
+                // --- Already in Pending / SpawnRequest drain queue ---
+                if (em.HasComponent<MapBodyHybridVisualPending>(entity) ||
+                    em.HasComponent<MapBodyHybridVisualSpawnRequest>(entity))
+                    continue;
+
+                // [HYBRID] Runtime SpawnRequest — not a GhostComponent; safe AddComponent.
+                em.AddComponentData(entity, new MapBodyHybridVisualSpawnRequest());
+                queued++;
+            }
+
+            return queued;
+        }
+
+        /// <summary>
         /// Instantiates GameObject proxies for entities tagged with baked
         /// <see cref="MapBodyHybridVisualPending"/> or runtime
         /// <see cref="MapBodyHybridVisualSpawnRequest"/>.
@@ -1191,6 +1334,8 @@ namespace TitanOrbit.Game
 
                 _proxies[entity] = go;
                 RegisterProxyKind(entity, ProxyVisualKind.Asteroid);
+                // [TITAN-ORBIT] Backup Instantiates tracking for loading-bar registry repair.
+                AsteroidClientEntityRegistry.NotifyInstantiated(entity);
                 go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.localScale = Vector3.one * scale;
                 return true;
@@ -2087,6 +2232,7 @@ namespace TitanOrbit.Game
             ToroidalDisplay.RemoveEntity(entity);
             GemClientEntityRegistry.NotifyDestroyed(entity);
             PlanetClientEntityRegistry.NotifyDestroyed(entity);
+            AsteroidClientEntityRegistry.NotifyDestroyed(entity);
             _asteroidBurstFired.Remove(entity);
             _asteroidLastKnown.Remove(entity);
 

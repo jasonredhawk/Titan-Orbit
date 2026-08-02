@@ -18,8 +18,8 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Hidden world-space anchor used as a blip key for ECS entities on the minimap.
     /// <see cref="MinimapEcsEntitySync"/> creates/updates these from ghost state; blip
-    /// renderers read Kind, Team, and body stats for icon shape and color. [HYBRID] bridge
-    /// between ECS entities and UGUI/minimap presentation — does not drive simulation.
+    /// renderers read Kind, Team, chassis, cargo, and match stats for icon shape and badges.
+    /// [HYBRID] bridge between ECS entities and UGUI/minimap presentation — does not drive simulation.
     /// </summary>
     public sealed class MinimapBlipAnchor : MonoBehaviour
     {
@@ -38,6 +38,47 @@ namespace TitanOrbit.UI
 
         /// <summary>True when player has not picked a team yet.</summary>
         public bool AwaitingTeamSelection;
+
+        // --- Ship identity (for silhouette lookup) ---
+        /// <summary>[TITAN-ORBIT] Upgrade ladder level from <c>ShipState.ShipLevel</c>.</summary>
+        public int ShipLevel;
+
+        /// <summary>[TITAN-ORBIT] Branch within the level from <c>ShipState.BranchIndex</c>.</summary>
+        public int BranchIndex;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Index into <c>PlanetShipFamilyConfig.families</c>
+        /// (<c>ShipState.ShipFamilyConfigIndex</c>).
+        /// </summary>
+        public byte ShipFamilyConfigIndex;
+
+        // --- Ship cargo (live hold — not match scores) ---
+        /// <summary>[TITAN-ORBIT] People currently aboard (<c>ShipState.CurrentPeople</c>).</summary>
+        public int CurrentPeople;
+
+        /// <summary>[TITAN-ORBIT] Max people capacity (<c>ShipState.PeopleCapacity</c>).</summary>
+        public int PeopleCapacity;
+
+        // --- Match-long scores (ghosted ShipMatchStats) ---
+        /// <summary>[TITAN-ORBIT] Cumulative kills this match.</summary>
+        public int Kills;
+
+        /// <summary>[TITAN-ORBIT] Cumulative gems deposited this match.</summary>
+        public int GemsDeposited;
+
+        /// <summary>[TITAN-ORBIT] Cumulative people delivered this match.</summary>
+        public int PeopleDelivered;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Yaw in degrees around world Y from <c>LocalTransform.Rotation</c>,
+        /// used to rotate the ship silhouette so facing is readable on the minimap.
+        /// </summary>
+        public float YawDegrees;
+
+        /// <summary>
+        /// [NETCODE] Owner <c>GhostOwner.NetworkId</c> — stable tie-break for top-of-team badges.
+        /// </summary>
+        public int OwnerNetworkId;
 
         // --- Planet / body stats for label and scale ---
         /// <summary>Planet level for ring/label display.</summary>

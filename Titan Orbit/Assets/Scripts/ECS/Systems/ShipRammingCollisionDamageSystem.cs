@@ -173,9 +173,11 @@ namespace TitanOrbit.ECS
                             impactForceN, selfDamage);
 
                         ApplyAsteroidDamage(ref state, other, asteroidDamage, ship.Team);
+                        // [TITAN-ORBIT] Asteroid self-damage — no player damager (network id 0).
                         ApplyShipSelfDamage(
                             ref state, ref ship, shipEntity, selfDamage, intensity,
-                            gemPrefab, shipPos, spawnServerTime, ecb, now);
+                            gemPrefab, shipPos, spawnServerTime, ecb, now,
+                            damagerNetworkId: 0);
                         state.EntityManager.SetComponentData(shipEntity, ship);
                     }
                     else
@@ -223,9 +225,11 @@ namespace TitanOrbit.ECS
                                 pushN, selfPulse);
 
                         ApplyAsteroidDamage(ref state, other, asteroidPulse, ship.Team);
+                        // [TITAN-ORBIT] Grind self-damage — environment, not a player kill.
                         ApplyShipSelfDamage(
                             ref state, ref ship, shipEntity, selfPulse, grindIntensity,
-                            gemPrefab, shipPos, spawnServerTime, ecb, now);
+                            gemPrefab, shipPos, spawnServerTime, ecb, now,
+                            damagerNetworkId: 0);
                         state.EntityManager.SetComponentData(shipEntity, ship);
 
                         contact.NextGrindTime = now + pulse;
@@ -408,9 +412,15 @@ namespace TitanOrbit.ECS
                 impactForceN, damage);
 
             float3 vicPos = state.EntityManager.GetComponentData<LocalTransform>(victim).Position;
+            // [TITAN-ORBIT] Credit the offender as last damager for kill stats.
+            int offenderNetworkId = 0;
+            if (state.EntityManager.HasComponent<GhostOwner>(offender))
+                offenderNetworkId = state.EntityManager.GetComponentData<GhostOwner>(offender).NetworkId;
+
             ApplyShipSelfDamage(
                 ref state, ref vicShip, victim, damage, intensity,
-                gemPrefab, vicPos, spawnServerTime, ecb, now);
+                gemPrefab, vicPos, spawnServerTime, ecb, now,
+                damagerNetworkId: offenderNetworkId);
             state.EntityManager.SetComponentData(victim, vicShip);
         }
 
@@ -485,6 +495,12 @@ namespace TitanOrbit.ECS
             state.EntityManager.SetComponentData(asteroid, a);
         }
 
+        /// <summary>
+        /// Applies ramming / grind hull damage to one ship and optionally stamps kill attribution.
+        /// </summary>
+        /// <param name="damagerNetworkId">
+        /// Attacker GhostOwner.NetworkId for ship-vs-ship; 0 for asteroid self-damage (no kill credit).
+        /// </param>
         static void ApplyShipSelfDamage(
             ref SystemState state,
             ref ShipState ship,
@@ -495,7 +511,8 @@ namespace TitanOrbit.ECS
             float3 shipPos,
             float spawnServerTime,
             EntityCommandBuffer ecb,
-            double now)
+            double now,
+            int damagerNetworkId)
         {
             if (damage <= 0.0001f || ship.IsDead)
                 return;
@@ -524,6 +541,18 @@ namespace TitanOrbit.ECS
                 var vitals = state.EntityManager.GetComponentData<ShipVitalsState>(shipEntity);
                 vitals.LastHullDamageTime = now;
                 state.EntityManager.SetComponentData(shipEntity, vitals);
+            }
+
+            // --- Kill attribution ---
+            // [TITAN-ORBIT] Only stamp when another ship dealt the damage (network id > 0).
+            if ((result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead) &&
+                damagerNetworkId > 0)
+            {
+                ShipMatchStatsLogic.SetLastDamager(
+                    state.EntityManager,
+                    shipEntity,
+                    damagerNetworkId,
+                    (float)now);
             }
 
             if (result.GemsToExpel > 0.0001f)
