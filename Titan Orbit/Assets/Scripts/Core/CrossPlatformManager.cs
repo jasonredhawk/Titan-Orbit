@@ -4,8 +4,8 @@ namespace TitanOrbit.Core
 {
     /// <summary>
     /// Handles cross-platform configuration and optimizations (frame rate, VSync, mobile quality).
-    /// Runs once at <see cref="Start"/>. Dedicated Relay joins also set 60 FPS / VSync off in
-    /// session code — that path re-applies after this so a default VSync=on does not stick.
+    /// Runs once at <see cref="Start"/>. Dedicated Relay joins re-assert VSync on in
+    /// <c>TitanOrbitSessionManager</c> so tear-free presents stick after this Start runs.
     /// </summary>
     public class CrossPlatformManager : MonoBehaviour
     {
@@ -15,7 +15,8 @@ namespace TitanOrbit.Core
 
         /// <summary>
         /// When true, enables VSync on desktop at scene start.
-        /// Dedicated online clients re-clear VSync from session code after join.
+        /// Dedicated online clients also keep VSync on from session code after join
+        /// (prevents tearing while the camera pans over map bodies).
         /// </summary>
         [SerializeField] private bool enableVSync = true;
 
@@ -52,6 +53,8 @@ namespace TitanOrbit.Core
             }
 
             // --- Desktop / WebGL VSync ---
+            // [UNITY] vSyncCount 1 = present on every vertical blank (no tearing).
+            // Session manager re-asserts this for dedicated online clients after join.
             QualitySettings.vSyncCount = enableVSync ? 1 : 0;
 
             if (Application.platform == RuntimePlatform.WebGLPlayer)

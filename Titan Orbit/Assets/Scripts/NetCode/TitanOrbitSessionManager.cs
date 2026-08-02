@@ -165,20 +165,26 @@ namespace TitanOrbit.NetCode
         }
 #else
         /// <summary>
-        /// Client: keep dedicated Join→GCE at 60 FPS / VSync off after scene platform defaults.
+        /// Client: keep dedicated Join→GCE on VSync after scene platform defaults.
+        /// VSync locks present to the monitor refresh and prevents tearing / “vertical strip”
+        /// artifacts while the camera pans over asteroids (same panel can look fine in Starblast
+        /// because the browser compositor typically presents synced).
         /// </summary>
         void Update()
         {
             // --- Dedicated online frame pace ---
-            // [TITAN-ORBIT] CrossPlatformManager may enable VSync at Start after join prepare.
-            // basics55: Editor still sat ~30 FPS with target=60/vSync=0 (CPU-bound); player builds
-            // need this assert so H64 can actually reach ~60 Hz.
+            // [UNITY] vSyncCount = 1 → wait for vertical blank before presenting. When VSync is
+            // on, Application.targetFrameRate is ignored; the panel Hz becomes the present rate.
+            // [TITAN-ORBIT] We used to force vSync off + 60 FPS for join catch-up (basics55). That
+            // caused visible tear bands during flight on high-Hz monitors. Re-assert VSync every
+            // frame so a later Quality/UI change cannot leave tearing on.
             if (!IsDedicatedOnlineClient)
                 return;
+            if (QualitySettings.vSyncCount != 1)
+                QualitySettings.vSyncCount = 1;
+            // Fallback soft cap only if something clears VSync — harmless while vSyncCount > 0.
             if (Application.targetFrameRate != 60)
                 Application.targetFrameRate = 60;
-            if (QualitySettings.vSyncCount != 0)
-                QualitySettings.vSyncCount = 0;
         }
 #endif
 
@@ -1657,9 +1663,10 @@ namespace TitanOrbit.NetCode
             ClientTeamFlowState.Reset();
             StopMppmLanAutoConnect();
 
-            // [UNITY] Editor Join often sits ~22 FPS with VSync/uncapped hitching; prefer 60 for catch-up.
+            // [UNITY] VSync on at join — sync presents to the monitor and avoid tear strips while
+            // flying. targetFrameRate is ignored while vSyncCount > 0; kept as a soft fallback.
             Application.targetFrameRate = 60;
-            QualitySettings.vSyncCount = 0;
+            QualitySettings.vSyncCount = 1;
 
             await SuspendLocalServerForDedicatedClientAsync();
             await EnsureClientReadyForRelayDriverResetAsync();
