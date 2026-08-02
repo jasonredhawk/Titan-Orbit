@@ -68,8 +68,25 @@ namespace TitanOrbit.ECS
         /// <summary>Throttles expensive shield-sphere rebuilds.</summary>
         static int s_DroneHitRebuildCounter;
 
+        /// <summary>
+        /// Planetary defense hit spheres this tick (no turret ghosts — pose from planet + slot).
+        /// </summary>
+        static readonly List<PlanetaryDefenseHitTarget> s_DefenseHitTargets =
+            new List<PlanetaryDefenseHitTarget>(64);
+
+        /// <summary>Winning defense slot index (−1 when not a turret).</summary>
+        static int s_BestDefenseSlot = -1;
+
+        /// <summary>Throttles defense-sphere rebuilds.</summary>
+        static int s_DefenseHitRebuildCounter;
+
+        static PlanetShipFamilyConfig s_DefenseFamilyConfig;
+        static PlanetaryDefenseConfig s_DefenseDefaultConfig;
+        static bool s_DefenseConfigWarmed;
+
         EntityQuery _droneShipQuery;
         EntityQuery _allShipQuery;
+        EntityQuery _defensePlanetQuery;
 
         /// <summary>Require bullet singleton before ticking.</summary>
         public void OnCreate(ref SystemState state)
@@ -88,6 +105,11 @@ namespace TitanOrbit.ECS
                 ComponentType.ReadOnly<ShipState>(),
                 ComponentType.ReadOnly<LocalTransform>(),
                 ComponentType.ReadOnly<GhostOwner>());
+            _defensePlanetQuery = state.GetEntityQuery(
+                ComponentType.ReadOnly<PlanetTag>(),
+                ComponentType.ReadOnly<PlanetState>(),
+                ComponentType.ReadOnly<LocalTransform>(),
+                ComponentType.ReadOnly<PlanetaryDefenseSlotElement>());
 
             // [TITAN-ORBIT] Pull Upgrade Visual Scale Multiplier from the single Resources bank
             // so ScaleMultiplier on spawns matches designer Inspector values (client + server).
@@ -166,6 +188,22 @@ namespace TitanOrbit.ECS
             else if (!needDroneHits)
             {
                 s_DroneHitTargets.Clear();
+            }
+
+            // --- Planetary defense hit spheres (throttle — same cadence as drones) ---
+            EnsureDefenseConfigWarmed();
+            s_DefenseHitRebuildCounter++;
+            if (needDroneHits &&
+                (s_DefenseHitTargets.Count == 0 || (s_DefenseHitRebuildCounter % 3) == 0))
+            {
+                using var defensePlanets = _defensePlanetQuery.ToEntityArray(Allocator.Temp);
+                PlanetaryDefenseHitScan.RebuildTargets(
+                    state.EntityManager, defensePlanets, mapW, mapH,
+                    s_DefenseFamilyConfig, s_DefenseDefaultConfig, s_DefenseHitTargets);
+            }
+            else if (!needDroneHits)
+            {
+                s_DefenseHitTargets.Clear();
             }
 
             // --- Phase A: advance existing bullets (substepped sweeps) ---
@@ -431,6 +469,10 @@ namespace TitanOrbit.ECS
             /// Derived drone body (shield / fighter / mining). Damages equipment RemainingCharges.
             /// </summary>
             Drone = 6,
+            /// <summary>
+            /// Planetary defense turret on an owned planet (ghosted slot buffer HP).
+            /// </summary>
+            PlanetaryDefense = 7,
         }
 
         /// <summary>
@@ -485,6 +527,7 @@ namespace TitanOrbit.ECS
             var bestKind = BulletHitKind.None;
             Entity bestEntity = Entity.Null;
             s_BestDroneSlot = -1;
+            s_BestDefenseSlot = -1;
 
             // --- Planets + gem-moon shields ---
             foreach (var (planetState, planetTransform, moonState, planetEntity) in SystemAPI
@@ -628,6 +671,18 @@ namespace TitanOrbit.ECS
                 bestKind = BulletHitKind.Drone;
                 bestEntity = hitDrone.ShipEntity;
                 s_BestDroneSlot = hitDrone.SlotIndex;
+            }
+
+            // --- Planetary defense turrets (derived spheres on owned planets) ---
+            if (AllowsHitKind(b.DamageFilter, BulletHitKind.PlanetaryDefense) &&
+                PlanetaryDefenseHitScan.TryKeepNearestTurretHit(
+                    in b, from, to, mapW, mapH, s_DefenseHitTargets,
+                    ref bestT, ref bestHit, out int defenseIdx))
+            {
+                PlanetaryDefenseHitTarget hitTurret = s_DefenseHitTargets[defenseIdx];
+                bestKind = BulletHitKind.PlanetaryDefense;
+                bestEntity = hitTurret.PlanetEntity;
+                s_BestDefenseSlot = hitTurret.SlotIndex;
             }
 
             // --- No intersection ---
@@ -786,9 +841,28 @@ namespace TitanOrbit.ECS
                     return true;
                 }
 
+                case BulletHitKind.PlanetaryDefense:
+                {
+                    // [TITAN-ORBIT] Slot HP → 0 resets to empty placeholder (rebuild with gems).
+                    PlanetaryDefenseHitScan.ApplyDamage(
+                        state.EntityManager, bestEntity, s_BestDefenseSlot, b.Damage);
+                    return true;
+                }
+
                 default:
                     return false;
             }
+        }
+
+        /// <summary>Warm family/default defense configs once for hit-sphere rebuilds.</summary>
+        static void EnsureDefenseConfigWarmed()
+        {
+            if (s_DefenseConfigWarmed)
+                return;
+            s_DefenseFamilyConfig =
+                UnityEngine.Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            s_DefenseDefaultConfig = PlanetaryDefenseConfig.LoadDefault();
+            s_DefenseConfigWarmed = true;
         }
 
         /// <summary>
@@ -838,8 +912,16 @@ namespace TitanOrbit.ECS
                     return kind == BulletHitKind.Asteroid;
 
                 case BulletDamageFilter.ShipsOnly:
-                    // Fighter: enemy ships + their drones. Pass through asteroids / transports / moons.
-                    return kind == BulletHitKind.Ship || kind == BulletHitKind.Drone;
+                    // Fighter: enemy ships + their drones + enemy planetary turrets.
+                    // Pass through asteroids / transports / moons.
+                    return kind == BulletHitKind.Ship ||
+                           kind == BulletHitKind.Drone ||
+                           kind == BulletHitKind.PlanetaryDefense;
+
+                case BulletDamageFilter.ShipsAndTransports:
+                    // Planetary defense guns: enemy ships + people transports.
+                    // Pass through rocks / moons / drones / other turrets.
+                    return kind == BulletHitKind.Ship || kind == BulletHitKind.Transport;
 
                 default:
                     return true;

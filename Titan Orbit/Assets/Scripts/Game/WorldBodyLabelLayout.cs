@@ -10,7 +10,52 @@ namespace TitanOrbit.Game
         public const float PlanetPaddingAboveSurfaceLocal = 0.04f;
         /// <summary>Extra lift above mesh top for displaced SGT terrain (mountains).</summary>
         public const float PlanetTerrainClearanceOverRadius = 0.12f;
-        public const float TextWorldScale = 0.04f;
+
+        /// <summary>
+        /// Legacy TMP root scale when labels were children of a scaled planet root
+        /// (effective world size ≈ this × planetSize). Kept for size-matching helpers.
+        /// </summary>
+        public const float TextWorldScaleLegacyLocal = 0.04f;
+
+        /// <summary>
+        /// Default readable world scale for planet TMP under a unit-scale proxy root.
+        /// [TITAN-ORBIT] After PlanetVisualBody, roots no longer multiply this by planetSize.
+        /// </summary>
+        public const float TextWorldScale = 0.55f;
+
+        /// <summary>Clamp floor for planet population labels (small planets).</summary>
+        public const float PlanetLabelWorldScaleMin = 0.45f;
+
+        /// <summary>Clamp ceiling for planet population labels (huge homes).</summary>
+        public const float PlanetLabelWorldScaleMax = 0.95f;
+
+        /// <summary>Legacy moon label local scale when parented under a scaled planet.</summary>
+        public const float MoonLabelWorldScaleLegacyLocal = 0.022f;
+
+        public const float MoonLabelWorldScaleMin = 0.16f;
+        public const float MoonLabelWorldScaleMax = 0.4f;
+
+        /// <summary>
+        /// Readable planet label world scale matching the old inherited-planet-scale look.
+        /// </summary>
+        public static float GetReadablePlanetLabelWorldScale(float planetSize)
+        {
+            return Mathf.Clamp(
+                Mathf.Max(0.25f, planetSize) * TextWorldScaleLegacyLocal,
+                PlanetLabelWorldScaleMin,
+                PlanetLabelWorldScaleMax);
+        }
+
+        /// <summary>
+        /// Readable moon gem/shield label world scale under a unit-scale planet root.
+        /// </summary>
+        public static float GetReadableMoonLabelWorldScale(float planetSize)
+        {
+            return Mathf.Clamp(
+                Mathf.Max(0.25f, planetSize) * MoonLabelWorldScaleLegacyLocal,
+                MoonLabelWorldScaleMin,
+                MoonLabelWorldScaleMax);
+        }
 
         public static bool ShouldSkipRenderer(Renderer renderer)
         {
@@ -37,7 +82,11 @@ namespace TitanOrbit.Game
                 name.Contains("MoonOrbitZone") ||
                 name.Contains("GemMoonMatrixShield") ||
                 name.Contains("PlanetRings") ||
-                name.Contains("PlanetOrbit"))
+                name.Contains("PlanetOrbit") ||
+                name.Contains("PlanetaryDefense") ||
+                name.Contains("PadZone") ||
+                name.Contains("InfoPlate") ||
+                name.Contains("DefenseSlot"))
                 return true;
 
             return false;
@@ -77,33 +126,54 @@ namespace TitanOrbit.Game
             if (planetRoot == null)
                 return 0.5f;
 
-            float maxY = 0f;
-            bool found = false;
-            var renderers = planetRoot.GetComponentsInChildren<Renderer>(true);
-            for (int i = 0; i < renderers.Length; i++)
+            // Prefer scaled body half-height — reliable under unit-scale roots even when
+            // SgtPlanet renderers are not ready on the first frames after Instantiates.
+            if (PlanetVisualBody.TryGet(planetRoot, out Transform body))
             {
-                var renderer = renderers[i];
+                float fromBody = Mathf.Max(0.25f, body.localScale.x) * 0.5f;
+                float maxY = fromBody;
+                bool foundMesh = false;
+                var renderers = body.GetComponentsInChildren<Renderer>(true);
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    var renderer = renderers[i];
+                    if (ShouldSkipRenderer(renderer))
+                        continue;
+
+                    Bounds bounds = renderer.bounds;
+                    Vector3 topWorld = bounds.center + Vector3.up * bounds.extents.y;
+                    Vector3 topLocal = planetRoot.InverseTransformPoint(topWorld);
+                    if (topLocal.y > maxY)
+                    {
+                        maxY = topLocal.y;
+                        foundMesh = true;
+                    }
+                }
+
+                return Mathf.Max(0.01f, foundMesh ? maxY : fromBody);
+            }
+
+            float legacyMaxY = 0f;
+            bool found = false;
+            var all = planetRoot.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                var renderer = all[i];
                 if (ShouldSkipRenderer(renderer) || IsUnderMoonVisual(renderer.transform, planetRoot))
                     continue;
 
                 Bounds bounds = renderer.bounds;
                 Vector3 topWorld = bounds.center + Vector3.up * bounds.extents.y;
                 Vector3 topLocal = planetRoot.InverseTransformPoint(topWorld);
-                if (topLocal.y > maxY)
+                if (topLocal.y > legacyMaxY)
                 {
-                    maxY = topLocal.y;
+                    legacyMaxY = topLocal.y;
                     found = true;
                 }
             }
 
             if (found)
-                return Mathf.Clamp(maxY, 0.01f, 5f);
-
-            foreach (var col in planetRoot.GetComponents<SphereCollider>())
-            {
-                if (!col.isTrigger)
-                    return col.radius;
-            }
+                return Mathf.Max(0.01f, legacyMaxY);
 
             return 0.5f;
         }
@@ -169,7 +239,8 @@ namespace TitanOrbit.Game
 
             float surfaceY = GetPlanetSurfaceYLocal(planetRoot);
             float anchorY = GetPlanetLabelAnchorYLocal(surfaceY);
-            labelRoot.localPosition = new Vector3(0f, Mathf.Clamp(anchorY, 0.01f, 6f), 0f);
+            // No tight upper clamp — homeworlds can be Size 15+ with unit-scale roots.
+            labelRoot.localPosition = new Vector3(0f, Mathf.Max(0.01f, anchorY), 0f);
         }
 
         public static void ApplySnugMoonLabel(TextMeshPro label, Transform moonRoot, float fallbackMoonRadius = 0.25f)

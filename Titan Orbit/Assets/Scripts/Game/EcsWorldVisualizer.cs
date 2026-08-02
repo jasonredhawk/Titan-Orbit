@@ -590,6 +590,23 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Copies planet proxy entity keys into <paramref name="dst"/> (clears first).
+        /// [TITAN-ORBIT] Quarantine-safe — dictionary walk only, never <c>ToEntityArray</c>.
+        /// Used by <c>PlanetaryDefenseVisualDriver</c> to place turrets without map-body gathers.
+        /// </summary>
+        public void CopyPlanetProxyEntities(List<Entity> dst)
+        {
+            if (dst == null)
+                return;
+            dst.Clear();
+            foreach (var kv in _proxyPlanetVisuals)
+            {
+                if (kv.Key != Entity.Null)
+                    dst.Add(kv.Key);
+            }
+        }
+
+        /// <summary>
         /// Quarantine-safe planet lookup by <see cref="PlanetState.PlanetId"/>.
         /// Walks hybrid proxy keys only, then per-entity <c>HasComponent</c>/<c>GetComponentData</c> —
         /// never <c>ToEntityArray</c> / full planet archetype gathers (Crash!!! after Settling OFF).
@@ -931,9 +948,19 @@ namespace TitanOrbit.Game
                         t.rotation = displayRot;
                 }
 
-                Vector3 displayScale = Vector3.one * scale;
-                if ((t.localScale - displayScale).sqrMagnitude > 0.0001f)
-                    t.localScale = displayScale;
+                // --- Scale ---
+                // Planets: unit-scale root; ECS diameter lives on PlanetVisualBody.
+                // Asteroids / other bodies: scale stays on the proxy root.
+                if (kind == ProxyVisualKind.Planet)
+                {
+                    PlanetVisualBody.ApplyScale(go, scale);
+                }
+                else
+                {
+                    Vector3 displayScale = Vector3.one * scale;
+                    if ((t.localScale - displayScale).sqrMagnitude > 0.0001f)
+                        t.localScale = displayScale;
+                }
 
                 // --- Planet level / ownership visuals (rings, moon, materials) ---
                 // [TITAN-ORBIT] DrawPlanets used to Destroy+recreate when PlanetVisualKey changed,
@@ -1313,7 +1340,9 @@ namespace TitanOrbit.Game
                 // CollectFromClientRegistry needs this entity under TransformQuarantine.
                 PlanetClientEntityRegistry.NotifyInstantiated(entity);
                 go.transform.SetPositionAndRotation(GetVisualPosition(entity, lt.Position), lt.Rotation);
-                go.transform.localScale = Vector3.one * scale;
+                // Unit root + scaled PlanetVisualBody (TryCreatePlanetVisual already set this;
+                // re-apply in case CreatePrimitivePlanetProxy fallback was used).
+                PlanetVisualBody.EnsureAndApplyScale(go, scale);
                 return true;
             }
 
@@ -2479,7 +2508,7 @@ namespace TitanOrbit.Game
                         alive.Add(entity);
                         go.transform.position = GetVisualPosition(entity, lt.Position);
                         go.transform.rotation = lt.Rotation;
-                        go.transform.localScale = Vector3.one * scale;
+                        PlanetVisualBody.ApplyScale(go, scale);
                         continue;
                     }
 
@@ -2519,7 +2548,7 @@ namespace TitanOrbit.Game
                 PlanetClientEntityRegistry.NotifyInstantiated(entity);
                 go.transform.position = GetVisualPosition(entity, lt.Position);
                 go.transform.rotation = lt.Rotation;
-                go.transform.localScale = Vector3.one * scale;
+                PlanetVisualBody.EnsureAndApplyScale(go, scale);
             }
         }
 
@@ -2680,14 +2709,20 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        /// <summary>Colored primitive sphere fallback when planet prefab pipeline fails.</summary>
+        /// <summary>
+        /// Colored primitive sphere fallback when planet prefab pipeline fails.
+        /// Mesh lives under <see cref="PlanetVisualBody"/> so the proxy root stays unit-scale.
+        /// </summary>
         static GameObject CreatePrimitivePlanetProxy(TeamId ownership)
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            go.name = "PlanetTagProxy";
-            var col = go.GetComponent<Collider>();
+            var go = new GameObject("PlanetTagProxy");
+            Transform body = PlanetVisualBody.EnsureAndApplyScale(go, 1f);
+            var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            sphere.name = "PlanetBody";
+            sphere.transform.SetParent(body, false);
+            var col = sphere.GetComponent<Collider>();
             if (col != null) Destroy(col);
-            var renderer = go.GetComponent<Renderer>();
+            var renderer = sphere.GetComponent<Renderer>();
             if (renderer != null)
             {
                 Color color = ownership == TeamId.None

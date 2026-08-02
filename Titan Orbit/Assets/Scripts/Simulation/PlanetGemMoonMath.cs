@@ -47,7 +47,9 @@ namespace TitanOrbit.Simulation
             math.max(0.001f, BaseMaxShieldPoints * math.max(1, planetLevel));
 
         /// <summary>
-        /// Uniform local scale for moon mesh — larger on small planets (inverse size cap), boosted for homeworld.
+        /// Uniform scale for the moon mesh when its parent still inherits planet scale
+        /// (legacy). Prefer <see cref="ComputeVisualWorldUniformScale"/> under unit-scale planet roots.
+        /// Larger on small planets (inverse size cap), boosted for homeworld.
         /// </summary>
         public static float ComputeVisualUniformScale(float planetSize, float homeScaleMultiplier = 1f)
         {
@@ -58,6 +60,20 @@ namespace TitanOrbit.Simulation
             inv = Mathf.Min(inv, GemMoonInversePlanetSizeCap);
             return Mathf.Clamp(baseAtRef * inv * Mathf.Max(0.01f, homeScaleMultiplier), 0.02f, 1.25f);
         }
+
+        /// <summary>
+        /// World-space uniform scale for the moon mesh under a unit-scale planet proxy root.
+        /// Equals legacy <c>ComputeVisualUniformScale × planetSize</c> (same on-screen size as before).
+        /// </summary>
+        public static float ComputeVisualWorldUniformScale(float planetSize, float homeScaleMultiplier = 1f)
+        {
+            planetSize = Mathf.Max(0.01f, planetSize);
+            return ComputeVisualUniformScale(planetSize, homeScaleMultiplier) * planetSize;
+        }
+
+        /// <summary>World radius of the soft orbit-zone / shield shell around the moon.</summary>
+        public static float GetMoonVisualShellOuterRadiusWorld(float planetSize, bool isHomePlanet) =>
+            GetMoonVisualShellOuterRadiusLocal(planetSize, isHomePlanet) * Mathf.Max(0.01f, planetSize);
 
         public static float GetRingsOuterEdgeRadiusLocal(int level) =>
             PlanetOrbitMath.GetLevelBandsOuterRadiusLocal(level);

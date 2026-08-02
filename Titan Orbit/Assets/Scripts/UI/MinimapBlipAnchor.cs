@@ -81,8 +81,14 @@ namespace TitanOrbit.UI
         public int OwnerNetworkId;
 
         // --- Planet / body stats for label and scale ---
-        /// <summary>Planet level for ring/label display.</summary>
+        /// <summary>Planet level for ring/label display (also = defense slot count when owned).</summary>
         public int PlanetLevel;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Bit <c>i</c> set when planetary-defense slot <c>i</c> has an active turret
+        /// (<c>TurretLevel &gt; 0</c>). Minimap draws a filled dot for set bits and a ring for empty pads.
+        /// </summary>
+        public byte DefenseTurretBuiltMask;
 
         /// <summary>Rounded population for planet blip label.</summary>
         public int Population;

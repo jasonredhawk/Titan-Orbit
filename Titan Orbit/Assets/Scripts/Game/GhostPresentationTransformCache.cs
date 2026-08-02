@@ -88,6 +88,23 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Copies ship entity keys from this-frame publish (falls back to last snapshots).
+        /// [TITAN-ORBIT] Dictionary walk only — safe under TransformQuarantine (no archetype gather).
+        /// </summary>
+        internal static void CopyShipEntities(List<Entity> dst)
+        {
+            if (dst == null)
+                return;
+            dst.Clear();
+            var source = Ships.Count > 0 ? Ships : LastShipSnapshots;
+            foreach (var kv in source)
+            {
+                if (kv.Key != Entity.Null)
+                    dst.Add(kv.Key);
+            }
+        }
+
+        /// <summary>
         /// Lookup people-transport presentation pose by entity (this frame, else last published).
         /// </summary>
         internal static bool TryGetPeopleTransport(Entity entity, out Snapshot snapshot)

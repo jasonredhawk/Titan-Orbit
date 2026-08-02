@@ -426,6 +426,10 @@ namespace TitanOrbit.Game
                     return kind == ObstacleKind.Asteroid;
                 case BulletDamageFilter.ShipsOnly:
                     return kind == ObstacleKind.Ship;
+                case BulletDamageFilter.ShipsAndTransports:
+                    // [TITAN-ORBIT] Cosmetic tracers — transport obstacles are not in this list yet;
+                    // ships still clip the bolt. Server owns real transport hits.
+                    return kind == ObstacleKind.Ship;
                 default:
                     return true;
             }

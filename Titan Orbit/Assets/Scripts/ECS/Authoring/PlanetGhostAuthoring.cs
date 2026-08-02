@@ -31,6 +31,11 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new PlanetGrowthState());
                 AddComponent(entity, new PlanetGemMoonState());
 
+                // --- Planetary defense slots (ghosted buffer) ---
+                // [NETCODE] Must bake the buffer on the ghost prefab — runtime AddBuffer does not
+                // replicate GhostFields. Length is managed at runtime by PlanetaryDefenseSlotSyncSystem.
+                AddBuffer<PlanetaryDefenseSlotElement>(entity);
+
                 // --- Client hybrid visual queue ---
                 // [NETCODE] Pending is GhostPrefabType.Client only — see MapBodyHybridVisualPending.
                 // [TITAN-ORBIT] Avoids join-time ToEntityArray mark scans (Windows Crash!!!).

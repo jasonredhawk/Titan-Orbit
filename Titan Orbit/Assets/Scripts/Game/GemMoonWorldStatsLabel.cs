@@ -16,7 +16,8 @@ namespace TitanOrbit.Game
         const string ShieldMaxColorHex = "#40F2FF99";
         const int TextSortingOrder = 5001;
         const int IconSortingOrder = 5000;
-        const float LabelWorldScale = 0.022f;
+        /// <summary>Fallback moon label scale before planet size is known (unit-scale roots).</summary>
+        const float LabelWorldScaleFallback = 0.24f;
         const float CurrentFontSize = 33f;
         const float MaxFontSize = 21f;
         const float StatBlockGapLocal = 2f;
@@ -84,8 +85,8 @@ namespace TitanOrbit.Game
                 Destroy(legacyLabel.gameObject);
 
             _labelRoot = CreateLabelRoot("GemsLabel", transform);
-            _gemRow = CreateStatRow(_labelRoot, "GemRow", GemMoonLabelIcons.Gem, ParseHexColor(GemsColorHex));
-            _shieldRow = CreateStatRow(_labelRoot, "ShieldRow", GemMoonLabelIcons.Shield, ParseHexColor(ShieldColorHex));
+            _gemRow = CreateStatRow(_labelRoot, "GemRow", WorldStatLabelIcons.Gem, ParseHexColor(GemsColorHex));
+            _shieldRow = CreateStatRow(_labelRoot, "ShieldRow", WorldStatLabelIcons.Shield, ParseHexColor(ShieldColorHex));
         }
 
         static Transform CreateLabelRoot(string name, Transform parent)
@@ -94,7 +95,8 @@ namespace TitanOrbit.Game
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             go.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
-            go.transform.localScale = new Vector3(LabelWorldScale, -LabelWorldScale, LabelWorldScale);
+            go.transform.localScale = new Vector3(
+                LabelWorldScaleFallback, -LabelWorldScaleFallback, LabelWorldScaleFallback);
             go.transform.localPosition = Vector3.zero;
             return go.transform;
         }
@@ -150,6 +152,14 @@ namespace TitanOrbit.Game
             // --- Apply changes ---
             if (_labelRoot == null)
                 return;
+
+            // --- World text scale under unit-scale planet root ---
+            // Legacy moon labels inherited planet LocalTransform.Scale; restore that size.
+            float planetSize = 10f;
+            if (EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out float ecsScale, out _))
+                planetSize = ecsScale;
+            float s = WorldBodyLabelLayout.GetReadableMoonLabelWorldScale(planetSize);
+            _labelRoot.localScale = new Vector3(s, -s, s);
 
             WorldBodyLabelLayout.ApplySnugMoonLabel(_labelRoot, transform, _moonLocalRadius);
         }
@@ -344,31 +354,6 @@ namespace TitanOrbit.Game
 
             LayoutLabelBlock(ref _gemRow, ref _shieldRow);
             return true;
-        }
-        static class GemMoonLabelIcons
-        {
-            const string GemIconPath =
-                "Assets/CleanFlatIcon/png_128/icon_line/icon_line_store/icon_line_store_25.png";
-            const string ShieldIconPath =
-                "Assets/CleanFlatIcon/png_128/icon/icon_shield/icon_shield_20.png";
-
-            static Sprite _gem;
-            static Sprite _shield;
-
-            public static Sprite Gem => Load(ref _gem, GemIconPath);
-            public static Sprite Shield => Load(ref _shield, ShieldIconPath);
-
-            static Sprite Load(ref Sprite cache, string assetPath)
-            {
-                // --- Load ---
-                if (cache != null)
-                    return cache;
-
-#if UNITY_EDITOR
-                cache = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
-#endif
-                return cache;
-            }
         }
     }
 }

@@ -10,7 +10,11 @@ namespace TitanOrbit.Game
     /// <summary>
     /// [HYBRID] Instantiates legacy planet and asteroid prefabs as ECS presentation proxies for
     /// <see cref="EcsWorldVisualizer"/>. Strips NGO/legacy gameplay components, applies team materials,
-    /// attaches spin/moon/orbit-ring children, and scales by ECS world diameter. Render only.
+    /// and attaches spin/moon/orbit-ring children. Render only.
+    /// <para>
+    /// Planet roots stay at unit scale; ECS diameter is applied to
+    /// <see cref="PlanetVisualBody"/> so labels / moons / defense pads use true world sizes.
+    /// </para>
     /// Also refreshes existing planet proxies in place when ghosted level/ownership changes
     /// (<see cref="RefreshPlanetVisualAppearance"/>) — required under TransformQuarantine because
     /// the old DrawPlanets rebuild path is no longer called.
@@ -61,9 +65,11 @@ namespace TitanOrbit.Game
             StripForProxy(instance);
             RemoveUiChildren(instance);
             ApplyPlanetMaterial(instance, materialPool, isHome, team, planetId, shipFamilyConfigIndex);
-            instance.transform.localScale = Vector3.one * Mathf.Max(0.25f, worldScale);
 
-            EnsurePlanetSpin(instance);
+            // Unit-scale root + scaled PlanetVisualBody (mesh / rings). Labels + moon stay on root.
+            float size = Mathf.Max(0.25f, worldScale);
+            Transform visualBody = PlanetVisualBody.EnsureAndApplyScale(instance, size);
+            EnsurePlanetSpin(instance, visualBody);
 
             var stats = instance.GetComponent<PlanetWorldStatsLabel>();
             if (stats == null)
@@ -75,8 +81,8 @@ namespace TitanOrbit.Game
                 moon = instance.AddComponent<PlanetGemMoonVisualProxy>();
             Material moonMaterial = CreateGemMoonMaterial(
                 instance, materialPool, isHome, team, planetId, shipFamilyConfigIndex);
-            moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial, team);
-            EnsureOrbitRingVisual(instance, worldScale, planetLevel, team, isHome, planetId);
+            moon.Configure(size, planetLevel, isHome, planetId, moonMaterial, team);
+            EnsureOrbitRingVisual(instance, visualBody, size, planetLevel, team, isHome, planetId);
             return true;
         }
 
@@ -120,6 +126,10 @@ namespace TitanOrbit.Game
 
             worldScale = Mathf.Max(0.25f, worldScale);
 
+            // Keep unit root + body scale in sync when ECS diameter changes.
+            Transform visualBody = PlanetVisualBody.EnsureAndApplyScale(instance, worldScale);
+            EnsurePlanetSpin(instance, visualBody);
+
             // --- Surface material (capture / home identity only) ---
             // [TITAN-ORBIT] Level-up does not change the planet surface — only ring band count.
             if (materialsChanged)
@@ -136,27 +146,41 @@ namespace TitanOrbit.Game
                 moon.Configure(worldScale, planetLevel, isHome, planetId, moonMaterial, team);
             }
 
-            // --- Decorative level bands + people-transfer orbit ring ---
-            // [TITAN-ORBIT] PlanetOrbitRingVisual caches level at Configure — this is the live refresh.
-            EnsureOrbitRingVisual(instance, worldScale, planetLevel, team, isHome, planetId);
-        }
-
-        static void EnsurePlanetSpin(GameObject planetRoot)
-        {
-            // --- Ensure setup ---
-            if (planetRoot == null)
-                return;
-
-            if (planetRoot.GetComponent<PlanetSpinVisualProxy>() == null)
-                planetRoot.AddComponent<PlanetSpinVisualProxy>();
+            // --- Decorative level bands + people-transfer orbit ring (under scaled body) ---
+            EnsureOrbitRingVisual(instance, visualBody, worldScale, planetLevel, team, isHome, planetId);
         }
 
         /// <summary>
-        /// Ensures a <c>PlanetRings</c> child with <see cref="PlanetOrbitRingVisual"/> and configures
-        /// band count / team tint from the current planet state.
+        /// Attaches <see cref="PlanetSpinVisualProxy"/> to the scaled visual body (not the unit root).
+        /// Strips a legacy spin component from the root if an older proxy still has one.
+        /// </summary>
+        static void EnsurePlanetSpin(GameObject planetRoot, Transform visualBody)
+        {
+            if (planetRoot == null)
+                return;
+
+            // Legacy: spin used to live on the scaled root — remove so it cannot reparent moon/labels.
+            var legacyRootSpin = planetRoot.GetComponent<PlanetSpinVisualProxy>();
+            if (legacyRootSpin != null)
+                Object.Destroy(legacyRootSpin);
+
+            if (visualBody == null)
+                visualBody = PlanetVisualBody.EnsureAndApplyScale(planetRoot, 1f);
+            if (visualBody == null)
+                return;
+
+            if (visualBody.GetComponent<PlanetSpinVisualProxy>() == null)
+                visualBody.gameObject.AddComponent<PlanetSpinVisualProxy>();
+        }
+
+        /// <summary>
+        /// Ensures a <c>PlanetRings</c> child under the scaled visual body with
+        /// <see cref="PlanetOrbitRingVisual"/>, configured from the current planet state.
+        /// Draw matrix uses the body so local radii (<c>world / planetSize</c>) stay correct.
         /// </summary>
         static void EnsureOrbitRingVisual(
             GameObject planetRoot,
+            Transform visualBody,
             float planetSize,
             int planetLevel,
             TeamId team,
@@ -166,20 +190,36 @@ namespace TitanOrbit.Game
             if (planetRoot == null)
                 return;
 
-            // --- Find or create rings root ---
-            // [UNITY] Prefab may already include PlanetRings; Instantiates path often needs create.
-            Transform ringsRoot = planetRoot.transform.Find("PlanetRings");
+            if (visualBody == null)
+                visualBody = PlanetVisualBody.EnsureAndApplyScale(planetRoot, planetSize);
+            if (visualBody == null)
+                return;
+
+            // --- Find or create rings under the scaled body ---
+            // Migrate a legacy PlanetRings that still hangs on the unit root.
+            Transform ringsRoot = visualBody.Find("PlanetRings");
+            if (ringsRoot == null)
+            {
+                Transform legacy = planetRoot.transform.Find("PlanetRings");
+                if (legacy != null)
+                {
+                    legacy.SetParent(visualBody, false);
+                    ringsRoot = legacy;
+                }
+            }
+
             if (ringsRoot == null)
             {
                 var ringsGo = new GameObject("PlanetRings");
-                ringsGo.transform.SetParent(planetRoot.transform, false);
+                ringsGo.transform.SetParent(visualBody, false);
                 ringsRoot = ringsGo.transform;
             }
 
             var ringVisual = ringsRoot.GetComponent<PlanetOrbitRingVisual>();
             if (ringVisual == null)
                 ringVisual = ringsRoot.gameObject.AddComponent<PlanetOrbitRingVisual>();
-            ringVisual.Configure(planetRoot.transform, planetSize, planetLevel, team, isHome, planetId);
+            // Body transform carries planetScale — same contract as the old scaled root.
+            ringVisual.Configure(visualBody, planetSize, planetLevel, team, isHome, planetId);
         }
 
         public static Material CreateGemMoonMaterial(

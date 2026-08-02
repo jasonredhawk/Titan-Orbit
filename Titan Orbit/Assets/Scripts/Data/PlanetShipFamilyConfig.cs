@@ -36,6 +36,11 @@ namespace TitanOrbit.Data
                 "Neutral / captured planet surface material for this family. Homes ignore this and use " +
                 "PlanetMaterialPool water materials by team. Leave empty to fall back to planetId % pool.")]
             public Material planetMaterial;
+
+            [Tooltip(
+                "Optional planetary defense turret recipe for this family (machine-gun vs cannon, etc.). " +
+                "Leave empty to use Resources/PlanetaryDefenseConfig.")]
+            public PlanetaryDefenseConfig defenseConfig;
         }
 
         [Tooltip("Ordered list: index 0 = home planet family, index 1 = planet 1, etc.")]

@@ -38,17 +38,23 @@ namespace TitanOrbit.Game
 
         public bool IsHome => _isHome;
 
-        public float MoonBodyRadiusLocal =>
-            PlanetGemMoonMath.GetMoonBodyRadiusLocal(_planetSize, _isHome);
+        /// <summary>
+        /// Moon body radius in moon-root local space. Planet roots are unit-scale, so this
+        /// equals <see cref="MoonBodyRadiusWorld"/> (no inherited planet scale).
+        /// </summary>
+        public float MoonBodyRadiusLocal => MoonBodyRadiusWorld;
 
+        /// <summary>Dock snap radius in moon-root local (= world under unit planet roots).</summary>
         public float MoonDockSnapRadiusLocal =>
-            PlanetGemMoonMath.GetMoonDockSnapRadiusLocal(_planetSize, _isHome);
+            PlanetGemMoonMath.GetMoonDockRadiusWorld(_planetSize, _isHome);
 
+        /// <summary>Orbit-zone shell outer radius in moon-root local (= world).</summary>
         public float MoonVisualShellOuterRadiusLocal =>
-            PlanetGemMoonMath.GetMoonVisualShellOuterRadiusLocal(_planetSize, _isHome);
+            PlanetGemMoonMath.GetMoonVisualShellOuterRadiusWorld(_planetSize, _isHome);
 
+        /// <summary>Matrix shield outer radius in moon-root local (= world).</summary>
         public float MoonShieldOuterRadiusLocal =>
-            PlanetGemMoonMath.GetMoonShieldOuterRadiusLocal(_planetSize, _isHome);
+            PlanetGemMoonMath.GetMoonShieldOuterRadiusWorld(_planetSize, _isHome);
 
         public float CurrentShieldRatio
         {
@@ -190,9 +196,10 @@ namespace TitanOrbit.Game
             if (_moonSpinVisual == null)
                 return;
 
+            // Unit-scale planet root — moon mesh uses true world uniform size.
             float homeMul = _isHome ? HomeScaleMultiplier : 1f;
-            float uniform = PlanetGemMoonMath.ComputeVisualUniformScale(_planetSize, homeMul);
-            _moonSpinVisual.localScale = Vector3.one * uniform;
+            float worldUniform = PlanetGemMoonMath.ComputeVisualWorldUniformScale(_planetSize, homeMul);
+            _moonSpinVisual.localScale = Vector3.one * worldUniform;
         }
 
         void ApplyMoonMaterial()
@@ -234,9 +241,8 @@ namespace TitanOrbit.Game
                 _statsLabel = _moonRoot.GetComponent<GemMoonWorldStatsLabel>();
             if (_statsLabel == null)
                 _statsLabel = _moonRoot.gameObject.AddComponent<GemMoonWorldStatsLabel>();
-            float homeMul = _isHome ? HomeScaleMultiplier : 1f;
-            float moonLocalRadius = 0.5f * PlanetGemMoonMath.ComputeVisualUniformScale(_planetSize, homeMul);
-            _statsLabel.Configure(_planetId, moonLocalRadius);
+            // Moon-root local == world under unit planet roots.
+            _statsLabel.Configure(_planetId, MoonBodyRadiusWorld);
         }
 
         /// <summary>

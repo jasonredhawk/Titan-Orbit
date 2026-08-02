@@ -435,7 +435,10 @@ namespace TitanOrbit.ECS
                 // --- Find the spawned planet ghost by PlanetId and flip ownership ---
                 bool applied = false;
                 int claimedLevel = 1;
-                foreach (var planet in SystemAPI.Query<RefRW<PlanetState>>().WithAll<PlanetTag>())
+                foreach (var (planet, planetEntity) in SystemAPI
+                             .Query<RefRW<PlanetState>>()
+                             .WithAll<PlanetTag>()
+                             .WithEntityAccess())
                 {
                     if (planet.ValueRO.PlanetId != planetId)
                         continue;
@@ -445,6 +448,10 @@ namespace TitanOrbit.ECS
                     planet.ValueRW.Ownership = claim.Team;
                     claimedLevel = math.max(1, planet.ValueRO.PlanetLevel);
                     applied = true;
+
+                    // [TITAN-ORBIT] Starting claims get fresh empty defense pads (no leftover turrets).
+                    PlanetaryDefenseSlotSyncSystem.WipeSlotsForOwnershipChange(
+                        state.EntityManager, planetEntity, claim.Team, claimedLevel);
 
                     // Keep layout buffer metadata in sync for session / lobby consumers.
                     for (int i = 0; i < _layoutEntries.Length; i++)
@@ -657,6 +664,15 @@ namespace TitanOrbit.ECS
             };
             PlanetGemMoonCombatLogic.InitMoonGems(ref moonState);
             SetOrAddComponent(em, e, moonState);
+
+            // --- Planetary defense pads for owned homes (neutrals wait for claim wipe) ---
+            // [TITAN-ORBIT] Homes spawn already owned — seed empty slots immediately so pads
+            // appear without waiting on SlotSync's first tick.
+            if (team != TeamId.None)
+            {
+                PlanetaryDefenseSlotSyncSystem.WipeSlotsForOwnershipChange(
+                    em, e, team, math.max(1, level));
+            }
         }
 
         /// <summary>

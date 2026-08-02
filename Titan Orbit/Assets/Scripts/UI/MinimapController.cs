@@ -178,6 +178,8 @@ namespace TitanOrbit.UI
             public float QuantizedWorldToMinimapScale;
             public int Population;
             public int Level;
+            /// <summary>Bitmask of slots with active turrets (filled vs ring dots).</summary>
+            public byte DefenseTurretBuiltMask;
             public Color32 Color;
         }
 
@@ -2203,7 +2205,9 @@ namespace TitanOrbit.UI
             dotsRect.anchorMax = Vector2.one;
             dotsRect.offsetMin = Vector2.zero;
             dotsRect.offsetMax = Vector2.zero;
-            AddLevelDotsToContainer(dotsRect, p.PlanetLevel, size, color);
+            AddLevelDotsToContainer(
+                dotsRect, p.PlanetLevel, size, color, p.DefenseTurretBuiltMask,
+                planetWorldSize, worldToMinimapScale);
 
             // --- Planet fill disc ---
             var fillGo = new GameObject("PlanetFill", typeof(RectTransform));
@@ -2243,9 +2247,12 @@ namespace TitanOrbit.UI
         private static float ResolvePlanetWorldSize(MinimapBlipAnchor p)
         {
             if (p == null) return 1f;
+            // Prefer ECS BodySize — hybrid planet proxy roots are unit-scale now; blip
+            // anchors still store diameter in BodySize from MinimapEcsEntitySync.
+            if (p.BodySize >= 0.1f)
+                return p.BodySize;
             float fromScale = (p.transform.localScale.x + p.transform.localScale.y + p.transform.localScale.z) / 3f;
-            if (fromScale >= 0.1f) return fromScale;
-            return Mathf.Max(0.25f, p.BodySize);
+            return Mathf.Max(0.25f, fromScale);
         }
 
         /// <summary>
@@ -2367,22 +2374,42 @@ namespace TitanOrbit.UI
             tmp.overflowMode = TextOverflowModes.Overflow;
         }
 
-        private Sprite _minimapLevelDotSpriteCache;
+        private Sprite _minimapLevelDotFilledSpriteCache;
+        private Sprite _minimapLevelDotRingSpriteCache;
 
-        private Sprite GetMinimapLevelDotSprite()
+        /// <summary>Filled disc — planetary defense slot with an active turret.</summary>
+        private Sprite GetMinimapLevelDotFilledSprite()
         {
-            if (_minimapLevelDotSpriteCache != null) return _minimapLevelDotSpriteCache;
-            _minimapLevelDotSpriteCache = CreateBlipSprite(24, BlipType.Circle);
-            if (_minimapLevelDotSpriteCache != null)
-                _minimapLevelDotSpriteCache.name = "MinimapLevelDot";
-            return _minimapLevelDotSpriteCache;
+            if (_minimapLevelDotFilledSpriteCache != null) return _minimapLevelDotFilledSpriteCache;
+            _minimapLevelDotFilledSpriteCache = CreateBlipSprite(24, BlipType.Circle);
+            if (_minimapLevelDotFilledSpriteCache != null)
+                _minimapLevelDotFilledSpriteCache.name = "MinimapLevelDotFilled";
+            return _minimapLevelDotFilledSpriteCache;
         }
 
-        private void AddLevelDotsToContainer(RectTransform container, int level, float blipSize, Color teamColor)
+        /// <summary>Hollow ring — empty planetary defense pad (no turret yet).</summary>
+        private Sprite GetMinimapLevelDotRingSprite()
+        {
+            if (_minimapLevelDotRingSpriteCache != null) return _minimapLevelDotRingSpriteCache;
+            _minimapLevelDotRingSpriteCache = CreateBlipSprite(24, BlipType.Ring);
+            if (_minimapLevelDotRingSpriteCache != null)
+                _minimapLevelDotRingSpriteCache.name = "MinimapLevelDotRing";
+            return _minimapLevelDotRingSpriteCache;
+        }
+
+        private void AddLevelDotsToContainer(
+            RectTransform container,
+            int level,
+            float blipSize,
+            Color teamColor,
+            byte defenseTurretBuiltMask,
+            float planetWorldSize,
+            float worldToMinimapScale)
         {
             if (container == null || level < 1) return;
-            Sprite dotSprite = GetMinimapLevelDotSprite();
-            if (dotSprite == null) return;
+            Sprite filled = GetMinimapLevelDotFilledSprite();
+            Sprite ring = GetMinimapLevelDotRingSprite();
+            if (filled == null || ring == null) return;
 
             for (int i = 0; i < level; i++)
             {
@@ -2393,34 +2420,62 @@ namespace TitanOrbit.UI
                 dotRect.anchorMax = new Vector2(0.5f, 0.5f);
                 dotRect.pivot = new Vector2(0.5f, 0.5f);
                 var img = dotGo.AddComponent<Image>();
-                img.sprite = dotSprite;
+                bool hasTurret = (defenseTurretBuiltMask & (1 << i)) != 0;
+                img.sprite = hasTurret ? filled : ring;
                 img.type = Image.Type.Simple;
                 img.color = teamColor;
                 img.raycastTarget = false;
             }
 
-            LayoutLevelDots(container, level, blipSize, teamColor);
+            LayoutLevelDots(
+                container, level, blipSize, teamColor, defenseTurretBuiltMask,
+                planetWorldSize, worldToMinimapScale);
         }
 
-        private void LayoutLevelDots(RectTransform container, int level, float blipSize, Color teamColor)
+        /// <summary>
+        /// Positions defense/level dots at the same ring as world pads:
+        /// <see cref="PlanetaryDefenseMath.GetSlotRingRadiusWorld"/> × position scale
+        /// (midpoint surface↔orbit), not the enlarged planet-fill rim.
+        /// Filled = turret built; ring = empty pad.
+        /// </summary>
+        private void LayoutLevelDots(
+            RectTransform container,
+            int level,
+            float blipSize,
+            Color teamColor,
+            byte defenseTurretBuiltMask,
+            float planetWorldSize,
+            float worldToMinimapScale)
         {
             if (container == null || level < 1) return;
-            float half = blipSize * 0.5f;
+            // Dot size still scales with the (enlarged) planet disc for readability.
             float dotSize = Mathf.Max(3f, Mathf.Round(blipSize * 0.12f));
-            float orbitR = half + dotSize * 0.5f + 1f;
+            // [TITAN-ORBIT] Match world pad radius — same formula as PlanetaryDefenseVisualDriver.
+            float slotRadiusWorld = PlanetaryDefenseMath.GetSlotRingRadiusWorld(
+                Mathf.Max(0.01f, planetWorldSize), level);
+            float orbitR = slotRadiusWorld * Mathf.Max(0.0001f, worldToMinimapScale);
+            // Keep dots readable if the planet disc is huge vs the true ring (rare).
+            orbitR = Mathf.Max(orbitR, dotSize);
+            Sprite filled = GetMinimapLevelDotFilledSprite();
+            Sprite ring = GetMinimapLevelDotRingSprite();
 
             for (int i = 0; i < level; i++)
             {
                 var dotRect = container.GetChild(i) as RectTransform;
                 if (dotRect == null) continue;
                 dotRect.sizeDelta = new Vector2(dotSize, dotSize);
-                // Evenly around the planet; first dot at top (+y), then CCW
-                float angle = Mathf.PI * 0.5f + (Mathf.PI * 2f * i) / level;
+                // Same even-ring angles as world defense pads (index 0 = +Z / UI +Y).
+                float angle = PlanetaryDefenseMath.GetEvenRingSlotAngle(i, level);
                 float x = orbitR * Mathf.Cos(angle);
                 float y = orbitR * Mathf.Sin(angle);
                 dotRect.anchoredPosition = new Vector2(Mathf.Round(x), Mathf.Round(y));
                 if (dotRect.GetComponent<Image>() is Image img)
+                {
+                    bool hasTurret = (defenseTurretBuiltMask & (1 << i)) != 0;
+                    if (filled != null && ring != null)
+                        img.sprite = hasTurret ? filled : ring;
                     img.color = teamColor;
+                }
             }
         }
 
@@ -2444,6 +2499,7 @@ namespace TitanOrbit.UI
             float qWorldScale = Mathf.Round(worldToMinimapScale * 1000f) / 1000f;
             int pop = p.Population;
             int level = p.PlanetLevel;
+            byte turretMask = p.DefenseTurretBuiltMask;
             Color32 c32 = color;
 
             if (planetBlipLayoutState.TryGetValue(p.transform, out var prev) &&
@@ -2451,6 +2507,7 @@ namespace TitanOrbit.UI
                 Mathf.Approximately(prev.QuantizedWorldToMinimapScale, qWorldScale) &&
                 prev.Population == pop &&
                 prev.Level == level &&
+                prev.DefenseTurretBuiltMask == turretMask &&
                 prev.Color.r == c32.r && prev.Color.g == c32.g && prev.Color.b == c32.b && prev.Color.a == c32.a)
                 return;
 
@@ -2460,12 +2517,14 @@ namespace TitanOrbit.UI
                 QuantizedWorldToMinimapScale = qWorldScale,
                 Population = pop,
                 Level = level,
+                DefenseTurretBuiltMask = turretMask,
                 Color = c32
             };
 
             // --- Root + orbit ring (ring follows moon path; disc may be larger for readability) ---
             blipRt.sizeDelta = new Vector2(qSize, qSize);
-            AddOrUpdatePlanetOrbitRing(blipRt, ResolvePlanetWorldSize(p), worldToMinimapScale, color);
+            float planetWorldSize = ResolvePlanetWorldSize(p);
+            AddOrUpdatePlanetOrbitRing(blipRt, planetWorldSize, worldToMinimapScale, color);
 
             // --- Planet fill tint ---
             Image planetImg = null;
@@ -2485,7 +2544,7 @@ namespace TitanOrbit.UI
                 ApplyPlanetPopulationTextLayout(tmp, qSize);
             }
 
-            // --- Level dots around the fill (decorative; not the moon orbit) ---
+            // --- Defense dots at world pad radius (ring = empty, filled = turret) ---
             var dotsGo = blipRt.Find("LevelDots");
             if (dotsGo != null)
             {
@@ -2498,10 +2557,16 @@ namespace TitanOrbit.UI
                 else if (dotsGo.childCount != needed)
                 {
                     ClearLevelDotsChildrenImmediate(dotsGo.transform);
-                    AddLevelDotsToContainer(dotsRect, needed, qSize, color);
+                    AddLevelDotsToContainer(
+                        dotsRect, needed, qSize, color, turretMask,
+                        planetWorldSize, worldToMinimapScale);
                 }
                 else
-                    LayoutLevelDots(dotsRect, needed, qSize, color);
+                {
+                    LayoutLevelDots(
+                        dotsRect, needed, qSize, color, turretMask,
+                        planetWorldSize, worldToMinimapScale);
+                }
             }
         }
 

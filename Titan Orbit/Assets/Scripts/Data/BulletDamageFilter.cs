@@ -21,5 +21,11 @@ namespace TitanOrbit.Data
         /// transports, moons. Planets still block as solid world geometry.
         /// </summary>
         ShipsOnly = 2,
+
+        /// <summary>
+        /// Planetary defense turrets — damage enemy ships and people transports.
+        /// Pass through asteroids, moons, and ship drones. Planets still block as solid world geometry.
+        /// </summary>
+        ShipsAndTransports = 3,
     }
 }

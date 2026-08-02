@@ -196,9 +196,12 @@ namespace TitanOrbit.Game
             if (_labelRoot == null)
                 return;
 
-            var spin = GetComponent<PlanetSpinVisualProxy>();
+            // Spin lives on PlanetVisualBody — search children, not only this root.
+            var spin = GetComponentInChildren<PlanetSpinVisualProxy>(true);
             if (spin != null)
                 spin.KeepOnPlanetRoot(_labelRoot);
+            else if (_labelRoot.parent != transform)
+                _labelRoot.SetParent(transform, true);
         }
 
         /// <summary>Creates the flat billboard root (rotated for top-down camera, flipped Y for TMP).</summary>
@@ -267,7 +270,10 @@ namespace TitanOrbit.Game
             return tmp;
         }
 
-        /// <summary>Snaps the label root to the planet surface via shared world-body layout helpers.</summary>
+        /// <summary>
+        /// Snaps the label to the planet surface and sets a readable world TMP scale.
+        /// Unit-scale planet roots no longer enlarge children — scale from ECS diameter.
+        /// </summary>
         void ApplyLayout()
         {
             // --- Apply changes ---
@@ -275,6 +281,14 @@ namespace TitanOrbit.Game
                 return;
 
             KeepLabelOnPlanetRoot();
+
+            // --- World text scale (matches pre–PlanetVisualBody inherited look) ---
+            float planetSize = PlanetVisualBody.ResolvePresentationSize(transform);
+            if (EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out float ecsScale, out _))
+                planetSize = ecsScale;
+            float s = WorldBodyLabelLayout.GetReadablePlanetLabelWorldScale(planetSize);
+            _labelRoot.localScale = new Vector3(s, -s, s);
+
             WorldBodyLabelLayout.ApplySnugPlanetLabel(_labelRoot, transform);
         }
 
@@ -474,6 +488,8 @@ namespace TitanOrbit.Game
         /// [UNITY] Per-frame refresh so population and triangle bonuses stay live.
         /// Dirty-checks TMP writes — assigning .text every frame rebuilt meshes + GC
         /// (~4ms / 93KB across labels, Profiler frame 41220).
+        /// Layout/scale always updates: unit-scale roots need ECS diameter applied every
+        /// frame until pose is ready, and recovered labels may still carry a tiny old scale.
         /// </summary>
         void LateUpdate()
         {
@@ -481,9 +497,8 @@ namespace TitanOrbit.Game
             if (planetId == 0)
                 return;
 
-            bool dirty = Refresh();
-            if (dirty)
-                ApplyLayout();
+            Refresh();
+            ApplyLayout();
         }
 
         /// <summary>
@@ -510,9 +525,8 @@ namespace TitanOrbit.Game
             if (!EcsGameBridge.TryGetPlanetStateByPlanetId(planetId, out PlanetState state))
                 return false;
 
-            // Prefer ECS scale when available (proxy lossyScale can drift from sim).
-            // Pose is frame-cached in EcsGameBridge — cheap after the first label this frame.
-            float planetScale = transform.lossyScale.x;
+            // Prefer ECS scale — unit-scale roots no longer carry diameter on lossyScale.
+            float planetScale = PlanetVisualBody.ResolvePresentationSize(transform);
             if (EcsGameBridge.TryGetPlanetPoseByPlanetId(planetId, out _, out float ecsScale, out _))
                 planetScale = ecsScale;
 

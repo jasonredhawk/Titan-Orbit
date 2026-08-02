@@ -330,6 +330,8 @@ namespace TitanOrbit.UI
                     anchor.Population = planet.Population;
                     anchor.PlanetId = planet.PlanetId;
                     anchor.BodySize = math.max(0.25f, lt.Scale);
+                    // Per-entity buffer read — not a map-body archetype gather (quarantine-safe).
+                    anchor.DefenseTurretBuiltMask = ReadDefenseTurretBuiltMask(em, entity);
                     UpdateGemMoonAnchor(anchor, lt, planet, elapsed);
                 }
                 else if (anchor.Kind == MinimapBlipKind.Asteroid && em.HasComponent<AsteroidState>(entity))
@@ -473,7 +475,7 @@ namespace TitanOrbit.UI
                 : Time.timeAsDouble;
 
             for (int i = 0; i < entities.Length; i++)
-                ApplyPlanetAnchor(entities[i], states[i], transforms[i], alive, elapsed);
+                ApplyPlanetAnchor(em, entities[i], states[i], transforms[i], alive, elapsed);
         }
 
         /// <summary>
@@ -485,11 +487,17 @@ namespace TitanOrbit.UI
             // --- Single planet from proxy entity ---
             var state = em.GetComponentData<PlanetState>(entity);
             var lt = em.GetComponentData<LocalTransform>(entity);
-            ApplyPlanetAnchor(entity, state, lt, alive, elapsed);
+            ApplyPlanetAnchor(em, entity, state, lt, alive, elapsed);
         }
 
         /// <summary>Applies PlanetState + LocalTransform onto a minimap planet/home blip + gem moon.</summary>
-        void ApplyPlanetAnchor(Entity entity, PlanetState state, LocalTransform lt, HashSet<Entity> alive, double elapsed)
+        void ApplyPlanetAnchor(
+            EntityManager em,
+            Entity entity,
+            PlanetState state,
+            LocalTransform lt,
+            HashSet<Entity> alive,
+            double elapsed)
         {
             // --- Write planet blip fields ---
             alive.Add(entity);
@@ -500,9 +508,37 @@ namespace TitanOrbit.UI
             anchor.Population = state.Population;
             anchor.PlanetId = state.PlanetId;
             anchor.BodySize = math.max(0.25f, lt.Scale);
+            // Per-entity buffer read — not a map-body archetype gather (quarantine-safe).
+            anchor.DefenseTurretBuiltMask = ReadDefenseTurretBuiltMask(em, entity);
             anchor.transform.position = lt.Position;
             anchor.transform.localScale = Vector3.one * anchor.BodySize;
             UpdateGemMoonAnchor(anchor, lt, state, elapsed);
+        }
+
+        /// <summary>
+        /// Builds a bit mask of slots with active turrets from the ghosted defense buffer.
+        /// Safe under TransformQuarantine: single-entity <c>HasBuffer</c>/<c>GetBuffer</c> only.
+        /// </summary>
+        static byte ReadDefenseTurretBuiltMask(EntityManager em, Entity entity)
+        {
+            if (entity == Entity.Null || !em.Exists(entity) ||
+                !em.HasBuffer<PlanetaryDefenseSlotElement>(entity))
+                return 0;
+
+            var buffer = em.GetBuffer<PlanetaryDefenseSlotElement>(entity);
+            byte mask = 0;
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                var slot = buffer[i];
+                if (slot.TurretLevel <= 0)
+                    continue;
+                // Prefer SlotIndex so bit i matches minimap / world pad index.
+                int bit = slot.SlotIndex < 8 ? slot.SlotIndex : i;
+                if (bit >= 0 && bit < 8)
+                    mask |= (byte)(1 << bit);
+            }
+
+            return mask;
         }
 
         void UpdateGemMoonAnchor(MinimapBlipAnchor planetAnchor, LocalTransform lt, PlanetState state, double elapsed)

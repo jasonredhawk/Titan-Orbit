@@ -661,6 +661,14 @@ namespace TitanOrbit.ECS
 
                         if (unloadOutcome == PeopleUnloadOutcome.Captured)
                         {
+                            // [TITAN-ORBIT] Capture destroys all planetary defense turrets — slots
+                            // become empty placeholders for the new owner (plan rule).
+                            PlanetaryDefenseSlotSyncSystem.WipeSlotsForOwnershipChange(
+                                state.EntityManager,
+                                planetEntity,
+                                team,
+                                planetState.PlanetLevel);
+
                             // [TITAN-ORBIT] Immediate client graph / minimap refresh — do not wait on
                             // rate-limited planet ghost snapshots (MaxSendChunks + low Importance).
                             PlanetOwnershipNetNotify.Send(

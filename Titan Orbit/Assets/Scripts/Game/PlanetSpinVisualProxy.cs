@@ -7,9 +7,14 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Cosmetic spin for planet body and level rings around the level-band tilt axis from
-    /// <see cref="PlanetOrbitMath.GetLevelBandsSpinAxisLocal"/>. Gem moon and UI labels stay parented
-    /// outside the spin pivot so they do not rotate with the mesh. Render only — no sim impact.
+    /// [HYBRID] Cosmetic spin for the planet mesh around the level-band tilt axis from
+    /// <see cref="PlanetOrbitMath.GetLevelBandsSpinAxisLocal"/>.
+    /// <para>
+    /// Lives on <see cref="PlanetVisualBody"/> (the scaled child). Gem moon, stats labels,
+    /// defense pads, and orbit-ring drawers stay on the unit-scale planet root (or as
+    /// non-spinning siblings under the body) so they do not rotate with the mesh.
+    /// </para>
+    /// Render only — no sim impact.
     /// </summary>
     public class PlanetSpinVisualProxy : MonoBehaviour
     {
@@ -18,12 +23,17 @@ namespace TitanOrbit.Game
         const string SpinPivotName = "PlanetSpinPivot";
         const string PlanetBodyName = "PlanetBody";
 
-        /// <summary>Children that must not be reparented under the spin pivot (moon, labels).</summary>
+        /// <summary>
+        /// Children that must not be reparented under the spin pivot.
+        /// Orbit rings stay as a sibling under <see cref="PlanetVisualBody"/> (scaled, not spun).
+        /// </summary>
         static readonly HashSet<string> NonSpinningChildNames = new HashSet<string>
         {
             "GemMoonVisual",
             "PopulationText",
             "PlanetStatsLabel",
+            "PlanetRings",
+            "PlanetaryDefense",
         };
 
         Transform _spinPivot;
@@ -51,14 +61,27 @@ namespace TitanOrbit.Game
             _spinAxisLocal = PlanetOrbitMath.GetLevelBandsSpinAxisLocal();
         }
 
-        /// <summary>Moves existing PlanetBody child under the spin pivot if not already there.</summary>
+        /// <summary>
+        /// Moves SgtPlanet (and water helpers) under the spin pivot.
+        /// Prefab authors put SgtPlanet on the planet root; with unit-scale roots the spin
+        /// component lives on <see cref="PlanetVisualBody"/>, so we also search the parent root.
+        /// </summary>
         void MigratePlanetBodyToPivot()
         {
             // --- MigratePlanetBodyToPivot ---
             if (_spinPivot.Find(PlanetBodyName) != null)
                 return;
 
+            // Prefer components on this object (body); fall back to unit-scale planet root.
             var sgt = GetComponent<SgtPlanet>();
+            Transform waterHost = transform;
+            if (sgt == null && transform.parent != null)
+            {
+                sgt = transform.parent.GetComponent<SgtPlanet>();
+                if (sgt != null)
+                    waterHost = transform.parent;
+            }
+
             if (sgt == null)
                 return;
 
@@ -67,7 +90,7 @@ namespace TitanOrbit.Game
             var newSgt = bodyGo.AddComponent<SgtPlanet>();
             CopySgtPlanet(sgt, newSgt);
 
-            var waterGradient = GetComponent<SgtPlanetWaterGradient>();
+            var waterGradient = waterHost.GetComponent<SgtPlanetWaterGradient>();
             if (waterGradient != null)
             {
                 var newGradient = bodyGo.AddComponent<SgtPlanetWaterGradient>();
@@ -75,7 +98,7 @@ namespace TitanOrbit.Game
                 Destroy(waterGradient);
             }
 
-            var waterTexture = GetComponent<SgtPlanetWaterTexture>();
+            var waterTexture = waterHost.GetComponent<SgtPlanetWaterTexture>();
             if (waterTexture != null)
             {
                 var newTexture = bodyGo.AddComponent<SgtPlanetWaterTexture>();
@@ -137,13 +160,25 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Reparents <paramref name="child"/> onto the unit-scale planet proxy root
+        /// (parent of <see cref="PlanetVisualBody"/> when this component lives on the body).
+        /// </summary>
         public void KeepOnPlanetRoot(Transform child)
         {
             // --- KeepOnPlanetRoot ---
-            if (child == null || child.parent == transform)
+            if (child == null)
                 return;
 
-            child.SetParent(transform, true);
+            // Spin lives on PlanetVisualBody — labels/moon belong on the unit pose root above it.
+            Transform planetRoot = transform;
+            if (transform.parent != null && transform.name == PlanetVisualBody.BodyName)
+                planetRoot = transform.parent;
+
+            if (child.parent == planetRoot)
+                return;
+
+            child.SetParent(planetRoot, true);
         }
 
         void LateUpdate()
