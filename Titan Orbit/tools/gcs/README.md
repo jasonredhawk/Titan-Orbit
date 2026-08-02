@@ -93,18 +93,21 @@ After this, opening `https://titanorbit.io` loads the same game as `/index.html`
 
 Chrome errors like:
 
+- `Uncaught RuntimeError: memory access out of bounds` at `Module._main` / `removeRunDependency` / IndexedDB `transaction.oncomplete`
 - `LinkError: WebAssembly.instantiate(): Import #… "JS_SystemInfo_GetLanguage": function import requires a callable`
 - `TitanOrbitWebGL.data.unityweb: net::ERR_HTTP2_PROTOCOL_ERROR`
 - `[UnityCache] Failed to load … data.unityweb … network error`
 
-usually mean **Build artifacts are mismatched or GCS is serving the wrong `Content-Encoding`** (not a game-code bug).
+usually mean **Build artifacts are mismatched (CDN/IndexedDB) or GCS is serving the wrong `Content-Encoding`** — not a TeamChoice / ECS join bug. Startup OOB with an IndexedDB stack almost always means old `.data` + new `.wasm`.
 
 **Most common causes**
 
-1. **`Content-Encoding: br` on files that are not Brotli-compressed on disk** (or the opposite). The browser then fails to decode `.data.unityweb` / `.framework.js.unityweb`, framework JS never runs, and WASM is missing imports like `JS_SystemInfo_GetLanguage`.
-2. **Mixed deploy** — new `loader.js` + old `wasm`/`framework` from cache or a partial upload. Upload the **entire** `TitanOrbitWebGL` folder from one build in a single `deploy_webgl_gcs.bat` run.
-3. **Wrong `SOURCE_DIR`** — `upload` uses `rsync --delete`; pointing at an empty or wrong folder can delete remote `Build\` files.
-4. **Cloudflare double-compression** — if Cloudflare also compresses `/Build/*`, disable auto compression for those paths or bypass cache after deploy.
+1. **Stale IndexedDB / CDN mix** — browser or Cloudflare kept an old `index.html` / `.data.unityweb` while the new `.wasm` loaded. Production WebGL builds use **Name Files As Hashes**, **Data Caching OFF**, and a stamped `bundleVersion` each build. Still purge Cloudflare and **clear site data** once after deploy (DevTools → Application → Storage → Clear site data).
+1b. **Missing `Content-Encoding: br` on GCS** — Brotli `.unityweb` bytes served as raw → OOB at `_main`. Always run `deploy_webgl_gcs.bat` (upload **and** metadata). `Set-WebGlGcsMetadata.ps1` verifies `content_encoding` after update.
+2. **`Content-Encoding: br` on files that are not Brotli-compressed on disk** (or the opposite). The browser then fails to decode `.data.unityweb` / `.framework.js.unityweb`, framework JS never runs, and WASM is missing imports like `JS_SystemInfo_GetLanguage`.
+3. **Mixed deploy** — new `loader.js` + old `wasm`/`framework` from cache or a partial upload. Upload the **entire** `TitanOrbitWebGL` folder from one build in a single `deploy_webgl_gcs.bat` run.
+4. **Wrong `SOURCE_DIR`** — `upload` uses `rsync --delete`; pointing at an empty or wrong folder can delete remote `Build\` files.
+5. **Cloudflare double-compression** — if Cloudflare also compresses `/Build/*`, disable auto compression for those paths or bypass cache after deploy.
 
 **Fix**
 
@@ -123,12 +126,14 @@ usually mean **Build artifacts are mismatched or GCS is serving the wrong `Conte
 
 **Verify in DevTools → Network** (reload once):
 
-| File | Should have |
+With **Name Files As Hashes** enabled, `Build/*` names look like hex hashes (e.g. `a1b2….wasm.unityweb`), not `TitanOrbitWebGL.*`. Match by extension:
+
+| File pattern | Should have |
 |------|-------------|
-| `TitanOrbitWebGL.loader.js` | `Content-Type: application/javascript`, **no** `Content-Encoding` |
-| `TitanOrbitWebGL.framework.js.unityweb` | `Content-Encoding: br` if the file is Brotli on disk (see verify script) |
-| `TitanOrbitWebGL.wasm.unityweb` | `Content-Encoding: br` + `Content-Type: application/wasm` when Brotli |
-| `TitanOrbitWebGL.data.unityweb` | `Content-Encoding: br` when Brotli |
+| `*.loader.js` | `Content-Type: application/javascript`, **no** `Content-Encoding` |
+| `*.framework.js.unityweb` | `Content-Encoding: br` if the file is Brotli on disk (see verify script) |
+| `*.wasm.unityweb` | `Content-Encoding: br` + `Content-Type: application/wasm` when Brotli |
+| `*.data.unityweb` | `Content-Encoding: br` when Brotli |
 
 If `data.unityweb` shows `br` but the download size looks like the raw compressed file size and the request fails, metadata is wrong — rerun step 3.
 

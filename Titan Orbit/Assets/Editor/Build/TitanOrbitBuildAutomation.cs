@@ -43,12 +43,181 @@ namespace TitanOrbit.Editor.Build
         /// </summary>
         const string PendingLinuxServerBuildFileName = "TitanOrbitPendingLinuxServerBuild.json";
 
+        /// <summary>
+        /// WebGL production client for Cloudflare. Output under <see cref="WebBuildFolder"/>.
+        /// <para>
+        /// [TITAN-ORBIT] After a Linux Dedicated Server build the Editor stays on Linux Server.
+        /// Building WebGL without switching first can bake EntityScenes / SubScenes with Server
+        /// defines (same class of late-join / TeamChoice Crash!!! as a contaminated Windows client).
+        /// We switch to WebGL first and resume BuildPlayer after domain reload when needed —
+        /// same pattern as <see cref="BuildWindowsClient"/>.
+        /// </para>
+        /// </summary>
         [MenuItem("TitanOrbit/Build/WebGL Production")]
         public static void BuildWebGLProduction()
         {
-            // --- Build data ---
-            BuildTarget previousTarget = EditorUserBuildSettings.activeBuildTarget;
+            // --- Ensure active Editor platform is WebGL (not leftover Linux Server) ---
+            if (!IsWebGlActiveTarget())
+            {
+                QueueWebGlBuildAfterPlatformSwitch();
+                return;
+            }
 
+            ExecuteWebGlProductionBuild(restoreTargetAfter: null);
+        }
+
+        /// <summary>True when the Editor has already switched to WebGL.</summary>
+        static bool IsWebGlActiveTarget()
+        {
+            return EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL;
+        }
+
+        /// <summary>
+        /// Saves a pending WebGL build request (plus optional restore target), switches to WebGL,
+        /// and returns. <see cref="ResumePendingWebGlBuildIfAny"/> runs BuildPlayer after reload.
+        /// </summary>
+        static void QueueWebGlBuildAfterPlatformSwitch()
+        {
+            // --- Persist request + prior target across domain reload ---
+            // [STANDARD] SwitchActiveBuildTarget reloads assemblies; static locals die. Temp JSON survives.
+            var pending = new PendingWebGlBuild
+            {
+                requested = true,
+                previousTarget = (int)EditorUserBuildSettings.activeBuildTarget,
+                previousSubtarget = (int)EditorUserBuildSettings.standaloneBuildSubtarget
+            };
+
+            try
+            {
+                File.WriteAllText(GetPendingWebGlBuildPath(), JsonUtility.ToJson(pending));
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError(
+                    "[TitanOrbitBuild] Could not write pending WebGL build state. " +
+                    "Switch to WebGL in Build Profiles manually, then retry.\n" + ex);
+                return;
+            }
+
+            Debug.Log(
+                "[TitanOrbitBuild] Active Editor target is not WebGL " +
+                $"(now: {EditorUserBuildSettings.activeBuildTarget} / {EditorUserBuildSettings.standaloneBuildSubtarget}). " +
+                "Switching platform so EntityScenes bake for the WebGL client, then resuming the " +
+                "WebGL production build after scripts recompile.");
+
+            // --- Switch platform (triggers domain reload) ---
+            // [UNITY] WebGL is a client Player target — not Dedicated Server — so UNITY_SERVER
+            // is not defined during SubScene / EntityScene bake.
+            bool switched = EditorUserBuildSettings.SwitchActiveBuildTarget(
+                NamedBuildTarget.WebGL,
+                BuildTarget.WebGL);
+
+            if (!switched)
+            {
+                ClearPendingWebGlBuild();
+                Debug.LogError(
+                    "[TitanOrbitBuild] SwitchActiveBuildTarget to WebGL failed. " +
+                    "Open File → Build Profiles, select WebGL, Switch Platform, then retry.");
+            }
+        }
+
+        /// <summary>
+        /// After every domain reload, resume a queued WebGL production build if a pending request exists.
+        /// </summary>
+        [InitializeOnLoadMethod]
+        static void ResumePendingWebGlBuildIfAny()
+        {
+            EditorApplication.delayCall += TryExecutePendingWebGlBuild;
+        }
+
+        /// <summary>
+        /// Loads and clears the pending WebGL build file, then runs the WebGL BuildPlayer.
+        /// </summary>
+        static void TryExecutePendingWebGlBuild()
+        {
+            string path = GetPendingWebGlBuildPath();
+            if (!File.Exists(path))
+                return;
+
+            PendingWebGlBuild pending = null;
+            try
+            {
+                pending = JsonUtility.FromJson<PendingWebGlBuild>(File.ReadAllText(path));
+            }
+            catch (Exception ex)
+            {
+                ClearPendingWebGlBuild();
+                Debug.LogError("[TitanOrbitBuild] Corrupt pending WebGL build file; deleted. Retry the menu item.\n" + ex);
+                return;
+            }
+
+            ClearPendingWebGlBuild();
+
+            if (pending == null || !pending.requested)
+            {
+                Debug.LogError("[TitanOrbitBuild] Pending WebGL build was empty; retry the menu item.");
+                return;
+            }
+
+            if (!IsWebGlActiveTarget())
+            {
+                Debug.LogError(
+                    "[TitanOrbitBuild] Expected WebGL after platform switch, but Editor is still " +
+                    $"{EditorUserBuildSettings.activeBuildTarget} / {EditorUserBuildSettings.standaloneBuildSubtarget}. " +
+                    "Open File → Build Profiles → WebGL → Switch Platform, then retry.");
+                return;
+            }
+
+            // --- Optional restore target after BuildPlayer ---
+            // [TITAN-ORBIT] Never restore back to Dedicated Server / Linux Server — that re-contaminates
+            // the next client bake. Only restore when the prior target was a normal client Player.
+            BuildTarget? restoreAfter = null;
+            var previousTarget = (BuildTarget)pending.previousTarget;
+            var previousSub = (StandaloneBuildSubtarget)pending.previousSubtarget;
+            if (previousTarget != BuildTarget.WebGL &&
+                previousSub != StandaloneBuildSubtarget.Server &&
+                previousTarget != BuildTarget.StandaloneLinux64)
+            {
+                restoreAfter = previousTarget;
+            }
+
+            Debug.Log("[TitanOrbitBuild] Resuming queued WebGL production build after platform switch.");
+            ExecuteWebGlProductionBuild(restoreAfter);
+        }
+
+        /// <summary>
+        /// Runs WebGL <see cref="BuildPipeline.BuildPlayer"/> with DXT texture subtarget.
+        /// Caller must already have WebGL as the active Editor target so SubScenes bake correctly.
+        /// </summary>
+        /// <param name="restoreTargetAfter">
+        /// Optional Editor target to restore after BuildPlayer (e.g. Windows Player). Null leaves
+        /// WebGL active — preferred after switching away from Linux Dedicated Server.
+        /// </param>
+        static void ExecuteWebGlProductionBuild(BuildTarget? restoreTargetAfter)
+        {
+            // --- WebGL player settings that prevent startup OOB after deploy ---
+            // [TITAN-ORBIT] Hashed Build/* names: IndexedDB / CDN cannot mix old .data with new .wasm.
+            // Data caching OFF: stack traces with IndexedDB transaction.oncomplete → _main OOB were
+            // from UnityCache replaying a corrupt prior download (Content-Encoding mishap).
+            // Initial heap 512 MiB (not 1024): 109MB wasm + 289MB data + 1GiB heap OOMs some browsers
+            // at Module._main with "memory access out of bounds".
+            PlayerSettings.WebGL.nameFilesAsHashes = true;
+            PlayerSettings.WebGL.dataCaching = false;
+            PlayerSettings.WebGL.initialMemorySize = 512;
+            if (PlayerSettings.WebGL.maximumMemorySize < 2048)
+                PlayerSettings.WebGL.maximumMemorySize = 2048;
+
+            // --- Stamp bundleVersion so any leftover cache key still misses ---
+            // [UNITY] companyName+productName+productVersion participate in UnityCache identity.
+            string stamp = DateTime.UtcNow.ToString("yyyyMMdd.HHmm");
+            PlayerSettings.bundleVersion = stamp;
+            Debug.Log("[TitanOrbitBuild] WebGL PlayerSettings: nameFilesAsHashes=true dataCaching=false " +
+                      "initialMemorySize=512 bundleVersion=" + stamp);
+
+            // --- Wipe prior output so stale Build/* cannot ship beside the new index ---
+            CleanWebGlOutputFolder();
+
+            // --- Build data ---
             var options = new BuildPlayerOptions
             {
                 scenes = GetEnabledScenes(),
@@ -60,14 +229,65 @@ namespace TitanOrbit.Editor.Build
                 subtarget = (int)WebGLTextureSubtarget.DXT
             };
 
-            Debug.Log("[TitanOrbitBuild] WebGL production build: texture subtarget=DXT (desktop browsers).");
+            Debug.Log(
+                "[TitanOrbitBuild] WebGL production build: texture subtarget=DXT (desktop browsers), " +
+                "nameFilesAsHashes=true (IndexedDB cache-bust).");
 
-            // PrepareWebGlBuild runs in IPreprocessBuildWithReport; restore Standalone/PC target after if needed.
+            // PrepareWebGlBuild runs in IPreprocessBuildWithReport.
             BuildReport report = BuildPipeline.BuildPlayer(options);
-            WebGLTextureImportBuildFix.RestoreBuildTargetAfterProductionBuild(previousTarget);
 
-            if (report.summary.result != BuildResult.Succeeded)
+            if (restoreTargetAfter.HasValue)
+                WebGLTextureImportBuildFix.RestoreBuildTargetAfterProductionBuild(restoreTargetAfter.Value);
+            else if (EditorUserBuildSettings.activeBuildTarget == BuildTarget.WebGL)
+                Debug.Log("[TitanOrbitBuild] Leaving Editor on WebGL (did not restore Dedicated Server / Linux).");
+
+            if (report.summary.result == BuildResult.Succeeded)
+            {
+                Debug.Log(
+                    "[TitanOrbitBuild] WebGL production OK → " + GetWebGlOutputPath() +
+                    "\nNext: tools/gcs/deploy_webgl_gcs.bat → purge Cloudflare → clear browser site data once " +
+                    "(hashed Build/* names prevent future IndexedDB mix-ups).");
+            }
+            else
                 Debug.LogError($"[TitanOrbitBuild] WebGL build failed: {report.summary.result} — {report.summary.totalErrors} error(s).");
+        }
+
+        /// <summary>
+        /// Deletes <see cref="WebBuildFolder"/> so a new WebGL build cannot leave orphan
+        /// <c>Build/*.unityweb</c> files next to a fresh <c>index.html</c> (mixed-artifact crash).
+        /// </summary>
+        static void CleanWebGlOutputFolder()
+        {
+            // --- Resolve absolute path (Editor cwd = project root parent of Assets) ---
+            string root = Path.GetFullPath(Path.Combine(Application.dataPath, "..", WebBuildFolder));
+            if (!Directory.Exists(root))
+                return;
+
+            Debug.Log("[TitanOrbitBuild] Cleaning prior WebGL output → " + root);
+            try
+            {
+                Directory.Delete(root, recursive: true);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning(
+                    "[TitanOrbitBuild] Could not fully delete prior WebGL output (file locked?). " +
+                    "Close any local server using that folder and retry.\n" + ex.Message);
+            }
+
+            Directory.CreateDirectory(root);
+        }
+
+        static string GetPendingWebGlBuildPath()
+        {
+            return Path.Combine(Path.GetTempPath(), "TitanOrbitPendingWebGlBuild.json");
+        }
+
+        static void ClearPendingWebGlBuild()
+        {
+            string path = GetPendingWebGlBuildPath();
+            if (File.Exists(path))
+                File.Delete(path);
         }
 
         /// <summary>
@@ -832,6 +1052,29 @@ namespace TitanOrbit.Editor.Build
         {
             /// <summary>True when a Windows client BuildPlayer should run after platform switch.</summary>
             public bool requested;
+        }
+
+        /// <summary>
+        /// Serializable request for a WebGL production build that must survive domain reload after
+        /// switching away from Linux Dedicated Server (or any non-WebGL target).
+        /// </summary>
+        [Serializable]
+        class PendingWebGlBuild
+        {
+            /// <summary>True when a WebGL BuildPlayer should run after platform switch.</summary>
+            public bool requested;
+
+            /// <summary>
+            /// <see cref="BuildTarget"/> the Editor was on before the switch (cast to int for JSON).
+            /// Used only to restore a prior <b>client</b> target — never Dedicated Server.
+            /// </summary>
+            public int previousTarget;
+
+            /// <summary>
+            /// <see cref="StandaloneBuildSubtarget"/> before the switch (cast to int for JSON).
+            /// Server subtarget → do not restore (leave WebGL).
+            /// </summary>
+            public int previousSubtarget;
         }
 
         /// <summary>

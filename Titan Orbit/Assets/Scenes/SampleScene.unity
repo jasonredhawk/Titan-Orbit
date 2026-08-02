@@ -4091,8 +4091,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ae3422c64282f3441971af6c49183e56, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.CameraFollowEcs
-  offsetAtReferenceLevel: {x: 0, y: 30, z: 0}
-  gameplayFieldOfView: 45
+  settings: {fileID: 11400000, guid: 90d7e8197d9477d40bc1400865e6a4af, type: 2}
 --- !u!1 &716424125
 GameObject:
   m_ObjectHideFlags: 0
@@ -8874,6 +8873,9 @@ MonoBehaviour:
     thrusterVfxLocalEuler: {x: 0, y: 180, z: 0}
     thrusterVfxIdleScale: 0.1
     thrusterVfxTransitionSpeed: 3
+  shipBankMaxAngleDegrees: 111
+  shipBankSensitivity: 1.35
+  shipBankSmoothing: 8
 --- !u!114 &1418200281
 MonoBehaviour:
   m_ObjectHideFlags: 0
