@@ -54,6 +54,12 @@ namespace TitanOrbit.ECS
         /// </summary>
         public int StartingOwnedNeutralPlanetsPerTeam;
 
+        /// <summary>
+        /// Per home planet and starting owned neutral: randomly place 0..N defense turrets at
+        /// random levels 1..N (0 = seed none). Also capped by planet slot count / max turret level.
+        /// </summary>
+        public int StartingRandomDefenseTurretsMax;
+
         /// <summary>Smallest neutral planet body radius.</summary>
         public float MinPlanetSize;
 

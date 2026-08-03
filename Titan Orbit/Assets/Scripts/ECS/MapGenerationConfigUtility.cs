@@ -32,6 +32,9 @@ namespace TitanOrbit.ECS
             StartingOwnedNeutralPlanetsPerTeam = s.startingOwnedNeutralPlanetsPerTeam < 0
                 ? 0
                 : s.startingOwnedNeutralPlanetsPerTeam,
+            StartingRandomDefenseTurretsMax = s.startingRandomDefenseTurretsMax < 0
+                ? 0
+                : s.startingRandomDefenseTurretsMax,
             MinPlanetSize = s.minPlanetSize,
             MaxPlanetSize = s.maxPlanetSize,
             RandomizeNeutralStartingLevel = (byte)(s.randomizeNeutralStartingLevel ? 1 : 0),

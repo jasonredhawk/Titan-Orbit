@@ -52,6 +52,13 @@ namespace TitanOrbit.Data
             "(e.g. 4 wanted × 4 teams but only 12 neutrals → 3 each). Leftover neutrals stay unowned.")]
         [Min(0)]
         public int startingOwnedNeutralPlanetsPerTeam = 0;
+        [Tooltip(
+            "For each home planet and each starting owned neutral, randomly seed defense turrets. " +
+            "0 = none. N = place a random count of 0..N turrets on that planet, each at a random " +
+            "level from 1..N (also capped by the planet’s slot count / max turret level). " +
+            "Example: 3 → up to three turrets, each level 1–3.")]
+        [Min(0)]
+        public int startingRandomDefenseTurretsMax = 0;
         public float minPlanetSize = 9f;
         public float maxPlanetSize = 18f;
         [Tooltip("When enabled, neutral starting levels are spread evenly across the level range.")]

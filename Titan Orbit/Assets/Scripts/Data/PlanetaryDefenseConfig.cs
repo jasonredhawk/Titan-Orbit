@@ -38,10 +38,11 @@ namespace TitanOrbit.Data
         public float depositZoneRadius = 2.5f;
 
         [Tooltip(
-            "Engage range = orbit-ring outer radius × (1 + this). " +
-            "0.10 ≈ fire 10% beyond the planet ring.")]
-        [Range(0f, 0.5f)]
-        public float rangeBeyondOrbitOuter = 0.10f;
+            "Engage range is measured from the turret pad (not planet center): " +
+            "(distance from pad to orbit-ring centerline) × (1 + this). " +
+            "1.0 ≈ twice the pad→orbit gap (fire out to 2× that distance).")]
+        [Range(0f, 2f)]
+        public float rangeBeyondOrbitOuter = 1.0f;
 
         // Slot ring radius is not tuned here — PlanetaryDefenseMath places pads at the midpoint
         // between planet surface and orbit-ring centerline (minimap level-dot angles).
@@ -67,11 +68,13 @@ namespace TitanOrbit.Data
         [Tooltip("BulletVfxBank category name (matches fighter drones: \"Bullets\").")]
         public string bulletBankCategoryName = "Bullets";
 
-        [Tooltip("Cosmetic tracer scale multiplier.")]
-        public float bulletVisualScale = 0.85f;
+        [Tooltip(
+            "Baseline cosmetic tracer scale (level-1 fire power). Higher turret damage grows " +
+            "ScaleMultiplier via BulletVisualScale — same path as ship guns.")]
+        public float bulletVisualScale = 1.15f;
 
         [Tooltip("Max bullet travel distance (world units).")]
-        public float bulletMaxDistance = 40f;
+        public float bulletMaxDistance = 55f;
 
         [Tooltip("Bullet lifetime seconds.")]
         public float bulletLifetimeSeconds = 2.5f;
@@ -182,15 +185,20 @@ namespace TitanOrbit.Data
         /// <summary>Default ladder used when the asset array is empty.</summary>
         public static TurretLevelStats[] GenerateDefaultLevelStats()
         {
-            // Gems roughly track a short contribution session; HP/damage scale with level.
+            // Gems roughly track a short contribution session.
+            // Damage sits well above fighter-drone chips (~0.7–1.5) and near/above starter ship
+            // guns (~3) so planetary defense feels like a real base threat.
             return new[]
             {
-                new TurretLevelStats { gemsToReachLevel = 40f,  maxHealth = 40f,  damage = 0.8f,  fireRate = 1.0f, bulletSpeed = 20f, visualScale = 0.55f, hitRadius = 0.35f },
-                new TurretLevelStats { gemsToReachLevel = 70f,  maxHealth = 55f,  damage = 1.0f,  fireRate = 1.1f, bulletSpeed = 21f, visualScale = 0.65f, hitRadius = 0.40f },
-                new TurretLevelStats { gemsToReachLevel = 110f, maxHealth = 75f,  damage = 1.25f, fireRate = 1.2f, bulletSpeed = 22f, visualScale = 0.75f, hitRadius = 0.45f },
-                new TurretLevelStats { gemsToReachLevel = 160f, maxHealth = 100f, damage = 1.5f,  fireRate = 1.3f, bulletSpeed = 23f, visualScale = 0.85f, hitRadius = 0.50f },
-                new TurretLevelStats { gemsToReachLevel = 220f, maxHealth = 130f, damage = 1.8f,  fireRate = 1.4f, bulletSpeed = 24f, visualScale = 0.95f, hitRadius = 0.55f },
-                new TurretLevelStats { gemsToReachLevel = 300f, maxHealth = 170f, damage = 2.2f,  fireRate = 1.5f, bulletSpeed = 25f, visualScale = 1.10f, hitRadius = 0.65f },
+                // Fire rate is flat 3/s at every level. Bullet speed starts near regular ship
+                // guns (~20) and steps up with turret level (same spirit as ship chassis leveling).
+                // Damage = prior ladder × 0.4 (−60%). Lv1 = 2.
+                new TurretLevelStats { gemsToReachLevel = 40f,  maxHealth = 55f,  damage = 2f,   fireRate = 3f, bulletSpeed = 20f, visualScale = 0.55f, hitRadius = 0.40f },
+                new TurretLevelStats { gemsToReachLevel = 70f,  maxHealth = 75f,  damage = 3.2f, fireRate = 3f, bulletSpeed = 23f, visualScale = 0.65f, hitRadius = 0.45f },
+                new TurretLevelStats { gemsToReachLevel = 110f, maxHealth = 100f, damage = 4.8f, fireRate = 3f, bulletSpeed = 26f, visualScale = 0.75f, hitRadius = 0.50f },
+                new TurretLevelStats { gemsToReachLevel = 160f, maxHealth = 130f, damage = 6.8f, fireRate = 3f, bulletSpeed = 29f, visualScale = 0.85f, hitRadius = 0.55f },
+                new TurretLevelStats { gemsToReachLevel = 220f, maxHealth = 170f, damage = 9.2f, fireRate = 3f, bulletSpeed = 32f, visualScale = 0.95f, hitRadius = 0.60f },
+                new TurretLevelStats { gemsToReachLevel = 300f, maxHealth = 220f, damage = 12.4f, fireRate = 3f, bulletSpeed = 35f, visualScale = 1.10f, hitRadius = 0.70f },
             };
         }
 

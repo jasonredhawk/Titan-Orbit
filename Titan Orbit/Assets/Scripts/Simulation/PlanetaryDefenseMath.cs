@@ -10,8 +10,8 @@ namespace TitanOrbit.Simulation
     /// <para>
     /// [TITAN-ORBIT] Slot radius is halfway between the planet surface and the ship/moon
     /// orbit-ring centerline. Minimap dots use this same world radius × position scale so they
-    /// sit on the pad ring, not on the enlarged planet-fill rim. Combat engage range reaches
-    /// ~10% past the orbit outer edge.
+    /// sit on the pad ring, not on the enlarged planet-fill rim. Combat engage range is measured
+    /// from the turret pad: twice the radial distance from the pad to the orbit ring (×2).
     /// </para>
     /// </summary>
     public static class PlanetaryDefenseMath
@@ -103,17 +103,40 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Max fire range from planet center: orbit outer × (1 + beyondFraction).
+        /// Max fire range measured from the turret pad (not planet center).
+        /// Equals (orbit-ring centerline − pad radius) × (1 + <paramref name="rangeBeyondTurretToOrbit"/>).
+        /// Default 1.0 → twice the pad-to-orbit gap (×2).
+        /// </summary>
+        /// <param name="planetSize">Planet <c>LocalTransform.Scale</c>.</param>
+        /// <param name="planetLevel">Planet level (orbit / pad radii).</param>
+        /// <param name="rangeBeyondTurretToOrbit">
+        /// Extra fraction past the pad→orbit distance (1.0 = ×2 total).
+        /// </param>
+        public static float GetEngageRangeFromTurret(
+            float planetSize,
+            int planetLevel,
+            float rangeBeyondTurretToOrbit)
+        {
+            float padRadius = GetSlotRingRadiusWorld(planetSize, planetLevel);
+            PlanetOrbitMath.GetRingRadiiWorld(
+                planetSize, planetLevel, out _, out _, out float orbitCenterWorld);
+
+            // Radial gap from the defense pad out to the ship orbit path.
+            float turretToOrbit = math.max(0.05f, orbitCenterWorld - padRadius);
+            float beyond = math.max(0f, rangeBeyondTurretToOrbit);
+            return turretToOrbit * (1f + beyond);
+        }
+
+        /// <summary>
+        /// [LEGACY] Old planet-center engage range. Prefer <see cref="GetEngageRangeFromTurret"/>.
         /// </summary>
         public static float GetEngageRangeFromPlanetCenter(
             float planetSize,
             int planetLevel,
             float rangeBeyondOrbitOuter)
         {
-            PlanetOrbitMath.GetRingRadiiWorld(
-                planetSize, planetLevel, out _, out float outerWorld, out _);
-            float beyond = math.max(0f, rangeBeyondOrbitOuter);
-            return outerWorld * (1f + beyond);
+            // Kept so older call sites compile — redirects to the turret-based definition.
+            return GetEngageRangeFromTurret(planetSize, planetLevel, rangeBeyondOrbitOuter);
         }
 
         /// <summary>

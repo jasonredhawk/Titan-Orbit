@@ -15,12 +15,13 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative planetary defense fire. Active turrets aim at the nearest enemy ship
-    /// or people transport within engage range (~orbit outer + 10%) and append
-    /// <see cref="BulletElement"/> shots with <see cref="BulletDamageFilter.ShipsAndTransports"/>.
+    /// or people transport within engage range (from the pad: 2× pad→orbit distance) and
+    /// append <see cref="BulletElement"/> shots with <see cref="BulletDamageFilter.ShipsAndTransports"/>.
     /// <para>
     /// [TITAN-ORBIT] No turret ghosts — muzzle pose is derived from planet transform + slot index
     /// (same formula as client visuals / hit spheres). OwnerNetworkId is 0; OwnerTeam is planet
-    /// ownership so friendly-fire rules still work.
+    /// ownership so friendly-fire rules still work. Aim uses simple velocity lead so moving
+    /// ships are not under-shot; <see cref="BulletVisualScale"/> grows tracers with fire power.
     /// </para>
     /// World: ServerSimulation. Runs after <see cref="BulletSimulationSystem"/> so ship/drone
     /// volleys resolve first; turret bullets advance on the next tick.
@@ -91,6 +92,14 @@ namespace TitanOrbit.ECS
             using var enemyShips = _enemyShipQuery.ToEntityArray(Allocator.Temp);
             using var transports = _transportQuery.ToEntityArray(Allocator.Temp);
 
+            // Per-category upgrade knob (same bank path as ship guns) — grows tracer with damage.
+            float categoryUpgradeScale = 1f;
+            if (_vfxBank != null)
+            {
+                // Bank-wide upgrade cache for BulletVisualScale (ship sim also writes this).
+                BulletVisualScale.ActiveUpgradeVisualScaleMultiplier = _vfxBank.UpgradeVisualScaleMultiplier;
+            }
+
             for (int p = 0; p < planets.Length; p++)
             {
                 Entity planetEntity = planets[p];
@@ -108,11 +117,17 @@ namespace TitanOrbit.ECS
                 float3 planetPos = xf.Position;
                 float planetSize = math.max(0.25f, xf.Scale);
                 int slotCount = buffer.Length;
-                float engageRange = PlanetaryDefenseMath.GetEngageRangeFromPlanetCenter(
+                // Range from the pad, not planet center — pad→orbit gap × (1 + beyond).
+                float engageRange = PlanetaryDefenseMath.GetEngageRangeFromTurret(
                     planetSize, planet.PlanetLevel, config.rangeBeyondOrbitOuter);
                 float engageRangeSq = engageRange * engageRange;
                 byte ownerTeam = (byte)planet.Ownership;
                 int bankIndex = ResolveBankIndex(config);
+                if (_vfxBank != null)
+                    categoryUpgradeScale = _vfxBank.GetCategoryUpgradeVisualScaleMultiplier(bankIndex);
+
+                // Level-1 damage is the visual “no upgrade” reference for this turret recipe.
+                float referenceDamage = math.max(0.1f, config.GetLevelStats(1).damage);
 
                 // Optional HP regen (off by default in config).
                 bool regen = config.regenerateHealth && config.healthRegenPerSecond > 0f;
@@ -133,6 +148,8 @@ namespace TitanOrbit.ECS
 
                     var stats = config.GetLevelStats(slot.TurretLevel);
                     float fireRate = math.max(0.05f, stats.fireRate);
+                    float bulletSpeed = math.max(1f, stats.bulletSpeed);
+                    float damage = math.max(0.05f, stats.damage);
                     int cooldownKey = (planetEntity.Index << 16) ^ (i & 0xFFFF);
                     if (_nextFireTime.TryGetValue(cooldownKey, out float next) && now < next)
                         continue;
@@ -141,19 +158,39 @@ namespace TitanOrbit.ECS
                         planetPos, planetSize, planet.PlanetLevel, i, slotCount);
                     muzzle.y = PlanetaryDefenseMath.FixedY;
 
-                    // [TITAN-ORBIT] Engage range is from planet center (orbit outer × 1.10), not muzzle.
+                    // [TITAN-ORBIT] Engage range is from the turret muzzle (pad→orbit × 2).
                     if (!TryFindNearestHostile(
-                            planetPos, muzzle, (TeamId)ownerTeam, engageRangeSq, mapW, mapH,
-                            enemyShips, transports, out float3 targetPos))
+                            muzzle, (TeamId)ownerTeam, engageRangeSq, mapW, mapH,
+                            enemyShips, transports,
+                            out float3 targetPos, out float3 targetVel))
                         continue;
 
-                    float3 aim = ToroidalMapEcs.ShortestOffsetXZ(muzzle, targetPos, mapW, mapH);
+                    // --- Velocity lead so shots land on moving ships (not behind them) ---
+                    float3 toTarget = ToroidalMapEcs.ShortestOffsetXZ(muzzle, targetPos, mapW, mapH);
+                    toTarget.y = 0f;
+                    float dist = math.length(toTarget);
+                    float leadT = dist / bulletSpeed;
+                    // Cap lead so extreme speeds cannot aim wildly past the target.
+                    leadT = math.min(leadT, 0.85f);
+                    float3 aimPoint = targetPos + targetVel * leadT;
+                    aimPoint.y = PlanetaryDefenseMath.FixedY;
+
+                    float3 aim = ToroidalMapEcs.ShortestOffsetXZ(muzzle, aimPoint, mapW, mapH);
                     aim.y = 0f;
                     if (math.lengthsq(aim) < 0.0001f)
                         continue;
                     aim = math.normalize(aim);
 
-                    float3 bulletVel = aim * math.max(1f, stats.bulletSpeed);
+                    // Same fire-power → tracer size path as ship guns.
+                    float visualScale = BulletVisualScale.ComputePerShotScale(
+                        config.bulletVisualScale,
+                        damage,
+                        bulletSpeed,
+                        referenceDamage,
+                        bulletSpeed,
+                        categoryUpgradeScale);
+
+                    float3 bulletVel = aim * bulletSpeed;
                     uint sequence = BulletVfxBridge.NextSequence();
                     var spawn = new BulletElement
                     {
@@ -161,12 +198,12 @@ namespace TitanOrbit.ECS
                         Velocity = bulletVel,
                         MaxDistance = math.max(1f, config.bulletMaxDistance),
                         Lifetime = math.max(0.1f, config.bulletLifetimeSeconds),
-                        Damage = math.max(0.05f, stats.damage),
+                        Damage = damage,
                         OwnerNetworkId = 0,
                         OwnerTeam = ownerTeam,
                         Sequence = sequence,
                         BankIndex = math.max(0, bankIndex),
-                        ScaleMultiplier = math.max(0.1f, config.bulletVisualScale),
+                        ScaleMultiplier = math.max(0.1f, visualScale),
                         DamageFilter = BulletDamageFilter.ShipsAndTransports,
                     };
 
@@ -195,11 +232,11 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Nearest living enemy ship or people transport within engage range of the planet center
-        /// (toroidal). Among in-range hostiles, prefers the closest to the firing muzzle.
+        /// Nearest living enemy ship or people transport within engage range of the turret muzzle
+        /// (toroidal). Prefers the closest hostile to that muzzle. Also returns planar velocity
+        /// for lead aiming.
         /// </summary>
         bool TryFindNearestHostile(
-            float3 planetPos,
             float3 muzzle,
             TeamId ownerTeam,
             float engageRangeSq,
@@ -207,9 +244,11 @@ namespace TitanOrbit.ECS
             float mapH,
             NativeArray<Entity> enemyShips,
             NativeArray<Entity> transports,
-            out float3 targetPos)
+            out float3 targetPos,
+            out float3 targetVel)
         {
             targetPos = default;
+            targetVel = float3.zero;
             float bestMuzzleDistSq = float.MaxValue;
             bool found = false;
 
@@ -225,18 +264,22 @@ namespace TitanOrbit.ECS
 
                 float3 pos = EntityManager.GetComponentData<LocalTransform>(e).Position;
                 pos.y = PlanetaryDefenseMath.FixedY;
-                float3 fromPlanet = ToroidalMapEcs.ShortestOffsetXZ(planetPos, pos, mapW, mapH);
-                float planetDistSq = math.lengthsq(new float3(fromPlanet.x, 0f, fromPlanet.z));
-                if (planetDistSq > engageRangeSq)
-                    continue;
 
                 float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
                 float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
-                if (muzzleDistSq >= bestMuzzleDistSq)
+                if (muzzleDistSq > engageRangeSq || muzzleDistSq >= bestMuzzleDistSq)
                     continue;
 
                 bestMuzzleDistSq = muzzleDistSq;
                 targetPos = pos;
+                targetVel = float3.zero;
+                if (EntityManager.HasComponent<ShipKinematics>(e))
+                {
+                    float3 vel = EntityManager.GetComponentData<ShipKinematics>(e).Velocity;
+                    vel.y = 0f;
+                    targetVel = vel;
+                }
+
                 found = true;
             }
 
@@ -253,18 +296,16 @@ namespace TitanOrbit.ECS
 
                 float3 pos = EntityManager.GetComponentData<LocalTransform>(e).Position;
                 pos.y = PlanetaryDefenseMath.FixedY;
-                float3 fromPlanet = ToroidalMapEcs.ShortestOffsetXZ(planetPos, pos, mapW, mapH);
-                float planetDistSq = math.lengthsq(new float3(fromPlanet.x, 0f, fromPlanet.z));
-                if (planetDistSq > engageRangeSq)
-                    continue;
 
                 float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);
                 float muzzleDistSq = math.lengthsq(new float3(fromMuzzle.x, 0f, fromMuzzle.z));
-                if (muzzleDistSq >= bestMuzzleDistSq)
+                if (muzzleDistSq > engageRangeSq || muzzleDistSq >= bestMuzzleDistSq)
                     continue;
 
                 bestMuzzleDistSq = muzzleDistSq;
                 targetPos = pos;
+                // Transports often lack ship kinematics — lead stays zero (still fine for slow pods).
+                targetVel = float3.zero;
                 found = true;
             }
 

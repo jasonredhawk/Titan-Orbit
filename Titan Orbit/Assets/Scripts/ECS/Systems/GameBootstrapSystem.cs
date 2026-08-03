@@ -219,6 +219,7 @@ namespace TitanOrbit.ECS
                 $"Map {_config.MinMapSize:F0}-{_config.MaxMapSize:F0}, teams {_config.MinTeamsPerMatch}-{_config.MaxTeamsPerMatch}, " +
                 $"neutrals {_config.MinNeutralPlanets}-{_config.MaxNeutralPlanets}, " +
                 $"startingOwnedNeutralsPerTeam {_config.StartingOwnedNeutralPlanetsPerTeam}, " +
+                $"startingRandomDefenseTurretsMax {_config.StartingRandomDefenseTurretsMax}, " +
                 $"asteroids {_config.AsteroidsAtMinMapSize}-{_config.AsteroidsAtMaxMapSize}.");
 
             uint fallbackSeed = MapGenerationLogic.ComputeEphemeralSeed();
@@ -449,9 +450,23 @@ namespace TitanOrbit.ECS
                     claimedLevel = math.max(1, planet.ValueRO.PlanetLevel);
                     applied = true;
 
-                    // [TITAN-ORBIT] Starting claims get fresh empty defense pads (no leftover turrets).
+                    // [TITAN-ORBIT] Starting claims get fresh empty defense pads, then optional
+                    // random starter turrets from Map Generation Settings (0 = leave empty).
                     PlanetaryDefenseSlotSyncSystem.WipeSlotsForOwnershipChange(
                         state.EntityManager, planetEntity, claim.Team, claimedLevel);
+
+                    if (_config.StartingRandomDefenseTurretsMax > 0 &&
+                        state.EntityManager.HasBuffer<PlanetaryDefenseSlotElement>(planetEntity))
+                    {
+                        var defenseBuffer = state.EntityManager
+                            .GetBuffer<PlanetaryDefenseSlotElement>(planetEntity);
+                        PlanetaryDefenseLogic.SeedRandomStartingTurrets(
+                            defenseBuffer,
+                            ref _rng,
+                            _config.StartingRandomDefenseTurretsMax,
+                            claimedLevel,
+                            PlanetaryDefenseConfig.LoadDefault());
+                    }
 
                     // Keep layout buffer metadata in sync for session / lobby consumers.
                     for (int i = 0; i < _layoutEntries.Length; i++)
@@ -667,11 +682,25 @@ namespace TitanOrbit.ECS
 
             // --- Planetary defense pads for owned homes (neutrals wait for claim wipe) ---
             // [TITAN-ORBIT] Homes spawn already owned — seed empty slots immediately so pads
-            // appear without waiting on SlotSync's first tick.
+            // appear without waiting on SlotSync's first tick. Optional random starter turrets
+            // use the same Map Generation Settings knob as starting owned neutrals.
             if (team != TeamId.None)
             {
+                int planetLevel = math.max(1, level);
                 PlanetaryDefenseSlotSyncSystem.WipeSlotsForOwnershipChange(
-                    em, e, team, math.max(1, level));
+                    em, e, team, planetLevel);
+
+                if (_config.StartingRandomDefenseTurretsMax > 0 &&
+                    em.HasBuffer<PlanetaryDefenseSlotElement>(e))
+                {
+                    var defenseBuffer = em.GetBuffer<PlanetaryDefenseSlotElement>(e);
+                    PlanetaryDefenseLogic.SeedRandomStartingTurrets(
+                        defenseBuffer,
+                        ref _rng,
+                        _config.StartingRandomDefenseTurretsMax,
+                        planetLevel,
+                        PlanetaryDefenseConfig.LoadDefault());
+                }
             }
         }
 

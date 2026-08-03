@@ -34,9 +34,32 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Builds deterministic planetary-defense hit spheres each server tick for
     /// <see cref="BulletSimulationSystem"/> nearest-hit scans.
+    /// <para>
+    /// [TITAN-ORBIT] Hit radius must cover the hybrid turret mesh (pad-sized gun), not just the
+    /// tiny authored <c>hitRadius</c> — otherwise most ship shots look like hits but die on the
+    /// planet body behind the pad (nearest-t planet win after a graze miss).
+    /// </para>
     /// </summary>
     public static class PlanetaryDefenseHitScan
     {
+        /// <summary>
+        /// Floor on turret hit-sphere radius (world). Authored level <c>hitRadius</c> alone was
+        /// ~0.4 while the visible turret spans closer to a full pad — unusable for ship fire.
+        /// </summary>
+        public const float MinTurretHitRadiusWorld = 0.75f;
+
+        /// <summary>Extra radius as a fraction of authored level hitRadius (forgiveness).</summary>
+        public const float HitRadiusForgivenessMul = 1.75f;
+
+        /// <summary>
+        /// Collision pad from bullet <see cref="BulletElement.ScaleMultiplier"/> (same idea as
+        /// ship hull pads in <see cref="BulletSimulationSystem"/>).
+        /// </summary>
+        public const float BulletScaleHitPad = 0.22f;
+
+        /// <summary>Hard cap so huge tracers do not become planet-wide magnets.</summary>
+        public const float MaxBulletScaleHitPad = 0.9f;
+
         /// <summary>
         /// Clears and fills <paramref name="targetsOut"/> with every active turret this tick.
         /// </summary>
@@ -77,6 +100,9 @@ namespace TitanOrbit.ECS
                 int slotCount = buffer.Length;
                 byte team = (byte)planet.Ownership;
 
+                // Soft deposit pad radius — visible gun sits on this disc; hit sphere should cover it.
+                float padRadius = math.clamp(config.depositZoneRadius, 0.8f, 2.5f);
+
                 for (int i = 0; i < slotCount; i++)
                 {
                     var slot = buffer[i];
@@ -88,24 +114,31 @@ namespace TitanOrbit.ECS
                         planetPos, planetSize, planet.PlanetLevel, i, slotCount);
                     slotPos.y = PlanetaryDefenseMath.FixedY;
 
+                    // Cover the pad + mesh, not a pinhead at the muzzle.
+                    float hitR = math.max(
+                        MinTurretHitRadiusWorld,
+                        math.max(stats.hitRadius * HitRadiusForgivenessMul, padRadius * 0.55f));
+
                     targetsOut.Add(new PlanetaryDefenseHitTarget
                     {
                         PlanetEntity = planetEntity,
                         SlotIndex = i,
                         Position = slotPos,
                         Team = team,
-                        HitRadius = math.max(0.15f, stats.hitRadius),
+                        HitRadius = hitR,
                     });
                 }
             }
 
             _ = mapW;
             _ = mapH;
+            _ = defaultConfig;
         }
 
         /// <summary>
         /// Keeps the nearest turret hit along the segment when closer than the current best.
-        /// Friendly / same-team bullets pass through.
+        /// Friendly / same-team bullets pass through. Expands radius by bullet scale so heavy
+        /// tracers connect like they do against ship hulls.
         /// </summary>
         public static bool TryKeepNearestTurretHit(
             in BulletElement b,
@@ -122,6 +155,8 @@ namespace TitanOrbit.ECS
             if (targets == null || targets.Count == 0)
                 return false;
 
+            float bulletPad = math.clamp(b.ScaleMultiplier * BulletScaleHitPad, 0f, MaxBulletScaleHitPad);
+
             bool found = false;
             for (int i = 0; i < targets.Count; i++)
             {
@@ -129,8 +164,9 @@ namespace TitanOrbit.ECS
                 if (t.Team == b.OwnerTeam)
                     continue; // Friendly fire off.
 
+                float radius = t.HitRadius + bulletPad;
                 if (!BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, t.Position, t.HitRadius, mapW, mapH, out float3 hit))
+                        from, to, t.Position, radius, mapW, mapH, out float3 hit))
                     continue;
 
                 float tt = BulletCollision.GetSegmentHitParameter(from, to, hit);
@@ -175,6 +211,20 @@ namespace TitanOrbit.ECS
             }
 
             buffer[slotIndex] = slot;
+        }
+
+        /// <summary>
+        /// True when a same-planet turret hit should beat a slightly nearer planet-body chord.
+        /// Stops “I shot the pad but the bullet died on the planet” when both spheres overlap
+        /// on the segment within a small t window.
+        /// </summary>
+        public static bool PreferDefenseOverPlanetBody(float defenseT, float planetBodyT)
+        {
+            // Defense must still be a real hit on this segment.
+            if (defenseT < 0f || defenseT > 1.0001f)
+                return false;
+            // Planet was nearer — allow defense to steal if it is not far behind (≤ 18% of segment).
+            return defenseT <= planetBodyT + 0.18f;
         }
     }
 }

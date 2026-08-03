@@ -21,9 +21,9 @@ namespace TitanOrbit.Game
     /// [HYBRID] Pad = Shapes soft blue disc matching the planet orbit-ring fill and
     /// <see cref="GemMoonOrbitZoneVisual"/> tint. Turret sits in the disc center; level +
     /// gem cost text (with the same gem icon as the moon label) sits screen-below the pad.
-    /// Empty pads show placeholder copy instead of “Lv 0”. Parents to the unit-scale planet
-    /// proxy root so pad/text/turret use true world sizes (no ÷ planetScale).
-    /// See <see cref="PlanetVisualBody"/>.
+    /// Active turrets also show a thin horizontal HP bar under the mesh. Empty pads show
+    /// placeholder copy instead of “Lv 0”. Parents to the unit-scale planet proxy root so
+    /// pad/text/turret use true world sizes (no ÷ planetScale). See <see cref="PlanetVisualBody"/>.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Walks <see cref="EcsWorldVisualizer"/> planet proxy keys only — never
@@ -80,17 +80,56 @@ namespace TitanOrbit.Game
         const float MinTurretWorldScale = 0.35f;
         const float MaxTurretWorldScale = 0.7f;
 
+        // --- Health bar (thin strip under the turret mesh) ---
+
+        /// <summary>Full bar width floor/ceiling in slot-local / world units.</summary>
+        const float HealthBarWidthMin = 1.2f;
+        const float HealthBarWidthMax = 2.4f;
+
+        /// <summary>Strip height — thin progress bar, readable from top-down.</summary>
+        const float HealthBarHeight = 0.18f;
+
+        /// <summary>Lift above the pad plane so the bar clears the soft disc.</summary>
+        const float HealthBarAbovePadWorld = 0.08f;
+
+        /// <summary>
+        /// Extra gap past the turret mesh footprint toward screen-below (−Z).
+        /// Large enough that the strip sits clearly under the gun, not tucked under the mesh.
+        /// </summary>
+        const float HealthBarClearancePastTurret = 0.95f;
+
+        /// <summary>
+        /// Approx. how far the turret mesh extends from its pivot as a fraction of
+        /// <c>localScale</c> (FighterDrone hull is roughly 1 unit at scale 1).
+        /// </summary>
+        const float TurretMeshExtentOverScale = 0.85f;
+
+        /// <summary>Sprite sorting — under pad labels, above world meshes.</summary>
+        const int HealthBarSortingOrder = 5000;
+
+        /// <summary>Dark track behind the fill.</summary>
+        static readonly Color HealthBarBgColor = new Color(0.08f, 0.1f, 0.12f, 0.85f);
+
+        /// <summary>Healthy fill tint (green).</summary>
+        static readonly Color HealthBarFillFull = new Color(0.35f, 0.9f, 0.4f, 0.95f);
+
+        /// <summary>Critical fill tint (red) — lerped toward as HP drops.</summary>
+        static readonly Color HealthBarFillEmpty = new Color(0.95f, 0.25f, 0.2f, 0.95f);
+
+        /// <summary>Shared 1×1 white sprite for bg + fill (created once).</summary>
+        static Sprite s_HealthBarSprite;
+
         /// <summary>
         /// World-space uniform scale for TMP on the info plate (unit-scale planet root).
         /// Paired with larger font sizes below — sharper glyphs than a huge transform scale.
         /// </summary>
-        const float InfoTextWorldScale = 0.42f;
+        const float InfoTextWorldScale = 0.462f;
 
         /// <summary>Bold level line (top of the stack, closer to the pad).</summary>
-        const float LevelFontSize = 8.5f;
+        const float LevelFontSize = 9.35f;
 
         /// <summary>Gem progress line under the level (slightly smaller / softer).</summary>
-        const float CostFontSize = 6.25f;
+        const float CostFontSize = 6.875f;
 
         /// <summary>Local-space gap between Level and Cost after preferredHeight layout.</summary>
         const float InfoLineGapLocal = 0.12f;
@@ -136,7 +175,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// One slot: soft pad zone (Shapes) + turret in the center + info text below the rim.
+        /// One slot: soft pad zone (Shapes) + turret in the center + HP bar under the mesh +
+        /// info text below the rim.
         /// </summary>
         struct SlotVisual
         {
@@ -145,6 +185,9 @@ namespace TitanOrbit.Game
             public Transform SlotRoot;
             public PlanetaryDefensePadZoneVisual ZoneVisual;
             public GameObject TurretInstance;
+            public Transform HealthBarRoot;
+            public Transform HealthBarFill;
+            public SpriteRenderer HealthBarFillRenderer;
             public TextMeshPro LevelText;
             public TextMeshPro CostText;
             public SpriteRenderer GemIcon;
@@ -279,16 +322,9 @@ namespace TitanOrbit.Game
                 // Soft disc ≈ deposit zone. Root is unit-scale — slot-local == world.
                 float padWorldRadius = math.clamp(config.depositZoneRadius, 0.8f, 2.5f);
 
-                bool hasTarget = false;
-                float3 targetPos = default;
-                if (canAimShips)
-                {
-                    hasTarget = TryFindNearestHostileDisplay(
-                        em, visualizer, planet.Ownership, planetDisplay,
-                        PlanetaryDefenseMath.GetEngageRangeFromPlanetCenter(
-                            planetSize, planet.PlanetLevel, config.rangeBeyondOrbitOuter),
-                        hasMap, mapW, mapH, out targetPos);
-                }
+                // Engage distance from each pad (same formula as server combat).
+                float engageFromTurret = PlanetaryDefenseMath.GetEngageRangeFromTurret(
+                    planetSize, planet.PlanetLevel, config.rangeBeyondOrbitOuter);
 
                 for (int i = 0; i < group.Slots.Count && i < buffer.Length; i++)
                 {
@@ -337,13 +373,16 @@ namespace TitanOrbit.Game
                             vis.TurretInstance.transform.localScale = Vector3.one * worldScale;
 
                             // Rest pose = radially outward from planet center. When a hostile is
-                            // in engage range, ease toward that aim instead.
+                            // in this pad’s engage range, ease toward that aim instead.
                             Vector3 outwardFlat = new Vector3(
                                 slotWorld.x - planetDisplay.x,
                                 0f,
                                 slotWorld.z - planetDisplay.z);
                             Vector3 aimFlat = outwardFlat;
-                            if (hasTarget)
+                            if (canAimShips &&
+                                TryFindNearestHostileDisplay(
+                                    em, visualizer, planet.Ownership, slotWorld, engageFromTurret,
+                                    hasMap, mapW, mapH, out float3 targetPos))
                             {
                                 Vector3 from = vis.TurretInstance.transform.position;
                                 Vector3 toHostile = new Vector3(targetPos.x, from.y, targetPos.z) - from;
@@ -362,6 +401,12 @@ namespace TitanOrbit.Game
                             }
                         }
                     }
+
+                    // Thin HP strip under the turret footprint (hidden on empty pads).
+                    float turretScaleForBar = 0f;
+                    if (vis.TurretInstance != null && vis.TurretInstance.activeSelf)
+                        turretScaleForBar = vis.TurretInstance.transform.localScale.x;
+                    UpdateHealthBar(ref vis, slot, turretScaleForBar);
 
                     group.Slots[i] = vis;
                 }
@@ -579,6 +624,7 @@ namespace TitanOrbit.Game
                 vis.ZoneVisual = PlanetaryDefensePadZoneVisual.EnsureOnSlotRoot(vis.SlotRoot);
 
                 CreateInfoPlate(ref vis);
+                CreateHealthBar(ref vis);
 
                 if (turretPrefab != null)
                 {
@@ -594,6 +640,142 @@ namespace TitanOrbit.Game
 
                 group.Slots.Add(vis);
             }
+        }
+
+        /// <summary>
+        /// Builds a thin horizontal HP track under the turret: dark background + fill that
+        /// shrinks from the left as health drops. Hidden until a turret is active.
+        /// </summary>
+        void CreateHealthBar(ref SlotVisual vis)
+        {
+            if (vis.SlotRoot == null)
+                return;
+
+            // Flat on the flight plane (same −90° as planet/moon labels) so top-down cameras read it.
+            var rootGo = new GameObject("HealthBar");
+            rootGo.transform.SetParent(vis.SlotRoot, false);
+            rootGo.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+            // Placeholder pose — UpdateHealthBar places it past the live turret footprint each frame.
+            rootGo.transform.localPosition = new Vector3(0f, HealthBarAbovePadWorld, -1f);
+            rootGo.transform.localScale = Vector3.one;
+            vis.HealthBarRoot = rootGo.transform;
+
+            Sprite sprite = GetOrCreateHealthBarSprite();
+
+            // --- Background track ---
+            var bgGo = new GameObject("Bg");
+            bgGo.transform.SetParent(rootGo.transform, false);
+            bgGo.transform.localPosition = Vector3.zero;
+            bgGo.transform.localScale = new Vector3(HealthBarWidthMax, HealthBarHeight, 1f);
+            var bgRenderer = bgGo.AddComponent<SpriteRenderer>();
+            bgRenderer.sprite = sprite;
+            bgRenderer.color = HealthBarBgColor;
+            bgRenderer.sortingOrder = HealthBarSortingOrder;
+
+            // --- Fill (left-anchored: scale.x + centered offset so it drains toward the left) ---
+            var fillGo = new GameObject("Fill");
+            fillGo.transform.SetParent(rootGo.transform, false);
+            fillGo.transform.localPosition = Vector3.zero;
+            fillGo.transform.localScale = new Vector3(HealthBarWidthMax, HealthBarHeight, 1f);
+            var fillRenderer = fillGo.AddComponent<SpriteRenderer>();
+            fillRenderer.sprite = sprite;
+            fillRenderer.color = HealthBarFillFull;
+            fillRenderer.sortingOrder = HealthBarSortingOrder + 1;
+
+            vis.HealthBarFill = fillGo.transform;
+            vis.HealthBarFillRenderer = fillRenderer;
+
+            // Empty pads start with no turret — hide until UpdateHealthBar sees TurretLevel > 0.
+            rootGo.SetActive(false);
+        }
+
+        /// <summary>
+        /// Shows/hides the HP bar and sets fill width + color from ghosted Health / MaxHealth.
+        /// Places the strip just past the turret mesh toward screen-below so it does not cut
+        /// through the gun.
+        /// </summary>
+        /// <param name="turretWorldScale">
+        /// Live turret <c>localScale.x</c> (0 when inactive) — drives bar offset and width.
+        /// </param>
+        static void UpdateHealthBar(
+            ref SlotVisual vis,
+            PlanetaryDefenseSlotElement slot,
+            float turretWorldScale)
+        {
+            if (vis.HealthBarRoot == null)
+                return;
+
+            bool show = slot.TurretLevel > 0 && slot.MaxHealth > 0.01f;
+            if (vis.HealthBarRoot.gameObject.activeSelf != show)
+                vis.HealthBarRoot.gameObject.SetActive(show);
+            if (!show)
+                return;
+
+            // Hot-swap sprite if this bar still holds the old microscopic PPU-100 asset.
+            Sprite sprite = GetOrCreateHealthBarSprite();
+            if (vis.HealthBarFillRenderer != null && vis.HealthBarFillRenderer.sprite != sprite)
+                vis.HealthBarFillRenderer.sprite = sprite;
+
+            // Size the bar to the gun: a bit wider than the mesh, not pad-wide.
+            float extent = math.max(MinTurretWorldScale, turretWorldScale) * TurretMeshExtentOverScale;
+            float barWidth = math.clamp(extent * 2.4f, HealthBarWidthMin, HealthBarWidthMax);
+            // Push well past the footprint so the strip sits clearly below the turret
+            // (between the gun and the info plate), not tucked under the mesh.
+            float barZ = -(extent + HealthBarClearancePastTurret);
+
+            var bg = vis.HealthBarRoot.Find("Bg");
+            if (bg != null)
+            {
+                var bgRenderer = bg.GetComponent<SpriteRenderer>();
+                if (bgRenderer != null && bgRenderer.sprite != sprite)
+                    bgRenderer.sprite = sprite;
+                bg.localScale = new Vector3(barWidth, HealthBarHeight, 1f);
+            }
+
+            // Flat on XZ; −Z = screen-below on a typical top-down camera.
+            vis.HealthBarRoot.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+            vis.HealthBarRoot.localPosition = new Vector3(0f, HealthBarAbovePadWorld, barZ);
+
+            float ratio = math.saturate(slot.Health / math.max(0.01f, slot.MaxHealth));
+            float fillW = barWidth * ratio;
+
+            // Left-anchored fill: left edge stays put, right edge moves with HP.
+            if (vis.HealthBarFill != null)
+            {
+                vis.HealthBarFill.localScale = new Vector3(fillW, HealthBarHeight, 1f);
+                vis.HealthBarFill.localPosition = new Vector3(
+                    -barWidth * 0.5f + fillW * 0.5f,
+                    0f,
+                    0f);
+            }
+
+            if (vis.HealthBarFillRenderer != null)
+            {
+                // Green when full → red when empty.
+                vis.HealthBarFillRenderer.color = Color.Lerp(HealthBarFillEmpty, HealthBarFillFull, ratio);
+            }
+        }
+
+        /// <summary>
+        /// Lazy 1×1 white sprite shared by all defense HP bars.
+        /// [UNITY] pixelsPerUnit must match the texture size so localScale = world size
+        /// (PPU 100 on a 4×4 texture made every bar ~0.04 units — microscopic).
+        /// </summary>
+        static Sprite GetOrCreateHealthBarSprite()
+        {
+            // Replace the old microscopic PPU-100 cache if a prior Play Mode session left it.
+            if (s_HealthBarSprite != null &&
+                s_HealthBarSprite.name == "PlanetaryDefenseHealthBarSprite_v2")
+                return s_HealthBarSprite;
+
+            // 4×4 white tex / PPU 4 → sprite bounds are 1×1 world unit.
+            s_HealthBarSprite = Sprite.Create(
+                Texture2D.whiteTexture,
+                new Rect(0f, 0f, 4f, 4f),
+                new Vector2(0.5f, 0.5f),
+                4f);
+            s_HealthBarSprite.name = "PlanetaryDefenseHealthBarSprite_v2";
+            return s_HealthBarSprite;
         }
 
         /// <summary>
@@ -714,11 +896,15 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Nearest enemy ship within <paramref name="engageRange"/> of the turret pad
+        /// (<paramref name="muzzleDisplay"/>), for cosmetic aim only.
+        /// </summary>
         bool TryFindNearestHostileDisplay(
             EntityManager em,
             EcsWorldVisualizer visualizer,
             TeamId ownerTeam,
-            float3 planetDisplay,
+            float3 muzzleDisplay,
             float engageRange,
             bool hasMap,
             float mapW,
@@ -747,16 +933,16 @@ namespace TitanOrbit.Game
                 float distSq;
                 if (hasMap)
                 {
-                    float3 d = ToroidalMapEcs.ShortestOffsetXZ(planetDisplay, pos, mapW, mapH);
+                    float3 d = ToroidalMapEcs.ShortestOffsetXZ(muzzleDisplay, pos, mapW, mapH);
                     distSq = math.lengthsq(new float3(d.x, 0f, d.z));
                 }
                 else
                 {
-                    float3 d = pos - planetDisplay;
+                    float3 d = pos - muzzleDisplay;
                     distSq = math.lengthsq(new float3(d.x, 0f, d.z));
                 }
 
-                if (distSq >= bestDistSq)
+                if (distSq > bestDistSq)
                     continue;
                 bestDistSq = distSq;
                 targetPos = pos;

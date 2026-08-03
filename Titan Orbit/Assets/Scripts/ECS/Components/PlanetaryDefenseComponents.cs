@@ -1,4 +1,6 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -125,6 +127,72 @@ namespace TitanOrbit.ECS
                 var slot = buffer[i];
                 slot.SlotIndex = (byte)i;
                 buffer[i] = slot;
+            }
+        }
+
+        /// <summary>
+        /// Seeds a random subset of empty defense pads with active turrets for map start
+        /// (home planets and starting owned neutrals).
+        /// <paramref name="maxTurretsAndLevel"/> 0 = no-op. Otherwise places a random count of
+        /// 0..<paramref name="maxTurretsAndLevel"/> turrets (capped by buffer length), each at a
+        /// random level 1..<paramref name="maxTurretsAndLevel"/> (also capped by
+        /// <see cref="PlanetaryDefenseMath.GetMaxTurretLevelForPlanet"/>).
+        /// </summary>
+        /// <param name="buffer">Owned planet slot buffer (already sized / wiped empty).</param>
+        /// <param name="rng">Match RNG from map generation (deterministic with fixed seed).</param>
+        /// <param name="maxTurretsAndLevel">Designer N from Map Generation Settings.</param>
+        /// <param name="planetLevel">Planet level for turret-level cap.</param>
+        /// <param name="config">Defense config for max HP at each turret level (nullable → fallback HP).</param>
+        public static void SeedRandomStartingTurrets(
+            DynamicBuffer<PlanetaryDefenseSlotElement> buffer,
+            ref Random rng,
+            int maxTurretsAndLevel,
+            int planetLevel,
+            PlanetaryDefenseConfig config)
+        {
+            // --- Early outs ---
+            if (maxTurretsAndLevel <= 0 || buffer.Length <= 0)
+                return;
+
+            int maxCount = math.min(maxTurretsAndLevel, buffer.Length);
+            int maxLevel = math.min(
+                maxTurretsAndLevel,
+                PlanetaryDefenseMath.GetMaxTurretLevelForPlanet(planetLevel));
+            if (maxCount < 1 || maxLevel < 1)
+                return;
+
+            // "Up to N" includes zero — some claimed neutrals stay empty pads.
+            int placeCount = rng.NextInt(0, maxCount + 1);
+            if (placeCount <= 0)
+                return;
+
+            // --- Pick distinct slot indices (bitmask — max planet level is 6 slots) ---
+            int usedMask = 0;
+            for (int n = 0; n < placeCount; n++)
+            {
+                int idx = 0;
+                for (int guard = 0; guard < 64; guard++)
+                {
+                    idx = rng.NextInt(0, buffer.Length);
+                    if (((usedMask >> idx) & 1) == 0)
+                        break;
+                }
+
+                usedMask |= 1 << idx;
+
+                int level = rng.NextInt(1, maxLevel + 1);
+                float hp = 40f * level;
+                if (config != null)
+                    hp = math.max(1f, config.GetLevelStats(level).maxHealth);
+
+                buffer[idx] = new PlanetaryDefenseSlotElement
+                {
+                    SlotIndex = (byte)idx,
+                    TurretLevel = (byte)level,
+                    BuildProgress = 0f,
+                    Health = hp,
+                    MaxHealth = hp,
+                };
             }
         }
     }

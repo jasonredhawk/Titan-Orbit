@@ -77,9 +77,6 @@ namespace TitanOrbit.ECS
         /// <summary>Winning defense slot index (−1 when not a turret).</summary>
         static int s_BestDefenseSlot = -1;
 
-        /// <summary>Throttles defense-sphere rebuilds.</summary>
-        static int s_DefenseHitRebuildCounter;
-
         static PlanetShipFamilyConfig s_DefenseFamilyConfig;
         static PlanetaryDefenseConfig s_DefenseDefaultConfig;
         static bool s_DefenseConfigWarmed;
@@ -190,18 +187,18 @@ namespace TitanOrbit.ECS
                 s_DroneHitTargets.Clear();
             }
 
-            // --- Planetary defense hit spheres (throttle — same cadence as drones) ---
+            // --- Planetary defense hit spheres ---
+            // [TITAN-ORBIT] Rebuild every tick while bullets fly — few owned planets, and stale
+            // spheres make “I shot the turret” feel random. Do not share the drone %3 throttle.
             EnsureDefenseConfigWarmed();
-            s_DefenseHitRebuildCounter++;
-            if (needDroneHits &&
-                (s_DefenseHitTargets.Count == 0 || (s_DefenseHitRebuildCounter % 3) == 0))
+            if (needDroneHits)
             {
                 using var defensePlanets = _defensePlanetQuery.ToEntityArray(Allocator.Temp);
                 PlanetaryDefenseHitScan.RebuildTargets(
                     state.EntityManager, defensePlanets, mapW, mapH,
                     s_DefenseFamilyConfig, s_DefenseDefaultConfig, s_DefenseHitTargets);
             }
-            else if (!needDroneHits)
+            else
             {
                 s_DefenseHitTargets.Clear();
             }
@@ -591,6 +588,10 @@ namespace TitanOrbit.ECS
                     continue;
 
                 float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
+                // [TITAN-ORBIT] Heavier fire-power tracers (ScaleMultiplier) get a matching
+                // collision pad so big planetary-defense / upgraded shots do not skim past hulls.
+                float bulletPad = math.clamp(b.ScaleMultiplier * 0.18f, 0f, 0.85f);
+                shipRadius += bulletPad;
                 if (!BulletCollision.SegmentHitsSphereToroidal(
                         from, to, shipTransform.ValueRO.Position, shipRadius, mapW, mapH, out float3 shipHit))
                     continue;
@@ -674,15 +675,36 @@ namespace TitanOrbit.ECS
             }
 
             // --- Planetary defense turrets (derived spheres on owned planets) ---
+            // Scan even when a nearer planet-body hit already won — PreferDefenseOverPlanetBody
+            // below lets pad shots land instead of dying on the hull behind the turret.
+            float defenseBestT = float.MaxValue;
+            float3 defenseBestHit = to;
+            int defenseIdx = -1;
             if (AllowsHitKind(b.DamageFilter, BulletHitKind.PlanetaryDefense) &&
                 PlanetaryDefenseHitScan.TryKeepNearestTurretHit(
                     in b, from, to, mapW, mapH, s_DefenseHitTargets,
-                    ref bestT, ref bestHit, out int defenseIdx))
+                    ref defenseBestT, ref defenseBestHit, out defenseIdx) &&
+                defenseIdx >= 0)
             {
-                PlanetaryDefenseHitTarget hitTurret = s_DefenseHitTargets[defenseIdx];
-                bestKind = BulletHitKind.PlanetaryDefense;
-                bestEntity = hitTurret.PlanetEntity;
-                s_BestDefenseSlot = hitTurret.SlotIndex;
+                bool takeDefense = defenseBestT <= bestT;
+                if (!takeDefense &&
+                    bestKind == BulletHitKind.Planet &&
+                    bestEntity == s_DefenseHitTargets[defenseIdx].PlanetEntity)
+                {
+                    // Same planet: planet chord was slightly nearer than the pad sphere, but the
+                    // shot was clearly meant for the turret (common when aiming at the mesh).
+                    takeDefense = PlanetaryDefenseHitScan.PreferDefenseOverPlanetBody(
+                        defenseBestT, bestT);
+                }
+
+                if (takeDefense)
+                {
+                    bestT = defenseBestT;
+                    bestHit = defenseBestHit;
+                    bestKind = BulletHitKind.PlanetaryDefense;
+                    bestEntity = s_DefenseHitTargets[defenseIdx].PlanetEntity;
+                    s_BestDefenseSlot = s_DefenseHitTargets[defenseIdx].SlotIndex;
+                }
             }
 
             // --- No intersection ---
