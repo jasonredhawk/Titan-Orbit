@@ -217,11 +217,16 @@ namespace TitanOrbit.ECS
         /// <summary>[UNITY] Server ElapsedTime of last shield hit (VFX cooldown).</summary>
         public float LastShieldHitServerTime;
 
-        /// <summary>[TITAN-ORBIT] Server-only moon gem reservoir damaged when shield is down.</summary>
-        public float CurrentMoonGems;
+        /// <summary>
+        /// [TITAN-ORBIT] Moon gem reservoir damaged when shield is down.
+        /// Ghosted so clients can gate crown (Lv7) defense UI when the pool is full.
+        /// </summary>
+        [GhostField(Quantization = 100)] public float CurrentMoonGems;
 
-        /// <summary>[TITAN-ORBIT] Maximum moon gem capacity.</summary>
-        public float MaxMoonGems;
+        /// <summary>
+        /// [TITAN-ORBIT] Maximum moon gem capacity. Ghosted with <see cref="CurrentMoonGems"/>.
+        /// </summary>
+        [GhostField(Quantization = 100)] public float MaxMoonGems;
 
         /// <summary>[TITAN-ORBIT] Fractional accumulator for steady gem drain rate.</summary>
         public float GemDrainAccumulator;

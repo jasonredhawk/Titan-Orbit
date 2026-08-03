@@ -6,11 +6,10 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Designer-tunable planetary defense turret recipe for one ship / planet family.
     /// Holds the turret mesh prefab, bullet bank, regen knobs, and Level-1 → Level-6
-    /// combat ranges (HP, damage, fire rate, engage-distance multiplier). Runtime systems
-    /// resolve this via <see cref="ResolveForFamily"/>:
-    /// <c>ShipFamilyDefinition.planetaryDefense</c> → optional
-    /// <see cref="PlanetShipFamilyConfig.ShipFamilyEntry.defenseConfig"/> override →
-    /// <c>Resources/PlanetaryDefenseConfig</c>.
+    /// combat ranges (HP, damage, fire rate, engage distance, bullet speed) plus gem costs
+    /// that default to Solfeggio / cymatic frequencies. Level 7 is the crown rung (963) —
+    /// only unlockable when the planet is max level and the gem-moon reservoir is full.
+    /// Runtime resolve: <see cref="ResolveForFamily"/>.
     /// <para>
     /// [TITAN-ORBIT] Turrets are not NetCode ghosts — this asset only tunes build costs,
     /// combat stats, and which GameObject prefabs the client Instantiates at ghosted slots.
@@ -22,8 +21,17 @@ namespace TitanOrbit.Data
         /// <summary>Resources path used when a family leaves its turret recipe empty.</summary>
         public const string DefaultResourcesPath = "PlanetaryDefenseConfig";
 
-        /// <summary>Max planet / turret level — mirrors economy max without a Simulation cycle.</summary>
-        public const int MaxTurretLevel = 6;
+        /// <summary>
+        /// Highest turret level (crown). Levels 1–6 follow the planet; 7 needs the moon gate.
+        /// Matches <c>PlanetaryDefenseMath.CrownTurretLevel</c>.
+        /// </summary>
+        public const int MaxTurretLevel = 7;
+
+        /// <summary>
+        /// Standard ladder top used for Level-1 → Level-6 combat lerps (planet max).
+        /// Level 7 extrapolates one step past this.
+        /// </summary>
+        public const int StandardLadderMaxLevel = 6;
 
         /// <summary>Cached default asset from Resources (or runtime fallback).</summary>
         static PlanetaryDefenseConfig s_Default;
@@ -70,8 +78,8 @@ namespace TitanOrbit.Data
 
         // --- Level 1 → Level 6 combat ranges (primary designer knobs) ---
 
-        [Header("Level 1 → Level 6 Ranges (linear interpolate)")]
-        [Tooltip("Max HP at turret level 1. Levels 2–5 lerp toward Level 6.")]
+        [Header("Level 1 → Level 6 Ranges (linear interpolate; Lv7 extrapolates one step)")]
+        [Tooltip("Max HP at turret level 1. Levels 2–5 lerp toward Level 6; Level 7 steps past 6.")]
         public float healthAtLevel1 = 165f;
 
         [Tooltip("Max HP at turret level 6.")]
@@ -105,6 +113,47 @@ namespace TitanOrbit.Data
         [Tooltip("Bullet speed (world units/sec) at level 6.")]
         public float bulletSpeedAtLevel6 = 35f;
 
+        // --- Gem cost (Solfeggio / cymatic frequencies by default) ---
+
+        [Header("Gem Cost")]
+        [Tooltip(
+            "When true, gem costs use Solfeggio frequencies " +
+            "(174, 285, 396, 528, 639, 852, 963) — grounding through crown. " +
+            "Level 7 (963) is only buildable when planet is max level and the moon gem pool is full. " +
+            "When false, costs linear-lerp gemsAtLevel1 → gemsAtLevel6 for Lv1–6, and use gemsAtLevel7 for crown.")]
+        public bool useSolfeggioGemCosts = true;
+
+        [Tooltip(
+            "Gems for empty → level 1 when useSolfeggioGemCosts is off. " +
+            "Default matches Solfeggio foundation (174).")]
+        public float gemsAtLevel1 = 174f;
+
+        [Tooltip(
+            "Gems for level 5 → level 6 when useSolfeggioGemCosts is off. " +
+            "Default matches Solfeggio LA (852).")]
+        public float gemsAtLevel6 = 852f;
+
+        [Tooltip(
+            "Gems for level 6 → level 7 (crown) when useSolfeggioGemCosts is off. " +
+            "Default matches Solfeggio crown (963).")]
+        public float gemsAtLevel7 = 963f;
+
+        /// <summary>
+        /// Solfeggio tones (Hz) used as gem costs for turret levels 1–7 when
+        /// <see cref="useSolfeggioGemCosts"/> is true. Spans foundation → crown:
+        /// 174, 285, 396, 528, 639, 852, 963. Level 7 is gameplay-gated by the full moon.
+        /// </summary>
+        public static readonly float[] SolfeggioGemCostsByLevel =
+        {
+            174f, // Lv1 — foundation / grounding
+            285f, // Lv2 — healing / quantum field (extended Solfeggio)
+            396f, // Lv3 — UT
+            528f, // Lv4 — MI (often called the “miracle” / transformation tone)
+            639f, // Lv5 — FA
+            852f, // Lv6 — LA
+            963f, // Lv7 — crown (only when planet L6 + moon gems full)
+        };
+
         // --- VFX / bullets ---
 
         [Header("Bullets")]
@@ -124,32 +173,33 @@ namespace TitanOrbit.Data
         [Tooltip("Bullet lifetime seconds.")]
         public float bulletLifetimeSeconds = 2.5f;
 
-        // --- Secondary per-level ladder (gems / visual / hit — not driven by ranges) ---
+        // --- Secondary per-level ladder (visual / hit) ---
 
-        [Header("Per-Level Secondary (gems / visual / hit)")]
+        [Header("Per-Level Secondary (visual / hit)")]
         [Tooltip(
-            "Rows for levels 1–6. Combat stats (HP / damage / fire rate / engage / bullet speed) " +
-            "are overwritten from the Level 1→6 ranges above. Edit gemsToReachLevel, visualScale, " +
-            "and hitRadius here (or leave empty for defaults).")]
+            "Rows for levels 1–7. Combat stats and gem costs are overwritten from the ranges / " +
+            "Solfeggio table above. Edit visualScale and hitRadius here (or leave empty for defaults).")]
         public TurretLevelStats[] levels = Array.Empty<TurretLevelStats>();
 
         /// <summary>
-        /// One rung on the turret upgrade ladder. Combat fields are filled from the asset's
-        /// Level-1 / Level-6 ranges; gems / visualScale / hitRadius stay designer-authored.
+        /// One rung on the turret upgrade ladder. Combat + gem fields are filled from the
+        /// asset's ranges / Solfeggio table; visualScale / hitRadius stay designer-authored.
         /// </summary>
         [Serializable]
         public struct TurretLevelStats
         {
-            /// <summary>Gems required to activate this level from the previous rung (or empty).</summary>
+            /// <summary>
+            /// Gems required to activate this level (Solfeggio table or gems range / crown field).
+            /// </summary>
             public float gemsToReachLevel;
 
-            /// <summary>Max HP at this turret level (from health range lerp).</summary>
+            /// <summary>Max HP at this turret level (from health range lerp / crown step).</summary>
             public float maxHealth;
 
-            /// <summary>Damage per shot (from damage range lerp).</summary>
+            /// <summary>Damage per shot (from damage range lerp / crown step).</summary>
             public float damage;
 
-            /// <summary>Shots per second (from fire-rate range lerp).</summary>
+            /// <summary>Shots per second (from fire-rate range lerp / crown step).</summary>
             public float fireRate;
 
             /// <summary>Bullet speed (world units / sec).</summary>
@@ -157,7 +207,7 @@ namespace TitanOrbit.Data
 
             /// <summary>
             /// Engage distance = (pad→orbit gap) × this multiplier.
-            /// From engage-range Level 1→6 lerp (default 2 → 3).
+            /// From engage-range Level 1→6 lerp (default 2 → 3); Lv7 steps past 6.
             /// </summary>
             public float engageRangeMultiplier;
 
@@ -229,8 +279,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Ensures the 6-row ladder exists, then overwrites combat stats from the Level 1→6 ranges.
-        /// Preserves authored gems / visualScale / hitRadius when already set.
+        /// Ensures the 7-row ladder exists, then overwrites combat + gem stats from ranges /
+        /// Solfeggio. Preserves authored visualScale / hitRadius when already set.
         /// </summary>
         public void EnsureLevelsInitialized()
         {
@@ -239,20 +289,21 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Linear t for turret level L (1..6): 0 at level 1, 1 at level 6.
+        /// Linear t for combat ranges: 0 at level 1, 1 at level 6, 1.2 at level 7
+        /// (one extrapolated step past the standard ladder).
         /// </summary>
         public static float LevelLerpT(int turretLevel)
         {
-            int level = Mathf.Clamp(turretLevel, 1, MaxTurretLevel);
-            return (level - 1) / (float)(MaxTurretLevel - 1);
+            int level = Mathf.Max(1, turretLevel);
+            return (level - 1) / (float)(StandardLadderMaxLevel - 1);
         }
 
         /// <summary>
-        /// Interpolates a Level-1 → Level-6 authored pair for the given turret level.
+        /// Interpolates (or extrapolates past Lv6) a Level-1 → Level-6 authored pair.
         /// </summary>
         public static float LerpLevelRange(float atLevel1, float atLevel6, int turretLevel)
         {
-            return Mathf.Lerp(atLevel1, atLevel6, LevelLerpT(turretLevel));
+            return Mathf.LerpUnclamped(atLevel1, atLevel6, LevelLerpT(turretLevel));
         }
 
         /// <summary>
@@ -265,7 +316,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Stats for turret level L (1..6). Combat fields always reflect the authored ranges.
+        /// Stats for turret level L (1..7). Combat fields always reflect the authored ranges.
         /// </summary>
         public TurretLevelStats GetLevelStats(int turretLevel)
         {
@@ -297,7 +348,7 @@ namespace TitanOrbit.Data
 #endif
 
         /// <summary>
-        /// Allocates / pads the secondary ladder (gems, visual, hit) with defaults when missing.
+        /// Allocates / pads the secondary ladder (visual, hit) with defaults when missing.
         /// </summary>
         void EnsureSecondaryRowsExist()
         {
@@ -318,8 +369,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Writes HP / damage / fire rate / engage multiplier / bullet speed from the
-        /// Level-1 → Level-6 range fields into every ladder row.
+        /// Writes HP / damage / fire rate / engage / bullet speed / gem cost from the
+        /// Level-1 → Level-6 ranges (Lv7 extrapolated) and Solfeggio / crown gem table.
         /// </summary>
         void ApplyCombatRangesToLevels()
         {
@@ -331,7 +382,7 @@ namespace TitanOrbit.Data
                 int level = i + 1;
                 var row = levels[i];
 
-                // --- Combat from authored ranges ---
+                // --- Combat from authored ranges (Lv7 = one step past Lv6) ---
                 row.maxHealth = Mathf.Max(1f, LerpLevelRange(healthAtLevel1, healthAtLevel6, level));
                 row.damage = Mathf.Max(0.05f, LerpLevelRange(damageAtLevel1, damageAtLevel6, level));
                 row.fireRate = Mathf.Max(0.05f, LerpLevelRange(fireRateAtLevel1, fireRateAtLevel6, level));
@@ -342,10 +393,26 @@ namespace TitanOrbit.Data
                     1f,
                     LerpLevelRange(bulletSpeedAtLevel1, bulletSpeedAtLevel6, level));
 
+                // --- Gem cost: Solfeggio / crown, or linear + crown field ---
+                // [TITAN-ORBIT] Exact Solfeggio Hz values (not a lerp) so each pad level
+                // lands on a tone associated with distinct cymatic geometry.
+                if (useSolfeggioGemCosts)
+                {
+                    row.gemsToReachLevel = Mathf.Max(1f, SolfeggioGemCostsByLevel[i]);
+                }
+                else if (level >= MaxTurretLevel)
+                {
+                    row.gemsToReachLevel = Mathf.Max(1f, gemsAtLevel7);
+                }
+                else
+                {
+                    row.gemsToReachLevel = Mathf.Max(
+                        1f,
+                        LerpLevelRange(gemsAtLevel1, gemsAtLevel6, level));
+                }
+
                 // --- Secondary: fill zeros with defaults so empty rows still look sane ---
                 var fallback = GenerateDefaultSecondaryLevelStats()[i];
-                if (row.gemsToReachLevel <= 0f)
-                    row.gemsToReachLevel = fallback.gemsToReachLevel;
                 if (row.visualScale <= 0f)
                     row.visualScale = fallback.visualScale;
                 if (row.hitRadius <= 0f)
@@ -356,22 +423,22 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Default gems / visualScale / hitRadius (and placeholder combat) for empty ladders.
-        /// Combat columns are immediately overwritten by <see cref="ApplyCombatRangesToLevels"/>.
-        /// Visual scales are ~20% smaller than the pre-bulk GenericSpaceship4 ladder.
+        /// Default visualScale / hitRadius (and placeholder combat/gems) for empty ladders.
+        /// Combat + gem columns are immediately overwritten by <see cref="ApplyCombatRangesToLevels"/>.
         /// </summary>
         public static TurretLevelStats[] GenerateDefaultSecondaryLevelStats()
         {
-            // Gems roughly track a short contribution session.
-            // visualScale / hitRadius grow gently with level (~20% under the older pad-gun sizes).
+            // visualScale / hitRadius grow gently; Lv7 is a small crown bump.
+            // Gem placeholders match Solfeggio 174 → 963.
             return new[]
             {
-                new TurretLevelStats { gemsToReachLevel = 40f,  visualScale = 0.56f, hitRadius = 0.50f },
-                new TurretLevelStats { gemsToReachLevel = 70f,  visualScale = 0.64f, hitRadius = 0.55f },
-                new TurretLevelStats { gemsToReachLevel = 110f, visualScale = 0.72f, hitRadius = 0.60f },
-                new TurretLevelStats { gemsToReachLevel = 160f, visualScale = 0.80f, hitRadius = 0.65f },
-                new TurretLevelStats { gemsToReachLevel = 220f, visualScale = 0.88f, hitRadius = 0.70f },
-                new TurretLevelStats { gemsToReachLevel = 300f, visualScale = 1.00f, hitRadius = 0.80f },
+                new TurretLevelStats { gemsToReachLevel = 174f, visualScale = 0.56f, hitRadius = 0.50f },
+                new TurretLevelStats { gemsToReachLevel = 285f, visualScale = 0.64f, hitRadius = 0.55f },
+                new TurretLevelStats { gemsToReachLevel = 396f, visualScale = 0.72f, hitRadius = 0.60f },
+                new TurretLevelStats { gemsToReachLevel = 528f, visualScale = 0.80f, hitRadius = 0.65f },
+                new TurretLevelStats { gemsToReachLevel = 639f, visualScale = 0.88f, hitRadius = 0.70f },
+                new TurretLevelStats { gemsToReachLevel = 852f, visualScale = 1.00f, hitRadius = 0.80f },
+                new TurretLevelStats { gemsToReachLevel = 963f, visualScale = 1.10f, hitRadius = 0.85f },
             };
         }
     }

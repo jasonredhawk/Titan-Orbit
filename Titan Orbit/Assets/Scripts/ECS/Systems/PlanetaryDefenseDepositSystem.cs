@@ -119,19 +119,41 @@ namespace TitanOrbit.ECS
                     continue;
 
                 var planet = em.GetComponentData<PlanetState>(planetEntity);
-                int maxTurretLevel = PlanetaryDefenseMath.GetMaxTurretLevelForPlanet(planet.PlanetLevel);
+                // Crown Lv7 needs planet L6 + full moon gem pool — re-read moon each beat below.
+                float moonCurrent = 0f;
+                float moonMax = 0f;
+                if (em.HasComponent<PlanetGemMoonState>(planetEntity))
+                {
+                    var moon = em.GetComponentData<PlanetGemMoonState>(planetEntity);
+                    moonCurrent = moon.CurrentMoonGems;
+                    moonMax = moon.MaxMoonGems;
+                }
+
+                int maxTurretLevel = PlanetaryDefenseMath.GetMaxTurretLevelForPlanet(
+                    planet.PlanetLevel, moonCurrent, moonMax);
 
                 for (int b = 0; b < beats; b++)
                 {
-                    // Re-read — prior beat may have activated/upgraded.
+                    // Re-read — prior beat may have activated/upgraded; moon fill can change mid-fight.
                     ship = shipState.ValueRO;
                     if (ship.CurrentGems <= 0.001f)
                         break;
+
+                    if (em.HasComponent<PlanetGemMoonState>(planetEntity))
+                    {
+                        var moon = em.GetComponentData<PlanetGemMoonState>(planetEntity);
+                        moonCurrent = moon.CurrentMoonGems;
+                        moonMax = moon.MaxMoonGems;
+                    }
+
+                    maxTurretLevel = PlanetaryDefenseMath.GetMaxTurretLevelForPlanet(
+                        planet.PlanetLevel, moonCurrent, moonMax);
 
                     var slot = buffer[slotIndex];
                     if (slot.TurretLevel >= maxTurretLevel)
                     {
                         // Cap: refuse gems and keep progress clear so the UI does not "loop".
+                        // Also clears partial crown progress if the moon gate closed mid-deposit.
                         if (slot.BuildProgress > 0f)
                         {
                             slot.BuildProgress = 0f;
@@ -171,7 +193,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// While <see cref="PlanetaryDefenseSlotElement.BuildProgress"/> covers the next rung cost,
-        /// activate/upgrade and subtract that cost. Stops at the planet's max turret level.
+        /// activate/upgrade and subtract that cost. Stops at the planet's max turret level
+        /// (including crown Lv7 when unlocked).
         /// Prevents the progress UI from wrapping back to 0 without a real level change.
         /// </summary>
         static void ApplyLevelUpsWhileFull(
@@ -179,8 +202,8 @@ namespace TitanOrbit.ECS
             int maxTurretLevel,
             PlanetaryDefenseConfig config)
         {
-            // Guard against pathological overfill — at most one rung per planet max level.
-            for (int guard = 0; guard < 8; guard++)
+            // Guard against pathological overfill — enough for empty→crown in one hitch.
+            for (int guard = 0; guard < 10; guard++)
             {
                 if (slot.TurretLevel >= maxTurretLevel)
                 {
@@ -271,10 +294,21 @@ namespace TitanOrbit.ECS
                 float planetSize = math.max(0.25f, planetXf.Scale);
                 int slotCount = buffer.Length;
 
+                float moonCurrent = 0f;
+                float moonMax = 0f;
+                if (em.HasComponent<PlanetGemMoonState>(planetEntity))
+                {
+                    var moon = em.GetComponentData<PlanetGemMoonState>(planetEntity);
+                    moonCurrent = moon.CurrentMoonGems;
+                    moonMax = moon.MaxMoonGems;
+                }
+
+                int maxLvl = PlanetaryDefenseMath.GetMaxTurretLevelForPlanet(
+                    planet.PlanetLevel, moonCurrent, moonMax);
+
                 for (int i = 0; i < slotCount; i++)
                 {
                     var slot = buffer[i];
-                    int maxLvl = PlanetaryDefenseMath.GetMaxTurretLevelForPlanet(planet.PlanetLevel);
                     if (slot.TurretLevel >= maxLvl)
                         continue;
 

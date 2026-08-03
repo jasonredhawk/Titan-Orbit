@@ -12,6 +12,8 @@ namespace TitanOrbit.Simulation
     /// orbit-ring centerline. Combat engage range is measured from the turret pad as
     /// (pad→orbit gap) × multiplier, where the multiplier comes from
     /// <c>PlanetaryDefenseConfig</c> Level 1→6 fire-distance ranges (default 2× → 3×).
+    /// Level 7 (crown) is gated: planet at <see cref="PlanetEconomyMath.MaxPlanetLevel"/>
+    /// and the gem-moon reservoir full.
     /// </para>
     /// </summary>
     public static class PlanetaryDefenseMath
@@ -21,6 +23,17 @@ namespace TitanOrbit.Simulation
         /// [TITAN-ORBIT] Same floor as drone combat (<c>DroneSwarmLogic.FixedY</c>).
         /// </summary>
         public const float FixedY = 0f;
+
+        /// <summary>
+        /// Crown turret level (Solfeggio 963). Not tied to planet level — requires
+        /// <see cref="IsCrownTurretUnlocked"/>.
+        /// </summary>
+        public const int CrownTurretLevel = 7;
+
+        /// <summary>
+        /// Epsilon when comparing moon gem fill to capacity (float safety).
+        /// </summary>
+        public const float MoonGemFullEpsilon = 0.001f;
 
         /// <summary>
         /// Even ring angle for slot <paramref name="slotIndex"/> of <paramref name="slotCount"/>.
@@ -157,11 +170,48 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Max turret level that may exist on a planet of the given level.
+        /// Max turret level from planet level alone (1..6). Does <b>not</b> include crown Lv7 —
+        /// use the overload with moon gem fill for that.
         /// </summary>
         public static int GetMaxTurretLevelForPlanet(int planetLevel)
         {
             return math.clamp(planetLevel, 1, PlanetEconomyMath.MaxPlanetLevel);
+        }
+
+        /// <summary>
+        /// True when crown Lv7 may be built: planet at max level and moon gem pool is full.
+        /// </summary>
+        /// <param name="planetLevel">Owned planet level.</param>
+        /// <param name="currentMoonGems">Moon reservoir current (server or ghosted).</param>
+        /// <param name="maxMoonGems">Moon reservoir capacity.</param>
+        public static bool IsCrownTurretUnlocked(
+            int planetLevel,
+            float currentMoonGems,
+            float maxMoonGems)
+        {
+            // --- Planet must be fully leveled ---
+            if (planetLevel < PlanetEconomyMath.MaxPlanetLevel)
+                return false;
+
+            // --- Moon gem pool must be at capacity (healed / undrained) ---
+            if (maxMoonGems <= MoonGemFullEpsilon)
+                return false;
+
+            return currentMoonGems >= maxMoonGems - MoonGemFullEpsilon;
+        }
+
+        /// <summary>
+        /// Max turret level including crown Lv7 when the moon gate passes.
+        /// </summary>
+        public static int GetMaxTurretLevelForPlanet(
+            int planetLevel,
+            float currentMoonGems,
+            float maxMoonGems)
+        {
+            int baseMax = GetMaxTurretLevelForPlanet(planetLevel);
+            if (IsCrownTurretUnlocked(planetLevel, currentMoonGems, maxMoonGems))
+                return CrownTurretLevel;
+            return baseMax;
         }
     }
 }

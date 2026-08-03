@@ -14,10 +14,10 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [NETCODE] Must be baked on the planet ghost prefab. Runtime-only
     /// <c>AddBuffer</c> does <b>not</b> replicate <see cref="GhostField"/> values.
-    /// <see cref="InternalBufferCapacityAttribute"/> 6 = MaxPlanetLevel so snapshots can grow
-    /// without realloc thrash. Every field on this buffer <b>must</b> be a <see cref="GhostField"/>
-    /// (NetCode rule for ghost buffers). Regen clocks live on the server-only
-    /// <see cref="PlanetaryDefenseSlotRegenElement"/> buffer instead.
+    /// <see cref="InternalBufferCapacityAttribute"/> 6 = max pad count (planet level), not turret
+    /// level — crown Lv7 is still one slot with <c>TurretLevel == 7</c>. Every field on this buffer
+    /// <b>must</b> be a <see cref="GhostField"/> (NetCode rule for ghost buffers). Regen clocks live
+    /// on the server-only <see cref="PlanetaryDefenseSlotRegenElement"/> buffer instead.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] <see cref="TurretLevel"/> 0 = empty placeholder (build progress fills toward

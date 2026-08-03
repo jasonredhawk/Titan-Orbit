@@ -29,12 +29,16 @@ MonoBehaviour:
   engageRangeMultiplierAtLevel6: 3
   bulletSpeedAtLevel1: 20
   bulletSpeedAtLevel6: 35
+  useSolfeggioGemCosts: 1
+  gemsAtLevel1: 174
+  gemsAtLevel6: 852
+  gemsAtLevel7: 963
   bulletBankCategoryName: Bullets
   bulletVisualScale: 1.15
   bulletMaxDistance: 55
   bulletLifetimeSeconds: 2.5
   levels:
-  - gemsToReachLevel: 40
+  - gemsToReachLevel: 174
     maxHealth: 165
     damage: 2
     fireRate: 3
@@ -42,7 +46,7 @@ MonoBehaviour:
     engageRangeMultiplier: 2
     visualScale: 0.56
     hitRadius: 0.5
-  - gemsToReachLevel: 70
+  - gemsToReachLevel: 285
     maxHealth: 264
     damage: 4.08
     fireRate: 3
@@ -50,7 +54,7 @@ MonoBehaviour:
     engageRangeMultiplier: 2.2
     visualScale: 0.64
     hitRadius: 0.55
-  - gemsToReachLevel: 110
+  - gemsToReachLevel: 396
     maxHealth: 363
     damage: 6.16
     fireRate: 3
@@ -58,7 +62,7 @@ MonoBehaviour:
     engageRangeMultiplier: 2.4
     visualScale: 0.72
     hitRadius: 0.6
-  - gemsToReachLevel: 160
+  - gemsToReachLevel: 528
     maxHealth: 462
     damage: 8.24
     fireRate: 3
@@ -66,7 +70,7 @@ MonoBehaviour:
     engageRangeMultiplier: 2.6
     visualScale: 0.8
     hitRadius: 0.65
-  - gemsToReachLevel: 220
+  - gemsToReachLevel: 639
     maxHealth: 561
     damage: 10.32
     fireRate: 3
@@ -74,7 +78,7 @@ MonoBehaviour:
     engageRangeMultiplier: 2.8
     visualScale: 0.88
     hitRadius: 0.7
-  - gemsToReachLevel: 300
+  - gemsToReachLevel: 852
     maxHealth: 660
     damage: 12.4
     fireRate: 3
@@ -82,3 +86,11 @@ MonoBehaviour:
     engageRangeMultiplier: 3
     visualScale: 1
     hitRadius: 0.8
+  - gemsToReachLevel: 963
+    maxHealth: 759
+    damage: 14.48
+    fireRate: 3
+    bulletSpeed: 38
+    engageRangeMultiplier: 3.2
+    visualScale: 1.1
+    hitRadius: 0.85

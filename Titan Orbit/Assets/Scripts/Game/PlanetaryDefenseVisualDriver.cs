@@ -31,6 +31,11 @@ namespace TitanOrbit.Game
     /// Yaw and bank are kept separate so roll never fights the aim slerp.
     /// </para>
     /// <para>
+    /// [HYBRID] Turret meshes use the same GenericSpaceships team materials as people transports
+    /// / attack·mining·shield drones (<see cref="PeopleTransportTeamMaterials"/>) so captured
+    /// planets paint pads in the owning team's skin.
+    /// </para>
+    /// <para>
     /// [TITAN-ORBIT] Walks <see cref="EcsWorldVisualizer"/> planet proxy keys only — never
     /// <c>ToEntityArray</c> / map-body archetype gathers (Windows late-join Crash!!! under
     /// session-long TransformQuarantine).
@@ -175,6 +180,11 @@ namespace TitanOrbit.Game
         PlanetaryDefenseConfig _defaultConfig;
         TMP_FontAsset _font;
 
+        /// <summary>
+        /// Shared GenericSpaceships1-8 team skins (same catalog as drones / people transports).
+        /// </summary>
+        PeopleTransportTeamMaterials _teamMaterials;
+
         readonly Dictionary<int, PlanetDefenseGroup> _groupsByPlanetId =
             new Dictionary<int, PlanetDefenseGroup>(16);
         readonly List<int> _alivePlanetIds = new List<int>(16);
@@ -203,6 +213,10 @@ namespace TitanOrbit.Game
             public Transform SlotRoot;
             public PlanetaryDefensePadZoneVisual ZoneVisual;
             public GameObject TurretInstance;
+            /// <summary>
+            /// Last team skin applied to <see cref="TurretInstance"/> — refreshed on capture.
+            /// </summary>
+            public TeamId AppliedTeam;
             public Transform HealthBarRoot;
             public Transform HealthBarFill;
             public SpriteRenderer HealthBarFillRenderer;
@@ -358,7 +372,19 @@ namespace TitanOrbit.Game
 
                 float3 planetDisplay = (float3)planetProxy.transform.position;
                 int slotCount = buffer.Length;
-                int maxTurretLevel = PlanetaryDefenseMath.GetMaxTurretLevelForPlanet(planet.PlanetLevel);
+
+                // Crown Lv7 when planet is maxed and the gem-moon reservoir is full (ghosted).
+                float moonCurrent = 0f;
+                float moonMax = 0f;
+                if (em.HasComponent<PlanetGemMoonState>(planetEntity))
+                {
+                    var moon = em.GetComponentData<PlanetGemMoonState>(planetEntity);
+                    moonCurrent = moon.CurrentMoonGems;
+                    moonMax = moon.MaxMoonGems;
+                }
+
+                int maxTurretLevel = PlanetaryDefenseMath.GetMaxTurretLevelForPlanet(
+                    planet.PlanetLevel, moonCurrent, moonMax);
 
                 // Soft disc ≈ deposit zone. Root is unit-scale — slot-local == world.
                 float padWorldRadius = math.clamp(config.depositZoneRadius, 0.8f, 2.5f);
@@ -399,6 +425,14 @@ namespace TitanOrbit.Game
                         {
                             vis.TurretInstance.transform.localPosition =
                                 new Vector3(0f, TurretAbovePadWorld, 0f);
+
+                            // [HYBRID] Same GenericSpaceships team skins as drones / transports.
+                            // Re-apply when ownership flips (capture) or the mesh was just spawned.
+                            if (vis.AppliedTeam != planet.Ownership)
+                            {
+                                ApplyTurretTeamMaterials(vis.TurretInstance, planet.Ownership);
+                                vis.AppliedTeam = planet.Ownership;
+                            }
 
                             var levelStats = config.GetLevelStats(slot.TurretLevel);
 
@@ -512,9 +546,12 @@ namespace TitanOrbit.Game
                 vis.LevelText.fontSize = LevelFontSize;
                 vis.LevelText.fontStyle = FontStyles.Bold;
                 vis.LevelText.color = Color.white;
+                // Crown rung shows as Lv 7 (Solfeggio 963) once unlocked + built.
                 vis.LevelText.text = slot.TurretLevel <= 0
                     ? EmptyPadPlaceholder
-                    : "Lv " + slot.TurretLevel;
+                    : slot.TurretLevel >= PlanetaryDefenseMath.CrownTurretLevel
+                        ? "Lv 7"
+                        : "Lv " + slot.TurretLevel;
             }
 
             bool atCap = slot.TurretLevel >= maxTurretLevel && slot.TurretLevel > 0;
@@ -527,6 +564,7 @@ namespace TitanOrbit.Game
 
                 if (atCap)
                 {
+                    // At Lv6 with crown locked → MAX until the moon is full again.
                     vis.CostText.text = "MAX";
                 }
                 else
@@ -783,10 +821,100 @@ namespace TitanOrbit.Game
                     // LateUpdate owns world size from pad radius — reset authored scale.
                     vis.TurretInstance.transform.localScale = Vector3.one;
                     vis.TurretInstance.SetActive(slot.TurretLevel > 0);
+                    // AppliedTeam stays None until the first LateUpdate paints ownership skin.
+                    vis.AppliedTeam = TeamId.None;
                 }
 
                 group.Slots.Add(vis);
             }
+        }
+
+        /// <summary>
+        /// Paints every mesh renderer on the turret with the GenericSpaceships team material
+        /// used by people transports and attack/mining/shield drones.
+        /// </summary>
+        /// <param name="turretRoot">Instantiated turret prefab root.</param>
+        /// <param name="team">Planet ownership team (skin source).</param>
+        void ApplyTurretTeamMaterials(GameObject turretRoot, TeamId team)
+        {
+            if (turretRoot == null || team == TeamId.None)
+                return;
+
+            Material material = ResolveTeamMaterial(team);
+            if (material == null)
+                return;
+
+            // --- Swap sharedMaterials on all mesh / skinned renderers ---
+            // [HYBRID] Cosmetic only — same pack mats as PeopleTransportVisualApplier.
+            var renderers = turretRoot.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null || renderer is ParticleSystemRenderer)
+                    continue;
+                if (!(renderer is MeshRenderer) && !(renderer is SkinnedMeshRenderer))
+                    continue;
+
+                Material[] current = renderer.sharedMaterials;
+                if (current == null || current.Length == 0)
+                {
+                    renderer.sharedMaterial = material;
+                    continue;
+                }
+
+                var replaced = new Material[current.Length];
+                for (int s = 0; s < current.Length; s++)
+                    replaced[s] = material;
+                renderer.sharedMaterials = replaced;
+            }
+        }
+
+        /// <summary>
+        /// Resolves the GenericSpaceships1-8 material for <paramref name="team"/> from
+        /// <see cref="PeopleTransportTeamMaterials"/> (Resources), with a tinted Unlit fallback.
+        /// </summary>
+        Material ResolveTeamMaterial(TeamId team)
+        {
+            EnsureTeamMaterialsCatalog();
+            if (_teamMaterials != null)
+            {
+                Material fromCatalog = _teamMaterials.GetMaterialForTeam(team);
+                if (fromCatalog != null)
+                    return fromCatalog;
+            }
+
+            // --- Fallback: solid team colour if the catalog asset is missing from the build ---
+            var shader = Shader.Find("Universal Render Pipeline/Unlit")
+                         ?? Shader.Find("Unlit/Color")
+                         ?? Shader.Find("Standard");
+            var mat = new Material(shader);
+            Color color = team.ToColor();
+            if (mat.HasProperty("_BaseColor"))
+                mat.SetColor("_BaseColor", color);
+            if (mat.HasProperty("_Color"))
+                mat.SetColor("_Color", color);
+            mat.color = color;
+            return mat;
+        }
+
+        /// <summary>
+        /// Loads <c>Resources/PeopleTransportTeamMaterials</c> once — same asset drones/transports use.
+        /// </summary>
+        void EnsureTeamMaterialsCatalog()
+        {
+            if (_teamMaterials != null)
+                return;
+
+            _teamMaterials = Resources.Load<PeopleTransportTeamMaterials>(
+                PeopleTransportTeamMaterials.ResourcesPath);
+
+#if UNITY_EDITOR
+            if (_teamMaterials == null)
+            {
+                _teamMaterials = UnityEditor.AssetDatabase.LoadAssetAtPath<PeopleTransportTeamMaterials>(
+                    "Assets/Resources/PeopleTransportTeamMaterials.asset");
+            }
+#endif
         }
 
         /// <summary>
