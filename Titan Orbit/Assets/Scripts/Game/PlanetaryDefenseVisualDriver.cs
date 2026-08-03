@@ -26,6 +26,11 @@ namespace TitanOrbit.Game
     /// pad/text/turret use true world sizes (no ÷ planetScale). See <see cref="PlanetVisualBody"/>.
     /// </para>
     /// <para>
+    /// [TITAN-ORBIT] Active turrets bank (roll) while turning to aim — same cosmetic curve as
+    /// ships (<see cref="ShipBankVisualApplier"/> / <see cref="ShipBankVisualSettingsCache"/>).
+    /// Yaw and bank are kept separate so roll never fights the aim slerp.
+    /// </para>
+    /// <para>
     /// [TITAN-ORBIT] Walks <see cref="EcsWorldVisualizer"/> planet proxy keys only — never
     /// <c>ToEntityArray</c> / map-body archetype gathers (Windows late-join Crash!!! under
     /// session-long TransformQuarantine).
@@ -34,8 +39,17 @@ namespace TitanOrbit.Game
     [DefaultExecutionOrder(66300)]
     public sealed class PlanetaryDefenseVisualDriver : MonoBehaviour
     {
-        /// <summary>Cosmetic facing turn speed when tracking a hostile.</summary>
-        const float AimTurnSpeed = 8f;
+        /// <summary>
+        /// Cosmetic facing turn speed when tracking a hostile.
+        /// Half of the original 8 — turrets track slower so aim reads less snappy.
+        /// </summary>
+        const float AimTurnSpeed = 4f;
+
+        /// <summary>
+        /// Yaw-rate deadband (°/s): below this, bank eases flat so idle turrets do not jitter.
+        /// Matches <see cref="ShipBankVisualApplier"/> idle deadband.
+        /// </summary>
+        const float IdleBankAngularVelDeadbandDegPerSec = 18f;
 
         /// <summary>
         /// World Y for the whole slot vs planet center. Slightly below the flight plane so
@@ -71,14 +85,17 @@ namespace TitanOrbit.Game
         const float IconHeightOverFontSize = 0.11f;
 
         /// <summary>
-        /// Turret world size vs pad radius. FighterDrone is tiny at authored 0.25 — we size
-        /// relative to the soft pad so it reads as a gun on the disc, not a second ship.
+        /// Turret world size vs pad radius. GenericSpaceship4 reads large at authored scale 1 —
+        /// we size relative to the soft pad so it sits as a gun on the disc, not a second ship.
         /// </summary>
         const float TurretSizeVsPadRadius = 0.42f;
 
-        /// <summary>Hard clamp so tiny/huge planets still get a readable but not enormous turret.</summary>
-        const float MinTurretWorldScale = 0.35f;
-        const float MaxTurretWorldScale = 0.7f;
+        /// <summary>
+        /// Hard clamp so tiny/huge planets still get a readable but not enormous turret.
+        /// ~20% smaller than the prior 0.45–0.95 clamp so GenericSpaceship4 sits lighter on the pad.
+        /// </summary>
+        const float MinTurretWorldScale = 0.36f;
+        const float MaxTurretWorldScale = 0.76f;
 
         // --- Health bar (thin strip under the turret mesh) ---
 
@@ -94,13 +111,13 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Extra gap past the turret mesh footprint toward screen-below (−Z).
-        /// Large enough that the strip sits clearly under the gun, not tucked under the mesh.
+        /// Pushed further down so the strip clears the bulkier GenericSpaceship4 mesh.
         /// </summary>
-        const float HealthBarClearancePastTurret = 0.95f;
+        const float HealthBarClearancePastTurret = 1.25f;
 
         /// <summary>
         /// Approx. how far the turret mesh extends from its pivot as a fraction of
-        /// <c>localScale</c> (FighterDrone hull is roughly 1 unit at scale 1).
+        /// <c>localScale</c> (GenericSpaceship4 hull is roughly 1 unit at scale 1).
         /// </summary>
         const float TurretMeshExtentOverScale = 0.85f;
 
@@ -176,7 +193,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// One slot: soft pad zone (Shapes) + turret in the center + HP bar under the mesh +
-        /// info text below the rim.
+        /// info text below the rim. Also holds cosmetic bank (roll-while-turning) state for
+        /// the active turret mesh.
         /// </summary>
         struct SlotVisual
         {
@@ -194,6 +212,29 @@ namespace TitanOrbit.Game
             public Transform InfoRoot;
             /// <summary>Matches <see cref="InfoStyleVersion"/> after outline / hierarchy are applied.</summary>
             public byte StyleVersion;
+
+            // --- Cosmetic bank (yaw vs roll kept separate so aim slerp stays clean) ---
+
+            /// <summary>
+            /// Yaw-only facing for this turret (no roll). Written each frame before bank is applied
+            /// onto <see cref="TurretInstance"/> as <c>yaw * roll</c>.
+            /// </summary>
+            public Quaternion TurretYawRotation;
+
+            /// <summary>True after <see cref="TurretYawRotation"/> has been seeded once.</summary>
+            public bool TurretYawInitialized;
+
+            /// <summary>Previous planar yaw (°) used to estimate turn rate for bank.</summary>
+            public float BankPrevYawDeg;
+
+            /// <summary>True after the first yaw sample (avoids a huge spike on the first frame).</summary>
+            public bool BankYawInitialized;
+
+            /// <summary>Smoothed yaw rate (°/s) feeding the bank curve.</summary>
+            public float BankYawRateDegPerSec;
+
+            /// <summary>Current cosmetic roll angle (°); positive = bank into the turn.</summary>
+            public float BankCurrentAngle;
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -322,10 +363,6 @@ namespace TitanOrbit.Game
                 // Soft disc ≈ deposit zone. Root is unit-scale — slot-local == world.
                 float padWorldRadius = math.clamp(config.depositZoneRadius, 0.8f, 2.5f);
 
-                // Engage distance from each pad (same formula as server combat).
-                float engageFromTurret = PlanetaryDefenseMath.GetEngageRangeFromTurret(
-                    planetSize, planet.PlanetLevel, config.rangeBeyondOrbitOuter);
-
                 for (int i = 0; i < group.Slots.Count && i < buffer.Length; i++)
                 {
                     var slot = buffer[i];
@@ -363,14 +400,19 @@ namespace TitanOrbit.Game
                             vis.TurretInstance.transform.localPosition =
                                 new Vector3(0f, TurretAbovePadWorld, 0f);
 
+                            var levelStats = config.GetLevelStats(slot.TurretLevel);
+
                             // Modest size vs pad — level visualScale nudges slightly, stays clamped.
-                            float scaleMul = math.clamp(
-                                config.GetLevelStats(slot.TurretLevel).visualScale, 0.5f, 1.25f);
+                            float scaleMul = math.clamp(levelStats.visualScale, 0.4f, 1.1f);
                             float worldScale = math.clamp(
                                 padWorldRadius * TurretSizeVsPadRadius * scaleMul,
                                 MinTurretWorldScale,
                                 MaxTurretWorldScale);
                             vis.TurretInstance.transform.localScale = Vector3.one * worldScale;
+
+                            // Per-level fire distance (same pad→orbit × multiplier as server combat).
+                            float engageFromTurret = PlanetaryDefenseMath.GetEngageRangeFromTurret(
+                                planetSize, planet.PlanetLevel, levelStats.engageRangeMultiplier);
 
                             // Rest pose = radially outward from planet center. When a hostile is
                             // in this pad’s engage range, ease toward that aim instead.
@@ -391,14 +433,13 @@ namespace TitanOrbit.Game
                                     aimFlat = toHostile;
                             }
 
-                            if (aimFlat.sqrMagnitude > 0.0001f)
-                            {
-                                var want = Quaternion.LookRotation(aimFlat.normalized, Vector3.up);
-                                vis.TurretInstance.transform.rotation = Quaternion.Slerp(
-                                    vis.TurretInstance.transform.rotation,
-                                    want,
-                                    1f - math.exp(-AimTurnSpeed * Time.deltaTime));
-                            }
+                            // [TITAN-ORBIT] Yaw + ship-style bank roll (cosmetic only).
+                            ApplyTurretAimAndBank(ref vis, aimFlat, Time.deltaTime);
+                        }
+                        else
+                        {
+                            // Empty pad — drop bank state so a rebuilt turret starts flat.
+                            ResetTurretBankState(ref vis);
                         }
                     }
 
@@ -516,6 +557,112 @@ namespace TitanOrbit.Game
             float halfStackWorld = GetInfoStackHalfHeightLocal(vis) * InfoTextWorldScale;
             float belowDist = padWorldRadius + InfoGapPastRimWorld + halfStackWorld;
             vis.InfoRoot.localPosition = new Vector3(0f, InfoAbovePadWorld, -belowDist);
+        }
+
+        /// <summary>
+        /// Eases turret yaw toward <paramref name="aimFlat"/>, then applies ship-style bank roll
+        /// from yaw rate. Writes the composite pose onto <see cref="SlotVisual.TurretInstance"/>.
+        /// Cosmetic only — combat aim on the server is independent.
+        /// </summary>
+        /// <param name="vis">Slot visual (yaw/bank state mutated in place).</param>
+        /// <param name="aimFlat">Desired flat facing (XZ); ignored when near-zero length.</param>
+        /// <param name="dt">Frame delta for slerp / bank smoothing.</param>
+        static void ApplyTurretAimAndBank(ref SlotVisual vis, Vector3 aimFlat, float dt)
+        {
+            if (vis.TurretInstance == null)
+                return;
+
+            dt = math.max(1e-5f, dt);
+
+            // --- Desired yaw (flat LookRotation) ---
+            Quaternion wantYaw = vis.TurretYawInitialized
+                ? vis.TurretYawRotation
+                : Quaternion.identity;
+            if (aimFlat.sqrMagnitude > 0.0001f)
+                wantYaw = Quaternion.LookRotation(aimFlat.normalized, Vector3.up);
+
+            // Seed on first active frame so we do not inherit an identity→want snap spike.
+            if (!vis.TurretYawInitialized)
+            {
+                vis.TurretYawRotation = wantYaw;
+                vis.TurretYawInitialized = true;
+                vis.BankPrevYawDeg = GetPlanarYawDegrees(wantYaw);
+                vis.BankYawInitialized = true;
+                vis.BankYawRateDegPerSec = 0f;
+                vis.BankCurrentAngle = 0f;
+                vis.TurretInstance.transform.rotation = wantYaw;
+                return;
+            }
+
+            // --- Ease yaw only (no roll in this quaternion) ---
+            // [TITAN-ORBIT] Same AimTurnSpeed as before — bank is layered after this slerp.
+            float yawT = 1f - math.exp(-AimTurnSpeed * dt);
+            vis.TurretYawRotation = Quaternion.Slerp(vis.TurretYawRotation, wantYaw, yawT);
+
+            // --- Sample / smooth yaw rate (°/s) ---
+            float yawDeg = GetPlanarYawDegrees(vis.TurretYawRotation);
+            if (!vis.BankYawInitialized)
+            {
+                vis.BankPrevYawDeg = yawDeg;
+                vis.BankYawInitialized = true;
+                vis.BankYawRateDegPerSec = 0f;
+            }
+            else
+            {
+                float instantRate = Mathf.DeltaAngle(vis.BankPrevYawDeg, yawDeg) / dt;
+                vis.BankPrevYawDeg = yawDeg;
+
+                // Same exponential catch-up ships use for yaw-rate sampling.
+                float smoothing = ShipBankVisualSettingsCache.BankSmoothing;
+                float velT = 1f - math.exp(-smoothing * dt);
+                vis.BankYawRateDegPerSec = math.lerp(vis.BankYawRateDegPerSec, instantRate, velT);
+            }
+
+            // --- Target bank from turn rate (shared ship curve + Inspector knobs) ---
+            float signedRate = vis.BankYawRateDegPerSec;
+            if (math.abs(signedRate) < IdleBankAngularVelDeadbandDegPerSec)
+                signedRate = 0f;
+
+            float maxBank = ShipBankVisualSettingsCache.MaxBankAngleDegrees;
+            float sensitivity = ShipBankVisualSettingsCache.BankSensitivity;
+            float maxTurnDegPerSec =
+                ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond();
+            float targetBank = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
+                signedRate, maxBank, maxTurnDegPerSec, sensitivity);
+
+            float bankT = 1f - math.exp(-ShipBankVisualSettingsCache.BankSmoothing * dt);
+            vis.BankCurrentAngle = math.lerp(vis.BankCurrentAngle, targetBank, bankT);
+
+            // --- Composite pose: yaw * local Z roll (same sign as ShipBankVisualApplier) ---
+            vis.TurretInstance.transform.rotation =
+                vis.TurretYawRotation * Quaternion.Euler(0f, 0f, -vis.BankCurrentAngle);
+        }
+
+        /// <summary>
+        /// Clears yaw/bank filters so the next active turret starts flat instead of inheriting
+        /// the previous gun's lean.
+        /// </summary>
+        static void ResetTurretBankState(ref SlotVisual vis)
+        {
+            vis.TurretYawInitialized = false;
+            vis.TurretYawRotation = Quaternion.identity;
+            vis.BankYawInitialized = false;
+            vis.BankPrevYawDeg = 0f;
+            vis.BankYawRateDegPerSec = 0f;
+            vis.BankCurrentAngle = 0f;
+        }
+
+        /// <summary>
+        /// Planar yaw (degrees) from a world rotation — ignores pitch/roll so bank tracks turn only.
+        /// Same helper idea as <see cref="ShipBankVisualApplier"/>.
+        /// </summary>
+        static float GetPlanarYawDegrees(Quaternion rotation)
+        {
+            Vector3 fwd = rotation * Vector3.forward;
+            fwd.y = 0f;
+            if (fwd.sqrMagnitude < 1e-8f)
+                return 0f;
+            return Mathf.Atan2(fwd.x, fwd.z) * Mathf.Rad2Deg;
         }
 
         /// <summary>

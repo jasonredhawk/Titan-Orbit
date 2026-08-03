@@ -55,7 +55,8 @@ namespace TitanOrbit.Data
 
     /// <summary>
     /// ScriptableObject (designer asset) that defines one ship family — AstroEagle, Cosmic Shark, etc.
-    /// Holds per-component ability stats, the upgrade-tree chassis tiers, team materials, and lookup helpers.
+    /// Holds per-component ability stats, the upgrade-tree chassis tiers, team materials,
+    /// optional <see cref="planetaryDefense"/> turret recipe, and lookup helpers.
     /// Read by <see cref="ShipFamilyStatsCalculator"/>, <see cref="PlanetShipFamilyConfig"/>, and orbit-station UI
     /// to resolve prefabs, power bars, and moon-dock component prices. Does not run in ECS sim directly.
     /// </summary>
@@ -77,6 +78,13 @@ namespace TitanOrbit.Data
 
         [Header("Bullets")]
         public int bulletPrefabIndex = 0;
+
+        [Header("Planetary Defense")]
+        [Tooltip(
+            "Turret recipe for planets of this family (mesh prefab, Level 1→6 combat ranges, " +
+            "bullet bank). Primary authoring site — leave empty to use Resources/PlanetaryDefenseConfig. " +
+            "PlanetShipFamilyConfig.ShipFamilyEntry.defenseConfig can still override per list slot.")]
+        public PlanetaryDefenseConfig planetaryDefense;
 
         [Header("Menu Preview Camera")]
         [Tooltip("Field of view for theatrical (3/4 hero) menu preview renders.")]

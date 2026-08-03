@@ -12,58 +12,73 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3c05b1be4051a42418d63427bb764078, type: 3}
   m_Name: PlanetaryDefenseConfig
   m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.PlanetaryDefenseConfig
-  visualPrefab: {fileID: 6001000000000003, guid: f878ef8e41b806e48bf25aa098f6697a, type: 3}
+  visualPrefab: {fileID: 1013782367046998, guid: bbc293f3110d12a4eac32946501388d7, type: 3}
   placeholderPrefab: {fileID: 0}
   depositZoneRadius: 2.5
-  radiusInsetInsideOrbitInner: 0.75
-  rangeBeyondOrbitOuter: 1
   depositChunkIntervalSeconds: 0.5
-  regenerateHealth: 0
-  healthRegenPerSecond: 0
+  regenerateHealth: 1
+  healthRegenPerSecond: 3
+  healthRegenDelayAfterDamage: 2.5
+  healthAtLevel1: 165
+  healthAtLevel6: 660
+  damageAtLevel1: 2
+  damageAtLevel6: 12.4
+  fireRateAtLevel1: 3
+  fireRateAtLevel6: 3
+  engageRangeMultiplierAtLevel1: 2
+  engageRangeMultiplierAtLevel6: 3
+  bulletSpeedAtLevel1: 20
+  bulletSpeedAtLevel6: 35
   bulletBankCategoryName: Bullets
   bulletVisualScale: 1.15
   bulletMaxDistance: 55
   bulletLifetimeSeconds: 2.5
   levels:
   - gemsToReachLevel: 40
-    maxHealth: 55
+    maxHealth: 165
     damage: 2
     fireRate: 3
     bulletSpeed: 20
-    visualScale: 0.55
-    hitRadius: 0.4
+    engageRangeMultiplier: 2
+    visualScale: 0.56
+    hitRadius: 0.5
   - gemsToReachLevel: 70
-    maxHealth: 75
-    damage: 3.2
+    maxHealth: 264
+    damage: 4.08
     fireRate: 3
     bulletSpeed: 23
-    visualScale: 0.65
-    hitRadius: 0.45
+    engageRangeMultiplier: 2.2
+    visualScale: 0.64
+    hitRadius: 0.55
   - gemsToReachLevel: 110
-    maxHealth: 100
-    damage: 4.8
+    maxHealth: 363
+    damage: 6.16
     fireRate: 3
     bulletSpeed: 26
-    visualScale: 0.75
-    hitRadius: 0.5
+    engageRangeMultiplier: 2.4
+    visualScale: 0.72
+    hitRadius: 0.6
   - gemsToReachLevel: 160
-    maxHealth: 130
-    damage: 6.8
+    maxHealth: 462
+    damage: 8.24
     fireRate: 3
     bulletSpeed: 29
-    visualScale: 0.85
-    hitRadius: 0.55
+    engageRangeMultiplier: 2.6
+    visualScale: 0.8
+    hitRadius: 0.65
   - gemsToReachLevel: 220
-    maxHealth: 170
-    damage: 9.2
+    maxHealth: 561
+    damage: 10.32
     fireRate: 3
     bulletSpeed: 32
-    visualScale: 0.95
-    hitRadius: 0.6
+    engageRangeMultiplier: 2.8
+    visualScale: 0.88
+    hitRadius: 0.7
   - gemsToReachLevel: 300
-    maxHealth: 220
+    maxHealth: 660
     damage: 12.4
     fireRate: 3
     bulletSpeed: 35
-    visualScale: 1.1
-    hitRadius: 0.7
+    engageRangeMultiplier: 3
+    visualScale: 1
+    hitRadius: 0.8

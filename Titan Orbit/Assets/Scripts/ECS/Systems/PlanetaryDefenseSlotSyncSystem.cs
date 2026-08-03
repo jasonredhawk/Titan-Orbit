@@ -71,7 +71,7 @@ namespace TitanOrbit.ECS
                 if (!cache.Initialized)
                 {
                     // Homes spawn already owned — create empty pads. Neutrals stay length 0.
-                    ApplyOwnershipAndLevel(buffer, ownership, level, wipe: true);
+                    ApplyOwnershipAndLevel(em, entity, buffer, ownership, level, wipe: true);
                     cache.LastOwnership = ownership;
                     cache.LastPlanetLevel = level;
                     cache.Initialized = true;
@@ -93,18 +93,27 @@ namespace TitanOrbit.ECS
                 // Level-up only: grow/shrink without wiping existing turrets.
                 if (ownershipChanged || cache.LastPlanetLevel != level)
                 {
-                    ApplyOwnershipAndLevel(buffer, ownership, level, wipe: mustWipe || becameNeutral);
+                    ApplyOwnershipAndLevel(
+                        em, entity, buffer, ownership, level, wipe: mustWipe || becameNeutral);
                     cache.LastOwnership = ownership;
                     cache.LastPlanetLevel = level;
                     em.SetComponentData(entity, cache);
+                }
+                else
+                {
+                    // Keep server-only regen buffer length aligned even when ownership/level steady.
+                    PlanetaryDefenseLogic.EnsureRegenBuffer(em, entity, buffer.Length, wipeExisting: false);
                 }
             }
         }
 
         /// <summary>
         /// Resizes (and optionally wipes) the slot buffer for the planet's current ownership/level.
+        /// Also keeps the server-only regen clock buffer in lockstep by index.
         /// </summary>
         static void ApplyOwnershipAndLevel(
+            EntityManager em,
+            Entity planetEntity,
             DynamicBuffer<PlanetaryDefenseSlotElement> buffer,
             TeamId ownership,
             int planetLevel,
@@ -113,11 +122,13 @@ namespace TitanOrbit.ECS
             if (ownership == TeamId.None)
             {
                 buffer.Clear();
+                PlanetaryDefenseLogic.EnsureRegenBuffer(em, planetEntity, 0, wipeExisting: true);
                 return;
             }
 
             int count = PlanetaryDefenseMath.GetSlotCountForOwnedPlanet(planetLevel);
             PlanetaryDefenseLogic.EnsureSlotCount(buffer, count, wipeExisting: wipe);
+            PlanetaryDefenseLogic.EnsureRegenBuffer(em, planetEntity, count, wipeExisting: wipe);
         }
 
         /// <summary>
@@ -141,11 +152,13 @@ namespace TitanOrbit.ECS
             if (newOwner == TeamId.None)
             {
                 buffer.Clear();
+                PlanetaryDefenseLogic.EnsureRegenBuffer(em, planetEntity, 0, wipeExisting: true);
             }
             else
             {
                 int count = PlanetaryDefenseMath.GetSlotCountForOwnedPlanet(planetLevel);
                 PlanetaryDefenseLogic.EnsureSlotCount(buffer, count, wipeExisting: true);
+                PlanetaryDefenseLogic.EnsureRegenBuffer(em, planetEntity, count, wipeExisting: true);
             }
 
             if (!em.HasComponent<PlanetaryDefenseServerCache>(planetEntity))

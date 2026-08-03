@@ -38,8 +38,9 @@ namespace TitanOrbit.Data
             public Material planetMaterial;
 
             [Tooltip(
-                "Optional planetary defense turret recipe for this family (machine-gun vs cannon, etc.). " +
-                "Leave empty to use Resources/PlanetaryDefenseConfig.")]
+                "Optional override for this list slot's turret recipe. Prefer authoring " +
+                "ShipFamilyDefinition.planetaryDefense instead. Leave empty to use the family " +
+                "definition's recipe, then Resources/PlanetaryDefenseConfig.")]
             public PlanetaryDefenseConfig defenseConfig;
         }
 

@@ -15,13 +15,16 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative planetary defense fire. Active turrets aim at the nearest enemy ship
-    /// or people transport within engage range (from the pad: 2× pad→orbit distance) and
-    /// append <see cref="BulletElement"/> shots with <see cref="BulletDamageFilter.ShipsAndTransports"/>.
+    /// or people transport within engage range (pad→orbit gap × Level 1→6 fire-distance multiplier
+    /// from <see cref="PlanetaryDefenseConfig"/>) and append <see cref="BulletElement"/> shots with
+    /// <see cref="BulletDamageFilter.ShipsAndTransports"/>.
     /// <para>
     /// [TITAN-ORBIT] No turret ghosts — muzzle pose is derived from planet transform + slot index
     /// (same formula as client visuals / hit spheres). OwnerNetworkId is 0; OwnerTeam is planet
     /// ownership so friendly-fire rules still work. Aim uses simple velocity lead so moving
     /// ships are not under-shot; <see cref="BulletVisualScale"/> grows tracers with fire power.
+    /// Bullet bank comes from the turret asset category name, else the family's
+    /// <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>.
     /// </para>
     /// World: ServerSimulation. Runs after <see cref="BulletSimulationSystem"/> so ship/drone
     /// volleys resolve first; turret bullets advance on the next tick.
@@ -113,24 +116,31 @@ namespace TitanOrbit.ECS
 
                 var config = PlanetaryDefenseConfig.ResolveForFamily(
                     _familyConfig, planet.ShipFamilyConfigIndex);
+                ShipFamilyDefinition familyDef = null;
+                if (_familyConfig != null)
+                {
+                    var entry = _familyConfig.GetFamilyByConfigIndex(planet.ShipFamilyConfigIndex);
+                    familyDef = entry != null ? entry.shipFamilyDefinition : null;
+                }
+
                 var xf = EntityManager.GetComponentData<LocalTransform>(planetEntity);
                 float3 planetPos = xf.Position;
                 float planetSize = math.max(0.25f, xf.Scale);
                 int slotCount = buffer.Length;
-                // Range from the pad, not planet center — pad→orbit gap × (1 + beyond).
-                float engageRange = PlanetaryDefenseMath.GetEngageRangeFromTurret(
-                    planetSize, planet.PlanetLevel, config.rangeBeyondOrbitOuter);
-                float engageRangeSq = engageRange * engageRange;
                 byte ownerTeam = (byte)planet.Ownership;
-                int bankIndex = ResolveBankIndex(config);
+                int bankIndex = ResolveBankIndex(config, familyDef);
                 if (_vfxBank != null)
                     categoryUpgradeScale = _vfxBank.GetCategoryUpgradeVisualScaleMultiplier(bankIndex);
 
                 // Level-1 damage is the visual “no upgrade” reference for this turret recipe.
                 float referenceDamage = math.max(0.1f, config.GetLevelStats(1).damage);
 
-                // Optional HP regen (off by default in config).
+                // Ship-style delayed regen: heal only after healthRegenDelayAfterDamage since last hit.
                 bool regen = config.regenerateHealth && config.healthRegenPerSecond > 0f;
+                float regenDelay = math.max(0f, config.healthRegenDelayAfterDamage);
+                double nowDouble = SystemAPI.Time.ElapsedTime;
+                var regenBuf = PlanetaryDefenseLogic.EnsureRegenBuffer(
+                    EntityManager, planetEntity, slotCount, wipeExisting: false);
 
                 for (int i = 0; i < slotCount; i++)
                 {
@@ -138,12 +148,19 @@ namespace TitanOrbit.ECS
                     if (slot.TurretLevel == 0 || slot.Health <= 0f)
                         continue;
 
-                    if (regen)
+                    if (regen && slot.Health < slot.MaxHealth)
                     {
-                        slot.Health = math.min(
-                            slot.MaxHealth,
-                            slot.Health + config.healthRegenPerSecond * dt);
-                        buffer[i] = slot;
+                        double lastDamage = i < regenBuf.Length
+                            ? regenBuf[i].LastDamageServerTime
+                            : 0.0;
+                        // [TITAN-ORBIT] Same gate as ShipVitalsRegenSystem — no heal while under fire.
+                        if (nowDouble >= lastDamage + regenDelay)
+                        {
+                            slot.Health = math.min(
+                                slot.MaxHealth,
+                                slot.Health + config.healthRegenPerSecond * dt);
+                            buffer[i] = slot;
+                        }
                     }
 
                     var stats = config.GetLevelStats(slot.TurretLevel);
@@ -158,7 +175,11 @@ namespace TitanOrbit.ECS
                         planetPos, planetSize, planet.PlanetLevel, i, slotCount);
                     muzzle.y = PlanetaryDefenseMath.FixedY;
 
-                    // [TITAN-ORBIT] Engage range is from the turret muzzle (pad→orbit × 2).
+                    // [TITAN-ORBIT] Per-turret-level fire distance: pad→orbit gap × multiplier (2→3).
+                    float engageRange = PlanetaryDefenseMath.GetEngageRangeFromTurret(
+                        planetSize, planet.PlanetLevel, stats.engageRangeMultiplier);
+                    float engageRangeSq = engageRange * engageRange;
+
                     if (!TryFindNearestHostile(
                             muzzle, (TeamId)ownerTeam, engageRangeSq, mapW, mapH,
                             enemyShips, transports,
@@ -322,28 +343,42 @@ namespace TitanOrbit.ECS
             _warmed = true;
         }
 
-        int ResolveBankIndex(PlanetaryDefenseConfig config)
+        /// <summary>
+        /// Resolves BulletVfxBank category: turret asset name first, then family bullet index.
+        /// </summary>
+        int ResolveBankIndex(PlanetaryDefenseConfig config, ShipFamilyDefinition family)
         {
             if (config == null)
                 config = _defaultConfig;
-            // Key by asset name hash — avoid obsolete GetInstanceID in Unity 6.
-            int key = config != null ? config.name.GetHashCode() : 0;
+            // Key by asset name + family bullet index so family fallback caches separately.
+            int familyBullet = family != null ? family.bulletPrefabIndex : 0;
+            int key = (config != null ? config.name.GetHashCode() : 0) ^ (familyBullet * 397);
             if (_bankIndexByFamily.TryGetValue(key, out int cached))
                 return cached;
 
-            int idx = 0;
+            // --- Prefer turret asset category name ---
+            int idx = -1;
             if (_vfxBank != null &&
+                config != null &&
                 !string.IsNullOrEmpty(config.bulletBankCategoryName) &&
                 _vfxBank.TryGetCategoryIndexByName(config.bulletBankCategoryName, out int found))
             {
                 idx = found;
             }
-            else if (_vfxBank != null &&
-                     _vfxBank.TryGetCategoryIndexByName(DroneSwarmLogic.FighterBankCategoryName, out int fighter))
+
+            // --- Fallback: owning family's ship bullet bank index ---
+            if (idx < 0)
+                idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family);
+
+            // --- Last resort: fighter drone bank name ---
+            if (idx < 0 &&
+                _vfxBank != null &&
+                _vfxBank.TryGetCategoryIndexByName(DroneSwarmLogic.FighterBankCategoryName, out int fighter))
             {
                 idx = fighter;
             }
 
+            idx = math.max(0, idx);
             _bankIndexByFamily[key] = idx;
             return idx;
         }

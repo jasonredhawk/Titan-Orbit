@@ -867,7 +867,7 @@ namespace TitanOrbit.ECS
                 {
                     // [TITAN-ORBIT] Slot HP → 0 resets to empty placeholder (rebuild with gems).
                     PlanetaryDefenseHitScan.ApplyDamage(
-                        state.EntityManager, bestEntity, s_BestDefenseSlot, b.Damage);
+                        state.EntityManager, bestEntity, s_BestDefenseSlot, b.Damage, serverElapsed);
                     return true;
                 }
 

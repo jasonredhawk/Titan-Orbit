@@ -15,7 +15,9 @@ namespace TitanOrbit.ECS
     /// [NETCODE] Must be baked on the planet ghost prefab. Runtime-only
     /// <c>AddBuffer</c> does <b>not</b> replicate <see cref="GhostField"/> values.
     /// <see cref="InternalBufferCapacityAttribute"/> 6 = MaxPlanetLevel so snapshots can grow
-    /// without realloc thrash.
+    /// without realloc thrash. Every field on this buffer <b>must</b> be a <see cref="GhostField"/>
+    /// (NetCode rule for ghost buffers). Regen clocks live on the server-only
+    /// <see cref="PlanetaryDefenseSlotRegenElement"/> buffer instead.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] <see cref="TurretLevel"/> 0 = empty placeholder (build progress fills toward
@@ -39,6 +41,24 @@ namespace TitanOrbit.ECS
 
         /// <summary>Max HP for the current turret level (mirrors config at last activate/upgrade).</summary>
         [GhostField(Quantization = 100)] public float MaxHealth;
+    }
+
+    /// <summary>
+    /// Server-only per-slot regen clock, indexed like <see cref="PlanetaryDefenseSlotElement"/>.
+    /// <para>
+    /// [NETCODE] Not a ghost buffer — last-damage times must not be forced onto the ghosted
+    /// slot element (ghost buffers require every field to be a <see cref="GhostField"/>).
+    /// Clients only need replicated Health for the HP bar.
+    /// </para>
+    /// </summary>
+    [InternalBufferCapacity(6)]
+    public struct PlanetaryDefenseSlotRegenElement : IBufferElementData
+    {
+        /// <summary>
+        /// Server <c>World.ElapsedTime</c> of the last HP damage on this slot.
+        /// Same idea as <see cref="ShipVitalsState.LastHullDamageTime"/>.
+        /// </summary>
+        public double LastDamageServerTime;
     }
 
     /// <summary>
@@ -131,6 +151,63 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Ensures the server-only regen buffer matches <paramref name="desiredCount"/> slot indices.
+        /// When <paramref name="wipeExisting"/> is true, all last-damage times reset to 0.
+        /// </summary>
+        public static void EnsureRegenSlotCount(
+            DynamicBuffer<PlanetaryDefenseSlotRegenElement> regen,
+            int desiredCount,
+            bool wipeExisting)
+        {
+            desiredCount = math.max(0, desiredCount);
+
+            if (wipeExisting)
+            {
+                regen.Clear();
+                for (int i = 0; i < desiredCount; i++)
+                    regen.Add(new PlanetaryDefenseSlotRegenElement { LastDamageServerTime = 0.0 });
+                return;
+            }
+
+            while (regen.Length < desiredCount)
+                regen.Add(new PlanetaryDefenseSlotRegenElement { LastDamageServerTime = 0.0 });
+
+            while (regen.Length > desiredCount)
+                regen.RemoveAt(regen.Length - 1);
+        }
+
+        /// <summary>
+        /// Creates / resizes the server-only regen buffer to match the ghosted slot buffer length.
+        /// </summary>
+        public static DynamicBuffer<PlanetaryDefenseSlotRegenElement> EnsureRegenBuffer(
+            EntityManager em,
+            Entity planetEntity,
+            int slotCount,
+            bool wipeExisting)
+        {
+            if (!em.HasBuffer<PlanetaryDefenseSlotRegenElement>(planetEntity))
+                em.AddBuffer<PlanetaryDefenseSlotRegenElement>(planetEntity);
+
+            var regen = em.GetBuffer<PlanetaryDefenseSlotRegenElement>(planetEntity);
+            EnsureRegenSlotCount(regen, slotCount, wipeExisting);
+            return regen;
+        }
+
+        /// <summary>Stamps last-damage time for one slot (no-op when index is out of range).</summary>
+        public static void StampLastDamage(
+            DynamicBuffer<PlanetaryDefenseSlotRegenElement> regen,
+            int slotIndex,
+            double serverElapsed)
+        {
+            if (slotIndex < 0 || slotIndex >= regen.Length)
+                return;
+
+            var entry = regen[slotIndex];
+            entry.LastDamageServerTime = serverElapsed;
+            regen[slotIndex] = entry;
+        }
+
+        /// <summary>
         /// Seeds a random subset of empty defense pads with active turrets for map start
         /// (home planets and starting owned neutrals).
         /// <paramref name="maxTurretsAndLevel"/> 0 = no-op. Otherwise places a random count of
@@ -181,7 +258,8 @@ namespace TitanOrbit.ECS
                 usedMask |= 1 << idx;
 
                 int level = rng.NextInt(1, maxLevel + 1);
-                float hp = 40f * level;
+                // Fallback when config is missing — ~Lv1 scale × level (matches ×3 HP ladder).
+                float hp = 165f * level;
                 if (config != null)
                     hp = math.max(1f, config.GetLevelStats(level).maxHealth);
 

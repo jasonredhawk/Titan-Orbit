@@ -183,13 +183,18 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Applies bullet damage to a turret slot. Resets the slot to empty when HP hits 0.
+        /// Applies bullet damage to a turret slot and stamps last-damage time for regen delay.
+        /// Resets the slot to empty when HP hits 0.
         /// </summary>
+        /// <param name="serverElapsed">
+        /// Server <c>World.ElapsedTime</c> — same clock as ship <see cref="ShipVitalsState.LastHullDamageTime"/>.
+        /// </param>
         public static void ApplyDamage(
             EntityManager em,
             Entity planetEntity,
             int slotIndex,
-            float damage)
+            float damage,
+            double serverElapsed)
         {
             if (!em.HasBuffer<PlanetaryDefenseSlotElement>(planetEntity))
                 return;
@@ -207,10 +212,22 @@ namespace TitanOrbit.ECS
             {
                 // [TITAN-ORBIT] Destroyed → empty placeholder (rebuild from gems).
                 buffer[slotIndex] = PlanetaryDefenseLogic.CreateEmptySlot((byte)slotIndex);
+                // Clear regen clock so a rebuilt turret does not inherit the old stamp.
+                if (em.HasBuffer<PlanetaryDefenseSlotRegenElement>(planetEntity))
+                {
+                    var regen = em.GetBuffer<PlanetaryDefenseSlotRegenElement>(planetEntity);
+                    PlanetaryDefenseLogic.StampLastDamage(regen, slotIndex, 0.0);
+                }
+
                 return;
             }
 
             buffer[slotIndex] = slot;
+
+            // Server-only regen buffer — stamp out-of-combat delay (not on the ghosted slot element).
+            var regenBuf = PlanetaryDefenseLogic.EnsureRegenBuffer(
+                em, planetEntity, buffer.Length, wipeExisting: false);
+            PlanetaryDefenseLogic.StampLastDamage(regenBuf, slotIndex, serverElapsed);
         }
 
         /// <summary>
