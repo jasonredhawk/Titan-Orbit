@@ -17,7 +17,8 @@ namespace TitanOrbit.ECS
     /// Server-authoritative planetary defense fire. Active turrets aim at the nearest enemy ship
     /// or people transport within absolute engage range (world units from the pad; Level 1→6
     /// from <see cref="PlanetaryDefenseConfig"/>, default 20 at Lv1 then +4/level) and append
-    /// <see cref="BulletElement"/> shots with <see cref="BulletDamageFilter.ShipsAndTransports"/>.
+    /// <see cref="BulletElement"/> shots with <see cref="BulletDamageFilter.ShipsAndTransports"/>
+    /// (enemy ships, people transports, and asteroids — rocks block + take damage like ship guns).
     /// <para>
     /// [TITAN-ORBIT] No turret ghosts — muzzle pose is derived from planet transform + slot index
     /// (same formula as client visuals / hit spheres). OwnerNetworkId is 0; OwnerTeam is planet
@@ -33,6 +34,8 @@ namespace TitanOrbit.ECS
     /// (same value as acquisition). Lifetime is 0 so only range/hits despawn the bullet —
     /// <see cref="BulletSimulationSystem"/> sums Euclidean flight steps, which match toroidal
     /// pad→target distance when aim uses <see cref="ToroidalMapEcs.ShortestOffsetXZ"/>.
+    /// Asteroid collision uses the shared toroidal swept test in
+    /// <see cref="BulletSimulationSystem"/> (same path as ship guns).
     /// </para>
     /// World: ServerSimulation. Runs after <see cref="BulletSimulationSystem"/> so ship/drone
     /// volleys resolve first; turret bullets advance on the next tick.
@@ -232,6 +235,7 @@ namespace TitanOrbit.ECS
                         Sequence = sequence,
                         BankIndex = math.max(0, bankIndex),
                         ScaleMultiplier = math.max(0.1f, visualScale),
+                        // Ships + transports + asteroids (rocks block/damage like ship guns).
                         DamageFilter = BulletDamageFilter.ShipsAndTransports,
                     };
 

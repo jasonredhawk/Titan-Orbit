@@ -62,7 +62,8 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// [TITAN-ORBIT] Collision / damage mask. Ship guns use <see cref="BulletDamageFilter.Everything"/>;
         /// mining drones use <see cref="BulletDamageFilter.AsteroidsOnly"/>; fighters use
-        /// <see cref="BulletDamageFilter.ShipsOnly"/>.
+        /// <see cref="BulletDamageFilter.ShipsOnly"/>; planetary defense uses
+        /// <see cref="BulletDamageFilter.ShipsAndTransports"/> (ships, transports, asteroids).
         /// </summary>
         public BulletDamageFilter DamageFilter;
     }

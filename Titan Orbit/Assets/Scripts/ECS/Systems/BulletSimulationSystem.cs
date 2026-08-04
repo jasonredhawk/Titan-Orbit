@@ -964,17 +964,23 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Whether this bullet's <see cref="BulletDamageFilter"/> may collide with / damage
         /// the given hit kind. Planets always block (solid world). Mining drones skip ships;
-        /// fighters skip asteroids — Starblast-style pass-through.
+        /// fighters skip asteroids — Starblast-style pass-through. Planetary defense hits
+        /// ships, transports, and asteroids (rocks must not be pass-through).
         /// </summary>
+        /// <param name="filter">Per-bullet mask from spawn (ship / drone / PD).</param>
+        /// <param name="kind">Candidate obstacle class from the swept test.</param>
+        /// <returns>True when this bullet should stop on / damage that kind.</returns>
         static bool AllowsHitKind(BulletDamageFilter filter, BulletHitKind kind)
         {
             // --- Planet bodies always block (no HP) ---
+            // [TITAN-ORBIT] Solid world geometry for every filter — even mining bolts stop here.
             if (kind == BulletHitKind.Planet)
                 return true;
 
             switch (filter)
             {
                 case BulletDamageFilter.Everything:
+                    // Ship guns: full collision set (planets already handled above).
                     return true;
 
                 case BulletDamageFilter.AsteroidsOnly:
@@ -989,9 +995,12 @@ namespace TitanOrbit.ECS
                            kind == BulletHitKind.PlanetaryDefense;
 
                 case BulletDamageFilter.ShipsAndTransports:
-                    // Planetary defense guns: enemy ships + people transports.
-                    // Pass through rocks / moons / drones / other turrets.
-                    return kind == BulletHitKind.Ship || kind == BulletHitKind.Transport;
+                    // Planetary defense: enemy ships + people transports + asteroids.
+                    // [TITAN-ORBIT] Asteroids use the same toroidal swept path + Health write as
+                    // Everything — previously PD skipped rocks and bolts tunneled through belts.
+                    return kind == BulletHitKind.Ship ||
+                           kind == BulletHitKind.Transport ||
+                           kind == BulletHitKind.Asteroid;
 
                 default:
                     return true;

@@ -411,10 +411,15 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// [TITAN-ORBIT] Mirrors server <c>BulletSimulationSystem.AllowsHitKind</c> for cosmetic tracers.
-        /// Planets always block; mining skips ships/moons; fighters skip asteroids/moons.
+        /// Planets always block; mining skips ships/moons; fighters skip asteroids/moons;
+        /// planetary defense clips ships and asteroids (transports are server-only for now).
         /// </summary>
+        /// <param name="filter">Spawn-time mask from the tracer request (byte cast).</param>
+        /// <param name="kind">Hybrid-proxy obstacle class under test.</param>
+        /// <returns>True when the cosmetic tracer should stop on this kind.</returns>
         static bool PassesDamageFilter(BulletDamageFilter filter, ObstacleKind kind)
         {
+            // Planets are solid world for every filter (same as server).
             if (kind == ObstacleKind.Planet)
                 return true;
 
@@ -427,9 +432,9 @@ namespace TitanOrbit.Game
                 case BulletDamageFilter.ShipsOnly:
                     return kind == ObstacleKind.Ship;
                 case BulletDamageFilter.ShipsAndTransports:
-                    // [TITAN-ORBIT] Cosmetic tracers — transport obstacles are not in this list yet;
-                    // ships still clip the bolt. Server owns real transport hits.
-                    return kind == ObstacleKind.Ship;
+                    // PD: ships + asteroids. Transports are not in this hybrid list yet —
+                    // server BulletSimulation owns real transport hits.
+                    return kind == ObstacleKind.Ship || kind == ObstacleKind.Asteroid;
                 default:
                     return true;
             }
