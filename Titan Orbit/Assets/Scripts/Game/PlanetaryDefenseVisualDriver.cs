@@ -29,8 +29,10 @@ namespace TitanOrbit.Game
     /// [TITAN-ORBIT] Active turrets bank (roll) while turning to aim — same cosmetic curve as
     /// ships (<see cref="ShipBankVisualApplier"/> / <see cref="ShipBankVisualSettingsCache"/>).
     /// Yaw and bank are kept separate so roll never fights the aim slerp. Hostile tracking uses
-    /// the same <see cref="PlanetaryDefenseAimMath"/> lead as server combat so barrels point
-    /// where bullets go (ships via <see cref="ShipKinematics"/>, people transports via
+    /// the same <see cref="PlanetaryDefenseAimMath"/> lead as server combat (identical
+    /// per-level <c>bulletSpeed</c>, engage range for max-lead cap, and
+    /// <see cref="PlanetaryDefenseAimMath.ShipVelocityLeadScale"/>) so barrels point where
+    /// bullets go (ships via <see cref="ShipKinematics"/>, people transports via
     /// <see cref="PeopleTransportVfxDriver.CopyAimFlights"/>).
     /// </para>
     /// <para>
@@ -614,9 +616,12 @@ namespace TitanOrbit.Game
                             {
                                 float3 muzzle = (float3)vis.TurretInstance.transform.position;
                                 muzzle.y = PlanetaryDefenseMath.FixedY;
-                                // [HYBRID] Presentation lead — does not drive sim; matches server math.
+                                // [HYBRID] Presentation lead — does not drive sim; matches server
+                                // combat (same per-level bulletSpeed + engageRange + lead scale).
                                 if (PlanetaryDefenseAimMath.TryComputeFireDirection(
                                         muzzle, targetPos, targetVel, bulletSpeed, mapW, mapH,
+                                        engageFromTurret,
+                                        PlanetaryDefenseAimMath.ShipVelocityLeadScale,
                                         out float3 fireDir))
                                 {
                                     aimFlat = new Vector3(fireDir.x, 0f, fireDir.z);
@@ -1493,6 +1498,15 @@ namespace TitanOrbit.Game
         /// (no ECS transport archetype gather).
         /// </para>
         /// </summary>
+        /// <param name="em">Client world entity manager.</param>
+        /// <param name="ownerTeam">Planet ownership — skip friendlies.</param>
+        /// <param name="muzzleDisplay">Pad / turret display position.</param>
+        /// <param name="engageRange">Absolute world engage range (same as server).</param>
+        /// <param name="mapW">Toroidal map width.</param>
+        /// <param name="mapH">Toroidal map height.</param>
+        /// <param name="targetPos">Nearest hostile display position.</param>
+        /// <param name="targetVel">Planar velocity for lead math.</param>
+        /// <returns>True when a hostile is inside engage range.</returns>
         bool TryFindNearestHostileDisplay(
             EntityManager em,
             TeamId ownerTeam,

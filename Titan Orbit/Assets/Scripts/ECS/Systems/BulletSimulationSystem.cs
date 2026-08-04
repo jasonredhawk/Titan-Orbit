@@ -210,8 +210,9 @@ namespace TitanOrbit.ECS
                 float3 startPos = b.Position;
                 float3 endPos = startPos + b.Velocity * dt;
                 // [TITAN-ORBIT] Euclidean step on unbounded flight (not a wrapped-torus path sum).
-                // MaxDistance is therefore a straight-line budget from spawn — PD turrets set it to
-                // the same engageRange used for toroidal target acquisition (XZ shortest path).
+                // MaxDistance is a straight-line budget from spawn. Planetary defense sets it via
+                // PlanetaryDefenseAimMath.ComputeBulletMaxDistance — at least engage range, but
+                // longer when lead intercept is past the acquisition sphere (crossing/fleeing ships).
                 float stepDistance = math.distance(startPos, endPos);
 
                 // Collide before lifetime/range cull so the final segment still scores hits.

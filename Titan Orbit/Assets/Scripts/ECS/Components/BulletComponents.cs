@@ -23,8 +23,9 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// [TITAN-ORBIT] Maximum travel distance before despawn.
         /// Metric: Euclidean path length summed from per-tick <c>|vel|*dt</c> steps on unbounded
-        /// flight (not toroidal wrap distance). Planetary defense copies engage range into this
-        /// field so pad→target toroidal acquisition range matches straight-line flight budget.
+        /// flight (not toroidal wrap distance). Planetary defense uses
+        /// <c>PlanetaryDefenseAimMath.ComputeBulletMaxDistance</c> (engage range, or longer when
+        /// the lead intercept sits past acquisition — otherwise fleeing/crossing ships were culled).
         /// </summary>
         public float MaxDistance;
 

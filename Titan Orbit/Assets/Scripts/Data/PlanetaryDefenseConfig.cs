@@ -16,8 +16,10 @@ namespace TitanOrbit.Data
     /// Engage range is absolute world units (independent of planet size / pad→orbit gap),
     /// defaulting to 20 at Lv1 then +4 per level above 1 (Lv2=24, Lv3=28, …) so equal-level
     /// ships (30 base + 4/level) can out-range turrets while lower-level ships step into fire sooner.
-    /// Combat copies that per-level engageRange into bullet MaxDistance; there is no separate
-    /// bullet lifetime / max-distance designer field on this asset.
+    /// Acquisition uses per-level engageRange; bullet <c>MaxDistance</c> is computed at fire
+    /// time via <c>PlanetaryDefenseAimMath.ComputeBulletMaxDistance</c> (at least engageRange,
+    /// longer when lead intercept sits past the acquire sphere). There is no separate bullet
+    /// lifetime / max-distance designer field on this asset.
     /// </para>
     /// </summary>
     [CreateAssetMenu(fileName = "PlanetaryDefenseConfig", menuName = "Titan Orbit/Planetary Defense Config")]
@@ -113,10 +115,15 @@ namespace TitanOrbit.Data
             "Default 40 = 20 at Lv1 + 4 × (levels above 1). Lv2=24, Lv3=28, … Lv6=40.")]
         public float engageRangeAtLevel6 = 40f;
 
-        [Tooltip("Bullet speed (world units/sec) at level 1 — also lerped into the ladder.")]
+        [Tooltip(
+            "Bullet speed (world units/sec) at level 1 — lerped into the ladder. " +
+            "Combat uses this same value for lead aiming AND spawned BulletElement.Velocity. " +
+            "Production Resources asset is slower (~8) than this script default.")]
         public float bulletSpeedAtLevel1 = 20f;
 
-        [Tooltip("Bullet speed (world units/sec) at level 6.")]
+        [Tooltip(
+            "Bullet speed (world units/sec) at level 6. Same aim/spawn contract as Level 1. " +
+            "Production Resources asset is ~16.")]
         public float bulletSpeedAtLevel6 = 35f;
 
         // --- Gem cost (Solfeggio / cymatic frequencies by default) ---
@@ -173,9 +180,11 @@ namespace TitanOrbit.Data
             "ScaleMultiplier via BulletVisualScale — same path as ship guns.")]
         public float bulletVisualScale = 1.15f;
 
-        // [TITAN-ORBIT] Bullet MaxDistance is NOT a separate designer knob — combat spawn copies
-        // that level's engageRange so shots despawn at the same reach used for target acquisition.
-        // Lifetime is unused for PD (Lifetime = 0 → distance-only cull in BulletSimulationSystem).
+        // [TITAN-ORBIT] Bullet MaxDistance is NOT a separate designer knob — combat sets it from
+        // engageRange + lead intercept distance (see PlanetaryDefenseAimMath). Lifetime is unused
+        // for PD (Lifetime = 0 → distance-only cull in BulletSimulationSystem).
+        // bulletSpeedAtLevel* MUST stay in sync with aim: combat passes GetLevelStats(...).bulletSpeed
+        // into both the quadratic and BulletElement.Velocity.
 
         // --- Secondary per-level ladder (visual / hit) ---
 
