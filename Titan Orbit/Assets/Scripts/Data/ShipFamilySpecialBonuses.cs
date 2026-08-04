@@ -6,7 +6,8 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Per-family multiplicative bonuses applied after prefab component sum + aggregation.
     /// Defaults are 1 (no change). Tune on each <see cref="ShipFamilyDefinition"/> —
-    /// e.g. moveSpeedMul = 1.2 for a fast family, maxGemsMul = 1.5 for a cargo hauler.
+    /// e.g. moveSpeedMul = 1.2 for a fast family, maxGemsMul = 1.5 for a cargo hauler,
+    /// bulletRangeMul = 1.25 for a long-range sniper family.
     /// Shared part calc profiles stay project-wide; this is how families differ at runtime.
     /// </summary>
     [Serializable]
@@ -21,6 +22,11 @@ namespace TitanOrbit.Data
         public float firePowerMul;
         public float fireRateMul;
         public float bulletSpeedMul;
+        /// <summary>
+        /// Multiplier on aggregated bullet travel range (base + per-level).
+        /// [TITAN-ORBIT] Family identity lever — not a player attribute upgrade.
+        /// </summary>
+        public float bulletRangeMul;
         public float rammingMul;
         public float healthCapMul;
         public float healthRegenMul;
@@ -40,6 +46,7 @@ namespace TitanOrbit.Data
             firePowerMul = 1f,
             fireRateMul = 1f,
             bulletSpeedMul = 1f,
+            bulletRangeMul = 1f,
             rammingMul = 1f,
             healthCapMul = 1f,
             healthRegenMul = 1f,
@@ -58,6 +65,7 @@ namespace TitanOrbit.Data
             {
                 return ApproxOne(moveSpeedMul) && ApproxOne(accelerationMul) && ApproxOne(turnSpeedMul)
                     && ApproxOne(firePowerMul) && ApproxOne(fireRateMul) && ApproxOne(bulletSpeedMul)
+                    && ApproxOne(bulletRangeMul)
                     && ApproxOne(rammingMul) && ApproxOne(healthCapMul) && ApproxOne(healthRegenMul)
                     && ApproxOne(energyCapMul) && ApproxOne(energyRegenMul) && ApproxOne(maxGemsMul)
                     && ApproxOne(maxPeopleMul) && ApproxOne(tractorDistanceMul) && ApproxOne(tractorPowerMul);
@@ -76,6 +84,8 @@ namespace TitanOrbit.Data
             stats.fireRatePerLevel *= Mul(fireRateMul);
             stats.bulletSpeed *= Mul(bulletSpeedMul);
             stats.bulletSpeedPerLevel *= Mul(bulletSpeedMul);
+            stats.bulletRange *= Mul(bulletRangeMul);
+            stats.bulletRangePerLevel *= Mul(bulletRangeMul);
             stats.rammingPower *= Mul(rammingMul);
             stats.rammingPowerPerLevel *= Mul(rammingMul);
             stats.healthCap *= Mul(healthCapMul);

@@ -151,7 +151,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] Max travel distance before the bullet is removed with no hit/impact.
-        /// Default <see cref="DefaultBulletMaxDistance"/> (~30).
+        /// Written from family <c>bulletRange</c> (ship-level scaled + <c>bulletRangeMul</c>);
+        /// falls back to <see cref="DefaultBulletMaxDistance"/> (~30) when authored range is zero.
         /// </summary>
         public float BulletMaxDistance;
 

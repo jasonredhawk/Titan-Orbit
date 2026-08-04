@@ -133,6 +133,8 @@ namespace TitanOrbit.Data
             target.firePowerPerLevel += source.firePowerPerLevel * factor;
             target.bulletSpeed += source.bulletSpeed * factor;
             target.bulletSpeedPerLevel += source.bulletSpeedPerLevel * factor;
+            target.bulletRange += source.bulletRange * factor;
+            target.bulletRangePerLevel += source.bulletRangePerLevel * factor;
             target.fireRate += source.fireRate * factor;
             target.fireRatePerLevel += source.fireRatePerLevel * factor;
             target.rammingPower += source.rammingPower * factor;
@@ -169,6 +171,7 @@ namespace TitanOrbit.Data
         {
             if (s.firePowerPerLevel == 0f && s.firePower != 0f) s.firePowerPerLevel = s.firePower * frac;
             if (s.bulletSpeedPerLevel == 0f && s.bulletSpeed != 0f) s.bulletSpeedPerLevel = s.bulletSpeed * frac;
+            if (s.bulletRangePerLevel == 0f && s.bulletRange != 0f) s.bulletRangePerLevel = s.bulletRange * frac;
             if (s.fireRatePerLevel == 0f && s.fireRate != 0f) s.fireRatePerLevel = s.fireRate * frac;
             if (s.rammingPowerPerLevel == 0f && s.rammingPower != 0f) s.rammingPowerPerLevel = s.rammingPower * frac;
             if (s.healthCapPerLevel == 0f && s.healthCap != 0f) s.healthCapPerLevel = s.healthCap * frac;
@@ -795,6 +798,8 @@ namespace TitanOrbit.Data
                     firePowerPerLevel = ShipComponentWeaponSuggestions.GetSuggestedFirePowerPerLevel(1),
                     bulletSpeed = ShipComponentWeaponSuggestions.BulletSpeedV1,
                     bulletSpeedPerLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeedPerLevel(1),
+                    bulletRange = ShipComponentWeaponSuggestions.BulletRangeV1,
+                    bulletRangePerLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletRangePerLevel(1),
                     fireRate = ShipComponentWeaponSuggestions.FireRate,
                     fireRatePerLevel = 0f,
                 };
@@ -803,6 +808,7 @@ namespace TitanOrbit.Data
                 {
                     firePower = ShipComponentWeaponSuggestions.FirePowerV1,
                     bulletSpeed = ShipComponentWeaponSuggestions.BulletSpeedV1,
+                    bulletRange = ShipComponentWeaponSuggestions.BulletRangePerVersion,
                     fireRate = 0f,
                     fireRatePerLevel = 0f,
                     energyCap = profile.baseAtVersion1.energyCap,
@@ -818,6 +824,8 @@ namespace TitanOrbit.Data
                     firePowerPerLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonFirePowerPerLevel(1),
                     bulletSpeed = ShipComponentWeaponSuggestions.CannonBulletSpeedV1,
                     bulletSpeedPerLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonBulletSpeedPerLevel(1),
+                    bulletRange = ShipComponentWeaponSuggestions.CannonBulletRangeV1,
+                    bulletRangePerLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonBulletRangePerLevel(1),
                     fireRate = ShipComponentWeaponSuggestions.CannonFireRate,
                     fireRatePerLevel = 0f,
                 };
@@ -826,6 +834,7 @@ namespace TitanOrbit.Data
                 {
                     firePower = ShipComponentWeaponSuggestions.CannonFirePowerV1,
                     bulletSpeed = ShipComponentWeaponSuggestions.CannonBulletSpeedV1 * 0.25f,
+                    bulletRange = ShipComponentWeaponSuggestions.CannonBulletRangePerVersion,
                     fireRate = 0f,
                     fireRatePerLevel = 0f,
                     energyCap = profile.baseAtVersion1.energyCap,

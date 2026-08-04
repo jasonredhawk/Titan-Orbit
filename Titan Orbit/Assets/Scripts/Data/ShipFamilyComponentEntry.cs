@@ -8,7 +8,7 @@ namespace TitanOrbit.Data
     /// <summary>UI color grouping for ship component stats (offense, health, energy, movement, capacity).</summary>
     public enum ShipComponentStatCategory
     {
-        /// <summary>Damage, fire rate, bullet speed, ramming.</summary>
+        /// <summary>Damage, fire rate, bullet speed, bullet range, ramming.</summary>
         Offense = 0,
         /// <summary>Max hull and regeneration.</summary>
         Health = 1,
@@ -34,6 +34,14 @@ namespace TitanOrbit.Data
         /// <summary>Projectile speed in world units per second.</summary>
         public float bulletSpeed;
         public float bulletSpeedPerLevel;
+        /// <summary>
+        /// How far a bullet travels before expiring (world units). Writes <c>ShipWeaponConfig.BulletMaxDistance</c>.
+        /// [TITAN-ORBIT] Grows with ship level via <see cref="bulletRangePerLevel"/> — not a bottom-bar
+        /// attribute upgrade like Fire Power. Family <c>bulletRangeMul</c> can scale both fields.
+        /// </summary>
+        public float bulletRange;
+        /// <summary>Added to <see cref="bulletRange"/> once per ship level above 1.</summary>
+        public float bulletRangePerLevel;
         /// <summary>Shots per second baseline.</summary>
         public float fireRate;
         public float fireRatePerLevel;
@@ -123,6 +131,8 @@ namespace TitanOrbit.Data
             if (allowedSet.Contains("firePowerPerLevel")) filtered.firePowerPerLevel = stats.firePowerPerLevel;
             if (allowedSet.Contains("bulletSpeed")) filtered.bulletSpeed = stats.bulletSpeed;
             if (allowedSet.Contains("bulletSpeedPerLevel")) filtered.bulletSpeedPerLevel = stats.bulletSpeedPerLevel;
+            if (allowedSet.Contains("bulletRange")) filtered.bulletRange = stats.bulletRange;
+            if (allowedSet.Contains("bulletRangePerLevel")) filtered.bulletRangePerLevel = stats.bulletRangePerLevel;
             if (allowedSet.Contains("fireRate")) filtered.fireRate = stats.fireRate;
             if (allowedSet.Contains("fireRatePerLevel")) filtered.fireRatePerLevel = stats.fireRatePerLevel;
             if (allowedSet.Contains("rammingPower")) filtered.rammingPower = stats.rammingPower;

@@ -6,7 +6,7 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// Pure math helpers for <see cref="ShipComponentAbilityStats"/> — addition, zero checks, fallback fill,
-    /// transform-based scaling, weapon projectile-speed aggregation (max, not sum), and component-id
+    /// transform-based scaling, weapon projectile-speed / range aggregation (max, not sum), and component-id
     /// classification (weapon vs engine vs thruster). Fire power / fire rate stay as field-wise sums
     /// for power-score totals; live bullets use per-mount stats instead. No Unity scene access; safe
     /// to call from editor tooling and runtime stat pipelines.
@@ -19,13 +19,15 @@ namespace TitanOrbit.Data
             // --- Add ---
             // [TITAN-ORBIT] firePower / fireRate are summed for hull power-score capacity.
             // Per-bullet damage and per-barrel cadence come from ShipWeaponMountElement, not this total.
-            // bulletSpeed is corrected by ApplyWeaponProjectileSpeedToSummedStats (max, not sum).
+            // bulletSpeed / bulletRange are corrected by ApplyWeaponProjectile* (max, not sum).
             return new ShipComponentAbilityStats
             {
                 firePower = a.firePower + b.firePower,
                 firePowerPerLevel = a.firePowerPerLevel + b.firePowerPerLevel,
                 bulletSpeed = a.bulletSpeed + b.bulletSpeed,
                 bulletSpeedPerLevel = a.bulletSpeedPerLevel + b.bulletSpeedPerLevel,
+                bulletRange = a.bulletRange + b.bulletRange,
+                bulletRangePerLevel = a.bulletRangePerLevel + b.bulletRangePerLevel,
                 fireRate = a.fireRate + b.fireRate,
                 fireRatePerLevel = a.fireRatePerLevel + b.fireRatePerLevel,
                 rammingPower = a.rammingPower + b.rammingPower,
@@ -111,6 +113,55 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Replaces naively summed weapon <c>bulletRange</c> with the <b>max</b> across weapon parts.
+        /// <para>
+        /// [TITAN-ORBIT] Bullet range is a per-projectile property (same as speed — one travel
+        /// distance for the hull, not N× guns). Unlike fire power, range is <b>not</b> a bottom-bar
+        /// attribute; it grows with ship level via <c>bulletRangePerLevel</c> and family
+        /// <c>bulletRangeMul</c>. Writes into <c>ShipWeaponConfig.BulletMaxDistance</c> at apply time.
+        /// </para>
+        /// Call after summing scaled component stats (same slot as projectile-speed aggregation).
+        /// </summary>
+        public static ShipComponentAbilityStats ApplyWeaponBulletRangeToSummedStats(
+            ShipComponentAbilityStats total,
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
+        {
+            if (componentIds == null || perComponentStats == null)
+                return total;
+
+            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            if (count == 0)
+                return total;
+
+            float maxRange = 0f;
+            float maxRangePerLevel = 0f;
+            bool anyWeapon = false;
+
+            // --- Peel weapon contributions out of the naive sum ---
+            for (int i = 0; i < count; i++)
+            {
+                if (!IsWeaponComponent(componentIds[i]))
+                    continue;
+
+                ShipComponentAbilityStats s = perComponentStats[i];
+                total.bulletRange -= s.bulletRange;
+                total.bulletRangePerLevel -= s.bulletRangePerLevel;
+                maxRange = Mathf.Max(maxRange, s.bulletRange);
+                maxRangePerLevel = Mathf.Max(maxRangePerLevel, s.bulletRangePerLevel);
+                anyWeapon = true;
+            }
+
+            if (!anyWeapon)
+                return total;
+
+            // --- One projectile range for the hull (longest barrel), not N× sum ---
+            total.bulletRange = Mathf.Max(0f, total.bulletRange) + maxRange;
+            total.bulletRangePerLevel = Mathf.Max(0f, total.bulletRangePerLevel) + maxRangePerLevel;
+            return total;
+        }
+
+        /// <summary>
         /// Intentionally keeps naively summed weapon <c>firePower</c> (total across barrels).
         /// <para>
         /// [TITAN-ORBIT] Live bullets use <b>per-mount</b> firePower from
@@ -154,6 +205,7 @@ namespace TitanOrbit.Data
             // --- IsAllZero ---
             return s.firePower == 0f && s.firePowerPerLevel == 0f &&
                    s.bulletSpeed == 0f && s.bulletSpeedPerLevel == 0f &&
+                   s.bulletRange == 0f && s.bulletRangePerLevel == 0f &&
                    s.fireRate == 0f && s.fireRatePerLevel == 0f &&
                    s.rammingPower == 0f && s.rammingPowerPerLevel == 0f &&
                    s.healthCap == 0f && s.healthCapPerLevel == 0f &&
@@ -182,6 +234,8 @@ namespace TitanOrbit.Data
             if (result.firePowerPerLevel == 0f) result.firePowerPerLevel = defaults.firePowerPerLevel;
             if (result.bulletSpeed == 0f) result.bulletSpeed = defaults.bulletSpeed;
             if (result.bulletSpeedPerLevel == 0f) result.bulletSpeedPerLevel = defaults.bulletSpeedPerLevel;
+            if (result.bulletRange == 0f) result.bulletRange = defaults.bulletRange;
+            if (result.bulletRangePerLevel == 0f) result.bulletRangePerLevel = defaults.bulletRangePerLevel;
             if (result.fireRate == 0f) result.fireRate = defaults.fireRate;
             if (result.fireRatePerLevel == 0f) result.fireRatePerLevel = defaults.fireRatePerLevel;
             if (result.rammingPower == 0f) result.rammingPower = defaults.rammingPower;
@@ -312,6 +366,9 @@ namespace TitanOrbit.Data
                     firePowerPerLevel = stats.firePowerPerLevel * firePowerScale,
                     bulletSpeed = stats.bulletSpeed,
                     bulletSpeedPerLevel = stats.bulletSpeedPerLevel,
+                    // [TITAN-ORBIT] Range is hull-level (like speed) — not scaled by mesh size.
+                    bulletRange = stats.bulletRange,
+                    bulletRangePerLevel = stats.bulletRangePerLevel,
                     fireRate = stats.fireRate * fireRateScale,
                     fireRatePerLevel = stats.fireRatePerLevel * fireRateScale,
                     rammingPower = stats.rammingPower,
@@ -367,6 +424,8 @@ namespace TitanOrbit.Data
                 firePowerPerLevel = s.firePowerPerLevel * factor,
                 bulletSpeed = s.bulletSpeed * factor,
                 bulletSpeedPerLevel = s.bulletSpeedPerLevel * factor,
+                bulletRange = s.bulletRange * factor,
+                bulletRangePerLevel = s.bulletRangePerLevel * factor,
                 fireRate = s.fireRate * factor,
                 fireRatePerLevel = s.fireRatePerLevel * factor,
                 rammingPower = s.rammingPower * factor,

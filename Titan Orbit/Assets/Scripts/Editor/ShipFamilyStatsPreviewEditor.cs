@@ -83,6 +83,8 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.FloatField("Fire Power / Level", total.firePowerPerLevel);
                 EditorGUILayout.FloatField("Bullet Speed", total.bulletSpeed);
                 EditorGUILayout.FloatField("Bullet Speed / Level", total.bulletSpeedPerLevel);
+                EditorGUILayout.FloatField("Bullet Range", total.bulletRange);
+                EditorGUILayout.FloatField("Bullet Range / Level", total.bulletRangePerLevel);
                 EditorGUILayout.FloatField("Fire Rate (shots/s)", total.fireRate);
                 EditorGUILayout.FloatField("Fire Rate / Level", total.fireRatePerLevel);
                 EditorGUILayout.FloatField("Ramming Power", total.rammingPower);
@@ -215,6 +217,8 @@ namespace TitanOrbit.Editor
                             EditorGUILayout.FloatField("  Fire Power / Level", s.firePowerPerLevel);
                             EditorGUILayout.FloatField("  Bullet Speed", s.bulletSpeed);
                             EditorGUILayout.FloatField("  Bullet Speed / Level", s.bulletSpeedPerLevel);
+                            EditorGUILayout.FloatField("  Bullet Range", s.bulletRange);
+                            EditorGUILayout.FloatField("  Bullet Range / Level", s.bulletRangePerLevel);
                             EditorGUILayout.FloatField("  Fire Rate (shots/s)", s.fireRate);
                             EditorGUILayout.FloatField("  Fire Rate / Level", s.fireRatePerLevel);
                             EditorGUILayout.FloatField("  Ramming Power", s.rammingPower);

@@ -68,6 +68,7 @@ namespace TitanOrbit.Data
         public static ShipComponentAbilityStats ApplyMaxEffectiveLevels(ShipComponentAbilityStats stats, int upgradeCount)
         {
             stats.firePower += stats.firePowerPerLevel * upgradeCount;
+            stats.bulletRange += stats.bulletRangePerLevel * upgradeCount;
             stats.fireRate += stats.fireRatePerLevel * upgradeCount;
             stats.rammingPower += stats.rammingPowerPerLevel * upgradeCount;
             stats.healthCap += stats.healthCapPerLevel * upgradeCount;
@@ -155,7 +156,7 @@ namespace TitanOrbit.Data
                 turnSpeed = s.turnSpeed,
                 gemCap = s.maxGems,
                 peopleCap = s.maxPeople,
-                offense = s.firePower + s.bulletSpeed + s.fireRate + s.rammingPower,
+                offense = s.firePower + s.bulletSpeed + s.bulletRange + s.fireRate + s.rammingPower,
                 defense = s.healthCap + s.healthRegen,
                 energy = s.energyCap + s.energyRegen,
                 mobility = s.moveSpeed + s.turnSpeed + s.accelerationCap,

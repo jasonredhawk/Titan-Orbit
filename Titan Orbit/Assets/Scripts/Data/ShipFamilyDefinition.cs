@@ -23,6 +23,9 @@ namespace TitanOrbit.Data
                 firePowerPerLevel = 0.75f,
                 bulletSpeed = 12f,
                 bulletSpeedPerLevel = 3f,
+                // [TITAN-ORBIT] Matches ShipWeaponConfig.DefaultBulletMaxDistance; +25%/level like most offense stats.
+                bulletRange = 30f,
+                bulletRangePerLevel = 7.5f,
                 fireRate = 3f,
                 fireRatePerLevel = 0f,
                 rammingPower = 1f,

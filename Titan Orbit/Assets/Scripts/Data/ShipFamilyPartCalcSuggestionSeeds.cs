@@ -39,6 +39,13 @@ namespace TitanOrbit.Data
         /// <summary>[TITAN-ORBIT] Always 0 for every weapon type — rate does not grow per level.</summary>
         public const float FireRatePerLevel = 0f;
         public const float BulletSpeedV1 = 12f;
+        /// <summary>
+        /// Weapon Bullet travel distance at version 1 (matches <c>ShipWeaponConfig.DefaultBulletMaxDistance</c>).
+        /// [TITAN-ORBIT] Grows with ship level — not a bottom-bar attribute upgrade.
+        /// </summary>
+        public const float BulletRangeV1 = 30f;
+        /// <summary>Extra bullet range added per weapon part version step in ProfileSet seeds.</summary>
+        public const float BulletRangePerVersion = 4f;
 
         /// <summary>Weapon Cannon fire power ≈ 4× Weapon Bullet.</summary>
         public const float CannonFirePowerV1 = FirePowerV1 * 4f;
@@ -46,6 +53,10 @@ namespace TitanOrbit.Data
         public const float CannonFireRate = 1f;
         /// <summary>Weapon Cannon projectile speed (slightly slower than bullets).</summary>
         public const float CannonBulletSpeedV1 = 10f;
+        /// <summary>Weapon Cannon travel distance at version 1 (slightly longer than bullets).</summary>
+        public const float CannonBulletRangeV1 = 36f;
+        /// <summary>Extra cannon range per weapon part version step.</summary>
+        public const float CannonBulletRangePerVersion = 5f;
 
         /// <summary>
         /// HUD clamps attribute ticks to 7; each Fire Power tick is +10%
@@ -92,6 +103,16 @@ namespace TitanOrbit.Data
         public static float GetSuggestedBulletSpeedPerLevel(int version) =>
             Mathf.Max(0f, GetSuggestedBulletSpeed(version) * ShipPropulsionAggregation.PerLevelFractionOfBase);
 
+        public static float GetSuggestedBulletRange(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return BulletRangeV1 + (v - 1) * BulletRangePerVersion;
+        }
+
+        /// <summary>Per-level bullet range — float only (no RoundToInt). Scales with ship level at runtime.</summary>
+        public static float GetSuggestedBulletRangePerLevel(int version) =>
+            Mathf.Max(0f, GetSuggestedBulletRange(version) * ShipPropulsionAggregation.PerLevelFractionOfBase);
+
         /// <summary>Weapon Cannon fire-power per ship level (same fraction rule as bullets).</summary>
         public static float GetSuggestedCannonFirePowerPerLevel(int version)
         {
@@ -107,6 +128,16 @@ namespace TitanOrbit.Data
             float speed = CannonBulletSpeedV1 * v;
             return Mathf.Max(0f, speed * ShipPropulsionAggregation.PerLevelFractionOfBase);
         }
+
+        public static float GetSuggestedCannonBulletRange(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return CannonBulletRangeV1 + (v - 1) * CannonBulletRangePerVersion;
+        }
+
+        /// <summary>Weapon Cannon bullet-range per ship level (same fraction rule as bullets).</summary>
+        public static float GetSuggestedCannonBulletRangePerLevel(int version) =>
+            Mathf.Max(0f, GetSuggestedCannonBulletRange(version) * ShipPropulsionAggregation.PerLevelFractionOfBase);
 
         public static float ComputeSustainedEnergyDrain(float firePower, float fireRate) =>
             Mathf.Max(0f, firePower) * Mathf.Max(0.01f, fireRate);

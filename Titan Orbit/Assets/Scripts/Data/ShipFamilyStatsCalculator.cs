@@ -183,6 +183,11 @@ namespace TitanOrbit.Data
                 result.TotalStats,
                 result.MatchedComponentIds,
                 result.PerComponentStats);
+            // [TITAN-ORBIT] Bullet range is per-projectile — max across weapons (grows with ship level).
+            result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponBulletRangeToSummedStats(
+                result.TotalStats,
+                result.MatchedComponentIds,
+                result.PerComponentStats);
             // [TITAN-ORBIT] Per-bullet damage lives on each mount — hull sum stays for power score.
             result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponFirePowerToSummedStats(
                 result.TotalStats,

@@ -1032,6 +1032,8 @@ namespace TitanOrbit.Editor
             if (source.firePowerPerLevel != 0f) target.firePowerPerLevel = source.firePowerPerLevel;
             if (source.bulletSpeed != 0f) target.bulletSpeed = source.bulletSpeed;
             if (source.bulletSpeedPerLevel != 0f) target.bulletSpeedPerLevel = source.bulletSpeedPerLevel;
+            if (source.bulletRange != 0f) target.bulletRange = source.bulletRange;
+            if (source.bulletRangePerLevel != 0f) target.bulletRangePerLevel = source.bulletRangePerLevel;
             if (source.fireRate != 0f) target.fireRate = source.fireRate;
             if (source.fireRatePerLevel != 0f) target.fireRatePerLevel = source.fireRatePerLevel;
             if (source.rammingPower != 0f) target.rammingPower = source.rammingPower;
@@ -1082,10 +1084,12 @@ namespace TitanOrbit.Editor
                     {
                         stats.firePower = ShipComponentWeaponSuggestions.GetSuggestedFirePower(version);
                         stats.bulletSpeed = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeed(version);
+                        stats.bulletRange = ShipComponentWeaponSuggestions.GetSuggestedBulletRange(version);
                         stats.fireRate = ShipComponentWeaponSuggestions.FireRate;
                         stats.fireRatePerLevel = ShipComponentWeaponSuggestions.FireRatePerLevel;
                         stats.firePowerPerLevel = ShipComponentWeaponSuggestions.GetSuggestedFirePowerPerLevel(version);
                         stats.bulletSpeedPerLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeedPerLevel(version);
+                        stats.bulletRangePerLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletRangePerLevel(version);
                     }
                     break;
 

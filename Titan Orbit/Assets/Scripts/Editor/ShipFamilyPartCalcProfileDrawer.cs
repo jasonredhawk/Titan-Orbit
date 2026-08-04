@@ -161,6 +161,7 @@ namespace TitanOrbit.Editor
 
             TryFillPair(statsProp, "firePower", "firePowerPerLevel", frac);
             TryFillPair(statsProp, "bulletSpeed", "bulletSpeedPerLevel", frac);
+            TryFillPair(statsProp, "bulletRange", "bulletRangePerLevel", frac);
             // Weapons keep fireRate flat (EvaluateAtVersion zeroes fireRatePerLevel).
             if (!ShipFamilyPartTypes.IsWeapon(partType))
                 TryFillPair(statsProp, "fireRate", "fireRatePerLevel", frac);

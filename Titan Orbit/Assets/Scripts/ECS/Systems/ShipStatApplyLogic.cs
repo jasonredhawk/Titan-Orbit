@@ -228,9 +228,14 @@ namespace TitanOrbit.ECS
                     // child (e.g. 4×12 speed). Prefab sum now uses max speed; until the catalog is
                     // re-baked, force bullet speed (and leave firePower/fireRate as authored
                     // breakdown totals — live shots use per-mount combat, not this hull block).
+                    // Same for bulletRange: display breakdown never stored range; use family defaults.
                     var familyDefaults = family.GetEffectiveDefaultFallbackStats();
                     if (familyDefaults.bulletSpeed > 0.01f)
                         baseStats.bulletSpeed = familyDefaults.bulletSpeed;
+                    if (familyDefaults.bulletRange > 0.01f)
+                        baseStats.bulletRange = familyDefaults.bulletRange;
+                    if (familyDefaults.bulletRangePerLevel > 0.01f)
+                        baseStats.bulletRangePerLevel = familyDefaults.bulletRangePerLevel;
                     baseStats = family.ApplyStatFallbacks(baseStats);
                 }
                 return true;
@@ -371,9 +376,14 @@ namespace TitanOrbit.ECS
                 weapon.BulletSpeed = bulletSpeed;
                 weapon.BulletDamage = firePower;
                 weapon.EnergyCostPerShot = firePower;
-                // [TITAN-ORBIT] Original design range ~30 units — distance cull (no impact VFX).
+                // [TITAN-ORBIT] Bullet travel range from family stats (ship-level scaled).
+                // Fallback to DefaultBulletMaxDistance when authored range is zero/missing.
                 // Lifetime is derived so MaxDistance wins before the timer for normal bullet speeds.
-                weapon.BulletMaxDistance = ShipWeaponConfig.DefaultBulletMaxDistance;
+                weapon.BulletMaxDistance = Mathf.Max(
+                    1f,
+                    effective.bulletRange > 0.01f
+                        ? effective.bulletRange
+                        : ShipWeaponConfig.DefaultBulletMaxDistance);
                 weapon.BulletLifetime = Mathf.Max(0.25f, weapon.BulletMaxDistance / Mathf.Max(1f, bulletSpeed));
                 // [TITAN-ORBIT] Reset VFX baselines on hull swap so upgradeMul ≈ 1 until attributes climb.
                 if (chassisIdentityChanged || weapon.ReferenceBulletDamage <= 0.01f)

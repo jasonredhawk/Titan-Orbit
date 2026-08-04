@@ -29,6 +29,11 @@ namespace TitanOrbit.Data
         /// parts — see <see cref="ShipComponentAbilityStatsMath.ApplyWeaponProjectileSpeedToSummedStats"/>).
         /// Faster bullets come from attribute upgrades / Shard cards, not ship tier.
         /// </para>
+        /// <para>
+        /// [TITAN-ORBIT] <c>bulletRange</c> <b>does</b> grow with ship level (unlike bulletSpeed).
+        /// Range is not a bottom-bar attribute upgrade — only chassis level + family
+        /// <c>bulletRangeMul</c> change how far shots travel.
+        /// </para>
         /// </summary>
         public static ShipComponentAbilityStats GetEffectiveStatsAtShipLevel(ShipComponentAbilityStats stats, int shipLevel)
         {
@@ -48,12 +53,15 @@ namespace TitanOrbit.Data
 
             // --- Linear growth on most stats; move/accel/turn use settings level penalties ---
             // bulletSpeed: base only (no perLvl) — see method summary.
+            // bulletRange: DOES grow with ship level (unlike bulletSpeed) — not a player attribute.
             return new ShipComponentAbilityStats
             {
                 firePower = stats.firePower + stats.firePowerPerLevel * perLvl,
                 firePowerPerLevel = stats.firePowerPerLevel,
                 bulletSpeed = stats.bulletSpeed,
                 bulletSpeedPerLevel = stats.bulletSpeedPerLevel,
+                bulletRange = stats.bulletRange + stats.bulletRangePerLevel * perLvl,
+                bulletRangePerLevel = stats.bulletRangePerLevel,
                 fireRate = stats.fireRate + stats.fireRatePerLevel * perLvl,
                 fireRatePerLevel = stats.fireRatePerLevel,
                 rammingPower = stats.rammingPower + stats.rammingPowerPerLevel * perLvl,
@@ -206,6 +214,7 @@ namespace TitanOrbit.Data
             // --- Pick top non-zero stats in fixed priority order ---
             TryAddLine(lines, "Fire", s.firePower, maxLines);
             TryAddLine(lines, "Bullet", s.bulletSpeed, maxLines);
+            TryAddLine(lines, "Range", s.bulletRange, maxLines);
             TryAddLine(lines, "Fire rate", s.fireRate, maxLines);
             TryAddLine(lines, "Ram", s.rammingPower, maxLines);
             TryAddLine(lines, "Health", s.healthCap, maxLines);

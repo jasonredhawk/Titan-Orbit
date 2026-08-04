@@ -99,6 +99,7 @@ namespace TitanOrbit.Data
         static readonly string[] WeaponOffenseFields =
         {
             "firePower", "firePowerPerLevel", "bulletSpeed", "bulletSpeedPerLevel",
+            "bulletRange", "bulletRangePerLevel",
             "fireRate", "fireRatePerLevel"
         };
         static readonly string[] HealthFields =
