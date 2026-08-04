@@ -20,10 +20,19 @@ namespace TitanOrbit.ECS
         /// <summary>[ECS/DOTS] World-units-per-second velocity vector on the XZ plane.</summary>
         public float3 Velocity;
 
-        /// <summary>[TITAN-ORBIT] Maximum travel distance before despawn (Euclidean step sum).</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Maximum travel distance before despawn.
+        /// Metric: Euclidean path length summed from per-tick <c>|vel|*dt</c> steps on unbounded
+        /// flight (not toroidal wrap distance). Planetary defense copies engage range into this
+        /// field so pad→target toroidal acquisition range matches straight-line flight budget.
+        /// </summary>
         public float MaxDistance;
 
-        /// <summary>[UNITY] Seconds until automatic despawn.</summary>
+        /// <summary>
+        /// [UNITY] Seconds until automatic despawn.
+        /// [TITAN-ORBIT] When ≤ 0, lifetime cull is disabled — only <see cref="MaxDistance"/>
+        /// (and hits) end the shot. Planetary defense uses 0; ship guns keep a positive timer.
+        /// </summary>
         public float Lifetime;
 
         /// <summary>[TITAN-ORBIT] Damage applied on hit (ships, moons, asteroids).</summary>
@@ -70,10 +79,15 @@ namespace TitanOrbit.ECS
         /// <summary>[ECS/DOTS] Initial bullet velocity.</summary>
         public float3 Velocity;
 
-        /// <summary>[UNITY] Tracer lifetime in seconds.</summary>
+        /// <summary>
+        /// [UNITY] Tracer lifetime in seconds.
+        /// [TITAN-ORBIT] ≤ 0 = distance-only (no age cull); see <see cref="BulletElement.Lifetime"/>.
+        /// </summary>
         public float Lifetime;
 
-        /// <summary>[TITAN-ORBIT] Max travel distance for cosmetic tracer.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Max travel distance for cosmetic tracer (Euclidean path sum, same as sim).
+        /// </summary>
         public float MaxDistance;
 
         /// <summary>[TITAN-ORBIT] Display damage value (cosmetic; server sim owns real damage).</summary>
@@ -141,10 +155,13 @@ namespace TitanOrbit.ECS
         /// <summary>[ECS/DOTS] Tracer velocity.</summary>
         public float3 Velocity;
 
-        /// <summary>[UNITY] Seconds until tracer despawns.</summary>
+        /// <summary>
+        /// [UNITY] Seconds until tracer despawns.
+        /// [TITAN-ORBIT] May be +∞ when spawn Lifetime was ≤ 0 (distance-only PD shots).
+        /// </summary>
         public float RemainingLifetime;
 
-        /// <summary>[TITAN-ORBIT] Max distance before tracer despawn.</summary>
+        /// <summary>[TITAN-ORBIT] Max distance before tracer despawn (Euclidean path sum).</summary>
         public float MaxDistance;
 
         /// <summary>[UNITY] Base tracer mesh scale.</summary>

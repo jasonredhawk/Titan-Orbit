@@ -38,6 +38,9 @@ namespace TitanOrbit.ECS
                     BankIndex = r.BankIndex,
                     ScaleMultiplier = r.ScaleMultiplier > 0f ? r.ScaleMultiplier : 1f,
                     AsteroidHealthAfter = r.AsteroidHealthAfter,
+                    PlanetaryDefensePlanetId = r.PlanetaryDefensePlanetId,
+                    PlanetaryDefenseSlotIndex = r.PlanetaryDefenseSlotIndex,
+                    PlanetaryDefenseHealthAfter = r.PlanetaryDefenseHealthAfter,
                 });
                 ecb.DestroyEntity(entity);
             }

@@ -15,16 +15,24 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative planetary defense fire. Active turrets aim at the nearest enemy ship
-    /// or people transport within engage range (pad→orbit gap × Level 1→6 fire-distance multiplier
-    /// from <see cref="PlanetaryDefenseConfig"/>) and append <see cref="BulletElement"/> shots with
-    /// <see cref="BulletDamageFilter.ShipsAndTransports"/>.
+    /// or people transport within absolute engage range (world units from the pad; Level 1→6
+    /// from <see cref="PlanetaryDefenseConfig"/>, default 20 at Lv1 then +4/level) and append
+    /// <see cref="BulletElement"/> shots with <see cref="BulletDamageFilter.ShipsAndTransports"/>.
     /// <para>
     /// [TITAN-ORBIT] No turret ghosts — muzzle pose is derived from planet transform + slot index
     /// (same formula as client visuals / hit spheres). OwnerNetworkId is 0; OwnerTeam is planet
-    /// ownership so friendly-fire rules still work. Aim uses simple velocity lead so moving
-    /// ships are not under-shot; <see cref="BulletVisualScale"/> grows tracers with fire power.
-    /// Bullet bank comes from the turret asset category name, else the family's
+    /// ownership so friendly-fire rules still work. Fire direction uses
+    /// <see cref="PlanetaryDefenseAimMath"/> lead targeting (quadratic intercept from target
+    /// position + velocity + bullet speed) so moving ships and descending people transports
+    /// are not under-shot. Ship velocity comes from <see cref="ShipKinematics"/>; transport
+    /// velocity from <see cref="PeopleTransportState.Velocity"/>.
+    /// <see cref="BulletVisualScale"/> grows tracers with fire power. Bullet bank comes from
+    /// the turret asset category name, else the family's
     /// <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>.
+    /// Each shot's <see cref="BulletElement.MaxDistance"/> equals that level's engage range
+    /// (same value as acquisition). Lifetime is 0 so only range/hits despawn the bullet —
+    /// <see cref="BulletSimulationSystem"/> sums Euclidean flight steps, which match toroidal
+    /// pad→target distance when aim uses <see cref="ToroidalMapEcs.ShortestOffsetXZ"/>.
     /// </para>
     /// World: ServerSimulation. Runs after <see cref="BulletSimulationSystem"/> so ship/drone
     /// volleys resolve first; turret bullets advance on the next tick.
@@ -175,9 +183,10 @@ namespace TitanOrbit.ECS
                         planetPos, planetSize, planet.PlanetLevel, i, slotCount);
                     muzzle.y = PlanetaryDefenseMath.FixedY;
 
-                    // [TITAN-ORBIT] Per-turret-level fire distance: pad→orbit gap × multiplier (2→3).
-                    float engageRange = PlanetaryDefenseMath.GetEngageRangeFromTurret(
-                        planetSize, planet.PlanetLevel, stats.engageRangeMultiplier);
+                    // [TITAN-ORBIT] Absolute world range from the pad (default 20 at Lv1, +4/level after).
+                    // Independent of planet size — ships use 30 base + 4/level so equal-level
+                    // ships can out-range turrets while lower-level ships step into fire sooner.
+                    float engageRange = math.max(0.5f, stats.engageRange);
                     float engageRangeSq = engageRange * engageRange;
 
                     if (!TryFindNearestHostile(
@@ -186,21 +195,13 @@ namespace TitanOrbit.ECS
                             out float3 targetPos, out float3 targetVel))
                         continue;
 
-                    // --- Velocity lead so shots land on moving ships (not behind them) ---
-                    float3 toTarget = ToroidalMapEcs.ShortestOffsetXZ(muzzle, targetPos, mapW, mapH);
-                    toTarget.y = 0f;
-                    float dist = math.length(toTarget);
-                    float leadT = dist / bulletSpeed;
-                    // Cap lead so extreme speeds cannot aim wildly past the target.
-                    leadT = math.min(leadT, 0.85f);
-                    float3 aimPoint = targetPos + targetVel * leadT;
-                    aimPoint.y = PlanetaryDefenseMath.FixedY;
-
-                    float3 aim = ToroidalMapEcs.ShortestOffsetXZ(muzzle, aimPoint, mapW, mapH);
-                    aim.y = 0f;
-                    if (math.lengthsq(aim) < 0.0001f)
+                    // --- Lead targeting (shared with client barrel aim) ---
+                    // [TITAN-ORBIT] Quadratic intercept in toroidal XZ space. Falls back to
+                    // current-position aim when no valid future intercept exists.
+                    if (!PlanetaryDefenseAimMath.TryComputeFireDirection(
+                            muzzle, targetPos, targetVel, bulletSpeed, mapW, mapH,
+                            out float3 aim))
                         continue;
-                    aim = math.normalize(aim);
 
                     // Same fire-power → tracer size path as ship guns.
                     float visualScale = BulletVisualScale.ComputePerShotScale(
@@ -213,12 +214,18 @@ namespace TitanOrbit.ECS
 
                     float3 bulletVel = aim * bulletSpeed;
                     uint sequence = BulletVfxBridge.NextSequence();
+                    // --- Range cull matches engage ---
+                    // [TITAN-ORBIT] MaxDistance = this level's engageRange (not a separate config
+                    // knob). BulletSimulation despawns on Euclidean traveled ≥ MaxDistance;
+                    // acquisition above uses toroidal muzzle distance — same numeric reach when
+                    // aim is the shortest XZ offset. Lifetime = 0 disables the age timer so slow
+                    // bullets still reach the full engage sphere.
                     var spawn = new BulletElement
                     {
                         Position = muzzle,
                         Velocity = bulletVel,
-                        MaxDistance = math.max(1f, config.bulletMaxDistance),
-                        Lifetime = math.max(0.1f, config.bulletLifetimeSeconds),
+                        MaxDistance = engageRange,
+                        Lifetime = 0f,
                         Damage = damage,
                         OwnerNetworkId = 0,
                         OwnerTeam = ownerTeam,
@@ -255,7 +262,13 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Nearest living enemy ship or people transport within engage range of the turret muzzle
         /// (toroidal). Prefers the closest hostile to that muzzle. Also returns planar velocity
-        /// for lead aiming.
+        /// for <see cref="PlanetaryDefenseAimMath"/> lead aiming.
+        /// <para>
+        /// Ships: <see cref="ShipKinematics.Velocity"/> (ghosted mirror of PhysicsVelocity).
+        /// People transports: <see cref="PeopleTransportState.Velocity"/> written each tick by
+        /// the magnet-steer step — this is what descending/landing pods use, so lead works on
+        /// the miss case the player reported.
+        /// </para>
         /// </summary>
         bool TryFindNearestHostile(
             float3 muzzle,
@@ -293,6 +306,7 @@ namespace TitanOrbit.ECS
 
                 bestMuzzleDistSq = muzzleDistSq;
                 targetPos = pos;
+                // [NETCODE] ShipKinematics is the gameplay-readable velocity ghost field.
                 targetVel = float3.zero;
                 if (EntityManager.HasComponent<ShipKinematics>(e))
                 {
@@ -304,7 +318,7 @@ namespace TitanOrbit.ECS
                 found = true;
             }
 
-            // --- Enemy people transports ---
+            // --- Enemy people transports (descending / landing pods) ---
             for (int i = 0; i < transports.Length; i++)
             {
                 Entity e = transports[i];
@@ -325,8 +339,11 @@ namespace TitanOrbit.ECS
 
                 bestMuzzleDistSq = muzzleDistSq;
                 targetPos = pos;
-                // Transports often lack ship kinematics — lead stays zero (still fine for slow pods).
-                targetVel = float3.zero;
+                // [TITAN-ORBIT] Transports are not ships — velocity lives on PeopleTransportState
+                // (magnet steer writes it each server tick). Zero here was why landing pods were missed.
+                float3 vel = t.Velocity;
+                vel.y = 0f;
+                targetVel = vel;
                 found = true;
             }
 

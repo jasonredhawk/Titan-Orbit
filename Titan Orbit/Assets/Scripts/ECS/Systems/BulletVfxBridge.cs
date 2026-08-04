@@ -22,6 +22,10 @@ namespace TitanOrbit.ECS
             public uint Sequence;
             public float3 SpawnPosition;
             public float3 Velocity;
+            /// <summary>
+            /// Tracer age budget in seconds. ≤ 0 = distance-only (planetary defense);
+            /// <see cref="Game.BulletVfxDriver"/> maps that to +∞ RemainingLifetime.
+            /// </summary>
             public float Lifetime;
             public float MaxDistance;
             public float Damage;
@@ -57,6 +61,22 @@ namespace TitanOrbit.ECS
             /// Mirrors <see cref="BulletHitRpc.AsteroidHealthAfter"/>.
             /// </summary>
             public float AsteroidHealthAfter;
+
+            /// <summary>
+            /// <see cref="BulletHitRpc.PlanetaryDefensePlanetId"/> — 0 when not a PD hit.
+            /// </summary>
+            public int PlanetaryDefensePlanetId;
+
+            /// <summary>
+            /// <see cref="BulletHitRpc.PlanetaryDefenseSlotIndex"/> when PlanetId &gt; 0.
+            /// </summary>
+            public byte PlanetaryDefenseSlotIndex;
+
+            /// <summary>
+            /// <see cref="BulletHitRpc.PlanetaryDefenseHealthAfter"/> — remaining turret HP
+            /// (0 = destroyed this hit). Ignored when PlanetId is 0.
+            /// </summary>
+            public float PlanetaryDefenseHealthAfter;
         }
 
         static readonly ConcurrentQueue<SpawnRequest> SpawnQueue = new ConcurrentQueue<SpawnRequest>();

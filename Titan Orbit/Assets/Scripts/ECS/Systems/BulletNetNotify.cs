@@ -81,11 +81,21 @@ namespace TitanOrbit.ECS
         /// <param name="asteroidHealthAfter">
         /// Asteroid Health after damage, or &lt; 0 when the hit was not an asteroid.
         /// </param>
+        /// <param name="planetaryDefensePlanetId">
+        /// Stable planet id when a PD turret was damaged; 0 otherwise.
+        /// </param>
+        /// <param name="planetaryDefenseSlotIndex">Slot index when PlanetId &gt; 0.</param>
+        /// <param name="planetaryDefenseHealthAfter">
+        /// Turret Health after damage (0 = destroyed); ignored when PlanetId is 0.
+        /// </param>
         public static void SendHit(
             ref EntityCommandBuffer ecb,
             in BulletElement bullet,
             float3 hitPosition,
-            float asteroidHealthAfter = -1f)
+            float asteroidHealthAfter = -1f,
+            int planetaryDefensePlanetId = 0,
+            byte planetaryDefenseSlotIndex = 0,
+            float planetaryDefenseHealthAfter = -1f)
         {
             if (bullet.Sequence == 0)
                 return;
@@ -100,6 +110,9 @@ namespace TitanOrbit.ECS
                 BankIndex = bullet.BankIndex,
                 ScaleMultiplier = bullet.ScaleMultiplier > 0f ? bullet.ScaleMultiplier : 1f,
                 AsteroidHealthAfter = asteroidHealthAfter,
+                PlanetaryDefensePlanetId = planetaryDefensePlanetId,
+                PlanetaryDefenseSlotIndex = planetaryDefenseSlotIndex,
+                PlanetaryDefenseHealthAfter = planetaryDefenseHealthAfter,
             };
 
             if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
@@ -115,6 +128,9 @@ namespace TitanOrbit.ECS
                 BankIndex = bullet.BankIndex,
                 ScaleMultiplier = bullet.ScaleMultiplier > 0f ? bullet.ScaleMultiplier : 1f,
                 AsteroidHealthAfter = asteroidHealthAfter,
+                PlanetaryDefensePlanetId = planetaryDefensePlanetId,
+                PlanetaryDefenseSlotIndex = planetaryDefenseSlotIndex,
+                PlanetaryDefenseHealthAfter = planetaryDefenseHealthAfter,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }

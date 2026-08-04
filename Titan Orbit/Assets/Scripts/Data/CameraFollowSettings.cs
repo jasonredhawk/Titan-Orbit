@@ -4,12 +4,13 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// [UNITY] Designer-tunable camera follow profile for the top-down gameplay camera.
-    /// Create multiple assets (Assets → Create → Titan Orbit → Camera Follow Settings) and assign
-    /// or swap them on CameraFollowEcs (Game assembly).
+    /// Create multiple assets (Assets → Create → Titan Orbit → Camera Follow Settings).
+    /// Assign on each <see cref="ShipFamilyDefinition.cameraFollowSettings"/> (and optionally as the
+    /// Main Camera fallback on CameraFollowEcs).
     /// <para>
     /// [TITAN-ORBIT] Starblast-style framing knobs live here — look-ahead lead while moving,
-    /// and height zoom that grows with ship level. Later, ship families can each reference a
-    /// different profile without changing camera code.
+    /// and height zoom that grows with ship level. CameraFollowEcs applies the local ship's
+    /// family profile when <c>ShipFamilyConfigIndex</c> changes.
     /// </para>
     /// </summary>
     [CreateAssetMenu(

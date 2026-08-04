@@ -59,7 +59,8 @@ namespace TitanOrbit.Data
     /// <summary>
     /// ScriptableObject (designer asset) that defines one ship family — AstroEagle, Cosmic Shark, etc.
     /// Holds per-component ability stats, the upgrade-tree chassis tiers, team materials,
-    /// optional <see cref="planetaryDefense"/> turret recipe, and lookup helpers.
+    /// optional <see cref="planetaryDefense"/> turret recipe, optional
+    /// <see cref="cameraFollowSettings"/> gameplay camera profile, and lookup helpers.
     /// Read by <see cref="ShipFamilyStatsCalculator"/>, <see cref="PlanetShipFamilyConfig"/>, and orbit-station UI
     /// to resolve prefabs, power bars, and moon-dock component prices. Does not run in ECS sim directly.
     /// </summary>
@@ -88,6 +89,15 @@ namespace TitanOrbit.Data
             "bullet bank). Primary authoring site — leave empty to use Resources/PlanetaryDefenseConfig. " +
             "PlanetShipFamilyConfig.ShipFamilyEntry.defenseConfig can still override per list slot.")]
         public PlanetaryDefenseConfig planetaryDefense;
+
+        [Header("Gameplay Camera")]
+        [Tooltip(
+            "In-game CameraFollowEcs profile for ships of this family (height zoom, look-ahead, FOV). " +
+            "Create via Assets → Create → Titan Orbit → Camera Follow Settings. " +
+            "Leave empty to keep the Main Camera's default profile. " +
+            "Applied when the local player's ShipFamilyConfigIndex resolves to this family " +
+            "(team spawn or moon-dock ship purchase).")]
+        public CameraFollowSettings cameraFollowSettings;
 
         [Header("Menu Preview Camera")]
         [Tooltip("Field of view for theatrical (3/4 hero) menu preview renders.")]

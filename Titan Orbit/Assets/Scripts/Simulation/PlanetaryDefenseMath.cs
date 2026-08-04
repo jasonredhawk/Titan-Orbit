@@ -4,16 +4,15 @@ using Unity.Mathematics;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Pure placement / range math for planetary defense slots.
+    /// Pure placement math for planetary defense slots.
     /// Angles match minimap defense dots (<c>MinimapController.LayoutLevelDots</c>): even spacing
     /// around the planet with index 0 at “north” (+Z on the XZ plane / UI +Y).
     /// <para>
     /// [TITAN-ORBIT] Slot radius is halfway between the planet surface and the ship/moon
-    /// orbit-ring centerline. Combat engage range is measured from the turret pad as
-    /// (pad→orbit gap) × multiplier, where the multiplier comes from
-    /// <c>PlanetaryDefenseConfig</c> Level 1→6 fire-distance ranges (default 2× → 3×).
-    /// Level 7 (crown) is gated: planet at <see cref="PlanetEconomyMath.MaxPlanetLevel"/>
-    /// and the gem-moon reservoir full.
+    /// orbit-ring centerline. Combat engage range is an absolute world distance from the
+    /// turret pad (authored on <c>PlanetaryDefenseConfig</c> — default 20 at Lv1, +4 per level above 1),
+    /// independent of planet size. Level 7 (crown) is gated: planet at
+    /// <see cref="PlanetEconomyMath.MaxPlanetLevel"/> and the gem-moon reservoir full.
     /// </para>
     /// </summary>
     public static class PlanetaryDefenseMath
@@ -113,51 +112,6 @@ namespace TitanOrbit.Simulation
                 planetNear, planetSize, planetLevel, slotIndex, slotCount);
             slot.y = FixedY;
             return slot;
-        }
-
-        /// <summary>
-        /// Radial distance from the defense pad out to the ship orbit-ring centerline.
-        /// Engage range = this gap × the turret's engage-range multiplier.
-        /// </summary>
-        public static float GetPadToOrbitGap(float planetSize, int planetLevel)
-        {
-            float padRadius = GetSlotRingRadiusWorld(planetSize, planetLevel);
-            PlanetOrbitMath.GetRingRadiiWorld(
-                planetSize, planetLevel, out _, out _, out float orbitCenterWorld);
-            return math.max(0.05f, orbitCenterWorld - padRadius);
-        }
-
-        /// <summary>
-        /// Max fire range measured from the turret pad (not planet center).
-        /// Equals (orbit-ring centerline − pad radius) × <paramref name="padToOrbitMultiplier"/>.
-        /// Default recipe uses 2 at Lv1 and 3 at Lv6.
-        /// </summary>
-        /// <param name="planetSize">Planet <c>LocalTransform.Scale</c>.</param>
-        /// <param name="planetLevel">Planet level (orbit / pad radii).</param>
-        /// <param name="padToOrbitMultiplier">
-        /// Absolute multiple of the pad→orbit gap (2 = ×2, 3 = ×3). Not “beyond fraction”.
-        /// </param>
-        public static float GetEngageRangeFromTurret(
-            float planetSize,
-            int planetLevel,
-            float padToOrbitMultiplier)
-        {
-            float gap = GetPadToOrbitGap(planetSize, planetLevel);
-            float mul = math.max(0.05f, padToOrbitMultiplier);
-            return gap * mul;
-        }
-
-        /// <summary>
-        /// [LEGACY] Older call sites passed “beyond fraction” where 1.0 meant ×2 total.
-        /// Converts to absolute multiplier then uses <see cref="GetEngageRangeFromTurret"/>.
-        /// </summary>
-        public static float GetEngageRangeFromPlanetCenter(
-            float planetSize,
-            int planetLevel,
-            float rangeBeyondOrbitOuter)
-        {
-            float absoluteMul = 1f + math.max(0f, rangeBeyondOrbitOuter);
-            return GetEngageRangeFromTurret(planetSize, planetLevel, absoluteMul);
         }
 
         /// <summary>

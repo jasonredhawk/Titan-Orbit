@@ -26,12 +26,35 @@ namespace TitanOrbit.Game
     /// matching the legacy NGO ClientRpc timing that fired on delivery — not on spawn.
     /// </para>
     /// <para>
+    /// [HYBRID] <see cref="CopyAimFlights"/> lets <see cref="PlanetaryDefenseVisualDriver"/>
+    /// lead-aim cosmetic turrets at the same display pose + server velocity the spheres use —
+    /// Dictionary/list walk only (no map-body ECS gathers).
+    /// </para>
+    /// <para>
     /// Windows-safe: no map-body <c>ToEntityArray</c>, Instantiates 1/frame after settle.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66200)]
     public class PeopleTransportVfxDriver : MonoBehaviour
     {
+        /// <summary>
+        /// One in-flight transport sample for cosmetic turret lead aim (presentation only).
+        /// </summary>
+        public struct AimFlightSample
+        {
+            /// <summary>Display-space world position of the VFX sphere (flattened to Y=0 for aim).</summary>
+            public float3 DisplayPos;
+
+            /// <summary>
+            /// Last server planar velocity (world units/sec) — same vector used for dead-reckon
+            /// and for <see cref="PlanetaryDefenseAimMath"/> lead on the client.
+            /// </summary>
+            public float3 Velocity;
+
+            /// <summary>Owning team as byte (cast to <see cref="TeamId"/>).</summary>
+            public byte Team;
+        }
+
         /// <summary>One active cosmetic flight keyed by server <see cref="PeopleTransportState.Sequence"/>.</summary>
         struct Flight
         {
@@ -60,6 +83,9 @@ namespace TitanOrbit.Game
         /// <summary>Blend toward server pose so packet jitter does not teleport the sphere.</summary>
         const float ServerPoseBlend = 0.65f;
 
+        /// <summary>Singleton for other client bridges (turret aim) without FindObject each frame.</summary>
+        static PeopleTransportVfxDriver s_Instance;
+
         readonly List<Flight> _flights = new List<Flight>(32);
         readonly Dictionary<uint, int> _indexBySequence = new Dictionary<uint, int>(32);
 
@@ -71,6 +97,9 @@ namespace TitanOrbit.Game
             new Dictionary<uint, PeopleTransportVfxBridge.PoseUpdate>(16);
 
         int _lastTickFrame = -1;
+
+        /// <summary>Live driver instance, or null when disabled.</summary>
+        public static PeopleTransportVfxDriver Active => s_Instance;
 
         /// <summary>[UNITY] Attach to session manager when the scene loads.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -91,12 +120,50 @@ namespace TitanOrbit.Game
             go.AddComponent<PeopleTransportVfxDriver>();
         }
 
+        /// <summary>[UNITY] Publish singleton so turret aim can find flights without a scene scan.</summary>
+        void OnEnable()
+        {
+            s_Instance = this;
+        }
+
         void OnDisable()
         {
+            if (s_Instance == this)
+                s_Instance = null;
             ClearAllFlights();
             PeopleTransportVfxBridge.Clear();
             _indexBySequence.Clear();
             _pendingPoses.Clear();
+        }
+
+        /// <summary>
+        /// Copies active VFX flights for cosmetic planetary-defense lead aim.
+        /// [HYBRID] List walk only — never queries ECS transport archetypes (Windows join-safe).
+        /// </summary>
+        /// <param name="dst">Cleared and filled with display pose + velocity + team.</param>
+        public void CopyAimFlights(List<AimFlightSample> dst)
+        {
+            if (dst == null)
+                return;
+            dst.Clear();
+            for (int i = 0; i < _flights.Count; i++)
+            {
+                var f = _flights[i];
+                if (f.Go == null)
+                    continue;
+
+                // Prefer the GO display position (already unwraped for the local camera tile).
+                float3 display = (float3)f.Go.transform.position;
+                display.y = 0f;
+                float3 vel = f.Velocity;
+                vel.y = 0f;
+                dst.Add(new AimFlightSample
+                {
+                    DisplayPos = display,
+                    Velocity = vel,
+                    Team = f.Team,
+                });
+            }
         }
 
         /// <summary>

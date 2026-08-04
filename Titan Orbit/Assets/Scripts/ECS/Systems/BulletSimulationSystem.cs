@@ -210,11 +210,15 @@ namespace TitanOrbit.ECS
                 float3 startPos = b.Position;
                 float3 endPos = startPos + b.Velocity * dt;
                 // [TITAN-ORBIT] Euclidean step on unbounded flight (not a wrapped-torus path sum).
+                // MaxDistance is therefore a straight-line budget from spawn — PD turrets set it to
+                // the same engageRange used for toroidal target acquisition (XZ shortest path).
                 float stepDistance = math.distance(startPos, endPos);
 
                 // Collide before lifetime/range cull so the final segment still scores hits.
-                bool wouldExpire = (b.Age + dt) >= b.Lifetime ||
-                                   (b.Traveled + stepDistance) >= b.MaxDistance;
+                // [TITAN-ORBIT] Lifetime <= 0 means "no timer" (planetary defense) — MaxDistance alone.
+                bool lifetimeExpired = b.Lifetime > 0f && (b.Age + dt) >= b.Lifetime;
+                bool rangeExpired = (b.Traveled + stepDistance) >= b.MaxDistance;
+                bool wouldExpire = lifetimeExpired || rangeExpired;
 
                 // --- Substep when |vel|*dt is large vs smallest asteroid ---
                 // [TITAN-ORBIT] Starblast continuous feel: split long steps so grazing rocks cannot
@@ -225,6 +229,9 @@ namespace TitanOrbit.ECS
                 bool hit = false;
                 float3 hitPoint = endPos;
                 float asteroidHealthAfter = -1f;
+                int pdPlanetId = 0;
+                byte pdSlotIndex = 0;
+                float pdHealthAfter = -1f;
 
                 for (int s = 0; s < substeps; s++)
                 {
@@ -233,7 +240,8 @@ namespace TitanOrbit.ECS
                     if (TryResolveBulletHit(
                             ref state, ecb, gemPrefab, gemSpawnServerTime,
                             in b, cursor, next, mapW, mapH, moonElapsed, serverElapsed,
-                            out hitPoint, out asteroidHealthAfter))
+                            out hitPoint, out asteroidHealthAfter,
+                            out pdPlanetId, out pdSlotIndex, out pdHealthAfter))
                     {
                         hit = true;
                         break;
@@ -245,9 +253,11 @@ namespace TitanOrbit.ECS
                 if (hit)
                 {
                     // [NETCODE] Server owns impact timing — clients play VFX from BulletHitRpc.
-                    // AsteroidHealthAfter lets clients show true HP Left / hide on kill without
-                    // waiting for lagging asteroid ghost snapshots.
-                    BulletNetNotify.SendHit(ref ecb, b, hitPoint, asteroidHealthAfter);
+                    // AsteroidHealthAfter / PlanetaryDefenseHealthAfter let clients show true HP
+                    // without waiting for lagging ghost snapshots (asteroids + planet MaxSendRate).
+                    BulletNetNotify.SendHit(
+                        ref ecb, b, hitPoint, asteroidHealthAfter,
+                        pdPlanetId, pdSlotIndex, pdHealthAfter);
                     bullets.RemoveAtSwapBack(i);
                     continue;
                 }
@@ -421,11 +431,15 @@ namespace TitanOrbit.ECS
                     bool spawnHit = TryResolveBulletHit(
                         ref state, ecb, gemPrefab, gemSpawnServerTime,
                         in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
-                        out float3 spawnHitPoint, out float spawnAsteroidHealthAfter);
+                        out float3 spawnHitPoint, out float spawnAsteroidHealthAfter,
+                        out int spawnPdPlanetId, out byte spawnPdSlotIndex,
+                        out float spawnPdHealthAfter);
 
                     if (spawnHit)
                     {
-                        BulletNetNotify.SendHit(ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter);
+                        BulletNetNotify.SendHit(
+                            ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter,
+                            spawnPdPlanetId, spawnPdSlotIndex, spawnPdHealthAfter);
                         // Do not add to the live buffer — bullet resolved this frame.
                     }
                     else
@@ -497,6 +511,13 @@ namespace TitanOrbit.ECS
         /// <param name="asteroidHealthAfter">
         /// Asteroid Health after this hit, or &lt; 0 when the winner was not an asteroid.
         /// </param>
+        /// <param name="planetaryDefensePlanetId">
+        /// Stable planet id when a PD turret was damaged; 0 otherwise.
+        /// </param>
+        /// <param name="planetaryDefenseSlotIndex">Slot index when PlanetId &gt; 0.</param>
+        /// <param name="planetaryDefenseHealthAfter">
+        /// Turret Health after damage (0 = destroyed); &lt; 0 / unused when PlanetId is 0.
+        /// </param>
         /// <returns>True when this segment scored a hit and applied damage (or planet block).</returns>
         bool TryResolveBulletHit(
             ref SystemState state,
@@ -511,10 +532,16 @@ namespace TitanOrbit.ECS
             double moonElapsed,
             double serverElapsed,
             out float3 hitPoint,
-            out float asteroidHealthAfter)
+            out float asteroidHealthAfter,
+            out int planetaryDefensePlanetId,
+            out byte planetaryDefenseSlotIndex,
+            out float planetaryDefenseHealthAfter)
         {
             hitPoint = to;
             asteroidHealthAfter = -1f;
+            planetaryDefensePlanetId = 0;
+            planetaryDefenseSlotIndex = 0;
+            planetaryDefenseHealthAfter = -1f;
 
             // --- Pass 1: scan every obstacle, keep nearest contact (smallest segment t) ---
             // [TITAN-ORBIT] Do not apply damage inside the scan — a farther body must not win
@@ -868,6 +895,27 @@ namespace TitanOrbit.ECS
                     // [TITAN-ORBIT] Slot HP → 0 resets to empty placeholder (rebuild with gems).
                     PlanetaryDefenseHitScan.ApplyDamage(
                         state.EntityManager, bestEntity, s_BestDefenseSlot, b.Damage, serverElapsed);
+
+                    // Publish post-hit HP on BulletHitRpc — planet ghost MaxSendRate lags the bar.
+                    if (state.EntityManager.HasComponent<PlanetState>(bestEntity))
+                    {
+                        planetaryDefensePlanetId =
+                            state.EntityManager.GetComponentData<PlanetState>(bestEntity).PlanetId;
+                        planetaryDefenseSlotIndex = (byte)math.clamp(s_BestDefenseSlot, 0, 255);
+                        planetaryDefenseHealthAfter = 0f;
+                        if (state.EntityManager.HasBuffer<PlanetaryDefenseSlotElement>(bestEntity))
+                        {
+                            var buf = state.EntityManager.GetBuffer<PlanetaryDefenseSlotElement>(bestEntity);
+                            if (s_BestDefenseSlot >= 0 && s_BestDefenseSlot < buf.Length)
+                            {
+                                var slot = buf[s_BestDefenseSlot];
+                                // Destroyed → CreateEmptySlot (TurretLevel 0, Health 0).
+                                planetaryDefenseHealthAfter =
+                                    slot.TurretLevel > 0 ? math.max(0f, slot.Health) : 0f;
+                            }
+                        }
+                    }
+
                     return true;
                 }
 

@@ -18,6 +18,8 @@ MonoBehaviour:
     firePowerPerLevel: 0.75
     bulletSpeed: 12
     bulletSpeedPerLevel: 3
+    bulletRange: 0
+    bulletRangePerLevel: 0
     fireRate: 3
     fireRatePerLevel: 0
     rammingPower: 1
@@ -51,6 +53,7 @@ MonoBehaviour:
     firePowerMul: 1
     fireRateMul: 1
     bulletSpeedMul: 1
+    bulletRangeMul: 1
     rammingMul: 1
     healthCapMul: 1
     healthRegenMul: 1
@@ -61,6 +64,8 @@ MonoBehaviour:
     tractorDistanceMul: 1
     tractorPowerMul: 1
   bulletPrefabIndex: 0
+  planetaryDefense: {fileID: 0}
+  cameraFollowSettings: {fileID: 11400000, guid: 90d7e8197d9477d40bc1400865e6a4af, type: 2}
   menuPreviewTheatricalFieldOfView: 36
   menuPreviewBoundsPadding: 1.22
   menuPreviewBackgroundColor: {r: 0.06, g: 0.09, b: 0.14, a: 1}
@@ -73,6 +78,8 @@ MonoBehaviour:
       firePowerPerLevel: 0
       bulletSpeed: 0
       bulletSpeedPerLevel: 0
+      bulletRange: 0
+      bulletRangePerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
       rammingPower: 1
@@ -129,6 +136,8 @@ MonoBehaviour:
       firePowerPerLevel: 0
       bulletSpeed: 0
       bulletSpeedPerLevel: 0
+      bulletRange: 0
+      bulletRangePerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
       rammingPower: 0
@@ -185,6 +194,8 @@ MonoBehaviour:
       firePowerPerLevel: 0
       bulletSpeed: 0
       bulletSpeedPerLevel: 0
+      bulletRange: 0
+      bulletRangePerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
       rammingPower: 0
@@ -241,6 +252,8 @@ MonoBehaviour:
       firePowerPerLevel: 0
       bulletSpeed: 0
       bulletSpeedPerLevel: 0
+      bulletRange: 0
+      bulletRangePerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
       rammingPower: 0
@@ -297,6 +310,8 @@ MonoBehaviour:
       firePowerPerLevel: 0
       bulletSpeed: 0
       bulletSpeedPerLevel: 0
+      bulletRange: 0
+      bulletRangePerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
       rammingPower: 0
@@ -353,6 +368,8 @@ MonoBehaviour:
       firePowerPerLevel: 0
       bulletSpeed: 0
       bulletSpeedPerLevel: 0
+      bulletRange: 0
+      bulletRangePerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
       rammingPower: 0
@@ -409,6 +426,8 @@ MonoBehaviour:
       firePowerPerLevel: 0
       bulletSpeed: 0
       bulletSpeedPerLevel: 0
+      bulletRange: 0
+      bulletRangePerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
       rammingPower: 0
@@ -465,6 +484,8 @@ MonoBehaviour:
       firePowerPerLevel: 1
       bulletSpeed: 12
       bulletSpeedPerLevel: 3
+      bulletRange: 0
+      bulletRangePerLevel: 0
       fireRate: 3
       fireRatePerLevel: 0
       rammingPower: 0
@@ -521,6 +542,8 @@ MonoBehaviour:
       firePowerPerLevel: 0
       bulletSpeed: 0
       bulletSpeedPerLevel: 0
+      bulletRange: 0
+      bulletRangePerLevel: 0
       fireRate: 0
       fireRatePerLevel: 0
       rammingPower: 0

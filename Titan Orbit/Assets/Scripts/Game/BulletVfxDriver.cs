@@ -47,6 +47,10 @@ namespace TitanOrbit.Game
             public float3 LogicalPos;
             public float3 SpawnPos;
             public float3 Velocity;
+            /// <summary>
+            /// Seconds left before cosmetic despawn. When the spawn request Lifetime is ≤ 0
+            /// (planetary defense), this is set to +∞ so only <see cref="MaxDistance"/> culls.
+            /// </summary>
             public float RemainingLifetime;
             public float MaxDistance;
             public float Traveled;
@@ -247,6 +251,7 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
+                // RemainingLifetime is +∞ for distance-only shots (PD Lifetime = 0).
                 if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
                 {
                     DestroyTracerGo(t);
@@ -364,6 +369,7 @@ namespace TitanOrbit.Game
         /// cosmetics do not keep flying through the rock after a real server hit.
         /// Skips duplicate impact flash when client already predicted this Sequence / nearby impact.
         /// Mining floats always use HitRpc <c>AsteroidHealthAfter</c> (never cosmetic-predicted HP).
+        /// Planetary-defense HP bars use <c>PlanetaryDefenseHealthAfter</c> (ghost MaxSendRate lag).
         /// </summary>
         void DrainHits()
         {
@@ -376,7 +382,7 @@ namespace TitanOrbit.Game
                 hitPos.y = 0f;
 
                 // --- Reconcile: client already showed impact for this Sequence ---
-                // Tracer + impact VFX already done; still apply authoritative mining float.
+                // Tracer + impact VFX already done; still apply authoritative mining float / PD bar.
                 if (hit.Sequence != 0 && _clientPredictedHitSequences.Remove(hit.Sequence))
                 {
                     int ownerNetworkId = 0;
@@ -393,6 +399,7 @@ namespace TitanOrbit.Game
                     };
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.Damage, (TeamId)hit.OwnerTeam, hit.AsteroidHealthAfter, in synth);
+                    TryNotifyPlanetaryDefenseHitRpc(in hit);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                     continue;
                 }
@@ -419,6 +426,7 @@ namespace TitanOrbit.Game
                     // Always show float on HitRpc — even when VFX was client-predicted.
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.Damage, (TeamId)hit.OwnerTeam, hit.AsteroidHealthAfter, in tracer);
+                    TryNotifyPlanetaryDefenseHitRpc(in hit);
 
                     DestroyTracerGo(tracer);
                     RemoveAtSwap(idx);
@@ -438,6 +446,7 @@ namespace TitanOrbit.Game
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.Damage, (TeamId)hit.OwnerTeam, hit.AsteroidHealthAfter,
                         in nearTracer);
+                    TryNotifyPlanetaryDefenseHitRpc(in hit);
 
                     DestroyTracerGo(nearTracer);
                     RemoveAtSwap(nearIdx);
@@ -452,9 +461,32 @@ namespace TitanOrbit.Game
                     };
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.Damage, (TeamId)hit.OwnerTeam, hit.AsteroidHealthAfter, in synth);
+                    TryNotifyPlanetaryDefenseHitRpc(in hit);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                 }
+                else
+                {
+                    // No tracer to destroy — still punch PD HP bar from authoritative HitRpc.
+                    TryNotifyPlanetaryDefenseHitRpc(in hit);
+                }
             }
+        }
+
+        /// <summary>
+        /// Forwards server PD Health-after from <see cref="BulletHitRpc"/> into the hybrid
+        /// turret HP bar so it dips immediately (planet ghost MaxSendRate otherwise lags).
+        /// No-op when PlanetId is 0 (not a planetary-defense impact).
+        /// </summary>
+        /// <param name="hit">Dequeued HitRequest (already display-space for VFX position).</param>
+        static void TryNotifyPlanetaryDefenseHitRpc(in BulletVfxBridge.HitRequest hit)
+        {
+            if (hit.PlanetaryDefensePlanetId <= 0)
+                return;
+
+            PlanetaryDefenseVisualDriver.NotifyAuthoritativeHit(
+                hit.PlanetaryDefensePlanetId,
+                hit.PlanetaryDefenseSlotIndex,
+                hit.PlanetaryDefenseHealthAfter);
         }
 
         /// <summary>
@@ -532,7 +564,8 @@ namespace TitanOrbit.Game
             adopted.BankIndex = req.BankIndex;
             adopted.ScaleMultiplier = req.ScaleMultiplier > 0f ? req.ScaleMultiplier : adopted.ScaleMultiplier;
             adopted.Damage = req.Damage;
-            adopted.RemainingLifetime = math.max(0.05f, req.Lifetime);
+            // [TITAN-ORBIT] Lifetime <= 0 = distance-only (PD turrets); do not clamp to 0.05s.
+            adopted.RemainingLifetime = ResolveTracerLifetime(req.Lifetime);
             adopted.MaxDistance = math.max(0.5f, req.MaxDistance);
             // Do not reset Traveled / LogicalPos — stretch/trail continue from presentation muzzle.
 
@@ -718,7 +751,8 @@ namespace TitanOrbit.Game
                 LogicalPos = req.SpawnPosition,
                 SpawnPos = req.SpawnPosition,
                 Velocity = req.Velocity,
-                RemainingLifetime = math.max(0.1f, req.Lifetime),
+                // [TITAN-ORBIT] Lifetime <= 0 = distance-only (PD); ship guns keep a positive timer.
+                RemainingLifetime = ResolveTracerLifetime(req.Lifetime),
                 MaxDistance = math.max(0.5f, req.MaxDistance),
                 Traveled = 0f,
                 Damage = req.Damage,
@@ -742,6 +776,22 @@ namespace TitanOrbit.Game
         }
 
         bool _oneShotPoolPrewarmQueued;
+
+        /// <summary>
+        /// Maps server/RPC Lifetime onto cosmetic RemainingLifetime.
+        /// Positive values keep the ship-gun timer (clamped so tiny floats do not despawn instantly).
+        /// Lifetime ≤ 0 means distance-only cull (planetary defense) — RemainingLifetime = +∞ so
+        /// the age check never fires and MaxDistance alone ends the tracer.
+        /// </summary>
+        /// <param name="lifetimeSeconds">Authoritative Lifetime from the spawn request / RPC.</param>
+        /// <returns>Seconds for RemainingLifetime, or <see cref="float.PositiveInfinity"/> when unused.</returns>
+        static float ResolveTracerLifetime(float lifetimeSeconds)
+        {
+            // [TITAN-ORBIT] Mirror BulletSimulationSystem: Lifetime <= 0 skips the age timer.
+            if (lifetimeSeconds <= 0f)
+                return float.PositiveInfinity;
+            return math.max(0.1f, lifetimeSeconds);
+        }
 
         void EnsureBank()
         {

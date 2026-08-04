@@ -6,13 +6,18 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Designer-tunable planetary defense turret recipe for one ship / planet family.
     /// Holds the turret mesh prefab, bullet bank, regen knobs, and Level-1 → Level-6
-    /// combat ranges (HP, damage, fire rate, engage distance, bullet speed) plus gem costs
-    /// that default to Solfeggio / cymatic frequencies. Level 7 is the crown rung (963) —
+    /// combat ranges (HP, damage, fire rate, absolute engage range, bullet speed) plus gem
+    /// costs that default to Solfeggio / cymatic frequencies. Level 7 is the crown rung (963) —
     /// only unlockable when the planet is max level and the gem-moon reservoir is full.
     /// Runtime resolve: <see cref="ResolveForFamily"/>.
     /// <para>
     /// [TITAN-ORBIT] Turrets are not NetCode ghosts — this asset only tunes build costs,
     /// combat stats, and which GameObject prefabs the client Instantiates at ghosted slots.
+    /// Engage range is absolute world units (independent of planet size / pad→orbit gap),
+    /// defaulting to 20 at Lv1 then +4 per level above 1 (Lv2=24, Lv3=28, …) so equal-level
+    /// ships (30 base + 4/level) can out-range turrets while lower-level ships step into fire sooner.
+    /// Combat copies that per-level engageRange into bullet MaxDistance; there is no separate
+    /// bullet lifetime / max-distance designer field on this asset.
     /// </para>
     /// </summary>
     [CreateAssetMenu(fileName = "PlanetaryDefenseConfig", menuName = "Titan Orbit/Planetary Defense Config")]
@@ -98,14 +103,15 @@ namespace TitanOrbit.Data
         public float fireRateAtLevel6 = 3f;
 
         [Tooltip(
-            "Engage range as a multiple of the pad→orbit-ring gap at level 1. " +
-            "2 = fire out to twice that radial distance from the pad.")]
-        public float engageRangeMultiplierAtLevel1 = 2f;
+            "Max fire distance from the turret pad at level 1 (world units). " +
+            "Independent of planet size — not a pad→orbit multiplier. " +
+            "Default 20 (base only — the +4/level step starts at level 2).")]
+        public float engageRangeAtLevel1 = 20f;
 
         [Tooltip(
-            "Engage range multiplier at level 6 (same units as Level 1). " +
-            "Default 3 = three times the pad→orbit gap.")]
-        public float engageRangeMultiplierAtLevel6 = 3f;
+            "Max fire distance from the turret pad at level 6 (world units). " +
+            "Default 40 = 20 at Lv1 + 4 × (levels above 1). Lv2=24, Lv3=28, … Lv6=40.")]
+        public float engageRangeAtLevel6 = 40f;
 
         [Tooltip("Bullet speed (world units/sec) at level 1 — also lerped into the ladder.")]
         public float bulletSpeedAtLevel1 = 20f;
@@ -167,11 +173,9 @@ namespace TitanOrbit.Data
             "ScaleMultiplier via BulletVisualScale — same path as ship guns.")]
         public float bulletVisualScale = 1.15f;
 
-        [Tooltip("Max bullet travel distance (world units). Keep ≥ longest engage range.")]
-        public float bulletMaxDistance = 55f;
-
-        [Tooltip("Bullet lifetime seconds.")]
-        public float bulletLifetimeSeconds = 2.5f;
+        // [TITAN-ORBIT] Bullet MaxDistance is NOT a separate designer knob — combat spawn copies
+        // that level's engageRange so shots despawn at the same reach used for target acquisition.
+        // Lifetime is unused for PD (Lifetime = 0 → distance-only cull in BulletSimulationSystem).
 
         // --- Secondary per-level ladder (visual / hit) ---
 
@@ -206,10 +210,10 @@ namespace TitanOrbit.Data
             public float bulletSpeed;
 
             /// <summary>
-            /// Engage distance = (pad→orbit gap) × this multiplier.
-            /// From engage-range Level 1→6 lerp (default 2 → 3); Lv7 steps past 6.
+            /// Absolute engage distance from the turret pad (world units).
+            /// From engage-range Level 1→6 lerp (default 20 → 40 = +4 per level above 1); Lv7 steps past 6.
             /// </summary>
-            public float engageRangeMultiplier;
+            public float engageRange;
 
             /// <summary>Visual scale multiplier on the prefab root (1 = authored size).</summary>
             public float visualScale;
@@ -307,12 +311,12 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Pad→orbit engage multiplier for this turret level (from the fire-distance range).
+        /// Absolute engage range (world units from the pad) for this turret level.
         /// </summary>
-        public float GetEngageRangeMultiplier(int turretLevel)
+        public float GetEngageRange(int turretLevel)
         {
             EnsureLevelsInitialized();
-            return Mathf.Max(0.05f, GetLevelStats(turretLevel).engageRangeMultiplier);
+            return Mathf.Max(0.5f, GetLevelStats(turretLevel).engageRange);
         }
 
         /// <summary>
@@ -386,9 +390,11 @@ namespace TitanOrbit.Data
                 row.maxHealth = Mathf.Max(1f, LerpLevelRange(healthAtLevel1, healthAtLevel6, level));
                 row.damage = Mathf.Max(0.05f, LerpLevelRange(damageAtLevel1, damageAtLevel6, level));
                 row.fireRate = Mathf.Max(0.05f, LerpLevelRange(fireRateAtLevel1, fireRateAtLevel6, level));
-                row.engageRangeMultiplier = Mathf.Max(
-                    0.05f,
-                    LerpLevelRange(engageRangeMultiplierAtLevel1, engageRangeMultiplierAtLevel6, level));
+                // Absolute world units — not pad→orbit gap × multiplier.
+                // Defaults 20 → 40: Lv1 = 20 base, then +4 each level above 1 (Lv2=24 … Lv6=40).
+                row.engageRange = Mathf.Max(
+                    0.5f,
+                    LerpLevelRange(engageRangeAtLevel1, engageRangeAtLevel6, level));
                 row.bulletSpeed = Mathf.Max(
                     1f,
                     LerpLevelRange(bulletSpeedAtLevel1, bulletSpeedAtLevel6, level));

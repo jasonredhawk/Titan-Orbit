@@ -375,11 +375,35 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Asteroid <see cref="AsteroidState.Health"/> after this hit, or &lt; 0 when the impact
-        /// was not an asteroid (planet / ship / moon / transport).
+        /// was not an asteroid (planet / ship / moon / transport / planetary defense).
         /// [TITAN-ORBIT] Clients must not guess HP Left from lagging ghost Health — use this.
         /// 0 means the rock was killed this hit (hide proxy immediately).
         /// </summary>
         public float AsteroidHealthAfter;
+
+        /// <summary>
+        /// Stable <see cref="PlanetState.PlanetId"/> when this hit damaged a planetary-defense
+        /// turret slot; 0 when the impact was not PD.
+        /// <para>
+        /// [TITAN-ORBIT] Planet ghosts use low Importance / MaxSendRate (~15), so ghosted
+        /// <see cref="PlanetaryDefenseSlotElement.Health"/> can lag for a long time. Clients
+        /// punch the HP bar from this HitRpc payload, then reconcile when the ghost catches up.
+        /// </para>
+        /// </summary>
+        public int PlanetaryDefensePlanetId;
+
+        /// <summary>
+        /// Slot index in the planet’s <see cref="PlanetaryDefenseSlotElement"/> buffer when
+        /// <see cref="PlanetaryDefensePlanetId"/> &gt; 0; ignored otherwise.
+        /// </summary>
+        public byte PlanetaryDefenseSlotIndex;
+
+        /// <summary>
+        /// Turret slot Health after this hit when <see cref="PlanetaryDefensePlanetId"/> &gt; 0;
+        /// 0 means the turret was destroyed this hit (slot reset to empty). Use &lt; 0 only when
+        /// not a PD impact (PlanetId already 0 — field unused).
+        /// </summary>
+        public float PlanetaryDefenseHealthAfter;
     }
 
     /// <summary>

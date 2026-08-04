@@ -1,6 +1,8 @@
 using TitanOrbit.Data;
+using TitanOrbit.ECS;
 using TitanOrbit.Shared;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 namespace TitanOrbit.Game
 {
@@ -9,11 +11,12 @@ namespace TitanOrbit.Game
     /// [HYBRID] Reads <see cref="ShipDisplayPose"/> (filled by <see cref="ShipVisualSyncSystem"/>),
     /// never drives ship sim. Client only; execution order 67001 so it runs after presentation sync.
     /// <para>
-    /// [TITAN-ORBIT] Framing knobs live on a <see cref="CameraFollowSettings"/> ScriptableObject
-    /// so you can author multiple profiles and swap them (e.g. later per ship family). The camera
-    /// hard-locks to the ship, then adds a gently smoothed look-ahead on XZ and a smoothly eased
-    /// height zoom from ship level. Ship flight smoothing stays owned by NetCode — we only
-    /// SmoothDamp camera composition (look-ahead + height), not the hull.
+    /// [TITAN-ORBIT] Framing knobs live on a <see cref="CameraFollowSettings"/> ScriptableObject.
+    /// Each <see cref="ShipFamilyDefinition"/> can point at its own profile; this component watches
+    /// the local ship's ghosted <c>ShipFamilyConfigIndex</c> and calls <see cref="SetSettings"/> when
+    /// the family changes (team spawn or moon-dock purchase). The camera hard-locks to the ship,
+    /// then adds a gently smoothed look-ahead on XZ and a smoothly eased height zoom from ship level.
+    /// Ship flight smoothing stays owned by NetCode — we only SmoothDamp camera composition.
     /// </para>
     /// Moon-dock cinematic overrides the follow target with a hard lock on the spinning hull.
     /// </summary>
@@ -22,21 +25,47 @@ namespace TitanOrbit.Game
     {
         [Header("Profile")]
         [Tooltip(
-            "Camera follow tuning asset (height, look-ahead, FOV). " +
-            "Create via Assets → Create → Titan Orbit → Camera Follow Settings. " +
-            "Swap at runtime with SetSettings() when ship families need different framing.")]
-        [SerializeField] CameraFollowSettings settings;
+            "Fallback camera follow profile when the local ship's family has no Camera Follow Settings assigned. " +
+            "Usually DefaultCameraFollowSettings. Family-specific profiles on ShipFamilyDefinition override this " +
+            "automatically when ShipFamilyConfigIndex changes.")]
+        [FormerlySerializedAs("settings")]
+        [SerializeField] CameraFollowSettings defaultSettings;
 
         /// <summary>
-        /// Active profile. Null-safe: falls back to an in-memory default matching ScriptableObject field defaults.
+        /// Runtime-active profile (family override or <see cref="defaultSettings"/>).
+        /// Null-safe: falls back to an in-memory default matching ScriptableObject field defaults.
         /// </summary>
-        public CameraFollowSettings Settings => settings != null ? settings : FallbackSettings;
+        public CameraFollowSettings Settings
+        {
+            get
+            {
+                if (_activeSettings != null)
+                    return _activeSettings;
+                if (defaultSettings != null)
+                    return defaultSettings;
+                return FallbackSettings;
+            }
+        }
 
         /// <summary>
-        /// Lazy in-memory defaults used only when the Inspector slot is empty.
-        /// Avoids NullReferenceException in play mode if someone forgets to assign an asset.
+        /// Lazy in-memory defaults used only when both the family slot and Inspector fallback are empty.
         /// </summary>
         static CameraFollowSettings _fallbackSettings;
+
+        /// <summary>
+        /// Profile currently driving framing. Set by <see cref="SetSettings"/> / family sync — never overwrites
+        /// the serialized <see cref="defaultSettings"/> slot so we can restore when a family leaves it empty.
+        /// </summary>
+        CameraFollowSettings _activeSettings;
+
+        /// <summary>
+        /// Last <see cref="ShipState.ShipFamilyConfigIndex"/> we applied a profile for.
+        /// <c>int.MinValue</c> means "never synced yet".
+        /// </summary>
+        int _syncedFamilyConfigIndex = int.MinValue;
+
+        /// <summary>Last profile instance applied for <see cref="_syncedFamilyConfigIndex"/> (identity compare).</summary>
+        CameraFollowSettings _syncedProfile;
 
         /// <summary>[UNITY] Cached Camera on this GameObject (may be null if misconfigured).</summary>
         UnityEngine.Camera cam;
@@ -85,22 +114,30 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Assigns a new follow profile (e.g. when the player spawns a different ship family).
+        /// Assigns a new follow profile (e.g. when the player purchases a different ship family).
         /// Updates FOV immediately; height / look-ahead ease toward the new knobs via SmoothDamp.
+        /// Does not change the Inspector <see cref="defaultSettings"/> fallback reference.
         /// </summary>
-        /// <param name="newSettings">Profile to use. Null clears the slot and uses fallback defaults.</param>
+        /// <param name="newSettings">
+        /// Profile to use. Null clears the runtime override so <see cref="defaultSettings"/> / code fallback apply.
+        /// </param>
         public void SetSettings(CameraFollowSettings newSettings)
         {
-            settings = newSettings;
+            _activeSettings = newSettings;
             ApplyLensFromSettings();
         }
 
         /// <summary>
-        /// [UNITY] Awake — cache the Camera, apply FOV from the profile, lock euler to top-down (90° pitch).
+        /// [UNITY] Awake — cache the Camera, seed active profile from the scene fallback, lock top-down euler.
         /// </summary>
         void Awake()
         {
             cam = GetComponent<UnityEngine.Camera>();
+
+            // --- Seed runtime profile from the Inspector fallback until a local ship family resolves ---
+            if (_activeSettings == null)
+                _activeSettings = defaultSettings;
+
             ApplyLensFromSettings();
 
             // [TITAN-ORBIT] Top-down: pitch 90° so +Y is "out of the screen," XZ is the play plane.
@@ -115,6 +152,11 @@ namespace TitanOrbit.Game
         {
             if (cam == null)
                 cam = GetComponent<UnityEngine.Camera>();
+
+            // Keep edit-mode preview on the fallback unless play mode already swapped via family sync.
+            if (!Application.isPlaying || _activeSettings == null)
+                _activeSettings = defaultSettings;
+
             ApplyLensFromSettings();
         }
 #endif
@@ -141,6 +183,11 @@ namespace TitanOrbit.Game
         /// </summary>
         void LateUpdate()
         {
+            // --- Family profile sync (before framing) ---
+            // [TITAN-ORBIT] Ghosted ShipFamilyConfigIndex changes on moon-dock purchase / team spawn.
+            // Reuse EcsGameBridge.TryGetLocalShipState — no new ship ECS gathers.
+            SyncProfileFromLocalShipFamily();
+
             if (!TryResolveFollowTarget(out var shipPos, out bool isMoonDockOverride))
                 return;
 
@@ -166,7 +213,7 @@ namespace TitanOrbit.Game
             }
 
             // --- Height zoom from ship level ---
-            // [TITAN-ORBIT] Profile owns the curve; SmoothDamp so level-ups / profile swaps ease out.
+            // [TITAN-ORBIT] Profile owns the curve; SmoothDamp so level-ups / family swaps ease out.
             float targetHeight = profile.ComputeTargetHeight(ResolveShipLevel());
             _currentHeight = Mathf.SmoothDamp(
                 _currentHeight,
@@ -204,6 +251,39 @@ namespace TitanOrbit.Game
 
             _lastShipPos = shipPos;
             _hasLastShipPos = true;
+        }
+
+        /// <summary>
+        /// Resolves the local ship's family from ghosted <c>ShipFamilyConfigIndex</c> and applies that
+        /// family's <see cref="ShipFamilyDefinition.cameraFollowSettings"/> (or the scene fallback).
+        /// </summary>
+        void SyncProfileFromLocalShipFamily()
+        {
+            // [HYBRID] Tiny tagged/seeded read — safe during GhostSpawnBacklog / TeamChoice Instantiates.
+            if (!EcsGameBridge.TryGetLocalShipState(out var state))
+                return;
+
+            int familyIndex = state.ShipFamilyConfigIndex;
+
+            // --- Resolve desired profile for this family index ---
+            // Prefer the family's authored asset; fall back to the Main Camera defaultSettings slot.
+            CameraFollowSettings desired = defaultSettings;
+            PlanetShipFamilyConfig config = ShipStatApplyLogic.Config;
+            if (config != null)
+            {
+                PlanetShipFamilyConfig.ShipFamilyEntry entry = config.GetFamilyByConfigIndex(familyIndex);
+                ShipFamilyDefinition family = entry != null ? entry.shipFamilyDefinition : null;
+                if (family != null && family.cameraFollowSettings != null)
+                    desired = family.cameraFollowSettings;
+            }
+
+            // --- Skip if we already applied this family index + same profile instance ---
+            if (familyIndex == _syncedFamilyConfigIndex && ReferenceEquals(desired, _syncedProfile))
+                return;
+
+            _syncedFamilyConfigIndex = familyIndex;
+            _syncedProfile = desired;
+            SetSettings(desired);
         }
 
         /// <summary>

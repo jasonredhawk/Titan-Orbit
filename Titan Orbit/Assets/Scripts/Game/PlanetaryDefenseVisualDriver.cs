@@ -28,7 +28,10 @@ namespace TitanOrbit.Game
     /// <para>
     /// [TITAN-ORBIT] Active turrets bank (roll) while turning to aim — same cosmetic curve as
     /// ships (<see cref="ShipBankVisualApplier"/> / <see cref="ShipBankVisualSettingsCache"/>).
-    /// Yaw and bank are kept separate so roll never fights the aim slerp.
+    /// Yaw and bank are kept separate so roll never fights the aim slerp. Hostile tracking uses
+    /// the same <see cref="PlanetaryDefenseAimMath"/> lead as server combat so barrels point
+    /// where bullets go (ships via <see cref="ShipKinematics"/>, people transports via
+    /// <see cref="PeopleTransportVfxDriver.CopyAimFlights"/>).
     /// </para>
     /// <para>
     /// [HYBRID] Turret meshes use the same GenericSpaceships team materials as people transports
@@ -39,6 +42,13 @@ namespace TitanOrbit.Game
     /// [TITAN-ORBIT] Walks <see cref="EcsWorldVisualizer"/> planet proxy keys only — never
     /// <c>ToEntityArray</c> / map-body archetype gathers (Windows late-join Crash!!! under
     /// session-long TransformQuarantine).
+    /// </para>
+    /// <para>
+    /// [NETCODE] Slot <see cref="PlanetaryDefenseSlotElement.Health"/> is ghosted, but planet
+    /// ghosts use a low MaxSendRate — the HP bar would look “stuck” for a long time after a
+    /// real hit. <see cref="NotifyAuthoritativeHit"/> applies a short optimistic bar punch from
+    /// <see cref="BulletHitRpc"/> (server Health-after), then reconciles when the ghost catches up.
+    /// Friendly fire is off: same-team shots never damage pads (no HitRpc PD payload).
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66300)]
@@ -111,6 +121,12 @@ namespace TitanOrbit.Game
         /// <summary>Strip height — thin progress bar, readable from top-down.</summary>
         const float HealthBarHeight = 0.18f;
 
+        /// <summary>
+        /// How much larger the outline is than the fill track (world units on each axis).
+        /// Makes the max-HP frame readable even when the fill is near-full green.
+        /// </summary>
+        const float HealthBarOutlinePad = 0.06f;
+
         /// <summary>Lift above the pad plane so the bar clears the soft disc.</summary>
         const float HealthBarAbovePadWorld = 0.08f;
 
@@ -129,16 +145,60 @@ namespace TitanOrbit.Game
         /// <summary>Sprite sorting — under pad labels, above world meshes.</summary>
         const int HealthBarSortingOrder = 5000;
 
-        /// <summary>Dark track behind the fill.</summary>
-        static readonly Color HealthBarBgColor = new Color(0.08f, 0.1f, 0.12f, 0.85f);
+        /// <summary>
+        /// Light rim around the whole bar so the max-HP frame stays visible against the map.
+        /// </summary>
+        static readonly Color HealthBarOutlineColor = new Color(0.92f, 0.94f, 0.98f, 0.95f);
 
-        /// <summary>Healthy fill tint (green).</summary>
-        static readonly Color HealthBarFillFull = new Color(0.35f, 0.9f, 0.4f, 0.95f);
+        /// <summary>
+        /// Empty (missing HP) track — darker than the fill but lighter than space so
+        /// current vs max is obvious at a glance.
+        /// </summary>
+        static readonly Color HealthBarBgColor = new Color(0.12f, 0.14f, 0.18f, 0.92f);
 
-        /// <summary>Critical fill tint (red) — lerped toward as HP drops.</summary>
-        static readonly Color HealthBarFillEmpty = new Color(0.95f, 0.25f, 0.2f, 0.95f);
+        // --- HP fill traffic-light (bright, readable on the dark map) ---
+        // [TITAN-ORBIT] High / mid / low bands at 2/3 and 1/3 — see HealthBarFillColor.
 
-        /// <summary>Shared 1×1 white sprite for bg + fill (created once).</summary>
+        /// <summary>HP ratio at or above this → high band (green, lerped from orange).</summary>
+        const float HealthBarHighRatio = 2f / 3f;
+
+        /// <summary>HP ratio below this → low band (red → orange toward mid).</summary>
+        const float HealthBarLowRatio = 1f / 3f;
+
+        /// <summary>Healthy fill tint — bright green (full HP).</summary>
+        static readonly Color HealthBarFillFull = new Color(0.15f, 1f, 0.25f, 0.98f);
+
+        /// <summary>Medium fill tint — bright orange (middle third of HP).</summary>
+        static readonly Color HealthBarFillMid = new Color(1f, 0.55f, 0.05f, 0.98f);
+
+        /// <summary>Critical fill tint — bright red (near-empty HP).</summary>
+        static readonly Color HealthBarFillEmpty = new Color(1f, 0.15f, 0.12f, 0.98f);
+
+        /// <summary>
+        /// Brief white/red flash tint while a HitRpc optimistic punch is live.
+        /// Client presentation only — does not affect server combat.
+        /// </summary>
+        static readonly Color HealthBarHitFlashColor = new Color(1f, 0.95f, 0.85f, 1f);
+
+        /// <summary>
+        /// How long (seconds) we prefer HitRpc Health-after over lagging ghost Health.
+        /// Safety timeout — ghost usually catches up sooner under MaxSendRate.
+        /// </summary>
+        const float OptimisticHpHoldSeconds = 2.5f;
+
+        /// <summary>How long (seconds) the bar/turret hit flash lasts after a HitRpc punch.</summary>
+        const float HitFlashSeconds = 0.22f;
+
+        /// <summary>Turret scale mul at the peak of the hit punch (1 = no punch).</summary>
+        const float HitPunchScalePeak = 1.12f;
+
+        /// <summary>
+        /// Ghost Health within this of optimistic Health → clear override (reconciled).
+        /// Quantization=100 on the ghost field is 0.01; this is a comfortable match window.
+        /// </summary>
+        const float OptimisticHpReconcileEpsilon = 0.75f;
+
+        /// <summary>Shared 1×1 white sprite for outline + bg + fill (created once).</summary>
         static Sprite s_HealthBarSprite;
 
         /// <summary>
@@ -191,6 +251,35 @@ namespace TitanOrbit.Game
         readonly List<int> _removePlanetIds = new List<int>(16);
         readonly List<Entity> _planetEntitiesScratch = new List<Entity>(32);
         readonly List<Entity> _shipEntitiesScratch = new List<Entity>(32);
+
+        /// <summary>
+        /// Scratch for people-transport VFX aim samples (no ECS gather — VFX driver list walk).
+        /// </summary>
+        readonly List<PeopleTransportVfxDriver.AimFlightSample> _transportAimScratch =
+            new List<PeopleTransportVfxDriver.AimFlightSample>(32);
+
+        /// <summary>
+        /// HitRpc Health-after overrides keyed by planetId×slot (see <see cref="MakeOptimisticKey"/>).
+        /// Cleared when ghost Health catches up or the hold timer expires.
+        /// </summary>
+        readonly Dictionary<long, OptimisticSlotHp> _optimisticHpBySlot =
+            new Dictionary<long, OptimisticSlotHp>(32);
+
+        /// <summary>
+        /// Short-lived client display of server Health-after from <see cref="BulletHitRpc"/>.
+        /// Not a second sim — presentation only until the planet ghost buffer updates.
+        /// </summary>
+        struct OptimisticSlotHp
+        {
+            /// <summary>Authoritative remaining HP from the HitRpc (0 = destroyed this hit).</summary>
+            public float HealthAfter;
+
+            /// <summary>Unity <c>Time.time</c> when we stop preferring this over ghost Health.</summary>
+            public float ExpireAt;
+
+            /// <summary>Unity <c>Time.time</c> until the bar/turret flash ends.</summary>
+            public float FlashUntil;
+        }
 
         /// <summary>One planet's pad + turret GameObjects.</summary>
         sealed class PlanetDefenseGroup
@@ -281,6 +370,67 @@ namespace TitanOrbit.Game
             _defaultConfig = PlanetaryDefenseConfig.LoadDefault();
             _font = ResolveFont();
         }
+
+        /// <summary>
+        /// Applies a server-authored turret HP punch from <see cref="BulletHitRpc"/>.
+        /// Called by <see cref="BulletVfxDriver"/> when PlanetId &gt; 0 on the hit payload.
+        /// <para>
+        /// [TITAN-ORBIT] Planet ghosts lag MaxSendRate — without this the HP bar looks frozen
+        /// even though <see cref="PlanetaryDefenseHitScan.ApplyDamage"/> already ran on the server.
+        /// We never invent permanent HP: ghost Health wins as soon as it is ≤ this value
+        /// (or within epsilon), or when the hold timer expires.
+        /// </para>
+        /// </summary>
+        /// <param name="planetId">Stable <see cref="PlanetState.PlanetId"/>.</param>
+        /// <param name="slotIndex">Slot index in the planet’s defense buffer.</param>
+        /// <param name="healthAfter">
+        /// Remaining Health after the hit (0 = destroyed / empty placeholder).
+        /// </param>
+        public static void NotifyAuthoritativeHit(int planetId, int slotIndex, float healthAfter)
+        {
+            if (s_Instance == null || planetId <= 0 || slotIndex < 0)
+                return;
+
+            s_Instance.ApplyOptimisticHit(planetId, slotIndex, healthAfter);
+        }
+
+        /// <summary>
+        /// Stores or tightens the optimistic HP for one pad and arms the hit flash.
+        /// Instance path for <see cref="NotifyAuthoritativeHit"/>.
+        /// </summary>
+        /// <param name="planetId">Stable planet id.</param>
+        /// <param name="slotIndex">Defense slot index.</param>
+        /// <param name="healthAfter">Server Health after this hit.</param>
+        void ApplyOptimisticHit(int planetId, int slotIndex, float healthAfter)
+        {
+            // --- Key + clamp ---
+            // [STANDARD] Dictionary key packs planet + slot so multi-pad planets stay independent.
+            long key = MakeOptimisticKey(planetId, slotIndex);
+            float clampedHp = math.max(0f, healthAfter);
+            float now = Time.time;
+
+            // --- Prefer the lowest remaining HP when multiple HitRpcs race ---
+            // [TITAN-ORBIT] Rapid fire can enqueue several hits before LateUpdate reads once;
+            // keep the most damaged value so the bar never “heals” from an older RPC.
+            if (_optimisticHpBySlot.TryGetValue(key, out var existing) &&
+                existing.ExpireAt > now)
+            {
+                clampedHp = math.min(clampedHp, existing.HealthAfter);
+            }
+
+            _optimisticHpBySlot[key] = new OptimisticSlotHp
+            {
+                HealthAfter = clampedHp,
+                ExpireAt = now + OptimisticHpHoldSeconds,
+                FlashUntil = now + HitFlashSeconds,
+            };
+        }
+
+        /// <summary>
+        /// Packs planet id + slot into one dictionary key (planet in high bits, slot in low byte).
+        /// </summary>
+        static long MakeOptimisticKey(int planetId, int slotIndex) =>
+            ((long)planetId << 8) | (byte)math.clamp(slotIndex, 0, 255);
 
         void OnDestroy()
         {
@@ -444,27 +594,33 @@ namespace TitanOrbit.Game
                                 MaxTurretWorldScale);
                             vis.TurretInstance.transform.localScale = Vector3.one * worldScale;
 
-                            // Per-level fire distance (same pad→orbit × multiplier as server combat).
-                            float engageFromTurret = PlanetaryDefenseMath.GetEngageRangeFromTurret(
-                                planetSize, planet.PlanetLevel, levelStats.engageRangeMultiplier);
+                            // Absolute fire distance from the pad (same world units as server combat).
+                            float engageFromTurret = math.max(0.5f, levelStats.engageRange);
 
                             // Rest pose = radially outward from planet center. When a hostile is
-                            // in this pad’s engage range, ease toward that aim instead.
+                            // in this pad’s engage range, ease toward the lead aim point instead
+                            // (same PlanetaryDefenseAimMath as server fire direction).
                             Vector3 outwardFlat = new Vector3(
                                 slotWorld.x - planetDisplay.x,
                                 0f,
                                 slotWorld.z - planetDisplay.z);
                             Vector3 aimFlat = outwardFlat;
+                            float bulletSpeed = math.max(1f, levelStats.bulletSpeed);
                             if (canAimShips &&
+                                hasMap &&
                                 TryFindNearestHostileDisplay(
-                                    em, visualizer, planet.Ownership, slotWorld, engageFromTurret,
-                                    hasMap, mapW, mapH, out float3 targetPos))
+                                    em, planet.Ownership, slotWorld, engageFromTurret,
+                                    mapW, mapH, out float3 targetPos, out float3 targetVel))
                             {
-                                Vector3 from = vis.TurretInstance.transform.position;
-                                Vector3 toHostile = new Vector3(targetPos.x, from.y, targetPos.z) - from;
-                                toHostile.y = 0f;
-                                if (toHostile.sqrMagnitude > 0.0001f)
-                                    aimFlat = toHostile;
+                                float3 muzzle = (float3)vis.TurretInstance.transform.position;
+                                muzzle.y = PlanetaryDefenseMath.FixedY;
+                                // [HYBRID] Presentation lead — does not drive sim; matches server math.
+                                if (PlanetaryDefenseAimMath.TryComputeFireDirection(
+                                        muzzle, targetPos, targetVel, bulletSpeed, mapW, mapH,
+                                        out float3 fireDir))
+                                {
+                                    aimFlat = new Vector3(fireDir.x, 0f, fireDir.z);
+                                }
                             }
 
                             // [TITAN-ORBIT] Yaw + ship-style bank roll (cosmetic only).
@@ -478,10 +634,11 @@ namespace TitanOrbit.Game
                     }
 
                     // Thin HP strip under the turret footprint (hidden on empty pads).
+                    // [NETCODE] May punch from HitRpc optimistic Health before the ghost arrives.
                     float turretScaleForBar = 0f;
                     if (vis.TurretInstance != null && vis.TurretInstance.activeSelf)
                         turretScaleForBar = vis.TurretInstance.transform.localScale.x;
-                    UpdateHealthBar(ref vis, slot, turretScaleForBar);
+                    UpdateHealthBar(ref vis, slot, turretScaleForBar, planet.PlanetId, i);
 
                     group.Slots[i] = vis;
                 }
@@ -600,7 +757,8 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Eases turret yaw toward <paramref name="aimFlat"/>, then applies ship-style bank roll
         /// from yaw rate. Writes the composite pose onto <see cref="SlotVisual.TurretInstance"/>.
-        /// Cosmetic only — combat aim on the server is independent.
+        /// Cosmetic only — does not drive sim; <paramref name="aimFlat"/> should already be the
+        /// lead direction from <see cref="PlanetaryDefenseAimMath"/> (same helper as server fire).
         /// </summary>
         /// <param name="vis">Slot visual (yaw/bank state mutated in place).</param>
         /// <param name="aimFlat">Desired flat facing (XZ); ignored when near-zero length.</param>
@@ -918,8 +1076,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Builds a thin horizontal HP track under the turret: dark background + fill that
-        /// shrinks from the left as health drops. Hidden until a turret is active.
+        /// Builds a thin horizontal HP track under the turret: light outline (max HP frame) +
+        /// dark background track + fill that shrinks from the left as health drops.
+        /// Hidden until a turret is active.
         /// </summary>
         void CreateHealthBar(ref SlotVisual vis)
         {
@@ -937,7 +1096,22 @@ namespace TitanOrbit.Game
 
             Sprite sprite = GetOrCreateHealthBarSprite();
 
-            // --- Background track ---
+            // --- Outline (max-HP frame) ---
+            // Drawn first / lowest sorting so the dark track + fill sit inside a visible rim.
+            // Without this, a near-full green bar blends into the map and max HP is hard to read.
+            var outlineGo = new GameObject("Outline");
+            outlineGo.transform.SetParent(rootGo.transform, false);
+            outlineGo.transform.localPosition = Vector3.zero;
+            outlineGo.transform.localScale = new Vector3(
+                HealthBarWidthMax + HealthBarOutlinePad * 2f,
+                HealthBarHeight + HealthBarOutlinePad * 2f,
+                1f);
+            var outlineRenderer = outlineGo.AddComponent<SpriteRenderer>();
+            outlineRenderer.sprite = sprite;
+            outlineRenderer.color = HealthBarOutlineColor;
+            outlineRenderer.sortingOrder = HealthBarSortingOrder;
+
+            // --- Background track (empty / missing HP) ---
             var bgGo = new GameObject("Bg");
             bgGo.transform.SetParent(rootGo.transform, false);
             bgGo.transform.localPosition = Vector3.zero;
@@ -945,7 +1119,7 @@ namespace TitanOrbit.Game
             var bgRenderer = bgGo.AddComponent<SpriteRenderer>();
             bgRenderer.sprite = sprite;
             bgRenderer.color = HealthBarBgColor;
-            bgRenderer.sortingOrder = HealthBarSortingOrder;
+            bgRenderer.sortingOrder = HealthBarSortingOrder + 1;
 
             // --- Fill (left-anchored: scale.x + centered offset so it drains toward the left) ---
             var fillGo = new GameObject("Fill");
@@ -955,7 +1129,7 @@ namespace TitanOrbit.Game
             var fillRenderer = fillGo.AddComponent<SpriteRenderer>();
             fillRenderer.sprite = sprite;
             fillRenderer.color = HealthBarFillFull;
-            fillRenderer.sortingOrder = HealthBarSortingOrder + 1;
+            fillRenderer.sortingOrder = HealthBarSortingOrder + 2;
 
             vis.HealthBarFill = fillGo.transform;
             vis.HealthBarFillRenderer = fillRenderer;
@@ -965,24 +1139,80 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Shows/hides the HP bar and sets fill width + color from ghosted Health / MaxHealth.
+        /// Shows/hides the HP bar and sets fill width + color from ghosted Health / MaxHealth,
+        /// optionally punched by HitRpc optimistic Health-after (planet ghost MaxSendRate lag).
         /// Places the strip just past the turret mesh toward screen-below so it does not cut
-        /// through the gun.
+        /// through the gun. Outline + bg always span full max HP; fill shrinks with current HP.
         /// </summary>
         /// <param name="turretWorldScale">
         /// Live turret <c>localScale.x</c> (0 when inactive) — drives bar offset and width.
         /// </param>
-        static void UpdateHealthBar(
+        /// <param name="planetId">Stable planet id for optimistic HitRpc lookup.</param>
+        /// <param name="slotIndex">Slot index for optimistic HitRpc lookup.</param>
+        void UpdateHealthBar(
             ref SlotVisual vis,
             PlanetaryDefenseSlotElement slot,
-            float turretWorldScale)
+            float turretWorldScale,
+            int planetId,
+            int slotIndex)
         {
             if (vis.HealthBarRoot == null)
                 return;
 
-            bool show = slot.TurretLevel > 0 && slot.MaxHealth > 0.01f;
+            // --- Resolve display HP (ghost vs HitRpc optimistic punch) ---
+            // [NETCODE] Ghost Health is truth long-term; HitRpc Health-after is truth for the
+            // short window after a confirmed server hit (same idea as asteroid AsteroidHealthAfter).
+            float displayHealth = slot.Health;
+            float maxHealth = slot.MaxHealth;
+            bool showFromGhost = slot.TurretLevel > 0 && maxHealth > 0.01f;
+            bool hitFlash = false;
+            float flashT = 0f; // 1 = flash peak, 0 = flash done
+            bool optimisticDestroyed = false;
+
+            long optKey = MakeOptimisticKey(planetId, slotIndex);
+            if (_optimisticHpBySlot.TryGetValue(optKey, out var opt))
+            {
+                float now = Time.time;
+                bool expired = now >= opt.ExpireAt;
+                // Ghost caught up (equal/lower) → drop override so regen / later snapshots win.
+                bool ghostCaughtUp = showFromGhost &&
+                    slot.Health <= opt.HealthAfter + OptimisticHpReconcileEpsilon;
+                // Ghost already shows empty/destroyed while we still hold a destroy punch.
+                bool ghostEmpty = !showFromGhost && opt.HealthAfter <= 0.01f;
+
+                if (expired || ghostCaughtUp || ghostEmpty)
+                {
+                    _optimisticHpBySlot.Remove(optKey);
+                }
+                else
+                {
+                    displayHealth = opt.HealthAfter;
+                    optimisticDestroyed = opt.HealthAfter <= 0.01f;
+                    if (now < opt.FlashUntil)
+                    {
+                        hitFlash = true;
+                        flashT = math.saturate(
+                            (opt.FlashUntil - now) / math.max(0.01f, HitFlashSeconds));
+                    }
+                }
+            }
+
+            // Show bar while the turret is alive on the ghost, or while we still punch a
+            // destroy-to-empty transition (bar drains to 0 before the mesh hides).
+            bool show = showFromGhost || (optimisticDestroyed && maxHealth > 0.01f);
             if (vis.HealthBarRoot.gameObject.activeSelf != show)
                 vis.HealthBarRoot.gameObject.SetActive(show);
+
+            // --- Hit scale punch on the turret mesh (cosmetic only) ---
+            // [HYBRID] Applied after aim sizing wrote localScale — multiplies the base world scale.
+            if (vis.TurretInstance != null && vis.TurretInstance.activeSelf && hitFlash)
+            {
+                float punch = math.lerp(1f, HitPunchScalePeak, flashT);
+                float punched = math.max(0.01f, turretWorldScale) * punch;
+                vis.TurretInstance.transform.localScale = Vector3.one * punched;
+                turretWorldScale = punched;
+            }
+
             if (!show)
                 return;
 
@@ -998,12 +1228,61 @@ namespace TitanOrbit.Game
             // (between the gun and the info plate), not tucked under the mesh.
             float barZ = -(extent + HealthBarClearancePastTurret);
 
+            // --- Outline = full max-HP frame (slightly larger than the track) ---
+            // Lazy-add if this bar was built before the outline layer existed (Play Mode hot reload).
+            var outline = vis.HealthBarRoot.Find("Outline");
+            if (outline == null)
+            {
+                var outlineGo = new GameObject("Outline");
+                outlineGo.transform.SetParent(vis.HealthBarRoot, false);
+                outlineGo.transform.localPosition = Vector3.zero;
+                var outlineSr = outlineGo.AddComponent<SpriteRenderer>();
+                outlineSr.sprite = sprite;
+                outlineSr.color = HealthBarOutlineColor;
+                outlineSr.sortingOrder = HealthBarSortingOrder;
+                outline = outlineGo.transform;
+
+                // Keep bg / fill above the new rim.
+                var existingBg = vis.HealthBarRoot.Find("Bg");
+                if (existingBg != null)
+                {
+                    var bgSr = existingBg.GetComponent<SpriteRenderer>();
+                    if (bgSr != null)
+                        bgSr.sortingOrder = HealthBarSortingOrder + 1;
+                }
+
+                if (vis.HealthBarFillRenderer != null)
+                    vis.HealthBarFillRenderer.sortingOrder = HealthBarSortingOrder + 2;
+            }
+
+            if (outline != null)
+            {
+                var outlineRenderer = outline.GetComponent<SpriteRenderer>();
+                if (outlineRenderer != null)
+                {
+                    if (outlineRenderer.sprite != sprite)
+                        outlineRenderer.sprite = sprite;
+                    outlineRenderer.color = HealthBarOutlineColor;
+                }
+
+                outline.localScale = new Vector3(
+                    barWidth + HealthBarOutlinePad * 2f,
+                    HealthBarHeight + HealthBarOutlinePad * 2f,
+                    1f);
+            }
+
+            // --- Bg = empty track (always full width = max HP) ---
             var bg = vis.HealthBarRoot.Find("Bg");
             if (bg != null)
             {
                 var bgRenderer = bg.GetComponent<SpriteRenderer>();
-                if (bgRenderer != null && bgRenderer.sprite != sprite)
-                    bgRenderer.sprite = sprite;
+                if (bgRenderer != null)
+                {
+                    if (bgRenderer.sprite != sprite)
+                        bgRenderer.sprite = sprite;
+                    bgRenderer.color = HealthBarBgColor;
+                }
+
                 bg.localScale = new Vector3(barWidth, HealthBarHeight, 1f);
             }
 
@@ -1011,7 +1290,10 @@ namespace TitanOrbit.Game
             vis.HealthBarRoot.localRotation = Quaternion.Euler(-90f, 0f, 0f);
             vis.HealthBarRoot.localPosition = new Vector3(0f, HealthBarAbovePadWorld, barZ);
 
-            float ratio = math.saturate(slot.Health / math.max(0.01f, slot.MaxHealth));
+            float safeMax = math.max(0.01f, maxHealth);
+            // When HitRpc says destroyed but ghost still shows an alive turret, drain to 0
+            // against the ghost MaxHealth so the bar visibly empties before the mesh hides.
+            float ratio = math.saturate(displayHealth / safeMax);
             float fillW = barWidth * ratio;
 
             // Left-anchored fill: left edge stays put, right edge moves with HP.
@@ -1026,9 +1308,37 @@ namespace TitanOrbit.Game
 
             if (vis.HealthBarFillRenderer != null)
             {
-                // Green when full → red when empty.
-                vis.HealthBarFillRenderer.color = Color.Lerp(HealthBarFillEmpty, HealthBarFillFull, ratio);
+                // Bright green (high) / orange (mid) / red (low) — see HealthBarFillColor.
+                Color fill = HealthBarFillColor(ratio);
+                if (hitFlash)
+                    fill = Color.Lerp(fill, HealthBarHitFlashColor, flashT);
+                vis.HealthBarFillRenderer.color = fill;
             }
+        }
+
+        /// <summary>
+        /// Maps current HP ratio (0 = empty, 1 = full) to a bright traffic-light fill color.
+        /// High (≥2/3): orange → bright green. Mid (1/3–2/3): solid bright orange.
+        /// Low (&lt;1/3): bright red → orange as HP climbs toward the mid band.
+        /// Client presentation only — does not affect server combat.
+        /// </summary>
+        /// <param name="ratio">Saturated Health / MaxHealth in [0, 1].</param>
+        /// <returns>Opaque-ish fill tint for the HP strip SpriteRenderer.</returns>
+        static Color HealthBarFillColor(float ratio)
+        {
+            // --- High band: tip into green as the turret approaches full HP ---
+            if (ratio >= HealthBarHighRatio)
+            {
+                float t = (ratio - HealthBarHighRatio) / (1f - HealthBarHighRatio);
+                return Color.Lerp(HealthBarFillMid, HealthBarFillFull, t);
+            }
+
+            // --- Mid band: hold orange so the middle third stays readable (no muddy brown) ---
+            if (ratio >= HealthBarLowRatio)
+                return HealthBarFillMid;
+
+            // --- Low band: red at empty, easing toward orange at the mid threshold ---
+            return Color.Lerp(HealthBarFillEmpty, HealthBarFillMid, ratio / HealthBarLowRatio);
         }
 
         /// <summary>
@@ -1172,24 +1482,33 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Nearest enemy ship within <paramref name="engageRange"/> of the turret pad
-        /// (<paramref name="muzzleDisplay"/>), for cosmetic aim only.
+        /// Nearest enemy ship or people-transport VFX flight within
+        /// <paramref name="engageRange"/> of the turret pad (<paramref name="muzzleDisplay"/>),
+        /// for cosmetic lead aim only. Returns planar velocity so
+        /// <see cref="PlanetaryDefenseAimMath"/> can match server fire direction.
+        /// <para>
+        /// Ships: presentation cache + ghosted <see cref="ShipKinematics"/> (dictionary walk —
+        /// already gated by <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> at
+        /// the call site). Transports: <see cref="PeopleTransportVfxDriver.CopyAimFlights"/>
+        /// (no ECS transport archetype gather).
+        /// </para>
         /// </summary>
         bool TryFindNearestHostileDisplay(
             EntityManager em,
-            EcsWorldVisualizer visualizer,
             TeamId ownerTeam,
             float3 muzzleDisplay,
             float engageRange,
-            bool hasMap,
             float mapW,
             float mapH,
-            out float3 targetPos)
+            out float3 targetPos,
+            out float3 targetVel)
         {
             targetPos = default;
+            targetVel = float3.zero;
             float bestDistSq = engageRange * engageRange;
             bool found = false;
 
+            // --- Enemy ships (presentation pose + kinematics velocity) ---
             GhostPresentationTransformCache.CopyShipEntities(_shipEntitiesScratch);
             for (int i = 0; i < _shipEntitiesScratch.Count; i++)
             {
@@ -1205,26 +1524,54 @@ namespace TitanOrbit.Game
                     continue;
 
                 float3 pos = snap.Position;
-                float distSq;
-                if (hasMap)
-                {
-                    float3 d = ToroidalMapEcs.ShortestOffsetXZ(muzzleDisplay, pos, mapW, mapH);
-                    distSq = math.lengthsq(new float3(d.x, 0f, d.z));
-                }
-                else
-                {
-                    float3 d = pos - muzzleDisplay;
-                    distSq = math.lengthsq(new float3(d.x, 0f, d.z));
-                }
-
+                pos.y = PlanetaryDefenseMath.FixedY;
+                float3 d = ToroidalMapEcs.ShortestOffsetXZ(muzzleDisplay, pos, mapW, mapH);
+                float distSq = math.lengthsq(new float3(d.x, 0f, d.z));
                 if (distSq > bestDistSq)
                     continue;
+
                 bestDistSq = distSq;
                 targetPos = pos;
+                // [NETCODE] Ghosted kinematics — same field the server combat system reads.
+                targetVel = float3.zero;
+                if (em.HasComponent<ShipKinematics>(shipEntity))
+                {
+                    float3 vel = em.GetComponentData<ShipKinematics>(shipEntity).Velocity;
+                    vel.y = 0f;
+                    targetVel = vel;
+                }
+
                 found = true;
             }
 
-            _ = visualizer;
+            // --- Enemy people transports (VFX flights — descending / landing pods) ---
+            // [HYBRID] No PeopleTransportTag ToEntityArray — transports are not ghosts on client.
+            var vfx = PeopleTransportVfxDriver.Active;
+            if (vfx != null)
+            {
+                vfx.CopyAimFlights(_transportAimScratch);
+                for (int i = 0; i < _transportAimScratch.Count; i++)
+                {
+                    var sample = _transportAimScratch[i];
+                    var team = (TeamId)sample.Team;
+                    if (team == TeamId.None || team == ownerTeam)
+                        continue;
+
+                    float3 pos = sample.DisplayPos;
+                    pos.y = PlanetaryDefenseMath.FixedY;
+                    float3 d = ToroidalMapEcs.ShortestOffsetXZ(muzzleDisplay, pos, mapW, mapH);
+                    float distSq = math.lengthsq(new float3(d.x, 0f, d.z));
+                    if (distSq > bestDistSq)
+                        continue;
+
+                    bestDistSq = distSq;
+                    targetPos = pos;
+                    targetVel = sample.Velocity;
+                    targetVel.y = 0f;
+                    found = true;
+                }
+            }
+
             return found;
         }
 
@@ -1251,11 +1598,16 @@ namespace TitanOrbit.Game
             return false;
         }
 
+        /// <summary>
+        /// Destroys every pad hub and clears HitRpc optimistic HP (session leave / no proxies).
+        /// </summary>
         void ClearAllGroups()
         {
             foreach (var kv in _groupsByPlanetId)
                 DestroyGroup(kv.Value);
             _groupsByPlanetId.Clear();
+            // [TITAN-ORBIT] Drop stale punches so a new join cannot flash old planet ids.
+            _optimisticHpBySlot.Clear();
         }
 
         static void DestroyGroup(PlanetDefenseGroup group)
