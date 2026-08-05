@@ -44,8 +44,9 @@ namespace TitanOrbit.UI
     /// fallbacks re-apply the same tax so freighters never show untaxed chassis speeds.
     /// </para>
     /// <para>
-    /// Presentation-only — never writes ECS. Numbers use fixed-width formatting so TMP does not
-    /// reflow when signs / decimals flicker (that "blinking" layout shift).
+    /// Master on/off lives on <see cref="GameManager.ShowSpeedometer"/> (NceGameRoot Inspector → HUD).
+    /// When off, this component does not build UI and LateUpdate returns immediately — no ECS ship
+    /// queries, no bar math, no TMP rebuilds. Presentation-only — never writes ECS.
     /// </para>
     /// Hidden during team select, death, and when the upgrade tree obscures HUD.
     /// </summary>
@@ -67,13 +68,11 @@ namespace TitanOrbit.UI
         /// <summary>Figure space — same advance as a digit in most fonts; pads without visible gaps jumping.</summary>
         const char FigureSpace = '\u2007';
 
-        [Header("Enable")]
-        [SerializeField] bool speedometerEnabled = true;
-
         [Header("Layout")]
         [SerializeField] SpeedometerPlacement placement = SpeedometerPlacement.BottomLeft;
         [SerializeField] float panelWidth = 380f * HudLayoutScale;
-        [SerializeField] float panelHeight = 148f * HudLayoutScale;
+        // Taller than the old 148×scale so bars, tick strips, and 4 body lines never share vertical bands.
+        [SerializeField] float panelHeight = 178f * HudLayoutScale;
         [SerializeField, FormerlySerializedAs("accelerationDisplayResponsiveness")]
         float accelerationBarSmoothing = 5f;
         [SerializeField, FormerlySerializedAs("rightMargin")] float horizontalMargin = 20f;
@@ -148,28 +147,102 @@ namespace TitanOrbit.UI
         ShipComponentAbilityStats _statsCacheEffective;
         ShipAttributeUpgradeState _statsCacheAttrs;
 
-        void Start()
+        /// <summary>
+        /// Latched when GameManager turns the HUD off so we hide the panel once and clear samples.
+        /// </summary>
+        bool _idleBecauseDisabled;
+
+        /// <summary>
+        /// [UNITY] Awake — subscribe to GameManager so we can disable this component when the
+        /// speedometer is off (Unity then skips LateUpdate entirely). Unsubscribe only in OnDestroy
+        /// so setting <c>enabled = false</c> does not drop the listener we need to turn back on.
+        /// </summary>
+        void Awake()
         {
-            if (speedometerEnabled)
-                BuildUIIfNeeded();
+            GameManager.ShowSpeedometerChanged += OnShowSpeedometerChanged;
         }
 
+        /// <summary>
+        /// [UNITY] Start — sync with GameManager (covers the case where GameManager Awake ran first
+        /// and fired the event before we subscribed) and build UI when allowed.
+        /// </summary>
+        void Start()
+        {
+            ApplyFeatureEnabled(GameManager.IsShowSpeedometerActive);
+        }
+
+        /// <summary>
+        /// [UNITY] OnDisable — hide the panel when this component is off (feature toggle or parent).
+        /// </summary>
         void OnDisable()
         {
             if (rootPanel != null)
                 rootPanel.SetActive(false);
         }
 
+        /// <summary>
+        /// [UNITY] OnEnable — restore the panel when re-enabled and the GameManager toggle is on.
+        /// </summary>
         void OnEnable()
         {
-            if (speedometerEnabled && uiBuilt && rootPanel != null)
+            if (GameManager.IsShowSpeedometerActive && uiBuilt && rootPanel != null)
                 rootPanel.SetActive(true);
         }
 
+        /// <summary>
+        /// [UNITY] OnDestroy — drop the static event subscription and dispose the cached ECS query.
+        /// </summary>
+        void OnDestroy()
+        {
+            GameManager.ShowSpeedometerChanged -= OnShowSpeedometerChanged;
+
+            if (_hudTaggedQuery != default)
+            {
+                _hudTaggedQuery.Dispose();
+                _hudTaggedQuery = default;
+            }
+            _hudTaggedQueryWorld = null;
+        }
+
+        /// <summary>
+        /// True when NceGameRoot → Game Manager → Show Speedometer is on (or no GameManager yet).
+        /// </summary>
+        static bool IsFeatureEnabled() => GameManager.IsShowSpeedometerActive;
+
+        /// <summary>
+        /// GameManager published a new Show Speedometer value (Play Mode Inspector or Awake).
+        /// </summary>
+        void OnShowSpeedometerChanged(bool show) => ApplyFeatureEnabled(show);
+
+        /// <summary>
+        /// Turns the HUD fully on or off. Off sets <c>enabled = false</c> so Unity does not call
+        /// LateUpdate at all — not merely hiding the panel while queries keep running.
+        /// </summary>
+        void ApplyFeatureEnabled(bool show)
+        {
+            if (!show)
+            {
+                EnterDisabledIdle();
+                // [UNITY] disabled MonoBehaviour → no LateUpdate / no background HUD work.
+                if (enabled)
+                    enabled = false;
+                return;
+            }
+
+            _idleBecauseDisabled = false;
+            if (!enabled)
+                enabled = true;
+            BuildUIIfNeeded();
+        }
+
+        /// <summary>
+        /// One-time procedural HUD build. Vertical bands are non-overlapping so tick strips never
+        /// sit inside the body-text region (the old 0–0.46 label band overlapped accel ticks).
+        /// </summary>
         void BuildUIIfNeeded()
         {
             // --- One-time procedural HUD build ---
-            if (uiBuilt || !speedometerEnabled)
+            if (uiBuilt || !IsFeatureEnabled())
                 return;
 
             // --- Resolve parent canvas ---
@@ -189,16 +262,18 @@ namespace TitanOrbit.UI
             bg.color = backgroundColor;
             bg.raycastTarget = false;
 
+            // --- Vertical layout bands (normalized Y, bottom→top) ---
+            // [TITAN-ORBIT] Clear gaps between each band so TMP ticks cannot paint over bars/text.
             float pad = 8f * HudLayoutScale;
-            const float labelNormH = 0.46f;
+            const float textNormTop = 0.48f;
+            const float accelTickNormBottom = 0.50f;
+            const float accelTickNormTop = 0.56f;
+            const float accelNormBottom = 0.58f;
+            const float accelNormTop = 0.68f;
+            const float speedTickNormBottom = 0.70f;
+            const float speedTickNormTop = 0.76f;
+            const float speedNormBottom = 0.78f;
             const float speedNormTop = 1f;
-            const float speedNormBottom = 0.74f;
-            const float speedTickNormBottom = 0.645f;
-            const float speedTickNormTop = 0.72f;
-            const float accelNormTop = 0.61f;
-            const float accelNormBottom = 0.465f;
-            const float accelTickNormBottom = 0.38f;
-            const float accelTickNormTop = 0.445f;
 
             GameObject sliderGo = new GameObject("SpeedBar");
             sliderGo.transform.SetParent(rootPanel.transform, false);
@@ -254,7 +329,7 @@ namespace TitanOrbit.UI
             speedTickRect.anchorMax = new Vector2(1f, speedTickNormTop);
             speedTickRect.offsetMin = new Vector2(pad, 0f);
             speedTickRect.offsetMax = new Vector2(-pad, 0f);
-            speedTickLabels = CreateTickLabelRow(speedTickStrip.transform, 5, 9f * HudLayoutScale);
+            speedTickLabels = CreateTickLabelRow(speedTickStrip.transform, 5, 8f * HudLayoutScale);
 
             GameObject accelRoot = new GameObject("AccelBar");
             accelRoot.transform.SetParent(rootPanel.transform, false);
@@ -271,7 +346,7 @@ namespace TitanOrbit.UI
             accelTickRect.anchorMax = new Vector2(1f, accelTickNormTop);
             accelTickRect.offsetMin = new Vector2(pad, 0f);
             accelTickRect.offsetMax = new Vector2(-pad, 0f);
-            accelTickLabels = CreateTickLabelRow(accelTickStrip.transform, 5, 9f * HudLayoutScale);
+            accelTickLabels = CreateTickLabelRow(accelTickStrip.transform, 5, 8f * HudLayoutScale);
 
             GameObject accelTrack = new GameObject("Track");
             accelTrack.transform.SetParent(accelRoot.transform, false);
@@ -321,14 +396,17 @@ namespace TitanOrbit.UI
             labelGo.transform.SetParent(rootPanel.transform, false);
             RectTransform lr = labelGo.AddComponent<RectTransform>();
             lr.anchorMin = new Vector2(0f, 0f);
-            lr.anchorMax = new Vector2(1f, labelNormH);
+            lr.anchorMax = new Vector2(1f, textNormTop);
             lr.offsetMin = new Vector2(10f * HudLayoutScale, 4f * HudLayoutScale);
             lr.offsetMax = new Vector2(-10f * HudLayoutScale, -2f * HudLayoutScale);
             speedLabel = labelGo.AddComponent<TextMeshProUGUI>();
             speedLabel.text = "—";
-            speedLabel.fontSize = 12f * HudLayoutScale;
-            speedLabel.lineSpacing = -2f * HudLayoutScale;
+            speedLabel.fontSize = 11f * HudLayoutScale;
+            speedLabel.lineSpacing = -4f * HudLayoutScale;
             speedLabel.richText = true;
+            // [UNITY] No wrap — long telemetry lines stay on one row; wrapping used to climb into bars.
+            speedLabel.enableWordWrapping = false;
+            speedLabel.overflowMode = TextOverflowModes.Ellipsis;
             // [UNITY] Monospace keeps SPD/ACC columns from shifting when digits change.
             if (TMP_Settings.defaultFontAsset != null)
                 speedLabel.font = TMP_Settings.defaultFontAsset;
@@ -339,9 +417,15 @@ namespace TitanOrbit.UI
             uiBuilt = true;
         }
 
+        /// <summary>
+        /// Builds a row of fixed-width tick labels under a bar. Edge ticks left/right-align so
+        /// neighboring labels do not overlap at the strip ends.
+        /// </summary>
         TextMeshProUGUI[] CreateTickLabelRow(Transform parent, int count, float fontSize)
         {
             var labels = new TextMeshProUGUI[count];
+            // Narrower than spacing between 5 anchors on a ~608px panel so "+12.5" cannot collide.
+            float tickCellW = 44f * HudLayoutScale;
             for (int i = 0; i < count; i++)
             {
                 GameObject go = new GameObject($"Tick{i}");
@@ -350,14 +434,18 @@ namespace TitanOrbit.UI
                 float x = count <= 1 ? 0.5f : (float)i / (count - 1);
                 rt.anchorMin = new Vector2(x, 0f);
                 rt.anchorMax = new Vector2(x, 1f);
-                rt.pivot = new Vector2(0.5f, 0.5f);
-                rt.sizeDelta = new Vector2(52f * HudLayoutScale, 0f);
+                // Edge pivots pull text inward so first/last ticks stay inside the panel.
+                float pivotX = i == 0 ? 0f : (i == count - 1 ? 1f : 0.5f);
+                rt.pivot = new Vector2(pivotX, 0.5f);
+                rt.sizeDelta = new Vector2(tickCellW, 0f);
                 rt.anchoredPosition = Vector2.zero;
                 var tmp = go.AddComponent<TextMeshProUGUI>();
                 tmp.text = "—";
                 tmp.fontSize = fontSize;
                 tmp.enableAutoSizing = false;
                 tmp.richText = false;
+                tmp.enableWordWrapping = false;
+                tmp.overflowMode = TextOverflowModes.Overflow;
                 tmp.alignment = TextAlignmentOptions.Midline;
                 if (TMP_Settings.defaultFontAsset != null)
                     tmp.font = TMP_Settings.defaultFontAsset;
@@ -469,15 +557,6 @@ namespace TitanOrbit.UI
         /// and as a sanity fallback if motor MaxSpeed still looks like bake defaults.
         /// </summary>
 
-        void OnDestroy()
-        {
-            if (_hudTaggedQuery != default)
-            {
-                _hudTaggedQuery.Dispose();
-                _hudTaggedQuery = default;
-            }
-            _hudTaggedQueryWorld = null;
-        }
         bool TryGetLocalShipHudData(
             out ShipState ship,
             out ShipMotorConfig motor,
@@ -743,16 +822,23 @@ namespace TitanOrbit.UI
                 ramRating, ramMass, hullBaseline, inboundSpeed, restitution);
         }
 
+        /// <summary>
+        /// [UNITY] LateUpdate — after ship presentation has written pose/kinematics for this frame.
+        /// When <see cref="GameManager.ShowSpeedometer"/> is off, latches idle and returns with
+        /// zero ECS / TMP work until the toggle turns back on.
+        /// </summary>
         void LateUpdate()
         {
-
-            // --- Early out when disabled or UI not built ---
-            if (!speedometerEnabled)
+            // --- Master toggle (GameManager → HUD → Show Speedometer) ---
+            // [TITAN-ORBIT] Off means no background work: hide once, then pure return.
+            if (!IsFeatureEnabled())
             {
-                if (rootPanel != null)
-                    rootPanel.SetActive(false);
+                EnterDisabledIdle();
                 return;
             }
+
+            // Leaving idle — allow BuildUI / refresh again.
+            _idleBecauseDisabled = false;
 
             if (!uiBuilt)
                 BuildUIIfNeeded();
@@ -954,15 +1040,17 @@ namespace TitanOrbit.UI
                 displayCur = maxSpd;
 
             // [TITAN-ORBIT] Brief territory tag so the raised max reads as a boost, not a chassis change.
+            // ASCII "x" instead of "×" — wide unicode glyphs look crushed under <mspace>.
             string territoryTag = territoryMult > 1.001f
-                ? $"  ·  <color=#AAEEDD>×{FormatFixed1(territoryMult, 4)} terr</color>"
+                ? $" <color=#AAEEDD>x{FormatFixed1(territoryMult, 4)}t</color>"
                 : string.Empty;
 
+            // --- Compact body lines (no wrap; must fit panel width) ---
             string spdLine;
             if (atCruise)
             {
                 spdLine =
-                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  ·  <color=#AAAAAA>at max</color>{territoryTag}";
+                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  <color=#AAAAAA>max</color>{territoryTag}";
             }
             else
             {
@@ -970,15 +1058,15 @@ namespace TitanOrbit.UI
                 float tMax = remaining / maxFwd;
                 tMax = Mathf.Clamp(tMax, 0f, 99.9f);
                 spdLine =
-                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  ·  max in <color=#AAEEDD>{FormatFixed1(tMax, 4)}s</color>{territoryTag}";
+                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  <color=#AAEEDD>{FormatFixed1(tMax, 4)}s</color> to max{territoryTag}";
             }
 
             string stopPart = cur > 0.35f
-                ? $"  ·  stop {FormatFixed1(cur / maxBrake, 4)}s"
-                : "  ·  stop  —.−s";
+                ? $"  stop {FormatFixed1(cur / maxBrake, 4)}s"
+                : "  stop —.−s";
 
             string line2 =
-                $"ACC {FormatFixedSigned1(smoothedHorizontalAccel)}/{FormatFixed1(maxFwd)}  ·  brake {FormatFixed1(maxBrake)}  ·  MASS {FormatFixed1(mass)}";
+                $"ACC {FormatFixedSigned1(smoothedHorizontalAccel)}/{FormatFixed1(maxFwd)}  brk {FormatFixed1(maxBrake)}  MASS {FormatFixed1(mass)}";
 
             GetRamDamageEstimate(
                 ship,
@@ -992,7 +1080,7 @@ namespace TitanOrbit.UI
                 out float massFactor);
 
             string line3 =
-                $"RAM {FormatFixed1(ramRating, 4)}×m{FormatFixed1(massFactor, 4)} →ast {FormatFixed1(ramAst)}  ·  hull {FormatFixed1(ramSelf)}  <color=#888888>(m {FormatFixed1(ramMass)})</color>";
+                $"RAM {FormatFixed1(ramRating, 4)} x m{FormatFixed1(massFactor, 4)}  ast {FormatFixed1(ramAst)}  hull {FormatFixed1(ramSelf)}  <color=#888888>m {FormatFixed1(ramMass)}</color>";
 
             string line4;
             if (weapon.FireRate > 0.01f && weapon.BulletDamage > 0.01f)
@@ -1001,19 +1089,40 @@ namespace TitanOrbit.UI
                 // mounts — each barrel still fires its own FirePower (see ShipWeaponMountElement).
                 float dps = weapon.BulletDamage * weapon.FireRate;
                 line4 =
-                    $"BUL {FormatFixed1(weapon.BulletDamage)}/hit avg  ·  {FormatFixed1(dps)}/s  <color=#888888>({FormatFixed1(weapon.FireRate)}/s avg)</color>";
+                    $"BUL {FormatFixed1(weapon.BulletDamage)}/hit  {FormatFixed1(dps)}/s  <color=#888888>{FormatFixed1(weapon.FireRate)}/s</color>";
             }
             else
-                line4 = "BUL  —.−/hit  ·   —.−/s";
+                line4 = "BUL  —.−/hit  —.−/s";
 
-            // [UNITY] mspace keeps TMP digit columns stable even with proportional fonts.
+            // [UNITY] <mspace> forces equal advance so digit columns do not jump.
+            // Must be wide enough for LiberationSans SDF glyphs — 0.52em crushed letters together.
             string body =
-                "<mspace=0.55em>" + spdLine + stopPart + "\n" + line2 + "\n" + line3 + "\n" + line4 + "</mspace>";
+                "<mspace=0.72em>" + spdLine + stopPart + "\n" + line2 + "\n" + line3 + "\n" + line4 + "</mspace>";
             if (body != lastHudBodyText)
             {
                 lastHudBodyText = body;
                 speedLabel.text = body;
             }
+        }
+
+        /// <summary>
+        /// Hides the panel once and clears sample state when the GameManager toggle turns off.
+        /// Subsequent frames while still disabled hit the early return with no further work.
+        /// </summary>
+        void EnterDisabledIdle()
+        {
+            if (_idleBecauseDisabled)
+                return;
+
+            _idleBecauseDisabled = true;
+            if (rootPanel != null)
+                rootPanel.SetActive(false);
+
+            // --- Drop transient sample state so re-enable does not flash a stale accel spike ---
+            hasLastHorizontalSpeed = false;
+            accelSampleShip = Entity.Null;
+            smoothedHorizontalAccel = 0f;
+            nextTextRebuildTime = 0f;
         }
     }
 }

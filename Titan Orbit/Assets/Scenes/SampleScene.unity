@@ -2280,10 +2280,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c4e8a91b2f6d4e4a9b1c3d5e7f901234, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.ShipSpeedometerHUD
-  speedometerEnabled: 1
   placement: 0
   panelWidth: 608
-  panelHeight: 220.8
+  panelHeight: 284.8
   accelerationBarSmoothing: 5
   horizontalMargin: 20
   verticalMargin: 20
@@ -8660,6 +8659,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Core.GameManager
   editorMultiplayerMode: 0
+  showSpeedometer: 1
   debugFreeShipUpgradeTree: 1
   debugLogAsteroidDestroyPerf: 0
   debugEnableStutterIsolator: 0

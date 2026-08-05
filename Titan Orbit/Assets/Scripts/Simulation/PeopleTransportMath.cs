@@ -195,6 +195,8 @@ namespace TitanOrbit.Simulation
         public static bool CanCompleteUnloadDelivery(float3 projectilePos, float3 spawnPosition, float3 planetCenter, float planetSize, float elapsed, float mapW, float mapH)
         {
             // --- CanCompleteUnloadDelivery ---
+            // [TITAN-ORBIT] Brief min-time + min-travel so a brand-new spawn on the surface is not
+            // consumed on the same tick; once those clear, surface reach finishes the hop.
             if (elapsed < UnloadDeliveryMinSeconds)
                 return false;
             if (ToroidalMapEcs.ToroidalDistance(projectilePos, spawnPosition, mapW, mapH) < UnloadDeliveryMinTravelDistance)
@@ -204,6 +206,18 @@ namespace TitanOrbit.Simulation
             return ToroidalMapEcs.ToroidalDistance(projectilePos, surface, mapW, mapH) <= surfaceReach;
         }
 
+        /// <summary>
+        /// Whether a load transport that turned around (ship left orbit / became ineligible) has
+        /// reached the source planet surface and should refund population.
+        /// <para>
+        /// [TITAN-ORBIT] Uses surface reach + a short min elapsed only. Do <b>not</b> wait the full
+        /// <see cref="EffectiveVisualTravelSeconds"/> hop (~6.25s), and do <b>not</b> require a large
+        /// distance-from-spawn. Load spheres spawn on the surface; when they return along that same
+        /// radial, spawn distance shrinks again while they are on the surface — a 0.75 world-unit
+        /// spawn gate fought surface consume and left spheres bouncing near the planet for a long
+        /// time (or until an intermittent geometry sweet spot).
+        /// </para>
+        /// </summary>
         public static bool CanCompleteReturnToSourcePlanet(
             float3 projectilePos,
             float3 spawnPosition,
@@ -213,10 +227,15 @@ namespace TitanOrbit.Simulation
             float mapW,
             float mapH)
         {
-            if (elapsed < EffectiveVisualTravelSeconds)
+            // --- Return-to-planet consume (ship left ring mid-load) ---
+            // spawnPosition is unused for distance gating (spawn is on the surface — see summary).
+            _ = spawnPosition;
+
+            // Short min-time only: avoids same-tick refund if the ship leaves on the spawn frame.
+            // Unload's min-travel-from-spawn does not apply here — that gate fights surface arrival.
+            if (elapsed < UnloadDeliveryMinSeconds)
                 return false;
-            if (ToroidalMapEcs.ToroidalDistance(projectilePos, spawnPosition, mapW, mapH) < 0.75f)
-                return false;
+
             float surfaceReach = math.max(0.85f, planetSize * 0.12f);
             float3 surface = GetPlanetSurfaceToward(planetCenter, planetSize, projectilePos, mapW, mapH);
             return ToroidalMapEcs.ToroidalDistance(projectilePos, surface, mapW, mapH) <= surfaceReach;

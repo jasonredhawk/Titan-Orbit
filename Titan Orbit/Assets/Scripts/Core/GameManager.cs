@@ -1,3 +1,4 @@
+using System;
 using TitanOrbit;
 using UnityEngine;
 
@@ -19,17 +20,23 @@ namespace TitanOrbit.Core
     }
 
     /// <summary>
-    /// Scene singleton that holds designer-tunable debug flags for local play and the Editor
-    /// Test / Production multiplayer toggle. Lives on <c>NceGameRoot</c> in SampleScene
+    /// Scene singleton that holds designer-tunable HUD options, debug flags for local play, and the
+    /// Editor Test / Production multiplayer toggle. Lives on <c>NceGameRoot</c> in SampleScene
     /// (Inspector → Game Manager). Moon orbit ship-tree UI reads <see cref="DebugFreeShipUpgradeTree"/>
-    /// so you can click any upgrade-tree node for free during testing. Publishes the same value to
+    /// so you can click any upgrade-tree node for free during testing. Publishes debug values to
     /// <see cref="TitanOrbitDebugFlags"/> so the ECS server store can honor free selects without
-    /// referencing this Core assembly. Dedicated server builds normally leave the flag false.
+    /// referencing this Core assembly. Dedicated server builds normally leave debug flags false.
     /// </summary>
     public class GameManager : MonoBehaviour
     {
         /// <summary>Global access for UI and tools that need debug flags without scene references.</summary>
         public static GameManager Instance { get; private set; }
+
+        /// <summary>
+        /// Play Mode only: fired when <see cref="ShowSpeedometer"/> is published so
+        /// <c>ShipSpeedometerHUD</c> can disable its own component (no LateUpdate) when off.
+        /// </summary>
+        public static event Action<bool> ShowSpeedometerChanged;
 
         // [EDITOR] / [TITAN-ORBIT] Inspector Test|Production toolbar (see GameManagerEditor) applies
         // the same NetCode prefs as Titan Orbit > Configure Multiplayer For Local Play / Dedicated Server.
@@ -38,6 +45,18 @@ namespace TitanOrbit.Core
         [Header("Multiplayer Mode (Editor)")]
         [Tooltip("Test = local Client & Server + Local play UI. Production = Client-only + UGS/Relay join (hides Local play). Same as Titan Orbit > Configure Multiplayer menus. Editor-only — does not change player builds by itself (Production still writes TitanOrbitMultiplayerConfig for the next WebGL build).")]
         [SerializeField] EditorMultiplayerMode editorMultiplayerMode = EditorMultiplayerMode.Test;
+
+        // [UNITY] / [TITAN-ORBIT] Production may hide the telemetry panel; Test often keeps it on.
+        // When false, ShipSpeedometerHUD disables itself — no LateUpdate, no ECS queries.
+        [Header("HUD")]
+        [Tooltip("Local-player speedometer (speed / accel / mass / ram / bullets). Off = not drawn and the HUD component disables itself (no per-frame update). Useful to disable for Production polish while keeping it for Test.")]
+        [SerializeField] bool showSpeedometer = true;
+
+        /// <summary>Last value pushed to <see cref="ShowSpeedometerChanged"/> (avoids spam while editing).</summary>
+        bool _hasPublishedShowSpeedometer;
+
+        /// <summary>Mirror of the last published showSpeedometer for change detection.</summary>
+        bool _lastPublishedShowSpeedometer;
 
         // [UNITY] Inspector toggle — when true, ship upgrade tree treats all nodes as free / clickable.
         [Header("Debug — Ship Upgrade Tree")]
@@ -67,6 +86,9 @@ namespace TitanOrbit.Core
         [Tooltip("Starting value when the isolator is enabled: skip local gem burst (Shift+F5).")]
         [SerializeField] bool isolatorStartDisableGemBurst;
 
+        /// <summary>True when the local-player speedometer HUD should run (Inspector on NceGameRoot).</summary>
+        public bool ShowSpeedometer => showSpeedometer;
+
         /// <summary>True when designers enabled free upgrades in the Inspector (client + local-host convenience).</summary>
         public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
 
@@ -75,6 +97,13 @@ namespace TitanOrbit.Core
 
         /// <summary>True when the Shift+F stutter isolator overlay is enabled.</summary>
         public bool DebugEnableStutterIsolator => debugEnableStutterIsolator;
+
+        /// <summary>
+        /// Safe static check for the speedometer. Defaults <b>on</b> when no GameManager exists yet
+        /// so early frames before Awake still match the previous always-on behavior.
+        /// </summary>
+        public static bool IsShowSpeedometerActive =>
+            Instance == null || Instance.showSpeedometer;
 
         /// <summary>
         /// Safe static check used by moon orbit UI. Also true when the Shared flag was published
@@ -97,7 +126,7 @@ namespace TitanOrbit.Core
                 return Instance;
             }
 
-            var existing = Object.FindFirstObjectByType<GameManager>();
+            var existing = UnityEngine.Object.FindFirstObjectByType<GameManager>();
             if (existing != null)
             {
                 // Awake may not have run yet — adopt this scene object and publish its Inspector value.
@@ -151,11 +180,13 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
                 TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
                 ClearIsolationFlags();
+                _hasPublishedShowSpeedometer = false;
             }
         }
 
         /// <summary>
-        /// Copies Inspector fields into <see cref="TitanOrbitDebugFlags"/> for ECS / other assemblies.
+        /// Copies Inspector fields into <see cref="TitanOrbitDebugFlags"/> for ECS / other assemblies,
+        /// and notifies HUD listeners when Show Speedometer changes in Play Mode.
         /// </summary>
         public void PublishDebugFlags()
         {
@@ -179,6 +210,27 @@ namespace TitanOrbit.Core
             {
                 ClearIsolationFlags();
             }
+
+            // --- HUD: speedometer on/off ---
+            NotifyShowSpeedometerChangedIfNeeded();
+        }
+
+        /// <summary>
+        /// Invokes <see cref="ShowSpeedometerChanged"/> in Play Mode when the value changes
+        /// (or on the first publish after Awake so late subscribers can sync via Start instead).
+        /// </summary>
+        void NotifyShowSpeedometerChangedIfNeeded()
+        {
+            // [UNITY] Edit Mode OnValidate must not poke play-mode HUD components.
+            if (!Application.isPlaying)
+                return;
+
+            if (_hasPublishedShowSpeedometer && _lastPublishedShowSpeedometer == showSpeedometer)
+                return;
+
+            _hasPublishedShowSpeedometer = true;
+            _lastPublishedShowSpeedometer = showSpeedometer;
+            ShowSpeedometerChanged?.Invoke(showSpeedometer);
         }
 
         /// <summary>Resets all Shift+F isolation bits to off (normal gameplay).</summary>

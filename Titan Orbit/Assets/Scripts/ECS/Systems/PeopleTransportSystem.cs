@@ -63,6 +63,11 @@ namespace TitanOrbit.ECS
     /// Unload batch = ship level only (L6 ship → one +6 unload). Packing into a single sphere
     /// cuts spawn/pose RPC traffic and client Instantiates vs N separate +1 flights.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] When surplus above the 50% reserve is smaller than the full load chunk,
+    /// the ship still gets a partial transport (often +1). That lets several orbiting ships each
+    /// receive a trickle +1 instead of one high-level ship waiting until surplus covers +2…+6.
+    /// </para>
     /// </summary>
     // [ECS/DOTS] Drive is in PredictedFixedStepSimulationSystemGroup — UpdateAfter that type from
     // SimulationSystemGroup is invalid. Run after the predicted fixed-step group instead.
@@ -153,12 +158,21 @@ namespace TitanOrbit.ECS
                 var planetState = planetStateById[orbitPlanetId];
                 var planetTransform = planetTransformById[orbitPlanetId];
                 float planetSize = math.max(0.5f, planetTransform.Scale);
-                int maxPop = PlanetPopulationMath.GetMaxPopulation(planetSize, planetState.PlanetLevel);
+                // [TITAN-ORBIT] Same effective cap as growth / world labels (includes triangle bonuses).
+                // Base-only halfCap made territory-boosted planets look "full" on the HUD while
+                // dispatch still thought they were below 50% (or the reverse).
+                float connectionBonus = 0f;
+                if (state.EntityManager.HasComponent<PlanetGrowthState>(planetEntity))
+                    connectionBonus = state.EntityManager
+                        .GetComponentData<PlanetGrowthState>(planetEntity).ConnectionBonusFraction;
+                int maxPop = PlanetPopulationMath.GetEffectiveMaxPopulation(
+                    planetSize, planetState.PlanetLevel, connectionBonus);
                 int halfCap = math.max(1, maxPop / 2);
 
                 // --- Load vs unload batch sizes (people/sec + people per packed sphere) ---
                 // [TITAN-ORBIT] Load = min(ship, planet). L6 ship at L3 planet → one +3 transport.
                 // Unload = ship level only. L6 ship → one +6 transport (planet level does not cap).
+                // Live PlanetLevel / ShipLevel every tick — leveling mid-orbit must change chunk size.
                 int shipLevel = math.max(1, shipState.ValueRO.ShipLevel);
                 int planetLevel = math.max(1, planetState.PlanetLevel);
                 float loadChunk = math.max(1f, math.min(shipLevel, planetLevel));
@@ -199,6 +213,11 @@ namespace TitanOrbit.ECS
                         transfer.LoadAccumulator += loadStep;
                         if (transfer.LoadAccumulator >= loadChunk)
                         {
+                            // --- Packed load, capped by cargo space and deployable surplus ---
+                            // [TITAN-ORBIT] Ideal size is loadChunk, but surplus or space may be
+                            // smaller — then we still send a partial sphere (often +1). That keeps
+                            // multi-ship orbits sharing trickle people near the 50% reserve instead
+                            // of one high-level ship blocking until a full +2…+6 surplus exists.
                             int space = shipState.ValueRO.PeopleCapacity - shipState.ValueRO.CurrentPeople -
                                         (int)transfer.PeopleInTransit;
                             int surplus = planetState.Population - halfCap;
@@ -283,8 +302,9 @@ namespace TitanOrbit.ECS
         /// Spawns one packed load transport carrying <paramref name="amount"/> people.
         /// Planet pays immediately; the ship gains crew only when the sphere delivers.
         /// </summary>
-        /// <param name="amount">People packed into this single sphere (clamped to
-        /// <c>min(shipLevel, planetLevel)</c> and capacity/surplus by the caller).</param>
+        /// <param name="amount">People packed into this single sphere (ideal size
+        /// <c>min(shipLevel, planetLevel)</c>; caller may pass a smaller partial when surplus
+        /// or cargo space is tight).</param>
         static bool TryDispatchLoad(
             ref EntityCommandBuffer ecb,
             ref ShipState ship,
