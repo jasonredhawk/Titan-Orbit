@@ -114,22 +114,17 @@ namespace TitanOrbit.UI
         readonly Dictionary<Transform, RectTransform> _shipRoleDotRoots = new Dictionary<Transform, RectTransform>();
         /// <summary>Last role mask per ship (bit0 killer, bit1 miner, bit2 transporter).</summary>
         readonly Dictionary<Transform, byte> _shipRoleDotMask = new Dictionary<Transform, byte>();
-        /// <summary>Per-team top NetworkIds recomputed from <see cref="cachedShips"/>.</summary>
-        readonly Dictionary<TeamId, TopOfTeamIds> _topOfTeam = new Dictionary<TeamId, TopOfTeamIds>();
+        /// <summary>
+        /// Scratch list for <see cref="ShipTopOfTeamRoles.Recompute"/> — filled from
+        /// <see cref="cachedShips"/> each blip pass (no ECS gathers).
+        /// </summary>
+        readonly List<ShipTopOfTeamRoles.Candidate> _topRoleCandidates = new List<ShipTopOfTeamRoles.Candidate>(32);
         /// <summary>Shared white circle sprite, tinted blue / red / yellow per role.</summary>
         static Sprite _shipRoleDotSprite;
         // [TITAN-ORBIT] Role colors: blue = killer, red = gems (miner), yellow = transports.
         static readonly Color RoleDotKiller = new Color(0.35f, 0.55f, 1f, 0.95f);
         static readonly Color RoleDotMiner = new Color(1f, 0.28f, 0.28f, 0.95f);
         static readonly Color RoleDotTransporter = new Color(1f, 0.88f, 0.25f, 0.95f);
-
-        /// <summary>NetworkIds winning each match-stat category for one team (0 = none).</summary>
-        struct TopOfTeamIds
-        {
-            public int KillerNetworkId;
-            public int MinerNetworkId;
-            public int TransporterNetworkId;
-        }
 
         // Edge markers for planets outside visible area
         private Dictionary<Transform, RectTransform> edgeMarkers = new Dictionary<Transform, RectTransform>();
@@ -1988,77 +1983,38 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Picks each team's top killer / miner / transporter from <see cref="cachedShips"/>.
+        /// Picks each team's top killer / miner / transporter from <see cref="cachedShips"/>
+        /// via shared <see cref="ShipTopOfTeamRoles"/> (same rules as ship nameplates).
         /// Ties → lowest <see cref="MinimapBlipAnchor.OwnerNetworkId"/>. Zero scores never win.
         /// </summary>
         void RecomputeTopOfTeamFromCachedShips()
         {
-            _topOfTeam.Clear();
+            // --- Copy anchor rows into shared candidate list ---
+            _topRoleCandidates.Clear();
             if (cachedShips == null)
+            {
+                ShipTopOfTeamRoles.Recompute(_topRoleCandidates);
                 return;
-
-            var bestKillScore = new Dictionary<TeamId, int>(8);
-            var bestGemScore = new Dictionary<TeamId, int>(8);
-            var bestPeopleScore = new Dictionary<TeamId, int>(8);
-            var topsByTeam = new Dictionary<TeamId, TopOfTeamIds>(8);
+            }
 
             for (int i = 0; i < cachedShips.Length; i++)
             {
                 var ship = cachedShips[i];
-                if (ship == null || ship.IsDead || ship.Team == TeamId.None || ship.OwnerNetworkId <= 0)
+                if (ship == null)
                     continue;
 
-                if (!topsByTeam.TryGetValue(ship.Team, out var tops))
-                    tops = default;
-
-                if (ship.Kills > 0)
+                _topRoleCandidates.Add(new ShipTopOfTeamRoles.Candidate
                 {
-                    bestKillScore.TryGetValue(ship.Team, out int curScore);
-                    int curId = tops.KillerNetworkId;
-                    if (curId == 0 || IsBetterTop(ship.Kills, ship.OwnerNetworkId, curScore, curId))
-                    {
-                        tops.KillerNetworkId = ship.OwnerNetworkId;
-                        bestKillScore[ship.Team] = ship.Kills;
-                    }
-                }
-
-                if (ship.GemsDeposited > 0)
-                {
-                    bestGemScore.TryGetValue(ship.Team, out int curScore);
-                    int curId = tops.MinerNetworkId;
-                    if (curId == 0 || IsBetterTop(ship.GemsDeposited, ship.OwnerNetworkId, curScore, curId))
-                    {
-                        tops.MinerNetworkId = ship.OwnerNetworkId;
-                        bestGemScore[ship.Team] = ship.GemsDeposited;
-                    }
-                }
-
-                if (ship.PeopleDelivered > 0)
-                {
-                    bestPeopleScore.TryGetValue(ship.Team, out int curScore);
-                    int curId = tops.TransporterNetworkId;
-                    if (curId == 0 || IsBetterTop(ship.PeopleDelivered, ship.OwnerNetworkId, curScore, curId))
-                    {
-                        tops.TransporterNetworkId = ship.OwnerNetworkId;
-                        bestPeopleScore[ship.Team] = ship.PeopleDelivered;
-                    }
-                }
-
-                topsByTeam[ship.Team] = tops;
+                    Team = ship.Team,
+                    OwnerNetworkId = ship.OwnerNetworkId,
+                    Kills = ship.Kills,
+                    GemsDeposited = ship.GemsDeposited,
+                    PeopleDelivered = ship.PeopleDelivered,
+                    IsDead = ship.IsDead,
+                });
             }
 
-            foreach (var kv in topsByTeam)
-                _topOfTeam[kv.Key] = kv.Value;
-        }
-
-        /// <summary>Higher score wins; equal score → lower NetworkId.</summary>
-        static bool IsBetterTop(int candidateScore, int candidateId, int currentScore, int currentId)
-        {
-            if (candidateScore > currentScore)
-                return true;
-            if (candidateScore < currentScore)
-                return false;
-            return candidateId < currentId;
+            ShipTopOfTeamRoles.Recompute(_topRoleCandidates);
         }
 
         /// <summary>
@@ -2080,17 +2036,10 @@ namespace TitanOrbit.UI
                     return;
             }
 
-            bool isKiller = false;
-            bool isMiner = false;
-            bool isTransporter = false;
-            if (ship.Team != TeamId.None &&
-                ship.OwnerNetworkId > 0 &&
-                _topOfTeam.TryGetValue(ship.Team, out var tops))
-            {
-                isKiller = tops.KillerNetworkId == ship.OwnerNetworkId;
-                isMiner = tops.MinerNetworkId == ship.OwnerNetworkId;
-                isTransporter = tops.TransporterNetworkId == ship.OwnerNetworkId;
-            }
+            // --- Role winners from shared helper (recomputed from cachedShips this pass) ---
+            bool isKiller = ShipTopOfTeamRoles.IsKiller(ship.Team, ship.OwnerNetworkId);
+            bool isMiner = ShipTopOfTeamRoles.IsMiner(ship.Team, ship.OwnerNetworkId);
+            bool isTransporter = ShipTopOfTeamRoles.IsTransporter(ship.Team, ship.OwnerNetworkId);
 
             byte mask = 0;
             if (isKiller) mask |= 1;

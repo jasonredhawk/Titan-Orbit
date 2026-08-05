@@ -52,7 +52,19 @@ namespace TitanOrbit.UI
         /// </summary>
         public byte ShipFamilyConfigIndex;
 
-        // --- Ship cargo (live hold — not match scores) ---
+        // --- Ship vitals / cargo (live hold — not match scores) ---
+        /// <summary>[TITAN-ORBIT] Current hull points (<c>ShipState.Health</c>).</summary>
+        public float Health;
+
+        /// <summary>[TITAN-ORBIT] Max hull (<c>ShipState.MaxHealth</c>).</summary>
+        public float MaxHealth;
+
+        /// <summary>[TITAN-ORBIT] Gems currently in cargo (<c>ShipState.CurrentGems</c>).</summary>
+        public float CurrentGems;
+
+        /// <summary>[TITAN-ORBIT] Max gem cargo (<c>ShipState.GemCapacity</c>).</summary>
+        public float GemCapacity;
+
         /// <summary>[TITAN-ORBIT] People currently aboard (<c>ShipState.CurrentPeople</c>).</summary>
         public int CurrentPeople;
 

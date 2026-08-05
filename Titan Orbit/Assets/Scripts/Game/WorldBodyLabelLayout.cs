@@ -86,7 +86,13 @@ namespace TitanOrbit.Game
                 name.Contains("PlanetaryDefense") ||
                 name.Contains("PadZone") ||
                 name.Contains("InfoPlate") ||
-                name.Contains("DefenseSlot"))
+                name.Contains("DefenseSlot") ||
+                name.Contains("ShipNameplate") ||
+                name.Contains("FullVersionBadge") ||
+                name.Contains("HealthBar") ||
+                name.Contains("GemsBar") ||
+                name.Contains("PeopleBar") ||
+                name.Contains("RoleRow"))
                 return true;
 
             return false;
@@ -101,7 +107,8 @@ namespace TitanOrbit.Game
                 string name = t.name;
                 if (name.Contains("PlanetStatsLabel") ||
                     name.Contains("GemsLabel") ||
-                    name.Contains("PopulationText"))
+                    name.Contains("PopulationText") ||
+                    name.Contains("ShipNameplate"))
                     return true;
                 t = t.parent;
             }

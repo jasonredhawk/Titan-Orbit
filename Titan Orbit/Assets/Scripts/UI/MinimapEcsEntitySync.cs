@@ -430,7 +430,11 @@ namespace TitanOrbit.UI
             anchor.BranchIndex = ship.BranchIndex;
             anchor.ShipFamilyConfigIndex = ship.ShipFamilyConfigIndex;
 
-            // --- Live people cargo ---
+            // --- Live vitals / cargo (nameplates + minimap consumers) ---
+            anchor.Health = ship.Health;
+            anchor.MaxHealth = ship.MaxHealth;
+            anchor.CurrentGems = ship.CurrentGems;
+            anchor.GemCapacity = ship.GemCapacity;
             anchor.CurrentPeople = ship.CurrentPeople;
             anchor.PeopleCapacity = ship.PeopleCapacity;
 

@@ -228,6 +228,33 @@ namespace TitanOrbit.Game
         readonly List<Entity> _registryRepairScratch = new List<Entity>(64);
 
         /// <summary>
+        /// Scratch candidates for <see cref="ShipTopOfTeamRoles"/> while syncing ship proxies
+        /// (nameplate role icons). Filled from <c>ShipMatchStats</c> already read in the ship loop.
+        /// </summary>
+        readonly List<ShipTopOfTeamRoles.Candidate> _nameplateRoleCandidates =
+            new List<ShipTopOfTeamRoles.Candidate>(32);
+
+        /// <summary>
+        /// Ship proxies waiting for nameplate paint after role recompute this frame.
+        /// Avoids a second ship <c>ToEntityArray</c> — collect during sync, apply after Recompute.
+        /// </summary>
+        readonly List<PendingShipNameplate> _pendingShipNameplates = new List<PendingShipNameplate>(32);
+
+        /// <summary>Per-owner 1-based team rank from the last nameplate flush.</summary>
+        readonly Dictionary<int, int> _nameplateRankByNetworkId = new Dictionary<int, int>(32);
+
+        /// <summary>One ship row deferred until top-of-team winners + ranks are known.</summary>
+        struct PendingShipNameplate
+        {
+            public GameObject Go;
+            public int NetworkId;
+            public ShipState Ship;
+            public int Kills;
+            public int GemsDeposited;
+            public int PeopleDelivered;
+        }
+
+        /// <summary>
         /// Max SpawnRequest tags added per frame from Instantiates registries when the GO dict
         /// is missing a proxy. Keeps structural adds modest under Settling.
         /// </summary>
@@ -1848,6 +1875,25 @@ namespace TitanOrbit.Game
                     proxyGo.SetActive(false);
                 else if (!proxyGo.activeSelf)
                     proxyGo.SetActive(true);
+
+                // --- Local nameplate during Instantiates backlog (seeded path only) ---
+                // [TITAN-ORBIT] Full SyncShipProxyTransforms is skipped while ShouldSkipShipEntityQueries;
+                // still paint the local hull so the player sees name/bars after Join Team.
+                // Do NOT Recompute top-of-team from this single ship — that would wipe other
+                // teams' winners in the shared ShipTopOfTeamRoles snapshot (minimap + remotes).
+                EnsureShipNameplate(proxyGo, networkId);
+                EcsGameBridge.RefreshPlayerDisplayNameCache();
+                int kills = 0, gemsDeposited = 0, peopleDelivered = 0;
+                if (em.HasComponent<ShipMatchStats>(shipEntity))
+                {
+                    var stats = em.GetComponentData<ShipMatchStats>(shipEntity);
+                    kills = stats.Kills;
+                    gemsDeposited = stats.GemsDeposited;
+                    peopleDelivered = stats.PeopleDelivered;
+                }
+
+                ApplyShipNameplatePresentation(
+                    proxyGo, networkId, ship, kills, gemsDeposited, peopleDelivered);
             }
         }
 
@@ -1982,6 +2028,10 @@ namespace TitanOrbit.Game
             int localNetworkId = EcsGameBridge.GetLocalNetworkId();
             bool suppressOwnedVisuals = ClientTeamFlowState.ShouldSuppressLocalPlayerControl();
 
+            // --- Nameplate batch (collect during loop, flush after role recompute) ---
+            _pendingShipNameplates.Clear();
+            _nameplateRoleCandidates.Clear();
+
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
                 ComponentType.ReadOnly<LocalTransform>());
@@ -2047,18 +2097,15 @@ namespace TitanOrbit.Game
                     var ship = em.GetComponentData<ShipState>(entity);
                     _proxyShipLevels[entity] = Mathf.Max(1, ship.ShipLevel);
                     _proxyTeams[entity] = ship.Team;
+                    _proxyBranchIndices[entity] = Mathf.Max(0, ship.BranchIndex);
                     if (ship.IsDead)
                         go.SetActive(false);
                     else if (!go.activeSelf)
                         go.SetActive(true);
-                }
 
-                // Keep branch/chassis bookkeeping fresh for EnsureShipProxies rebuild checks.
-                // [NETCODE] Must match EnsureShipProxies (ShipState.BranchIndex) — loadout used to
-                // thrash DestroyProxy/CreateShipProxy every frame after upgrade-tree purchases and
-                // reset the moon-dock cinematic (ship looked ejected from orbit).
-                if (em.HasComponent<ShipState>(entity))
-                    _proxyBranchIndices[entity] = Mathf.Max(0, em.GetComponentData<ShipState>(entity).BranchIndex);
+                    // --- Nameplate vitals / role candidates (no extra ship gather) ---
+                    QueueShipNameplate(em, entity, go, networkId, ship);
+                }
 
                 if (networkId > 0)
                 {
@@ -2072,6 +2119,9 @@ namespace TitanOrbit.Game
                     }
                 }
             }
+
+            // --- Paint nameplates after winners are known ---
+            FlushPendingShipNameplates();
         }
 
         /// <summary>
@@ -2170,7 +2220,150 @@ namespace TitanOrbit.Game
                 attributeScaleVisual = go.AddComponent<ShipComponentAttributeScaleApplier>();
             attributeScaleVisual.Bind(entity, familyPrefix, bindFamily);
 
+            // --- World nameplate (name / badge / thin bars / top-role slots) ---
+            // [HYBRID] Presentation only — vitals pushed from SyncShipProxyTransforms.
+            EnsureShipNameplate(go, networkId);
+
             return go;
+        }
+
+        /// <summary>
+        /// Ensures a <see cref="ShipWorldNameplate"/> exists on the hybrid ship proxy and binds
+        /// the owner NetworkId. Safe to call repeatedly (Bind rebuilds only when needed).
+        /// </summary>
+        /// <param name="proxyGo">Ship proxy GameObject from <see cref="CreateShipProxy"/>.</param>
+        /// <param name="networkId">Owner <c>GhostOwner.NetworkId</c> (0 until known).</param>
+        static void EnsureShipNameplate(GameObject proxyGo, int networkId)
+        {
+            // --- EnsureShipNameplate ---
+            if (proxyGo == null)
+                return;
+
+            var nameplate = proxyGo.GetComponent<ShipWorldNameplate>();
+            if (nameplate == null)
+                nameplate = proxyGo.AddComponent<ShipWorldNameplate>();
+            nameplate.Bind(networkId);
+        }
+
+        /// <summary>
+        /// Paints one ship nameplate from already-read ship/match state and the last
+        /// <see cref="ShipTopOfTeamRoles.Recompute"/> / rank snapshot. No ECS queries.
+        /// </summary>
+        void ApplyShipNameplatePresentation(
+            GameObject proxyGo,
+            int networkId,
+            in ShipState ship,
+            int kills,
+            int gemsDeposited,
+            int peopleDelivered)
+        {
+            // --- ApplyShipNameplatePresentation ---
+            if (proxyGo == null)
+                return;
+
+            var nameplate = proxyGo.GetComponent<ShipWorldNameplate>();
+            if (nameplate == null)
+                return;
+
+            string displayName = EcsGameBridge.GetCachedPlayerDisplayName(networkId);
+            int score = ShipMatchScoreLogic.ComputeCombinedScore(kills, gemsDeposited, peopleDelivered);
+            if (!_nameplateRankByNetworkId.TryGetValue(networkId, out int rank))
+                rank = 1;
+
+            nameplate.ApplyPresentation(
+                networkId,
+                displayName,
+                ship.Team,
+                ship.IsDead,
+                ship.AwaitingTeamSelection,
+                ship.ShipLevel,
+                score,
+                rank,
+                ship.Health,
+                ship.MaxHealth,
+                ship.CurrentGems,
+                ship.GemCapacity,
+                ship.CurrentPeople,
+                ship.PeopleCapacity,
+                ShipTopOfTeamRoles.IsKiller(ship.Team, networkId),
+                ShipTopOfTeamRoles.IsMiner(ship.Team, networkId),
+                ShipTopOfTeamRoles.IsTransporter(ship.Team, networkId));
+        }
+
+        /// <summary>
+        /// Recomputes top-of-team winners and per-team ranks, refreshes the player-name
+        /// cache once, then paints every pending ship nameplate.
+        /// </summary>
+        void FlushPendingShipNameplates()
+        {
+            // --- Role winners + ranks + name cache (once per ship sync batch) ---
+            ShipTopOfTeamRoles.Recompute(_nameplateRoleCandidates);
+            ShipMatchScoreLogic.ComputeTeamRanks(_nameplateRoleCandidates, _nameplateRankByNetworkId);
+            EcsGameBridge.RefreshPlayerDisplayNameCache();
+
+            for (int i = 0; i < _pendingShipNameplates.Count; i++)
+            {
+                PendingShipNameplate pending = _pendingShipNameplates[i];
+                ApplyShipNameplatePresentation(
+                    pending.Go,
+                    pending.NetworkId,
+                    pending.Ship,
+                    pending.Kills,
+                    pending.GemsDeposited,
+                    pending.PeopleDelivered);
+            }
+
+            _pendingShipNameplates.Clear();
+            _nameplateRoleCandidates.Clear();
+        }
+
+        /// <summary>
+        /// Queues one ship for nameplate paint and records its match scores for role/rank recompute.
+        /// Call only from the gated ship sync paths (no extra gathers).
+        /// </summary>
+        void QueueShipNameplate(
+            EntityManager em,
+            Entity entity,
+            GameObject proxyGo,
+            int networkId,
+            in ShipState ship)
+        {
+            // --- QueueShipNameplate ---
+            if (proxyGo == null)
+                return;
+
+            EnsureShipNameplate(proxyGo, networkId);
+
+            int kills = 0;
+            int gemsDeposited = 0;
+            int peopleDelivered = 0;
+            if (em.HasComponent<ShipMatchStats>(entity))
+            {
+                var stats = em.GetComponentData<ShipMatchStats>(entity);
+                kills = stats.Kills;
+                gemsDeposited = stats.GemsDeposited;
+                peopleDelivered = stats.PeopleDelivered;
+            }
+
+            _nameplateRoleCandidates.Add(new ShipTopOfTeamRoles.Candidate
+            {
+                Team = ship.Team,
+                OwnerNetworkId = networkId,
+                Kills = kills,
+                GemsDeposited = gemsDeposited,
+                PeopleDelivered = peopleDelivered,
+                IsDead = ship.IsDead,
+            });
+
+            _pendingShipNameplates.Add(new PendingShipNameplate
+            {
+                Go = proxyGo,
+                NetworkId = networkId,
+                Ship = ship,
+                Kills = kills,
+                GemsDeposited = gemsDeposited,
+                PeopleDelivered = peopleDelivered,
+            });
         }
 
         /// <summary>[EDITOR] Default ship family asset when inspector field is empty.</summary>

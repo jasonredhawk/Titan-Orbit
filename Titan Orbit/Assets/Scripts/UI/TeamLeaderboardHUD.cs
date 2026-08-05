@@ -57,17 +57,7 @@ namespace TitanOrbit.UI
         [SerializeField] bool hideWhenUpgradeTreeOpen = true;
 
         // -------------------------------------------------------------------------
-        // Score weights (old NGO ScoreSystem defaults)
-        // -------------------------------------------------------------------------
-
-        /// <summary>Points per enemy kill — matches legacy <c>pointsPerEnemyKill</c>.</summary>
-        const int PointsPerKill = 100;
-
-        /// <summary>Points per deposited gem — matches legacy <c>pointsPerDepositedGem</c>.</summary>
-        const int PointsPerGem = 2;
-
-        /// <summary>Points per delivered person — matches legacy <c>pointsPerHostileUnloadPerson</c>.</summary>
-        const int PointsPerPerson = 5;
+        // Score weights live in ShipMatchScoreLogic (shared with ship nameplates).
 
         // -------------------------------------------------------------------------
         // Runtime UI roots
@@ -313,13 +303,12 @@ namespace TitanOrbit.UI
         static TeamId IndexToTeam(int index) => (TeamId)(Mathf.Clamp(index, 0, 4) + 1);
 
         /// <summary>
-        /// Combined match score from ghosted stats — same weights as the old NGO ScoreSystem.
+        /// Combined match score from ghosted stats — same weights as the old NGO ScoreSystem
+        /// (shared with ship nameplates via <see cref="ShipMatchScoreLogic"/>).
         /// </summary>
         static int ComputeCombinedScore(int kills, int gemsDeposited, int peopleDelivered)
         {
-            return kills * PointsPerKill
-                   + gemsDeposited * PointsPerGem
-                   + peopleDelivered * PointsPerPerson;
+            return ShipMatchScoreLogic.ComputeCombinedScore(kills, gemsDeposited, peopleDelivered);
         }
 
         // =========================================================================
