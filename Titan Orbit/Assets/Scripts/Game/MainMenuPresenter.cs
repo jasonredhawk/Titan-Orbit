@@ -37,17 +37,27 @@ namespace TitanOrbit.Game
         /// <summary>Child name for the player-name TMP_InputField.</summary>
         public const string PlayerNameInputObjectName = "PlayerNameInput";
 
-        /// <summary>Shared navy fill for menu buttons (space theme, no Shift placeholder art).</summary>
-        static readonly Color ButtonFill = new Color(0.10f, 0.16f, 0.28f, 0.94f);
-
-        /// <summary>Accent cyan used on primary Play and Sign-in buttons.</summary>
-        static readonly Color PrimaryFill = new Color(0.14f, 0.42f, 0.58f, 0.95f);
-
         /// <summary>Soft status text color.</summary>
         static readonly Color StatusColor = new Color(0.72f, 0.84f, 0.96f, 0.92f);
 
-        /// <summary>Input field fill — slightly lighter than buttons so it reads as editable.</summary>
-        static readonly Color InputFill = new Color(0.08f, 0.12f, 0.20f, 0.92f);
+        /// <summary>
+        /// Player-name field fill — semi-transparent black so it reads as a text box, not a button.
+        /// </summary>
+        static readonly Color InputFill = new Color(0f, 0f, 0f, 0.55f);
+
+        /// <summary>
+        /// Visual template copied from the scene Play button (Shift Cut Frame) and applied to
+        /// Join / Local client / Sign in so the whole menu shares one button look.
+        /// </summary>
+        struct MenuButtonStyle
+        {
+            public Sprite Sprite;
+            public Image.Type ImageType;
+            public float PixelsPerUnitMultiplier;
+            public Color ImageColor;
+            public ColorBlock Colors;
+            public bool HasSprite;
+        }
 
         /// <summary>
         /// Applies the full main-menu visual refresh once the panel exists.
@@ -82,11 +92,14 @@ namespace TitanOrbit.Game
             if (title != null)
                 title.gameObject.SetActive(false);
 
+            // Capture Play's Shift Cut Frame look before we rebuild the rest of the menu.
+            MenuButtonStyle buttonStyle = CaptureButtonStyle(playButton);
+
             // --- Hero logo (transparent PNG from Resources) ---
             EnsureLogo(panel.transform);
 
-            // --- Account strip: Sign in / Sign out only (no Guest · player-id details) ---
-            EnsureAccountBar(panel.transform);
+            // --- Account strip: Sign in / Sign out (same style as Play) ---
+            EnsureAccountBar(panel.transform, buttonStyle);
 
             // --- Player display name (persisted via LocalPlayerDisplayName) ---
             EnsurePlayerNameField(panel.transform);
@@ -100,14 +113,14 @@ namespace TitanOrbit.Game
             {
                 // Reparent Play into the stack so spacing is consistent with code-built buttons.
                 EnsureInStack(playButton.transform, stack, 0);
-                StyleButton(playButton.gameObject, GetPlayLabel(), PrimaryFill, 48f, 340f);
+                StyleButton(playButton.gameObject, GetPlayLabel(), buttonStyle, 48f, 340f);
             }
 
             CreateOrWireStackButton(
                 stack,
                 "BrowseGamesButton",
                 "Join game",
-                ButtonFill,
+                buttonStyle,
                 onJoinGame,
                 playButton != null ? 1 : 0);
 
@@ -118,7 +131,7 @@ namespace TitanOrbit.Game
                     stack,
                     "LocalClientButton",
                     "Local client",
-                    ButtonFill,
+                    buttonStyle,
                     onLocalClient,
                     -1);
             }
@@ -132,6 +145,49 @@ namespace TitanOrbit.Game
 
             // --- Status line under the stack (must run after LayoutStack so height is known) ---
             statusText = EnsureStatusTextBelowStack(panel.transform, stack);
+        }
+
+        /// <summary>
+        /// Reads sprite / sliced type / tint / ColorBlock from the scene Play button.
+        /// Falls back to the known Cut Frame colors when Play is missing.
+        /// </summary>
+        static MenuButtonStyle CaptureButtonStyle(Button playButton)
+        {
+            // --- Default matches SampleScene PlayButton (Shift Cut Frame Filled) ---
+            var style = new MenuButtonStyle
+            {
+                Sprite = null,
+                ImageType = Image.Type.Sliced,
+                PixelsPerUnitMultiplier = 1f,
+                ImageColor = new Color(0.22f, 0.33f, 0.42f, 0.75f),
+                HasSprite = false,
+                Colors = new ColorBlock
+                {
+                    normalColor = new Color(0.22f, 0.33f, 0.42f, 0.75f),
+                    highlightedColor = new Color(0.28f, 0.40f, 0.50f, 0.85f),
+                    pressedColor = new Color(0.17f, 0.27f, 0.36f, 0.90f),
+                    selectedColor = new Color(0.22f, 0.33f, 0.42f, 0.75f),
+                    disabledColor = new Color(0.20f, 0.25f, 0.35f, 0.70f),
+                    colorMultiplier = 1f,
+                    fadeDuration = 0.1f,
+                },
+            };
+
+            if (playButton == null)
+                return style;
+
+            var image = playButton.GetComponent<Image>();
+            if (image != null)
+            {
+                style.Sprite = image.sprite;
+                style.ImageType = image.type;
+                style.PixelsPerUnitMultiplier = image.pixelsPerUnitMultiplier;
+                style.ImageColor = image.color;
+                style.HasSprite = image.sprite != null;
+            }
+
+            style.Colors = playButton.colors;
+            return style;
         }
 
         /// <summary>Play button caption depends on local-dev vs dedicated Quick join mode.</summary>
@@ -198,9 +254,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Compact Sign in / Sign out button only — no Guest / player-id status text beside it.
+        /// Compact Sign in / Sign out button in the top-right — uses the same Cut Frame style as Play.
         /// </summary>
-        static void EnsureAccountBar(Transform panel)
+        static void EnsureAccountBar(Transform panel, MenuButtonStyle buttonStyle)
         {
             Transform existing = panel.Find(AccountBarObjectName);
             GameObject barGo = existing != null
@@ -227,10 +283,10 @@ namespace TitanOrbit.Game
             barRt.anchorMin = new Vector2(1f, 1f);
             barRt.anchorMax = new Vector2(1f, 1f);
             barRt.pivot = new Vector2(1f, 1f);
-            barRt.sizeDelta = new Vector2(220f, 40f);
+            barRt.sizeDelta = new Vector2(240f, 44f);
             barRt.anchoredPosition = new Vector2(-24f, -24f);
 
-            // --- Single centered action button ---
+            // --- Single action button filling the bar ---
             Transform btnTf = barGo.transform.Find("AccountActionButton");
             GameObject btnGo = btnTf != null
                 ? btnTf.gameObject
@@ -245,20 +301,12 @@ namespace TitanOrbit.Game
             btnRt.offsetMax = Vector2.zero;
             btnRt.pivot = new Vector2(0.5f, 0.5f);
 
-            var btnImage = btnGo.GetComponent<Image>();
-            btnImage.color = PrimaryFill;
-            btnImage.raycastTarget = true;
+            // Reuse Play's sliced Cut Frame sprite + ColorBlock (not a flat navy fill).
+            StyleButton(btnGo, "Sign in with Unity", buttonStyle, 44f, 240f);
 
-            var btnLabel = EnsureChildTmp(btnGo.transform, "Text", TextAlignmentOptions.Center);
-            var labelRt = btnLabel.rectTransform;
-            labelRt.anchorMin = Vector2.zero;
-            labelRt.anchorMax = Vector2.one;
-            labelRt.offsetMin = Vector2.zero;
-            labelRt.offsetMax = Vector2.zero;
-            btnLabel.fontSize = 17f;
-            btnLabel.color = Color.white;
-            btnLabel.text = "Sign in with Unity";
-            btnLabel.raycastTarget = false;
+            var btnLabel = btnGo.GetComponentInChildren<TextMeshProUGUI>(true);
+            if (btnLabel != null)
+                btnLabel.fontSize = 17f;
 
             var accountBar = barGo.GetComponent<MainMenuAccountBar>();
             if (accountBar == null)
@@ -321,8 +369,9 @@ namespace TitanOrbit.Game
             inputRt.anchoredPosition = Vector2.zero;
 
             var inputBg = inputGo.GetComponent<Image>();
-            // Empty sprite so we do not paint the old Placeholder HUD art behind the field.
+            // Semi-transparent black plate — clearly an input, not a Cut Frame button.
             inputBg.sprite = null;
+            inputBg.type = Image.Type.Simple;
             inputBg.color = InputFill;
             inputBg.raycastTarget = true;
 
@@ -433,12 +482,12 @@ namespace TitanOrbit.Game
                 child.SetSiblingIndex(Mathf.Clamp(siblingIndex, 0, stack.childCount - 1));
         }
 
-        /// <summary>Creates or updates a stack button with consistent size and navy/cyan fill.</summary>
+        /// <summary>Creates or updates a stack button using the shared Play / Cut Frame style.</summary>
         static void CreateOrWireStackButton(
             Transform stack,
             string name,
             string label,
-            Color fill,
+            MenuButtonStyle style,
             UnityEngine.Events.UnityAction onClick,
             int siblingIndex)
         {
@@ -464,7 +513,7 @@ namespace TitanOrbit.Game
             if (siblingIndex >= 0)
                 go.transform.SetSiblingIndex(Mathf.Clamp(siblingIndex, 0, stack.childCount - 1));
 
-            StyleButton(go, label, fill, 46f, 340f);
+            StyleButton(go, label, style, 46f, 340f);
 
             var button = go.GetComponent<Button>();
             button.onClick.RemoveAllListeners();
@@ -474,8 +523,10 @@ namespace TitanOrbit.Game
             go.SetActive(true);
         }
 
-        /// <summary>Applies size, color, and centered TMP label to a menu button GameObject.</summary>
-        static void StyleButton(GameObject go, string label, Color fill, float height, float width)
+        /// <summary>
+        /// Applies Play-button visuals (Cut Frame sprite, sliced type, ColorBlock) plus label size.
+        /// </summary>
+        static void StyleButton(GameObject go, string label, MenuButtonStyle style, float height, float width)
         {
             var rt = go.GetComponent<RectTransform>();
             rt.localScale = Vector3.one;
@@ -488,44 +539,63 @@ namespace TitanOrbit.Game
             layout.preferredWidth = width;
 
             var image = go.GetComponent<Image>();
-            if (image != null)
+            if (image == null)
+                image = go.AddComponent<Image>();
+
+            // [UNITY] Sliced Cut Frame needs a border sprite — copy from Play when available.
+            if (style.HasSprite)
             {
-                // Keep scene Play sprite if present; otherwise solid color is fine.
-                image.color = fill;
-                image.raycastTarget = true;
+                image.sprite = style.Sprite;
+                image.type = style.ImageType;
+                image.pixelsPerUnitMultiplier = style.PixelsPerUnitMultiplier;
+            }
+            else
+            {
+                image.sprite = null;
+                image.type = Image.Type.Simple;
             }
 
+            image.color = style.ImageColor;
+            image.raycastTarget = true;
+
+            var button = go.GetComponent<Button>();
+            if (button == null)
+                button = go.AddComponent<Button>();
+            button.transition = Selectable.Transition.ColorTint;
+            button.colors = style.Colors;
+            button.targetGraphic = image;
+
             var textGo = go.transform.Find("Text")?.gameObject;
+            TextMeshProUGUI tmp = null;
             if (textGo == null)
             {
                 // Scene PlayButton may use a differently named child — take first TMP.
-                var existingTmp = go.GetComponentInChildren<TextMeshProUGUI>(true);
-                if (existingTmp != null)
+                tmp = go.GetComponentInChildren<TextMeshProUGUI>(true);
+                if (tmp == null)
                 {
-                    existingTmp.text = label;
-                    existingTmp.fontSize = 22f;
-                    existingTmp.alignment = TextAlignmentOptions.Center;
-                    existingTmp.color = Color.white;
-                    existingTmp.raycastTarget = false;
-                    return;
+                    textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
+                    textGo.transform.SetParent(go.transform, false);
+                    tmp = textGo.GetComponent<TextMeshProUGUI>();
                 }
-
-                textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
-                textGo.transform.SetParent(go.transform, false);
+            }
+            else
+            {
+                tmp = textGo.GetComponent<TextMeshProUGUI>();
             }
 
-            var textRt = textGo.GetComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = Vector2.zero;
-            textRt.offsetMax = Vector2.zero;
-
-            var tmp = textGo.GetComponent<TextMeshProUGUI>();
-            tmp.text = label;
-            tmp.fontSize = 22f;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = Color.white;
-            tmp.raycastTarget = false;
+            if (tmp != null)
+            {
+                var textRt = tmp.rectTransform;
+                textRt.anchorMin = Vector2.zero;
+                textRt.anchorMax = Vector2.one;
+                textRt.offsetMin = Vector2.zero;
+                textRt.offsetMax = Vector2.zero;
+                tmp.text = label;
+                tmp.fontSize = 22f;
+                tmp.alignment = TextAlignmentOptions.Center;
+                tmp.color = Color.white;
+                tmp.raycastTarget = false;
+            }
         }
 
         /// <summary>Forces layout rebuild after children change.</summary>
