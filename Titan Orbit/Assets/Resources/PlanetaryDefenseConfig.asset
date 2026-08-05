@@ -19,8 +19,8 @@ MonoBehaviour:
   regenerateHealth: 1
   healthRegenPerSecond: 3
   healthRegenDelayAfterDamage: 2.5
-  healthAtLevel1: 144
-  healthAtLevel6: 1440
+  healthAtLevel1: 174
+  healthAtLevel6: 852
   damageAtLevel1: 2
   damageAtLevel6: 10
   fireRateAtLevel1: 2
@@ -28,7 +28,7 @@ MonoBehaviour:
   engageRangeAtLevel1: 20
   engageRangeAtLevel6: 30
   bulletSpeedAtLevel1: 8
-  bulletSpeedAtLevel6: 16
+  bulletSpeedAtLevel6: 20
   useSolfeggioGemCosts: 1
   gemsAtLevel1: 174
   gemsAtLevel6: 852
@@ -37,7 +37,7 @@ MonoBehaviour:
   bulletVisualScale: 1.15
   levels:
   - gemsToReachLevel: 174
-    maxHealth: 144
+    maxHealth: 174
     damage: 2
     fireRate: 2
     bulletSpeed: 8
@@ -45,50 +45,50 @@ MonoBehaviour:
     visualScale: 0.56
     hitRadius: 0.5
   - gemsToReachLevel: 285
-    maxHealth: 403.2
+    maxHealth: 309.6
     damage: 3.6
     fireRate: 2
-    bulletSpeed: 9.6
+    bulletSpeed: 10.4
     engageRange: 22
     visualScale: 0.64
     hitRadius: 0.55
   - gemsToReachLevel: 396
-    maxHealth: 662.4
+    maxHealth: 445.2
     damage: 5.2
     fireRate: 2
-    bulletSpeed: 11.2
+    bulletSpeed: 12.8
     engageRange: 24
     visualScale: 0.72
     hitRadius: 0.6
   - gemsToReachLevel: 528
-    maxHealth: 921.60004
+    maxHealth: 580.8
     damage: 6.8
     fireRate: 2
-    bulletSpeed: 12.8
+    bulletSpeed: 15.200001
     engageRange: 26
     visualScale: 0.8
     hitRadius: 0.65
   - gemsToReachLevel: 639
-    maxHealth: 1180.8
+    maxHealth: 716.4
     damage: 8.4
     fireRate: 2
-    bulletSpeed: 14.4
+    bulletSpeed: 17.6
     engageRange: 28
     visualScale: 0.88
     hitRadius: 0.7
   - gemsToReachLevel: 852
-    maxHealth: 1440
+    maxHealth: 852
     damage: 10
     fireRate: 2
-    bulletSpeed: 16
+    bulletSpeed: 20
     engageRange: 30
     visualScale: 1
     hitRadius: 0.8
   - gemsToReachLevel: 963
-    maxHealth: 1699.2001
+    maxHealth: 987.60004
     damage: 11.6
     fireRate: 2
-    bulletSpeed: 17.6
+    bulletSpeed: 22.400002
     engageRange: 32
     visualScale: 1.1
     hitRadius: 0.85

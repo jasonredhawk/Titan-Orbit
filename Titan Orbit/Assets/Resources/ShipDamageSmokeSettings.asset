@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 46961efcbff516644ba692bdb3cf675c, type: 3}
+  m_Name: ShipDamageSmokeSettings
+  m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.ShipDamageSmokeSettings
+  enabled: 1
+  smokePrefab: {fileID: 134592, guid: 3caa0426f5c44154a89f8c0d2b118c76, type: 3}
+  localOffset: {x: 0, y: 0.25, z: -0.35}
+  localEuler: {x: -90, y: 0, z: 0}
+  maxWorldScale: 0.75
+  smokeStartsAtHealthFraction: 0.5
+  smokeFullAtHealthFraction: 0
+  minEmissionRate: 4
+  maxEmissionRate: 18
+  maxRateOverDistance: 1.2
+  minLifetime: 0.575
+  maxLifetime: 1.44
+  minStartSize: 0.63
+  maxStartSize: 1.55
+  intensityTransitionSpeed: 1.15
+  trailSpeedReference: 10

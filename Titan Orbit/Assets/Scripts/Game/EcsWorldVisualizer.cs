@@ -430,6 +430,7 @@ namespace TitanOrbit.Game
 
             // --- Ship banking (cosmetic roll) ---
             // [TITAN-ORBIT] Publish Inspector knobs so hybrid + EG bank paths share one feel.
+            // Damage smoke profiles live on ShipFamilyDefinition.damageSmokeSettings (ScriptableObject).
             PublishShipBankVisualSettings();
         }
 
@@ -2151,6 +2152,18 @@ namespace TitanOrbit.Game
             }
 
             propulsionVisual.Bind(entity, familyPrefix, propulsionVfxSettings, bindFamily);
+
+            // --- Damage smoke (hull HP → trail density) ---
+            // [HYBRID] Cosmetic only — profile from ShipFamilyDefinition.damageSmokeSettings.
+            var damageSmokeVisual = go.GetComponent<ShipDamageSmokeVisualApplier>();
+            if (damageSmokeVisual == null)
+                damageSmokeVisual = go.AddComponent<ShipDamageSmokeVisualApplier>();
+            ShipDamageSmokeSettings smokeSettings = bindFamily != null
+                ? bindFamily.damageSmokeSettings
+                : null;
+            if (smokeSettings == null)
+                smokeSettings = ShipDamageSmokeSettings.LoadDefault();
+            damageSmokeVisual.Bind(entity, smokeSettings);
 
             var attributeScaleVisual = go.GetComponent<ShipComponentAttributeScaleApplier>();
             if (attributeScaleVisual == null)
