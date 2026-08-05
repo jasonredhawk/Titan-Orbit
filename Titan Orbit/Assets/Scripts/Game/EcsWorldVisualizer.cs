@@ -252,6 +252,10 @@ namespace TitanOrbit.Game
             public int Kills;
             public int GemsDeposited;
             public int PeopleDelivered;
+            /// <summary>
+            /// True when the ship is fully moon-docked — nameplate stays hidden for that state.
+            /// </summary>
+            public bool IsLandedOnMoon;
         }
 
         /// <summary>
@@ -1892,8 +1896,10 @@ namespace TitanOrbit.Game
                     peopleDelivered = stats.PeopleDelivered;
                 }
 
+                // [TITAN-ORBIT] Same fully-landed gate as the batched nameplate path.
+                bool landedOnMoon = IsShipFullyLandedOnMoon(em, shipEntity);
                 ApplyShipNameplatePresentation(
-                    proxyGo, networkId, ship, kills, gemsDeposited, peopleDelivered);
+                    proxyGo, networkId, ship, kills, gemsDeposited, peopleDelivered, landedOnMoon);
             }
         }
 
@@ -2249,13 +2255,17 @@ namespace TitanOrbit.Game
         /// Paints one ship nameplate from already-read ship/match state and the last
         /// <see cref="ShipTopOfTeamRoles.Recompute"/> / rank snapshot. No ECS queries.
         /// </summary>
+        /// <param name="isLandedOnMoon">
+        /// True when the ship is fully docked on a gem moon — plate is hidden for that state.
+        /// </param>
         void ApplyShipNameplatePresentation(
             GameObject proxyGo,
             int networkId,
             in ShipState ship,
             int kills,
             int gemsDeposited,
-            int peopleDelivered)
+            int peopleDelivered,
+            bool isLandedOnMoon)
         {
             // --- ApplyShipNameplatePresentation ---
             if (proxyGo == null)
@@ -2276,6 +2286,7 @@ namespace TitanOrbit.Game
                 ship.Team,
                 ship.IsDead,
                 ship.AwaitingTeamSelection,
+                isLandedOnMoon,
                 ship.ShipLevel,
                 score,
                 rank,
@@ -2310,7 +2321,8 @@ namespace TitanOrbit.Game
                     pending.Ship,
                     pending.Kills,
                     pending.GemsDeposited,
-                    pending.PeopleDelivered);
+                    pending.PeopleDelivered,
+                    pending.IsLandedOnMoon);
             }
 
             _pendingShipNameplates.Clear();
@@ -2345,6 +2357,9 @@ namespace TitanOrbit.Game
                 peopleDelivered = stats.PeopleDelivered;
             }
 
+            // [NETCODE] ShipMoonDockState is ghosted — same component the orbit menu / dock VFX read.
+            bool landedOnMoon = IsShipFullyLandedOnMoon(em, entity);
+
             _nameplateRoleCandidates.Add(new ShipTopOfTeamRoles.Candidate
             {
                 Team = ship.Team,
@@ -2363,7 +2378,27 @@ namespace TitanOrbit.Game
                 Kills = kills,
                 GemsDeposited = gemsDeposited,
                 PeopleDelivered = peopleDelivered,
+                IsLandedOnMoon = landedOnMoon,
             });
+        }
+
+        /// <summary>
+        /// True when the ship is fully docked on a gem moon (deposit / orbit store allowed).
+        /// Reads the already-synced ghost component for this entity only — not a map-body gather.
+        /// </summary>
+        /// <param name="em">Client world entity manager from the ship sync path.</param>
+        /// <param name="shipEntity">Ship ghost entity already in hand from the ship loop.</param>
+        /// <returns>True when MoonPlanetId is set and landing progress is at the complete threshold.</returns>
+        static bool IsShipFullyLandedOnMoon(EntityManager em, Entity shipEntity)
+        {
+            // --- Per-entity moon dock read (safe under quarantine — not a planet/asteroid scan) ---
+            if (!em.HasComponent<ShipMoonDockState>(shipEntity))
+                return false;
+
+            var moonDock = em.GetComponentData<ShipMoonDockState>(shipEntity);
+            return moonDock.MoonPlanetId != 0
+                   && moonDock.LandingProgress + 0.0001f
+                   >= GemEconomyConstants.MoonLandingCompleteThreshold;
         }
 
         /// <summary>[EDITOR] Default ship family asset when inspector field is empty.</summary>

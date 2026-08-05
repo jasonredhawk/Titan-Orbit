@@ -12,9 +12,24 @@ namespace TitanOrbit.Services
     /// <summary>
     /// Single entry point for Unity Gaming Services init and Authentication.
     /// Configure Unity Player Accounts in the Editor (Services &gt; Unity Player Accounts) and set <see cref="UnityPlayerAccountSettings"/> client id.
+    ///
+    /// Session persistence: Unity Authentication stores a session token after anonymous sign-in /
+    /// Unity Player Account link. The next launch calls <see cref="SignInAnonymouslyAsync"/> which
+    /// <b>restores</b> that cached session (including Unity-linked players) — players should not need
+    /// to browser-sign-in every load. We also remember a local PlayerPrefs flag so the Main Menu
+    /// shows "Sign out" while PlayerInfo catches up after cold start.
     /// </summary>
     public static class UnityGameServicesBootstrap
     {
+        /// <summary>
+        /// Local remember-me flag: set after a successful Unity Player Account link / sign-in,
+        /// cleared only on explicit Sign out (clearAuthenticationSession).
+        /// </summary>
+        const string UnityAccountLinkedPrefsKey = "TitanOrbit_UnityAccountLinked_v1";
+
+        /// <summary>Last UGS PlayerId that had a confirmed Unity identity (debug / future validation).</summary>
+        const string UnityAccountLinkedPlayerIdPrefsKey = "TitanOrbit_UnityAccountPlayerId_v1";
+
         static bool _authEventsHooked;
         static bool _playerAccountHooksHooked;
         static TaskCompletionSource<bool> _pendingUnityAuthCompletion;
@@ -85,6 +100,8 @@ namespace TitanOrbit.Services
         /// <summary>
         /// Uses <see cref="AuthenticationService.Instance.SignInAnonymouslyAsync"/> to create a guest session or
         /// <b>restore a cached session</b> (including Unity Player Account–linked players) per Unity session docs.
+        /// When <see cref="IAuthenticationService.SessionTokenExists"/> is true, this refreshes that player —
+        /// it does not create a new anonymous account.
         /// </summary>
         static async Task EnsureAuthenticationSessionRestoredAsync()
         {
@@ -93,6 +110,13 @@ namespace TitanOrbit.Services
             if (auth.IsAuthorized)
                 return;
 
+            // [UGS] Log cache state so "have to sign in every launch" is diagnosable in Player.log.
+            bool hadCachedToken = auth.SessionTokenExists;
+            bool rememberedUnity = PlayerPrefs.GetInt(UnityAccountLinkedPrefsKey, 0) != 0;
+            Debug.Log(
+                "[UnityGameServicesBootstrap] Restoring auth session. SessionTokenExists=" +
+                hadCachedToken + " RememberUnity=" + rememberedUnity);
+
             const int maxAttempts = 12;
             Exception last = null;
             for (int attempt = 1; attempt <= maxAttempts; attempt++)
@@ -100,6 +124,9 @@ namespace TitanOrbit.Services
                 try
                 {
                     await auth.SignInAnonymouslyAsync();
+                    Debug.Log(
+                        "[UnityGameServicesBootstrap] Auth ready. PlayerId=" + auth.PlayerId +
+                        " restoredFromCache=" + hadCachedToken);
                     return;
                 }
                 catch (Exception e)
@@ -165,6 +192,9 @@ namespace TitanOrbit.Services
                     AuthenticationService.Instance.IsSignedIn &&
                     AuthenticationService.Instance.IsAuthorized)
                 {
+                    // Still refresh PlayerInfo so Unity-link shows after domain reload / cold start.
+                    await TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: true);
+                    SyncRememberFlagFromPlayerInfo();
 #if UNITY_WEBGL && !UNITY_EDITOR
                     await WebGlUnityPlayerAccountBrowser.TryResumeOAuthRedirectIfPresentAsync();
 #endif
@@ -173,6 +203,12 @@ namespace TitanOrbit.Services
 
                 await EnsureUnityServicesAndAnonymousAuthLockedAsync();
                 bool ok = AuthenticationService.Instance.IsSignedIn && AuthenticationService.Instance.IsAuthorized;
+                if (ok)
+                {
+                    // [UGS] Pull identities so HasUnityPlayerAccountLinked is accurate after session restore.
+                    await TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: true);
+                    SyncRememberFlagFromPlayerInfo();
+                }
 #if UNITY_WEBGL && !UNITY_EDITOR
                 if (ok)
                     await WebGlUnityPlayerAccountBrowser.TryResumeOAuthRedirectIfPresentAsync();
@@ -235,23 +271,137 @@ namespace TitanOrbit.Services
         }
 
         /// <summary>
-        /// Use for menus and session checks: true if <see cref="HasUnityPlayerAccountLinked"/> or Unity Player Accounts
-        /// still has an access token (common when <see cref="GetPlayerInfoAsync"/> temporarily drops the "unity" identity).
+        /// Use for menus and session checks. True when Authentication has a Unity identity, or when we
+        /// previously persisted a successful Unity link and a session token / signed-in session still exists
+        /// (PlayerInfo can lag one frame after cold-start restore).
         /// </summary>
+        /// <remarks>
+        /// Do <b>not</b> treat <see cref="PlayerAccountService"/> access-token alone as signed-in.
+        /// That token is in-memory only and vanishes on the next launch — using it made the button say
+        /// "Sign out" during the browser session even when Auth never cached a Unity-linked player.
+        /// </remarks>
         public static bool IsUnityAccountActiveForUi()
         {
             // --- IsUnityAccountActiveForUi ---
             if (HasUnityPlayerAccountLinked())
                 return true;
-            if (UnityServicesNotReadyYet() || !IsAuthorizedSession())
+
+            if (PlayerPrefs.GetInt(UnityAccountLinkedPrefsKey, 0) == 0)
                 return false;
+
+            if (UnityServicesNotReadyYet())
+            {
+                // Optimistic: last launch linked Unity and we have not finished UGS init yet.
+                return true;
+            }
+
+            var auth = AuthenticationService.Instance;
+            // Remember-me + cached session token (or already signed in) → treat as Unity until proven otherwise.
+            return auth.SessionTokenExists || auth.IsSignedIn;
+        }
+
+        /// <summary>
+        /// Marks that this device successfully authenticated a Unity-linked player.
+        /// Only call after <see cref="HasUnityPlayerAccountLinked"/> is true (or SignInWithUnity succeeded
+        /// and PlayerInfo confirms the unity identity).
+        /// </summary>
+        static void RememberUnityAccountLinked()
+        {
+            PlayerPrefs.SetInt(UnityAccountLinkedPrefsKey, 1);
+            if (!string.IsNullOrEmpty(PlayerId))
+                PlayerPrefs.SetString(UnityAccountLinkedPlayerIdPrefsKey, PlayerId);
+            PlayerPrefs.Save();
+            Debug.Log("[UnityGameServicesBootstrap] Remembered Unity account link. PlayerId=" + PlayerId);
+        }
+
+        /// <summary>Clears the local remember-me flag (explicit Sign out only).</summary>
+        static void ForgetUnityAccountLinked()
+        {
+            PlayerPrefs.DeleteKey(UnityAccountLinkedPrefsKey);
+            PlayerPrefs.DeleteKey(UnityAccountLinkedPlayerIdPrefsKey);
+            PlayerPrefs.Save();
+        }
+
+        /// <summary>Sync remember-me from live PlayerInfo after session restore / GetPlayerInfo.</summary>
+        static void SyncRememberFlagFromPlayerInfo()
+        {
+            if (HasUnityPlayerAccountLinked())
+            {
+                RememberUnityAccountLinked();
+                return;
+            }
+
+            // PlayerInfo loaded and has no Unity identity → clear a stale remember-me from a prior
+            // browser session that never successfully cached a Unity-linked Auth player.
+            var info = AuthenticationService.Instance.PlayerInfo;
+            if (info != null && PlayerPrefs.GetInt(UnityAccountLinkedPrefsKey, 0) != 0)
+            {
+                Debug.LogWarning(
+                    "[UnityGameServicesBootstrap] Cleared stale Unity remember-me — restored session has no unity identity.");
+                ForgetUnityAccountLinked();
+            }
+        }
+
+        /// <summary>
+        /// Completes Authentication with a Unity Player Accounts access token.
+        /// Prefers link (keeps current player id); on AccountAlreadyLinked, switches to the Unity-owned
+        /// player via SignOut(clear) + SignInWithUnityAsync so the session token actually persists.
+        /// </summary>
+        /// <summary>Used by WebGL OAuth resume and browser SignedIn hooks.</summary>
+        internal static async Task<bool> CompleteAuthenticationWithUnityAccessTokenAsync(string accessToken, bool preferLink)
+        {
+            // --- CompleteAuthenticationWithUnityAccessTokenAsync ---
+            if (string.IsNullOrEmpty(accessToken))
+                return false;
+
+            var auth = AuthenticationService.Instance;
+
             try
             {
-                return PlayerAccountService.Instance.IsSignedIn &&
-                       !string.IsNullOrEmpty(PlayerAccountService.Instance.AccessToken);
+                if (preferLink && auth.IsSignedIn)
+                {
+                    try
+                    {
+                        await auth.LinkWithUnityAsync(accessToken);
+                    }
+                    catch (AuthenticationException ex) when (ex.ErrorCode == AuthenticationErrorCodes.AccountAlreadyLinked)
+                    {
+                        // [UGS] This Unity login is already tied to a different UGS player id.
+                        // Linking the current guest fails — switch to that Unity player so the
+                        // session token we cache is the one that will restore next launch.
+                        Debug.LogWarning(
+                            "[UnityGameServicesBootstrap] Unity account already linked to another player. " +
+                            "Signing out guest and signing in with Unity so persistence works.");
+                        auth.SignOut(clearCredentials: true);
+                        await auth.SignInWithUnityAsync(accessToken);
+                    }
+                }
+                else
+                {
+                    if (auth.IsSignedIn)
+                        auth.SignOut(clearCredentials: true);
+                    await auth.SignInWithUnityAsync(accessToken);
+                }
+
+                TitanOrbitFriendsCoordinator.ResetAfterAuthChange();
+                await TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: false);
+
+                if (HasUnityPlayerAccountLinked() || auth.IsSignedIn)
+                {
+                    // SignInWithUnity always yields a Unity-authenticated player even if GetPlayerInfo lags.
+                    RememberUnityAccountLinked();
+                    AuthStateChanged?.Invoke();
+                    return true;
+                }
+
+                Debug.LogWarning(
+                    "[UnityGameServicesBootstrap] Unity token accepted but player has no unity identity yet.");
+                AuthStateChanged?.Invoke();
+                return auth.IsSignedIn;
             }
-            catch
+            catch (Exception ex)
             {
+                Debug.LogWarning("[UnityGameServicesBootstrap] Completing Unity auth failed: " + ex.Message);
                 return false;
             }
         }
@@ -282,14 +432,22 @@ namespace TitanOrbit.Services
 #else
             await EnsureGuestSessionForOnlineAsync();
 #endif
-            if (IsUnityAccountActiveForUi())
+            // Already have a Unity-linked Authentication player — nothing to do.
+            if (HasUnityPlayerAccountLinked())
+            {
+                RememberUnityAccountLinked();
                 return true;
+            }
+
 #if UNITY_WEBGL && !UNITY_EDITOR
+            // WebGL: OAuth must start in the same click turn (gesture). Prefer link when a guest exists.
             return await WebGlUnityPlayerAccountBrowser.BeginOAuthInBrowserAsync(AuthenticationService.Instance.IsSignedIn);
 #else
-            if (AuthenticationService.Instance.IsSignedIn)
-                return await LinkUnityPlayerAccountUsingBrowserAsync();
-            return await SignInWithUnityPlayerAccountUsingBrowserAsync();
+            // Prefer link when a guest session exists (keeps lobby player id); CompleteAuthentication…
+            // falls back to SignInWithUnity when the Unity account is already tied to another player.
+            return AuthenticationService.Instance.IsSignedIn
+                ? await LinkUnityPlayerAccountUsingBrowserAsync()
+                : await SignInWithUnityPlayerAccountUsingBrowserAsync();
 #endif
         }
 
@@ -307,12 +465,11 @@ namespace TitanOrbit.Services
                 if (PlayerAccountService.Instance.IsSignedIn &&
                     !string.IsNullOrEmpty(PlayerAccountService.Instance.AccessToken))
                 {
-                    await AuthenticationService.Instance.SignInWithUnityAsync(PlayerAccountService.Instance.AccessToken);
-                    TitanOrbitFriendsCoordinator.ResetAfterAuthChange();
-                    await TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: false);
-                    AuthStateChanged?.Invoke();
-                    _pendingUnityAuthCompletion.TrySetResult(AuthenticationService.Instance.IsSignedIn);
-                    return AuthenticationService.Instance.IsSignedIn;
+                    bool ok = await CompleteAuthenticationWithUnityAccessTokenAsync(
+                        PlayerAccountService.Instance.AccessToken,
+                        preferLink: false);
+                    _pendingUnityAuthCompletion.TrySetResult(ok);
+                    return ok;
                 }
 
                 await PlayerAccountService.Instance.StartSignInAsync();
@@ -358,22 +515,15 @@ namespace TitanOrbit.Services
                 if (PlayerAccountService.Instance.IsSignedIn &&
                     !string.IsNullOrEmpty(PlayerAccountService.Instance.AccessToken))
                 {
-                    await AuthenticationService.Instance.LinkWithUnityAsync(PlayerAccountService.Instance.AccessToken);
-                    TitanOrbitFriendsCoordinator.ResetAfterAuthChange();
-                    await TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: false);
-                    _pendingUnityAuthCompletion.TrySetResult(true);
-                    AuthStateChanged?.Invoke();
-                    return true;
+                    bool ok = await CompleteAuthenticationWithUnityAccessTokenAsync(
+                        PlayerAccountService.Instance.AccessToken,
+                        preferLink: true);
+                    _pendingUnityAuthCompletion.TrySetResult(ok);
+                    return ok;
                 }
 
                 await PlayerAccountService.Instance.StartSignInAsync();
                 return await WaitForPendingAuthAsync(TimeSpan.FromMinutes(5));
-            }
-            catch (AuthenticationException ex) when (ex.ErrorCode == AuthenticationErrorCodes.AccountAlreadyLinked)
-            {
-                Debug.LogWarning("[UnityGameServicesBootstrap] Account already linked.");
-                _pendingUnityAuthCompletion?.TrySetResult(false);
-                return false;
             }
             catch (Exception ex)
             {
@@ -399,14 +549,25 @@ namespace TitanOrbit.Services
         }
 
         /// <summary>Signs out of Unity Authentication and Unity Player Accounts.</summary>
+        /// <param name="clearAuthenticationSession">
+        /// When true (default for the Sign out button), deletes the cached session token so the next
+        /// launch does <b>not</b> restore the Unity-linked player. Pass false only for soft sign-out tests.
+        /// </param>
         public static void SignOutAllSessions(bool clearAuthenticationSession = true)
         {
             // --- SignOutAllSessions ---
 #if UNITY_WEBGL && !UNITY_EDITOR
             WebGlUnityPlayerAccountBrowser.ClearPendingOAuthState();
 #endif
+            if (clearAuthenticationSession)
+                ForgetUnityAccountLinked();
+
             if (UnityServices.State != ServicesInitializationState.Initialized)
+            {
+                AuthStateChanged?.Invoke();
                 return;
+            }
+
             if (AuthenticationService.Instance.IsSignedIn)
                 AuthenticationService.Instance.SignOut(clearAuthenticationSession);
             PlayerAccountService.Instance.SignOut();
@@ -508,15 +669,11 @@ namespace TitanOrbit.Services
                     return;
                 }
 
-                if (_pendingLinkInsteadOfSignIn)
-                    await AuthenticationService.Instance.LinkWithUnityAsync(token);
-                else
-                    await AuthenticationService.Instance.SignInWithUnityAsync(token);
-
-                TitanOrbitFriendsCoordinator.ResetAfterAuthChange();
-                await TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: false);
-                AuthStateChanged?.Invoke();
-                _pendingUnityAuthCompletion?.TrySetResult(AuthenticationService.Instance.IsSignedIn);
+                // Shared path handles Link vs SignInWithUnity and AccountAlreadyLinked → switch player.
+                bool ok = await CompleteAuthenticationWithUnityAccessTokenAsync(
+                    token,
+                    preferLink: _pendingLinkInsteadOfSignIn);
+                _pendingUnityAuthCompletion?.TrySetResult(ok);
             }
             catch (Exception ex)
             {

@@ -25,6 +25,7 @@ namespace TitanOrbit.Game
     /// [HYBRID] Client presentation only — fed by <see cref="EcsWorldVisualizer"/>. Clearance is
     /// half the ship's widest local footprint (+ padding), frozen until ability-upgrade growth;
     /// yaw must not move the plate. The label root is unparented so text/bars stay world-upright.
+    /// Fully moon-docked ships hide the plate until takeoff.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(120)]
@@ -51,7 +52,7 @@ namespace TitanOrbit.Game
 
         /// <summary>Secondary row font — visual ≈ 1.76 world units.</summary>
         const float MetaFontSize = 9.5f;
-        const float RoleLetterFontSize = 6f;
+        const float RoleLetterFontSize = 8.4f;
 
         const float OutlineWidth = 0.16f;
         const float FaceDilate = 0.1f;
@@ -77,7 +78,8 @@ namespace TitanOrbit.Game
 
         const float BadgeHeight = 0.5f;
 
-        const float RoleSlotSize = 0.7f;
+        /// <summary>K/G/T badge square size (label-local). ~40% larger than the first pass.</summary>
+        const float RoleSlotSize = 0.98f;
         const float RoleSlotGap = 0.12f;
 
         const float HealthHighRatio = 2f / 3f;
@@ -89,7 +91,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Bump when row spacing / fonts / clearance policy change so live proxies refresh layout.
         /// </summary>
-        const int LayoutVersion = 11;
+        const int LayoutVersion = 12;
 
         /// <summary>Max name characters before width-fit (wider plate allows longer names).</summary>
         const int MaxNameCharacters = 28;
@@ -199,13 +201,20 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Pushes live vitals, name, ship level, match score / team rank, badge, and top-role flags.
+        /// Hides the plate while the ship is dead, awaiting team pick, unteamed, or fully
+        /// landed on a gem moon (orbit menu covers that state).
         /// </summary>
+        /// <param name="isLandedOnMoon">
+        /// True when <c>ShipMoonDockState</c> reports a completed moon landing
+        /// (<c>MoonPlanetId != 0</c> and landing progress at the complete threshold).
+        /// </param>
         public void ApplyPresentation(
             int networkId,
             string displayName,
             TeamId team,
             bool isDead,
             bool awaitingTeamSelection,
+            bool isLandedOnMoon,
             int shipLevel,
             int matchScore,
             int teamRank,
@@ -228,7 +237,12 @@ namespace TitanOrbit.Game
             EnsureLayoutCurrent();
 
             // --- Visibility ---
-            bool visible = !isDead && !awaitingTeamSelection && team != TeamId.None;
+            // [TITAN-ORBIT] Moon dock: hide the world plate once the hull is fully landed so it
+            // does not float over the moon / orbit-station UI. Thrust clears dock → plate returns.
+            bool visible = !isDead
+                           && !awaitingTeamSelection
+                           && !isLandedOnMoon
+                           && team != TeamId.None;
             if (visible != _cachedVisible)
             {
                 _labelRoot.gameObject.SetActive(visible);
@@ -907,6 +921,24 @@ namespace TitanOrbit.Game
             if (_shipLevelText != null) _shipLevelText.fontSize = MetaFontSize;
             if (_scoreText != null) _scoreText.fontSize = MetaFontSize;
             if (_rankText != null) _rankText.fontSize = MetaFontSize;
+
+            RestyleRoleSlot(ref _roleKiller);
+            RestyleRoleSlot(ref _roleMiner);
+            RestyleRoleSlot(ref _roleTransporter);
+        }
+
+        /// <summary>Applies current <see cref="RoleSlotSize"/> / letter font to a recovered role badge.</summary>
+        static void RestyleRoleSlot(ref RoleSlot slot)
+        {
+            if (slot.Root == null)
+                return;
+
+            Transform bg = slot.Root.Find("Bg");
+            if (bg != null)
+                bg.localScale = new Vector3(RoleSlotSize, RoleSlotSize, 1f);
+
+            if (slot.Letter != null)
+                slot.Letter.fontSize = RoleLetterFontSize;
         }
 
         static void RestyleBar(ref ThinBar bar)

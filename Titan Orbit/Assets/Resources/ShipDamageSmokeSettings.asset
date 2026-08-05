@@ -14,17 +14,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.ShipDamageSmokeSettings
   enabled: 1
   smokePrefab: {fileID: 134592, guid: 3caa0426f5c44154a89f8c0d2b118c76, type: 3}
-  localOffset: {x: 0, y: 0.25, z: -0.35}
+  localOffset: {x: 0, y: 0.25, z: -0.5}
   localEuler: {x: -90, y: 0, z: 0}
   maxWorldScale: 0.75
-  smokeStartsAtHealthFraction: 0.5
+  smokeStartsAtHealthFraction: 0.75
   smokeFullAtHealthFraction: 0
   minEmissionRate: 4
-  maxEmissionRate: 18
-  maxRateOverDistance: 1.2
+  maxEmissionRate: 25
+  maxRateOverDistance: 2
   minLifetime: 0.575
-  maxLifetime: 1.44
+  maxLifetime: 3
   minStartSize: 0.63
-  maxStartSize: 1.55
+  maxStartSize: 2
   intensityTransitionSpeed: 1.15
-  trailSpeedReference: 10
+  trailSpeedReference: 20

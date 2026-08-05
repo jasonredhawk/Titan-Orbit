@@ -176,30 +176,18 @@ namespace TitanOrbit.Services
                     return;
                 }
 
-                try
+                // Shared path: Link, or on AccountAlreadyLinked → SignOut + SignInWithUnity (persists session).
+                bool ok = await UnityGameServicesBootstrap.CompleteAuthenticationWithUnityAccessTokenAsync(
+                    accessToken,
+                    preferLink: link);
+                if (!ok)
                 {
-                    if (link)
-                        await AuthenticationService.Instance.LinkWithUnityAsync(accessToken);
-                    else
-                        await AuthenticationService.Instance.SignInWithUnityAsync(accessToken);
-                }
-                catch (AuthenticationException ex) when (ex.ErrorCode == AuthenticationErrorCodes.AccountAlreadyLinked)
-                {
-                    Debug.LogWarning("[WebGlUnityPlayerAccountBrowser] Account already linked.");
-                    ClearPendingOAuthState();
-                    TryStripOAuthQueryFromBrowserUrl();
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning("[WebGlUnityPlayerAccountBrowser] Completing Unity auth failed: " + ex.Message);
+                    Debug.LogWarning("[WebGlUnityPlayerAccountBrowser] Completing Unity auth failed.");
                     ClearPendingOAuthState();
                     TryStripOAuthQueryFromBrowserUrl();
                     return;
                 }
 
-                TitanOrbitFriendsCoordinator.ResetAfterAuthChange();
-                await UnityGameServicesBootstrap.TryFetchPlayerInfoForUiAsync(allowReplacePlayerInfo: false);
                 UnityGameServicesBootstrap.NotifyAuthStateChangedFromWebGlOAuthResume();
                 ClearPendingOAuthState();
                 TryStripOAuthQueryFromBrowserUrl();

@@ -80,7 +80,7 @@ namespace TitanOrbit.Game
         LoadingScreenControllerNce _loadingScreen;
         JoinGameBrowserController _joinBrowser;
         RejoinShipChoiceController _rejoinChoice;
-        string _statusMessage = "For Docker/dedicated server: click Join game. For local dev: Local host or Local play.";
+        string _statusMessage = "Join a match or start local play.";
         bool _mainMenuButtonsBuilt;
         bool _initialized;
 
@@ -254,71 +254,23 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            EnsureMainMenuStatusText();
+            // --- Visual refresh (logo, account bar, stacked buttons, clear placeholder BG) ---
+            // [TITAN-ORBIT] MainMenuPresenter owns layout so bootstrap + flow stay in sync.
+            MainMenuPresenter.Apply(
+                mainMenuPanel,
+                playButton,
+                OnBrowseGamesClicked,
+                OnLocalClientClicked,
+                out var presentedStatus);
+            if (presentedStatus != null)
+                statusText = presentedStatus;
 
-            if (playButton != null)
-            {
-                var playLabel = playButton.GetComponentInChildren<TextMeshProUGUI>();
-                if (playLabel != null)
-                {
-                    if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
-                        playLabel.text = "Local client";
-                    else
-                        playLabel.text = TitanOrbitMultiplayerConfig.ShowLocalPlayOptions
-                            ? "Local play"
-                            : "Quick join";
-                }
-            }
-
-            float y = playButton != null
-                ? playButton.GetComponent<RectTransform>().anchoredPosition.y - 56f
-                : -170f;
-
-            CreateMainMenuButton("BrowseGamesButton", "Join game", y, OnBrowseGamesClicked);
-            y -= 56f;
-
-            if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
-            {
-                if (!TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
-                    CreateMainMenuButton("LocalHostButton", "Local host", y, OnLocalHostClicked);
-                if (!TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
-                    y -= 48f;
-                CreateMainMenuButton("LocalClientButton", "Local client", y, OnLocalClientClicked);
-            }
+            if (statusText != null && string.IsNullOrEmpty(statusText.text))
+                statusText.text = _statusMessage;
 
             _mainMenuButtonsBuilt = true;
-            Debug.Log("[NceGameFlow] Main menu buttons built (Join game" +
-                      (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions ? ", Local host, Local client" : "") + ").");
-        }
-
-        void EnsureMainMenuStatusText()
-        {
-            if (statusText != null || mainMenuPanel == null)
-                return;
-
-            var statusGo = mainMenuPanel.transform.Find("MainMenuStatus");
-            if (statusGo != null)
-            {
-                statusText = statusGo.GetComponent<TextMeshProUGUI>();
-                if (statusText != null)
-                    return;
-            }
-
-            var go = new GameObject("MainMenuStatus", typeof(RectTransform), typeof(TextMeshProUGUI));
-            go.transform.SetParent(mainMenuPanel.transform, false);
-            var rt = go.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f, 0.2f);
-            rt.anchorMax = new Vector2(0.5f, 0.2f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(680f, 80f);
-            rt.anchoredPosition = new Vector2(0f, 0f);
-
-            statusText = go.GetComponent<TextMeshProUGUI>();
-            statusText.fontSize = 16f;
-            statusText.alignment = TextAlignmentOptions.Center;
-            statusText.color = new Color(0.75f, 0.85f, 0.95f, 0.95f);
-            statusText.raycastTarget = false;
-            statusText.text = _statusMessage;
+            Debug.Log("[NceGameFlow] Main menu presented (logo, account, Join game" +
+                      (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions ? ", Local client" : "") + ").");
         }
 
         /// <summary>Shows connection errors on the main menu status line (not only the console).</summary>
@@ -328,128 +280,26 @@ namespace TitanOrbit.Game
             PushStatusToUi();
         }
 
-        void CreateMainMenuButton(string name, string label, float y, UnityEngine.Events.UnityAction onClick)
-        {
-            Transform existing = mainMenuPanel.transform.Find(name);
-            if (existing != null)
-            {
-                WireMainMenuButton(existing.gameObject, label, y, onClick);
-                return;
-            }
-
-            var go = new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
-            WireMainMenuButton(go, label, y, onClick);
-            go.transform.SetParent(mainMenuPanel.transform, false);
-        }
-
-        void WireMainMenuButton(GameObject go, string label, float y, UnityEngine.Events.UnityAction onClick)
-        {
-            var rt = go.GetComponent<RectTransform>();
-            rt.anchorMin = playButton != null
-                ? playButton.GetComponent<RectTransform>().anchorMin
-                : new Vector2(0.5f, 0.5f);
-            rt.anchorMax = playButton != null
-                ? playButton.GetComponent<RectTransform>().anchorMax
-                : new Vector2(0.5f, 0.5f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(320f, 44f);
-            rt.anchoredPosition = new Vector2(0f, y);
-
-            var image = go.GetComponent<Image>();
-            if (image != null)
-                image.color = new Color(0.11f, 0.17f, 0.28f, 0.98f);
-
-            var textGo = go.transform.Find("Text")?.gameObject;
-            if (textGo == null)
-            {
-                textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
-                textGo.transform.SetParent(go.transform, false);
-            }
-
-            var textRt = textGo.GetComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = Vector2.zero;
-            textRt.offsetMax = Vector2.zero;
-            var tmp = textGo.GetComponent<TextMeshProUGUI>();
-            tmp.text = label;
-            tmp.fontSize = 20f;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = Color.white;
-            tmp.raycastTarget = false;
-
-            var button = go.GetComponent<Button>();
-            button.onClick.RemoveAllListeners();
-            button.onClick.AddListener(onClick);
-            button.interactable = true;
-        }
-
         void WireExistingMainMenuButtons()
         {
             if (mainMenuPanel == null)
                 return;
 
-            float y = playButton != null
-                ? playButton.GetComponent<RectTransform>().anchoredPosition.y - 56f
-                : -170f;
-            WireExistingMainMenuButton("BrowseGamesButton", "Join game", y, OnBrowseGamesClicked);
-            y -= 56f;
-
-            if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
-            {
-                if (!TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
-                    WireExistingMainMenuButton("LocalHostButton", "Local host", y, OnLocalHostClicked);
-                if (!TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
-                    y -= 48f;
-                WireExistingMainMenuButton("LocalClientButton", "Local client", y, OnLocalClientClicked);
-            }
-        }
-
-        void WireExistingMainMenuButton(string name, string label, float y, UnityEngine.Events.UnityAction onClick)
-        {
-            var existing = mainMenuPanel.transform.Find(name);
-            if (existing == null)
-                return;
-            WireMainMenuButton(existing.gameObject, label, y, onClick);
+            // Re-apply presenter so retries after first frame still fix orphan layout / missing account bar.
+            MainMenuPresenter.Apply(
+                mainMenuPanel,
+                playButton,
+                OnBrowseGamesClicked,
+                OnLocalClientClicked,
+                out var presentedStatus);
+            if (presentedStatus != null)
+                statusText = presentedStatus;
         }
 
         void OnBrowseGamesClicked()
         {
             if (_joinBrowser != null)
                 _joinBrowser.Show();
-        }
-
-        void OnLocalHostClicked()
-        {
-            if (TitanOrbitSessionManager.Instance == null)
-            {
-                _statusMessage = "Session manager missing on NceGameRoot.";
-                PushStatusToUi();
-                Debug.LogError("[NceGameFlow] Local host: TitanOrbitSessionManager missing.");
-                return;
-            }
-
-            // [TITAN-ORBIT] Editor bootstrap creates ClientWorld only (TitanOrbitBootstrap).
-            // ServerWorld is recreated inside SessionManager.StartLocalPlay → ResumeEditorLocalServer…
-            // Do NOT require HasPlayableServerWorld() here — that made Local host always fail with server=null.
-            if (!HasPlayableClientWorld())
-            {
-                _statusMessage = "No ClientWorld. Press Play on the main Editor Game tab first.";
-                PushStatusToUi();
-                Debug.LogError("[NceGameFlow] Local host requires ClientWorld. client=" +
-                               DescribeWorld(ClientServerBootstrap.ClientWorld));
-                return;
-            }
-
-            Debug.Log("[NceGameFlow] Local host clicked — starting host + local client (ServerWorld will be created if missing).");
-            _statusMessage = "Starting local host...";
-            PushStatusToUi();
-            _autoStartSent = true;
-            if (playButton != null)
-                playButton.interactable = false;
-
-            // Host and connect this window so team selection appears (not listen-only).
-            TitanOrbitSessionManager.Instance.StartLocalPlay();
         }
 
         void PushStatusToUi()
@@ -499,10 +349,12 @@ namespace TitanOrbit.Game
             if (!ok)
             {
                 _statusMessage = "Multiplayer services unavailable. Check internet and Unity project link.";
+                PushStatusToUi();
                 return;
             }
 
             await PrefetchDedicatedLobbyCountAsync();
+            PushStatusToUi();
         }
 
         async System.Threading.Tasks.Task PrefetchDedicatedLobbyCountAsync()
@@ -691,8 +543,9 @@ namespace TitanOrbit.Game
             playButton.gameObject.SetActive(true);
             DisableChildRaycasts(playButton);
             EnsureMainMenuPlayButton();
+            // [TITAN-ORBIT] Do NOT AddListener(OnPlayClicked) — MainMenuPlayButton owns onClick alone.
+            // Previously both IPointerClick + this listener double-fired Local play / Quick join.
             playButton.onClick.RemoveListener(OnPlayClicked);
-            playButton.onClick.AddListener(OnPlayClicked);
         }
 
         void EnsureMainMenuPlayButton()
@@ -1140,7 +993,8 @@ namespace TitanOrbit.Game
                                 : "Choose a team.";
             }
 
-            // Loading screen is shown alone; lobby backdrop covers team pick and spawn wait.
+            // Loading screen alone while map builds; LobbyPanel dim covers team pick / spawn wait
+            // (TeamSelectionPanel itself draws no container fill — only the team cards).
             if (lobbyPanel != null)
                 lobbyPanel.SetActive((showTeam || showTeamCountWait || showSpawnWait) && !showRejoinChoice);
             if (teamSelectionPanel != null)
@@ -1232,11 +1086,13 @@ namespace TitanOrbit.Game
                 HideChildIfPresent(lobbyPanel.transform, "TeamStatus");
             }
 
-            // --- Solid tint only (no Placeholder HUD BG image) ---
-            // [TITAN-ORBIT] The Shift "Placeholder HUD BG" sprite does not fill the stretched
-            // LobbyPanel / team cards cleanly. Keep the existing Image.color overlays instead.
+            // --- Join Team chrome ---
+            // [TITAN-ORBIT] LobbyPanel keeps the same kind of full-screen dim as the loading
+            // overlay (players still see the map faintly). TeamSelectionPanel used to paint a
+            // second semi-transparent rectangle under the team row — hide that so only the
+            // TeamA…TeamE cards show. Individual team cards keep their own tinted fills.
             ClearJoinTeamBackgroundSprite(lobbyPanel);
-            ClearJoinTeamBackgroundSprite(teamSelectionPanel);
+            HideJoinTeamContainerBackground(teamSelectionPanel);
             if (_teamPanels != null)
             {
                 for (int i = 0; i < _teamPanels.Length; i++)
@@ -1268,6 +1124,30 @@ namespace TitanOrbit.Game
             image.sprite = null;
             image.type = Image.Type.Simple;
             image.preserveAspect = false;
+        }
+
+        /// <summary>
+        /// Makes the TeamSelectionPanel container Image fully transparent so it no longer draws
+        /// a box behind the team cards. Layout (HorizontalLayoutGroup) still runs on the same GO.
+        /// </summary>
+        /// <param name="root">Usually <c>TeamSelectionPanel</c>; null-safe no-op.</param>
+        static void HideJoinTeamContainerBackground(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            if (!root.TryGetComponent<Image>(out var image))
+                return;
+
+            // [UNITY] Keep the Image component (layout / raycasts) but draw nothing.
+            // [TITAN-ORBIT] LobbyPanel already provides the join dim — this second fill was redundant.
+            image.sprite = null;
+            image.type = Image.Type.Simple;
+            image.preserveAspect = false;
+            var c = image.color;
+            c.a = 0f;
+            image.color = c;
+            image.raycastTarget = false;
         }
 
         void EnsureUniformTeamPanelWidths()

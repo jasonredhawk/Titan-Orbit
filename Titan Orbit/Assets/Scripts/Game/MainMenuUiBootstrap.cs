@@ -1,22 +1,25 @@
 using System.Collections;
-using TitanOrbit.Data;
 using TitanOrbit.NetCode;
-using TMPro;
 using UnityEngine;
-using UnityEngine.UI;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// Guarantees Join game / Local host / Local client buttons exist even when
-    /// <see cref="NceGameFlowController"/> fails to initialize. Runs after scene load.
+    /// Guarantees the Main Menu layout exists even when <see cref="NceGameFlowController"/> fails to
+    /// initialize. Runs after scene load on client presentation processes only.
+    /// Delegates visuals to <see cref="MainMenuPresenter"/> (logo, account bar, stacked buttons).
     /// </summary>
     public static class MainMenuUiBootstrap
     {
+        /// <summary>Hidden DontDestroy runner that retries layout for a few frames.</summary>
         const string BootstrapObjectName = "MainMenuUiBootstrapRunner";
 
+        /// <summary>True after a successful <see cref="EnsureButtonsCreated"/> pass.</summary>
         static bool s_Created;
 
+        /// <summary>
+        /// [UNITY] AfterSceneLoad — dedicated servers skip client UI entirely.
+        /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void AfterSceneLoad()
         {
@@ -34,6 +37,10 @@ namespace TitanOrbit.Game
             runner.AddComponent<Runner>().Begin();
         }
 
+        /// <summary>
+        /// Builds logo / account / Join game / Local client via <see cref="MainMenuPresenter"/>.
+        /// Idempotent — safe if <see cref="NceGameFlowController"/> already presented the menu.
+        /// </summary>
         public static void EnsureButtonsCreated()
         {
             if (s_Created)
@@ -46,105 +53,20 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            var playButton = FindSceneObjectByName("PlayButton")?.GetComponent<Button>();
-            float y = playButton != null
-                ? playButton.GetComponent<RectTransform>().anchoredPosition.y - 56f
-                : -170f;
+            var playButton = FindSceneObjectByName("PlayButton")?.GetComponent<UnityEngine.UI.Button>();
 
-            CreateOrWireButton(panel.transform, "BrowseGamesButton", "Join game", y, OnJoinGameClicked);
-            y -= 56f;
+            MainMenuPresenter.Apply(
+                panel,
+                playButton,
+                OnJoinGameClicked,
+                OnLocalClientClicked,
+                out _);
 
-            if (TitanOrbitMultiplayerConfig.ShowLocalPlayOptions)
-            {
-                if (!TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
-                {
-                    CreateOrWireButton(panel.transform, "LocalHostButton", "Local host", y, OnLocalHostClicked);
-                    y -= 48f;
-                }
-
-                CreateOrWireButton(panel.transform, "LocalClientButton", "Local client", y, OnLocalClientClicked);
-            }
-
-            EnsureStatusText(panel.transform);
             s_Created = true;
-            Debug.Log("[MainMenuUiBootstrap] Main menu buttons ready.");
+            Debug.Log("[MainMenuUiBootstrap] Main menu layout ready.");
         }
 
-        static void CreateOrWireButton(
-            Transform parent,
-            string name,
-            string label,
-            float y,
-            UnityEngine.Events.UnityAction onClick)
-        {
-            Transform existing = parent.Find(name);
-            GameObject go = existing != null ? existing.gameObject : new GameObject(name, typeof(RectTransform), typeof(Image), typeof(Button));
-            if (existing == null)
-                go.transform.SetParent(parent, false);
-            go.transform.SetAsLastSibling();
-
-            var playButton = FindSceneObjectByName("PlayButton")?.GetComponent<RectTransform>();
-            var rt = go.GetComponent<RectTransform>();
-            rt.anchorMin = playButton != null ? playButton.anchorMin : new Vector2(0.5f, 0.5f);
-            rt.anchorMax = playButton != null ? playButton.anchorMax : new Vector2(0.5f, 0.5f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(320f, 44f);
-            rt.anchoredPosition = new Vector2(0f, y);
-            rt.localScale = Vector3.one;
-
-            var image = go.GetComponent<Image>();
-            image.color = new Color(0.11f, 0.17f, 0.28f, 0.98f);
-
-            var textGo = go.transform.Find("Text")?.gameObject;
-            if (textGo == null)
-            {
-                textGo = new GameObject("Text", typeof(RectTransform), typeof(TextMeshProUGUI));
-                textGo.transform.SetParent(go.transform, false);
-            }
-
-            var textRt = textGo.GetComponent<RectTransform>();
-            textRt.anchorMin = Vector2.zero;
-            textRt.anchorMax = Vector2.one;
-            textRt.offsetMin = Vector2.zero;
-            textRt.offsetMax = Vector2.zero;
-
-            var tmp = textGo.GetComponent<TextMeshProUGUI>();
-            tmp.text = label;
-            tmp.fontSize = 20f;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = Color.white;
-            tmp.raycastTarget = false;
-
-            var button = go.GetComponent<Button>();
-            button.onClick.RemoveAllListeners();
-            button.onClick.AddListener(onClick);
-            button.interactable = true;
-            go.SetActive(true);
-        }
-
-        static void EnsureStatusText(Transform panel)
-        {
-            var statusGo = panel.Find("MainMenuStatus");
-            if (statusGo != null)
-                return;
-
-            var go = new GameObject("MainMenuStatus", typeof(RectTransform), typeof(TextMeshProUGUI));
-            go.transform.SetParent(panel, false);
-            var rt = go.GetComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f, 0.12f);
-            rt.anchorMax = new Vector2(0.5f, 0.12f);
-            rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.sizeDelta = new Vector2(680f, 80f);
-            rt.anchoredPosition = Vector2.zero;
-
-            var tmp = go.GetComponent<TextMeshProUGUI>();
-            tmp.fontSize = 16f;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = new Color(0.75f, 0.85f, 0.95f, 0.95f);
-            tmp.raycastTarget = false;
-            tmp.text = "For Docker: Join game. For local dev: Local host.";
-        }
-
+        /// <summary>Opens the Join game browser overlay.</summary>
         static void OnJoinGameClicked()
         {
             Debug.Log("[MainMenuUiBootstrap] Join game clicked.");
@@ -167,18 +89,7 @@ namespace TitanOrbit.Game
             browser.Show();
         }
 
-        static void OnLocalHostClicked()
-        {
-            Debug.Log("[MainMenuUiBootstrap] Local host clicked.");
-            if (TitanOrbitSessionManager.Instance == null)
-            {
-                Debug.LogError("[MainMenuUiBootstrap] TitanOrbitSessionManager missing.");
-                return;
-            }
-
-            TitanOrbitSessionManager.Instance.StartLocalPlay();
-        }
-
+        /// <summary>LAN / MPPM second-window client join.</summary>
         static void OnLocalClientClicked()
         {
             Debug.Log("[MainMenuUiBootstrap] Local client clicked.");
@@ -191,6 +102,9 @@ namespace TitanOrbit.Game
             TitanOrbitSessionManager.Instance.StartLocalClientForLanTest();
         }
 
+        /// <summary>
+        /// Finds a loaded-scene object by exact name (includes inactive). Avoids DontDestroy orphans.
+        /// </summary>
         static GameObject FindSceneObjectByName(string objectName)
         {
             var transforms = Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
@@ -208,10 +122,13 @@ namespace TitanOrbit.Game
             return null;
         }
 
+        /// <summary>Coroutine host that retries layout until MainMenuPanel exists.</summary>
         sealed class Runner : MonoBehaviour
         {
+            /// <summary>Starts the retry loop.</summary>
             public void Begin() => StartCoroutine(Run());
 
+            /// <summary>Up to 30 frames — covers late scene activation.</summary>
             IEnumerator Run()
             {
                 for (int i = 0; i < 30 && !s_Created; i++)
@@ -223,7 +140,7 @@ namespace TitanOrbit.Game
                 }
 
                 if (!s_Created)
-                    Debug.LogError("[MainMenuUiBootstrap] Gave up creating main menu buttons after 30 frames.");
+                    Debug.LogError("[MainMenuUiBootstrap] Gave up creating main menu layout after 30 frames.");
             }
         }
     }
