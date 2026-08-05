@@ -4,10 +4,25 @@ using UnityEngine;
 namespace TitanOrbit.Core
 {
     /// <summary>
-    /// Scene singleton that holds designer-tunable debug flags for local play.
-    /// Lives on <c>NceGameRoot</c> in SampleScene (Inspector → Game Manager).
-    /// Moon orbit ship-tree UI reads <see cref="DebugFreeShipUpgradeTree"/> so you can click any
-    /// upgrade-tree node for free during testing. Publishes the same value to
+    /// Editor multiplayer workflow for this machine: Test (local Client &amp; Server) vs
+    /// Production (Client-only join to a dedicated server via UGS/Relay).
+    /// Stored on <see cref="GameManager"/> so you can flip it in the Inspector instead of the
+    /// Titan Orbit menu. Applied only by the Editor custom inspector — has no runtime effect in builds.
+    /// </summary>
+    public enum EditorMultiplayerMode
+    {
+        /// <summary>Local play: NetCode PlayMode Type = Client &amp; Server; Local play menu buttons shown.</summary>
+        Test = 0,
+
+        /// <summary>Dedicated join: NetCode PlayMode Type = Client; Local play buttons hidden (production-style menu).</summary>
+        Production = 1
+    }
+
+    /// <summary>
+    /// Scene singleton that holds designer-tunable debug flags for local play and the Editor
+    /// Test / Production multiplayer toggle. Lives on <c>NceGameRoot</c> in SampleScene
+    /// (Inspector → Game Manager). Moon orbit ship-tree UI reads <see cref="DebugFreeShipUpgradeTree"/>
+    /// so you can click any upgrade-tree node for free during testing. Publishes the same value to
     /// <see cref="TitanOrbitDebugFlags"/> so the ECS server store can honor free selects without
     /// referencing this Core assembly. Dedicated server builds normally leave the flag false.
     /// </summary>
@@ -15,6 +30,14 @@ namespace TitanOrbit.Core
     {
         /// <summary>Global access for UI and tools that need debug flags without scene references.</summary>
         public static GameManager Instance { get; private set; }
+
+        // [EDITOR] / [TITAN-ORBIT] Inspector Test|Production toolbar (see GameManagerEditor) applies
+        // the same NetCode prefs as Titan Orbit > Configure Multiplayer For Local Play / Dedicated Server.
+        // This serialized value is a reminder of what you last chose; the custom inspector syncs it
+        // from live PlayMode Tools prefs when you select the component.
+        [Header("Multiplayer Mode (Editor)")]
+        [Tooltip("Test = local Client & Server + Local play UI. Production = Client-only + UGS/Relay join (hides Local play). Same as Titan Orbit > Configure Multiplayer menus. Editor-only — does not change player builds by itself (Production still writes TitanOrbitMultiplayerConfig for the next WebGL build).")]
+        [SerializeField] EditorMultiplayerMode editorMultiplayerMode = EditorMultiplayerMode.Test;
 
         // [UNITY] Inspector toggle — when true, ship upgrade tree treats all nodes as free / clickable.
         [Header("Debug — Ship Upgrade Tree")]

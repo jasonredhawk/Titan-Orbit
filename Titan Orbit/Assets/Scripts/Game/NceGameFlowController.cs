@@ -994,11 +994,14 @@ namespace TitanOrbit.Game
             }
 
             // Loading screen alone while map builds; LobbyPanel dim covers team pick / spawn wait
-            // (TeamSelectionPanel itself draws no container fill — only the team cards).
+            // (TeamSelectionPanel itself draws no container fill — only the team cards with space art).
             if (lobbyPanel != null)
                 lobbyPanel.SetActive((showTeam || showTeamCountWait || showSpawnWait) && !showRejoinChoice);
             if (teamSelectionPanel != null)
                 teamSelectionPanel.SetActive(showTeam);
+            // Ensure nebula backgrounds are on the cards when Join Team becomes visible.
+            if (showTeam)
+                CleanupJoinTeamScreenUi();
 
             // --- Loading Map owns the screen ---
             // [TITAN-ORBIT] Show loading while Relay connect is in flight OR while the map is
@@ -1071,32 +1074,41 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Resources path for the Join Team card nebula (same art as the world SpaceBackground).
+        /// Copied under Resources so player builds can <see cref="Resources.Load{T}"/> it.
+        /// </summary>
+        const string TeamPanelSpaceSpriteResourcesPath = "UI/Backgrounds/SpaceBackground";
+
+        /// <summary>Cached nebula sprite for TeamA…TeamE panel Images (loaded once).</summary>
+        static Sprite s_TeamPanelSpaceSprite;
+
         void CleanupJoinTeamScreenUi()
         {
-            if (_joinTeamUiCleaned)
-                return;
-
-            _joinTeamUiCleaned = true;
-
-            // --- Hide unused lobby chrome ---
-            if (lobbyPanel != null)
+            // --- One-time chrome (legacy labels + LobbyPanel / container fills) ---
+            if (!_joinTeamUiCleaned)
             {
-                HideChildIfPresent(lobbyPanel.transform, "PlayerCount");
-                HideChildIfPresent(lobbyPanel.transform, "RoomName");
-                HideChildIfPresent(lobbyPanel.transform, "TeamStatus");
+                _joinTeamUiCleaned = true;
+
+                if (lobbyPanel != null)
+                {
+                    HideChildIfPresent(lobbyPanel.transform, "PlayerCount");
+                    HideChildIfPresent(lobbyPanel.transform, "RoomName");
+                    HideChildIfPresent(lobbyPanel.transform, "TeamStatus");
+                }
+
+                // [TITAN-ORBIT] LobbyPanel: soft transparent dim (Main Menu style).
+                // TeamSelectionPanel: no fill (layout only).
+                ApplyJoinTeamSpaceBackdrop(lobbyPanel);
+                HideJoinTeamContainerBackground(teamSelectionPanel);
             }
 
-            // --- Join Team chrome ---
-            // [TITAN-ORBIT] LobbyPanel keeps the same kind of full-screen dim as the loading
-            // overlay (players still see the map faintly). TeamSelectionPanel used to paint a
-            // second semi-transparent rectangle under the team row — hide that so only the
-            // TeamA…TeamE cards show. Individual team cards keep their own tinted fills.
-            ClearJoinTeamBackgroundSprite(lobbyPanel);
-            HideJoinTeamContainerBackground(teamSelectionPanel);
+            // --- Team cards: always refresh nebula sprite + team tint ---
+            // Cheap, and lets tint strength tweaks apply when Join Team becomes visible again.
             if (_teamPanels != null)
             {
                 for (int i = 0; i < _teamPanels.Length; i++)
-                    ClearJoinTeamBackgroundSprite(_teamPanels[i]);
+                    ApplyTeamPanelSpaceBackgroundImage(_teamPanels[i]);
             }
         }
 
@@ -1109,21 +1121,128 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Clears the root <see cref="Image"/> sprite so only the semi-transparent color fills the rect.
-        /// Does not touch nested TitleBar / StatsBar chrome.
+        /// Full-screen Join Team dim — same soft navy tint as Main Menu / Join Game so the
+        /// scrolling world <c>SpaceBackground</c> still reads behind the UI.
         /// </summary>
-        static void ClearJoinTeamBackgroundSprite(GameObject root)
+        /// <param name="root">Usually <c>LobbyPanel</c>; null-safe no-op.</param>
+        static void ApplyJoinTeamSpaceBackdrop(GameObject root)
         {
             if (root == null)
                 return;
-
             if (!root.TryGetComponent<Image>(out var image))
                 return;
 
-            // [UNITY] Null sprite + Simple type → solid color fill from Image.color.
-            image.sprite = null;
+            // [TITAN-ORBIT] Shared helper — identical color/alpha to Main Menu & Join Game overlays.
+            MainMenuPresenter.ApplyTransparentMenuBackdrop(image);
             image.type = Image.Type.Simple;
             image.preserveAspect = false;
+        }
+
+        /// <summary>
+        /// How hard the team hue pulls away from a neutral (white) multiply.
+        /// Higher = clearer team color; lower = more raw nebula. ~0.85 reads clearly on Nebula Blue.
+        /// </summary>
+        const float TeamPanelSpaceTintStrength = 0.85f;
+
+        /// <summary>
+        /// Puts the shared space nebula sprite on a team card Image and tints it with the team color.
+        /// Fills the panel rect (same role as the old Placeholder HUD BG on TeamA…TeamE).
+        /// Does not touch nested TitleBar / StatsBar chrome.
+        /// </summary>
+        /// <param name="root">TeamAPanel…TeamEPanel root; null-safe no-op.</param>
+        static void ApplyTeamPanelSpaceBackgroundImage(GameObject root)
+        {
+            if (root == null)
+                return;
+            if (!root.TryGetComponent<Image>(out var image))
+                return;
+
+            Sprite space = ResolveTeamPanelSpaceSprite();
+            if (space == null)
+            {
+                Debug.LogWarning(
+                    "[NceGameFlow] Team panel space sprite missing at Resources/" +
+                    TeamPanelSpaceSpriteResourcesPath +
+                    ". Team cards will keep solid color fills.");
+                return;
+            }
+
+            // [UNITY] Image multiplies sprite RGB by Image.color — team hue tints the nebula.
+            // [TITAN-ORBIT] Stretch to the card (not preserveAspect) so tall panels fill like before.
+            image.sprite = space;
+            image.type = Image.Type.Simple;
+            image.preserveAspect = false;
+            image.raycastTarget = true;
+
+            // --- Stronger team tint ---
+            // Pure scene RGB (e.g. 0.9, 0.25, 0.25) multiplies the blue-heavy nebula too dark —
+            // non-matching channels get crushed and the team hue is hard to read.
+            // Lerp from white → team color keeps brightness while pushing a clear faction tint.
+            Color teamRgb = new Color(image.color.r, image.color.g, image.color.b, 1f);
+            // If a previous pass already wrote a lerped tint, recover a saturated target from the
+            // panel name (TeamAPanel…TeamEPanel) so repeated RefreshUi calls stay vivid.
+            if (TryGetTeamColorForPanel(root, out Color canonical))
+                teamRgb = canonical;
+
+            Color tint = Color.Lerp(Color.white, teamRgb, TeamPanelSpaceTintStrength);
+            tint.a = 1f;
+            image.color = tint;
+        }
+
+        /// <summary>
+        /// Maps TeamAPanel…TeamEPanel to the shared <see cref="TeamIdExtensions.ToColor"/> palette.
+        /// </summary>
+        static bool TryGetTeamColorForPanel(GameObject root, out Color color)
+        {
+            color = Color.white;
+            if (root == null)
+                return false;
+
+            // [TITAN-ORBIT] Panel names are authored in SampleScene as TeamAPanel … TeamEPanel.
+            switch (root.name)
+            {
+                case "TeamAPanel":
+                    color = TeamId.TeamA.ToColor();
+                    return true;
+                case "TeamBPanel":
+                    color = TeamId.TeamB.ToColor();
+                    return true;
+                case "TeamCPanel":
+                    color = TeamId.TeamC.ToColor();
+                    return true;
+                case "TeamDPanel":
+                    color = TeamId.TeamD.ToColor();
+                    return true;
+                case "TeamEPanel":
+                    color = TeamId.TeamE.ToColor();
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Loads the Join Team nebula sprite once from Resources (player-safe path).
+        /// </summary>
+        static Sprite ResolveTeamPanelSpaceSprite()
+        {
+            if (s_TeamPanelSpaceSprite != null)
+                return s_TeamPanelSpaceSprite;
+
+            // Resources.Load<Sprite> works when the texture importer type is Sprite (2D).
+            s_TeamPanelSpaceSprite = Resources.Load<Sprite>(TeamPanelSpaceSpriteResourcesPath);
+            if (s_TeamPanelSpaceSprite != null)
+                return s_TeamPanelSpaceSprite;
+
+            // Fallback: some importers expose the asset as Texture2D with a sub-sprite.
+            var sprites = Resources.LoadAll<Sprite>(TeamPanelSpaceSpriteResourcesPath);
+            if (sprites != null && sprites.Length > 0)
+            {
+                s_TeamPanelSpaceSprite = sprites[0];
+                return s_TeamPanelSpaceSprite;
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -1140,7 +1259,7 @@ namespace TitanOrbit.Game
                 return;
 
             // [UNITY] Keep the Image component (layout / raycasts) but draw nothing.
-            // [TITAN-ORBIT] LobbyPanel already provides the join dim — this second fill was redundant.
+            // [TITAN-ORBIT] LobbyPanel + team cards carry the look; this second fill was redundant.
             image.sprite = null;
             image.type = Image.Type.Simple;
             image.preserveAspect = false;

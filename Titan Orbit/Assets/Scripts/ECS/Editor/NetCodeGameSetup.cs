@@ -67,9 +67,9 @@ namespace TitanOrbit.ECS.Editor
         [MenuItem("Titan Orbit/Configure Multiplayer For Local Play")]
         public static void ConfigureMultiplayerForLocalPlay()
         {
-            // --- ConfigureMultiplayerForLocalPlay ---
-            ApplyLocalPlayNetCodePrefs();
-            TitanOrbitMultiplayerConfigEditor.SetLocalPlayUiEnabled(true);
+            // --- Menu wrapper ---
+            // Same work as Game Manager → Multiplayer Mode → Test; dialog explains the result.
+            ApplyTestMode();
 
             EditorUtility.DisplayDialog(
                 "Titan Orbit — local play setup",
@@ -78,21 +78,18 @@ namespace TitanOrbit.ECS.Editor
                 "• Auto-connect port → 0 (pick Local play or Join game on the menu)\n" +
                 "• Num Thin Clients → 0\n\n" +
                 "Press Play, then choose Local play, Join game, or Local host/client.\n\n" +
+                "Tip: you can also flip Test / Production on NceGameRoot → Game Manager.\n\n" +
                 "For a second human player: Titan Orbit > Configure Multiplayer For MPPM (2 Players), " +
                 "then set Player 2 Role → Client in Window > Play Mode > Scenarios.",
                 "OK");
-
-            Debug.Log("[NetCodeGameSetup] Local multiplayer prefs applied. Open Window > Multiplayer > PlayMode Tools to verify.");
         }
 
         [MenuItem("Titan Orbit/Configure Multiplayer For Dedicated Server")]
         public static void ConfigureMultiplayerForDedicatedServer()
         {
-            // --- ConfigureMultiplayerForDedicatedServer ---
-            ApplyDedicatedJoinNetCodePrefs();
-            TitanOrbitMultiplayerConfigEditor.SetLocalPlayUiEnabled(false);
-            // basics45: MPPM Player 2 Role=Server → ghost schema mismatch / jitter.
-            ForceMppmScenarioClientRoles();
+            // --- Menu wrapper ---
+            // Same work as Game Manager → Multiplayer Mode → Production; dialog explains the result.
+            ApplyProductionMode();
 
             EditorUtility.DisplayDialog(
                 "Titan Orbit — dedicated server join setup",
@@ -104,10 +101,56 @@ namespace TitanOrbit.ECS.Editor
                 "Stop Play on ALL instances, then Play from the Main Editor only.\n" +
                 "Player 2 console must show buildSubTarget=Player (not Server).\n\n" +
                 "Then Join game → GCE Relay on both editors.\n\n" +
-                "Switch back to local testing with Titan Orbit > Configure Multiplayer For Local Play.",
+                "Tip: you can also flip Test / Production on NceGameRoot → Game Manager.",
                 "OK");
+        }
 
-            Debug.Log("[NetCodeGameSetup] Dedicated-server join prefs applied (Client world, MPPM roles Client). Restart Play mode if already running.");
+        /// <summary>
+        /// [EDITOR] Test mode — local Client &amp; Server worlds + Local play menu buttons.
+        /// Same outcome as <see cref="ConfigureMultiplayerForLocalPlay"/> without the dialog.
+        /// Called from the Game Manager Inspector toggle and the Titan Orbit menu.
+        /// </summary>
+        public static void ApplyTestMode()
+        {
+            // --- Test = Local Play ---
+            // [NETCODE] ClientAndServer so Editor Play hosts a ServerWorld for LAN / local host.
+            // [TITAN-ORBIT] ShowLocalPlayOptions reveals Local play / Local client on the main menu.
+            ApplyLocalPlayNetCodePrefs();
+            TitanOrbitMultiplayerConfigEditor.SetLocalPlayUiEnabled(true);
+            Debug.Log("[NetCodeGameSetup] Test mode applied (Client & Server, Local play UI on). " +
+                      "Open Window > Multiplayer > PlayMode Tools to verify.");
+        }
+
+        /// <summary>
+        /// [EDITOR] Production mode — Client-only Editor + UGS/Relay join (no local ServerWorld).
+        /// Same outcome as <see cref="ConfigureMultiplayerForDedicatedServer"/> without the dialog.
+        /// Called from the Game Manager Inspector toggle and the Titan Orbit menu.
+        /// </summary>
+        public static void ApplyProductionMode()
+        {
+            // --- Production = Dedicated Server join ---
+            // [NETCODE] PlayType.Client — Editor is a thin client against GCE / Edgegap.
+            // [TITAN-ORBIT] Hide Local play buttons so the menu matches a shipped WebGL client.
+            ApplyDedicatedJoinNetCodePrefs();
+            TitanOrbitMultiplayerConfigEditor.SetLocalPlayUiEnabled(false);
+            // basics45: MPPM Player 2 Role=Server → ghost schema mismatch / jitter.
+            ForceMppmScenarioClientRoles();
+            Debug.Log("[NetCodeGameSetup] Production mode applied (Client world, Local play UI off, MPPM roles Client). " +
+                      "Restart Play mode if already running.");
+        }
+
+        /// <summary>
+        /// Reads current NetCode PlayMode prefs + Local play UI flag and maps them to Test vs Production.
+        /// Used by the Game Manager Inspector so the toolbar matches reality after menu changes.
+        /// </summary>
+        /// <returns>True when prefs look like Test (Client &amp; Server + local UI); otherwise Production.</returns>
+        public static bool IsCurrentModeTest()
+        {
+            // --- Infer mode from live Editor prefs ---
+            bool clientAndServer =
+                MultiplayerPlayModePreferences.RequestedPlayType == ClientServerBootstrap.PlayType.ClientAndServer;
+            bool localUi = TitanOrbitMultiplayerConfig.ShowLocalPlayOptions;
+            return clientAndServer && localUi;
         }
 
         [MenuItem("Titan Orbit/Configure Multiplayer For MPPM (2 Players)")]
