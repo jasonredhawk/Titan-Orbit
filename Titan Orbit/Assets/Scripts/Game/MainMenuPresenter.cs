@@ -701,5 +701,133 @@ namespace TitanOrbit.Game
                 image.preserveAspect = true;
             }
         }
+
+        /// <summary>
+        /// Applies the scene Play button's Cut Frame look to any button GameObject.
+        /// Used by Join Game and other menus so all primary actions share one style.
+        /// </summary>
+        /// <param name="go">Button root with Image + Button (created if missing).</param>
+        /// <param name="label">TMP caption.</param>
+        /// <param name="height">Preferred height for layout.</param>
+        /// <param name="width">Preferred width for layout.</param>
+        /// <param name="styleSource">Optional Play button; when null, finds scene PlayButton.</param>
+        public static void StyleGameObjectAsMenuButton(
+            GameObject go,
+            string label,
+            float height,
+            float width,
+            Button styleSource = null)
+        {
+            if (go == null)
+                return;
+            if (styleSource == null)
+                styleSource = FindScenePlayButton();
+            StyleButton(go, label, CaptureButtonStyle(styleSource), height, width);
+        }
+
+        /// <summary>Finds the scene-authored PlayButton used as the visual style source.</summary>
+        public static Button FindScenePlayButton()
+        {
+            var transforms = Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                if (transforms[i].name != "PlayButton")
+                    continue;
+                var scene = transforms[i].gameObject.scene;
+                if (!scene.IsValid() || !scene.isLoaded)
+                    continue;
+                return transforms[i].GetComponent<Button>();
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Places a Titan Orbit logo sized for secondary screens (Join Game).
+        /// When <paramref name="parent"/> uses a vertical layout group, the logo participates in
+        /// that flow near the top; otherwise it anchors high on the parent.
+        /// </summary>
+        /// <param name="parent">Usually the Join Game content column or screen root.</param>
+        /// <param name="objectName">Child name so rebuild detection can Find it.</param>
+        /// <returns>The logo GameObject (new or existing).</returns>
+        public static GameObject PlaceCompactTopLogo(Transform parent, string objectName = "JoinGameLogo")
+        {
+            if (parent == null)
+                return null;
+
+            Transform existing = parent.Find(objectName);
+            GameObject go = existing != null
+                ? existing.gameObject
+                : new GameObject(objectName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+
+            if (existing == null)
+                go.transform.SetParent(parent, false);
+
+            // Join Game logo width (~50% larger than the older 504px compact size).
+            // Height follows sprite aspect, then trimmed ~15% so transparent PNG padding does not
+            // read as a large empty gap above/below the art (layout of the rest of the screen is unchanged).
+            const float logoW = 756f;
+            var fromResources = Resources.Load<Sprite>(LogoResourcesPath);
+            float aspect = fromResources != null && fromResources.rect.height > 0.01f
+                ? fromResources.rect.width / fromResources.rect.height
+                : (756f / 270f);
+            float logoH = Mathf.Clamp(logoW / aspect, 140f, 300f) * 0.85f;
+
+            var rt = go.GetComponent<RectTransform>();
+            rt.localScale = Vector3.one;
+
+            bool inVerticalLayout = parent.GetComponent<VerticalLayoutGroup>() != null;
+            if (inVerticalLayout)
+            {
+                // [UNITY] LayoutElement drives size inside VerticalLayoutGroup (not stretch anchors).
+                rt.anchorMin = new Vector2(0.5f, 1f);
+                rt.anchorMax = new Vector2(0.5f, 1f);
+                rt.pivot = new Vector2(0.5f, 1f);
+                rt.sizeDelta = new Vector2(logoW, logoH);
+                rt.anchoredPosition = Vector2.zero;
+
+                var le = go.GetComponent<LayoutElement>();
+                if (le == null)
+                    le = go.AddComponent<LayoutElement>();
+                le.preferredWidth = logoW;
+                le.preferredHeight = logoH;
+                le.minWidth = logoW * 0.5f;
+                le.minHeight = logoH;
+                le.flexibleWidth = 0f;
+                le.flexibleHeight = 0f;
+            }
+            else
+            {
+                // Absolute: higher than main-menu logo band (main uses ~0.58–0.88).
+                rt.anchorMin = new Vector2(0.5f, 0.80f);
+                rt.anchorMax = new Vector2(0.5f, 0.96f);
+                rt.pivot = new Vector2(0.5f, 0.5f);
+                rt.sizeDelta = new Vector2(logoW, logoH);
+                rt.anchoredPosition = Vector2.zero;
+            }
+
+            var image = go.GetComponent<Image>();
+            image.preserveAspect = true;
+            image.raycastTarget = false;
+            image.color = Color.white;
+            image.material = null;
+            if (fromResources != null)
+                image.sprite = fromResources;
+
+            go.SetActive(true);
+            return go;
+        }
+
+        /// <summary>
+        /// Soft navy panel tint matching the main menu — SpaceBackground shows through.
+        /// </summary>
+        public static void ApplyTransparentMenuBackdrop(Image image)
+        {
+            if (image == null)
+                return;
+            image.sprite = null;
+            image.color = new Color(0.02f, 0.04f, 0.08f, 0.35f);
+            image.raycastTarget = true;
+        }
     }
 }
