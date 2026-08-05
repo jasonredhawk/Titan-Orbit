@@ -1906,6 +1906,56 @@ namespace TitanOrbit.Game
 
         // --- Team / match queries ---
 
+        /// <summary>
+        /// One Join Team panel's live numbers: roster, home economy, and owned planet count.
+        /// Filled by <see cref="TryGetJoinTeamSlotStats"/> for <see cref="JoinTeamPanelStatsBinder"/>.
+        /// </summary>
+        public struct JoinTeamSlotStats
+        {
+            /// <summary>Players currently assigned to this team (ships / TeamStateSingleton).</summary>
+            public int PlayerCount;
+
+            /// <summary>Per-team cap from bootstrap (typically 20).</summary>
+            public int MaxPlayers;
+
+            /// <summary>Home planet level (0 if home not found yet).</summary>
+            public int HomeLevel;
+
+            /// <summary>Home planet gem reservoir.</summary>
+            public float HomeGems;
+
+            /// <summary>Home planet gem capacity at <see cref="HomeLevel"/>.</summary>
+            public float HomeMaxGems;
+
+            /// <summary>Planets owned by this team (home + captured).</summary>
+            public int PlanetCount;
+
+            /// <summary>Multi-line player list for the panel, or "No players".</summary>
+            public string PlayersLabel;
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Bootstrap default when <see cref="TeamStateSingleton.MaxPlayersPerTeam"/>
+        /// is missing on the client (that field is not a GhostField).
+        /// </summary>
+        const int DefaultMaxPlayersPerTeam = 20;
+
+        /// <summary>Scratch NetworkId → display name for one Join Team refresh.</summary>
+        static readonly Dictionary<int, string> s_JoinTeamNameByNetworkId = new Dictionary<int, string>(16);
+
+        /// <summary>Per-slot StringBuilders reused across Join Team refreshes (TeamA…E).</summary>
+        static readonly System.Text.StringBuilder[] s_JoinTeamLabelBuilders =
+        {
+            new System.Text.StringBuilder(32),
+            new System.Text.StringBuilder(32),
+            new System.Text.StringBuilder(32),
+            new System.Text.StringBuilder(32),
+            new System.Text.StringBuilder(32),
+        };
+
+        /// <summary>Per-slot ship counts for the current Join Team ship pass.</summary>
+        static readonly int[] s_JoinTeamShipCounts = new int[5];
+
         /// <summary>Team roster singleton — prefers ServerWorld on host, else ClientWorld.</summary>
         public static TeamStateSingleton GetTeamState()
         {
@@ -1925,6 +1975,234 @@ namespace TitanOrbit.Game
 
             return default;
         }
+
+        /// <summary>
+        /// Fills Join Team panel stats for active slots A… (one planet-cache pass + one ship pass).
+        /// Planet reads use the per-frame planet cache (proxy / registry under TransformQuarantine —
+        /// never a full client map-body gather). Ship listing skips while
+        /// <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> is true.
+        /// </summary>
+        /// <param name="into">Length ≥ active team count; index 0 = TeamA.</param>
+        /// <param name="activeTeamCount">How many team panels are live this match (2–5).</param>
+        public static void FillJoinTeamSlotStats(JoinTeamSlotStats[] into, int activeTeamCount)
+        {
+            // --- Guard ---
+            if (into == null || activeTeamCount <= 0)
+                return;
+
+            int slots = math.min(activeTeamCount, into.Length);
+            slots = math.min(slots, 5);
+
+            // --- Roster cap + singleton counts ---
+            // [NETCODE] TeamACount… are GhostFields when the singleton replicates; MaxPlayersPerTeam
+            // is server-local — Local Host reads it; dedicated clients fall back to the bootstrap default.
+            var teamState = GetTeamState();
+            int maxPlayers = teamState.MaxPlayersPerTeam > 0
+                ? teamState.MaxPlayersPerTeam
+                : DefaultMaxPlayersPerTeam;
+
+            for (int i = 0; i < slots; i++)
+            {
+                TeamId team = (TeamId)(i + 1);
+                into[i] = new JoinTeamSlotStats
+                {
+                    MaxPlayers = maxPlayers,
+                    PlayerCount = GetTeamRosterCountFromSingleton(teamState, team),
+                    PlayersLabel = "No players",
+                };
+            }
+
+            // --- Home / planets from quarantine-safe planet cache ---
+            // [TITAN-ORBIT] EnsurePlanetStateCacheForFrame walks PlanetClientEntityRegistry under
+            // TransformQuarantine — safe on Windows Join Team (Settling OFF, quarantine ON).
+            EnsurePlanetStateCacheForFrame();
+            foreach (var pair in s_PlanetStateByIdCache)
+            {
+                PlanetState planet = pair.Value;
+                int index = (int)planet.Ownership - 1; // TeamA → 0
+                if (index < 0 || index >= slots)
+                    continue;
+
+                into[index].PlanetCount++;
+                if (!planet.IsHomePlanet)
+                    continue;
+
+                // [TITAN-ORBIT] Homes start at level ≥ 1; show 0 only when no home was found.
+                into[index].HomeLevel = math.max(1, planet.PlanetLevel);
+                into[index].HomeGems = math.max(0f, planet.CurrentGems);
+                into[index].HomeMaxGems = PlanetEconomyMath.GetMaxGemsForLevel(planet.PlanetLevel);
+            }
+
+            // --- One ship pass for all slots (names + roster fallback) ---
+            TryEnrichAllJoinTeamStatsFromShips(into, slots);
+
+            for (int i = 0; i < slots; i++)
+            {
+                if (into[i].PlayerCount <= 0)
+                {
+                    into[i].PlayersLabel = "No players";
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(into[i].PlayersLabel) || into[i].PlayersLabel == "No players")
+                {
+                    into[i].PlayersLabel = into[i].PlayerCount == 1
+                        ? "1 player"
+                        : into[i].PlayerCount + " players";
+                }
+            }
+        }
+
+        /// <summary>Reads TeamACount…TeamECount from the roster singleton.</summary>
+        static int GetTeamRosterCountFromSingleton(in TeamStateSingleton teamState, TeamId team)
+        {
+            switch (team)
+            {
+                case TeamId.TeamA: return math.max(0, teamState.TeamACount);
+                case TeamId.TeamB: return math.max(0, teamState.TeamBCount);
+                case TeamId.TeamC: return math.max(0, teamState.TeamCCount);
+                case TeamId.TeamD: return math.max(0, teamState.TeamDCount);
+                case TeamId.TeamE: return math.max(0, teamState.TeamECount);
+                default: return 0;
+            }
+        }
+
+        /// <summary>
+        /// One ship query for all Join Team slots: builds name lists and bumps PlayerCount when
+        /// live ships outnumber <see cref="TeamStateSingleton"/>. Skips during Settling /
+        /// GhostSpawnBacklog / TeamChoice hold.
+        /// </summary>
+        static void TryEnrichAllJoinTeamStatsFromShips(JoinTeamSlotStats[] into, int slots)
+        {
+            // [TITAN-ORBIT] Join Team Crash!!! — never ship WithEntityAccess / ToEntityArray while backlog.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
+            // Prefer ServerWorld on Local Host (authoritative roster); else ClientWorld ghosts.
+            World world = null;
+            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
+                world = ServerWorld;
+            else if (ClientWorld != null && ClientWorld.IsCreated)
+                world = ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            using var query = em.CreateEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadOnly<ShipState>(),
+                ComponentType.ReadOnly<GhostOwner>());
+            if (query.IsEmptyIgnoreFilter)
+                return;
+
+            using var ships = query.ToComponentDataArray<ShipState>(Allocator.Temp);
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+
+            // --- Name lookup once per refresh ---
+            // [TITAN-ORBIT] PlayerNameElement lives on the match singleton; SetPlayerName RPC is not
+            // wired yet, so this map is often empty and labels fall back to "Player {id}".
+            FillJoinTeamNameLookup(em);
+
+            for (int i = 0; i < slots; i++)
+            {
+                s_JoinTeamLabelBuilders[i].Clear();
+                s_JoinTeamShipCounts[i] = 0;
+            }
+
+            for (int i = 0; i < ships.Length; i++)
+            {
+                int index = (int)ships[i].Team - 1;
+                if (index < 0 || index >= slots)
+                    continue;
+
+                string label = ResolveJoinTeamPlayerLabel(owners[i].NetworkId);
+                if (string.IsNullOrEmpty(label))
+                    continue;
+
+                if (s_JoinTeamShipCounts[index] > 0)
+                    s_JoinTeamLabelBuilders[index].Append('\n');
+                s_JoinTeamLabelBuilders[index].Append(label);
+                s_JoinTeamShipCounts[index]++;
+            }
+
+            for (int i = 0; i < slots; i++)
+            {
+                if (s_JoinTeamShipCounts[i] > into[i].PlayerCount)
+                    into[i].PlayerCount = s_JoinTeamShipCounts[i];
+                if (s_JoinTeamShipCounts[i] > 0)
+                    into[i].PlayersLabel = s_JoinTeamLabelBuilders[i].ToString();
+            }
+        }
+
+        /// <summary>Copies <see cref="PlayerNameElement"/> rows into <see cref="s_JoinTeamNameByNetworkId"/>.</summary>
+        static void FillJoinTeamNameLookup(EntityManager em)
+        {
+            s_JoinTeamNameByNetworkId.Clear();
+            using var nameQuery = em.CreateEntityQuery(ComponentType.ReadOnly<PlayerNameElement>());
+            if (nameQuery.IsEmptyIgnoreFilter)
+                return;
+
+            var entity = nameQuery.GetSingletonEntity();
+            if (!em.HasBuffer<PlayerNameElement>(entity))
+                return;
+
+            var buffer = em.GetBuffer<PlayerNameElement>(entity);
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                string name = buffer[i].DisplayName.ToString();
+                if (string.IsNullOrWhiteSpace(name))
+                    continue;
+                s_JoinTeamNameByNetworkId[buffer[i].NetworkId] = name;
+            }
+        }
+
+        /// <summary>
+        /// Resolves a display name from the cached name map; otherwise "Player {networkId}".
+        /// </summary>
+        static string ResolveJoinTeamPlayerLabel(int networkId)
+        {
+            if (networkId <= 0)
+                return "Player";
+
+            if (s_JoinTeamNameByNetworkId.TryGetValue(networkId, out string name) &&
+                !string.IsNullOrWhiteSpace(name))
+                return name;
+
+            return "Player " + networkId;
+        }
+
+        /// <summary>
+        /// Reloads <see cref="PlayerNameElement"/> into the shared name cache for scoreboards / HUD.
+        /// Safe on the client — reads a singleton buffer only; never walks ship or map-body entities.
+        /// Call once at the start of a leaderboard refresh, then use <see cref="GetCachedPlayerDisplayName"/>.
+        /// </summary>
+        public static void RefreshPlayerDisplayNameCache()
+        {
+            // --- Prefer ClientWorld (ghosted names); fall back to ServerWorld on Local Host ---
+            // [NETCODE] PlayerNameElement lives on the match singleton and replicates when SetPlayerName is wired.
+            World world = null;
+            if (ClientWorld != null && ClientWorld.IsCreated)
+                world = ClientWorld;
+            else if (ServerWorld != null && ServerWorld.IsCreated)
+                world = ServerWorld;
+
+            if (world == null || !world.IsCreated)
+            {
+                s_JoinTeamNameByNetworkId.Clear();
+                return;
+            }
+
+            FillJoinTeamNameLookup(world.EntityManager);
+        }
+
+        /// <summary>
+        /// Display name from the last <see cref="RefreshPlayerDisplayNameCache"/> pass.
+        /// Falls back to "Player {networkId}" when the name RPC has not populated the buffer yet.
+        /// </summary>
+        /// <param name="networkId">GhostOwner.NetworkId for the ship / connection.</param>
+        /// <returns>Cached custom name, or a stable fallback label.</returns>
+        public static string GetCachedPlayerDisplayName(int networkId) =>
+            ResolveJoinTeamPlayerLabel(networkId);
 
         /// <summary>Number of teams in this match (from home planets, then server team state).</summary>
         public static bool TryGetActiveTeamCount(out int activeTeamCount)

@@ -1171,6 +1171,9 @@ namespace TitanOrbit.Game
                 EnsureUniformTeamPanelWidths();
                 ApplyActiveTeamVisibility(activeTeamsForUi);
                 SetTeamButtonsInteractable(true, activeTeamsForUi);
+                // --- Live panel stats (roster / home gems / planets) ---
+                // [TITAN-ORBIT] Scene placeholders stay at 0 until this binder runs each frame.
+                JoinTeamPanelStatsBinder.Refresh(_teamPanels, activeTeamsForUi);
             }
             else if (!connected)
             {
@@ -1221,19 +1224,50 @@ namespace TitanOrbit.Game
 
             _joinTeamUiCleaned = true;
 
-            if (lobbyPanel == null)
-                return;
+            // --- Hide unused lobby chrome ---
+            if (lobbyPanel != null)
+            {
+                HideChildIfPresent(lobbyPanel.transform, "PlayerCount");
+                HideChildIfPresent(lobbyPanel.transform, "RoomName");
+                HideChildIfPresent(lobbyPanel.transform, "TeamStatus");
+            }
 
-            HideChildIfPresent(lobbyPanel.transform, "PlayerCount");
-            HideChildIfPresent(lobbyPanel.transform, "RoomName");
-            HideChildIfPresent(lobbyPanel.transform, "TeamStatus");
+            // --- Solid tint only (no Placeholder HUD BG image) ---
+            // [TITAN-ORBIT] The Shift "Placeholder HUD BG" sprite does not fill the stretched
+            // LobbyPanel / team cards cleanly. Keep the existing Image.color overlays instead.
+            ClearJoinTeamBackgroundSprite(lobbyPanel);
+            ClearJoinTeamBackgroundSprite(teamSelectionPanel);
+            if (_teamPanels != null)
+            {
+                for (int i = 0; i < _teamPanels.Length; i++)
+                    ClearJoinTeamBackgroundSprite(_teamPanels[i]);
+            }
         }
 
+        /// <summary>Hides a direct child by name when present (legacy lobby labels).</summary>
         static void HideChildIfPresent(Transform parent, string childName)
         {
             var child = parent.Find(childName);
             if (child != null)
                 child.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Clears the root <see cref="Image"/> sprite so only the semi-transparent color fills the rect.
+        /// Does not touch nested TitleBar / StatsBar chrome.
+        /// </summary>
+        static void ClearJoinTeamBackgroundSprite(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            if (!root.TryGetComponent<Image>(out var image))
+                return;
+
+            // [UNITY] Null sprite + Simple type → solid color fill from Image.color.
+            image.sprite = null;
+            image.type = Image.Type.Simple;
+            image.preserveAspect = false;
         }
 
         void EnsureUniformTeamPanelWidths()
