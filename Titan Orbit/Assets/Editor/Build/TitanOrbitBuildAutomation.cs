@@ -199,20 +199,30 @@ namespace TitanOrbit.Editor.Build
             // [TITAN-ORBIT] Hashed Build/* names: IndexedDB / CDN cannot mix old .data with new .wasm.
             // Data caching OFF: stack traces with IndexedDB transaction.oncomplete → _main OOB were
             // from UnityCache replaying a corrupt prior download (Content-Encoding mishap).
-            // Initial heap 512 MiB (not 1024): 109MB wasm + 289MB data + 1GiB heap OOMs some browsers
-            // at Module._main with "memory access out of bounds".
+            //
+            // Memory budget (Player.log / DevTools, build 20260805.2113):
+            //   wasm ≈ 109 MB decoded + data ≈ 290 MB decoded already sit in JS ArrayBuffers.
+            //   Reserving a huge WASM heap on top OOMs some tabs at Module._main with
+            //   "memory access out of bounds" (1024 was too high; 512 still failed on 2026-08-05).
+            //   Prefer a smaller initial heap and let geometric growth expand as systems boot.
+            // Stack: 32 MiB was oversized vs WebServer/Dev profiles (16 MiB) and steals from the same pool.
             PlayerSettings.WebGL.nameFilesAsHashes = true;
             PlayerSettings.WebGL.dataCaching = false;
-            PlayerSettings.WebGL.initialMemorySize = 512;
+            PlayerSettings.WebGL.initialMemorySize = 256;
             if (PlayerSettings.WebGL.maximumMemorySize < 2048)
                 PlayerSettings.WebGL.maximumMemorySize = 2048;
+            PlayerSettings.WebGL.emscriptenArgs = "-sSTACK_SIZE=16777216";
+            // [TITAN-ORBIT] App UI ships via com.unity.ai.inference. Standalone strips it with
+            // APP_UI_EDITOR_ONLY; WebGL was missing that define → InitializeInPlayer at boot
+            // ("Unable to find an AppUISettings…") right before Module._main OOB.
+            EnsureWebGlScriptingDefine("APP_UI_EDITOR_ONLY");
 
             // --- Stamp bundleVersion so any leftover cache key still misses ---
             // [UNITY] companyName+productName+productVersion participate in UnityCache identity.
             string stamp = DateTime.UtcNow.ToString("yyyyMMdd.HHmm");
             PlayerSettings.bundleVersion = stamp;
             Debug.Log("[TitanOrbitBuild] WebGL PlayerSettings: nameFilesAsHashes=true dataCaching=false " +
-                      "initialMemorySize=512 bundleVersion=" + stamp);
+                      "initialMemorySize=256 stack=16MiB APP_UI_EDITOR_ONLY bundleVersion=" + stamp);
 
             // --- Wipe prior output so stale Build/* cannot ship beside the new index ---
             CleanWebGlOutputFolder();
@@ -276,6 +286,36 @@ namespace TitanOrbit.Editor.Build
             }
 
             Directory.CreateDirectory(root);
+        }
+
+        /// <summary>
+        /// Ensures a scripting define is present for the WebGL named build target.
+        /// Used to strip editor-only packages (e.g. App UI) from the browser player.
+        /// </summary>
+        /// <param name="define">Define symbol to add if missing (e.g. <c>APP_UI_EDITOR_ONLY</c>).</param>
+        static void EnsureWebGlScriptingDefine(string define)
+        {
+            // --- Read current WebGL defines ---
+            // [UNITY] NamedBuildTarget.WebGL — same store as ProjectSettings scriptingDefineSymbols.WebGL.
+            string current = PlayerSettings.GetScriptingDefineSymbols(NamedBuildTarget.WebGL);
+            if (string.IsNullOrEmpty(current))
+            {
+                PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.WebGL, define);
+                Debug.Log("[TitanOrbitBuild] WebGL scripting defines → " + define);
+                return;
+            }
+
+            // --- Already present? ---
+            foreach (string part in current.Split(';'))
+            {
+                if (string.Equals(part.Trim(), define, StringComparison.Ordinal))
+                    return;
+            }
+
+            // --- Append ---
+            string next = current.TrimEnd(';') + ";" + define;
+            PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.WebGL, next);
+            Debug.Log("[TitanOrbitBuild] WebGL scripting defines → " + next);
         }
 
         static string GetPendingWebGlBuildPath()

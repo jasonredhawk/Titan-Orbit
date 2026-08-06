@@ -62,6 +62,14 @@ namespace TitanOrbit.UI
         private bool _sidebarLayoutMember;
         private bool _sidebarHeroLayout;
         private bool _sidebarHeroLayoutConfigured;
+        /// <summary>
+        /// When true, the dark price pill is collapsed — it sat directly above the colourful power bar
+        /// on the Orbit Menu "Your Ship" card and read as a useless black strip.
+        /// </summary>
+        private bool _sidebarHeroHidePrice;
+
+        /// <summary>True when this node is the Orbit Menu left-panel "Your Ship" hero card.</summary>
+        public bool UsesSidebarHeroLayout => _sidebarHeroLayout;
         public RectTransform Rect => transform as RectTransform;
         public float NodeButtonWidth { get; private set; }
         public float PowerBarTrackWidth { get; private set; }
@@ -131,13 +139,41 @@ namespace TitanOrbit.UI
             ApplyFixedLayoutSize(width, height);
         }
 
-        /// <summary>Current-ship node in sidebar with a large hero preview on top.</summary>
+        /// <summary>
+        /// Current-ship node in the Orbit Menu sidebar: centered name on top, large preview, power bar under art.
+        /// Hides the "You"/level label and the dark price pill.
+        /// </summary>
         public void ApplySidebarHeroPreviewLayout(float width, float height, float powerTrackWidth)
         {
-            // --- Apply changes ---
+            // --- Apply sidebar hero layout ---
             IsCurrentShipDisplay = true;
             _sidebarLayoutMember = true;
             _sidebarHeroLayout = true;
+            _sidebarHeroHidePrice = true;
+            _sidebarHeroLayoutConfigured = false;
+            Level = 0;
+            BranchIndex = 0;
+            Node = null;
+            NodeButtonWidth = width;
+            PowerBarTrackWidth = powerTrackWidth;
+            _boundHeight = height;
+            ApplyFixedLayoutSize(width, height);
+            // Size may be unchanged on rebuild — still force hero chrome (name-above-art, hide "You").
+            EnsureSidebarHeroLayout();
+            ApplyScaledChildLayout(width, height);
+            ApplySidebarHeroChrome();
+            if (Rect != null)
+                LayoutRebuilder.ForceRebuildLayoutImmediate(Rect);
+        }
+
+        /// <summary>Current-ship node stacked in <see cref="OrbitDockSidebarPanelUI"/> (uses layout group, not tree overlay).</summary>
+        public void ApplySidebarPanelLayout(float width, float height, float powerTrackWidth)
+        {
+            // --- Apply sidebar panel layout ---
+            IsCurrentShipDisplay = true;
+            _sidebarLayoutMember = true;
+            _sidebarHeroLayout = false;
+            _sidebarHeroHidePrice = false;
             _sidebarHeroLayoutConfigured = false;
             Level = 0;
             BranchIndex = 0;
@@ -148,21 +184,98 @@ namespace TitanOrbit.UI
             ApplyFixedLayoutSize(width, height);
         }
 
-        /// <summary>Current-ship node stacked in <see cref="OrbitDockSidebarPanelUI"/> (uses layout group, not tree overlay).</summary>
-        public void ApplySidebarPanelLayout(float width, float height, float powerTrackWidth)
+        /// <summary>
+        /// Orbit Menu "Your Ship": hide the dark price chrome and route hull-swap clicks to the card root.
+        /// The price pill was drawing a black bar immediately above the colourful stats.
+        /// </summary>
+        public void SetSidebarHeroCardClickHandler(UnityEngine.Events.UnityAction handler)
         {
-            // --- Apply changes ---
-            IsCurrentShipDisplay = true;
-            _sidebarLayoutMember = true;
-            _sidebarHeroLayout = false;
-            _sidebarHeroLayoutConfigured = false;
-            Level = 0;
-            BranchIndex = 0;
-            Node = null;
-            NodeButtonWidth = width;
-            PowerBarTrackWidth = powerTrackWidth;
-            _boundHeight = height;
-            ApplyFixedLayoutSize(width, height);
+            // --- Wire whole-card click; collapse price / "You" chrome ---
+            _sidebarHeroHidePrice = true;
+            ApplySidebarHeroChrome();
+
+            if (button == null)
+                return;
+
+            button.transition = Selectable.Transition.None;
+            button.interactable = handler != null;
+            var rootGraphic = button.targetGraphic;
+            if (rootGraphic != null)
+                rootGraphic.raycastTarget = handler != null;
+
+            button.onClick.RemoveAllListeners();
+            if (handler != null)
+                button.onClick.AddListener(handler);
+        }
+
+        /// <summary>
+        /// Sidebar hero chrome: no "You"/level, no price pill, name centered above the ship art.
+        /// </summary>
+        private void ApplySidebarHeroChrome()
+        {
+            // --- Hide level + price; center the ship name ---
+            if (!_sidebarHeroLayout)
+                return;
+
+            ApplySidebarHeroPriceHidden();
+
+            // Drop the "You" / Lv label — name above the art is enough.
+            if (levelText != null)
+            {
+                levelText.gameObject.SetActive(false);
+                if (_levelLe == null)
+                    _levelLe = levelText.GetComponent<LayoutElement>();
+                if (_levelLe != null)
+                {
+                    _levelLe.ignoreLayout = true;
+                    _levelLe.preferredHeight = 0f;
+                    _levelLe.minHeight = 0f;
+                }
+            }
+
+            if (shipNameText != null)
+            {
+                shipNameText.gameObject.SetActive(true);
+                // [UNITY] TMP center alignment so the title sits over the preview, not left-ragged.
+                shipNameText.alignment = TextAlignmentOptions.Center;
+                shipNameText.enableWordWrapping = true;
+                shipNameText.overflowMode = TextOverflowModes.Ellipsis;
+            }
+
+            if (_leftVlg != null)
+            {
+                _leftVlg.childAlignment = TextAnchor.UpperCenter;
+                _leftVlg.spacing = 0f;
+            }
+
+            if (_nameLe != null)
+                _nameLe.flexibleWidth = 1f;
+        }
+
+        /// <summary>Collapses the price row so it cannot paint a dark strip above the power bar.</summary>
+        private void ApplySidebarHeroPriceHidden()
+        {
+            // --- Hide price chrome on sidebar hero ---
+            if (!_sidebarHeroHidePrice)
+                return;
+
+            EnsurePriceButton();
+            if (_priceLe == null && priceButton != null)
+                _priceLe = priceButton.GetComponent<LayoutElement>();
+
+            if (priceButton != null)
+            {
+                priceButton.gameObject.SetActive(false);
+                priceButton.interactable = false;
+            }
+
+            if (_priceLe != null)
+            {
+                _priceLe.ignoreLayout = true;
+                _priceLe.preferredHeight = 0f;
+                _priceLe.minHeight = 0f;
+                _priceLe.flexibleHeight = 0f;
+            }
         }
 
         /// <summary>Re-applies slot size after child layout or power-bar updates.</summary>
@@ -256,7 +369,7 @@ namespace TitanOrbit.UI
 
         private void EnsureSidebarHeroLayout()
         {
-            // --- Ensure setup ---
+            // --- Ensure name-above-art vertical stack ---
             if (!_sidebarHeroLayout || _sidebarHeroLayoutConfigured)
                 return;
 
@@ -287,12 +400,13 @@ namespace TitanOrbit.UI
             vlg.childForceExpandWidth = true;
             vlg.childForceExpandHeight = false;
 
+            // [TITAN-ORBIT] Order: centered ship name, then large preview. Power bar stays a root sibling under ContentRow.
             Transform previewCol = contentRow.Find("PreviewColumn");
             Transform leftCol = contentRow.Find("LeftColumn");
-            if (previewCol != null)
-                previewCol.SetAsFirstSibling();
             if (leftCol != null)
-                leftCol.SetAsLastSibling();
+                leftCol.SetAsFirstSibling();
+            if (previewCol != null)
+                previewCol.SetAsLastSibling();
 
             _sidebarHeroLayoutConfigured = true;
         }
@@ -343,9 +457,14 @@ namespace TitanOrbit.UI
                 _powerBarLe = powerBar.GetComponent<LayoutElement>();
         }
 
+        /// <summary>
+        /// Scales child LayoutElements from the prefab reference size to the bound slot size.
+        /// Sidebar hero layout uses a fixed chrome budget so the power bar stays inside the card
+        /// (above Bank / Auto-deposit) instead of overflowing when height-scale is large.
+        /// </summary>
         private void ApplyScaledChildLayout(float width, float height)
         {
-            // --- Apply changes ---
+            // --- Scale child layout to bound size ---
             if (layoutWidth < 1f || layoutHeight < 1f)
                 return;
 
@@ -353,44 +472,128 @@ namespace TitanOrbit.UI
             if (_sidebarHeroLayout)
                 EnsureSidebarHeroLayout();
 
+            // Uniform scale from the 120×100 prefab reference. Tree nodes use this fully;
+            // sidebar hero clamps text/chrome so the stats bar still fits.
             float wScale = width / layoutWidth;
             float hScale = height / layoutHeight;
             float fontScale = Mathf.Min(wScale, hScale);
 
+            // [TITAN-ORBIT] Sidebar hero ("Your Ship"): pack preview + labels tightly, then place the
+            // power bar immediately underneath. Inflating ContentRow past its children left a dark empty
+            // strip above the colourful stats (card background showing through).
+            float heroPadTop = 6f;
+            float heroPadBottom = 6f;
+            float heroRootSpacing = 8f; // Breathing room between ship art and the colour stats bar.
+            float heroBarH = 12f;
+            float heroPreviewH = 0f;
+            float heroContentH = 0f;
+            float heroNameH = 0f;
+            if (_sidebarHeroLayout)
+            {
+                float chrome = heroPadTop + heroPadBottom + heroRootSpacing + heroBarH;
+                float available = Mathf.Max(96f, height - chrome);
+                // Name only above the art ("You"/level and price are hidden) — rest goes to the preview.
+                float heroLabelScale = 1.35f;
+                heroNameH = ScalePx(RefLayout.NameHeight, heroLabelScale) + 2f;
+                float heroLabelsH = heroNameH + 4f; // ContentRow spacing between name and preview
+                heroPreviewH = Mathf.Max(80f, available - heroLabelsH);
+                heroContentH = heroPreviewH + heroLabelsH;
+            }
+
             if (_rootVlg != null)
             {
-                _rootVlg.padding = new RectOffset(
-                    ScalePxInt(RefLayout.RootPadLeft, wScale),
-                    ScalePxInt(RefLayout.RootPadRight, wScale),
-                    ScalePxInt(RefLayout.RootPadTop, hScale),
-                    ScalePxInt(RefLayout.RootPadBottom, hScale));
-                _rootVlg.spacing = RefLayout.RootSpacing * hScale;
+                if (_sidebarHeroLayout)
+                {
+                    _rootVlg.padding = new RectOffset(
+                        ScalePxInt(RefLayout.RootPadLeft, wScale),
+                        ScalePxInt(RefLayout.RootPadRight, wScale),
+                        Mathf.RoundToInt(heroPadTop),
+                        Mathf.RoundToInt(heroPadBottom));
+                    _rootVlg.spacing = heroRootSpacing;
+                }
+                else
+                {
+                    _rootVlg.padding = new RectOffset(
+                        ScalePxInt(RefLayout.RootPadLeft, wScale),
+                        ScalePxInt(RefLayout.RootPadRight, wScale),
+                        ScalePxInt(RefLayout.RootPadTop, hScale),
+                        ScalePxInt(RefLayout.RootPadBottom, hScale));
+                    _rootVlg.spacing = RefLayout.RootSpacing * hScale;
+                }
             }
 
             if (_contentRowLe != null)
             {
-                _contentRowLe.minHeight = _sidebarHeroLayout
-                    ? height * 0.92f
-                    : ScalePx(RefLayout.ContentMinHeight, hScale);
+                if (_sidebarHeroLayout)
+                {
+                    // Tight fit — do not stretch; leftover height would read as a black bar above stats.
+                    _contentRowLe.minHeight = heroContentH;
+                    _contentRowLe.preferredHeight = heroContentH;
+                    _contentRowLe.flexibleHeight = 0f;
+                }
+                else
+                {
+                    _contentRowLe.minHeight = ScalePx(RefLayout.ContentMinHeight, hScale);
+                    _contentRowLe.flexibleHeight = 1f;
+                }
             }
 
             if (_sidebarHeroLayout && _contentRowVlg != null)
-                _contentRowVlg.spacing = RefLayout.ContentHSpacing * hScale;
+                _contentRowVlg.spacing = 4f;
             else if (_contentRowHlg != null)
                 _contentRowHlg.spacing = RefLayout.ContentHSpacing * wScale;
 
-            if (_leftVlg != null)
-                _leftVlg.spacing = RefLayout.LeftSpacing * hScale;
-            if (_leftLe != null)
-                _leftLe.minWidth = ScalePx(RefLayout.LeftMinWidth, wScale);
+            // Hero labels stay readable without eating the power-bar row (cap scale ~1.35×).
+            float heroFontScale = _sidebarHeroLayout ? Mathf.Min(fontScale, 1.35f) : fontScale;
+            float heroHScale = _sidebarHeroLayout ? Mathf.Min(hScale, 1.35f) : hScale;
 
-            ApplyTextScale(levelText, _levelLe, RefLayout.LevelFontSize, RefLayout.LevelHeight, fontScale, hScale);
-            ApplyTextScale(shipNameText, _nameLe, RefLayout.NameFontSize, RefLayout.NameHeight, fontScale, hScale);
-            if (_nameLe != null)
-                _nameLe.minHeight = ScalePx(RefLayout.NameMinHeight, hScale);
-            ApplyTextScale(priceText, _priceLe, RefLayout.PriceFontSize, RefLayout.PriceHeight, fontScale, hScale);
-            if (_priceLe != null)
-                _priceLe.minWidth = ScalePx(RefLayout.PriceMinWidth, wScale);
+            if (_leftVlg != null)
+            {
+                _leftVlg.spacing = _sidebarHeroLayout ? 0f : RefLayout.LeftSpacing * heroHScale;
+                if (_sidebarHeroLayout)
+                    _leftVlg.childAlignment = TextAnchor.UpperCenter;
+            }
+            if (_leftLe != null)
+            {
+                if (_sidebarHeroLayout)
+                {
+                    // Full-width name row so centered TMP can span the card.
+                    float nameRowW = width - ScalePx(RefLayout.RootPadLeft + RefLayout.RootPadRight, wScale);
+                    _leftLe.minWidth = nameRowW;
+                    _leftLe.preferredWidth = nameRowW;
+                    _leftLe.flexibleWidth = 1f;
+                    _leftLe.flexibleHeight = 0f;
+                    _leftLe.preferredHeight = heroNameH;
+                    _leftLe.minHeight = heroNameH;
+                }
+                else
+                {
+                    _leftLe.minWidth = ScalePx(RefLayout.LeftMinWidth, wScale);
+                }
+            }
+
+            if (_sidebarHeroLayout)
+            {
+                // Title above art — slightly larger, fixed row height; level stays collapsed.
+                ApplyTextScale(shipNameText, _nameLe, RefLayout.NameFontSize + 1f, RefLayout.NameHeight, heroFontScale, heroHScale);
+                if (_nameLe != null)
+                {
+                    _nameLe.minHeight = heroNameH;
+                    _nameLe.preferredHeight = heroNameH;
+                    _nameLe.flexibleWidth = 1f;
+                }
+                ApplySidebarHeroChrome();
+            }
+            else
+            {
+                ApplyTextScale(levelText, _levelLe, RefLayout.LevelFontSize, RefLayout.LevelHeight, heroFontScale, heroHScale);
+                ApplyTextScale(shipNameText, _nameLe, RefLayout.NameFontSize, RefLayout.NameHeight, heroFontScale, heroHScale);
+                if (_nameLe != null)
+                    _nameLe.minHeight = ScalePx(RefLayout.NameMinHeight, heroHScale);
+                ApplyTextScale(priceText, _priceLe, RefLayout.PriceFontSize, RefLayout.PriceHeight, heroFontScale, heroHScale);
+                if (_priceLe != null)
+                    _priceLe.minWidth = ScalePx(RefLayout.PriceMinWidth, wScale);
+            }
 
             float previewColW = ScalePx(RefLayout.PreviewColWidth, wScale);
             float previewW = ScalePx(RefLayout.PreviewSize, wScale);
@@ -401,7 +604,7 @@ namespace TitanOrbit.UI
             {
                 previewColW = width - ScalePx(RefLayout.RootPadLeft + RefLayout.RootPadRight, wScale);
                 previewW = previewColW;
-                previewH = height * 0.58f;
+                previewH = heroPreviewH;
                 previewMinH = previewH * 0.85f;
             }
 
@@ -410,6 +613,12 @@ namespace TitanOrbit.UI
                 _previewColLe.preferredWidth = previewColW;
                 _previewColLe.minWidth = previewColW;
                 _previewColLe.flexibleWidth = _sidebarHeroLayout ? 1f : 0f;
+                if (_sidebarHeroLayout)
+                {
+                    _previewColLe.preferredHeight = previewH;
+                    _previewColLe.minHeight = previewMinH;
+                    _previewColLe.flexibleHeight = 0f;
+                }
             }
             if (_previewImgLe != null)
             {
@@ -417,21 +626,41 @@ namespace TitanOrbit.UI
                 _previewImgLe.preferredHeight = previewH;
                 _previewImgLe.minHeight = previewMinH;
                 _previewImgLe.flexibleWidth = _sidebarHeroLayout ? 1f : 0f;
+                if (_sidebarHeroLayout)
+                    _previewImgLe.flexibleHeight = 0f;
             }
 
-            float barH = ScalePx(RefLayout.PowerBarHeight, hScale);
+            // Hero art: stretch the Image rect to the preview column (preserveAspect keeps silhouette readable).
+            if (_sidebarHeroLayout && previewImage != null)
+            {
+                previewImage.preserveAspect = true;
+                var previewRt = previewImage.transform as RectTransform;
+                if (previewRt != null)
+                {
+                    previewRt.anchorMin = Vector2.zero;
+                    previewRt.anchorMax = Vector2.one;
+                    previewRt.offsetMin = Vector2.zero;
+                    previewRt.offsetMax = Vector2.zero;
+                }
+            }
+
+            float barH = _sidebarHeroLayout ? heroBarH : ScalePx(RefLayout.PowerBarHeight, hScale);
             if (_powerBarLe != null)
             {
                 _powerBarLe.preferredHeight = barH;
                 _powerBarLe.minHeight = barH;
                 _powerBarLe.minWidth = ScalePx(RefLayout.PowerBarMinWidth, wScale);
+                _powerBarLe.flexibleHeight = 0f;
             }
 
+            // Keep segment thickness near the reserved bar height in sidebar hero.
+            float barHeightScale = _sidebarHeroLayout ? (heroBarH / RefLayout.PowerBarHeight) : hScale;
             if (powerBar != null)
-                powerBar.ConfigureLayoutScale(wScale, hScale);
+                powerBar.ConfigureLayoutScale(wScale, barHeightScale);
 
             _lastWidthScale = wScale;
-            _lastHeightScale = hScale;
+            // [TITAN-ORBIT] Store the scale used for the power bar so Refresh/ApplyBreakdown does not re-inflate it.
+            _lastHeightScale = barHeightScale;
         }
 
         private static void ApplyTextScale(
@@ -721,6 +950,12 @@ namespace TitanOrbit.UI
         public void EnsureStableButtonRendering()
         {
             // --- Ensure setup ---
+            if (_sidebarHeroLayout)
+            {
+                ApplySidebarHeroChrome();
+                return;
+            }
+
             if (button != null)
             {
                 button.transition = Selectable.Transition.None;
@@ -746,11 +981,36 @@ namespace TitanOrbit.UI
             graphic.color = color;
         }
 
-        public void SetLevelLabel(string text) { if (levelText != null) levelText.text = text; }
-        public void SetShipName(string text) { if (shipNameText != null) shipNameText.text = text; }
+        public void SetLevelLabel(string text)
+        {
+            // --- SetLevelLabel ---
+            if (_sidebarHeroLayout)
+            {
+                ApplySidebarHeroChrome();
+                return;
+            }
+
+            if (levelText != null)
+                levelText.text = text;
+        }
+
+        public void SetShipName(string text)
+        {
+            // --- SetShipName ---
+            if (shipNameText != null)
+                shipNameText.text = text;
+            if (_sidebarHeroLayout)
+                ApplySidebarHeroChrome();
+        }
         public void SetPrice(string text)
         {
             // --- SetPrice ---
+            if (_sidebarHeroHidePrice)
+            {
+                ApplySidebarHeroPriceHidden();
+                return;
+            }
+
             EnsurePriceButton();
             if (priceText != null)
                 priceText.text = text;
@@ -759,6 +1019,12 @@ namespace TitanOrbit.UI
         public void SetPriceButtonStyle(bool clickable)
         {
             // --- SetPriceButtonStyle ---
+            if (_sidebarHeroHidePrice)
+            {
+                ApplySidebarHeroPriceHidden();
+                return;
+            }
+
             EnsurePriceButton();
             Color fill = clickable ? PriceEnabledFill : PriceDisabledFill;
             Color border = clickable ? PriceEnabledBorder : PriceDisabledBorder;
@@ -784,6 +1050,15 @@ namespace TitanOrbit.UI
         public void SetInteractable(bool on)
         {
             // --- SetInteractable ---
+            if (_sidebarHeroHidePrice)
+            {
+                // Card-root click stays wired from SetSidebarHeroCardClickHandler; only toggle interactable.
+                if (button != null)
+                    button.interactable = on;
+                ApplySidebarHeroPriceHidden();
+                return;
+            }
+
             EnsurePriceButton();
             if (priceButton != null)
                 priceButton.interactable = on;
@@ -802,6 +1077,12 @@ namespace TitanOrbit.UI
         public void SetPriceClickHandler(UnityEngine.Events.UnityAction handler)
         {
             // --- SetPriceClickHandler ---
+            if (_sidebarHeroHidePrice)
+            {
+                SetSidebarHeroCardClickHandler(handler);
+                return;
+            }
+
             EnsurePriceButton();
             if (priceButton == null) return;
             priceButton.onClick.RemoveAllListeners();

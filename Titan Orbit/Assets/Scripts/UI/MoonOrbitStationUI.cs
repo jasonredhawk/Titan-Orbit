@@ -826,7 +826,11 @@ namespace TitanOrbit.UI
             bool debugFree = IsDebugFreeShipUpgradeTree();
             view.SetInteractable(debugFree);
             view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
-            view.SetLevelLabel("You");
+            // Sidebar hero: no "You" label — centered ship name sits above the art instead.
+            if (view.UsesSidebarHeroLayout)
+                view.SetLevelLabel(string.Empty);
+            else
+                view.SetLevelLabel("You");
             view.SetShipName($"Lv {ShipLevel}");
             view.SetPrice(debugFree ? "Free" : "—");
             view.ApplyPowerBreakdown(GetCurrentShipPowerBreakdown(), maxPower);

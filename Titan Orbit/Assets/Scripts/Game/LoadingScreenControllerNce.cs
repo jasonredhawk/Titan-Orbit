@@ -7,12 +7,13 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Full-screen join overlay shown while the map builds on the client.
-    /// Layout (top → bottom): title, status line, horizontal how-to-play instruction cards,
-    /// then one progress bar driven by <see cref="EcsGameBridge.TryGetJoinLoadProgress"/>
-    /// (planet/asteroid GameObject proxies vs server meta N).
+    /// Content sits in a tight vertical cluster in the middle of the screen (not pinned to
+    /// the top/bottom edges): HOW TO PLAY → five instruction cards → BUILDING GALAXY →
+    /// status → progress bar → percent. Progress is driven by
+    /// <see cref="EcsGameBridge.TryGetJoinLoadProgress"/> (planet/asteroid GameObject proxies
+    /// vs server meta N).
     /// <para>
-    /// The instruction strip is the same five-step guide that used to live on
-    /// <c>InstructionScreenUI</c> — restored here so players can read while they wait.
+    /// The instruction strip matches the five-step guide from <c>InstructionScreenUI</c>.
     /// Art loads from <c>Resources/InstructionScreens/</c>. Does not gather asteroid entities
     /// (Crash!!! on Windows).
     /// </para>
@@ -21,15 +22,32 @@ namespace TitanOrbit.Game
     {
         // --- Progress bar chrome ---
         const float BarPadding = 2f;
+        const float ProgressBarWidth = 520f;
+        const float ProgressBarHeight = 18f;
+
+        // --- Centered content cluster ---
+        // [TITAN-ORBIT] Pack labels + cards + bar toward screen center so large monitors
+        // do not leave a huge empty gap between a top title and a bottom progress bar.
+        // Wide strip so each instruction image is physically larger (width × height), not
+        // just a taller empty frame around the same sprite.
+        const float ContentMaxWidth = 1770f; // ~1.5× original 1180 — bigger cards end-to-end
+        const float ContentWidthScreenFraction = 0.94f;
+        const float ContentSidePadding = 24f;
+        const float SectionGap = 14f;
+        const float HowToHeight = 36f;
+        const float TitleHeight = 40f;
+        const float StatusHeight = 26f;
+        const float PercentHeight = 22f;
 
         // --- Instruction strip (matches InstructionScreenUI topics) ---
         const int StepCount = 5;
-        const float InstructionSidePadding = 28f;
-        const float InstructionBottomReserve = 110f; // room for status + bar + percent
-        const float InstructionTopReserve = 100f;    // room for title
-        const float ColumnGap = 14f;
-        const float CardInnerPadding = 10f;
-        const float ImageAspect = 0.75f; // height / width (4:3)
+        const float ColumnGap = 10f;
+        const float CardInnerPadding = 8f;
+        // [TITAN-ORBIT] Instruction PNGs are 1536×1024 (3:2 → height/width = 2/3).
+        // Using 4:3 (0.75) made the frame taller than the art → black bars top/bottom.
+        const float ImageAspect = 2f / 3f;
+        /// <summary>Cap card height so the cluster stays compact on tall monitors.</summary>
+        const float MaxCardHeight = 560f;
 
         /// <summary>One how-to-play step: short title, body copy, and Resources sprite path.</summary>
         struct InstructionStep
@@ -96,9 +114,11 @@ namespace TitanOrbit.Game
         };
 
         RectTransform _panelRoot;
+        RectTransform _contentRoot;
         RectTransform _barTrackRect;
         RectTransform _fillRect;
         Image _fillImage;
+        TextMeshProUGUI _howToText;
         TextMeshProUGUI _titleText;
         TextMeshProUGUI _statusText;
         TextMeshProUGUI _percentText;
@@ -193,16 +213,15 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// [UNITY] Canvas / resolution change — reflow the five instruction cards so they stay
-        /// equal-width across the strip.
+        /// [UNITY] Canvas / resolution change — reflow the centered cluster and equal-width cards.
         /// </summary>
         void OnRectTransformDimensionsChange()
         {
             if (_uiBuilt && IsVisible)
-                LayoutInstructionColumns();
+                LayoutContent();
         }
 
-        /// <summary>Shows the overlay, resets fill, and lays out instruction cards.</summary>
+        /// <summary>Shows the overlay, resets fill, and lays out the centered content cluster.</summary>
         public void Show()
         {
             BuildUi();
@@ -220,7 +239,7 @@ namespace TitanOrbit.Game
             // Cards need an active frame so rect sizes are valid before we measure columns.
             PreloadInstructionSprites();
             ApplyInstructionSprites();
-            LayoutInstructionColumns();
+            LayoutContent();
         }
 
         /// <summary>Hides the overlay without destroying it.</summary>
@@ -244,7 +263,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// [UNITY] Builds the full-screen panel once under the parent Canvas:
-        /// backdrop → title → how-to-play strip → status → progress bar → percent.
+        /// full-screen backdrop + centered content cluster
+        /// (HOW TO PLAY → cards → BUILDING GALAXY → status → bar → percent).
         /// </summary>
         void BuildUi()
         {
@@ -270,60 +290,37 @@ namespace TitanOrbit.Game
             backdrop.color = new Color(0.02f, 0.04f, 0.1f, 0.97f);
             backdrop.raycastTarget = true;
 
-            // --- Title (top band) ---
-            _titleText = CreateText(_panelRoot, "Title", "BUILDING GALAXY", 34, FontStyles.Bold);
-            var titleRect = _titleText.rectTransform;
-            titleRect.anchorMin = new Vector2(0f, 1f);
-            titleRect.anchorMax = new Vector2(1f, 1f);
-            titleRect.pivot = new Vector2(0.5f, 1f);
-            titleRect.anchoredPosition = new Vector2(0f, -28f);
-            titleRect.sizeDelta = new Vector2(-80f, 44f);
-            _titleText.alignment = TextAlignmentOptions.Center;
-            _titleText.color = new Color(0.85f, 0.92f, 1f, 1f);
+            // --- Centered content cluster (sized/positioned in LayoutContent) ---
+            _contentRoot = CreateRect("Content", _panelRoot);
+            _contentRoot.anchorMin = new Vector2(0.5f, 0.5f);
+            _contentRoot.anchorMax = new Vector2(0.5f, 0.5f);
+            _contentRoot.pivot = new Vector2(0.5f, 0.5f);
+            _contentRoot.anchoredPosition = Vector2.zero;
+            _contentRoot.sizeDelta = new Vector2(ContentMaxWidth, 600f);
 
-            var howToLabel = CreateText(_panelRoot, "HowToLabel", "HOW TO PLAY", 18, FontStyles.Bold);
-            var howToRect = howToLabel.rectTransform;
-            howToRect.anchorMin = new Vector2(0f, 1f);
-            howToRect.anchorMax = new Vector2(1f, 1f);
-            howToRect.pivot = new Vector2(0.5f, 1f);
-            howToRect.anchoredPosition = new Vector2(0f, -72f);
-            howToRect.sizeDelta = new Vector2(-80f, 24f);
-            howToLabel.alignment = TextAlignmentOptions.Center;
-            howToLabel.color = new Color(0.62f, 0.76f, 0.92f, 0.95f);
+            // HOW TO PLAY — top of the cluster
+            _howToText = CreateText(_contentRoot, "HowToPlay", "HOW TO PLAY", 28, FontStyles.Bold);
+            _howToText.alignment = TextAlignmentOptions.Center;
+            _howToText.color = new Color(0.85f, 0.92f, 1f, 1f);
 
-            // --- Horizontal instruction strip (middle of screen) ---
-            // StretchFill(left, right, top, bottom) — leave bottom band for status + bar.
-            _instructionsRow = CreateRect("InstructionsRow", _panelRoot);
-            StretchFill(
-                _instructionsRow,
-                InstructionSidePadding,
-                InstructionSidePadding,
-                InstructionTopReserve,
-                InstructionBottomReserve);
-
+            // Five instruction cards
+            _instructionsRow = CreateRect("InstructionsRow", _contentRoot);
             _columns.Clear();
             for (int i = 0; i < StepCount; i++)
                 _columns.Add(CreateInstructionColumn(_instructionsRow, Steps[i], i));
 
-            // --- Status (above the bar) ---
-            _statusText = CreateText(_panelRoot, "Status", "Loading map...", 18, FontStyles.Normal);
-            var statusRect = _statusText.rectTransform;
-            statusRect.anchorMin = new Vector2(0f, 0f);
-            statusRect.anchorMax = new Vector2(1f, 0f);
-            statusRect.pivot = new Vector2(0.5f, 0f);
-            statusRect.anchoredPosition = new Vector2(0f, 72f);
-            statusRect.sizeDelta = new Vector2(-120f, 28f);
+            // BUILDING GALAXY — under the cards
+            _titleText = CreateText(_contentRoot, "Title", "BUILDING GALAXY", 30, FontStyles.Bold);
+            _titleText.alignment = TextAlignmentOptions.Center;
+            _titleText.color = new Color(0.85f, 0.92f, 1f, 1f);
+
+            _statusText = CreateText(_contentRoot, "Status", "Loading map...", 17, FontStyles.Normal);
             _statusText.alignment = TextAlignmentOptions.Center;
             _statusText.color = new Color(0.62f, 0.76f, 0.92f, 0.95f);
 
-            // --- Progress bar track ---
-            var barBackground = CreateRect("ProgressBarBackground", _panelRoot);
+            // Progress bar
+            var barBackground = CreateRect("ProgressBarBackground", _contentRoot);
             _barTrackRect = barBackground;
-            barBackground.anchorMin = new Vector2(0.5f, 0f);
-            barBackground.anchorMax = new Vector2(0.5f, 0f);
-            barBackground.pivot = new Vector2(0.5f, 0f);
-            barBackground.anchoredPosition = new Vector2(0f, 40f);
-            barBackground.sizeDelta = new Vector2(520f, 18f);
             var barBgImage = barBackground.gameObject.AddComponent<Image>();
             barBgImage.sprite = WhiteSprite;
             barBgImage.color = new Color(0.08f, 0.12f, 0.2f, 0.95f);
@@ -340,13 +337,7 @@ namespace TitanOrbit.Game
             _fillImage.color = new Color(0.28f, 0.62f, 0.98f, 1f);
             _fillImage.raycastTarget = false;
 
-            _percentText = CreateText(_panelRoot, "Percent", "0%", 16, FontStyles.Bold);
-            var percentRect = _percentText.rectTransform;
-            percentRect.anchorMin = new Vector2(0f, 0f);
-            percentRect.anchorMax = new Vector2(1f, 0f);
-            percentRect.pivot = new Vector2(0.5f, 0f);
-            percentRect.anchoredPosition = new Vector2(0f, 12f);
-            percentRect.sizeDelta = new Vector2(0f, 22f);
+            _percentText = CreateText(_contentRoot, "Percent", "0%", 16, FontStyles.Bold);
             _percentText.alignment = TextAlignmentOptions.Center;
             _percentText.color = new Color(0.75f, 0.85f, 1f, 0.95f);
 
@@ -355,7 +346,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Builds one vertical card: accent → title → image frame → body.
-        /// Positioned later by <see cref="LayoutInstructionColumns"/>.
+        /// Positioned later by <see cref="LayoutContent"/>.
         /// </summary>
         StepColumn CreateInstructionColumn(RectTransform row, InstructionStep step, int index)
         {
@@ -374,13 +365,14 @@ namespace TitanOrbit.Game
             title.color = new Color(0.94f, 0.97f, 1f, 1f);
 
             var imageFrame = CreateRect("ImageFrame", columnRoot);
+            // Transparent — never show a dark letterbox behind preserveAspect.
             var frameBg = imageFrame.gameObject.AddComponent<Image>();
-            frameBg.color = new Color(0.03f, 0.05f, 0.09f, 1f);
+            frameBg.color = new Color(0f, 0f, 0f, 0f);
             frameBg.raycastTarget = false;
 
-            // Placeholder color until the Resources sprite loads (dark slate).
+            // Illustration fills a frame sized to the sprite's real aspect (see LayoutContent).
             var illustrationGo = CreateRect("Illustration", imageFrame);
-            StretchFill(illustrationGo, 4f, 4f, 4f, 4f);
+            StretchFill(illustrationGo, 0f, 0f, 0f, 0f);
             var illustration = illustrationGo.gameObject.AddComponent<Image>();
             illustration.preserveAspect = true;
             illustration.type = Image.Type.Simple;
@@ -406,49 +398,140 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Equal-width columns across <see cref="_instructionsRow"/>, stacked title / image / body.
-        /// Safe to call when the panel is inactive (no-op if row has zero size).
+        /// Packs the content cluster toward screen center and lays out equal-width cards.
+        /// Order: HOW TO PLAY → cards → BUILDING GALAXY → status → bar → percent.
         /// </summary>
-        void LayoutInstructionColumns()
+        void LayoutContent()
         {
-            if (_instructionsRow == null || _columns.Count == 0)
+            if (_contentRoot == null || _panelRoot == null || _columns.Count == 0)
                 return;
 
             Canvas.ForceUpdateCanvases();
 
-            float rowWidth = _instructionsRow.rect.width;
-            float rowHeight = _instructionsRow.rect.height;
-            if (rowWidth < 10f || rowHeight < 10f)
+            // --- Content width from panel, capped ---
+            float panelWidth = _panelRoot.rect.width;
+            float panelHeight = _panelRoot.rect.height;
+            if (panelWidth < 10f || panelHeight < 10f)
                 return;
 
-            float totalGaps = ColumnGap * (StepCount - 1);
-            float columnWidth = Mathf.Max((rowWidth - totalGaps) / StepCount, 40f);
+            float contentWidth = Mathf.Min(
+                ContentMaxWidth,
+                panelWidth * ContentWidthScreenFraction,
+                panelWidth - ContentSidePadding * 2f);
+            contentWidth = Mathf.Max(contentWidth, 480f);
 
-            // --- Measure each card, then use a uniform height so the strip looks even ---
+            float totalGaps = ColumnGap * (StepCount - 1);
+            float columnWidth = Mathf.Max((contentWidth - totalGaps) / StepCount, 40f);
+
+            // --- Measure cards first (drives cluster height) ---
+            // Use a generous row budget so image height is not crushed; we then clamp card height.
+            float measureBudget = MaxCardHeight;
             var metrics = new ColumnLayoutMetrics[_columns.Count];
             float maxCardHeight = 0f;
             for (int i = 0; i < _columns.Count; i++)
             {
-                metrics[i] = ComputeColumnMetrics(_columns[i], columnWidth, rowHeight);
+                metrics[i] = ComputeColumnMetrics(_columns[i], columnWidth, measureBudget);
                 maxCardHeight = Mathf.Max(maxCardHeight, metrics[i].TotalHeight);
             }
 
-            float uniformCardHeight = Mathf.Min(maxCardHeight, rowHeight);
-            float verticalOffset = (rowHeight - uniformCardHeight) * 0.5f;
+            float cardHeight = Mathf.Min(maxCardHeight, MaxCardHeight);
+
+            // --- Total cluster height (tight stack) ---
+            float clusterHeight =
+                HowToHeight
+                + SectionGap
+                + cardHeight
+                + SectionGap
+                + TitleHeight
+                + 6f
+                + StatusHeight
+                + SectionGap
+                + ProgressBarHeight
+                + 6f
+                + PercentHeight;
+
+            // Cap to ~78% of screen so it never feels edge-to-edge on short windows.
+            float maxCluster = panelHeight * 0.78f;
+            if (clusterHeight > maxCluster && cardHeight > 200f)
+            {
+                float shrink = clusterHeight - maxCluster;
+                cardHeight = Mathf.Max(200f, cardHeight - shrink);
+                clusterHeight =
+                    HowToHeight
+                    + SectionGap
+                    + cardHeight
+                    + SectionGap
+                    + TitleHeight
+                    + 6f
+                    + StatusHeight
+                    + SectionGap
+                    + ProgressBarHeight
+                    + 6f
+                    + PercentHeight;
+            }
+
+            _contentRoot.sizeDelta = new Vector2(contentWidth, clusterHeight);
+            _contentRoot.anchoredPosition = Vector2.zero;
+
+            // --- Stack from top of content (y decreases downward; pivot is center) ---
+            float yFromTop = 0f;
+
+            PlaceTopBand(_howToText.rectTransform, contentWidth, HowToHeight, ref yFromTop);
+            yFromTop += SectionGap;
+
+            // Instructions row
+            _instructionsRow.anchorMin = new Vector2(0.5f, 1f);
+            _instructionsRow.anchorMax = new Vector2(0.5f, 1f);
+            _instructionsRow.pivot = new Vector2(0.5f, 1f);
+            _instructionsRow.anchoredPosition = new Vector2(0f, -yFromTop);
+            _instructionsRow.sizeDelta = new Vector2(contentWidth, cardHeight);
 
             for (int i = 0; i < _columns.Count; i++)
             {
                 StepColumn col = _columns[i];
                 float x = i * (columnWidth + ColumnGap);
 
-                col.ColumnRoot.anchorMin = new Vector2(0f, 0f);
-                col.ColumnRoot.anchorMax = new Vector2(0f, 0f);
-                col.ColumnRoot.pivot = new Vector2(0f, 0f);
-                col.ColumnRoot.anchoredPosition = new Vector2(x, verticalOffset);
-                col.ColumnRoot.sizeDelta = new Vector2(columnWidth, uniformCardHeight);
+                col.ColumnRoot.anchorMin = new Vector2(0f, 1f);
+                col.ColumnRoot.anchorMax = new Vector2(0f, 1f);
+                col.ColumnRoot.pivot = new Vector2(0f, 1f);
+                col.ColumnRoot.anchoredPosition = new Vector2(x, 0f);
+                col.ColumnRoot.sizeDelta = new Vector2(columnWidth, cardHeight);
 
+                // Re-measure with the final card height budget so images fit.
+                metrics[i] = ComputeColumnMetrics(col, columnWidth, cardHeight);
                 ApplyColumnLayout(col, columnWidth, metrics[i]);
             }
+
+            yFromTop += cardHeight + SectionGap;
+
+            PlaceTopBand(_titleText.rectTransform, contentWidth, TitleHeight, ref yFromTop);
+            yFromTop += 6f;
+            PlaceTopBand(_statusText.rectTransform, contentWidth, StatusHeight, ref yFromTop);
+            yFromTop += SectionGap;
+
+            // Progress bar (fixed width, centered)
+            _barTrackRect.anchorMin = new Vector2(0.5f, 1f);
+            _barTrackRect.anchorMax = new Vector2(0.5f, 1f);
+            _barTrackRect.pivot = new Vector2(0.5f, 1f);
+            _barTrackRect.anchoredPosition = new Vector2(0f, -yFromTop);
+            _barTrackRect.sizeDelta = new Vector2(ProgressBarWidth, ProgressBarHeight);
+            yFromTop += ProgressBarHeight + 6f;
+
+            PlaceTopBand(_percentText.rectTransform, contentWidth, PercentHeight, ref yFromTop);
+        }
+
+        /// <summary>
+        /// Places a full-width band at the current top offset inside the content cluster,
+        /// then advances <paramref name="yFromTop"/> by <paramref name="height"/>.
+        /// </summary>
+        static void PlaceTopBand(RectTransform rect, float contentWidth, float height, ref float yFromTop)
+        {
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, -yFromTop);
+            rect.sizeDelta = new Vector2(contentWidth, height);
+            yFromTop += height;
         }
 
         /// <summary>Preferred sizes for one column at the given width.</summary>
@@ -479,18 +562,34 @@ namespace TitanOrbit.Game
             float titleHeight = col.Title.GetPreferredValues(col.Title.text, innerWidth, 0f).y;
             float bodyHeight = col.Body.GetPreferredValues(col.Body.text, innerWidth, 0f).y;
 
-            float imageHeight = innerWidth * ImageAspect;
-            float maxImageHeight = rowHeight * 0.5f;
+            // Prefer the loaded sprite's aspect so the frame matches the art exactly.
+            float aspect = ImageAspect;
+            if (col.Illustration != null && col.Illustration.sprite != null)
+            {
+                Rect spriteRect = col.Illustration.sprite.rect;
+                if (spriteRect.width > 1f)
+                    aspect = spriteRect.height / spriteRect.width;
+            }
+
+            float imageHeight = innerWidth * aspect;
+            // Image is the hero of each card — leave enough room for title + body under it.
+            float maxImageHeight = rowHeight * 0.62f;
             imageHeight = Mathf.Min(imageHeight, maxImageHeight);
 
-            float totalHeight = accentHeight
+            float chrome =
+                accentHeight
                 + CardInnerPadding
                 + titleHeight
                 + titleGap
-                + imageHeight
                 + imageGap
                 + bodyHeight
                 + CardInnerPadding;
+
+            // If the preferred stack is taller than the card budget, shrink the image first.
+            if (chrome + imageHeight > rowHeight && rowHeight > chrome + 40f)
+                imageHeight = rowHeight - chrome;
+
+            float totalHeight = chrome + imageHeight;
 
             return new ColumnLayoutMetrics
             {
@@ -565,8 +664,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Loads a sprite from Resources. Falls back to Texture2D + Sprite.Create when the
-        /// asset is imported as a texture rather than a Sprite.
+        /// Loads instruction art from Resources as a Texture2D, trims baked letterbox bars
+        /// when the texture is readable, then builds a Sprite that fills the UI frame.
         /// </summary>
         Sprite LoadSprite(string resourcePath)
         {
@@ -576,18 +675,23 @@ namespace TitanOrbit.Game
             if (_spriteCache.TryGetValue(resourcePath, out Sprite cached) && cached != null)
                 return cached;
 
-            Sprite sprite = Resources.Load<Sprite>(resourcePath);
-            if (sprite == null)
+            Sprite sprite = null;
+            Texture2D texture = Resources.Load<Texture2D>(resourcePath);
+            if (texture != null)
             {
-                Texture2D texture = Resources.Load<Texture2D>(resourcePath);
-                if (texture != null)
-                {
-                    sprite = Sprite.Create(
-                        texture,
-                        new Rect(0f, 0f, texture.width, texture.height),
-                        new Vector2(0.5f, 0.5f),
-                        100f);
-                }
+                // --- Crop baked black bars (e.g. instruction_upgrades) ---
+                // [UNITY] Sprite.Create rect uses bottom-left origin in texture pixels.
+                Rect rect = GetTrimmedContentRect(texture);
+                sprite = Sprite.Create(
+                    texture,
+                    rect,
+                    new Vector2(0.5f, 0.5f),
+                    100f);
+            }
+            else
+            {
+                // Fallback if imported as Sprite only.
+                sprite = Resources.Load<Sprite>(resourcePath);
             }
 
             if (sprite == null)
@@ -595,6 +699,111 @@ namespace TitanOrbit.Game
 
             _spriteCache[resourcePath] = sprite;
             return sprite;
+        }
+
+        /// <summary>
+        /// Returns the largest content rect after stripping near-black letterbox rows/columns.
+        /// Falls back to the full texture when Read/Write is off or trim finds nothing.
+        /// [UNITY] GetPixels32 is bottom-left origin — y=0 is the bottom row of the image.
+        /// </summary>
+        static Rect GetTrimmedContentRect(Texture2D texture)
+        {
+            int width = texture.width;
+            int height = texture.height;
+            var full = new Rect(0f, 0f, width, height);
+
+            if (!texture.isReadable)
+                return full;
+
+            Color32[] pixels;
+            try
+            {
+                pixels = texture.GetPixels32();
+            }
+            catch
+            {
+                return full;
+            }
+
+            const byte darkThreshold = 18;
+
+            // --- Visual top = high y; visual bottom = low y ---
+            int yMax = height - 1;
+            int yMin = 0;
+
+            for (; yMax >= 0; yMax--)
+            {
+                if (!RowIsDark(pixels, width, height, yMax, darkThreshold))
+                    break;
+            }
+
+            for (; yMin <= yMax; yMin++)
+            {
+                if (!RowIsDark(pixels, width, height, yMin, darkThreshold))
+                    break;
+            }
+
+            int left = 0;
+            int right = width - 1;
+            for (; left < width; left++)
+            {
+                if (!ColumnIsDark(pixels, width, height, left, yMin, yMax, darkThreshold))
+                    break;
+            }
+
+            for (; right > left; right--)
+            {
+                if (!ColumnIsDark(pixels, width, height, right, yMin, yMax, darkThreshold))
+                    break;
+            }
+
+            int contentHeight = yMax - yMin + 1;
+            int contentWidth = right - left + 1;
+            if (contentWidth < width / 4 || contentHeight < height / 4)
+                return full;
+
+            return new Rect(left, yMin, contentWidth, contentHeight);
+        }
+
+        /// <summary>True when every pixel in texture row <paramref name="y"/> is near-black.</summary>
+        static bool RowIsDark(Color32[] pixels, int width, int height, int y, byte threshold)
+        {
+            if (y < 0 || y >= height)
+                return true;
+
+            int row = y * width;
+            // Sample every 8th pixel for speed — letterbox bars are solid.
+            for (int x = 0; x < width; x += 8)
+            {
+                Color32 c = pixels[row + x];
+                if (c.r > threshold || c.g > threshold || c.b > threshold)
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>True when every sampled pixel in column <paramref name="x"/> (between yMin..yMax) is near-black.</summary>
+        static bool ColumnIsDark(
+            Color32[] pixels,
+            int width,
+            int height,
+            int x,
+            int yMin,
+            int yMax,
+            byte threshold)
+        {
+            if (x < 0 || x >= width)
+                return true;
+
+            for (int y = yMin; y <= yMax; y += 8)
+            {
+                Color32 c = pixels[y * width + x];
+                if (c.r > threshold || c.g > threshold || c.b > threshold)
+                    return false;
+            }
+
+            return true;
         }
 
         /// <summary>Creates an empty RectTransform child.</summary>

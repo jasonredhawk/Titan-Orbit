@@ -16,9 +16,11 @@ MonoBehaviour:
   enableExtendedColorPicker: 0
   editorHints: 1
   backgroundColorTint: {r: 0.627451, g: 0.88235295, b: 1, a: 1}
-  backgroundType: 1
+  # [TITAN-ORBIT] BASIC (0) — ADVANCED embeds Background Advanced.mp4 via Resources and
+  # WebGL rejects embedded VideoClips (Editor warning + native OOB risk at Module._main).
+  backgroundType: 0
   backgroundImage: {fileID: 21300000, guid: 59da25cc8872f164da4db6b05ad99d57, type: 3}
-  backgroundVideo: {fileID: 32900000, guid: 488f8fa32c1a5f24cbac413b5e63b1f6, type: 3}
+  backgroundVideo: {fileID: 0}
   backgroundPreserveAspect: 0
   backgroundSpeed: 1.25
   primaryColor: {r: 0.3882353, g: 0.7764706, b: 1, a: 1}

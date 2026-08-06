@@ -8,7 +8,9 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Narrow left dock panel: navigation between Upgrades and Store, current ship, bank balance, and equipped loadout.
+    /// Narrow left Orbit Menu dock: Upgrades/Store nav, current ship, bank, and compact purchased loadout.
+    /// Upgrade Cards and Equipment hosts hold glance-sized cards (title + icon + power bar) so many
+    /// owned items fit on one scroll pass. Full ability text lives on the right-hand store purchase cards.
     /// </summary>
     public class OrbitDockSidebarPanelUI : MonoBehaviour
     {
@@ -18,7 +20,11 @@ namespace TitanOrbit.UI
             Store
         }
 
-        public const float PanelWidth = 252f;
+        /// <summary>
+        /// Fixed width of the left Orbit Menu dock (nav + Your Ship + purchased loadout).
+        /// Slightly wider than the old 252 so compact inventory cards can use a readable title row.
+        /// </summary>
+        public const float PanelWidth = 286f;
         public const string SectionTitleUpgradeCards = "Upgrade Cards";
         public const string SectionTitleEquipment = "Equipment";
 
@@ -30,7 +36,11 @@ namespace TitanOrbit.UI
         public static readonly Color BankBalanceAccent = new Color(0.95f, 0.78f, 0.22f, 1f);
 
         private const float NavStripHeight = 44f;
-        private const float CurrentShipNodeHeight = 232f;
+        /// <summary>
+        /// Height of the "Your Ship" hero card (preview + labels + power bar).
+        /// Tall enough that the scaled power bar fits inside the card instead of spilling into Bank below.
+        /// </summary>
+        private const float CurrentShipNodeHeight = 256f;
         private const float BankBalanceBannerHeight = 96f;
         private const float AutoDepositToggleHeight = 38f;
         public const string AutoDepositGemsPrefsKey = "TitanOrbit_AutoDepositGems";
@@ -274,11 +284,25 @@ namespace TitanOrbit.UI
         {
             // --- Ensure setup ---
             EnsureBuilt();
-            if (_currentShipNode != null || nodePrefab == null || _currentShipHost == null)
+            if (nodePrefab == null || _currentShipHost == null)
                 return;
 
             float innerW = PanelWidth - 32f;
             float trackW = Mathf.Max(48f, innerW - 56f);
+
+            // Node already built — still re-apply hero layout so name-above-art / hide-"You" edits stick after code changes.
+            if (_currentShipNode != null)
+            {
+                _currentShipNode.ApplySidebarHeroPreviewLayout(innerW, CurrentShipNodeHeight, trackW);
+                _currentShipNode.ConfigureLayout(true);
+                _currentShipNode.SetSidebarHeroCardClickHandler(() =>
+                {
+                    if (_station != null)
+                        _station.OnCurrentShipDisplayNodeClicked();
+                });
+                return;
+            }
+
             var view = Instantiate(nodePrefab, _currentShipHost);
             view.gameObject.SetActive(true);
             if (nodeBackgroundSprite != null)
@@ -293,8 +317,9 @@ namespace TitanOrbit.UI
 
             view.ApplySidebarHeroPreviewLayout(innerW, CurrentShipNodeHeight, trackW);
             view.ConfigureLayout(true);
-            view.EnsureStableButtonRendering();
-            view.SetPriceClickHandler(() =>
+            // [TITAN-ORBIT] Sidebar hero hides the dark price pill (it sat on top of the power bar).
+            // Hull-swap click goes on the whole card instead.
+            view.SetSidebarHeroCardClickHandler(() =>
             {
                 if (_station != null)
                     _station.OnCurrentShipDisplayNodeClicked();

@@ -31,6 +31,51 @@
     <script>
       var canvas = document.querySelector("#unity-canvas");
 
+      // #region agent log
+      // [TITAN-ORBIT] Debug-mode WebGL boot ingest (session 9ed833). Safe no-op if Cursor ingest is down.
+      function titanOrbitDebugLog(hypothesisId, location, message, data) {
+        try {
+          fetch('http://127.0.0.1:7811/ingest/30ccdc0d-4064-42d7-ab07-612840f5e6a2', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Debug-Session-Id': '9ed833'
+            },
+            body: JSON.stringify({
+              sessionId: '9ed833',
+              runId: 'webgl-boot',
+              hypothesisId: hypothesisId,
+              location: location,
+              message: message,
+              data: data || {},
+              timestamp: Date.now()
+            })
+          }).catch(function () {});
+        } catch (e) {}
+      }
+      function titanOrbitMem() {
+        var m = (performance && performance.memory) ? {
+          usedMB: Math.round(performance.memory.usedJSHeapSize / 1048576),
+          totalMB: Math.round(performance.memory.totalJSHeapSize / 1048576),
+          limitMB: Math.round(performance.memory.jsHeapSizeLimit / 1048576)
+        } : null;
+        var bar = document.querySelector('#unity-progress-bar-full');
+        return { jsHeap: m, progress: bar ? bar.style.width : null, href: location.href };
+      }
+      titanOrbitDebugLog('A', 'index.html:boot', 'page-script-start', titanOrbitMem());
+      window.addEventListener('error', function (e) {
+        titanOrbitDebugLog('A', 'index.html:window.error', String(e.message || e.error || 'error'), Object.assign(titanOrbitMem(), {
+          filename: e.filename || '',
+          lineno: e.lineno || 0
+        }));
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var reason = e && e.reason;
+        var msg = reason && (reason.message || reason.stack || String(reason)) || 'rejection';
+        titanOrbitDebugLog('A', 'index.html:unhandledrejection', String(msg).slice(0, 800), titanOrbitMem());
+      });
+      // #endregion
+
       // Shows a temporary message banner/ribbon for a few seconds, or
       // a permanent error message on top of the canvas if type=='error'.
       // If type=='warning', a yellow highlight color is used.
@@ -135,9 +180,29 @@
       var script = document.createElement("script");
       script.src = loaderUrl;
       script.onload = () => {
+        // #region agent log
+        titanOrbitDebugLog('A', 'index.html:loader', 'loader-ready-calling-createUnityInstance', Object.assign(titanOrbitMem(), {
+          productVersion: config.productVersion,
+          dataUrl: config.dataUrl,
+          codeUrl: config.codeUrl
+        }));
+        var lastProgress = -1;
+        // #endregion
         createUnityInstance(canvas, config, (progress) => {
           document.querySelector("#unity-progress-bar-full").style.width = 100 * progress + "%";
+          // #region agent log
+          if (progress >= 0.9 && lastProgress < 0.9) {
+            titanOrbitDebugLog('A', 'index.html:progress', 'hit-90pct-entering-main', titanOrbitMem());
+          }
+          if (progress >= 1 && lastProgress < 1) {
+            titanOrbitDebugLog('E', 'index.html:progress', 'hit-100pct', titanOrbitMem());
+          }
+          lastProgress = progress;
+          // #endregion
               }).then((unityInstance) => {
+                // #region agent log
+                titanOrbitDebugLog('E', 'index.html:ready', 'createUnityInstance-resolved', titanOrbitMem());
+                // #endregion
                 document.querySelector("#unity-loading-bar").style.display = "none";
 #if SHOW_DIAGNOSTICS
                 document.getElementById("diagnostics-icon").onclick = () => {
@@ -182,6 +247,9 @@
                 };
 #endif
               }).catch((message) => {
+                // #region agent log
+                titanOrbitDebugLog('A', 'index.html:catch', String(message).slice(0, 800), titanOrbitMem());
+                // #endregion
                 alert(message);
               });
             };

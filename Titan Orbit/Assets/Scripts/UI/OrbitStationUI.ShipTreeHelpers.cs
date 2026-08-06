@@ -338,7 +338,10 @@ namespace TitanOrbit.UI
                 view.SetButtonBackgroundColor(new Color(0.26f, 0.62f, 0.36f, 0.98f));
 
             view.SetPreview(ResolveCurrentShipPreviewSprite());
-            if (view.UsesMoonHorizontalLayout)
+            // Sidebar hero hides level ("You") and shows only the centered ship name above the art.
+            if (view.UsesSidebarHeroLayout)
+                view.SetLevelLabel(string.Empty);
+            else if (view.UsesMoonHorizontalLayout)
                 view.SetLevelLabel("You");
             else
                 view.SetLevelLabel($"Lv {currentLevel}");
