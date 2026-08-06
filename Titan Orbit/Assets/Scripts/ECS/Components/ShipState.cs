@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -69,6 +70,14 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] True at spawn until RequestTeamCommand assigns a team.</summary>
         [GhostField] public bool AwaitingTeamSelection;
+
+        /// <summary>
+        /// [TITAN-ORBIT] OVERDRIVE energy lockout (predicted ghost field — client + server share it).
+        /// Set when energy hits 0; cleared when Shift is released or energy reaches ≥25% MaxEnergy.
+        /// Burst is active only while Shift+Thrust, energy &gt; 0, and this is false.
+        /// Replaces the old non-ghosted Engaged latch that desynced bloom/speed.
+        /// </summary>
+        [GhostField] public bool OverdriveLockout;
     }
 
     /// <summary>
@@ -78,6 +87,9 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [TITAN-ORBIT] MaxSpeed / EngineThrust / RotationSpeed already include the empty-hold
     /// capacity tax from <see cref="TitanOrbit.Data.ShipMobilityResolution"/> (gem/people capacity).
+    /// ThrustEnergyDrainPerSecond comes from authored engine+thruster drain × family mul
+    /// (spent only during OVERDRIVE). OVERDRIVE speed/thrust/drain multipliers are baked
+    /// here from ProfileSet × family bonuses.
     /// </para>
     /// </summary>
     public struct ShipMotorConfig : IComponentData
@@ -111,6 +123,144 @@ namespace TitanOrbit.ECS
         /// <see cref="ShipStatApplyLogic"/>; read by asteroid ram/grind damage on the server.
         /// </summary>
         public float RammingPower;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Base energy spend rate used only while OVERDRIVE burst is active.
+        /// Sum of engine + thruster authored <c>thrustEnergyDrain</c> × family
+        /// <c>thrustEnergyDrainMul</c>. Multiplied by <see cref="OverdriveEnergyDrainMultiplier"/>
+        /// at drain time. Normal RMB thrust does not spend energy.
+        /// </summary>
+        public float ThrustEnergyDrainPerSecond;
+
+        /// <summary>
+        /// [TITAN-ORBIT] MaxSpeed × this while OVERDRIVE burst is active
+        /// (<see cref="ShipOverdriveTuning.IsBurstActive"/>).
+        /// Baked from ProfileSet extraSpeedPercent × family extraSpeedPercentMul (1 + p).
+        /// </summary>
+        public float OverdriveSpeedMultiplier;
+
+        /// <summary>
+        /// [TITAN-ORBIT] EngineThrust × this while OVERDRIVE burst is active (matches speed mul).
+        /// </summary>
+        public float OverdriveThrustMultiplier;
+
+        /// <summary>
+        /// [TITAN-ORBIT] ThrustEnergyDrainPerSecond × this while OVERDRIVE burst is active.
+        /// Always 1 + p × e (ProfileSet × family energy mul). Unused for normal thrust (free).
+        /// </summary>
+        public float OverdriveEnergyDrainMultiplier;
+    }
+
+    /// <summary>
+    /// [TITAN-ORBIT] Code fallbacks + shared OVERDRIVE lockout / burst rules for motor, HUD, and scale.
+    /// Live speed/drain muls come from ProfileSet × family bonuses baked onto <see cref="ShipMotorConfig"/>.
+    /// Formula: speed = 1 + p; drain = 1 + p × e (defaults p=0.75, e=2 → 1.75 / 2.5).
+    /// <para>
+    /// Lockout hysteresis (one place for sim + presentation):
+    /// Shift up → clear lockout; energy ≤ 0 → lockout; energy ≥ 25% MaxEnergy → clear lockout.
+    /// Burst = Shift ∧ Thrust ∧ ¬orbit ∧ energy &gt; 0 ∧ ¬lockout.
+    /// </para>
+    /// </summary>
+    public static class ShipOverdriveTuning
+    {
+        /// <summary>Fallback MaxSpeed multiplier for +75% (1.75).</summary>
+        public static float SpeedMultiplier =>
+            1f + ShipFamilyOverdriveAbility.DefaultExtraSpeedPercent;
+
+        /// <summary>Fallback EngineThrust multiplier (same as speed).</summary>
+        public static float ThrustMultiplier => SpeedMultiplier;
+
+        /// <summary>Fallback overdrive drain: 1 + 0.75×2 = 2.5.</summary>
+        public static float EnergyDrainMultiplier =>
+            1f + ShipFamilyOverdriveAbility.DefaultExtraSpeedPercent
+                * ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyPercent;
+
+        /// <summary>
+        /// Fraction of MaxEnergy required to clear lockout / (re)start OVERDRIVE after empty.
+        /// </summary>
+        public const float OverdriveEngageEnergyFraction = 0.25f;
+
+        /// <summary>Absolute floor so tiny MaxEnergy pools still get hysteresis.</summary>
+        public const float OverdriveEngageEnergyAbsoluteMin = 1f;
+
+        /// <summary>Energy required to clear lockout and allow a new burst.</summary>
+        public static float EngageEnergyThreshold(float maxEnergy) =>
+            math.max(OverdriveEngageEnergyAbsoluteMin, maxEnergy * OverdriveEngageEnergyFraction);
+
+        /// <summary>
+        /// Updates <paramref name="lockout"/> from Shift + energy (call every fixed motor tick).
+        /// Does not require thrust — lockout clears at ≥25% while Shift is held so the next
+        /// thrust frame can burst immediately.
+        /// </summary>
+        /// <param name="shiftHeld"><see cref="ShipInput.Overdrive"/> (Shift alone).</param>
+        /// <param name="currentEnergy">Current energy pool (may be mid-drain this tick).</param>
+        /// <param name="maxEnergy">Ship MaxEnergy.</param>
+        /// <param name="lockout"><see cref="ShipState.OverdriveLockout"/>.</param>
+        public static void StepLockout(
+            bool shiftHeld,
+            float currentEnergy,
+            float maxEnergy,
+            ref bool lockout)
+        {
+            // --- Shift released: always allow a fresh engage later ---
+            if (!shiftHeld)
+            {
+                lockout = false;
+                return;
+            }
+
+            // --- Empty pool: block until regen hits the engage floor ---
+            if (currentEnergy <= 0f)
+            {
+                lockout = true;
+                return;
+            }
+
+            // --- Regen (or still above floor): clear lockout so burst can run ---
+            if (currentEnergy >= EngageEnergyThreshold(maxEnergy))
+                lockout = false;
+        }
+
+        /// <summary>
+        /// True when OVERDRIVE burst should apply speed/thrust/drain and thruster bloom.
+        /// Call <see cref="StepLockout"/> first in the motor so lockout matches this tick's energy.
+        /// </summary>
+        /// <param name="shiftHeld">Shift held.</param>
+        /// <param name="thrustHeld">RMB thrust held.</param>
+        /// <param name="useOrbit">Passive orbit motor owns this tick.</param>
+        /// <param name="currentEnergy">Energy after lockout step (before or after drain — see motor).</param>
+        /// <param name="lockout">Current <see cref="ShipState.OverdriveLockout"/>.</param>
+        public static bool IsBurstActive(
+            bool shiftHeld,
+            bool thrustHeld,
+            bool useOrbit,
+            float currentEnergy,
+            bool lockout)
+        {
+            return shiftHeld
+                && thrustHeld
+                && !useOrbit
+                && currentEnergy > 0f
+                && !lockout;
+        }
+
+        /// <summary>Resolves speed mul from motor, falling back to code default when unset (≤ 0).</summary>
+        public static float ResolveSpeedMultiplier(in ShipMotorConfig motor) =>
+            motor.OverdriveSpeedMultiplier > 0.01f
+                ? motor.OverdriveSpeedMultiplier
+                : SpeedMultiplier;
+
+        /// <summary>Resolves thrust mul from motor, falling back to code default when unset (≤ 0).</summary>
+        public static float ResolveThrustMultiplier(in ShipMotorConfig motor) =>
+            motor.OverdriveThrustMultiplier > 0.01f
+                ? motor.OverdriveThrustMultiplier
+                : ThrustMultiplier;
+
+        /// <summary>Resolves overdrive drain mul from motor, falling back when unset (≤ 0).</summary>
+        public static float ResolveEnergyDrainMultiplier(in ShipMotorConfig motor) =>
+            motor.OverdriveEnergyDrainMultiplier > 0.01f
+                ? motor.OverdriveEnergyDrainMultiplier
+                : EnergyDrainMultiplier;
     }
 
     /// <summary>

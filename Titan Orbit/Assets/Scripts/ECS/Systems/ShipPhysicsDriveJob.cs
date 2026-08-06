@@ -53,15 +53,15 @@ namespace TitanOrbit.ECS
         public float LoadMinTurnMultiplier;
 
         /// <summary>
-        /// Per-ship motor tick. Writes velocity, yaw, <see cref="ShipOrbitState"/>, and
-        /// <see cref="ShipTerritoryBoostLatch"/>. Position stays physics-owned except while fully
-        /// moon-docked (surface attach).
+        /// Per-ship motor tick. Writes velocity, yaw, <see cref="ShipOrbitState"/>,
+        /// <see cref="ShipTerritoryBoostLatch"/>, and <see cref="ShipState.OverdriveLockout"/>.
+        /// Position stays physics-owned except while fully moon-docked (surface attach).
         /// </summary>
         void Execute(
             RefRO<ShipInput> input,
             RefRO<ShipMotorConfig> motor,
             RefRO<ShipMoonDockState> moonDock,
-            RefRO<ShipState> shipState,
+            RefRW<ShipState> shipState,
             RefRW<PhysicsVelocity> physicsVelocity,
             RefRW<PhysicsDamping> physicsDamping,
             RefRW<LocalTransform> transform,
@@ -72,7 +72,7 @@ namespace TitanOrbit.ECS
                 input.ValueRO,
                 motor.ValueRO,
                 moonDock.ValueRO,
-                shipState.ValueRO,
+                ref shipState.ValueRW,
                 ref physicsVelocity.ValueRW,
                 ref physicsDamping.ValueRW,
                 ref transform.ValueRW,

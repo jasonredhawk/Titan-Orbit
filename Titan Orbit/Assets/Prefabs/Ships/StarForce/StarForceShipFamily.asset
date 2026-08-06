@@ -36,6 +36,8 @@ MonoBehaviour:
     moveSpeedPerLevel: 1.8000001
     accelerationCap: 2.4
     accelerationCapPerLevel: 0.6
+    thrustEnergyDrain: 0
+    thrustEnergyDrainPerLevel: 0
     turnSpeed: 14
     turnSpeedPerLevel: 3.5
     maxGems: 8
@@ -59,6 +61,8 @@ MonoBehaviour:
     healthRegenMul: 1
     energyCapMul: 1
     energyRegenMul: 1
+    thrustEnergyDrainMul: 1
+    overdrivePercentMul: 1
     maxGemsMul: 1
     maxPeopleMul: 1
     tractorDistanceMul: 1
@@ -97,6 +101,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -155,6 +161,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -213,6 +221,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 8
@@ -247,7 +257,7 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: Engine
     displayName: Engine 1
-    statCategories: 03000000
+    statCategories: 0300000002000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -263,14 +273,16 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
+      energyCap: 4.59
+      energyCapPerLevel: 1.1475
+      energyRegen: 0.9449999
+      energyRegenPerLevel: 0.23624997
       moveSpeed: 6
       moveSpeedPerLevel: 1.2
       accelerationCap: 3
       accelerationCapPerLevel: 0.6
+      thrustEnergyDrain: 1.5
+      thrustEnergyDrainPerLevel: 0.3
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -305,7 +317,7 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: EngineComp1
     displayName: EngineComp1 1
-    statCategories: 01000000
+    statCategories: 0300000002000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -321,14 +333,16 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
+      energyCap: 4.59
+      energyCapPerLevel: 1.1475
+      energyRegen: 0.9449999
+      energyRegenPerLevel: 0.23624997
+      moveSpeed: 6
+      moveSpeedPerLevel: 1.2
+      accelerationCap: 3
+      accelerationCapPerLevel: 0.6
+      thrustEnergyDrain: 1.5
+      thrustEnergyDrainPerLevel: 0.3
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -363,7 +377,7 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: EngineComp2
     displayName: EngineComp2 2
-    statCategories: 01000000
+    statCategories: 0300000002000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -379,14 +393,16 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
-      moveSpeed: 0
-      moveSpeedPerLevel: 0
-      accelerationCap: 0
-      accelerationCapPerLevel: 0
+      energyCap: 6.1200004
+      energyCapPerLevel: 1.5300001
+      energyRegen: 1.26
+      energyRegenPerLevel: 0.315
+      moveSpeed: 8
+      moveSpeedPerLevel: 1.6
+      accelerationCap: 4
+      accelerationCapPerLevel: 0.8
+      thrustEnergyDrain: 2
+      thrustEnergyDrainPerLevel: 0.4
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -445,6 +461,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -503,8 +521,10 @@ MonoBehaviour:
       moveSpeedPerLevel: 1.2
       accelerationCap: 3
       accelerationCapPerLevel: 0.6
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
+      thrustEnergyDrain: 1.5
+      thrustEnergyDrainPerLevel: 0.3
+      turnSpeed: 4.1621623
+      turnSpeedPerLevel: 1.0405406
       maxGems: 0
       maxGemsPerLevel: 0
       tractorBeamDistance: 0
@@ -537,14 +557,14 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: Weapon
     displayName: Weapon 1
-    statCategories: 0000000002000000
+    statCategories: 00000000
     stats:
       firePower: 3
-      firePowerPerLevel: 1
+      firePowerPerLevel: 0.75
       bulletSpeed: 12
       bulletSpeedPerLevel: 3
-      bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRange: 30
+      bulletRangePerLevel: 7.5
       fireRate: 3
       fireRatePerLevel: 0
       rammingPower: 0
@@ -553,14 +573,16 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 15.300001
-      energyCapPerLevel: 3.8250003
-      energyRegen: 3.1499999
-      energyRegenPerLevel: 0.78749996
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -619,13 +641,15 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 8
       maxGemsPerLevel: 2
       tractorBeamDistance: 3
-      tractorBeamDistancePerLevel: 0.5
-      tractorBeamPower: 5
+      tractorBeamDistancePerLevel: 0.75
+      tractorBeamPower: 4
       tractorBeamPowerPerLevel: 1
       maxPeople: 2
       maxPeoplePerLevel: 0.5
@@ -1350,13 +1374,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 139.67836
-    powerScoreAtMaxLevel: 336.34796
+    powerScore: 108.92989
+    powerScoreAtMaxLevel: 417.34045
     powerScoreBreakdown:
-      offense: 37.068398
+      offense: 97.0684
       defense: 24.962984
-      energy: 36.9
-      mobility: 24.08
+      energy: 15.029366
+      mobility: 20.002163
       capacity: 29.1427
       firePower: 5.39268
       bulletSpeed: 24
@@ -1364,10 +1388,10 @@ MonoBehaviour:
       rammingPower: 1
       healthCap: 24.102192
       healthRegen: 0.8607926
-      energyCap: 30.600002
-      energyRegen: 6.2999997
-      moveSpeed: 5.28
-      turnSpeed: 14
+      energyCap: 12.463377
+      energyRegen: 2.565989
+      moveSpeed: 6.2400002
+      turnSpeed: 4.1621623
       gemCap: 23.31416
       peopleCap: 5.82854
     componentMass: 9.558767
@@ -1395,13 +1419,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 117.67597
-    powerScoreAtMaxLevel: 284.98993
+    powerScore: 113.70545
+    powerScoreAtMaxLevel: 286.80362
     powerScoreBreakdown:
       offense: 19
       defense: 33.06454
-      energy: 21
-      mobility: 25.4
+      energy: 18.989481
+      mobility: 27.44
       capacity: 25.61143
       firePower: 3
       bulletSpeed: 12
@@ -1409,9 +1433,9 @@ MonoBehaviour:
       rammingPower: 1
       healthCap: 31.924383
       healthRegen: 1.1401566
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 9
+      energyCap: 15.747375
+      energyRegen: 3.2421064
+      moveSpeed: 7.0400004
       turnSpeed: 14
       gemCap: 20.489143
       peopleCap: 5.122286

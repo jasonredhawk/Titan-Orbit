@@ -36,6 +36,8 @@ MonoBehaviour:
     moveSpeedPerLevel: 0
     accelerationCap: 0
     accelerationCapPerLevel: 0
+    thrustEnergyDrain: 0
+    thrustEnergyDrainPerLevel: 0
     turnSpeed: 0
     turnSpeedPerLevel: 0
     maxGems: 0
@@ -59,6 +61,8 @@ MonoBehaviour:
     healthRegenMul: 1
     energyCapMul: 1
     energyRegenMul: 1
+    thrustEnergyDrainMul: 1
+    overdrivePercentMul: 1
     maxGemsMul: 1
     maxPeopleMul: 1
     tractorDistanceMul: 1
@@ -97,6 +101,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 8
@@ -116,7 +122,7 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: Engine
     displayName: Engine 1
-    statCategories: 03000000
+    statCategories: 0300000002000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -132,14 +138,16 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
+      energyCap: 20.400002
+      energyCapPerLevel: 5.1000004
+      energyRegen: 4.2
+      energyRegenPerLevel: 1.05
       moveSpeed: 6
       moveSpeedPerLevel: 1.2
       accelerationCap: 3
       accelerationCapPerLevel: 0.6
+      thrustEnergyDrain: 1.5
+      thrustEnergyDrainPerLevel: 0.3
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -183,6 +191,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -226,6 +236,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -245,14 +257,14 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: Missile
     displayName: Weapon 1
-    statCategories: 0000000002000000
+    statCategories: 00000000
     stats:
       firePower: 12
       firePowerPerLevel: 3
       bulletSpeed: 10
-      bulletSpeedPerLevel: 2
-      bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletSpeedPerLevel: 2.5
+      bulletRange: 36
+      bulletRangePerLevel: 9
       fireRate: 1
       fireRatePerLevel: 0
       rammingPower: 0
@@ -261,14 +273,16 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 20.400002
-      energyCapPerLevel: 5.1000004
-      energyRegen: 4.2
-      energyRegenPerLevel: 1.05
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -312,6 +326,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -331,7 +347,7 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: WingMain
     displayName: WingMain 1
-    statCategories: 01000000
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -355,16 +371,18 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
-      tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxGems: 8
+      maxGemsPerLevel: 2
+      tractorBeamDistance: 3
+      tractorBeamDistancePerLevel: 0.75
+      tractorBeamPower: 4
+      tractorBeamPowerPerLevel: 1
+      maxPeople: 2
+      maxPeoplePerLevel: 0.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -374,7 +392,7 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: WingMini
     displayName: WingMini 1
-    statCategories: 01000000
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -398,16 +416,18 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
-      tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxGems: 8
+      maxGemsPerLevel: 2
+      tractorBeamDistance: 3
+      tractorBeamDistancePerLevel: 0.75
+      tractorBeamPower: 4
+      tractorBeamPowerPerLevel: 1
+      maxPeople: 2
+      maxPeoplePerLevel: 0.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -417,7 +437,7 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: WingTip
     displayName: WingTip 1
-    statCategories: 01000000
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -441,16 +461,18 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
-      tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxGems: 8
+      maxGemsPerLevel: 2
+      tractorBeamDistance: 3
+      tractorBeamDistancePerLevel: 0.75
+      tractorBeamPower: 4
+      tractorBeamPowerPerLevel: 1
+      maxPeople: 2
+      maxPeoplePerLevel: 0.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -460,7 +482,7 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: WingWide
     displayName: WingWide 1
-    statCategories: 01000000
+    statCategories: 0100000004000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -484,16 +506,18 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
-      maxGems: 0
-      maxGemsPerLevel: 0
-      tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
-      tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
-      maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxGems: 8
+      maxGemsPerLevel: 2
+      tractorBeamDistance: 3
+      tractorBeamDistancePerLevel: 0.75
+      tractorBeamPower: 4
+      tractorBeamPowerPerLevel: 1
+      maxPeople: 2
+      maxPeoplePerLevel: 0.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 0}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -525,14 +549,14 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 1
-    powerScore: 132.49788
-    powerScoreAtMaxLevel: 168.29225
+    powerScore: 185.95908
+    powerScoreAtMaxLevel: 280.11874
     powerScoreBreakdown:
-      offense: 24.9648
+      offense: 60.964798
       defense: 53.924484
       energy: 24.600002
       mobility: 21.2
-      capacity: 12.1285
+      capacity: 65.58969
       firePower: 13.0449
       bulletSpeed: 10
       fireRate: 0.91989976
@@ -543,8 +567,8 @@ MonoBehaviour:
       energyRegen: 4.2
       moveSpeed: 4.8
       turnSpeed: 14
-      gemCap: 9.7028
-      peopleCap: 2.4257
+      gemCap: 52.471756
+      peopleCap: 13.117939
     componentMass: 10.969606
     lockedInUpgradeTree: 0
   - chassisId: NightAye_03
@@ -570,26 +594,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 179.61082
-    powerScoreAtMaxLevel: 266.4335
+    powerScore: 211.56793
+    powerScoreAtMaxLevel: 422.36914
     powerScoreBreakdown:
-      offense: 40.85516
+      offense: 112.855156
       defense: 60.372917
-      energy: 49.200005
+      energy: 21
       mobility: 25.4
-      capacity: 10
+      capacity: 70.1571
       firePower: 17.037912
       bulletSpeed: 20
       fireRate: 2.8172467
       rammingPower: 1
       healthCap: 58.291092
       healthRegen: 2.0818248
-      energyCap: 40.800003
-      energyRegen: 8.4
+      energyCap: 18
+      energyRegen: 3
       moveSpeed: 9
       turnSpeed: 14
-      gemCap: 8
-      peopleCap: 2
+      gemCap: 56.12568
+      peopleCap: 14.03142
     componentMass: 11.489398
     lockedInUpgradeTree: 0
   - chassisId: NightAye_09
@@ -615,26 +639,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 172.14394
-    powerScoreAtMaxLevel: 256.49625
+    powerScore: 220.96817
+    powerScoreAtMaxLevel: 437.7326
     powerScoreBreakdown:
-      offense: 39.273037
+      offense: 111.27303
       defense: 59.051247
-      energy: 49.200005
+      energy: 36.024242
       mobility: 21.2
-      capacity: 10
+      capacity: 72
       firePower: 15.092689
       bulletSpeed: 20
       fireRate: 3.180348
       rammingPower: 1
       healthCap: 57.014996
       healthRegen: 2.03625
-      energyCap: 40.800003
-      energyRegen: 8.4
+      energyCap: 29.873764
+      energyRegen: 6.15048
       moveSpeed: 4.8
       turnSpeed: 14
-      gemCap: 8
-      peopleCap: 2
+      gemCap: 57.6
+      peopleCap: 14.4
     componentMass: 12.3644
     lockedInUpgradeTree: 0
   - chassisId: NightAye_10
@@ -660,14 +684,14 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 188.03625
-    powerScoreAtMaxLevel: 321.49493
+    powerScore: 248.03625
+    powerScoreAtMaxLevel: 552.49493
     powerScoreBreakdown:
-      offense: 54.88148
+      offense: 126.881485
       defense: 55.13625
       energy: 49.200005
       mobility: 21.2
-      capacity: 12.5
+      capacity: 72.5
       firePower: 32.4
       bulletSpeed: 20
       fireRate: 1.4814814
@@ -678,8 +702,8 @@ MonoBehaviour:
       energyRegen: 8.4
       moveSpeed: 4.8
       turnSpeed: 14
-      gemCap: 10
-      peopleCap: 2.5
+      gemCap: 58
+      peopleCap: 14.5
     componentMass: 11.65
     lockedInUpgradeTree: 0
   - chassisId: NightAye_14
@@ -705,26 +729,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 180.54852
-    powerScoreAtMaxLevel: 315.67117
+    powerScore: 300.40768
+    powerScoreAtMaxLevel: 588.4247
     powerScoreBreakdown:
-      offense: 21.775785
+      offense: 57.775784
       defense: 106.633965
-      energy: 24.600002
+      energy: 20.910002
       mobility: 21.2
-      capacity: 11
+      capacity: 134.54916
       firePower: 9.51456
       bulletSpeed: 10
       fireRate: 1.2612249
       rammingPower: 1
       healthCap: 102.95693
       healthRegen: 3.677034
-      energyCap: 20.400002
-      energyRegen: 4.2
+      energyCap: 17.340002
+      energyRegen: 3.57
       moveSpeed: 4.8
       turnSpeed: 14
-      gemCap: 8.8
-      peopleCap: 2.2
+      gemCap: 107.63933
+      peopleCap: 26.909832
     componentMass: 20.079823
     lockedInUpgradeTree: 0
   - chassisId: NightAye_05
@@ -750,26 +774,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 188.75523
-    powerScoreAtMaxLevel: 323.27167
+    powerScore: 243.86244
+    powerScoreAtMaxLevel: 545.7093
     powerScoreBreakdown:
-      offense: 47
+      offense: 119
       defense: 69.25523
-      energy: 49.200005
+      energy: 18.11522
       mobility: 21.2
-      capacity: 7.5
+      capacity: 93.692
       firePower: 24
       bulletSpeed: 20
       fireRate: 2
       rammingPower: 1
       healthCap: 66.86712
       healthRegen: 2.3881116
-      energyCap: 40.800003
-      energyRegen: 8.4
+      energyCap: 15.022378
+      energyRegen: 3.092842
       moveSpeed: 4.8
       turnSpeed: 14
-      gemCap: 6
-      peopleCap: 1.5
+      gemCap: 74.9536
+      peopleCap: 18.7384
     componentMass: 12.594847
     lockedInUpgradeTree: 0
   - chassisId: NightAye_13
@@ -795,26 +819,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 199.31961
-    powerScoreAtMaxLevel: 385.17767
+    powerScore: 234.16908
+    powerScoreAtMaxLevel: 598.87665
     powerScoreBreakdown:
-      offense: 53.73846
+      offense: 125.73846
       defense: 59.90741
-      energy: 49.200005
+      energy: 21
       mobility: 25.4
-      capacity: 16.0122
+      capacity: 79.061676
       firePower: 31.199999
       bulletSpeed: 20
       fireRate: 1.5384616
       rammingPower: 1
       healthCap: 57.841637
       healthRegen: 2.065773
-      energyCap: 40.800003
-      energyRegen: 8.4
+      energyCap: 18
+      energyRegen: 3
       moveSpeed: 9
       turnSpeed: 14
-      gemCap: 12.80976
-      peopleCap: 3.20244
+      gemCap: 63.249344
+      peopleCap: 15.812336
     componentMass: 10.456256
     lockedInUpgradeTree: 0
   - chassisId: NightAye_07
@@ -840,26 +864,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 189.99995
-    powerScoreAtMaxLevel: 367.35284
+    powerScore: 224.70245
+    powerScoreAtMaxLevel: 580.7578
     powerScoreBreakdown:
-      offense: 43.75294
+      offense: 115.752945
       defense: 65.85195
-      energy: 49.200005
+      energy: 21
       mobility: 25.4
-      capacity: 11.548
+      capacity: 74.4505
       firePower: 20.400002
       bulletSpeed: 20
       fireRate: 2.352941
       rammingPower: 1
       healthCap: 63.581196
       healthRegen: 2.2707572
-      energyCap: 40.800003
-      energyRegen: 8.4
+      energyCap: 18
+      energyRegen: 3
       moveSpeed: 9
       turnSpeed: 14
-      gemCap: 9.2384
-      peopleCap: 2.3096
+      gemCap: 59.560402
+      peopleCap: 14.8901005
     componentMass: 12.739458
     lockedInUpgradeTree: 0
   - chassisId: NightAye_12
@@ -885,26 +909,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 214.27008
-    powerScoreAtMaxLevel: 424.01636
+    powerScore: 360.6701
+    powerScoreAtMaxLevel: 788.8164
     powerScoreBreakdown:
-      offense: 36.67619
+      offense: 72.676186
       defense: 121.47008
-      energy: 24.600002
+      energy: 21
       mobility: 25.4
-      capacity: 10
+      capacity: 160.00002
       firePower: 25.199999
       bulletSpeed: 10
       fireRate: 0.4761905
       rammingPower: 1
       healthCap: 117.281456
       healthRegen: 4.1886225
-      energyCap: 20.400002
-      energyRegen: 4.2
+      energyCap: 18
+      energyRegen: 3
       moveSpeed: 9
       turnSpeed: 14
-      gemCap: 8
-      peopleCap: 2
+      gemCap: 128.00002
+      peopleCap: 32.000004
     componentMass: 21.2322
     lockedInUpgradeTree: 0
   - chassisId: NightAye_04
@@ -930,26 +954,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 208.07948
-    powerScoreAtMaxLevel: 402.64044
+    powerScore: 269.8795
+    powerScoreAtMaxLevel: 670.2404
     powerScoreBreakdown:
-      offense: 54.88148
+      offense: 126.881485
       defense: 75.89955
-      energy: 49.200005
+      energy: 21
       mobility: 25.4
-      capacity: 7.5799203
+      capacity: 97.57992
       firePower: 32.4
       bulletSpeed: 20
       fireRate: 1.4814814
       rammingPower: 1
       healthCap: 73.282326
       healthRegen: 2.6172261
-      energyCap: 40.800003
-      energyRegen: 8.4
+      energyCap: 18
+      energyRegen: 3
       moveSpeed: 9
       turnSpeed: 14
-      gemCap: 6.063936
-      peopleCap: 1.515984
+      gemCap: 78.063934
+      peopleCap: 19.515984
     componentMass: 13.506238
     lockedInUpgradeTree: 0
   - chassisId: NightAye_16
@@ -975,26 +999,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 259.88443
-    powerScoreAtMaxLevel: 557.69
+    powerScore: 288.43216
+    powerScoreAtMaxLevel: 864.92236
     powerScoreBreakdown:
-      offense: 73.8
+      offense: 181.8
       defense: 76.08443
-      energy: 73.8
+      energy: 21
       mobility: 25.4
-      capacity: 18
+      capacity: 99.34773
       firePower: 39
       bulletSpeed: 30
       fireRate: 2.8
       rammingPower: 2
       healthCap: 73.46082
       healthRegen: 2.623601
-      energyCap: 61.200005
-      energyRegen: 12.599999
+      energyCap: 18
+      energyRegen: 3
       moveSpeed: 9
       turnSpeed: 14
-      gemCap: 14.4
-      peopleCap: 3.6
+      gemCap: 79.47819
+      peopleCap: 19.869547
     componentMass: 13.386122
     lockedInUpgradeTree: 0
   - chassisId: NightAye_18
@@ -1020,26 +1044,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 221.2546
-    powerScoreAtMaxLevel: 482.47284
+    powerScore: 309.7712
+    powerScoreAtMaxLevel: 843.63525
     powerScoreBreakdown:
-      offense: 47
+      offense: 119
       defense: 96.75459
-      energy: 49.200005
+      energy: 24.600002
       mobility: 21.2
-      capacity: 12.5
+      capacity: 125.616615
       firePower: 24
       bulletSpeed: 20
       fireRate: 2
       rammingPower: 1
       healthCap: 93.41823
       healthRegen: 3.3363657
-      energyCap: 40.800003
-      energyRegen: 8.4
+      energyCap: 20.400002
+      energyRegen: 4.2
       moveSpeed: 4.8
       turnSpeed: 14
-      gemCap: 10
-      peopleCap: 2.5
+      gemCap: 100.49329
+      peopleCap: 25.123323
     componentMass: 18.094917
     lockedInUpgradeTree: 0
   - chassisId: NightAye_15
@@ -1065,26 +1089,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 264.97968
-    powerScoreAtMaxLevel: 558.52094
+    powerScore: 252.34068
+    powerScoreAtMaxLevel: 854.0832
     powerScoreBreakdown:
-      offense: 87.666664
+      offense: 231.66667
       defense: 55.779682
-      energy: 98.40001
+      energy: 24.600002
       mobility: 21.2
-      capacity: 10
+      capacity: 71.161
       firePower: 42
       bulletSpeed: 40
       fireRate: 4.666667
       rammingPower: 1
       healthCap: 53.856243
       healthRegen: 1.9234376
-      energyCap: 81.600006
-      energyRegen: 16.8
+      energyCap: 20.400002
+      energyRegen: 4.2
       moveSpeed: 4.8
       turnSpeed: 14
-      gemCap: 8
-      peopleCap: 2
+      gemCap: 56.928802
+      peopleCap: 14.232201
     componentMass: 10.981121
     lockedInUpgradeTree: 0
   - chassisId: NightAye_01
@@ -1110,12 +1134,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 262.39795
-    powerScoreAtMaxLevel: 548.2931
+    powerScore: 184.99794
+    powerScoreAtMaxLevel: 698.14307
     powerScoreBreakdown:
-      offense: 120.36817
+      offense: 264.36816
       defense: 14.127487
-      energy: 98.40001
+      energy: 21
       mobility: 25.4
       capacity: 10
       firePower: 76.87046
@@ -1124,8 +1148,8 @@ MonoBehaviour:
       rammingPower: 1
       healthCap: 13.640332
       healthRegen: 0.48715472
-      energyCap: 81.600006
-      energyRegen: 16.8
+      energyCap: 18
+      energyRegen: 3
       moveSpeed: 9
       turnSpeed: 14
       gemCap: 8
@@ -1155,26 +1179,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 254.52617
-    powerScoreAtMaxLevel: 543.729
+    powerScore: 300.61603
+    powerScoreAtMaxLevel: 890.4312
     powerScoreBreakdown:
-      offense: 69.693474
+      offense: 177.69348
       defense: 85.67779
-      energy: 73.8
+      energy: 21
       mobility: 25.4
-      capacity: 6.5
+      capacity: 105.38988
       firePower: 35.54837
       bulletSpeed: 30
       fireRate: 3.1451056
       rammingPower: 1
       healthCap: 82.72338
       healthRegen: 2.9544067
-      energyCap: 61.200005
-      energyRegen: 12.599999
+      energyCap: 18
+      energyRegen: 3
       moveSpeed: 9
       turnSpeed: 14
-      gemCap: 5.2
-      peopleCap: 1.3
+      gemCap: 84.311905
+      peopleCap: 21.077976
     componentMass: 15.722405
     lockedInUpgradeTree: 0
   - chassisId: NightAye_11
@@ -1200,26 +1224,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 490.7585
-    powerScoreAtMaxLevel: 1120.668
+    powerScore: 410.78256
+    powerScoreAtMaxLevel: 1640.728
     powerScoreBreakdown:
-      offense: 193.61165
+      offense: 481.61166
       defense: 76.31852
-      energy: 196.80002
+      energy: 21
       mobility: 25.4
-      capacity: 10
+      capacity: 105.82405
       firePower: 104.63999
       bulletSpeed: 80
       fireRate: 7.9716635
       rammingPower: 1
       healthCap: 73.686844
       healthRegen: 2.6316733
-      energyCap: 163.20001
-      energyRegen: 33.600002
+      energyCap: 18
+      energyRegen: 3
       moveSpeed: 9
       turnSpeed: 14
-      gemCap: 8
-      peopleCap: 2
+      gemCap: 84.65924
+      peopleCap: 21.16481
     componentMass: 12.810247
     lockedInUpgradeTree: 0
   - chassisId: NightAye_19
@@ -1245,26 +1269,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 313.59763
-    powerScoreAtMaxLevel: 743.10736
+    powerScore: 394.45966
+    powerScoreAtMaxLevel: 1305.2625
     powerScoreBreakdown:
-      offense: 82.333336
+      offense: 226.33333
       defense: 109.91761
-      energy: 98.40001
+      energy: 49.200005
       mobility: 24.08
-      capacity: 10
+      capacity: 140.06203
       firePower: 36
       bulletSpeed: 40
       fireRate: 5.3333335
       rammingPower: 1
       healthCap: 106.12735
       healthRegen: 3.7902613
-      energyCap: 81.600006
-      energyRegen: 16.8
+      energyCap: 40.800003
+      energyRegen: 8.4
       moveSpeed: 5.28
       turnSpeed: 14
-      gemCap: 8
-      peopleCap: 2
+      gemCap: 112.04962
+      peopleCap: 28.012405
     componentMass: 21.685015
     lockedInUpgradeTree: 0
   - chassisId: NightAye_17
@@ -1290,26 +1314,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 274.32614
-    powerScoreAtMaxLevel: 666.3153
+    powerScore: 433.73273
+    powerScoreAtMaxLevel: 1244.8318
     powerScoreBreakdown:
-      offense: 47
+      offense: 119
       defense: 152.32613
-      energy: 49.200005
+      energy: 24.600002
       mobility: 21.2
-      capacity: 10
+      capacity: 194.00659
       firePower: 24
       bulletSpeed: 20
       fireRate: 2
       rammingPower: 1
       healthCap: 147.0735
       healthRegen: 5.252624
-      energyCap: 40.800003
-      energyRegen: 8.4
+      energyCap: 20.400002
+      energyRegen: 4.2
       moveSpeed: 4.8
       turnSpeed: 14
-      gemCap: 8
-      peopleCap: 2
+      gemCap: 155.20528
+      peopleCap: 38.80132
     componentMass: 28.289326
     lockedInUpgradeTree: 0
   - chassisId: NightAye_20
@@ -1335,26 +1359,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 479.33972
-    powerScoreAtMaxLevel: 1101.2715
+    powerScore: 447.67853
+    powerScoreAtMaxLevel: 1742.1185
     powerScoreBreakdown:
-      offense: 175.34215
+      offense: 463.34216
       defense: 90.5597
-      energy: 196.80002
+      energy: 55.350002
       mobility: 24.08
-      capacity: 7.5
+      capacity: 117.28882
       firePower: 85.2
       bulletSpeed: 80
       fireRate: 9.142158
       rammingPower: 1
       healthCap: 87.43695
       healthRegen: 3.1227489
-      energyCap: 163.20001
-      energyRegen: 33.600002
+      energyCap: 45.9
+      energyRegen: 9.45
       moveSpeed: 5.28
       turnSpeed: 14
-      gemCap: 6
-      peopleCap: 1.5
+      gemCap: 93.831055
+      peopleCap: 23.457764
     componentMass: 18.278881
     lockedInUpgradeTree: 0
   - chassisId: NightAye_08
@@ -1380,26 +1404,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 290.87473
-    powerScoreAtMaxLevel: 680.1384
+    powerScore: 312.5115
+    powerScoreAtMaxLevel: 1094.2303
     powerScoreBreakdown:
-      offense: 94.418594
+      offense: 238.4186
       defense: 77.20773
-      energy: 98.40001
+      energy: 24.600002
       mobility: 21.2
-      capacity: 7.5
+      capacity: 102.93679
       firePower: 48.96698
       bulletSpeed: 40
       fireRate: 4.4516134
       rammingPower: 1
       healthCap: 74.545395
       healthRegen: 2.6623356
-      energyCap: 81.600006
-      energyRegen: 16.8
+      energyCap: 20.400002
+      energyRegen: 4.2
       moveSpeed: 4.8
       turnSpeed: 14
-      gemCap: 6
-      peopleCap: 1.5
+      gemCap: 82.349434
+      peopleCap: 20.587358
     componentMass: 14.371521
     lockedInUpgradeTree: 0
   teamMaterials:

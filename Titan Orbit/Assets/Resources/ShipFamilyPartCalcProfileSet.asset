@@ -13,6 +13,9 @@ MonoBehaviour:
   m_Name: ShipFamilyPartCalcProfileSet
   m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.ShipFamilyPartCalcProfileSet
   globalUpgradeScaleMultiplier: 0.25
+  overdriveAbility:
+    extraSpeedPercent: 0.5
+    extraSpeedEnergyPercent: 4
   nameMappings:
   - discoveredName: Acc
     partType: Hull
@@ -183,7 +186,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: Engine
-    partType: Engine/Thrust
+    partType: Engine
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -191,7 +194,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: Engine1
-    partType: Engine/Thrust
+    partType: Engine
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -199,7 +202,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: Engine2
-    partType: Engine/Thrust
+    partType: Engine
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -207,7 +210,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: EngineComp1
-    partType: Engine/Thrust
+    partType: Engine
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -215,7 +218,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: EngineComp2
-    partType: Engine/Thrust
+    partType: Engine
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -223,7 +226,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: Engine_1
-    partType: Engine/Thrust
+    partType: Engine
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -231,7 +234,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: Engine_2
-    partType: Engine/Thrust
+    partType: Engine
     contributesAbilityStats: 1
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -239,7 +242,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: Exhaust
-    partType: Engine/Thrust
+    partType: Thruster
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
@@ -455,7 +458,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: ThrustCover
-    partType: Engine/Thrust
+    partType: Thruster
     contributesAbilityStats: 0
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -463,7 +466,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: Thruster
-    partType: Engine/Thrust
+    partType: Thruster
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
@@ -471,7 +474,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: Thrusters
-    partType: Engine/Thrust
+    partType: Thruster
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
@@ -479,7 +482,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: Thrusters_Big
-    partType: Engine/Thrust
+    partType: Thruster
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 1.5
@@ -487,7 +490,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: Thruster_Place
-    partType: Engine/Thrust
+    partType: Thruster
     contributesAbilityStats: 0
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
@@ -495,7 +498,7 @@ MonoBehaviour:
     notes: 
     includeInPopulate: 1
   - discoveredName: Tiny_Thrusters
-    partType: Engine/Thrust
+    partType: Thruster
     contributesAbilityStats: 1
     enablePropulsionVfx: 1
     propulsionVfxScale: 0.45
@@ -704,6 +707,12 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 8
@@ -737,6 +746,12 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 8
@@ -756,7 +771,7 @@ MonoBehaviour:
       bulletSpeed: 12
       bulletSpeedPerLevel: 3
       bulletRange: 30
-      bulletRangePerLevel: 4
+      bulletRangePerLevel: 7.5
       fireRate: 3
       fireRatePerLevel: 0
       rammingPower: 0
@@ -765,14 +780,20 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 15.300001
-      energyCapPerLevel: 3.8250003
-      energyRegen: 3.1499999
-      energyRegenPerLevel: 0.78749996
+      energyCap: 9
+      energyCapPerLevel: 2.25
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -798,14 +819,20 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 15.300001
-      energyCapPerLevel: 3.8250003
-      energyRegen: 3.1499999
-      energyRegenPerLevel: 0.78749996
+      energyCap: 9
+      energyCapPerLevel: 2.25
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -834,14 +861,20 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 20.400002
-      energyCapPerLevel: 5.1000004
-      energyRegen: 4.2
-      energyRegenPerLevel: 1.05
+      energyCap: 12
+      energyCapPerLevel: 3
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -867,14 +900,20 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 20.400002
-      energyCapPerLevel: 5.1000004
-      energyRegen: 4.2
-      energyRegenPerLevel: 1.05
+      energyCap: 12
+      energyCapPerLevel: 3
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -911,6 +950,12 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 8
@@ -944,6 +989,12 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 8
@@ -955,7 +1006,88 @@ MonoBehaviour:
       maxPeople: 2
       maxPeoplePerLevel: 0.5
     perLevelFractionOverride: 0
-  - partType: Engine/Thrust
+  - partType: Engine
+    defaultCategories: 0300000002000000
+    baseAtVersion1:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      bulletRange: 0
+      bulletRangePerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 0
+      healthCapPerLevel: 0
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 9
+      energyCapPerLevel: 1.8000001
+      energyRegen: 3.15
+      energyRegenPerLevel: 0.63000005
+      moveSpeed: 6
+      moveSpeedPerLevel: 1.2
+      accelerationCap: 3
+      accelerationCapPerLevel: 0.6
+      thrustEnergyDrain: 1.5
+      thrustEnergyDrainPerLevel: 0.3
+      extraSpeedPercent: 0.5
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 4
+      extraSpeedEnergyPercentPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    perVersionIncrement:
+      firePower: 0
+      firePowerPerLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerLevel: 0
+      bulletRange: 0
+      bulletRangePerLevel: 0
+      fireRate: 0
+      fireRatePerLevel: 0
+      rammingPower: 0
+      rammingPowerPerLevel: 0
+      healthCap: 0
+      healthCapPerLevel: 0
+      healthRegen: 0
+      healthRegenPerLevel: 0
+      energyCap: 3
+      energyCapPerLevel: 0.6
+      energyRegen: 1.0500001
+      energyRegenPerLevel: 0.21000002
+      moveSpeed: 2
+      moveSpeedPerLevel: 0.4
+      accelerationCap: 1
+      accelerationCapPerLevel: 0.2
+      thrustEnergyDrain: 0.5
+      thrustEnergyDrainPerLevel: 0.1
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
+      turnSpeed: 0
+      turnSpeedPerLevel: 0
+      maxGems: 0
+      maxGemsPerLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerLevel: 0
+      maxPeople: 0
+      maxPeoplePerLevel: 0
+    perLevelFractionOverride: 0.2
+  - partType: Thruster
     defaultCategories: 03000000
     baseAtVersion1:
       firePower: 0
@@ -980,8 +1112,14 @@ MonoBehaviour:
       moveSpeedPerLevel: 1.2
       accelerationCap: 3
       accelerationCapPerLevel: 0.6
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
+      thrustEnergyDrain: 1.5
+      thrustEnergyDrainPerLevel: 0.3
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
+      turnSpeed: 4.1621623
+      turnSpeedPerLevel: 1.0405406
       maxGems: 0
       maxGemsPerLevel: 0
       tractorBeamDistance: 0
@@ -1013,8 +1151,14 @@ MonoBehaviour:
       moveSpeedPerLevel: 0.4
       accelerationCap: 1
       accelerationCapPerLevel: 0.2
-      turnSpeed: 0
-      turnSpeedPerLevel: 0
+      thrustEnergyDrain: 0.5
+      thrustEnergyDrainPerLevel: 0.1
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
+      turnSpeed: 4.1621623
+      turnSpeedPerLevel: 1.0405406
       maxGems: 0
       maxGemsPerLevel: 0
       tractorBeamDistance: 0
@@ -1049,6 +1193,12 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 10.7027025
       turnSpeedPerLevel: 2.6756756
       maxGems: 0
@@ -1082,6 +1232,12 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 10.7027025
       turnSpeedPerLevel: 2.6756756
       maxGems: 0
@@ -1118,6 +1274,12 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -1151,6 +1313,12 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerLevel: 0
+      extraSpeedEnergyPercent: 0
+      extraSpeedEnergyPercentPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0

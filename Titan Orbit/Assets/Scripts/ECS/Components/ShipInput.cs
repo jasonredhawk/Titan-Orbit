@@ -22,9 +22,16 @@ namespace TitanOrbit.ECS
         [GhostField(Quantization = 1000)]
         public float2 MovePlanarDir;
 
-        /// <summary>True while forward thrust is held (right-click or W).</summary>
+        /// <summary>True while forward thrust is held (right-click hold).</summary>
         [GhostField]
         public bool Thrust;
+
+        /// <summary>
+        /// [TITAN-ORBIT] OVERDRIVE intent — Shift held (does <b>not</b> require thrust).
+        /// Motor engage latch keys off this + energy; burst speed/drain only while Thrust is also held.
+        /// </summary>
+        [GhostField]
+        public bool Overdrive;
 
         /// <summary>
         /// [NETCODE] InputEvent — tracks "pressed this tick" for one-shot actions like firing.
@@ -48,6 +55,6 @@ namespace TitanOrbit.ECS
         public bool WantDepositGems;
 
         public FixedString512Bytes ToFixedString() =>
-            $"ShipInput[t={Thrust},f={Fire.Count},c={CycleBullet.Count},b={SpaceBrakes},d={WantDepositGems}]";
+            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},b={SpaceBrakes},d={WantDepositGems}]";
     }
 }

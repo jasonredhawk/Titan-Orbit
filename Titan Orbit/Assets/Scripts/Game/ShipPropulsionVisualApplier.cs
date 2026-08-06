@@ -33,7 +33,9 @@ namespace TitanOrbit.Game
     /// <see cref="ShipComponentAttributeScaleApplier"/> (execution order 95). Parent scale changes
     /// can stop Sci-Fi Arsenal <c>ParticleSystem</c>s even while thrust stays held. This applier
     /// runs at order 100 (after scale) and re-<c>Play()</c>s stuck jets without requiring a
-    /// release/re-click of the thrust button.
+    /// release/re-click of the thrust button. OVERDRIVE thruster bloom comes from parent mount
+    /// scale (<see cref="ShipComponentAttributeScaleApplier"/>) — do not multiply jet localScale
+    /// again or flames double-grow.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(100)]
@@ -102,7 +104,8 @@ namespace TitanOrbit.Game
         float _thrusterVfxBlend;
 
         /// <summary>
-        /// Set by <see cref="ForceRefreshEmission"/> after thruster mount scale (territory triangle).
+        /// Set by <see cref="ForceRefreshEmission"/> after attribute upgrade mount grow only
+        /// (not territory/overdrive smooth lerp — that path used to blink jets every step).
         /// Next LateUpdate hard-restarts particle systems even if <c>isPlaying</c> still reads true.
         /// </summary>
         bool _forceRestartPending;
@@ -267,8 +270,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Forces emission / Play to re-apply on the next LateUpdate even when thrust state looks unchanged.
-        /// Called by <see cref="ShipComponentAttributeScaleApplier"/> after territory triangle enter/exit
-        /// rescales thruster mounts (parent scale can stop particle systems mid-flight).
+        /// Called by <see cref="ShipComponentAttributeScaleApplier"/> after attribute upgrade mesh grow
+        /// (not on territory/overdrive display lerp — continuous scale uses self-heal via stopped particles).
         /// </summary>
         public void ForceRefreshEmission()
         {
@@ -471,6 +474,7 @@ namespace TitanOrbit.Game
                     continue;
 
                 // [TITAN-ORBIT] Per-mount scale from ProfileSet (Big / Tiny) × idle→thrust blend.
+                // OVERDRIVE size comes from parent thruster mount AttributeScale — not here.
                 float mountScale = i < _thrusterMountScales.Count ? _thrusterMountScales[i] : 1f;
                 float finalScale = scaleLerp * Mathf.Max(0.01f, mountScale);
                 go.transform.localScale = Vector3.one * finalScale;

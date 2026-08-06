@@ -54,6 +54,7 @@ namespace TitanOrbit.ECS
                 // Never last death position; never inside the gem-moon dock zone (Orbit Menu).
                 float3 spawnPos = ShipHomeSpawnLogic.FindHomeSpawnPosition(
                     state.EntityManager, shipState.ValueRO.Team, orbitElapsed);
+
                 RespawnShip(
                     ref shipState.ValueRW,
                     ref kinematics.ValueRW,
@@ -98,6 +99,7 @@ namespace TitanOrbit.ECS
             ship.CurrentPeople = 0;
             ship.CurrentEnergy = ship.MaxEnergy;
             ship.IsDead = false;
+            ship.OverdriveLockout = false;
             kinematics.Velocity = float3.zero;
             orbit.OrbitPlanetId = 0;
             orbit.InOrbitRing = false;

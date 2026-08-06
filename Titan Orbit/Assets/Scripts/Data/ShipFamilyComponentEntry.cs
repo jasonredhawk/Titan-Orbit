@@ -61,6 +61,32 @@ namespace TitanOrbit.Data
         /// <summary>Acceleration cap used by <see cref="ShipPropulsionAggregation"/>.</summary>
         public float accelerationCap;
         public float accelerationCapPerLevel;
+        /// <summary>
+        /// [TITAN-ORBIT] Energy spent per second from this engine/thruster while OVERDRIVE is active —
+        /// analogous to weapon <see cref="firePower"/> (cost per shot). Independent of move/accel
+        /// so designers can make efficient mounts (lower drain, same thrust). Normal RMB does not drain.
+        /// Summed into <c>ShipMotorConfig.ThrustEnergyDrainPerSecond</c> at apply time.
+        /// N engines ⇒ N× base drain (then × OVERDRIVE energy mul from engine ExtraSpeed fields).
+        /// </summary>
+        public float thrustEnergyDrain;
+        /// <summary>Added to <see cref="thrustEnergyDrain"/> once per ship level above 1.</summary>
+        public float thrustEnergyDrainPerLevel;
+        /// <summary>
+        /// [TITAN-ORBIT] OVERDRIVE extra speed/thrust fraction on this <b>engine</b> (0.75 = +75% → 1.75×).
+        /// Authored on engines only — not thrusters / ProfileSet globals. Hull uses the <b>max</b> across
+        /// engines for speed/thrust feel; energy cost stacks via summed <see cref="thrustEnergyDrain"/>.
+        /// </summary>
+        public float extraSpeedPercent;
+        /// <summary>Added to <see cref="extraSpeedPercent"/> once per ship level above 1 (default 0).</summary>
+        public float extraSpeedPercentPerLevel;
+        /// <summary>
+        /// [TITAN-ORBIT] OVERDRIVE energy factor vs this engine's speed fraction
+        /// (2.0 with 0.75 speed → +150% energy → drain × 2.5). Hull uses the <b>max</b> across engines
+        /// for the mul; absolute OD spend still scales with engine count via thrustEnergyDrain sum.
+        /// </summary>
+        public float extraSpeedEnergyPercent;
+        /// <summary>Added to <see cref="extraSpeedEnergyPercent"/> once per ship level above 1 (default 0).</summary>
+        public float extraSpeedEnergyPercentPerLevel;
         /// <summary>Yaw turn rate in degrees per second.</summary>
         public float turnSpeed;
         public float turnSpeedPerLevel;
@@ -149,6 +175,16 @@ namespace TitanOrbit.Data
             if (allowedSet.Contains("moveSpeedPerLevel")) filtered.moveSpeedPerLevel = stats.moveSpeedPerLevel;
             if (allowedSet.Contains("accelerationCap")) filtered.accelerationCap = stats.accelerationCap;
             if (allowedSet.Contains("accelerationCapPerLevel")) filtered.accelerationCapPerLevel = stats.accelerationCapPerLevel;
+            if (allowedSet.Contains("thrustEnergyDrain")) filtered.thrustEnergyDrain = stats.thrustEnergyDrain;
+            if (allowedSet.Contains("thrustEnergyDrainPerLevel"))
+                filtered.thrustEnergyDrainPerLevel = stats.thrustEnergyDrainPerLevel;
+            if (allowedSet.Contains("extraSpeedPercent")) filtered.extraSpeedPercent = stats.extraSpeedPercent;
+            if (allowedSet.Contains("extraSpeedPercentPerLevel"))
+                filtered.extraSpeedPercentPerLevel = stats.extraSpeedPercentPerLevel;
+            if (allowedSet.Contains("extraSpeedEnergyPercent"))
+                filtered.extraSpeedEnergyPercent = stats.extraSpeedEnergyPercent;
+            if (allowedSet.Contains("extraSpeedEnergyPercentPerLevel"))
+                filtered.extraSpeedEnergyPercentPerLevel = stats.extraSpeedEnergyPercentPerLevel;
             if (allowedSet.Contains("turnSpeed")) filtered.turnSpeed = stats.turnSpeed;
             if (allowedSet.Contains("turnSpeedPerLevel")) filtered.turnSpeedPerLevel = stats.turnSpeedPerLevel;
             if (allowedSet.Contains("maxGems")) filtered.maxGems = stats.maxGems;

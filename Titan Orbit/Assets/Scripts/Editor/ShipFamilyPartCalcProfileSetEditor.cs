@@ -108,17 +108,34 @@ namespace TitanOrbit.Editor
                 "Two lists, different jobs:\n" +
                 "• Name Mappings = inventory of unique prefab part names (sorted A→Z).\n" +
                 "• Part Profiles = shared stats per group:\n" +
-                "  Cockpit, Weapon Bullet, Weapon Cannon, Wing, Engine/Thrust, Tail, Hull.\n\n" +
+                "  Cockpit, Weapon Bullet, Weapon Cannon, Wing, Engine, Thruster, Tail, Hull.\n\n" +
                 "Attribute mesh grow: Global Upgrade Scale Multiplier (top of the asset, default 0.25) " +
                 "dampens ALL bottom-bar upgrade mesh growth on every component after per-part 1/N sharing. " +
                 "Presentation only — not combat stats.\n\n" +
-                "Engine + thrusters share Engine/Thrust stats (VFX only on thruster mounts).\n" +
-                "Fin merges into Tail. Guns → Weapon Bullet; cannons/missiles → Weapon Cannon.\n" +
+                "Engine = move/accel + Energy Cap/Regen (power plant). Mesh grow: Movement + Energy attrs.\n" +
+                "Thruster = move/accel + turn. Mesh grow: Movement + Rotation attrs. VFX on thruster mounts.\n" +
+                "Weapons = offense only (Fire Power + Bullet Speed grow). Fin merges into Tail.\n" +
                 "Covers/plates stay in their group with contributesAbilityStats off and VFX off.\n\n" +
                 "1) Discover All Ship Families\n" +
                 "2) Classify with Cursor (optional)\n" +
                 "3) Ensure Profiles / Reset Profiles → Scan Folder on each family.",
                 MessageType.Info);
+
+            // --- OVERDRIVE (top of inspector so it is not buried under Discover tools) ---
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.LabelField("OVERDRIVE ability (project defaults)", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "extraSpeedPercent = 0.75 → +75% speed/thrust (×1.75).\n" +
+                "extraSpeedEnergyPercent = 2.0 → energy extra = 2 × speed fraction " +
+                "(+150% energy → drain ×2.5).\n" +
+                "Each ShipFamilyDefinition Special Bonuses can multiply both " +
+                "(extraSpeedPercentMul / extraSpeedEnergyPercentMul).",
+                MessageType.None);
+            EditorGUILayout.PropertyField(
+                serializedObject.FindProperty("overdriveAbility"),
+                new GUIContent("Overdrive Ability"),
+                true);
+            EditorGUILayout.EndVertical();
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Ship families root", EditorStyles.boldLabel);
@@ -211,9 +228,11 @@ namespace TitanOrbit.Editor
             EditorGUILayout.HelpBox(
                 "Part Profiles: Default Categories filter which stats appear under Base At Version 1 " +
                 "and Per Version Increment (including *Per Level). Empty Per Level fields auto-fill " +
-                "from base × fraction when you expand a row (same math as Scan).",
+                "from base × fraction when you expand a row (same math as Scan).\n\n" +
+                "OVERDRIVE is edited in the box at the top of this inspector.",
                 MessageType.None);
-            DrawDefaultInspector();
+            // Draw everything except overdriveAbility (already shown in the dedicated box above).
+            DrawPropertiesExcluding(serializedObject, "m_Script", "overdriveAbility");
             if (GUI.changed)
                 set.InvalidateLookups();
             serializedObject.ApplyModifiedProperties();
@@ -536,18 +555,19 @@ namespace TitanOrbit.Editor
             md.AppendLine("## Mental model");
             md.AppendLine("- `partType` = **broad group** (shared Part Profile stats + attribute mesh-scale bucket).");
             md.AppendLine("- Allowed partType values ONLY:");
-            md.AppendLine("  `Cockpit`, `Weapon Bullet`, `Weapon Cannon`, `Wing`, `Engine/Thrust`, `Tail`, `Hull`, `Ignore`");
+            md.AppendLine("  `Cockpit`, `Weapon Bullet`, `Weapon Cannon`, `Wing`, `Engine`, `Thruster`, `Tail`, `Hull`, `Ignore`");
             md.AppendLine("- `Cockpit` and `Cockpit_Base` both → `Cockpit` so Max People scales together.");
-            md.AppendLine("- Engine meshes + thrusters → `Engine/Thrust` (same stats). VFX only on thruster/exhaust mounts.");
+            md.AppendLine("- Engine meshes → `Engine` (move/accel + Energy Cap/Regen). VFX **off**.");
+            md.AppendLine("- Thruster / Exhaust mounts → `Thruster` (move/accel + turn). VFX **on**.");
             md.AppendLine("- Fin → `Tail`. Everything else that is not a gameplay part → `Hull`.");
             md.AppendLine("- Covers / plates / holders stay in the parent group with");
             md.AppendLine("  `contributesAbilityStats: false` and `enablePropulsionVfx: false`.");
             md.AppendLine();
             md.AppendLine("## Rules");
-            md.AppendLine("- Gun / Machinegun / Barrel → `Weapon Bullet` (rapid, smaller); VFX off");
-            md.AppendLine("- Cannon / Missile / Rocket → `Weapon Cannon` (slow, heavier); VFX off");
-            md.AppendLine("- Engine_* → `Engine/Thrust`; stats true; VFX **off** (mesh only)");
-            md.AppendLine("- Exhaust / Thrusters / Thrusters_Big / Tiny_Thrusters → `Engine/Thrust`; VFX on");
+            md.AppendLine("- Gun / Machinegun / Barrel → `Weapon Bullet` (rapid, smaller); VFX off; offense only");
+            md.AppendLine("- Cannon / Missile / Rocket → `Weapon Cannon` (slow, heavier); VFX off; offense only");
+            md.AppendLine("- Engine_* → `Engine`; stats true; VFX **off** (mesh only)");
+            md.AppendLine("- Exhaust / Thrusters / Thrusters_Big / Tiny_Thrusters → `Thruster`; VFX on");
             md.AppendLine("- Thrusters_Big → VFX scale ≈ **1.5**; Tiny_Thrusters → ≈ **0.45**");
             md.AppendLine("- Fin / Tail → `Tail`; stats true; VFX off");
             md.AppendLine("- Thruster_Place / *Cover* / *Plate* / *Holder* → parent group;");

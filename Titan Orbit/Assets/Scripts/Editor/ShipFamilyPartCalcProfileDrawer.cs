@@ -179,6 +179,8 @@ namespace TitanOrbit.Editor
             TryFillPair(statsProp, "energyRegen", "energyRegenPerLevel", frac);
             TryFillPair(statsProp, "moveSpeed", "moveSpeedPerLevel", frac);
             TryFillPair(statsProp, "accelerationCap", "accelerationCapPerLevel", frac);
+            TryFillPair(statsProp, "thrustEnergyDrain", "thrustEnergyDrainPerLevel", frac);
+            // [TITAN-ORBIT] OVERDRIVE ExtraSpeed*PerLevel stays 0 unless designers type a value.
             TryFillPair(statsProp, "turnSpeed", "turnSpeedPerLevel", frac);
             TryFillPair(statsProp, "maxGems", "maxGemsPerLevel", frac);
             TryFillPair(statsProp, "tractorBeamDistance", "tractorBeamDistancePerLevel", frac);

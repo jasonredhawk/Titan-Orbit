@@ -36,6 +36,8 @@ MonoBehaviour:
     moveSpeedPerLevel: 1.8000001
     accelerationCap: 2.4
     accelerationCapPerLevel: 0.6
+    thrustEnergyDrain: 0
+    thrustEnergyDrainPerLevel: 0
     turnSpeed: 14
     turnSpeedPerLevel: 3.5
     maxGems: 8
@@ -59,6 +61,8 @@ MonoBehaviour:
     healthRegenMul: 1
     energyCapMul: 1
     energyRegenMul: 1
+    thrustEnergyDrainMul: 1
+    overdrivePercentMul: 1
     maxGemsMul: 1
     maxPeopleMul: 1
     tractorDistanceMul: 1
@@ -73,7 +77,7 @@ MonoBehaviour:
   components:
   - componentId: Arm
     displayName: Arm 1
-    statCategories: 0100000004000000
+    statCategories: 01000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -97,6 +101,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -155,6 +161,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -213,6 +221,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 8
@@ -271,6 +281,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 8
@@ -305,7 +317,7 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: Engine
     displayName: Engine 1
-    statCategories: 03000000
+    statCategories: 0300000002000000
     stats:
       firePower: 0
       firePowerPerLevel: 0
@@ -321,14 +333,16 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 0
-      energyCapPerLevel: 0
-      energyRegen: 0
-      energyRegenPerLevel: 0
+      energyCap: 15.300001
+      energyCapPerLevel: 3.8250003
+      energyRegen: 3.1499999
+      energyRegenPerLevel: 0.78749996
       moveSpeed: 6
       moveSpeedPerLevel: 1.2
       accelerationCap: 3
       accelerationCapPerLevel: 0.6
+      thrustEnergyDrain: 1.5
+      thrustEnergyDrainPerLevel: 0.3
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -387,6 +401,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -445,6 +461,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -503,6 +521,8 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 10.7027025
       turnSpeedPerLevel: 2.6756756
       maxGems: 0
@@ -537,14 +557,14 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: Weapon
     displayName: Weapon 1
-    statCategories: 0000000002000000
+    statCategories: 00000000
     stats:
       firePower: 3
-      firePowerPerLevel: 1
+      firePowerPerLevel: 0.75
       bulletSpeed: 12
       bulletSpeedPerLevel: 3
-      bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRange: 30
+      bulletRangePerLevel: 7.5
       fireRate: 3
       fireRatePerLevel: 0
       rammingPower: 0
@@ -553,14 +573,16 @@ MonoBehaviour:
       healthCapPerLevel: 0
       healthRegen: 0
       healthRegenPerLevel: 0
-      energyCap: 15.300001
-      energyCapPerLevel: 3.8250003
-      energyRegen: 3.1499999
-      energyRegenPerLevel: 0.78749996
+      energyCap: 0
+      energyCapPerLevel: 0
+      energyRegen: 0
+      energyRegenPerLevel: 0
       moveSpeed: 0
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 0
@@ -619,13 +641,15 @@ MonoBehaviour:
       moveSpeedPerLevel: 0
       accelerationCap: 0
       accelerationCapPerLevel: 0
+      thrustEnergyDrain: 0
+      thrustEnergyDrainPerLevel: 0
       turnSpeed: 0
       turnSpeedPerLevel: 0
       maxGems: 8
       maxGemsPerLevel: 2
       tractorBeamDistance: 3
-      tractorBeamDistancePerLevel: 0.5
-      tractorBeamPower: 5
+      tractorBeamDistancePerLevel: 0.75
+      tractorBeamPower: 4
       tractorBeamPowerPerLevel: 1
       maxPeople: 2
       maxPeoplePerLevel: 0.5
@@ -675,12 +699,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 1
-    powerScore: 114.57484
-    powerScoreAtMaxLevel: 150.59854
+    powerScore: 139.67548
+    powerScoreAtMaxLevel: 219.22433
     powerScoreBreakdown:
-      offense: 19
+      offense: 49
       defense: 34.930622
-      energy: 18.45
+      energy: 43.550636
       mobility: 31.485405
       capacity: 19.50881
       firePower: 3
@@ -689,8 +713,8 @@ MonoBehaviour:
       rammingPower: 1
       healthCap: 33.726116
       healthRegen: 1.2045043
-      energyCap: 15.300001
-      energyRegen: 3.1499999
+      energyCap: 36.11516
+      energyRegen: 7.4354734
       moveSpeed: 5.28
       turnSpeed: 21.405405
       gemCap: 15.607048
@@ -720,12 +744,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 137.79561
-    powerScoreAtMaxLevel: 217.06049
+    powerScore: 163.38576
+    powerScoreAtMaxLevel: 300.20236
     powerScoreBreakdown:
-      offense: 21.623878
+      offense: 51.62388
       defense: 46.605446
-      energy: 18.45
+      energy: 44.040154
       mobility: 24.08
       capacity: 40
       firePower: 1.460157
@@ -734,8 +758,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 44.99836
       healthRegen: 1.6070845
-      energyCap: 15.300001
-      energyRegen: 3.1499999
+      energyCap: 36.521103
+      energyRegen: 7.51905
       moveSpeed: 5.28
       turnSpeed: 14
       gemCap: 32
@@ -765,12 +789,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 134.61409
-    powerScoreAtMaxLevel: 208.88113
+    powerScore: 148.81142
+    powerScoreAtMaxLevel: 230.17712
     powerScoreBreakdown:
       offense: 20
       defense: 48.864468
-      energy: 21
+      energy: 35.197327
       mobility: 24.08
       capacity: 30.469618
       firePower: 3
@@ -779,8 +803,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 47.179485
       healthRegen: 1.6849813
-      energyCap: 18
-      energyRegen: 3
+      energyCap: 29.188026
+      energyRegen: 6.009299
       moveSpeed: 5.28
       turnSpeed: 14
       gemCap: 24.375694
@@ -810,12 +834,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 141.27087
-    powerScoreAtMaxLevel: 254.18967
+    powerScore: 159.72087
+    powerScoreAtMaxLevel: 338.39117
     powerScoreBreakdown:
-      offense: 20.183617
+      offense: 50.183617
       defense: 49.2641
-      energy: 18.45
+      energy: 36.9
       mobility: 24.08
       capacity: 39.932816
       firePower: 2.3439598
@@ -824,8 +848,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 47.56534
       healthRegen: 1.698762
-      energyCap: 15.300001
-      energyRegen: 3.1499999
+      energyCap: 30.600002
+      energyRegen: 6.2999997
       moveSpeed: 5.28
       turnSpeed: 14
       gemCap: 31.94625
@@ -855,12 +879,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 141.25574
-    powerScoreAtMaxLevel: 260.41754
+    powerScore: 189.37468
+    powerScoreAtMaxLevel: 344.6257
     powerScoreBreakdown:
       offense: 20
       defense: 48.58931
-      energy: 21
+      energy: 69.11894
       mobility: 29.84
       capacity: 36.42643
       firePower: 3
@@ -869,8 +893,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 46.913815
       healthRegen: 1.6754935
-      energyCap: 18
-      energyRegen: 3
+      energyCap: 57.31815
+      energyRegen: 11.800794
       moveSpeed: 6.2400002
       turnSpeed: 14
       gemCap: 29.141144
@@ -900,12 +924,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 150.44002
-    powerScoreAtMaxLevel: 268.81003
+    powerScore: 164.49501
+    powerScoreAtMaxLevel: 293.40628
     powerScoreBreakdown:
       offense: 20
       defense: 41.964634
-      energy: 21
+      energy: 35.055
       mobility: 42.18811
       capacity: 35.08727
       firePower: 3
@@ -914,8 +938,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 40.51758
       healthRegen: 1.4470565
-      energyCap: 18
-      energyRegen: 3
+      energyCap: 29.070002
+      energyRegen: 5.9849997
       moveSpeed: 5.28
       turnSpeed: 32.10811
       gemCap: 28.069815
@@ -946,9 +970,9 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
     powerScore: 183.25868
-    powerScoreAtMaxLevel: 363.63736
+    powerScoreAtMaxLevel: 481.63736
     powerScoreBreakdown:
-      offense: 38
+      offense: 98
       defense: 45.543396
       energy: 36.9
       mobility: 24.08
@@ -990,12 +1014,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 189.55008
-    powerScoreAtMaxLevel: 376.9793
+    powerScore: 180.90315
+    powerScoreAtMaxLevel: 477.98553
     powerScoreBreakdown:
-      offense: 38.158936
+      offense: 98.158936
       defense: 52.03926
-      energy: 36.9
+      energy: 28.253078
       mobility: 31.485405
       capacity: 44.825706
       firePower: 5.099706
@@ -1004,8 +1028,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 50.244804
       healthRegen: 1.7944573
-      energyCap: 30.600002
-      energyRegen: 6.2999997
+      energyCap: 23.429382
+      energyRegen: 4.8236957
       moveSpeed: 5.28
       turnSpeed: 21.405405
       gemCap: 35.860565
@@ -1035,12 +1059,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 154.20514
-    powerScoreAtMaxLevel: 305.28516
+    powerScore: 160.98828
+    powerScoreAtMaxLevel: 436.71597
     powerScoreBreakdown:
-      offense: 38.025776
+      offense: 98.02577
       defense: 38.151062
-      energy: 36.9
+      energy: 43.683144
       mobility: 24.08
       capacity: 29.46772
       firePower: 6.4063497
@@ -1049,8 +1073,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 36.835506
       healthRegen: 1.3155539
-      energyCap: 30.600002
-      energyRegen: 6.2999997
+      energyCap: 36.225048
+      energyRegen: 7.4580975
       moveSpeed: 5.28
       turnSpeed: 14
       gemCap: 23.574177
@@ -1080,12 +1104,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 153.9343
-    powerScoreAtMaxLevel: 304.13007
+    powerScore: 138.87587
+    powerScoreAtMaxLevel: 393.0533
     powerScoreBreakdown:
-      offense: 40.38122
+      offense: 100.381226
       defense: 34.989483
-      energy: 36.9
+      energy: 21.841572
       mobility: 28.605406
       capacity: 28.95977
       firePower: 2.8796341
@@ -1094,8 +1118,8 @@ MonoBehaviour:
       rammingPower: 1
       healthCap: 33.782948
       healthRegen: 1.2065339
-      energyCap: 30.600002
-      energyRegen: 6.2999997
+      energyCap: 18.112524
+      energyRegen: 3.7290487
       moveSpeed: 4.8
       turnSpeed: 21.405405
       gemCap: 23.167816
@@ -1125,12 +1149,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 192.44566
-    powerScoreAtMaxLevel: 435.70276
+    powerScore: 215.12881
+    powerScoreAtMaxLevel: 486.73984
     powerScoreBreakdown:
       offense: 20
       defense: 62.58908
-      energy: 21
+      energy: 43.683144
       mobility: 31.485405
       capacity: 67.17118
       firePower: 3
@@ -1139,8 +1163,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 60.430836
       healthRegen: 2.1582444
-      energyCap: 18
-      energyRegen: 3
+      energyCap: 36.225048
+      energyRegen: 7.4580975
       moveSpeed: 5.28
       turnSpeed: 21.405405
       gemCap: 53.736946
@@ -1170,12 +1194,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 210.31354
-    powerScoreAtMaxLevel: 465.57123
+    powerScore: 195.07661
+    powerScoreAtMaxLevel: 564.51044
     powerScoreBreakdown:
-      offense: 39.70446
+      offense: 99.70446
       defense: 62.09433
-      energy: 36.9
+      energy: 21.663069
       mobility: 28.605406
       capacity: 56.84744
       firePower: 4.266366
@@ -1184,8 +1208,8 @@ MonoBehaviour:
       rammingPower: 3
       healthCap: 59.953148
       healthRegen: 2.1411839
-      energyCap: 30.600002
-      energyRegen: 6.2999997
+      energyCap: 17.964497
+      energyRegen: 3.6985724
       moveSpeed: 4.8
       turnSpeed: 21.405405
       gemCap: 45.47795
@@ -1215,12 +1239,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 198.18471
-    powerScoreAtMaxLevel: 455.5006
+    powerScore: 242.16153
+    powerScoreAtMaxLevel: 621.05347
     powerScoreBreakdown:
-      offense: 20.337984
+      offense: 50.337986
       defense: 79.43555
-      energy: 18.45
+      energy: 62.42681
       mobility: 45.068108
       capacity: 48.2831
       firePower: 2.147958
@@ -1229,8 +1253,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 76.69639
       healthRegen: 2.7391567
-      energyCap: 15.300001
-      energyRegen: 3.1499999
+      energyCap: 51.768578
+      energyRegen: 10.658236
       moveSpeed: 5.7599998
       turnSpeed: 32.10811
       gemCap: 38.62648
@@ -1260,12 +1284,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 206.43431
-    powerScoreAtMaxLevel: 458.03638
+    powerScore: 211.43242
+    powerScoreAtMaxLevel: 602.0022
     powerScoreBreakdown:
-      offense: 38.051003
+      offense: 98.051
       defense: 45.38364
-      energy: 36.9
+      energy: 41.89811
       mobility: 52.890812
       capacity: 46.58813
       firePower: 5.471724
@@ -1274,8 +1298,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 43.818687
       healthRegen: 1.5649531
-      energyCap: 30.600002
-      energyRegen: 6.2999997
+      energyCap: 34.744774
+      energyRegen: 7.1533346
       moveSpeed: 5.28
       turnSpeed: 42.81081
       gemCap: 37.270504
@@ -1305,12 +1329,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 202.05046
-    powerScoreAtMaxLevel: 447.81357
+    powerScore: 207.1585
+    powerScoreAtMaxLevel: 591.80664
     powerScoreBreakdown:
-      offense: 38
+      offense: 98
       defense: 48.099884
-      energy: 36.9
+      energy: 42.008034
       mobility: 52.890812
       capacity: 38.95977
       firePower: 6
@@ -1319,8 +1343,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 46.44127
       healthRegen: 1.6586169
-      energyCap: 30.600002
-      energyRegen: 6.2999997
+      energyCap: 34.83593
+      energyRegen: 7.1721025
       moveSpeed: 5.28
       turnSpeed: 42.81081
       gemCap: 31.167816
@@ -1350,12 +1374,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 270.2921
-    powerScoreAtMaxLevel: 665.3383
+    powerScore: 277.07526
+    powerScoreAtMaxLevel: 829.5694
     powerScoreBreakdown:
-      offense: 38.05476
+      offense: 98.05476
       defense: 80.513214
-      energy: 36.9
+      energy: 43.683144
       mobility: 31.485405
       capacity: 96.739975
       firePower: 5.453526
@@ -1364,8 +1388,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 77.73689
       healthRegen: 2.7763176
-      energyCap: 30.600002
-      energyRegen: 6.2999997
+      energyCap: 36.225048
+      energyRegen: 7.4580975
       moveSpeed: 5.28
       turnSpeed: 21.405405
       gemCap: 77.39198
@@ -1395,12 +1419,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 246.79742
-    powerScoreAtMaxLevel: 603.4935
+    powerScore: 241.37819
+    powerScoreAtMaxLevel: 736.94543
     powerScoreBreakdown:
-      offense: 39
+      offense: 99
       defense: 70.55766
-      energy: 36.9
+      energy: 31.480774
       mobility: 28.605406
       capacity: 83.134346
       firePower: 6
@@ -1409,8 +1433,8 @@ MonoBehaviour:
       rammingPower: 3
       healthCap: 68.12464
       healthRegen: 2.4330227
-      energyCap: 30.600002
-      energyRegen: 6.2999997
+      energyCap: 26.106009
+      energyRegen: 5.374766
       moveSpeed: 4.8
       turnSpeed: 21.405405
       gemCap: 66.50748
@@ -1440,12 +1464,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 349.30783
-    powerScoreAtMaxLevel: 830.8865
+    powerScore: 296.50784
+    powerScoreAtMaxLevel: 994.678
     powerScoreBreakdown:
-      offense: 75.525314
+      offense: 195.52531
       defense: 75.04688
-      energy: 73.8
+      energy: 21
       mobility: 64.91351
       capacity: 81.53052
       firePower: 8.41692
@@ -1454,8 +1478,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 72.45906
       healthRegen: 2.5878239
-      energyCap: 61.200005
-      energyRegen: 12.599999
+      energyCap: 18
+      energyRegen: 3
       moveSpeed: 9
       turnSpeed: 53.51351
       gemCap: 65.22441
@@ -1485,12 +1509,12 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 263.99475
-    powerScoreAtMaxLevel: 624.57983
+    powerScore: 215.73022
+    powerScoreAtMaxLevel: 799.34357
     powerScoreBreakdown:
-      offense: 74.88783
+      offense: 194.88783
       defense: 52.288624
-      energy: 73.8
+      energy: 25.535463
       mobility: 24.08
       capacity: 61.47631
       firePower: 9.14982
@@ -1499,8 +1523,8 @@ MonoBehaviour:
       rammingPower: 2
       healthCap: 50.48557
       healthRegen: 1.8030562
-      energyCap: 61.200005
-      energyRegen: 12.599999
+      energyCap: 21.17575
+      energyRegen: 4.359713
       moveSpeed: 5.28
       turnSpeed: 14
       gemCap: 49.18105
@@ -1531,9 +1555,9 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
     powerScore: 223.83858
-    powerScoreAtMaxLevel: 541.07324
+    powerScoreAtMaxLevel: 761.50665
     powerScoreBreakdown:
-      offense: 56.483433
+      offense: 146.48343
       defense: 56.458984
       energy: 55.350002
       mobility: 26.96

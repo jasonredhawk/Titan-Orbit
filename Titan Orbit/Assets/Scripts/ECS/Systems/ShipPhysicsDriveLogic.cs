@@ -18,10 +18,17 @@ namespace TitanOrbit.ECS
     /// velocity (bounce is not overwritten blindly).
     /// [TITAN-ORBIT] Also detects planet orbit rings (toroidal distance), blends passive orbit
     /// velocity when coasting, writes <see cref="ShipOrbitState"/> for people-transport dwell /
-    /// HUD, applies enemy moon shield repel, and latches friendly-triangle speed
+    /// HUD, applies enemy moon shield repel, latches friendly-triangle speed
     /// (<c>1 + 0.05 × homePlanetLevel</c> — not a ship MovementSpeed attribute) via
-    /// <see cref="ShipTerritoryBoostLatch"/>. Paired with <see cref="ShipPhysicsDriveSystem"/>
-    /// and <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
+    /// <see cref="ShipTerritoryBoostLatch"/>, and OVERDRIVE via ghosted
+    /// <see cref="ShipState.OverdriveLockout"/> (<see cref="ShipOverdriveTuning.StepLockout"/>):
+    /// burst = Shift ∧ Thrust ∧ energy &gt; 0 ∧ ¬lockout; lockout sets at energy 0 and clears at
+    /// ≥25% MaxEnergy (or Shift release). Normal RMB thrust is free. When burst ends, planar
+    /// speed hard-caps to the new max so speedometer / bloom stay in sync.
+    /// Drain rate = <see cref="ShipMotorConfig.ThrustEnergyDrainPerSecond"/> ×
+    /// <see cref="ShipMotorConfig.OverdriveEnergyDrainMultiplier"/>.
+    /// Paired with <see cref="ShipPhysicsDriveSystem"/> and
+    /// <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
     /// </summary>
     public static class ShipPhysicsDriveLogic
     {
@@ -57,13 +64,31 @@ namespace TitanOrbit.ECS
         /// <param name="loadSpeedWeightPerPerson">Current-load MaxSpeed tax weight for people aboard.</param>
         /// <param name="loadTurnWeightPerGem">Current-load turn tax weight for gems aboard.</param>
         /// <param name="loadTurnWeightPerPerson">Current-load turn tax weight for people aboard.</param>
+        /// <param name="shipState">Hull vitals — written for thrust/OVERDRIVE energy drain (predicted + server).</param>
+        /// <param name="physicsVelocity">Unity Physics linear/angular velocity for this ship.</param>
+        /// <param name="physicsDamping">Cleared while motor owns velocity (orbit / dock / flight).</param>
+        /// <param name="transform">LocalTransform — yaw + moon-dock position; flight Position is physics-owned.</param>
+        /// <param name="orbitState">Written each tick for people-transport dwell / HUD.</param>
+        /// <param name="territoryLatch">Sticky friendly-boost latch (client+server must match).</param>
+        /// <param name="territoryLatch">Sticky friendly-triangle motor mult (not ghosted).</param>
+        /// <param name="planets">Planet snapshots for orbit ring + moon shield.</param>
+        /// <param name="dt">Fixed step delta time.</param>
+        /// <param name="mapW">Toroidal map width.</param>
+        /// <param name="mapH">Toroidal map height.</param>
+        /// <param name="elapsedSeconds">Sim time for moon phase / shield.</param>
+        /// <param name="territoryTriangles">Baked territory triangles (may be empty).</param>
+        /// <param name="homeLevelByTeam">Home planet level per team for territory boost.</param>
+        /// <param name="loadSpeedWeightPerGem">Current-load MaxSpeed tax weight per gem.</param>
+        /// <param name="loadSpeedWeightPerPerson">Current-load MaxSpeed tax weight per person.</param>
+        /// <param name="loadTurnWeightPerGem">Current-load turn tax weight per gem.</param>
+        /// <param name="loadTurnWeightPerPerson">Current-load turn tax weight per person.</param>
         /// <param name="loadMinSpeedMultiplier">Floor for current-load MaxSpeed multiplier.</param>
         /// <param name="loadMinTurnMultiplier">Floor for current-load turn multiplier.</param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
             in ShipMoonDockState moonDock,
-            in ShipState shipState,
+            ref ShipState shipState,
             ref PhysicsVelocity physicsVelocity,
             ref PhysicsDamping physicsDamping,
             ref LocalTransform transform,
@@ -94,6 +119,7 @@ namespace TitanOrbit.ECS
                 physicsDamping = default;
                 orbitState = default;
                 ClearTerritoryBoostLatch(ref territoryLatch);
+                shipState.OverdriveLockout = false;
                 return;
             }
 
@@ -118,6 +144,7 @@ namespace TitanOrbit.ECS
                 physicsDamping = default;
                 orbitState = default;
                 ClearTerritoryBoostLatch(ref territoryLatch);
+                shipState.OverdriveLockout = false;
                 return;
             }
 
@@ -180,6 +207,44 @@ namespace TitanOrbit.ECS
             // Capacity-taxed MaxSpeed × current-load tax × territory.
             float maxSpeed = motor.MaxSpeed * loadMul.SpeedMultiplier * territoryMult;
 
+            // --- OVERDRIVE lockout + burst (shared predicted + server) ---
+            // [TITAN-ORBIT] Ghosted OverdriveLockout — see ShipOverdriveTuning.StepLockout.
+            ShipOverdriveTuning.StepLockout(
+                input.Overdrive,
+                shipState.CurrentEnergy,
+                shipState.MaxEnergy,
+                ref shipState.OverdriveLockout);
+
+            bool overdriveActive = ShipOverdriveTuning.IsBurstActive(
+                input.Overdrive,
+                input.Thrust,
+                useOrbit,
+                shipState.CurrentEnergy,
+                shipState.OverdriveLockout);
+
+            if (overdriveActive)
+            {
+                thrust *= ShipOverdriveTuning.ResolveThrustMultiplier(motor);
+                maxSpeed *= ShipOverdriveTuning.ResolveSpeedMultiplier(motor);
+
+                // Energy cost is OVERDRIVE-only (normal flight regenerates / stays full).
+                if (motor.ThrustEnergyDrainPerSecond > 0f)
+                {
+                    float drainMult = ShipOverdriveTuning.ResolveEnergyDrainMultiplier(motor);
+                    float spend = motor.ThrustEnergyDrainPerSecond * drainMult * dt;
+                    shipState.CurrentEnergy = math.max(0f, shipState.CurrentEnergy - spend);
+                    // Empty this tick → lockout so bloom/speed drop immediately.
+                    if (shipState.CurrentEnergy <= 0f)
+                    {
+                        shipState.OverdriveLockout = true;
+                        overdriveActive = false;
+                        // Restore cruise caps — drain ended the burst mid-tick.
+                        thrust = motor.EngineThrust * territoryMult;
+                        maxSpeed = motor.MaxSpeed * loadMul.SpeedMultiplier * territoryMult;
+                    }
+                }
+            }
+
             // --- Start from post-collision velocity (Unity Physics may have bounced us last tick) ---
             float3 vel = physicsVelocity.Linear;
             vel.y = 0f;
@@ -216,7 +281,8 @@ namespace TitanOrbit.ECS
                     movementMass,
                     input.Thrust,
                     input.SpaceBrakes,
-                    dt);
+                    dt,
+                    hardCapToMaxSpeed: !overdriveActive);
 
                 ApplyRecoilDecay(ref vel, maxSpeed, movementMass, motor.RecoilDecayPerSecond, dt);
             }
@@ -297,6 +363,101 @@ namespace TitanOrbit.ECS
         {
             latch.LatchedMult = 1f;
             latch.HoldUntilElapsed = -1.0;
+        }
+
+        /// <summary>
+        /// Continuous thrust and optional space-brake deceleration on the XZ plane.
+        /// Skipped entirely on ticks where passive orbit motor owns velocity.
+        /// When <paramref name="spaceBrakes"/> is false and the player is not thrusting,
+        /// velocity is left alone (frictionless coast — Left Ctrl / AIR BRAKES toggle).
+        /// </summary>
+        /// <param name="hardCapToMaxSpeed">
+        /// When true (OVERDRIVE off), clamp planar speed to <paramref name="maxSpeed"/> so
+        /// post-OD overspeed does not linger via the 1.08/1.35 soft band + recoil decay.
+        /// </param>
+        static void ApplyThrustCoastAndBrakes(
+            ref float3 vel,
+            in quaternion rotation,
+            float engineThrust,
+            float maxSpeed,
+            float brakeDeceleration,
+            float mass,
+            bool thrust,
+            bool spaceBrakes,
+            float dt,
+            bool hardCapToMaxSpeed = false)
+        {
+            mass = math.max(ShipMassLogic.MinMass, mass);
+            maxSpeed = math.max(0.1f, maxSpeed);
+
+            if (thrust)
+            {
+                float3 fwd = math.mul(rotation, new float3(0f, 0f, 1f));
+                fwd.y = 0f;
+                if (math.lengthsq(fwd) > 0.01f)
+                {
+                    float3 moveDirection = math.normalize(fwd);
+                    float speed = math.length(vel);
+                    float3 accel;
+                    if (speed < maxSpeed)
+                    {
+                        // [TITAN-ORBIT] F = ma — EngineThrust is force; mass slows acceleration.
+                        accel = moveDirection * (engineThrust / mass);
+                    }
+                    else
+                    {
+                        // At cruise cap: thrust steers sideways without adding forward speed.
+                        float3 velNorm = math.normalize(vel);
+                        float3 thrustVec = moveDirection * engineThrust;
+                        float alongVel = math.dot(thrustVec, velNorm);
+                        float3 steerForce = thrustVec - velNorm * math.max(0f, alongVel);
+                        accel = steerForce / mass;
+                    }
+
+                    vel += accel * dt;
+                }
+            }
+            else if (spaceBrakes && math.lengthsq(vel) > 0.001f)
+            {
+                // --- Space brakes ON (default) ---
+                // [TITAN-ORBIT] Hard authored deceleration toward stop when not thrusting.
+                // Toggle: Left Ctrl (desktop) or AIR BRAKES button (mobile).
+                float brakeAccel = math.max(0.5f, brakeDeceleration);
+                float3 brake = -math.normalize(vel) * brakeAccel * dt;
+                if (math.lengthsq(brake) >= math.lengthsq(vel))
+                    vel = float3.zero;
+                else
+                    vel += brake;
+            }
+            // else: space brakes OFF → frictionless coast (keep velocity; no CoastFriction).
+            // PlayerInputHandler documents this as "float endlessly" when SpaceBrakesEnabled is false.
+
+            vel.y = 0f;
+
+            float mag = math.length(vel);
+
+            // --- OVERDRIVE exit: snap to cruise max (bloom / speedometer sync) ---
+            // [TITAN-ORBIT] Without this, OD overspeed sits in the 1.08–1.35 band and bleeds
+            // slowly via recoil decay — feels like OD "lingers" after energy empties.
+            if (hardCapToMaxSpeed && mag > maxSpeed)
+            {
+                vel = math.normalize(vel) * maxSpeed;
+                return;
+            }
+
+            // --- H74 hard cruise lock (thrusting, small overspeed band only) ---
+            // [TITAN-ORBIT] At cruise, speed can hunt a small band above MaxSpeed even with steady
+            // forward thrust. That variance makes presentation step size wobble every frame
+            // (expected = speed×dt), which reads as chop on a ~60 FPS client.
+            // Lock the hunt band to MaxSpeed while thrusting. Larger overspeed (impacts) still
+            // uses ApplyRecoilDecay + the soft 1.35× ceiling below — not zeroed here.
+            if (thrust && mag > maxSpeed && mag <= maxSpeed * 1.08f)
+                vel = math.normalize(vel) * maxSpeed;
+
+            // Soft hard ceiling — collision overspeed above this is clipped; mid-band bleeds via recoil.
+            mag = math.length(vel);
+            if (mag > maxSpeed * 1.35f)
+                vel = vel * ((maxSpeed * 1.35f) / mag);
         }
 
         /// <summary>
@@ -489,86 +650,6 @@ namespace TitanOrbit.ECS
             transform.Rotation = angle <= maxRadians
                 ? targetRotation
                 : math.slerp(transform.Rotation, targetRotation, maxRadians / math.max(angle, 1e-6f));
-        }
-
-        /// <summary>
-        /// Continuous thrust and optional space-brake deceleration on the XZ plane.
-        /// Skipped entirely on ticks where passive orbit motor owns velocity.
-        /// When <paramref name="spaceBrakes"/> is false and the player is not thrusting,
-        /// velocity is left alone (frictionless coast — Left Ctrl / AIR BRAKES toggle).
-        /// </summary>
-        static void ApplyThrustCoastAndBrakes(
-            ref float3 vel,
-            in quaternion rotation,
-            float engineThrust,
-            float maxSpeed,
-            float brakeDeceleration,
-            float mass,
-            bool thrust,
-            bool spaceBrakes,
-            float dt)
-        {
-            mass = math.max(ShipMassLogic.MinMass, mass);
-            maxSpeed = math.max(0.1f, maxSpeed);
-
-            if (thrust)
-            {
-                float3 fwd = math.mul(rotation, new float3(0f, 0f, 1f));
-                fwd.y = 0f;
-                if (math.lengthsq(fwd) > 0.01f)
-                {
-                    float3 moveDirection = math.normalize(fwd);
-                    float speed = math.length(vel);
-                    float3 accel;
-                    if (speed < maxSpeed)
-                    {
-                        // [TITAN-ORBIT] F = ma — EngineThrust is force; mass slows acceleration.
-                        accel = moveDirection * (engineThrust / mass);
-                    }
-                    else
-                    {
-                        // At cruise cap: thrust steers sideways without adding forward speed.
-                        float3 velNorm = math.normalize(vel);
-                        float3 thrustVec = moveDirection * engineThrust;
-                        float alongVel = math.dot(thrustVec, velNorm);
-                        float3 steerForce = thrustVec - velNorm * math.max(0f, alongVel);
-                        accel = steerForce / mass;
-                    }
-
-                    vel += accel * dt;
-                }
-            }
-            else if (spaceBrakes && math.lengthsq(vel) > 0.001f)
-            {
-                // --- Space brakes ON (default) ---
-                // [TITAN-ORBIT] Hard authored deceleration toward stop when not thrusting.
-                // Toggle: Left Ctrl (desktop) or AIR BRAKES button (mobile).
-                float brakeAccel = math.max(0.5f, brakeDeceleration);
-                float3 brake = -math.normalize(vel) * brakeAccel * dt;
-                if (math.lengthsq(brake) >= math.lengthsq(vel))
-                    vel = float3.zero;
-                else
-                    vel += brake;
-            }
-            // else: space brakes OFF → frictionless coast (keep velocity; no CoastFriction).
-            // PlayerInputHandler documents this as "float endlessly" when SpaceBrakesEnabled is false.
-
-            vel.y = 0f;
-
-            // --- H74 hard cruise lock (thrusting, small overspeed band only) ---
-            // [TITAN-ORBIT] At cruise, speed can hunt a small band above MaxSpeed even with steady
-            // forward thrust. That variance makes presentation step size wobble every frame
-            // (expected = speed×dt), which reads as chop on a ~60 FPS client.
-            // Lock the hunt band to MaxSpeed while thrusting. Larger overspeed (impacts) still
-            // uses ApplyRecoilDecay + the soft 1.35× ceiling below — not zeroed here.
-            float mag = math.length(vel);
-            if (thrust && mag > maxSpeed && mag <= maxSpeed * 1.08f)
-                vel = math.normalize(vel) * maxSpeed;
-
-            // Soft hard ceiling — collision overspeed above this is clipped; mid-band bleeds via recoil.
-            mag = math.length(vel);
-            if (mag > maxSpeed * 1.35f)
-                vel = vel * ((maxSpeed * 1.35f) / mag);
         }
 
         /// <summary>

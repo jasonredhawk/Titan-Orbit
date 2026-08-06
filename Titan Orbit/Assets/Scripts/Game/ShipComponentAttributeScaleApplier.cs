@@ -9,35 +9,30 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// Client-side component mesh scaling on ship proxies when bottom-bar attribute upgrades change,
-    /// and when the ship is inside a friendly territory triangle (Engine/Thrust mounts grow like a
-    /// speed upgrade — NGO feel). Watches ShipAttributeUpgradeState + territory multiplier on the
-    /// linked ship entity. Attached by EcsWorldVisualizer.
+    /// when the ship is inside a friendly territory triangle (Engine/Thruster mounts grow), and when
+    /// OVERDRIVE is active (Thruster mounts bloom with the baked overdrive speed mul).
+    /// Attached by EcsWorldVisualizer.
     /// <para>
     /// Growth rates come from <c>ShipFamilyPartCalcProfileSet.asset</c> Part Profiles
     /// (<c>perLevel / base</c> via <see cref="ShipComponentAttributeScaleLogic.BuildRatesFromProfileSet"/>).
-    /// Multiple drivers on one part share growth (<c>1/N</c> each) and add — they do not multiply.
-    /// Tail mounts grow from RotationSpeed; Engine and Thruster buckets share MovementSpeed.
-    /// The same factors rebuild the ECS <c>PhysicsCollider</c> via
-    /// <see cref="ShipHullColliderLogic"/> so grown parts collide at their visible size.
+    /// Collider rebuilds via <see cref="ShipHullColliderLogic"/> use attribute size only
+    /// (territory / overdrive are presentation-only).
     /// </para>
     /// <para>
-    /// Territory mult is <see cref="PlanetConnectionGraphCache.LocalOwnerTerritoryMult"/> — sticky and
-    /// written only on first-time predicting ticks so NetCode resim / triangle-edge noise cannot
-    /// blink engine scale every frame. Territory grow is presentation-only (colliders stay at
-    /// attribute size, not triangle-boosted size).
-    /// </para>
-    /// <para>
-    /// [TITAN-ORBIT] Scaling thruster mounts also parents jet flame prefabs from
-    /// <see cref="ShipPropulsionVisualApplier"/>. After a territory step we call
-    /// <see cref="ShipPropulsionVisualApplier.ForceRefreshEmission"/> so flames re-<c>Play()</c>
-    /// without the player releasing thrust.
+    /// [TITAN-ORBIT] Territory boosts are <b>smoothed</b>; OVERDRIVE thruster bloom <b>snaps</b>
+    /// with <see cref="ShipOverdriveTuning.IsBurstActive"/> (same rule as the motor — pending
+    /// Shift/Thrust + ghosted energy/lockout). Thruster VFX is <b>not</b> ForceRefresh'd on boost
+    /// changes — that restart was the blink; <see cref="ShipPropulsionVisualApplier"/> self-heals.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(95)]
     public class ShipComponentAttributeScaleApplier : MonoBehaviour
     {
-        /// <summary>Ignore tiny float noise; only re-apply on clear boosted↔normal transitions.</summary>
-        const float TerritoryMultApplyEpsilon = 0.02f;
+        /// <summary>How fast territory display muls approach their targets (mult units per second).</summary>
+        const float TerritoryScaleTransitionPerSecond = 2.5f;
+
+        /// <summary>Treat display and target as equal within this (avoid endless Apply writes).</summary>
+        const float BoostDisplayEpsilon = 0.002f;
 
         /// <summary>Linked ship ghost entity — source of ShipAttributeUpgradeState.</summary>
         Entity _shipEntity;
@@ -60,11 +55,24 @@ namespace TitanOrbit.Game
         ShipComponentAttributeScaleLogic.ScaleGroup _part;
 
         ShipAttributeUpgradeState _lastApplied;
-        float _lastTerritoryMult = -1f;
+
+        /// <summary>Instant target from ECS / graph cache (may jump).</summary>
+        float _targetTerritoryMult = 1f;
+        /// <summary>Instant OVERDRIVE target (1 or baked speed mul).</summary>
+        float _targetOverdriveMult = 1f;
+
+        /// <summary>Smoothed territory mul actually applied to meshes this frame.</summary>
+        float _displayTerritoryMult = 1f;
+        /// <summary>Smoothed overdrive mul actually applied to thruster meshes.</summary>
+        float _displayOverdriveMult = 1f;
+
+        /// <summary>Last display muls written to Transform — skip Apply when unchanged.</summary>
+        float _lastAppliedTerritoryMult = -1f;
+        float _lastAppliedOverdriveMult = -1f;
 
         /// <summary>
-        /// Cached propulsion applier on the same hull proxy. Null until first territory/upgrade apply
-        /// that needs a VFX refresh after mount scale.
+        /// Cached propulsion applier on the same hull proxy. Null until first upgrade apply
+        /// that needs a VFX refresh after mount scale (attribute grow only — not boost lerp).
         /// </summary>
         ShipPropulsionVisualApplier _propulsionVisual;
 
@@ -77,7 +85,12 @@ namespace TitanOrbit.Game
             // Family is unused for rates — ProfileSet Part Profiles are the shared source of truth.
             _ = family;
             _lastApplied = default;
-            _lastTerritoryMult = -1f;
+            _targetTerritoryMult = 1f;
+            _targetOverdriveMult = 1f;
+            _displayTerritoryMult = 1f;
+            _displayOverdriveMult = 1f;
+            _lastAppliedTerritoryMult = -1f;
+            _lastAppliedOverdriveMult = -1f;
             RebuildCache();
         }
 
@@ -88,12 +101,10 @@ namespace TitanOrbit.Game
         void RebuildCache()
         {
             // --- ProfileSet percent-of-base rates (version 1) ---
-            // [TITAN-ORBIT] EvaluateAtVersion fills *PerLevel when zero — same as Scan.
             var profileSet = ShipFamilyPartCalcProfileSet.LoadShared();
             _rates = ShipComponentAttributeScaleLogic.BuildRatesFromProfileSet(profileSet);
 
             // --- Same USC groups as ShipHullColliderLogic bake ---
-            // [TITAN-ORBIT] Shared helper keeps proxy mesh grow and collider child grow in lockstep.
             ShipComponentAttributeScaleLogic.BuildGroupsFromHierarchy(
                 transform,
                 _familyPrefix,
@@ -117,9 +128,10 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Applies mesh scale when upgrades or the cached territory mult change.
-        /// Remotes use 1× territory (only the local owner cache is meaningful for thruster grow).
+        /// Resolves boost targets, smoothly approaches them, and writes mesh scales.
+        /// Remotes use 1× territory / overdrive (only the local owner cache is meaningful).
         /// </summary>
+        /// <param name="force">Snap display to targets and rebuild (Bind / cache rebuild).</param>
         void TryApplyAttributeScale(bool force = false)
         {
             if (!_initialized || _shipEntity == Entity.Null)
@@ -145,31 +157,95 @@ namespace TitanOrbit.Game
 
             var attrs = em.GetComponentData<ShipAttributeUpgradeState>(_shipEntity);
 
-            // --- Territory thruster grow (sticky cache from predicted drive) ---
-            // [TITAN-ORBIT] LocalOwnerTerritoryMult is only published for the local owner.
-            // Prefer GhostOwnerIsLocal, but also accept LocalPlayerShipTag — NetCode can briefly
-            // disable GhostOwnerIsLocal around Instantiates while the tag still marks our hull.
-            float territoryMult = 1f;
+            // --- Resolve instant targets (local owner only) ---
+            float targetTerritory = 1f;
+            float targetOverdrive = 1f;
             bool isLocalOwner =
                 (em.HasComponent<GhostOwnerIsLocal>(_shipEntity) &&
                  em.IsComponentEnabled<GhostOwnerIsLocal>(_shipEntity)) ||
                 em.HasComponent<LocalPlayerShipTag>(_shipEntity);
             if (isLocalOwner)
-                territoryMult = PlanetConnectionGraphCache.LocalOwnerTerritoryMult;
+            {
+                // Sticky graph cache — still can step when sticky expires; we smooth below.
+                targetTerritory = Mathf.Max(1f, PlanetConnectionGraphCache.LocalOwnerTerritoryMult);
 
-            // Skip when neither upgrades nor a meaningful territory step changed.
+                // OVERDRIVE bloom: same IsBurstActive rule as the motor (pending Shift/Thrust +
+                // ghosted energy / OverdriveLockout). Snapped below — not eased.
+                if (em.HasComponent<ShipState>(_shipEntity))
+                {
+                    var ship = em.GetComponentData<ShipState>(_shipEntity);
+                    bool thrustHeld;
+                    bool shiftHeld;
+                    if (ShipPendingInput.HasValue)
+                    {
+                        thrustHeld = ShipPendingInput.Latest.Thrust;
+                        shiftHeld = ShipPendingInput.Latest.Overdrive;
+                    }
+                    else if (em.HasComponent<ShipInput>(_shipEntity))
+                    {
+                        var input = em.GetComponentData<ShipInput>(_shipEntity);
+                        thrustHeld = input.Thrust;
+                        shiftHeld = input.Overdrive;
+                    }
+                    else
+                    {
+                        thrustHeld = false;
+                        shiftHeld = false;
+                    }
+
+                    // Presentation never runs the orbit motor — useOrbit false for bloom.
+                    if (ShipOverdriveTuning.IsBurstActive(
+                            shiftHeld,
+                            thrustHeld,
+                            useOrbit: false,
+                            ship.CurrentEnergy,
+                            ship.OverdriveLockout))
+                    {
+                        if (em.HasComponent<ShipMotorConfig>(_shipEntity))
+                        {
+                            var motor = em.GetComponentData<ShipMotorConfig>(_shipEntity);
+                            targetOverdrive = ShipOverdriveTuning.ResolveSpeedMultiplier(motor);
+                        }
+                        else
+                            targetOverdrive = ShipOverdriveTuning.SpeedMultiplier;
+                    }
+                }
+            }
+
+            _targetTerritoryMult = targetTerritory;
+            _targetOverdriveMult = targetOverdrive;
+
+            // --- Territory: smooth; OVERDRIVE: snap (synced with speed hard-cap on OD exit) ---
+            if (force)
+            {
+                _displayTerritoryMult = _targetTerritoryMult;
+                _displayOverdriveMult = _targetOverdriveMult;
+            }
+            else
+            {
+                float step = TerritoryScaleTransitionPerSecond * Time.deltaTime;
+                _displayTerritoryMult = Mathf.MoveTowards(
+                    _displayTerritoryMult, _targetTerritoryMult, step);
+                _displayOverdriveMult = _targetOverdriveMult;
+            }
+
             bool attrsSame = attrs.Equals(_lastApplied);
-            bool territorySame = math.abs(territoryMult - _lastTerritoryMult) < TerritoryMultApplyEpsilon;
-            if (!force && attrsSame && territorySame)
+            bool displaySettled =
+                math.abs(_displayTerritoryMult - _targetTerritoryMult) < BoostDisplayEpsilon &&
+                math.abs(_displayOverdriveMult - _targetOverdriveMult) < BoostDisplayEpsilon;
+            bool displayUnchanged =
+                math.abs(_displayTerritoryMult - _lastAppliedTerritoryMult) < BoostDisplayEpsilon &&
+                math.abs(_displayOverdriveMult - _lastAppliedOverdriveMult) < BoostDisplayEpsilon;
+
+            // Skip Transform writes when upgrades idle and display already matches last apply.
+            if (!force && attrsSame && displaySettled && displayUnchanged)
                 return;
 
-            // --- Did territory (or first bind) actually step? ---
-            // [TITAN-ORBIT] Only this path rescales thruster mounts that parent jet particles.
-            // Upgrade-only applies can also move mounts, so refresh whenever we Apply.
-            bool territoryStepped = !territorySame;
-
+            bool attrsChanged = !attrsSame;
             _lastApplied = attrs;
-            _lastTerritoryMult = territoryMult;
+            _lastAppliedTerritoryMult = _displayTerritoryMult;
+            _lastAppliedOverdriveMult = _displayOverdriveMult;
+
             ShipComponentAttributeScaleLogic.Apply(
                 attrs,
                 _rates,
@@ -180,23 +256,23 @@ namespace TitanOrbit.Game
                 _thruster,
                 _tail,
                 _part,
-                territoryMult);
+                _displayTerritoryMult,
+                _displayOverdriveMult);
 
-            // --- Keep thruster jets alive after mount scale ---
-            // [HYBRID] Propulsion LateUpdate (order 100) also self-heals stuck ParticleSystems;
-            // ForceRefresh makes the next pass skip its "unchanged" early-out immediately.
-            if (territoryStepped || force)
+            // --- VFX: never ForceRefresh on boost lerp ---
+            // [TITAN-ORBIT] ForceRefreshEmission Stop+Clear+Play caused thruster blink whenever
+            // territory/overdrive stepped. Propulsion LateUpdate already restarts stopped particles
+            // while thrust is held. Only nudge after attribute mesh grow (upgrade tick / bind).
+            if (attrsChanged || force)
                 NotifyPropulsionAfterMountScale();
         }
 
         /// <summary>
-        /// Asks the sibling propulsion applier to re-apply emission after we mutated thruster/engine mounts.
-        /// Safe when propulsion is missing (proxy without jets).
+        /// Asks the sibling propulsion applier to re-apply emission after attribute mount grow.
+        /// Not used for territory/overdrive smooth transitions.
         /// </summary>
         void NotifyPropulsionAfterMountScale()
         {
-            // --- Lazy cache (same GameObject as this applier) ---
-            // [UNITY] GetComponent once — Bind/RebuildCache can run before propulsion Bind attaches.
             if (_propulsionVisual == null)
                 _propulsionVisual = GetComponent<ShipPropulsionVisualApplier>();
 

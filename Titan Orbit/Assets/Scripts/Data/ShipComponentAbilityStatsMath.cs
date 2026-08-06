@@ -44,6 +44,14 @@ namespace TitanOrbit.Data
                 moveSpeedPerLevel = a.moveSpeedPerLevel + b.moveSpeedPerLevel,
                 accelerationCap = a.accelerationCap + b.accelerationCap,
                 accelerationCapPerLevel = a.accelerationCapPerLevel + b.accelerationCapPerLevel,
+                thrustEnergyDrain = a.thrustEnergyDrain + b.thrustEnergyDrain,
+                thrustEnergyDrainPerLevel = a.thrustEnergyDrainPerLevel + b.thrustEnergyDrainPerLevel,
+                // [TITAN-ORBIT] OVERDRIVE knobs — max across parts (do not sum 0.75+0.75).
+                extraSpeedPercent = Mathf.Max(a.extraSpeedPercent, b.extraSpeedPercent),
+                extraSpeedPercentPerLevel = Mathf.Max(a.extraSpeedPercentPerLevel, b.extraSpeedPercentPerLevel),
+                extraSpeedEnergyPercent = Mathf.Max(a.extraSpeedEnergyPercent, b.extraSpeedEnergyPercent),
+                extraSpeedEnergyPercentPerLevel = Mathf.Max(
+                    a.extraSpeedEnergyPercentPerLevel, b.extraSpeedEnergyPercentPerLevel),
                 turnSpeed = a.turnSpeed + b.turnSpeed,
                 turnSpeedPerLevel = a.turnSpeedPerLevel + b.turnSpeedPerLevel,
                 maxGems = a.maxGems + b.maxGems,
@@ -214,6 +222,9 @@ namespace TitanOrbit.Data
                    s.energyRegen == 0f && s.energyRegenPerLevel == 0f &&
                    s.moveSpeed == 0f && s.moveSpeedPerLevel == 0f &&
                    s.accelerationCap == 0f && s.accelerationCapPerLevel == 0f &&
+                   s.thrustEnergyDrain == 0f && s.thrustEnergyDrainPerLevel == 0f &&
+                   s.extraSpeedPercent == 0f && s.extraSpeedPercentPerLevel == 0f &&
+                   s.extraSpeedEnergyPercent == 0f && s.extraSpeedEnergyPercentPerLevel == 0f &&
                    s.turnSpeed == 0f && s.turnSpeedPerLevel == 0f &&
                    s.maxGems == 0f && s.maxGemsPerLevel == 0f &&
                    s.tractorBeamDistance == 0f && s.tractorBeamDistancePerLevel == 0f &&
@@ -252,6 +263,16 @@ namespace TitanOrbit.Data
             if (result.moveSpeedPerLevel == 0f) result.moveSpeedPerLevel = defaults.moveSpeedPerLevel;
             if (result.accelerationCap == 0f) result.accelerationCap = defaults.accelerationCap;
             if (result.accelerationCapPerLevel == 0f) result.accelerationCapPerLevel = defaults.accelerationCapPerLevel;
+            if (result.thrustEnergyDrain == 0f) result.thrustEnergyDrain = defaults.thrustEnergyDrain;
+            if (result.thrustEnergyDrainPerLevel == 0f)
+                result.thrustEnergyDrainPerLevel = defaults.thrustEnergyDrainPerLevel;
+            if (result.extraSpeedPercent == 0f) result.extraSpeedPercent = defaults.extraSpeedPercent;
+            if (result.extraSpeedPercentPerLevel == 0f)
+                result.extraSpeedPercentPerLevel = defaults.extraSpeedPercentPerLevel;
+            if (result.extraSpeedEnergyPercent == 0f)
+                result.extraSpeedEnergyPercent = defaults.extraSpeedEnergyPercent;
+            if (result.extraSpeedEnergyPercentPerLevel == 0f)
+                result.extraSpeedEnergyPercentPerLevel = defaults.extraSpeedEnergyPercentPerLevel;
             if (result.turnSpeed == 0f) result.turnSpeed = defaults.turnSpeed;
             if (result.turnSpeedPerLevel == 0f) result.turnSpeedPerLevel = defaults.turnSpeedPerLevel;
             if (result.maxGems == 0f) result.maxGems = defaults.maxGems;
@@ -289,23 +310,24 @@ namespace TitanOrbit.Data
             return ShipFamilyPartTypes.IsWeapon(partType);
         }
 
+        /// <summary>
+        /// [TITAN-ORBIT] Maneuver jets: name contains Thruster or Exhaust.
+        /// Author turn + move/accel; set thrust energy drain. Do not own Energy Cap/Regen.
+        /// </summary>
         public static bool IsThrusterComponent(string componentId)
         {
             // --- IsThrusterComponent ---
-            if (string.IsNullOrEmpty(componentId)) return false;
-            string id = componentId.TrimStart();
-            if (id.StartsWith("Thruster", StringComparison.OrdinalIgnoreCase)) return true;
-            return ContainsIsolatedKeyword(id, "thruster");
+            return ShipFamilyPartTypes.IsThrusterLikeName(componentId);
         }
 
+        /// <summary>
+        /// [TITAN-ORBIT] Power plants: propulsion mounts that are not thruster-like.
+        /// Author Energy Cap/Regen (cumulative) + move/accel; no turn.
+        /// </summary>
         public static bool IsEngineComponent(string componentId)
         {
             // --- IsEngineComponent ---
-            if (string.IsNullOrEmpty(componentId)) return false;
-            string id = componentId.TrimStart();
-            if (IsThrusterComponent(id)) return false;
-            if (id.StartsWith("Engine", StringComparison.OrdinalIgnoreCase)) return true;
-            return ContainsIsolatedKeyword(id, "engine") || ContainsIsolatedKeyword(id, "thrust");
+            return ShipFamilyPartTypes.IsEngineLikeName(componentId);
         }
 
         public static bool IsPropulsionComponent(string componentId)
@@ -385,6 +407,12 @@ namespace TitanOrbit.Data
                     moveSpeedPerLevel = stats.moveSpeedPerLevel,
                     accelerationCap = stats.accelerationCap,
                     accelerationCapPerLevel = stats.accelerationCapPerLevel,
+                    thrustEnergyDrain = stats.thrustEnergyDrain,
+                    thrustEnergyDrainPerLevel = stats.thrustEnergyDrainPerLevel,
+                    extraSpeedPercent = stats.extraSpeedPercent,
+                    extraSpeedPercentPerLevel = stats.extraSpeedPercentPerLevel,
+                    extraSpeedEnergyPercent = stats.extraSpeedEnergyPercent,
+                    extraSpeedEnergyPercentPerLevel = stats.extraSpeedEnergyPercentPerLevel,
                     turnSpeed = stats.turnSpeed,
                     turnSpeedPerLevel = stats.turnSpeedPerLevel,
                     maxGems = stats.maxGems,
@@ -410,6 +438,14 @@ namespace TitanOrbit.Data
                 scaled.moveSpeedPerLevel = stats.moveSpeedPerLevel;
                 scaled.accelerationCap = stats.accelerationCap;
                 scaled.accelerationCapPerLevel = stats.accelerationCapPerLevel;
+                // Efficiency is designer-authored — do not inflate drain with mesh scale.
+                scaled.thrustEnergyDrain = stats.thrustEnergyDrain;
+                scaled.thrustEnergyDrainPerLevel = stats.thrustEnergyDrainPerLevel;
+                // OVERDRIVE fractions are designer knobs — not mesh-scale dependent.
+                scaled.extraSpeedPercent = stats.extraSpeedPercent;
+                scaled.extraSpeedPercentPerLevel = stats.extraSpeedPercentPerLevel;
+                scaled.extraSpeedEnergyPercent = stats.extraSpeedEnergyPercent;
+                scaled.extraSpeedEnergyPercentPerLevel = stats.extraSpeedEnergyPercentPerLevel;
             }
             return scaled;
         }
@@ -442,6 +478,12 @@ namespace TitanOrbit.Data
                 moveSpeedPerLevel = s.moveSpeedPerLevel * factor,
                 accelerationCap = s.accelerationCap * factor,
                 accelerationCapPerLevel = s.accelerationCapPerLevel * factor,
+                thrustEnergyDrain = s.thrustEnergyDrain * factor,
+                thrustEnergyDrainPerLevel = s.thrustEnergyDrainPerLevel * factor,
+                extraSpeedPercent = s.extraSpeedPercent * factor,
+                extraSpeedPercentPerLevel = s.extraSpeedPercentPerLevel * factor,
+                extraSpeedEnergyPercent = s.extraSpeedEnergyPercent * factor,
+                extraSpeedEnergyPercentPerLevel = s.extraSpeedEnergyPercentPerLevel * factor,
                 turnSpeed = s.turnSpeed * factor,
                 turnSpeedPerLevel = s.turnSpeedPerLevel * factor,
                 maxGems = s.maxGems * factor,

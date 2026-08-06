@@ -82,6 +82,10 @@ namespace TitanOrbit.ECS.Authoring
                     BrakeDeceleration = authoring.BrakeDeceleration,
                     Mass = authoring.Mass,
                     RecoilDecayPerSecond = authoring.RecoilDecayPerSecond,
+                    ThrustEnergyDrainPerSecond = 0f,
+                    OverdriveSpeedMultiplier = ShipOverdriveTuning.SpeedMultiplier,
+                    OverdriveThrustMultiplier = ShipOverdriveTuning.ThrustMultiplier,
+                    OverdriveEnergyDrainMultiplier = ShipOverdriveTuning.EnergyDrainMultiplier,
                 });
                 // [TITAN-ORBIT] Pre-physics velocity snapshot for mass-aware bounce (not ghosted —
                 // local predicted / server sim only; rewritten every fixed step).

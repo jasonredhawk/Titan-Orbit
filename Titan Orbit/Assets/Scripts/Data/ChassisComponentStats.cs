@@ -364,8 +364,8 @@ namespace TitanOrbit.Data
 
             if (ShipFamilyPartTypes.IsPropulsion(type))
             {
-                // Same Part Profile; thruster-like names use thruster attribute-scale + VFX path.
-                if (IsThrusterLikeComponentId(child.name))
+                // Separate Part Profiles; thruster profile / thruster-like names → thruster scale group.
+                if (ShipFamilyPartTypes.IsThrusterProfile(type) || IsThrusterLikeComponentId(child.name))
                 {
                     if (addToTotals)
                     {

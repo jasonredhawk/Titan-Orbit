@@ -101,6 +101,14 @@ namespace TitanOrbit.Data
         /// <summary>Each additional engine/thruster contributes moveSpeedPerLevel × this factor (0.5 = half).</summary>
         public const float AdditionalPropulsionMoveSpeedPerLevelFactor = 0.5f;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Default energy/sec per unit of accelerationCap when seeding
+        /// <see cref="ShipComponentAbilityStats.thrustEnergyDrain"/>. Used as the OVERDRIVE cost
+        /// base (normal RMB thrust is free). Tuned so sustained Shift+RMB nets drain against
+        /// typical engine Cap/Regen. Designers can still lower per-part drain.
+        /// </summary>
+        public const float ThrustEnergyDrainPerAccelerationUnit = 0.5f;
+
         /// <summary>Scan/auto-populate move speed for engine/thruster version 1 (Engine_1), before <see cref="OverallPropulsionSpeedMultiplier"/>.</summary>
         public const float SuggestedPropulsionMoveSpeedV1 = 6f;
 
@@ -109,6 +117,14 @@ namespace TitanOrbit.Data
 
         /// <summary>Acceleration cap as a fraction of suggested move speed for that version.</summary>
         public const float SuggestedPropulsionAccelerationFractionOfMoveSpeed = 0.5f;
+
+        /// <summary>
+        /// Fraction of v1 energy Cap/Regen added per engine version step — same ratio as moveSpeed
+        /// (<see cref="SuggestedPropulsionMoveSpeedPerVersion"/> / <see cref="SuggestedPropulsionMoveSpeedV1"/> = 2/6).
+        /// Engine_2 must not double Cap vs Engine_1.
+        /// </summary>
+        public static float EngineEnergyPerVersionFractionOfV1 =>
+            SuggestedPropulsionMoveSpeedPerVersion / Mathf.Max(0.01f, SuggestedPropulsionMoveSpeedV1);
 
         /// <summary>Engine/thruster move speed from version: v1=6, v2=8, v3=10, …</summary>
         public static float GetSuggestedPropulsionMoveSpeed(int version)
@@ -133,6 +149,26 @@ namespace TitanOrbit.Data
         public static float GetSuggestedPropulsionAccelerationCapPerLevel(int version)
         {
             return GetSuggestedPropulsionAccelerationCap(version) * PropulsionPerLevelFractionOfBase;
+        }
+
+        /// <summary>
+        /// Default <c>thrustEnergyDrain</c> for a propulsion version (accel × drain-per-accel).
+        /// Analogous to weapon firePower as the “cost” knob — separate from move/accel so efficiency can vary.
+        /// </summary>
+        public static float GetSuggestedThrustEnergyDrain(int version) =>
+            GetSuggestedPropulsionAccelerationCap(version) * ThrustEnergyDrainPerAccelerationUnit;
+
+        /// <summary>Per-version step for ProfileSet Engine/Thruster thrustEnergyDrain (v2 − v1).</summary>
+        public static float GetSuggestedThrustEnergyDrainPerVersion() =>
+            GetSuggestedThrustEnergyDrain(2) - GetSuggestedThrustEnergyDrain(1);
+
+        /// <summary>
+        /// Gentle Cap/Regen share weight for engine version N — same curve as moveSpeed
+        /// (v1 → 1.0, v2 → 8/6 ≈ 1.333, v3 → 10/6 ≈ 1.667). Not linear in version (that doubled Engine_2).
+        /// </summary>
+        public static float GetEngineEnergyVersionWeight(int version)
+        {
+            return GetSuggestedPropulsionMoveSpeed(version) / Mathf.Max(0.01f, SuggestedPropulsionMoveSpeedV1);
         }
 
         public static float ApplyOverallPropulsionSpeedScale(float value)
@@ -349,11 +385,11 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// After Scan / Populate, rebalance Energy stats on weapon components from fire power + rate.
-        /// Cannons: cap ≈ one max Fire Power attribute shot. Bullets: short burst. Regen always
-        /// slower than sustained drain. Called from the ShipFamilyDefinition editor.
+        /// [TITAN-ORBIT] Weapons hold Energy Cap (battery) but never Energy Regen — engines produce.
+        /// Clears weapon regen after Scan so leftover authored regen cannot inflate hull regen.
+        /// Does <b>not</b> clear Cap (use <see cref="ApplyWeaponEnergyCapSuggestionsForComponents"/> to seed).
         /// </summary>
-        public static void BalanceWeaponEnergyForComponents(List<ShipFamilyComponentEntry> components)
+        public static void ClearWeaponEnergyRegenForComponents(List<ShipFamilyComponentEntry> components)
         {
             if (components == null)
                 return;
@@ -367,17 +403,522 @@ namespace TitanOrbit.Data
                     continue;
 
                 ShipComponentAbilityStats stats = entry.stats;
-                string partType = ShipFamilyPartTypes.Normalize(
-                    ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(entry.componentId),
-                    entry.componentId);
-
-                if (string.Equals(partType, ShipFamilyPartTypes.WeaponCannon, System.StringComparison.OrdinalIgnoreCase))
-                    ShipComponentWeaponSuggestions.ApplyCannonBalancedEnergy(ref stats);
-                else
-                    ShipComponentWeaponSuggestions.ApplyBulletBalancedEnergy(ref stats);
-
+                stats.energyRegen = 0f;
+                stats.energyRegenPerLevel = 0f;
                 entry.stats = stats;
             }
+        }
+
+        /// <summary>
+        /// [LEGACY] Prefer <see cref="ClearWeaponEnergyRegenForComponents"/>.
+        /// Still clears weapon regen only (Cap is kept as weapon battery storage).
+        /// </summary>
+        public static void ClearWeaponEnergyForComponents(List<ShipFamilyComponentEntry> components) =>
+            ClearWeaponEnergyRegenForComponents(components);
+
+        /// <summary>
+        /// Seeds weapon <c>energyCap</c> as <c>firePower × fireRate</c> (1 sec of fire) when unset.
+        /// Never writes energyRegen. Does not overwrite authored Cap &gt; 0 unless
+        /// <paramref name="overwriteExisting"/> is true.
+        /// </summary>
+        public static void ApplyWeaponEnergyCapSuggestionsForComponents(
+            List<ShipFamilyComponentEntry> components,
+            bool overwriteExisting = false)
+        {
+            if (components == null)
+                return;
+
+            for (int i = 0; i < components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+                if (!ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
+                    continue;
+
+                ShipComponentAbilityStats stats = entry.stats;
+                if (!overwriteExisting && stats.energyCap > 0.0001f)
+                {
+                    // Still strip regen if a designer left it on a weapon row.
+                    stats.energyRegen = 0f;
+                    stats.energyRegenPerLevel = 0f;
+                    entry.stats = stats;
+                    continue;
+                }
+
+                ShipComponentWeaponSuggestions.ApplyWeaponBatteryCap(ref stats);
+                entry.stats = stats;
+            }
+        }
+
+        /// <summary>
+        /// Scan / Recalculate / Rebalance: strip weapon Regen, ensure Energy category on weapons,
+        /// then size Cap as firePower×fireRate (overwrite so Cap tracks Offense). Callers still run
+        /// <see cref="BalanceEngineEnergyForComponents"/> for the engine power plant.
+        /// </summary>
+        public static void BalanceWeaponEnergyForComponents(List<ShipFamilyComponentEntry> components)
+        {
+            if (components == null)
+                return;
+
+            // --- Ensure Energy category so KeepOnlyAuthoringFields keeps Cap after Scan ---
+            for (int i = 0; i < components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+                if (!ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
+                    continue;
+
+                entry.EnsureStatCategories();
+                if (!ShipFamilyComponentPartKey.ContainsStatCategory(
+                        entry.statCategories, ShipComponentStatCategory.Energy))
+                {
+                    entry.statCategories.Add(ShipComponentStatCategory.Energy);
+                }
+            }
+
+            ClearWeaponEnergyRegenForComponents(components);
+            // overwriteExisting: Scan must keep Cap in sync with firePower after ProfileSet seeds.
+            ApplyWeaponEnergyCapSuggestionsForComponents(components, overwriteExisting: true);
+        }
+
+        /// <summary>
+        /// [LEGACY] Old "seconds of drain" engine budget — replaced by weapon-style shot-cap balancing.
+        /// Kept so older comments/docs that cite the constant still compile if referenced.
+        /// </summary>
+        public const float EngineEnergyCapSecondsOfWeaponDrain = 4f;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Engine regen uses the same fraction as the old weapon self-contained pool
+        /// (<see cref="ShipComponentWeaponSuggestions.EnergyRegenFractionOfSustainedDrain"/> = 0.35).
+        /// Holding fire still nets drain; thruster/overdrive compete for the same bar.
+        /// </summary>
+        public const float EngineEnergyRegenFractionOfWeaponDrain =
+            ShipComponentWeaponSuggestions.EnergyRegenFractionOfSustainedDrain;
+
+        /// <summary>
+        /// Fallback Cap when a hull has engines but no weapons — one v1 bullet weapon's 1-sec pool
+        /// (<c>FirePowerV1 × FireRate</c> = 3×3). Also the ProfileSet Engine baseAtVersion1 Cap.
+        /// </summary>
+        public const float EngineEnergyFallbackCapPerVersion = 9f;
+
+        /// <summary>
+        /// Fallback Regen when a hull has engines but no weapons — 35% of v1 bullet sustained drain (3×3).
+        /// Also the ProfileSet Engine baseAtVersion1 Regen.
+        /// </summary>
+        public const float EngineEnergyFallbackRegenPerVersion = 3.15f;
+
+        /// <summary>
+        /// ProfileSet Engine perVersionIncrement Cap — moveSpeed-like step (2/6 of v1), not a full second plant.
+        /// </summary>
+        public static float EngineEnergyCapPerVersionIncrement =>
+            EngineEnergyFallbackCapPerVersion * EngineEnergyPerVersionFractionOfV1;
+
+        /// <summary>
+        /// ProfileSet Engine perVersionIncrement Regen — same gentle fraction as Cap.
+        /// </summary>
+        public static float EngineEnergyRegenPerVersionIncrement =>
+            EngineEnergyFallbackRegenPerVersion * EngineEnergyPerVersionFractionOfV1;
+
+        /// <summary>
+        /// After Scan / Populate, size Energy Cap/Regen on <b>engine-like</b> mounts from the
+        /// hull's weapons: for each gun, Cap ≈ <c>firePower × fireRate</c> (1 sec of fire) and
+        /// Regen ≈ 35% of that gun's sustained drain. Totals are split across engines by
+        /// <b>gentle</b> version weight (moveSpeed curve: v1=1, v2≈1.33 — not v2=2).
+        /// Also clears thruster Cap/Regen (thrusters do not own the power plant) and seeds
+        /// <see cref="ShipComponentAbilityStats.thrustEnergyDrain"/> on engines + thrusters when unset.
+        /// <para>
+        /// [TITAN-ORBIT] Weapon components separately author Cap-only batteries
+        /// (<see cref="BalanceWeaponEnergyForComponents"/>). Hull <c>MaxEnergy</c> sums engine Cap
+        /// + weapon Cap — weapons hold extra storage; only engines produce Regen.
+        /// </para>
+        /// </summary>
+        public static void BalanceEngineEnergyForComponents(List<ShipFamilyComponentEntry> components)
+        {
+            if (components == null)
+                return;
+
+            // --- Clear thruster Cap/Regen (role: maneuver + drain, not power plant) ---
+            for (int i = 0; i < components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+                if (!ShipFamilyPartTypes.IsThrusterLikeName(entry.componentId))
+                    continue;
+
+                ShipComponentAbilityStats thrusterStats = entry.stats;
+                thrusterStats.energyCap = 0f;
+                thrusterStats.energyCapPerLevel = 0f;
+                thrusterStats.energyRegen = 0f;
+                thrusterStats.energyRegenPerLevel = 0f;
+                entry.stats = thrusterStats;
+            }
+
+            // --- Seed thrustEnergyDrain on engines + thrusters (efficiency knob; keep authored values) ---
+            ApplyPropulsionThrustEnergyDrainSuggestionsForComponents(components, overwriteExisting: false);
+            // --- Seed OVERDRIVE ExtraSpeed knobs on engines when missing ---
+            ApplyEngineOverdriveSuggestionsForComponents(components, overwriteExisting: false);
+
+            // --- Sum what old weapon energy balancing would have put on each gun ---
+            float totalCap = 0f;
+            float totalRegen = 0f;
+            float totalEngineVersionWeight = 0f;
+            var engineIndices = new List<int>(4);
+
+            for (int i = 0; i < components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+
+                if (ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
+                {
+                    // Mirror ApplyWeaponBatteryCap / ApplyBalancedEnergy regen without writing the gun.
+                    float firePower = Mathf.Max(0f, entry.stats.firePower);
+                    if (firePower <= 0f)
+                        continue;
+
+                    float fireRate = Mathf.Max(0.01f, entry.stats.fireRate);
+                    float sustained = ShipComponentWeaponSuggestions.ComputeSustainedEnergyDrain(firePower, fireRate);
+                    totalCap += sustained; // 1 sec of fire — same as weapon Cap default
+                    totalRegen += sustained * ShipComponentWeaponSuggestions.EnergyRegenFractionOfSustainedDrain;
+                    continue;
+                }
+
+                if (!ShipFamilyPartTypes.IsEngineLikeName(entry.componentId))
+                    continue;
+
+                engineIndices.Add(i);
+                int version = Mathf.Max(1, ShipFamilyPartCalcProfileSet.ExtractVersion(entry.componentId));
+                totalEngineVersionWeight += GetEngineEnergyVersionWeight(version);
+            }
+
+            if (engineIndices.Count == 0)
+            {
+                // [TITAN-ORBIT] Thruster-only hulls (e.g. SpaceExcalibur): thrusters carry the
+                // power plant when no Engine_* mounts exist, otherwise MaxEnergy stays 0.
+                for (int i = 0; i < components.Count; i++)
+                {
+                    ShipFamilyComponentEntry entry = components[i];
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                        continue;
+                    if (!ShipFamilyPartTypes.IsThrusterLikeName(entry.componentId))
+                        continue;
+                    if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(entry.componentId))
+                        continue;
+
+                    engineIndices.Add(i);
+                    int version = Mathf.Max(1, ShipFamilyPartCalcProfileSet.ExtractVersion(entry.componentId));
+                    totalEngineVersionWeight += GetEngineEnergyVersionWeight(version);
+                }
+
+                if (engineIndices.Count == 0)
+                    return;
+            }
+
+            if (totalEngineVersionWeight <= 0.0001f)
+                totalEngineVersionWeight = engineIndices.Count;
+
+            // --- No weapons: one bullet-weapon-sized plant × gentle version weight per engine ---
+            if (totalCap <= 0.0001f)
+            {
+                totalCap = 0f;
+                totalRegen = 0f;
+                for (int e = 0; e < engineIndices.Count; e++)
+                {
+                    int version = Mathf.Max(1, ShipFamilyPartCalcProfileSet.ExtractVersion(
+                        components[engineIndices[e]].componentId));
+                    float weight = GetEngineEnergyVersionWeight(version);
+                    totalCap += EngineEnergyFallbackCapPerVersion * weight;
+                    totalRegen += EngineEnergyFallbackRegenPerVersion * weight;
+                }
+            }
+
+            // --- Split by gentle version weight (v1:v2 ≈ 1:1.33, not 1:2) ---
+            for (int e = 0; e < engineIndices.Count; e++)
+            {
+                ShipFamilyComponentEntry entry = components[engineIndices[e]];
+                int version = Mathf.Max(1, ShipFamilyPartCalcProfileSet.ExtractVersion(entry.componentId));
+                float share = GetEngineEnergyVersionWeight(version) / totalEngineVersionWeight;
+
+                ShipComponentAbilityStats stats = entry.stats;
+                stats.energyCap = Mathf.Max(1f, totalCap * share);
+                stats.energyRegen = Mathf.Max(0.1f, totalRegen * share);
+                stats.energyCapPerLevel = stats.energyCap * PerLevelFractionOfBase;
+                stats.energyRegenPerLevel = stats.energyRegen * PerLevelFractionOfBase;
+                // Engines do not author turn — clear leftover turn from older scans.
+                // Thruster-only fallback keeps turn (ApplyThrusterTurn already wrote it).
+                if (ShipFamilyPartTypes.IsEngineLikeName(entry.componentId))
+                {
+                    stats.turnSpeed = 0f;
+                    stats.turnSpeedPerLevel = 0f;
+                }
+
+                entry.stats = stats;
+
+                // Ensure Energy category so EnforceComponentStatCategories keeps Cap/Regen
+                // (normal engines already have it; thruster-only fallback needs it added).
+                entry.EnsureStatCategories();
+                if (entry.statCategories == null)
+                    entry.statCategories = new List<ShipComponentStatCategory>();
+                bool hasEnergy = false;
+                for (int c = 0; c < entry.statCategories.Count; c++)
+                {
+                    if (entry.statCategories[c] == ShipComponentStatCategory.Energy)
+                    {
+                        hasEnergy = true;
+                        break;
+                    }
+                }
+
+                if (!hasEnergy)
+                    entry.statCategories.Add(ShipComponentStatCategory.Energy);
+            }
+        }
+
+        /// <summary>
+        /// Seeds <see cref="ShipComponentAbilityStats.thrustEnergyDrain"/> on engine-like and thruster-like
+        /// mounts from acceleration × <see cref="ThrustEnergyDrainPerAccelerationUnit"/>.
+        /// Analogous to weapon firePower as the “energy cost” knob — designers can lower drain for efficiency.
+        /// </summary>
+        /// <param name="components">Family component rows.</param>
+        /// <param name="overwriteExisting">
+        /// When false, skips parts that already have authored drain &gt; 0 (preserves designer tweaks).
+        /// When true (rebalance), rewrites from current accel.
+        /// </param>
+        public static void ApplyPropulsionThrustEnergyDrainSuggestionsForComponents(
+            List<ShipFamilyComponentEntry> components,
+            bool overwriteExisting = false)
+        {
+            if (components == null)
+                return;
+
+            for (int i = 0; i < components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+                if (!ShipFamilyPartTypes.IsEngineLikeName(entry.componentId)
+                    && !ShipFamilyPartTypes.IsThrusterLikeName(entry.componentId))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(entry.componentId))
+                    continue;
+
+                ShipComponentAbilityStats stats = entry.stats;
+                if (!overwriteExisting && stats.thrustEnergyDrain > 0.0001f)
+                    continue;
+
+                // Prefer authored accel; else version suggestion.
+                float accel = stats.accelerationCap;
+                if (accel <= 0.0001f)
+                {
+                    int version = Mathf.Max(1, ShipFamilyPartCalcProfileSet.ExtractVersion(entry.componentId));
+                    accel = GetSuggestedPropulsionAccelerationCap(version);
+                }
+
+                stats.thrustEnergyDrain = Mathf.Max(0f, accel * ThrustEnergyDrainPerAccelerationUnit);
+                stats.thrustEnergyDrainPerLevel = stats.thrustEnergyDrain * PropulsionPerLevelFractionOfBase;
+                entry.stats = stats;
+            }
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Thruster-like mounts author Fin-scale turn (Tail/Fin still add their own turn).
+        /// Called after Scan/Recalculate because the Thruster profile may still need Fin-scale turn
+        /// when an older Scan used the shared Engine/Thrust row (turnSpeed = 0).
+        /// Skips cosmetic Place/Cover/Plate/Holder mounts.
+        /// </summary>
+        public static void ApplyThrusterTurnSuggestionsForComponents(List<ShipFamilyComponentEntry> components)
+        {
+            if (components == null)
+                return;
+
+            for (int i = 0; i < components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+                if (!ShipFamilyPartTypes.IsThrusterLikeName(entry.componentId))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(entry.componentId))
+                    continue;
+
+                int version = Mathf.Max(1, ShipFamilyPartCalcProfileSet.ExtractVersion(entry.componentId));
+                ShipComponentAbilityStats stats = entry.stats;
+                stats.turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(version);
+                stats.turnSpeedPerLevel = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(stats.turnSpeed);
+                entry.stats = stats;
+            }
+        }
+
+        /// <summary>
+        /// Sums authored <see cref="ShipComponentAbilityStats.thrustEnergyDrain"/> on engines + thrusters
+        /// at ship level into <c>ShipMotorConfig.ThrustEnergyDrainPerSecond</c>.
+        /// Parts with drain ≤ 0 fall back to accel × <see cref="ThrustEnergyDrainPerAccelerationUnit"/>.
+        /// When no propulsion parts contribute, falls back to a fraction of hull accel.
+        /// </summary>
+        /// <param name="family">Family definition with component rows.</param>
+        /// <param name="shipLevel">1-based ship level for *PerLevel growth.</param>
+        /// <param name="fallbackTotalAcceleration">Hull summed accel when no propulsion drain rows exist.</param>
+        public static float ComputeThrusterEnergyDrainPerSecond(
+            ShipFamilyDefinition family,
+            int shipLevel,
+            float fallbackTotalAcceleration)
+        {
+            float totalDrain = 0f;
+            bool anyPropulsion = false;
+
+            if (family?.components != null)
+            {
+                int levelsAfterFirst = Mathf.Max(0, shipLevel - 1);
+                for (int i = 0; i < family.components.Count; i++)
+                {
+                    ShipFamilyComponentEntry entry = family.components[i];
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                        continue;
+                    if (!ShipFamilyPartTypes.IsEngineLikeName(entry.componentId)
+                        && !ShipFamilyPartTypes.IsThrusterLikeName(entry.componentId))
+                        continue;
+                    if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(entry.componentId))
+                        continue;
+
+                    anyPropulsion = true;
+                    ShipComponentAbilityStats stats = entry.stats;
+                    float authored = stats.thrustEnergyDrain
+                        + stats.thrustEnergyDrainPerLevel * levelsAfterFirst;
+                    if (authored > 0.0001f)
+                    {
+                        totalDrain += authored;
+                        continue;
+                    }
+
+                    // Migration: old assets without thrustEnergyDrain — derive from accel.
+                    float accel = GetPropulsionAccelerationContribution(stats, levelsAfterFirst);
+                    totalDrain += Mathf.Max(0f, accel * ThrustEnergyDrainPerAccelerationUnit);
+                }
+            }
+
+            if (!anyPropulsion || totalDrain <= 0.0001f)
+            {
+                // No engine/thruster mounts: still tax a little from total accel so overdrive has a cost.
+                totalDrain = Mathf.Max(0f, fallbackTotalAcceleration)
+                    * 0.35f
+                    * ThrustEnergyDrainPerAccelerationUnit;
+            }
+
+            return Mathf.Max(0f, totalDrain);
+        }
+
+        /// <summary>
+        /// Seeds OVERDRIVE <c>extraSpeedPercent</c> / <c>extraSpeedEnergyPercent</c> on engine-like
+        /// mounts when unset (project defaults). Per-level stays 0 unless already authored.
+        /// Thrusters never get these fields.
+        /// </summary>
+        public static void ApplyEngineOverdriveSuggestionsForComponents(
+            List<ShipFamilyComponentEntry> components,
+            bool overwriteExisting = false)
+        {
+            if (components == null)
+                return;
+
+            for (int i = 0; i < components.Count; i++)
+            {
+                ShipFamilyComponentEntry entry = components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+                if (!ShipFamilyPartTypes.IsEngineLikeName(entry.componentId))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(entry.componentId))
+                    continue;
+
+                ShipComponentAbilityStats stats = entry.stats;
+                if (!overwriteExisting && stats.extraSpeedPercent > 0.0001f)
+                {
+                    // Still zero thruster-mistaken regen-style leftovers on PerLevel if needed — keep authored.
+                    entry.stats = stats;
+                    continue;
+                }
+
+                stats.extraSpeedPercent = ShipFamilyOverdriveAbility.DefaultExtraSpeedPercent;
+                stats.extraSpeedEnergyPercent = ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyPercent;
+                // [TITAN-ORBIT] Per-level defaults to 0 — designers opt in later.
+                if (overwriteExisting || stats.extraSpeedPercentPerLevel < 0f)
+                    stats.extraSpeedPercentPerLevel = 0f;
+                if (overwriteExisting || stats.extraSpeedEnergyPercentPerLevel < 0f)
+                    stats.extraSpeedEnergyPercentPerLevel = 0f;
+                entry.stats = stats;
+            }
+        }
+
+        /// <summary>
+        /// Resolves OVERDRIVE speed/thrust/drain multipliers from <b>engine</b> component rows
+        /// (max ExtraSpeed / ExtraSpeedEnergy across engines at ship level), then × family Special Bonuses.
+        /// Falls back to ProfileSet / code defaults when no engine authors ExtraSpeedPercent.
+        /// <para>
+        /// Absolute OD energy/sec still scales with engine count via summed
+        /// <see cref="ComputeThrusterEnergyDrainPerSecond"/> — N engines ⇒ ~N× drain at the same mul.
+        /// </para>
+        /// </summary>
+        public static void ResolveOverdriveMultipliersFromEngines(
+            ShipFamilyDefinition family,
+            int shipLevel,
+            in ShipFamilySpecialBonuses bonuses,
+            out float speedMultiplier,
+            out float thrustMultiplier,
+            out float energyDrainMultiplier)
+        {
+            float maxEsp = 0f;
+            float maxEsep = 0f;
+            bool anyEngineOd = false;
+
+            if (family?.components != null)
+            {
+                int levelsAfterFirst = Mathf.Max(0, shipLevel - 1);
+                for (int i = 0; i < family.components.Count; i++)
+                {
+                    ShipFamilyComponentEntry entry = family.components[i];
+                    if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                        continue;
+                    if (!ShipFamilyPartTypes.IsEngineLikeName(entry.componentId))
+                        continue;
+                    if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(entry.componentId))
+                        continue;
+
+                    ShipComponentAbilityStats stats = entry.stats;
+                    float esp = stats.extraSpeedPercent + stats.extraSpeedPercentPerLevel * levelsAfterFirst;
+                    float esep = stats.extraSpeedEnergyPercent
+                        + stats.extraSpeedEnergyPercentPerLevel * levelsAfterFirst;
+                    if (esp <= 0.0001f && esep <= 0.0001f)
+                        continue;
+
+                    anyEngineOd = true;
+                    if (esp > maxEsp) maxEsp = esp;
+                    if (esep > maxEsep) maxEsep = esep;
+                }
+            }
+
+            ShipFamilyOverdriveAbility ability;
+            if (anyEngineOd)
+            {
+                if (maxEsp <= 0.0001f)
+                    maxEsp = ShipFamilyOverdriveAbility.DefaultExtraSpeedPercent;
+                if (maxEsep <= 0.0001f)
+                    maxEsep = ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyPercent;
+                ability = new ShipFamilyOverdriveAbility
+                {
+                    extraSpeedPercent = maxEsp,
+                    extraSpeedEnergyPercent = maxEsep,
+                };
+            }
+            else
+            {
+                // Legacy / thruster-only hulls — ProfileSet block or code defaults.
+                ability = ShipFamilyPartCalcProfileSet.ResolveOverdriveAbility();
+            }
+
+            bonuses.ResolveOverdrive(ability, out speedMultiplier, out thrustMultiplier, out energyDrainMultiplier);
         }
     }
 }

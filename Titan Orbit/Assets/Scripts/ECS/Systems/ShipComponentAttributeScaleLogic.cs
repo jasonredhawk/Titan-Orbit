@@ -41,6 +41,11 @@ namespace TitanOrbit.ECS
     /// <c>partProfiles</c> rows. Do not use flat <c>ShipAttributeUpgradeLogic.MultiplierPerLevel</c>
     /// for mesh/collider size — that is combat/stat math only.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Ability → mesh map after Engine/Thruster split:
+    /// Weapons grow from FirePower + BulletSpeed; Engines from MovementSpeed + EnergyCap + EnergyRegen;
+    /// Thrusters from MovementSpeed + RotationSpeed; Tail from RotationSpeed; Wing/Cockpit/Hull unchanged.
+    /// </para>
     /// </summary>
     public static class ShipComponentAttributeScaleLogic
     {
@@ -73,17 +78,22 @@ namespace TitanOrbit.ECS
             public float WingGems;
             public float WingPeople;
 
-            // --- Engine/Thrust: MovementSpeed → avg(moveSpeed, accelerationCap) fractions ---
+            // --- Engine/Thrust: MovementSpeed + Energy Cap/Regen (engines are the power plant) ---
             public float EngineMove;
+            public float EngineEnergyCap;
+            public float EngineEnergyRegen;
+
+            // --- Thruster mounts: MovementSpeed + RotationSpeed (turn) ---
+            public float ThrusterMove;
+            public float ThrusterTurn;
 
             // --- Tail: RotationSpeed → turnSpeed ---
             public float TailTurn;
 
-            // --- Weapon Bullet/Cannon averaged: Offense + Energy ---
+            // --- Weapon Bullet/Cannon: Offense + Energy Cap (battery; no Regen grow) ---
             public float WeaponFirePower;
             public float WeaponBulletSpeed;
             public float WeaponEnergyCap;
-            public float WeaponEnergyRegen;
 
             // --- Hull (legacy Part_*): Health ---
             public float HullHealth;
@@ -125,6 +135,7 @@ namespace TitanOrbit.ECS
             ShipComponentAbilityStats cockpit = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Cockpit);
             ShipComponentAbilityStats wing = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Wing);
             ShipComponentAbilityStats engine = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Engine);
+            ShipComponentAbilityStats thruster = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Thruster);
             ShipComponentAbilityStats tail = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Tail);
             ShipComponentAbilityStats hull = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Hull);
             ShipComponentAbilityStats weaponBullet = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.WeaponBullet);
@@ -142,10 +153,28 @@ namespace TitanOrbit.ECS
             rates.WingGems = PerLevelFraction(wing.maxGems, wing.maxGemsPerLevel);
             rates.WingPeople = PerLevelFraction(wing.maxPeople, wing.maxPeoplePerLevel);
 
-            // Engine/Thrust: one MovementSpeed driver = average of move + accel fractions.
+            // Engine: MovementSpeed + Energy Cap/Regen (power plant).
             rates.EngineMove = AverageFraction(
                 PerLevelFraction(engine.moveSpeed, engine.moveSpeedPerLevel),
                 PerLevelFraction(engine.accelerationCap, engine.accelerationCapPerLevel));
+            rates.EngineEnergyCap = PerLevelFraction(engine.energyCap, engine.energyCapPerLevel);
+            rates.EngineEnergyRegen = PerLevelFraction(engine.energyRegen, engine.energyRegenPerLevel);
+
+            // Thruster: MovementSpeed + RotationSpeed (Fin-scale turn on the Thruster profile).
+            rates.ThrusterMove = AverageFraction(
+                PerLevelFraction(thruster.moveSpeed, thruster.moveSpeedPerLevel),
+                PerLevelFraction(thruster.accelerationCap, thruster.accelerationCapPerLevel));
+            // Fallback if Thruster profile missing move seeds — use Engine move curve.
+            if (rates.ThrusterMove <= 0.0001f)
+                rates.ThrusterMove = rates.EngineMove;
+            rates.ThrusterTurn = PerLevelFraction(thruster.turnSpeed, thruster.turnSpeedPerLevel);
+            if (rates.ThrusterTurn <= 0.0001f)
+            {
+                rates.ThrusterTurn = PerLevelFraction(
+                    ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(1),
+                    ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(
+                        ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(1)));
+            }
 
             rates.TailTurn = PerLevelFraction(tail.turnSpeed, tail.turnSpeedPerLevel);
 
@@ -155,12 +184,10 @@ namespace TitanOrbit.ECS
             rates.WeaponBulletSpeed = AverageFraction(
                 PerLevelFraction(weaponBullet.bulletSpeed, weaponBullet.bulletSpeedPerLevel),
                 PerLevelFraction(weaponCannon.bulletSpeed, weaponCannon.bulletSpeedPerLevel));
+            // [TITAN-ORBIT] Weapons add Cap storage; EnergyCapacity upgrades grow gun meshes slightly.
             rates.WeaponEnergyCap = AverageFraction(
                 PerLevelFraction(weaponBullet.energyCap, weaponBullet.energyCapPerLevel),
                 PerLevelFraction(weaponCannon.energyCap, weaponCannon.energyCapPerLevel));
-            rates.WeaponEnergyRegen = AverageFraction(
-                PerLevelFraction(weaponBullet.energyRegen, weaponBullet.energyRegenPerLevel),
-                PerLevelFraction(weaponCannon.energyRegen, weaponCannon.energyRegenPerLevel));
 
             rates.HullHealth = PerLevelFraction(hull.healthCap, hull.healthCapPerLevel);
             rates.HullHealthRegen = PerLevelFraction(hull.healthRegen, hull.healthRegenPerLevel);
@@ -177,8 +204,30 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when weapon components in the family carry energy stats.
-        /// [LEGACY] Kept for callers; weapon mesh grow always uses ProfileSet Energy fractions now.
+        /// True when engine-like components in the family carry Cap or Regen.
+        /// [TITAN-ORBIT] Engines own Cap+Regen production; weapons may add Cap-only storage.
+        /// </summary>
+        public static bool FamilyHasEngineComponentEnergy(ShipFamilyDefinition family)
+        {
+            if (family?.components == null)
+                return false;
+
+            for (int i = 0; i < family.components.Count; i++)
+            {
+                var entry = family.components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+                if (!ShipFamilyPartTypes.IsEngineLikeName(entry.componentId))
+                    continue;
+                if (entry.stats.energyCap > 0.01f || entry.stats.energyRegen > 0.01f)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when any weapon component authors Energy Cap (battery / magazine storage).
         /// </summary>
         public static bool FamilyHasWeaponComponentEnergy(ShipFamilyDefinition family)
         {
@@ -188,11 +237,11 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < family.components.Count; i++)
             {
                 var entry = family.components[i];
-                if (entry == null || string.IsNullOrEmpty(entry.componentId))
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
                     continue;
-                if (!ShipComponentAbilityStatsMath.IsWeaponComponent(entry.componentId))
+                if (!ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
                     continue;
-                if (entry.stats.energyCap > 0.01f || entry.stats.energyRegen > 0.01f)
+                if (entry.stats.energyCap > 0.01f)
                     return true;
             }
 
@@ -376,8 +425,12 @@ namespace TitanOrbit.ECS
         /// </summary>
         /// <param name="rates">Per-group <c>perLevel/base</c> fractions from <see cref="BuildRatesFromProfileSet"/>.</param>
         /// <param name="territoryMovementMult">
-        /// Friendly-triangle speed multiplier (usually 1). Scales Engine/Thrust meshes for territory feedback.
+        /// Friendly-triangle speed multiplier (usually 1). Scales Engine/Thruster meshes for territory feedback.
         /// Presentation-only — pass 1 for physics collider bakes so server and client hulls match.
+        /// </param>
+        /// <param name="overdriveThrusterMult">
+        /// [TITAN-ORBIT] OVERDRIVE visual boost (usually 1). Scales <b>thruster</b> mounts only to match
+        /// the burst speed feel (<see cref="ShipOverdriveTuning.SpeedMultiplier"/>). Pass 1 for colliders.
         /// </param>
         public static void Apply(
             in ShipAttributeUpgradeState attrs,
@@ -389,7 +442,8 @@ namespace TitanOrbit.ECS
             ScaleGroup thruster,
             ScaleGroup tail,
             ScaleGroup part,
-            float territoryMovementMult = 1f)
+            float territoryMovementMult = 1f,
+            float overdriveThrusterMult = 1f)
         {
             ComputeScaleFactors(
                 attrs,
@@ -402,12 +456,16 @@ namespace TitanOrbit.ECS
                 out float tailScale,
                 out float partScale);
 
-            // --- Territory speed feedback (Engine/Thrust mounts only) ---
+            // --- Territory speed feedback (Engine + Thruster mounts) ---
             // [TITAN-ORBIT] Faster in friendly triangles → bigger propulsion meshes.
             // Collider bake must pass 1 — territory is local-owner presentation, not sim size.
             float tMult = Mathf.Max(1f, territoryMovementMult);
             engineScale *= tMult;
             thrusterScale *= tMult;
+
+            // --- OVERDRIVE thruster bloom (thrusters only) ---
+            // [TITAN-ORBIT] Shift+RMB burst → jets grow with the same proportion as the speed mult.
+            thrusterScale *= Mathf.Max(1f, overdriveThrusterMult);
 
             ApplyGroup(cockpit, cockpitScale);
             ApplyGroup(wing, wingScale);
@@ -589,18 +647,28 @@ namespace TitanOrbit.ECS
                 attrs.GemCapacity * rates.WingGems,
                 attrs.PeopleCapacity * rates.WingPeople);
 
-            // --- Weapon Bullet/Cannon: Offense + Energy (4 drivers) ---
+            // --- Weapon Bullet/Cannon: Offense + Energy Cap (3 drivers) ---
             weaponScale = SharedAbilityScale(
-                4,
+                3,
                 globalMul,
                 attrs.FirePower * rates.WeaponFirePower,
                 attrs.BulletSpeed * rates.WeaponBulletSpeed,
-                attrs.EnergyCapacity * rates.WeaponEnergyCap,
-                attrs.EnergyRegen * rates.WeaponEnergyRegen);
+                attrs.EnergyCapacity * rates.WeaponEnergyCap);
 
-            // --- Engine/Thrust: MovementSpeed only (N=1 → full percent) ---
-            engineScale = SharedAbilityScale(1, globalMul, attrs.MovementSpeed * rates.EngineMove);
-            thrusterScale = engineScale;
+            // --- Engine-like: MovementSpeed + Energy Cap/Regen (power plant) ---
+            engineScale = SharedAbilityScale(
+                3,
+                globalMul,
+                attrs.MovementSpeed * rates.EngineMove,
+                attrs.EnergyCapacity * rates.EngineEnergyCap,
+                attrs.EnergyRegen * rates.EngineEnergyRegen);
+
+            // --- Thruster-like: MovementSpeed + RotationSpeed (turn) ---
+            thrusterScale = SharedAbilityScale(
+                2,
+                globalMul,
+                attrs.MovementSpeed * rates.ThrusterMove,
+                attrs.RotationSpeed * rates.ThrusterTurn);
 
             // --- Tail: RotationSpeed only ---
             tailScale = SharedAbilityScale(1, globalMul, attrs.RotationSpeed * rates.TailTurn);

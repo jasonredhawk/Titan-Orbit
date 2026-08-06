@@ -16,6 +16,8 @@ namespace TitanOrbit.Game
     /// the local ship's ghosted <c>ShipFamilyConfigIndex</c> and calls <see cref="SetSettings"/> when
     /// the family changes (team spawn or moon-dock purchase). The camera hard-locks to the ship,
     /// then adds a gently smoothed look-ahead on XZ and a smoothly eased height zoom from ship level.
+    /// During gem Instantiates (<see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>) look-ahead
+    /// freezes and ship level holds last-good — avoids false zoom when asteroids break or hits spike speed.
     /// Ship flight smoothing stays owned by NetCode — we only SmoothDamp camera composition.
     /// </para>
     /// Moon-dock cinematic overrides the follow target with a hard lock on the spinning hull.
@@ -92,6 +94,13 @@ namespace TitanOrbit.Game
 
         /// <summary>True once <see cref="_lastShipPos"/> has a valid sample.</summary>
         bool _hasLastShipPos;
+
+        /// <summary>
+        /// Last successfully read <see cref="ShipState.ShipLevel"/>. Never fall back to 1 during
+        /// <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/> (gem Instantiates after
+        /// asteroid destroy) — that caused SmoothDamp height zoom-in/out.
+        /// </summary>
+        int _lastKnownShipLevel = 1;
 
         /// <summary>
         /// Code defaults matching <see cref="CameraFollowSettings"/> field defaults.
@@ -214,6 +223,7 @@ namespace TitanOrbit.Game
 
             // --- Height zoom from ship level ---
             // [TITAN-ORBIT] Profile owns the curve; SmoothDamp so level-ups / family swaps ease out.
+            // Uses last-good level so gem Instantiates (GhostSpawnBacklog) never snap height to L1.
             float targetHeight = profile.ComputeTargetHeight(ResolveShipLevel());
             _currentHeight = Mathf.SmoothDamp(
                 _currentHeight,
@@ -225,20 +235,33 @@ namespace TitanOrbit.Game
 
             // --- Look-ahead from planar velocity ---
             // Moon-dock cinematic keeps a hard hull lock: no lead (spinning on the surface would yank framing).
-            Vector3 desiredLookAhead = Vector3.zero;
-            if (!isMoonDockOverride)
+            // [TITAN-ORBIT] During ship/gem Instantiates, velocity reads fail and pose-delta is near-zero
+            // (soft-track) — SmoothDamp toward zero then back out feels like zoom. Freeze lead instead.
+            bool freezeLookAhead = ClientJoinSettleCache.ShouldSkipShipEntityQueries;
+            if (!isMoonDockOverride && !freezeLookAhead)
             {
                 Vector3 planarVel = ResolvePlanarVelocity(shipPos, dt);
-                desiredLookAhead = profile.ComputeDesiredLookAhead(planarVel);
+                Vector3 desiredLookAhead = profile.ComputeDesiredLookAhead(planarVel);
+                _lookAheadCurrent = Vector3.SmoothDamp(
+                    _lookAheadCurrent,
+                    desiredLookAhead,
+                    ref _lookAheadSmoothVelocity,
+                    profile.lookAheadSmoothTime,
+                    Mathf.Infinity,
+                    dt);
             }
-
-            _lookAheadCurrent = Vector3.SmoothDamp(
-                _lookAheadCurrent,
-                desiredLookAhead,
-                ref _lookAheadSmoothVelocity,
-                profile.lookAheadSmoothTime,
-                Mathf.Infinity,
-                dt);
+            else if (isMoonDockOverride)
+            {
+                // Ease lead out while docked (do not freeze a stale combat lead over the moon).
+                _lookAheadCurrent = Vector3.SmoothDamp(
+                    _lookAheadCurrent,
+                    Vector3.zero,
+                    ref _lookAheadSmoothVelocity,
+                    profile.lookAheadSmoothTime,
+                    Mathf.Infinity,
+                    dt);
+            }
+            // else: backlog — keep _lookAheadCurrent / velocity as-is.
 
             // Force Y=0 so look-ahead never lifts/drops the camera (height owns Y).
             _lookAheadCurrent.y = 0f;
@@ -287,14 +310,20 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Reads local <see cref="ShipState.ShipLevel"/> when the bridge can resolve it; defaults to 1.
+        /// Reads local <see cref="ShipState.ShipLevel"/> when the bridge can resolve it.
+        /// Holds the last good value when the read fails (join backlog / gem Instantiates) so height
+        /// does not SmoothDamp toward level-1 and back — that looked like combat zoom.
         /// </summary>
-        static int ResolveShipLevel()
+        int ResolveShipLevel()
         {
             // [HYBRID] Tiny tagged/seeded read via EcsGameBridge — safe during GhostSpawnBacklog.
             if (EcsGameBridge.TryGetLocalShipState(out var state))
-                return Mathf.Max(1, state.ShipLevel);
-            return 1;
+            {
+                _lastKnownShipLevel = Mathf.Max(1, state.ShipLevel);
+                return _lastKnownShipLevel;
+            }
+
+            return Mathf.Max(1, _lastKnownShipLevel);
         }
 
         /// <summary>

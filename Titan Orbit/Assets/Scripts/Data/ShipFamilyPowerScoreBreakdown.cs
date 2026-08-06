@@ -77,6 +77,7 @@ namespace TitanOrbit.Data
             stats.energyRegen += stats.energyRegenPerLevel * upgradeCount;
             stats.moveSpeed += stats.moveSpeedPerLevel * upgradeCount;
             stats.accelerationCap += stats.accelerationCapPerLevel * upgradeCount;
+            stats.thrustEnergyDrain += stats.thrustEnergyDrainPerLevel * upgradeCount;
             stats.turnSpeed += stats.turnSpeedPerLevel * upgradeCount;
             stats.maxGems += stats.maxGemsPerLevel * upgradeCount;
             stats.maxPeople += stats.maxPeoplePerLevel * upgradeCount;

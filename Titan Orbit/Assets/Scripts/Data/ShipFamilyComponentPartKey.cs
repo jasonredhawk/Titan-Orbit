@@ -9,9 +9,10 @@ namespace TitanOrbit.Data
     /// fields are authored for each Stat Category × part type. Used by the ShipFamilyDefinition
     /// Inspector (filter visible fields) and by Scan / Populate when writing component stats.
     /// <para>
-    /// [TITAN-ORBIT] Thrusters author move/accel only — turn speed lives on Fin/Tail.
-    /// Propulsion particle VFX and cosmetic covers (stats off, still in Thruster scale group) are
-    /// controlled on <see cref="ShipFamilyPartNameMapping"/>.
+    /// [TITAN-ORBIT] Thruster-like mounts author move/accel/turn; engine-like mounts author
+    /// move/accel + Energy Cap/Regen (power plant); Tail/Fin still author turn. Weapons author
+    /// Offense plus Energy Cap only (extra battery — no Regen). Propulsion particle VFX and
+    /// cosmetic covers are controlled on <see cref="ShipFamilyPartNameMapping"/>.
     /// </para>
     /// </summary>
     public static class ShipFamilyComponentPartKey
@@ -25,19 +26,21 @@ namespace TitanOrbit.Data
         static readonly Dictionary<string, string> AliasToCanonical =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                // Propulsion → Engine/Thrust group
-                { "ThrustCover", ShipFamilyPartTypes.Engine },
-                { "Thrusters", ShipFamilyPartTypes.Engine },
-                { "Thrusters_Big", ShipFamilyPartTypes.Engine },
-                { "Tiny_Thrusters", ShipFamilyPartTypes.Engine },
-                { "Thruster_Place", ShipFamilyPartTypes.Engine },
-                { "Exhaust", ShipFamilyPartTypes.Engine },
+                // Propulsion — separate Engine (power plant) vs Thruster (maneuver jets)
+                { "ThrustCover", ShipFamilyPartTypes.Thruster },
+                { "Thrusters", ShipFamilyPartTypes.Thruster },
+                { "Thrusters_Big", ShipFamilyPartTypes.Thruster },
+                { "Tiny_Thrusters", ShipFamilyPartTypes.Thruster },
+                { "Thruster_Place", ShipFamilyPartTypes.Thruster },
+                { "Exhaust", ShipFamilyPartTypes.Thruster },
                 { "EngineComp1", ShipFamilyPartTypes.Engine },
                 { "EngineComp2", ShipFamilyPartTypes.Engine },
                 { "Engine_1", ShipFamilyPartTypes.Engine },
                 { "Engine_2", ShipFamilyPartTypes.Engine },
                 { "Engine1", ShipFamilyPartTypes.Engine },
                 { "Engine2", ShipFamilyPartTypes.Engine },
+                { "Engine", ShipFamilyPartTypes.Engine },
+                { "Thruster", ShipFamilyPartTypes.Thruster },
                 // Weapons — rapid small vs heavy slow
                 { "Gun", ShipFamilyPartTypes.WeaponBullet },
                 { "Machinegun", ShipFamilyPartTypes.WeaponBullet },
@@ -106,9 +109,28 @@ namespace TitanOrbit.Data
             { "healthCap", "healthCapPerLevel", "healthRegen", "healthRegenPerLevel" };
         static readonly string[] EnergyFields =
             { "energyCap", "energyCapPerLevel", "energyRegen", "energyRegenPerLevel" };
-        /// <summary>Engine / thruster movement — move + accel only (no turn).</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Weapon Energy category — Cap only (battery / magazine). Engines own Regen.
+        /// </summary>
+        static readonly string[] WeaponEnergyCapFields =
+            { "energyCap", "energyCapPerLevel" };
+        /// <summary>Engine-like movement — move + accel + thrust drain + OVERDRIVE knobs (power plant).</summary>
         static readonly string[] PropulsionMovementFields =
-            { "moveSpeed", "moveSpeedPerLevel", "accelerationCap", "accelerationCapPerLevel" };
+        {
+            "moveSpeed", "moveSpeedPerLevel",
+            "accelerationCap", "accelerationCapPerLevel",
+            "thrustEnergyDrain", "thrustEnergyDrainPerLevel",
+            "extraSpeedPercent", "extraSpeedPercentPerLevel",
+            "extraSpeedEnergyPercent", "extraSpeedEnergyPercentPerLevel"
+        };
+        /// <summary>Thruster-like movement — move + accel + turn + thrust drain (no OVERDRIVE knobs; engines own those).</summary>
+        static readonly string[] ThrusterMovementFields =
+        {
+            "moveSpeed", "moveSpeedPerLevel",
+            "accelerationCap", "accelerationCapPerLevel",
+            "thrustEnergyDrain", "thrustEnergyDrainPerLevel",
+            "turnSpeed", "turnSpeedPerLevel"
+        };
         static readonly string[] TurnMovementFields = { "turnSpeed", "turnSpeedPerLevel" };
         static readonly string[] CapacityFields =
             { "maxGems", "maxGemsPerLevel", "maxPeople", "maxPeoplePerLevel" };
@@ -170,8 +192,25 @@ namespace TitanOrbit.Data
                 };
             }
 
-            if (ShipFamilyPartTypes.IsPropulsion(partType) || ShipFamilyPartTypes.IsTurn(partType))
+            // [TITAN-ORBIT] Engines = Movement + Energy (power plant). Thrusters = Movement only
+            // (move/accel/turn fields). Tail/Fin = Movement (turn fields only).
+            if (ShipFamilyPartTypes.IsEngineProfile(partType)
+                || ShipFamilyPartTypes.IsEngineLikeName(componentId))
+            {
+                return new List<ShipComponentStatCategory>
+                {
+                    ShipComponentStatCategory.Movement,
+                    ShipComponentStatCategory.Energy
+                };
+            }
+
+            if (ShipFamilyPartTypes.IsThrusterProfile(partType)
+                || ShipFamilyPartTypes.IsThrusterLikeName(componentId)
+                || ShipFamilyPartTypes.IsPropulsion(partType)
+                || ShipFamilyPartTypes.IsTurn(partType))
+            {
                 return new List<ShipComponentStatCategory> { ShipComponentStatCategory.Movement };
+            }
 
             if (string.Equals(partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase))
             {
@@ -182,6 +221,7 @@ namespace TitanOrbit.Data
                 };
             }
 
+            // [TITAN-ORBIT] Weapons: Offense + Energy Cap (battery). Engines own Cap+Regen production.
             if (ShipFamilyPartTypes.IsWeapon(partType))
             {
                 return new List<ShipComponentStatCategory>
@@ -216,12 +256,19 @@ namespace TitanOrbit.Data
                 case ShipComponentStatCategory.Health:
                     return HealthFields;
                 case ShipComponentStatCategory.Energy:
+                    // Weapons: Cap only. Engines / other Energy mounts: Cap + Regen.
+                    if (ShipFamilyPartTypes.IsWeapon(partType)
+                        || ShipComponentAbilityStats.IsWeaponComponent(componentId))
+                        return WeaponEnergyCapFields;
                     return EnergyFields;
                 case ShipComponentStatCategory.Movement:
-                    // [TITAN-ORBIT] Engine/Thrust = move/accel; Tail (incl. Fin) = turn only.
+                    // [TITAN-ORBIT] Tail/Fin = turn only; Thruster profile = move/accel/turn; Engine = move/accel.
                     partType = ShipFamilyPartTypes.Normalize(partType, componentId);
                     if (ShipFamilyPartTypes.IsTurn(partType))
                         return TurnMovementFields;
+                    if (ShipFamilyPartTypes.IsThrusterProfile(partType)
+                        || ShipFamilyPartTypes.IsThrusterLikeName(componentId))
+                        return ThrusterMovementFields;
                     if (ShipFamilyPartTypes.IsPropulsion(partType))
                         return PropulsionMovementFields;
                     return PropulsionMovementFields;
@@ -290,10 +337,13 @@ namespace TitanOrbit.Data
                 StringComparison.OrdinalIgnoreCase);
         }
 
-        static bool ContainsStatCategory(
+        /// <summary>True when <paramref name="categories"/> already lists <paramref name="category"/>.</summary>
+        public static bool ContainsStatCategory(
             IReadOnlyList<ShipComponentStatCategory> categories,
             ShipComponentStatCategory category)
         {
+            if (categories == null)
+                return false;
             for (int i = 0; i < categories.Count; i++)
             {
                 if (categories[i] == category)

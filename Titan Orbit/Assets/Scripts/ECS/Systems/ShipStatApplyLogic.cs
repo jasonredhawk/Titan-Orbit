@@ -352,7 +352,9 @@ namespace TitanOrbit.ECS
                     ship.Health = Mathf.Clamp(ship.MaxHealth * prevHealthRatio, 1f, ship.MaxHealth);
 
                 ship.CurrentEnergy = Mathf.Min(ship.CurrentEnergy, ship.MaxEnergy);
-                if (ship.CurrentEnergy <= 0.01f)
+                // [TITAN-ORBIT] Seed full energy only at team-select / spawn — never refill when
+                // OVERDRIVE (or combat) emptied the pool to ~0, or re-engage hysteresis breaks.
+                if (ship.AwaitingTeamSelection)
                     ship.CurrentEnergy = ship.MaxEnergy;
 
                 ship.CurrentGems = Mathf.Min(ship.CurrentGems, ship.GemCapacity);
@@ -464,6 +466,44 @@ namespace TitanOrbit.ECS
                 motor.ChassisReferenceHealth = referenceHealth;
                 // [TITAN-ORBIT] Ram/grind damage rating — level-scaled family sum (HUD uses the same field).
                 motor.RammingPower = Mathf.Max(0f, effective.rammingPower);
+
+                // [TITAN-ORBIT] Engines + thrusters author thrustEnergyDrain (OVERDRIVE cost base).
+                // MaxEnergy = summed Cap from engines (plant) + weapons (extra batteries);
+                // Regen comes from engines only (BalanceEngineEnergyForComponents).
+                // Normal RMB thrust does not spend energy — only Shift+RMB overdrive does.
+                TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition drainFamily);
+                float thrustDrain = ShipPropulsionAggregation.ComputeThrusterEnergyDrainPerSecond(
+                    drainFamily,
+                    shipLevel,
+                    effective.accelerationCap);
+                // Family Special Bonuses × thrustEnergyDrain (Compute reads raw part rows).
+                if (drainFamily != null)
+                {
+                    float drainMul = drainFamily.specialBonuses.thrustEnergyDrainMul;
+                    if (drainMul > 0.0001f)
+                        thrustDrain *= drainMul;
+                }
+
+                motor.ThrustEnergyDrainPerSecond = Mathf.Max(0f, thrustDrain);
+
+                // --- OVERDRIVE: engine ExtraSpeed% / ExtraSpeedEnergy% × family Special Bonuses ---
+                // Baked onto motor so predicted + server fixed steps never load ScriptableObjects.
+                // Absolute drain/sec = ThrustEnergyDrainPerSecond × OD mul — N engines ≈ N× cost
+                // because thrustEnergyDrain sums across engines (mul is max ExtraSpeed pair).
+                var bonuses = drainFamily != null
+                    ? drainFamily.specialBonuses
+                    : ShipFamilySpecialBonuses.Identity;
+                ShipPropulsionAggregation.ResolveOverdriveMultipliersFromEngines(
+                    drainFamily,
+                    shipLevel,
+                    bonuses,
+                    out float odSpeed,
+                    out float odThrust,
+                    out float odDrain);
+                motor.OverdriveSpeedMultiplier = odSpeed;
+                motor.OverdriveThrustMultiplier = odThrust;
+                motor.OverdriveEnergyDrainMultiplier = odDrain;
+
                 em.SetComponentData(shipEntity, motor);
             }
 

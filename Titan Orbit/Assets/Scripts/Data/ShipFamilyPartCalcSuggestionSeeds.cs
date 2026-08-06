@@ -61,7 +61,7 @@ namespace TitanOrbit.Data
         /// <summary>
         /// HUD clamps attribute ticks to 7; each Fire Power tick is +10%
         /// (matches ShipAttributeUpgradeLogic.MultiplierPerLevel without a Data→ECS reference).
-        /// Used so energy cap can afford one maxed fire-power shot at base weapon stats.
+        /// Used by engine fleet Cap mirroring and max-shot cost helpers.
         /// </summary>
         public const int MaxFirePowerAttributeTicks = 7;
         public const float FirePowerAttributeMultiplierPerLevel = 0.1f;
@@ -73,10 +73,13 @@ namespace TitanOrbit.Data
         public const float EnergyRegenFractionOfSustainedDrain = 0.35f;
 
         /// <summary>
-        /// Weapon Bullet energy cap = this many max-attribute shots (short burst).
-        /// Cannons use 1 so one maxed shot nearly empties the bar.
+        /// [LEGACY] Old weapon Cap = N max-attribute shots. Weapon Cap now defaults to
+        /// <c>firePower × fireRate</c> (1 second of sustained fire) via <see cref="ApplyWeaponBatteryCap"/>.
         /// </summary>
         public const float BulletEnergyCapMaxAttributeShots = 3f;
+
+        /// <summary>[LEGACY] See <see cref="BulletEnergyCapMaxAttributeShots"/>.</summary>
+        public const float CannonEnergyCapMaxAttributeShots = 1f;
 
         /// <summary>Legacy name kept for callers — maps to bullet fire rate.</summary>
         public const float BurstEnergyBalanceFireRate = FireRate;
@@ -155,49 +158,62 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Sizes weapon energy pool/regen from fire power + fire rate.
         /// <para>
-        /// Combat spends <c>firePower</c> energy per shot. Cap is sized so a max Fire Power
-        /// attribute shot fits (cannons: ~1 shot empties the bar; bullets: a short burst).
-        /// Regen is a fraction of sustained drain so holding fire always nets energy loss.
+        /// Combat spends <c>firePower</c> energy per shot. Cap defaults to
+        /// <c>firePower × fireRate</c> (1 second of sustained fire). Regen is a fraction of
+        /// sustained drain so holding fire always nets energy loss.
         /// </para>
+        /// [TITAN-ORBIT] Prefer <see cref="ApplyWeaponBatteryCap"/> on weapon components — hull
+        /// Regen is owned by engines; weapons only add Cap storage.
         /// </summary>
         /// <param name="stats">Weapon component stats (reads firePower / fireRate; writes energy).</param>
-        /// <param name="maxAttributeShotsInCap">
-        /// How many max-attribute shots fit in the energy bar (1 for cannon, ~3 for bullets).
-        /// </param>
-        public static void ApplyBalancedEnergy(
-            ref ShipComponentAbilityStats stats,
-            float maxAttributeShotsInCap = BulletEnergyCapMaxAttributeShots)
+        public static void ApplyBalancedEnergy(ref ShipComponentAbilityStats stats)
         {
+            ApplyWeaponBatteryCap(ref stats);
+
+            // --- Regen: always slower than sustained fire drain (engine plant uses this formula) ---
             float firePower = Mathf.Max(0f, stats.firePower);
             float fireRate = Mathf.Max(0.01f, stats.fireRate);
             if (firePower <= 0f)
                 return;
 
-            // --- Cap: afford max Fire Power attribute shots at this component's base fire power ---
-            // [TITAN-ORBIT] Energy cost per shot = firePower. Cap uses max-attribute cost so
-            // upgrading Fire Power to full never makes a shot more expensive than the pool.
-            float maxShotCost = GetMaxAttributeFirePowerCost(firePower);
-            float shots = Mathf.Max(1f, maxAttributeShotsInCap);
-            stats.energyCap = maxShotCost * shots;
-            stats.energyCapPerLevel = stats.energyCap * ShipPropulsionAggregation.PerLevelFractionOfBase;
-
-            // --- Regen: always slower than sustained fire drain ---
             float sustainedDrain = ComputeSustainedEnergyDrain(firePower, fireRate);
             stats.energyRegen = sustainedDrain * EnergyRegenFractionOfSustainedDrain;
             stats.energyRegenPerLevel = stats.energyRegen * ShipPropulsionAggregation.PerLevelFractionOfBase;
         }
 
         /// <summary>
-        /// Cannon energy: one maxed Fire Power shot ≈ full energy bar; regen &lt; 1 shot/sec drain.
+        /// [TITAN-ORBIT] Weapon battery Cap only — no Regen. Engines produce energy; guns store it.
+        /// Default Cap = <c>firePower × fireRate</c> (enough for ~1 second of continuous fire
+        /// at base Offense stats). Designers can override Cap after Scan/Rebalance.
         /// </summary>
-        public static void ApplyCannonBalancedEnergy(ref ShipComponentAbilityStats stats) =>
-            ApplyBalancedEnergy(ref stats, maxAttributeShotsInCap: 1f);
+        /// <param name="stats">Weapon stats (reads firePower / fireRate; writes energyCap / PerLevel; clears regen).</param>
+        public static void ApplyWeaponBatteryCap(ref ShipComponentAbilityStats stats)
+        {
+            float firePower = Mathf.Max(0f, stats.firePower);
+            if (firePower <= 0f)
+            {
+                stats.energyRegen = 0f;
+                stats.energyRegenPerLevel = 0f;
+                return;
+            }
 
-        /// <summary>
-        /// Bullet energy: short burst of maxed shots in the bar; regen &lt; 3 shots/sec drain.
-        /// </summary>
+            // --- Cap: 1 second of sustained fire at this gun's authored firePower × fireRate ---
+            float fireRate = Mathf.Max(0.01f, stats.fireRate);
+            stats.energyCap = ComputeSustainedEnergyDrain(firePower, fireRate);
+            stats.energyCapPerLevel = stats.energyCap * ShipPropulsionAggregation.PerLevelFractionOfBase;
+
+            // Weapons never produce Regen.
+            stats.energyRegen = 0f;
+            stats.energyRegenPerLevel = 0f;
+        }
+
+        /// <summary>Cannon energy: Cap = firePower × fireRate (1 sec); regen &lt; sustained drain.</summary>
+        public static void ApplyCannonBalancedEnergy(ref ShipComponentAbilityStats stats) =>
+            ApplyBalancedEnergy(ref stats);
+
+        /// <summary>Bullet energy: Cap = firePower × fireRate (1 sec); regen &lt; sustained drain.</summary>
         public static void ApplyBulletBalancedEnergy(ref ShipComponentAbilityStats stats) =>
-            ApplyBalancedEnergy(ref stats, maxAttributeShotsInCap: BulletEnergyCapMaxAttributeShots);
+            ApplyBalancedEnergy(ref stats);
     }
 
     /// <summary>Scan/auto-populate wing tractor beam defaults.</summary>
@@ -244,13 +260,14 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
-    /// Scan / ProfileSet turn-speed seeds for the Tail Part Profile group.
+    /// Scan / ProfileSet turn-speed seeds for the Tail Part Profile group and thruster mounts.
     /// <para>
     /// [TITAN-ORBIT] Fin and Tail used to be separate part types with their own seeds
     /// (<see cref="FinTurnSpeedPerVersion"/> + <see cref="TailTurnSpeedPerVersion"/>).
     /// They now share the Tail profile; <see cref="GetSuggestedTurnSpeed"/> returns the
     /// combined package so Reset / CreateDefaultProfile keep the old total turn budget.
-    /// Thrusters never author turn — only Tail (incl. Fin name mappings).
+    /// Thruster-like mounts also author Fin-scale turn (<see cref="GetSuggestedFinTurnSpeed"/>)
+    /// so Tail/Fin + thrusters both contribute without exploding the turn budget.
     /// </para>
     /// </summary>
     public static class ShipComponentTurnSpeedSuggestions

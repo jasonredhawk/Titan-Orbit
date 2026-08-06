@@ -39,6 +39,11 @@ namespace TitanOrbit.UI
     /// the boosted cruise the motor already applies.
     /// </para>
     /// <para>
+    /// [TITAN-ORBIT] The speed bar always spans to OVERDRIVE top speed (motor baked capacity),
+    /// even when Shift is not held. The right-hand band uses <see cref="overdriveZoneColor"/> so
+    /// players see unused overdrive headroom; the cyan fill only enters that band while OD is active.
+    /// </para>
+    /// <para>
     /// [TITAN-ORBIT] <see cref="ShipMotorConfig"/> already includes the empty-hold capacity tax from
     /// <see cref="ShipMobilityResolution"/>. Prefer those post-tax motor fields; bake-default
     /// fallbacks re-apply the same tax so freighters never show untaxed chassis speeds.
@@ -83,6 +88,11 @@ namespace TitanOrbit.UI
         [SerializeField] Color backgroundColor = new Color(0f, 0f, 0f, 0.45f);
         [SerializeField] Color fillColor = new Color(0.35f, 0.85f, 1f, 0.9f);
         [SerializeField] Color trackColor = new Color(0.15f, 0.15f, 0.18f, 0.85f);
+        /// <summary>
+        /// [TITAN-ORBIT] Always-visible band from cruise max → OVERDRIVE top speed on the speed bar.
+        /// Amber so it reads as "burst capacity" next to the cyan fill (matches SPD od tag).
+        /// </summary>
+        [SerializeField] Color overdriveZoneColor = new Color(1f, 0.72f, 0.28f, 0.38f);
         [SerializeField] Color textColor = new Color(0.92f, 0.95f, 1f, 1f);
         [SerializeField] Color accelPositiveColor = new Color(0.25f, 0.92f, 0.45f, 0.92f);
         [SerializeField] Color accelNegativeColor = new Color(0.95f, 0.28f, 0.28f, 0.92f);
@@ -90,6 +100,9 @@ namespace TitanOrbit.UI
 
         GameObject rootPanel;
         Slider speedSlider;
+        /// <summary>Speed-bar band for OVERDRIVE headroom (behind the cyan fill).</summary>
+        RectTransform overdriveZoneRect;
+        Image overdriveZoneImage;
         RectTransform accelGreenFill;
         RectTransform accelRedFill;
         TextMeshProUGUI speedLabel;
@@ -300,6 +313,20 @@ namespace TitanOrbit.UI
             trackImg.color = trackColor;
             trackImg.raycastTarget = false;
             speedSlider.targetGraphic = trackImg;
+
+            // --- OVERDRIVE capacity zone (always painted; fill covers it when speed enters OD) ---
+            // [TITAN-ORBIT] Sibling between track and Fill Area so unused headroom stays visible
+            // while cruising at normal max. Anchors updated each frame from baseMax / odMax.
+            GameObject odZoneGo = new GameObject("OverdriveZone");
+            odZoneGo.transform.SetParent(sliderGo.transform, false);
+            overdriveZoneRect = odZoneGo.AddComponent<RectTransform>();
+            overdriveZoneRect.anchorMin = new Vector2(0.57f, 0f);
+            overdriveZoneRect.anchorMax = Vector2.one;
+            overdriveZoneRect.offsetMin = Vector2.zero;
+            overdriveZoneRect.offsetMax = Vector2.zero;
+            overdriveZoneImage = odZoneGo.AddComponent<Image>();
+            overdriveZoneImage.color = overdriveZoneColor;
+            overdriveZoneImage.raycastTarget = false;
 
             GameObject fillArea = new GameObject("Fill Area");
             fillArea.transform.SetParent(sliderGo.transform, false);
@@ -753,6 +780,96 @@ namespace TitanOrbit.UI
         static float ResolveTerritoryMovementMult() =>
             Mathf.Max(1f, PlanetConnectionGraphCache.LocalOwnerTerritoryMult);
 
+        /// <summary>
+        /// Baked OVERDRIVE MaxSpeed multiplier from the motor (always ≥ 1), even when Shift is up.
+        /// Used to size the speed bar's amber capacity zone and the "od N.N" label.
+        /// </summary>
+        /// <param name="motor">Local ship motor (ProfileSet × family OD baked in).</param>
+        static float ResolveOverdriveCapacityMult(in ShipMotorConfig motor) =>
+            Mathf.Max(1f, ShipOverdriveTuning.ResolveSpeedMultiplier(motor));
+
+        /// <summary>
+        /// OVERDRIVE movement multiplier matching <see cref="ShipPhysicsDriveLogic"/> —
+        /// <see cref="ShipOverdriveTuning.IsBurstActive"/> with pending Shift/Thrust + ghosted
+        /// energy/lockout. Returns 1 when burst is off (capacity zone still uses
+        /// <see cref="ResolveOverdriveCapacityMult"/>).
+        /// </summary>
+        /// <param name="em">Client visualization world EntityManager.</param>
+        /// <param name="shipEntity">Local ship ghost.</param>
+        /// <param name="ship">Current vitals + <see cref="ShipState.OverdriveLockout"/>.</param>
+        static float ResolveOverdriveMovementMult(
+            EntityManager em,
+            Entity shipEntity,
+            in ShipState ship)
+        {
+            // --- Guards ---
+            if (shipEntity == Entity.Null || !em.Exists(shipEntity))
+                return 1f;
+
+            // [TITAN-ORBIT] Prefer ShipPendingInput — ghost ShipInput can lag one tick / skip
+            // under join backlog, which made SPD overdrive flicker independently of the motor.
+            bool thrustHeld;
+            bool shiftHeld;
+            if (ShipPendingInput.HasValue)
+            {
+                thrustHeld = ShipPendingInput.Latest.Thrust;
+                shiftHeld = ShipPendingInput.Latest.Overdrive;
+            }
+            else if (em.HasComponent<ShipInput>(shipEntity))
+            {
+                var input = em.GetComponentData<ShipInput>(shipEntity);
+                thrustHeld = input.Thrust;
+                shiftHeld = input.Overdrive;
+            }
+            else
+                return 1f;
+
+            if (!ShipOverdriveTuning.IsBurstActive(
+                    shiftHeld,
+                    thrustHeld,
+                    useOrbit: false,
+                    ship.CurrentEnergy,
+                    ship.OverdriveLockout))
+                return 1f;
+
+            if (em.HasComponent<ShipMotorConfig>(shipEntity))
+            {
+                var motor = em.GetComponentData<ShipMotorConfig>(shipEntity);
+                return ShipOverdriveTuning.ResolveSpeedMultiplier(motor);
+            }
+
+            return ShipOverdriveTuning.SpeedMultiplier;
+        }
+
+        /// <summary>
+        /// Layouts the amber OVERDRIVE band from cruise max → bar max (right side of the speed bar).
+        /// Hidden when capacity mul is ~1 (no OD headroom to show).
+        /// </summary>
+        /// <param name="cruiseMax">Normal max speed (territory + load, no OD).</param>
+        /// <param name="barMax">Full bar scale = cruise × OD capacity mul.</param>
+        void UpdateOverdriveZone(float cruiseMax, float barMax)
+        {
+            if (overdriveZoneRect == null || overdriveZoneImage == null)
+                return;
+
+            float safeBar = Mathf.Max(0.01f, barMax);
+            float cruiseFrac = Mathf.Clamp01(cruiseMax / safeBar);
+            bool showZone = barMax > cruiseMax * 1.001f && cruiseFrac < 0.999f;
+            if (overdriveZoneImage.enabled != showZone)
+                overdriveZoneImage.enabled = showZone;
+            if (!showZone)
+                return;
+
+            // --- Right-hand band: everything above normal cruise is OD capacity ---
+            overdriveZoneRect.anchorMin = new Vector2(cruiseFrac, 0f);
+            overdriveZoneRect.anchorMax = Vector2.one;
+            overdriveZoneRect.offsetMin = Vector2.zero;
+            overdriveZoneRect.offsetMax = Vector2.zero;
+            // Keep inspector/runtime color in sync if the designer tweaks the serialized field.
+            if (overdriveZoneImage.color != overdriveZoneColor)
+                overdriveZoneImage.color = overdriveZoneColor;
+        }
+
         /// <summary>Planar speed magnitude — top-down game ignores Y velocity.</summary>
         static float GetHorizontalSpeed(in ShipKinematics kinematics)
         {
@@ -843,7 +960,7 @@ namespace TitanOrbit.UI
             if (!uiBuilt)
                 BuildUIIfNeeded();
             if (rootPanel == null || speedSlider == null || speedLabel == null || accelGreenFill == null || accelRedFill == null
-                || speedTickLabels == null || accelTickLabels == null)
+                || speedTickLabels == null || accelTickLabels == null || overdriveZoneRect == null)
             {
                 return;
             }
@@ -918,7 +1035,7 @@ namespace TitanOrbit.UI
 
             float cur = GetHorizontalSpeed(kinematics);
             float chassisMove = effectiveStats.moveSpeed;
-            float maxSpd = ResolveDisplayMaxSpeed(motor, effectiveStats);
+            float cruiseMax = ResolveDisplayMaxSpeed(motor, effectiveStats);
             // Bake default MaxSpeed=35 while chassis is ~13 — motor not applied yet this frame.
             bool motorLooksBaked = chassisMove > 0.1f && motor.MaxSpeed > chassisMove * 1.35f;
 
@@ -927,20 +1044,36 @@ namespace TitanOrbit.UI
             // ShipMotorConfig stays unboosted. Without this, the bar saturates early and SPD
             // shows e.g. 13.5/13.5 "at max" while kinematics are still climbing past chassis cruise.
             float territoryMult = ResolveTerritoryMovementMult();
-            maxSpd *= territoryMult;
+            cruiseMax *= territoryMult;
 
             // --- Current-load MaxSpeed tax (same as ShipPhysicsDriveLogic each tick) ---
             // Capacity tax is already inside motor.MaxSpeed; collecting gems/people further
             // lowers the live cruise cap — HUD must match or the bar lies at "full" while slow.
             var loadMul = ShipMobilityResolution.ApplyCurrentLoadTax(ship.CurrentGems, ship.CurrentPeople);
-            maxSpd *= loadMul.SpeedMultiplier;
+            cruiseMax *= loadMul.SpeedMultiplier;
 
-            speedSlider.value = Mathf.Clamp01(cur / Mathf.Max(0.01f, maxSpd));
+            // --- OVERDRIVE capacity (always) vs live burst (only while engaged) ---
+            // [TITAN-ORBIT] Bar scale = cruise × baked OD mul so the amber zone is always visible.
+            // Live cruise / "at max" / thrust use active overdrive only.
+            float overdriveCapacityMult = ResolveOverdriveCapacityMult(motor);
+            float overdriveActiveMult = 1f;
+            var vizWorld = EcsGameBridge.GetVisualizationWorld();
+            if (vizWorld != null && vizWorld.IsCreated)
+                overdriveActiveMult = ResolveOverdriveMovementMult(vizWorld.EntityManager, shipEntity, ship);
+            bool overdriveActive = overdriveActiveMult > 1.001f;
+
+            float barMax = cruiseMax * overdriveCapacityMult;
+            // Live motor ceiling this frame (cruise when OD off, OD top when on).
+            float liveMax = overdriveActive ? barMax : cruiseMax;
+
+            // Fill against full OD scale so unused amber headroom stays readable at cruise.
+            speedSlider.value = Mathf.Clamp01(cur / Mathf.Max(0.01f, barMax));
+            UpdateOverdriveZone(cruiseMax, barMax);
 
             float mass = GetMovementMass(ship, motor);
-            // [TITAN-ORBIT] F/m — same a = (EngineThrust × territory)/mass the motor uses below MaxSpeed.
+            // [TITAN-ORBIT] F/m — same a = (EngineThrust × territory × overdrive)/mass the motor uses.
             // EngineThrust on motor is already capacity-taxed by ShipStatApplyLogic.
-            float thrustForDisplay = motor.EngineThrust * territoryMult;
+            float thrustForDisplay = motor.EngineThrust * territoryMult * overdriveActiveMult;
             float maxFwd = Mathf.Max(0.01f, thrustForDisplay / Mathf.Max(ShipMassLogic.MinMass, mass));
             if (motorLooksBaked && effectiveStats.accelerationCap > 0.1f)
             {
@@ -957,7 +1090,7 @@ namespace TitanOrbit.UI
                     effectiveStats.maxPeople).EngineThrust;
                 maxFwd = Mathf.Max(
                     0.01f,
-                    taxedThrust * territoryMult / Mathf.Max(ShipMassLogic.MinMass, mass));
+                    taxedThrust * territoryMult * overdriveActiveMult / Mathf.Max(ShipMassLogic.MinMass, mass));
             }
 
             float maxBrake = Mathf.Max(0.01f, motor.BrakeDeceleration > 0f
@@ -972,11 +1105,11 @@ namespace TitanOrbit.UI
             lastHorizontalSpeed = cur;
             hasLastHorizontalSpeed = true;
 
-            float speedNoiseFloor = maxSpd * 0.015f;
+            float speedNoiseFloor = liveMax * 0.015f;
             if (Mathf.Abs(speedDelta) < speedNoiseFloor)
                 rawAccel = 0f;
 
-            bool atCruise = cur >= maxSpd * AtMaxSpeedFraction;
+            bool atCruise = cur >= liveMax * AtMaxSpeedFraction;
             if (atCruise && Mathf.Abs(rawAccel) < maxFwd * 0.35f)
                 rawAccel = 0f;
 
@@ -997,15 +1130,15 @@ namespace TitanOrbit.UI
             accelRedFill.offsetMin = Vector2.zero;
             accelRedFill.offsetMax = Vector2.zero;
 
-            // --- Tick labels: only when max speed / accel scale changes ---
+            // --- Tick labels: full bar = OD capacity (amber zone included) ---
             float skew = Mathf.Max(maxFwd, maxBrake, 0.01f);
-            if (!Mathf.Approximately(lastTickMaxSpeed, maxSpd))
+            if (!Mathf.Approximately(lastTickMaxSpeed, barMax))
             {
-                lastTickMaxSpeed = maxSpd;
+                lastTickMaxSpeed = barMax;
                 for (int i = 0; i < speedTickLabels.Length; i++)
                 {
                     float t = speedTickLabels.Length <= 1 ? 0f : (float)i / (speedTickLabels.Length - 1);
-                    float tickSpd = t * maxSpd;
+                    float tickSpd = t * barMax;
                     speedTickLabels[i].text = FormatFixed1(tickSpd, 4);
                     speedTickLabels[i].alignment = i == 0
                         ? TextAlignmentOptions.MidlineLeft
@@ -1035,30 +1168,38 @@ namespace TitanOrbit.UI
             nextTextRebuildTime = Time.unscaledTime + 0.1f;
 
             // Clamp displayed speed for text so we never show 13.6/13.5 from float noise.
-            float displayCur = Mathf.Min(cur, maxSpd);
+            float displayCur = Mathf.Min(cur, liveMax);
             if (atCruise)
-                displayCur = maxSpd;
+                displayCur = liveMax;
 
-            // [TITAN-ORBIT] Brief territory tag so the raised max reads as a boost, not a chassis change.
+            // [TITAN-ORBIT] Territory tag + always-on OD capacity; active OD also shows xN.Nod.
             // ASCII "x" instead of "×" — wide unicode glyphs look crushed under <mspace>.
             string territoryTag = territoryMult > 1.001f
                 ? $" <color=#AAEEDD>x{FormatFixed1(territoryMult, 4)}t</color>"
                 : string.Empty;
+            string overdriveCapTag = overdriveCapacityMult > 1.001f
+                ? $" <color=#FFCC66>od {FormatFixed1(barMax)}</color>"
+                : string.Empty;
+            string overdriveActiveTag = overdriveActive
+                ? $" <color=#FFCC66>x{FormatFixed1(overdriveActiveMult, 4)}on</color>"
+                : string.Empty;
+            string boostTags = territoryTag + overdriveCapTag + overdriveActiveTag;
 
             // --- Compact body lines (no wrap; must fit panel width) ---
+            // Denominator = live motor ceiling (cruise or OD top); amber "od N.N" is always the bar end.
             string spdLine;
             if (atCruise)
             {
                 spdLine =
-                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  <color=#AAAAAA>max</color>{territoryTag}";
+                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(liveMax)}  <color=#AAAAAA>max</color>{boostTags}";
             }
             else
             {
-                float remaining = Mathf.Max(0f, maxSpd - cur);
+                float remaining = Mathf.Max(0f, liveMax - cur);
                 float tMax = remaining / maxFwd;
                 tMax = Mathf.Clamp(tMax, 0f, 99.9f);
                 spdLine =
-                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(maxSpd)}  <color=#AAEEDD>{FormatFixed1(tMax, 4)}s</color> to max{territoryTag}";
+                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(liveMax)}  <color=#AAEEDD>{FormatFixed1(tMax, 4)}s</color> to max{boostTags}";
             }
 
             string stopPart = cur > 0.35f

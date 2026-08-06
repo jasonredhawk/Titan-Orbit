@@ -117,11 +117,16 @@ namespace TitanOrbit.Game
             if (cyclePressedThisFrame || ShipPendingInput.CycleBulletLatched)
                 cycleBullet.Set();
 
+            // [TITAN-ORBIT] OVERDRIVE intent = Shift alone (not AND thrust).
+            // Latch re-engages at ≥25% energy while Shift stays held; burst applies when thrusting.
+            bool overdrive = _input.OverdriveHeld;
+
             return new ShipInput
             {
                 AimPlanarDir = aimDir,
                 MovePlanarDir = float2.zero,
                 Thrust = thrust,
+                Overdrive = overdrive,
                 Fire = fire,
                 CycleBullet = cycleBullet,
                 SpaceBrakes = _input.SpaceBrakesEnabled,

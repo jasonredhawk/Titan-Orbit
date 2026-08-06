@@ -109,7 +109,9 @@ namespace TitanOrbit.Editor
             EditorGUILayout.LabelField("Family Special Bonuses", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox(
                 "Multipliers applied after component sum (shared profiles stay project-wide). " +
-                "Example: moveSpeedMul = 1.2, maxGemsMul = 1.5. Edit the Special Bonuses fields above.",
+                "OVERDRIVE: extraSpeedPercentMul / extraSpeedEnergyPercentMul scale ProfileSet " +
+                "extraSpeedPercent (0.75) and extraSpeedEnergyPercent (2.0). " +
+                "thrustEnergyDrainMul scales OVERDRIVE energy cost (normal thrust is free).",
                 MessageType.None);
 
             if (GUILayout.Button("Reset Family Bonuses To 1×"))
@@ -548,7 +550,10 @@ namespace TitanOrbit.Editor
                 def.components.Add(entry);
             }
 
+            // [TITAN-ORBIT] Weapons: Cap battery (no Regen). Engines: Cap+Regen power plant.
             ShipPropulsionAggregation.BalanceWeaponEnergyForComponents(def.components);
+            ShipPropulsionAggregation.ApplyThrusterTurnSuggestionsForComponents(def.components);
+            ShipPropulsionAggregation.BalanceEngineEnergyForComponents(def.components);
 
             def.EnforceComponentStatCategories();
             def.InvalidateComponentStatsLookup();
@@ -559,7 +564,7 @@ namespace TitanOrbit.Editor
             EditorUtility.DisplayDialog(
                 "Scan Complete",
                 $"Found {scan.Count} unique component(s); wrote {def.components.Count} (skipped {skippedUnmapped} Ignore/unmapped).\n" +
-                "Stats come from ShipFamilyPartCalcProfileSet. Stat Categories filter stored fields. VFX flags baked per name.",
+                "Stats from ShipFamilyPartCalcProfileSet. Engines Cap/Regen; weapons Cap-only (extra storage). VFX flags baked per name.",
                 "OK");
         }
 
@@ -608,11 +613,16 @@ namespace TitanOrbit.Editor
             }
 
             ShipPropulsionAggregation.BalanceWeaponEnergyForComponents(def.components);
+            ShipPropulsionAggregation.ApplyThrusterTurnSuggestionsForComponents(def.components);
+            ShipPropulsionAggregation.BalanceEngineEnergyForComponents(def.components);
             def.EnforceComponentStatCategories();
             def.InvalidateComponentStatsLookup();
             EditorUtility.SetDirty(def);
             AssetDatabase.SaveAssets();
-            EditorUtility.DisplayDialog("Recalculate", $"Updated {def.components.Count} component(s) from ProfileSet.", "OK");
+            EditorUtility.DisplayDialog(
+                "Recalculate",
+                $"Updated {def.components.Count} component(s) from ProfileSet. Engines Cap/Regen; weapons Cap-only.",
+                "OK");
         }
 
         /// <summary>First integer in the suffix (e.g. Wing_3_L ΓåÆ 3, Weapon1 ΓåÆ 1); 1 if none.</summary>
@@ -1050,6 +1060,16 @@ namespace TitanOrbit.Editor
             if (source.moveSpeedPerLevel != 0f) target.moveSpeedPerLevel = source.moveSpeedPerLevel;
             if (source.accelerationCap != 0f) target.accelerationCap = source.accelerationCap;
             if (source.accelerationCapPerLevel != 0f) target.accelerationCapPerLevel = source.accelerationCapPerLevel;
+            if (source.thrustEnergyDrain != 0f) target.thrustEnergyDrain = source.thrustEnergyDrain;
+            if (source.thrustEnergyDrainPerLevel != 0f)
+                target.thrustEnergyDrainPerLevel = source.thrustEnergyDrainPerLevel;
+            if (source.extraSpeedPercent != 0f) target.extraSpeedPercent = source.extraSpeedPercent;
+            if (source.extraSpeedPercentPerLevel != 0f)
+                target.extraSpeedPercentPerLevel = source.extraSpeedPercentPerLevel;
+            if (source.extraSpeedEnergyPercent != 0f)
+                target.extraSpeedEnergyPercent = source.extraSpeedEnergyPercent;
+            if (source.extraSpeedEnergyPercentPerLevel != 0f)
+                target.extraSpeedEnergyPercentPerLevel = source.extraSpeedEnergyPercentPerLevel;
             if (source.turnSpeed != 0f) target.turnSpeed = source.turnSpeed;
             if (source.turnSpeedPerLevel != 0f) target.turnSpeedPerLevel = source.turnSpeedPerLevel;
             if (source.maxGems != 0f) target.maxGems = source.maxGems;
@@ -1101,12 +1121,30 @@ namespace TitanOrbit.Editor
                     break;
 
                 case ShipComponentStatCategory.Energy:
-                    if (string.Equals(type, "Weapon", StringComparison.OrdinalIgnoreCase))
+                    // [TITAN-ORBIT] Weapons: Cap-only battery. Engines: Cap+Regen (BalanceEngineEnergy after Scan).
+                    if (ShipFamilyPartTypes.IsWeapon(type)
+                        || ShipComponentAbilityStats.IsWeaponComponent(componentId))
                     {
-                        // Filled after offense stats via BalanceWeaponEnergyForComponents on scan.
+                        // Fresh stats struct — seed Offense fields needed for Cap = firePower × fireRate.
+                        bool cannon = ShipFamilyPartTypes.IsWeaponCannonProfile(type);
+                        stats.firePower = cannon
+                            ? ShipComponentWeaponSuggestions.CannonFirePowerV1 * Mathf.Max(1, version)
+                            : ShipComponentWeaponSuggestions.GetSuggestedFirePower(version);
+                        stats.fireRate = cannon
+                            ? ShipComponentWeaponSuggestions.CannonFireRate
+                            : ShipComponentWeaponSuggestions.FireRate;
+                        ShipComponentWeaponSuggestions.ApplyWeaponBatteryCap(ref stats);
+                        // Do not leave Offense fields on the Energy-only fragment.
+                        stats.firePower = 0f;
+                        stats.fireRate = 0f;
+                        break;
                     }
-                    else
+
+                    if (ShipFamilyPartTypes.IsEngineLikeName(componentId)
+                        || string.Equals(type, "Engine", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(type, ShipFamilyPartTypes.Engine, StringComparison.OrdinalIgnoreCase))
                     {
+                        // Placeholder until BalanceEngineEnergyForComponents runs (fleet-aware split).
                         stats.energyCap = 20f * v;
                         stats.energyRegen = 2.5f * v;
                         stats.energyCapPerLevel = PerLevelFromBase(stats.energyCap);
@@ -1115,27 +1153,40 @@ namespace TitanOrbit.Editor
                     break;
 
                 case ShipComponentStatCategory.Movement:
-                    // [TITAN-ORBIT] Fin and Tail share the merged Tail turn package (Fin+Tail seeds).
+                    // [TITAN-ORBIT] Tail/Fin = turn package; thrusters = move/accel + Fin-scale turn;
+                    // engines = move/accel only (Energy category owns Cap/Regen).
                     if (string.Equals(type, "Tail", StringComparison.OrdinalIgnoreCase)
-                        || string.Equals(type, "Fin", StringComparison.OrdinalIgnoreCase))
+                        || string.Equals(type, "Fin", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(type, ShipFamilyPartTypes.Tail, StringComparison.OrdinalIgnoreCase))
                     {
                         stats.turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeed(version);
                         stats.turnSpeedPerLevel = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(stats.turnSpeed);
                     }
-                    else if (string.Equals(type, "Thruster", StringComparison.OrdinalIgnoreCase))
+                    else if (ShipFamilyPartTypes.IsThrusterLikeName(componentId)
+                        || string.Equals(type, "Thruster", StringComparison.OrdinalIgnoreCase))
                     {
-                        // [TITAN-ORBIT] Thrusters contribute move/accel only — turn stays on Fin/Tail.
                         stats.moveSpeed = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeed(version);
                         stats.accelerationCap = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCap(version);
                         stats.moveSpeedPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeedPerLevel(version);
                         stats.accelerationCapPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCapPerLevel(version);
+                        stats.thrustEnergyDrain = ShipPropulsionAggregation.GetSuggestedThrustEnergyDrain(version);
+                        stats.thrustEnergyDrainPerLevel =
+                            stats.thrustEnergyDrain * ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase;
+                        // Fin-scale turn so Tail + thruster stacks without exploding the turn budget.
+                        stats.turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(version);
+                        stats.turnSpeedPerLevel = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(stats.turnSpeed);
                     }
-                    else if (string.Equals(type, "Engine", StringComparison.OrdinalIgnoreCase))
+                    else if (string.Equals(type, "Engine", StringComparison.OrdinalIgnoreCase)
+                        || string.Equals(type, ShipFamilyPartTypes.Engine, StringComparison.OrdinalIgnoreCase)
+                        || ShipFamilyPartTypes.IsEngineLikeName(componentId))
                     {
                         stats.moveSpeed = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeed(version);
                         stats.accelerationCap = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCap(version);
                         stats.moveSpeedPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeedPerLevel(version);
                         stats.accelerationCapPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCapPerLevel(version);
+                        stats.thrustEnergyDrain = ShipPropulsionAggregation.GetSuggestedThrustEnergyDrain(version);
+                        stats.thrustEnergyDrainPerLevel =
+                            stats.thrustEnergyDrain * ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase;
                     }
                     else
                     {
@@ -1143,6 +1194,9 @@ namespace TitanOrbit.Editor
                         stats.accelerationCap = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCap(version);
                         stats.moveSpeedPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeedPerLevel(version);
                         stats.accelerationCapPerLevel = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCapPerLevel(version);
+                        stats.thrustEnergyDrain = ShipPropulsionAggregation.GetSuggestedThrustEnergyDrain(version);
+                        stats.thrustEnergyDrainPerLevel =
+                            stats.thrustEnergyDrain * ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase;
                     }
                     break;
 

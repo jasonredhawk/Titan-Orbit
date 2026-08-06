@@ -39,7 +39,7 @@ namespace TitanOrbit.Simulation
         /// [TITAN-ORBIT] Shared by <c>ShipTerritoryBoostLatch</c> and presentation sticky hold —
         /// ship MovementSpeed attributes are <b>not</b> required for this boost.
         /// </summary>
-        public const float TerritoryBoostStickySeconds = 0.5f;
+        public const float TerritoryBoostStickySeconds = 1.25f;
 
         /// <summary>
         /// [TITAN-ORBIT] Original balance: +5% max pop and growth per triangle average level, stacked

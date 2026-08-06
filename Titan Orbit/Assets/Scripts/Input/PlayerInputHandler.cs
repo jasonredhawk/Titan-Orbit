@@ -47,6 +47,8 @@ namespace TitanOrbit.Input
         private bool minePressed;
         /// <summary>When true, ship decelerates when not holding move. When false, ship floats (no auto-slow). Toggled by CTRL.</summary>
         private bool spaceBrakesEnabled = true;
+        /// <summary>Shift held this frame — OVERDRIVE intent (latch); burst also needs RMB thrust.</summary>
+        private bool overdriveHeld;
 
         /// <summary>Same as Left Ctrl: toggles whether the ship auto-slows when not thrusting.</summary>
         public void ToggleSpaceBrakes() => spaceBrakesEnabled = !spaceBrakesEnabled;
@@ -92,6 +94,11 @@ namespace TitanOrbit.Input
         public bool MoveForwardPressed => moveForwardPressed;
         /// <summary>True when space brakes are on (ship slows when not holding move). False = float endlessly. Toggle with CTRL.</summary>
         public bool SpaceBrakesEnabled => spaceBrakesEnabled;
+        /// <summary>
+        /// [TITAN-ORBIT] Left or Right Shift held — OVERDRIVE when combined with thrust (RMB).
+        /// Desktop only; mobile has no overdrive control yet.
+        /// </summary>
+        public bool OverdriveHeld => overdriveHeld;
         public bool IsMobile => Application.isMobilePlatform;
 
         /// <summary>WASD / Move action planar direction (x = world X, y = world Z).</summary>
@@ -223,6 +230,17 @@ namespace TitanOrbit.Input
             // When on: ship slows when not holding move; when off: ship floats.
             if (Keyboard.current != null && Keyboard.current.leftCtrlKey.wasPressedThisFrame)
                 spaceBrakesEnabled = !spaceBrakesEnabled;
+
+            // --- OVERDRIVE modifier (Left/Right Shift) ---
+            // [TITAN-ORBIT] ShipInput.Overdrive = Shift alone. Motor latch re-engages at ≥25% energy
+            // while Shift stays held; burst speed applies when RMB thrust is also held.
+            // Desktop only; mobile leaves this false until a dedicated control exists.
+            overdriveHeld = false;
+            if (!Application.isMobilePlatform && Keyboard.current != null)
+            {
+                overdriveHeld = Keyboard.current.leftShiftKey.isPressed
+                    || Keyboard.current.rightShiftKey.isPressed;
+            }
 
             // --- Optional secondary actions ---
             // FireRocket / PlaceMine from the action map; Starship may also use Q / E fallbacks elsewhere.
