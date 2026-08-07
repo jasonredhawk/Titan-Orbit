@@ -39,22 +39,16 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Shared stat-application pipeline: resolves a chassis id from team + level + branch, sums
     /// ship-family component stats, applies attribute upgrades (×10% for most; additive Move Speed
-    /// PerAbilityLevel), taxes mobility from gem/people capacity <b>and</b> absolute live hull mass
-    /// via <see cref="ShipMobilityResolution"/> / <see cref="ShipCargoMobilitySettings"/>, and writes
-    /// the result onto ShipState, ShipWeaponConfig, ShipMotorConfig, and ShipVitalsConfig. Called by
-    /// ShipStatApplySystem (server + client prediction), ShipAttributeUpgradeLogic (purchase),
-    /// and respawn/rejoin flows. Does not run movement — only updates numeric caps and motor tuning.
+    /// PerAbilityLevel), and writes untaxed MaxSpeed / EngineThrust (= accel) / RotationSpeed onto
+    /// ShipMotorConfig. Live subtractive mass tax
+    /// (<see cref="ShipMobilityResolution"/> / <see cref="ShipCargoMobilitySettings"/>) runs each
+    /// drive tick from current gems/people + ComponentSize. Also writes ShipState, ShipWeaponConfig,
+    /// and ShipVitalsConfig. Called by ShipStatApplySystem (server + client prediction),
+    /// ShipAttributeUpgradeLogic (purchase), and respawn/rejoin flows.
     /// <para>
     /// [NETCODE] <see cref="ShipMotorConfig"/> is not ghost-serialized. The client must run the same
     /// ApplyToShip path (motor/weapon/vitals only) or owner prediction keeps bake defaults
     /// (MaxSpeed=35) while the server uses chassis ~13 — HUD lies and prediction fights reconcile.
-    /// </para>
-    /// <para>
-    /// [TITAN-ORBIT] Capacity + component-mass tax (empty-hold identity): high <c>maxGems</c> /
-    /// <c>maxPeople</c> and live hull mass lower MaxSpeed, EngineThrust, and RotationSpeed using
-    /// <see cref="ShipCargoMobilitySettings"/> — people hit top speed harder, gems hit accel harder,
-    /// mass uses <c>*WeightPerComponentMass</c> (absolute, not level-1 ratio). No Fighter/Miner/
-    /// Transport role enum in the motor path. Drive still applies F/m from movement mass.
     /// </para>
     /// </summary>
     public static class ShipStatApplyLogic
@@ -441,38 +435,23 @@ namespace TitanOrbit.ECS
             // --- Physics tuning (ShipPhysicsDriveSystem reads these) ---
             if (em.HasComponent<ShipMotorConfig>(shipEntity))
             {
-                // --- Untaxed motor inputs from chassis + attributes ---
+                // --- Untaxed motor baselines (drive applies live subtractive mass tax each tick) ---
+                // [TITAN-ORBIT] No ×10 EngineThrustVisibility — EngineThrust stores acceleration.
+                // No bake-time capacity tax — collecting gems/people updates Speed/Accel/Turn live.
                 float moveVal = Mathf.Max(0.1f, effective.moveSpeed);
                 float turnVal = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(effective.turnSpeed);
-                float thrust = Mathf.Max(0.1f, effective.accelerationCap > 0f
+                float accel = Mathf.Max(0.1f, effective.accelerationCap > 0f
                     ? effective.accelerationCap
                     : moveVal);
-                thrust *= ShipPropulsionAggregation.EngineThrustVisibility;
 
-                // --- Live hull mass (box × attribute grow × tier) for tax + F/m reference ---
-                // [TITAN-ORBIT] Absolute mass — no level-1 vs live ratio. Tax uses
-                // *WeightPerComponentMass in ShipCargoMobilitySettings; drive still does a = F/m.
-                float liveComponentMass = TryGetLiveHullComponentMass(
+                // --- ComponentSize (box × attribute grow × tier → HullMassReference) ---
+                float liveComponentSize = TryGetLiveHullComponentMass(
                     chassisId, hasAttrs ? attrs : default, shipLevel, applyAttributeScale: true);
-                if (liveComponentMass <= 0.0001f)
-                    liveComponentMass = TryGetChassisComponentMass(chassisId);
+                if (liveComponentSize <= 0.0001f)
+                    liveComponentSize = TryGetChassisComponentMass(chassisId);
 
-                float liveHullMass = ShipMassLogic.ComputeHullMassReference(
-                    liveComponentMass, ShipMassLogic.DefaultBaseMass);
-
-                // --- Capacity + component-mass tax (empty-hold identity) ---
-                // [TITAN-ORBIT] GemCapacity / PeopleCapacity / live hull mass from summed components
-                // slow MaxSpeed, accel, and turn even when the hold is empty. People hit top speed
-                // harder; gems hit accel harder; mass uses *WeightPerComponentMass. See settings.
-                float gemCap = Mathf.Max(0f, effective.maxGems);
-                float peopleCap = Mathf.Max(0f, effective.maxPeople);
-                ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyCapacityTax(
-                    moveVal,
-                    thrust,
-                    turnVal,
-                    gemCap,
-                    peopleCap,
-                    liveHullMass);
+                float liveHullSize = ShipMassLogic.ComputeHullMassReference(
+                    liveComponentSize, ShipMassLogic.DefaultBaseMass);
 
                 // [TITAN-ORBIT] Mass reference uses level-1 health so upgrades change weight feel.
                 ShipComponentAbilityStats levelOneStats =
@@ -480,11 +459,11 @@ namespace TitanOrbit.ECS
                 float referenceHealth = Mathf.Max(1f, levelOneStats.healthCap);
 
                 var motor = em.GetComponentData<ShipMotorConfig>(shipEntity);
-                motor.MaxSpeed = taxed.MaxSpeed;
-                motor.EngineThrust = taxed.EngineThrust;
-                motor.RotationSpeed = taxed.RotationSpeed;
+                motor.MaxSpeed = moveVal;
+                motor.EngineThrust = accel;
+                motor.RotationSpeed = turnVal;
                 motor.BrakeDeceleration = ShipMassLogic.DefaultBrakeDeceleration;
-                motor.HullMassReference = liveHullMass;
+                motor.HullMassReference = liveHullSize;
                 motor.ChassisReferenceHealth = referenceHealth;
                 // [TITAN-ORBIT] Ram/grind damage rating — level-scaled family sum (HUD uses the same field).
                 motor.RammingPower = Mathf.Max(0f, effective.rammingPower);

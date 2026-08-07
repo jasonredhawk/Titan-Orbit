@@ -6,6 +6,7 @@ using TitanOrbit.Game;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using TMPro;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -44,21 +45,25 @@ namespace TitanOrbit.UI
     /// players see unused overdrive headroom; the cyan fill only enters that band while OD is active.
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] <see cref="ShipMotorConfig"/> already includes the empty-hold capacity tax from
-    /// <see cref="ShipMobilityResolution"/>. Prefer those post-tax motor fields; bake-default
-    /// fallbacks re-apply the same tax so freighters never show untaxed chassis speeds.
+    /// [TITAN-ORBIT] Pre–mass-tax baselines for SPD / ACC / turn are always chassis
+    /// <see cref="ShipComponentAbilityStats"/> (leveled + attrs). Live subtractive mass tax
+    /// (gems/people/ComponentSize) then matches <see cref="ShipPhysicsDriveLogic"/> (motor stores
+    /// the same chassis baselines after <see cref="ShipStatApplyLogic"/>).
     /// </para>
     /// <para>
     /// Master on/off lives on <see cref="GameManager.ShowSpeedometer"/> (NceGameRoot Inspector → HUD).
     /// When off, this component does not build UI and LateUpdate returns immediately — no ECS ship
     /// queries, no bar math, no TMP rebuilds. Presentation-only — never writes ECS.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Hover pads over SPD / ACC / MASS / RAM / BUL open a rollover that lists the
+    /// chassis (and moon-store) parts feeding that number — see <see cref="ShipSpeedometerStatTooltips"/>.
+    /// </para>
     /// Hidden during team select, death, and when the upgrade tree obscures HUD.
     /// </summary>
     public class ShipSpeedometerHUD : MonoBehaviour
     {
         const float HudLayoutScale = 1.6f;
-        const float AsteroidCollisionNormalSpeedRetention = 0.93f;
 
         /// <summary>
         /// Cached LocalPlayerShipTag query — CreateEntityQuery every LateUpdate was ~3ms
@@ -152,8 +157,21 @@ namespace TitanOrbit.UI
         bool _triedUpgradeBarLookup;
         float _lastUpgradeBoost = float.NaN;
 
-        /// <summary>Cached chassis id string — FixedString.ToString() every LateUpdate allocates.</summary>
+        /// <summary>
+        /// Chassis id string for tooltips / catalog lookups.
+        /// Only refreshed when the stats cache rebuilds (not every LateUpdate — ToString allocates).
+        /// </summary>
         string _cachedChassisId;
+
+        /// <summary>
+        /// FixedString chassis key for cache invalidation without allocating.
+        /// Compared to live <see cref="ShipChassisState.ChassisId"/> each frame.
+        /// </summary>
+        FixedString64Bytes _statsCacheChassisKey;
+
+        /// <summary>Last <see cref="ShipState.ShipFamilyConfigIndex"/> baked into the stats cache.</summary>
+        byte _statsCacheFamilyIndex = byte.MaxValue;
+
         Entity _statsCacheShipEntity;
         int _statsCacheShipLevel = int.MinValue;
         int _statsCacheBranch = int.MinValue;
@@ -164,6 +182,35 @@ namespace TitanOrbit.UI
         /// Latched when GameManager turns the HUD off so we hide the panel once and clear samples.
         /// </summary>
         bool _idleBecauseDisabled;
+
+        // --- Rollover tooltips (hover pads → floating TMP) ---
+
+        /// <summary>Floating breakdown panel (inactive until a hover zone is entered).</summary>
+        GameObject _tooltipPanel;
+
+        /// <summary>Rich-text body inside <see cref="_tooltipPanel"/>.</summary>
+        TextMeshProUGUI _tooltipLabel;
+
+        /// <summary>Rect on the tooltip panel for positioning beside the speedometer.</summary>
+        RectTransform _tooltipRect;
+
+        /// <summary>Cached chassis part list for tooltip copy (refreshed on chassis / store change).</summary>
+        ShipSpeedometerStatTooltips.PartCache _partCache;
+
+        /// <summary>Last live numbers passed into tooltip Build (updated every LateUpdate while shown).</summary>
+        ShipSpeedometerStatTooltips.LiveContext _liveTooltipContext;
+
+        /// <summary>Section currently under the pointer, or null when the rollover is hidden.</summary>
+        SpeedometerStatSection? _activeTooltipSection;
+
+        /// <summary>
+        /// Section scheduled to hide at end of LateUpdate. Cancelled if another pad calls
+        /// <see cref="ShowStatTooltip"/> in the same frame (bar → line handoff).
+        /// </summary>
+        SpeedometerStatSection? _pendingHideSection;
+
+        /// <summary>Last rich text written to the tooltip (skip TMP writes when unchanged).</summary>
+        string _lastTooltipBody = "";
 
         /// <summary>
         /// [UNITY] Awake — subscribe to GameManager so we can disable this component when the
@@ -436,6 +483,8 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] Bars/ticks sit above textNormTop — wrapping cannot climb into them.
             speedLabel.enableWordWrapping = true;
             speedLabel.overflowMode = TextOverflowModes.Overflow;
+            // [UNITY] Hover pads own raycasts — body TMP must not steal pointer enters.
+            speedLabel.raycastTarget = false;
             // [UNITY] Monospace keeps SPD/ACC columns from shifting when digits change.
             if (TMP_Settings.defaultFontAsset != null)
                 speedLabel.font = TMP_Settings.defaultFontAsset;
@@ -443,7 +492,229 @@ namespace TitanOrbit.UI
             bool alignLeft = placement == SpeedometerPlacement.BottomLeft || placement == SpeedometerPlacement.TopLeft;
             speedLabel.alignment = alignLeft ? TextAlignmentOptions.TopLeft : TextAlignmentOptions.TopRight;
 
+            // --- Hover pads (SPD / ACC / MASS / RAM / BUL) ---
+            // [TITAN-ORBIT] Invisible Images catch pointer enter/exit; decorative chrome stays
+            // raycastTarget=false so only these pads (and the floating tip) participate.
+            // Text band is four equal rows (TMP TopLeft → line 0 at top of band).
+            float textBand = textNormTop;
+            float lineH = textBand * 0.25f;
+            CreateHoverZone("Hover_SPD_Bar", new Vector2(0f, speedTickNormBottom), Vector2.one, SpeedometerStatSection.Speed);
+            CreateHoverZone("Hover_SPD_Line", new Vector2(0f, textBand - lineH), new Vector2(1f, textBand), SpeedometerStatSection.Speed);
+            CreateHoverZone("Hover_ACC_Bar", new Vector2(0f, accelTickNormBottom), new Vector2(1f, accelNormTop), SpeedometerStatSection.Accel);
+            // ACC / MASS share body line 1 — left ~62% Accel, right ~38% Mass.
+            CreateHoverZone(
+                "Hover_ACC_Line",
+                new Vector2(0f, textBand - lineH * 2f),
+                new Vector2(0.62f, textBand - lineH),
+                SpeedometerStatSection.Accel);
+            CreateHoverZone(
+                "Hover_MASS_Line",
+                new Vector2(0.62f, textBand - lineH * 2f),
+                new Vector2(1f, textBand - lineH),
+                SpeedometerStatSection.Mass);
+            CreateHoverZone(
+                "Hover_RAM_Line",
+                new Vector2(0f, textBand - lineH * 3f),
+                new Vector2(1f, textBand - lineH * 2f),
+                SpeedometerStatSection.Ram);
+            CreateHoverZone(
+                "Hover_BUL_Line",
+                new Vector2(0f, 0f),
+                new Vector2(1f, textBand - lineH * 3f),
+                SpeedometerStatSection.Bullets);
+
+            BuildTooltipPanel(canvas);
+
             uiBuilt = true;
+        }
+
+        /// <summary>
+        /// Adds a full-stretch invisible Image + <see cref="ShipSpeedometerHoverZone"/> under the
+        /// root panel. Anchors are normalized Y bands matching the bar / body layout.
+        /// </summary>
+        void CreateHoverZone(string name, Vector2 anchorMin, Vector2 anchorMax, SpeedometerStatSection section)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(rootPanel.transform, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = anchorMin;
+            rt.anchorMax = anchorMax;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+
+            // [UNITY] Transparent Image is required for GraphicRaycaster hit testing.
+            Image img = go.AddComponent<Image>();
+            img.color = new Color(0f, 0f, 0f, 0f);
+            img.raycastTarget = true;
+
+            var zone = go.AddComponent<ShipSpeedometerHoverZone>();
+            zone.Owner = this;
+            zone.Section = section;
+        }
+
+        /// <summary>
+        /// Builds the floating breakdown panel as a sibling of the speedometer (under this HUD
+        /// transform so it follows the same canvas). Starts inactive — only shown on hover.
+        /// </summary>
+        void BuildTooltipPanel(Canvas canvas)
+        {
+            _tooltipPanel = new GameObject("ShipSpeedometerTooltip");
+            // [UNITY] Parent under the same HUD host as the speedometer so canvas scale matches.
+            _tooltipPanel.transform.SetParent(transform, false);
+            _tooltipRect = _tooltipPanel.AddComponent<RectTransform>();
+            _tooltipRect.pivot = new Vector2(0f, 0f);
+            _tooltipRect.sizeDelta = new Vector2(320f * HudLayoutScale, 120f * HudLayoutScale);
+
+            Image tipBg = _tooltipPanel.AddComponent<Image>();
+            tipBg.color = new Color(0.05f, 0.07f, 0.1f, 0.92f);
+            tipBg.raycastTarget = false;
+
+            GameObject tipTextGo = new GameObject("Body");
+            tipTextGo.transform.SetParent(_tooltipPanel.transform, false);
+            RectTransform tipTextRt = tipTextGo.AddComponent<RectTransform>();
+            tipTextRt.anchorMin = Vector2.zero;
+            tipTextRt.anchorMax = Vector2.one;
+            tipTextRt.offsetMin = new Vector2(10f * HudLayoutScale, 8f * HudLayoutScale);
+            tipTextRt.offsetMax = new Vector2(-10f * HudLayoutScale, -8f * HudLayoutScale);
+
+            _tooltipLabel = tipTextGo.AddComponent<TextMeshProUGUI>();
+            _tooltipLabel.fontSize = 11f * HudLayoutScale;
+            _tooltipLabel.richText = true;
+            _tooltipLabel.enableWordWrapping = true;
+            _tooltipLabel.overflowMode = TextOverflowModes.Overflow;
+            _tooltipLabel.raycastTarget = false;
+            _tooltipLabel.alignment = TextAlignmentOptions.TopLeft;
+            _tooltipLabel.color = textColor;
+            if (TMP_Settings.defaultFontAsset != null)
+                _tooltipLabel.font = TMP_Settings.defaultFontAsset;
+            _tooltipLabel.text = "";
+
+            // Sort above the speedometer panel so the tip is never covered by its background.
+            if (canvas != null)
+                _tooltipPanel.transform.SetAsLastSibling();
+
+            _tooltipPanel.SetActive(false);
+        }
+
+        /// <summary>
+        /// [UNITY] Pointer entered a hover pad — show that section's component breakdown.
+        /// Safe to call repeatedly for the same section (refreshes copy from latest live context).
+        /// </summary>
+        public void ShowStatTooltip(SpeedometerStatSection section)
+        {
+            if (!uiBuilt || _tooltipPanel == null || _tooltipLabel == null)
+                return;
+
+            // Entering any pad cancels a pending hide from a sibling pad this frame.
+            _pendingHideSection = null;
+            _activeTooltipSection = section;
+            RefreshTooltipContent();
+            PositionTooltipPanel();
+            if (!_tooltipPanel.activeSelf)
+                _tooltipPanel.SetActive(true);
+        }
+
+        /// <summary>
+        /// [UNITY] Pointer left a hover pad. Defers hide to LateUpdate so moving between the
+        /// SPD bar and SPD line (same section) does not flicker the tip off for a frame.
+        /// </summary>
+        public void HideStatTooltip(SpeedometerStatSection section)
+        {
+            if (_activeTooltipSection != section)
+                return;
+
+            _pendingHideSection = section;
+        }
+
+        /// <summary>
+        /// Applies a deferred hide after EventSystem pointer callbacks for this frame are done.
+        /// Called from LateUpdate so bar→line handoffs can cancel via <see cref="ShowStatTooltip"/>.
+        /// </summary>
+        void FlushPendingTooltipHide()
+        {
+            if (!_pendingHideSection.HasValue)
+                return;
+
+            SpeedometerStatSection pending = _pendingHideSection.Value;
+            _pendingHideSection = null;
+            if (_activeTooltipSection != pending)
+                return;
+
+            _activeTooltipSection = null;
+            if (_tooltipPanel != null && _tooltipPanel.activeSelf)
+                _tooltipPanel.SetActive(false);
+        }
+
+        /// <summary>Rebuilds tooltip TMP from the active section + cached parts + live context.</summary>
+        void RefreshTooltipContent()
+        {
+            if (_tooltipLabel == null || !_activeTooltipSection.HasValue)
+                return;
+
+            string body = ShipSpeedometerStatTooltips.Build(
+                _activeTooltipSection.Value,
+                _partCache,
+                _liveTooltipContext);
+            if (body == _lastTooltipBody)
+                return;
+
+            _lastTooltipBody = body;
+            _tooltipLabel.text = body;
+            // [UNITY] Size tip height to the wrapped text so BottomLeft "above panel" placement
+            // does not leave a huge empty box or clip long breakdowns.
+            _tooltipLabel.ForceMeshUpdate(true);
+            if (_tooltipRect != null)
+            {
+                float padY = 16f * HudLayoutScale;
+                float tipW = _tooltipRect.sizeDelta.x;
+                float tipH = Mathf.Max(80f * HudLayoutScale, _tooltipLabel.preferredHeight + padY);
+                _tooltipRect.sizeDelta = new Vector2(tipW, tipH);
+            }
+        }
+
+        /// <summary>
+        /// Places the tip clear of the speedometer and the bottom ability-upgrade strip.
+        /// Bottom placements: tip sits <b>above</b> the panel so it cannot cover upgrade buttons.
+        /// Top placements: tip sits beside the panel on the free horizontal side.
+        /// </summary>
+        void PositionTooltipPanel()
+        {
+            if (_tooltipRect == null)
+                return;
+            if (_rootRect == null && rootPanel != null)
+                _rootRect = rootPanel.GetComponent<RectTransform>();
+            if (_rootRect == null)
+                return;
+
+            // --- Match canvas anchors with the speedometer corner ---
+            Vector2 panelPos = _rootRect.anchoredPosition;
+            Vector2 panelSize = _rootRect.sizeDelta;
+            float gap = 10f * HudLayoutScale;
+            _tooltipRect.anchorMin = _rootRect.anchorMin;
+            _tooltipRect.anchorMax = _rootRect.anchorMax;
+
+            bool bottom = placement == SpeedometerPlacement.BottomLeft
+                || placement == SpeedometerPlacement.BottomRight;
+            bool left = placement == SpeedometerPlacement.BottomLeft
+                || placement == SpeedometerPlacement.TopLeft;
+
+            if (bottom)
+            {
+                // [TITAN-ORBIT] Above the speedometer — beside+down overlapped the upgrade strip.
+                // Pivot at bottom so tip grows upward from just above the panel top.
+                _tooltipRect.pivot = left ? new Vector2(0f, 0f) : new Vector2(1f, 0f);
+                float x = left ? panelPos.x : panelPos.x;
+                _tooltipRect.anchoredPosition = new Vector2(x, panelPos.y + panelSize.y + gap);
+            }
+            else
+            {
+                // Top corners: beside the panel, hanging down (upgrade strip is not a concern).
+                _tooltipRect.pivot = left ? new Vector2(0f, 1f) : new Vector2(1f, 1f);
+                float x = left
+                    ? panelPos.x + panelSize.x + gap
+                    : panelPos.x - gap;
+                _tooltipRect.anchoredPosition = new Vector2(x, panelPos.y);
+            }
         }
 
         /// <summary>
@@ -675,7 +946,17 @@ namespace TitanOrbit.UI
             if (em.HasComponent<ShipLoadoutState>(shipEntity))
                 branchIndex = em.GetComponentData<ShipLoadoutState>(shipEntity).BranchIndex;
 
-            // Reuse cached chassis/effective stats when ship identity + level + branch + attrs unchanged.
+            // --- Live chassis identity (no string alloc) ---
+            // [TITAN-ORBIT] Buying a new ship / family often keeps ShipLevel + branch + attrs the same
+            // while ChassisId and ShipFamilyConfigIndex change. Omitting those from the cache key left
+            // SPD/ACC tooltips on the previous hull's part list until something else busted the cache.
+            FixedString64Bytes chassisKey = default;
+            bool hasChassisState = em.HasComponent<ShipChassisState>(shipEntity);
+            if (hasChassisState)
+                chassisKey = em.GetComponentData<ShipChassisState>(shipEntity).ChassisId;
+            byte familyIndex = ship.ShipFamilyConfigIndex;
+
+            // Reuse cached chassis/effective stats when identity + level + branch + family + attrs match.
             // ChassisId.ToString() + catalog lookups every LateUpdate were ~13KB GC (Profiler 5199).
             ShipAttributeUpgradeState attrs = default;
             bool hasAttrs = em.HasComponent<ShipAttributeUpgradeState>(shipEntity);
@@ -685,23 +966,22 @@ namespace TitanOrbit.UI
             if (_statsCacheShipEntity == shipEntity &&
                 _statsCacheShipLevel == ship.ShipLevel &&
                 _statsCacheBranch == branchIndex &&
+                _statsCacheFamilyIndex == familyIndex &&
+                _statsCacheChassisKey.Equals(chassisKey) &&
                 (!hasAttrs || AttrsEqual(attrs, _statsCacheAttrs)))
             {
                 effectiveStats = _statsCacheEffective;
                 return true;
             }
 
+            // --- Cache miss: always re-read ChassisId (never reuse stale _cachedChassisId) ---
+            // [TITAN-ORBIT] Older code reused the string when only the entity matched, so a T1→T2
+            // or family swap on the same ghost kept the previous chassis id for tooltips.
             string chassisId = null;
-            if (em.HasComponent<ShipChassisState>(shipEntity))
+            if (hasChassisState && !chassisKey.IsEmpty)
             {
-                var chassis = em.GetComponentData<ShipChassisState>(shipEntity);
-                if (_statsCacheShipEntity == shipEntity && _cachedChassisId != null)
-                    chassisId = _cachedChassisId;
-                else
-                {
-                    chassisId = chassis.ChassisId.ToString();
-                    _cachedChassisId = chassisId;
-                }
+                chassisId = chassisKey.ToString();
+                _cachedChassisId = chassisId;
             }
 
             if (string.IsNullOrEmpty(chassisId))
@@ -712,7 +992,8 @@ namespace TitanOrbit.UI
                     branchIndex,
                     out chassisId,
                     allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex);
+                    shipFamilyConfigIndex: familyIndex);
+                _cachedChassisId = chassisId;
             }
 
             if (!string.IsNullOrEmpty(chassisId) &&
@@ -735,9 +1016,18 @@ namespace TitanOrbit.UI
                 }
             }
 
+            // --- Bust tooltip part cache when hull identity changed ---
+            if (_partCache.Valid &&
+                (_partCache.ChassisId != chassisId || _partCache.ShipLevel != ship.ShipLevel))
+            {
+                _partCache.Valid = false;
+            }
+
             _statsCacheShipEntity = shipEntity;
             _statsCacheShipLevel = ship.ShipLevel;
             _statsCacheBranch = branchIndex;
+            _statsCacheFamilyIndex = familyIndex;
+            _statsCacheChassisKey = chassisKey;
             _statsCacheAttrs = attrs;
             _statsCacheEffective = effectiveStats;
             return true;
@@ -757,35 +1047,40 @@ namespace TitanOrbit.UI
             a.PeopleCapacity == b.PeopleCapacity;
 
         /// <summary>
-        /// Display MaxSpeed: prefer post-tax <see cref="ShipMotorConfig.MaxSpeed"/>.
-        /// When motor still looks like bake defaults, rebuild from chassis moveSpeed and apply
-        /// the same capacity tax so the bar matches freighter / fighter feel.
-        /// Does <b>not</b> include territory boost — call <see cref="ResolveTerritoryMovementMult"/> after.
+        /// Chassis MaxSpeed before mass tax: leveled + attributed <see cref="ShipComponentAbilityStats.moveSpeed"/>.
+        /// Falls back to motor only when chassis stats are missing (first frames / bake).
         /// </summary>
-        static float ResolveDisplayMaxSpeed(in ShipMotorConfig motor, in ShipComponentAbilityStats effectiveStats)
+        static float ResolveChassisMaxSpeed(in ShipMotorConfig motor, in ShipComponentAbilityStats effectiveStats)
         {
-            float motorMax = Mathf.Max(0.01f, motor.MaxSpeed);
-            float chassisMax = effectiveStats.moveSpeed > 0.1f ? effectiveStats.moveSpeed : 0f;
+            if (effectiveStats.moveSpeed > 0.1f)
+                return effectiveStats.moveSpeed;
+            return Mathf.Max(0.1f, motor.MaxSpeed);
+        }
 
-            // [TITAN-ORBIT] Before client apply runs (first frames), bake MaxSpeed=35 would empty the bar.
-            // Capacity tax is already inside motorMax after ApplyToShip; only tax the chassis fallback.
-            if (chassisMax > 0.1f && motorMax > chassisMax * 1.35f)
-            {
-                float untaxedThrust = Mathf.Max(0.1f, effectiveStats.accelerationCap > 0f
-                    ? effectiveStats.accelerationCap
-                    : chassisMax) * ShipPropulsionAggregation.EngineThrustVisibility;
-                float untaxedTurn = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
-                    effectiveStats.turnSpeed);
-                return ShipMobilityResolution.ApplyCapacityTax(
-                    chassisMax,
-                    untaxedThrust,
-                    untaxedTurn,
-                    effectiveStats.maxGems,
-                    effectiveStats.maxPeople,
-                    motor.HullMassReference).MaxSpeed;
-            }
+        /// <summary>
+        /// Chassis acceleration before mass tax: leveled + attributed accelerationCap.
+        /// Falls back to motor EngineThrust (accel) only when chassis Accel is missing.
+        /// </summary>
+        static float ResolveChassisAccel(in ShipMotorConfig motor, in ShipComponentAbilityStats effectiveStats)
+        {
+            if (effectiveStats.accelerationCap > 0.1f)
+                return effectiveStats.accelerationCap;
+            if (effectiveStats.moveSpeed > 0.1f)
+                return effectiveStats.moveSpeed;
+            return Mathf.Max(0.1f, motor.EngineThrust);
+        }
 
-            return motorMax;
+        /// <summary>
+        /// Chassis turn (°/s) before mass tax from definition-unit turnSpeed.
+        /// Falls back to motor RotationSpeed when chassis turn is unset.
+        /// </summary>
+        static float ResolveChassisTurnDeg(in ShipMotorConfig motor, in ShipComponentAbilityStats effectiveStats)
+        {
+            float fromChassis = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
+                effectiveStats.turnSpeed);
+            if (fromChassis > 0.5f)
+                return fromChassis;
+            return Mathf.Max(0.5f, motor.RotationSpeed);
         }
 
         /// <summary>
@@ -908,7 +1203,10 @@ namespace TitanOrbit.UI
                 ship.CurrentPeople);
         }
 
-        /// <summary>Estimates asteroid ram damage from current speed and effective ramming stats.</summary>
+        /// <summary>
+        /// Estimates asteroid impact damage: rating × mobility totalMass × current speed
+        /// (same product as <see cref="ShipRammingCollisionDamageSystem"/>).
+        /// </summary>
         static void GetRamDamageEstimate(
             in ShipState ship,
             in ShipMotorConfig motor,
@@ -917,22 +1215,12 @@ namespace TitanOrbit.UI
             out float asteroidDamage,
             out float selfDamage,
             out float ramRating,
-            out float ramMass,
-            out float massFactor)
+            out float totalMass)
         {
             float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
-            float hullBaseline = ShipMassLogic.ComputeRammingHullMassBaseline(
-                motor.HullMassReference,
-                ship.MaxHealth,
-                motor.ChassisReferenceHealth,
-                baseMass);
-            ramMass = ShipMassLogic.ComputeRammingMass(
-                motor.HullMassReference,
-                ship.MaxHealth,
-                motor.ChassisReferenceHealth,
-                ship.CurrentGems,
-                baseMass,
-                ship.CurrentPeople);
+            float componentSize = motor.HullMassReference > 0f
+                ? motor.HullMassReference
+                : Mathf.Max(ShipMassLogic.MinMass, baseMass * ShipMassLogic.HullMassScale);
 
             // Prefer motor.RammingPower (server-applied) when present; else rebuild from family stats.
             float familyRammingPower = motor.RammingPower > 0f
@@ -941,17 +1229,21 @@ namespace TitanOrbit.UI
                     ? effectiveStats.rammingPower
                     : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower);
             ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRammingPower);
-            massFactor = ShipComponentRammingSuggestions.ComputeMassDamageFactor(ramMass, hullBaseline);
 
-            // [TITAN-ORBIT] Same helpers as ShipAsteroidRammingDamageSystem — HUD cannot drift.
-            float restitution = Mathf.Approximately(AsteroidCollisionNormalSpeedRetention,
-                ShipComponentRammingSuggestions.MaxAsteroidRestitutionForDamage)
-                ? ShipComponentRammingSuggestions.MaxAsteroidRestitutionForDamage
-                : AsteroidCollisionNormalSpeedRetention;
+            // [TITAN-ORBIT] Same totalMass + product as server ram/grind — HUD cannot drift.
+            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+                motor.MaxSpeed,
+                motor.EngineThrust,
+                motor.RotationSpeed,
+                ship.CurrentGems,
+                ship.CurrentPeople,
+                componentSize);
+            totalMass = taxed.TotalMass;
+
             asteroidDamage = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                ramRating, ramMass, hullBaseline, inboundSpeed, restitution);
+                ramRating, totalMass, inboundSpeed);
             selfDamage = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
-                ramRating, ramMass, hullBaseline, inboundSpeed, restitution);
+                ramRating, totalMass, inboundSpeed);
         }
 
         /// <summary>
@@ -1037,6 +1329,13 @@ namespace TitanOrbit.UI
                 hasLastHorizontalSpeed = false;
                 accelSampleShip = Entity.Null;
                 smoothedHorizontalAccel = 0f;
+                // --- Hide rollover when the speedometer itself is hidden ---
+                if (_tooltipPanel != null && _tooltipPanel.activeSelf)
+                {
+                    _activeTooltipSection = null;
+                    _pendingHideSection = null;
+                    _tooltipPanel.SetActive(false);
+                }
                 return;
             }
 
@@ -1049,23 +1348,35 @@ namespace TitanOrbit.UI
             }
 
             float cur = GetHorizontalSpeed(kinematics);
-            float chassisMove = effectiveStats.moveSpeed;
-            float cruiseMax = ResolveDisplayMaxSpeed(motor, effectiveStats);
-            // Bake default MaxSpeed=35 while chassis is ~13 — motor not applied yet this frame.
-            bool motorLooksBaked = chassisMove > 0.1f && motor.MaxSpeed > chassisMove * 1.35f;
+
+            // --- Chassis baselines (leveled + attrs) — only pre–mass-tax numbers ---
+            // [TITAN-ORBIT] Do not use motor.MaxSpeed / EngineThrust as a second "untaxed" source;
+            // those should match chassis after ApplyToShip, and when they diverge the motor line confused the HUD.
+            float chassisMove = ResolveChassisMaxSpeed(motor, effectiveStats);
+            float chassisAccel = ResolveChassisAccel(motor, effectiveStats);
+            float chassisTurnDeg = ResolveChassisTurnDeg(motor, effectiveStats);
+
+            // --- Live subtractive mass tax (same formula as ShipPhysicsDriveLogic) ---
+            float componentSize = motor.HullMassReference > 0f
+                ? motor.HullMassReference
+                : ShipMassLogic.MinMass;
+            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+                chassisMove,
+                chassisAccel,
+                chassisTurnDeg,
+                ship.CurrentGems,
+                ship.CurrentPeople,
+                componentSize);
+            float cruiseMax = taxed.MaxSpeed;
+            float maxFwd = taxed.EngineThrust;
 
             // --- Friendly territory boost (same mult as ShipPhysicsDriveLogic) ---
-            // [TITAN-ORBIT] Motor multiplies MaxSpeed / EngineThrust at drive time only; chassis
+            // [TITAN-ORBIT] Motor multiplies MaxSpeed / accel at drive time only; chassis
             // ShipMotorConfig stays unboosted. Without this, the bar saturates early and SPD
             // shows e.g. 13.5/13.5 "at max" while kinematics are still climbing past chassis cruise.
             float territoryMult = ResolveTerritoryMovementMult();
             cruiseMax *= territoryMult;
-
-            // --- Current-load MaxSpeed tax (same as ShipPhysicsDriveLogic each tick) ---
-            // Capacity tax is already inside motor.MaxSpeed; collecting gems/people further
-            // lowers the live cruise cap — HUD must match or the bar lies at "full" while slow.
-            var loadMul = ShipMobilityResolution.ApplyCurrentLoadTax(ship.CurrentGems, ship.CurrentPeople);
-            cruiseMax *= loadMul.SpeedMultiplier;
+            maxFwd *= territoryMult;
 
             // --- OVERDRIVE capacity (always) vs live burst (only while engaged) ---
             // [TITAN-ORBIT] Bar scale = cruise × baked OD mul so the amber zone is always visible.
@@ -1080,38 +1391,79 @@ namespace TitanOrbit.UI
             float barMax = cruiseMax * overdriveCapacityMult;
             // Live motor ceiling this frame (cruise when OD off, OD top when on).
             float liveMax = overdriveActive ? barMax : cruiseMax;
+            maxFwd *= overdriveActiveMult;
 
             // Fill against full OD scale so unused amber headroom stays readable at cruise.
             speedSlider.value = Mathf.Clamp01(cur / Mathf.Max(0.01f, barMax));
             UpdateOverdriveZone(cruiseMax, barMax);
 
             float mass = GetMovementMass(ship, motor);
-            // [TITAN-ORBIT] F/m — same a = (EngineThrust × territory × overdrive)/mass the motor uses.
-            // EngineThrust on motor is already capacity-taxed by ShipStatApplyLogic.
-            float thrustForDisplay = motor.EngineThrust * territoryMult * overdriveActiveMult;
-            float maxFwd = Mathf.Max(0.01f, thrustForDisplay / Mathf.Max(ShipMassLogic.MinMass, mass));
-            if (motorLooksBaked && effectiveStats.accelerationCap > 0.1f)
-            {
-                // --- Bake fallback: tax chassis accel the same way ApplyToShip would ---
-                float untaxedThrust = effectiveStats.accelerationCap
-                    * ShipPropulsionAggregation.EngineThrustVisibility;
-                float untaxedTurn = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
-                    effectiveStats.turnSpeed);
-                float taxedThrust = ShipMobilityResolution.ApplyCapacityTax(
-                    effectiveStats.moveSpeed,
-                    untaxedThrust,
-                    untaxedTurn,
-                    effectiveStats.maxGems,
-                    effectiveStats.maxPeople,
-                    motor.HullMassReference).EngineThrust;
-                maxFwd = Mathf.Max(
-                    0.01f,
-                    taxedThrust * territoryMult * overdriveActiveMult / Mathf.Max(ShipMassLogic.MinMass, mass));
-            }
+            maxFwd = Mathf.Max(0.01f, maxFwd);
 
             float maxBrake = Mathf.Max(0.01f, motor.BrakeDeceleration > 0f
                 ? motor.BrakeDeceleration
                 : ShipMassLogic.DefaultBrakeDeceleration);
+
+            // Mobility tax totalMass — same number the MASS line and MASS tooltip show.
+            float displayMass = taxed.TotalMass;
+
+            // --- Rollover context (parts + live numbers) ---
+            // [TITAN-ORBIT] Part cache Instantiates the chassis prefab only when chassis / store gear changes.
+            // LiveContext updates every frame so an open tip stays in sync with bars.
+            if (vizWorld != null && vizWorld.IsCreated && !string.IsNullOrEmpty(_cachedChassisId))
+            {
+                ShipSpeedometerStatTooltips.TryRefreshPartCache(
+                    vizWorld.EntityManager,
+                    shipEntity,
+                    _cachedChassisId,
+                    ship.ShipLevel,
+                    ref _partCache);
+            }
+
+            GetRamDamageEstimate(
+                ship,
+                motor,
+                effectiveStats,
+                cur,
+                out float tipRamAst,
+                out float tipRamSelf,
+                out float tipRamRating,
+                out _);
+
+            _liveTooltipContext = new ShipSpeedometerStatTooltips.LiveContext
+            {
+                Ship = ship,
+                Motor = motor,
+                EffectiveStats = effectiveStats,
+                Weapon = weapon,
+                CurrentSpeed = cur,
+                LiveMaxSpeed = liveMax,
+                CruiseMaxSpeed = cruiseMax,
+                BarMaxSpeed = barMax,
+                TerritoryMult = territoryMult,
+                TotalMass = taxed.TotalMass,
+                ChassisMaxSpeed = chassisMove,
+                ChassisAccel = chassisAccel,
+                ChassisTurnDeg = chassisTurnDeg,
+                TaxedAccel = taxed.EngineThrust,
+                OverdriveCapacityMult = overdriveCapacityMult,
+                OverdriveActiveMult = overdriveActiveMult,
+                MovementMass = mass,
+                MaxForwardAccel = maxFwd,
+                MaxBrake = maxBrake,
+                RamAsteroidDamage = tipRamAst,
+                RamSelfDamage = tipRamSelf,
+                RamRating = tipRamRating,
+                ComponentSize = componentSize,
+            };
+
+            if (_activeTooltipSection.HasValue)
+            {
+                RefreshTooltipContent();
+                PositionTooltipPanel();
+            }
+
+            FlushPendingTooltipHide();
 
             // --- Accel bar from frame-to-frame speed delta ---
             // [TITAN-ORBIT] Presentation-only. Editor ~30 FPS amplifies sample noise; dead-zone + cruise flatten.
@@ -1223,7 +1575,7 @@ namespace TitanOrbit.UI
                 : "  stop —.−s";
 
             string line2 =
-                $"ACC {FormatFixedSigned1(smoothedHorizontalAccel)}/{FormatFixed1(maxFwd)}  brk {FormatFixed1(maxBrake)}  MASS {FormatFixed1(mass)}";
+                $"ACC {FormatFixedSigned1(smoothedHorizontalAccel)}/{FormatFixed1(maxFwd)}  brk {FormatFixed1(maxBrake)}  MASS {FormatFixed1(displayMass)}";
 
             GetRamDamageEstimate(
                 ship,
@@ -1233,11 +1585,10 @@ namespace TitanOrbit.UI
                 out float ramAst,
                 out float ramSelf,
                 out float ramRating,
-                out float ramMass,
-                out float massFactor);
+                out float ramTotalMass);
 
             string line3 =
-                $"RAM {FormatFixed1(ramRating, 4)} x m{FormatFixed1(massFactor, 4)}  ast {FormatFixed1(ramAst)}  hull {FormatFixed1(ramSelf)}  <color=#888888>m {FormatFixed1(ramMass)}</color>";
+                $"RAM {FormatFixed1(ramRating, 4)} × m{FormatFixed1(ramTotalMass, 4)} × v{FormatFixed1(cur, 4)}  ast {FormatFixed1(ramAst)}  hull {FormatFixed1(ramSelf)}";
 
             string line4;
             if (weapon.FireRate > 0.01f && weapon.BulletDamage > 0.01f)
@@ -1274,6 +1625,12 @@ namespace TitanOrbit.UI
             _idleBecauseDisabled = true;
             if (rootPanel != null)
                 rootPanel.SetActive(false);
+            if (_tooltipPanel != null && _tooltipPanel.activeSelf)
+            {
+                _activeTooltipSection = null;
+                _pendingHideSection = null;
+                _tooltipPanel.SetActive(false);
+            }
 
             // --- Drop transient sample state so re-enable does not flash a stale accel spike ---
             hasLastHorizontalSpeed = false;

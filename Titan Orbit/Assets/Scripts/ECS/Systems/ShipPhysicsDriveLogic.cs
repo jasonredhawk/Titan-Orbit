@@ -27,6 +27,8 @@ namespace TitanOrbit.ECS
     /// speed hard-caps to the new max so speedometer / bloom stay in sync.
     /// Drain rate = <see cref="ShipMotorConfig.ThrustEnergyDrainPerSecond"/>
     /// (ExtraSpeedEnergyDrain summed across engines).
+    /// Live subtractive mass tax (<see cref="ShipMobilityResolution"/>) converts untaxed motor
+    /// baselines into MaxSpeed / accel / turn from current gems/people + ComponentSize.
     /// Paired with <see cref="ShipPhysicsDriveSystem"/> and
     /// <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
     /// </summary>
@@ -60,30 +62,15 @@ namespace TitanOrbit.ECS
         /// </param>
         /// <param name="territoryTriangles">Baked planet-center triangles for friendly speed boost; may be empty.</param>
         /// <param name="homeLevelByTeam">Home planet level indexed by <c>TeamId</c> byte (length ≥ 6).</param>
-        /// <param name="loadSpeedWeightPerGem">From <see cref="ShipCargoMobilitySettings"/> — current-load MaxSpeed tax.</param>
-        /// <param name="loadSpeedWeightPerPerson">Current-load MaxSpeed tax weight for people aboard.</param>
-        /// <param name="loadTurnWeightPerGem">Current-load turn tax weight for gems aboard.</param>
-        /// <param name="loadTurnWeightPerPerson">Current-load turn tax weight for people aboard.</param>
-        /// <param name="shipState">Hull vitals — written for thrust/OVERDRIVE energy drain (predicted + server).</param>
-        /// <param name="physicsVelocity">Unity Physics linear/angular velocity for this ship.</param>
-        /// <param name="physicsDamping">Cleared while motor owns velocity (orbit / dock / flight).</param>
-        /// <param name="transform">LocalTransform — yaw + moon-dock position; flight Position is physics-owned.</param>
-        /// <param name="orbitState">Written each tick for people-transport dwell / HUD.</param>
-        /// <param name="territoryLatch">Sticky friendly-boost latch (client+server must match).</param>
-        /// <param name="territoryLatch">Sticky friendly-triangle motor mult (not ghosted).</param>
-        /// <param name="planets">Planet snapshots for orbit ring + moon shield.</param>
-        /// <param name="dt">Fixed step delta time.</param>
-        /// <param name="mapW">Toroidal map width.</param>
-        /// <param name="mapH">Toroidal map height.</param>
-        /// <param name="elapsedSeconds">Sim time for moon phase / shield.</param>
-        /// <param name="territoryTriangles">Baked territory triangles (may be empty).</param>
-        /// <param name="homeLevelByTeam">Home planet level per team for territory boost.</param>
-        /// <param name="loadSpeedWeightPerGem">Current-load MaxSpeed tax weight per gem.</param>
-        /// <param name="loadSpeedWeightPerPerson">Current-load MaxSpeed tax weight per person.</param>
-        /// <param name="loadTurnWeightPerGem">Current-load turn tax weight per gem.</param>
-        /// <param name="loadTurnWeightPerPerson">Current-load turn tax weight per person.</param>
-        /// <param name="loadMinSpeedMultiplier">Floor for current-load MaxSpeed multiplier.</param>
-        /// <param name="loadMinTurnMultiplier">Floor for current-load turn multiplier.</param>
+        /// <param name="massPerGem">From <see cref="ShipCargoMobilitySettings"/> — cargo → totalMass.</param>
+        /// <param name="massPerPerson">Cargo people → totalMass.</param>
+        /// <param name="massPerComponentSize">ComponentSize (HullMassReference) → totalMass.</param>
+        /// <param name="speedWeightPerMass">Subtract from MaxSpeed per unit totalMass.</param>
+        /// <param name="accelWeightPerMass">Subtract from accel per unit totalMass.</param>
+        /// <param name="turnWeightPerMass">Subtract from turn °/s per unit totalMass.</param>
+        /// <param name="minSpeed">Floor after subtractive MaxSpeed tax.</param>
+        /// <param name="minAccel">Floor after subtractive accel tax.</param>
+        /// <param name="minTurn">Floor after subtractive turn tax.</param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
@@ -101,12 +88,15 @@ namespace TitanOrbit.ECS
             double elapsedSeconds,
             in NativeArray<RuntimeTriangle> territoryTriangles,
             in NativeArray<int> homeLevelByTeam,
-            float loadSpeedWeightPerGem,
-            float loadSpeedWeightPerPerson,
-            float loadTurnWeightPerGem,
-            float loadTurnWeightPerPerson,
-            float loadMinSpeedMultiplier,
-            float loadMinTurnMultiplier)
+            float massPerGem,
+            float massPerPerson,
+            float massPerComponentSize,
+            float speedWeightPerMass,
+            float accelWeightPerMass,
+            float turnWeightPerMass,
+            float minSpeed,
+            float minAccel,
+            float minTurn)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -148,10 +138,7 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            // --- Movement mass (HP bulk + gems + people) — must match on client and server ---
-            // [TITAN-ORBIT] Mass slows accel via F/m. Bake-time MaxSpeed / EngineThrust / turn
-            // already tax absolute hull mass via ShipCargoMobilitySettings.*WeightPerComponentMass
-            // (ShipStatApplyLogic). Current-load tax below stacks on that capacity-taxed motor.
+            // --- Orbit / recoil mass scalar (not used for flight accel — tax sets accel directly) ---
             float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
             float movementMass = ShipMassLogic.ComputeMovementMass(
                 motor.HullMassReference,
@@ -159,20 +146,36 @@ namespace TitanOrbit.ECS
                 motor.ChassisReferenceHealth,
                 shipState.CurrentGems,
                 baseMass,
-                shipState.CurrentPeople);
+                shipState.CurrentPeople,
+                massPerGem,
+                massPerPerson);
 
-            // --- Current-load MaxSpeed / turn (updates every tick as you collect) ---
-            ShipMobilityResolution.CurrentLoadMultipliers loadMul =
-                ShipMobilityResolution.ComputeCurrentLoadMultipliers(
-                    shipState.CurrentGems,
-                    shipState.CurrentPeople,
-                    loadSpeedWeightPerGem,
-                    loadSpeedWeightPerPerson,
-                    loadTurnWeightPerGem,
-                    loadTurnWeightPerPerson,
-                    loadMinSpeedMultiplier,
-                    loadMinTurnMultiplier);
-            float rotationSpeed = math.max(1f, motor.RotationSpeed * loadMul.TurnMultiplier);
+            // --- Live subtractive mass tax (chassis baselines on motor × cargo + ComponentSize) ---
+            // [TITAN-ORBIT] MaxSpeed / EngineThrust / RotationSpeed are chassis pre-tax values from
+            // ShipStatApplyLogic. Collecting cargo updates Speed/Accel/Turn every tick.
+            // totalMass = gems×mG + people×mP + componentSize×mCS.
+            float componentSize = motor.HullMassReference > 0f
+                ? motor.HullMassReference
+                : math.max(ShipMassLogic.MinMass, baseMass * ShipMassLogic.HullMassScale);
+            float totalMass = ShipMobilityResolution.ComputeTotalMassBurst(
+                shipState.CurrentGems,
+                shipState.CurrentPeople,
+                componentSize,
+                massPerGem,
+                massPerPerson,
+                massPerComponentSize);
+            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxBurst(
+                motor.MaxSpeed,
+                motor.EngineThrust,
+                motor.RotationSpeed,
+                totalMass,
+                speedWeightPerMass,
+                accelWeightPerMass,
+                turnWeightPerMass,
+                minSpeed,
+                minAccel,
+                minTurn);
+            float rotationSpeed = taxed.RotationSpeed;
 
             // --- Yaw: dt-capped slerp toward aim (never snap to mouse in one frame) ---
             AimWorldPoint(in transform.Position, in transform.Rotation, in input.AimPlanarDir, out float2 aimWorldXz);
@@ -204,9 +207,9 @@ namespace TitanOrbit.ECS
                 mapH);
             float territoryMult = ApplyTerritoryBoostLatch(
                 ref territoryLatch, rawTerritoryMult, elapsedSeconds);
-            float thrust = motor.EngineThrust * territoryMult;
-            // Capacity-taxed MaxSpeed × current-load tax × territory.
-            float maxSpeed = motor.MaxSpeed * loadMul.SpeedMultiplier * territoryMult;
+            // [TITAN-ORBIT] EngineThrust on motor is untaxed accel; live tax already applied above.
+            float thrust = taxed.EngineThrust * territoryMult;
+            float maxSpeed = taxed.MaxSpeed * territoryMult;
 
             // --- OVERDRIVE lockout + burst (shared predicted + server) ---
             // [TITAN-ORBIT] Ghosted OverdriveLockout — see ShipOverdriveTuning.StepLockout.
@@ -240,8 +243,8 @@ namespace TitanOrbit.ECS
                         shipState.OverdriveLockout = true;
                         overdriveActive = false;
                         // Restore cruise caps — drain ended the burst mid-tick.
-                        thrust = motor.EngineThrust * territoryMult;
-                        maxSpeed = motor.MaxSpeed * loadMul.SpeedMultiplier * territoryMult;
+                        thrust = taxed.EngineThrust * territoryMult;
+                        maxSpeed = taxed.MaxSpeed * territoryMult;
                     }
                 }
             }
@@ -379,7 +382,7 @@ namespace TitanOrbit.ECS
         static void ApplyThrustCoastAndBrakes(
             ref float3 vel,
             in quaternion rotation,
-            float engineThrust,
+            float acceleration,
             float maxSpeed,
             float brakeDeceleration,
             float mass,
@@ -402,17 +405,16 @@ namespace TitanOrbit.ECS
                     float3 accel;
                     if (speed < maxSpeed)
                     {
-                        // [TITAN-ORBIT] F = ma — EngineThrust is force; mass slows acceleration.
-                        accel = moveDirection * (engineThrust / mass);
+                        // [TITAN-ORBIT] EngineThrust is already acceleration after mass tax — no F/m.
+                        accel = moveDirection * acceleration;
                     }
                     else
                     {
                         // At cruise cap: thrust steers sideways without adding forward speed.
                         float3 velNorm = math.normalize(vel);
-                        float3 thrustVec = moveDirection * engineThrust;
-                        float alongVel = math.dot(thrustVec, velNorm);
-                        float3 steerForce = thrustVec - velNorm * math.max(0f, alongVel);
-                        accel = steerForce / mass;
+                        float3 accelVec = moveDirection * acceleration;
+                        float alongVel = math.dot(accelVec, velNorm);
+                        accel = accelVec - velNorm * math.max(0f, alongVel);
                     }
 
                     vel += accel * dt;

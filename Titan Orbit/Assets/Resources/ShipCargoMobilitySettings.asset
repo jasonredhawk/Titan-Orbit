@@ -15,15 +15,12 @@ MonoBehaviour:
   levelMaxSpeedPenaltyFractionPerLevel: 0
   levelAccelPenaltyFractionPerLevel: 0
   levelTurnPenaltyFractionPerLevel: 0
-  speedWeightPerGem: 0.001
-  speedWeightPerPerson: 0.002
-  accelWeightPerGem: 0.002
-  accelWeightPerPerson: 0.001
-  turnWeightPerGem: 0.001
-  turnWeightPerPerson: 0.001
-  speedWeightPerComponentMass: 0.02
-  accelWeightPerComponentMass: 0
-  turnWeightPerComponentMass: 0.02
-  minSpeedMultiplier: 0.25
-  minAccelMultiplier: 0.25
-  minTurnMultiplier: 0.25
+  massPerGem: 0.1
+  massPerPerson: 0.15
+  massPerComponentSize: 1.75
+  speedWeightPerMass: 0.05
+  accelWeightPerMass: 0.05
+  turnWeightPerMass: 0.05
+  minSpeed: 0.25
+  minAccel: 0.25
+  minTurn: 0.25

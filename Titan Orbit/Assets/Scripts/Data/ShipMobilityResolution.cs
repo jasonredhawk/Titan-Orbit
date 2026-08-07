@@ -4,230 +4,192 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Pure cargo + hull-mass → mobility tax math shared by <see cref="ECS.ShipStatApplyLogic"/>
-    /// (capacity + live component mass → <c>ShipMotorConfig</c>), the Burst drive job (current load →
-    /// MaxSpeed / turn each tick), and HUD previews. Capacity path may use managed settings; load
-    /// multipliers are Burst-safe float math so server and client prediction stay matched.
+    /// Pure cargo + ComponentSize → mobility tax shared by drive (live each tick), HUD, and tests.
     /// <para>
-    /// [TITAN-ORBIT] Two layers:
-    /// (1) Capacity + component-mass tax — GemCapacity / PeopleCapacity / live HullMassReference at
-    /// stat apply (empty-hold identity + absolute hull mass, not level-1 ratio).
-    /// (2) Current-load tax — CurrentGems / CurrentPeople each motor tick on MaxSpeed and turn
-    /// (accel already slows via mass F/m when you pick up cargo).
-    /// Same gem/people weight fields drive both cargo layers. Formula:
-    /// <c>value' = value × max(minMultiplier, 1 / (1 + penalty))</c>.
+    /// [TITAN-ORBIT] One mass, then subtract:
+    /// <c>totalMass = gems×MassPerGem + people×MassPerPerson + componentSize×MassPerComponentSize</c>
+    /// <c>stat' = max(floor, untaxed − totalMass × WeightPerMass)</c>.
+    /// Motor stores <b>untaxed</b> baselines; drive/HUD apply this live so collecting cargo updates
+    /// Speed / Accel / Turn immediately. Burst overloads take plain floats (no ScriptableObject).
     /// </para>
     /// </summary>
     public static class ShipMobilityResolution
     {
         /// <summary>
-        /// Result of applying the capacity tax to one chassis's untaxed motor inputs.
-        /// Units match what <c>ShipStatApplyLogic</c> writes: move speed definition units,
-        /// EngineThrust (already × visibility), RotationSpeed in °/s.
+        /// Result of subtractive mass tax on untaxed motor inputs.
+        /// Units: MaxSpeed (world units/s), EngineThrust (= acceleration), RotationSpeed (°/s).
         /// </summary>
         public struct TaxedMotorStats
         {
-            /// <summary>Top speed after capacity tax (same units as untaxed MaxSpeed).</summary>
+            /// <summary>Top speed after mass tax.</summary>
             public float MaxSpeed;
 
-            /// <summary>Engine thrust / acceleration force after capacity tax.</summary>
+            /// <summary>Acceleration after mass tax (stored on motor as EngineThrust).</summary>
             public float EngineThrust;
 
-            /// <summary>Yaw rate in degrees per second after capacity tax.</summary>
+            /// <summary>Yaw rate in degrees per second after mass tax.</summary>
             public float RotationSpeed;
 
-            /// <summary>Multiplier applied to MaxSpeed (1 = no tax, floor = settings min).</summary>
-            public float SpeedMultiplier;
-
-            /// <summary>Multiplier applied to EngineThrust.</summary>
-            public float AccelMultiplier;
-
-            /// <summary>Multiplier applied to RotationSpeed.</summary>
-            public float TurnMultiplier;
+            /// <summary>totalMass used for this tax (for HUD breakdowns).</summary>
+            public float TotalMass;
         }
 
         /// <summary>
-        /// Burst-safe MaxSpeed / turn multipliers from cargo currently aboard.
-        /// Accel is intentionally omitted — current load already slows ramp via movement mass.
+        /// Builds totalMass from current gems/people and ComponentSize using cached settings.
         /// </summary>
-        public struct CurrentLoadMultipliers
+        public static float ComputeTotalMass(float gems, float people, float componentSize)
         {
-            /// <summary>Multiply capacity-taxed MaxSpeed by this (1 when empty).</summary>
-            public float SpeedMultiplier;
-
-            /// <summary>Multiply capacity-taxed RotationSpeed by this (1 when empty).</summary>
-            public float TurnMultiplier;
+            return ComputeTotalMass(gems, people, componentSize, ShipCargoMobilitySettingsCache.ResolveOrDefault());
         }
 
         /// <summary>
-        /// Applies capacity + component-mass tax using the cached settings asset (or code defaults).
-        /// Call after propulsion aggregation, level mobility scale, and attribute multipliers.
+        /// Builds totalMass with an explicit settings instance (tests / editor / HUD).
         /// </summary>
-        /// <param name="componentMass">
-        /// Live hull mass at apply (same units as <c>ShipMotorConfig.HullMassReference</c>).
-        /// 0 skips the mass term.
-        /// </param>
-        public static TaxedMotorStats ApplyCapacityTax(
+        public static float ComputeTotalMass(
+            float gems,
+            float people,
+            float componentSize,
+            ShipCargoMobilitySettings settings)
+        {
+            if (settings == null)
+            {
+                return ComputeTotalMassBurst(
+                    gems, people, componentSize,
+                    massPerGem: 0.01f,
+                    massPerPerson: 0.15f,
+                    massPerComponentSize: 1f);
+            }
+
+            return ComputeTotalMassBurst(
+                gems,
+                people,
+                componentSize,
+                settings.massPerGem,
+                settings.massPerPerson,
+                settings.massPerComponentSize);
+        }
+
+        /// <summary>
+        /// [ECS/DOTS] Burst-safe totalMass — same formula as the managed overload.
+        /// </summary>
+        public static float ComputeTotalMassBurst(
+            float gems,
+            float people,
+            float componentSize,
+            float massPerGem,
+            float massPerPerson,
+            float massPerComponentSize)
+        {
+            float g = math.max(0f, gems);
+            float p = math.max(0f, people);
+            float size = math.max(0f, componentSize);
+            return g * math.max(0f, massPerGem)
+                   + p * math.max(0f, massPerPerson)
+                   + size * math.max(0f, massPerComponentSize);
+        }
+
+        /// <summary>
+        /// Applies subtractive mass tax using cached settings.
+        /// </summary>
+        public static TaxedMotorStats ApplyMassTax(
             float untaxedMaxSpeed,
-            float untaxedEngineThrust,
+            float untaxedAccel,
             float untaxedRotationSpeedDeg,
-            float gemCapacity,
-            float peopleCapacity,
-            float componentMass = 0f)
+            float totalMass)
         {
-            return ApplyCapacityTax(
+            return ApplyMassTax(
                 untaxedMaxSpeed,
-                untaxedEngineThrust,
+                untaxedAccel,
                 untaxedRotationSpeedDeg,
-                gemCapacity,
-                peopleCapacity,
-                componentMass,
+                totalMass,
                 ShipCargoMobilitySettingsCache.ResolveOrDefault());
         }
 
         /// <summary>
-        /// Applies capacity + component-mass tax with an explicit settings instance (tests / editor previews).
+        /// Applies subtractive mass tax with an explicit settings instance.
         /// </summary>
-        /// <param name="componentMass">
-        /// Live hull mass at apply (same units as <c>ShipMotorConfig.HullMassReference</c>).
-        /// </param>
-        public static TaxedMotorStats ApplyCapacityTax(
+        public static TaxedMotorStats ApplyMassTax(
             float untaxedMaxSpeed,
-            float untaxedEngineThrust,
+            float untaxedAccel,
             float untaxedRotationSpeedDeg,
-            float gemCapacity,
-            float peopleCapacity,
-            float componentMass,
+            float totalMass,
             ShipCargoMobilitySettings settings)
         {
-            // --- Guard ---
             if (settings == null)
             {
-                return new TaxedMotorStats
-                {
-                    MaxSpeed = Mathf.Max(0.1f, untaxedMaxSpeed),
-                    EngineThrust = Mathf.Max(0.1f, untaxedEngineThrust),
-                    RotationSpeed = Mathf.Max(1f, untaxedRotationSpeedDeg),
-                    SpeedMultiplier = 1f,
-                    AccelMultiplier = 1f,
-                    TurnMultiplier = 1f,
-                };
+                return ApplyMassTaxBurst(
+                    untaxedMaxSpeed,
+                    untaxedAccel,
+                    untaxedRotationSpeedDeg,
+                    totalMass,
+                    speedWeightPerMass: 0.1f,
+                    accelWeightPerMass: 0.1f,
+                    turnWeightPerMass: 0.5f,
+                    minSpeed: 0.1f,
+                    minAccel: 0.1f,
+                    minTurn: 1f);
             }
 
-            float gems = Mathf.Max(0f, gemCapacity);
-            float people = Mathf.Max(0f, peopleCapacity);
-            float mass = Mathf.Max(0f, componentMass);
+            return ApplyMassTaxBurst(
+                untaxedMaxSpeed,
+                untaxedAccel,
+                untaxedRotationSpeedDeg,
+                totalMass,
+                settings.speedWeightPerMass,
+                settings.accelWeightPerMass,
+                settings.turnWeightPerMass,
+                settings.minSpeed,
+                settings.minAccel,
+                settings.minTurn);
+        }
 
-            // --- Capacity + absolute hull-mass penalties (ALWAYS MaxSpeed + accel + turn) ---
-            // [TITAN-ORBIT] Mass term is absolute live hull mass — not reference/live ratio.
-            float speedPenalty = gems * settings.speedWeightPerGem
-                                 + people * settings.speedWeightPerPerson
-                                 + mass * settings.speedWeightPerComponentMass;
-            float accelPenalty = gems * settings.accelWeightPerGem
-                                 + people * settings.accelWeightPerPerson
-                                 + mass * settings.accelWeightPerComponentMass;
-            float turnPenalty = gems * settings.turnWeightPerGem
-                                + people * settings.turnWeightPerPerson
-                                + mass * settings.turnWeightPerComponentMass;
+        /// <summary>
+        /// Convenience: compute totalMass then tax (managed / HUD).
+        /// </summary>
+        public static TaxedMotorStats ApplyMassTaxFromCargo(
+            float untaxedMaxSpeed,
+            float untaxedAccel,
+            float untaxedRotationSpeedDeg,
+            float gems,
+            float people,
+            float componentSize,
+            ShipCargoMobilitySettings settings = null)
+        {
+            settings ??= ShipCargoMobilitySettingsCache.ResolveOrDefault();
+            float totalMass = ComputeTotalMass(gems, people, componentSize, settings);
+            TaxedMotorStats taxed = ApplyMassTax(
+                untaxedMaxSpeed, untaxedAccel, untaxedRotationSpeedDeg, totalMass, settings);
+            taxed.TotalMass = totalMass;
+            return taxed;
+        }
 
-            float speedMul = MultiplierFromPenalty(speedPenalty, settings.minSpeedMultiplier);
-            float accelMul = MultiplierFromPenalty(accelPenalty, settings.minAccelMultiplier);
-            float turnMul = MultiplierFromPenalty(turnPenalty, settings.minTurnMultiplier);
+        /// <summary>
+        /// [ECS/DOTS] Burst-safe subtractive tax — same formula as the managed overload.
+        /// </summary>
+        public static TaxedMotorStats ApplyMassTaxBurst(
+            float untaxedMaxSpeed,
+            float untaxedAccel,
+            float untaxedRotationSpeedDeg,
+            float totalMass,
+            float speedWeightPerMass,
+            float accelWeightPerMass,
+            float turnWeightPerMass,
+            float minSpeed,
+            float minAccel,
+            float minTurn)
+        {
+            float mass = math.max(0f, totalMass);
+            float speedDrag = mass * math.max(0f, speedWeightPerMass);
+            float accelDrag = mass * math.max(0f, accelWeightPerMass);
+            float turnDrag = mass * math.max(0f, turnWeightPerMass);
 
             return new TaxedMotorStats
             {
-                MaxSpeed = Mathf.Max(0.1f, untaxedMaxSpeed * speedMul),
-                EngineThrust = Mathf.Max(0.1f, untaxedEngineThrust * accelMul),
-                RotationSpeed = Mathf.Max(1f, untaxedRotationSpeedDeg * turnMul),
-                SpeedMultiplier = speedMul,
-                AccelMultiplier = accelMul,
-                TurnMultiplier = turnMul,
+                MaxSpeed = math.max(minSpeed, untaxedMaxSpeed - speedDrag),
+                EngineThrust = math.max(minAccel, untaxedAccel - accelDrag),
+                RotationSpeed = math.max(minTurn, untaxedRotationSpeedDeg - turnDrag),
+                TotalMass = mass,
             };
-        }
-
-        /// <summary>
-        /// Current-load MaxSpeed / turn multipliers from cached settings (HUD / main thread).
-        /// </summary>
-        public static CurrentLoadMultipliers ApplyCurrentLoadTax(float currentGems, float currentPeople)
-        {
-            return ApplyCurrentLoadTax(
-                currentGems,
-                currentPeople,
-                ShipCargoMobilitySettingsCache.ResolveOrDefault());
-        }
-
-        /// <summary>
-        /// Current-load MaxSpeed / turn multipliers with explicit settings (HUD / tests).
-        /// </summary>
-        public static CurrentLoadMultipliers ApplyCurrentLoadTax(
-            float currentGems,
-            float currentPeople,
-            ShipCargoMobilitySettings settings)
-        {
-            if (settings == null)
-            {
-                return new CurrentLoadMultipliers
-                {
-                    SpeedMultiplier = 1f,
-                    TurnMultiplier = 1f,
-                };
-            }
-
-            return ComputeCurrentLoadMultipliers(
-                currentGems,
-                currentPeople,
-                settings.speedWeightPerGem,
-                settings.speedWeightPerPerson,
-                settings.turnWeightPerGem,
-                settings.turnWeightPerPerson,
-                settings.minSpeedMultiplier,
-                settings.minTurnMultiplier);
-        }
-
-        /// <summary>
-        /// [ECS/DOTS] Burst-safe current-load multipliers — same formula as capacity MaxSpeed/turn
-        /// tax, but using CurrentGems / CurrentPeople. Called from the drive job each tick.
-        /// </summary>
-        public static CurrentLoadMultipliers ComputeCurrentLoadMultipliers(
-            float currentGems,
-            float currentPeople,
-            float speedWeightPerGem,
-            float speedWeightPerPerson,
-            float turnWeightPerGem,
-            float turnWeightPerPerson,
-            float minSpeedMultiplier,
-            float minTurnMultiplier)
-        {
-            float gems = math.max(0f, currentGems);
-            float people = math.max(0f, currentPeople);
-
-            float speedPenalty = gems * speedWeightPerGem + people * speedWeightPerPerson;
-            float turnPenalty = gems * turnWeightPerGem + people * turnWeightPerPerson;
-
-            return new CurrentLoadMultipliers
-            {
-                SpeedMultiplier = MultiplierFromPenaltyBurst(speedPenalty, minSpeedMultiplier),
-                TurnMultiplier = MultiplierFromPenaltyBurst(turnPenalty, minTurnMultiplier),
-            };
-        }
-
-        /// <summary>
-        /// Converts a non-negative penalty into a multiplier: <c>1 / (1 + penalty)</c>, floored.
-        /// Zero penalty → 1 (no change). Large holds asymptote toward <paramref name="minMultiplier"/>.
-        /// </summary>
-        public static float MultiplierFromPenalty(float penalty, float minMultiplier)
-        {
-            float p = Mathf.Max(0f, penalty);
-            float mul = 1f / (1f + p);
-            return Mathf.Max(minMultiplier, mul);
-        }
-
-        /// <summary>Burst-safe sibling of <see cref="MultiplierFromPenalty"/>.</summary>
-        public static float MultiplierFromPenaltyBurst(float penalty, float minMultiplier)
-        {
-            float p = math.max(0f, penalty);
-            float mul = 1f / (1f + p);
-            return math.max(minMultiplier, mul);
         }
     }
 }

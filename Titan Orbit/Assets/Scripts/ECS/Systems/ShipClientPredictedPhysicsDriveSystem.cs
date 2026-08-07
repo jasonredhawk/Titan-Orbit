@@ -127,7 +127,7 @@ namespace TitanOrbit.ECS
                     PlanetConnectionGraphCache.UpdateLocalOwnerTerritoryMult(localMult, moonElapsed);
             }
 
-            // --- Current-load MaxSpeed / turn weights (must match server job) ---
+            // --- Subtractive mass tax weights (must match server job) ---
             ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
 
             var job = new ShipPhysicsDriveJob
@@ -139,12 +139,15 @@ namespace TitanOrbit.ECS
                 Planets = planets.AsArray(),
                 TerritoryTriangles = territory,
                 HomeLevelByTeam = homeLevels,
-                LoadSpeedWeightPerGem = mobility.speedWeightPerGem,
-                LoadSpeedWeightPerPerson = mobility.speedWeightPerPerson,
-                LoadTurnWeightPerGem = mobility.turnWeightPerGem,
-                LoadTurnWeightPerPerson = mobility.turnWeightPerPerson,
-                LoadMinSpeedMultiplier = mobility.minSpeedMultiplier,
-                LoadMinTurnMultiplier = mobility.minTurnMultiplier,
+                MassPerGem = mobility.massPerGem,
+                MassPerPerson = mobility.massPerPerson,
+                MassPerComponentSize = mobility.massPerComponentSize,
+                SpeedWeightPerMass = mobility.speedWeightPerMass,
+                AccelWeightPerMass = mobility.accelWeightPerMass,
+                TurnWeightPerMass = mobility.turnWeightPerMass,
+                MinSpeed = mobility.minSpeed,
+                MinAccel = mobility.minAccel,
+                MinTurn = mobility.minTurn,
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);

@@ -85,9 +85,10 @@ namespace TitanOrbit.ECS
     /// recomputed on server and client by <see cref="ShipStatApplyLogic"/> when level, branch,
     /// attributes, or equipment change. Read by movement job.
     /// <para>
-    /// [TITAN-ORBIT] MaxSpeed / EngineThrust / RotationSpeed already include the empty-hold
-    /// capacity + component-mass tax from <see cref="TitanOrbit.Data.ShipMobilityResolution"/>
-    /// (gem/people capacity and absolute live hull mass).
+    /// [TITAN-ORBIT] MaxSpeed / EngineThrust / RotationSpeed are <b>untaxed</b> chassis baselines.
+    /// Drive applies live subtractive mass tax from current gems/people + ComponentSize
+    /// (<see cref="TitanOrbit.Data.ShipMobilityResolution"/>).
+    /// EngineThrust stores acceleration (world units/s²), not force — no ×10 visibility, no F/m.
     /// ThrustEnergyDrainPerSecond is absolute OVERDRIVE energy/sec = sum over engines of
     /// ExtraSpeedEnergyDrain. OverdriveEnergyDrainMultiplier stays 1
     /// (rate already baked). Normal RMB thrust does not spend energy.
@@ -95,13 +96,16 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct ShipMotorConfig : IComponentData
     {
-        /// <summary>[PHYSICS] Engine force in Newtons (acceleration = thrust / mass). Capacity-taxed.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Untaxed acceleration (world units/s²). Drive subtracts totalMass × AccelWeightPerMass.
+        /// Field name kept for ghost/serialization stability.
+        /// </summary>
         public float EngineThrust;
 
-        /// <summary>[TITAN-ORBIT] Top speed cap in world units per second. Capacity-taxed.</summary>
+        /// <summary>[TITAN-ORBIT] Untaxed top speed (world units/s). Drive applies live mass tax.</summary>
         public float MaxSpeed;
 
-        /// <summary>[TITAN-ORBIT] Turn rate in degrees per second toward aim point. Capacity-taxed.</summary>
+        /// <summary>[TITAN-ORBIT] Untaxed turn rate (°/s) toward aim. Drive applies live mass tax.</summary>
         public float RotationSpeed;
 
         /// <summary>[TITAN-ORBIT] Space-brake deceleration magnitude.</summary>
@@ -113,7 +117,7 @@ namespace TitanOrbit.ECS
         /// <summary>[TITAN-ORBIT] How fast excess speed (recoil) bleeds off per second.</summary>
         public float RecoilDecayPerSecond;
 
-        /// <summary>[PHYSICS] Chassis component mass × hull mass scale (excludes HP bulk and gems).</summary>
+        /// <summary>[PHYSICS] Chassis ComponentSize × hull scale (excludes HP bulk and gems). Feeds mass tax.</summary>
         public float HullMassReference;
 
         /// <summary>[TITAN-ORBIT] Level-1 max health used to soften movement mass at higher ship levels.</summary>

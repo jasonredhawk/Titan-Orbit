@@ -16,8 +16,8 @@ namespace TitanOrbit.ECS
     /// owner-predicted ghosts; server runs all simulated ships.
     /// Planet snapshots + map size + territory triangles are collected once on the main thread so
     /// every ship shares the same toroidal orbit / shield / territory inputs this tick.
-    /// Current-load MaxSpeed / turn weights are copied from <see cref="ShipCargoMobilitySettings"/>
-    /// on the main thread (Burst cannot read ScriptableObjects).
+    /// Mass-tax weights are copied from <see cref="ShipCargoMobilitySettings"/> on the main thread
+    /// (Burst cannot read ScriptableObjects).
     /// </summary>
     [BurstCompile]
     [WithAll(typeof(ShipTag), typeof(Simulate))]
@@ -44,13 +44,16 @@ namespace TitanOrbit.ECS
         /// <summary>Home planet level per TeamId byte index (length ≥ 6).</summary>
         [ReadOnly] public NativeArray<int> HomeLevelByTeam;
 
-        // --- Current-load MaxSpeed / turn tax (from ShipCargoMobilitySettings, main-thread copy) ---
-        public float LoadSpeedWeightPerGem;
-        public float LoadSpeedWeightPerPerson;
-        public float LoadTurnWeightPerGem;
-        public float LoadTurnWeightPerPerson;
-        public float LoadMinSpeedMultiplier;
-        public float LoadMinTurnMultiplier;
+        // --- Subtractive mass tax (from ShipCargoMobilitySettings, main-thread copy) ---
+        public float MassPerGem;
+        public float MassPerPerson;
+        public float MassPerComponentSize;
+        public float SpeedWeightPerMass;
+        public float AccelWeightPerMass;
+        public float TurnWeightPerMass;
+        public float MinSpeed;
+        public float MinAccel;
+        public float MinTurn;
 
         /// <summary>
         /// Per-ship motor tick. Writes velocity, yaw, <see cref="ShipOrbitState"/>,
@@ -85,12 +88,15 @@ namespace TitanOrbit.ECS
                 Elapsed,
                 in TerritoryTriangles,
                 in HomeLevelByTeam,
-                LoadSpeedWeightPerGem,
-                LoadSpeedWeightPerPerson,
-                LoadTurnWeightPerGem,
-                LoadTurnWeightPerPerson,
-                LoadMinSpeedMultiplier,
-                LoadMinTurnMultiplier);
+                MassPerGem,
+                MassPerPerson,
+                MassPerComponentSize,
+                SpeedWeightPerMass,
+                AccelWeightPerMass,
+                TurnWeightPerMass,
+                MinSpeed,
+                MinAccel,
+                MinTurn);
         }
     }
 }

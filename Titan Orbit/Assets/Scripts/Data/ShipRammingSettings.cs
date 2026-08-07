@@ -20,7 +20,8 @@ namespace TitanOrbit.Data
         [Header("Overall strength")]
         [Tooltip(
             "Scales all ramming damage (asteroid, enemy ship, and self). " +
-            "0.5 = half as nasty as family rammingPower alone; 1 = full; raise to make rams meaner.")]
+            "Damage = rating × totalMass × closingSpeed (impact) or × taxedAccel (grind). " +
+            "0.5 = softer; 1 = full family rammingPower; raise to make rams meaner.")]
         [Min(0.01f)]
         public float GlobalDamageMultiplier = 0.5f;
 

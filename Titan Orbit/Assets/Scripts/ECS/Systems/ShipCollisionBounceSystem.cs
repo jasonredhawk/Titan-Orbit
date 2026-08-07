@@ -20,7 +20,8 @@ namespace TitanOrbit.ECS
     /// no asteroid/planet <c>ToEntityArray</c> (join-crash safe). Tangential grip stays in
     /// <see cref="ShipAsteroidContactFrictionSystem"/> which runs after this system.
     /// </para>
-    /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → Bounce (this) → Friction → Toroidal.
+    /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → Bounce (this) → Friction →
+    /// SameTileDepenetration → Toroidal → Planar → Kinematics.
     /// </summary>
     [UpdateInGroup(typeof(AfterPhysicsSystemGroup))]
     [UpdateBefore(typeof(ShipAsteroidContactFrictionSystem))]

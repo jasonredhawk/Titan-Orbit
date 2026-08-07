@@ -12,9 +12,10 @@ namespace TitanOrbit.Data
     public static class ShipPropulsionAggregation
     {
         /// <summary>
-        /// Multiplier on engine thrust force at runtime (legacy Starship <c>ENGINE_THRUST_VISIBILITY</c>).
-        /// Keeps acceleration snappy while mass still scales thrust via F/m.
+        /// [LEGACY] Old force-scale so F/m felt snappy. Flight accel is now chassis Accel after
+        /// subtractive mass tax — do not multiply by this.
         /// </summary>
+        [System.Obsolete("Flight uses acceleration directly after mass tax; do not scale by 10.")]
         public const float EngineThrustVisibility = 10f;
 
         /// <summary>Per-level terms for non-propulsion stats (~25% of base). Used when balancing weapon energy after scan.</summary>

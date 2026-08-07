@@ -30,7 +30,8 @@ namespace TitanOrbit.ECS
     /// (Settling / GhostSpawnBacklog / post–TeamChoice hold). ShipTag ComponentLookup during
     /// TeamChoice Instantiates Crash!!! — server always applies friction.
     /// </para>
-    /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → Bounce → Friction (this) → Toroidal / Planar / Kinematics.
+    /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → Bounce → Friction (this) →
+    /// SameTileDepenetration → Toroidal → Planar → Kinematics.
     /// </summary>
     // [PHYSICS] AfterPhysicsSystemGroup sits after ExportPhysicsWorld inside PhysicsSystemGroup.
     // Do NOT UpdateAfter(PhysicsSimulationGroup) alone — that window forbids ECS velocity writes.

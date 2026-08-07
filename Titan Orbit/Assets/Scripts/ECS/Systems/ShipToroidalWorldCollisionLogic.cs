@@ -73,8 +73,59 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Tiny extra push beyond exact surface contact so the next integrate step does not
+        /// immediately re-overlap under continuous thrust. Used by same-tile depenetration only
+        /// (cross-seam resolve still uses exact <c>minDist - dist</c>).
+        /// </summary>
+        public const float SameTileDepenetrationSkin = 0.02f;
+
+        /// <summary>
+        /// Same-tile XZ position push-out when Unity Physics left residual overlap (grind under
+        /// thrust, or planar Y-snap undoing a vertical contact resolve). Does <b>not</b> rewrite
+        /// velocity — <see cref="ShipCollisionBounceSystem"/> / friction already own bounce and grip.
+        /// Called from <see cref="ShipAsteroidSameTileDepenetrationSystem"/> via collision events
+        /// (join-crash safe — no asteroid gather). Cross-seam pairs still use
+        /// <see cref="TryResolveShipVsWorldSphere"/>.
+        /// </summary>
+        /// <param name="shipPos">Ship position — written when depenetrating.</param>
+        /// <param name="shipRadius">Ship hull sphere radius (XZ AABB / fallback).</param>
+        /// <param name="bodyPos">Asteroid center (logical sim, same tile).</param>
+        /// <param name="bodyRadius">Asteroid sphere radius.</param>
+        /// <returns>True when a penetration was resolved this call.</returns>
+        public static bool TryDepenetrateShipVsSameTileWorldSphere(
+            ref float3 shipPos,
+            float shipRadius,
+            float3 bodyPos,
+            float bodyRadius)
+        {
+            // --- Planar Euclidean separation (same tile — PhysX already saw this pair) ---
+            // [TITAN-ORBIT] Ignore Y: play plane is Y = 0. PhysX may have "resolved" partly along
+            // Y on tall compound hulls; planar snap then restores Y without restoring XZ clearance.
+            float3 offset = bodyPos - shipPos;
+            offset.y = 0f;
+            float dist = math.length(offset);
+            float minDist = math.max(0.01f, shipRadius + bodyRadius);
+            if (dist >= minDist)
+                return false;
+
+            // --- Separation normal: from body toward ship ---
+            float3 normal;
+            if (dist < 1e-5f)
+                normal = new float3(1f, 0f, 0f);
+            else
+                normal = -offset / dist;
+
+            // --- Push out on XZ (+ skin so continuous thrust cannot dig in 1 unit/tick) ---
+            float penetration = minDist - dist;
+            shipPos += normal * (penetration + SameTileDepenetrationSkin);
+            shipPos.y = 0f;
+            return true;
+        }
+
+        /// <summary>
         /// If the ship overlaps the world sphere on the torus, push the ship out and bounce velocity.
-        /// No-op when the pair is on the same tile (Unity Physics owns that contact) or not overlapping.
+        /// No-op when the pair is on the same tile (Unity Physics +
+        /// <see cref="ShipAsteroidSameTileDepenetrationSystem"/> own that contact) or not overlapping.
         /// Pass <paramref name="bodyMass"/> &gt; 0 with <paramref name="shipMass"/> for asteroids
         /// (virtual mass, rock stays put); leave bodyMass ≤ 0 for infinite-mass planets.
         /// </summary>
@@ -109,8 +160,9 @@ namespace TitanOrbit.ECS
             float shipMass = 0f,
             float bodyMass = 0f)
         {
-            // --- Same tile: leave to Unity Physics + ShipCollisionBounceSystem ---
+            // --- Same tile: leave to Unity Physics + bounce/friction + same-tile XZ depenetration ---
             // [TITAN-ORBIT] Avoids double-bounce near the origin where Euclidean contacts already work.
+            // Residual grind penetration is fixed by ShipAsteroidSameTileDepenetrationSystem (position only).
             if (!NeedsToroidalResolve(shipPos, bodyPos, mapW, mapH))
                 return false;
 

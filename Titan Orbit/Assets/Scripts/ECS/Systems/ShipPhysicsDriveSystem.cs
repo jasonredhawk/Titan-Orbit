@@ -71,7 +71,7 @@ namespace TitanOrbit.ECS
             var homeLevels = new NativeArray<int>(6, Allocator.TempJob);
             PlanetConnectionGraphCache.CopyHomeLevels(PlanetConnectionGraphSide.Server, ref homeLevels);
 
-            // --- Current-load MaxSpeed / turn weights (Burst job cannot read ScriptableObject) ---
+            // --- Subtractive mass tax weights (Burst job cannot read ScriptableObject) ---
             ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
 
             // [NETCODE] Fixed-step dt from PredictedFixedStepSimulationSystemGroup — not frame delta.
@@ -84,12 +84,15 @@ namespace TitanOrbit.ECS
                 Planets = planets.AsArray(),
                 TerritoryTriangles = territory,
                 HomeLevelByTeam = homeLevels,
-                LoadSpeedWeightPerGem = mobility.speedWeightPerGem,
-                LoadSpeedWeightPerPerson = mobility.speedWeightPerPerson,
-                LoadTurnWeightPerGem = mobility.turnWeightPerGem,
-                LoadTurnWeightPerPerson = mobility.turnWeightPerPerson,
-                LoadMinSpeedMultiplier = mobility.minSpeedMultiplier,
-                LoadMinTurnMultiplier = mobility.minTurnMultiplier,
+                MassPerGem = mobility.massPerGem,
+                MassPerPerson = mobility.massPerPerson,
+                MassPerComponentSize = mobility.massPerComponentSize,
+                SpeedWeightPerMass = mobility.speedWeightPerMass,
+                AccelWeightPerMass = mobility.accelWeightPerMass,
+                TurnWeightPerMass = mobility.turnWeightPerMass,
+                MinSpeed = mobility.minSpeed,
+                MinAccel = mobility.minAccel,
+                MinTurn = mobility.minTurn,
             };
             state.Dependency = job.ScheduleParallel(state.Dependency);
             state.Dependency = planets.Dispose(state.Dependency);

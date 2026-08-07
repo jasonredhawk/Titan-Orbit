@@ -6,7 +6,6 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
-using Unity.Physics;
 using Unity.Transforms;
 using UnityEngine;
 
@@ -14,9 +13,15 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative ramming damage from <b>real collisions only</b>:
-    /// PhysX <see cref="CollisionEvent"/> pairs (same-tile) plus cross-seam asteroid
+    /// PhysX collision-event pairs (same-tile) plus cross-seam asteroid
     /// penetrations queued by <see cref="ShipToroidalWorldCollisionSystem"/>.
     /// No proximity skin — flying past an asteroid does not chip hull.
+    /// <para>
+    /// [TITAN-ORBIT] Damage uses mobility <c>totalMass</c> and after-tax motion:
+    /// Impact = rating × totalMass × closingSpeed; Grind = rating × totalMass × taxedAccel × dt.
+    /// Same helpers as the HUD (<see cref="ShipComponentRammingSuggestions"/>).
+    /// Bounce / PhysX still use <see cref="ShipMassLogic.ComputeRammingMass"/> elsewhere.
+    /// </para>
     /// <para>
     /// Targets: asteroids (impact + grind) and enemy ships (impact reciprocal damage).
     /// Hull/gem rules use <see cref="ShipDamageLogic"/>. Clients never predict this.
@@ -111,12 +116,8 @@ namespace TitanOrbit.ECS
                 var input = state.EntityManager.GetComponentData<ShipInput>(shipEntity);
                 float3 shipPos = state.EntityManager.GetComponentData<LocalTransform>(shipEntity).Position;
 
-                float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
-                float hullBaseline = ShipMassLogic.ComputeRammingHullMassBaseline(
-                    motor.HullMassReference, ship.MaxHealth, motor.ChassisReferenceHealth, baseMass);
-                float ramMass = ShipMassLogic.ComputeRammingMass(
-                    motor.HullMassReference, ship.MaxHealth, motor.ChassisReferenceHealth,
-                    ship.CurrentGems, baseMass, ship.CurrentPeople);
+                // --- Mobility totalMass + after-tax accel (same tax as ShipPhysicsDriveLogic) ---
+                ResolveMobilityRamInputs(in ship, in motor, out float totalMass, out float taxedAccel);
 
                 // [TITAN-ORBIT] Rating from ShipFamilyDefinition component rammingPower (summed +
                 // level-scaled in ShipStatApplyLogic → motor.RammingPower). Not a flat constant.
@@ -129,7 +130,7 @@ namespace TitanOrbit.ECS
                 float closing = ShipComponentRammingSuggestions.ResolveClosingSpeedForDamage(
                     pending.ClosingSpeed,
                     pending.EstimatedImpulse,
-                    ramMass);
+                    totalMass);
 
                 long key = PackKey(shipEntity, other);
                 hitThisTick.Add(key);
@@ -154,21 +155,18 @@ namespace TitanOrbit.ECS
 
                 var contact = contacts[contactIndex];
 
-                // --- Impact on contact enter ---
+                // --- Impact on contact enter: rating × totalMass × closingSpeed ---
                 if (isNew && closing >= ImpactMinClosingSpeed)
                 {
                     if (!otherIsShip)
                     {
                         float asteroidDamage = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                            ramRating, ramMass, hullBaseline, closing,
-                            ShipComponentRammingSuggestions.MaxAsteroidRestitutionForDamage);
+                            ramRating, totalMass, closing);
                         float selfDamage = ShipComponentRammingSuggestions.ComputeImpactSelfDamage(
-                            ramRating, ramMass, hullBaseline, closing,
-                            ShipComponentRammingSuggestions.MaxAsteroidRestitutionForDamage);
+                            ramRating, totalMass, closing);
 
-                        float impactForceN = (ramMass * closing *
-                            (1f + ShipComponentRammingSuggestions.MaxAsteroidRestitutionForDamage)) /
-                            math.max(1e-4f, fixedDt);
+                        // Gem VFX intensity only — not part of the damage product.
+                        float impactForceN = (totalMass * closing) / math.max(1e-4f, fixedDt);
                         float intensity = ShipComponentRammingSuggestions.ComputeRamImpactGemExpulsionIntensity(
                             impactForceN, selfDamage);
 
@@ -196,16 +194,17 @@ namespace TitanOrbit.ECS
                     MarkColliding(ref state, other, shipEntity, now);
                 }
 
-                // --- Asteroid grind while colliding + thrusting into the surface ---
+                // --- Asteroid grind: rating × totalMass × taxedAccel × pulse (thrust into rock) ---
                 if (!otherIsShip && input.Thrust)
                 {
                     float3 forward = math.mul(
                         state.EntityManager.GetComponentData<LocalTransform>(shipEntity).Rotation,
                         new float3(0f, 0f, 1f));
                     forward.y = 0f;
+                    // [TITAN-ORBIT] Gate push uses taxedAccel — same after-tax Accel as drive / grind damage.
                     float3 driveForce = float3.zero;
                     if (math.lengthsq(forward) > 1e-6f)
-                        driveForce = math.normalize(forward) * math.max(0f, motor.EngineThrust);
+                        driveForce = math.normalize(forward) * math.max(0f, taxedAccel);
 
                     float pushN = ShipComponentRammingSuggestions.ComputeNormalPushNewtons(
                         new Vector3(normalShipFromOther.x, 0f, normalShipFromOther.z),
@@ -216,13 +215,13 @@ namespace TitanOrbit.ECS
                     {
                         float pulse = ShipComponentRammingSuggestions.GrindPulseIntervalSeconds;
                         float asteroidPulse = ShipComponentRammingSuggestions.ComputeGrindDamagePerPulse(
-                            ramRating, ramMass, hullBaseline, pushN, pulse);
+                            ramRating, totalMass, taxedAccel, pulse);
 
                         float selfPulse = ShipComponentRammingSuggestions.ComputeGrindSelfDamagePerPulse(
-                            ramRating, ramMass, hullBaseline, pushN, pulse);
+                            ramRating, totalMass, taxedAccel, pulse);
                         float grindIntensity =
                             ShipComponentRammingSuggestions.ComputeRamGrindGemExpulsionIntensity(
-                                pushN, selfPulse);
+                                taxedAccel, selfPulse);
 
                         ApplyAsteroidDamage(ref state, other, asteroidPulse, ship.Team);
                         // [TITAN-ORBIT] Grind self-damage — environment, not a player kill.
@@ -392,22 +391,14 @@ namespace TitanOrbit.ECS
             var offMotor = state.EntityManager.GetComponentData<ShipMotorConfig>(offender);
             var vicShip = state.EntityManager.GetComponentData<ShipState>(victim);
 
-            float baseMass = offMotor.Mass > 0f ? offMotor.Mass : ShipMassLogic.DefaultBaseMass;
-            float hullBaseline = ShipMassLogic.ComputeRammingHullMassBaseline(
-                offMotor.HullMassReference, offShip.MaxHealth, offMotor.ChassisReferenceHealth, baseMass);
-            float ramMass = ShipMassLogic.ComputeRammingMass(
-                offMotor.HullMassReference, offShip.MaxHealth, offMotor.ChassisReferenceHealth,
-                offShip.CurrentGems, baseMass, offShip.CurrentPeople);
+            ResolveMobilityRamInputs(in offShip, in offMotor, out float totalMass, out _);
             float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(
                 offMotor.RammingPower);
 
             float damage = ShipComponentRammingSuggestions.ComputeImpactDamage(
-                ramRating, ramMass, hullBaseline, closing,
-                ShipComponentRammingSuggestions.MaxAsteroidRestitutionForDamage);
+                ramRating, totalMass, closing);
 
-            float impactForceN = (ramMass * closing *
-                (1f + ShipComponentRammingSuggestions.MaxAsteroidRestitutionForDamage)) /
-                math.max(1e-4f, fixedDt);
+            float impactForceN = (totalMass * closing) / math.max(1e-4f, fixedDt);
             float intensity = ShipComponentRammingSuggestions.ComputeRamImpactGemExpulsionIntensity(
                 impactForceN, damage);
 
@@ -422,6 +413,37 @@ namespace TitanOrbit.ECS
                 gemPrefab, vicPos, spawnServerTime, ecb, now,
                 damagerNetworkId: offenderNetworkId);
             state.EntityManager.SetComponentData(victim, vicShip);
+        }
+
+        /// <summary>
+        /// Mobility totalMass + after-tax Accel — same subtractive tax as
+        /// <see cref="ShipPhysicsDriveLogic"/> / the speedometer.
+        /// </summary>
+        /// <param name="ship">Current vitals (gems / people).</param>
+        /// <param name="motor">Untaxed chassis baselines + HullMassReference (ComponentSize).</param>
+        /// <param name="totalMass">Gems×mG + people×mP + size×mCS.</param>
+        /// <param name="taxedAccel">After-tax acceleration used for grind damage and the push gate.</param>
+        static void ResolveMobilityRamInputs(
+            in ShipState ship,
+            in ShipMotorConfig motor,
+            out float totalMass,
+            out float taxedAccel)
+        {
+            float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
+            float componentSize = motor.HullMassReference > 0f
+                ? motor.HullMassReference
+                : math.max(ShipMassLogic.MinMass, baseMass * ShipMassLogic.HullMassScale);
+
+            // [TITAN-ORBIT] ApplyMassTaxFromCargo reads ShipCargoMobilitySettingsCache — same asset as drive.
+            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+                motor.MaxSpeed,
+                motor.EngineThrust,
+                motor.RotationSpeed,
+                ship.CurrentGems,
+                ship.CurrentPeople,
+                componentSize);
+            totalMass = taxed.TotalMass;
+            taxedAccel = taxed.EngineThrust;
         }
 
         static bool IsMoonDockImmune(ref SystemState state, Entity shipEntity)
