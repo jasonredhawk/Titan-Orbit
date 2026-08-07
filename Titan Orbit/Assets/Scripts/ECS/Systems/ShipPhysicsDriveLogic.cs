@@ -25,8 +25,8 @@ namespace TitanOrbit.ECS
     /// burst = Shift ∧ Thrust ∧ energy &gt; 0 ∧ ¬lockout; lockout sets at energy 0 and clears at
     /// ≥25% MaxEnergy (or Shift release). Normal RMB thrust is free. When burst ends, planar
     /// speed hard-caps to the new max so speedometer / bloom stay in sync.
-    /// Drain rate = <see cref="ShipMotorConfig.ThrustEnergyDrainPerSecond"/> ×
-    /// <see cref="ShipMotorConfig.OverdriveEnergyDrainMultiplier"/>.
+    /// Drain rate = <see cref="ShipMotorConfig.ThrustEnergyDrainPerSecond"/>
+    /// (ExtraSpeedEnergyDrain summed across engines).
     /// Paired with <see cref="ShipPhysicsDriveSystem"/> and
     /// <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
     /// </summary>
@@ -149,8 +149,9 @@ namespace TitanOrbit.ECS
             }
 
             // --- Movement mass (HP bulk + gems + people) — must match on client and server ---
-            // [TITAN-ORBIT] Mass slows accel via F/m. MaxSpeed / turn also get a current-load tax
-            // below (capacity tax is already baked into ShipMotorConfig at stat apply).
+            // [TITAN-ORBIT] Mass slows accel via F/m. Bake-time MaxSpeed / EngineThrust / turn
+            // already tax absolute hull mass via ShipCargoMobilitySettings.*WeightPerComponentMass
+            // (ShipStatApplyLogic). Current-load tax below stacks on that capacity-taxed motor.
             float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
             float movementMass = ShipMassLogic.ComputeMovementMass(
                 motor.HullMassReference,

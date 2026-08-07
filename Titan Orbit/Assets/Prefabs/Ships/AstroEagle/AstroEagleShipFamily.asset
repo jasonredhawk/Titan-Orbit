@@ -13,45 +13,44 @@ MonoBehaviour:
   m_Name: AstroEagleShipFamily
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
   familyId: AstroEagle
+  shipLevelStatGrowthFraction: 0.1
   defaultFallbackStats:
     firePower: 3
-    firePowerPerLevel: 0.75
+    firePowerPerAbilityLevel: 0.75
     bulletSpeed: 12
-    bulletSpeedPerLevel: 3
+    bulletSpeedPerAbilityLevel: 3
     bulletRange: 0
-    bulletRangePerLevel: 0
+    bulletRangePerAbilityLevel: 0
     fireRate: 3
-    fireRatePerLevel: 0
+    fireRatePerAbilityLevel: 0
     rammingPower: 1
-    rammingPowerPerLevel: 0.25
+    rammingPowerPerAbilityLevel: 0.25
     healthCap: 6.3
-    healthCapPerLevel: 1.575
+    healthCapPerAbilityLevel: 1.575
     healthRegen: 0.22500002
-    healthRegenPerLevel: 0.056250006
+    healthRegenPerAbilityLevel: 0.056250006
     energyCap: 18
-    energyCapPerLevel: 4.5
+    energyCapPerAbilityLevel: 4.5
     energyRegen: 3
-    energyRegenPerLevel: 0.75
+    energyRegenPerAbilityLevel: 0.75
     moveSpeed: 9
-    moveSpeedPerLevel: 1.8
+    moveSpeedPerAbilityLevel: 1.8
     accelerationCap: 4.8
-    accelerationCapPerLevel: 1.2
-    thrustEnergyDrain: 0
-    thrustEnergyDrainPerLevel: 0
+    accelerationCapPerAbilityLevel: 1.2
     extraSpeedPercent: 0
-    extraSpeedPercentPerLevel: 0
-    extraSpeedEnergyPercent: 0
-    extraSpeedEnergyPercentPerLevel: 0
+    extraSpeedPercentPerAbilityLevel: 0
+    extraSpeedEnergyDrain: 0
+    extraSpeedEnergyDrainPerAbilityLevel: 0
     turnSpeed: 14
-    turnSpeedPerLevel: 3.5
+    turnSpeedPerAbilityLevel: 3.5
     maxGems: 8
-    maxGemsPerLevel: 2
+    maxGemsPerAbilityLevel: 2
     tractorBeamDistance: 3
-    tractorBeamDistancePerLevel: 0.75
+    tractorBeamDistancePerAbilityLevel: 0.75
     tractorBeamPower: 4
-    tractorBeamPowerPerLevel: 1
+    tractorBeamPowerPerAbilityLevel: 1
     maxPeople: 4
-    maxPeoplePerLevel: 1
+    maxPeoplePerAbilityLevel: 1
   specialBonuses:
     moveSpeedMul: 1
     accelerationMul: 1
@@ -65,9 +64,8 @@ MonoBehaviour:
     healthRegenMul: 1
     energyCapMul: 1
     energyRegenMul: 1
-    thrustEnergyDrainMul: 1
     extraSpeedPercentMul: 1
-    extraSpeedEnergyPercentMul: 1
+    extraSpeedEnergyDrainMul: 1
     maxGemsMul: 1
     maxPeopleMul: 1
     tractorDistanceMul: 1
@@ -85,43 +83,41 @@ MonoBehaviour:
     statCategories: 000000000100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 1
-      rammingPowerPerLevel: 0.25
+      rammingPowerPerAbilityLevel: 0.25
       healthCap: 6.3
-      healthCapPerLevel: 1.575
+      healthCapPerAbilityLevel: 1.575
       healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      healthRegenPerAbilityLevel: 0.056250006
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 8
-      maxGemsPerLevel: 2
+      maxGemsPerAbilityLevel: 2
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      maxPeoplePerAbilityLevel: 0.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: cd7b456e48084a444b0c5869ca781107, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: cd7b456e48084a444b0c5869ca781107, type: 3}
@@ -164,43 +160,41 @@ MonoBehaviour:
     statCategories: 000000000100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 1
-      rammingPowerPerLevel: 0.25
+      rammingPowerPerAbilityLevel: 0.25
       healthCap: 6.3
-      healthCapPerLevel: 1.575
+      healthCapPerAbilityLevel: 1.575
       healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      healthRegenPerAbilityLevel: 0.056250006
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 8
-      maxGemsPerLevel: 2
+      maxGemsPerAbilityLevel: 2
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      maxPeoplePerAbilityLevel: 0.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: cc4275dfd02b11142b40e76c65f09c6d, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: cc4275dfd02b11142b40e76c65f09c6d, type: 3}
@@ -243,43 +237,41 @@ MonoBehaviour:
     statCategories: 000000000100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 1.12
-      rammingPowerPerLevel: 0.28
+      rammingPowerPerAbilityLevel: 0.28
       healthCap: 8.1
-      healthCapPerLevel: 2.025
+      healthCapPerAbilityLevel: 2.025
       healthRegen: 0.28928575
-      healthRegenPerLevel: 0.07232144
+      healthRegenPerAbilityLevel: 0.07232144
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 16
-      maxGemsPerLevel: 4
+      maxGemsPerAbilityLevel: 4
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 4
-      maxPeoplePerLevel: 1
+      maxPeoplePerAbilityLevel: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 13a71218e8201ca46af2b395b42837e1, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 13a71218e8201ca46af2b395b42837e1, type: 3}
@@ -322,43 +314,41 @@ MonoBehaviour:
     statCategories: 0300000002000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 3.8571427
-      energyCapPerLevel: 0.9642857
+      energyCapPerAbilityLevel: 0.9642857
       energyRegen: 1.3499999
-      energyRegenPerLevel: 0.33749998
+      energyRegenPerAbilityLevel: 0.33749998
       moveSpeed: 6
-      moveSpeedPerLevel: 1.2
+      moveSpeedPerAbilityLevel: 1.2
       accelerationCap: 3
-      accelerationCapPerLevel: 0.6
-      thrustEnergyDrain: 1.5
-      thrustEnergyDrainPerLevel: 0.3
+      accelerationCapPerAbilityLevel: 0.6
       extraSpeedPercent: 0.5
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 4
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 6.3
+      extraSpeedEnergyDrainPerAbilityLevel: 2.5200002
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: bd84fb5dd437dc140b624c89d666b686, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: bd84fb5dd437dc140b624c89d666b686, type: 3}
@@ -401,43 +391,41 @@ MonoBehaviour:
     statCategories: 0300000002000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 5.1428566
-      energyCapPerLevel: 1.2857141
+      energyCapPerAbilityLevel: 1.2857141
       energyRegen: 1.7999998
-      energyRegenPerLevel: 0.44999996
+      energyRegenPerAbilityLevel: 0.44999996
       moveSpeed: 8
-      moveSpeedPerLevel: 1.6
+      moveSpeedPerAbilityLevel: 1.6
       accelerationCap: 4
-      accelerationCapPerLevel: 0.8
-      thrustEnergyDrain: 2
-      thrustEnergyDrainPerLevel: 0.4
+      accelerationCapPerAbilityLevel: 0.8
       extraSpeedPercent: 0.5
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 4
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 6.3
+      extraSpeedEnergyDrainPerAbilityLevel: 2.9400003
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 8c69850db4c38f149b1e6ba5d97b6173, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 8c69850db4c38f149b1e6ba5d97b6173, type: 3}
@@ -480,43 +468,41 @@ MonoBehaviour:
     statCategories: 03000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 10.7027025
-      turnSpeedPerLevel: 2.6756756
+      turnSpeedPerAbilityLevel: 2.6756756
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: cbe789725f09e034eaac48c58ca2d236, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: cbe789725f09e034eaac48c58ca2d236, type: 3}
@@ -559,43 +545,41 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 3.15
-      healthCapPerLevel: 0.7875
+      healthCapPerAbilityLevel: 0.7875
       healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      healthRegenPerAbilityLevel: 0.028125003
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 97f53dadd461cbe4e82b8c1db336a5bd, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 97f53dadd461cbe4e82b8c1db336a5bd, type: 3}
@@ -638,43 +622,41 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 4.05
-      healthCapPerLevel: 1.0125
+      healthCapPerAbilityLevel: 1.0125
       healthRegen: 0.14464287
-      healthRegenPerLevel: 0.03616072
+      healthRegenPerAbilityLevel: 0.03616072
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 558a464699a9f6145b30273717b731f9, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 558a464699a9f6145b30273717b731f9, type: 3}
@@ -717,43 +699,41 @@ MonoBehaviour:
     statCategories: 03000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 10.7027025
-      turnSpeedPerLevel: 2.6756756
+      turnSpeedPerAbilityLevel: 2.6756756
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: ff8427dfaf12f114098042181fb75dc5, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: ff8427dfaf12f114098042181fb75dc5, type: 3}
@@ -796,43 +776,41 @@ MonoBehaviour:
     statCategories: 03000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 6
-      moveSpeedPerLevel: 1.2
+      moveSpeedPerAbilityLevel: 1.2
       accelerationCap: 3
-      accelerationCapPerLevel: 0.6
-      thrustEnergyDrain: 1.5
-      thrustEnergyDrainPerLevel: 0.3
+      accelerationCapPerAbilityLevel: 0.6
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 4.1621623
-      turnSpeedPerLevel: 1.0405406
+      turnSpeedPerAbilityLevel: 1.0405406
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: b832d0927e5692345b05dc390a15acd7, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: b832d0927e5692345b05dc390a15acd7, type: 3}
@@ -875,43 +853,41 @@ MonoBehaviour:
     statCategories: 0000000002000000
     stats:
       firePower: 3
-      firePowerPerLevel: 0.75
+      firePowerPerAbilityLevel: 0.75
       bulletSpeed: 12
-      bulletSpeedPerLevel: 3
+      bulletSpeedPerAbilityLevel: 3
       bulletRange: 30
-      bulletRangePerLevel: 7.5
+      bulletRangePerAbilityLevel: 7.5
       fireRate: 3
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 9
-      energyCapPerLevel: 2.25
+      energyCapPerAbilityLevel: 2.25
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 96e8d8bb8f302cb4d8dc40b06abf8cbf, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 96e8d8bb8f302cb4d8dc40b06abf8cbf, type: 3}
@@ -954,43 +930,41 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 6.3
-      healthCapPerLevel: 1.575
+      healthCapPerAbilityLevel: 1.575
       healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      healthRegenPerAbilityLevel: 0.056250006
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 8
-      maxGemsPerLevel: 2
+      maxGemsPerAbilityLevel: 2
       tractorBeamDistance: 3
-      tractorBeamDistancePerLevel: 0.75
+      tractorBeamDistancePerAbilityLevel: 0.75
       tractorBeamPower: 4
-      tractorBeamPowerPerLevel: 1
+      tractorBeamPowerPerAbilityLevel: 1
       maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      maxPeoplePerAbilityLevel: 0.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: bfdc1c73a3cf76841b846bcdc2bb7be8, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: bfdc1c73a3cf76841b846bcdc2bb7be8, type: 3}
@@ -1033,43 +1007,41 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 8.1
-      healthCapPerLevel: 2.025
+      healthCapPerAbilityLevel: 2.025
       healthRegen: 0.28928575
-      healthRegenPerLevel: 0.07232144
+      healthRegenPerAbilityLevel: 0.07232144
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 16
-      maxGemsPerLevel: 4
+      maxGemsPerAbilityLevel: 4
       tractorBeamDistance: 6
-      tractorBeamDistancePerLevel: 1.5
+      tractorBeamDistancePerAbilityLevel: 1.5
       tractorBeamPower: 8
-      tractorBeamPowerPerLevel: 2
+      tractorBeamPowerPerAbilityLevel: 2
       maxPeople: 4
-      maxPeoplePerLevel: 1
+      maxPeoplePerAbilityLevel: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 312e4b4eaed063741b0fb13d99d94d86, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 312e4b4eaed063741b0fb13d99d94d86, type: 3}
@@ -1112,43 +1084,41 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 9.9
-      healthCapPerLevel: 2.475
+      healthCapPerAbilityLevel: 2.475
       healthRegen: 0.35357147
-      healthRegenPerLevel: 0.08839287
+      healthRegenPerAbilityLevel: 0.08839287
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 24
-      maxGemsPerLevel: 6
+      maxGemsPerAbilityLevel: 6
       tractorBeamDistance: 9
-      tractorBeamDistancePerLevel: 2.25
+      tractorBeamDistancePerAbilityLevel: 2.25
       tractorBeamPower: 12
-      tractorBeamPowerPerLevel: 3
+      tractorBeamPowerPerAbilityLevel: 3
       maxPeople: 6
-      maxPeoplePerLevel: 1.5
+      maxPeoplePerAbilityLevel: 1.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: b65b968f6d3ef0b4faf20f4f86c6e58b, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: b65b968f6d3ef0b4faf20f4f86c6e58b, type: 3}
@@ -1191,43 +1161,41 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 11.7
-      healthCapPerLevel: 2.925
+      healthCapPerAbilityLevel: 2.925
       healthRegen: 0.41785717
-      healthRegenPerLevel: 0.10446429
+      healthRegenPerAbilityLevel: 0.10446429
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 32
-      maxGemsPerLevel: 8
+      maxGemsPerAbilityLevel: 8
       tractorBeamDistance: 12
-      tractorBeamDistancePerLevel: 3
+      tractorBeamDistancePerAbilityLevel: 3
       tractorBeamPower: 16
-      tractorBeamPowerPerLevel: 4
+      tractorBeamPowerPerAbilityLevel: 4
       maxPeople: 8
-      maxPeoplePerLevel: 2
+      maxPeoplePerAbilityLevel: 2
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: f8a1899f76644574e88bfea8a1acedbd, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: f8a1899f76644574e88bfea8a1acedbd, type: 3}
@@ -1270,43 +1238,41 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 13.5
-      healthCapPerLevel: 3.375
+      healthCapPerAbilityLevel: 3.375
       healthRegen: 0.4821429
-      healthRegenPerLevel: 0.120535724
+      healthRegenPerAbilityLevel: 0.120535724
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
-      thrustEnergyDrain: 0
-      thrustEnergyDrainPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
       extraSpeedPercent: 0
-      extraSpeedPercentPerLevel: 0
-      extraSpeedEnergyPercent: 0
-      extraSpeedEnergyPercentPerLevel: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 40
-      maxGemsPerLevel: 10
+      maxGemsPerAbilityLevel: 10
       tractorBeamDistance: 15
-      tractorBeamDistancePerLevel: 3.75
+      tractorBeamDistancePerAbilityLevel: 3.75
       tractorBeamPower: 20
-      tractorBeamPowerPerLevel: 5
+      tractorBeamPowerPerAbilityLevel: 5
       maxPeople: 10
-      maxPeoplePerLevel: 2.5
+      maxPeoplePerAbilityLevel: 2.5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 0254719097875634ab3f302cab4a48c4, type: 3}
     theatricalMenuPreviewSprite: {fileID: 21300000, guid: 0254719097875634ab3f302cab4a48c4, type: 3}
@@ -1384,12 +1350,12 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 78c6ec280f2677f47843997367108cd1, type: 3}
     minHomePlanetLevel: 1
     powerScore: 153.94269
-    powerScoreAtMaxLevel: 249.24837
+    powerScoreAtMaxLevel: 255.72836
     powerScoreBreakdown:
       offense: 49
       defense: 24.302233
       energy: 29.82857
-      mobility: 59.811893
+      mobility: 66.29189
       capacity: 40
       firePower: 3
       bulletSpeed: 12
@@ -1399,7 +1365,7 @@ MonoBehaviour:
       healthRegen: 0.83800805
       energyCap: 24.42857
       energyRegen: 5.3999996
-      moveSpeed: 9.12
+      moveSpeed: 11.4
       turnSpeed: 33.89189
       gemCap: 32
       peopleCap: 8
@@ -1443,13 +1409,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 1d52f0f31724db044b11d3584d1c549e, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 175.45537
-    powerScoreAtMaxLevel: 325.68304
+    powerScore: 177.45537
+    powerScoreAtMaxLevel: 330.48303
     powerScoreBreakdown:
       offense: 51
       defense: 43.86019
       energy: 22.865438
-      mobility: 48.92973
+      mobility: 53.72973
       capacity: 56.000004
       firePower: 3
       bulletSpeed: 12
@@ -1459,7 +1425,7 @@ MonoBehaviour:
       healthRegen: 1.5124205
       energyCap: 19.270695
       energyRegen: 3.5947437
-      moveSpeed: 8
+      moveSpeed: 10
       turnSpeed: 29.72973
       gemCap: 44.800003
       peopleCap: 11.200001
@@ -1503,13 +1469,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 7c4a157b73cb511458fcc9b0b8831c6f, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 215.6667
-    powerScoreAtMaxLevel: 427.98508
+    powerScore: 217.6667
+    powerScoreAtMaxLevel: 432.7851
     powerScoreBreakdown:
       offense: 99.00004
       defense: 56.54792
       energy: 32.13135
-      mobility: 38.227028
+      mobility: 43.027027
       capacity: 69.945404
       firePower: 6.015
       bulletSpeed: 24
@@ -1519,7 +1485,7 @@ MonoBehaviour:
       healthRegen: 1.9499283
       energyCap: 28.467667
       energyRegen: 3.6636834
-      moveSpeed: 8
+      moveSpeed: 10
       turnSpeed: 19.027027
       gemCap: 55.95632
       peopleCap: 13.98908
@@ -1563,13 +1529,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 694bcb6631349e74b92803e59dfb594c, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 208.24524
-    powerScoreAtMaxLevel: 470.6984
+    powerScore: 209.56523
+    powerScoreAtMaxLevel: 473.2184
     powerScoreBreakdown:
       offense: 99.12923
       defense: 36.34048
       energy: 26.227285
-      mobility: 57.052975
+      mobility: 59.57297
       capacity: 63.1845
       firePower: 6.24
       bulletSpeed: 24
@@ -1579,7 +1545,7 @@ MonoBehaviour:
       healthRegen: 1.2531202
       energyCap: 24.094286
       energyRegen: 2.133
-      moveSpeed: 5.28
+      moveSpeed: 6.6
       turnSpeed: 46.972973
       gemCap: 50.5476
       peopleCap: 12.6369
@@ -1623,13 +1589,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2c8b45e58600e4843bc4bb9ef84f6099, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 242.98407
-    powerScoreAtMaxLevel: 538.347
+    powerScore: 244.98407
+    powerScoreAtMaxLevel: 543.147
     powerScoreBreakdown:
       offense: 97.00011
       defense: 38.504562
       energy: 31.865438
-      mobility: 38.227028
+      mobility: 43.027027
       capacity: 115.56178
       firePower: 6.025263
       bulletSpeed: 24
@@ -1639,7 +1605,7 @@ MonoBehaviour:
       healthRegen: 1.3277436
       energyCap: 28.270695
       energyRegen: 3.5947437
-      moveSpeed: 8
+      moveSpeed: 10
       turnSpeed: 19.027027
       gemCap: 92.449425
       peopleCap: 23.112356
@@ -1683,13 +1649,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 035c83706d87add499054bbe5ce76846, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 217.13078
-    powerScoreAtMaxLevel: 502.99637
+    powerScore: 219.37077
+    powerScoreAtMaxLevel: 509.23636
     powerScoreBreakdown:
       offense: 105.1275
       defense: 42.941536
       energy: 37.522755
-      mobility: 43.987026
+      mobility: 50.227028
       capacity: 71.23946
       firePower: 13.440001
       bulletSpeed: 24
@@ -1699,7 +1665,7 @@ MonoBehaviour:
       healthRegen: 1.4807426
       energyCap: 32.4613
       energyRegen: 5.061455
-      moveSpeed: 8.96
+      moveSpeed: 11.2
       turnSpeed: 19.027027
       gemCap: 56.99157
       peopleCap: 14.247892
@@ -1743,13 +1709,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: eb5cba6f45aea34448993d9126b0e27a, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 247.85802
-    powerScoreAtMaxLevel: 728.4038
+    powerScore: 249.85802
+    powerScoreAtMaxLevel: 733.20386
     powerScoreBreakdown:
       offense: 195.52719
       defense: 33.229256
       energy: 49.86544
-      mobility: 59.632435
+      mobility: 64.432434
       capacity: 58.691475
       firePower: 9.6394205
       bulletSpeed: 48
@@ -1759,7 +1725,7 @@ MonoBehaviour:
       healthRegen: 1.1458366
       energyCap: 46.270695
       energyRegen: 3.5947437
-      moveSpeed: 8
+      moveSpeed: 10
       turnSpeed: 40.432434
       gemCap: 46.95318
       peopleCap: 11.738295
@@ -1803,13 +1769,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c5595c22219d27f4b9054592ae82dd8f, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 274.2644
-    powerScoreAtMaxLevel: 676.9812
+    powerScore: 276.2644
+    powerScoreAtMaxLevel: 681.7812
     powerScoreBreakdown:
       offense: 99.18381
       defense: 58.839314
       energy: 31.885714
-      mobility: 38.227028
+      mobility: 43.027027
       capacity: 125.86093
       firePower: 6.651423
       bulletSpeed: 24
@@ -1819,7 +1785,7 @@ MonoBehaviour:
       healthRegen: 2.028942
       energyCap: 28.285713
       energyRegen: 3.5999997
-      moveSpeed: 8
+      moveSpeed: 10
       turnSpeed: 19.027027
       gemCap: 100.68874
       peopleCap: 25.172186
@@ -1863,13 +1829,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: d89347a1fcac36d449b19f7870b0302e, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 256.32013
-    powerScoreAtMaxLevel: 729.3099
+    powerScore: 258.04013
+    powerScoreAtMaxLevel: 732.42993
     powerScoreBreakdown:
       offense: 193.00021
       defense: 37.285713
       energy: 47.941715
-      mobility: 16.642162
+      mobility: 19.762163
       capacity: 100
       firePower: 12.050525
       bulletSpeed: 48
@@ -1879,7 +1845,7 @@ MonoBehaviour:
       healthRegen: 1.2857144
       energyCap: 44.845715
       energyRegen: 3.096
-      moveSpeed: 6.8800006
+      moveSpeed: 8.6
       turnSpeed: 4.1621623
       gemCap: 80
       peopleCap: 20
@@ -1923,13 +1889,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 20c0f9e060a2aae479738b9e79acfec5, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 248.43549
-    powerScoreAtMaxLevel: 642.53455
+    powerScore: 250.79549
+    powerScoreAtMaxLevel: 649.4945
     powerScoreBreakdown:
       offense: 100.51299
       defense: 50.821774
       energy: 39.500736
-      mobility: 65.89406
+      mobility: 72.85406
       capacity: 81.769485
       firePower: 4.849431
       bulletSpeed: 24
@@ -1939,7 +1905,7 @@ MonoBehaviour:
       healthRegen: 1.7524754
       energyCap: 33.92647
       energyRegen: 5.5742655
-      moveSpeed: 9.440001
+      moveSpeed: 11.8
       turnSpeed: 38.054054
       gemCap: 65.41559
       peopleCap: 16.353897
@@ -1983,13 +1949,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 141bc613c1c6cee4986bfa32f12428ee, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 274.49127
-    powerScoreAtMaxLevel: 858.62537
+    powerScore: 276.21127
+    powerScoreAtMaxLevel: 861.74536
     powerScoreBreakdown:
       offense: 195.12
       defense: 59.155445
       energy: 42.942856
-      mobility: 38.04757
+      mobility: 41.16757
       capacity: 79.945404
       firePower: 12
       bulletSpeed: 48
@@ -1999,7 +1965,7 @@ MonoBehaviour:
       healthRegen: 2.039843
       energyCap: 41.142857
       energyRegen: 1.7999998
-      moveSpeed: 6.8800006
+      moveSpeed: 8.6
       turnSpeed: 25.567568
       gemCap: 63.95632
       peopleCap: 15.98908
@@ -2043,13 +2009,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 6695101ca1cb8c748bc792551b705af7, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 290.52365
-    powerScoreAtMaxLevel: 794.6282
+    powerScore: 292.52365
+    powerScoreAtMaxLevel: 799.42816
     powerScoreBreakdown:
       offense: 99
       defense: 70.27719
       energy: 33.274014
-      mobility: 38.227028
+      mobility: 43.027027
       capacity: 129.9454
       firePower: 6
       bulletSpeed: 24
@@ -2059,7 +2025,7 @@ MonoBehaviour:
       healthRegen: 2.4233518
       energyCap: 29.314085
       energyRegen: 3.95993
-      moveSpeed: 8
+      moveSpeed: 10
       turnSpeed: 19.027027
       gemCap: 103.95633
       peopleCap: 25.989082
@@ -2103,13 +2069,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: bbf6e5d4ff0462744a2e4351d64e9339, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 292.59128
-    powerScoreAtMaxLevel: 788.35034
+    powerScore: 294.31128
+    powerScoreAtMaxLevel: 791.47034
     powerScoreBreakdown:
       offense: 99.12
       defense: 85.25545
       energy: 24.942856
-      mobility: 38.04757
+      mobility: 41.16757
       capacity: 119.945404
       firePower: 6
       bulletSpeed: 24
@@ -2119,7 +2085,7 @@ MonoBehaviour:
       healthRegen: 2.9398427
       energyCap: 23.142857
       energyRegen: 1.7999998
-      moveSpeed: 6.8800006
+      moveSpeed: 8.6
       turnSpeed: 25.567568
       gemCap: 95.95632
       peopleCap: 23.98908
@@ -2163,13 +2129,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: defba0386e258ed44b17a5c4a64ea4ed, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 331.9936
-    powerScoreAtMaxLevel: 1096.152
+    powerScore: 333.7136
+    powerScoreAtMaxLevel: 1099.272
     powerScoreBreakdown:
       offense: 289.18442
       defense: 55.80771
       energy: 60.932747
-      mobility: 16.642162
+      mobility: 19.762163
       capacity: 115.94295
       firePower: 16.268028
       bulletSpeed: 72
@@ -2179,7 +2145,7 @@ MonoBehaviour:
       healthRegen: 1.9244041
       energyCap: 59.13537
       energyRegen: 1.7973793
-      moveSpeed: 6.8800006
+      moveSpeed: 8.6
       turnSpeed: 4.1621623
       gemCap: 92.75436
       peopleCap: 23.18859
@@ -2223,13 +2189,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: a18ea5542319bcd4697389d1757019c1, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 310.3532
-    powerScoreAtMaxLevel: 955.2644
+    powerScore: 312.47324
+    powerScoreAtMaxLevel: 960.7844
     powerScoreBreakdown:
       offense: 195.12022
       defense: 45.794113
       energy: 49.86544
-      mobility: 88.08
+      mobility: 93.6
       capacity: 80.16315
       firePower: 12.050528
       bulletSpeed: 48
@@ -2239,7 +2205,7 @@ MonoBehaviour:
       healthRegen: 1.5791075
       energyCap: 46.270695
       energyRegen: 3.5947437
-      moveSpeed: 8.4800005
+      moveSpeed: 10.6
       turnSpeed: 66
       gemCap: 64.130516
       peopleCap: 16.032629
@@ -2283,13 +2249,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 45f089a901dedbf4c94bffe2d1c1ea38, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 275.48862
-    powerScoreAtMaxLevel: 971.0553
+    powerScore: 277.48862
+    powerScoreAtMaxLevel: 975.8553
     powerScoreBreakdown:
       offense: 198.08458
       defense: 58.86853
       energy: 50.522495
-      mobility: 48.92973
+      mobility: 53.72973
       capacity: 71.15701
       firePower: 9.21085
       bulletSpeed: 48
@@ -2299,7 +2265,7 @@ MonoBehaviour:
       healthRegen: 2.0299497
       energyCap: 46.757404
       energyRegen: 3.765092
-      moveSpeed: 8
+      moveSpeed: 10
       turnSpeed: 29.72973
       gemCap: 56.925613
       peopleCap: 14.231403
@@ -2343,13 +2309,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 4922b732c4c3d8a4fa8e07ef8208f50a, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 453.96024
-    powerScoreAtMaxLevel: 1390.6302
+    powerScore: 455.68024
+    powerScoreAtMaxLevel: 1393.7502
     powerScoreBreakdown:
       offense: 193.00021
       defense: 79.23214
       energy: 42.932716
-      mobility: 27.344864
+      mobility: 30.464865
       capacity: 250
       firePower: 12.050525
       bulletSpeed: 48
@@ -2359,7 +2325,7 @@ MonoBehaviour:
       healthRegen: 2.732143
       energyCap: 41.135345
       energyRegen: 1.7973719
-      moveSpeed: 6.8800006
+      moveSpeed: 8.6
       turnSpeed: 14.864864
       gemCap: 200
       peopleCap: 50
@@ -2403,13 +2369,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c750136a4b942fe4e91c2429d2342dc4, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 408.84326
-    powerScoreAtMaxLevel: 1319.6792
+    powerScore: 411.40326
+    powerScoreAtMaxLevel: 1327.8392
     powerScoreBreakdown:
       offense: 195.15976
       defense: 77.3437
       energy: 64.26268
-      mobility: 59.991352
+      mobility: 68.15135
       capacity: 169.13681
       firePower: 12.508731
       bulletSpeed: 48
@@ -2419,7 +2385,7 @@ MonoBehaviour:
       healthRegen: 2.6670244
       energyCap: 56.935318
       energyRegen: 7.327361
-      moveSpeed: 10.24
+      moveSpeed: 12.799999
       turnSpeed: 27.351353
       gemCap: 135.30945
       peopleCap: 33.827362
@@ -2463,13 +2429,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c2101fd8fc62ad940a772d7906e43060, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 404.66763
-    powerScoreAtMaxLevel: 1313.4717
+    powerScore: 407.14764
+    powerScoreAtMaxLevel: 1321.1516
     powerScoreBreakdown:
       offense: 197.4574
       defense: 77.31459
       energy: 63.95111
-      mobility: 60.44973
+      mobility: 68.12973
       capacity: 165.8774
       firePower: 9.874802
       bulletSpeed: 48
@@ -2479,7 +2445,7 @@ MonoBehaviour:
       healthRegen: 2.666021
       energyCap: 56.70453
       energyRegen: 7.246584
-      moveSpeed: 9.92
+      moveSpeed: 12.4
       turnSpeed: 29.72973
       gemCap: 132.70192
       peopleCap: 33.17548
@@ -2523,13 +2489,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 7cc8118669eef80449fa8d0084437714, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 333.78345
-    powerScoreAtMaxLevel: 1007.15985
+    powerScore: 336.34348
+    powerScoreAtMaxLevel: 1015.3198
     powerScoreBreakdown:
       offense: 97.00025
       defense: 62.171665
       energy: 42.930542
-      mobility: 59.991352
+      mobility: 68.15135
       capacity: 161.05086
       firePower: 6.039051
       bulletSpeed: 24
@@ -2539,7 +2505,7 @@ MonoBehaviour:
       healthRegen: 2.1438508
       energyCap: 36.467068
       energyRegen: 6.463474
-      moveSpeed: 10.24
+      moveSpeed: 12.799999
       turnSpeed: 27.351353
       gemCap: 128.84068
       peopleCap: 32.21017
@@ -2583,13 +2549,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 60a427a4c1251ba4b8272743a47030b1, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 373.4108
-    powerScoreAtMaxLevel: 1259.2819
+    powerScore: 376.4508
+    powerScoreAtMaxLevel: 1270.3219
     powerScoreBreakdown:
       offense: 197.45494
       defense: 68.52566
       energy: 74.27156
-      mobility: 90.538376
+      mobility: 101.57838
       capacity: 113.33519
       firePower: 10.740004
       bulletSpeed: 48
@@ -2599,7 +2565,7 @@ MonoBehaviour:
       healthRegen: 2.3629541
       energyCap: 64.349304
       energyRegen: 9.9222555
-      moveSpeed: 12.159999
+      moveSpeed: 15.199999
       turnSpeed: 46.37838
       gemCap: 90.66815
       peopleCap: 22.667038

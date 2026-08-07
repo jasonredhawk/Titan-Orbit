@@ -86,10 +86,11 @@ namespace TitanOrbit.ECS
     /// attributes, or equipment change. Read by movement job.
     /// <para>
     /// [TITAN-ORBIT] MaxSpeed / EngineThrust / RotationSpeed already include the empty-hold
-    /// capacity tax from <see cref="TitanOrbit.Data.ShipMobilityResolution"/> (gem/people capacity).
-    /// ThrustEnergyDrainPerSecond comes from authored engine+thruster drain × family mul
-    /// (spent only during OVERDRIVE). OVERDRIVE speed/thrust/drain multipliers are baked
-    /// here from ProfileSet × family bonuses.
+    /// capacity + component-mass tax from <see cref="TitanOrbit.Data.ShipMobilityResolution"/>
+    /// (gem/people capacity and absolute live hull mass).
+    /// ThrustEnergyDrainPerSecond is absolute OVERDRIVE energy/sec = sum over engines of
+    /// ExtraSpeedEnergyDrain. OverdriveEnergyDrainMultiplier stays 1
+    /// (rate already baked). Normal RMB thrust does not spend energy.
     /// </para>
     /// </summary>
     public struct ShipMotorConfig : IComponentData
@@ -125,17 +126,16 @@ namespace TitanOrbit.ECS
         public float RammingPower;
 
         /// <summary>
-        /// [TITAN-ORBIT] Base energy spend rate used only while OVERDRIVE burst is active.
-        /// Sum of engine + thruster authored <c>thrustEnergyDrain</c> × family
-        /// <c>thrustEnergyDrainMul</c>. Multiplied by <see cref="OverdriveEnergyDrainMultiplier"/>
-        /// at drain time. Normal RMB thrust does not spend energy.
+        /// [TITAN-ORBIT] Absolute energy spend per second while OVERDRIVE burst is active.
+        /// Sum over engines of ExtraSpeedEnergyDrain (e.g. 2 = spend 2 energy/sec).
+        /// Normal RMB thrust does not spend energy.
         /// </summary>
         public float ThrustEnergyDrainPerSecond;
 
         /// <summary>
         /// [TITAN-ORBIT] MaxSpeed × this while OVERDRIVE burst is active
         /// (<see cref="ShipOverdriveTuning.IsBurstActive"/>).
-        /// Baked from ProfileSet extraSpeedPercent × family extraSpeedPercentMul (1 + p).
+        /// Baked from engine ExtraSpeedPercent × family extraSpeedPercentMul (1 + p).
         /// </summary>
         public float OverdriveSpeedMultiplier;
 
@@ -145,16 +145,16 @@ namespace TitanOrbit.ECS
         public float OverdriveThrustMultiplier;
 
         /// <summary>
-        /// [TITAN-ORBIT] ThrustEnergyDrainPerSecond × this while OVERDRIVE burst is active.
-        /// Always 1 + p × e (ProfileSet × family energy mul). Unused for normal thrust (free).
+        /// [TITAN-ORBIT] Kept at 1 — absolute OD drain is already in
+        /// <see cref="ThrustEnergyDrainPerSecond"/>. Legacy mul path left for ghost/bake safety.
         /// </summary>
         public float OverdriveEnergyDrainMultiplier;
     }
 
     /// <summary>
     /// [TITAN-ORBIT] Code fallbacks + shared OVERDRIVE lockout / burst rules for motor, HUD, and scale.
-    /// Live speed/drain muls come from ProfileSet × family bonuses baked onto <see cref="ShipMotorConfig"/>.
-    /// Formula: speed = 1 + p; drain = 1 + p × e (defaults p=0.75, e=2 → 1.75 / 2.5).
+    /// Live speed/drain come from engines × family bonuses baked onto <see cref="ShipMotorConfig"/>.
+    /// Formula: speed = 1 + p; drain/sec = ExtraSpeedEnergyDrain (defaults p=0.75, drain=2).
     /// <para>
     /// Lockout hysteresis (one place for sim + presentation):
     /// Shift up → clear lockout; energy ≤ 0 → lockout; energy ≥ 25% MaxEnergy → clear lockout.
@@ -170,10 +170,12 @@ namespace TitanOrbit.ECS
         /// <summary>Fallback EngineThrust multiplier (same as speed).</summary>
         public static float ThrustMultiplier => SpeedMultiplier;
 
-        /// <summary>Fallback overdrive drain: 1 + 0.75×2 = 2.5.</summary>
-        public static float EnergyDrainMultiplier =>
-            1f + ShipFamilyOverdriveAbility.DefaultExtraSpeedPercent
-                * ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyPercent;
+        /// <summary>Fallback absolute OD drain/sec (ExtraSpeedEnergyDrain default = 2).</summary>
+        public static float DefaultEnergyDrainPerSecond =>
+            ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyDrain;
+
+        /// <summary>Legacy name — always 1; absolute drain lives on ThrustEnergyDrainPerSecond.</summary>
+        public static float EnergyDrainMultiplier => 1f;
 
         /// <summary>
         /// Fraction of MaxEnergy required to clear lockout / (re)start OVERDRIVE after empty.
@@ -256,7 +258,7 @@ namespace TitanOrbit.ECS
                 ? motor.OverdriveThrustMultiplier
                 : ThrustMultiplier;
 
-        /// <summary>Resolves overdrive drain mul from motor, falling back when unset (≤ 0).</summary>
+        /// <summary>Resolves overdrive drain mul from motor (always ~1; absolute rate is on ThrustEnergyDrainPerSecond).</summary>
         public static float ResolveEnergyDrainMultiplier(in ShipMotorConfig motor) =>
             motor.OverdriveEnergyDrainMultiplier > 0.01f
                 ? motor.OverdriveEnergyDrainMultiplier

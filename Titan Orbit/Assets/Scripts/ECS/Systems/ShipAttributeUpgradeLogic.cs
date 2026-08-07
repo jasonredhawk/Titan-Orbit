@@ -4,18 +4,24 @@ using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.NetCode;
+using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Bottom-bar attribute upgrades: gem cost, per-level caps, stat multipliers, and server-side
-    /// purchase validation. Each upgrade level adds +10% to one stat; purchases call ShipStatApplyLogic
-    /// to refresh ShipState / motor / weapon caps. Client sends PurchaseAttributeUpgradeCommand RPC;
+    /// purchase validation. Most abilities add +10% per purchase; Move Speed instead adds one step
+    /// of authored <c>moveSpeedPerAbilityLevel</c>, <c>accelerationCapPerAbilityLevel</c>, and
+    /// <c>extraSpeedEnergyDrainPerAbilityLevel</c> together. Purchases call ShipStatApplyLogic to
+    /// refresh ShipState / motor / weapon caps. Client sends PurchaseAttributeUpgradeCommand RPC;
     /// ShipAttributeUpgradeSystem invokes TryPurchaseForNetworkId on the server.
     /// </summary>
     public static class ShipAttributeUpgradeLogic
     {
-        /// <summary>Each upgrade level multiplies the stat by (1 + level × this value).</summary>
+        /// <summary>
+        /// Each non-Move-Speed upgrade level multiplies that stat by (1 + level × this value).
+        /// Move Speed uses additive *PerAbilityLevel steps — see <see cref="ApplyMoveSpeedAbilitySteps"/>.
+        /// </summary>
         public const float MultiplierPerLevel = 0.1f;
 
         /// <summary>Gem cost per purchase — scales with ship level (stronger ships pay more).</summary>
@@ -65,7 +71,8 @@ namespace TitanOrbit.ECS
         public static void Reset(ref ShipAttributeUpgradeState state) => state = default;
 
         /// <summary>
-        /// Applies +10% per level multipliers onto summed chassis stats before ShipStatApplyLogic writes components.
+        /// Applies +10% per level multipliers onto summed chassis stats (non-Move-Speed abilities).
+        /// Call <see cref="ApplyMoveSpeedAbilitySteps"/> afterward for Move Speed purchases.
         /// </summary>
         public static void ApplyMultipliers(ref ShipComponentAbilityStats stats, in ShipAttributeUpgradeState state)
         {
@@ -75,10 +82,56 @@ namespace TitanOrbit.ECS
             stats.healthRegen *= 1f + state.HealthRegen * MultiplierPerLevel;
             stats.energyCap *= 1f + state.EnergyCapacity * MultiplierPerLevel;
             stats.energyRegen *= 1f + state.EnergyRegen * MultiplierPerLevel;
-            stats.moveSpeed *= 1f + state.MovementSpeed * MultiplierPerLevel;
+            // [TITAN-ORBIT] Move Speed is additive *PerAbilityLevel — not ×1.1 (see ApplyMoveSpeedAbilitySteps).
             stats.turnSpeed *= 1f + state.RotationSpeed * MultiplierPerLevel;
             stats.maxGems *= 1f + state.GemCapacity * MultiplierPerLevel;
             stats.maxPeople *= 1f + state.PeopleCapacity * MultiplierPerLevel;
+        }
+
+        /// <summary>
+        /// Bottom-HUD Move Speed ability: each purchase adds one step of authored chassis
+        /// <paramref name="moveSpeedPerAbilityLevel"/>, <paramref name="accelerationCapPerAbilityLevel"/>,
+        /// and <paramref name="extraSpeedEnergyDrainPerAbilityLevel"/> (all three together).
+        /// Steps come from the level-1 summed propulsion stats, not a flat 10%.
+        /// </summary>
+        public static void ApplyMoveSpeedAbilitySteps(
+            ref ShipComponentAbilityStats stats,
+            in ShipAttributeUpgradeState state,
+            float moveSpeedPerAbilityLevel,
+            float accelerationCapPerAbilityLevel,
+            float extraSpeedEnergyDrainPerAbilityLevel)
+        {
+            int n = Mathf.Max(0, state.MovementSpeed);
+            if (n <= 0)
+                return;
+
+            // --- Additive ability steps (same purchase grows cruise, thrust, and OD drain) ---
+            stats.moveSpeed += n * Mathf.Max(0f, moveSpeedPerAbilityLevel);
+            stats.accelerationCap += n * Mathf.Max(0f, accelerationCapPerAbilityLevel);
+            stats.extraSpeedEnergyDrain += n * Mathf.Max(0f, extraSpeedEnergyDrainPerAbilityLevel);
+        }
+
+        /// <summary>
+        /// Resolves Move Speed ability step sizes from a level-1 chassis sum.
+        /// When a step is still 0, falls back to base × propulsion Scan fraction so HUD purchases
+        /// still do something before designers re-Scan.
+        /// </summary>
+        public static void ResolveMoveSpeedAbilitySteps(
+            in ShipComponentAbilityStats levelOneSummed,
+            out float moveStep,
+            out float accelStep,
+            out float odDrainStep)
+        {
+            float frac = ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase;
+            moveStep = levelOneSummed.moveSpeedPerAbilityLevel > 0.0001f
+                ? levelOneSummed.moveSpeedPerAbilityLevel
+                : Mathf.Max(0f, levelOneSummed.moveSpeed * frac);
+            accelStep = levelOneSummed.accelerationCapPerAbilityLevel > 0.0001f
+                ? levelOneSummed.accelerationCapPerAbilityLevel
+                : Mathf.Max(0f, levelOneSummed.accelerationCap * frac);
+            odDrainStep = levelOneSummed.extraSpeedEnergyDrainPerAbilityLevel > 0.0001f
+                ? levelOneSummed.extraSpeedEnergyDrainPerAbilityLevel
+                : Mathf.Max(0f, levelOneSummed.extraSpeedEnergyDrain * frac);
         }
 
         /// <summary>Ensures ShipAttributeUpgradeState exists on the ship (added on first purchase).</summary>

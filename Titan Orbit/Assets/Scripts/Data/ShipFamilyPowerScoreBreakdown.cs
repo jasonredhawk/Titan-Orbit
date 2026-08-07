@@ -67,20 +67,21 @@ namespace TitanOrbit.Data
         /// <summary>Inflates summed stats by per-level × upgrade count (max-level preview).</summary>
         public static ShipComponentAbilityStats ApplyMaxEffectiveLevels(ShipComponentAbilityStats stats, int upgradeCount)
         {
-            stats.firePower += stats.firePowerPerLevel * upgradeCount;
-            stats.bulletRange += stats.bulletRangePerLevel * upgradeCount;
-            stats.fireRate += stats.fireRatePerLevel * upgradeCount;
-            stats.rammingPower += stats.rammingPowerPerLevel * upgradeCount;
-            stats.healthCap += stats.healthCapPerLevel * upgradeCount;
-            stats.healthRegen += stats.healthRegenPerLevel * upgradeCount;
-            stats.energyCap += stats.energyCapPerLevel * upgradeCount;
-            stats.energyRegen += stats.energyRegenPerLevel * upgradeCount;
-            stats.moveSpeed += stats.moveSpeedPerLevel * upgradeCount;
-            stats.accelerationCap += stats.accelerationCapPerLevel * upgradeCount;
-            stats.thrustEnergyDrain += stats.thrustEnergyDrainPerLevel * upgradeCount;
-            stats.turnSpeed += stats.turnSpeedPerLevel * upgradeCount;
-            stats.maxGems += stats.maxGemsPerLevel * upgradeCount;
-            stats.maxPeople += stats.maxPeoplePerLevel * upgradeCount;
+            stats.firePower += stats.firePowerPerAbilityLevel * upgradeCount;
+            stats.bulletRange += stats.bulletRangePerAbilityLevel * upgradeCount;
+            stats.fireRate += stats.fireRatePerAbilityLevel * upgradeCount;
+            stats.rammingPower += stats.rammingPowerPerAbilityLevel * upgradeCount;
+            stats.healthCap += stats.healthCapPerAbilityLevel * upgradeCount;
+            stats.healthRegen += stats.healthRegenPerAbilityLevel * upgradeCount;
+            stats.energyCap += stats.energyCapPerAbilityLevel * upgradeCount;
+            stats.energyRegen += stats.energyRegenPerAbilityLevel * upgradeCount;
+            stats.moveSpeed += stats.moveSpeedPerAbilityLevel * upgradeCount;
+            stats.accelerationCap += stats.accelerationCapPerAbilityLevel * upgradeCount;
+            stats.extraSpeedPercent += stats.extraSpeedPercentPerAbilityLevel * upgradeCount;
+            stats.extraSpeedEnergyDrain += stats.extraSpeedEnergyDrainPerAbilityLevel * upgradeCount;
+            stats.turnSpeed += stats.turnSpeedPerAbilityLevel * upgradeCount;
+            stats.maxGems += stats.maxGemsPerAbilityLevel * upgradeCount;
+            stats.maxPeople += stats.maxPeoplePerAbilityLevel * upgradeCount;
             return stats;
         }
 

@@ -201,6 +201,85 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Heuristic component mass from BoxCollider extents after attribute mesh grow, × ship-tier scale.
+        /// Instantiates a temporary prefab hierarchy (destroyed before return). Falls back to 0 when
+        /// the prefab has no usable boxes (caller may use legacy transform-scale mass).
+        /// </summary>
+        /// <param name="chassisPrefab">Upgrade-tree hull prefab.</param>
+        /// <param name="attrs">Bottom-bar levels used by <see cref="ShipComponentAttributeScaleLogic"/>.</param>
+        /// <param name="familyPrefix">USC family token (e.g. AstroEagle); empty → parse from prefab name.</param>
+        /// <param name="shipLevel">Ship tier for <see cref="BodyCollisionMath.GetShipTierScale"/>.</param>
+        /// <param name="applyAttributeScale">
+        /// When false, skips attribute grow (level-1 / zero-ability reference mass).
+        /// </param>
+        public static float ComputeLiveHullComponentMass(
+            GameObject chassisPrefab,
+            in ShipAttributeUpgradeState attrs,
+            string familyPrefix,
+            int shipLevel,
+            bool applyAttributeScale)
+        {
+            if (chassisPrefab == null)
+                return 0f;
+
+            GameObject instance = null;
+            try
+            {
+                // --- Temp hierarchy (destroyed in finally) ---
+                // [UNITY] Instantiate so we can mutate localScale without dirtying the asset prefab.
+                instance = Object.Instantiate(chassisPrefab);
+                instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                instance.transform.localScale = Vector3.one;
+                var root = instance.transform;
+
+                // --- Bottom-bar attribute grow (same math as proxy meshes / collider bake) ---
+                if (applyAttributeScale)
+                {
+                    string prefix = ResolveFamilyPrefix(chassisPrefab, familyPrefix);
+                    ShipComponentAttributeScaleLogic.ApplyToHierarchy(
+                        root,
+                        prefix,
+                        attrs,
+                        territoryMovementMult: 1f);
+                }
+
+                // --- Sum box volumes (world extents after grow) ---
+                // [UNITY] Qualify UnityEngine.BoxCollider — this file also imports Unity.Physics
+                // which has its own BoxCollider type (ambiguous otherwise).
+                float volumeSum = 0f;
+                var boxes = instance.GetComponentsInChildren<UnityEngine.BoxCollider>(true);
+                for (int i = 0; i < boxes.Length; i++)
+                {
+                    UnityEngine.BoxCollider box = boxes[i];
+                    if (box == null || !box.enabled || box.isTrigger)
+                        continue;
+
+                    // [UNITY] lossyScale folds parent scales so grown parts count correctly.
+                    Vector3 lossy = box.transform.lossyScale;
+                    Vector3 size = box.size;
+                    float sx = Mathf.Abs(size.x * lossy.x);
+                    float sy = Mathf.Abs(size.y * lossy.y);
+                    float sz = Mathf.Abs(size.z * lossy.z);
+                    volumeSum += sx * sy * sz;
+                }
+
+                if (volumeSum <= 0.0001f)
+                    return 0f;
+
+                // [TITAN-ORBIT] Tier scale once (plan: volume × attribute × GetShipTierScale) — not cubed.
+                float tierScale = applyAttributeScale
+                    ? BodyCollisionMath.GetShipTierScale(shipLevel)
+                    : BodyCollisionMath.GetShipTierScale(1);
+                return Mathf.Max(0f, volumeSum * tierScale);
+            }
+            finally
+            {
+                if (instance != null)
+                    Object.Destroy(instance);
+            }
+        }
+
+        /// <summary>
         /// USC family token before the first underscore (AstroEagle_Wing_2 → AstroEagle).
         /// Falls back to the prefab name, then AstroEagle.
         /// </summary>

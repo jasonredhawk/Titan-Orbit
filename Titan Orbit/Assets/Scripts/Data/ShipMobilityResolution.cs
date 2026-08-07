@@ -4,16 +4,17 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Pure cargo → mobility tax math shared by <see cref="ECS.ShipStatApplyLogic"/> (capacity →
-    /// <c>ShipMotorConfig</c>), the Burst drive job (current load → MaxSpeed / turn each tick),
-    /// and HUD previews. Capacity path may use managed settings; load multipliers are Burst-safe
-    /// float math so server and client prediction stay matched.
+    /// Pure cargo + hull-mass → mobility tax math shared by <see cref="ECS.ShipStatApplyLogic"/>
+    /// (capacity + live component mass → <c>ShipMotorConfig</c>), the Burst drive job (current load →
+    /// MaxSpeed / turn each tick), and HUD previews. Capacity path may use managed settings; load
+    /// multipliers are Burst-safe float math so server and client prediction stay matched.
     /// <para>
     /// [TITAN-ORBIT] Two layers:
-    /// (1) Capacity tax — GemCapacity / PeopleCapacity at stat apply (empty-hold identity).
+    /// (1) Capacity + component-mass tax — GemCapacity / PeopleCapacity / live HullMassReference at
+    /// stat apply (empty-hold identity + absolute hull mass, not level-1 ratio).
     /// (2) Current-load tax — CurrentGems / CurrentPeople each motor tick on MaxSpeed and turn
     /// (accel already slows via mass F/m when you pick up cargo).
-    /// Same weight fields drive both layers. Formula:
+    /// Same gem/people weight fields drive both cargo layers. Formula:
     /// <c>value' = value × max(minMultiplier, 1 / (1 + penalty))</c>.
     /// </para>
     /// </summary>
@@ -59,15 +60,20 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Applies capacity tax using the cached settings asset (or code defaults).
+        /// Applies capacity + component-mass tax using the cached settings asset (or code defaults).
         /// Call after propulsion aggregation, level mobility scale, and attribute multipliers.
         /// </summary>
+        /// <param name="componentMass">
+        /// Live hull mass at apply (same units as <c>ShipMotorConfig.HullMassReference</c>).
+        /// 0 skips the mass term.
+        /// </param>
         public static TaxedMotorStats ApplyCapacityTax(
             float untaxedMaxSpeed,
             float untaxedEngineThrust,
             float untaxedRotationSpeedDeg,
             float gemCapacity,
-            float peopleCapacity)
+            float peopleCapacity,
+            float componentMass = 0f)
         {
             return ApplyCapacityTax(
                 untaxedMaxSpeed,
@@ -75,18 +81,23 @@ namespace TitanOrbit.Data
                 untaxedRotationSpeedDeg,
                 gemCapacity,
                 peopleCapacity,
+                componentMass,
                 ShipCargoMobilitySettingsCache.ResolveOrDefault());
         }
 
         /// <summary>
-        /// Applies capacity tax with an explicit settings instance (tests / editor previews).
+        /// Applies capacity + component-mass tax with an explicit settings instance (tests / editor previews).
         /// </summary>
+        /// <param name="componentMass">
+        /// Live hull mass at apply (same units as <c>ShipMotorConfig.HullMassReference</c>).
+        /// </param>
         public static TaxedMotorStats ApplyCapacityTax(
             float untaxedMaxSpeed,
             float untaxedEngineThrust,
             float untaxedRotationSpeedDeg,
             float gemCapacity,
             float peopleCapacity,
+            float componentMass,
             ShipCargoMobilitySettings settings)
         {
             // --- Guard ---
@@ -105,14 +116,19 @@ namespace TitanOrbit.Data
 
             float gems = Mathf.Max(0f, gemCapacity);
             float people = Mathf.Max(0f, peopleCapacity);
+            float mass = Mathf.Max(0f, componentMass);
 
-            // --- Capacity penalties (ALWAYS MaxSpeed + accel + turn) ---
+            // --- Capacity + absolute hull-mass penalties (ALWAYS MaxSpeed + accel + turn) ---
+            // [TITAN-ORBIT] Mass term is absolute live hull mass — not reference/live ratio.
             float speedPenalty = gems * settings.speedWeightPerGem
-                                 + people * settings.speedWeightPerPerson;
+                                 + people * settings.speedWeightPerPerson
+                                 + mass * settings.speedWeightPerComponentMass;
             float accelPenalty = gems * settings.accelWeightPerGem
-                                 + people * settings.accelWeightPerPerson;
+                                 + people * settings.accelWeightPerPerson
+                                 + mass * settings.accelWeightPerComponentMass;
             float turnPenalty = gems * settings.turnWeightPerGem
-                                + people * settings.turnWeightPerPerson;
+                                + people * settings.turnWeightPerPerson
+                                + mass * settings.turnWeightPerComponentMass;
 
             float speedMul = MultiplierFromPenalty(speedPenalty, settings.minSpeedMultiplier);
             float accelMul = MultiplierFromPenalty(accelPenalty, settings.minAccelMultiplier);

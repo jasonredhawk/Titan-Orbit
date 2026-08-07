@@ -98,48 +98,46 @@ namespace TitanOrbit.Data
             ShipComponentStatCategory.Capacity
         };
 
-        static readonly string[] RammingOffenseFields = { "rammingPower", "rammingPowerPerLevel" };
+        static readonly string[] RammingOffenseFields = { "rammingPower", "rammingPowerPerAbilityLevel" };
         static readonly string[] WeaponOffenseFields =
         {
-            "firePower", "firePowerPerLevel", "bulletSpeed", "bulletSpeedPerLevel",
-            "bulletRange", "bulletRangePerLevel",
-            "fireRate", "fireRatePerLevel"
+            "firePower", "firePowerPerAbilityLevel", "bulletSpeed", "bulletSpeedPerAbilityLevel",
+            "bulletRange", "bulletRangePerAbilityLevel",
+            "fireRate", "fireRatePerAbilityLevel"
         };
         static readonly string[] HealthFields =
-            { "healthCap", "healthCapPerLevel", "healthRegen", "healthRegenPerLevel" };
+            { "healthCap", "healthCapPerAbilityLevel", "healthRegen", "healthRegenPerAbilityLevel" };
         static readonly string[] EnergyFields =
-            { "energyCap", "energyCapPerLevel", "energyRegen", "energyRegenPerLevel" };
+            { "energyCap", "energyCapPerAbilityLevel", "energyRegen", "energyRegenPerAbilityLevel" };
         /// <summary>
         /// [TITAN-ORBIT] Weapon Energy category — Cap only (battery / magazine). Engines own Regen.
         /// </summary>
         static readonly string[] WeaponEnergyCapFields =
-            { "energyCap", "energyCapPerLevel" };
-        /// <summary>Engine-like movement — move + accel + thrust drain + OVERDRIVE knobs (power plant).</summary>
+            { "energyCap", "energyCapPerAbilityLevel" };
+        /// <summary>Engine-like movement — move + accel + OVERDRIVE knobs (power plant; OD drain = esp × esep).</summary>
         static readonly string[] PropulsionMovementFields =
         {
-            "moveSpeed", "moveSpeedPerLevel",
-            "accelerationCap", "accelerationCapPerLevel",
-            "thrustEnergyDrain", "thrustEnergyDrainPerLevel",
-            "extraSpeedPercent", "extraSpeedPercentPerLevel",
-            "extraSpeedEnergyPercent", "extraSpeedEnergyPercentPerLevel"
+            "moveSpeed", "moveSpeedPerAbilityLevel",
+            "accelerationCap", "accelerationCapPerAbilityLevel",
+            "extraSpeedPercent", "extraSpeedPercentPerAbilityLevel",
+            "extraSpeedEnergyDrain", "extraSpeedEnergyDrainPerAbilityLevel"
         };
-        /// <summary>Thruster-like movement — move + accel + turn + thrust drain (no OVERDRIVE knobs; engines own those).</summary>
+        /// <summary>Thruster-like movement — move + accel + turn (no OVERDRIVE knobs; engines own those).</summary>
         static readonly string[] ThrusterMovementFields =
         {
-            "moveSpeed", "moveSpeedPerLevel",
-            "accelerationCap", "accelerationCapPerLevel",
-            "thrustEnergyDrain", "thrustEnergyDrainPerLevel",
-            "turnSpeed", "turnSpeedPerLevel"
+            "moveSpeed", "moveSpeedPerAbilityLevel",
+            "accelerationCap", "accelerationCapPerAbilityLevel",
+            "turnSpeed", "turnSpeedPerAbilityLevel"
         };
-        static readonly string[] TurnMovementFields = { "turnSpeed", "turnSpeedPerLevel" };
+        static readonly string[] TurnMovementFields = { "turnSpeed", "turnSpeedPerAbilityLevel" };
         static readonly string[] CapacityFields =
-            { "maxGems", "maxGemsPerLevel", "maxPeople", "maxPeoplePerLevel" };
+            { "maxGems", "maxGemsPerAbilityLevel", "maxPeople", "maxPeoplePerAbilityLevel" };
         static readonly string[] WingCapacityFields =
         {
-            "maxGems", "maxGemsPerLevel",
-            "tractorBeamDistance", "tractorBeamDistancePerLevel",
-            "tractorBeamPower", "tractorBeamPowerPerLevel",
-            "maxPeople", "maxPeoplePerLevel"
+            "maxGems", "maxGemsPerAbilityLevel",
+            "tractorBeamDistance", "tractorBeamDistancePerAbilityLevel",
+            "tractorBeamPower", "tractorBeamPowerPerAbilityLevel",
+            "maxPeople", "maxPeoplePerAbilityLevel"
         };
 
         /// <summary>Strips version suffixes: Wing1 → Wing, Wing_3 → Wing, MainBody4 → MainBody.</summary>

@@ -45,13 +45,13 @@ namespace TitanOrbit.ECS
             /// <summary>Authored firePower × XY transform scale.</summary>
             public float FirePower;
 
-            /// <summary>Authored firePowerPerLevel × XY transform scale.</summary>
+            /// <summary>Authored firePowerPerAbilityLevel × XY transform scale.</summary>
             public float FirePowerPerLevel;
 
             /// <summary>Authored fireRate × (1/Z) transform scale.</summary>
             public float FireRate;
 
-            /// <summary>Authored fireRatePerLevel × (1/Z) transform scale.</summary>
+            /// <summary>Authored fireRatePerAbilityLevel × (1/Z) transform scale.</summary>
             public float FireRatePerLevel;
         }
 
@@ -256,9 +256,9 @@ namespace TitanOrbit.ECS
             {
                 CannonIndex = cannonIndex,
                 FirePower = scaled.firePower,
-                FirePowerPerLevel = scaled.firePowerPerLevel,
+                FirePowerPerLevel = scaled.firePowerPerAbilityLevel,
                 FireRate = scaled.fireRate,
-                FireRatePerLevel = scaled.fireRatePerLevel,
+                FireRatePerLevel = scaled.fireRatePerAbilityLevel,
             };
             return result.FirePower > 0.01f || result.FireRate > 0.01f;
         }

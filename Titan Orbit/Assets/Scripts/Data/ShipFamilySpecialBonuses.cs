@@ -8,9 +8,8 @@ namespace TitanOrbit.Data
     /// Per-family multiplicative bonuses applied after prefab component sum + aggregation.
     /// Defaults are 1 (no change). Tune on each <see cref="ShipFamilyDefinition"/> —
     /// e.g. moveSpeedMul = 1.2 for a fast family, maxGemsMul = 1.5 for a cargo hauler,
-    /// extraSpeedPercentMul / extraSpeedEnergyPercentMul scale engine-authored OVERDRIVE
-    /// ExtraSpeed / ExtraSpeedEnergy (0.75 speed / 2.0 energy factor), thrustEnergyDrainMul = 0.8
-    /// for efficient thrusters.
+    /// extraSpeedPercentMul / extraSpeedEnergyDrainMul scale engine-authored OVERDRIVE
+    /// ExtraSpeedPercent and ExtraSpeedEnergyDrain (absolute OD energy/sec).
     /// Shared part calc profiles stay project-wide; this is how families differ at runtime.
     /// </summary>
     [Serializable]
@@ -35,13 +34,6 @@ namespace TitanOrbit.Data
         public float healthRegenMul;
         public float energyCapMul;
         public float energyRegenMul;
-        /// <summary>
-        /// Multiplier on summed engine+thruster <c>thrustEnergyDrain</c> (OVERDRIVE energy cost base).
-        /// Normal RMB thrust does not spend energy.
-        /// 1 = ProfileSet / part authoring; 0.8 = 20% more efficient; 1.5 = hungrier.
-        /// </summary>
-        [Tooltip("× thrustEnergyDrain for OVERDRIVE cost on this family (1 = unchanged).")]
-        public float thrustEnergyDrainMul;
 
         /// <summary>
         /// × engine-authored OVERDRIVE <c>extraSpeedPercent</c> (1 = use engine value as-is).
@@ -52,10 +44,12 @@ namespace TitanOrbit.Data
         public float extraSpeedPercentMul;
 
         /// <summary>
-        /// × engine-authored OVERDRIVE <c>extraSpeedEnergyPercent</c> (1 = use engine value as-is).
+        /// × engine-authored OVERDRIVE <c>extraSpeedEnergyDrain</c> (1 = use engine value as-is).
+        /// Scales absolute OD energy/sec — not multiplied by ExtraSpeedPercent.
         /// </summary>
-        [Tooltip("× engine ExtraSpeedEnergyPercent (1 = use engine-authored 2.0).")]
-        public float extraSpeedEnergyPercentMul;
+        [Tooltip("× engine ExtraSpeedEnergyDrain (1 = use engine-authored 2).")]
+        [FormerlySerializedAs("extraSpeedEnergyPercentMul")]
+        public float extraSpeedEnergyDrainMul;
 
         public float maxGemsMul;
         public float maxPeopleMul;
@@ -77,9 +71,8 @@ namespace TitanOrbit.Data
             healthRegenMul = 1f,
             energyCapMul = 1f,
             energyRegenMul = 1f,
-            thrustEnergyDrainMul = 1f,
             extraSpeedPercentMul = 1f,
-            extraSpeedEnergyPercentMul = 1f,
+            extraSpeedEnergyDrainMul = 1f,
             maxGemsMul = 1f,
             maxPeopleMul = 1f,
             tractorDistanceMul = 1f,
@@ -96,9 +89,8 @@ namespace TitanOrbit.Data
                     && ApproxOne(bulletRangeMul)
                     && ApproxOne(rammingMul) && ApproxOne(healthCapMul) && ApproxOne(healthRegenMul)
                     && ApproxOne(energyCapMul) && ApproxOne(energyRegenMul)
-                    && ApproxOne(thrustEnergyDrainMul)
                     && ApproxOne(extraSpeedPercentMul)
-                    && ApproxOne(extraSpeedEnergyPercentMul)
+                    && ApproxOne(extraSpeedEnergyDrainMul)
                     && ApproxOne(maxGemsMul)
                     && ApproxOne(maxPeopleMul) && ApproxOne(tractorDistanceMul) && ApproxOne(tractorPowerMul);
             }
@@ -111,63 +103,60 @@ namespace TitanOrbit.Data
         public ShipComponentAbilityStats Apply(ShipComponentAbilityStats stats)
         {
             stats.firePower *= Mul(firePowerMul);
-            stats.firePowerPerLevel *= Mul(firePowerMul);
+            stats.firePowerPerAbilityLevel *= Mul(firePowerMul);
             stats.fireRate *= Mul(fireRateMul);
-            stats.fireRatePerLevel *= Mul(fireRateMul);
+            stats.fireRatePerAbilityLevel *= Mul(fireRateMul);
             stats.bulletSpeed *= Mul(bulletSpeedMul);
-            stats.bulletSpeedPerLevel *= Mul(bulletSpeedMul);
+            stats.bulletSpeedPerAbilityLevel *= Mul(bulletSpeedMul);
             stats.bulletRange *= Mul(bulletRangeMul);
-            stats.bulletRangePerLevel *= Mul(bulletRangeMul);
+            stats.bulletRangePerAbilityLevel *= Mul(bulletRangeMul);
             stats.rammingPower *= Mul(rammingMul);
-            stats.rammingPowerPerLevel *= Mul(rammingMul);
+            stats.rammingPowerPerAbilityLevel *= Mul(rammingMul);
             stats.healthCap *= Mul(healthCapMul);
-            stats.healthCapPerLevel *= Mul(healthCapMul);
+            stats.healthCapPerAbilityLevel *= Mul(healthCapMul);
             stats.healthRegen *= Mul(healthRegenMul);
-            stats.healthRegenPerLevel *= Mul(healthRegenMul);
+            stats.healthRegenPerAbilityLevel *= Mul(healthRegenMul);
             stats.energyCap *= Mul(energyCapMul);
-            stats.energyCapPerLevel *= Mul(energyCapMul);
+            stats.energyCapPerAbilityLevel *= Mul(energyCapMul);
             stats.energyRegen *= Mul(energyRegenMul);
-            stats.energyRegenPerLevel *= Mul(energyRegenMul);
+            stats.energyRegenPerAbilityLevel *= Mul(energyRegenMul);
             stats.moveSpeed *= Mul(moveSpeedMul);
-            stats.moveSpeedPerLevel *= Mul(moveSpeedMul);
+            stats.moveSpeedPerAbilityLevel *= Mul(moveSpeedMul);
             stats.accelerationCap *= Mul(accelerationMul);
-            stats.accelerationCapPerLevel *= Mul(accelerationMul);
-            stats.thrustEnergyDrain *= Mul(thrustEnergyDrainMul);
-            stats.thrustEnergyDrainPerLevel *= Mul(thrustEnergyDrainMul);
+            stats.accelerationCapPerAbilityLevel *= Mul(accelerationMul);
             stats.extraSpeedPercent *= Mul(extraSpeedPercentMul);
-            stats.extraSpeedPercentPerLevel *= Mul(extraSpeedPercentMul);
-            stats.extraSpeedEnergyPercent *= Mul(extraSpeedEnergyPercentMul);
-            stats.extraSpeedEnergyPercentPerLevel *= Mul(extraSpeedEnergyPercentMul);
+            stats.extraSpeedPercentPerAbilityLevel *= Mul(extraSpeedPercentMul);
+            stats.extraSpeedEnergyDrain *= Mul(extraSpeedEnergyDrainMul);
+            stats.extraSpeedEnergyDrainPerAbilityLevel *= Mul(extraSpeedEnergyDrainMul);
             stats.turnSpeed *= Mul(turnSpeedMul);
-            stats.turnSpeedPerLevel *= Mul(turnSpeedMul);
+            stats.turnSpeedPerAbilityLevel *= Mul(turnSpeedMul);
             stats.maxGems *= Mul(maxGemsMul);
-            stats.maxGemsPerLevel *= Mul(maxGemsMul);
+            stats.maxGemsPerAbilityLevel *= Mul(maxGemsMul);
             stats.maxPeople *= Mul(maxPeopleMul);
-            stats.maxPeoplePerLevel *= Mul(maxPeopleMul);
+            stats.maxPeoplePerAbilityLevel *= Mul(maxPeopleMul);
             stats.tractorBeamDistance *= Mul(tractorDistanceMul);
-            stats.tractorBeamDistancePerLevel *= Mul(tractorDistanceMul);
+            stats.tractorBeamDistancePerAbilityLevel *= Mul(tractorDistanceMul);
             stats.tractorBeamPower *= Mul(tractorPowerMul);
-            stats.tractorBeamPowerPerLevel *= Mul(tractorPowerMul);
+            stats.tractorBeamPowerPerAbilityLevel *= Mul(tractorPowerMul);
             return stats;
         }
 
         /// <summary>
-        /// Resolves OVERDRIVE speed/thrust/drain:
-        /// Resolves OVERDRIVE speed/thrust/drain from engine-authored (or fallback) ability
-        /// × this family's <see cref="extraSpeedPercentMul"/> / <see cref="extraSpeedEnergyPercentMul"/>.
+        /// Resolves OVERDRIVE speed/thrust and absolute OD energy/sec from one ability pair
+        /// × this family's ExtraSpeed muls. Drain = ExtraSpeedEnergyDrain (after mul) — not × speed %.
         /// </summary>
         public void ResolveOverdrive(
             in ShipFamilyOverdriveAbility profileDefaults,
             out float speedMultiplier,
             out float thrustMultiplier,
-            out float energyDrainMultiplier)
+            out float energyDrainPerSecond)
         {
-            profileDefaults.ResolveMultipliers(
+            profileDefaults.ResolveSpeedAndDrainRate(
                 Mul(extraSpeedPercentMul),
-                Mul(extraSpeedEnergyPercentMul),
+                Mul(extraSpeedEnergyDrainMul),
                 out speedMultiplier,
                 out thrustMultiplier,
-                out energyDrainMultiplier);
+                out energyDrainPerSecond);
         }
 
         static float Mul(float value) => value > 0.0001f ? value : 1f;

@@ -74,8 +74,7 @@ namespace TitanOrbit.Editor
                 // [TITAN-ORBIT] Weapons Cap-only (battery); engines Cap+Regen (plant sized from fire drain).
                 ShipPropulsionAggregation.BalanceWeaponEnergyForComponents(def.components);
                 ShipPropulsionAggregation.ApplyThrusterTurnSuggestionsForComponents(def.components);
-                // Overwrite drain from accel so efficiency seeds match current propulsion numbers.
-                ShipPropulsionAggregation.ApplyPropulsionThrustEnergyDrainSuggestionsForComponents(
+                ShipPropulsionAggregation.ApplyEngineOverdriveSuggestionsForComponents(
                     def.components,
                     overwriteExisting: true);
                 ShipPropulsionAggregation.BalanceEngineEnergyForComponents(def.components);
@@ -118,7 +117,7 @@ namespace TitanOrbit.Editor
                 $"Updated {updated} family asset(s).\n" +
                 "Engines: Energy Cap/Regen (fleet pool from fire drain).\n" +
                 "Weapons: Energy Cap only (extra storage; no Regen).\n" +
-                "Engines + thrusters: thrustEnergyDrain (efficiency).",
+                "Engines: ExtraSpeed OVERDRIVE knobs (drain/sec = ExtraSpeedEnergyDrain).",
                 "OK");
 
             Debug.Log($"[ShipFamilyEnergyPropulsionRebalance] Updated {updated} ShipFamilyDefinition asset(s).");

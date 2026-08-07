@@ -175,19 +175,19 @@ namespace TitanOrbit.Editor
             int maxUpgrades = GetMaxUpgradeCountForTier(minHomePlanetLevel);
             ShipComponentAbilityStats atMinLevel = SumStatsAtShipLevelWithFallbacks(total, matchedIds, perComponentStats, shipLevel: 1, def);
 
-            preview.firePower = RangeFromPerLevel(atMinLevel.firePower, atMinLevel.firePowerPerLevel, maxUpgrades);
+            preview.firePower = RangeFromPerLevel(atMinLevel.firePower, atMinLevel.firePowerPerAbilityLevel, maxUpgrades);
             preview.bulletSpeed = new StatMinMax(atMinLevel.bulletSpeed, atMinLevel.bulletSpeed);
-            preview.fireRate = RangeFromPerLevel(atMinLevel.fireRate, atMinLevel.fireRatePerLevel, maxUpgrades);
-            preview.ramPower = RangeFromPerLevel(atMinLevel.rammingPower, atMinLevel.rammingPowerPerLevel, maxUpgrades);
-            preview.healthCap = RangeFromPerLevel(atMinLevel.healthCap, atMinLevel.healthCapPerLevel, maxUpgrades);
-            preview.healthRegen = RangeFromPerLevel(atMinLevel.healthRegen, atMinLevel.healthRegenPerLevel, maxUpgrades);
-            preview.energyCap = RangeFromPerLevel(atMinLevel.energyCap, atMinLevel.energyCapPerLevel, maxUpgrades);
-            preview.energyRegen = RangeFromPerLevel(atMinLevel.energyRegen, atMinLevel.energyRegenPerLevel, maxUpgrades);
-            preview.gemCap = RangeFromPerLevel(atMinLevel.maxGems, atMinLevel.maxGemsPerLevel, maxUpgrades);
-            preview.peopleCap = RangeFromPerLevel(atMinLevel.maxPeople, atMinLevel.maxPeoplePerLevel, maxUpgrades);
+            preview.fireRate = RangeFromPerLevel(atMinLevel.fireRate, atMinLevel.fireRatePerAbilityLevel, maxUpgrades);
+            preview.ramPower = RangeFromPerLevel(atMinLevel.rammingPower, atMinLevel.rammingPowerPerAbilityLevel, maxUpgrades);
+            preview.healthCap = RangeFromPerLevel(atMinLevel.healthCap, atMinLevel.healthCapPerAbilityLevel, maxUpgrades);
+            preview.healthRegen = RangeFromPerLevel(atMinLevel.healthRegen, atMinLevel.healthRegenPerAbilityLevel, maxUpgrades);
+            preview.energyCap = RangeFromPerLevel(atMinLevel.energyCap, atMinLevel.energyCapPerAbilityLevel, maxUpgrades);
+            preview.energyRegen = RangeFromPerLevel(atMinLevel.energyRegen, atMinLevel.energyRegenPerAbilityLevel, maxUpgrades);
+            preview.gemCap = RangeFromPerLevel(atMinLevel.maxGems, atMinLevel.maxGemsPerAbilityLevel, maxUpgrades);
+            preview.peopleCap = RangeFromPerLevel(atMinLevel.maxPeople, atMinLevel.maxPeoplePerAbilityLevel, maxUpgrades);
             // Propulsion at high ship levels applies a mobility penalty at runtime; use base + per-level ├ù tier upgrades.
-            preview.moveSpeed = RangeFromPerLevel(atMinLevel.moveSpeed, atMinLevel.moveSpeedPerLevel, maxUpgrades);
-            preview.turnSpeed = RangeFromPerLevel(atMinLevel.turnSpeed, atMinLevel.turnSpeedPerLevel, maxUpgrades);
+            preview.moveSpeed = RangeFromPerLevel(atMinLevel.moveSpeed, atMinLevel.moveSpeedPerAbilityLevel, maxUpgrades);
+            preview.turnSpeed = RangeFromPerLevel(atMinLevel.turnSpeed, atMinLevel.turnSpeedPerAbilityLevel, maxUpgrades);
             preview.powerScoreTotal = new StatMinMax(
                 ShipFamilyPowerScoreBreakdown.FromSummedShipStats(atMinLevel).Total,
                 ShipFamilyPowerScoreBreakdown.FromSummedShipStats(

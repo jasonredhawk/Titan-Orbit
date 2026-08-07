@@ -3,14 +3,19 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// [UNITY] Designer-tunable cargo capacity → mobility tax. Ships with large gem/people holds
-    /// (from summed chassis components) automatically lose MaxSpeed, acceleration, and turn —
-    /// no Fighter/Miner/Transport role enum required.
+    /// [UNITY] Designer-tunable cargo + hull-mass → mobility tax. Ships with large gem/people holds
+    /// (from summed chassis components) or heavy live hull mass automatically lose MaxSpeed,
+    /// acceleration, and turn — no Fighter/Miner/Transport role enum required.
     /// <para>
-    /// [TITAN-ORBIT] Both MaxSpeed and acceleration are taxed whenever capacity &gt; 0.
-    /// There is no "only tax speed when people &gt; gems" branch. The weight fields only set
-    /// how hard each cargo type pulls on each stat: people weigh more on MaxSpeed; gems weigh
-    /// more on acceleration; turn has separate gem/people weights (same defaults for now).
+    /// [TITAN-ORBIT] Both MaxSpeed and acceleration are taxed whenever capacity or component mass
+    /// &gt; 0. There is no "only tax speed when people &gt; gems" branch. The weight fields only set
+    /// how hard each cargo type / unit of hull mass pulls on each stat: people weigh more on
+    /// MaxSpeed; gems weigh more on acceleration; turn has separate gem/people/mass weights.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Component-mass tax uses absolute live hull mass (box × attribute grow × tier
+    /// scale, then hull-mass scale) — <b>not</b> a level-1 vs current ratio. Drive still applies
+    /// F/m from <c>ShipMassLogic.ComputeMovementMass</c> (hull + current gems/people).
     /// </para>
     /// Sole asset: <c>Assets/Resources/ShipCargoMobilitySettings.asset</c>
     /// (Create via Assets → Create → Titan Orbit → Ship Cargo Mobility Settings).
@@ -50,7 +55,7 @@ namespace TitanOrbit.Data
         [Range(0f, 0.5f)]
         public float levelTurnPenaltyFractionPerLevel = 0.11f;
 
-        // --- MaxSpeed: always taxed from gems + people; people weight is stronger ---
+        // --- MaxSpeed: always taxed from gems + people + component mass; people weight is stronger ---
 
         [Header("MaxSpeed tax (capacity at apply + current load each tick; people weight stronger)")]
         [Tooltip(
@@ -66,7 +71,7 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float speedWeightPerPerson = 0.015f;
 
-        // --- Acceleration: always taxed from gems + people; gems weight is stronger ---
+        // --- Acceleration: always taxed from gems + people + component mass; gems weight is stronger ---
 
         [Header("Acceleration capacity tax (always taxed; gems weight stronger)")]
         [Tooltip(
@@ -96,23 +101,51 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float turnWeightPerPerson = 0.008f;
 
+        // --- Component / hull mass tax (absolute live mass at apply — not level-1 ratio) ---
+
+        [Header("Component mass tax (live hull mass at apply; absolute, not vs level 1)")]
+        [Tooltip(
+            "Penalty per unit of live hull component mass at chassis apply. " +
+            "Mass = box extents × attribute grow × tier scale × HullMassScale (same as " +
+            "ShipMotorConfig.HullMassReference). Example: mass 5 × 0.02 → penalty 0.1 → ~91% MaxSpeed. " +
+            "0 = no MaxSpeed drag from hull mass (cargo capacity tax still applies).")]
+        [Min(0f)]
+        public float speedWeightPerComponentMass = 0.02f;
+
+        [Tooltip(
+            "Penalty per unit of live hull component mass on EngineThrust at apply. " +
+            "Stacks with drive-time F/m (ComputeMovementMass). Prefer a higher weight than " +
+            "speedWeightPerComponentMass so heavy hulls ramp slower than they cruise. " +
+            "0 = no bake accel drag from mass (F/m still slows ramp when mass grows).")]
+        [Min(0f)]
+        public float accelWeightPerComponentMass = 0.04f;
+
+        [Tooltip(
+            "Penalty per unit of live hull component mass on RotationSpeed at apply. " +
+            "0 = no turn drag from hull mass.")]
+        [Min(0f)]
+        public float turnWeightPerComponentMass = 0.02f;
+
         // --- Floors (safety clamp — not on/off switches) ---
 
-        [Header("Capacity-tax multiplier floors (safety clamp)")]
+        [Header("Capacity + mass tax multiplier floors (safety clamp)")]
         [Tooltip(
-            "Safety clamp only — NOT an on/off switch. After capacity tax, MaxSpeed multiplier is " +
-            "max(this, 1/(1+penalty)). Example: 0.25 means even a huge hold cannot go below " +
-            "25% of untaxed MaxSpeed. Raise toward 1 to soften extreme freighters; lower to allow heavier tax.")]
+            "Safety clamp only — NOT an on/off switch. After gem + people + component-mass tax, " +
+            "MaxSpeed multiplier is max(this, 1/(1+penalty)). Example: 0.25 means even a huge hold " +
+            "or ultra-heavy hull cannot go below 25% of untaxed MaxSpeed. Raise toward 1 to soften " +
+            "extreme freighters; lower to allow heavier tax.")]
         [Range(0.05f, 1f)]
         public float minSpeedMultiplier = 0.25f;
 
         [Tooltip(
-            "Safety clamp for EngineThrust / acceleration after capacity tax. Same meaning as minSpeedMultiplier.")]
+            "Safety clamp for EngineThrust / acceleration after gem + people + component-mass tax. " +
+            "Same meaning as minSpeedMultiplier.")]
         [Range(0.05f, 1f)]
         public float minAccelMultiplier = 0.25f;
 
         [Tooltip(
-            "Safety clamp for RotationSpeed after capacity tax. Same meaning as minSpeedMultiplier.")]
+            "Safety clamp for RotationSpeed after gem + people + component-mass tax. " +
+            "Same meaning as minSpeedMultiplier.")]
         [Range(0.05f, 1f)]
         public float minTurnMultiplier = 0.25f;
 
@@ -132,6 +165,9 @@ namespace TitanOrbit.Data
             accelWeightPerPerson = Mathf.Max(0f, accelWeightPerPerson);
             turnWeightPerGem = Mathf.Max(0f, turnWeightPerGem);
             turnWeightPerPerson = Mathf.Max(0f, turnWeightPerPerson);
+            speedWeightPerComponentMass = Mathf.Max(0f, speedWeightPerComponentMass);
+            accelWeightPerComponentMass = Mathf.Max(0f, accelWeightPerComponentMass);
+            turnWeightPerComponentMass = Mathf.Max(0f, turnWeightPerComponentMass);
             minSpeedMultiplier = Mathf.Clamp(minSpeedMultiplier, 0.05f, 1f);
             minAccelMultiplier = Mathf.Clamp(minAccelMultiplier, 0.05f, 1f);
             minTurnMultiplier = Mathf.Clamp(minTurnMultiplier, 0.05f, 1f);

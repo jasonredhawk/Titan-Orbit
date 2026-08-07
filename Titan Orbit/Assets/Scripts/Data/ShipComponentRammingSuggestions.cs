@@ -96,7 +96,7 @@ namespace TitanOrbit.Data
             return RammingPowerV1 + (v - 1) * RammingPowerPerVersion;
         }
 
-        /// <summary>Suggested rammingPowerPerLevel for Scan / ProfileSet — float only (no RoundToInt).</summary>
+        /// <summary>Suggested rammingPowerPerAbilityLevel for Scan / ProfileSet — float only (no RoundToInt).</summary>
         public static float GetSuggestedRammingPowerPerLevel(int version) =>
             Mathf.Max(0f, GetSuggestedRammingPower(version) * RammingPerLevelFractionOfBase);
 

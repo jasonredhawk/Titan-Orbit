@@ -431,9 +431,11 @@ namespace TitanOrbit.UI
             speedLabel.fontSize = 11f * HudLayoutScale;
             speedLabel.lineSpacing = -4f * HudLayoutScale;
             speedLabel.richText = true;
-            // [UNITY] No wrap — long telemetry lines stay on one row; wrapping used to climb into bars.
-            speedLabel.enableWordWrapping = false;
-            speedLabel.overflowMode = TextOverflowModes.Ellipsis;
+            // [UNITY] Wrap inside the reserved text band (0→textNormTop) so long SPD / boost /
+            // stop lines stay fully readable. Ellipsis used to hide territory + OVERDRIVE tags.
+            // [TITAN-ORBIT] Bars/ticks sit above textNormTop — wrapping cannot climb into them.
+            speedLabel.enableWordWrapping = true;
+            speedLabel.overflowMode = TextOverflowModes.Overflow;
             // [UNITY] Monospace keeps SPD/ACC columns from shifting when digits change.
             if (TMP_Settings.defaultFontAsset != null)
                 speedLabel.font = TMP_Settings.defaultFontAsset;
@@ -716,9 +718,21 @@ namespace TitanOrbit.UI
             if (!string.IsNullOrEmpty(chassisId) &&
                 ShipStatApplyLogic.TryGetBaseStatsForChassis(chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))
             {
-                effectiveStats = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, ship.ShipLevel);
+                float growth = ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
+                if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family) &&
+                    family != null)
+                    growth = family.ResolveShipLevelStatGrowthFraction();
+                effectiveStats = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
+                    summed, ship.ShipLevel, growth);
                 if (hasAttrs)
+                {
                     ShipAttributeUpgradeLogic.ApplyMultipliers(ref effectiveStats, attrs);
+                    // [TITAN-ORBIT] Same additive Move Speed path as ShipStatApplyLogic (not ×1.1).
+                    ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
+                        summed, out float moveStep, out float accelStep, out float odDrainStep);
+                    ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
+                        ref effectiveStats, attrs, moveStep, accelStep, odDrainStep);
+                }
             }
 
             _statsCacheShipEntity = shipEntity;
@@ -767,7 +781,8 @@ namespace TitanOrbit.UI
                     untaxedThrust,
                     untaxedTurn,
                     effectiveStats.maxGems,
-                    effectiveStats.maxPeople).MaxSpeed;
+                    effectiveStats.maxPeople,
+                    motor.HullMassReference).MaxSpeed;
             }
 
             return motorMax;
@@ -1087,7 +1102,8 @@ namespace TitanOrbit.UI
                     untaxedThrust,
                     untaxedTurn,
                     effectiveStats.maxGems,
-                    effectiveStats.maxPeople).EngineThrust;
+                    effectiveStats.maxPeople,
+                    motor.HullMassReference).EngineThrust;
                 maxFwd = Mathf.Max(
                     0.01f,
                     taxedThrust * territoryMult * overdriveActiveMult / Mathf.Max(ShipMassLogic.MinMass, mass));
@@ -1185,7 +1201,7 @@ namespace TitanOrbit.UI
                 : string.Empty;
             string boostTags = territoryTag + overdriveCapTag + overdriveActiveTag;
 
-            // --- Compact body lines (no wrap; must fit panel width) ---
+            // --- Compact body lines (wrap inside text band if a row is wider than the panel) ---
             // Denominator = live motor ceiling (cruise or OD top); amber "od N.N" is always the bar end.
             string spdLine;
             if (atCruise)

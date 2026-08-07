@@ -47,13 +47,13 @@ namespace TitanOrbit.Entities
         /// <summary>Sum of accelerationCap on engine/thruster parts (level 1).</summary>
         public float PreviewSumPropulsionAcceleration => previewSumPropulsionAcceleration;
 
-        /// <summary>Sum of accelerationCapPerLevel on engine/thruster parts.</summary>
+        /// <summary>Sum of accelerationCapPerAbilityLevel on engine/thruster parts.</summary>
         public float PreviewSumPropulsionAccelerationPerLevel => previewSumPropulsionAccelerationPerLevel;
 
         /// <summary>Best engine/thruster base moveSpeed (counted once toward top speed).</summary>
         public float PreviewPrimaryThrusterMoveSpeed => previewPrimaryThrusterMoveSpeed;
 
-        /// <summary>Half the sum of moveSpeedPerLevel from non-primary propulsion parts.</summary>
+        /// <summary>Half the sum of moveSpeedPerAbilityLevel from non-primary propulsion parts.</summary>
         public float PreviewExtraThrusterMoveSpeed => previewExtraThrusterMoveSpeed;
 
         /// <summary>Primary + extra propulsion move speed (matches in-game top-speed feel at level 1).</summary>
@@ -173,7 +173,7 @@ namespace TitanOrbit.Entities
             {
                 if (!ShipComponentAbilityStats.IsPropulsionComponent(matchedComponentIds[i]))
                     continue;
-                previewSumPropulsionAccelerationPerLevel += perComponentStats[i].accelerationCapPerLevel;
+                previewSumPropulsionAccelerationPerLevel += perComponentStats[i].accelerationCapPerAbilityLevel;
             }
         }
     }

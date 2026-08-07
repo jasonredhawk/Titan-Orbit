@@ -4,16 +4,18 @@ using UnityEngine;
 namespace TitanOrbit.Simulation
 {
     /// <summary>
-    /// Ramming mass helpers for HUD, combat estimates, and mass-aware collision bounce.
-    /// Movement acceleration uses <see cref="ComputeMovementMass"/> synced onto Unity Physics
-    /// <c>PhysicsMass</c> each fixed step before thrust runs.
-    /// Bounce / energy transfer uses <see cref="ComputeRammingMass"/> (linear HP bulk) via
-    /// <c>ShipCollisionImpulseLogic</c> so heavy hulls feel heavier on impact than in the motor.
+    /// Hull mass helpers for motor baking, HUD, combat estimates, and mass-aware collision bounce.
     /// <para>
-    /// [TITAN-ORBIT] Movement mass (HP bulk + current gems + current people) slows <b>acceleration
-    /// only</b> via F/m. Empty-hold MaxSpeed / turn identity comes from capacity tax in
-    /// <c>ShipMobilityResolution</c> — do not expect mass alone to lower top speed or yaw rate.
+    /// [TITAN-ORBIT] Live hull mass (box extents × attribute grow × tier scale) is computed in
+    /// <c>ShipHullColliderLogic.ComputeLiveHullComponentMass</c>, then fed here:
     /// </para>
+    /// <list type="bullet">
+    /// <item><see cref="ComputeHullMassReference"/> — stores on <c>ShipMotorConfig.HullMassReference</c>;
+    /// also fed into <c>ShipMobilityResolution.ApplyCapacityTax</c> as absolute component mass
+    /// (weights live in <c>ShipCargoMobilitySettings</c> — not a level-1 vs live ratio).</item>
+    /// <item><see cref="ComputeMovementMass"/> — F/m each fixed step (HP bulk + current gems/people).</item>
+    /// <item><see cref="ComputeRammingMass"/> — bounce / energy transfer via ShipCollisionImpulseLogic.</item>
+    /// </list>
     /// </summary>
     public static class ShipMassLogic
     {
@@ -64,7 +66,8 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Mass used by the motor each tick (softened hull bulk + current gems + current people).
-        /// Heavier mass → slower acceleration; MaxSpeed / turn stay on capacity tax + motor config.
+        /// Heavier mass → slower acceleration via F/m. Bake-time MaxSpeed / thrust / turn also tax
+        /// absolute hull mass via <c>ShipCargoMobilitySettings.*WeightPerComponentMass</c>.
         /// </summary>
         /// <param name="currentPeople">Colonists currently aboard (0 when unused).</param>
         public static float ComputeMovementMass(

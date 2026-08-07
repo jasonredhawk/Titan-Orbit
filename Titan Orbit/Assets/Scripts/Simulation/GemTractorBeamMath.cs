@@ -179,11 +179,11 @@ namespace TitanOrbit.Simulation
         /// </summary>
         public static void GetTractorBeamFromStats(
             float tractorBeamDistance,
-            float tractorBeamDistancePerLevel,
+            float tractorBeamDistancePerAbilityLevel,
             float tractorBeamPower,
-            float tractorBeamPowerPerLevel,
+            float tractorBeamPowerPerAbilityLevel,
             float maxGems,
-            float maxGemsPerLevel,
+            float maxGemsPerAbilityLevel,
             int shipLevel,
             bool inOrbitZone,
             out float searchRadius,
@@ -191,13 +191,13 @@ namespace TitanOrbit.Simulation
         {
             // --- Level-scaled authoring ---
             int perLvl = math.max(0, shipLevel - 1);
-            searchRadius = tractorBeamDistance + tractorBeamDistancePerLevel * perLvl;
-            attractionSpeed = tractorBeamPower + tractorBeamPowerPerLevel * perLvl;
+            searchRadius = tractorBeamDistance + tractorBeamDistancePerAbilityLevel * perLvl;
+            attractionSpeed = tractorBeamPower + tractorBeamPowerPerAbilityLevel * perLvl;
 
             // --- Legacy fallback: only MaxGems was authored ---
             if (searchRadius <= 0f && attractionSpeed <= 0f)
             {
-                float effectiveMaxGems = math.max(0f, maxGems + maxGemsPerLevel * perLvl);
+                float effectiveMaxGems = math.max(0f, maxGems + maxGemsPerAbilityLevel * perLvl);
                 GetTractorBeamFromMaxGems(effectiveMaxGems, inOrbitZone, out searchRadius, out attractionSpeed);
                 return;
             }

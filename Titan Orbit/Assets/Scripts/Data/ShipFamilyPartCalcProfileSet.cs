@@ -87,7 +87,7 @@ namespace TitanOrbit.Data
 
             // [TITAN-ORBIT] Weapons never grow fire rate per ship level — keep authored rate flat.
             if (ShipFamilyPartTypes.IsWeapon(partType))
-                s.fireRatePerLevel = 0f;
+                s.fireRatePerAbilityLevel = 0f;
 
             return s;
         }
@@ -118,8 +118,8 @@ namespace TitanOrbit.Data
             // [TITAN-ORBIT] Weapons never grow fire rate per ship level.
             if (ShipFamilyPartTypes.IsWeapon(partType))
             {
-                baseAtVersion1.fireRatePerLevel = 0f;
-                perVersionIncrement.fireRatePerLevel = 0f;
+                baseAtVersion1.fireRatePerAbilityLevel = 0f;
+                perVersionIncrement.fireRatePerAbilityLevel = 0f;
             }
         }
 
@@ -130,80 +130,82 @@ namespace TitanOrbit.Data
             if (factor == 0f)
                 return;
             target.firePower += source.firePower * factor;
-            target.firePowerPerLevel += source.firePowerPerLevel * factor;
+            target.firePowerPerAbilityLevel += source.firePowerPerAbilityLevel * factor;
             target.bulletSpeed += source.bulletSpeed * factor;
-            target.bulletSpeedPerLevel += source.bulletSpeedPerLevel * factor;
+            target.bulletSpeedPerAbilityLevel += source.bulletSpeedPerAbilityLevel * factor;
             target.bulletRange += source.bulletRange * factor;
-            target.bulletRangePerLevel += source.bulletRangePerLevel * factor;
+            target.bulletRangePerAbilityLevel += source.bulletRangePerAbilityLevel * factor;
             target.fireRate += source.fireRate * factor;
-            target.fireRatePerLevel += source.fireRatePerLevel * factor;
+            target.fireRatePerAbilityLevel += source.fireRatePerAbilityLevel * factor;
             target.rammingPower += source.rammingPower * factor;
-            target.rammingPowerPerLevel += source.rammingPowerPerLevel * factor;
+            target.rammingPowerPerAbilityLevel += source.rammingPowerPerAbilityLevel * factor;
             target.healthCap += source.healthCap * factor;
-            target.healthCapPerLevel += source.healthCapPerLevel * factor;
+            target.healthCapPerAbilityLevel += source.healthCapPerAbilityLevel * factor;
             target.healthRegen += source.healthRegen * factor;
-            target.healthRegenPerLevel += source.healthRegenPerLevel * factor;
+            target.healthRegenPerAbilityLevel += source.healthRegenPerAbilityLevel * factor;
             target.energyCap += source.energyCap * factor;
-            target.energyCapPerLevel += source.energyCapPerLevel * factor;
+            target.energyCapPerAbilityLevel += source.energyCapPerAbilityLevel * factor;
             target.energyRegen += source.energyRegen * factor;
-            target.energyRegenPerLevel += source.energyRegenPerLevel * factor;
+            target.energyRegenPerAbilityLevel += source.energyRegenPerAbilityLevel * factor;
             target.moveSpeed += source.moveSpeed * factor;
-            target.moveSpeedPerLevel += source.moveSpeedPerLevel * factor;
+            target.moveSpeedPerAbilityLevel += source.moveSpeedPerAbilityLevel * factor;
             target.accelerationCap += source.accelerationCap * factor;
-            target.accelerationCapPerLevel += source.accelerationCapPerLevel * factor;
-            target.thrustEnergyDrain += source.thrustEnergyDrain * factor;
-            target.thrustEnergyDrainPerLevel += source.thrustEnergyDrainPerLevel * factor;
+            target.accelerationCapPerAbilityLevel += source.accelerationCapPerAbilityLevel * factor;
             // OVERDRIVE knobs: take max (same rule as AbilityStatsMath.Add).
             float esp = source.extraSpeedPercent * factor;
             if (esp > target.extraSpeedPercent) target.extraSpeedPercent = esp;
-            float espPl = source.extraSpeedPercentPerLevel * factor;
-            if (espPl > target.extraSpeedPercentPerLevel) target.extraSpeedPercentPerLevel = espPl;
-            float esep = source.extraSpeedEnergyPercent * factor;
-            if (esep > target.extraSpeedEnergyPercent) target.extraSpeedEnergyPercent = esep;
-            float esepPl = source.extraSpeedEnergyPercentPerLevel * factor;
-            if (esepPl > target.extraSpeedEnergyPercentPerLevel) target.extraSpeedEnergyPercentPerLevel = esepPl;
+            float espPl = source.extraSpeedPercentPerAbilityLevel * factor;
+            if (espPl > target.extraSpeedPercentPerAbilityLevel) target.extraSpeedPercentPerAbilityLevel = espPl;
+            float esep = source.extraSpeedEnergyDrain * factor;
+            if (esep > target.extraSpeedEnergyDrain) target.extraSpeedEnergyDrain = esep;
+            float esepPl = source.extraSpeedEnergyDrainPerAbilityLevel * factor;
+            if (esepPl > target.extraSpeedEnergyDrainPerAbilityLevel) target.extraSpeedEnergyDrainPerAbilityLevel = esepPl;
+            target.extraSpeedEnergyDrainPerAbilityLevel += source.extraSpeedEnergyDrainPerAbilityLevel * factor;
             target.turnSpeed += source.turnSpeed * factor;
-            target.turnSpeedPerLevel += source.turnSpeedPerLevel * factor;
+            target.turnSpeedPerAbilityLevel += source.turnSpeedPerAbilityLevel * factor;
             target.maxGems += source.maxGems * factor;
-            target.maxGemsPerLevel += source.maxGemsPerLevel * factor;
+            target.maxGemsPerAbilityLevel += source.maxGemsPerAbilityLevel * factor;
             target.tractorBeamDistance += source.tractorBeamDistance * factor;
-            target.tractorBeamDistancePerLevel += source.tractorBeamDistancePerLevel * factor;
+            target.tractorBeamDistancePerAbilityLevel += source.tractorBeamDistancePerAbilityLevel * factor;
             target.tractorBeamPower += source.tractorBeamPower * factor;
-            target.tractorBeamPowerPerLevel += source.tractorBeamPowerPerLevel * factor;
+            target.tractorBeamPowerPerAbilityLevel += source.tractorBeamPowerPerAbilityLevel * factor;
             target.maxPeople += source.maxPeople * factor;
-            target.maxPeoplePerLevel += source.maxPeoplePerLevel * factor;
+            target.maxPeoplePerAbilityLevel += source.maxPeoplePerAbilityLevel * factor;
         }
 
         /// <summary>
-        /// Fills each *PerLevel from its base × <paramref name="frac"/> when the PerLevel is still zero.
-        /// Used by <see cref="EvaluateAtVersion"/> and by the Inspector so authored rows match Scan.
+        /// Fills each <c>*PerAbilityLevel</c> from its base × <paramref name="frac"/> when still zero.
+        /// Used by Scan / Inspector for bottom-HUD ability steps — not ship-tier growth
+        /// (ship tier uses <see cref="ShipFamilyDefinition.shipLevelStatGrowthFraction"/>).
         /// </summary>
         public static void FillPerLevelIfZero(ref ShipComponentAbilityStats s, float frac)
         {
-            if (s.firePowerPerLevel == 0f && s.firePower != 0f) s.firePowerPerLevel = s.firePower * frac;
-            if (s.bulletSpeedPerLevel == 0f && s.bulletSpeed != 0f) s.bulletSpeedPerLevel = s.bulletSpeed * frac;
-            if (s.bulletRangePerLevel == 0f && s.bulletRange != 0f) s.bulletRangePerLevel = s.bulletRange * frac;
-            if (s.fireRatePerLevel == 0f && s.fireRate != 0f) s.fireRatePerLevel = s.fireRate * frac;
-            if (s.rammingPowerPerLevel == 0f && s.rammingPower != 0f) s.rammingPowerPerLevel = s.rammingPower * frac;
-            if (s.healthCapPerLevel == 0f && s.healthCap != 0f) s.healthCapPerLevel = s.healthCap * frac;
-            if (s.healthRegenPerLevel == 0f && s.healthRegen != 0f) s.healthRegenPerLevel = s.healthRegen * frac;
-            if (s.energyCapPerLevel == 0f && s.energyCap != 0f) s.energyCapPerLevel = s.energyCap * frac;
-            if (s.energyRegenPerLevel == 0f && s.energyRegen != 0f) s.energyRegenPerLevel = s.energyRegen * frac;
-            if (s.moveSpeedPerLevel == 0f && s.moveSpeed != 0f) s.moveSpeedPerLevel = s.moveSpeed * frac;
-            if (s.accelerationCapPerLevel == 0f && s.accelerationCap != 0f) s.accelerationCapPerLevel = s.accelerationCap * frac;
-            if (s.thrustEnergyDrainPerLevel == 0f && s.thrustEnergyDrain != 0f)
-                s.thrustEnergyDrainPerLevel = s.thrustEnergyDrain * frac;
-            // [TITAN-ORBIT] extraSpeed*PerLevel stays 0 unless designers author a step — do not auto-fill.
-            if (s.turnSpeedPerLevel == 0f && s.turnSpeed != 0f) s.turnSpeedPerLevel = s.turnSpeed * frac;
-            if (s.maxGemsPerLevel == 0f && s.maxGems != 0f) s.maxGemsPerLevel = s.maxGems * frac;
-            if (s.tractorBeamDistancePerLevel == 0f && s.tractorBeamDistance != 0f)
-                s.tractorBeamDistancePerLevel = s.tractorBeamDistance * frac;
-            if (s.tractorBeamPowerPerLevel == 0f && s.tractorBeamPower != 0f)
-                s.tractorBeamPowerPerLevel = s.tractorBeamPower * frac;
+            if (s.firePowerPerAbilityLevel == 0f && s.firePower != 0f) s.firePowerPerAbilityLevel = s.firePower * frac;
+            if (s.bulletSpeedPerAbilityLevel == 0f && s.bulletSpeed != 0f) s.bulletSpeedPerAbilityLevel = s.bulletSpeed * frac;
+            if (s.bulletRangePerAbilityLevel == 0f && s.bulletRange != 0f) s.bulletRangePerAbilityLevel = s.bulletRange * frac;
+            if (s.fireRatePerAbilityLevel == 0f && s.fireRate != 0f) s.fireRatePerAbilityLevel = s.fireRate * frac;
+            if (s.rammingPowerPerAbilityLevel == 0f && s.rammingPower != 0f) s.rammingPowerPerAbilityLevel = s.rammingPower * frac;
+            if (s.healthCapPerAbilityLevel == 0f && s.healthCap != 0f) s.healthCapPerAbilityLevel = s.healthCap * frac;
+            if (s.healthRegenPerAbilityLevel == 0f && s.healthRegen != 0f) s.healthRegenPerAbilityLevel = s.healthRegen * frac;
+            if (s.energyCapPerAbilityLevel == 0f && s.energyCap != 0f) s.energyCapPerAbilityLevel = s.energyCap * frac;
+            if (s.energyRegenPerAbilityLevel == 0f && s.energyRegen != 0f) s.energyRegenPerAbilityLevel = s.energyRegen * frac;
+            if (s.moveSpeedPerAbilityLevel == 0f && s.moveSpeed != 0f) s.moveSpeedPerAbilityLevel = s.moveSpeed * frac;
+            if (s.accelerationCapPerAbilityLevel == 0f && s.accelerationCap != 0f)
+                s.accelerationCapPerAbilityLevel = s.accelerationCap * frac;
+            // [TITAN-ORBIT] ExtraSpeedPercent ability step stays 0 unless designers author a step.
+            // ExtraSpeedEnergyDrain PerAbilityLevel follows moveSpeed fraction (Move Speed HUD).
+            if (s.extraSpeedEnergyDrainPerAbilityLevel == 0f && s.extraSpeedEnergyDrain != 0f)
+                s.extraSpeedEnergyDrainPerAbilityLevel = s.extraSpeedEnergyDrain * frac;
+            if (s.turnSpeedPerAbilityLevel == 0f && s.turnSpeed != 0f) s.turnSpeedPerAbilityLevel = s.turnSpeed * frac;
+            if (s.maxGemsPerAbilityLevel == 0f && s.maxGems != 0f) s.maxGemsPerAbilityLevel = s.maxGems * frac;
+            if (s.tractorBeamDistancePerAbilityLevel == 0f && s.tractorBeamDistance != 0f)
+                s.tractorBeamDistancePerAbilityLevel = s.tractorBeamDistance * frac;
+            if (s.tractorBeamPowerPerAbilityLevel == 0f && s.tractorBeamPower != 0f)
+                s.tractorBeamPowerPerAbilityLevel = s.tractorBeamPower * frac;
             // [TITAN-ORBIT] No RoundToInt — small bases (e.g. maxPeople=2 × 0.25) must stay fractional
             // so attribute mesh grow and Scan curves keep the true percent-of-base step.
-            if (s.maxPeoplePerLevel == 0f && s.maxPeople != 0f)
-                s.maxPeoplePerLevel = s.maxPeople * frac;
+            if (s.maxPeoplePerAbilityLevel == 0f && s.maxPeople != 0f)
+                s.maxPeoplePerAbilityLevel = s.maxPeople * frac;
         }
     }
 
@@ -234,34 +236,16 @@ namespace TitanOrbit.Data
         [Range(0f, 2f)]
         public float globalUpgradeScaleMultiplier = DefaultGlobalUpgradeScaleMultiplier;
 
-        [Header("OVERDRIVE ability (legacy fallback)")]
-        [Tooltip(
-            "LEGACY — OVERDRIVE ExtraSpeed / ExtraSpeedEnergy now live on Engine Part Profile rows " +
-            "(and each family's engine components). This block is only a fallback when no engine " +
-            "authors ExtraSpeedPercent. Prefer editing Engine profile / family engine components.")]
-        public ShipFamilyOverdriveAbility overdriveAbility = ShipFamilyOverdriveAbility.Default;
-
         [Header("Name inventory — one row per unique prefab part name (Discover & Classify)")]
         [Tooltip("Inventory of prefab suffixes (Wing_2, Thrusters_Big…). Each maps into a Part Profile group via partType. Count is large; that is expected.")]
         public List<ShipFamilyPartNameMapping> nameMappings = new List<ShipFamilyPartNameMapping>();
 
         [Header("Part Profiles — Cockpit, Weapons, Wing, Engine, Thruster, Tail, Hull")]
-        [Tooltip("Eight shared groups. Edit stats once per group; Scan applies to every Name Mapping in that group. Version digits in the name pick the tier. Engine = power plant (move/accel + Energy). Thruster = maneuver jets (move/accel + turn).")]
+        [Tooltip("Eight shared groups. Edit stats once per group; Scan applies to every Name Mapping in that group. Version digits in the name pick the tier. Engine = power plant (move/accel + Energy + OVERDRIVE knobs). Thruster = maneuver jets (move/accel + turn).")]
         public List<ShipFamilyPartCalcProfile> partProfiles = new List<ShipFamilyPartCalcProfile>();
 
         [NonSerialized] Dictionary<string, ShipFamilyPartNameMapping> _nameLookup;
         [NonSerialized] Dictionary<string, ShipFamilyPartCalcProfile> _profileLookup;
-
-        /// <summary>
-        /// Loads the shared ProfileSet OVERDRIVE ability, or code defaults when the asset is missing.
-        /// </summary>
-        public static ShipFamilyOverdriveAbility ResolveOverdriveAbility()
-        {
-            var set = LoadShared();
-            if (set == null)
-                return ShipFamilyOverdriveAbility.Default.Resolved();
-            return set.overdriveAbility.Resolved();
-        }
 
         /// <summary>Loads the Resources asset, or null when missing.</summary>
         public static ShipFamilyPartCalcProfileSet LoadShared()
@@ -788,40 +772,40 @@ namespace TitanOrbit.Data
             // Version-1 bases + per-version increments derived from seed helpers (v1 vs v2 delta).
             if (ShipFamilyPartTypes.IsEngineProfile(type))
             {
-                // [TITAN-ORBIT] Power plant: move/accel + Energy Cap/Regen + thrust drain + OVERDRIVE knobs.
+                // [TITAN-ORBIT] Power plant: move/accel + Energy Cap/Regen + OVERDRIVE knobs.
                 // BalanceEngineEnergyForComponents overwrites Cap/Regen from hull weapon drain on Scan.
                 // Cap/Regen per-version uses the gentle moveSpeed fraction (not a second full plant).
+                // OD drain/sec = ExtraSpeedEnergyDrain (absolute; not × ExtraSpeedPercent).
                 profile.baseAtVersion1 = new ShipComponentAbilityStats
                 {
                     moveSpeed = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeed(1),
                     accelerationCap = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCap(1),
-                    thrustEnergyDrain = ShipPropulsionAggregation.GetSuggestedThrustEnergyDrain(1),
                     energyCap = ShipPropulsionAggregation.EngineEnergyFallbackCapPerVersion,
                     energyRegen = ShipPropulsionAggregation.EngineEnergyFallbackRegenPerVersion,
                     extraSpeedPercent = ShipFamilyOverdriveAbility.DefaultExtraSpeedPercent,
-                    extraSpeedPercentPerLevel = 0f,
-                    extraSpeedEnergyPercent = ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyPercent,
-                    extraSpeedEnergyPercentPerLevel = 0f,
+                    extraSpeedPercentPerAbilityLevel = 0f,
+                    extraSpeedEnergyDrain = ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyDrain,
+                    extraSpeedEnergyDrainPerAbilityLevel = ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyDrain
+                        * ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase,
                 };
                 profile.perVersionIncrement = new ShipComponentAbilityStats
                 {
                     moveSpeed = ShipPropulsionAggregation.SuggestedPropulsionMoveSpeedPerVersion,
                     accelerationCap = ShipPropulsionAggregation.SuggestedPropulsionMoveSpeedPerVersion
                         * ShipPropulsionAggregation.SuggestedPropulsionAccelerationFractionOfMoveSpeed,
-                    thrustEnergyDrain = ShipPropulsionAggregation.GetSuggestedThrustEnergyDrainPerVersion(),
                     energyCap = ShipPropulsionAggregation.EngineEnergyCapPerVersionIncrement,
                     energyRegen = ShipPropulsionAggregation.EngineEnergyRegenPerVersionIncrement,
                     // OVERDRIVE knobs stay flat across versions unless designers author increments.
                     extraSpeedPercent = 0f,
-                    extraSpeedPercentPerLevel = 0f,
-                    extraSpeedEnergyPercent = 0f,
-                    extraSpeedEnergyPercentPerLevel = 0f,
+                    extraSpeedPercentPerAbilityLevel = 0f,
+                    extraSpeedEnergyDrain = 0f,
+                    extraSpeedEnergyDrainPerAbilityLevel = 0f,
                 };
                 profile.perLevelFractionOverride = ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase;
             }
             else if (ShipFamilyPartTypes.IsThrusterProfile(type))
             {
-                // [TITAN-ORBIT] Maneuver jets: move/accel + Fin-scale turn + thrust energy cost.
+                // [TITAN-ORBIT] Maneuver jets: move/accel + Fin-scale turn (no OVERDRIVE / no separate OD drain).
                 float turnV1 = ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(1);
                 float turnPerVersion = ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(2)
                     - ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(1);
@@ -832,18 +816,16 @@ namespace TitanOrbit.Data
                 {
                     moveSpeed = ShipPropulsionAggregation.GetSuggestedPropulsionMoveSpeed(1),
                     accelerationCap = ShipPropulsionAggregation.GetSuggestedPropulsionAccelerationCap(1),
-                    thrustEnergyDrain = ShipPropulsionAggregation.GetSuggestedThrustEnergyDrain(1),
                     turnSpeed = turnV1,
-                    turnSpeedPerLevel = turnPerLevelV1,
+                    turnSpeedPerAbilityLevel = turnPerLevelV1,
                 };
                 profile.perVersionIncrement = new ShipComponentAbilityStats
                 {
                     moveSpeed = ShipPropulsionAggregation.SuggestedPropulsionMoveSpeedPerVersion,
                     accelerationCap = ShipPropulsionAggregation.SuggestedPropulsionMoveSpeedPerVersion
                         * ShipPropulsionAggregation.SuggestedPropulsionAccelerationFractionOfMoveSpeed,
-                    thrustEnergyDrain = ShipPropulsionAggregation.GetSuggestedThrustEnergyDrainPerVersion(),
                     turnSpeed = turnPerVersion,
-                    turnSpeedPerLevel = turnPerLevelPerVersion,
+                    turnSpeedPerAbilityLevel = turnPerLevelPerVersion,
                 };
                 profile.perLevelFractionOverride = ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase;
             }
@@ -859,12 +841,12 @@ namespace TitanOrbit.Data
                 profile.baseAtVersion1 = new ShipComponentAbilityStats
                 {
                     turnSpeed = turnV1,
-                    turnSpeedPerLevel = turnPerLevelV1,
+                    turnSpeedPerAbilityLevel = turnPerLevelV1,
                 };
                 profile.perVersionIncrement = new ShipComponentAbilityStats
                 {
                     turnSpeed = turnPerVersion,
-                    turnSpeedPerLevel = turnPerLevelPerVersion,
+                    turnSpeedPerAbilityLevel = turnPerLevelPerVersion,
                 };
             }
             else if (string.Equals(type, ShipFamilyPartTypes.WeaponBullet, StringComparison.OrdinalIgnoreCase))
@@ -873,13 +855,13 @@ namespace TitanOrbit.Data
                 profile.baseAtVersion1 = new ShipComponentAbilityStats
                 {
                     firePower = ShipComponentWeaponSuggestions.FirePowerV1,
-                    firePowerPerLevel = ShipComponentWeaponSuggestions.GetSuggestedFirePowerPerLevel(1),
+                    firePowerPerAbilityLevel = ShipComponentWeaponSuggestions.GetSuggestedFirePowerPerLevel(1),
                     bulletSpeed = ShipComponentWeaponSuggestions.BulletSpeedV1,
-                    bulletSpeedPerLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeedPerLevel(1),
+                    bulletSpeedPerAbilityLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletSpeedPerLevel(1),
                     bulletRange = ShipComponentWeaponSuggestions.BulletRangeV1,
-                    bulletRangePerLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletRangePerLevel(1),
+                    bulletRangePerAbilityLevel = ShipComponentWeaponSuggestions.GetSuggestedBulletRangePerLevel(1),
                     fireRate = ShipComponentWeaponSuggestions.FireRate,
-                    fireRatePerLevel = 0f,
+                    fireRatePerAbilityLevel = 0f,
                 };
                 ShipComponentWeaponSuggestions.ApplyWeaponBatteryCap(ref profile.baseAtVersion1);
 
@@ -889,10 +871,10 @@ namespace TitanOrbit.Data
                     bulletSpeed = ShipComponentWeaponSuggestions.BulletSpeedV1,
                     bulletRange = ShipComponentWeaponSuggestions.BulletRangePerVersion,
                     fireRate = 0f,
-                    fireRatePerLevel = 0f,
+                    fireRatePerAbilityLevel = 0f,
                     // Cap scales linearly with firePower; v2 firePower = 2×v1 ⇒ Cap step = Cap(v1).
                     energyCap = profile.baseAtVersion1.energyCap,
-                    energyCapPerLevel = profile.baseAtVersion1.energyCapPerLevel,
+                    energyCapPerAbilityLevel = profile.baseAtVersion1.energyCapPerAbilityLevel,
                 };
             }
             else if (string.Equals(type, ShipFamilyPartTypes.WeaponCannon, StringComparison.OrdinalIgnoreCase))
@@ -901,13 +883,13 @@ namespace TitanOrbit.Data
                 profile.baseAtVersion1 = new ShipComponentAbilityStats
                 {
                     firePower = ShipComponentWeaponSuggestions.CannonFirePowerV1,
-                    firePowerPerLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonFirePowerPerLevel(1),
+                    firePowerPerAbilityLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonFirePowerPerLevel(1),
                     bulletSpeed = ShipComponentWeaponSuggestions.CannonBulletSpeedV1,
-                    bulletSpeedPerLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonBulletSpeedPerLevel(1),
+                    bulletSpeedPerAbilityLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonBulletSpeedPerLevel(1),
                     bulletRange = ShipComponentWeaponSuggestions.CannonBulletRangeV1,
-                    bulletRangePerLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonBulletRangePerLevel(1),
+                    bulletRangePerAbilityLevel = ShipComponentWeaponSuggestions.GetSuggestedCannonBulletRangePerLevel(1),
                     fireRate = ShipComponentWeaponSuggestions.CannonFireRate,
-                    fireRatePerLevel = 0f,
+                    fireRatePerAbilityLevel = 0f,
                 };
                 ShipComponentWeaponSuggestions.ApplyWeaponBatteryCap(ref profile.baseAtVersion1);
 
@@ -917,9 +899,9 @@ namespace TitanOrbit.Data
                     bulletSpeed = ShipComponentWeaponSuggestions.CannonBulletSpeedV1 * 0.25f,
                     bulletRange = ShipComponentWeaponSuggestions.CannonBulletRangePerVersion,
                     fireRate = 0f,
-                    fireRatePerLevel = 0f,
+                    fireRatePerAbilityLevel = 0f,
                     energyCap = profile.baseAtVersion1.energyCap,
-                    energyCapPerLevel = profile.baseAtVersion1.energyCapPerLevel,
+                    energyCapPerAbilityLevel = profile.baseAtVersion1.energyCapPerAbilityLevel,
                 };
             }
             else if (string.Equals(type, ShipFamilyPartTypes.Cockpit, StringComparison.OrdinalIgnoreCase))

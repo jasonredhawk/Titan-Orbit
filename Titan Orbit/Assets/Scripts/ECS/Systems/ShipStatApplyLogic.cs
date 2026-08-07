@@ -38,9 +38,10 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// Shared stat-application pipeline: resolves a chassis id from team + level + branch, sums
-    /// ship-family component stats, applies attribute-upgrade multipliers, taxes mobility from
-    /// gem/people capacity via <see cref="ShipMobilityResolution"/>, and writes the result onto
-    /// ShipState, ShipWeaponConfig, ShipMotorConfig, and ShipVitalsConfig. Called by
+    /// ship-family component stats, applies attribute upgrades (×10% for most; additive Move Speed
+    /// PerAbilityLevel), taxes mobility from gem/people capacity <b>and</b> absolute live hull mass
+    /// via <see cref="ShipMobilityResolution"/> / <see cref="ShipCargoMobilitySettings"/>, and writes
+    /// the result onto ShipState, ShipWeaponConfig, ShipMotorConfig, and ShipVitalsConfig. Called by
     /// ShipStatApplySystem (server + client prediction), ShipAttributeUpgradeLogic (purchase),
     /// and respawn/rejoin flows. Does not run movement — only updates numeric caps and motor tuning.
     /// <para>
@@ -49,10 +50,11 @@ namespace TitanOrbit.ECS
     /// (MaxSpeed=35) while the server uses chassis ~13 — HUD lies and prediction fights reconcile.
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] Capacity tax (empty-hold identity): high <c>maxGems</c> / <c>maxPeople</c> from
-    /// components automatically lower MaxSpeed, EngineThrust, and RotationSpeed using
+    /// [TITAN-ORBIT] Capacity + component-mass tax (empty-hold identity): high <c>maxGems</c> /
+    /// <c>maxPeople</c> and live hull mass lower MaxSpeed, EngineThrust, and RotationSpeed using
     /// <see cref="ShipCargoMobilitySettings"/> — people hit top speed harder, gems hit accel harder,
-    /// turn has separate gem/people weights. No Fighter/Miner/Transport role enum in the motor path.
+    /// mass uses <c>*WeightPerComponentMass</c> (absolute, not level-1 ratio). No Fighter/Miner/
+    /// Transport role enum in the motor path. Drive still applies F/m from movement mass.
     /// </para>
     /// </summary>
     public static class ShipStatApplyLogic
@@ -234,8 +236,8 @@ namespace TitanOrbit.ECS
                         baseStats.bulletSpeed = familyDefaults.bulletSpeed;
                     if (familyDefaults.bulletRange > 0.01f)
                         baseStats.bulletRange = familyDefaults.bulletRange;
-                    if (familyDefaults.bulletRangePerLevel > 0.01f)
-                        baseStats.bulletRangePerLevel = familyDefaults.bulletRangePerLevel;
+                    if (familyDefaults.bulletRangePerAbilityLevel > 0.01f)
+                        baseStats.bulletRangePerAbilityLevel = familyDefaults.bulletRangePerAbilityLevel;
                     baseStats = family.ApplyStatFallbacks(baseStats);
                 }
                 return true;
@@ -287,7 +289,7 @@ namespace TitanOrbit.ECS
 
             // --- Chassis baseline (level-1 sum) ---
             // When moon-store equipment includes ship components, rebuild chassis+store together so
-            // engines use max primary + half moveSpeedPerLevel extras (not naive full-speed add).
+            // engines use max primary + half moveSpeedPerAbilityLevel extras (not naive full-speed add).
             ShipComponentAbilityStats summed;
             if (!TryGetBaseStatsWithStoreComponents(em, shipEntity, chassisId, out summed))
             {
@@ -295,11 +297,14 @@ namespace TitanOrbit.ECS
                     return;
             }
 
-            // [TITAN-ORBIT] Level scaling curve applied before attribute multipliers.
+            // [TITAN-ORBIT] Ship-tier growth = family shipLevelStatGrowthFraction (default 10% of base).
             // Keep a pre-attribute copy so bullet VFX baselines reset on chassis swap without
             // baking attribute FirePower boosts into ReferenceBullet* (that made tracers huge).
+            float shipTierGrowth = ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
+            if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition tierFamily) && tierFamily != null)
+                shipTierGrowth = tierFamily.ResolveShipLevelStatGrowthFraction();
             ShipComponentAbilityStats chassisBaseline =
-                ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, shipLevel);
+                ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, shipLevel, shipTierGrowth);
 
             // --- Equipped upgrade cards (flat / multiplier modifiers on top of chassis+store) ---
             TryAddEquippedCardStatModifiers(em, shipEntity, chassisId, ref chassisBaseline);
@@ -321,12 +326,21 @@ namespace TitanOrbit.ECS
             }
 
             int attributeSum = 0;
-            // --- Attribute upgrades (+10% per level from bottom HUD) ---
+            ShipAttributeUpgradeState attrs = default;
+            bool hasAttrs = false;
+            // --- Attribute upgrades (×10% for most; Move Speed = additive PerAbilityLevel) ---
             if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
             {
-                var attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+                attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+                hasAttrs = true;
                 attributeSum = SumAttributeLevels(attrs);
                 ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, attrs);
+                // [TITAN-ORBIT] Move Speed HUD: add N × (move / accel / OD drain) PerAbilityLevel
+                // from the level-1 chassis sum — not ×1.1 and not ship-tier growth.
+                ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
+                    summed, out float moveStep, out float accelStep, out float odDrainStep);
+                ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
+                    ref effective, attrs, moveStep, accelStep, odDrainStep);
             }
 
             int equipmentFingerprint = ComputeEquippedLoadoutFingerprint(em, shipEntity);
@@ -435,10 +449,21 @@ namespace TitanOrbit.ECS
                     : moveVal);
                 thrust *= ShipPropulsionAggregation.EngineThrustVisibility;
 
-                // --- Capacity tax (empty-hold identity) ---
-                // [TITAN-ORBIT] GemCapacity / PeopleCapacity from summed components slow MaxSpeed,
-                // accel, and turn even when the hold is empty. People hit top speed harder; gems
-                // hit accel harder; turn has separate gem/people weights. See ShipCargoMobilitySettings.
+                // --- Live hull mass (box × attribute grow × tier) for tax + F/m reference ---
+                // [TITAN-ORBIT] Absolute mass — no level-1 vs live ratio. Tax uses
+                // *WeightPerComponentMass in ShipCargoMobilitySettings; drive still does a = F/m.
+                float liveComponentMass = TryGetLiveHullComponentMass(
+                    chassisId, hasAttrs ? attrs : default, shipLevel, applyAttributeScale: true);
+                if (liveComponentMass <= 0.0001f)
+                    liveComponentMass = TryGetChassisComponentMass(chassisId);
+
+                float liveHullMass = ShipMassLogic.ComputeHullMassReference(
+                    liveComponentMass, ShipMassLogic.DefaultBaseMass);
+
+                // --- Capacity + component-mass tax (empty-hold identity) ---
+                // [TITAN-ORBIT] GemCapacity / PeopleCapacity / live hull mass from summed components
+                // slow MaxSpeed, accel, and turn even when the hold is empty. People hit top speed
+                // harder; gems hit accel harder; mass uses *WeightPerComponentMass. See settings.
                 float gemCap = Mathf.Max(0f, effective.maxGems);
                 float peopleCap = Mathf.Max(0f, effective.maxPeople);
                 ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyCapacityTax(
@@ -446,63 +471,42 @@ namespace TitanOrbit.ECS
                     thrust,
                     turnVal,
                     gemCap,
-                    peopleCap);
+                    peopleCap,
+                    liveHullMass);
 
                 // [TITAN-ORBIT] Mass reference uses level-1 health so upgrades change weight feel.
                 ShipComponentAbilityStats levelOneStats =
                     ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, 1);
                 float referenceHealth = Mathf.Max(1f, levelOneStats.healthCap);
-                float componentMass = TryGetChassisComponentMass(chassisId);
-                float hullMassReference = ShipMassLogic.ComputeHullMassReference(
-                    componentMass,
-                    ShipMassLogic.DefaultBaseMass);
 
                 var motor = em.GetComponentData<ShipMotorConfig>(shipEntity);
                 motor.MaxSpeed = taxed.MaxSpeed;
                 motor.EngineThrust = taxed.EngineThrust;
                 motor.RotationSpeed = taxed.RotationSpeed;
                 motor.BrakeDeceleration = ShipMassLogic.DefaultBrakeDeceleration;
-                motor.HullMassReference = hullMassReference;
+                motor.HullMassReference = liveHullMass;
                 motor.ChassisReferenceHealth = referenceHealth;
                 // [TITAN-ORBIT] Ram/grind damage rating — level-scaled family sum (HUD uses the same field).
                 motor.RammingPower = Mathf.Max(0f, effective.rammingPower);
 
-                // [TITAN-ORBIT] Engines + thrusters author thrustEnergyDrain (OVERDRIVE cost base).
-                // MaxEnergy = summed Cap from engines (plant) + weapons (extra batteries);
-                // Regen comes from engines only (BalanceEngineEnergyForComponents).
-                // Normal RMB thrust does not spend energy — only Shift+RMB overdrive does.
+                // [TITAN-ORBIT] OVERDRIVE: ExtraSpeedPercent (speed mul) from engines; absolute OD drain
+                // from effective.extraSpeedEnergyDrain (ship-tier + Move Speed ability steps).
                 TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition drainFamily);
-                float thrustDrain = ShipPropulsionAggregation.ComputeThrusterEnergyDrainPerSecond(
-                    drainFamily,
-                    shipLevel,
-                    effective.accelerationCap);
-                // Family Special Bonuses × thrustEnergyDrain (Compute reads raw part rows).
-                if (drainFamily != null)
-                {
-                    float drainMul = drainFamily.specialBonuses.thrustEnergyDrainMul;
-                    if (drainMul > 0.0001f)
-                        thrustDrain *= drainMul;
-                }
-
-                motor.ThrustEnergyDrainPerSecond = Mathf.Max(0f, thrustDrain);
-
-                // --- OVERDRIVE: engine ExtraSpeed% / ExtraSpeedEnergy% × family Special Bonuses ---
-                // Baked onto motor so predicted + server fixed steps never load ScriptableObjects.
-                // Absolute drain/sec = ThrustEnergyDrainPerSecond × OD mul — N engines ≈ N× cost
-                // because thrustEnergyDrain sums across engines (mul is max ExtraSpeed pair).
                 var bonuses = drainFamily != null
                     ? drainFamily.specialBonuses
                     : ShipFamilySpecialBonuses.Identity;
-                ShipPropulsionAggregation.ResolveOverdriveMultipliersFromEngines(
+                ShipPropulsionAggregation.ResolveOverdriveFromEngines(
                     drainFamily,
                     shipLevel,
                     bonuses,
                     out float odSpeed,
                     out float odThrust,
-                    out float odDrain);
+                    out float _);
+                motor.ThrustEnergyDrainPerSecond = Mathf.Max(0f, effective.extraSpeedEnergyDrain);
                 motor.OverdriveSpeedMultiplier = odSpeed;
                 motor.OverdriveThrustMultiplier = odThrust;
-                motor.OverdriveEnergyDrainMultiplier = odDrain;
+                // Absolute rate already baked into ThrustEnergyDrainPerSecond — mul stays 1.
+                motor.OverdriveEnergyDrainMultiplier = 1f;
 
                 em.SetComponentData(shipEntity, motor);
             }
@@ -809,6 +813,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Computes chassis component mass from prefab transform hierarchy for ShipMassLogic hull reference.
+        /// Legacy fallback when box-extent mass returns 0.
         /// </summary>
         static float TryGetChassisComponentMass(string chassisId)
         {
@@ -826,6 +831,37 @@ namespace TitanOrbit.ECS
                 familyPrefix = chassisId.Substring(0, underscore);
 
             return ChassisComponentStats.ComputeComponentMassFromTransform(tier.prefab.transform, familyPrefix);
+        }
+
+        /// <summary>
+        /// Live hull component mass from box extents × attribute grow × tier scale.
+        /// Used for <see cref="ShipMotorConfig.HullMassReference"/> and capacity mass tax.
+        /// </summary>
+        static float TryGetLiveHullComponentMass(
+            string chassisId,
+            in ShipAttributeUpgradeState attrs,
+            int shipLevel,
+            bool applyAttributeScale)
+        {
+            var config = Config;
+            if (config == null || string.IsNullOrEmpty(chassisId))
+                return 0f;
+
+            var tier = config.GetTierEntryForChassisId(chassisId);
+            if (tier?.prefab == null)
+                return 0f;
+
+            string familyPrefix = "AstroEagle";
+            int underscore = chassisId.IndexOf('_');
+            if (underscore > 0)
+                familyPrefix = chassisId.Substring(0, underscore);
+
+            return ShipHullColliderLogic.ComputeLiveHullComponentMass(
+                tier.prefab,
+                attrs,
+                familyPrefix,
+                shipLevel,
+                applyAttributeScale);
         }
     }
 }

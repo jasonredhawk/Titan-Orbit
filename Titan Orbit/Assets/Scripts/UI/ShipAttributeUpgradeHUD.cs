@@ -14,8 +14,9 @@ namespace TitanOrbit.UI
     /// Bottom-left ship attribute upgrade bar (10 slots, keys 1–9 and 0). Reads local ship
     /// ShipState and ShipAttributeUpgradeState from EcsGameBridge; sends purchases via
     /// MoonOrbitRpcClient.PurchaseAttributeUpgrade (server validates in ShipAttributeUpgradeSystem).
-    /// Cost = ShipLevel × 5 gems; max levels per attribute = ShipLevel. Strip layout avoids
-    /// minimap overlap. Cosmetic tick marks reflect ghost-serialized upgrade levels.
+    /// Cost = ShipLevel × 5 gems; max levels per attribute = ShipLevel.
+    /// Most abilities are +10% per purchase; Move Speed adds one chassis PerAbilityLevel step
+    /// (move + accel + OD drain together) — see ShipAttributeUpgradeLogic.
     /// Strip layout: recomputed only when screen / canvas / minimap size changes; positions are
     /// snapped to whole canvas units so windowed (non-1:1) views do not shimmer.
     /// <para>

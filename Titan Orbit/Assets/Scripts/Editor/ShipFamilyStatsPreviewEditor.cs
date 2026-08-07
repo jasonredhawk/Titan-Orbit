@@ -80,29 +80,29 @@ namespace TitanOrbit.Editor
             {
                 EditorGUILayout.LabelField("Offense", EditorStyles.miniBoldLabel);
                 EditorGUILayout.FloatField("Fire Power", total.firePower);
-                EditorGUILayout.FloatField("Fire Power / Level", total.firePowerPerLevel);
+                EditorGUILayout.FloatField("Fire Power / Level", total.firePowerPerAbilityLevel);
                 EditorGUILayout.FloatField("Bullet Speed", total.bulletSpeed);
-                EditorGUILayout.FloatField("Bullet Speed / Level", total.bulletSpeedPerLevel);
+                EditorGUILayout.FloatField("Bullet Speed / Level", total.bulletSpeedPerAbilityLevel);
                 EditorGUILayout.FloatField("Bullet Range", total.bulletRange);
-                EditorGUILayout.FloatField("Bullet Range / Level", total.bulletRangePerLevel);
+                EditorGUILayout.FloatField("Bullet Range / Level", total.bulletRangePerAbilityLevel);
                 EditorGUILayout.FloatField("Fire Rate (shots/s)", total.fireRate);
-                EditorGUILayout.FloatField("Fire Rate / Level", total.fireRatePerLevel);
+                EditorGUILayout.FloatField("Fire Rate / Level", total.fireRatePerAbilityLevel);
                 EditorGUILayout.FloatField("Ramming Power", total.rammingPower);
-                EditorGUILayout.FloatField("Ramming Power / Level", total.rammingPowerPerLevel);
+                EditorGUILayout.FloatField("Ramming Power / Level", total.rammingPowerPerAbilityLevel);
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Health", EditorStyles.miniBoldLabel);
                 EditorGUILayout.FloatField("Health Cap", total.healthCap);
-                EditorGUILayout.FloatField("Health Cap / Level", total.healthCapPerLevel);
+                EditorGUILayout.FloatField("Health Cap / Level", total.healthCapPerAbilityLevel);
                 EditorGUILayout.FloatField("Health Regen", total.healthRegen);
-                EditorGUILayout.FloatField("Health Regen / Level", total.healthRegenPerLevel);
+                EditorGUILayout.FloatField("Health Regen / Level", total.healthRegenPerAbilityLevel);
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Energy", EditorStyles.miniBoldLabel);
                 EditorGUILayout.FloatField("Energy Cap", total.energyCap);
-                EditorGUILayout.FloatField("Energy Cap / Level", total.energyCapPerLevel);
+                EditorGUILayout.FloatField("Energy Cap / Level", total.energyCapPerAbilityLevel);
                 EditorGUILayout.FloatField("Energy Regen", total.energyRegen);
-                EditorGUILayout.FloatField("Energy Regen / Level", total.energyRegenPerLevel);
+                EditorGUILayout.FloatField("Energy Regen / Level", total.energyRegenPerAbilityLevel);
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Movement", EditorStyles.miniBoldLabel);
@@ -111,13 +111,13 @@ namespace TitanOrbit.Editor
                     total.accelerationCap);
                 EditorGUILayout.FloatField(
                     new GUIContent("Acceleration Cap / Level (sum, all parts)", "Sum of per-level acceleration terms."),
-                    total.accelerationCapPerLevel);
+                    total.accelerationCapPerAbilityLevel);
                 EditorGUILayout.FloatField(
-                    new GUIContent("Move Speed (aggregated)", "Shared engine/thruster pool: best base move speed once + half the sum of other parts' moveSpeedPerLevel."),
+                    new GUIContent("Move Speed (aggregated)", "Shared engine/thruster pool: best base move speed once + half the sum of other parts' moveSpeedPerAbilityLevel."),
                     total.moveSpeed);
                 EditorGUILayout.FloatField(
-                    new GUIContent("Move Speed / Level (primary)", "Primary propulsion part's moveSpeedPerLevel after aggregation."),
-                    total.moveSpeedPerLevel);
+                    new GUIContent("Move Speed / Level (primary)", "Primary propulsion part's moveSpeedPerAbilityLevel after aggregation."),
+                    total.moveSpeedPerAbilityLevel);
                 if (preview != null)
                 {
                     EditorGUILayout.LabelField("Propulsion (engines + thrusters)", EditorStyles.miniBoldLabel);
@@ -139,7 +139,7 @@ namespace TitanOrbit.Editor
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Extra propulsion Move Speed",
-                            "Half the sum of moveSpeedPerLevel from every other engine/thruster (not their full moveSpeed)."),
+                            "Half the sum of moveSpeedPerAbilityLevel from every other engine/thruster (not their full moveSpeed)."),
                         preview.PreviewExtraThrusterMoveSpeed);
                     EditorGUILayout.FloatField(
                         new GUIContent(
@@ -156,14 +156,14 @@ namespace TitanOrbit.Editor
                     new GUIContent(
                         "Turn Speed / Level",
                         "Sum of per-level turn terms. Starship applies ship-level mobility scaling when rotating."),
-                    total.turnSpeedPerLevel);
+                    total.turnSpeedPerAbilityLevel);
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
                 EditorGUILayout.FloatField("Max Gems", total.maxGems);
-                EditorGUILayout.FloatField("Max Gems / Level", total.maxGemsPerLevel);
+                EditorGUILayout.FloatField("Max Gems / Level", total.maxGemsPerAbilityLevel);
                 EditorGUILayout.FloatField("Max People", total.maxPeople);
-                EditorGUILayout.FloatField("Max People / Level", total.maxPeoplePerLevel);
+                EditorGUILayout.FloatField("Max People / Level", total.maxPeoplePerAbilityLevel);
 
                 if (preview != null)
                 {
@@ -203,7 +203,7 @@ namespace TitanOrbit.Editor
                     if (isWeapon)
                         label += " [weapon: xy=power, 1/z=rate; offense only]";
                     if (isPropulsion)
-                        label += " [engine/thruster: one base move speed + half sum of others' moveSpeedPerLevel; accel sums]";
+                        label += " [engine/thruster: one base move speed + half sum of others' moveSpeedPerAbilityLevel; accel sums]";
                     EditorGUILayout.LabelField("- " + label);
 
                     if (showPerComponent && perStats != null && i < perStats.Count)
@@ -214,27 +214,27 @@ namespace TitanOrbit.Editor
                             EditorGUI.indentLevel++;
                             EditorGUILayout.LabelField("Offense", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Fire Power", s.firePower);
-                            EditorGUILayout.FloatField("  Fire Power / Level", s.firePowerPerLevel);
+                            EditorGUILayout.FloatField("  Fire Power / Level", s.firePowerPerAbilityLevel);
                             EditorGUILayout.FloatField("  Bullet Speed", s.bulletSpeed);
-                            EditorGUILayout.FloatField("  Bullet Speed / Level", s.bulletSpeedPerLevel);
+                            EditorGUILayout.FloatField("  Bullet Speed / Level", s.bulletSpeedPerAbilityLevel);
                             EditorGUILayout.FloatField("  Bullet Range", s.bulletRange);
-                            EditorGUILayout.FloatField("  Bullet Range / Level", s.bulletRangePerLevel);
+                            EditorGUILayout.FloatField("  Bullet Range / Level", s.bulletRangePerAbilityLevel);
                             EditorGUILayout.FloatField("  Fire Rate (shots/s)", s.fireRate);
-                            EditorGUILayout.FloatField("  Fire Rate / Level", s.fireRatePerLevel);
+                            EditorGUILayout.FloatField("  Fire Rate / Level", s.fireRatePerAbilityLevel);
                             EditorGUILayout.FloatField("  Ramming Power", s.rammingPower);
-                            EditorGUILayout.FloatField("  Ramming Power / Level", s.rammingPowerPerLevel);
+                            EditorGUILayout.FloatField("  Ramming Power / Level", s.rammingPowerPerAbilityLevel);
 
                             EditorGUILayout.LabelField("Health", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Health Cap", s.healthCap);
-                            EditorGUILayout.FloatField("  Health Cap / Level", s.healthCapPerLevel);
+                            EditorGUILayout.FloatField("  Health Cap / Level", s.healthCapPerAbilityLevel);
                             EditorGUILayout.FloatField("  Health Regen", s.healthRegen);
-                            EditorGUILayout.FloatField("  Health Regen / Level", s.healthRegenPerLevel);
+                            EditorGUILayout.FloatField("  Health Regen / Level", s.healthRegenPerAbilityLevel);
 
                             EditorGUILayout.LabelField("Energy", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Energy Cap", s.energyCap);
-                            EditorGUILayout.FloatField("  Energy Cap / Level", s.energyCapPerLevel);
+                            EditorGUILayout.FloatField("  Energy Cap / Level", s.energyCapPerAbilityLevel);
                             EditorGUILayout.FloatField("  Energy Regen", s.energyRegen);
-                            EditorGUILayout.FloatField("  Energy Regen / Level", s.energyRegenPerLevel);
+                            EditorGUILayout.FloatField("  Energy Regen / Level", s.energyRegenPerAbilityLevel);
 
                             EditorGUILayout.LabelField("Movement", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField(
@@ -246,7 +246,7 @@ namespace TitanOrbit.Editor
                                 isPropulsion
                                     ? new GUIContent("  Move Speed / Level", "Authoritative for engines/thrusters; not multiplied by transform scale.")
                                     : new GUIContent("  Move Speed / Level"),
-                                s.moveSpeedPerLevel);
+                                s.moveSpeedPerAbilityLevel);
                             EditorGUILayout.FloatField(
                                 isPropulsion
                                     ? new GUIContent(
@@ -260,7 +260,7 @@ namespace TitanOrbit.Editor
                                         "  Acceleration Cap / Level",
                                         "Added per ship level for each engine/thruster; stacked with base acceleration cap.")
                                     : new GUIContent("  Acceleration Cap / Level"),
-                                s.accelerationCapPerLevel);
+                                s.accelerationCapPerAbilityLevel);
                             EditorGUILayout.FloatField(
                                 new GUIContent(
                                     "  Turn Speed",
@@ -270,13 +270,13 @@ namespace TitanOrbit.Editor
                                 new GUIContent(
                                     "  Turn Speed / Level",
                                     "Definition units per ship level. Starship converts to ┬░/s only when rotating."),
-                                s.turnSpeedPerLevel);
+                                s.turnSpeedPerAbilityLevel);
 
                             EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Max Gems", s.maxGems);
-                            EditorGUILayout.FloatField("  Max Gems / Level", s.maxGemsPerLevel);
+                            EditorGUILayout.FloatField("  Max Gems / Level", s.maxGemsPerAbilityLevel);
                             EditorGUILayout.FloatField("  Max People", s.maxPeople);
-                            EditorGUILayout.FloatField("  Max People / Level", s.maxPeoplePerLevel);
+                            EditorGUILayout.FloatField("  Max People / Level", s.maxPeoplePerAbilityLevel);
                             EditorGUI.indentLevel--;
                         }
                     }

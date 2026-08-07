@@ -121,21 +121,11 @@ namespace TitanOrbit.Editor
                 "3) Ensure Profiles / Reset Profiles → Scan Folder on each family.",
                 MessageType.Info);
 
-            // --- OVERDRIVE (top of inspector so it is not buried under Discover tools) ---
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("OVERDRIVE ability (project defaults)", EditorStyles.boldLabel);
+            // --- OVERDRIVE lives on Engine Part Profile rows (ExtraSpeedPercent / ExtraSpeedEnergyDrain) ---
             EditorGUILayout.HelpBox(
-                "extraSpeedPercent = 0.75 → +75% speed/thrust (×1.75).\n" +
-                "extraSpeedEnergyPercent = 2.0 → energy extra = 2 × speed fraction " +
-                "(+150% energy → drain ×2.5).\n" +
-                "Each ShipFamilyDefinition Special Bonuses can multiply both " +
-                "(extraSpeedPercentMul / extraSpeedEnergyPercentMul).",
-                MessageType.None);
-            EditorGUILayout.PropertyField(
-                serializedObject.FindProperty("overdriveAbility"),
-                new GUIContent("Overdrive Ability"),
-                true);
-            EditorGUILayout.EndVertical();
+                "OVERDRIVE ExtraSpeed / ExtraSpeedEnergy are authored on the Engine Part Profile " +
+                "(and each family's engine components). Family Special Bonuses can multiply both.",
+                MessageType.Info);
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUILayout.LabelField("Ship families root", EditorStyles.boldLabel);
@@ -229,10 +219,9 @@ namespace TitanOrbit.Editor
                 "Part Profiles: Default Categories filter which stats appear under Base At Version 1 " +
                 "and Per Version Increment (including *Per Level). Empty Per Level fields auto-fill " +
                 "from base × fraction when you expand a row (same math as Scan).\n\n" +
-                "OVERDRIVE is edited in the box at the top of this inspector.",
+                "OVERDRIVE ExtraSpeed fields are on the Engine Part Profile (not a global ProfileSet block).",
                 MessageType.None);
-            // Draw everything except overdriveAbility (already shown in the dedicated box above).
-            DrawPropertiesExcluding(serializedObject, "m_Script", "overdriveAbility");
+            DrawPropertiesExcluding(serializedObject, "m_Script");
             if (GUI.changed)
                 set.InvalidateLookups();
             serializedObject.ApplyModifiedProperties();

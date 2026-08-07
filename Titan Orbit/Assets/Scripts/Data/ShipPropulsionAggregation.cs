@@ -6,14 +6,11 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Engine and thruster move-speed and acceleration rules shared by legacy <see cref="Entities.Starship"/>,
     /// ECS motor, and editor previews. [TITAN-ORBIT] Engines/thrusters share one propulsion pool: the single
-    /// best base moveSpeed plus half the sum of every other part's moveSpeedPerLevel, then a global 0.8 scale.
+    /// best base moveSpeed plus half the sum of every other part's moveSpeedPerAbilityLevel.
     /// Acceleration caps sum across all propulsion parts. Paired with <see cref="ShipFamilyStatsCalculator"/>.
     /// </summary>
     public static class ShipPropulsionAggregation
     {
-        /// <summary>Applied to aggregated top speed and acceleration at runtime (0.8 = 20% slower overall).</summary>
-        public const float OverallPropulsionSpeedMultiplier = 0.8f;
-
         /// <summary>
         /// Multiplier on engine thrust force at runtime (legacy Starship <c>ENGINE_THRUST_VISIBILITY</c>).
         /// Keeps acceleration snappy while mass still scales thrust via F/m.
@@ -23,7 +20,7 @@ namespace TitanOrbit.Data
         /// <summary>Per-level terms for non-propulsion stats (~25% of base). Used when balancing weapon energy after scan.</summary>
         public const float PerLevelFractionOfBase = 0.25f;
 
-        /// <summary>Engine/thruster moveSpeedPerLevel and accelerationCapPerLevel are this fraction of base (20%).</summary>
+        /// <summary>Engine/thruster moveSpeedPerAbilityLevel and accelerationCapPerAbilityLevel are this fraction of base (20%).</summary>
         public const float PropulsionPerLevelFractionOfBase = 0.20f;
 
         /// <summary>
@@ -98,18 +95,10 @@ namespace TitanOrbit.Data
             return authored * definitionUnitsToDegreesPerSecond;
         }
 
-        /// <summary>Each additional engine/thruster contributes moveSpeedPerLevel × this factor (0.5 = half).</summary>
+        /// <summary>Each additional engine/thruster contributes moveSpeedPerAbilityLevel × this factor (0.5 = half).</summary>
         public const float AdditionalPropulsionMoveSpeedPerLevelFactor = 0.5f;
 
-        /// <summary>
-        /// [TITAN-ORBIT] Default energy/sec per unit of accelerationCap when seeding
-        /// <see cref="ShipComponentAbilityStats.thrustEnergyDrain"/>. Used as the OVERDRIVE cost
-        /// base (normal RMB thrust is free). Tuned so sustained Shift+RMB nets drain against
-        /// typical engine Cap/Regen. Designers can still lower per-part drain.
-        /// </summary>
-        public const float ThrustEnergyDrainPerAccelerationUnit = 0.5f;
-
-        /// <summary>Scan/auto-populate move speed for engine/thruster version 1 (Engine_1), before <see cref="OverallPropulsionSpeedMultiplier"/>.</summary>
+        /// <summary>Scan/auto-populate move speed for engine/thruster version 1 (Engine_1).</summary>
         public const float SuggestedPropulsionMoveSpeedV1 = 6f;
 
         /// <summary>Move speed added per version tier (v2 = 8, v3 = 10, …), before global propulsion scale.</summary>
@@ -139,28 +128,17 @@ namespace TitanOrbit.Data
             return GetSuggestedPropulsionMoveSpeed(version) * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
         }
 
-        /// <summary>moveSpeedPerLevel for scan/auto-populate (20% of base move speed for that version).</summary>
+        /// <summary>moveSpeedPerAbilityLevel for scan/auto-populate (20% of base move speed for that version).</summary>
         public static float GetSuggestedPropulsionMoveSpeedPerLevel(int version)
         {
             return GetSuggestedPropulsionMoveSpeed(version) * PropulsionPerLevelFractionOfBase;
         }
 
-        /// <summary>accelerationCapPerLevel for scan/auto-populate (20% of base acceleration for that version).</summary>
+        /// <summary>accelerationCapPerAbilityLevel for scan/auto-populate (20% of base acceleration for that version).</summary>
         public static float GetSuggestedPropulsionAccelerationCapPerLevel(int version)
         {
             return GetSuggestedPropulsionAccelerationCap(version) * PropulsionPerLevelFractionOfBase;
         }
-
-        /// <summary>
-        /// Default <c>thrustEnergyDrain</c> for a propulsion version (accel × drain-per-accel).
-        /// Analogous to weapon firePower as the “cost” knob — separate from move/accel so efficiency can vary.
-        /// </summary>
-        public static float GetSuggestedThrustEnergyDrain(int version) =>
-            GetSuggestedPropulsionAccelerationCap(version) * ThrustEnergyDrainPerAccelerationUnit;
-
-        /// <summary>Per-version step for ProfileSet Engine/Thruster thrustEnergyDrain (v2 − v1).</summary>
-        public static float GetSuggestedThrustEnergyDrainPerVersion() =>
-            GetSuggestedThrustEnergyDrain(2) - GetSuggestedThrustEnergyDrain(1);
 
         /// <summary>
         /// Gentle Cap/Regen share weight for engine version N — same curve as moveSpeed
@@ -171,18 +149,13 @@ namespace TitanOrbit.Data
             return GetSuggestedPropulsionMoveSpeed(version) / Mathf.Max(0.01f, SuggestedPropulsionMoveSpeedV1);
         }
 
-        public static float ApplyOverallPropulsionSpeedScale(float value)
-        {
-            return value * OverallPropulsionSpeedMultiplier;
-        }
-
         public struct Result
         {
             public float topMoveSpeed;
             public float sumAcceleration;
             /// <summary>Index into matched component lists for the part whose base moveSpeed was used once.</summary>
             public int primaryIndex;
-            /// <summary>Effective extra top speed from non-primary parts (half the summed moveSpeedPerLevel).</summary>
+            /// <summary>Effective extra top speed from non-primary parts (half the summed moveSpeedPerAbilityLevel).</summary>
             public float extraMoveSpeedFromPerLevel;
         }
 
@@ -218,23 +191,24 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Per-part acceleration before the global propulsion scale. Uses authored <see cref="ShipComponentAbilityStats.accelerationCap"/>
+        /// Per-part acceleration contribution. Uses authored <see cref="ShipComponentAbilityStats.accelerationCap"/>
         /// (summed for thrusters and engines). When cap is unset, derives from move speed using the same ratio as scan suggestions.
         /// </summary>
         public static float GetPropulsionAccelerationContribution(
             ShipComponentAbilityStats comp,
             int levelsAfterFirst)
         {
-            float authored = comp.accelerationCap + comp.accelerationCapPerLevel * levelsAfterFirst;
+            // [TITAN-ORBIT] Ship-tier growth is applied later via family shipLevelStatGrowthFraction.
+            // Do not multiply PerAbilityLevel here — those steps are bottom-HUD Move Speed only.
+            _ = levelsAfterFirst;
+            float authored = comp.accelerationCap;
             if (authored > 0f)
                 return authored;
 
-            if (comp.moveSpeed <= 0f && comp.moveSpeedPerLevel <= 0f)
+            if (comp.moveSpeed <= 0f)
                 return 0f;
 
-            float moveDerived = comp.moveSpeed * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
-            float movePerLevelDerived = comp.moveSpeedPerLevel * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
-            return moveDerived + movePerLevelDerived * levelsAfterFirst;
+            return comp.moveSpeed * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
         }
 
         /// <summary>
@@ -288,7 +262,7 @@ namespace TitanOrbit.Data
                         continue;
                     if (i == result.primaryIndex)
                         continue;
-                    summedExtraPerLevel += Mathf.Max(0f, perComponentStats[i].moveSpeedPerLevel);
+                    summedExtraPerLevel += Mathf.Max(0f, perComponentStats[i].moveSpeedPerAbilityLevel);
                 }
 
                 result.extraMoveSpeedFromPerLevel =
@@ -318,10 +292,6 @@ namespace TitanOrbit.Data
                 levelsAfterFirst,
                 levelAccelPenalty);
 
-            result.topMoveSpeed = ApplyOverallPropulsionSpeedScale(result.topMoveSpeed);
-            result.extraMoveSpeedFromPerLevel = ApplyOverallPropulsionSpeedScale(result.extraMoveSpeedFromPerLevel);
-            result.sumAcceleration = ApplyOverallPropulsionSpeedScale(result.sumAcceleration);
-
             return result;
         }
 
@@ -349,9 +319,9 @@ namespace TitanOrbit.Data
 
                 ShipComponentAbilityStats s = perComponentStats[i];
                 total.moveSpeed -= s.moveSpeed;
-                total.moveSpeedPerLevel -= s.moveSpeedPerLevel;
+                total.moveSpeedPerAbilityLevel -= s.moveSpeedPerAbilityLevel;
                 total.accelerationCap -= s.accelerationCap;
-                total.accelerationCapPerLevel -= s.accelerationCapPerLevel;
+                total.accelerationCapPerAbilityLevel -= s.accelerationCapPerAbilityLevel;
             }
 
             Result propulsion = ComputeThrusterPropulsion(componentIds, perComponentStats, shipLevel);
@@ -362,13 +332,13 @@ namespace TitanOrbit.Data
             {
                 if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
                     continue;
-                total.accelerationCapPerLevel += perComponentStats[i].accelerationCapPerLevel;
+                total.accelerationCapPerAbilityLevel += perComponentStats[i].accelerationCapPerAbilityLevel;
             }
 
             if (propulsion.primaryIndex >= 0 && propulsion.primaryIndex < count)
             {
-                total.moveSpeedPerLevel = Mathf.Max(0f, total.moveSpeedPerLevel)
-                    + perComponentStats[propulsion.primaryIndex].moveSpeedPerLevel;
+                total.moveSpeedPerAbilityLevel = Mathf.Max(0f, total.moveSpeedPerAbilityLevel)
+                    + perComponentStats[propulsion.primaryIndex].moveSpeedPerAbilityLevel;
             }
 
             return total;
@@ -379,8 +349,8 @@ namespace TitanOrbit.Data
         /// </summary>
         public static float ComputeWeaponSustainedEnergyDrain(ShipComponentAbilityStats weaponStats, int firePowerUpgrades = 0)
         {
-            float firePower = weaponStats.firePower + weaponStats.firePowerPerLevel * Mathf.Max(0, firePowerUpgrades);
-            float fireRate = Mathf.Max(0.01f, weaponStats.fireRate + weaponStats.fireRatePerLevel * Mathf.Max(0, firePowerUpgrades));
+            float firePower = weaponStats.firePower + weaponStats.firePowerPerAbilityLevel * Mathf.Max(0, firePowerUpgrades);
+            float fireRate = Mathf.Max(0.01f, weaponStats.fireRate + weaponStats.fireRatePerAbilityLevel * Mathf.Max(0, firePowerUpgrades));
             return firePower * fireRate;
         }
 
@@ -404,7 +374,7 @@ namespace TitanOrbit.Data
 
                 ShipComponentAbilityStats stats = entry.stats;
                 stats.energyRegen = 0f;
-                stats.energyRegenPerLevel = 0f;
+                stats.energyRegenPerAbilityLevel = 0f;
                 entry.stats = stats;
             }
         }
@@ -441,7 +411,7 @@ namespace TitanOrbit.Data
                 {
                     // Still strip regen if a designer left it on a weapon row.
                     stats.energyRegen = 0f;
-                    stats.energyRegenPerLevel = 0f;
+                    stats.energyRegenPerAbilityLevel = 0f;
                     entry.stats = stats;
                     continue;
                 }
@@ -527,11 +497,12 @@ namespace TitanOrbit.Data
         /// Regen ≈ 35% of that gun's sustained drain. Totals are split across engines by
         /// <b>gentle</b> version weight (moveSpeed curve: v1=1, v2≈1.33 — not v2=2).
         /// Also clears thruster Cap/Regen (thrusters do not own the power plant) and seeds
-        /// <see cref="ShipComponentAbilityStats.thrustEnergyDrain"/> on engines + thrusters when unset.
+        /// OVERDRIVE ExtraSpeed knobs on engines when unset.
         /// <para>
         /// [TITAN-ORBIT] Weapon components separately author Cap-only batteries
         /// (<see cref="BalanceWeaponEnergyForComponents"/>). Hull <c>MaxEnergy</c> sums engine Cap
         /// + weapon Cap — weapons hold extra storage; only engines produce Regen.
+        /// OD drain/sec = ExtraSpeedEnergyDrain on engines (absolute; not × speed %).
         /// </para>
         /// </summary>
         public static void BalanceEngineEnergyForComponents(List<ShipFamilyComponentEntry> components)
@@ -539,7 +510,7 @@ namespace TitanOrbit.Data
             if (components == null)
                 return;
 
-            // --- Clear thruster Cap/Regen (role: maneuver + drain, not power plant) ---
+            // --- Clear thruster Cap/Regen (role: maneuver, not power plant) ---
             for (int i = 0; i < components.Count; i++)
             {
                 ShipFamilyComponentEntry entry = components[i];
@@ -550,14 +521,12 @@ namespace TitanOrbit.Data
 
                 ShipComponentAbilityStats thrusterStats = entry.stats;
                 thrusterStats.energyCap = 0f;
-                thrusterStats.energyCapPerLevel = 0f;
+                thrusterStats.energyCapPerAbilityLevel = 0f;
                 thrusterStats.energyRegen = 0f;
-                thrusterStats.energyRegenPerLevel = 0f;
+                thrusterStats.energyRegenPerAbilityLevel = 0f;
                 entry.stats = thrusterStats;
             }
 
-            // --- Seed thrustEnergyDrain on engines + thrusters (efficiency knob; keep authored values) ---
-            ApplyPropulsionThrustEnergyDrainSuggestionsForComponents(components, overwriteExisting: false);
             // --- Seed OVERDRIVE ExtraSpeed knobs on engines when missing ---
             ApplyEngineOverdriveSuggestionsForComponents(components, overwriteExisting: false);
 
@@ -646,14 +615,14 @@ namespace TitanOrbit.Data
                 ShipComponentAbilityStats stats = entry.stats;
                 stats.energyCap = Mathf.Max(1f, totalCap * share);
                 stats.energyRegen = Mathf.Max(0.1f, totalRegen * share);
-                stats.energyCapPerLevel = stats.energyCap * PerLevelFractionOfBase;
-                stats.energyRegenPerLevel = stats.energyRegen * PerLevelFractionOfBase;
+                stats.energyCapPerAbilityLevel = stats.energyCap * PerLevelFractionOfBase;
+                stats.energyRegenPerAbilityLevel = stats.energyRegen * PerLevelFractionOfBase;
                 // Engines do not author turn — clear leftover turn from older scans.
                 // Thruster-only fallback keeps turn (ApplyThrusterTurn already wrote it).
                 if (ShipFamilyPartTypes.IsEngineLikeName(entry.componentId))
                 {
                     stats.turnSpeed = 0f;
-                    stats.turnSpeedPerLevel = 0f;
+                    stats.turnSpeedPerAbilityLevel = 0f;
                 }
 
                 entry.stats = stats;
@@ -675,52 +644,6 @@ namespace TitanOrbit.Data
 
                 if (!hasEnergy)
                     entry.statCategories.Add(ShipComponentStatCategory.Energy);
-            }
-        }
-
-        /// <summary>
-        /// Seeds <see cref="ShipComponentAbilityStats.thrustEnergyDrain"/> on engine-like and thruster-like
-        /// mounts from acceleration × <see cref="ThrustEnergyDrainPerAccelerationUnit"/>.
-        /// Analogous to weapon firePower as the “energy cost” knob — designers can lower drain for efficiency.
-        /// </summary>
-        /// <param name="components">Family component rows.</param>
-        /// <param name="overwriteExisting">
-        /// When false, skips parts that already have authored drain &gt; 0 (preserves designer tweaks).
-        /// When true (rebalance), rewrites from current accel.
-        /// </param>
-        public static void ApplyPropulsionThrustEnergyDrainSuggestionsForComponents(
-            List<ShipFamilyComponentEntry> components,
-            bool overwriteExisting = false)
-        {
-            if (components == null)
-                return;
-
-            for (int i = 0; i < components.Count; i++)
-            {
-                ShipFamilyComponentEntry entry = components[i];
-                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
-                    continue;
-                if (!ShipFamilyPartTypes.IsEngineLikeName(entry.componentId)
-                    && !ShipFamilyPartTypes.IsThrusterLikeName(entry.componentId))
-                    continue;
-                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(entry.componentId))
-                    continue;
-
-                ShipComponentAbilityStats stats = entry.stats;
-                if (!overwriteExisting && stats.thrustEnergyDrain > 0.0001f)
-                    continue;
-
-                // Prefer authored accel; else version suggestion.
-                float accel = stats.accelerationCap;
-                if (accel <= 0.0001f)
-                {
-                    int version = Mathf.Max(1, ShipFamilyPartCalcProfileSet.ExtractVersion(entry.componentId));
-                    accel = GetSuggestedPropulsionAccelerationCap(version);
-                }
-
-                stats.thrustEnergyDrain = Mathf.Max(0f, accel * ThrustEnergyDrainPerAccelerationUnit);
-                stats.thrustEnergyDrainPerLevel = stats.thrustEnergyDrain * PropulsionPerLevelFractionOfBase;
-                entry.stats = stats;
             }
         }
 
@@ -748,71 +671,13 @@ namespace TitanOrbit.Data
                 int version = Mathf.Max(1, ShipFamilyPartCalcProfileSet.ExtractVersion(entry.componentId));
                 ShipComponentAbilityStats stats = entry.stats;
                 stats.turnSpeed = ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(version);
-                stats.turnSpeedPerLevel = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(stats.turnSpeed);
+                stats.turnSpeedPerAbilityLevel = ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(stats.turnSpeed);
                 entry.stats = stats;
             }
         }
 
         /// <summary>
-        /// Sums authored <see cref="ShipComponentAbilityStats.thrustEnergyDrain"/> on engines + thrusters
-        /// at ship level into <c>ShipMotorConfig.ThrustEnergyDrainPerSecond</c>.
-        /// Parts with drain ≤ 0 fall back to accel × <see cref="ThrustEnergyDrainPerAccelerationUnit"/>.
-        /// When no propulsion parts contribute, falls back to a fraction of hull accel.
-        /// </summary>
-        /// <param name="family">Family definition with component rows.</param>
-        /// <param name="shipLevel">1-based ship level for *PerLevel growth.</param>
-        /// <param name="fallbackTotalAcceleration">Hull summed accel when no propulsion drain rows exist.</param>
-        public static float ComputeThrusterEnergyDrainPerSecond(
-            ShipFamilyDefinition family,
-            int shipLevel,
-            float fallbackTotalAcceleration)
-        {
-            float totalDrain = 0f;
-            bool anyPropulsion = false;
-
-            if (family?.components != null)
-            {
-                int levelsAfterFirst = Mathf.Max(0, shipLevel - 1);
-                for (int i = 0; i < family.components.Count; i++)
-                {
-                    ShipFamilyComponentEntry entry = family.components[i];
-                    if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
-                        continue;
-                    if (!ShipFamilyPartTypes.IsEngineLikeName(entry.componentId)
-                        && !ShipFamilyPartTypes.IsThrusterLikeName(entry.componentId))
-                        continue;
-                    if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(entry.componentId))
-                        continue;
-
-                    anyPropulsion = true;
-                    ShipComponentAbilityStats stats = entry.stats;
-                    float authored = stats.thrustEnergyDrain
-                        + stats.thrustEnergyDrainPerLevel * levelsAfterFirst;
-                    if (authored > 0.0001f)
-                    {
-                        totalDrain += authored;
-                        continue;
-                    }
-
-                    // Migration: old assets without thrustEnergyDrain — derive from accel.
-                    float accel = GetPropulsionAccelerationContribution(stats, levelsAfterFirst);
-                    totalDrain += Mathf.Max(0f, accel * ThrustEnergyDrainPerAccelerationUnit);
-                }
-            }
-
-            if (!anyPropulsion || totalDrain <= 0.0001f)
-            {
-                // No engine/thruster mounts: still tax a little from total accel so overdrive has a cost.
-                totalDrain = Mathf.Max(0f, fallbackTotalAcceleration)
-                    * 0.35f
-                    * ThrustEnergyDrainPerAccelerationUnit;
-            }
-
-            return Mathf.Max(0f, totalDrain);
-        }
-
-        /// <summary>
-        /// Seeds OVERDRIVE <c>extraSpeedPercent</c> / <c>extraSpeedEnergyPercent</c> on engine-like
+        /// Seeds OVERDRIVE <c>extraSpeedPercent</c> / <c>extraSpeedEnergyDrain</c> on engine-like
         /// mounts when unset (project defaults). Per-level stays 0 unless already authored.
         /// Thrusters never get these fields.
         /// </summary>
@@ -834,48 +699,62 @@ namespace TitanOrbit.Data
                     continue;
 
                 ShipComponentAbilityStats stats = entry.stats;
-                if (!overwriteExisting && stats.extraSpeedPercent > 0.0001f)
-                {
-                    // Still zero thruster-mistaken regen-style leftovers on PerLevel if needed — keep authored.
-                    entry.stats = stats;
-                    continue;
-                }
+                // Seed missing speed and/or drain independently so one authored field does not skip the other.
+                bool needsSpeed = overwriteExisting || stats.extraSpeedPercent <= 0.0001f;
+                bool needsDrain = overwriteExisting || stats.extraSpeedEnergyDrain <= 0.0001f;
+                bool needsDrainPerAbility = overwriteExisting || stats.extraSpeedEnergyDrainPerAbilityLevel <= 0.0001f;
 
-                stats.extraSpeedPercent = ShipFamilyOverdriveAbility.DefaultExtraSpeedPercent;
-                stats.extraSpeedEnergyPercent = ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyPercent;
-                // [TITAN-ORBIT] Per-level defaults to 0 — designers opt in later.
-                if (overwriteExisting || stats.extraSpeedPercentPerLevel < 0f)
-                    stats.extraSpeedPercentPerLevel = 0f;
-                if (overwriteExisting || stats.extraSpeedEnergyPercentPerLevel < 0f)
-                    stats.extraSpeedEnergyPercentPerLevel = 0f;
+                if (needsSpeed)
+                    stats.extraSpeedPercent = ShipFamilyOverdriveAbility.DefaultExtraSpeedPercent;
+                if (needsDrain)
+                    stats.extraSpeedEnergyDrain = ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyDrain;
+                // [TITAN-ORBIT] ExtraSpeedPercent ability step stays 0 unless designers opt in.
+                // ExtraSpeedEnergyDrain PerAbilityLevel matches moveSpeed's fraction (Move Speed HUD).
+                if (overwriteExisting || stats.extraSpeedPercentPerAbilityLevel < 0f)
+                    stats.extraSpeedPercentPerAbilityLevel = 0f;
+                if (needsDrainPerAbility)
+                {
+                    float drainBase = stats.extraSpeedEnergyDrain > 0.0001f
+                        ? stats.extraSpeedEnergyDrain
+                        : ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyDrain;
+                    stats.extraSpeedEnergyDrainPerAbilityLevel =
+                        drainBase * PropulsionPerLevelFractionOfBase;
+                }
                 entry.stats = stats;
             }
         }
 
         /// <summary>
-        /// Resolves OVERDRIVE speed/thrust/drain multipliers from <b>engine</b> component rows
-        /// (max ExtraSpeed / ExtraSpeedEnergy across engines at ship level), then × family Special Bonuses.
-        /// Falls back to ProfileSet / code defaults when no engine authors ExtraSpeedPercent.
-        /// <para>
-        /// Absolute OD energy/sec still scales with engine count via summed
-        /// <see cref="ComputeThrusterEnergyDrainPerSecond"/> — N engines ⇒ ~N× drain at the same mul.
-        /// </para>
+        /// Resolves OVERDRIVE speed/thrust multipliers and absolute energy drain/sec from <b>engine</b>
+        /// component rows at ship level, then × family Special Bonuses.
+        /// <list type="bullet">
+        /// <item>Speed/thrust mul = 1 + max(ExtraSpeedPercent × ship-tier growth) across engines</item>
+        /// <item>Drain/sec = sum of ExtraSpeedEnergyDrain × ship-tier growth (family fraction, default 10%)</item>
+        /// </list>
+        /// Falls back to code defaults when no engine authors OVERDRIVE fields.
         /// </summary>
-        public static void ResolveOverdriveMultipliersFromEngines(
+        public static void ResolveOverdriveFromEngines(
             ShipFamilyDefinition family,
             int shipLevel,
             in ShipFamilySpecialBonuses bonuses,
             out float speedMultiplier,
             out float thrustMultiplier,
-            out float energyDrainMultiplier)
+            out float energyDrainPerSecond)
         {
             float maxEsp = 0f;
-            float maxEsep = 0f;
+            float totalDrain = 0f;
             bool anyEngineOd = false;
+
+            float speedFamilyMul = bonuses.extraSpeedPercentMul > 0.0001f ? bonuses.extraSpeedPercentMul : 1f;
+            float energyFamilyMul = bonuses.extraSpeedEnergyDrainMul > 0.0001f
+                ? bonuses.extraSpeedEnergyDrainMul
+                : 1f;
 
             if (family?.components != null)
             {
                 int levelsAfterFirst = Mathf.Max(0, shipLevel - 1);
+                float growth = family.ResolveShipLevelStatGrowthFraction();
+                float tierMul = 1f + levelsAfterFirst * growth;
                 for (int i = 0; i < family.components.Count; i++)
                 {
                     ShipFamilyComponentEntry entry = family.components[i];
@@ -887,38 +766,56 @@ namespace TitanOrbit.Data
                         continue;
 
                     ShipComponentAbilityStats stats = entry.stats;
-                    float esp = stats.extraSpeedPercent + stats.extraSpeedPercentPerLevel * levelsAfterFirst;
-                    float esep = stats.extraSpeedEnergyPercent
-                        + stats.extraSpeedEnergyPercentPerLevel * levelsAfterFirst;
-                    if (esp <= 0.0001f && esep <= 0.0001f)
+                    // [TITAN-ORBIT] Ship-tier growth uses family fraction — not *PerAbilityLevel.
+                    float esp = stats.extraSpeedPercent * tierMul;
+                    float drain = stats.extraSpeedEnergyDrain * tierMul;
+                    if (esp <= 0.0001f && drain <= 0.0001f)
                         continue;
 
                     anyEngineOd = true;
                     if (esp > maxEsp) maxEsp = esp;
-                    if (esep > maxEsep) maxEsep = esep;
+
+                    // [TITAN-ORBIT] Absolute OD drain from this engine — use ExtraSpeedEnergyDrain as-is.
+                    float engineDrain = drain > 0.0001f
+                        ? drain
+                        : ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyDrain;
+                    totalDrain += Mathf.Max(0f, engineDrain * energyFamilyMul);
                 }
             }
 
-            ShipFamilyOverdriveAbility ability;
-            if (anyEngineOd)
+            if (!anyEngineOd)
             {
-                if (maxEsp <= 0.0001f)
-                    maxEsp = ShipFamilyOverdriveAbility.DefaultExtraSpeedPercent;
-                if (maxEsep <= 0.0001f)
-                    maxEsep = ShipFamilyOverdriveAbility.DefaultExtraSpeedEnergyPercent;
-                ability = new ShipFamilyOverdriveAbility
-                {
-                    extraSpeedPercent = maxEsp,
-                    extraSpeedEnergyPercent = maxEsep,
-                };
-            }
-            else
-            {
-                // Legacy / thruster-only hulls — ProfileSet block or code defaults.
-                ability = ShipFamilyPartCalcProfileSet.ResolveOverdriveAbility();
+                ShipFamilyOverdriveAbility ability = ShipFamilyOverdriveAbility.Default.Resolved();
+                bonuses.ResolveOverdrive(
+                    ability, out speedMultiplier, out thrustMultiplier, out energyDrainPerSecond);
+                return;
             }
 
-            bonuses.ResolveOverdrive(ability, out speedMultiplier, out thrustMultiplier, out energyDrainMultiplier);
+            if (maxEsp <= 0.0001f)
+                maxEsp = ShipFamilyOverdriveAbility.DefaultExtraSpeedPercent;
+
+            float maxSpeedFraction = Mathf.Max(0f, maxEsp * speedFamilyMul);
+            speedMultiplier = 1f + maxSpeedFraction;
+            thrustMultiplier = speedMultiplier;
+            energyDrainPerSecond = Mathf.Max(0f, totalDrain);
+        }
+
+        /// <summary>[LEGACY name] Prefer <see cref="ResolveOverdriveFromEngines"/> — third out is absolute drain/sec.</summary>
+        public static void ResolveOverdriveMultipliersFromEngines(
+            ShipFamilyDefinition family,
+            int shipLevel,
+            in ShipFamilySpecialBonuses bonuses,
+            out float speedMultiplier,
+            out float thrustMultiplier,
+            out float energyDrainPerSecond)
+        {
+            ResolveOverdriveFromEngines(
+                family,
+                shipLevel,
+                bonuses,
+                out speedMultiplier,
+                out thrustMultiplier,
+                out energyDrainPerSecond);
         }
     }
 }

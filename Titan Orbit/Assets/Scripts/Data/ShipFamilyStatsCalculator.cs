@@ -39,7 +39,10 @@ namespace TitanOrbit.Data
             if (ShipComponentAbilityStatsMath.IsAllZero(sum.TotalStats))
                 return false;
 
-            effectiveAtLevel = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(sum.TotalStats, shipLevel);
+            effectiveAtLevel = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
+                sum.TotalStats,
+                shipLevel,
+                family.ResolveShipLevelStatGrowthFraction());
             return true;
         }
 
@@ -125,7 +128,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Appends moon-store-purchased components onto a prefab sum, then re-runs shared aggregation.
-        /// Propulsion parts use max primary + half moveSpeedPerLevel for extras (not naive full-speed add).
+        /// Propulsion parts use max primary + half moveSpeedPerAbilityLevel for extras (not naive full-speed add).
         /// </summary>
         public static SumResult AppendExtraComponentsAndAggregate(
             SumResult prefabSum,

@@ -85,7 +85,7 @@ namespace TitanOrbit.ECS.Authoring
                     ThrustEnergyDrainPerSecond = 0f,
                     OverdriveSpeedMultiplier = ShipOverdriveTuning.SpeedMultiplier,
                     OverdriveThrustMultiplier = ShipOverdriveTuning.ThrustMultiplier,
-                    OverdriveEnergyDrainMultiplier = ShipOverdriveTuning.EnergyDrainMultiplier,
+                    OverdriveEnergyDrainMultiplier = 1f,
                 });
                 // [TITAN-ORBIT] Pre-physics velocity snapshot for mass-aware bounce (not ghosted —
                 // local predicted / server sim only; rewritten every fixed step).
@@ -274,11 +274,11 @@ namespace TitanOrbit.ECS.Authoring
                     {
                         LocalPosition = localPos,
                         TractorBeamDistance = wing.tractorBeamDistance,
-                        TractorBeamDistancePerLevel = wing.tractorBeamDistancePerLevel,
+                        TractorBeamDistancePerLevel = wing.tractorBeamDistancePerAbilityLevel,
                         TractorBeamPower = wing.tractorBeamPower,
-                        TractorBeamPowerPerLevel = wing.tractorBeamPowerPerLevel,
+                        TractorBeamPowerPerLevel = wing.tractorBeamPowerPerAbilityLevel,
                         MaxGems = wing.maxGems,
-                        MaxGemsPerLevel = wing.maxGemsPerLevel,
+                        MaxGemsPerLevel = wing.maxGemsPerAbilityLevel,
                     });
                 }
 

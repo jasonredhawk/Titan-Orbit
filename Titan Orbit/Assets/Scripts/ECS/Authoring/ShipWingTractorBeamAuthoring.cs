@@ -19,18 +19,18 @@ namespace TitanOrbit.ECS.Authoring
         public float tractorBeamDistance = 3f;
 
         /// <summary>[TITAN-ORBIT] Additional search radius per ship level above 1.</summary>
-        public float tractorBeamDistancePerLevel = 0.75f;
+        public float tractorBeamDistancePerAbilityLevel = 0.75f;
 
         /// <summary>[TITAN-ORBIT] Base gem pull speed at ship level 1.</summary>
         public float tractorBeamPower = 4f;
 
         /// <summary>[TITAN-ORBIT] Additional pull speed per ship level above 1.</summary>
-        public float tractorBeamPowerPerLevel = 1f;
+        public float tractorBeamPowerPerAbilityLevel = 1f;
 
         /// <summary>[TITAN-ORBIT] Base max gems this wing holds at ship level 1.</summary>
         public float maxGems = 8f;
 
         /// <summary>[TITAN-ORBIT] Additional gem capacity per ship level above 1.</summary>
-        public float maxGemsPerLevel = 2f;
+        public float maxGemsPerAbilityLevel = 2f;
     }
 }

@@ -20,38 +20,38 @@ namespace TitanOrbit.Data
             return new ShipComponentAbilityStats
             {
                 firePower = 3f,
-                firePowerPerLevel = 0.75f,
+                firePowerPerAbilityLevel = 0.75f,
                 bulletSpeed = 12f,
-                bulletSpeedPerLevel = 3f,
+                bulletSpeedPerAbilityLevel = 3f,
                 // [TITAN-ORBIT] Matches ShipWeaponConfig.DefaultBulletMaxDistance; +25%/level like most offense stats.
                 bulletRange = 30f,
-                bulletRangePerLevel = 7.5f,
+                bulletRangePerAbilityLevel = 7.5f,
                 fireRate = 3f,
-                fireRatePerLevel = 0f,
+                fireRatePerAbilityLevel = 0f,
                 rammingPower = 1f,
-                rammingPowerPerLevel = 0.25f,
+                rammingPowerPerAbilityLevel = 0.25f,
                 healthCap = 6.3f,
-                healthCapPerLevel = 1.575f,
+                healthCapPerAbilityLevel = 1.575f,
                 healthRegen = 0.225f,
-                healthRegenPerLevel = 0.05625f,
+                healthRegenPerAbilityLevel = 0.05625f,
                 energyCap = 18f,
-                energyCapPerLevel = 4.5f,
+                energyCapPerAbilityLevel = 4.5f,
                 energyRegen = 3f,
-                energyRegenPerLevel = 0.75f,
+                energyRegenPerAbilityLevel = 0.75f,
                 moveSpeed = 9f,
-                moveSpeedPerLevel = 1.8f,
+                moveSpeedPerAbilityLevel = 1.8f,
                 accelerationCap = 2.4f,
-                accelerationCapPerLevel = 0.6f,
+                accelerationCapPerAbilityLevel = 0.6f,
                 turnSpeed = 14f,
-                turnSpeedPerLevel = 3.5f,
+                turnSpeedPerAbilityLevel = 3.5f,
                 maxGems = 8f,
-                maxGemsPerLevel = 2f,
+                maxGemsPerAbilityLevel = 2f,
                 tractorBeamDistance = 3f,
-                tractorBeamDistancePerLevel = 0.75f,
+                tractorBeamDistancePerAbilityLevel = 0.75f,
                 tractorBeamPower = 4f,
-                tractorBeamPowerPerLevel = 1f,
+                tractorBeamPowerPerAbilityLevel = 1f,
                 maxPeople = 2f,
-                maxPeoplePerLevel = 0f,
+                maxPeoplePerAbilityLevel = 0f,
             };
         }
     }
@@ -73,6 +73,25 @@ namespace TitanOrbit.Data
         static readonly Regex PropulsionIdCompactFormRegex = new Regex(@"^(Engine|Thruster)(\d+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         public string familyId;
+
+        [Header("Ship Tier Growth")]
+        [Tooltip(
+            "Per ship level above 1, each chassis base stat grows by this fraction of its level-1 value " +
+            "(0.10 = +10% of base per ship level). Applies in GetEffectiveStatsAtShipLevel. " +
+            "Component *PerAbilityLevel fields are for bottom-HUD ability upgrades, not ship tier.")]
+        [Min(0f)]
+        public float shipLevelStatGrowthFraction = DefaultShipLevelStatGrowthFraction;
+
+        /// <summary>Default +10% of base per ship level above 1 (family-tunable).</summary>
+        public const float DefaultShipLevelStatGrowthFraction = 0.10f;
+
+        /// <summary>
+        /// Resolves this family's ship-tier growth fraction (falls back to default when unset / negative).
+        /// </summary>
+        public float ResolveShipLevelStatGrowthFraction() =>
+            shipLevelStatGrowthFraction > 0.0001f
+                ? shipLevelStatGrowthFraction
+                : DefaultShipLevelStatGrowthFraction;
 
         [Header("Default Stat Fallbacks")]
         public ShipComponentAbilityStats defaultFallbackStats;

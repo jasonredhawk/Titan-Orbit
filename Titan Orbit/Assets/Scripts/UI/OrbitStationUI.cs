@@ -193,7 +193,7 @@ namespace TitanOrbit.UI
         private GridLayoutGroup _moonDockStoreGrid;
         private string _moonDockStoreBuiltForFamilyKey;
         private int _moonDockEquipmentCardLayoutVersionBuilt = -1;
-        private const int MoonDockEquipmentCardLayoutVersion = 3;
+        private const int MoonDockEquipmentCardLayoutVersion = 4;
 
         private sealed class MoonDockStoreCardBinding
         {
@@ -264,16 +264,16 @@ namespace TitanOrbit.UI
         private bool _upgradeCardSlotRichLayoutActive;
         private bool _upgradeSpinRowUsesTallLayout;
 
-        private const int MoonDockStoreTilesPerRow = 7;
-        private const float MoonDockStoreTileSpacing = 6f;
-        private const float MoonDockStoreTileMinWidth = 72f;
+        private const int MoonDockStoreTilesPerRow = 4;
+        private const float MoonDockStoreTileSpacing = 8f;
+        private const float MoonDockStoreTileMinWidth = 140f;
         private const float MoonDockStoreCardHeight = 118f;
-        private const float MoonDockEquipmentCardHeight = 324f;
-        private const float MoonDockEquipmentIconHeight = 136f;
-        private const float MoonDockEquipmentIconMinHeight = 104f;
-        private const float MoonDockEquipmentAbilityFontSize = 11f;
-        private const float MoonDockEquipmentAbilityAreaHeight = 80f;
-        private const float MoonDockEquipmentStatsFooterHeight = 112f;
+        private const float MoonDockEquipmentCardHeight = 380f;
+        private const float MoonDockEquipmentIconHeight = 72f;
+        private const float MoonDockEquipmentIconMinHeight = 56f;
+        private const float MoonDockEquipmentAbilityFontSize = 9.5f;
+        private const float MoonDockEquipmentAbilityAreaHeight = 168f;
+        private const float MoonDockEquipmentStatsFooterHeight = 200f;
         private const float MoonDockEquipmentPowerBarHeight = 8f;
         private const float MoonDockEquipmentPowerBarPairGap = 2f;
         private const float MoonDockEquipmentScrollMinHeight = 200f;
@@ -3995,54 +3995,10 @@ namespace TitanOrbit.UI
             return $"Lv {level} · PWR {power:F0}";
         }
 
-        private static string BuildMoonDockComponentStatRichText(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family, int maxLines = 8)
+        private static string BuildMoonDockComponentStatRichText(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family, int maxLines = 14)
         {
-            if (entry == null)
-                return string.Empty;
-
-            ShipFamilyPowerScoreBreakdown breakdown = ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, family);
-            ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsForDisplay(entry, shipLevel, family);
-            string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(entry.componentId);
-            var sb = new StringBuilder(128);
-            int count = 0;
-            for (int i = 0; i < ShipFamilyPowerScoreBreakdown.DisplayStatCount; i++)
-            {
-                float value = breakdown.GetDisplayStatValue(i);
-                if (Mathf.Abs(value) < 0.05f)
-                    continue;
-                if (count >= maxLines)
-                    break;
-
-                AppendMoonDockComponentStatLine(sb, ref count, maxLines, value, ShipAbilityCategoryColors.PowerBreakdownStatFullLabels[i], i);
-            }
-
-            if (partType == "Weapon")
-                AppendMoonDockComponentStatLine(sb, ref count, maxLines, effective.fireRate, "Fire Rate", 1);
-            AppendMoonDockComponentStatLine(sb, ref count, maxLines, effective.rammingPower, "Ramming Power", 0);
-
-            return count == 0 ? "<color=#888888>—</color>" : sb.ToString();
-        }
-
-        private static void AppendMoonDockComponentStatLine(
-            StringBuilder sb,
-            ref int count,
-            int maxLines,
-            float value,
-            string label,
-            int colorStatIndex)
-        {
-            if (count >= maxLines || Mathf.Abs(value) < 0.05f)
-                return;
-
-            if (count > 0)
-                sb.Append('\n');
-
-            Color statColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColor(colorStatIndex);
-            sb.Append("<color=#").Append(ColorUtility.ToHtmlStringRGB(statColor)).Append('>');
-            sb.Append('+').Append(FormatMoonDockComponentStatValue(value)).Append(' ');
-            sb.Append(label);
-            sb.Append("</color>");
-            count++;
+            // [TITAN-ORBIT] Ability list with base vs cumulative propulsion gains (ShipComponentStoreData).
+            return ShipComponentStoreData.BuildAbilityDescriptionRichText(entry, shipLevel, family, maxLines);
         }
 
         private static void ApplyEquipmentCardAbilityDescription(
@@ -4067,13 +4023,6 @@ namespace TitanOrbit.UI
                 if (layoutRoot is RectTransform parentRt)
                     LayoutRebuilder.ForceRebuildLayoutImmediate(parentRt);
             }
-        }
-
-        private static string FormatMoonDockComponentStatValue(float value)
-        {
-            if (Mathf.Abs(value - Mathf.Round(value)) < 0.05f)
-                return Mathf.RoundToInt(value).ToString();
-            return value.ToString("0.#");
         }
 
         private float GetMoonDockComponentMaxDisplayPower(ShipFamilyDefinition family, int shipLevel)
@@ -4203,7 +4152,7 @@ namespace TitanOrbit.UI
             glyphRt.offsetMin = Vector2.zero;
             glyphRt.offsetMax = Vector2.zero;
             iconGlyphText = glyphGo.AddComponent<TextMeshProUGUI>();
-            iconGlyphText.fontSize = componentStatLayout ? 42f : 22f;
+            iconGlyphText.fontSize = componentStatLayout ? 28f : 22f;
             iconGlyphText.alignment = TextAlignmentOptions.Center;
             iconGlyphText.color = new Color(1f, 1f, 1f, 0.95f);
             iconGlyphText.raycastTarget = false;
@@ -4254,7 +4203,7 @@ namespace TitanOrbit.UI
             descriptionText.enableWordWrapping = true;
             descriptionText.richText = componentStatLayout;
             descriptionText.overflowMode = componentStatLayout ? TextOverflowModes.Overflow : TextOverflowModes.Ellipsis;
-            descriptionText.maxVisibleLines = componentStatLayout ? 8 : 4;
+            descriptionText.maxVisibleLines = componentStatLayout ? 16 : 4;
             descriptionText.raycastTarget = false;
             if (fontAsset != null) descriptionText.font = fontAsset;
 

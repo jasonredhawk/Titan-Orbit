@@ -159,35 +159,36 @@ namespace TitanOrbit.Editor
             if (statsProp == null)
                 return;
 
-            TryFillPair(statsProp, "firePower", "firePowerPerLevel", frac);
-            TryFillPair(statsProp, "bulletSpeed", "bulletSpeedPerLevel", frac);
-            TryFillPair(statsProp, "bulletRange", "bulletRangePerLevel", frac);
-            // Weapons keep fireRate flat (EvaluateAtVersion zeroes fireRatePerLevel).
+            TryFillPair(statsProp, "firePower", "firePowerPerAbilityLevel", frac);
+            TryFillPair(statsProp, "bulletSpeed", "bulletSpeedPerAbilityLevel", frac);
+            TryFillPair(statsProp, "bulletRange", "bulletRangePerAbilityLevel", frac);
+            // Weapons keep fireRate flat (EvaluateAtVersion zeroes fireRatePerAbilityLevel).
             if (!ShipFamilyPartTypes.IsWeapon(partType))
-                TryFillPair(statsProp, "fireRate", "fireRatePerLevel", frac);
+                TryFillPair(statsProp, "fireRate", "fireRatePerAbilityLevel", frac);
             else
             {
-                SerializedProperty fireRatePerLevel = statsProp.FindPropertyRelative("fireRatePerLevel");
-                if (fireRatePerLevel != null)
-                    fireRatePerLevel.floatValue = 0f;
+                SerializedProperty fireRatePerAbilityLevel = statsProp.FindPropertyRelative("fireRatePerAbilityLevel");
+                if (fireRatePerAbilityLevel != null)
+                    fireRatePerAbilityLevel.floatValue = 0f;
             }
 
-            TryFillPair(statsProp, "rammingPower", "rammingPowerPerLevel", frac);
-            TryFillPair(statsProp, "healthCap", "healthCapPerLevel", frac);
-            TryFillPair(statsProp, "healthRegen", "healthRegenPerLevel", frac);
-            TryFillPair(statsProp, "energyCap", "energyCapPerLevel", frac);
-            TryFillPair(statsProp, "energyRegen", "energyRegenPerLevel", frac);
-            TryFillPair(statsProp, "moveSpeed", "moveSpeedPerLevel", frac);
-            TryFillPair(statsProp, "accelerationCap", "accelerationCapPerLevel", frac);
-            TryFillPair(statsProp, "thrustEnergyDrain", "thrustEnergyDrainPerLevel", frac);
-            // [TITAN-ORBIT] OVERDRIVE ExtraSpeed*PerLevel stays 0 unless designers type a value.
-            TryFillPair(statsProp, "turnSpeed", "turnSpeedPerLevel", frac);
-            TryFillPair(statsProp, "maxGems", "maxGemsPerLevel", frac);
-            TryFillPair(statsProp, "tractorBeamDistance", "tractorBeamDistancePerLevel", frac);
-            TryFillPair(statsProp, "tractorBeamPower", "tractorBeamPowerPerLevel", frac);
+            TryFillPair(statsProp, "rammingPower", "rammingPowerPerAbilityLevel", frac);
+            TryFillPair(statsProp, "healthCap", "healthCapPerAbilityLevel", frac);
+            TryFillPair(statsProp, "healthRegen", "healthRegenPerAbilityLevel", frac);
+            TryFillPair(statsProp, "energyCap", "energyCapPerAbilityLevel", frac);
+            TryFillPair(statsProp, "energyRegen", "energyRegenPerAbilityLevel", frac);
+            TryFillPair(statsProp, "moveSpeed", "moveSpeedPerAbilityLevel", frac);
+            TryFillPair(statsProp, "accelerationCap", "accelerationCapPerAbilityLevel", frac);
+            // [TITAN-ORBIT] ExtraSpeedPercent ability step stays 0 unless designers type a value.
+            // ExtraSpeedEnergyDrain PerAbilityLevel matches moveSpeed's fraction of base (Move Speed HUD).
+            TryFillPair(statsProp, "extraSpeedEnergyDrain", "extraSpeedEnergyDrainPerAbilityLevel", frac);
+            TryFillPair(statsProp, "turnSpeed", "turnSpeedPerAbilityLevel", frac);
+            TryFillPair(statsProp, "maxGems", "maxGemsPerAbilityLevel", frac);
+            TryFillPair(statsProp, "tractorBeamDistance", "tractorBeamDistancePerAbilityLevel", frac);
+            TryFillPair(statsProp, "tractorBeamPower", "tractorBeamPowerPerAbilityLevel", frac);
 
             // Same float multiply as FillPerLevelIfZero — no integer rounding.
-            TryFillPair(statsProp, "maxPeople", "maxPeoplePerLevel", frac);
+            TryFillPair(statsProp, "maxPeople", "maxPeoplePerAbilityLevel", frac);
         }
 
         static void TryFillPair(SerializedProperty statsProp, string baseName, string perLevelName, float frac)
