@@ -3,6 +3,7 @@ using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Shared;
+using TitanOrbit.Simulation;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -19,8 +20,11 @@ namespace TitanOrbit.UI
     /// Most abilities are +10% per purchase; Move Speed adds one chassis PerAbilityLevel step
     /// (move + accel + OD drain together) — see ShipAttributeUpgradeLogic.
     /// <para>
-    /// [TITAN-ORBIT] Quick-stat chips sit above each button (value + next step + Lv). Hover opens
-    /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> (parts → stack → tier → ability).
+    /// [TITAN-ORBIT] Optional quick-stat chips above each button show <b>current</b> and
+    /// <c>+per-buy</c> (toggle via a small STATS control). Bottom buttons keep name + gem cost
+    /// and paint three purchase states: Ready (affordable), Locked (not enough gems), Maxed.
+    /// Both rows share dark-glass + category-accent chrome (space-gamer HUD). Chip hover opens
+    /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> when the STATS row is on.
     /// </para>
     /// Strip layout: recomputed only when screen / canvas / minimap size changes; positions are
     /// snapped to whole canvas units so windowed (non-1:1) views do not shimmer.
@@ -54,8 +58,8 @@ namespace TitanOrbit.UI
         [SerializeField] private float barHeight = 68f;
         [SerializeField] private float buttonWidth = 136f;
         [SerializeField] private float buttonSpacing = 10f;
-        [Tooltip("Height of the quick-stat chip band above each ability button.")]
-        [SerializeField] private float chipBandHeight = 44f;
+        [Tooltip("Height of the quick-stat chip band (value + +per-buy only — no title line).")]
+        [SerializeField] private float chipBandHeight = 34f;
         [Header("Mobile / touch")]
         [Tooltip("Multiplies bar height, button width, fonts, ticks, and padding on phones/tablets so the bottom upgrade strip is easier to read and tap.")]
         [SerializeField] private float mobileHudScale = 1.48f;
@@ -70,16 +74,57 @@ namespace TitanOrbit.UI
         [Tooltip("Uniform font size for all ability titles (scaled on mobile with the upgrade bar).")]
         [SerializeField, FormerlySerializedAs("titleFontSizeMax")] private float titleFontSize = 12f;
 
-        [Header("Visual Styling")]
-        [SerializeField] private Color buttonFrameColor = new Color(0.95f, 0.98f, 1f, 0.42f);
-        [SerializeField] private Color buttonInnerShadeColor = new Color(0f, 0f, 0f, 0.22f);
-        [SerializeField] private Color buttonAccentColor = new Color(0.75f, 0.88f, 1f, 0.28f);
-        [SerializeField] private Color buttonShadowColor = new Color(0f, 0f, 0f, 0.45f);
+        [Header("STATS row toggle")]
+        [Tooltip("When on, the top value/+per-buy chips and their hover tips are available.")]
+        [SerializeField] private bool statsChipsVisible = true;
+        [Tooltip("Width of the small STATS toggle control (logical pixels before scale).")]
+        [SerializeField] private float statsToggleWidth = 58f;
+        [Tooltip("Height of the small STATS toggle control (logical pixels before scale).")]
+        [SerializeField] private float statsToggleHeight = 18f;
 
-        [Header("Cost icon (assign in Inspector)")]
-        [Tooltip("Shown next to the gem cost number on each upgrade slot. Leave empty until you have a sprite.")]
+        [Header("Visual Styling — dark glass HUD")]
+        [Tooltip("Near-black void glass fill shared by top chips and bottom upgrade buttons.")]
+        [SerializeField] private Color glassFillColor = new Color(0.04f, 0.06f, 0.09f, 0.92f);
+        [Tooltip("How much category colour bleeds into the glass fill when READY (0 = pure void, 1 = full flood).")]
+        [SerializeField, Range(0f, 0.45f)] private float categoryFillBlend = 0.16f;
+        [Tooltip("Subtle inner shade on bottom buttons (kept very dark).")]
+        [SerializeField] private Color buttonInnerShadeColor = new Color(0f, 0f, 0f, 0.28f);
+
+        [Header("Upgrade button states")]
+        [Tooltip("Title / body text when the slot can be purchased (enough gems).")]
+        [SerializeField] private Color readyTitleColor = new Color(0.88f, 0.92f, 0.98f, 1f);
+        [Tooltip("Fill darken + desaturate when LOCKED (not enough gems). Higher = flatter / greyer.")]
+        [SerializeField, Range(0f, 1f)] private float lockedDim = 0.55f;
+        [Tooltip("Cost digits when LOCKED — amber “can’t afford” signal.")]
+        [SerializeField] private Color lockedCostColor = new Color(0.72f, 0.55f, 0.35f, 0.85f);
+        [Tooltip("Gold chrome when the ability is fully MAXED for this ship level.")]
+        [SerializeField] private Color maxedAccentColor = new Color(0.95f, 0.82f, 0.35f, 0.95f);
+        [Tooltip("Title tint when MAXED.")]
+        [SerializeField] private Color maxedTitleColor = new Color(0.95f, 0.88f, 0.55f, 1f);
+        [Tooltip("MAX label colour.")]
+        [SerializeField] private Color maxedCostColor = new Color(1f, 0.9f, 0.45f, 1f);
+
+        [Header("Cost icon")]
+        [Tooltip("Shown next to the gem cost on each bottom upgrade slot. If empty, falls back to WorldStatLabelIcons.Gem.")]
         [SerializeField] private Sprite gemCostIconSprite;
-        [SerializeField] private float gemIconSize = 14f;
+        [SerializeField] private float gemIconSize = 11f;
+        /// <summary>
+        /// Off-white tint for gem icon + cost digits when READY. Not moon-label red.
+        /// </summary>
+        [SerializeField] private Color gemCostIconColor = new Color(0.9f, 0.92f, 0.95f, 1f);
+
+        const string StatsChipsPrefsKey = "TitanOrbit.AbilityStatsChipsVisible";
+
+        /// <summary>
+        /// Purchase affordance for one bottom upgrade slot.
+        /// Ready = can buy; Locked = room to level but not enough gems; Maxed = at ship-level cap.
+        /// </summary>
+        enum UpgradeSlotVisualState
+        {
+            Ready = 0,
+            Locked = 1,
+            Maxed = 2
+        }
 
         private static readonly string[] Titles =
         {
@@ -101,9 +146,19 @@ namespace TitanOrbit.UI
         private TextMeshProUGUI[] titleTexts = new TextMeshProUGUI[10];
         private GameObject[] tickContainers = new GameObject[10];
         private Image[] buttonImages = new Image[10];
+        private Outline[] buttonOutlines = new Outline[10];
+        private Image[] buttonAccentRails = new Image[10];
+        private Color[] buttonCategoryColors = new Color[10];
         private TextMeshProUGUI[] keyLabels = new TextMeshProUGUI[10];
         private TextMeshProUGUI[] costLabels = new TextMeshProUGUI[10];
         private Image[] costGemIcons = new Image[10];
+        private readonly UpgradeSlotVisualState[] _lastSlotVisualState =
+        {
+            (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1),
+            (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1),
+            (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1),
+            (UpgradeSlotVisualState)(-1)
+        };
 
         // --- Quick-stat chips above each ability button ---
         private RectTransform[] _chipRects = new RectTransform[10];
@@ -120,6 +175,12 @@ namespace TitanOrbit.UI
         private ShipSpeedometerHUD _cachedSpeedometer;
         private bool _triedSpeedometerLookup;
         private float _lastChipBandH = -1f;
+        private bool _lastStatsChipsVisible = true;
+
+        // --- STATS toggle (shows/hides chip row + hover tips) ---
+        private RectTransform _statsToggleRect;
+        private TextMeshProUGUI _statsToggleLabel;
+        private Image _statsToggleBg;
 
         private float _layoutScale = 1f;
         private float _elementScale = 1f;
@@ -138,7 +199,6 @@ namespace TitanOrbit.UI
         private int _lastMaxUpgrades = -1;
         private int _lastCost = -1;
         private readonly string[] _lastCostText = new string[10];
-        private readonly bool[] _lastInteractable = new bool[10];
         private bool _slotVisualsSeeded;
 
         /// <summary>Cached minimap rect so layout dirty-checks do not FindFirstObjectByType every frame.</summary>
@@ -415,6 +475,7 @@ namespace TitanOrbit.UI
 
             // Skip writes when snapped metrics match last apply — no per-frame position chase.
             float chipH = SnapUi(S(chipBandHeight));
+            bool chipsOn = statsChipsVisible;
             bool metricsUnchanged =
                 !force &&
                 NearlyEqual(availableWidth, _lastLayoutWidth) &&
@@ -423,7 +484,8 @@ namespace TitanOrbit.UI
                 NearlyEqual(barH, _lastBarH) &&
                 NearlyEqual(buttonW, _lastButtonW) &&
                 NearlyEqual(spacing, _lastSpacing) &&
-                NearlyEqual(chipH, _lastChipBandH);
+                NearlyEqual(chipH, _lastChipBandH) &&
+                chipsOn == _lastStatsChipsVisible;
             if (metricsUnchanged)
                 return;
 
@@ -434,13 +496,31 @@ namespace TitanOrbit.UI
             _lastButtonW = buttonW;
             _lastSpacing = spacing;
             _lastChipBandH = chipH;
+            _lastStatsChipsVisible = chipsOn;
 
-            // [TITAN-ORBIT] Strip = chip band on top + ability buttons below.
+            // [TITAN-ORBIT] Strip = optional chip band + ability buttons. STATS toggle sits top-left.
             float gap = SnapUi(E(4f));
             float buttonH = SnapUi(barH - E(6f));
-            float totalH = SnapUi(buttonH + gap + chipH);
+            float toggleH = SnapUi(S(statsToggleHeight));
+            float chipBand = chipsOn ? chipH : 0f;
+            float chipGap = chipsOn ? gap : 0f;
+            // Toggle always peeks above the button row (and above chips when they are on).
+            float totalH = SnapUi(buttonH + chipGap + chipBand + gap + toggleH);
             _stripRootRect.anchoredPosition = new Vector2(insetL, insetB);
             _stripRootRect.sizeDelta = new Vector2(availableWidth, totalH);
+
+            float toggleW = SnapUi(S(statsToggleWidth));
+            if (_statsToggleRect != null)
+            {
+                _statsToggleRect.anchorMin = new Vector2(0f, 0f);
+                _statsToggleRect.anchorMax = new Vector2(0f, 0f);
+                _statsToggleRect.pivot = new Vector2(0f, 0f);
+                _statsToggleRect.anchoredPosition = new Vector2(0f, buttonH + chipGap + chipBand + gap);
+                _statsToggleRect.sizeDelta = new Vector2(toggleW, toggleH);
+            }
+
+            if (_statsToggleLabel != null)
+                _statsToggleLabel.fontSize = F(10f);
 
             for (int i = 0; i < 10; i++)
             {
@@ -457,11 +537,17 @@ namespace TitanOrbit.UI
 
                 if (_chipRects[i] != null)
                 {
-                    _chipRects[i].anchorMin = new Vector2(0f, 0f);
-                    _chipRects[i].anchorMax = new Vector2(0f, 0f);
-                    _chipRects[i].pivot = new Vector2(0f, 0f);
-                    _chipRects[i].anchoredPosition = new Vector2(x, buttonH + gap);
-                    _chipRects[i].sizeDelta = new Vector2(buttonW, chipH);
+                    bool showChip = chipsOn;
+                    if (_chipRects[i].gameObject.activeSelf != showChip)
+                        _chipRects[i].gameObject.SetActive(showChip);
+                    if (showChip)
+                    {
+                        _chipRects[i].anchorMin = new Vector2(0f, 0f);
+                        _chipRects[i].anchorMax = new Vector2(0f, 0f);
+                        _chipRects[i].pivot = new Vector2(0f, 0f);
+                        _chipRects[i].anchoredPosition = new Vector2(x, buttonH + gap);
+                        _chipRects[i].sizeDelta = new Vector2(buttonW, chipH);
+                    }
                 }
 
                 if (titleTexts[i] != null)
@@ -471,8 +557,10 @@ namespace TitanOrbit.UI
                 if (costLabels[i] != null)
                     costLabels[i].fontSize = F(11f);
                 if (_chipValueTexts[i] != null)
-                    _chipValueTexts[i].fontSize = F(11f);
+                    _chipValueTexts[i].fontSize = F(12f);
             }
+
+            RefreshStatsToggleVisual();
         }
 
         private void OnValidate()
@@ -512,7 +600,13 @@ namespace TitanOrbit.UI
             bgImage.raycastTarget = false;
             rootPanel.SetActive(false);
 
+            // Restore last STATS-row choice (default on for first-time players).
+            if (PlayerPrefs.HasKey(StatsChipsPrefsKey))
+                statsChipsVisible = PlayerPrefs.GetInt(StatsChipsPrefsKey, 1) != 0;
+
             string[] keyStrings = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" };
+
+            CreateStatsToggle(rootPanel.transform);
 
             for (int i = 0; i < 10; i++)
             {
@@ -522,10 +616,14 @@ namespace TitanOrbit.UI
                 titleTexts[i] = btn.titleText;
                 tickContainers[i] = btn.tickContainer;
                 buttonImages[i] = btn.bgImage;
+                buttonOutlines[i] = btn.outline;
+                buttonAccentRails[i] = btn.accentRail;
+                buttonCategoryColors[i] = statColor;
                 keyLabels[i] = btn.keyLabel;
                 costLabels[i] = btn.costLabel;
                 costGemIcons[i] = btn.costGemIcon;
                 _buttonRects[i] = btn.buttonRect;
+                _lastSlotVisualState[i] = (UpgradeSlotVisualState)(-1);
 
                 var chip = CreateStatChip(rootPanel.transform, i, statColor);
                 _chipRects[i] = chip.chipRect;
@@ -537,7 +635,290 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Quick-stat chip above one ability button — short label, big value, muted +step / Lv.
+        /// Small top-left STATS control — toggles the chip row and its hover tips on/off.
+        /// </summary>
+        void CreateStatsToggle(Transform parent)
+        {
+            GameObject go = new GameObject("StatsToggle");
+            go.transform.SetParent(parent, false);
+            _statsToggleRect = go.AddComponent<RectTransform>();
+
+            _statsToggleBg = go.AddComponent<Image>();
+            _statsToggleBg.raycastTarget = true;
+            var outline = go.AddComponent<Outline>();
+            outline.effectDistance = new Vector2(E(1f), E(1f));
+
+            // Cool ice accent (not category-specific) — cockpit toggle chrome.
+            Color ice = new Color(0.35f, 0.72f, 0.95f, 0.95f);
+            ApplyGamerGlassChrome(_statsToggleBg, outline, ice, includeInnerShade: false);
+
+            Button btn = go.AddComponent<Button>();
+            btn.targetGraphic = _statsToggleBg;
+            btn.onClick.AddListener(ToggleStatsChipsVisible);
+
+            GameObject textGo = new GameObject("Label");
+            textGo.transform.SetParent(go.transform, false);
+            RectTransform textRt = textGo.AddComponent<RectTransform>();
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.offsetMin = new Vector2(E(2f), E(1f));
+            textRt.offsetMax = new Vector2(E(-2f), E(-1f));
+            _statsToggleLabel = textGo.AddComponent<TextMeshProUGUI>();
+            _statsToggleLabel.alignment = TextAlignmentOptions.Center;
+            _statsToggleLabel.fontStyle = FontStyles.Bold;
+            _statsToggleLabel.fontSize = F(10f);
+            _statsToggleLabel.color = new Color(0.88f, 0.92f, 0.98f, 1f);
+            _statsToggleLabel.raycastTarget = false;
+            if (TMP_Settings.defaultFontAsset != null)
+                _statsToggleLabel.font = TMP_Settings.defaultFontAsset;
+
+            RefreshStatsToggleVisual();
+        }
+
+        /// <summary>Flips the STATS chip row and persists the choice.</summary>
+        void ToggleStatsChipsVisible()
+        {
+            SetStatsChipsVisible(!statsChipsVisible);
+        }
+
+        /// <summary>
+        /// Shows or hides the top value chips and their hover tooltips.
+        /// Bottom upgrade buttons stay available either way.
+        /// </summary>
+        public void SetStatsChipsVisible(bool visible)
+        {
+            if (statsChipsVisible == visible && _uiBuilt)
+            {
+                RefreshStatsToggleVisual();
+                return;
+            }
+
+            statsChipsVisible = visible;
+            PlayerPrefs.SetInt(StatsChipsPrefsKey, visible ? 1 : 0);
+            PlayerPrefs.Save();
+
+            // Hide any open tip when collapsing the row (hover functionality off).
+            if (!visible)
+            {
+                _activeAbilityTipIndex = null;
+                _pendingHideAbilityTip = null;
+                if (_abilityTipPanel != null && _abilityTipPanel.activeSelf)
+                    _abilityTipPanel.SetActive(false);
+            }
+
+            if (_uiBuilt)
+                RefreshUpgradeStripLayout(force: true);
+            else
+                RefreshStatsToggleVisual();
+        }
+
+        /// <summary>Paints STATS label + accent for the current on/off state.</summary>
+        void RefreshStatsToggleVisual()
+        {
+            if (_statsToggleLabel != null)
+                _statsToggleLabel.text = "[STATS]";
+            // Dim when off so the control still reads as a toggle, not a missing button.
+            if (_statsToggleBg != null)
+            {
+                Color ice = new Color(0.35f, 0.72f, 0.95f, statsChipsVisible ? 0.95f : 0.45f);
+                Color fill = Color.Lerp(glassFillColor, ice, statsChipsVisible ? categoryFillBlend : categoryFillBlend * 0.5f);
+                fill.a = glassFillColor.a;
+                _statsToggleBg.color = fill;
+                var outline = _statsToggleBg.GetComponent<Outline>();
+                if (outline != null)
+                {
+                    Color o = ice;
+                    o.a = statsChipsVisible ? 0.9f : 0.4f;
+                    outline.effectColor = o;
+                }
+            }
+
+            if (_statsToggleLabel != null)
+            {
+                float a = statsChipsVisible ? 1f : 0.55f;
+                _statsToggleLabel.color = new Color(0.88f, 0.92f, 0.98f, a);
+            }
+        }
+
+        /// <summary>
+        /// Shared dark-void glass + thin category accent — used by chips and bottom buttons.
+        /// [TITAN-ORBIT] Matches titan-orbit-ui-space-gamer-theme (no full-panel colour floods).
+        /// </summary>
+        void ApplyGamerGlassChrome(Image fill, Outline outline, Color categoryAccent, bool includeInnerShade)
+        {
+            Color fillCol = Color.Lerp(glassFillColor, categoryAccent, categoryFillBlend);
+            fillCol.a = glassFillColor.a;
+            fill.color = fillCol;
+
+            Color outlineCol = categoryAccent;
+            outlineCol.a = 0.85f;
+            outline.effectColor = outlineCol;
+            outline.effectDistance = new Vector2(E(1f), E(1f));
+            _ = includeInnerShade; // reserved — callers add InnerShade child when needed
+        }
+
+        /// <summary>
+        /// Thin top accent rail (category tint only). Shared by chips and upgrade buttons.
+        /// Returns the Image so hosts can recolor per Ready / Locked / Maxed state.
+        /// </summary>
+        static Image AddCategoryAccentRail(Transform parent, Color accent, float insetX, float thickness)
+        {
+            GameObject accentGo = new GameObject("Accent");
+            accentGo.transform.SetParent(parent, false);
+            RectTransform accentRt = accentGo.AddComponent<RectTransform>();
+            accentRt.anchorMin = new Vector2(0f, 1f);
+            accentRt.anchorMax = new Vector2(1f, 1f);
+            accentRt.pivot = new Vector2(0.5f, 1f);
+            accentRt.offsetMin = new Vector2(insetX, -thickness);
+            accentRt.offsetMax = new Vector2(-insetX, -1f);
+            Image accentImg = accentGo.AddComponent<Image>();
+            Color c = accent;
+            c.a = 0.9f;
+            accentImg.color = c;
+            accentImg.raycastTarget = false;
+            return accentImg;
+        }
+
+        /// <summary>
+        /// Resolves Ready / Locked / Maxed from level vs ship-level cap and current gems.
+        /// </summary>
+        static UpgradeSlotVisualState ResolveUpgradeSlotState(int currentLevel, int maxUpgrades, float currentGems, int cost)
+        {
+            if (currentLevel >= maxUpgrades)
+                return UpgradeSlotVisualState.Maxed;
+            if (currentGems >= cost - 0.01f)
+                return UpgradeSlotVisualState.Ready;
+            return UpgradeSlotVisualState.Locked;
+        }
+
+        /// <summary>
+        /// Paints one bottom upgrade button for Ready / Locked / Maxed.
+        /// We drive colours ourselves — Unity's default Button grey fade fights dark-glass chrome.
+        /// </summary>
+        void ApplyUpgradeSlotVisual(int index, UpgradeSlotVisualState state)
+        {
+            if (index < 0 || index >= 10 || buttonImages[index] == null)
+                return;
+
+            Color category = buttonCategoryColors[index];
+            Image fill = buttonImages[index];
+            Outline outline = buttonOutlines[index];
+            Image rail = buttonAccentRails[index];
+            TextMeshProUGUI title = titleTexts[index];
+            TextMeshProUGUI key = keyLabels[index];
+            TextMeshProUGUI cost = costLabels[index];
+            Image gem = costGemIcons[index];
+            Button btn = buttons[index];
+
+            Color accent;
+            Color fillCol;
+            Color titleCol;
+            Color keyCol;
+            Color costCol;
+            Color gemCol;
+            bool interactable;
+
+            switch (state)
+            {
+                case UpgradeSlotVisualState.Maxed:
+                    // Gold “completed” chrome — proud, not greyed-out.
+                    accent = maxedAccentColor;
+                    fillCol = Color.Lerp(glassFillColor, maxedAccentColor, 0.22f);
+                    fillCol.a = glassFillColor.a;
+                    titleCol = maxedTitleColor;
+                    keyCol = new Color(maxedAccentColor.r, maxedAccentColor.g, maxedAccentColor.b, 0.85f);
+                    costCol = maxedCostColor;
+                    gemCol = maxedCostColor;
+                    interactable = false;
+                    break;
+
+                case UpgradeSlotVisualState.Locked:
+                    // Dimmed category glass + amber cost (“need more gems”).
+                    accent = Color.Lerp(category, new Color(0.35f, 0.38f, 0.42f, 1f), lockedDim);
+                    accent.a = 0.45f;
+                    fillCol = Color.Lerp(glassFillColor, accent, categoryFillBlend * 0.35f);
+                    fillCol.a = glassFillColor.a * 0.92f;
+                    titleCol = Color.Lerp(readyTitleColor, new Color(0.45f, 0.48f, 0.52f, 1f), lockedDim);
+                    keyCol = new Color(0.4f, 0.45f, 0.52f, 0.65f);
+                    costCol = lockedCostColor;
+                    gemCol = lockedCostColor;
+                    interactable = false;
+                    break;
+
+                default: // Ready
+                    accent = category;
+                    accent.a = 0.9f;
+                    fillCol = Color.Lerp(glassFillColor, category, categoryFillBlend);
+                    fillCol.a = glassFillColor.a;
+                    titleCol = readyTitleColor;
+                    keyCol = new Color(0.62f, 0.78f, 0.95f, 0.92f);
+                    costCol = gemCostIconColor;
+                    gemCol = gemCostIconColor;
+                    interactable = true;
+                    break;
+            }
+
+            fill.color = fillCol;
+            if (outline != null)
+            {
+                Color o = accent;
+                o.a = state == UpgradeSlotVisualState.Ready ? 0.9f
+                    : state == UpgradeSlotVisualState.Maxed ? 0.95f
+                    : 0.4f;
+                outline.effectColor = o;
+            }
+
+            if (rail != null)
+            {
+                Color r = accent;
+                r.a = state == UpgradeSlotVisualState.Locked ? 0.4f : 0.95f;
+                rail.color = r;
+            }
+
+            if (title != null) title.color = titleCol;
+            if (key != null) key.color = keyCol;
+            if (cost != null) cost.color = costCol;
+            if (gem != null && gem.enabled) gem.color = gemCol;
+
+            if (btn != null && btn.interactable != interactable)
+                btn.interactable = interactable;
+
+            // Tick marks: lit = category (Ready/Locked) or gold (Maxed); empty stays dim.
+            ApplyTickStateColors(index, state, category);
+        }
+
+        /// <summary>Retints upgrade ticks when the slot state changes (esp. MAXED → gold lit ticks).</summary>
+        void ApplyTickStateColors(int index, UpgradeSlotVisualState state, Color category)
+        {
+            if (tickContainers == null || index < 0 || index >= tickContainers.Length || tickContainers[index] == null)
+                return;
+
+            Color lit = state == UpgradeSlotVisualState.Maxed
+                ? maxedAccentColor
+                : new Color(1f, 1f, 0.9f, 1f);
+            // Slight category wash on Ready lit ticks so they match the button accent.
+            if (state == UpgradeSlotVisualState.Ready)
+                lit = Color.Lerp(lit, category, 0.35f);
+            else if (state == UpgradeSlotVisualState.Locked)
+                lit = Color.Lerp(lit, new Color(0.45f, 0.48f, 0.52f, 1f), lockedDim);
+
+            Color empty = state == UpgradeSlotVisualState.Locked
+                ? new Color(0.22f, 0.24f, 0.28f, 0.55f)
+                : new Color(0.3f, 0.3f, 0.35f, 0.8f);
+
+            Transform container = tickContainers[index].transform;
+            int litCount = _lastTickLevels[index];
+            for (int i = 0; i < container.childCount; i++)
+            {
+                Image img = container.GetChild(i).GetComponent<Image>();
+                if (img == null) continue;
+                img.color = i < litCount ? lit : empty;
+            }
+        }
+
+        /// <summary>
+        /// Quick-stat chip above one ability button — value and +per-buy only (no title).
+        /// Hover opens the calculation tip when the STATS row is visible.
         /// </summary>
         (RectTransform chipRect, TextMeshProUGUI valueText) CreateStatChip(Transform parent, int index, Color statColor)
         {
@@ -546,28 +927,10 @@ namespace TitanOrbit.UI
             RectTransform chipRect = chipObj.AddComponent<RectTransform>();
 
             Image bg = chipObj.AddComponent<Image>();
-            Color glass = new Color(0.04f, 0.06f, 0.09f, 0.88f);
-            bg.color = glass;
             bg.raycastTarget = true;
-
             var outline = chipObj.AddComponent<Outline>();
-            Color accent = statColor;
-            accent.a = 0.85f;
-            outline.effectColor = accent;
-            outline.effectDistance = new Vector2(E(1f), E(1f));
-
-            // Top accent bar
-            GameObject accentGo = new GameObject("Accent");
-            accentGo.transform.SetParent(chipObj.transform, false);
-            RectTransform accentRt = accentGo.AddComponent<RectTransform>();
-            accentRt.anchorMin = new Vector2(0f, 1f);
-            accentRt.anchorMax = new Vector2(1f, 1f);
-            accentRt.pivot = new Vector2(0.5f, 1f);
-            accentRt.offsetMin = new Vector2(E(2f), E(-3f));
-            accentRt.offsetMax = new Vector2(E(-2f), E(-1f));
-            Image accentImg = accentGo.AddComponent<Image>();
-            accentImg.color = accent;
-            accentImg.raycastTarget = false;
+            ApplyGamerGlassChrome(bg, outline, statColor, includeInnerShade: false);
+            AddCategoryAccentRail(chipObj.transform, statColor, E(2f), E(3f));
 
             GameObject textGo = new GameObject("ChipText");
             textGo.transform.SetParent(chipObj.transform, false);
@@ -579,15 +942,15 @@ namespace TitanOrbit.UI
             TextMeshProUGUI valueText = textGo.AddComponent<TextMeshProUGUI>();
             valueText.richText = true;
             valueText.enableWordWrapping = true;
-            valueText.overflowMode = TextOverflowModes.Truncate;
+            // [UNITY] Overflow (not Truncate) so the +per-buy number is never clipped off.
+            valueText.overflowMode = TextOverflowModes.Overflow;
             valueText.alignment = TextAlignmentOptions.Center;
-            valueText.fontSize = F(11f);
-            valueText.color = Color.white;
+            valueText.fontSize = F(12f);
+            valueText.color = new Color(0.88f, 0.92f, 0.98f, 1f);
             valueText.raycastTarget = false;
             if (TMP_Settings.defaultFontAsset != null)
                 valueText.font = TMP_Settings.defaultFontAsset;
-            string shortLabel = ShipAbilityCategoryColors.PowerBreakdownStatLabels[index];
-            valueText.text = $"<color=#AAAAAA>{shortLabel}</color>\n—";
+            valueText.text = "—";
 
             var zone = chipObj.AddComponent<ShipAbilityStatHoverZone>();
             zone.Owner = this;
@@ -626,6 +989,9 @@ namespace TitanOrbit.UI
         /// <summary>Pointer entered a quick-stat chip — show that ability's calculation card.</summary>
         public void ShowAbilityStatTooltip(int abilityIndex)
         {
+            // STATS row off → chips hidden and hover tips stay dormant.
+            if (!statsChipsVisible)
+                return;
             if (!_uiBuilt || _abilityTipPanel == null || _abilityTipLabel == null)
                 return;
             if (abilityIndex < 0 || abilityIndex > 9)
@@ -850,30 +1216,53 @@ namespace TitanOrbit.UI
             return true;
         }
 
-        /// <summary>Formats one chip TMP line: label, big value, muted +step and Lv.</summary>
+        /// <summary>
+        /// Chip glance text: <b>current</b> and green <c>+per-buy</c> only (no FP/MS title).
+        /// Ability name lives on the bottom button; full math is on hover.
+        /// </summary>
         static string FormatChipText(int index, float value, float nextStep, int abilityLv, string unit)
         {
-            string label = ShipAbilityCategoryColors.PowerBreakdownStatLabels[index];
-            string val = value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-            var sb = new System.Text.StringBuilder(64);
-            sb.Append("<color=#AAAAAA>").Append(label).Append("</color>\n");
-            sb.Append("<b>").Append(val).Append(unit).Append("</b>");
-            if (nextStep > 0.0001f)
-            {
-                sb.Append("\n<size=85%><color=#88AACC>+")
-                    .Append(nextStep.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
-                if (index != 6)
-                    sb.Append("</color></size>");
-                else
-                    sb.Append("</color></size>");
-            }
-
-            if (abilityLv > 0)
-                sb.Append(" <size=85%><color=#CCCCAA>Lv").Append(abilityLv).Append("</color></size>");
+            _ = index;
+            _ = abilityLv;
+            var sb = new System.Text.StringBuilder(48);
+            AppendCurrentAndPerBuy(sb, value, nextStep, unit, sizePercent: 100);
             return sb.ToString();
         }
 
-        private (Button button, RectTransform buttonRect, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, int index, Color statColor, string keyStr)
+        /// <summary>
+        /// Appends <c>12.5/hit  +1.25</c> — the two glance stats on each top chip (not the bottom button).
+        /// </summary>
+        /// <param name="sb">TMP rich-text builder.</param>
+        /// <param name="value">Current effective value.</param>
+        /// <param name="nextStep">Gain from the next gem purchase (0 hides the +).</param>
+        /// <param name="unit">Optional unit suffix on the current value (e.g. <c>/s</c>, <c>°/s</c>).</param>
+        /// <param name="sizePercent">TMP size tag for the whole stats line (100 = default).</param>
+        static void AppendCurrentAndPerBuy(
+            System.Text.StringBuilder sb,
+            float value,
+            float nextStep,
+            string unit,
+            int sizePercent)
+        {
+            string val = value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+            bool wrapSize = sizePercent > 0 && sizePercent != 100;
+            if (wrapSize)
+                sb.Append("<size=").Append(sizePercent).Append("%>");
+
+            sb.Append("<b>").Append(val).Append(unit).Append("</b>");
+            if (nextStep > 0.0001f)
+            {
+                // Green delta — gamification “what you get if you buy” signal.
+                sb.Append(" <color=#7DFFB2>+")
+                    .Append(nextStep.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))
+                    .Append("</color>");
+            }
+
+            if (wrapSize)
+                sb.Append("</size>");
+        }
+
+        private (Button button, RectTransform buttonRect, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, Outline outline, Image accentRail, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, int index, Color statColor, string keyStr)
         {
             GameObject btnObj = new GameObject($"UpgradeBtn_{index}");
             btnObj.transform.SetParent(parent, false);
@@ -883,15 +1272,14 @@ namespace TitanOrbit.UI
             btnRect.anchorMax = new Vector2(0f, 0.5f);
             btnRect.pivot = new Vector2(0f, 0.5f);
 
+            // --- Dark glass + category accent (same language as the top STATS chips) ---
+            // [TITAN-ORBIT] No full-panel category flood — thin rail + outline carry the tint.
+            // Per-frame ApplyUpgradeSlotVisual recolors for Ready / Locked / Maxed.
             Image bgImage = btnObj.AddComponent<Image>();
-            bgImage.color = statColor;
             bgImage.raycastTarget = true;
             var buttonOutline = btnObj.AddComponent<Outline>();
-            buttonOutline.effectColor = buttonFrameColor;
-            buttonOutline.effectDistance = new Vector2(E(1f), E(1f));
-            var buttonShadow = btnObj.AddComponent<Shadow>();
-            buttonShadow.effectColor = buttonShadowColor;
-            buttonShadow.effectDistance = new Vector2(0f, E(-2f));
+            ApplyGamerGlassChrome(bgImage, buttonOutline, statColor, includeInnerShade: true);
+            Image accentRail = AddCategoryAccentRail(btnObj.transform, statColor, E(4f), E(3f));
 
             GameObject innerShade = new GameObject("InnerShade");
             innerShade.transform.SetParent(btnObj.transform, false);
@@ -904,20 +1292,17 @@ namespace TitanOrbit.UI
             shadeImage.color = buttonInnerShadeColor;
             shadeImage.raycastTarget = false;
 
-            GameObject accentLine = new GameObject("AccentLine");
-            accentLine.transform.SetParent(btnObj.transform, false);
-            RectTransform accentRect = accentLine.AddComponent<RectTransform>();
-            accentRect.anchorMin = new Vector2(0f, 1f);
-            accentRect.anchorMax = new Vector2(1f, 1f);
-            accentRect.pivot = new Vector2(0.5f, 1f);
-            accentRect.offsetMin = new Vector2(E(5f), E(-3f));
-            accentRect.offsetMax = new Vector2(E(-5f), E(-1f));
-            Image accentImage = accentLine.AddComponent<Image>();
-            accentImage.color = buttonAccentColor;
-            accentImage.raycastTarget = false;
-
             Button button = btnObj.AddComponent<Button>();
             button.targetGraphic = bgImage;
+            // [UNITY] Neutral ColorBlock so interactable=false does not wash our custom state paints grey.
+            var colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.05f, 1.05f, 1.05f, 1f);
+            colors.pressedColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            colors.selectedColor = Color.white;
+            colors.disabledColor = Color.white;
+            colors.colorMultiplier = 1f;
+            button.colors = colors;
             int capturedIndex = index;
             button.onClick.AddListener(() => TryUpgrade(capturedIndex));
 
@@ -927,13 +1312,14 @@ namespace TitanOrbit.UI
             keyRect.anchorMin = new Vector2(0f, 1f);
             keyRect.anchorMax = new Vector2(0f, 1f);
             keyRect.pivot = new Vector2(0f, 1f);
-            keyRect.anchoredPosition = new Vector2(E(4f), E(-4f));
+            keyRect.anchoredPosition = new Vector2(E(4f), E(-5f));
             keyRect.sizeDelta = new Vector2(E(20f), E(16f));
             TextMeshProUGUI keyLabel = keyObj.AddComponent<TextMeshProUGUI>();
             keyLabel.text = keyStr;
             keyLabel.fontSize = F(13f);
             if (TMP_Settings.defaultFontAsset != null) keyLabel.font = TMP_Settings.defaultFontAsset;
-            keyLabel.color = new Color(1f, 1f, 1f, 0.9f);
+            // Cool caption tone (space-gamer theme), not pure white glare.
+            keyLabel.color = new Color(0.62f, 0.78f, 0.95f, 0.92f);
             keyLabel.alignment = TextAlignmentOptions.TopLeft;
 
             GameObject titleObj = new GameObject("Title");
@@ -946,9 +1332,10 @@ namespace TitanOrbit.UI
             titleRect.offsetMin = new Vector2(E(4f), bottomForCost);
             titleRect.offsetMax = new Vector2(-E(tickColumnRightInset), -E(titleAreaTopInset));
             TextMeshProUGUI titleText = titleObj.AddComponent<TextMeshProUGUI>();
+            // [TITAN-ORBIT] Bottom button = ability name only. Current / +per-buy live on the chip above.
             titleText.text = Titles[index];
             if (TMP_Settings.defaultFontAsset != null) titleText.font = TMP_Settings.defaultFontAsset;
-            titleText.color = Color.white;
+            titleText.color = new Color(0.88f, 0.92f, 0.98f, 1f);
             titleText.fontStyle = FontStyles.Bold;
             titleText.alignment = TextAlignmentOptions.Center;
             titleText.enableWordWrapping = true;
@@ -988,12 +1375,31 @@ namespace TitanOrbit.UI
 
             HorizontalLayoutGroup costRowLayout = costRow.AddComponent<HorizontalLayoutGroup>();
             costRowLayout.childAlignment = TextAnchor.MiddleCenter;
-            costRowLayout.spacing = E(1f);
+            costRowLayout.spacing = E(2f);
             costRowLayout.padding = new RectOffset(0, 0, 0, 0);
             costRowLayout.childForceExpandWidth = false;
             costRowLayout.childForceExpandHeight = false;
             costRowLayout.childControlWidth = true;
             costRowLayout.childControlHeight = true;
+
+            // --- Gem icon then cost digits: [💎] 15 ---
+            // [TITAN-ORBIT] Same gem art as moon / defense-pad labels when Inspector sprite is empty.
+            Sprite gemSprite = ResolveGemCostIcon();
+            GameObject gemObj = new GameObject("GemIcon");
+            gemObj.transform.SetParent(costRow.transform, false);
+            RectTransform gemRect = gemObj.AddComponent<RectTransform>();
+            float gemSz = E(gemIconSize);
+            gemRect.sizeDelta = new Vector2(gemSz, gemSz);
+            Image costGemIcon = gemObj.AddComponent<Image>();
+            costGemIcon.raycastTarget = false;
+            costGemIcon.preserveAspect = true;
+            costGemIcon.color = gemCostIconColor;
+            costGemIcon.sprite = gemSprite;
+            costGemIcon.enabled = gemSprite != null;
+            LayoutElement gemLe = gemObj.AddComponent<LayoutElement>();
+            gemLe.preferredWidth = gemSz;
+            gemLe.preferredHeight = gemSz;
+            gemLe.flexibleWidth = 0f;
 
             GameObject costObj = new GameObject("CostLabel");
             costObj.transform.SetParent(costRow.transform, false);
@@ -1003,8 +1409,9 @@ namespace TitanOrbit.UI
             costLabel.text = "";
             costLabel.fontSize = F(11f);
             if (TMP_Settings.defaultFontAsset != null) costLabel.font = TMP_Settings.defaultFontAsset;
-            costLabel.color = new Color(0.9f, 0.9f, 0.6f, 1f);
-            costLabel.alignment = TextAlignmentOptions.MidlineRight;
+            // Same warm gold as gemCostIconColor so icon + digits match.
+            costLabel.color = gemCostIconColor;
+            costLabel.alignment = TextAlignmentOptions.MidlineLeft;
             costLabel.overflowMode = TextOverflowModes.Overflow;
             ContentSizeFitter costCsf = costObj.AddComponent<ContentSizeFitter>();
             costCsf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
@@ -1012,22 +1419,22 @@ namespace TitanOrbit.UI
             LayoutElement costLe = costObj.AddComponent<LayoutElement>();
             costLe.flexibleWidth = 0f;
 
-            GameObject gemObj = new GameObject("GemIcon");
-            gemObj.transform.SetParent(costRow.transform, false);
-            RectTransform gemRect = gemObj.AddComponent<RectTransform>();
-            float gemSz = E(gemIconSize);
-            gemRect.sizeDelta = new Vector2(gemSz, gemSz);
-            Image costGemIcon = gemObj.AddComponent<Image>();
-            costGemIcon.raycastTarget = false;
-            costGemIcon.preserveAspect = true;
-            costGemIcon.enabled = gemCostIconSprite != null;
-            if (gemCostIconSprite != null) costGemIcon.sprite = gemCostIconSprite;
-            LayoutElement gemLe = gemObj.AddComponent<LayoutElement>();
-            gemLe.preferredWidth = gemSz;
-            gemLe.preferredHeight = gemSz;
-            gemLe.flexibleWidth = 0f;
+            return (button, btnRect, titleText, tickContainer, bgImage, buttonOutline, accentRail, keyLabel, costLabel, costGemIcon);
+        }
 
-            return (button, btnRect, titleText, tickContainer, bgImage, keyLabel, costLabel, costGemIcon);
+        /// <summary>
+        /// Gem sprite for the cost row: Inspector override, else shared <see cref="WorldStatLabelIcons.Gem"/>.
+        /// </summary>
+        Sprite ResolveGemCostIcon()
+        {
+            if (gemCostIconSprite != null)
+                return gemCostIconSprite;
+
+            // [HYBRID] Same CleanFlatIcon gem used by moon gem counts / defense pad costs.
+            Sprite shared = WorldStatLabelIcons.Gem;
+            if (shared != null)
+                gemCostIconSprite = shared;
+            return shared;
         }
 
         private void CreateTickMarks(GameObject container, int maxCount)
@@ -1047,7 +1454,7 @@ namespace TitanOrbit.UI
             }
         }
 
-        private void UpdateTickMarks(int index, int currentLevel, int maxLevel)
+        private void UpdateTickMarks(int index, int currentLevel, int maxLevel, UpgradeSlotVisualState slotState)
         {
             // --- Per-slot tick paint ---
             if (tickContainers == null || index < 0 || index >= tickContainers.Length || tickContainers[index] == null) return;
@@ -1067,18 +1474,14 @@ namespace TitanOrbit.UI
                 _lastTickLevels[index] = -1; // force color refresh after rebuild
             }
 
-            // Skip Image.color writes when fill count is unchanged (avoids per-frame dirty).
-            if (_lastTickLevels[index] == currentLevel && _lastMaxUpgrades == maxLevel)
+            // Skip Image.color writes when fill count + state are unchanged (avoids per-frame dirty).
+            if (_lastTickLevels[index] == currentLevel
+                && _lastMaxUpgrades == maxLevel
+                && _lastSlotVisualState[index] == slotState)
                 return;
 
-            for (int i = 0; i < childCount; i++)
-            {
-                Image img = container.GetChild(i).GetComponent<Image>();
-                if (img != null)
-                    img.color = i < currentLevel ? new Color(1f, 1f, 0.9f, 1f) : new Color(0.3f, 0.3f, 0.35f, 0.8f);
-            }
-
             _lastTickLevels[index] = currentLevel;
+            ApplyTickStateColors(index, slotState, buttonCategoryColors[index]);
         }
 
         private void Update()
@@ -1120,30 +1523,27 @@ namespace TitanOrbit.UI
             for (int i = 0; i < 10; i++)
             {
                 int current = ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, i);
-                UpdateTickMarks(i, current, maxUpgrades);
 
-                bool canUpgrade = current < maxUpgrades && ship.CurrentGems >= cost - 0.01f;
-                // Button defaults to interactable=true — seed once so unaffordable slots disable on first paint.
-                if (buttons[i] != null && (!_slotVisualsSeeded || _lastInteractable[i] != canUpgrade))
-                {
-                    buttons[i].interactable = canUpgrade;
-                    _lastInteractable[i] = canUpgrade;
-                }
+                // --- Slot state: Ready (buyable) / Locked (broke) / Maxed (cap) ---
+                UpgradeSlotVisualState slotState = ResolveUpgradeSlotState(
+                    current, maxUpgrades, ship.CurrentGems, cost);
+                UpdateTickMarks(i, current, maxUpgrades, slotState);
 
                 if (costLabels[i] == null)
                     continue;
 
                 string costText;
                 bool showGemIcon;
-                if (current >= maxUpgrades)
+                if (slotState == UpgradeSlotVisualState.Maxed)
                 {
+                    // At cap — hide the gem; "MAX" is enough.
                     costText = "MAX";
                     showGemIcon = false;
                 }
                 else
                 {
                     costText = cost.ToString();
-                    showGemIcon = gemCostIconSprite != null;
+                    showGemIcon = ResolveGemCostIcon() != null;
                 }
 
                 // Dirty-check TMP / icon — farming asteroids changes gems every frame; skip when text identical.
@@ -1152,7 +1552,19 @@ namespace TitanOrbit.UI
                     costLabels[i].text = costText;
                     _lastCostText[i] = costText;
                     if (costGemIcons[i] != null)
-                        costGemIcons[i].enabled = showGemIcon;
+                    {
+                        Sprite gemSprite = ResolveGemCostIcon();
+                        if (costGemIcons[i].sprite == null && gemSprite != null)
+                            costGemIcons[i].sprite = gemSprite;
+                        costGemIcons[i].enabled = showGemIcon && costGemIcons[i].sprite != null;
+                    }
+                }
+
+                // Repaint chrome when affordance changes (gems cross the cost threshold, or hit MAX).
+                if (!_slotVisualsSeeded || _lastSlotVisualState[i] != slotState)
+                {
+                    ApplyUpgradeSlotVisual(i, slotState);
+                    _lastSlotVisualState[i] = slotState;
                 }
             }
 
@@ -1172,12 +1584,18 @@ namespace TitanOrbit.UI
             FlushPendingAbilityTipHide();
         }
 
-        /// <summary>Paints chip TMP from live / speedometer-shared context.</summary>
+        /// <summary>
+        /// Paints top chips only: current effective value and +amount from the next purchase.
+        /// Bottom buttons keep the static ability name (no duplicated stats).
+        /// </summary>
         void RefreshChipValues(in ShipState ship, in ShipAttributeUpgradeState attrs)
         {
             _ = ship;
+            // Skip work while the STATS row is collapsed (chips + hover are off).
+            if (!statsChipsVisible)
+                return;
+
             TryResolveChipLiveContext(out _, out var live, out _);
-            // Prefer attrs from snapshot (already have) over tip resolve.
             for (int i = 0; i < 10; i++)
             {
                 if (_chipValueTexts[i] == null)
@@ -1185,11 +1603,11 @@ namespace TitanOrbit.UI
 
                 ShipAbilityStatBreakdown.ResolveChipDisplay(
                     i, in live, in attrs, out float value, out float nextStep, out int abilityLv, out string unit);
-                string text = FormatChipText(i, value, nextStep, abilityLv, unit);
-                if (_lastChipText[i] == text)
+                string chipText = FormatChipText(i, value, nextStep, abilityLv, unit);
+                if (_lastChipText[i] == chipText)
                     continue;
-                _lastChipText[i] = text;
-                _chipValueTexts[i].text = text;
+                _lastChipText[i] = chipText;
+                _chipValueTexts[i].text = chipText;
             }
         }
 

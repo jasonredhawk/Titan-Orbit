@@ -2244,19 +2244,22 @@ MonoBehaviour:
   barHeight: 68
   buttonWidth: 136
   buttonSpacing: 10
-  chipBandHeight: 44
+  chipBandHeight: 34
   mobileHudScale: 1.48
   titleAreaTopInset: 16
   tickColumnRightInset: 14
   tickColumnFromRight: -5
   ticksCenterYOffset: -3
   titleFontSize: 12
-  buttonFrameColor: {r: 0.95, g: 0.98, b: 1, a: 0.42}
+  statsChipsVisible: 1
+  statsToggleWidth: 52
+  statsToggleHeight: 18
+  glassFillColor: {r: 0.04, g: 0.06, b: 0.09, a: 0.92}
+  categoryFillBlend: 0.16
   buttonInnerShadeColor: {r: 0, g: 0, b: 0, a: 0.22}
-  buttonAccentColor: {r: 0.75, g: 0.88, b: 1, a: 0.28}
-  buttonShadowColor: {r: 0, g: 0, b: 0, a: 0.45}
-  gemCostIconSprite: {fileID: 0}
-  gemIconSize: 14
+  gemCostIconSprite: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
+  gemIconSize: 11
+  gemCostIconColor: {r: 0.9, g: 0.92, b: 0.95, a: 1}
 --- !u!114 &505988332
 MonoBehaviour:
   m_ObjectHideFlags: 0
