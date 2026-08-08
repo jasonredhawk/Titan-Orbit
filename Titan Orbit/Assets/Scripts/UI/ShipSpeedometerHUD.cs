@@ -224,6 +224,9 @@ namespace TitanOrbit.UI
         /// <summary>Rect on the tooltip panel for positioning beside the speedometer.</summary>
         RectTransform _tooltipRect;
 
+        /// <summary>[TITAN-ORBIT] Sci-fi chrome — accent recolors per speedometer section.</summary>
+        ShipStatTooltipChrome.Handles _tooltipChrome;
+
         /// <summary>Cached chassis part list for tooltip copy (refreshed on chassis / store change).</summary>
         ShipSpeedometerStatTooltips.PartCache _partCache;
 
@@ -667,45 +670,34 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Builds the floating breakdown panel as a sibling of the speedometer (under this HUD
         /// transform so it follows the same canvas). Starts inactive — only shown on hover.
+        /// [TITAN-ORBIT] Uses <see cref="ShipStatTooltipChrome"/> so speedometer tips match the
+        /// ability-chip calculation cards (Shift cut-frame + category accent).
         /// </summary>
         void BuildTooltipPanel(Canvas canvas)
         {
-            _tooltipPanel = new GameObject("ShipSpeedometerTooltip");
             // [UNITY] Parent under the same HUD host as the speedometer so canvas scale matches.
-            _tooltipPanel.transform.SetParent(transform, false);
-            _tooltipRect = _tooltipPanel.AddComponent<RectTransform>();
-            _tooltipRect.pivot = new Vector2(0f, 0f);
-            _tooltipRect.sizeDelta = new Vector2(520f * HudLayoutScale, 120f * HudLayoutScale);
-
-            Image tipBg = _tooltipPanel.AddComponent<Image>();
-            tipBg.color = new Color(0.05f, 0.07f, 0.1f, 0.92f);
-            tipBg.raycastTarget = false;
-
-            GameObject tipTextGo = new GameObject("Body");
-            tipTextGo.transform.SetParent(_tooltipPanel.transform, false);
-            RectTransform tipTextRt = tipTextGo.AddComponent<RectTransform>();
-            tipTextRt.anchorMin = Vector2.zero;
-            tipTextRt.anchorMax = Vector2.one;
-            tipTextRt.offsetMin = new Vector2(10f * HudLayoutScale, 8f * HudLayoutScale);
-            tipTextRt.offsetMax = new Vector2(-10f * HudLayoutScale, -8f * HudLayoutScale);
-
-            _tooltipLabel = tipTextGo.AddComponent<TextMeshProUGUI>();
-            _tooltipLabel.fontSize = 11f * HudLayoutScale;
-            _tooltipLabel.richText = true;
-            _tooltipLabel.enableWordWrapping = true;
-            _tooltipLabel.overflowMode = TextOverflowModes.Overflow;
-            _tooltipLabel.raycastTarget = false;
-            _tooltipLabel.alignment = TextAlignmentOptions.TopLeft;
-            _tooltipLabel.color = textColor;
-            if (TMP_Settings.defaultFontAsset != null)
-                _tooltipLabel.font = TMP_Settings.defaultFontAsset;
-            _tooltipLabel.text = "";
+            _tooltipChrome = ShipStatTooltipChrome.Build(
+                "ShipSpeedometerTooltip",
+                transform,
+                "TELEMETRY",
+                520f * HudLayoutScale,
+                120f * HudLayoutScale,
+                HudLayoutScale);
+            _tooltipPanel = _tooltipChrome.Root;
+            _tooltipRect = _tooltipChrome.RootRect;
+            _tooltipLabel = _tooltipChrome.BodyLabel;
+            if (_tooltipRect != null)
+                _tooltipRect.pivot = new Vector2(0f, 0f);
+            if (_tooltipLabel != null)
+            {
+                _tooltipLabel.fontSize = 11f * HudLayoutScale;
+                _tooltipLabel.color = textColor;
+                _tooltipLabel.text = "";
+            }
 
             // Sort above the speedometer panel so the tip is never covered by its background.
-            if (canvas != null)
+            if (canvas != null && _tooltipPanel != null)
                 _tooltipPanel.transform.SetAsLastSibling();
-
-            _tooltipPanel.SetActive(false);
         }
 
         /// <summary>
@@ -733,8 +725,14 @@ namespace TitanOrbit.UI
             // Entering any pad cancels a pending hide from a sibling pad this frame.
             _pendingHideSection = null;
             _activeTooltipSection = section;
+            // [TITAN-ORBIT] Recolor chrome accent for SPD / ACC / MASS / RAM / BUL.
+            ShipStatTooltipChrome.ApplyAccent(
+                in _tooltipChrome,
+                ShipStatTooltipChrome.AccentForSpeedometerSection(section));
             RefreshTooltipContent();
             PositionTooltipPanel();
+            // Draw above other HUD chrome so bars / names cannot bleed through.
+            _tooltipPanel.transform.SetAsLastSibling();
             if (!_tooltipPanel.activeSelf)
                 _tooltipPanel.SetActive(true);
         }
@@ -790,9 +788,11 @@ namespace TitanOrbit.UI
             _tooltipLabel.ForceMeshUpdate(true);
             if (_tooltipRect != null)
             {
-                float padY = 16f * HudLayoutScale;
+                // [TITAN-ORBIT] ExtraHeightPadding covers caption bar + frame insets from chrome.
                 float tipW = _tooltipRect.sizeDelta.x;
-                float tipH = Mathf.Max(80f * HudLayoutScale, _tooltipLabel.preferredHeight + padY);
+                float tipH = Mathf.Max(
+                    100f * HudLayoutScale,
+                    _tooltipLabel.preferredHeight + _tooltipChrome.ExtraHeightPadding);
                 _tooltipRect.sizeDelta = new Vector2(tipW, tipH);
             }
         }
@@ -1694,6 +1694,8 @@ namespace TitanOrbit.UI
                 ChassisAccel = chassisAccel,
                 ChassisTurnDeg = chassisTurnDeg,
                 TaxedAccel = taxed.EngineThrust,
+                // [TITAN-ORBIT] Pre-territory taxed turn — same subtract as drive; chips show this not chassis.
+                TaxedTurnDeg = taxed.RotationSpeed,
                 OverdriveCapacityMult = overdriveCapacityMult,
                 OverdriveActiveMult = overdriveActiveMult,
                 MovementMass = mass,

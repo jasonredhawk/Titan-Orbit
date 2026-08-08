@@ -112,6 +112,8 @@ namespace TitanOrbit.UI
         private GameObject _abilityTipPanel;
         private RectTransform _abilityTipRect;
         private TextMeshProUGUI _abilityTipLabel;
+        /// <summary>[TITAN-ORBIT] Sci-fi chrome handles — accent stripe recolors per ability category.</summary>
+        private ShipStatTooltipChrome.Handles _abilityTipChrome;
         private int? _activeAbilityTipIndex;
         private int? _pendingHideAbilityTip;
         private string _lastAbilityTipBody = "";
@@ -594,41 +596,31 @@ namespace TitanOrbit.UI
             return (chipRect, valueText);
         }
 
-        /// <summary>Floating calculation card for ability-chip rollovers.</summary>
+        /// <summary>
+        /// Floating calculation card for ability-chip rollovers.
+        /// [TITAN-ORBIT] Uses <see cref="ShipStatTooltipChrome"/> (Shift cut-frame + accent) so the
+        /// tip matches orbit-station / spin-card sci-fi language instead of a plain debug box.
+        /// </summary>
         void BuildAbilityTipPanel()
         {
-            _abilityTipPanel = new GameObject("ShipAbilityStatTooltip");
             // Same canvas parent as the strip so anchoredPosition math matches GetUpgradeStripReserveHeight space.
             Transform tipParent = _layoutCanvasRect != null ? (Transform)_layoutCanvasRect : transform;
-            _abilityTipPanel.transform.SetParent(tipParent, false);
-            _abilityTipRect = _abilityTipPanel.AddComponent<RectTransform>();
-            _abilityTipRect.pivot = new Vector2(0.5f, 0f);
-            _abilityTipRect.sizeDelta = new Vector2(E(560f), E(160f));
-
-            Image tipBg = _abilityTipPanel.AddComponent<Image>();
-            tipBg.color = new Color(0.05f, 0.07f, 0.1f, 0.94f);
-            tipBg.raycastTarget = false;
-
-            GameObject bodyGo = new GameObject("Body");
-            bodyGo.transform.SetParent(_abilityTipPanel.transform, false);
-            RectTransform bodyRt = bodyGo.AddComponent<RectTransform>();
-            bodyRt.anchorMin = Vector2.zero;
-            bodyRt.anchorMax = Vector2.one;
-            bodyRt.offsetMin = new Vector2(E(10f), E(8f));
-            bodyRt.offsetMax = new Vector2(E(-10f), E(-8f));
-            _abilityTipLabel = bodyGo.AddComponent<TextMeshProUGUI>();
-            _abilityTipLabel.fontSize = F(11f);
-            _abilityTipLabel.richText = true;
-            _abilityTipLabel.enableWordWrapping = true;
-            _abilityTipLabel.overflowMode = TextOverflowModes.Overflow;
-            _abilityTipLabel.alignment = TextAlignmentOptions.TopLeft;
-            _abilityTipLabel.color = new Color(0.92f, 0.95f, 1f, 1f);
-            _abilityTipLabel.raycastTarget = false;
-            if (TMP_Settings.defaultFontAsset != null)
-                _abilityTipLabel.font = TMP_Settings.defaultFontAsset;
+            _abilityTipChrome = ShipStatTooltipChrome.Build(
+                "ShipAbilityStatTooltip",
+                tipParent,
+                "ABILITY MATRIX",
+                E(560f),
+                E(160f),
+                _elementScale);
+            _abilityTipPanel = _abilityTipChrome.Root;
+            _abilityTipRect = _abilityTipChrome.RootRect;
+            _abilityTipLabel = _abilityTipChrome.BodyLabel;
+            if (_abilityTipRect != null)
+                _abilityTipRect.pivot = new Vector2(0.5f, 0f);
+            if (_abilityTipLabel != null)
+                _abilityTipLabel.fontSize = F(11f);
 
             _abilityTipPanel.transform.SetAsLastSibling();
-            _abilityTipPanel.SetActive(false);
         }
 
         /// <summary>Pointer entered a quick-stat chip — show that ability's calculation card.</summary>
@@ -641,8 +633,14 @@ namespace TitanOrbit.UI
 
             _pendingHideAbilityTip = null;
             _activeAbilityTipIndex = abilityIndex;
+            // [TITAN-ORBIT] Recolor chrome accent to the hovered ability's ODEMC category tone.
+            ShipStatTooltipChrome.ApplyAccent(
+                in _abilityTipChrome,
+                ShipStatTooltipChrome.AccentForAbilityIndex(abilityIndex));
             RefreshAbilityTipContent();
             PositionAbilityTipPanel(abilityIndex);
+            // Draw above leaderboard / other HUD so bars and names cannot bleed through.
+            _abilityTipPanel.transform.SetAsLastSibling();
             if (!_abilityTipPanel.activeSelf)
                 _abilityTipPanel.SetActive(true);
         }
@@ -674,7 +672,7 @@ namespace TitanOrbit.UI
                 return;
             if (!TryResolveChipLiveContext(out var parts, out var live, out var attrs))
             {
-                _abilityTipLabel.text = "<color=#888888>Waiting for ship stats…</color>";
+                _abilityTipLabel.text = "<color=#5B7A94>// AWAITING SHIP LINK...</color>";
                 return;
             }
 
@@ -688,7 +686,10 @@ namespace TitanOrbit.UI
             if (_abilityTipRect != null)
             {
                 float tipW = _abilityTipRect.sizeDelta.x;
-                float tipH = Mathf.Max(E(100f), _abilityTipLabel.preferredHeight + E(20f));
+                // [TITAN-ORBIT] ExtraHeightPadding covers caption bar + frame insets from chrome.
+                float tipH = Mathf.Max(
+                    E(120f),
+                    _abilityTipLabel.preferredHeight + _abilityTipChrome.ExtraHeightPadding);
                 _abilityTipRect.sizeDelta = new Vector2(tipW, tipH);
             }
         }
@@ -795,13 +796,17 @@ namespace TitanOrbit.UI
                 && _cachedSpeedometer.TryGetTooltipSharedState(out parts, out live))
                 return true;
 
-            // Fallback before speedometer paints: ship vitals only (part grids empty).
+            // Fallback before speedometer paints: ship vitals + local mass tax so MS/TS chips
+            // still show post-tax cruise/turn instead of raw chassis.
             live = new ShipSpeedometerStatTooltips.LiveContext
             {
                 Ship = _cachedShip,
                 ChassisMaxSpeed = 0f,
                 ChassisAccel = 0f,
                 ChassisTurnDeg = 0f,
+                CruiseMaxSpeed = 0f,
+                TaxedAccel = 0f,
+                TaxedTurnDeg = 0f,
                 TotalMass = 0f,
             };
 
@@ -820,8 +825,26 @@ namespace TitanOrbit.UI
                 live.EffectiveStats = baseStats;
                 live.ChassisMaxSpeed = baseStats.moveSpeed;
                 live.ChassisAccel = baseStats.accelerationCap;
+                // turnSpeed on ability stats may be definition units; speedometer converts when present.
                 live.ChassisTurnDeg = baseStats.turnSpeed;
                 live.Ship = ship;
+
+                // [TITAN-ORBIT] Hull size unknown until speedometer paints — tax cargo only so
+                // MS/TS still drop below chassis instead of showing pre-tax. Full ComponentSize
+                // arrives via TryGetTooltipSharedState on the next speedometer frame.
+                float componentSize = ShipMassLogic.MinMass;
+                ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+                    live.ChassisMaxSpeed,
+                    live.ChassisAccel,
+                    live.ChassisTurnDeg,
+                    ship.CurrentGems,
+                    ship.CurrentPeople,
+                    componentSize);
+                live.TotalMass = taxed.TotalMass;
+                live.CruiseMaxSpeed = taxed.MaxSpeed;
+                live.TaxedAccel = taxed.EngineThrust;
+                live.TaxedTurnDeg = taxed.RotationSpeed;
+                live.ComponentSize = componentSize;
             }
 
             return true;

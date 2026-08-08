@@ -95,6 +95,11 @@ namespace TitanOrbit.UI
             /// Grind damage uses this lever.
             /// </summary>
             public float TaxedAccel;
+            /// <summary>
+            /// After-tax turn °/s (mobility tax only — no territory / OVERDRIVE).
+            /// Quick-stat TS chip shows this; chassis turn stays in <see cref="ChassisTurnDeg"/>.
+            /// </summary>
+            public float TaxedTurnDeg;
             /// <summary>ComponentSize fed into totalMass (HullMassReference).</summary>
             public float ComponentSize;
             public float OverdriveCapacityMult;
@@ -246,29 +251,20 @@ namespace TitanOrbit.UI
         static void AppendSpeedTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "SPD — top speed");
-            sb.AppendLine("<color=#AAAAAA>See Move Speed chip for full ability pipeline. Bars show live cruise / OD.</color>");
+            sb.AppendLine("<color=#5B7A94>See Move Speed chip for full ability pipeline. Bars show live cruise / OD.</color>");
             ShipAbilityStatBreakdown.AppendGroupedFieldGrid(
                 sb, parts, ShipAbilityStatBreakdown.StatField.MoveSpeed, "Move", useStackWeight: true);
-            sb.AppendLine();
+
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "CHASSIS", "7EC8FF");
             AppendChassisMoveBreakdown(sb, parts, live);
-            sb.Append("− totalMass ").Append(FDetail(live.TotalMass)).Append(" × SpeedWeight");
-            sb.Append(" → ").Append(FResult(live.CruiseMaxSpeed / Mathf.Max(0.001f, live.TerritoryMult))).AppendLine();
+            AppendMassTaxEffectsBreakdown(sb, in live, includeMove: true, includeAccel: false);
 
-            if (live.TerritoryMult > 1.001f)
-            {
-                sb.Append("Territory  ×").Append(FDetail(live.TerritoryMult));
-                sb.Append(" → cruise ").Append(FResult(live.CruiseMaxSpeed)).AppendLine();
-            }
-            else
-            {
-                sb.Append("Cruise max  ").Append(FResult(live.CruiseMaxSpeed)).AppendLine();
-            }
-
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE FLIGHT", "7EC8FF");
             if (live.OverdriveCapacityMult > 1.001f)
             {
-                sb.Append("<color=#FFCC66>OVERDRIVE cap ×")
+                sb.Append("<color=#FFCC66>OVERDRIVE cap x")
                     .Append(FDetail(live.OverdriveCapacityMult))
-                    .Append(" → bar ")
+                    .Append(" -> bar ")
                     .Append(FResult(live.BarMaxSpeed))
                     .Append("</color>")
                     .AppendLine();
@@ -276,9 +272,9 @@ namespace TitanOrbit.UI
 
             if (live.OverdriveActiveMult > 1.001f)
             {
-                sb.Append("<color=#FFCC66>Burst ON ×")
+                sb.Append("<color=#FFCC66>Burst ON x")
                     .Append(FDetail(live.OverdriveActiveMult))
-                    .Append(" → live ")
+                    .Append(" -> live ")
                     .Append(FResult(live.LiveMaxSpeed))
                     .Append("</color>")
                     .AppendLine();
@@ -292,16 +288,18 @@ namespace TitanOrbit.UI
         static void AppendAccelTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "ACC — acceleration");
-            sb.AppendLine("<color=#AAAAAA>See Move Speed chip for ability steps. Bars show live thrust / brake.</color>");
+            sb.AppendLine("<color=#5B7A94>See Move Speed chip for ability steps. Bars show live thrust / brake.</color>");
             ShipAbilityStatBreakdown.AppendGroupedFieldGrid(
                 sb, parts, ShipAbilityStatBreakdown.StatField.AccelerationCap, "Accel", useStackWeight: true);
-            sb.AppendLine();
+
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "CHASSIS", "7EC8FF");
             AppendChassisAccelBreakdown(sb, parts, live);
-            sb.Append("− totalMass ").Append(FDetail(live.TotalMass)).Append(" × AccelWeight");
-            sb.Append(" → <color=#40EB73>").Append(FResult(live.MaxForwardAccel / Mathf.Max(0.001f, live.TerritoryMult * Mathf.Max(1f, live.OverdriveActiveMult)))).Append("</color>").AppendLine();
+            AppendMassTaxEffectsBreakdown(sb, in live, includeMove: false, includeAccel: true);
+
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE FLIGHT", "7EC8FF");
             sb.Append("Live max a  <color=#40EB73>").Append(FResult(live.MaxForwardAccel)).Append("</color>");
             if (live.TerritoryMult > 1.001f || live.OverdriveActiveMult > 1.001f)
-                sb.Append(" <color=#888888>(× territory / OD)</color>");
+                sb.Append(" <color=#5B7A94>(x territory / OD)</color>");
             sb.AppendLine();
             sb.Append("Brake  ").Append(FResult(live.MaxBrake)).Append("/s");
         }
@@ -310,7 +308,8 @@ namespace TitanOrbit.UI
         static void AppendMassTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "MASS — totalMass (mobility tax)");
-            sb.AppendLine("<color=#AAAAAA>totalMass = gems×MassPerGem + people×MassPerPerson + size×MassPerComponentSize</color>");
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "BREAKDOWN", "C9A0FF");
+            sb.AppendLine("<color=#5B7A94>totalMass = gems x MassPerGem + people x MassPerPerson + size x MassPerComponentSize</color>");
 
             ShipCargoMobilitySettings settings = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             float mGem = settings != null ? settings.massPerGem : 0.01f;
@@ -322,47 +321,45 @@ namespace TitanOrbit.UI
             float sizeMass = live.ComponentSize * mSize;
 
             sb.Append("Gems  ").Append(F0(live.Ship.CurrentGems))
-                .Append(" × ").Append(F2(mGem))
+                .Append(" x ").Append(F2(mGem))
                 .Append(" = ").Append(F2(gemMass)).AppendLine();
             sb.Append("People  ").Append(F0(live.Ship.CurrentPeople))
-                .Append(" × ").Append(F2(mPerson))
+                .Append(" x ").Append(F2(mPerson))
                 .Append(" = ").Append(F2(peopleMass)).AppendLine();
             sb.Append("ComponentSize  ").Append(F1(live.ComponentSize))
-                .Append(" × ").Append(F2(mSize))
+                .Append(" x ").Append(F2(mSize))
                 .Append(" = ").Append(F2(sizeMass)).AppendLine();
             // Same totalMass the MASS line prints (and that Speed/Accel/Turn tax uses).
             float sumParts = gemMass + peopleMass + sizeMass;
             sb.Append("totalMass  <color=#AAEEDD>").Append(F1(live.TotalMass)).Append("</color>");
             if (Mathf.Abs(sumParts - live.TotalMass) > 0.05f)
-                sb.Append(" <color=#888888>(parts ").Append(F1(sumParts)).Append(")</color>");
+                sb.Append(" <color=#5B7A94>(parts ").Append(F1(sumParts)).Append(")</color>");
             sb.AppendLine();
 
             if (settings != null)
             {
-                sb.AppendLine();
-                sb.Append("Speed drag  −").Append(F1(live.TotalMass * settings.speedWeightPerMass)).AppendLine();
-                sb.Append("Accel drag  −").Append(F1(live.TotalMass * settings.accelWeightPerMass)).AppendLine();
-                sb.Append("Turn drag  −").Append(F1(live.TotalMass * settings.turnWeightPerMass)).Append("/s");
+                ShipStatTooltipChrome.AppendSectionBanner(sb, "DRAG", "7EC8FF");
+                sb.Append("Speed drag  -").Append(F1(live.TotalMass * settings.speedWeightPerMass)).AppendLine();
+                sb.Append("Accel drag  -").Append(F1(live.TotalMass * settings.accelWeightPerMass)).AppendLine();
+                sb.Append("Turn drag  -").Append(F1(live.TotalMass * settings.turnWeightPerMass)).Append("/s");
             }
 
             // --- Optional: list non-cosmetic hullish parts as structure contributors ---
             if (parts.Valid && parts.Ids != null && parts.Ids.Count > 0)
             {
-                sb.AppendLine();
-                sb.AppendLine();
-                sb.AppendLine("<color=#888888>Chassis parts (ComponentSize from prefab scales):</color>");
+                ShipStatTooltipChrome.AppendSectionBanner(sb, "CHASSIS", "5B7A94");
                 int shown = 0;
                 for (int i = 0; i < parts.Ids.Count && shown < 8; i++)
                 {
                     string id = parts.Ids[i];
                     if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
                         continue;
-                    sb.Append("• ").Append(ResolvePartName(parts.Family, id)).AppendLine();
+                    sb.Append("- ").Append(ResolvePartName(parts.Family, id)).AppendLine();
                     shown++;
                 }
 
                 if (parts.Ids.Count > shown)
-                    sb.Append("<color=#888888>… +")
+                    sb.Append("<color=#5B7A94>+")
                         .Append(parts.Ids.Count - shown)
                         .Append(" more</color>");
             }
@@ -372,8 +369,9 @@ namespace TitanOrbit.UI
         static void AppendRamTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "RAM — impact damage");
-            sb.AppendLine("<color=#AAAAAA>Impact = rating × totalMass × closing speed (after-tax flight).</color>");
-            sb.AppendLine("<color=#AAAAAA>Grind = rating × totalMass × taxed Accel × pulse (while thrusting into rock).</color>");
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "PARTS", "FFAA66");
+            sb.AppendLine("<color=#5B7A94>Impact = rating x totalMass x closing speed (after-tax flight).</color>");
+            sb.AppendLine("<color=#5B7A94>Grind = rating x totalMass x taxed Accel x pulse (while thrusting into rock).</color>");
 
             int written = 0;
             float sumRam = 0f;
@@ -386,7 +384,7 @@ namespace TitanOrbit.UI
                         continue;
 
                     string name = ResolvePartName(parts.Family, parts.Ids[i]);
-                    sb.Append("• ").Append(name).Append("  +")
+                    sb.Append("- ").Append(name).Append("  +")
                         .Append(F1(ram)).Append(" Ramming").AppendLine();
                     sumRam += ram;
                     written++;
@@ -394,20 +392,20 @@ namespace TitanOrbit.UI
             }
 
             if (written == 0)
-                sb.AppendLine("<color=#888888>No parts author Ramming (family fallback may apply).</color>");
+                sb.AppendLine("<color=#5B7A94>No parts author Ramming (family fallback may apply).</color>");
             else
                 sb.Append("Sum (level-1)  ").Append(F1(sumRam)).AppendLine();
 
             float familyRam = live.Motor.RammingPower > 0f
                 ? live.Motor.RammingPower
                 : live.EffectiveStats.rammingPower;
-            sb.AppendLine();
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE IMPACT", "FFCC66");
             sb.Append("Motor Ramming  ").Append(F1(familyRam)).AppendLine();
             sb.Append("Rating  ").Append(F1(live.RamRating)).AppendLine();
             sb.Append("totalMass  ").Append(F1(live.TotalMass)).AppendLine();
             sb.Append("Taxed Accel  ").Append(F1(live.TaxedAccel));
-            sb.Append(" <color=#888888>(grind lever)</color>").AppendLine();
-            sb.Append("At ").Append(F1(live.CurrentSpeed)).Append("/s → ");
+            sb.Append(" <color=#5B7A94>(grind lever)</color>").AppendLine();
+            sb.Append("At ").Append(F1(live.CurrentSpeed)).Append("/s -> ");
             sb.Append("ast <color=#FFAA66>").Append(F1(live.RamAsteroidDamage)).Append("</color>  ");
             sb.Append("hull <color=#FF6666>").Append(F1(live.RamSelfDamage)).Append("</color>");
         }
@@ -416,7 +414,8 @@ namespace TitanOrbit.UI
         static void AppendBulletsTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "BUL — weapons");
-            sb.AppendLine("<color=#AAAAAA>HUD shows hull averages. Each mount still fires its own Fire Power.</color>");
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "WEAPONS", "FF8A5B");
+            sb.AppendLine("<color=#5B7A94>HUD shows hull averages. Each mount still fires its own Fire Power.</color>");
 
             int written = 0;
             if (parts.Valid && parts.Ids != null)
@@ -431,7 +430,7 @@ namespace TitanOrbit.UI
                         continue;
 
                     string name = ResolvePartName(parts.Family, parts.Ids[i]);
-                    sb.Append("• ").Append(name).Append("  ");
+                    sb.Append("- ").Append(name).Append("  ");
                     if (s.firePower >= 0.05f)
                         sb.Append("+").Append(F1(s.firePower)).Append(" Fire  ");
                     if (s.fireRate >= 0.01f)
@@ -444,18 +443,113 @@ namespace TitanOrbit.UI
             }
 
             if (written == 0)
-                sb.AppendLine("<color=#888888>No weapon parts matched.</color>");
+                sb.AppendLine("<color=#5B7A94>No weapon parts matched.</color>");
 
-            sb.AppendLine();
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "HULL AVG", "7EC8FF");
             float dps = live.Weapon.BulletDamage * live.Weapon.FireRate;
             sb.Append("Hull avg  ").Append(F1(live.Weapon.BulletDamage)).Append("/hit  ");
             sb.Append(F1(dps)).Append("/s  ");
-            sb.Append("<color=#888888>").Append(F1(live.Weapon.FireRate)).Append("/s</color>");
+            sb.Append("<color=#5B7A94>").Append(F1(live.Weapon.FireRate)).Append("/s</color>");
         }
 
         // --------------------------------------------------------------------------
         // Helpers
         // -------------------------------------------------------------------------
+
+        /// <summary>
+        /// Expanded totalMass composition + subtractive drag on Move / Accel.
+        /// Used by Move Speed ability tips and SPD/ACC speedometer tips so the old one-liner
+        /// "- totalMass X tax -> cruise Y" is replaced with a readable pipeline.
+        /// </summary>
+        /// <param name="sb">Tip string builder.</param>
+        /// <param name="live">Live motor / cargo numbers from the HUD.</param>
+        /// <param name="includeMove">When true, show chassis Move - speed drag -> cruise.</param>
+        /// <param name="includeAccel">When true, show chassis Accel - accel drag -> taxed Accel.</param>
+        public static void AppendMassTaxEffectsBreakdown(
+            StringBuilder sb,
+            in LiveContext live,
+            bool includeMove,
+            bool includeAccel)
+        {
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "MASS TAX", "C9A0FF");
+
+            ShipCargoMobilitySettings settings = ShipCargoMobilitySettingsCache.ResolveOrDefault();
+            float mGem = settings != null ? settings.massPerGem : 0.01f;
+            float mPerson = settings != null ? settings.massPerPerson : 0.15f;
+            float mSize = settings != null ? settings.massPerComponentSize : 1f;
+            float speedW = settings != null ? settings.speedWeightPerMass : 0.1f;
+            float accelW = settings != null ? settings.accelWeightPerMass : 0.1f;
+            float minSpeed = settings != null ? settings.minSpeed : 0.1f;
+            float minAccel = settings != null ? settings.minAccel : 0.1f;
+
+            float gemMass = live.Ship.CurrentGems * mGem;
+            float peopleMass = live.Ship.CurrentPeople * mPerson;
+            float sizeMass = live.ComponentSize * mSize;
+
+            sb.AppendLine("<color=#5B7A94>totalMass = cargo + hull size (subtracts from chassis Move/Accel)</color>");
+            sb.Append("Gems  ").Append(F0(live.Ship.CurrentGems))
+                .Append(" x ").Append(F2(mGem))
+                .Append(" = ").Append(F2(gemMass)).AppendLine();
+            sb.Append("People  ").Append(F0(live.Ship.CurrentPeople))
+                .Append(" x ").Append(F2(mPerson))
+                .Append(" = ").Append(F2(peopleMass)).AppendLine();
+            sb.Append("Hull size  ").Append(F1(live.ComponentSize))
+                .Append(" x ").Append(F2(mSize))
+                .Append(" = ").Append(F2(sizeMass)).AppendLine();
+            sb.Append("totalMass  <color=#AAEEDD>").Append(F1(live.TotalMass)).Append("</color>")
+                .AppendLine();
+
+            ShipStatTooltipChrome.AppendSubDivider(sb);
+
+            float speedDrag = live.TotalMass * speedW;
+            float accelDrag = live.TotalMass * accelW;
+
+            if (includeMove)
+            {
+                // Cruise before territory = chassis - speed drag (floored).
+                float cruisePreTerritory = Mathf.Max(
+                    minSpeed,
+                    live.ChassisMaxSpeed - speedDrag);
+                // Prefer live cruise when territory is 1 so we stay honest to the HUD.
+                float cruiseShown = live.TerritoryMult > 1.001f
+                    ? live.CruiseMaxSpeed / Mathf.Max(0.001f, live.TerritoryMult)
+                    : live.CruiseMaxSpeed;
+
+                sb.Append("Speed drag  totalMass x ").Append(F2(speedW))
+                    .Append(" = <color=#FFAA66>-").Append(F1(speedDrag)).Append("</color>")
+                    .AppendLine();
+                sb.Append("Chassis Move  ").Append(FResult(live.ChassisMaxSpeed))
+                    .Append(" - ").Append(F1(speedDrag))
+                    .Append(" -> cruise <color=#AAEEDD>").Append(FResult(cruiseShown)).Append("</color>")
+                    .AppendLine();
+                if (Mathf.Abs(cruiseShown - cruisePreTerritory) > 0.05f)
+                {
+                    sb.Append("<color=#5B7A94>(floor/clamp ").Append(FResult(cruisePreTerritory))
+                        .Append(")</color>").AppendLine();
+                }
+
+                if (live.TerritoryMult > 1.001f)
+                {
+                    sb.Append("Territory  x").Append(FDetail(live.TerritoryMult))
+                        .Append(" -> cruise ").Append(FResult(live.CruiseMaxSpeed)).AppendLine();
+                }
+            }
+
+            if (includeAccel)
+            {
+                float taxed = Mathf.Max(minAccel, live.ChassisAccel - accelDrag);
+                // Prefer live TaxedAccel when available (matches grind lever / motor).
+                float taxedShown = live.TaxedAccel > 0.01f ? live.TaxedAccel : taxed;
+
+                sb.Append("Accel drag  totalMass x ").Append(F2(accelW))
+                    .Append(" = <color=#FFAA66>-").Append(F1(accelDrag)).Append("</color>")
+                    .AppendLine();
+                sb.Append("Chassis Accel  ").Append(FResult(live.ChassisAccel))
+                    .Append(" - ").Append(F1(accelDrag))
+                    .Append(" -> <color=#40EB73>").Append(FResult(taxedShown)).Append("</color>")
+                    .AppendLine();
+            }
+        }
 
         /// <summary>
         /// Level-1 propulsion pool: primary Move/Accel ×1 + each extra × extraStackWeight of its own stats.
@@ -802,10 +896,14 @@ namespace TitanOrbit.UI
             };
         }
 
+        /// <summary>
+        /// Telemetry-style section title inside a READOUT banner.
+        /// [TITAN-ORBIT] Matches ability-chip tip language from <see cref="ShipAbilityStatBreakdown"/>.
+        /// </summary>
         static void AppendHeader(StringBuilder sb, string title)
         {
-            sb.Append("<b>").Append(title).Append("</b>").AppendLine();
-            sb.AppendLine();
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "READOUT", "7EC8FF");
+            sb.Append("<b><color=#E8F4FF>").Append(title).Append("</color></b>").AppendLine();
         }
 
         /// <summary>Moon-dock display name, or formatted component id.</summary>

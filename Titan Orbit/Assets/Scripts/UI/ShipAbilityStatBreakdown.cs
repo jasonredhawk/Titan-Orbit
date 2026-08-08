@@ -9,10 +9,11 @@ using UnityEngine;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Gamer-style calculation cards for the ten bottom Ship Ability chips.
+    /// Telemetry-style calculation cards for the ten bottom Ship Ability chips.
     /// Builds grouped part grids (N× same component) and walks parts → stack → ship tier →
     /// ability purchases → live modifiers. Presentation-only — never writes ECS.
     /// <para>
+    /// Rich text is shown inside <see cref="ShipStatTooltipChrome"/> (Shift sci-fi frame).
     /// Paired with <see cref="ShipAttributeUpgradeHUD"/> chips and
     /// <see cref="ShipSpeedometerStatTooltips"/> (shared <see cref="ShipSpeedometerStatTooltips.PartCache"/>).
     /// </para>
@@ -108,16 +109,23 @@ namespace TitanOrbit.UI
                     nextStep = NextTenPercentStep(value, abilityLv);
                     break;
                 case 6:
-                    // Show chassis Move (pre–mass-tax) so chip matches ability math; live cruise is in tip.
-                    value = Mathf.Max(0f, live.ChassisMaxSpeed);
+                    // [TITAN-ORBIT] Chip shows live cruise after mass tax (+ territory), matching the
+                    // speedometer SPD ceiling when OVERDRIVE is off — not pre-tax chassis Move.
+                    value = Mathf.Max(0f, live.CruiseMaxSpeed > 0.01f
+                        ? live.CruiseMaxSpeed
+                        : live.ChassisMaxSpeed);
+                    // Next purchase still adds a chassis PerAbilityLevel step (subtractive tax
+                    // does not shrink that delta), so preview stays MoveStepPreview.
                     nextStep = Mathf.Max(0f, live.MoveStepPreview);
                     if (nextStep <= 0.0001f)
                         nextStep = Mathf.Max(0f, eff.moveSpeedPerAbilityLevel);
                     break;
                 case 7:
-                    value = Mathf.Max(0f, live.ChassisTurnDeg > 0.01f ? live.ChassisTurnDeg : eff.turnSpeed);
+                    // [TITAN-ORBIT] Show post–mass-tax turn when available; +10% step still from chassis.
+                    float chassisTurn = live.ChassisTurnDeg > 0.01f ? live.ChassisTurnDeg : eff.turnSpeed;
+                    value = Mathf.Max(0f, live.TaxedTurnDeg > 0.01f ? live.TaxedTurnDeg : chassisTurn);
                     unitSuffix = "°/s";
-                    nextStep = NextTenPercentStep(value, abilityLv);
+                    nextStep = NextTenPercentStep(chassisTurn, abilityLv);
                     break;
                 case 8:
                     value = Mathf.Max(0f, eff.maxGems);
@@ -177,6 +185,7 @@ namespace TitanOrbit.UI
                     break;
                 case 2:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.HealthCap, "Health Cap", lv, live.EffectiveStats.healthCap);
+                    ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE", "7EC8FF");
                     sb.Append("Live HP  ").Append(FResult(live.Ship.Health))
                         .Append(" / ").Append(FResult(live.Ship.MaxHealth)).AppendLine();
                     break;
@@ -185,6 +194,7 @@ namespace TitanOrbit.UI
                     break;
                 case 4:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.EnergyCap, "Energy Cap", lv, live.EffectiveStats.energyCap);
+                    ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE", "7EC8FF");
                     sb.Append("Live Energy  ").Append(FResult(live.Ship.CurrentEnergy))
                         .Append(" / ").Append(FResult(live.Ship.MaxEnergy)).AppendLine();
                     break;
@@ -200,10 +210,12 @@ namespace TitanOrbit.UI
                     break;
                 case 8:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.MaxGems, "Max Gems", lv, live.EffectiveStats.maxGems);
+                    ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE", "7EC8FF");
                     sb.Append("Live gems  ").Append(F0(live.Ship.CurrentGems)).AppendLine();
                     break;
                 case 9:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.MaxPeople, "Max People", lv, live.EffectiveStats.maxPeople);
+                    ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE", "7EC8FF");
                     sb.Append("Live people  ").Append(F0(live.Ship.CurrentPeople)).AppendLine();
                     break;
                 default:
@@ -369,28 +381,38 @@ namespace TitanOrbit.UI
         /// Appends a clear PRIMARY / EXTRAS parts grid.
         /// Example: <c>1× Engine_1  base 12 ×100% = +12</c> then <c>2× Engine_1  base 12 ×10% = +2.4</c>.
         /// </summary>
+        /// <param name="sectionTitle">
+        /// Optional inner-panel banner label. Null = default PARTS / STACK.
+        /// </param>
         public static void AppendGroupedFieldGrid(
             StringBuilder sb,
             in ShipSpeedometerStatTooltips.PartCache parts,
             StatField field,
             string unitLabel,
-            bool useStackWeight)
+            bool useStackWeight,
+            string sectionTitle = null)
         {
             var rows = new List<GroupedPartRow>(8);
             CollectGroupedRows(in parts, field, useStackWeight, rows);
+            // [TITAN-ORBIT] Inner "panel" header so PARTS reads as its own block inside the tip.
+            string banner = string.IsNullOrEmpty(sectionTitle)
+                ? (useStackWeight ? "PARTS / STACK" : "PARTS")
+                : sectionTitle;
+            ShipStatTooltipChrome.AppendSectionBanner(sb, banner, "5B9BD5");
+
             if (rows.Count == 0)
             {
-                sb.AppendLine("<color=#888888>No contributing parts.</color>");
+                sb.AppendLine("<color=#5B7A94>No contributing parts.</color>");
                 return;
             }
 
             if (useStackWeight)
             {
-                sb.AppendLine("<color=#AAAAAA>Stack: primary ×100% of its base; each extra × its extraStackWeight of its own base.</color>");
+                sb.AppendLine("<color=#5B7A94>primary x100% of base · extras x their extraStackWeight</color>");
             }
             else
             {
-                sb.AppendLine("<color=#AAAAAA>Parts (full sum — no stack weight)</color>");
+                sb.AppendLine("<color=#5B7A94>full sum — no stack weight</color>");
             }
 
             float poolSum = 0f;
@@ -407,7 +429,8 @@ namespace TitanOrbit.UI
                     continue;
                 if (!wrotePrimaryHeader)
                 {
-                    sb.AppendLine("<b>PRIMARY</b> <color=#888888>(×100%)</color>");
+                    ShipStatTooltipChrome.AppendSubDivider(sb);
+                    sb.AppendLine("<color=#5B9BD5>> PRIMARY</color> <color=#5B7A94>(x100% of base)</color>");
                     wrotePrimaryHeader = true;
                 }
 
@@ -436,7 +459,8 @@ namespace TitanOrbit.UI
                     continue;
                 if (!wroteExtraHeader)
                 {
-                    sb.AppendLine("<b>EXTRAS</b> <color=#888888>(each × own weight)</color>");
+                    ShipStatTooltipChrome.AppendSubDivider(sb);
+                    sb.AppendLine("<color=#C9A0FF>> EXTRAS</color> <color=#5B7A94>(each x own weight)</color>");
                     wroteExtraHeader = true;
                 }
 
@@ -470,7 +494,8 @@ namespace TitanOrbit.UI
                 sb.AppendLine();
             }
 
-            sb.Append("Pool  <color=#AAEEDD>").Append(FDetail(poolSum)).Append("</color> ").Append(unitLabel).AppendLine();
+            sb.Append("<color=#5B7A94>POOL</color>  <color=#AAEEDD>").Append(FDetail(poolSum)).Append("</color> ")
+                .Append(unitLabel).AppendLine();
         }
 
         /// <summary>
@@ -534,19 +559,20 @@ namespace TitanOrbit.UI
             float afterTier = afterAbility / Mathf.Max(0.0001f, abilityMult);
             float poolEst = afterTier / Mathf.Max(0.0001f, 1f + perLvl * growth);
 
-            sb.AppendLine();
+            // --- Pipeline block (tier → ability purchases) ---
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "PIPELINE", "7DFFB2");
             sb.Append("Ship Lv ").Append(shipLevel.ToString(CultureInfo.InvariantCulture));
             if (perLvl > 0)
             {
-                sb.Append("  +").Append(F0(growth * 100f)).Append("% ×").Append(perLvl.ToString(CultureInfo.InvariantCulture));
-                sb.Append(" → ").Append(FDetail(afterTier)).AppendLine();
+                sb.Append("  +").Append(F0(growth * 100f)).Append("% x").Append(perLvl.ToString(CultureInfo.InvariantCulture));
+                sb.Append(" -> ").Append(FDetail(afterTier)).AppendLine();
             }
             else
-                sb.Append("  ").Append(FDetail(poolEst)).Append(" <color=#888888>(no tier growth)</color>").AppendLine();
+                sb.Append("  ").Append(FDetail(poolEst)).Append(" <color=#5B7A94>(no tier growth)</color>").AppendLine();
 
             sb.Append("Ability Lv").Append(abilityLv.ToString(CultureInfo.InvariantCulture));
-            sb.Append("  ×").Append(FDetail(abilityMult));
-            sb.Append(" → <b>").Append(FResult(finalEffective)).Append("</b>").AppendLine();
+            sb.Append("  x").Append(FDetail(abilityMult));
+            sb.Append(" -> <b><color=#AAEEDD>").Append(FResult(finalEffective)).Append("</color></b>").AppendLine();
         }
 
         static void AppendMoveAbilityCard(
@@ -557,29 +583,26 @@ namespace TitanOrbit.UI
             int abilityLv)
         {
             _ = attrs;
-            sb.AppendLine("<color=#AAAAAA>Move: PRIMARY at ×100% of its base; each EXTRA engine/thruster at ×extraStackWeight of its own base. Accel + OD drain use the same stacking.</color>");
-            AppendGroupedFieldGrid(sb, parts, StatField.MoveSpeed, "Move", useStackWeight: true);
-            sb.AppendLine();
-            AppendGroupedFieldGrid(sb, parts, StatField.AccelerationCap, "Accel", useStackWeight: true);
+            sb.AppendLine("<color=#5B7A94>PRIMARY x100% of base; each EXTRA at xextraStackWeight. Accel + OD drain share stacking.</color>");
+            AppendGroupedFieldGrid(sb, parts, StatField.MoveSpeed, "Move", useStackWeight: true, sectionTitle: "MOVE PARTS");
+            AppendGroupedFieldGrid(sb, parts, StatField.AccelerationCap, "Accel", useStackWeight: true, sectionTitle: "ACCEL PARTS");
 
-            sb.AppendLine();
-            sb.Append("Chassis Move  ").Append(FResult(live.ChassisMaxSpeed)).AppendLine();
-            sb.Append("Chassis Accel ").Append(FResult(live.ChassisAccel)).AppendLine();
-            sb.Append("− totalMass ").Append(FDetail(live.TotalMass)).Append(" tax → cruise ")
-                .Append(FResult(live.CruiseMaxSpeed / Mathf.Max(0.001f, live.TerritoryMult))).AppendLine();
-            if (live.TerritoryMult > 1.001f)
-                sb.Append("Territory ×").Append(FDetail(live.TerritoryMult))
-                    .Append(" → ").Append(FResult(live.CruiseMaxSpeed)).AppendLine();
+            // --- Mass tax: composition + drag on Move and Accel (replaces the old one-liner) ---
+            ShipSpeedometerStatTooltips.AppendMassTaxEffectsBreakdown(
+                sb, in live, includeMove: true, includeAccel: true);
+
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE FLIGHT", "7EC8FF");
             if (live.OverdriveCapacityMult > 1.001f)
-                sb.Append("<color=#FFCC66>OVERDRIVE bar ").Append(FResult(live.BarMaxSpeed)).Append("</color>").AppendLine();
+                sb.Append("<color=#FFCC66>OVERDRIVE bar ").Append(FResult(live.BarMaxSpeed)).Append("</color>")
+                    .AppendLine();
 
             float moveStep = live.MoveStepPreview;
             if (moveStep <= 0.0001f)
                 moveStep = Mathf.Max(0f, parts.Propulsion.moveSpeedPerAbilityLevel);
             sb.Append("Purchased  Lv").Append(abilityLv.ToString(CultureInfo.InvariantCulture));
-            sb.Append(" × +").Append(FDetail(moveStep)).Append(" Move/buy").AppendLine();
-            sb.Append("MASS  ").Append(FResult(live.TotalMass))
-                .Append("  (gems+people+size)").AppendLine();
+            sb.Append(" x +").Append(FDetail(moveStep)).Append(" Move/buy").AppendLine();
+            sb.Append("Now  ").Append(FResult(live.CurrentSpeed))
+                .Append(" / ").Append(FResult(live.LiveMaxSpeed)).AppendLine();
         }
 
         static void AppendRelatedFireExtras(
@@ -587,17 +610,17 @@ namespace TitanOrbit.UI
             in ShipSpeedometerStatTooltips.PartCache parts,
             in ShipSpeedometerStatTooltips.LiveContext live)
         {
-            sb.AppendLine();
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "RELATED", "FFAA66");
             float dps = live.Weapon.BulletDamage * live.Weapon.FireRate;
             sb.Append("Hull avg  ").Append(FResult(live.Weapon.BulletDamage)).Append("/hit  ");
             sb.Append(FResult(dps)).Append("/s  ");
-            sb.Append("<color=#888888>").Append(FResult(live.Weapon.FireRate)).Append("/s</color>").AppendLine();
+            sb.Append("<color=#5B7A94>").Append(FResult(live.Weapon.FireRate)).Append("/s</color>").AppendLine();
 
-            AppendGroupedFieldGrid(sb, parts, StatField.RammingPower, "RAM", useStackWeight: true);
+            AppendGroupedFieldGrid(sb, parts, StatField.RammingPower, "RAM", useStackWeight: true, sectionTitle: "RAM PARTS");
             sb.Append("RAM live  ").Append(FDetail(live.RamRating))
-                .Append(" × m").Append(FDetail(live.TotalMass))
-                .Append(" × v").Append(FDetail(live.CurrentSpeed))
-                .Append(" → ast ").Append(FResult(live.RamAsteroidDamage))
+                .Append(" x m").Append(FDetail(live.TotalMass))
+                .Append(" x v").Append(FDetail(live.CurrentSpeed))
+                .Append(" -> ast ").Append(FResult(live.RamAsteroidDamage))
                 .Append("  hull ").Append(FResult(live.RamSelfDamage)).AppendLine();
         }
 
@@ -607,9 +630,14 @@ namespace TitanOrbit.UI
             if (settings == null)
                 return;
             float drag = live.TotalMass * settings.turnWeightPerMass;
-            sb.Append("Mass turn drag  −").Append(FDetail(drag)).Append("/s").AppendLine();
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE", "7EC8FF");
+            sb.Append("Mass turn drag  -").Append(FDetail(drag)).Append("/s").AppendLine();
         }
 
+        /// <summary>
+        /// Telemetry-style header: title, big readout, Lv / next step, then a tech divider.
+        /// [TITAN-ORBIT] Rich-text colors match <see cref="ShipStatTooltipChrome"/> cyan readout language.
+        /// </summary>
         static void AppendHeader(
             StringBuilder sb,
             string title,
@@ -620,20 +648,31 @@ namespace TitanOrbit.UI
             float nextStep,
             bool moveAbility)
         {
-            sb.Append("<b>").Append(title).Append("</b>").AppendLine();
-            sb.Append("<size=120%>").Append(FResult(value)).Append(unit).Append("</size>").AppendLine();
-            sb.Append("Lv").Append(lv.ToString(CultureInfo.InvariantCulture))
-                .Append(" / ").Append(maxLv.ToString(CultureInfo.InvariantCulture));
+            // --- Readout block (body starts below chrome caption — no duplicate title bar) ---
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "READOUT", "7EC8FF");
+            sb.Append("<b><color=#E8F4FF>").Append(title).Append("</color></b>").AppendLine();
+
+            // --- Big current value ---
+            sb.Append("<size=125%><color=#AAEEDD>").Append(FResult(value)).Append("</color></size>");
+            if (!string.IsNullOrEmpty(unit))
+                sb.Append("<color=#6A8499>").Append(unit).Append("</color>");
+            sb.AppendLine();
+
+            // --- Level / next purchase ---
+            sb.Append("<color=#5B7A94>|</color> <color=#B8C8D8>Lv </color>")
+                .Append("<color=#E8F4FF>").Append(lv.ToString(CultureInfo.InvariantCulture)).Append("</color>")
+                .Append("<color=#5B7A94>/</color>")
+                .Append("<color=#B8C8D8>").Append(maxLv.ToString(CultureInfo.InvariantCulture)).Append("</color>");
             if (nextStep > 0.0001f)
             {
-                sb.Append("   next +").Append(FResult(nextStep));
+                sb.Append("  <color=#5B7A94>*</color>  <color=#B8C8D8>next </color>")
+                    .Append("<color=#7DFFB2>+").Append(FResult(nextStep)).Append("</color>");
                 if (!moveAbility)
-                    sb.Append(" <color=#888888>(+10%)</color>");
+                    sb.Append(" <color=#5B7A94>(+10%)</color>");
                 else
-                    sb.Append(" <color=#888888>(ability step)</color>");
+                    sb.Append(" <color=#5B7A94>(ability step)</color>");
             }
 
-            sb.AppendLine();
             sb.AppendLine();
         }
 
