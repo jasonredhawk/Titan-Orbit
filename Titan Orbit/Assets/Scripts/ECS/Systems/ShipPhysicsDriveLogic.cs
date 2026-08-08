@@ -29,6 +29,9 @@ namespace TitanOrbit.ECS
     /// (ExtraSpeedEnergyDrain summed across engines).
     /// Live subtractive mass tax (<see cref="ShipMobilityResolution"/>) converts untaxed motor
     /// baselines into MaxSpeed / accel / turn from current gems/people + ComponentSize.
+    /// While <see cref="ShipAsteroidContactState"/> reports contact from the previous physics
+    /// step, inward velocity into the rock is removed so continuous thrust cannot dig the hull in
+    /// (position shove from AABB spheres was tried and rejected — compound hulls over-estimate).
     /// Paired with <see cref="ShipPhysicsDriveSystem"/> and
     /// <see cref="ShipClientPredictedPhysicsDriveSystem"/>.
     /// </summary>
@@ -52,6 +55,10 @@ namespace TitanOrbit.ECS
         /// <param name="transform">Position (read) and yaw (write); position integration is physics-owned.</param>
         /// <param name="orbitState">Replicated orbit ring context for HUD and people transports.</param>
         /// <param name="territoryLatch">Sticky friendly-triangle mult (client + server, not ghosted).</param>
+        /// <param name="asteroidContact">
+        /// Previous physics step's ship↔asteroid contact (from collision events). When in contact,
+        /// inward velocity along the rock normal is removed so continuous thrust cannot dig in.
+        /// </param>
         /// <param name="planets">Main-thread planet snapshots shared by all ships this tick.</param>
         /// <param name="dt">Fixed prediction step delta time.</param>
         /// <param name="mapW">Toroidal map width.</param>
@@ -81,6 +88,7 @@ namespace TitanOrbit.ECS
             ref LocalTransform transform,
             ref ShipOrbitState orbitState,
             ref ShipTerritoryBoostLatch territoryLatch,
+            in ShipAsteroidContactState asteroidContact,
             in NativeArray<PlanetMotorSnapshot> planets,
             float dt,
             float mapW,
@@ -306,6 +314,13 @@ namespace TitanOrbit.ECS
                 elapsedSeconds,
                 softenForPassiveOrbit: useOrbit);
 
+            // --- Asteroid contact: reject inward motor velocity (no position shove) ---
+            // [TITAN-ORBIT] Continuous thrust into a rock used to fight PhysX and slowly dig the
+            // hull in. Contact normal is from last physics step's collision events. We only remove
+            // the into-rock component so slide / bounce remnant / orbit still work. Do NOT push
+            // LocalTransform with AABB sphere radii — compound hulls over-estimate and shove.
+            RejectInwardAsteroidVelocity(ref vel, in asteroidContact);
+
             vel.y = 0f;
             physicsVelocity = new PhysicsVelocity
             {
@@ -367,6 +382,34 @@ namespace TitanOrbit.ECS
         {
             latch.LatchedMult = 1f;
             latch.HoldUntilElapsed = -1.0;
+        }
+
+        /// <summary>
+        /// Removes velocity into an asteroid contact normal so the motor cannot dig the hull deeper
+        /// while grinding. Leaves tangential slide and outward (separating) speed untouched.
+        /// </summary>
+        /// <param name="vel">Planar linear velocity — inward component written to zero when contacting.</param>
+        /// <param name="asteroidContact">Previous physics step contact cache (may be empty).</param>
+        public static void RejectInwardAsteroidVelocity(
+            ref float3 vel,
+            in ShipAsteroidContactState asteroidContact)
+        {
+            if (asteroidContact.InContact == 0)
+                return;
+
+            float3 n = asteroidContact.OutwardNormal;
+            n.y = 0f;
+            if (math.lengthsq(n) < 1e-8f)
+                return;
+            n = math.normalize(n);
+
+            // Negative vn = moving into the rock (opposite the outward normal).
+            float vn = math.dot(vel, n);
+            if (vn >= 0f)
+                return;
+
+            vel -= n * vn;
+            vel.y = 0f;
         }
 
         /// <summary>

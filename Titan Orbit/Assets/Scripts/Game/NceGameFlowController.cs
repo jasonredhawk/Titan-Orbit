@@ -1103,12 +1103,12 @@ namespace TitanOrbit.Game
                 HideJoinTeamContainerBackground(teamSelectionPanel);
             }
 
-            // --- Team cards: always refresh nebula sprite + team tint ---
-            // Cheap, and lets tint strength tweaks apply when Join Team becomes visible again.
+            // --- Team cards: always refresh nebula fill + TitleBar accent ---
+            // Cheap, and lets palette tweaks apply when Join Team becomes visible again.
             if (_teamPanels != null)
             {
                 for (int i = 0; i < _teamPanels.Length; i++)
-                    ApplyTeamPanelSpaceBackgroundImage(_teamPanels[i]);
+                    ApplyTeamPanelVisuals(_teamPanels[i]);
             }
         }
 
@@ -1139,18 +1139,57 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// How hard the team hue pulls away from a neutral (white) multiply.
-        /// Higher = clearer team color; lower = more raw nebula. ~0.85 reads clearly on Nebula Blue.
+        /// TitleBar fill alpha when painted with the canonical team color.
+        /// Opaque enough to read as a solid accent strip; text still sits on top.
         /// </summary>
-        const float TeamPanelSpaceTintStrength = 0.85f;
+        const float TeamPanelAccentBarAlpha = 0.92f;
 
         /// <summary>
-        /// Puts the shared space nebula sprite on a team card Image and tints it with the team color.
-        /// Fills the panel rect (same role as the old Placeholder HUD BG on TeamA…TeamE).
-        /// Does not touch nested TitleBar / StatsBar chrome.
+        /// Soft darken before team tint so white TMP labels stay readable over the nebula.
+        /// Applied as a neutral grey multiply, then blended toward team RGB.
+        /// </summary>
+        const float TeamPanelNebulaScrim = 0.18f;
+
+        /// <summary>
+        /// How hard the panel background pulls toward the team hue (0 = grey scrim only,
+        /// 1 = full team multiply). Mid values keep nebula detail while the card still reads
+        /// as that faction — the old 0.85 wash crushed blue-heavy art.
+        /// </summary>
+        const float TeamPanelBackgroundTintStrength = 0.45f;
+
+        /// <summary>
+        /// Applies Join Team card visuals: team-tinted nebula on the panel root, solid team color
+        /// on the TitleBar accent strip, and a matching Outline. Faction hue shows on the fill
+        /// and the bar — not outline-only.
         /// </summary>
         /// <param name="root">TeamAPanel…TeamEPanel root; null-safe no-op.</param>
-        static void ApplyTeamPanelSpaceBackgroundImage(GameObject root)
+        static void ApplyTeamPanelVisuals(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            // --- Resolve faction RGB once (panel name → TeamId palette) ---
+            if (!TryGetTeamColorForPanel(root, out Color teamRgb))
+            {
+                // Fallback: keep scene-authored Image RGB if the GO was renamed.
+                if (root.TryGetComponent<Image>(out var fallbackImage))
+                    teamRgb = new Color(fallbackImage.color.r, fallbackImage.color.g, fallbackImage.color.b, 1f);
+                else
+                    teamRgb = Color.white;
+            }
+
+            ApplyTeamPanelSpaceBackgroundImage(root, teamRgb);
+            ApplyTeamPanelAccentBar(root, teamRgb);
+            ApplyTeamPanelOutline(root, teamRgb);
+        }
+
+        /// <summary>
+        /// Puts the shared space nebula sprite on the team card root Image and multiplies it with
+        /// a moderate team tint (plus a light scrim). TitleBar still carries the solid accent bar.
+        /// </summary>
+        /// <param name="root">TeamAPanel…TeamEPanel root; null-safe no-op.</param>
+        /// <param name="teamRgb">Canonical team RGB used for the background multiply.</param>
+        static void ApplyTeamPanelSpaceBackgroundImage(GameObject root, Color teamRgb)
         {
             if (root == null)
                 return;
@@ -1167,26 +1206,87 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            // [UNITY] Image multiplies sprite RGB by Image.color — team hue tints the nebula.
-            // [TITAN-ORBIT] Stretch to the card (not preserveAspect) so tall panels fill like before.
+            // [UNITY] Image multiplies sprite RGB by Image.color — that is the team tint.
+            // [TITAN-ORBIT] Lerp from a light grey scrim → team color (not white→team at 0.85).
+            // Full-strength team multiply on Nebula Blue crushed non-matching channels; ~0.45
+            // leaves art readable while the panel still reads as that faction.
             image.sprite = space;
             image.type = Image.Type.Simple;
             image.preserveAspect = false;
             image.raycastTarget = true;
 
-            // --- Stronger team tint ---
-            // Pure scene RGB (e.g. 0.9, 0.25, 0.25) multiplies the blue-heavy nebula too dark —
-            // non-matching channels get crushed and the team hue is hard to read.
-            // Lerp from white → team color keeps brightness while pushing a clear faction tint.
-            Color teamRgb = new Color(image.color.r, image.color.g, image.color.b, 1f);
-            // If a previous pass already wrote a lerped tint, recover a saturated target from the
-            // panel name (TeamAPanel…TeamEPanel) so repeated RefreshUi calls stay vivid.
-            if (TryGetTeamColorForPanel(root, out Color canonical))
-                teamRgb = canonical;
-
-            Color tint = Color.Lerp(Color.white, teamRgb, TeamPanelSpaceTintStrength);
+            float grey = 1f - TeamPanelNebulaScrim;
+            Color baseTint = new Color(grey, grey, grey, 1f);
+            Color tint = Color.Lerp(baseTint, teamRgb, TeamPanelBackgroundTintStrength);
             tint.a = 1f;
             image.color = tint;
+        }
+
+        /// <summary>
+        /// Paints Content/TitleBar with the solid team color — the strong "team colour bar"
+        /// on top of the softer tinted nebula fill.
+        /// </summary>
+        /// <param name="root">TeamAPanel…TeamEPanel root.</param>
+        /// <param name="teamRgb">Canonical team RGB (alpha ignored; we set accent alpha).</param>
+        static void ApplyTeamPanelAccentBar(GameObject root, Color teamRgb)
+        {
+            if (root == null)
+                return;
+
+            // SampleScene path: Team*Panel/Content/TitleBar (Image + LayoutElement height ~32).
+            Transform titleBar = root.transform.Find("Content/TitleBar");
+            if (titleBar == null)
+                titleBar = FindChildRecursiveByName(root.transform, "TitleBar");
+            if (titleBar == null || !titleBar.TryGetComponent<Image>(out var barImage))
+                return;
+
+            // Solid fill — drop any Placeholder HUD sprite so hue is pure team color.
+            barImage.sprite = null;
+            barImage.type = Image.Type.Simple;
+            barImage.preserveAspect = false;
+            Color accent = teamRgb;
+            accent.a = TeamPanelAccentBarAlpha;
+            barImage.color = accent;
+        }
+
+        /// <summary>
+        /// Tints the card Outline with the team color so the panel edge matches the TitleBar accent.
+        /// </summary>
+        /// <param name="root">TeamAPanel…TeamEPanel root.</param>
+        /// <param name="teamRgb">Canonical team RGB.</param>
+        static void ApplyTeamPanelOutline(GameObject root, Color teamRgb)
+        {
+            if (root == null)
+                return;
+            if (!root.TryGetComponent<Outline>(out var outline))
+                return;
+
+            // Slightly brighter edge so the outline pops against the nebula fill.
+            Color edge = Color.Lerp(teamRgb, Color.white, 0.35f);
+            edge.a = 1f;
+            outline.effectColor = edge;
+        }
+
+        /// <summary>
+        /// Depth-first search for a child Transform by exact name (TitleBar fallback if path differs).
+        /// </summary>
+        static Transform FindChildRecursiveByName(Transform parent, string childName)
+        {
+            if (parent == null || string.IsNullOrEmpty(childName))
+                return null;
+
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                Transform child = parent.GetChild(i);
+                if (child.name == childName)
+                    return child;
+
+                Transform nested = FindChildRecursiveByName(child, childName);
+                if (nested != null)
+                    return nested;
+            }
+
+            return null;
         }
 
         /// <summary>

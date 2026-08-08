@@ -11,8 +11,7 @@ namespace TitanOrbit.ECS
     /// can impart pitch/roll; this re-locks yaw-only rotation, clamps <c>Position.y</c> to the play
     /// plane, and zeros vertical velocity. Bounce linear XZ is preserved for
     /// <see cref="ShipKinematicsSyncSystem"/>. Pipeline:
-    /// Drive → Physics → Bounce → Friction → SameTileDepenetration → Toroidal → Planar (this) →
-    /// KinematicsSync.
+    /// Drive → Physics → Bounce → Friction → Toroidal → Planar (this) → KinematicsSync.
     /// </summary>
     // OrderLast: after default-slot PhysicsSystemGroup. Avoid UpdateAfter(PhysicsSystemGroup) —
     // ClientWorld sorter warns when that group is not a PredictedFixedStep sibling.

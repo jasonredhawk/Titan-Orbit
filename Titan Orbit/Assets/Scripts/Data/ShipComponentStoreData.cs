@@ -383,7 +383,7 @@ namespace TitanOrbit.Data
         /// <summary>
         /// How much hull top speed / accel this propulsion part contributes:
         /// aggregated result with the part minus without it (same rules as flight).
-        /// Accel sums fully; Move uses primary + half Speed/Lvl on extras.
+        /// Move and Accel use primary + 10% of primary per extra engine/thruster.
         /// </summary>
         public static void TryGetPropulsionCumulativeGain(
             ShipFamilyDefinition family,

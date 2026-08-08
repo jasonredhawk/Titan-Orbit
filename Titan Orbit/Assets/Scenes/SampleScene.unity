@@ -2290,6 +2290,7 @@ MonoBehaviour:
   backgroundColor: {r: 0, g: 0, b: 0, a: 0.45}
   fillColor: {r: 0.35, g: 0.85, b: 1, a: 0.9}
   trackColor: {r: 0.15, g: 0.15, b: 0.18, a: 0.85}
+  overdriveZoneColor: {r: 1, g: 0.72, b: 0.28, a: 0.38}
   textColor: {r: 0.92, g: 0.95, b: 1, a: 1}
   accelPositiveColor: {r: 0.25, g: 0.92, b: 0.45, a: 0.92}
   accelNegativeColor: {r: 0.95, g: 0.28, b: 0.28, a: 0.92}
@@ -8544,8 +8545,8 @@ MonoBehaviour:
   floatingCountVisibility:
     gemPickup: 1
     gemDeposit: 1
-    asteroidDamage: 0
-    asteroidHealthRemaining: 0
+    asteroidDamage: 1
+    asteroidHealthRemaining: 1
     asteroidGemsRemaining: 0
     asteroidImpactForce: 0
     damageShipOrDrone: 0
@@ -12767,6 +12768,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.UI.MinimapController
   minimapRadius: 40
   collapsedZoomOutMultiplier: 1.5
+  scaleCollapsedRadiusWithShipLevel: 1
   displaySize: 150
   minimapContent: {fileID: 0}
   sizeScaleFactor: 1.2

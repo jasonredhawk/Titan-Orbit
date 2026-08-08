@@ -63,7 +63,7 @@ namespace TitanOrbit.UI
             /// <summary>Level-1 scaled per-part stats (pre ship-tier growth / attributes).</summary>
             public List<ShipComponentAbilityStats> Stats;
 
-            /// <summary>Propulsion pool at ship level (primary + half Speed/Lvl extras + summed accel).</summary>
+            /// <summary>Propulsion pool at ship level (primary Move/Accel × 10% stack per extra).</summary>
             public ShipPropulsionAggregation.Result Propulsion;
         }
 
@@ -105,6 +105,10 @@ namespace TitanOrbit.UI
             public float RamAsteroidDamage;
             public float RamSelfDamage;
             public float RamRating;
+            /// <summary>
+            /// Bottom-HUD Move Speed ability purchases (adds move + accel PerAbilityLevel steps).
+            /// </summary>
+            public int MoveSpeedAbilityLevel;
         }
 
         /// <summary>
@@ -237,12 +241,19 @@ namespace TitanOrbit.UI
         static void AppendSpeedTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "SPD — top speed");
-            sb.AppendLine("<color=#AAAAAA>Primary thruster Move once; extras add ½ Speed/Lvl.</color>");
+            sb.AppendLine("<color=#AAAAAA>Primary Move × (1 + 10% × extra engines/thrusters). Energy Cap/Regen still sum.</color>");
 
             // --- Per propulsion part ---
             int written = 0;
             if (parts.Valid && parts.Ids != null)
             {
+                float primaryBase = parts.Propulsion.primaryIndex >= 0
+                    && parts.Propulsion.primaryIndex < parts.Stats.Count
+                    ? parts.Stats[parts.Propulsion.primaryIndex].moveSpeed
+                    : 0f;
+                float extraGain = primaryBase
+                    * ShipPropulsionAggregation.AdditionalPropulsionFractionOfBase;
+
                 for (int i = 0; i < parts.Ids.Count && i < parts.Stats.Count; i++)
                 {
                     if (!ShipComponentAbilityStats.IsPropulsionComponent(parts.Ids[i]))
@@ -250,22 +261,21 @@ namespace TitanOrbit.UI
 
                     string name = ResolvePartName(parts.Family, parts.Ids[i]);
                     float baseMove = parts.Stats[i].moveSpeed;
-                    float perLvl = parts.Stats[i].moveSpeedPerAbilityLevel;
                     bool primary = i == parts.Propulsion.primaryIndex;
 
                     if (primary)
                     {
                         sb.Append("• <color=#AAEEDD>").Append(name).Append("</color>  ");
-                        sb.Append("+").Append(F1(baseMove)).Append(" Move <color=#888888>(primary)</color>");
+                        sb.Append("+").Append(FDetail(baseMove)).Append(" Move <color=#888888>(primary)</color>");
                     }
                     else
                     {
-                        float cruiseGain = Mathf.Max(0f, perLvl)
-                            * ShipPropulsionAggregation.AdditionalPropulsionMoveSpeedPerLevelFactor;
                         sb.Append("• ").Append(name).Append("  ");
-                        sb.Append("+").Append(F1(cruiseGain)).Append(" cruise");
+                        sb.Append("+").Append(FDetail(extraGain)).Append(" cruise");
+                        sb.Append(" <color=#888888>(10% of primary");
                         if (baseMove > 0.05f)
-                            sb.Append(" <color=#888888>(base ").Append(F1(baseMove)).Append(")</color>");
+                            sb.Append("; part base ").Append(FDetail(baseMove));
+                        sb.Append(")</color>");
                     }
 
                     sb.AppendLine();
@@ -276,31 +286,28 @@ namespace TitanOrbit.UI
             if (written == 0)
                 sb.AppendLine("<color=#888888>No propulsion parts matched.</color>");
 
-            // --- Aggregation + chassis → mass tax → live ---
+            // --- Aggregation + chassis pipeline → mass tax → live ---
             sb.AppendLine();
-            sb.Append("Pool top Move  <color=#AAEEDD>").Append(F1(parts.Propulsion.topMoveSpeed)).Append("</color>");
-            sb.AppendLine();
-            sb.Append("Chassis Move  ").Append(F1(live.ChassisMaxSpeed));
-            sb.Append(" <color=#888888>(level + attrs)</color>").AppendLine();
-            sb.Append("− totalMass ").Append(F1(live.TotalMass)).Append(" × SpeedWeight");
-            sb.Append(" → ").Append(F1(live.CruiseMaxSpeed / Mathf.Max(0.001f, live.TerritoryMult))).AppendLine();
+            AppendChassisMoveBreakdown(sb, parts, live);
+            sb.Append("− totalMass ").Append(FDetail(live.TotalMass)).Append(" × SpeedWeight");
+            sb.Append(" → ").Append(FResult(live.CruiseMaxSpeed / Mathf.Max(0.001f, live.TerritoryMult))).AppendLine();
 
             if (live.TerritoryMult > 1.001f)
             {
-                sb.Append("Territory  ×").Append(F1(live.TerritoryMult));
-                sb.Append(" → cruise ").Append(F1(live.CruiseMaxSpeed)).AppendLine();
+                sb.Append("Territory  ×").Append(FDetail(live.TerritoryMult));
+                sb.Append(" → cruise ").Append(FResult(live.CruiseMaxSpeed)).AppendLine();
             }
             else
             {
-                sb.Append("Cruise max  ").Append(F1(live.CruiseMaxSpeed)).AppendLine();
+                sb.Append("Cruise max  ").Append(FResult(live.CruiseMaxSpeed)).AppendLine();
             }
 
             if (live.OverdriveCapacityMult > 1.001f)
             {
                 sb.Append("<color=#FFCC66>OVERDRIVE cap ×")
-                    .Append(F1(live.OverdriveCapacityMult))
+                    .Append(FDetail(live.OverdriveCapacityMult))
                     .Append(" → bar ")
-                    .Append(F1(live.BarMaxSpeed))
+                    .Append(FResult(live.BarMaxSpeed))
                     .Append("</color>")
                     .AppendLine();
             }
@@ -308,39 +315,61 @@ namespace TitanOrbit.UI
             if (live.OverdriveActiveMult > 1.001f)
             {
                 sb.Append("<color=#FFCC66>Burst ON ×")
-                    .Append(F1(live.OverdriveActiveMult))
+                    .Append(FDetail(live.OverdriveActiveMult))
                     .Append(" → live ")
-                    .Append(F1(live.LiveMaxSpeed))
+                    .Append(FResult(live.LiveMaxSpeed))
                     .Append("</color>")
                     .AppendLine();
             }
 
-            sb.Append("Now  ").Append(F1(live.CurrentSpeed))
-                .Append(" / ").Append(F1(live.LiveMaxSpeed));
+            sb.Append("Now  ").Append(FResult(live.CurrentSpeed))
+                .Append(" / ").Append(FResult(live.LiveMaxSpeed));
         }
 
-        /// <summary>ACC: summed propulsion accel → chassis → − totalMass × AccelWeightPerMass.</summary>
+        /// <summary>ACC: primary Accel × (1 + 10% × extras) → chassis → − totalMass × AccelWeightPerMass.</summary>
         static void AppendAccelTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "ACC — acceleration");
-            sb.AppendLine("<color=#AAAAAA>Part Accel sums → chassis (level + attrs) → minus totalMass × AccelWeight.</color>");
+            sb.AppendLine("<color=#AAAAAA>Primary Accel × (1 + 10% × extra engines/thrusters) → chassis → mass tax.</color>");
 
             int written = 0;
             if (parts.Valid && parts.Ids != null)
             {
+                float primaryAccel = 0f;
+                if (parts.Propulsion.primaryIndex >= 0 && parts.Propulsion.primaryIndex < parts.Stats.Count)
+                {
+                    primaryAccel = ShipPropulsionAggregation.GetPropulsionAccelerationContribution(
+                        parts.Stats[parts.Propulsion.primaryIndex], 0);
+                }
+
+                float extraGain = primaryAccel
+                    * ShipPropulsionAggregation.AdditionalPropulsionFractionOfBase;
+
                 for (int i = 0; i < parts.Ids.Count && i < parts.Stats.Count; i++)
                 {
                     if (!ShipComponentAbilityStats.IsPropulsionComponent(parts.Ids[i]))
                         continue;
 
                     float contrib = ShipPropulsionAggregation.GetPropulsionAccelerationContribution(
-                        parts.Stats[i], Mathf.Max(0, parts.ShipLevel - 1));
-                    if (contrib < 0.05f)
-                        continue;
-
+                        parts.Stats[i], 0);
                     string name = ResolvePartName(parts.Family, parts.Ids[i]);
-                    sb.Append("• ").Append(name).Append("  +")
-                        .Append(F1(contrib)).Append(" Accel").AppendLine();
+                    bool primary = i == parts.Propulsion.primaryIndex;
+
+                    if (primary)
+                    {
+                        if (contrib < 0.05f)
+                            continue;
+                        sb.Append("• <color=#AAEEDD>").Append(name).Append("</color>  +")
+                            .Append(FDetail(contrib)).Append(" Accel <color=#888888>(primary)</color>")
+                            .AppendLine();
+                    }
+                    else
+                    {
+                        sb.Append("• ").Append(name).Append("  +")
+                            .Append(FDetail(extraGain)).Append(" Accel");
+                        sb.Append(" <color=#888888>(10% of primary)</color>").AppendLine();
+                    }
+
                     written++;
                 }
             }
@@ -349,16 +378,14 @@ namespace TitanOrbit.UI
                 sb.AppendLine("<color=#888888>No propulsion accel parts matched.</color>");
 
             sb.AppendLine();
-            sb.Append("Sum Accel  ").Append(F1(parts.Propulsion.sumAcceleration)).AppendLine();
-            sb.Append("Chassis Accel  ").Append(F1(live.ChassisAccel));
-            sb.Append(" <color=#888888>(level + attrs)</color>").AppendLine();
-            sb.Append("− totalMass ").Append(F1(live.TotalMass)).Append(" × AccelWeight");
-            sb.Append(" → <color=#40EB73>").Append(F1(live.MaxForwardAccel / Mathf.Max(0.001f, live.TerritoryMult * Mathf.Max(1f, live.OverdriveActiveMult)))).Append("</color>").AppendLine();
-            sb.Append("Live max a  <color=#40EB73>").Append(F1(live.MaxForwardAccel)).Append("</color>");
+            AppendChassisAccelBreakdown(sb, parts, live);
+            sb.Append("− totalMass ").Append(FDetail(live.TotalMass)).Append(" × AccelWeight");
+            sb.Append(" → <color=#40EB73>").Append(FResult(live.MaxForwardAccel / Mathf.Max(0.001f, live.TerritoryMult * Mathf.Max(1f, live.OverdriveActiveMult)))).Append("</color>").AppendLine();
+            sb.Append("Live max a  <color=#40EB73>").Append(FResult(live.MaxForwardAccel)).Append("</color>");
             if (live.TerritoryMult > 1.001f || live.OverdriveActiveMult > 1.001f)
                 sb.Append(" <color=#888888>(× territory / OD)</color>");
             sb.AppendLine();
-            sb.Append("Brake  ").Append(F1(live.MaxBrake)).Append("/s");
+            sb.Append("Brake  ").Append(FResult(live.MaxBrake)).Append("/s");
         }
 
         /// <summary>MASS: totalMass for mobility tax (gems + people + ComponentSize).</summary>
@@ -512,6 +539,327 @@ namespace TitanOrbit.UI
         // Helpers
         // -------------------------------------------------------------------------
 
+        /// <summary>
+        /// Level-1 propulsion pool: primary Move/Accel × (1 + 10% × extras), before ship-tier growth.
+        /// </summary>
+        static bool TryResolvePoolL1(in PartCache parts, out float moveL1, out float accelL1, out int extras)
+        {
+            moveL1 = 0f;
+            accelL1 = 0f;
+            extras = 0;
+            if (!parts.Valid
+                || parts.Ids == null
+                || parts.Stats == null
+                || parts.Propulsion.primaryIndex < 0
+                || parts.Propulsion.primaryIndex >= parts.Stats.Count
+                || parts.Propulsion.propulsionCount <= 0)
+            {
+                return false;
+            }
+
+            int count = parts.Propulsion.propulsionCount;
+            extras = Mathf.Max(0, count - 1);
+            float stack = ShipPropulsionAggregation.GetPropulsionStackScale(count);
+            ShipComponentAbilityStats primary = parts.Stats[parts.Propulsion.primaryIndex];
+            moveL1 = Mathf.Max(0f, primary.moveSpeed) * stack;
+            accelL1 = Mathf.Max(
+                0f,
+                ShipPropulsionAggregation.GetPropulsionAccelerationContribution(primary, 0)) * stack;
+            return moveL1 > 0.01f || accelL1 > 0.01f;
+        }
+
+        /// <summary>
+        /// Chassis Move pipeline: pool L1 → ship-tier growth → level mobility drag → Move Speed ability.
+        /// Final line is the live chassis MaxSpeed the HUD taxes from.
+        /// </summary>
+        static void AppendChassisMoveBreakdown(StringBuilder sb, in PartCache parts, in LiveContext live)
+        {
+            int shipLevel = Mathf.Max(1, live.Ship.ShipLevel);
+            int perLvl = Mathf.Max(0, shipLevel - 1);
+            float growth = parts.Family != null
+                ? parts.Family.ResolveShipLevelStatGrowthFraction()
+                : ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
+            float growthPct = growth * 100f;
+
+            if (!TryResolvePoolL1(parts, out float moveL1, out _, out int extras))
+            {
+                sb.Append("Chassis Move  ").Append(FResult(live.ChassisMaxSpeed)).AppendLine();
+                return;
+            }
+
+            // --- Pool at level 1 (primary × stack) — full float math, detail display ---
+            sb.Append("Pool Move  <color=#AAEEDD>").Append(FDetail(moveL1)).Append("</color>");
+            if (extras > 0)
+            {
+                sb.Append(" <color=#888888>(primary + 10%×")
+                    .Append(extras)
+                    .Append(" extras)</color>");
+            }
+
+            sb.AppendLine();
+
+            // --- Ship-tier growth ---
+            float afterTier = moveL1 * (1f + perLvl * growth);
+            if (perLvl > 0)
+            {
+                sb.Append("Ship Lv ").Append(shipLevel)
+                    .Append("  +")
+                    .Append(F0(growthPct))
+                    .Append("% ×")
+                    .Append(perLvl)
+                    .Append(" → ")
+                    .Append(FDetail(afterTier))
+                    .AppendLine();
+            }
+            else
+            {
+                sb.Append("Ship Lv 1  ").Append(FDetail(afterTier))
+                    .Append(" <color=#888888>(no tier growth yet)</color>")
+                    .AppendLine();
+            }
+
+            // --- Optional level MaxSpeed drag from mobility settings ---
+            ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
+            float speedPenalty = mobility != null ? mobility.levelMaxSpeedPenaltyFractionPerLevel : 0f;
+            float afterDrag = ShipPropulsionAggregation.ApplyShipLevelMobilityScale(
+                afterTier, perLvl, speedPenalty);
+            if (perLvl > 0 && speedPenalty > 0.0001f && !Mathf.Approximately(afterDrag, afterTier))
+            {
+                sb.Append("Level speed drag  −")
+                    .Append(F0(speedPenalty * 100f))
+                    .Append("%/Lv → ")
+                    .Append(FDetail(afterDrag))
+                    .AppendLine();
+            }
+
+            // --- Move Speed ability step (how +Move per purchase is built) ---
+            AppendMoveSpeedAbilityBreakdown(sb, parts, live, forAccel: false, moveL1);
+            sb.Append("<b>Chassis Move</b>  ").Append(FResult(live.ChassisMaxSpeed)).AppendLine();
+        }
+
+        /// <summary>
+        /// Chassis Accel pipeline: pool L1 → ship-tier growth → level accel drag → Move Speed ability.
+        /// </summary>
+        static void AppendChassisAccelBreakdown(StringBuilder sb, in PartCache parts, in LiveContext live)
+        {
+            int shipLevel = Mathf.Max(1, live.Ship.ShipLevel);
+            int perLvl = Mathf.Max(0, shipLevel - 1);
+            float growth = parts.Family != null
+                ? parts.Family.ResolveShipLevelStatGrowthFraction()
+                : ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
+            float growthPct = growth * 100f;
+
+            if (!TryResolvePoolL1(parts, out float moveL1, out float accelL1, out int extras))
+            {
+                sb.Append("Chassis Accel  ").Append(FResult(live.ChassisAccel)).AppendLine();
+                return;
+            }
+
+            sb.Append("Pool Accel  <color=#AAEEDD>").Append(FDetail(accelL1)).Append("</color>");
+            if (extras > 0)
+                sb.Append(" <color=#888888>(primary + 10%×").Append(extras).Append(" extras)</color>");
+            sb.AppendLine();
+
+            float afterTier = accelL1 * (1f + perLvl * growth);
+            if (perLvl > 0)
+            {
+                sb.Append("Ship Lv ").Append(shipLevel)
+                    .Append("  +")
+                    .Append(F0(growthPct))
+                    .Append("% ×")
+                    .Append(perLvl)
+                    .Append(" → ")
+                    .Append(FDetail(afterTier))
+                    .AppendLine();
+            }
+            else
+            {
+                sb.Append("Ship Lv 1  ").Append(FDetail(afterTier))
+                    .Append(" <color=#888888>(no tier growth yet)</color>")
+                    .AppendLine();
+            }
+
+            ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
+            float accelPenalty = mobility != null ? mobility.levelAccelPenaltyFractionPerLevel : 0f;
+            float afterDrag = ShipPropulsionAggregation.ApplyShipLevelMobilityScale(
+                afterTier, perLvl, accelPenalty);
+            if (perLvl > 0 && accelPenalty > 0.0001f && !Mathf.Approximately(afterDrag, afterTier))
+            {
+                sb.Append("Level accel drag  −")
+                    .Append(F0(accelPenalty * 100f))
+                    .Append("%/Lv → ")
+                    .Append(FDetail(afterDrag))
+                    .AppendLine();
+            }
+
+            // --- Move Speed ability step (how +Accel per purchase is built) ---
+            AppendMoveSpeedAbilityBreakdown(sb, parts, live, forAccel: true, moveL1);
+            sb.Append("<b>Chassis Accel</b>  ").Append(FResult(live.ChassisAccel)).AppendLine();
+        }
+
+        /// <summary>
+        /// Explains one Move Speed ability purchase step: each propulsion part's PerAbilityLevel,
+        /// primary at 100% + extras at 10% of <b>their</b> authored step, then Lv × step.
+        /// Same purchase adds Move and Accel together — <paramref name="forAccel"/> picks which step to show.
+        /// </summary>
+        /// <param name="forAccel">True = Accel/Lvl step; false = Move/Lvl step.</param>
+        /// <param name="moveL1">Level-1 pool Move for fallback when PerAbilityLevel is unset.</param>
+        static void AppendMoveSpeedAbilityBreakdown(
+            StringBuilder sb,
+            in PartCache parts,
+            in LiveContext live,
+            bool forAccel,
+            float moveL1)
+        {
+            sb.AppendLine("<color=#AAAAAA>Move Speed ability: primary Move/Accel PerAbilityLevel at 100%; each extra engine/thruster adds 10% of its own step.</color>");
+
+            float stepTotal = 0f;
+            int lineCount = 0;
+            bool usedFallback = false;
+
+            if (parts.Valid && parts.Ids != null && parts.Stats != null)
+            {
+                for (int i = 0; i < parts.Ids.Count && i < parts.Stats.Count; i++)
+                {
+                    if (!ShipComponentAbilityStats.IsPropulsionComponent(parts.Ids[i]))
+                        continue;
+
+                    ShipComponentAbilityStats comp = parts.Stats[i];
+                    bool primary = i == parts.Propulsion.primaryIndex;
+                    float weight = primary
+                        ? 1f
+                        : ShipPropulsionAggregation.AdditionalPropulsionFractionOfBase;
+
+                    float authored;
+                    string unitLabel;
+                    if (forAccel)
+                    {
+                        authored = Mathf.Max(0f, comp.accelerationCapPerAbilityLevel);
+                        if (authored <= 0.0001f && comp.moveSpeedPerAbilityLevel > 0.0001f)
+                        {
+                            // Same derivation as ShipPropulsionAggregation when Accel/Lvl is blank.
+                            authored = comp.moveSpeedPerAbilityLevel
+                                * ShipPropulsionAggregation.SuggestedPropulsionAccelerationFractionOfMoveSpeed;
+                        }
+
+                        unitLabel = "Accel/Lvl";
+                    }
+                    else
+                    {
+                        authored = Mathf.Max(0f, comp.moveSpeedPerAbilityLevel);
+                        unitLabel = "Move/Lvl";
+                    }
+
+                    if (authored <= 0.0001f)
+                        continue;
+
+                    float weighted = authored * weight;
+                    stepTotal += weighted;
+                    lineCount++;
+
+                    string name = ResolvePartName(parts.Family, parts.Ids[i]);
+                    sb.Append("  • ");
+                    if (primary)
+                        sb.Append("<color=#AAEEDD>").Append(name).Append("</color>");
+                    else
+                        sb.Append(name);
+
+                    sb.Append("  ").Append(FDetail(authored)).Append(" ").Append(unitLabel);
+                    if (primary)
+                        sb.Append(" ×100%");
+                    else
+                        sb.Append(" ×10%");
+                    sb.Append(" = +").Append(FDetail(weighted)).AppendLine();
+                }
+            }
+
+            // --- Fallback when no part authored PerAbilityLevel (Scan fraction of pool) ---
+            if (stepTotal <= 0.0001f)
+            {
+                usedFallback = true;
+                ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
+                    BuildLevelOneSumForSteps(parts, moveL1, out _),
+                    out float moveStep,
+                    out float accelStep,
+                    out _);
+                stepTotal = forAccel ? accelStep : moveStep;
+                float fracPct = ShipPropulsionAggregation.PropulsionPerLevelFractionOfBase * 100f;
+                sb.Append("  <color=#888888>No authored PerAbilityLevel — fallback ")
+                    .Append(F0(fracPct))
+                    .Append("% of pool → +")
+                    .Append(FDetail(stepTotal))
+                    .Append("/purchase</color>")
+                    .AppendLine();
+            }
+            else if (lineCount > 1)
+            {
+                sb.Append("  Step/purchase  <color=#AAEEDD>")
+                    .Append(FDetail(stepTotal))
+                    .Append("</color>")
+                    .AppendLine();
+            }
+
+            // Prefer aggregated propulsion totals when present (matches motor apply).
+            if (!usedFallback)
+            {
+                float aggregated = forAccel
+                    ? parts.Propulsion.accelerationCapPerAbilityLevel
+                    : parts.Propulsion.moveSpeedPerAbilityLevel;
+                if (aggregated > 0.0001f)
+                    stepTotal = aggregated;
+            }
+
+            int abilityLv = Mathf.Max(0, live.MoveSpeedAbilityLevel);
+            float attrAdd = abilityLv * Mathf.Max(0f, stepTotal);
+            string statWord = forAccel ? "Accel" : "Move";
+
+            if (abilityLv > 0 && stepTotal > 0.0001f)
+            {
+                sb.Append("Purchased  Lv")
+                    .Append(abilityLv)
+                    .Append(" × +")
+                    .Append(FDetail(stepTotal))
+                    .Append(" ")
+                    .Append(statWord)
+                    .Append(" → +")
+                    .Append(FResult(attrAdd))
+                    .AppendLine();
+            }
+            else
+            {
+                sb.Append("Purchased  <color=#888888>0</color>  (step still +")
+                    .Append(FDetail(stepTotal))
+                    .Append(" ")
+                    .Append(statWord)
+                    .Append("/buy)")
+                    .AppendLine();
+            }
+        }
+
+        /// <summary>
+        /// Minimal level-1 sum for <see cref="ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps"/>
+        /// fallbacks when PerAbilityLevel fields are still 0.
+        /// </summary>
+        static ShipComponentAbilityStats BuildLevelOneSumForSteps(
+            in PartCache parts,
+            float moveL1,
+            out float accelL1)
+        {
+            TryResolvePoolL1(parts, out float move, out accelL1, out _);
+            if (moveL1 > 0.01f)
+                move = moveL1;
+
+            return new ShipComponentAbilityStats
+            {
+                moveSpeed = move,
+                accelerationCap = accelL1,
+                moveSpeedPerAbilityLevel = parts.Propulsion.moveSpeedPerAbilityLevel,
+                accelerationCapPerAbilityLevel = parts.Propulsion.accelerationCapPerAbilityLevel,
+                extraSpeedEnergyDrain = 0f,
+                extraSpeedEnergyDrainPerAbilityLevel = 0f,
+            };
+        }
+
         static void AppendHeader(StringBuilder sb, string title)
         {
             sb.Append("<b>").Append(title).Append("</b>").AppendLine();
@@ -575,9 +923,21 @@ namespace TitanOrbit.UI
         static string F0(float v) =>
             v.ToString("0", CultureInfo.InvariantCulture);
 
-        static string F1(float v) =>
-            v.ToString("0.0", CultureInfo.InvariantCulture);
+        /// <summary>
+        /// Intermediate calc display — enough digits that part lines add to the step total.
+        /// Math always uses full floats; this is display only.
+        /// </summary>
+        static string FDetail(float v) =>
+            v.ToString("0.####", CultureInfo.InvariantCulture);
 
+        /// <summary>Final / player-facing totals — up to 2 decimal places.</summary>
+        static string FResult(float v) =>
+            v.ToString("0.##", CultureInfo.InvariantCulture);
+
+        /// <summary>[LEGACY name] Same as <see cref="FResult"/> — prefer FResult for new lines.</summary>
+        static string F1(float v) => FResult(v);
+
+        /// <summary>Always two fraction digits (mass weights, etc.).</summary>
         static string F2(float v) =>
             v.ToString("0.00", CultureInfo.InvariantCulture);
     }

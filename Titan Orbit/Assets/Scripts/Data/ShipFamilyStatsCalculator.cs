@@ -128,7 +128,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Appends moon-store-purchased components onto a prefab sum, then re-runs shared aggregation.
-        /// Propulsion parts use max primary + half moveSpeedPerAbilityLevel for extras (not naive full-speed add).
+        /// Propulsion parts use primary Move/Accel + 10% of primary per extra (not naive full add).
         /// </summary>
         public static SumResult AppendExtraComponentsAndAggregate(
             SumResult prefabSum,

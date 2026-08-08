@@ -24,8 +24,8 @@ namespace TitanOrbit.ECS
     /// tick (stepped orbit / post-dock snap toward the original tile).
     /// Presentation still draws bodies via <c>ToroidalDisplay</c>; this system
     /// only adjusts ship <see cref="LocalTransform"/> / <see cref="PhysicsVelocity"/>.
-    /// Pipeline: Drive → Physics → Bounce → Friction → SameTileDepenetration →
-    /// ToroidalWorldCollision (this) → Planar → KinematicsSync.
+    /// Pipeline: Drive → Physics → Bounce → Friction → ToroidalWorldCollision (this) → Planar →
+    /// KinematicsSync.
     /// </summary>
     // OrderLast: after default-slot PhysicsSystemGroup. Avoid UpdateAfter(PhysicsSystemGroup) —
     // ClientWorld sorter warns when that group is not a PredictedFixedStep sibling.

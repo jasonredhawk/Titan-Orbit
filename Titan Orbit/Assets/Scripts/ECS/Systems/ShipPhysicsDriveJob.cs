@@ -69,7 +69,8 @@ namespace TitanOrbit.ECS
             RefRW<PhysicsDamping> physicsDamping,
             RefRW<LocalTransform> transform,
             RefRW<ShipOrbitState> orbitState,
-            RefRW<ShipTerritoryBoostLatch> territoryLatch)
+            RefRW<ShipTerritoryBoostLatch> territoryLatch,
+            RefRO<ShipAsteroidContactState> asteroidContact)
         {
             ShipPhysicsDriveLogic.Step(
                 input.ValueRO,
@@ -81,6 +82,7 @@ namespace TitanOrbit.ECS
                 ref transform.ValueRW,
                 ref orbitState.ValueRW,
                 ref territoryLatch.ValueRW,
+                asteroidContact.ValueRO,
                 in Planets,
                 Dt,
                 MapW,

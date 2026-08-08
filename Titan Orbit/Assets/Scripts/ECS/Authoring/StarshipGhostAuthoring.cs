@@ -90,6 +90,8 @@ namespace TitanOrbit.ECS.Authoring
                 // [TITAN-ORBIT] Pre-physics velocity snapshot for mass-aware bounce (not ghosted —
                 // local predicted / server sim only; rewritten every fixed step).
                 AddComponent(entity, new ShipPreCollisionVelocity());
+                // [TITAN-ORBIT] Previous-tick asteroid contact normal for motor inward-reject (not ghosted).
+                AddComponent(entity, new ShipAsteroidContactState());
                 AddComponent(entity, new ShipWeaponConfig
                 {
                     FireRate = authoring.FireRate,

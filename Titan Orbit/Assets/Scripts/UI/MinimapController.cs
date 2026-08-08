@@ -5,6 +5,7 @@ using UnityEngine.InputSystem;
 using TMPro;
 using System.Collections.Generic;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Game;
 using TitanOrbit.Simulation;
@@ -19,6 +20,8 @@ namespace TitanOrbit.UI
     /// Also planets, home planets, gem moons, and asteroids. Each team has its own color.
     /// Planet blips also draw a thin team-colored ring at the gem-moon / ship orbit radius
     /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>) so the orbit path is readable on the map.
+    /// Collapsed world radius scales with ship-level camera zoom (<see cref="CameraFollowEcs.CurrentHeightZoomFactor"/>)
+    /// so the circle shows proportionally more map as the gameplay camera rises. Expanded mode still fits the full torus.
     /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> caches, never map-body ECS gathers.
     /// </summary>
     public class MinimapController : MonoBehaviour
@@ -26,6 +29,10 @@ namespace TitanOrbit.UI
         [Header("Minimap Settings")]
         [SerializeField] private float minimapRadius = 40f;
         [SerializeField] private float collapsedZoomOutMultiplier = 1.5f;
+        [Tooltip(
+            "When on, collapsed minimap world radius grows with ship-level camera height " +
+            "(same proportion as CameraFollowEcs: CurrentHeight / heightAtLevel1). Expanded full-map mode is unchanged.")]
+        [SerializeField] private bool scaleCollapsedRadiusWithShipLevel = true;
         [SerializeField] private float displaySize = 150f;
         [SerializeField] private RectTransform minimapContent;
         [SerializeField] private float sizeScaleFactor = 1.2f; // Increased from 0.5f - makes entities more visible when zoomed in
@@ -66,8 +73,34 @@ namespace TitanOrbit.UI
         private Vector2 originalSizeDelta;
         private Vector2 originalAnchorMin;
         private Vector2 originalAnchorMax;
-        /// <summary>World radius shown when minimap is collapsed; restored after fullscreen so zoom matches pre-expand.</summary>
+        /// <summary>
+        /// Level-1 collapsed world radius (after <see cref="collapsedZoomOutMultiplier"/>).
+        /// Expand/collapse restore this base; ship-level zoom multiplies it each blip pass.
+        /// </summary>
         private float originalMinimapRadius;
+
+        /// <summary>
+        /// Designer <see cref="minimapRadius"/> × collapsed multiplier at level 1.
+        /// Never stores the ship-level-scaled value — that would double-scale on collapse.
+        /// </summary>
+        private float _baseCollapsedMinimapRadius;
+
+        /// <summary>
+        /// Designer <see cref="maxPlanetDistance"/> at level 1; scales with the same zoom factor
+        /// so edge-marker falloff stays relative to the visible circle.
+        /// </summary>
+        private float _baseMaxPlanetDistance;
+
+        /// <summary>
+        /// Cached gameplay camera follow — supplies <see cref="CameraFollowEcs.CurrentHeightZoomFactor"/>.
+        /// Null until found; missing camera falls back to <see cref="CameraFollowSettings"/> math from the player anchor level.
+        /// </summary>
+        private CameraFollowEcs _cameraFollow;
+
+        /// <summary>
+        /// Last good local ship level for zoom when the camera is missing and the player anchor has no level yet.
+        /// </summary>
+        private int _lastKnownShipLevelForZoom = 1;
 
         /// <summary>When expanded, other UI roots are faded via CanvasGroup; we restore previous values on collapse.</summary>
         private struct NonMinimapUiRestoreState
@@ -279,6 +312,60 @@ namespace TitanOrbit.UI
             minimapRadius = GetExpandedWorldRadius(PlayerPosition);
         }
 
+        /// <summary>
+        /// World-radius multiplier matching gameplay camera zoom-out from ship level.
+        /// Level 1 → 1; higher levels track <see cref="CameraFollowEcs.CurrentHeightZoomFactor"/>
+        /// (smoothed height / heightAtLevel1). Falls back to the same formula from the player blip level
+        /// when the follow camera is not in the scene yet.
+        /// </summary>
+        /// <returns>Factor ≥ ~0.01 to multiply the level-1 collapsed radius.</returns>
+        private float GetShipLevelZoomFactor()
+        {
+            // --- Prefer live camera height (includes SmoothDamp during level-up) ---
+            if (_cameraFollow == null)
+                _cameraFollow = FindFirstObjectByType<CameraFollowEcs>();
+
+            if (_cameraFollow != null)
+                return _cameraFollow.CurrentHeightZoomFactor;
+
+            // --- Fallback: same curve as CameraFollowSettings without a camera instance ---
+            // [HYBRID] playerAnchor.ShipLevel is filled by MinimapEcsEntitySync — no new ECS gathers.
+            int level = 1;
+            if (playerAnchor != null && playerAnchor.ShipLevel > 0)
+                level = playerAnchor.ShipLevel;
+            _lastKnownShipLevelForZoom = Mathf.Max(1, level);
+
+            // Code defaults match CameraFollowSettings field defaults (25 + 3×(L−1)).
+            float heightAtLevel1 = 25f;
+            float heightPerLevel = 3f;
+            float height = heightAtLevel1 + heightPerLevel * Mathf.Max(0, _lastKnownShipLevelForZoom - 1);
+            return Mathf.Max(0.01f, height / heightAtLevel1);
+        }
+
+        /// <summary>
+        /// Applies ship-level proportional zoom to the collapsed minimap.
+        /// Sets <see cref="minimapRadius"/> and <see cref="maxPlanetDistance"/> from level-1 bases × zoom factor.
+        /// No-op while expanded (full-map fit owns radius) or when scaling is disabled.
+        /// </summary>
+        private void ApplyCollapsedShipLevelZoom()
+        {
+            // --- Expanded mode shows the whole torus — do not ship-level scale that radius ---
+            if (isExpanded || !scaleCollapsedRadiusWithShipLevel)
+                return;
+
+            // Bases are captured in Start after collapsedZoomOutMultiplier; guard if Start has not run yet.
+            float baseRadius = _baseCollapsedMinimapRadius > 0.01f
+                ? _baseCollapsedMinimapRadius
+                : Mathf.Max(0.01f, minimapRadius);
+            float baseMaxDist = _baseMaxPlanetDistance > 0.01f
+                ? _baseMaxPlanetDistance
+                : Mathf.Max(baseRadius, maxPlanetDistance);
+
+            float factor = GetShipLevelZoomFactor();
+            minimapRadius = baseRadius * factor;
+            maxPlanetDistance = baseMaxDist * factor;
+        }
+
         // Exposed read‑only helpers so other systems (like Shapes panels) can match minimap math.
         public float MinimapRadius => minimapRadius;
         public float DisplaySize => displaySize;
@@ -334,6 +421,13 @@ namespace TitanOrbit.UI
 
             if (collapsedZoomOutMultiplier > 0f && !Mathf.Approximately(collapsedZoomOutMultiplier, 1f))
                 minimapRadius *= collapsedZoomOutMultiplier;
+
+            // --- Level-1 bases for ship-level proportional zoom ---
+            // [TITAN-ORBIT] collapsedZoomOutMultiplier is baked into the base once; each blip pass
+            // multiplies by CameraFollowEcs.CurrentHeightZoomFactor so L2+ shows more world.
+            _baseCollapsedMinimapRadius = minimapRadius;
+            _baseMaxPlanetDistance = maxPlanetDistance;
+            ApplyCollapsedShipLevelZoom();
             
             // Setup circular background
             SetupCircularBackground();
@@ -630,7 +724,10 @@ namespace TitanOrbit.UI
                 originalAnchorMax = minimapRect.anchorMax;
             }
 
-            originalMinimapRadius = minimapRadius;
+            // Store level-1 base (not the live ship-level-scaled radius) so collapse never double-scales.
+            originalMinimapRadius = _baseCollapsedMinimapRadius > 0.01f
+                ? _baseCollapsedMinimapRadius
+                : minimapRadius;
         }
 
         /// <summary>Show or hide minimap using CanvasGroup so Update() keeps running and we can show again after team is chosen.</summary>
@@ -773,7 +870,10 @@ namespace TitanOrbit.UI
         {
             if (minimapRect == null) return;
 
-            originalMinimapRadius = minimapRadius;
+            // Save level-1 base radius for collapse — not the live ship-level-scaled value.
+            originalMinimapRadius = _baseCollapsedMinimapRadius > 0.01f
+                ? _baseCollapsedMinimapRadius
+                : minimapRadius;
             
             // Same minimap: only change zoom (visible radius) and circle size. Content and coordinate system unchanged.
             Canvas canvas = GetComponentInParent<Canvas>();
@@ -972,8 +1072,13 @@ namespace TitanOrbit.UI
             // Restore display size
             displaySize = originalSizeDelta.x;
             
-            // Restore minimap radius (must match pre-expand; was incorrectly hardcoded to 40f)
-            minimapRadius = originalMinimapRadius;
+            // Restore level-1 base, then re-apply ship-level zoom so collapse matches current camera height.
+            minimapRadius = originalMinimapRadius > 0.01f
+                ? originalMinimapRadius
+                : _baseCollapsedMinimapRadius;
+            if (_baseMaxPlanetDistance > 0.01f)
+                maxPlanetDistance = _baseMaxPlanetDistance;
+            ApplyCollapsedShipLevelZoom();
             
             // Update mask and background
             SetupCircularBackground();
@@ -1501,6 +1606,8 @@ namespace TitanOrbit.UI
             Vector3 playerPos = playerTransform.position;
             if (isExpanded)
                 minimapRadius = GetExpandedWorldRadius(playerPos);
+            else
+                ApplyCollapsedShipLevelZoom();
 
             if (deadAsteroidGhosts.Count > 0 && Time.time >= nextGhostAsteroidRescanTime)
             {

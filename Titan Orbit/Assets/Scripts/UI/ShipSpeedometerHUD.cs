@@ -177,6 +177,8 @@ namespace TitanOrbit.UI
         int _statsCacheBranch = int.MinValue;
         ShipComponentAbilityStats _statsCacheEffective;
         ShipAttributeUpgradeState _statsCacheAttrs;
+        /// <summary>Move Speed ability level for tooltip chassis breakdown (updated every HUD fill).</summary>
+        int _moveSpeedAbilityLevel;
 
         /// <summary>
         /// Latched when GameManager turns the HUD off so we hide the panel once and clear samples.
@@ -757,17 +759,17 @@ namespace TitanOrbit.UI
             return labels;
         }
 
-        /// <summary>Always one decimal, fixed character width (figure-space pad) so layout never jumps.</summary>
-        static string FormatFixed1(float v, int width = 5)
+        /// <summary>Up to two decimals, fixed character width (figure-space pad) so layout never jumps.</summary>
+        static string FormatFixed1(float v, int width = 6)
         {
-            string s = v.ToString("0.0", CultureInfo.InvariantCulture);
+            string s = v.ToString("0.##", CultureInfo.InvariantCulture);
             return PadFigure(s, width);
         }
 
-        /// <summary>Always signed (+/-) with one decimal — ACC never drops the sign glyph.</summary>
-        static string FormatFixedSigned1(float v, int width = 6)
+        /// <summary>Always signed (+/-) with up to two decimals — ACC never drops the sign glyph.</summary>
+        static string FormatFixedSigned1(float v, int width = 7)
         {
-            string s = (v >= 0f ? "+" : "-") + Mathf.Abs(v).ToString("0.0", CultureInfo.InvariantCulture);
+            string s = (v >= 0f ? "+" : "-") + Mathf.Abs(v).ToString("0.##", CultureInfo.InvariantCulture);
             return PadFigure(s, width);
         }
 
@@ -971,6 +973,9 @@ namespace TitanOrbit.UI
                 (!hasAttrs || AttrsEqual(attrs, _statsCacheAttrs)))
             {
                 effectiveStats = _statsCacheEffective;
+                // [TITAN-ORBIT] Still refresh ability level — early return used to skip attrs when
+                // HasComponent was false and leave a stale MovementSpeed on the tooltip.
+                _moveSpeedAbilityLevel = hasAttrs ? attrs.MovementSpeed : 0;
                 return true;
             }
 
@@ -1030,6 +1035,7 @@ namespace TitanOrbit.UI
             _statsCacheChassisKey = chassisKey;
             _statsCacheAttrs = attrs;
             _statsCacheEffective = effectiveStats;
+            _moveSpeedAbilityLevel = hasAttrs ? attrs.MovementSpeed : 0;
             return true;
         }
 
@@ -1455,6 +1461,7 @@ namespace TitanOrbit.UI
                 RamSelfDamage = tipRamSelf,
                 RamRating = tipRamRating,
                 ComponentSize = componentSize,
+                MoveSpeedAbilityLevel = _moveSpeedAbilityLevel,
             };
 
             if (_activeTooltipSection.HasValue)

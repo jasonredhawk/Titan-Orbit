@@ -21,7 +21,7 @@ namespace TitanOrbit.ECS
     /// <see cref="ShipAsteroidContactFrictionSystem"/> which runs after this system.
     /// </para>
     /// Pipeline: Drive → Snapshot → PhysicsSimulation → Export → Bounce (this) → Friction →
-    /// SameTileDepenetration → Toroidal → Planar → Kinematics.
+    /// Toroidal → Planar → Kinematics.
     /// </summary>
     [UpdateInGroup(typeof(AfterPhysicsSystemGroup))]
     [UpdateBefore(typeof(ShipAsteroidContactFrictionSystem))]

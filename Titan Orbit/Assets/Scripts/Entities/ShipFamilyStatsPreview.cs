@@ -161,20 +161,13 @@ namespace TitanOrbit.Entities
                 shipLevel);
 
             previewPrimaryThrusterMoveSpeed = 0f;
-            previewExtraThrusterMoveSpeed = propulsion.extraMoveSpeedFromPerLevel;
+            previewExtraThrusterMoveSpeed = propulsion.extraMoveSpeedFromAdditional;
             previewTopSpeedMoveSpeed = propulsion.topMoveSpeed;
             previewSumPropulsionAcceleration = propulsion.sumAcceleration;
-            previewSumPropulsionAccelerationPerLevel = 0f;
+            previewSumPropulsionAccelerationPerLevel = propulsion.accelerationCapPerAbilityLevel;
 
             if (propulsion.primaryIndex >= 0 && propulsion.primaryIndex < perComponentStats.Count)
                 previewPrimaryThrusterMoveSpeed = perComponentStats[propulsion.primaryIndex].moveSpeed;
-
-            for (int i = 0; i < matchedComponentIds.Count && i < perComponentStats.Count; i++)
-            {
-                if (!ShipComponentAbilityStats.IsPropulsionComponent(matchedComponentIds[i]))
-                    continue;
-                previewSumPropulsionAccelerationPerLevel += perComponentStats[i].accelerationCapPerAbilityLevel;
-            }
         }
     }
 }

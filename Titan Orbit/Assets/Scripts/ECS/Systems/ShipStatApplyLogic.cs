@@ -283,7 +283,7 @@ namespace TitanOrbit.ECS
 
             // --- Chassis baseline (level-1 sum) ---
             // When moon-store equipment includes ship components, rebuild chassis+store together so
-            // engines use max primary + half moveSpeedPerAbilityLevel extras (not naive full-speed add).
+            // engines use primary Move/Accel + 10% of primary per extra (not naive full add).
             ShipComponentAbilityStats summed;
             if (!TryGetBaseStatsWithStoreComponents(em, shipEntity, chassisId, out summed))
             {
@@ -584,7 +584,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Rebuilds level-1 chassis stats including moon-store ship components, with correct
-        /// propulsion aggregation (max engine + half per-level for extras).
+        /// propulsion aggregation (primary Move/Accel + 10% of primary per extra).
         /// Returns false when there are no store ShipComponent rows (caller uses chassis-only path).
         /// </summary>
         static bool TryGetBaseStatsWithStoreComponents(

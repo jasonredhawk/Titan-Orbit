@@ -16,6 +16,8 @@ namespace TitanOrbit.Game
     /// the local ship's ghosted <c>ShipFamilyConfigIndex</c> and calls <see cref="SetSettings"/> when
     /// the family changes (team spawn or moon-dock purchase). The camera hard-locks to the ship,
     /// then adds a gently smoothed look-ahead on XZ and a smoothly eased height zoom from ship level.
+    /// <see cref="CurrentHeightZoomFactor"/> exposes that zoom proportion for the collapsed minimap
+    /// (<see cref="TitanOrbit.UI.MinimapController"/>) so both views stay in sync.
     /// During gem Instantiates (<see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>) look-ahead
     /// freezes and ship level holds last-good — avoids false zoom when asteroids break or hits spike speed.
     /// Ship flight smoothing stays owned by NetCode — we only SmoothDamp camera composition.
@@ -46,6 +48,37 @@ namespace TitanOrbit.Game
                 if (defaultSettings != null)
                     return defaultSettings;
                 return FallbackSettings;
+            }
+        }
+
+        /// <summary>
+        /// Current smoothed world-Y height above the ship (after SmoothDamp).
+        /// Before the first follow lock, returns the profile target for the last-known ship level.
+        /// [TITAN-ORBIT] Minimap collapsed zoom reads this so the circle radius tracks the live camera zoom.
+        /// </summary>
+        public float CurrentHeight
+        {
+            get
+            {
+                if (_initialized && _currentHeight > 0.01f)
+                    return _currentHeight;
+                return Settings.ComputeTargetHeight(Mathf.Max(1, _lastKnownShipLevel));
+            }
+        }
+
+        /// <summary>
+        /// How far the camera has zoomed out relative to level-1 height
+        /// (<c>CurrentHeight / heightAtLevel1</c>). Level 1 → 1; higher levels → larger.
+        /// Used by the minimap so collapsed world radius scales with the gameplay camera.
+        /// </summary>
+        public float CurrentHeightZoomFactor
+        {
+            get
+            {
+                // --- Same proportion as perspective top-down framing ---
+                // Fixed FOV ⇒ visible world radius ∝ camera height. Minimap radius multiplies by this.
+                float baseHeight = Mathf.Max(0.01f, Settings.heightAtLevel1);
+                return Mathf.Max(0.01f, CurrentHeight / baseHeight);
             }
         }
 

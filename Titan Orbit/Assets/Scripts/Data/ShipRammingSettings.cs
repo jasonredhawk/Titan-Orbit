@@ -21,8 +21,8 @@ namespace TitanOrbit.Data
         [Tooltip(
             "Scales all ramming damage (asteroid, enemy ship, and self). " +
             "Damage = rating × totalMass × closingSpeed (impact) or × taxedAccel (grind). " +
-            "0.5 = softer; 1 = full family rammingPower; raise to make rams meaner.")]
-        [Min(0.01f)]
+            "0.5 = softer; 1 = full family rammingPower; raise to make rams meaner. " +
+            "Not clamped — set freely (including below 0.01 or 0 to disable).")]
         public float GlobalDamageMultiplier = 0.5f;
 
         [Header("Self vs target")]
@@ -34,11 +34,15 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float SelfToAsteroidDamageRatio = 2f;
 
-        /// <summary>Keeps multipliers in a sane range after Inspector edits.</summary>
+        /// <summary>
+        /// Sanitizes self-damage ratio after Inspector edits.
+        /// <see cref="GlobalDamageMultiplier"/> is left as authored (not clamped).
+        /// </summary>
         public void ClampValues()
         {
             // --- Sanitize designer fields ---
-            GlobalDamageMultiplier = Mathf.Max(0.01f, GlobalDamageMultiplier);
+            // [TITAN-ORBIT] GlobalDamageMultiplier is intentional free-range — designers may set
+            // 0 (off), very small, or very large without a floor/ceiling rewrite.
             SelfToAsteroidDamageRatio = Mathf.Max(0f, SelfToAsteroidDamageRatio);
         }
 
