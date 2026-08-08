@@ -693,21 +693,85 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Places the ability calculation card above the hovered chip, then clamps X/Y so the tip
+        /// stays on-screen and clear of the bottom-right minimap (wide tips near slot 0 or 9
+        /// used to spill off the left edge or cover the map).
+        /// </summary>
+        /// <param name="abilityIndex">0–9 chip/button index.</param>
         void PositionAbilityTipPanel(int abilityIndex)
         {
             if (_abilityTipRect == null || _chipRects[abilityIndex] == null || _stripRootRect == null)
                 return;
 
-            // Tip sits above the chip, centered on that slot (canvas space of strip parent).
+            // --- Preferred spot: above the chip, horizontally centered on that slot ---
+            // Tip is parented to the layout canvas with the same anchors as the strip (bottom-left).
+            // anchoredPosition is therefore in the same space as strip.anchoredPosition + chip local X.
             RectTransform chip = _chipRects[abilityIndex];
             _abilityTipRect.anchorMin = _stripRootRect.anchorMin;
             _abilityTipRect.anchorMax = _stripRootRect.anchorMax;
             _abilityTipRect.pivot = new Vector2(0.5f, 0f);
+
             float stripX = _stripRootRect.anchoredPosition.x;
             float stripY = _stripRootRect.anchoredPosition.y;
-            float chipCenterX = stripX + chip.anchoredPosition.x + chip.sizeDelta.x * 0.5f;
+            float preferredX = stripX + chip.anchoredPosition.x + chip.sizeDelta.x * 0.5f;
             float tipBottom = stripY + chip.anchoredPosition.y + chip.sizeDelta.y + E(8f);
-            _abilityTipRect.anchoredPosition = new Vector2(chipCenterX, tipBottom);
+
+            float tipW = _abilityTipRect.sizeDelta.x;
+            float tipH = _abilityTipRect.sizeDelta.y;
+            float margin = E(8f);
+
+            // --- Horizontal clamp (canvas left ↔ minimap left) ---
+            // [TITAN-ORBIT] Same bounds the upgrade strip uses when measuring availableWidth.
+            if (TryResolveLayoutCanvas())
+            {
+                Rect canvasRect = _layoutCanvasRect.rect;
+                float canvasXMin = canvasRect.xMin;
+                float halfW = tipW * 0.5f;
+
+                // Tip left edge in canvas-local = canvasXMin + (centerX - halfW).
+                // Keep at least `margin` inside the canvas left.
+                float minCenterX = halfW + margin;
+
+                // Tip right edge must stay left of the minimap (or canvas right if no minimap).
+                EnsureMinimapRectCached();
+                float maxCenterX;
+                if (TryGetMinimapLeftLocalX(_layoutCanvasRect, _cachedMinimapRect, out float minimapLeftLocalX))
+                {
+                    // canvasXMin + centerX + halfW <= minimapLeft - gap
+                    maxCenterX = minimapLeftLocalX - S(minimapHorizontalGap) - canvasXMin - halfW;
+                }
+                else
+                {
+                    maxCenterX = canvasRect.width - margin - halfW;
+                }
+
+                // If the tip is wider than the safe band, shrink width so clamp can succeed.
+                float safeSpan = maxCenterX - minCenterX;
+                if (safeSpan < 0f)
+                {
+                    float maxTipW = tipW + safeSpan * 2f;
+                    maxTipW = Mathf.Max(E(220f), maxTipW);
+                    tipW = maxTipW;
+                    _abilityTipRect.sizeDelta = new Vector2(tipW, tipH);
+                    halfW = tipW * 0.5f;
+                    minCenterX = halfW + margin;
+                    if (TryGetMinimapLeftLocalX(_layoutCanvasRect, _cachedMinimapRect, out minimapLeftLocalX))
+                        maxCenterX = minimapLeftLocalX - S(minimapHorizontalGap) - canvasXMin - halfW;
+                    else
+                        maxCenterX = canvasRect.width - margin - halfW;
+                }
+
+                preferredX = Mathf.Clamp(preferredX, minCenterX, Mathf.Max(minCenterX, maxCenterX));
+
+                // --- Vertical clamp (keep tip under the top of the canvas) ---
+                // Tip top in canvas-local = canvas.yMin + tipBottom + tipH.
+                float maxBottom = canvasRect.height - margin - tipH;
+                if (tipBottom > maxBottom)
+                    tipBottom = Mathf.Max(stripY + chip.sizeDelta.y + E(4f), maxBottom);
+            }
+
+            _abilityTipRect.anchoredPosition = new Vector2(preferredX, tipBottom);
         }
 
         bool TryResolveChipLiveContext(

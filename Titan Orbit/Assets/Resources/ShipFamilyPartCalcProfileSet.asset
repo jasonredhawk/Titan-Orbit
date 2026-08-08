@@ -1014,7 +1014,7 @@ MonoBehaviour:
       healthRegenPerAbilityLevel: 0
       energyCap: 18
       energyCapPerAbilityLevel: 6
-      energyRegen: 6
+      energyRegen: 4
       energyRegenPerAbilityLevel: 1
       moveSpeed: 6
       moveSpeedPerAbilityLevel: 0.5
@@ -1052,8 +1052,8 @@ MonoBehaviour:
       healthRegenPerAbilityLevel: 0
       energyCap: 6
       energyCapPerAbilityLevel: 2
-      energyRegen: 3
-      energyRegenPerAbilityLevel: 0.5
+      energyRegen: 1
+      energyRegenPerAbilityLevel: 0.25
       moveSpeed: 2
       moveSpeedPerAbilityLevel: 0.16666667
       accelerationCap: 5
@@ -1073,7 +1073,7 @@ MonoBehaviour:
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
       extraStackWeight: 0
-    perLevelFractionOverride: 0.2
+    perLevelFractionOverride: 0
   - partType: Thruster
     defaultCategories: 03000000
     baseAtVersion1:
@@ -1152,7 +1152,7 @@ MonoBehaviour:
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
       extraStackWeight: 0
-    perLevelFractionOverride: 0.2
+    perLevelFractionOverride: 0
   - partType: Tail
     defaultCategories: 03000000
     baseAtVersion1:

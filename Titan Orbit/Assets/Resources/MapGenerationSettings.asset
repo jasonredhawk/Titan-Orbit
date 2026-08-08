@@ -13,17 +13,17 @@ MonoBehaviour:
   m_Name: MapGenerationSettings
   m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.MapGenerationSettings
   seed: 0
-  minMapSize: 333
+  minMapSize: 444
   maxMapSize: 444
-  minTeamsPerMatch: 2
+  minTeamsPerMatch: 5
   maxTeamsPerMatch: 5
   homePlanetSize: 20
   homePlanetLevel: 3
   homePlanetDistance: 80
   minHomePlanetPairSeparation: 90
   clearanceRadiusAroundHomePlanet: 40
-  minNeutralPlanets: 9
-  maxNeutralPlanets: 12
+  minNeutralPlanets: 20
+  maxNeutralPlanets: 20
   startingOwnedNeutralPlanetsPerTeam: 5
   startingRandomDefenseTurretsMax: 6
   minPlanetSize: 9
@@ -32,7 +32,7 @@ MonoBehaviour:
   minNeutralStartingLevel: 1
   maxNeutralStartingLevel: 6
   planetRingPlacementMargin: 3
-  asteroidsAtMinMapSize: 222
+  asteroidsAtMinMapSize: 333
   asteroidsAtMaxMapSize: 333
   minAsteroidClusters: 8
   maxAsteroidClusters: 35

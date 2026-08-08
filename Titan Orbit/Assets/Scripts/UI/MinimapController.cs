@@ -372,6 +372,26 @@ namespace TitanOrbit.UI
 
         /// <summary>True while the minimap is expanded to (near) full-map view.</summary>
         public bool IsExpanded => isExpanded;
+
+        /// <summary>
+        /// Programmatically expand or collapse the minimap (same as the M key / expand button).
+        /// Used by <see cref="TitanOrbit.Game.InstructionReferenceCaptureSession"/> for a full-map plate.
+        /// No-op when already in the requested state.
+        /// </summary>
+        /// <param name="expanded">True = full toroidal map overlay; false = collapsed corner circle.</param>
+        public void SetExpanded(bool expanded)
+        {
+            // --- Idempotent toggle ---
+            // [TITAN-ORBIT] Capture tools need a deterministic "show full map" without simulating keypresses.
+            if (isExpanded == expanded)
+                return;
+
+            isExpanded = expanded;
+            if (isExpanded)
+                ExpandMinimap();
+            else
+                CollapseMinimap();
+        }
         public Vector3 PlayerPosition => playerTransform != null ? playerTransform.position : Vector3.zero;
 
         public void GetToroidalDeltaForMinimap(Vector3 from, Vector3 to, out float dx, out float dz)
