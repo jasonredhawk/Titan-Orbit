@@ -18,9 +18,10 @@ namespace TitanOrbit.ECS
     /// <see cref="ShipPhysicsDriveSystem"/>) so muzzle positions use current transforms.
     /// <para>
     /// Multi-cannon fire uses <see cref="ShipWeaponFireLogic"/>: shared energy pool with
-    /// per-barrel firePower / fireRate. Full energy + all cooldowns ready → same-tick volley;
-    /// otherwise only <see cref="ShipWeaponState.NextMountIndex"/> may spend energy until it
-    /// fires, then the next mount in sequence (0→1→2→…→0). Empty mount buffer = unarmed.
+    /// per-barrel firePower / fireRate. Sequencing follows <see cref="ShipWeaponConfig.FireMode"/>
+    /// (from <see cref="ShipFamilyDefinition.weaponFireMode"/>): Energy Hybrid volleys when
+    /// affordable else round-robins; Always Fire Together waits for a full bank; Always Round-Robin
+    /// never volleys. Empty mount buffer = unarmed.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Ships cannot fire while <see cref="ShipOrbitState.InOrbitRing"/> is true —
@@ -313,13 +314,14 @@ namespace TitanOrbit.ECS
                     SystemAPI.GetComponentRO<ShipOrbitState>(entity).ValueRO.InOrbitRing)
                     continue;
 
-                // --- Volley vs energy-queue round-robin ---
+                // --- Volley / round-robin / hybrid per ShipWeaponConfig.FireMode ---
                 if (!ShipWeaponFireLogic.TryPlanFire(
                         shipState.ValueRO.CurrentEnergy,
                         mounts,
                         weaponState.ValueRO.NextMountIndex,
                         weaponCfg.ValueRO.BulletDamage,
                         weaponCfg.ValueRO.FireRate,
+                        weaponCfg.ValueRO.FireMode,
                         s_ShotScratch,
                         out int shotCount,
                         out float energySpend,

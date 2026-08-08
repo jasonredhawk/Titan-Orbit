@@ -1,4 +1,5 @@
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Shared;
@@ -17,6 +18,10 @@ namespace TitanOrbit.UI
     /// Cost = ShipLevel × 5 gems; max levels per attribute = ShipLevel.
     /// Most abilities are +10% per purchase; Move Speed adds one chassis PerAbilityLevel step
     /// (move + accel + OD drain together) — see ShipAttributeUpgradeLogic.
+    /// <para>
+    /// [TITAN-ORBIT] Quick-stat chips sit above each button (value + next step + Lv). Hover opens
+    /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> (parts → stack → tier → ability).
+    /// </para>
     /// Strip layout: recomputed only when screen / canvas / minimap size changes; positions are
     /// snapped to whole canvas units so windowed (non-1:1) views do not shimmer.
     /// <para>
@@ -49,6 +54,8 @@ namespace TitanOrbit.UI
         [SerializeField] private float barHeight = 68f;
         [SerializeField] private float buttonWidth = 136f;
         [SerializeField] private float buttonSpacing = 10f;
+        [Tooltip("Height of the quick-stat chip band above each ability button.")]
+        [SerializeField] private float chipBandHeight = 44f;
         [Header("Mobile / touch")]
         [Tooltip("Multiplies bar height, button width, fonts, ticks, and padding on phones/tablets so the bottom upgrade strip is easier to read and tap.")]
         [SerializeField] private float mobileHudScale = 1.48f;
@@ -97,6 +104,20 @@ namespace TitanOrbit.UI
         private TextMeshProUGUI[] keyLabels = new TextMeshProUGUI[10];
         private TextMeshProUGUI[] costLabels = new TextMeshProUGUI[10];
         private Image[] costGemIcons = new Image[10];
+
+        // --- Quick-stat chips above each ability button ---
+        private RectTransform[] _chipRects = new RectTransform[10];
+        private TextMeshProUGUI[] _chipValueTexts = new TextMeshProUGUI[10];
+        private readonly string[] _lastChipText = new string[10];
+        private GameObject _abilityTipPanel;
+        private RectTransform _abilityTipRect;
+        private TextMeshProUGUI _abilityTipLabel;
+        private int? _activeAbilityTipIndex;
+        private int? _pendingHideAbilityTip;
+        private string _lastAbilityTipBody = "";
+        private ShipSpeedometerHUD _cachedSpeedometer;
+        private bool _triedSpeedometerLookup;
+        private float _lastChipBandH = -1f;
 
         private float _layoutScale = 1f;
         private float _elementScale = 1f;
@@ -391,6 +412,7 @@ namespace TitanOrbit.UI
             RememberLayoutInputs();
 
             // Skip writes when snapped metrics match last apply — no per-frame position chase.
+            float chipH = SnapUi(S(chipBandHeight));
             bool metricsUnchanged =
                 !force &&
                 NearlyEqual(availableWidth, _lastLayoutWidth) &&
@@ -398,7 +420,8 @@ namespace TitanOrbit.UI
                 NearlyEqual(insetB, _lastInsetB) &&
                 NearlyEqual(barH, _lastBarH) &&
                 NearlyEqual(buttonW, _lastButtonW) &&
-                NearlyEqual(spacing, _lastSpacing);
+                NearlyEqual(spacing, _lastSpacing) &&
+                NearlyEqual(chipH, _lastChipBandH);
             if (metricsUnchanged)
                 return;
 
@@ -408,21 +431,36 @@ namespace TitanOrbit.UI
             _lastBarH = barH;
             _lastButtonW = buttonW;
             _lastSpacing = spacing;
+            _lastChipBandH = chipH;
 
-            _stripRootRect.anchoredPosition = new Vector2(insetL, insetB);
-            _stripRootRect.sizeDelta = new Vector2(availableWidth, barH);
-
+            // [TITAN-ORBIT] Strip = chip band on top + ability buttons below.
+            float gap = SnapUi(E(4f));
             float buttonH = SnapUi(barH - E(6f));
+            float totalH = SnapUi(buttonH + gap + chipH);
+            _stripRootRect.anchoredPosition = new Vector2(insetL, insetB);
+            _stripRootRect.sizeDelta = new Vector2(availableWidth, totalH);
+
             for (int i = 0; i < 10; i++)
             {
-                if (_buttonRects[i] == null)
-                    continue;
-                _buttonRects[i].anchorMin = new Vector2(0f, 0.5f);
-                _buttonRects[i].anchorMax = new Vector2(0f, 0.5f);
-                _buttonRects[i].pivot = new Vector2(0f, 0.5f);
-                // Integer step so each slot sits on a whole canvas unit.
-                _buttonRects[i].anchoredPosition = new Vector2(i * (buttonW + spacing), 0f);
-                _buttonRects[i].sizeDelta = new Vector2(buttonW, buttonH);
+                float x = i * (buttonW + spacing);
+                if (_buttonRects[i] != null)
+                {
+                    // Buttons sit on the strip floor.
+                    _buttonRects[i].anchorMin = new Vector2(0f, 0f);
+                    _buttonRects[i].anchorMax = new Vector2(0f, 0f);
+                    _buttonRects[i].pivot = new Vector2(0f, 0f);
+                    _buttonRects[i].anchoredPosition = new Vector2(x, 0f);
+                    _buttonRects[i].sizeDelta = new Vector2(buttonW, buttonH);
+                }
+
+                if (_chipRects[i] != null)
+                {
+                    _chipRects[i].anchorMin = new Vector2(0f, 0f);
+                    _chipRects[i].anchorMax = new Vector2(0f, 0f);
+                    _chipRects[i].pivot = new Vector2(0f, 0f);
+                    _chipRects[i].anchoredPosition = new Vector2(x, buttonH + gap);
+                    _chipRects[i].sizeDelta = new Vector2(buttonW, chipH);
+                }
 
                 if (titleTexts[i] != null)
                     titleTexts[i].fontSize = E(titleFontSize);
@@ -430,6 +468,8 @@ namespace TitanOrbit.UI
                     keyLabels[i].fontSize = F(13f);
                 if (costLabels[i] != null)
                     costLabels[i].fontSize = F(11f);
+                if (_chipValueTexts[i] != null)
+                    _chipValueTexts[i].fontSize = F(11f);
             }
         }
 
@@ -484,9 +524,266 @@ namespace TitanOrbit.UI
                 costLabels[i] = btn.costLabel;
                 costGemIcons[i] = btn.costGemIcon;
                 _buttonRects[i] = btn.buttonRect;
+
+                var chip = CreateStatChip(rootPanel.transform, i, statColor);
+                _chipRects[i] = chip.chipRect;
+                _chipValueTexts[i] = chip.valueText;
             }
 
+            BuildAbilityTipPanel();
             RefreshUpgradeStripLayout(force: true);
+        }
+
+        /// <summary>
+        /// Quick-stat chip above one ability button — short label, big value, muted +step / Lv.
+        /// </summary>
+        (RectTransform chipRect, TextMeshProUGUI valueText) CreateStatChip(Transform parent, int index, Color statColor)
+        {
+            GameObject chipObj = new GameObject($"StatChip_{index}");
+            chipObj.transform.SetParent(parent, false);
+            RectTransform chipRect = chipObj.AddComponent<RectTransform>();
+
+            Image bg = chipObj.AddComponent<Image>();
+            Color glass = new Color(0.04f, 0.06f, 0.09f, 0.88f);
+            bg.color = glass;
+            bg.raycastTarget = true;
+
+            var outline = chipObj.AddComponent<Outline>();
+            Color accent = statColor;
+            accent.a = 0.85f;
+            outline.effectColor = accent;
+            outline.effectDistance = new Vector2(E(1f), E(1f));
+
+            // Top accent bar
+            GameObject accentGo = new GameObject("Accent");
+            accentGo.transform.SetParent(chipObj.transform, false);
+            RectTransform accentRt = accentGo.AddComponent<RectTransform>();
+            accentRt.anchorMin = new Vector2(0f, 1f);
+            accentRt.anchorMax = new Vector2(1f, 1f);
+            accentRt.pivot = new Vector2(0.5f, 1f);
+            accentRt.offsetMin = new Vector2(E(2f), E(-3f));
+            accentRt.offsetMax = new Vector2(E(-2f), E(-1f));
+            Image accentImg = accentGo.AddComponent<Image>();
+            accentImg.color = accent;
+            accentImg.raycastTarget = false;
+
+            GameObject textGo = new GameObject("ChipText");
+            textGo.transform.SetParent(chipObj.transform, false);
+            RectTransform textRt = textGo.AddComponent<RectTransform>();
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.offsetMin = new Vector2(E(3f), E(2f));
+            textRt.offsetMax = new Vector2(E(-3f), E(-4f));
+            TextMeshProUGUI valueText = textGo.AddComponent<TextMeshProUGUI>();
+            valueText.richText = true;
+            valueText.enableWordWrapping = true;
+            valueText.overflowMode = TextOverflowModes.Truncate;
+            valueText.alignment = TextAlignmentOptions.Center;
+            valueText.fontSize = F(11f);
+            valueText.color = Color.white;
+            valueText.raycastTarget = false;
+            if (TMP_Settings.defaultFontAsset != null)
+                valueText.font = TMP_Settings.defaultFontAsset;
+            string shortLabel = ShipAbilityCategoryColors.PowerBreakdownStatLabels[index];
+            valueText.text = $"<color=#AAAAAA>{shortLabel}</color>\n—";
+
+            var zone = chipObj.AddComponent<ShipAbilityStatHoverZone>();
+            zone.Owner = this;
+            zone.AbilityIndex = index;
+
+            return (chipRect, valueText);
+        }
+
+        /// <summary>Floating calculation card for ability-chip rollovers.</summary>
+        void BuildAbilityTipPanel()
+        {
+            _abilityTipPanel = new GameObject("ShipAbilityStatTooltip");
+            // Same canvas parent as the strip so anchoredPosition math matches GetUpgradeStripReserveHeight space.
+            Transform tipParent = _layoutCanvasRect != null ? (Transform)_layoutCanvasRect : transform;
+            _abilityTipPanel.transform.SetParent(tipParent, false);
+            _abilityTipRect = _abilityTipPanel.AddComponent<RectTransform>();
+            _abilityTipRect.pivot = new Vector2(0.5f, 0f);
+            _abilityTipRect.sizeDelta = new Vector2(E(560f), E(160f));
+
+            Image tipBg = _abilityTipPanel.AddComponent<Image>();
+            tipBg.color = new Color(0.05f, 0.07f, 0.1f, 0.94f);
+            tipBg.raycastTarget = false;
+
+            GameObject bodyGo = new GameObject("Body");
+            bodyGo.transform.SetParent(_abilityTipPanel.transform, false);
+            RectTransform bodyRt = bodyGo.AddComponent<RectTransform>();
+            bodyRt.anchorMin = Vector2.zero;
+            bodyRt.anchorMax = Vector2.one;
+            bodyRt.offsetMin = new Vector2(E(10f), E(8f));
+            bodyRt.offsetMax = new Vector2(E(-10f), E(-8f));
+            _abilityTipLabel = bodyGo.AddComponent<TextMeshProUGUI>();
+            _abilityTipLabel.fontSize = F(11f);
+            _abilityTipLabel.richText = true;
+            _abilityTipLabel.enableWordWrapping = true;
+            _abilityTipLabel.overflowMode = TextOverflowModes.Overflow;
+            _abilityTipLabel.alignment = TextAlignmentOptions.TopLeft;
+            _abilityTipLabel.color = new Color(0.92f, 0.95f, 1f, 1f);
+            _abilityTipLabel.raycastTarget = false;
+            if (TMP_Settings.defaultFontAsset != null)
+                _abilityTipLabel.font = TMP_Settings.defaultFontAsset;
+
+            _abilityTipPanel.transform.SetAsLastSibling();
+            _abilityTipPanel.SetActive(false);
+        }
+
+        /// <summary>Pointer entered a quick-stat chip — show that ability's calculation card.</summary>
+        public void ShowAbilityStatTooltip(int abilityIndex)
+        {
+            if (!_uiBuilt || _abilityTipPanel == null || _abilityTipLabel == null)
+                return;
+            if (abilityIndex < 0 || abilityIndex > 9)
+                return;
+
+            _pendingHideAbilityTip = null;
+            _activeAbilityTipIndex = abilityIndex;
+            RefreshAbilityTipContent();
+            PositionAbilityTipPanel(abilityIndex);
+            if (!_abilityTipPanel.activeSelf)
+                _abilityTipPanel.SetActive(true);
+        }
+
+        /// <summary>Pointer left a chip — defer hide so neighboring chips can cancel.</summary>
+        public void HideAbilityStatTooltip(int abilityIndex)
+        {
+            if (_activeAbilityTipIndex != abilityIndex)
+                return;
+            _pendingHideAbilityTip = abilityIndex;
+        }
+
+        void FlushPendingAbilityTipHide()
+        {
+            if (!_pendingHideAbilityTip.HasValue)
+                return;
+            int pending = _pendingHideAbilityTip.Value;
+            _pendingHideAbilityTip = null;
+            if (_activeAbilityTipIndex != pending)
+                return;
+            _activeAbilityTipIndex = null;
+            if (_abilityTipPanel != null && _abilityTipPanel.activeSelf)
+                _abilityTipPanel.SetActive(false);
+        }
+
+        void RefreshAbilityTipContent()
+        {
+            if (_abilityTipLabel == null || !_activeAbilityTipIndex.HasValue)
+                return;
+            if (!TryResolveChipLiveContext(out var parts, out var live, out var attrs))
+            {
+                _abilityTipLabel.text = "<color=#888888>Waiting for ship stats…</color>";
+                return;
+            }
+
+            string body = ShipAbilityStatBreakdown.BuildForAbilityIndex(
+                _activeAbilityTipIndex.Value, in parts, in live, in attrs);
+            if (body == _lastAbilityTipBody)
+                return;
+            _lastAbilityTipBody = body;
+            _abilityTipLabel.text = body;
+            _abilityTipLabel.ForceMeshUpdate(true);
+            if (_abilityTipRect != null)
+            {
+                float tipW = _abilityTipRect.sizeDelta.x;
+                float tipH = Mathf.Max(E(100f), _abilityTipLabel.preferredHeight + E(20f));
+                _abilityTipRect.sizeDelta = new Vector2(tipW, tipH);
+            }
+        }
+
+        void PositionAbilityTipPanel(int abilityIndex)
+        {
+            if (_abilityTipRect == null || _chipRects[abilityIndex] == null || _stripRootRect == null)
+                return;
+
+            // Tip sits above the chip, centered on that slot (canvas space of strip parent).
+            RectTransform chip = _chipRects[abilityIndex];
+            _abilityTipRect.anchorMin = _stripRootRect.anchorMin;
+            _abilityTipRect.anchorMax = _stripRootRect.anchorMax;
+            _abilityTipRect.pivot = new Vector2(0.5f, 0f);
+            float stripX = _stripRootRect.anchoredPosition.x;
+            float stripY = _stripRootRect.anchoredPosition.y;
+            float chipCenterX = stripX + chip.anchoredPosition.x + chip.sizeDelta.x * 0.5f;
+            float tipBottom = stripY + chip.anchoredPosition.y + chip.sizeDelta.y + E(8f);
+            _abilityTipRect.anchoredPosition = new Vector2(chipCenterX, tipBottom);
+        }
+
+        bool TryResolveChipLiveContext(
+            out ShipSpeedometerStatTooltips.PartCache parts,
+            out ShipSpeedometerStatTooltips.LiveContext live,
+            out ShipAttributeUpgradeState attrs)
+        {
+            parts = default;
+            live = default;
+            attrs = default;
+            if (!TryGetUpgradeHudSnapshot(out _, out attrs))
+                return false;
+
+            if (!_triedSpeedometerLookup)
+            {
+                _triedSpeedometerLookup = true;
+                _cachedSpeedometer = Object.FindFirstObjectByType<ShipSpeedometerHUD>();
+            }
+
+            if (_cachedSpeedometer != null
+                && _cachedSpeedometer.TryGetTooltipSharedState(out parts, out live))
+                return true;
+
+            // Fallback before speedometer paints: ship vitals only (part grids empty).
+            live = new ShipSpeedometerStatTooltips.LiveContext
+            {
+                Ship = _cachedShip,
+                ChassisMaxSpeed = 0f,
+                ChassisAccel = 0f,
+                ChassisTurnDeg = 0f,
+                TotalMass = 0f,
+            };
+
+            // Best-effort effective stats from chassis id when available.
+            if (EcsGameBridge.TryGetLocalShipState(out ShipState ship)
+                && ShipStatApplyLogic.TryResolveChassisId(
+                    ship.Team,
+                    ship.ShipLevel,
+                    ship.BranchIndex,
+                    out string chassisId,
+                    allowFallback: true,
+                    ship.ShipFamilyConfigIndex)
+                && ShipStatApplyLogic.TryGetBaseStatsForChassis(chassisId, ship.ShipLevel, out ShipComponentAbilityStats baseStats))
+            {
+                ShipAttributeUpgradeLogic.ApplyMultipliers(ref baseStats, in attrs);
+                live.EffectiveStats = baseStats;
+                live.ChassisMaxSpeed = baseStats.moveSpeed;
+                live.ChassisAccel = baseStats.accelerationCap;
+                live.ChassisTurnDeg = baseStats.turnSpeed;
+                live.Ship = ship;
+            }
+
+            return true;
+        }
+
+        /// <summary>Formats one chip TMP line: label, big value, muted +step and Lv.</summary>
+        static string FormatChipText(int index, float value, float nextStep, int abilityLv, string unit)
+        {
+            string label = ShipAbilityCategoryColors.PowerBreakdownStatLabels[index];
+            string val = value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+            var sb = new System.Text.StringBuilder(64);
+            sb.Append("<color=#AAAAAA>").Append(label).Append("</color>\n");
+            sb.Append("<b>").Append(val).Append(unit).Append("</b>");
+            if (nextStep > 0.0001f)
+            {
+                sb.Append("\n<size=85%><color=#88AACC>+")
+                    .Append(nextStep.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture));
+                if (index != 6)
+                    sb.Append("</color></size>");
+                else
+                    sb.Append("</color></size>");
+            }
+
+            if (abilityLv > 0)
+                sb.Append(" <size=85%><color=#CCCCAA>Lv").Append(abilityLv).Append("</color></size>");
+            return sb.ToString();
         }
 
         private (Button button, RectTransform buttonRect, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, int index, Color statColor, string keyStr)
@@ -714,6 +1011,12 @@ namespace TitanOrbit.UI
             {
                 rootPanel.SetActive(show);
                 _lastShowActive = show;
+                if (!show && _abilityTipPanel != null)
+                {
+                    _activeAbilityTipIndex = null;
+                    _pendingHideAbilityTip = null;
+                    _abilityTipPanel.SetActive(false);
+                }
             }
 
             if (!show)
@@ -769,6 +1072,38 @@ namespace TitanOrbit.UI
             _lastMaxUpgrades = maxUpgrades;
             _lastCost = cost;
             _slotVisualsSeeded = true;
+
+            // --- Quick-stat chips (value + step + Lv) ---
+            RefreshChipValues(in ship, in attrs);
+
+            if (_activeAbilityTipIndex.HasValue)
+            {
+                RefreshAbilityTipContent();
+                PositionAbilityTipPanel(_activeAbilityTipIndex.Value);
+            }
+
+            FlushPendingAbilityTipHide();
+        }
+
+        /// <summary>Paints chip TMP from live / speedometer-shared context.</summary>
+        void RefreshChipValues(in ShipState ship, in ShipAttributeUpgradeState attrs)
+        {
+            _ = ship;
+            TryResolveChipLiveContext(out _, out var live, out _);
+            // Prefer attrs from snapshot (already have) over tip resolve.
+            for (int i = 0; i < 10; i++)
+            {
+                if (_chipValueTexts[i] == null)
+                    continue;
+
+                ShipAbilityStatBreakdown.ResolveChipDisplay(
+                    i, in live, in attrs, out float value, out float nextStep, out int abilityLv, out string unit);
+                string text = FormatChipText(i, value, nextStep, abilityLv, unit);
+                if (_lastChipText[i] == text)
+                    continue;
+                _lastChipText[i] = text;
+                _chipValueTexts[i].text = text;
+            }
         }
 
         private void LateUpdate()

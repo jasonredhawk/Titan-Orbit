@@ -107,16 +107,24 @@ namespace TitanOrbit.Editor
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Movement", EditorStyles.miniBoldLabel);
                 EditorGUILayout.FloatField(
-                    new GUIContent("Acceleration Cap (aggregated)", "Primary Accel × (1 + 10% × extra engines/thrusters)."),
+                    new GUIContent(
+                        "Acceleration Cap (aggregated)",
+                        "Primary Accel ×1 + each extra's Accel × extraStackWeight (default 0.1 for engines/thrusters)."),
                     total.accelerationCap);
                 EditorGUILayout.FloatField(
-                    new GUIContent("Acceleration Cap / Level (aggregated)", "Primary Accel/Lvl at 100% + each extra's Accel/Lvl at 10%."),
+                    new GUIContent(
+                        "Acceleration Cap / Level (aggregated)",
+                        "Primary Accel/Lvl ×1 + each extra's Accel/Lvl × extraStackWeight."),
                     total.accelerationCapPerAbilityLevel);
                 EditorGUILayout.FloatField(
-                    new GUIContent("Move Speed (aggregated)", "Primary Move × (1 + 10% × extra engines/thrusters). Energy Cap/Regen still sum."),
+                    new GUIContent(
+                        "Move Speed (aggregated)",
+                        "Primary Move ×1 + each extra's Move × extraStackWeight. Same pool weights for Energy Cap/Regen."),
                     total.moveSpeed);
                 EditorGUILayout.FloatField(
-                    new GUIContent("Move Speed / Level (aggregated)", "Primary Move/Lvl at 100% + each extra's Move/Lvl at 10%."),
+                    new GUIContent(
+                        "Move Speed / Level (aggregated)",
+                        "Primary Move/Lvl ×1 + each extra's Move/Lvl × extraStackWeight."),
                     total.moveSpeedPerAbilityLevel);
                 if (preview != null)
                 {
@@ -124,27 +132,27 @@ namespace TitanOrbit.Editor
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Acceleration Cap (stacked)",
-                            "Primary Accel × (1 + 10% × extras) — matches flight after ApplyPropulsionToSummedStats."),
+                            "Primary Accel ×1 + extras × extraStackWeight — matches flight after stack aggregation."),
                         preview.PreviewSumPropulsionAcceleration);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Acceleration Cap / Level (stacked)",
-                            "Primary Accel/Lvl at 100% + each extra's Accel/Lvl at 10%."),
+                            "Primary Accel/Lvl ×1 + each extra's Accel/Lvl × extraStackWeight."),
                         preview.PreviewSumPropulsionAccelerationPerLevel);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Primary propulsion Move Speed",
-                            "Best engine/thruster base move speed — counted once, then scaled by extras."),
+                            "Best engine/thruster base move speed — counted at 100%."),
                         preview.PreviewPrimaryThrusterMoveSpeed);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Extra propulsion Move Speed",
-                            "Primary Move × 10% × (engine/thruster count − 1)."),
+                            "Sum of each non-primary engine/thruster Move × its extraStackWeight."),
                         preview.PreviewExtraThrusterMoveSpeed);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Top speed cap",
-                            "Primary Move + extra propulsion Move — matches in-game max speed / speedometer."),
+                            "Primary Move + weighted extras — matches in-game max speed / speedometer."),
                         preview.PreviewTopSpeedMoveSpeed);
                 }
                 EditorGUILayout.FloatField(
@@ -203,7 +211,7 @@ namespace TitanOrbit.Editor
                     if (isWeapon)
                         label += " [weapon: xy=power, 1/z=rate; offense only]";
                     if (isPropulsion)
-                        label += " [engine/thruster: primary Move/Accel + 10% of primary per extra; Energy Cap/Regen sum]";
+                        label += " [engine/thruster: primary ×100% + extras × extraStackWeight of own stats]";
                     EditorGUILayout.LabelField("- " + label);
 
                     if (showPerComponent && perStats != null && i < perStats.Count)
@@ -277,6 +285,11 @@ namespace TitanOrbit.Editor
                             EditorGUILayout.FloatField("  Max Gems / Level", s.maxGemsPerAbilityLevel);
                             EditorGUILayout.FloatField("  Max People", s.maxPeople);
                             EditorGUILayout.FloatField("  Max People / Level", s.maxPeoplePerAbilityLevel);
+                            EditorGUILayout.FloatField(
+                                new GUIContent(
+                                    "  Extra Stack Weight",
+                                    "Primary = 100%; each extra in the same pool adds this fraction of ITS stats."),
+                                s.extraStackWeight);
                             EditorGUI.indentLevel--;
                         }
                     }

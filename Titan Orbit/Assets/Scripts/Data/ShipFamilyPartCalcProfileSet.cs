@@ -89,6 +89,12 @@ namespace TitanOrbit.Data
             if (ShipFamilyPartTypes.IsWeapon(partType))
                 s.fireRatePerAbilityLevel = 0f;
 
+            // [TITAN-ORBIT] Stack weight is a part property (not version-scaled). Prefer the authored
+            // baseAtVersion1 weight; fall back to type default (0.1 propulsion / 1.0 else).
+            s.extraStackWeight = baseAtVersion1.extraStackWeight > 0.0001f
+                ? baseAtVersion1.extraStackWeight
+                : ShipComponentStackAggregation.GetSuggestedExtraStackWeightForPartType(partType);
+
             return s;
         }
 
@@ -663,8 +669,10 @@ namespace TitanOrbit.Data
             // Prefer rows that already use the canonical label (hand-tuned Engine/Thrust) over
             // leftover legacy seeds (Thruster → Engine/Thrust) so Ensure never clobbers edits.
             var kept = new Dictionary<string, ShipFamilyPartCalcProfile>(StringComparer.OrdinalIgnoreCase);
+            // [TITAN-ORBIT] Non-core part types (custom groups) must survive Ensure — previously
+            // partProfiles was replaced with core-only and authored custom rows were wiped.
 
-            // Pass 1: already-canonical rows win.
+            // Pass 1: already-canonical core rows win.
             for (int i = 0; i < partProfiles.Count; i++)
             {
                 var p = partProfiles[i];
@@ -684,7 +692,7 @@ namespace TitanOrbit.Data
                 kept[normalized] = p;
             }
 
-            // Pass 2: legacy labels fill gaps only (rename label; keep that row's numbers).
+            // Pass 2: legacy core labels fill gaps only (rename label; keep that row's numbers).
             for (int i = 0; i < partProfiles.Count; i++)
             {
                 var p = partProfiles[i];
@@ -694,6 +702,23 @@ namespace TitanOrbit.Data
                 string normalized = ShipFamilyPartTypes.Normalize(p.partType.Trim(), null);
                 if (IndexOfCoreProfile(normalized) >= ShipFamilyPartTypes.CoreProfiles.Length)
                     continue;
+                if (kept.ContainsKey(normalized))
+                    continue;
+
+                p.partType = normalized;
+                kept[normalized] = p;
+            }
+
+            // Pass 3: preserve every non-core profile (do not drop custom groups).
+            for (int i = 0; i < partProfiles.Count; i++)
+            {
+                var p = partProfiles[i];
+                if (p == null || string.IsNullOrWhiteSpace(p.partType))
+                    continue;
+
+                string normalized = ShipFamilyPartTypes.Normalize(p.partType.Trim(), null);
+                if (IndexOfCoreProfile(normalized) < ShipFamilyPartTypes.CoreProfiles.Length)
+                    continue; // core — already in kept
                 if (kept.ContainsKey(normalized))
                     continue;
 
@@ -714,7 +739,7 @@ namespace TitanOrbit.Data
                 created++;
             }
 
-            // Keep Part Profiles in the same designer order as CoreProfiles.
+            // Keep Part Profiles in the same designer order as CoreProfiles (non-core after).
             partProfiles.Sort((a, b) =>
             {
                 int ai = IndexOfCoreProfile(a != null ? a.partType : null);
@@ -961,6 +986,11 @@ namespace TitanOrbit.Data
                         * ShipComponentHealthSuggestions.HealthRegenFractionOfCap * 0.5f,
                 };
             }
+
+            // [TITAN-ORBIT] Seed stack weight on version-1 base (engines/thrusters → 0.1, else 1).
+            // Not on perVersionIncrement — weight is a part property, not a tier delta.
+            profile.baseAtVersion1.extraStackWeight =
+                ShipComponentStackAggregation.GetSuggestedExtraStackWeightForPartType(type);
 
             // Bake *PerLevel into the row so Inspector / Scan see the same numbers.
             profile.EnsureAuthoredPerLevelFilled();

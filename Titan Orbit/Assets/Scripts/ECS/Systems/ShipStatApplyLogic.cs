@@ -283,7 +283,7 @@ namespace TitanOrbit.ECS
 
             // --- Chassis baseline (level-1 sum) ---
             // When moon-store equipment includes ship components, rebuild chassis+store together so
-            // engines use primary Move/Accel + 10% of primary per extra (not naive full add).
+            // stack pools use primary ×1 + extras × extraStackWeight (not naive full add).
             ShipComponentAbilityStats summed;
             if (!TryGetBaseStatsWithStoreComponents(em, shipEntity, chassisId, out summed))
             {
@@ -400,6 +400,12 @@ namespace TitanOrbit.ECS
                     weapon.ReferenceBulletDamage = baselineDamage;
                 if (chassisIdentityChanged || weapon.ReferenceBulletSpeed <= 0.01f)
                     weapon.ReferenceBulletSpeed = baselineSpeed;
+                // [TITAN-ORBIT] Hull-wide volley vs round-robin policy from the family asset.
+                // Default EnergyHybrid when family resolve fails so older paths keep legacy feel.
+                weapon.FireMode = ShipWeaponFireMode.EnergyHybrid;
+                if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition fireModeFamily) &&
+                    fireModeFamily != null)
+                    weapon.FireMode = fireModeFamily.weaponFireMode;
                 em.SetComponentData(shipEntity, weapon);
             }
 
@@ -584,7 +590,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Rebuilds level-1 chassis stats including moon-store ship components, with correct
-        /// propulsion aggregation (primary Move/Accel + 10% of primary per extra).
+        /// stack aggregation (primary ×1 + extras × extraStackWeight of own stats).
         /// Returns false when there are no store ShipComponent rows (caller uses chassis-only path).
         /// </summary>
         static bool TryGetBaseStatsWithStoreComponents(

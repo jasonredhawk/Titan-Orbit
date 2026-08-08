@@ -103,6 +103,18 @@ namespace TitanOrbit.Data
         [Header("Bullets")]
         public int bulletPrefabIndex = 0;
 
+        /// <summary>
+        /// [TITAN-ORBIT] Hull-wide multi-mount fire policy (volley vs round-robin vs energy hybrid).
+        /// Copied into <c>ShipWeaponConfig.FireMode</c> at stat apply. Default
+        /// <see cref="ShipWeaponFireMode.EnergyHybrid"/> preserves legacy feel for existing families.
+        /// </summary>
+        [Tooltip(
+            "How this family's weapon mounts spend the shared energy pool:\n" +
+            "• Energy Hybrid — full volley when energy covers every ready barrel; otherwise round-robin.\n" +
+            "• Always Fire Together — only fire when every barrel is ready and energy pays all at once.\n" +
+            "• Always Round-Robin — never volley; cycle mounts 0→1→2→… waiting for each shot's cost.")]
+        public ShipWeaponFireMode weaponFireMode = ShipWeaponFireMode.EnergyHybrid;
+
         [Header("Planetary Defense")]
         [Tooltip(
             "Turret recipe for planets of this family (mesh prefab, Level 1→6 combat ranges, " +

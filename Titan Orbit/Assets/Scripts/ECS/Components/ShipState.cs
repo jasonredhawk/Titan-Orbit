@@ -323,6 +323,13 @@ namespace TitanOrbit.ECS
 
         /// <summary>[TITAN-ORBIT] Level-1 baseline speed for upgrade VFX growth.</summary>
         public float ReferenceBulletSpeed;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Hull-wide fire policy from <c>ShipFamilyDefinition.weaponFireMode</c>.
+        /// Not ghosted — written by <see cref="ShipStatApplyLogic"/> on server and client apply paths.
+        /// Consumed by <see cref="ShipWeaponFireLogic.TryPlanFire"/>.
+        /// </summary>
+        public ShipWeaponFireMode FireMode;
     }
 
     /// <summary>
@@ -351,9 +358,10 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [ECS/DOTS] Energy-queue cursor for low-energy multi-cannon fire (server sim).
+    /// [ECS/DOTS] Energy-queue cursor for multi-cannon fire (server sim).
     /// Per-barrel cooldowns live on <see cref="ShipWeaponMountElement.FireCooldown"/>.
-    /// <see cref="NextMountIndex"/> is which mount may spend energy when a full volley is not affordable.
+    /// <see cref="NextMountIndex"/> is which mount may spend energy under Energy Hybrid (when a
+    /// full volley is not affordable) or Always Round-Robin. Unused while Always Fire Together waits.
     /// </summary>
     public struct ShipWeaponState : IComponentData
     {
@@ -361,9 +369,10 @@ namespace TitanOrbit.ECS
         public float FireCooldown;
 
         /// <summary>
-        /// [TITAN-ORBIT] Energy-queue index for round-robin drip. When the shared pool cannot
-        /// cover every mount at once, only this barrel may fire; after it shoots the cursor
-        /// advances 0→1→2→…→0. Reset to 0 after a full same-tick volley.
+        /// [TITAN-ORBIT] Energy-queue index for round-robin drip. When
+        /// <see cref="ShipWeaponConfig.FireMode"/> allows drip and the shared pool cannot cover
+        /// every mount at once, only this barrel may fire; after it shoots the cursor advances
+        /// 0→1→2→…→0. Reset to 0 after a full same-tick volley.
         /// </summary>
         public int NextMountIndex;
     }

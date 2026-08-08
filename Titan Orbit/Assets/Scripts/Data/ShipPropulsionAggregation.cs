@@ -7,12 +7,10 @@ namespace TitanOrbit.Data
     /// Engine and thruster move-speed and acceleration rules shared by legacy <see cref="Entities.Starship"/>,
     /// ECS motor, and editor previews.
     /// <para>
-    /// [TITAN-ORBIT] Engines/thrusters share one propulsion pool for <b>Move</b> and <b>Accel</b>:
-    /// primary (highest base moveSpeed) counts at full value; each additional engine/thruster adds
-    /// <see cref="AdditionalPropulsionFractionOfBase"/> (10%) of that primary base for cruise/accel.
-    /// Their <c>*PerAbilityLevel</c> HUD steps use primary at 100% and each extra at 10% of
-    /// <b>that extra's</b> authored PerAbilityLevel (so a second thruster does not add a full step).
-    /// Energy Cap / Regen and other non-speed stats stay simple summation.
+    /// [TITAN-ORBIT] Engines/thrusters share one propulsion pool. Primary (highest moveSpeed) at 100%;
+    /// each extra contributes <see cref="ShipComponentAbilityStats.extraStackWeight"/> (default 0.1)
+    /// of <b>its own</b> Move / Accel / PerAbilityLevel. Hull-wide energy and other stats use the same
+    /// weight via <see cref="ShipComponentStackAggregation"/>.
     /// </para>
     /// Paired with <see cref="ShipFamilyStatsCalculator"/>.
     /// </summary>
@@ -104,20 +102,21 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Each additional engine/thruster beyond the primary adds this fraction of the primary's
-        /// Move / Accel / matching PerAbilityLevel (0.1 = +10% of primary per extra part).
+        /// Default propulsion <c>extraStackWeight</c> when unset (0.1 = 10% of that extra's own stats).
+        /// Prefer <see cref="ShipComponentStackAggregation.DefaultPropulsionExtraStackWeight"/>.
         /// </summary>
-        public const float AdditionalPropulsionFractionOfBase = 0.1f;
+        public const float AdditionalPropulsionFractionOfBase =
+            ShipComponentStackAggregation.DefaultPropulsionExtraStackWeight;
 
         /// <summary>
-        /// [LEGACY] Old name for <see cref="AdditionalPropulsionFractionOfBase"/> when extras
-        /// contributed half of their own moveSpeedPerAbilityLevel. Prefer the new constant.
+        /// [LEGACY] Old name for <see cref="AdditionalPropulsionFractionOfBase"/>.
         /// </summary>
-        [System.Obsolete("Use AdditionalPropulsionFractionOfBase (10% of primary per extra).")]
+        [System.Obsolete("Use ShipComponentStackAggregation.ResolveExtraStackWeight.")]
         public const float AdditionalPropulsionMoveSpeedPerLevelFactor = AdditionalPropulsionFractionOfBase;
 
         /// <summary>
-        /// Stack scale for N propulsion parts: <c>1 + 0.1 × (N − 1)</c>. One part → 1×; three → 1.2×.
+        /// [LEGACY] Nominal 1+0.1×(N−1) scale for UI that still shows a stack multiplier.
+        /// Flight totals use each part's own stats × weight instead.
         /// </summary>
         public static float GetPropulsionStackScale(int propulsionCount)
         {
@@ -251,8 +250,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Per-part acceleration contribution (authored Accel, or derived from Move when unset).
-        /// Used when reading a single part; pool aggregation scales the primary via
-        /// <see cref="GetPropulsionStackScale"/> instead of summing every part.
+        /// Pool aggregation weights this value (primary ×1, extras × extraStackWeight).
         /// </summary>
         public static float GetPropulsionAccelerationContribution(
             ShipComponentAbilityStats comp,
@@ -274,10 +272,9 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Computes shared engine/thruster Move / Accel (and PerAbilityLevel) from per-component stats.
         /// <list type="bullet">
-        /// <item>Base Move / Accel: primary (highest moveSpeed) × (1 + 10% × extras).</item>
-        /// <item>PerAbilityLevel (Move / Accel): primary at 100% + each additional part at 10% of
-        /// <b>that part's</b> authored PerAbilityLevel (not a full sum, not primary×stack alone).</item>
-        /// <item>Energy Cap / Regen: not handled here — callers keep simple summation.</item>
+        /// <item>Base Move / Accel: primary (highest moveSpeed) at 100% + each extra at
+        /// <see cref="ShipComponentStackAggregation.ResolveExtraStackWeight"/> of <b>its own</b> value.</item>
+        /// <item>PerAbilityLevel: same weights on each part's authored step.</item>
         /// </list>
         /// </summary>
         public static Result ComputeThrusterPropulsion(
@@ -294,84 +291,73 @@ namespace TitanOrbit.Data
                 return result;
 
             int levelsAfterFirst = Mathf.Max(0, shipLevel - 1);
-            float bestPrimaryMove = 0f;
-            int propulsionCount = 0;
+            ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
+            float speedPenalty = mobility != null ? mobility.levelMaxSpeedPenaltyFractionPerLevel : 0f;
+            float accelPenalty = mobility != null ? mobility.levelAccelPenaltyFractionPerLevel : 0f;
 
-            // --- Count propulsion parts + pick primary (highest base moveSpeed) ---
+            // --- Pick primary via shared stack rules (highest moveSpeed) ---
+            result.primaryIndex = ShipComponentStackAggregation.PickPropulsionPrimaryGlobalIndex(
+                componentIds, perComponentStats);
+            if (result.primaryIndex < 0)
+                return result;
+
+            int propulsionCount = 0;
+            float topMove = 0f;
+            float sumAccel = 0f;
+            float extraMove = 0f;
+            float movePerTotal = 0f;
+            float accelPerTotal = 0f;
+
             for (int i = 0; i < count; i++)
             {
                 if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(componentIds[i]))
                     continue;
 
                 propulsionCount++;
                 ShipComponentAbilityStats comp = perComponentStats[i];
-                if (comp.moveSpeed > bestPrimaryMove)
-                {
-                    bestPrimaryMove = comp.moveSpeed;
-                    result.primaryIndex = i;
-                }
-            }
+                bool isPrimary = i == result.primaryIndex;
+                float weight = isPrimary
+                    ? 1f
+                    : ShipComponentStackAggregation.ResolveExtraStackWeight(in comp, componentIds[i]);
 
-            result.propulsionCount = propulsionCount;
-            if (result.primaryIndex < 0 || propulsionCount <= 0)
-                return result;
+                float moveBase = ApplyShipLevelMobilityScale(
+                    Mathf.Max(0f, comp.moveSpeed), levelsAfterFirst, speedPenalty);
+                float accelBase = ApplyShipLevelMobilityScale(
+                    Mathf.Max(0f, GetPropulsionAccelerationContribution(comp, levelsAfterFirst)),
+                    levelsAfterFirst,
+                    accelPenalty);
 
-            float stackScale = GetPropulsionStackScale(propulsionCount);
-            ShipComponentAbilityStats primary = perComponentStats[result.primaryIndex];
-            ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
+                float moveContrib = moveBase * weight;
+                float accelContrib = accelBase * weight;
+                topMove += moveContrib;
+                sumAccel += accelContrib;
+                if (!isPrimary)
+                    extraMove += moveContrib;
 
-            // --- Move: primary × (1 + 0.1 × extras), after optional level MaxSpeed drag ---
-            float primaryMove = ApplyShipLevelMobilityScale(
-                primary.moveSpeed,
-                levelsAfterFirst,
-                mobility.levelMaxSpeedPenaltyFractionPerLevel);
-            result.extraMoveSpeedFromAdditional =
-                primaryMove * AdditionalPropulsionFractionOfBase * Mathf.Max(0, propulsionCount - 1);
-            result.topMoveSpeed = Mathf.Max(0.1f, primaryMove * stackScale);
-
-            // --- Accel: same stack on primary Accel (not a full sum of every part) ---
-            float primaryAccel = Mathf.Max(
-                0f,
-                GetPropulsionAccelerationContribution(primary, levelsAfterFirst));
-            float primaryAccelAfterLevel = ApplyShipLevelMobilityScale(
-                primaryAccel,
-                levelsAfterFirst,
-                mobility.levelAccelPenaltyFractionPerLevel);
-            result.sumAcceleration = Mathf.Max(0f, primaryAccelAfterLevel * stackScale);
-
-            // --- PerAbilityLevel HUD steps: primary at 100%, each extra at 10% of ITS own step ---
-            // [TITAN-ORBIT] Not primary×stack (that ignores weaker extras' authored PerAbilityLevel)
-            // and not a full sum (that made every thruster add 100% to the Move Speed HUD step).
-            result.moveSpeedPerAbilityLevel = 0f;
-            result.accelerationCapPerAbilityLevel = 0f;
-            for (int i = 0; i < count; i++)
-            {
-                if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
-                    continue;
-
-                ShipComponentAbilityStats comp = perComponentStats[i];
                 float movePer = Mathf.Max(0f, comp.moveSpeedPerAbilityLevel);
                 float accelPer = Mathf.Max(0f, comp.accelerationCapPerAbilityLevel);
                 if (accelPer <= 0.0001f && movePer > 0f)
-                {
-                    // [TITAN-ORBIT] Mirror GetPropulsionAccelerationContribution when Accel/Lvl is unset.
                     accelPer = movePer * SuggestedPropulsionAccelerationFractionOfMoveSpeed;
-                }
 
-                float weight = i == result.primaryIndex
-                    ? 1f
-                    : AdditionalPropulsionFractionOfBase;
-                result.moveSpeedPerAbilityLevel += movePer * weight;
-                result.accelerationCapPerAbilityLevel += accelPer * weight;
+                movePerTotal += movePer * weight;
+                accelPerTotal += accelPer * weight;
             }
 
+            result.propulsionCount = propulsionCount;
+            result.topMoveSpeed = Mathf.Max(0.1f, topMove);
+            result.sumAcceleration = Mathf.Max(0f, sumAccel);
+            result.extraMoveSpeedFromAdditional = Mathf.Max(0f, extraMove);
+            result.moveSpeedPerAbilityLevel = movePerTotal;
+            result.accelerationCapPerAbilityLevel = accelPerTotal;
             return result;
         }
 
         /// <summary>
-        /// Replaces naively summed engine/thruster Move / Accel (and PerAbilityLevel) with the shared
-        /// stack rules. Call after summing all scaled component stats.
-        /// Energy Cap / Regen and other fields on <paramref name="total"/> are left alone.
+        /// Rebuilds hull totals with <see cref="ShipComponentStackAggregation.AggregateAllPools"/>
+        /// (primary ×1 + extras × extraStackWeight per type pool). Prefer calling that directly;
+        /// kept for upgrade-tree / legacy callers that passed a naive sum.
         /// </summary>
         public static ShipComponentAbilityStats ApplyPropulsionToSummedStats(
             ShipComponentAbilityStats total,
@@ -379,40 +365,9 @@ namespace TitanOrbit.Data
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
             int shipLevel = 1)
         {
-            if (componentIds == null || perComponentStats == null)
-                return total;
-
-            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
-            if (count == 0)
-                return total;
-
-            // --- Strip naive full-sum propulsion Move/Accel/PerAbilityLevel ---
-            // Without this, every engine/thruster would add 100% of its PerAbilityLevel into the
-            // hull Move Speed HUD step (exactly the bug designers see on multi-engine chassis).
-            for (int i = 0; i < count; i++)
-            {
-                if (!ShipComponentAbilityStats.IsPropulsionComponent(componentIds[i]))
-                    continue;
-
-                ShipComponentAbilityStats s = perComponentStats[i];
-                total.moveSpeed -= s.moveSpeed;
-                total.moveSpeedPerAbilityLevel -= s.moveSpeedPerAbilityLevel;
-                total.accelerationCap -= s.accelerationCap;
-                total.accelerationCapPerAbilityLevel -= s.accelerationCapPerAbilityLevel;
-            }
-
-            // --- Re-apply primary@100% + extras@10% (base Move/Accel use primary×stack) ---
-            Result propulsion = ComputeThrusterPropulsion(componentIds, perComponentStats, shipLevel);
-            total.moveSpeed = Mathf.Max(0f, total.moveSpeed) + propulsion.topMoveSpeed;
-            total.accelerationCap = Mathf.Max(0f, total.accelerationCap) + propulsion.sumAcceleration;
-            // Clamp strip residue then add aggregated ability steps (never leave a raw N× sum).
-            total.moveSpeedPerAbilityLevel =
-                Mathf.Max(0f, total.moveSpeedPerAbilityLevel) + propulsion.moveSpeedPerAbilityLevel;
-            total.accelerationCapPerAbilityLevel =
-                Mathf.Max(0f, total.accelerationCapPerAbilityLevel)
-                + propulsion.accelerationCapPerAbilityLevel;
-
-            return total;
+            _ = total;
+            _ = shipLevel;
+            return ShipComponentStackAggregation.AggregateAllPools(componentIds, perComponentStats);
         }
 
         /// <summary>

@@ -1145,22 +1145,24 @@ namespace TitanOrbit.Game
         const float TeamPanelAccentBarAlpha = 0.92f;
 
         /// <summary>
-        /// Soft darken before team tint so white TMP labels stay readable over the nebula.
-        /// Applied as a neutral grey multiply, then blended toward team RGB.
+        /// Soft darken on the nebula sprite itself (multiply grey) so labels stay readable.
+        /// Team hue is NOT applied here — see <see cref="TeamPanelTintOverlayAlpha"/>.
         /// </summary>
-        const float TeamPanelNebulaScrim = 0.18f;
+        const float TeamPanelNebulaScrim = 0.12f;
 
         /// <summary>
-        /// How hard the panel background pulls toward the team hue (0 = grey scrim only,
-        /// 1 = full team multiply). Mid values keep nebula detail while the card still reads
-        /// as that faction — the old 0.85 wash crushed blue-heavy art.
+        /// Alpha of the solid team-color overlay drawn over the nebula.
+        /// [UGUI] Multiply-tinting Image.color on a blue-heavy SpaceBackground barely shows
+        /// red/green/orange — a semi-transparent solid overlay actually reads as team tint.
         /// </summary>
-        const float TeamPanelBackgroundTintStrength = 0.45f;
+        const float TeamPanelTintOverlayAlpha = 0.05f;
+
+        /// <summary>Runtime child name for the team-color wash over each card nebula.</summary>
+        const string TeamPanelTintOverlayName = "TeamTintOverlay";
 
         /// <summary>
-        /// Applies Join Team card visuals: team-tinted nebula on the panel root, solid team color
-        /// on the TitleBar accent strip, and a matching Outline. Faction hue shows on the fill
-        /// and the bar — not outline-only.
+        /// Applies Join Team card visuals: nebula fill + solid team wash overlay, TitleBar accent,
+        /// and matching Outline. Overlay (not Image multiply) is what makes the faction tint visible.
         /// </summary>
         /// <param name="root">TeamAPanel…TeamEPanel root; null-safe no-op.</param>
         static void ApplyTeamPanelVisuals(GameObject root)
@@ -1178,18 +1180,18 @@ namespace TitanOrbit.Game
                     teamRgb = Color.white;
             }
 
-            ApplyTeamPanelSpaceBackgroundImage(root, teamRgb);
+            ApplyTeamPanelSpaceBackgroundImage(root);
+            ApplyTeamPanelTintOverlay(root, teamRgb);
             ApplyTeamPanelAccentBar(root, teamRgb);
             ApplyTeamPanelOutline(root, teamRgb);
         }
 
         /// <summary>
-        /// Puts the shared space nebula sprite on the team card root Image and multiplies it with
-        /// a moderate team tint (plus a light scrim). TitleBar still carries the solid accent bar.
+        /// Puts the shared space nebula sprite on the team card root Image with a near-neutral
+        /// multiply so art stays bright. Team color comes from <see cref="ApplyTeamPanelTintOverlay"/>.
         /// </summary>
         /// <param name="root">TeamAPanel…TeamEPanel root; null-safe no-op.</param>
-        /// <param name="teamRgb">Canonical team RGB used for the background multiply.</param>
-        static void ApplyTeamPanelSpaceBackgroundImage(GameObject root, Color teamRgb)
+        static void ApplyTeamPanelSpaceBackgroundImage(GameObject root)
         {
             if (root == null)
                 return;
@@ -1206,20 +1208,69 @@ namespace TitanOrbit.Game
                 return;
             }
 
-            // [UNITY] Image multiplies sprite RGB by Image.color — that is the team tint.
-            // [TITAN-ORBIT] Lerp from a light grey scrim → team color (not white→team at 0.85).
-            // Full-strength team multiply on Nebula Blue crushed non-matching channels; ~0.45
-            // leaves art readable while the panel still reads as that faction.
+            // [UNITY] Keep sprite multiply near-white — do not bake team hue into Image.color.
             image.sprite = space;
             image.type = Image.Type.Simple;
             image.preserveAspect = false;
             image.raycastTarget = true;
 
             float grey = 1f - TeamPanelNebulaScrim;
-            Color baseTint = new Color(grey, grey, grey, 1f);
-            Color tint = Color.Lerp(baseTint, teamRgb, TeamPanelBackgroundTintStrength);
-            tint.a = 1f;
-            image.color = tint;
+            image.color = new Color(grey, grey, grey, 1f);
+        }
+
+        /// <summary>
+        /// Ensures a full-rect child Image behind Content that paints a semi-transparent solid
+        /// team color over the nebula. This is the visible "panel tint" players expect.
+        /// </summary>
+        /// <param name="root">TeamAPanel…TeamEPanel root.</param>
+        /// <param name="teamRgb">Canonical team RGB (alpha ignored; we set overlay alpha).</param>
+        static void ApplyTeamPanelTintOverlay(GameObject root, Color teamRgb)
+        {
+            if (root == null)
+                return;
+
+            // --- Find or create the wash layer ---
+            Transform existing = root.transform.Find(TeamPanelTintOverlayName);
+            GameObject overlayGo;
+            if (existing != null)
+            {
+                overlayGo = existing.gameObject;
+            }
+            else
+            {
+                // [UNITY] New UI child under the panel; drawn above root Image, below Content.
+                overlayGo = new GameObject(TeamPanelTintOverlayName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                overlayGo.layer = root.layer;
+                overlayGo.transform.SetParent(root.transform, false);
+            }
+
+            // Sibling 0 = first drawn after the panel's own Image (Content stays on top for text/buttons).
+            overlayGo.transform.SetSiblingIndex(0);
+
+            var rect = overlayGo.GetComponent<RectTransform>();
+            // Stretch to the full card so the wash matches the nebula rect.
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.localScale = Vector3.one;
+
+            // If a parent LayoutGroup ever appears, keep this decorative layer out of layout math.
+            if (!overlayGo.TryGetComponent<LayoutElement>(out var layoutElement))
+                layoutElement = overlayGo.AddComponent<LayoutElement>();
+            layoutElement.ignoreLayout = true;
+
+            var overlayImage = overlayGo.GetComponent<Image>();
+            // Solid fill (no sprite) so alpha blends the true team RGB over the nebula.
+            overlayImage.sprite = null;
+            overlayImage.type = Image.Type.Simple;
+            overlayImage.preserveAspect = false;
+            overlayImage.raycastTarget = false;
+
+            Color wash = teamRgb;
+            wash.a = TeamPanelTintOverlayAlpha;
+            overlayImage.color = wash;
         }
 
         /// <summary>

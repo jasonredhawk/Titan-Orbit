@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
@@ -16,7 +17,8 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Screen corner placement for the local-player speedometer panel. BottomLeft avoids minimap overlap.
+    /// Screen placement for the local-player speedometer panel.
+    /// Default is top-center so SPD/ACC bars sit near the top of the map.
     /// </summary>
     public enum SpeedometerPlacement
     {
@@ -24,7 +26,9 @@ namespace TitanOrbit.UI
         BottomLeft = 0,
         BottomRight = 1,
         TopLeft = 2,
-        TopRight = 3
+        TopRight = 3,
+        /// <summary>[TITAN-ORBIT] Default — SPD/ACC bars centered under the top edge of the map.</summary>
+        TopCenter = 4
     }
 
     /// <summary>
@@ -41,8 +45,8 @@ namespace TitanOrbit.UI
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] The speed bar always spans to OVERDRIVE top speed (motor baked capacity),
-    /// even when Shift is not held. The right-hand band uses <see cref="overdriveZoneColor"/> so
-    /// players see unused overdrive headroom; the cyan fill only enters that band while OD is active.
+    /// even when Shift is not held. The right-hand band uses the fill colour at alpha 0.1 so
+    /// players see unused overdrive headroom; the solid fill only enters that band while OD is active.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Pre–mass-tax baselines for SPD / ACC / turn are always chassis
@@ -51,19 +55,35 @@ namespace TitanOrbit.UI
     /// the same chassis baselines after <see cref="ShipStatApplyLogic"/>).
     /// </para>
     /// <para>
+    /// [TITAN-ORBIT] Shows SPD + ACC bars only (top-center). MASS / RAM / BUL and ability
+    /// calculation breakdowns live on the bottom Ship Ability chips — see
+    /// <see cref="ShipAttributeUpgradeHUD"/> / <see cref="ShipAbilityStatBreakdown"/>.
+    /// </para>
+    /// <para>
     /// Master on/off lives on <see cref="GameManager.ShowSpeedometer"/> (NceGameRoot Inspector → HUD).
     /// When off, this component does not build UI and LateUpdate returns immediately — no ECS ship
     /// queries, no bar math, no TMP rebuilds. Presentation-only — never writes ECS.
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] Hover pads over SPD / ACC / MASS / RAM / BUL open a rollover that lists the
-    /// chassis (and moon-store) parts feeding that number — see <see cref="ShipSpeedometerStatTooltips"/>.
+    /// [TITAN-ORBIT] Compact top-center SPD + ACC bars only (no numeric body text). Hover pads
+    /// open short rollovers; full part pipelines live on ability chips —
+    /// <see cref="ShipSpeedometerStatTooltips"/> / <see cref="ShipAttributeUpgradeHUD"/>.
     /// </para>
     /// Hidden during team select, death, and when the upgrade tree obscures HUD.
     /// </summary>
     public class ShipSpeedometerHUD : MonoBehaviour
     {
-        const float HudLayoutScale = 1.6f;
+        /// <summary>Compact top-center gamer meter scale (bars only, no panel chrome).</summary>
+        const float HudLayoutScale = 1f;
+
+        /// <summary>Legible compact meter width (ticks + live value fit).</summary>
+        const float SlimPanelWidth = 220f;
+        /// <summary>Two thin bars + tick rows under each — small but readable.</summary>
+        const float SlimPanelHeight = 36f;
+        /// <summary>Left gutter for SPD/ACC micro-tags.</summary>
+        const float TagGutter = 18f;
+        /// <summary>Right gutter for the live speed readout.</summary>
+        const float ValueGutter = 30f;
 
         /// <summary>
         /// Cached LocalPlayerShipTag query — CreateEntityQuery every LateUpdate was ~3ms
@@ -79,29 +99,32 @@ namespace TitanOrbit.UI
         const char FigureSpace = '\u2007';
 
         [Header("Layout")]
-        [SerializeField] SpeedometerPlacement placement = SpeedometerPlacement.BottomLeft;
-        [SerializeField] float panelWidth = 380f * HudLayoutScale;
-        // Taller than the old 148×scale so bars, tick strips, and 4 body lines never share vertical bands.
-        [SerializeField] float panelHeight = 178f * HudLayoutScale;
+        [SerializeField] SpeedometerPlacement placement = SpeedometerPlacement.TopCenter;
+        // Kept for Inspector/serialization; BuildUI forces SlimPanelWidth/Height.
+        [SerializeField] float panelWidth = SlimPanelWidth;
+        [SerializeField] float panelHeight = SlimPanelHeight;
         [SerializeField, FormerlySerializedAs("accelerationDisplayResponsiveness")]
         float accelerationBarSmoothing = 5f;
         [SerializeField, FormerlySerializedAs("rightMargin")] float horizontalMargin = 20f;
-        [SerializeField, FormerlySerializedAs("bottomMargin")] float verticalMargin = 20f;
+        [SerializeField, FormerlySerializedAs("bottomMargin")] float verticalMargin = 6f;
+        [Tooltip("Unused when placement is TopCenter — kept for Inspector compatibility with older corner layouts.")]
         [SerializeField] float stackGapAboveUpgradeBar = 20f;
 
         [Header("Colors")]
-        [SerializeField] Color backgroundColor = new Color(0f, 0f, 0f, 0.45f);
-        [SerializeField] Color fillColor = new Color(0.35f, 0.85f, 1f, 0.9f);
-        [SerializeField] Color trackColor = new Color(0.15f, 0.15f, 0.18f, 0.85f);
+        [SerializeField] Color backgroundColor = new Color(0f, 0f, 0f, 0f);
+        [SerializeField] Color fillColor = new Color(0.35f, 0.85f, 1f, 0.95f);
+        [SerializeField] Color trackColor = new Color(0.05f, 0.07f, 0.1f, 0.55f);
         /// <summary>
-        /// [TITAN-ORBIT] Always-visible band from cruise max → OVERDRIVE top speed on the speed bar.
-        /// Amber so it reads as "burst capacity" next to the cyan fill (matches SPD od tag).
+        /// [TITAN-ORBIT] OVERDRIVE headroom band on the speed bar. Runtime uses
+        /// <see cref="fillColor"/> RGB with alpha 0.1 so the unused OD segment reads as a faint
+        /// tint of the same cyan fill (not a separate amber slab).
         /// </summary>
-        [SerializeField] Color overdriveZoneColor = new Color(1f, 0.72f, 0.28f, 0.38f);
+        [SerializeField] Color overdriveZoneColor = new Color(0.35f, 0.85f, 1f, 0.1f);
         [SerializeField] Color textColor = new Color(0.92f, 0.95f, 1f, 1f);
-        [SerializeField] Color accelPositiveColor = new Color(0.25f, 0.92f, 0.45f, 0.92f);
-        [SerializeField] Color accelNegativeColor = new Color(0.95f, 0.28f, 0.28f, 0.92f);
-        [SerializeField] Color tickLabelColor = new Color(0.78f, 0.82f, 0.9f, 0.72f);
+        [SerializeField] Color accelPositiveColor = new Color(0.25f, 0.92f, 0.45f, 0.95f);
+        [SerializeField] Color accelNegativeColor = new Color(0.95f, 0.28f, 0.28f, 0.95f);
+        [SerializeField] Color tickLabelColor = new Color(0.85f, 0.9f, 1f, 0.85f);
+        [SerializeField] Color frameAccentColor = new Color(0.35f, 0.85f, 1f, 0.35f);
 
         GameObject rootPanel;
         Slider speedSlider;
@@ -111,8 +134,13 @@ namespace TitanOrbit.UI
         RectTransform accelGreenFill;
         RectTransform accelRedFill;
         TextMeshProUGUI speedLabel;
+        /// <summary>Live planar speed digits to the right of the SPD track (compact readout).</summary>
+        TextMeshProUGUI speedLiveLabel;
         TextMeshProUGUI[] speedTickLabels;
         TextMeshProUGUI[] accelTickLabels;
+        /// <summary>Anchors for the middle SPD interest tick (cruise / OD boundary) — moves with OD zone.</summary>
+        RectTransform speedCruiseTickRt;
+        RectTransform speedCruiseMarkRt;
         Entity accelSampleShip;
         float lastHorizontalSpeed;
         float smoothedHorizontalAccel;
@@ -298,52 +326,97 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// One-time procedural HUD build. Vertical bands are non-overlapping so tick strips never
-        /// sit inside the body-text region (the old 0–0.46 label band overlapped accel ticks).
+        /// One-time procedural HUD build. Compact top-center gamer meter with thin SPD/ACC tracks,
+        /// interest ticks (0 / cruise / OD max, ±accel), and a live speed readout — no panel background.
         /// </summary>
         void BuildUIIfNeeded()
         {
-            // --- One-time procedural HUD build ---
-            if (uiBuilt || !IsFeatureEnabled())
+            if (!IsFeatureEnabled())
                 return;
+
+            // --- Rebuild when size drifts or tick strip is missing ---
+            if (uiBuilt && rootPanel != null)
+            {
+                RectTransform existingRt = rootPanel.GetComponent<RectTransform>();
+                bool needsRebuild = speedLabel != null
+                    || rootPanel.GetComponent<Image>() != null
+                    || rootPanel.GetComponent<Outline>() != null
+                    || rootPanel.transform.Find("HudText") != null
+                    || rootPanel.transform.Find("SpeedTicks") == null
+                    || existingRt == null
+                    || Mathf.Abs(existingRt.sizeDelta.y - SlimPanelHeight) > 0.5f
+                    || Mathf.Abs(existingRt.sizeDelta.x - SlimPanelWidth) > 0.5f;
+                if (!needsRebuild)
+                    return;
+
+                Destroy(rootPanel);
+                rootPanel = null;
+                speedLabel = null;
+                speedLiveLabel = null;
+                speedSlider = null;
+                overdriveZoneRect = null;
+                overdriveZoneImage = null;
+                accelGreenFill = null;
+                accelRedFill = null;
+                speedCruiseTickRt = null;
+                speedCruiseMarkRt = null;
+                _rootRect = null;
+                uiBuilt = false;
+            }
+            else if (uiBuilt)
+            {
+                return;
+            }
+
+            // Orphan from a previous tear-down / play session (rename so Create name does not collide).
+            Transform existing = transform.Find("ShipSpeedometer");
+            if (existing != null)
+            {
+                existing.name = "ShipSpeedometer_Legacy";
+                Destroy(existing.gameObject);
+            }
 
             // --- Resolve parent canvas ---
             Canvas canvas = GetComponentInParent<Canvas>();
             if (canvas == null)
-                canvas = Object.FindFirstObjectByType<Canvas>();
+                canvas = UnityEngine.Object.FindFirstObjectByType<Canvas>();
             if (canvas == null)
                 return;
+
+            // [TITAN-ORBIT] Lock slim top-center meter (ignore corner / fat scene overrides).
+            placement = SpeedometerPlacement.TopCenter;
+            panelWidth = SlimPanelWidth;
+            panelHeight = SlimPanelHeight;
 
             rootPanel = new GameObject("ShipSpeedometer");
             rootPanel.transform.SetParent(transform, false);
             RectTransform rootRect = rootPanel.AddComponent<RectTransform>();
             ApplyPlacement(rootRect);
-            rootRect.sizeDelta = new Vector2(panelWidth, panelHeight);
+            rootRect.sizeDelta = new Vector2(SlimPanelWidth, SlimPanelHeight);
+            // No panel Image / Outline — floating bars only (gamer HUD).
 
-            Image bg = rootPanel.AddComponent<Image>();
-            bg.color = backgroundColor;
-            bg.raycastTarget = false;
+            // --- Bands (bottom→top): ACC ticks, ACC bar, SPD ticks, SPD bar ---
+            float pad = 2f;
+            const float accelTickB = 0.00f;
+            const float accelTickT = 0.18f;
+            const float accelBarB = 0.20f;
+            const float accelBarT = 0.42f;
+            const float speedTickB = 0.46f;
+            const float speedTickT = 0.62f;
+            const float speedBarB = 0.66f;
+            const float speedBarT = 1.00f;
 
-            // --- Vertical layout bands (normalized Y, bottom→top) ---
-            // [TITAN-ORBIT] Clear gaps between each band so TMP ticks cannot paint over bars/text.
-            float pad = 8f * HudLayoutScale;
-            const float textNormTop = 0.48f;
-            const float accelTickNormBottom = 0.50f;
-            const float accelTickNormTop = 0.56f;
-            const float accelNormBottom = 0.58f;
-            const float accelNormTop = 0.68f;
-            const float speedTickNormBottom = 0.70f;
-            const float speedTickNormTop = 0.76f;
-            const float speedNormBottom = 0.78f;
-            const float speedNormTop = 1f;
+            CreateBarTag("Tag_SPD", "SPD", new Vector2(0f, speedBarB), new Vector2(0f, speedBarT), fillColor);
+            CreateBarTag("Tag_ACC", "ACC", new Vector2(0f, accelBarB), new Vector2(0f, accelBarT), accelPositiveColor);
 
+            // --- SPD track ---
             GameObject sliderGo = new GameObject("SpeedBar");
             sliderGo.transform.SetParent(rootPanel.transform, false);
             RectTransform sliderRect = sliderGo.AddComponent<RectTransform>();
-            sliderRect.anchorMin = new Vector2(0f, speedNormBottom);
-            sliderRect.anchorMax = new Vector2(1f, speedNormTop);
-            sliderRect.offsetMin = new Vector2(pad, 2f * HudLayoutScale);
-            sliderRect.offsetMax = new Vector2(-pad, -4f * HudLayoutScale);
+            sliderRect.anchorMin = new Vector2(0f, speedBarB);
+            sliderRect.anchorMax = new Vector2(1f, speedBarT);
+            sliderRect.offsetMin = new Vector2(pad + TagGutter, 0f);
+            sliderRect.offsetMax = new Vector2(-(pad + ValueGutter), 0f);
 
             speedSlider = sliderGo.AddComponent<Slider>();
             speedSlider.minValue = 0f;
@@ -363,9 +436,6 @@ namespace TitanOrbit.UI
             trackImg.raycastTarget = false;
             speedSlider.targetGraphic = trackImg;
 
-            // --- OVERDRIVE capacity zone (always painted; fill covers it when speed enters OD) ---
-            // [TITAN-ORBIT] Sibling between track and Fill Area so unused headroom stays visible
-            // while cruising at normal max. Anchors updated each frame from baseMax / odMax.
             GameObject odZoneGo = new GameObject("OverdriveZone");
             odZoneGo.transform.SetParent(sliderGo.transform, false);
             overdriveZoneRect = odZoneGo.AddComponent<RectTransform>();
@@ -374,8 +444,19 @@ namespace TitanOrbit.UI
             overdriveZoneRect.offsetMin = Vector2.zero;
             overdriveZoneRect.offsetMax = Vector2.zero;
             overdriveZoneImage = odZoneGo.AddComponent<Image>();
-            overdriveZoneImage.color = overdriveZoneColor;
+            overdriveZoneImage.color = ResolveOverdriveZoneColor();
             overdriveZoneImage.raycastTarget = false;
+
+            GameObject cruiseMark = new GameObject("CruiseMark");
+            cruiseMark.transform.SetParent(sliderGo.transform, false);
+            speedCruiseMarkRt = cruiseMark.AddComponent<RectTransform>();
+            speedCruiseMarkRt.anchorMin = new Vector2(0.57f, 0f);
+            speedCruiseMarkRt.anchorMax = new Vector2(0.57f, 1f);
+            speedCruiseMarkRt.pivot = new Vector2(0.5f, 0.5f);
+            speedCruiseMarkRt.sizeDelta = new Vector2(1.5f, 0f);
+            Image cruiseMarkImg = cruiseMark.AddComponent<Image>();
+            cruiseMarkImg.color = new Color(1f, 1f, 1f, 0.55f);
+            cruiseMarkImg.raycastTarget = false;
 
             GameObject fillArea = new GameObject("Fill Area");
             fillArea.transform.SetParent(sliderGo.transform, false);
@@ -398,31 +479,43 @@ namespace TitanOrbit.UI
             fillImg.raycastTarget = false;
             speedSlider.fillRect = fr;
 
+            CreateBarEndCap(sliderGo.transform, fillColor);
+
+            GameObject liveGo = new GameObject("SpeedLive");
+            liveGo.transform.SetParent(rootPanel.transform, false);
+            RectTransform liveRt = liveGo.AddComponent<RectTransform>();
+            liveRt.anchorMin = new Vector2(1f, speedBarB);
+            liveRt.anchorMax = new Vector2(1f, speedBarT);
+            liveRt.pivot = new Vector2(1f, 0.5f);
+            liveRt.sizeDelta = new Vector2(ValueGutter - 2f, 0f);
+            liveRt.anchoredPosition = new Vector2(-pad, 0f);
+            speedLiveLabel = liveGo.AddComponent<TextMeshProUGUI>();
+            speedLiveLabel.text = "—";
+            speedLiveLabel.fontSize = 8f;
+            speedLiveLabel.fontStyle = FontStyles.Bold;
+            speedLiveLabel.alignment = TextAlignmentOptions.MidlineRight;
+            speedLiveLabel.color = fillColor;
+            speedLiveLabel.enableWordWrapping = false;
+            speedLiveLabel.raycastTarget = false;
+            if (TMP_Settings.defaultFontAsset != null)
+                speedLiveLabel.font = TMP_Settings.defaultFontAsset;
+
             GameObject speedTickStrip = new GameObject("SpeedTicks");
             speedTickStrip.transform.SetParent(rootPanel.transform, false);
             RectTransform speedTickRect = speedTickStrip.AddComponent<RectTransform>();
-            speedTickRect.anchorMin = new Vector2(0f, speedTickNormBottom);
-            speedTickRect.anchorMax = new Vector2(1f, speedTickNormTop);
-            speedTickRect.offsetMin = new Vector2(pad, 0f);
-            speedTickRect.offsetMax = new Vector2(-pad, 0f);
-            speedTickLabels = CreateTickLabelRow(speedTickStrip.transform, 5, 8f * HudLayoutScale);
+            speedTickRect.anchorMin = new Vector2(0f, speedTickB);
+            speedTickRect.anchorMax = new Vector2(1f, speedTickT);
+            speedTickRect.offsetMin = new Vector2(pad + TagGutter, 0f);
+            speedTickRect.offsetMax = new Vector2(-(pad + ValueGutter), 0f);
+            speedTickLabels = CreateInterestTickRow(speedTickStrip.transform, 7f, out speedCruiseTickRt);
 
             GameObject accelRoot = new GameObject("AccelBar");
             accelRoot.transform.SetParent(rootPanel.transform, false);
             RectTransform accelRootRect = accelRoot.AddComponent<RectTransform>();
-            accelRootRect.anchorMin = new Vector2(0f, accelNormBottom);
-            accelRootRect.anchorMax = new Vector2(1f, accelNormTop);
-            accelRootRect.offsetMin = new Vector2(pad, 0f);
-            accelRootRect.offsetMax = new Vector2(-pad, 0f);
-
-            GameObject accelTickStrip = new GameObject("AccelTicks");
-            accelTickStrip.transform.SetParent(rootPanel.transform, false);
-            RectTransform accelTickRect = accelTickStrip.AddComponent<RectTransform>();
-            accelTickRect.anchorMin = new Vector2(0f, accelTickNormBottom);
-            accelTickRect.anchorMax = new Vector2(1f, accelTickNormTop);
-            accelTickRect.offsetMin = new Vector2(pad, 0f);
-            accelTickRect.offsetMax = new Vector2(-pad, 0f);
-            accelTickLabels = CreateTickLabelRow(accelTickStrip.transform, 5, 8f * HudLayoutScale);
+            accelRootRect.anchorMin = new Vector2(0f, accelBarB);
+            accelRootRect.anchorMax = new Vector2(1f, accelBarT);
+            accelRootRect.offsetMin = new Vector2(pad + TagGutter, 0f);
+            accelRootRect.offsetMax = new Vector2(-(pad + ValueGutter), 0f);
 
             GameObject accelTrack = new GameObject("Track");
             accelTrack.transform.SetParent(accelRoot.transform, false);
@@ -460,74 +553,91 @@ namespace TitanOrbit.UI
             GameObject centerLine = new GameObject("CenterLine");
             centerLine.transform.SetParent(accelRoot.transform, false);
             RectTransform cl = centerLine.AddComponent<RectTransform>();
-            cl.anchorMin = new Vector2(0.5f, 0.1f);
-            cl.anchorMax = new Vector2(0.5f, 0.9f);
+            cl.anchorMin = new Vector2(0.5f, 0f);
+            cl.anchorMax = new Vector2(0.5f, 1f);
             cl.pivot = new Vector2(0.5f, 0.5f);
-            cl.sizeDelta = new Vector2(1.5f * HudLayoutScale, 0f);
+            cl.sizeDelta = new Vector2(1f, 0f);
             Image cli = centerLine.AddComponent<Image>();
-            cli.color = new Color(1f, 1f, 1f, 0.28f);
+            cli.color = new Color(1f, 1f, 1f, 0.4f);
             cli.raycastTarget = false;
 
-            GameObject labelGo = new GameObject("HudText");
-            labelGo.transform.SetParent(rootPanel.transform, false);
-            RectTransform lr = labelGo.AddComponent<RectTransform>();
-            lr.anchorMin = new Vector2(0f, 0f);
-            lr.anchorMax = new Vector2(1f, textNormTop);
-            lr.offsetMin = new Vector2(10f * HudLayoutScale, 4f * HudLayoutScale);
-            lr.offsetMax = new Vector2(-10f * HudLayoutScale, -2f * HudLayoutScale);
-            speedLabel = labelGo.AddComponent<TextMeshProUGUI>();
-            speedLabel.text = "—";
-            speedLabel.fontSize = 11f * HudLayoutScale;
-            speedLabel.lineSpacing = -4f * HudLayoutScale;
-            speedLabel.richText = true;
-            // [UNITY] Wrap inside the reserved text band (0→textNormTop) so long SPD / boost /
-            // stop lines stay fully readable. Ellipsis used to hide territory + OVERDRIVE tags.
-            // [TITAN-ORBIT] Bars/ticks sit above textNormTop — wrapping cannot climb into them.
-            speedLabel.enableWordWrapping = true;
-            speedLabel.overflowMode = TextOverflowModes.Overflow;
-            // [UNITY] Hover pads own raycasts — body TMP must not steal pointer enters.
-            speedLabel.raycastTarget = false;
-            // [UNITY] Monospace keeps SPD/ACC columns from shifting when digits change.
-            if (TMP_Settings.defaultFontAsset != null)
-                speedLabel.font = TMP_Settings.defaultFontAsset;
-            speedLabel.color = textColor;
-            bool alignLeft = placement == SpeedometerPlacement.BottomLeft || placement == SpeedometerPlacement.TopLeft;
-            speedLabel.alignment = alignLeft ? TextAlignmentOptions.TopLeft : TextAlignmentOptions.TopRight;
+            GameObject accelTickStrip = new GameObject("AccelTicks");
+            accelTickStrip.transform.SetParent(rootPanel.transform, false);
+            RectTransform accelTickRect = accelTickStrip.AddComponent<RectTransform>();
+            accelTickRect.anchorMin = new Vector2(0f, accelTickB);
+            accelTickRect.anchorMax = new Vector2(1f, accelTickT);
+            accelTickRect.offsetMin = new Vector2(pad + TagGutter, 0f);
+            accelTickRect.offsetMax = new Vector2(-(pad + ValueGutter), 0f);
+            accelTickLabels = CreateTickLabelRow(accelTickStrip.transform, 3, 6.5f);
 
-            // --- Hover pads (SPD / ACC / MASS / RAM / BUL) ---
-            // [TITAN-ORBIT] Invisible Images catch pointer enter/exit; decorative chrome stays
-            // raycastTarget=false so only these pads (and the floating tip) participate.
-            // Text band is four equal rows (TMP TopLeft → line 0 at top of band).
-            float textBand = textNormTop;
-            float lineH = textBand * 0.25f;
-            CreateHoverZone("Hover_SPD_Bar", new Vector2(0f, speedTickNormBottom), Vector2.one, SpeedometerStatSection.Speed);
-            CreateHoverZone("Hover_SPD_Line", new Vector2(0f, textBand - lineH), new Vector2(1f, textBand), SpeedometerStatSection.Speed);
-            CreateHoverZone("Hover_ACC_Bar", new Vector2(0f, accelTickNormBottom), new Vector2(1f, accelNormTop), SpeedometerStatSection.Accel);
-            // ACC / MASS share body line 1 — left ~62% Accel, right ~38% Mass.
+            speedLabel = null;
+            lastTickMaxSpeed = -1f;
+            lastTickAccelSkew = -1f;
+
             CreateHoverZone(
-                "Hover_ACC_Line",
-                new Vector2(0f, textBand - lineH * 2f),
-                new Vector2(0.62f, textBand - lineH),
+                "Hover_SPD_Bar",
+                new Vector2(0f, speedTickB),
+                new Vector2(1f, speedBarT),
+                SpeedometerStatSection.Speed);
+            CreateHoverZone(
+                "Hover_ACC_Bar",
+                new Vector2(0f, accelTickB),
+                new Vector2(1f, accelBarT),
                 SpeedometerStatSection.Accel);
-            CreateHoverZone(
-                "Hover_MASS_Line",
-                new Vector2(0.62f, textBand - lineH * 2f),
-                new Vector2(1f, textBand - lineH),
-                SpeedometerStatSection.Mass);
-            CreateHoverZone(
-                "Hover_RAM_Line",
-                new Vector2(0f, textBand - lineH * 3f),
-                new Vector2(1f, textBand - lineH * 2f),
-                SpeedometerStatSection.Ram);
-            CreateHoverZone(
-                "Hover_BUL_Line",
-                new Vector2(0f, 0f),
-                new Vector2(1f, textBand - lineH * 3f),
-                SpeedometerStatSection.Bullets);
 
             BuildTooltipPanel(canvas);
 
             uiBuilt = true;
+        }
+
+        /// <summary>
+        /// Micro left-side tag (SPD / ACC) — chrome only, not live telemetry.
+        /// </summary>
+        void CreateBarTag(string name, string label, Vector2 anchorMin, Vector2 anchorMax, Color accent)
+        {
+            GameObject go = new GameObject(name);
+            go.transform.SetParent(rootPanel.transform, false);
+            RectTransform rt = go.AddComponent<RectTransform>();
+            rt.anchorMin = anchorMin;
+            rt.anchorMax = anchorMax;
+            rt.pivot = new Vector2(0f, 0.5f);
+            rt.offsetMin = new Vector2(0f, 0f);
+            rt.offsetMax = new Vector2(TagGutter - 1f, 0f);
+
+            TextMeshProUGUI tmp = go.AddComponent<TextMeshProUGUI>();
+            tmp.text = label;
+            tmp.fontSize = 6.5f;
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.alignment = TextAlignmentOptions.MidlineLeft;
+            tmp.color = new Color(accent.r, accent.g, accent.b, 0.7f);
+            tmp.enableWordWrapping = false;
+            tmp.raycastTarget = false;
+            if (TMP_Settings.defaultFontAsset != null)
+                tmp.font = TMP_Settings.defaultFontAsset;
+        }
+
+        /// <summary>1px accent tip on the right of a track (reads as a HUD end stop).</summary>
+        void CreateBarEndCap(Transform parent, Color accent)
+        {
+            GameObject cap = new GameObject("EndCap");
+            cap.transform.SetParent(parent, false);
+            RectTransform rt = cap.AddComponent<RectTransform>();
+            rt.anchorMin = new Vector2(1f, 0f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 0.5f);
+            rt.sizeDelta = new Vector2(1.5f, 0f);
+            rt.anchoredPosition = Vector2.zero;
+            Image img = cap.AddComponent<Image>();
+            img.color = new Color(accent.r, accent.g, accent.b, 0.55f);
+            img.raycastTarget = false;
+        }
+
+        /// <summary>OVERDRIVE zone uses the speed-fill RGB at alpha 0.1.</summary>
+        Color ResolveOverdriveZoneColor()
+        {
+            Color c = fillColor;
+            c.a = 0.1f;
+            return c;
         }
 
         /// <summary>
@@ -565,7 +675,7 @@ namespace TitanOrbit.UI
             _tooltipPanel.transform.SetParent(transform, false);
             _tooltipRect = _tooltipPanel.AddComponent<RectTransform>();
             _tooltipRect.pivot = new Vector2(0f, 0f);
-            _tooltipRect.sizeDelta = new Vector2(320f * HudLayoutScale, 120f * HudLayoutScale);
+            _tooltipRect.sizeDelta = new Vector2(520f * HudLayoutScale, 120f * HudLayoutScale);
 
             Image tipBg = _tooltipPanel.AddComponent<Image>();
             tipBg.color = new Color(0.05f, 0.07f, 0.1f, 0.92f);
@@ -596,6 +706,19 @@ namespace TitanOrbit.UI
                 _tooltipPanel.transform.SetAsLastSibling();
 
             _tooltipPanel.SetActive(false);
+        }
+
+        /// <summary>
+        /// Copies the latest part cache + live motor context for ability-chip rollovers.
+        /// Returns false until the speedometer has painted at least one frame with a ship.
+        /// </summary>
+        public bool TryGetTooltipSharedState(
+            out ShipSpeedometerStatTooltips.PartCache parts,
+            out ShipSpeedometerStatTooltips.LiveContext live)
+        {
+            parts = _partCache;
+            live = _liveTooltipContext;
+            return _hasHudCache && parts.Valid;
         }
 
         /// <summary>
@@ -675,9 +798,10 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Places the tip clear of the speedometer and the bottom ability-upgrade strip.
-        /// Bottom placements: tip sits <b>above</b> the panel so it cannot cover upgrade buttons.
-        /// Top placements: tip sits beside the panel on the free horizontal side.
+        /// Places the tip clear of the speedometer.
+        /// TopCenter: tip hangs below the panel toward the map.
+        /// Bottom placements: tip sits above the panel.
+        /// Top corners: tip sits beside the panel.
         /// </summary>
         void PositionTooltipPanel()
         {
@@ -688,12 +812,19 @@ namespace TitanOrbit.UI
             if (_rootRect == null)
                 return;
 
-            // --- Match canvas anchors with the speedometer corner ---
             Vector2 panelPos = _rootRect.anchoredPosition;
             Vector2 panelSize = _rootRect.sizeDelta;
             float gap = 10f * HudLayoutScale;
             _tooltipRect.anchorMin = _rootRect.anchorMin;
             _tooltipRect.anchorMax = _rootRect.anchorMax;
+
+            if (placement == SpeedometerPlacement.TopCenter)
+            {
+                // [TITAN-ORBIT] Below the bars so the tip does not clip off the top of the screen.
+                _tooltipRect.pivot = new Vector2(0.5f, 1f);
+                _tooltipRect.anchoredPosition = new Vector2(panelPos.x, panelPos.y - panelSize.y - gap);
+                return;
+            }
 
             bool bottom = placement == SpeedometerPlacement.BottomLeft
                 || placement == SpeedometerPlacement.BottomRight;
@@ -702,15 +833,12 @@ namespace TitanOrbit.UI
 
             if (bottom)
             {
-                // [TITAN-ORBIT] Above the speedometer — beside+down overlapped the upgrade strip.
-                // Pivot at bottom so tip grows upward from just above the panel top.
                 _tooltipRect.pivot = left ? new Vector2(0f, 0f) : new Vector2(1f, 0f);
                 float x = left ? panelPos.x : panelPos.x;
                 _tooltipRect.anchoredPosition = new Vector2(x, panelPos.y + panelSize.y + gap);
             }
             else
             {
-                // Top corners: beside the panel, hanging down (upgrade strip is not a concern).
                 _tooltipRect.pivot = left ? new Vector2(0f, 1f) : new Vector2(1f, 1f);
                 float x = left
                     ? panelPos.x + panelSize.x + gap
@@ -720,14 +848,57 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// Builds SPD interest ticks: left=0, middle=cruise (movable), right=bar max.
+        /// Middle RectTransform is returned so LateUpdate can slide it to the OD boundary.
+        /// </summary>
+        TextMeshProUGUI[] CreateInterestTickRow(Transform parent, float fontSize, out RectTransform middleRt)
+        {
+            var labels = new TextMeshProUGUI[3];
+            float[] xs = { 0f, 0.5f, 1f };
+            float[] pivots = { 0f, 0.5f, 1f };
+            middleRt = null;
+            for (int i = 0; i < 3; i++)
+            {
+                GameObject go = new GameObject($"Interest{i}");
+                go.transform.SetParent(parent, false);
+                RectTransform rt = go.AddComponent<RectTransform>();
+                rt.anchorMin = new Vector2(xs[i], 0f);
+                rt.anchorMax = new Vector2(xs[i], 1f);
+                rt.pivot = new Vector2(pivots[i], 0.5f);
+                rt.sizeDelta = new Vector2(40f, 0f);
+                rt.anchoredPosition = Vector2.zero;
+                if (i == 1)
+                    middleRt = rt;
+
+                var tmp = go.AddComponent<TextMeshProUGUI>();
+                tmp.text = "—";
+                tmp.fontSize = fontSize;
+                tmp.fontStyle = FontStyles.Bold;
+                tmp.enableAutoSizing = false;
+                tmp.richText = false;
+                tmp.enableWordWrapping = false;
+                tmp.overflowMode = TextOverflowModes.Overflow;
+                tmp.alignment = i == 0
+                    ? TextAlignmentOptions.MidlineLeft
+                    : (i == 2 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.Midline);
+                if (TMP_Settings.defaultFontAsset != null)
+                    tmp.font = TMP_Settings.defaultFontAsset;
+                tmp.color = tickLabelColor;
+                tmp.raycastTarget = false;
+                labels[i] = tmp;
+            }
+
+            return labels;
+        }
+
+        /// <summary>
         /// Builds a row of fixed-width tick labels under a bar. Edge ticks left/right-align so
         /// neighboring labels do not overlap at the strip ends.
         /// </summary>
         TextMeshProUGUI[] CreateTickLabelRow(Transform parent, int count, float fontSize)
         {
             var labels = new TextMeshProUGUI[count];
-            // Narrower than spacing between 5 anchors on a ~608px panel so "+12.5" cannot collide.
-            float tickCellW = 44f * HudLayoutScale;
+            float tickCellW = 36f;
             for (int i = 0; i < count; i++)
             {
                 GameObject go = new GameObject($"Tick{i}");
@@ -736,7 +907,6 @@ namespace TitanOrbit.UI
                 float x = count <= 1 ? 0.5f : (float)i / (count - 1);
                 rt.anchorMin = new Vector2(x, 0f);
                 rt.anchorMax = new Vector2(x, 1f);
-                // Edge pivots pull text inward so first/last ticks stay inside the panel.
                 float pivotX = i == 0 ? 0f : (i == count - 1 ? 1f : 0.5f);
                 rt.pivot = new Vector2(pivotX, 0.5f);
                 rt.sizeDelta = new Vector2(tickCellW, 0f);
@@ -744,6 +914,7 @@ namespace TitanOrbit.UI
                 var tmp = go.AddComponent<TextMeshProUGUI>();
                 tmp.text = "—";
                 tmp.fontSize = fontSize;
+                tmp.fontStyle = FontStyles.Bold;
                 tmp.enableAutoSizing = false;
                 tmp.richText = false;
                 tmp.enableWordWrapping = false;
@@ -757,6 +928,75 @@ namespace TitanOrbit.UI
             }
 
             return labels;
+        }
+
+        /// <summary>Compact tick number (no figure-space pad) so small HUD stays readable.</summary>
+        static string FormatTick(float v) =>
+            v.ToString("0.#", CultureInfo.InvariantCulture);
+
+        /// <summary>Signed compact tick for accel scale ends.</summary>
+        static string FormatTickSigned(float v)
+        {
+            string body = Mathf.Abs(v).ToString("0.#", CultureInfo.InvariantCulture);
+            return (v >= 0f ? "+" : "-") + body;
+        }
+
+        /// <summary>
+        /// Refreshes SPD interest ticks (0 / cruise / OD max), ACC ±scale ticks, live speed digits,
+        /// and slides the cruise hash mark to the OD boundary.
+        /// </summary>
+        void UpdateInterestTicks(float cur, float cruiseMax, float barMax, float maxFwd, float maxBrake)
+        {
+            float safeBar = Mathf.Max(0.01f, barMax);
+            float cruiseFrac = Mathf.Clamp01(cruiseMax / safeBar);
+
+            // --- SPD: 0 · cruise · barMax ---
+            if (speedTickLabels != null && speedTickLabels.Length >= 3)
+            {
+                if (!Mathf.Approximately(lastTickMaxSpeed, barMax)
+                    || (speedCruiseTickRt != null
+                        && Mathf.Abs(speedCruiseTickRt.anchorMin.x - cruiseFrac) > 0.001f))
+                {
+                    lastTickMaxSpeed = barMax;
+                    speedTickLabels[0].text = "0";
+                    speedTickLabels[1].text = FormatTick(cruiseMax);
+                    speedTickLabels[2].text = FormatTick(barMax);
+
+                    if (speedCruiseTickRt != null)
+                    {
+                        speedCruiseTickRt.anchorMin = new Vector2(cruiseFrac, 0f);
+                        speedCruiseTickRt.anchorMax = new Vector2(cruiseFrac, 1f);
+                    }
+                }
+            }
+
+            if (speedCruiseMarkRt != null)
+            {
+                speedCruiseMarkRt.anchorMin = new Vector2(cruiseFrac, 0f);
+                speedCruiseMarkRt.anchorMax = new Vector2(cruiseFrac, 1f);
+            }
+
+            // --- Live speed readout (right of SPD bar) ---
+            if (speedLiveLabel != null)
+            {
+                string live = FormatTick(cur);
+                if (speedLiveLabel.text != live)
+                    speedLiveLabel.text = live;
+            }
+
+            // --- ACC: -scale · 0 · +scale ---
+            float skew = Mathf.Max(maxFwd, maxBrake, 0.01f);
+            if (accelTickLabels != null && accelTickLabels.Length >= 3
+                && !Mathf.Approximately(lastTickAccelSkew, skew))
+            {
+                lastTickAccelSkew = skew;
+                accelTickLabels[0].text = FormatTickSigned(-skew);
+                accelTickLabels[0].alignment = TextAlignmentOptions.MidlineLeft;
+                accelTickLabels[1].text = "0";
+                accelTickLabels[1].alignment = TextAlignmentOptions.Midline;
+                accelTickLabels[2].text = FormatTickSigned(skew);
+                accelTickLabels[2].alignment = TextAlignmentOptions.MidlineRight;
+            }
         }
 
         /// <summary>Up to two decimals, fixed character width (figure-space pad) so layout never jumps.</summary>
@@ -785,14 +1025,14 @@ namespace TitanOrbit.UI
 
         float GetBottomLeftStackYBoost()
         {
+            // [TITAN-ORBIT] TopCenter (default) no longer stacks above the ability strip.
             if (placement != SpeedometerPlacement.BottomLeft)
                 return 0f;
 
-            // --- Resolve upgrade bar once (not every LateUpdate) ---
             if (!_triedUpgradeBarLookup)
             {
                 _triedUpgradeBarLookup = true;
-                _cachedUpgradeBar = Object.FindFirstObjectByType<ShipAttributeUpgradeHUD>();
+                _cachedUpgradeBar = UnityEngine.Object.FindFirstObjectByType<ShipAttributeUpgradeHUD>();
             }
 
             if (_cachedUpgradeBar == null)
@@ -802,11 +1042,8 @@ namespace TitanOrbit.UI
 
         void ApplyPlacement(RectTransform rootRect)
         {
-            // --- Corner anchor + margin (stack above upgrade bar when bottom-left) ---
-            // Round to whole canvas units and skip writes when unchanged — continuous rewrites
-            // shimmer in windowed Game views the same way the upgrade strip did.
+            // --- Anchor + margin (BottomLeft still stacks above upgrade bar for legacy layouts) ---
             float boost = GetBottomLeftStackYBoost();
-            // Skip full anchor rewrite when only boost is stable and position already applied.
             if (!float.IsNaN(_lastUpgradeBoost) &&
                 Mathf.Abs(boost - _lastUpgradeBoost) < 0.5f &&
                 !float.IsNaN(_lastAppliedAnchoredPos.x))
@@ -836,11 +1073,17 @@ namespace TitanOrbit.UI
                     rootRect.pivot = new Vector2(0f, 1f);
                     pos = new Vector2(h, -v);
                     break;
-                default: // TopRight
+                case SpeedometerPlacement.TopRight:
                     rootRect.anchorMin = new Vector2(1f, 1f);
                     rootRect.anchorMax = new Vector2(1f, 1f);
                     rootRect.pivot = new Vector2(1f, 1f);
                     pos = new Vector2(-h, -v);
+                    break;
+                default: // TopCenter — [TITAN-ORBIT] default for SPD/ACC map HUD
+                    rootRect.anchorMin = new Vector2(0.5f, 1f);
+                    rootRect.anchorMax = new Vector2(0.5f, 1f);
+                    rootRect.pivot = new Vector2(0.5f, 1f);
+                    pos = new Vector2(0f, -v);
                     break;
             }
 
@@ -1098,7 +1341,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Baked OVERDRIVE MaxSpeed multiplier from the motor (always ≥ 1), even when Shift is up.
-        /// Used to size the speed bar's amber capacity zone and the "od N.N" label.
+        /// Used to size the speed bar's OVERDRIVE capacity zone (faint fill-coloured band).
         /// </summary>
         /// <param name="motor">Local ship motor (ProfileSet × family OD baked in).</param>
         static float ResolveOverdriveCapacityMult(in ShipMotorConfig motor) =>
@@ -1158,7 +1401,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Layouts the amber OVERDRIVE band from cruise max → bar max (right side of the speed bar).
+        /// Layouts the faint OVERDRIVE band from cruise max → bar max (right side of the speed bar).
         /// Hidden when capacity mul is ~1 (no OD headroom to show).
         /// </summary>
         /// <param name="cruiseMax">Normal max speed (territory + load, no OD).</param>
@@ -1181,9 +1424,10 @@ namespace TitanOrbit.UI
             overdriveZoneRect.anchorMax = Vector2.one;
             overdriveZoneRect.offsetMin = Vector2.zero;
             overdriveZoneRect.offsetMax = Vector2.zero;
-            // Keep inspector/runtime color in sync if the designer tweaks the serialized field.
-            if (overdriveZoneImage.color != overdriveZoneColor)
-                overdriveZoneImage.color = overdriveZoneColor;
+            // [TITAN-ORBIT] Always fillColor RGB @ alpha 0.1 (ignore stale amber Inspector overrides).
+            Color od = ResolveOverdriveZoneColor();
+            if (overdriveZoneImage.color != od)
+                overdriveZoneImage.color = od;
         }
 
         /// <summary>Planar speed magnitude — top-down game ignores Y velocity.</summary>
@@ -1270,10 +1514,11 @@ namespace TitanOrbit.UI
             // Leaving idle — allow BuildUI / refresh again.
             _idleBecauseDisabled = false;
 
-            if (!uiBuilt)
-                BuildUIIfNeeded();
-            if (rootPanel == null || speedSlider == null || speedLabel == null || accelGreenFill == null || accelRedFill == null
-                || speedTickLabels == null || accelTickLabels == null || overdriveZoneRect == null)
+            // Build or rebuild (legacy HudText meter → compact bars-only).
+            BuildUIIfNeeded();
+            // Bars + interest ticks + live readout.
+            if (rootPanel == null || speedSlider == null || accelGreenFill == null || accelRedFill == null
+                || overdriveZoneRect == null || speedTickLabels == null || accelTickLabels == null)
             {
                 return;
             }
@@ -1385,7 +1630,7 @@ namespace TitanOrbit.UI
             maxFwd *= territoryMult;
 
             // --- OVERDRIVE capacity (always) vs live burst (only while engaged) ---
-            // [TITAN-ORBIT] Bar scale = cruise × baked OD mul so the amber zone is always visible.
+            // [TITAN-ORBIT] Bar scale = cruise × baked OD mul so the faint OD zone is always visible.
             // Live cruise / "at max" / thrust use active overdrive only.
             float overdriveCapacityMult = ResolveOverdriveCapacityMult(motor);
             float overdriveActiveMult = 1f;
@@ -1399,7 +1644,7 @@ namespace TitanOrbit.UI
             float liveMax = overdriveActive ? barMax : cruiseMax;
             maxFwd *= overdriveActiveMult;
 
-            // Fill against full OD scale so unused amber headroom stays readable at cruise.
+            // Fill against full OD scale so unused faint OD headroom stays readable at cruise.
             speedSlider.value = Mathf.Clamp01(cur / Mathf.Max(0.01f, barMax));
             UpdateOverdriveZone(cruiseMax, barMax);
 
@@ -1409,9 +1654,6 @@ namespace TitanOrbit.UI
             float maxBrake = Mathf.Max(0.01f, motor.BrakeDeceleration > 0f
                 ? motor.BrakeDeceleration
                 : ShipMassLogic.DefaultBrakeDeceleration);
-
-            // Mobility tax totalMass — same number the MASS line and MASS tooltip show.
-            float displayMass = taxed.TotalMass;
 
             // --- Rollover context (parts + live numbers) ---
             // [TITAN-ORBIT] Part cache Instantiates the chassis prefab only when chassis / store gear changes.
@@ -1462,6 +1704,9 @@ namespace TitanOrbit.UI
                 RamRating = tipRamRating,
                 ComponentSize = componentSize,
                 MoveSpeedAbilityLevel = _moveSpeedAbilityLevel,
+                MoveStepPreview = _partCache.Valid
+                    ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerAbilityLevel)
+                    : 0f,
             };
 
             if (_activeTooltipSection.HasValue)
@@ -1505,119 +1750,8 @@ namespace TitanOrbit.UI
             accelRedFill.offsetMin = Vector2.zero;
             accelRedFill.offsetMax = Vector2.zero;
 
-            // --- Tick labels: full bar = OD capacity (amber zone included) ---
-            float skew = Mathf.Max(maxFwd, maxBrake, 0.01f);
-            if (!Mathf.Approximately(lastTickMaxSpeed, barMax))
-            {
-                lastTickMaxSpeed = barMax;
-                for (int i = 0; i < speedTickLabels.Length; i++)
-                {
-                    float t = speedTickLabels.Length <= 1 ? 0f : (float)i / (speedTickLabels.Length - 1);
-                    float tickSpd = t * barMax;
-                    speedTickLabels[i].text = FormatFixed1(tickSpd, 4);
-                    speedTickLabels[i].alignment = i == 0
-                        ? TextAlignmentOptions.MidlineLeft
-                        : (i == speedTickLabels.Length - 1 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.Midline);
-                }
-            }
-
-            if (!Mathf.Approximately(lastTickAccelSkew, skew))
-            {
-                lastTickAccelSkew = skew;
-                for (int i = 0; i < accelTickLabels.Length; i++)
-                {
-                    float t = accelTickLabels.Length <= 1 ? 0.5f : (float)i / (accelTickLabels.Length - 1);
-                    float v = Mathf.Lerp(-skew, skew, t);
-                    accelTickLabels[i].text = FormatFixedSigned1(v, 5);
-                    accelTickLabels[i].alignment = i == 0
-                        ? TextAlignmentOptions.MidlineLeft
-                        : (i == accelTickLabels.Length - 1 ? TextAlignmentOptions.MidlineRight : TextAlignmentOptions.Midline);
-                }
-            }
-
-            // --- Body text at ~10 Hz — bars still update every frame ---
-            if (Time.unscaledTime < nextTextRebuildTime)
-            {
-                return;
-            }
-            nextTextRebuildTime = Time.unscaledTime + 0.1f;
-
-            // Clamp displayed speed for text so we never show 13.6/13.5 from float noise.
-            float displayCur = Mathf.Min(cur, liveMax);
-            if (atCruise)
-                displayCur = liveMax;
-
-            // [TITAN-ORBIT] Territory tag + always-on OD capacity; active OD also shows xN.Nod.
-            // ASCII "x" instead of "×" — wide unicode glyphs look crushed under <mspace>.
-            string territoryTag = territoryMult > 1.001f
-                ? $" <color=#AAEEDD>x{FormatFixed1(territoryMult, 4)}t</color>"
-                : string.Empty;
-            string overdriveCapTag = overdriveCapacityMult > 1.001f
-                ? $" <color=#FFCC66>od {FormatFixed1(barMax)}</color>"
-                : string.Empty;
-            string overdriveActiveTag = overdriveActive
-                ? $" <color=#FFCC66>x{FormatFixed1(overdriveActiveMult, 4)}on</color>"
-                : string.Empty;
-            string boostTags = territoryTag + overdriveCapTag + overdriveActiveTag;
-
-            // --- Compact body lines (wrap inside text band if a row is wider than the panel) ---
-            // Denominator = live motor ceiling (cruise or OD top); amber "od N.N" is always the bar end.
-            string spdLine;
-            if (atCruise)
-            {
-                spdLine =
-                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(liveMax)}  <color=#AAAAAA>max</color>{boostTags}";
-            }
-            else
-            {
-                float remaining = Mathf.Max(0f, liveMax - cur);
-                float tMax = remaining / maxFwd;
-                tMax = Mathf.Clamp(tMax, 0f, 99.9f);
-                spdLine =
-                    $"SPD {FormatFixed1(displayCur)}/{FormatFixed1(liveMax)}  <color=#AAEEDD>{FormatFixed1(tMax, 4)}s</color> to max{boostTags}";
-            }
-
-            string stopPart = cur > 0.35f
-                ? $"  stop {FormatFixed1(cur / maxBrake, 4)}s"
-                : "  stop —.−s";
-
-            string line2 =
-                $"ACC {FormatFixedSigned1(smoothedHorizontalAccel)}/{FormatFixed1(maxFwd)}  brk {FormatFixed1(maxBrake)}  MASS {FormatFixed1(displayMass)}";
-
-            GetRamDamageEstimate(
-                ship,
-                motor,
-                effectiveStats,
-                cur,
-                out float ramAst,
-                out float ramSelf,
-                out float ramRating,
-                out float ramTotalMass);
-
-            string line3 =
-                $"RAM {FormatFixed1(ramRating, 4)} × m{FormatFixed1(ramTotalMass, 4)} × v{FormatFixed1(cur, 4)}  ast {FormatFixed1(ramAst)}  hull {FormatFixed1(ramSelf)}";
-
-            string line4;
-            if (weapon.FireRate > 0.01f && weapon.BulletDamage > 0.01f)
-            {
-                // [TITAN-ORBIT] BulletDamage / FireRate on ShipWeaponConfig are averages across
-                // mounts — each barrel still fires its own FirePower (see ShipWeaponMountElement).
-                float dps = weapon.BulletDamage * weapon.FireRate;
-                line4 =
-                    $"BUL {FormatFixed1(weapon.BulletDamage)}/hit  {FormatFixed1(dps)}/s  <color=#888888>{FormatFixed1(weapon.FireRate)}/s</color>";
-            }
-            else
-                line4 = "BUL  —.−/hit  —.−/s";
-
-            // [UNITY] <mspace> forces equal advance so digit columns do not jump.
-            // Must be wide enough for LiberationSans SDF glyphs — 0.52em crushed letters together.
-            string body =
-                "<mspace=0.72em>" + spdLine + stopPart + "\n" + line2 + "\n" + line3 + "\n" + line4 + "</mspace>";
-            if (body != lastHudBodyText)
-            {
-                lastHudBodyText = body;
-                speedLabel.text = body;
-            }
+            // Interest ticks + live speed (0 / cruise / OD max, ±accel scale).
+            UpdateInterestTicks(cur, cruiseMax, barMax, maxFwd, maxBrake);
         }
 
         /// <summary>

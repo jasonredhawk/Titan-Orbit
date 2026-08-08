@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -59,6 +60,8 @@ namespace TitanOrbit.ECS
                     BulletScale = 1f,
                     ReferenceBulletDamage = 8f,
                     ReferenceBulletSpeed = 20f,
+                    // [TITAN-ORBIT] Overwritten by ShipStatApplyLogic from family.weaponFireMode.
+                    FireMode = ShipWeaponFireMode.EnergyHybrid,
                 });
             }
 

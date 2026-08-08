@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using Unity.Entities;
 using Unity.Mathematics;
 
@@ -6,15 +7,14 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Shared multi-mount fire planner for server bullets and client anticipation VFX.
     /// <para>
-    /// [TITAN-ORBIT] Shared energy pool (summed cap + regen), but <b>energy is claimed by one
-    /// barrel at a time</b> when the pool cannot cover a full volley:
+    /// [TITAN-ORBIT] Shared energy pool (summed cap + regen). Sequencing follows
+    /// <see cref="ShipWeaponFireMode"/> from the ship family (via <see cref="ShipWeaponConfig.FireMode"/>):
     /// <list type="bullet">
-    /// <item><b>Full volley</b> — energy ≥ sum of every mount’s firePower <b>and</b> every mount’s
-    /// cooldown is ready → all barrels fire in the same tick.</item>
-    /// <item><b>Energy queue (round-robin)</b> — otherwise only
-    /// <see cref="ShipWeaponState.NextMountIndex"/> may spend energy. Regen fills the pool for
-    /// that barrel alone until it fires; then the cursor advances to the next mount
-    /// (0→1→2→…→0). Other ready barrels do not steal energy out of turn.</item>
+    /// <item><b>Energy Hybrid</b> — energy ≥ sum of every mount’s firePower <b>and</b> every mount’s
+    /// cooldown is ready → all barrels fire in the same tick; otherwise only
+    /// <see cref="ShipWeaponState.NextMountIndex"/> may spend energy (round-robin drip).</item>
+    /// <item><b>Always Fire Together</b> — same full-volley gate only; never drip a single barrel.</item>
+    /// <item><b>Always Round-Robin</b> — never volley; always the NextMountIndex energy queue.</item>
     /// </list>
     /// Each mount still keeps its own <see cref="ShipWeaponMountElement.FirePower"/> /
     /// <see cref="ShipWeaponMountElement.FireRate"/> / cooldown.
@@ -48,10 +48,9 @@ namespace TitanOrbit.ECS
         public const int MaxShotsPerTick = 16;
 
         /// <summary>
-        /// Plans which mounts fire this tick: full volley when the pool covers every barrel,
-        /// otherwise exactly the round-robin energy-queue mount. Call after ticking mount
-        /// cooldowns down by dt. Does not mutate mounts — caller applies energy spend, writes
-        /// each shot’s <see cref="MountShot.CooldownSeconds"/>, and stores
+        /// Plans which mounts fire this tick according to <paramref name="fireMode"/>.
+        /// Call after ticking mount cooldowns down by dt. Does not mutate mounts — caller applies
+        /// energy spend, writes each shot’s <see cref="MountShot.CooldownSeconds"/>, and stores
         /// <paramref name="nextMountIndexAfter"/>.
         /// </summary>
         /// <param name="currentEnergy">Ship energy pool right now.</param>
@@ -64,6 +63,10 @@ namespace TitanOrbit.ECS
         /// </param>
         /// <param name="fallbackFireRate">
         /// Used when a mount’s <c>FireRate</c> is unset.
+        /// </param>
+        /// <param name="fireMode">
+        /// Hull-wide policy from <see cref="ShipWeaponConfig.FireMode"/> /
+        /// <see cref="ShipFamilyDefinition.weaponFireMode"/>.
         /// </param>
         /// <param name="shots">
         /// Caller-owned output (≥ <see cref="MaxShotsPerTick"/> or mount count). Filled from index 0.
@@ -78,6 +81,7 @@ namespace TitanOrbit.ECS
             int nextMountIndex,
             float fallbackDamage,
             float fallbackFireRate,
+            ShipWeaponFireMode fireMode,
             MountShot[] shots,
             out int shotCount,
             out float totalEnergySpend,
@@ -104,9 +108,14 @@ namespace TitanOrbit.ECS
                     allReady = false;
             }
 
-            // --- Mode A: full volley (pool covers every weapon and all are off cooldown) ---
+            // --- Mode: Always Round-Robin — skip volley entirely ---
+            // [TITAN-ORBIT] Designer forced drip-fire even when the pool could afford a full bank.
+            bool allowVolley = fireMode != ShipWeaponFireMode.AlwaysRoundRobin;
+
+            // --- Full volley (pool covers every weapon and all are off cooldown) ---
             // [TITAN-ORBIT] Same-tick multi-fire only when energy can feed the whole bank at once.
-            if (allReady && currentEnergy >= totalCost && totalCost > 0f)
+            // EnergyHybrid and AlwaysFireTogether both use this gate; AlwaysRoundRobin never does.
+            if (allowVolley && allReady && currentEnergy >= totalCost && totalCost > 0f)
             {
                 int capacity = math.min(mountCount, math.min(shots.Length, MaxShotsPerTick));
                 for (int i = 0; i < capacity; i++)
@@ -128,7 +137,12 @@ namespace TitanOrbit.ECS
                 return shotCount > 0;
             }
 
-            // --- Mode B: energy queue — only NextMountIndex may spend / fire ---
+            // --- Always Fire Together: wait for full bank — no single-barrel drip ---
+            // [TITAN-ORBIT] EnergyHybrid falls through to round-robin when volley is unaffordable.
+            if (fireMode == ShipWeaponFireMode.AlwaysFireTogether)
+                return false;
+
+            // --- Energy queue — only NextMountIndex may spend / fire ---
             // [TITAN-ORBIT] Regen fills the shared pool, but other barrels must wait their turn.
             // That is what makes low-energy fire cycle 0→1→2→… instead of mount 0 monopolizing.
             int mountIdx = nextMountIndex;

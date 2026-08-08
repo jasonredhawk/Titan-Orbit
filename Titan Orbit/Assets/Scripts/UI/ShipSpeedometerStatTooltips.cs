@@ -63,7 +63,7 @@ namespace TitanOrbit.UI
             /// <summary>Level-1 scaled per-part stats (pre ship-tier growth / attributes).</summary>
             public List<ShipComponentAbilityStats> Stats;
 
-            /// <summary>Propulsion pool at ship level (primary Move/Accel × 10% stack per extra).</summary>
+            /// <summary>Propulsion pool at ship level (primary ×1 + extras × extraStackWeight of own stats).</summary>
             public ShipPropulsionAggregation.Result Propulsion;
         }
 
@@ -109,6 +109,11 @@ namespace TitanOrbit.UI
             /// Bottom-HUD Move Speed ability purchases (adds move + accel PerAbilityLevel steps).
             /// </summary>
             public int MoveSpeedAbilityLevel;
+
+            /// <summary>
+            /// Preview for next Move Speed purchase (aggregated moveSpeedPerAbilityLevel step).
+            /// </summary>
+            public float MoveStepPreview;
         }
 
         /// <summary>
@@ -241,52 +246,9 @@ namespace TitanOrbit.UI
         static void AppendSpeedTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "SPD — top speed");
-            sb.AppendLine("<color=#AAAAAA>Primary Move × (1 + 10% × extra engines/thrusters). Energy Cap/Regen still sum.</color>");
-
-            // --- Per propulsion part ---
-            int written = 0;
-            if (parts.Valid && parts.Ids != null)
-            {
-                float primaryBase = parts.Propulsion.primaryIndex >= 0
-                    && parts.Propulsion.primaryIndex < parts.Stats.Count
-                    ? parts.Stats[parts.Propulsion.primaryIndex].moveSpeed
-                    : 0f;
-                float extraGain = primaryBase
-                    * ShipPropulsionAggregation.AdditionalPropulsionFractionOfBase;
-
-                for (int i = 0; i < parts.Ids.Count && i < parts.Stats.Count; i++)
-                {
-                    if (!ShipComponentAbilityStats.IsPropulsionComponent(parts.Ids[i]))
-                        continue;
-
-                    string name = ResolvePartName(parts.Family, parts.Ids[i]);
-                    float baseMove = parts.Stats[i].moveSpeed;
-                    bool primary = i == parts.Propulsion.primaryIndex;
-
-                    if (primary)
-                    {
-                        sb.Append("• <color=#AAEEDD>").Append(name).Append("</color>  ");
-                        sb.Append("+").Append(FDetail(baseMove)).Append(" Move <color=#888888>(primary)</color>");
-                    }
-                    else
-                    {
-                        sb.Append("• ").Append(name).Append("  ");
-                        sb.Append("+").Append(FDetail(extraGain)).Append(" cruise");
-                        sb.Append(" <color=#888888>(10% of primary");
-                        if (baseMove > 0.05f)
-                            sb.Append("; part base ").Append(FDetail(baseMove));
-                        sb.Append(")</color>");
-                    }
-
-                    sb.AppendLine();
-                    written++;
-                }
-            }
-
-            if (written == 0)
-                sb.AppendLine("<color=#888888>No propulsion parts matched.</color>");
-
-            // --- Aggregation + chassis pipeline → mass tax → live ---
+            sb.AppendLine("<color=#AAAAAA>See Move Speed chip for full ability pipeline. Bars show live cruise / OD.</color>");
+            ShipAbilityStatBreakdown.AppendGroupedFieldGrid(
+                sb, parts, ShipAbilityStatBreakdown.StatField.MoveSpeed, "Move", useStackWeight: true);
             sb.AppendLine();
             AppendChassisMoveBreakdown(sb, parts, live);
             sb.Append("− totalMass ").Append(FDetail(live.TotalMass)).Append(" × SpeedWeight");
@@ -326,57 +288,13 @@ namespace TitanOrbit.UI
                 .Append(" / ").Append(FResult(live.LiveMaxSpeed));
         }
 
-        /// <summary>ACC: primary Accel × (1 + 10% × extras) → chassis → − totalMass × AccelWeightPerMass.</summary>
+        /// <summary>ACC: primary Accel ×1 + extras × weight of their Accel → chassis → mass tax.</summary>
         static void AppendAccelTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "ACC — acceleration");
-            sb.AppendLine("<color=#AAAAAA>Primary Accel × (1 + 10% × extra engines/thrusters) → chassis → mass tax.</color>");
-
-            int written = 0;
-            if (parts.Valid && parts.Ids != null)
-            {
-                float primaryAccel = 0f;
-                if (parts.Propulsion.primaryIndex >= 0 && parts.Propulsion.primaryIndex < parts.Stats.Count)
-                {
-                    primaryAccel = ShipPropulsionAggregation.GetPropulsionAccelerationContribution(
-                        parts.Stats[parts.Propulsion.primaryIndex], 0);
-                }
-
-                float extraGain = primaryAccel
-                    * ShipPropulsionAggregation.AdditionalPropulsionFractionOfBase;
-
-                for (int i = 0; i < parts.Ids.Count && i < parts.Stats.Count; i++)
-                {
-                    if (!ShipComponentAbilityStats.IsPropulsionComponent(parts.Ids[i]))
-                        continue;
-
-                    float contrib = ShipPropulsionAggregation.GetPropulsionAccelerationContribution(
-                        parts.Stats[i], 0);
-                    string name = ResolvePartName(parts.Family, parts.Ids[i]);
-                    bool primary = i == parts.Propulsion.primaryIndex;
-
-                    if (primary)
-                    {
-                        if (contrib < 0.05f)
-                            continue;
-                        sb.Append("• <color=#AAEEDD>").Append(name).Append("</color>  +")
-                            .Append(FDetail(contrib)).Append(" Accel <color=#888888>(primary)</color>")
-                            .AppendLine();
-                    }
-                    else
-                    {
-                        sb.Append("• ").Append(name).Append("  +")
-                            .Append(FDetail(extraGain)).Append(" Accel");
-                        sb.Append(" <color=#888888>(10% of primary)</color>").AppendLine();
-                    }
-
-                    written++;
-                }
-            }
-
-            if (written == 0)
-                sb.AppendLine("<color=#888888>No propulsion accel parts matched.</color>");
-
+            sb.AppendLine("<color=#AAAAAA>See Move Speed chip for ability steps. Bars show live thrust / brake.</color>");
+            ShipAbilityStatBreakdown.AppendGroupedFieldGrid(
+                sb, parts, ShipAbilityStatBreakdown.StatField.AccelerationCap, "Accel", useStackWeight: true);
             sb.AppendLine();
             AppendChassisAccelBreakdown(sb, parts, live);
             sb.Append("− totalMass ").Append(FDetail(live.TotalMass)).Append(" × AccelWeight");
@@ -540,7 +458,7 @@ namespace TitanOrbit.UI
         // -------------------------------------------------------------------------
 
         /// <summary>
-        /// Level-1 propulsion pool: primary Move/Accel × (1 + 10% × extras), before ship-tier growth.
+        /// Level-1 propulsion pool: primary Move/Accel ×1 + each extra × extraStackWeight of its own stats.
         /// </summary>
         static bool TryResolvePoolL1(in PartCache parts, out float moveL1, out float accelL1, out int extras)
         {
@@ -557,15 +475,39 @@ namespace TitanOrbit.UI
                 return false;
             }
 
-            int count = parts.Propulsion.propulsionCount;
-            extras = Mathf.Max(0, count - 1);
-            float stack = ShipPropulsionAggregation.GetPropulsionStackScale(count);
-            ShipComponentAbilityStats primary = parts.Stats[parts.Propulsion.primaryIndex];
-            moveL1 = Mathf.Max(0f, primary.moveSpeed) * stack;
-            accelL1 = Mathf.Max(
-                0f,
-                ShipPropulsionAggregation.GetPropulsionAccelerationContribution(primary, 0)) * stack;
+            int primaryIdx = parts.Propulsion.primaryIndex;
+            for (int i = 0; i < parts.Ids.Count && i < parts.Stats.Count; i++)
+            {
+                if (!ShipComponentAbilityStats.IsPropulsionComponent(parts.Ids[i]))
+                    continue;
+
+                bool primary = i == primaryIdx;
+                float weight = primary
+                    ? 1f
+                    : ShipComponentStackAggregation.ResolveExtraStackWeight(parts.Stats[i], parts.Ids[i]);
+                if (!primary)
+                    extras++;
+
+                moveL1 += Mathf.Max(0f, parts.Stats[i].moveSpeed) * weight;
+                accelL1 += Mathf.Max(
+                    0f,
+                    ShipPropulsionAggregation.GetPropulsionAccelerationContribution(parts.Stats[i], 0)) * weight;
+            }
+
             return moveL1 > 0.01f || accelL1 > 0.01f;
+        }
+
+        /// <summary>
+        /// Formats an extra's stack weight for tooltip copy (e.g. ×10%, ×25%, ×100%).
+        /// </summary>
+        static string FormatStackWeightLabel(float weight)
+        {
+            float pct = weight * 100f;
+            if (Mathf.Abs(pct - 10f) < 0.05f)
+                return "×10%";
+            if (Mathf.Abs(pct - Mathf.Round(pct)) < 0.05f)
+                return "×" + Mathf.RoundToInt(pct).ToString(CultureInfo.InvariantCulture) + "%";
+            return "×" + pct.ToString("0.##", CultureInfo.InvariantCulture) + "%";
         }
 
         /// <summary>
@@ -587,13 +529,13 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            // --- Pool at level 1 (primary × stack) — full float math, detail display ---
+            // --- Pool at level 1 (weighted own-stats) — full float math, detail display ---
             sb.Append("Pool Move  <color=#AAEEDD>").Append(FDetail(moveL1)).Append("</color>");
             if (extras > 0)
             {
-                sb.Append(" <color=#888888>(primary + 10%×")
+                sb.Append(" <color=#888888>(primary + ")
                     .Append(extras)
-                    .Append(" extras)</color>");
+                    .Append("× weighted extras)</color>");
             }
 
             sb.AppendLine();
@@ -657,7 +599,7 @@ namespace TitanOrbit.UI
 
             sb.Append("Pool Accel  <color=#AAEEDD>").Append(FDetail(accelL1)).Append("</color>");
             if (extras > 0)
-                sb.Append(" <color=#888888>(primary + 10%×").Append(extras).Append(" extras)</color>");
+                sb.Append(" <color=#888888>(primary + ").Append(extras).Append("× weighted extras)</color>");
             sb.AppendLine();
 
             float afterTier = accelL1 * (1f + perLvl * growth);
@@ -699,7 +641,7 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Explains one Move Speed ability purchase step: each propulsion part's PerAbilityLevel,
-        /// primary at 100% + extras at 10% of <b>their</b> authored step, then Lv × step.
+        /// primary at 100% + extras at <c>extraStackWeight</c> of <b>their</b> authored step, then Lv × step.
         /// Same purchase adds Move and Accel together — <paramref name="forAccel"/> picks which step to show.
         /// </summary>
         /// <param name="forAccel">True = Accel/Lvl step; false = Move/Lvl step.</param>
@@ -711,7 +653,7 @@ namespace TitanOrbit.UI
             bool forAccel,
             float moveL1)
         {
-            sb.AppendLine("<color=#AAAAAA>Move Speed ability: primary Move/Accel PerAbilityLevel at 100%; each extra engine/thruster adds 10% of its own step.</color>");
+            sb.AppendLine("<color=#AAAAAA>Move Speed ability: primary PerAbilityLevel at 100%; each extra adds its own step × extraStackWeight.</color>");
 
             float stepTotal = 0f;
             int lineCount = 0;
@@ -728,7 +670,7 @@ namespace TitanOrbit.UI
                     bool primary = i == parts.Propulsion.primaryIndex;
                     float weight = primary
                         ? 1f
-                        : ShipPropulsionAggregation.AdditionalPropulsionFractionOfBase;
+                        : ShipComponentStackAggregation.ResolveExtraStackWeight(in comp, parts.Ids[i]);
 
                     float authored;
                     string unitLabel;
@@ -768,7 +710,7 @@ namespace TitanOrbit.UI
                     if (primary)
                         sb.Append(" ×100%");
                     else
-                        sb.Append(" ×10%");
+                        sb.Append(" ").Append(FormatStackWeightLabel(weight));
                     sb.Append(" = +").Append(FDetail(weighted)).AppendLine();
                 }
             }

@@ -41,7 +41,9 @@ namespace TitanOrbit.Editor
 
             string[] fields = ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(categories, partType);
             // Two blocks (Base At Version 1, Per Version Increment): header + fields each
+            // Base also gets Extra Stack Weight (not on Per Version Increment).
             height += GetStatsBlockHeight(fields, line, gap) * 2f;
+            height += line + gap; // Extra Stack Weight under Base
             height += gap;
             return height;
         }
@@ -120,6 +122,8 @@ namespace TitanOrbit.Editor
                 fields,
                 line,
                 gap);
+            // [TITAN-ORBIT] Stack weight lives on the version-1 base only (not a per-version delta).
+            y = DrawExtraStackWeightField(new Rect(position.x, y, width, 0f), baseProp, partType, line, gap);
             y = DrawStatsBlock(
                 new Rect(position.x, y, width, 0f),
                 "Per Version Increment",
@@ -240,6 +244,48 @@ namespace TitanOrbit.Editor
             return y;
         }
 
+        /// <summary>
+        /// Draws Extra Stack Weight under Base At Version 1 and seeds 0.1 / 1.0 when unset.
+        /// </summary>
+        static float DrawExtraStackWeightField(
+            Rect rect,
+            SerializedProperty statsProp,
+            string partType,
+            float line,
+            float gap)
+        {
+            float y = rect.y;
+            float width = rect.width;
+            if (statsProp == null)
+                return y;
+
+            SerializedProperty weightProp = statsProp.FindPropertyRelative("extraStackWeight");
+            if (weightProp == null)
+                return y;
+
+            if (weightProp.floatValue <= 0.0001f)
+            {
+                weightProp.floatValue =
+                    ShipComponentStackAggregation.GetSuggestedExtraStackWeightForPartType(partType);
+            }
+
+            float labelWidth = width * LabelWidthRatio;
+            var labelRect = new Rect(rect.x, y, labelWidth, line);
+            var fieldRect = new Rect(rect.x + labelWidth, y, width - labelWidth, line);
+            EditorGUI.LabelField(
+                labelRect,
+                new GUIContent(
+                    "Extra Stack Weight",
+                    "When multiple parts share a pool: primary = 100%; each extra adds this fraction of ITS stats. " +
+                    "1 = full sum; Engines/Thrusters = 0.1. Not a per-version increment."));
+            EditorGUI.BeginChangeCheck();
+            float value = EditorGUI.FloatField(fieldRect, weightProp.floatValue);
+            if (EditorGUI.EndChangeCheck())
+                weightProp.floatValue = Mathf.Max(0f, value);
+
+            return y + line + gap;
+        }
+
         static float GetStatsBlockHeight(string[] fields, float line, float gap)
         {
             float height = line + gap; // title
@@ -278,8 +324,14 @@ namespace TitanOrbit.Editor
 
             while (!SerializedProperty.EqualContents(child, end))
             {
-                if (child.propertyType == SerializedPropertyType.Float && !allowed.Contains(child.name))
+                // [TITAN-ORBIT] Never clear stack weight — drawn separately; not category-gated.
+                if (child.propertyType == SerializedPropertyType.Float
+                    && !allowed.Contains(child.name)
+                    && !string.Equals(child.name, "extraStackWeight", StringComparison.Ordinal))
+                {
                     child.floatValue = 0f;
+                }
+
                 if (!child.NextVisible(false))
                     break;
             }

@@ -16,11 +16,10 @@ namespace TitanOrbit.Game
     /// flash matches the drawn barrel (including BankPivot). Server remains authoritative for
     /// damage (<see cref="BulletSimulationSystem"/>).
     /// <para>
-    /// [TITAN-ORBIT] Mirrors <see cref="ShipWeaponFireLogic"/>: full-volley when predicted energy
-    /// covers every mount; otherwise only <c>_nextMountIndex</c> may spend energy until it fires,
-    /// then the next barrel in sequence (0→1→2→…→0). When <see cref="BulletSpawnRpc"/> arrives,
-    /// <see cref="BulletVfxDriver"/> binds Sequence without snapping pose back to the lagged
-    /// server muzzle.
+    /// [TITAN-ORBIT] Mirrors <see cref="ShipWeaponFireLogic"/> with the same
+    /// <see cref="ShipWeaponConfig.FireMode"/> the server uses (family weaponFireMode). When
+    /// <see cref="BulletSpawnRpc"/> arrives, <see cref="BulletVfxDriver"/> binds Sequence without
+    /// snapping pose back to the lagged server muzzle.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Anticipation deducts a <b>local predicted energy</b> pool (mirrors server
@@ -146,13 +145,14 @@ namespace TitanOrbit.Game
             // --- Sync predicted energy with ghost (before planning fire) ---
             SyncPredictedEnergy(shipState.CurrentEnergy);
 
-            // --- Volley vs energy-queue round-robin (same planner as server) ---
+            // --- Same planner + FireMode as BulletSimulationSystem (server) ---
             if (!ShipWeaponFireLogic.TryPlanFire(
                     _predictedEnergy,
                     mounts,
                     _nextMountIndex,
                     weaponCfg.BulletDamage,
                     weaponCfg.FireRate,
+                    weaponCfg.FireMode,
                     s_ShotScratch,
                     out int shotCount,
                     out float energySpend,

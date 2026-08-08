@@ -1,3 +1,4 @@
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Simulation;
 using Unity.Entities;
@@ -104,6 +105,8 @@ namespace TitanOrbit.ECS.Authoring
                     BulletScale = authoring.BulletScale,
                     ReferenceBulletDamage = authoring.BulletDamage,
                     ReferenceBulletSpeed = authoring.BulletSpeed,
+                    // [TITAN-ORBIT] Bake default; ShipStatApplyLogic overwrites from family.weaponFireMode.
+                    FireMode = ShipWeaponFireMode.EnergyHybrid,
                 });
                 AddComponent(entity, new ShipVitalsConfig
                 {

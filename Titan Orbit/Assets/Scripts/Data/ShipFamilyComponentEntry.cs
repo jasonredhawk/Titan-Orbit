@@ -137,6 +137,18 @@ namespace TitanOrbit.Data
         public float maxPeoplePerAbilityLevel;
 
         /// <summary>
+        /// When multiple parts share a stack pool: the primary contributes 100% of its stats;
+        /// each extra contributes this fraction of <b>its own</b> stats.
+        /// Default 1 = full sum (wings, cockpits, …). Engines/Thrusters use 0.1.
+        /// Unset (≤0) is resolved at aggregate time by component id.
+        /// </summary>
+        [Tooltip(
+            "Extra stack weight: primary = 100%; each additional part in the same pool " +
+            "adds this fraction of ITS stats. 1 = full sum; Engines/Thrusters = 0.1.")]
+        [Min(0f)]
+        public float extraStackWeight;
+
+        /// <summary>
         /// Guesses canonical Part Profile group from component id (see <see cref="ShipFamilyPartTypes"/>).
         /// </summary>
         public static string ResolvePartTypeForSuggestedStats(string componentId)
@@ -229,6 +241,9 @@ namespace TitanOrbit.Data
             if (allowedSet.Contains("tractorBeamPowerPerAbilityLevel")) filtered.tractorBeamPowerPerAbilityLevel = stats.tractorBeamPowerPerAbilityLevel;
             if (allowedSet.Contains("maxPeople")) filtered.maxPeople = stats.maxPeople;
             if (allowedSet.Contains("maxPeoplePerAbilityLevel")) filtered.maxPeoplePerAbilityLevel = stats.maxPeoplePerAbilityLevel;
+
+            // [TITAN-ORBIT] Stack weight is meta for multi-part pools — always keep (not category-gated).
+            filtered.extraStackWeight = stats.extraStackWeight;
 
             return filtered;
         }

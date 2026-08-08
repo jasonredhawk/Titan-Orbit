@@ -254,21 +254,36 @@ namespace TitanOrbit.Editor
             EditorGUILayout.HelpBox(
                 "Scans all prefabs in the family folder for child names like 'GalaxyRaptor_Wing2' or 'AstroEagle_Engine_2'. " +
                 "Uses the shared ShipFamilyPartCalcProfileSet (name mappings + part profiles) for stats and VFX flags. " +
-                "Run Discover & Classify on that asset first. Stat Categories filter which fields are stored.",
+                "Recalculate copies Part Profile numbers onto every component (Energy Cap included) — " +
+                "it does not rebalance Cap from weapons (Scan Folder still does).",
                 MessageType.Info);
 
             using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(def.familyId)))
             {
                 if (GUILayout.Button("Scan Folder And Auto-Populate Components"))
                 {
+                    // Flush pending Inspector edits before mutating the asset outside SerializedObject.
+                    serializedObject.ApplyModifiedProperties();
                     ScanFolderAndPopulate(def);
                     def.RecalculateTotalComponentMass();
                     EditorUtility.SetDirty(def);
+                    serializedObject.Update();
+                    GUIUtility.ExitGUI();
                 }
 
                 if (GUILayout.Button("Recalculate Component Stats From Part Profiles"))
                 {
-                    RecalculateComponentsFromProfiles(def);
+                    // Flush Inspector edits, then recalculate on delayCall so DisplayDialog /
+                    // SerializedObject writes are not fighting mid-OnInspectorGUI.
+                    serializedObject.ApplyModifiedProperties();
+                    ShipFamilyDefinition defCapture = def;
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (defCapture == null)
+                            return;
+                        RecalculateComponentsFromProfiles(defCapture);
+                    };
+                    GUIUtility.ExitGUI();
                 }
 
                 if (GUILayout.Button("Export Canonical Component Inventory (CSV)"))
@@ -519,8 +534,9 @@ namespace TitanOrbit.Editor
                     type = ShipFamilyPartTypes.Normalize(type, componentId);
 
                 var categories = contributesStats
-                    ? ShipFamilyComponentPartKey.InferDefaultStatCategories(
-                        string.IsNullOrEmpty(type) ? componentId : type)
+                    ? ShipFamilyComponentPartKey.InferDefaultStatCategoriesForPartType(
+                        string.IsNullOrEmpty(type) ? componentId : type,
+                        componentId)
                     : new List<ShipComponentStatCategory>();
                 if (contributesStats && (categories == null || categories.Count == 0))
                     categories = ShipFamilyComponentPartKey.InferDefaultStatCategories(componentId);
@@ -568,7 +584,14 @@ namespace TitanOrbit.Editor
                 "OK");
         }
 
-        /// <summary>Re-runs ProfileSet formulas on existing component rows (no folder scan).</summary>
+        /// <summary>
+        /// Pushes Part Profile stats onto every component row (categories + ability numbers + VFX).
+        /// <para>
+        /// [TITAN-ORBIT] Unlike Scan Folder, this does <b>not</b> run weapon/engine energy rebalance
+        /// or thruster-turn overrides — Energy Cap / Regen come from the Engine Part Profile.
+        /// Writes through SerializedObject so the Inspector refreshes.
+        /// </para>
+        /// </summary>
         static void RecalculateComponentsFromProfiles(ShipFamilyDefinition def)
         {
             if (def?.components == null || def.components.Count == 0)
@@ -587,45 +610,254 @@ namespace TitanOrbit.Editor
                 return;
             }
 
+            // --- Refresh every Part Profile first (so EvaluateAtVersion uses current seeds) ---
+            Undo.RecordObject(profileSet, "Refresh Part Profiles For Recalculate");
+            int profilesUpdated = RefreshAllPartProfiles(profileSet);
+            profileSet.InvalidateLookups();
+            EditorUtility.SetDirty(profileSet);
+
             Undo.RecordObject(def, "Recalculate Component Stats From Profiles");
+            int updated = 0;
+            int cosmetics = 0;
+            int missingProfile = 0;
+
             for (int i = 0; i < def.components.Count; i++)
             {
-                var entry = def.components[i];
-                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                ShipFamilyComponentEntry old = def.components[i];
+                if (old == null || string.IsNullOrWhiteSpace(old.componentId))
                     continue;
-                entry.EnsureStatCategories();
+
+                string componentId = old.componentId.Trim();
+
+                // Always re-resolve type / categories from ProfileSet + id (do not keep stale filters).
+                string partType = profileSet.ResolvePartType(componentId);
+                if (string.IsNullOrEmpty(partType)
+                    || string.Equals(partType, ShipFamilyPartTypes.Unmapped, StringComparison.OrdinalIgnoreCase))
+                    partType = ShipFamilyPartTypes.InferFromComponentName(componentId);
+                else
+                    partType = ShipFamilyPartTypes.Normalize(partType, componentId);
+
+                int version = ShipFamilyPartCalcProfileSet.ExtractVersion(componentId);
+                bool hasProfile = profileSet.TryGetProfile(partType, out _);
+                if (!hasProfile)
+                    missingProfile++;
+
+                List<ShipComponentStatCategory> categories;
+                ShipComponentAbilityStats stats;
+                string displayName;
 
                 // Cosmetics stay in the family list for mass/scale grouping but get zero ability stats.
-                if (!profileSet.ContributesAbilityStats(entry.componentId))
+                if (!profileSet.ContributesAbilityStats(componentId))
                 {
-                    entry.statCategories.Clear();
-                    entry.stats = default;
+                    categories = new List<ShipComponentStatCategory>();
+                    stats = default;
+                    displayName = string.IsNullOrWhiteSpace(old.displayName)
+                        ? $"{partType} {version}".Trim()
+                        : old.displayName;
+                    cosmetics++;
                 }
                 else
                 {
-                    if (entry.statCategories.Count == 0)
-                        entry.statCategories = ShipFamilyComponentPartKey.InferDefaultStatCategories(entry.componentId);
-                    entry.stats = profileSet.SuggestStatsForComponent(entry.componentId, entry.statCategories);
+                    // Categories from the resolved Part Profile group (not a second keyword guess on id).
+                    categories = ShipFamilyComponentPartKey.InferDefaultStatCategoriesForPartType(
+                        partType,
+                        componentId);
+                    if (categories == null || categories.Count == 0)
+                        categories = ShipFamilyComponentPartKey.InferDefaultStatCategories(componentId);
+
+                    stats = profileSet.SuggestStatsForComponent(componentId, categories);
+                    displayName = $"{partType} {version}".Trim();
+                    updated++;
                 }
 
-                entry.enablePropulsionVfx = profileSet.ShouldEnablePropulsionVfx(entry.componentId, out float scale);
-                entry.propulsionVfxScale = scale;
+                bool enableVfx = profileSet.ShouldEnablePropulsionVfx(componentId, out float scale);
+
+                // [UNITY] Replace the list element so SerializedObject.Update picks up a full rewrite
+                // (mutating nested struct fields alone can leave the Inspector showing stale floats).
+                def.components[i] = new ShipFamilyComponentEntry
+                {
+                    componentId = componentId,
+                    displayName = displayName,
+                    statCategories = categories,
+                    stats = stats,
+                    bulletPrefabIndex = old.bulletPrefabIndex,
+                    menuPreviewSprite = old.menuPreviewSprite,
+                    theatricalMenuPreviewSprite = old.theatricalMenuPreviewSprite,
+                    teamMenuPreviewSprites = old.teamMenuPreviewSprites,
+                    teamTheatricalMenuPreviewSprites = old.teamTheatricalMenuPreviewSprites,
+                    enablePropulsionVfx = enableVfx,
+                    propulsionVfxScale = scale,
+                };
             }
 
-            ShipPropulsionAggregation.BalanceWeaponEnergyForComponents(def.components);
-            ShipPropulsionAggregation.ApplyThrusterTurnSuggestionsForComponents(def.components);
-            ShipPropulsionAggregation.BalanceEngineEnergyForComponents(def.components);
+            // [TITAN-ORBIT] Do NOT run BalanceWeaponEnergy / BalanceEngineEnergy / thruster-turn
+            // overrides here — those rewrite Cap/Regen from weapons and ignore Engine Part Profile
+            // Energy Cap. Scan Folder still runs the balancers; Recalculate = pure ProfileSet push.
             def.EnforceComponentStatCategories();
+
+            // Write every float through SerializedObject so the Inspector cannot keep stale values.
+            WriteComponentsStatsViaSerializedObject(def);
+
             def.InvalidateComponentStatsLookup();
             EditorUtility.SetDirty(def);
             AssetDatabase.SaveAssets();
+
             EditorUtility.DisplayDialog(
                 "Recalculate",
-                $"Updated {def.components.Count} component(s) from ProfileSet. Engines Cap/Regen; weapons Cap-only.",
+                $"Part profiles refreshed: {profilesUpdated}.\n" +
+                $"Components with ability stats: {updated}. Cosmetics zeroed: {cosmetics}.\n" +
+                $"Rows without a matching Part Profile (heuristic seed): {missingProfile}.\n" +
+                $"Total rows: {def.components.Count}.\n\n" +
+                "Energy Cap/Regen come from the Engine Part Profile (no weapon-based rebalance).",
                 "OK");
         }
 
-        /// <summary>First integer in the suffix (e.g. Wing_3_L ΓåÆ 3, Weapon1 ΓåÆ 1); 1 if none.</summary>
+        /// <summary>
+        /// Copies each component's in-memory stats/categories into a fresh SerializedObject and
+        /// ApplyModifiedProperties — required so expanded Inspector rows show the new floats.
+        /// </summary>
+        static void WriteComponentsStatsViaSerializedObject(ShipFamilyDefinition def)
+        {
+            if (def?.components == null)
+                return;
+
+            var so = new SerializedObject(def);
+            so.Update();
+            SerializedProperty componentsProp = so.FindProperty("components");
+            if (componentsProp == null || !componentsProp.isArray)
+                return;
+
+            int n = Mathf.Min(componentsProp.arraySize, def.components.Count);
+            for (int i = 0; i < n; i++)
+            {
+                ShipFamilyComponentEntry entry = def.components[i];
+                if (entry == null)
+                    continue;
+
+                SerializedProperty element = componentsProp.GetArrayElementAtIndex(i);
+                element.FindPropertyRelative("componentId").stringValue = entry.componentId ?? string.Empty;
+                element.FindPropertyRelative("displayName").stringValue = entry.displayName ?? string.Empty;
+                WriteStatCategoriesProperty(element.FindPropertyRelative("statCategories"), entry.statCategories);
+                WriteAbilityStatsProperty(element.FindPropertyRelative("stats"), entry.stats);
+                element.FindPropertyRelative("enablePropulsionVfx").boolValue = entry.enablePropulsionVfx;
+                element.FindPropertyRelative("propulsionVfxScale").floatValue = entry.propulsionVfxScale;
+            }
+
+            so.ApplyModifiedProperties();
+        }
+
+        /// <summary>Writes a stat-category list into a SerializedProperty enum array.</summary>
+        static void WriteStatCategoriesProperty(
+            SerializedProperty categoriesProp,
+            List<ShipComponentStatCategory> categories)
+        {
+            if (categoriesProp == null || !categoriesProp.isArray)
+                return;
+
+            if (categories == null)
+                categories = new List<ShipComponentStatCategory>();
+            categoriesProp.arraySize = categories.Count;
+            for (int i = 0; i < categories.Count; i++)
+                categoriesProp.GetArrayElementAtIndex(i).enumValueIndex = (int)categories[i];
+        }
+
+        /// <summary>Writes every float on <see cref="ShipComponentAbilityStats"/> for Inspector refresh.</summary>
+        static void WriteAbilityStatsProperty(SerializedProperty statsProp, ShipComponentAbilityStats s)
+        {
+            if (statsProp == null)
+                return;
+
+            void Set(string name, float value)
+            {
+                SerializedProperty p = statsProp.FindPropertyRelative(name);
+                if (p != null)
+                    p.floatValue = value;
+            }
+
+            Set("firePower", s.firePower);
+            Set("firePowerPerAbilityLevel", s.firePowerPerAbilityLevel);
+            Set("bulletSpeed", s.bulletSpeed);
+            Set("bulletSpeedPerAbilityLevel", s.bulletSpeedPerAbilityLevel);
+            Set("bulletRange", s.bulletRange);
+            Set("bulletRangePerAbilityLevel", s.bulletRangePerAbilityLevel);
+            Set("fireRate", s.fireRate);
+            Set("fireRatePerAbilityLevel", s.fireRatePerAbilityLevel);
+            Set("rammingPower", s.rammingPower);
+            Set("rammingPowerPerAbilityLevel", s.rammingPowerPerAbilityLevel);
+            Set("healthCap", s.healthCap);
+            Set("healthCapPerAbilityLevel", s.healthCapPerAbilityLevel);
+            Set("healthRegen", s.healthRegen);
+            Set("healthRegenPerAbilityLevel", s.healthRegenPerAbilityLevel);
+            Set("energyCap", s.energyCap);
+            Set("energyCapPerAbilityLevel", s.energyCapPerAbilityLevel);
+            Set("energyRegen", s.energyRegen);
+            Set("energyRegenPerAbilityLevel", s.energyRegenPerAbilityLevel);
+            Set("moveSpeed", s.moveSpeed);
+            Set("moveSpeedPerAbilityLevel", s.moveSpeedPerAbilityLevel);
+            Set("accelerationCap", s.accelerationCap);
+            Set("accelerationCapPerAbilityLevel", s.accelerationCapPerAbilityLevel);
+            Set("extraSpeedPercent", s.extraSpeedPercent);
+            Set("extraSpeedPercentPerAbilityLevel", s.extraSpeedPercentPerAbilityLevel);
+            Set("extraSpeedEnergyDrain", s.extraSpeedEnergyDrain);
+            Set("extraSpeedEnergyDrainPerAbilityLevel", s.extraSpeedEnergyDrainPerAbilityLevel);
+            Set("turnSpeed", s.turnSpeed);
+            Set("turnSpeedPerAbilityLevel", s.turnSpeedPerAbilityLevel);
+            Set("maxGems", s.maxGems);
+            Set("maxGemsPerAbilityLevel", s.maxGemsPerAbilityLevel);
+            Set("tractorBeamDistance", s.tractorBeamDistance);
+            Set("tractorBeamDistancePerAbilityLevel", s.tractorBeamDistancePerAbilityLevel);
+            Set("tractorBeamPower", s.tractorBeamPower);
+            Set("tractorBeamPowerPerAbilityLevel", s.tractorBeamPowerPerAbilityLevel);
+            Set("maxPeople", s.maxPeople);
+            Set("maxPeoplePerAbilityLevel", s.maxPeoplePerAbilityLevel);
+            Set("extraStackWeight", s.extraStackWeight);
+        }
+
+        /// <summary>
+        /// Ensures every Part Profile has filled *PerLevel fields and seeded extraStackWeight
+        /// (0.1 propulsion / 1.0 else) so Recalculate / Scan evaluate from complete authoring.
+        /// Does not wipe authored base stats — only fills empty per-level / weight seeds.
+        /// </summary>
+        /// <returns>Number of profiles touched.</returns>
+        static int RefreshAllPartProfiles(ShipFamilyPartCalcProfileSet profileSet)
+        {
+            if (profileSet == null)
+                return 0;
+
+            // Additive: create any missing mapped/core profiles without wiping authored numbers.
+            profileSet.EnsureProfilesForMappedPartTypes();
+
+            int count = 0;
+            if (profileSet.partProfiles == null)
+                return 0;
+
+            for (int i = 0; i < profileSet.partProfiles.Count; i++)
+            {
+                ShipFamilyPartCalcProfile profile = profileSet.partProfiles[i];
+                if (profile == null)
+                    continue;
+
+                profile.EnsureAuthoredPerLevelFilled();
+
+                // [TITAN-ORBIT] Stack weight lives on version-1 base only.
+                float w = ShipComponentStackAggregation.GetSuggestedExtraStackWeightForPartType(profile.partType);
+                if (profile.baseAtVersion1.extraStackWeight <= 0.0001f)
+                    profile.baseAtVersion1.extraStackWeight = w;
+
+                // Weapons keep fireRatePerAbilityLevel flat.
+                if (ShipFamilyPartTypes.IsWeapon(profile.partType))
+                {
+                    profile.baseAtVersion1.fireRatePerAbilityLevel = 0f;
+                    profile.perVersionIncrement.fireRatePerAbilityLevel = 0f;
+                }
+
+                count++;
+            }
+
+            return count;
+        }
+
+        /// <summary>First integer in the suffix (e.g. Wing_3_L → 3, Weapon1 → 1); 1 if none.</summary>
         private static int ExtractFirstVersionNumberFromComponentRest(string rest)
         {
             if (string.IsNullOrEmpty(rest)) return 1;
@@ -1031,6 +1263,8 @@ namespace TitanOrbit.Editor
                 merged = MergeSuggestedStats(merged, part);
             }
 
+            // [TITAN-ORBIT] Always seed stack weight from id (engines/thrusters → 0.1, else 1).
+            merged.extraStackWeight = ShipComponentStackAggregation.GetSuggestedExtraStackWeight(componentId);
             return ShipComponentAbilityStats.KeepOnlyAuthoringFields(merged, categories, componentId);
         }
 
@@ -1077,6 +1311,7 @@ namespace TitanOrbit.Editor
             if (source.tractorBeamPowerPerAbilityLevel != 0f) target.tractorBeamPowerPerAbilityLevel = source.tractorBeamPowerPerAbilityLevel;
             if (source.maxPeople != 0f) target.maxPeople = source.maxPeople;
             if (source.maxPeoplePerAbilityLevel != 0f) target.maxPeoplePerAbilityLevel = source.maxPeoplePerAbilityLevel;
+            if (source.extraStackWeight > 0.0001f) target.extraStackWeight = source.extraStackWeight;
             return target;
         }
 
@@ -1210,6 +1445,8 @@ namespace TitanOrbit.Editor
                     break;
             }
 
+            // [TITAN-ORBIT] Stack weight: engines/thrusters 0.1, everything else 1.0.
+            stats.extraStackWeight = ShipComponentStackAggregation.GetSuggestedExtraStackWeight(componentId);
             return stats;
         }
 

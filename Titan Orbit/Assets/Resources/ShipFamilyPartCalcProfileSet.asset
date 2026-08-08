@@ -718,6 +718,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 2
       maxPeoplePerAbilityLevel: 0.5
+      extraStackWeight: 1
     perVersionIncrement:
       firePower: 0
       firePowerPerAbilityLevel: 0
@@ -755,6 +756,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 2
       maxPeoplePerAbilityLevel: 0.5
+      extraStackWeight: 0
     perLevelFractionOverride: 0
   - partType: Weapon Bullet
     defaultCategories: 0000000002000000
@@ -773,8 +775,8 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 9
-      energyCapPerAbilityLevel: 2.25
+      energyCap: 18
+      energyCapPerAbilityLevel: 9
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 0
@@ -795,6 +797,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     perVersionIncrement:
       firePower: 3
       firePowerPerAbilityLevel: 0.75
@@ -810,8 +813,8 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 9
-      energyCapPerAbilityLevel: 2.25
+      energyCap: 15
+      energyCapPerAbilityLevel: 3
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 0
@@ -832,6 +835,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
     perLevelFractionOverride: 0
   - partType: Weapon Cannon
     defaultCategories: 0000000002000000
@@ -850,8 +854,8 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 12
-      energyCapPerAbilityLevel: 3
+      energyCap: 60
+      energyCapPerAbilityLevel: 15
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 0
@@ -872,6 +876,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     perVersionIncrement:
       firePower: 12
       firePowerPerAbilityLevel: 3
@@ -887,8 +892,8 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 12
-      energyCapPerAbilityLevel: 3
+      energyCap: 20
+      energyCapPerAbilityLevel: 5
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 0
@@ -909,6 +914,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
     perLevelFractionOverride: 0
   - partType: Wing
     defaultCategories: 0100000004000000
@@ -949,6 +955,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 1
       maxPeople: 2
       maxPeoplePerAbilityLevel: 0.5
+      extraStackWeight: 1
     perVersionIncrement:
       firePower: 0
       firePowerPerAbilityLevel: 0
@@ -986,6 +993,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 1
       maxPeople: 2
       maxPeoplePerAbilityLevel: 0.5
+      extraStackWeight: 0
     perLevelFractionOverride: 0
   - partType: Engine
     defaultCategories: 0300000002000000
@@ -1004,18 +1012,18 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 9
-      energyCapPerAbilityLevel: 1.8000001
+      energyCap: 18
+      energyCapPerAbilityLevel: 6
       energyRegen: 6
       energyRegenPerAbilityLevel: 1
       moveSpeed: 6
-      moveSpeedPerAbilityLevel: 1.2
-      accelerationCap: 10
-      accelerationCapPerAbilityLevel: 2
+      moveSpeedPerAbilityLevel: 0.5
+      accelerationCap: 6
+      accelerationCapPerAbilityLevel: 1
       extraSpeedPercent: 0.5
       extraSpeedPercentPerAbilityLevel: 0
-      extraSpeedEnergyDrain: 6.3
-      extraSpeedEnergyDrainPerAbilityLevel: 1.2600001
+      extraSpeedEnergyDrain: 20
+      extraSpeedEnergyDrainPerAbilityLevel: 4
       turnSpeed: 0
       turnSpeedPerAbilityLevel: 0
       maxGems: 0
@@ -1026,6 +1034,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
     perVersionIncrement:
       firePower: 0
       firePowerPerAbilityLevel: 0
@@ -1041,12 +1050,12 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 3
-      energyCapPerAbilityLevel: 0.6
+      energyCap: 6
+      energyCapPerAbilityLevel: 2
       energyRegen: 3
       energyRegenPerAbilityLevel: 0.5
       moveSpeed: 2
-      moveSpeedPerAbilityLevel: 0.4
+      moveSpeedPerAbilityLevel: 0.16666667
       accelerationCap: 5
       accelerationCapPerAbilityLevel: 1
       extraSpeedPercent: 0
@@ -1063,6 +1072,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
     perLevelFractionOverride: 0.2
   - partType: Thruster
     defaultCategories: 03000000
@@ -1086,7 +1096,7 @@ MonoBehaviour:
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 6
-      moveSpeedPerAbilityLevel: 1.2
+      moveSpeedPerAbilityLevel: 0.5
       accelerationCap: 3
       accelerationCapPerAbilityLevel: 0.6
       extraSpeedPercent: 0
@@ -1103,6 +1113,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
     perVersionIncrement:
       firePower: 0
       firePowerPerAbilityLevel: 0
@@ -1123,7 +1134,7 @@ MonoBehaviour:
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 2
-      moveSpeedPerAbilityLevel: 0.4
+      moveSpeedPerAbilityLevel: 0.1666667
       accelerationCap: 1
       accelerationCapPerAbilityLevel: 0.2
       extraSpeedPercent: 0
@@ -1140,6 +1151,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
     perLevelFractionOverride: 0.2
   - partType: Tail
     defaultCategories: 03000000
@@ -1180,6 +1192,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     perVersionIncrement:
       firePower: 0
       firePowerPerAbilityLevel: 0
@@ -1217,6 +1230,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
     perLevelFractionOverride: 0
   - partType: Hull
     defaultCategories: 01000000
@@ -1257,6 +1271,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     perVersionIncrement:
       firePower: 0
       firePowerPerAbilityLevel: 0
@@ -1294,4 +1309,5 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
     perLevelFractionOverride: 0

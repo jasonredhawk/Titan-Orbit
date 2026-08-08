@@ -51,6 +51,7 @@ MonoBehaviour:
     tractorBeamPowerPerAbilityLevel: 1
     maxPeople: 4
     maxPeoplePerAbilityLevel: 1
+    extraStackWeight: 0
   specialBonuses:
     moveSpeedMul: 1
     accelerationMul: 1
@@ -71,6 +72,7 @@ MonoBehaviour:
     tractorDistanceMul: 1
     tractorPowerMul: 1
   bulletPrefabIndex: 0
+  weaponFireMode: 1
   planetaryDefense: {fileID: 11400000, guid: c727a2e2da26c5f4c98872606355a7cc, type: 2}
   cameraFollowSettings: {fileID: 11400000, guid: 90d7e8197d9477d40bc1400865e6a4af, type: 2}
   damageSmokeSettings: {fileID: 11400000, guid: 9a2f168e386dd484c9335fb37c499705, type: 2}
@@ -118,41 +120,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 2
       maxPeoplePerAbilityLevel: 0.5
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: cd7b456e48084a444b0c5869ca781107, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: cd7b456e48084a444b0c5869ca781107, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: cd7b456e48084a444b0c5869ca781107, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 27944825fb0bb8044bac8c91cb426254, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: b31537728002c4242ad66151a91d2fe1, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 6742723dc4a01c9419031af4d2bd7e72, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: a6b294945d26a4748bb76692487e5ea2, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: cd7b456e48084a444b0c5869ca781107, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 27944825fb0bb8044bac8c91cb426254, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: b31537728002c4242ad66151a91d2fe1, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 6742723dc4a01c9419031af4d2bd7e72, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: a6b294945d26a4748bb76692487e5ea2, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Cockpit_Base_1
@@ -195,41 +168,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 2
       maxPeoplePerAbilityLevel: 0.5
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: cc4275dfd02b11142b40e76c65f09c6d, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: cc4275dfd02b11142b40e76c65f09c6d, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: cc4275dfd02b11142b40e76c65f09c6d, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 70446577654a8044eb7242799367a30d, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 4c15e8aeaa2ca6e41b2663d9198bff7d, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 1c4cb1354346b6e44b31be3b73357c4d, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: f35ac39a7be16e741bc7af8e76542017, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: cc4275dfd02b11142b40e76c65f09c6d, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 70446577654a8044eb7242799367a30d, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 4c15e8aeaa2ca6e41b2663d9198bff7d, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 1c4cb1354346b6e44b31be3b73357c4d, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: f35ac39a7be16e741bc7af8e76542017, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Cockpit_Base_2
@@ -272,41 +216,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 4
       maxPeoplePerAbilityLevel: 1
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: 13a71218e8201ca46af2b395b42837e1, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 13a71218e8201ca46af2b395b42837e1, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 13a71218e8201ca46af2b395b42837e1, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 71b915a672c65c54abf798289170d029, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: f8aca361480f4c1439d24bce9dea4bfa, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: ebf5791ede5981744a949a0d91e72d7a, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: de183fa8412c4af44bedf16433ee3b7e, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 13a71218e8201ca46af2b395b42837e1, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 71b915a672c65c54abf798289170d029, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: f8aca361480f4c1439d24bce9dea4bfa, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: ebf5791ede5981744a949a0d91e72d7a, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: de183fa8412c4af44bedf16433ee3b7e, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Engine_1
@@ -327,14 +242,14 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 3.8571427
-      energyCapPerAbilityLevel: 0.9642857
-      energyRegen: 1.3499999
-      energyRegenPerAbilityLevel: 0.33749998
+      energyCap: 45
+      energyCapPerAbilityLevel: 9
+      energyRegen: 6
+      energyRegenPerAbilityLevel: 1
       moveSpeed: 6
-      moveSpeedPerAbilityLevel: 1.2
-      accelerationCap: 10
-      accelerationCapPerAbilityLevel: 2
+      moveSpeedPerAbilityLevel: 0.5
+      accelerationCap: 6
+      accelerationCapPerAbilityLevel: 1
       extraSpeedPercent: 0.5
       extraSpeedPercentPerAbilityLevel: 0
       extraSpeedEnergyDrain: 6.3
@@ -349,41 +264,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: bd84fb5dd437dc140b624c89d666b686, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: bd84fb5dd437dc140b624c89d666b686, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: bd84fb5dd437dc140b624c89d666b686, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 7858cb153afcc39428d6c343593d025a, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: c3880d75a2bc7ab4fb8d5ac254cab939, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 4d8a05a41630efb4693d9d2e7bd24693, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 4cb91348b055e8348afbfede00e114b0, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: bd84fb5dd437dc140b624c89d666b686, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 7858cb153afcc39428d6c343593d025a, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: c3880d75a2bc7ab4fb8d5ac254cab939, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 4d8a05a41630efb4693d9d2e7bd24693, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 4cb91348b055e8348afbfede00e114b0, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Engine_2
@@ -404,14 +290,14 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 5.1428566
-      energyCapPerAbilityLevel: 1.2857141
-      energyRegen: 1.7999998
-      energyRegenPerAbilityLevel: 0.44999996
+      energyCap: 65
+      energyCapPerAbilityLevel: 13
+      energyRegen: 9
+      energyRegenPerAbilityLevel: 1.5
       moveSpeed: 8
-      moveSpeedPerAbilityLevel: 1.6
-      accelerationCap: 15
-      accelerationCapPerAbilityLevel: 3
+      moveSpeedPerAbilityLevel: 0.6666667
+      accelerationCap: 11
+      accelerationCapPerAbilityLevel: 2
       extraSpeedPercent: 0.5
       extraSpeedPercentPerAbilityLevel: 0
       extraSpeedEnergyDrain: 6.3
@@ -426,45 +312,16 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: 8c69850db4c38f149b1e6ba5d97b6173, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 8c69850db4c38f149b1e6ba5d97b6173, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 8c69850db4c38f149b1e6ba5d97b6173, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 2228183183fe44740954d34d00cd2dba, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: f7d5029d6065e1b49b6ea6e0f0d9e947, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: c15430be831577649b10fa7e11145a3f, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 824997546dd6c2c4c9b1e339351aa656, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 8c69850db4c38f149b1e6ba5d97b6173, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 2228183183fe44740954d34d00cd2dba, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: f7d5029d6065e1b49b6ea6e0f0d9e947, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: c15430be831577649b10fa7e11145a3f, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 824997546dd6c2c4c9b1e339351aa656, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Fin
-    displayName: Fin 1
+    displayName: Tail 1
     statCategories: 03000000
     stats:
       firePower: 0
@@ -503,45 +360,16 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: cbe789725f09e034eaac48c58ca2d236, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: cbe789725f09e034eaac48c58ca2d236, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: cbe789725f09e034eaac48c58ca2d236, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 1956a621074bd4143b949e37cc337f21, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 573a66da9ad08404797623629d3006f7, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 4933233c91172044e9e854387987f23f, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 74c06797e1e46394a95f71798bca06ac, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: cbe789725f09e034eaac48c58ca2d236, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 1956a621074bd4143b949e37cc337f21, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 573a66da9ad08404797623629d3006f7, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 4933233c91172044e9e854387987f23f, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 74c06797e1e46394a95f71798bca06ac, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Part_1
-    displayName: Part 1
+    displayName: Hull 1
     statCategories: 01000000
     stats:
       firePower: 0
@@ -580,45 +408,16 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: 97f53dadd461cbe4e82b8c1db336a5bd, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 97f53dadd461cbe4e82b8c1db336a5bd, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 97f53dadd461cbe4e82b8c1db336a5bd, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 5076c32c914744b4a9f169f7510e97ea, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: a8b7392bee839b94abad0c0d9438eb06, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 9a2df741a527e3348a5f85c3eb14420e, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: ad7228d7b46854d458b1f5d3d15c453e, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 97f53dadd461cbe4e82b8c1db336a5bd, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 5076c32c914744b4a9f169f7510e97ea, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: a8b7392bee839b94abad0c0d9438eb06, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 9a2df741a527e3348a5f85c3eb14420e, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: ad7228d7b46854d458b1f5d3d15c453e, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Part_2
-    displayName: Part 2
+    displayName: Hull 2
     statCategories: 01000000
     stats:
       firePower: 0
@@ -657,41 +456,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: 558a464699a9f6145b30273717b731f9, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 558a464699a9f6145b30273717b731f9, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 558a464699a9f6145b30273717b731f9, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 676f4f67bc313104eafcf735b2aa94bb, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 15f45498a7160724eba28ce812e96d37, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: f119bfac4901611469ba2ae116b4f34b, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: d23d3910bddf63a4d8ba376ad23ed503, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 558a464699a9f6145b30273717b731f9, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 676f4f67bc313104eafcf735b2aa94bb, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 15f45498a7160724eba28ce812e96d37, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: f119bfac4901611469ba2ae116b4f34b, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: d23d3910bddf63a4d8ba376ad23ed503, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Tail
@@ -734,41 +504,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: ff8427dfaf12f114098042181fb75dc5, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: ff8427dfaf12f114098042181fb75dc5, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: ff8427dfaf12f114098042181fb75dc5, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 159dc205e3a972a4583abb0730a92a55, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 76a048f274da7a140a1a75eb64773391, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: f019e631c924cfa44befb73735ca3aa0, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: bd61a448d40d8424e8d4b302d68d7e25, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: ff8427dfaf12f114098042181fb75dc5, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 159dc205e3a972a4583abb0730a92a55, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 76a048f274da7a140a1a75eb64773391, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: f019e631c924cfa44befb73735ca3aa0, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: bd61a448d40d8424e8d4b302d68d7e25, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Thruster
@@ -794,7 +535,7 @@ MonoBehaviour:
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 6
-      moveSpeedPerAbilityLevel: 1.2
+      moveSpeedPerAbilityLevel: 0.5
       accelerationCap: 3
       accelerationCapPerAbilityLevel: 0.6
       extraSpeedPercent: 0
@@ -811,45 +552,16 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: b832d0927e5692345b05dc390a15acd7, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b832d0927e5692345b05dc390a15acd7, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: b832d0927e5692345b05dc390a15acd7, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 3345a0f8f066feb4e8d7f4841c94cd43, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: f84fd940ef3893048ac8fb8749a23a73, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: ac89bd02982c25044b8fa85bd4c9112d, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 6e9ff45da2a2b4242ae58a9183be9075, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: b832d0927e5692345b05dc390a15acd7, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 3345a0f8f066feb4e8d7f4841c94cd43, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: f84fd940ef3893048ac8fb8749a23a73, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: ac89bd02982c25044b8fa85bd4c9112d, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 6e9ff45da2a2b4242ae58a9183be9075, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
   - componentId: Weapon
-    displayName: Weapon 1
+    displayName: Weapon Bullet 1
     statCategories: 0000000002000000
     stats:
       firePower: 3
@@ -866,8 +578,8 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 9
-      energyCapPerAbilityLevel: 2.25
+      energyCap: 45
+      energyCapPerAbilityLevel: 9
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 0
@@ -888,41 +600,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: 96e8d8bb8f302cb4d8dc40b06abf8cbf, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 96e8d8bb8f302cb4d8dc40b06abf8cbf, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 96e8d8bb8f302cb4d8dc40b06abf8cbf, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 1a20dff7d806cc840a6ec63a7cdc8cb4, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: d5d706679d02642429903084327853f9, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 1acce62a5339f754b80bb0c46234cd4c, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 5c7c5a849f55c1f4daf56246b159ae54, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 96e8d8bb8f302cb4d8dc40b06abf8cbf, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 1a20dff7d806cc840a6ec63a7cdc8cb4, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: d5d706679d02642429903084327853f9, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 1acce62a5339f754b80bb0c46234cd4c, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 5c7c5a849f55c1f4daf56246b159ae54, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Wing_1
@@ -965,41 +648,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 1
       maxPeople: 2
       maxPeoplePerAbilityLevel: 0.5
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: bfdc1c73a3cf76841b846bcdc2bb7be8, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: bfdc1c73a3cf76841b846bcdc2bb7be8, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: bfdc1c73a3cf76841b846bcdc2bb7be8, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 4ec946940fe46a848aa9040efb80fe8a, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 097bb75f7ff94204f838ccbf04d89e95, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: f42502a189139e1419bd5c231b3aa068, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 95b0689f0dcedfb4bb7f42e6033c533e, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: bfdc1c73a3cf76841b846bcdc2bb7be8, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 4ec946940fe46a848aa9040efb80fe8a, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 097bb75f7ff94204f838ccbf04d89e95, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: f42502a189139e1419bd5c231b3aa068, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 95b0689f0dcedfb4bb7f42e6033c533e, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Wing_2
@@ -1042,41 +696,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 2
       maxPeople: 4
       maxPeoplePerAbilityLevel: 1
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: 312e4b4eaed063741b0fb13d99d94d86, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 312e4b4eaed063741b0fb13d99d94d86, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 312e4b4eaed063741b0fb13d99d94d86, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 59e0fde23ba2c5647bf78109e8c78f95, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: ac9f29ef9f94a714a8c23952ce91800d, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: f1205bb3b716954458b758e1f0ef3df2, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: cd6c74af31bbd7341a50c14bb627274c, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 312e4b4eaed063741b0fb13d99d94d86, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 59e0fde23ba2c5647bf78109e8c78f95, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: ac9f29ef9f94a714a8c23952ce91800d, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: f1205bb3b716954458b758e1f0ef3df2, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: cd6c74af31bbd7341a50c14bb627274c, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Wing_3
@@ -1119,41 +744,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 3
       maxPeople: 6
       maxPeoplePerAbilityLevel: 1.5
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: b65b968f6d3ef0b4faf20f4f86c6e58b, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: b65b968f6d3ef0b4faf20f4f86c6e58b, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: b65b968f6d3ef0b4faf20f4f86c6e58b, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 9ca6fd4217445b84c917646d1801a55c, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: bebfe1bc304f39840a2f81086c4981c3, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 7e69ea37b703a2945bf53b0b73e43f23, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 3c1745c36613d914a949ff78bbac5eff, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: b65b968f6d3ef0b4faf20f4f86c6e58b, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 9ca6fd4217445b84c917646d1801a55c, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: bebfe1bc304f39840a2f81086c4981c3, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 7e69ea37b703a2945bf53b0b73e43f23, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 3c1745c36613d914a949ff78bbac5eff, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Wing_4
@@ -1196,41 +792,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 4
       maxPeople: 8
       maxPeoplePerAbilityLevel: 2
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: f8a1899f76644574e88bfea8a1acedbd, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: f8a1899f76644574e88bfea8a1acedbd, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: f8a1899f76644574e88bfea8a1acedbd, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 27f1d728df83f774b86a51bb0f159222, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 373d5cabde7e77b4f89b18318381a060, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 30a2042692998c54e9d1aa157384da54, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 105498d11e5187047a5f70dffc9c420b, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: f8a1899f76644574e88bfea8a1acedbd, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 27f1d728df83f774b86a51bb0f159222, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 373d5cabde7e77b4f89b18318381a060, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 30a2042692998c54e9d1aa157384da54, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 105498d11e5187047a5f70dffc9c420b, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Wing_5
@@ -1273,41 +840,12 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 5
       maxPeople: 10
       maxPeoplePerAbilityLevel: 2.5
+      extraStackWeight: 1
     bulletPrefabIndex: -1
-    menuPreviewSprite: {fileID: 21300000, guid: 0254719097875634ab3f302cab4a48c4, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 0254719097875634ab3f302cab4a48c4, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 0254719097875634ab3f302cab4a48c4, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 6a635d7201d69d64a8a7a2daa788928a, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 0b82ca6a6a784584dbf46900817bc79c, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: baa6e7d7c1ec62e46b38ba9fa2ea4216, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 2ba675d2632e06b49b4fed74914f1c1c, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 0254719097875634ab3f302cab4a48c4, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 6a635d7201d69d64a8a7a2daa788928a, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 0b82ca6a6a784584dbf46900817bc79c, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: baa6e7d7c1ec62e46b38ba9fa2ea4216, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 2ba675d2632e06b49b4fed74914f1c1c, type: 3}
+    menuPreviewSprite: {fileID: 0}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamMenuPreviewSprites: []
+    teamTheatricalMenuPreviewSprites: []
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   upgradeTree:
@@ -1350,23 +888,23 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 78c6ec280f2677f47843997367108cd1, type: 3}
     minHomePlanetLevel: 1
     powerScore: 153.94269
-    powerScoreAtMaxLevel: 258.92838
+    powerScoreAtMaxLevel: 355.42535
     powerScoreBreakdown:
       offense: 49
-      defense: 24.302233
-      energy: 29.82857
-      mobility: 68.39189
+      defense: 24.30223
+      energy: 133.8
+      mobility: 48.154057
       capacity: 40
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 23.464224
+      healthCap: 23.464222
       healthRegen: 0.83800805
-      energyCap: 24.42857
-      energyRegen: 5.3999996
-      moveSpeed: 12
-      turnSpeed: 33.89189
+      energyCap: 123
+      energyRegen: 10.799999
+      moveSpeed: 11.400002
+      turnSpeed: 22.654053
       gemCap: 32
       peopleCap: 8
     componentMass: 12.895858
@@ -1409,13 +947,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 1d52f0f31724db044b11d3584d1c549e, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 177.85536
-    powerScoreAtMaxLevel: 339.54303
+    powerScore: 273.37918
+    powerScoreAtMaxLevel: 457.2883
     powerScoreBreakdown:
       offense: 51
       defense: 43.86019
-      energy: 22.865438
-      mobility: 59.62973
+      energy: 126.28115
+      mobility: 44.93784
       capacity: 56.000004
       firePower: 3
       bulletSpeed: 12
@@ -1423,73 +961,73 @@ MonoBehaviour:
       rammingPower: 3
       healthCap: 42.34777
       healthRegen: 1.5124205
-      energyCap: 19.270695
-      energyRegen: 3.5947437
-      moveSpeed: 10.4
-      turnSpeed: 29.72973
+      energyCap: 116.39561
+      energyRegen: 9.885547
+      moveSpeed: 10.000001
+      turnSpeed: 22.237837
       gemCap: 44.800003
       peopleCap: 11.200001
     componentMass: 14.692268
     lockedInUpgradeTree: 0
-  - chassisId: AstroEagle_06
-    upgradeTreeShipName: Turtle
-    prefab: {fileID: 1731801433134838, guid: 625aaae49fcd78c4dba15192e59c91a7, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 4648c65706d619040a727421d0afb226, type: 3}
+  - chassisId: AstroEagle_08
+    upgradeTreeShipName: Slicer
+    prefab: {fileID: 1779420705963414, guid: 91bd176f720d6bf4a8bb6212ff005be1, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 4648c65706d619040a727421d0afb226, type: 3}
+      sprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: abd419cd9bb425e48b2df54e4b0ab9af, type: 3}
+      sprite: {fileID: 21300000, guid: 0eb5e74a434f59d4f9c7be0569b0c6a0, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: bb5a0254d0253024eaca83069a20941c, type: 3}
+      sprite: {fileID: 21300000, guid: 5e597581abfa02542ad84d88a534c330, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: a0ae6e83e88694d469f25bcc61ab16e7, type: 3}
+      sprite: {fileID: 21300000, guid: 0ea1276aac9285a48b9a81dacfc3f704, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 7c4a157b73cb511458fcc9b0b8831c6f, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 4648c65706d619040a727421d0afb226, type: 3}
+      sprite: {fileID: 21300000, guid: 035c83706d87add499054bbe5ce76846, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 4648c65706d619040a727421d0afb226, type: 3}
+      sprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: abd419cd9bb425e48b2df54e4b0ab9af, type: 3}
+      sprite: {fileID: 21300000, guid: 0eb5e74a434f59d4f9c7be0569b0c6a0, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: bb5a0254d0253024eaca83069a20941c, type: 3}
+      sprite: {fileID: 21300000, guid: 5e597581abfa02542ad84d88a534c330, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: a0ae6e83e88694d469f25bcc61ab16e7, type: 3}
+      sprite: {fileID: 21300000, guid: 0ea1276aac9285a48b9a81dacfc3f704, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 7c4a157b73cb511458fcc9b0b8831c6f, type: 3}
+      sprite: {fileID: 21300000, guid: 035c83706d87add499054bbe5ce76846, type: 3}
     minHomePlanetLevel: 2
-    powerScore: 218.0667
-    powerScoreAtMaxLevel: 441.8451
+    powerScore: 338.2006
+    powerScoreAtMaxLevel: 592.714
     powerScoreBreakdown:
-      offense: 99.00004
-      defense: 56.54792
-      energy: 32.13135
-      mobility: 48.927025
-      capacity: 69.945404
-      firePower: 6.015
+      offense: 105.1275
+      defense: 42.941532
+      energy: 163.84445
+      mobility: 36.635136
+      capacity: 71.23946
+      firePower: 13.440001
       bulletSpeed: 24
-      fireRate: 5.985038
+      fireRate: 4.6875
       rammingPower: 3
-      healthCap: 54.597992
-      healthRegen: 1.9499283
-      energyCap: 28.467667
-      energyRegen: 3.6636834
-      moveSpeed: 10.4
-      turnSpeed: 19.027027
-      gemCap: 55.95632
-      peopleCap: 13.98908
-    componentMass: 17.933876
+      healthCap: 41.46079
+      healthRegen: 1.4807427
+      energyCap: 154.89574
+      energyRegen: 8.948712
+      moveSpeed: 11.200001
+      turnSpeed: 11.535135
+      gemCap: 56.99157
+      peopleCap: 14.247892
+    componentMass: 16.40188
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_02
     upgradeTreeShipName: Bat
@@ -1529,26 +1067,26 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 694bcb6631349e74b92803e59dfb594c, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 209.56525
-    powerScoreAtMaxLevel: 481.5784
+    powerScore: 350.17203
+    powerScoreAtMaxLevel: 690.6753
     powerScoreBreakdown:
       offense: 99.12923
-      defense: 36.34048
-      energy: 26.227285
-      mobility: 64.572975
-      capacity: 63.1845
+      defense: 36.340485
+      energy: 170.58
+      mobility: 56.12703
+      capacity: 63.184505
       firePower: 6.24
       bulletSpeed: 24
       fireRate: 5.769231
       rammingPower: 3.12
-      healthCap: 35.08736
+      healthCap: 35.087364
       healthRegen: 1.2531202
-      energyCap: 24.094286
-      energyRegen: 2.133
-      moveSpeed: 6.6000004
-      turnSpeed: 46.972973
-      gemCap: 50.5476
-      peopleCap: 12.6369
+      energyCap: 161.1
+      energyRegen: 9.4800005
+      moveSpeed: 6.6
+      turnSpeed: 43.227028
+      gemCap: 50.547604
+      peopleCap: 12.636901
     componentMass: 14.635678
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_05
@@ -1589,13 +1127,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 2c8b45e58600e4843bc4bb9ef84f6099, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 245.38408
-    powerScoreAtMaxLevel: 553.787
+    powerScore: 376.9079
+    powerScoreAtMaxLevel: 742.29297
     powerScoreBreakdown:
       offense: 97.00011
       defense: 38.504562
-      energy: 31.865438
-      mobility: 48.927025
+      energy: 171.28114
+      mobility: 34.235138
       capacity: 115.56178
       firePower: 6.025263
       bulletSpeed: 24
@@ -1603,133 +1141,193 @@ MonoBehaviour:
       rammingPower: 1
       healthCap: 37.17682
       healthRegen: 1.3277436
-      energyCap: 28.270695
-      energyRegen: 3.5947437
-      moveSpeed: 10.4
-      turnSpeed: 19.027027
+      energyCap: 161.3956
+      energyRegen: 9.885547
+      moveSpeed: 10.000001
+      turnSpeed: 11.535135
       gemCap: 92.449425
       peopleCap: 23.112356
     componentMass: 10.883494
     lockedInUpgradeTree: 0
-  - chassisId: AstroEagle_08
-    upgradeTreeShipName: Slicer
-    prefab: {fileID: 1779420705963414, guid: 91bd176f720d6bf4a8bb6212ff005be1, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
+  - chassisId: AstroEagle_15
+    upgradeTreeShipName: DoubleDragon
+    prefab: {fileID: 1356736870796250, guid: 64197639ad111934d844c67c50a57d0e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
+      sprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 0eb5e74a434f59d4f9c7be0569b0c6a0, type: 3}
+      sprite: {fileID: 21300000, guid: 474fc272c6c2cdf4aa446f187897d7de, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 5e597581abfa02542ad84d88a534c330, type: 3}
+      sprite: {fileID: 21300000, guid: 714f2232fc30dcd478682aecf3fd1a38, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 0ea1276aac9285a48b9a81dacfc3f704, type: 3}
+      sprite: {fileID: 21300000, guid: 939ccb69071672447b022ff3aeeeeb13, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 035c83706d87add499054bbe5ce76846, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
+      sprite: {fileID: 21300000, guid: 20c0f9e060a2aae479738b9e79acfec5, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 59336b238ca04954e8e4448e6f32e918, type: 3}
+      sprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 0eb5e74a434f59d4f9c7be0569b0c6a0, type: 3}
+      sprite: {fileID: 21300000, guid: 474fc272c6c2cdf4aa446f187897d7de, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 5e597581abfa02542ad84d88a534c330, type: 3}
+      sprite: {fileID: 21300000, guid: 714f2232fc30dcd478682aecf3fd1a38, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 0ea1276aac9285a48b9a81dacfc3f704, type: 3}
+      sprite: {fileID: 21300000, guid: 939ccb69071672447b022ff3aeeeeb13, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 035c83706d87add499054bbe5ce76846, type: 3}
+      sprite: {fileID: 21300000, guid: 20c0f9e060a2aae479738b9e79acfec5, type: 3}
     minHomePlanetLevel: 3
-    powerScore: 220.17078
-    powerScoreAtMaxLevel: 516.43634
+    powerScore: 383.46982
+    powerScoreAtMaxLevel: 759.2826
     powerScoreBreakdown:
-      offense: 105.1275
-      defense: 42.941536
-      energy: 37.522755
-      mobility: 53.527027
-      capacity: 71.23946
-      firePower: 13.440001
+      offense: 100.51299
+      defense: 50.821777
+      energy: 187.15886
+      mobility: 48.77027
+      capacity: 81.769485
+      firePower: 4.849431
       bulletSpeed: 24
-      fireRate: 4.6875
-      rammingPower: 3
-      healthCap: 41.460793
-      healthRegen: 1.4807426
-      energyCap: 32.4613
-      energyRegen: 5.061455
-      moveSpeed: 12
-      turnSpeed: 19.027027
-      gemCap: 56.99157
-      peopleCap: 14.247892
-    componentMass: 16.40188
+      fireRate: 7.4235606
+      rammingPower: 4.24
+      healthCap: 49.0693
+      healthRegen: 1.7524753
+      energyCap: 175.36526
+      energyRegen: 11.793591
+      moveSpeed: 11.8
+      turnSpeed: 23.07027
+      gemCap: 65.41559
+      peopleCap: 16.353897
+    componentMass: 20.11691
     lockedInUpgradeTree: 0
-  - chassisId: AstroEagle_07
-    upgradeTreeShipName: Starship
-    prefab: {fileID: 1054298520541712, guid: bfcef1b419c7fbf40932c1253d895e5a, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 54498255d740ed345936cd2816207fc3, type: 3}
+  - chassisId: AstroEagle_06
+    upgradeTreeShipName: Turtle
+    prefab: {fileID: 1731801433134838, guid: 625aaae49fcd78c4dba15192e59c91a7, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 4648c65706d619040a727421d0afb226, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 54498255d740ed345936cd2816207fc3, type: 3}
+      sprite: {fileID: 21300000, guid: 4648c65706d619040a727421d0afb226, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 239d7c61e0a32b944b5ab1fc544adcdd, type: 3}
+      sprite: {fileID: 21300000, guid: abd419cd9bb425e48b2df54e4b0ab9af, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 09dd2e1ab8d88554d954a7981ec50e7e, type: 3}
+      sprite: {fileID: 21300000, guid: bb5a0254d0253024eaca83069a20941c, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: cc7835121b6debc4c9a708b5f56e23fa, type: 3}
+      sprite: {fileID: 21300000, guid: a0ae6e83e88694d469f25bcc61ab16e7, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: eb5cba6f45aea34448993d9126b0e27a, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 54498255d740ed345936cd2816207fc3, type: 3}
+      sprite: {fileID: 21300000, guid: 7c4a157b73cb511458fcc9b0b8831c6f, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 4648c65706d619040a727421d0afb226, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 54498255d740ed345936cd2816207fc3, type: 3}
+      sprite: {fileID: 21300000, guid: 4648c65706d619040a727421d0afb226, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 239d7c61e0a32b944b5ab1fc544adcdd, type: 3}
+      sprite: {fileID: 21300000, guid: abd419cd9bb425e48b2df54e4b0ab9af, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 09dd2e1ab8d88554d954a7981ec50e7e, type: 3}
+      sprite: {fileID: 21300000, guid: bb5a0254d0253024eaca83069a20941c, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: cc7835121b6debc4c9a708b5f56e23fa, type: 3}
+      sprite: {fileID: 21300000, guid: a0ae6e83e88694d469f25bcc61ab16e7, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: eb5cba6f45aea34448993d9126b0e27a, type: 3}
+      sprite: {fileID: 21300000, guid: 7c4a157b73cb511458fcc9b0b8831c6f, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 250.25803
-    powerScoreAtMaxLevel: 745.4238
+    powerScore: 350.88342
+    powerScoreAtMaxLevel: 789.1539
     powerScoreBreakdown:
-      offense: 195.52719
-      defense: 33.229256
-      energy: 49.86544
-      mobility: 70.332436
-      capacity: 58.691475
-      firePower: 9.6394205
-      bulletSpeed: 48
-      fireRate: 15.887777
-      rammingPower: 2
-      healthCap: 32.08342
-      healthRegen: 1.1458366
-      energyCap: 46.270695
-      energyRegen: 3.5947437
-      moveSpeed: 10.4
-      turnSpeed: 40.432434
-      gemCap: 46.95318
-      peopleCap: 11.738295
-    componentMass: 15.395744
+      offense: 99.00004
+      defense: 56.547916
+      energy: 172.83997
+      mobility: 34.235138
+      capacity: 69.945404
+      firePower: 6.015
+      bulletSpeed: 24
+      fireRate: 5.985038
+      rammingPower: 3
+      healthCap: 54.59799
+      healthRegen: 1.9499283
+      energyCap: 162.76483
+      energyRegen: 10.07513
+      moveSpeed: 10.000001
+      turnSpeed: 11.535135
+      gemCap: 55.95632
+      peopleCap: 13.98908
+    componentMass: 17.933876
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_14
+    upgradeTreeShipName: DoubleBarrel
+    prefab: {fileID: 1758333184152476, guid: 0def20e404057694ca7fa325b6ade565, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 26e858a17d036e4479cf60b75b4707f3, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 26e858a17d036e4479cf60b75b4707f3, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: e167fac493f0c414799f83cb61b2c88d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: c0d94aabeace390468a00fca6d7554e2, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 4573d29694a648242b531172f3a9aa6a, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 6695101ca1cb8c748bc792551b705af7, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 26e858a17d036e4479cf60b75b4707f3, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 26e858a17d036e4479cf60b75b4707f3, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: e167fac493f0c414799f83cb61b2c88d, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: c0d94aabeace390468a00fca6d7554e2, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 4573d29694a648242b531172f3a9aa6a, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 6695101ca1cb8c748bc792551b705af7, type: 3}
+    minHomePlanetLevel: 4
+    powerScore: 431.2962
+    powerScoreAtMaxLevel: 948.546
+    powerScoreBreakdown:
+      offense: 99
+      defense: 70.27719
+      energy: 179.53847
+      mobility: 34.235138
+      capacity: 129.9454
+      firePower: 6
+      bulletSpeed: 24
+      fireRate: 6
+      rammingPower: 3
+      healthCap: 67.853836
+      healthRegen: 2.4233518
+      energyCap: 168.64865
+      energyRegen: 10.889813
+      moveSpeed: 10.000001
+      turnSpeed: 11.535135
+      gemCap: 103.95633
+      peopleCap: 25.989082
+    componentMass: 18.65636
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_10
     upgradeTreeShipName: Turkey
@@ -1769,267 +1367,27 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c5595c22219d27f4b9054592ae82dd8f, type: 3}
     minHomePlanetLevel: 4
-    powerScore: 276.6644
-    powerScoreAtMaxLevel: 694.0012
+    powerScore: 408.2868
+    powerScoreAtMaxLevel: 903.93933
     powerScoreBreakdown:
       offense: 99.18381
       defense: 58.839314
-      energy: 31.885714
-      mobility: 48.927025
-      capacity: 125.86093
+      energy: 171.4
+      mobility: 34.235138
+      capacity: 125.860916
       firePower: 6.651423
       bulletSpeed: 24
       fireRate: 5.412383
       rammingPower: 3.12
       healthCap: 56.81037
       healthRegen: 2.028942
-      energyCap: 28.285713
-      energyRegen: 3.5999997
-      moveSpeed: 10.4
-      turnSpeed: 19.027027
-      gemCap: 100.68874
-      peopleCap: 25.172186
+      energyCap: 161.5
+      energyRegen: 9.9
+      moveSpeed: 10
+      turnSpeed: 11.535135
+      gemCap: 100.688736
+      peopleCap: 25.172184
     componentMass: 15.716746
-    lockedInUpgradeTree: 0
-  - chassisId: AstroEagle_04
-    upgradeTreeShipName: Whale
-    prefab: {fileID: 1413902348143792, guid: 5b4fa90573fc25a459c6e97c555eb6c9, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 2f781a70c1297134693cdcb049a760df, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 5c0b631a637524e4d898f28f3ab37f42, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: e19b9e6139400074ab86052de8699721, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: d89347a1fcac36d449b19f7870b0302e, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 2f781a70c1297134693cdcb049a760df, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 5c0b631a637524e4d898f28f3ab37f42, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: e19b9e6139400074ab86052de8699721, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: d89347a1fcac36d449b19f7870b0302e, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 258.2401
-    powerScoreAtMaxLevel: 750.3699
-    powerScoreBreakdown:
-      offense: 193.00021
-      defense: 37.285713
-      energy: 47.941715
-      mobility: 29.462162
-      capacity: 100
-      firePower: 12.050525
-      bulletSpeed: 48
-      fireRate: 11.949686
-      rammingPower: 1
-      healthCap: 36
-      healthRegen: 1.2857144
-      energyCap: 44.845715
-      energyRegen: 3.096
-      moveSpeed: 8.8
-      turnSpeed: 4.1621623
-      gemCap: 80
-      peopleCap: 20
-    componentMass: 11.456842
-    lockedInUpgradeTree: 0
-  - chassisId: AstroEagle_15
-    upgradeTreeShipName: DoubleDragon
-    prefab: {fileID: 1356736870796250, guid: 64197639ad111934d844c67c50a57d0e, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 474fc272c6c2cdf4aa446f187897d7de, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 714f2232fc30dcd478682aecf3fd1a38, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 939ccb69071672447b022ff3aeeeeb13, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 20c0f9e060a2aae479738b9e79acfec5, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 61726aa41e7982a4cbff4a418e08fd21, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 474fc272c6c2cdf4aa446f187897d7de, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 714f2232fc30dcd478682aecf3fd1a38, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 939ccb69071672447b022ff3aeeeeb13, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 20c0f9e060a2aae479738b9e79acfec5, type: 3}
-    minHomePlanetLevel: 4
-    powerScore: 251.79549
-    powerScoreAtMaxLevel: 656.1345
-    powerScoreBreakdown:
-      offense: 100.51299
-      defense: 50.821774
-      energy: 39.500736
-      mobility: 74.85406
-      capacity: 81.769485
-      firePower: 4.849431
-      bulletSpeed: 24
-      fireRate: 7.4235606
-      rammingPower: 4.24
-      healthCap: 49.069298
-      healthRegen: 1.7524754
-      energyCap: 33.92647
-      energyRegen: 5.5742655
-      moveSpeed: 12.8
-      turnSpeed: 38.054054
-      gemCap: 65.41559
-      peopleCap: 16.353897
-    componentMass: 20.11691
-    lockedInUpgradeTree: 0
-  - chassisId: AstroEagle_11
-    upgradeTreeShipName: Squid
-    prefab: {fileID: 2830926078676568530, guid: 6f6d28f63f07edc47af0eb9b9247f647, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 34bd97f3a6826854ba3b18b170094268, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: b64383e5d6360c14fa46d87c133e30d2, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 3005c71f05284494f89fec28f1ee42af, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 141bc613c1c6cee4986bfa32f12428ee, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 34bd97f3a6826854ba3b18b170094268, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: b64383e5d6360c14fa46d87c133e30d2, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 3005c71f05284494f89fec28f1ee42af, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 141bc613c1c6cee4986bfa32f12428ee, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 276.4113
-    powerScoreAtMaxLevel: 881.74536
-    powerScoreBreakdown:
-      offense: 195.12
-      defense: 59.155445
-      energy: 42.942856
-      mobility: 50.86757
-      capacity: 79.945404
-      firePower: 12
-      bulletSpeed: 48
-      fireRate: 12
-      rammingPower: 3.12
-      healthCap: 57.1156
-      healthRegen: 2.039843
-      energyCap: 41.142857
-      energyRegen: 1.7999998
-      moveSpeed: 8.8
-      turnSpeed: 25.567568
-      gemCap: 63.95632
-      peopleCap: 15.98908
-    componentMass: 17.99454
-    lockedInUpgradeTree: 0
-  - chassisId: AstroEagle_14
-    upgradeTreeShipName: DoubleBarrel
-    prefab: {fileID: 1758333184152476, guid: 0def20e404057694ca7fa325b6ade565, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 26e858a17d036e4479cf60b75b4707f3, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 26e858a17d036e4479cf60b75b4707f3, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: e167fac493f0c414799f83cb61b2c88d, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: c0d94aabeace390468a00fca6d7554e2, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 4573d29694a648242b531172f3a9aa6a, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 6695101ca1cb8c748bc792551b705af7, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 26e858a17d036e4479cf60b75b4707f3, type: 3}
-    teamTheatricalMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 26e858a17d036e4479cf60b75b4707f3, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: e167fac493f0c414799f83cb61b2c88d, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: c0d94aabeace390468a00fca6d7554e2, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 4573d29694a648242b531172f3a9aa6a, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 6695101ca1cb8c748bc792551b705af7, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 292.92365
-    powerScoreAtMaxLevel: 813.22815
-    powerScoreBreakdown:
-      offense: 99
-      defense: 70.27719
-      energy: 33.274014
-      mobility: 48.927025
-      capacity: 129.9454
-      firePower: 6
-      bulletSpeed: 24
-      fireRate: 6
-      rammingPower: 3
-      healthCap: 67.853836
-      healthRegen: 2.4233518
-      energyCap: 29.314085
-      energyRegen: 3.95993
-      moveSpeed: 10.4
-      turnSpeed: 19.027027
-      gemCap: 103.95633
-      peopleCap: 25.989082
-    componentMass: 18.65636
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_09
     upgradeTreeShipName: Feather
@@ -2068,88 +1426,208 @@ MonoBehaviour:
     - variantName: TeamE
       team: 5
       sprite: {fileID: 21300000, guid: bbf6e5d4ff0462744a2e4351d64e9339, type: 3}
-    minHomePlanetLevel: 5
-    powerScore: 294.51126
-    powerScoreAtMaxLevel: 811.47034
+    minHomePlanetLevel: 4
+    powerScore: 429.62247
+    powerScoreAtMaxLevel: 947.2916
     powerScoreBreakdown:
       offense: 99.12
-      defense: 85.25545
-      energy: 24.942856
-      mobility: 50.86757
+      defense: 85.25544
+      energy: 164
+      mobility: 41.721622
       capacity: 119.945404
       firePower: 6
       bulletSpeed: 24
       fireRate: 6
       rammingPower: 3.12
-      healthCap: 82.315605
-      healthRegen: 2.9398427
-      energyCap: 23.142857
-      energyRegen: 1.7999998
-      moveSpeed: 8.8
-      turnSpeed: 25.567568
+      healthCap: 82.3156
+      healthRegen: 2.9398432
+      energyCap: 155
+      energyRegen: 9
+      moveSpeed: 8.6
+      turnSpeed: 21.82162
       gemCap: 95.95632
       peopleCap: 23.98908
     componentMass: 19.99454
     lockedInUpgradeTree: 0
-  - chassisId: AstroEagle_16
-    upgradeTreeShipName: Spider
-    prefab: {fileID: 1277677898927696, guid: 8c665a2ef03a84b40a1b7d18a0993504, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
+  - chassisId: AstroEagle_07
+    upgradeTreeShipName: Starship
+    prefab: {fileID: 1054298520541712, guid: bfcef1b419c7fbf40932c1253d895e5a, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 54498255d740ed345936cd2816207fc3, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
+      sprite: {fileID: 21300000, guid: 54498255d740ed345936cd2816207fc3, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: f793de227f9c5594c8d78a60f5ea40d6, type: 3}
+      sprite: {fileID: 21300000, guid: 239d7c61e0a32b944b5ab1fc544adcdd, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 7e7938a0f6f5196458c55ddedd63549c, type: 3}
+      sprite: {fileID: 21300000, guid: 09dd2e1ab8d88554d954a7981ec50e7e, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: ca36326aafe449e468ca20ab7c05e9b2, type: 3}
+      sprite: {fileID: 21300000, guid: cc7835121b6debc4c9a708b5f56e23fa, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: defba0386e258ed44b17a5c4a64ea4ed, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
+      sprite: {fileID: 21300000, guid: eb5cba6f45aea34448993d9126b0e27a, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 54498255d740ed345936cd2816207fc3, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
+      sprite: {fileID: 21300000, guid: 54498255d740ed345936cd2816207fc3, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: f793de227f9c5594c8d78a60f5ea40d6, type: 3}
+      sprite: {fileID: 21300000, guid: 239d7c61e0a32b944b5ab1fc544adcdd, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 7e7938a0f6f5196458c55ddedd63549c, type: 3}
+      sprite: {fileID: 21300000, guid: 09dd2e1ab8d88554d954a7981ec50e7e, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: ca36326aafe449e468ca20ab7c05e9b2, type: 3}
+      sprite: {fileID: 21300000, guid: cc7835121b6debc4c9a708b5f56e23fa, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: defba0386e258ed44b17a5c4a64ea4ed, type: 3}
+      sprite: {fileID: 21300000, guid: eb5cba6f45aea34448993d9126b0e27a, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 333.9136
-    powerScoreAtMaxLevel: 1119.272
+    powerScore: 453.78183
+    powerScoreAtMaxLevel: 1200.3956
     powerScoreBreakdown:
-      offense: 289.18442
-      defense: 55.80771
-      energy: 60.932747
-      mobility: 29.462162
-      capacity: 115.94295
-      firePower: 16.268028
-      bulletSpeed: 72
-      fireRate: 19.916378
+      offense: 195.52719
+      defense: 33.229256
+      energy: 261.28116
+      mobility: 55.64054
+      capacity: 58.691475
+      firePower: 9.6394205
+      bulletSpeed: 48
+      fireRate: 15.887777
+      rammingPower: 2
+      healthCap: 32.08342
+      healthRegen: 1.1458365
+      energyCap: 251.3956
+      energyRegen: 9.885547
+      moveSpeed: 10.000001
+      turnSpeed: 32.94054
+      gemCap: 46.95318
+      peopleCap: 11.738295
+    componentMass: 15.395744
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_21
+    upgradeTreeShipName: Tortoise
+    prefab: {fileID: 1151609033993864, guid: db2c3746e763e5d4ab1991a13f2824a6, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 7eeb64accc9aae54d975999f16cd59c9, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 3c0b006d1e96d4a49996d3543fcf5525, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: a6ad4b2e12bb6a746a4e71644f81790c, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 7cc8118669eef80449fa8d0084437714, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 7eeb64accc9aae54d975999f16cd59c9, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 3c0b006d1e96d4a49996d3543fcf5525, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: a6ad4b2e12bb6a746a4e71644f81790c, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 7cc8118669eef80449fa8d0084437714, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 461.08502
+    powerScoreAtMaxLevel: 1122.1437
+    powerScoreBreakdown:
+      offense: 97.00025
+      defense: 62.17166
+      energy: 182.65588
+      mobility: 40.667572
+      capacity: 161.05086
+      firePower: 6.039051
+      bulletSpeed: 24
+      fireRate: 5.961201
       rammingPower: 1
-      healthCap: 53.883305
-      healthRegen: 1.9244041
-      energyCap: 59.13537
-      energyRegen: 1.7973793
-      moveSpeed: 8.8
-      turnSpeed: 4.1621623
-      gemCap: 92.75436
-      peopleCap: 23.18859
-    componentMass: 15.590564
+      healthCap: 60.02781
+      healthRegen: 2.1438508
+      energyCap: 171.38692
+      energyRegen: 11.268959
+      moveSpeed: 12.800002
+      turnSpeed: 12.367567
+      gemCap: 128.84068
+      peopleCap: 32.21017
+    componentMass: 17.532612
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_04
+    upgradeTreeShipName: Whale
+    prefab: {fileID: 1413902348143792, guid: 5b4fa90573fc25a459c6e97c555eb6c9, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 2f781a70c1297134693cdcb049a760df, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 5c0b631a637524e4d898f28f3ab37f42, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: e19b9e6139400074ab86052de8699721, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: d89347a1fcac36d449b19f7870b0302e, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 5d3293e6e6293414b866f6dd93f3e4b2, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 2f781a70c1297134693cdcb049a760df, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 5c0b631a637524e4d898f28f3ab37f42, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: e19b9e6139400074ab86052de8699721, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: d89347a1fcac36d449b19f7870b0302e, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 513.63245
+    powerScoreAtMaxLevel: 1314.9061
+    powerScoreBreakdown:
+      offense: 193.00021
+      defense: 37.285713
+      energy: 307.28003
+      mobility: 20.316217
+      capacity: 100
+      firePower: 12.050525
+      bulletSpeed: 48
+      fireRate: 11.949686
+      rammingPower: 1
+      healthCap: 36
+      healthRegen: 1.2857144
+      energyCap: 291.80002
+      energyRegen: 15.480001
+      moveSpeed: 8.6
+      turnSpeed: 0.41621622
+      gemCap: 80
+      peopleCap: 20
+    componentMass: 11.456842
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_17
     upgradeTreeShipName: Thumper
@@ -2189,27 +1667,87 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: a18ea5542319bcd4697389d1757019c1, type: 3}
     minHomePlanetLevel: 5
-    powerScore: 313.0732
-    powerScoreAtMaxLevel: 972.5844
+    powerScore: 512.6511
+    powerScoreAtMaxLevel: 1331.5334
     powerScoreBreakdown:
       offense: 195.12022
-      defense: 45.794113
-      energy: 49.86544
-      mobility: 98.2
+      defense: 45.794117
+      energy: 261.28116
+      mobility: 78.36217
       capacity: 80.16315
       firePower: 12.050528
       bulletSpeed: 48
       fireRate: 11.949699
       rammingPower: 3.12
-      healthCap: 44.215004
+      healthCap: 44.215008
       healthRegen: 1.5791075
-      energyCap: 46.270695
-      energyRegen: 3.5947437
-      moveSpeed: 11.2
-      turnSpeed: 66
+      energyCap: 251.3956
+      energyRegen: 9.885547
+      moveSpeed: 10.600001
+      turnSpeed: 54.76216
       gemCap: 64.130516
       peopleCap: 16.032629
     componentMass: 21.034119
+    lockedInUpgradeTree: 0
+  - chassisId: AstroEagle_11
+    upgradeTreeShipName: Squid
+    prefab: {fileID: 2830926078676568530, guid: 6f6d28f63f07edc47af0eb9b9247f647, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 34bd97f3a6826854ba3b18b170094268, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: b64383e5d6360c14fa46d87c133e30d2, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 3005c71f05284494f89fec28f1ee42af, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 141bc613c1c6cee4986bfa32f12428ee, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
+    teamTheatricalMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: d852f0ca99385e34084c77e932b82355, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 34bd97f3a6826854ba3b18b170094268, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: b64383e5d6360c14fa46d87c133e30d2, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 3005c71f05284494f89fec28f1ee42af, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 141bc613c1c6cee4986bfa32f12428ee, type: 3}
+    minHomePlanetLevel: 5
+    powerScore: 483.52246
+    powerScoreAtMaxLevel: 1266.3789
+    powerScoreBreakdown:
+      offense: 195.12
+      defense: 59.15545
+      energy: 254
+      mobility: 41.721622
+      capacity: 79.945404
+      firePower: 12
+      bulletSpeed: 48
+      fireRate: 12
+      rammingPower: 3.12
+      healthCap: 57.115604
+      healthRegen: 2.039843
+      energyCap: 245
+      energyRegen: 9
+      moveSpeed: 8.6
+      turnSpeed: 21.82162
+      gemCap: 63.95632
+      peopleCap: 15.98908
+    componentMass: 17.99454
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_12
     upgradeTreeShipName: Eagle
@@ -2249,24 +1787,24 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 45f089a901dedbf4c94bffe2d1c1ea38, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 277.8886
-    powerScoreAtMaxLevel: 991.2353
+    powerScore: 484.6071
+    powerScoreAtMaxLevel: 1403.2609
     powerScoreBreakdown:
       offense: 198.08458
-      defense: 58.86853
-      energy: 50.522495
-      mobility: 59.62973
+      defense: 58.868534
+      energy: 265.13284
+      mobility: 44.93784
       capacity: 71.15701
       firePower: 9.21085
       bulletSpeed: 48
       fireRate: 15.633736
       rammingPower: 5.24
-      healthCap: 56.83858
+      healthCap: 56.838585
       healthRegen: 2.0299497
-      energyCap: 46.757404
-      energyRegen: 3.765092
-      moveSpeed: 10.4
-      turnSpeed: 29.72973
+      energyCap: 254.77885
+      energyRegen: 10.353995
+      moveSpeed: 10.000001
+      turnSpeed: 22.237837
       gemCap: 56.925613
       peopleCap: 14.231403
     componentMass: 20.322084
@@ -2309,13 +1847,13 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 4922b732c4c3d8a4fa8e07ef8208f50a, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 455.88025
-    powerScoreAtMaxLevel: 1415.8103
+    powerScore: 662.89355
+    powerScoreAtMaxLevel: 1836.7786
     powerScoreBreakdown:
       offense: 193.00021
       defense: 79.23214
-      energy: 42.932716
-      mobility: 40.164864
+      energy: 253.89195
+      mobility: 31.018919
       capacity: 250
       firePower: 12.050525
       bulletSpeed: 48
@@ -2323,10 +1861,10 @@ MonoBehaviour:
       rammingPower: 1
       healthCap: 76.5
       healthRegen: 2.732143
-      energyCap: 41.135345
-      energyRegen: 1.7973719
-      moveSpeed: 8.8
-      turnSpeed: 14.864864
+      energyCap: 244.90509
+      energyRegen: 8.98686
+      moveSpeed: 8.6
+      turnSpeed: 11.118918
       gemCap: 200
       peopleCap: 50
     componentMass: 14.013922
@@ -2369,24 +1907,24 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c750136a4b942fe4e91c2429d2342dc4, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 412.20328
-    powerScoreAtMaxLevel: 1329.8593
+    powerScore: 610.05835
+    powerScoreAtMaxLevel: 1706.4651
     powerScoreBreakdown:
       offense: 195.15976
       defense: 77.3437
-      energy: 64.26268
-      mobility: 66.451355
+      energy: 277.90155
+      mobility: 40.667572
       capacity: 169.13681
       firePower: 12.508731
       bulletSpeed: 48
       fireRate: 11.531033
       rammingPower: 3.12
       healthCap: 74.676674
-      healthRegen: 2.6670244
-      energyCap: 56.935318
-      energyRegen: 7.327361
-      moveSpeed: 13.6
-      turnSpeed: 27.351353
+      healthRegen: 2.6670241
+      energyCap: 265.9946
+      energyRegen: 11.906946
+      moveSpeed: 12.800002
+      turnSpeed: 12.367567
       gemCap: 135.30945
       peopleCap: 33.827362
     componentMass: 23.518192
@@ -2429,87 +1967,87 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: c2101fd8fc62ad940a772d7906e43060, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 408.34763
-    powerScoreAtMaxLevel: 1327.9717
+    powerScore: 597.5349
+    powerScoreAtMaxLevel: 1687.4133
     powerScoreBreakdown:
       offense: 197.4574
-      defense: 77.31459
-      energy: 63.95111
-      mobility: 68.82973
-      capacity: 165.8774
+      defense: 77.3146
+      energy: 261.83023
+      mobility: 49.73784
+      capacity: 165.87741
       firePower: 9.874802
       bulletSpeed: 48
       fireRate: 14.582591
       rammingPower: 5
-      healthCap: 74.64857
-      healthRegen: 2.666021
-      energyCap: 56.70453
-      energyRegen: 7.246584
-      moveSpeed: 13.6
-      turnSpeed: 29.72973
-      gemCap: 132.70192
-      peopleCap: 33.17548
+      healthCap: 74.648575
+      healthRegen: 2.6660209
+      energyCap: 251.9433
+      energyRegen: 9.886931
+      moveSpeed: 12.400001
+      turnSpeed: 22.237837
+      gemCap: 132.70193
+      peopleCap: 33.175484
     componentMass: 21.87723
     lockedInUpgradeTree: 0
-  - chassisId: AstroEagle_21
-    upgradeTreeShipName: Tortoise
-    prefab: {fileID: 1151609033993864, guid: db2c3746e763e5d4ab1991a13f2824a6, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
+  - chassisId: AstroEagle_16
+    upgradeTreeShipName: Spider
+    prefab: {fileID: 1277677898927696, guid: 8c665a2ef03a84b40a1b7d18a0993504, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
+      sprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 7eeb64accc9aae54d975999f16cd59c9, type: 3}
+      sprite: {fileID: 21300000, guid: f793de227f9c5594c8d78a60f5ea40d6, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 3c0b006d1e96d4a49996d3543fcf5525, type: 3}
+      sprite: {fileID: 21300000, guid: 7e7938a0f6f5196458c55ddedd63549c, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: a6ad4b2e12bb6a746a4e71644f81790c, type: 3}
+      sprite: {fileID: 21300000, guid: ca36326aafe449e468ca20ab7c05e9b2, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 7cc8118669eef80449fa8d0084437714, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
+      sprite: {fileID: 21300000, guid: defba0386e258ed44b17a5c4a64ea4ed, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
     teamTheatricalMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: d075d6c450ff7094987376a6bfe05c9b, type: 3}
+      sprite: {fileID: 21300000, guid: 2c03d73c4c701644696ed4421b739433, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 7eeb64accc9aae54d975999f16cd59c9, type: 3}
+      sprite: {fileID: 21300000, guid: f793de227f9c5594c8d78a60f5ea40d6, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 3c0b006d1e96d4a49996d3543fcf5525, type: 3}
+      sprite: {fileID: 21300000, guid: 7e7938a0f6f5196458c55ddedd63549c, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: a6ad4b2e12bb6a746a4e71644f81790c, type: 3}
+      sprite: {fileID: 21300000, guid: ca36326aafe449e468ca20ab7c05e9b2, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 7cc8118669eef80449fa8d0084437714, type: 3}
+      sprite: {fileID: 21300000, guid: defba0386e258ed44b17a5c4a64ea4ed, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 337.14346
-    powerScoreAtMaxLevel: 1017.33984
+    powerScore: 612.9272
+    powerScoreAtMaxLevel: 1806.8292
     powerScoreBreakdown:
-      offense: 97.00025
-      defense: 62.171665
-      energy: 42.930542
-      mobility: 66.451355
-      capacity: 161.05086
-      firePower: 6.039051
-      bulletSpeed: 24
-      fireRate: 5.961201
+      offense: 289.18442
+      defense: 55.807716
+      energy: 343.89227
+      mobility: 20.316217
+      capacity: 115.942955
+      firePower: 16.268028
+      bulletSpeed: 72
+      fireRate: 19.916378
       rammingPower: 1
-      healthCap: 60.027813
-      healthRegen: 2.1438508
-      energyCap: 36.467068
-      energyRegen: 6.463474
-      moveSpeed: 13.6
-      turnSpeed: 27.351353
-      gemCap: 128.84068
-      peopleCap: 32.21017
-    componentMass: 17.532612
+      healthCap: 53.883312
+      healthRegen: 1.9244041
+      energyCap: 334.90536
+      energyRegen: 8.9868965
+      moveSpeed: 8.6
+      turnSpeed: 0.41621622
+      gemCap: 92.754364
+      peopleCap: 23.188591
+    componentMass: 15.590564
     lockedInUpgradeTree: 0
   - chassisId: AstroEagle_20
     upgradeTreeShipName: Bee
@@ -2549,26 +2087,26 @@ MonoBehaviour:
       team: 5
       sprite: {fileID: 21300000, guid: 60a427a4c1251ba4b8272743a47030b1, type: 3}
     minHomePlanetLevel: 6
-    powerScore: 378.05078
-    powerScoreAtMaxLevel: 1263.782
+    powerScore: 572.9558
+    powerScoreAtMaxLevel: 1617.1232
     powerScoreBreakdown:
       offense: 197.45494
-      defense: 68.52566
-      energy: 74.27156
-      mobility: 94.678375
-      capacity: 113.33519
+      defense: 68.525665
+      energy: 293.25226
+      mobility: 56.402702
+      capacity: 113.3352
       firePower: 10.740004
       bulletSpeed: 48
       fireRate: 13.594936
       rammingPower: 5.12
-      healthCap: 66.162704
+      healthCap: 66.16271
       healthRegen: 2.3629541
-      energyCap: 64.349304
-      energyRegen: 9.9222555
-      moveSpeed: 16.8
-      turnSpeed: 46.37838
-      gemCap: 90.66815
-      peopleCap: 22.667038
+      energyCap: 279.52438
+      energyRegen: 13.727871
+      moveSpeed: 15.200003
+      turnSpeed: 23.902702
+      gemCap: 90.66816
+      peopleCap: 22.66704
     componentMass: 28.411789
     lockedInUpgradeTree: 0
   teamMaterials:
@@ -2595,5 +2133,5 @@ MonoBehaviour:
   - variantName: 
     team: 5
     materials: []
-  upgradeCardDeck: {fileID: 11400000, guid: 3c3b2eec102a55445a25ade9df76aa70, type: 2}
+  upgradeCardDeck: {fileID: 0}
   TotalComponentMass: 12.895858

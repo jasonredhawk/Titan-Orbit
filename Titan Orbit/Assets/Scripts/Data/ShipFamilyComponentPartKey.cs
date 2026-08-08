@@ -174,11 +174,32 @@ namespace TitanOrbit.Data
             return AliasToCanonical.TryGetValue(s, out string alias) ? alias : s;
         }
 
-        /// <summary>Default stat categories from part keywords when scanning or migrating component entries.</summary>
+        /// <summary>
+        /// Default stat categories from a component id (resolves part type via keywords / aliases).
+        /// Prefer <see cref="InferDefaultStatCategoriesForPartType"/> when the ProfileSet mapping
+        /// already resolved the part type — that avoids mis-classifying ids like "Part_1".
+        /// </summary>
         public static List<ShipComponentStatCategory> InferDefaultStatCategories(string componentId)
         {
             string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
             partType = ShipFamilyPartTypes.Normalize(partType, componentId);
+            return InferDefaultStatCategoriesForPartType(partType, componentId);
+        }
+
+        /// <summary>
+        /// Default stat categories for an already-resolved Part Profile group
+        /// (Engine, Wing, Weapon Bullet, …). Uses <paramref name="componentId"/> only for
+        /// engine-vs-thruster name heuristics when the type label is ambiguous.
+        /// </summary>
+        /// <param name="partType">Canonical or legacy part type from ProfileSet / Scan.</param>
+        /// <param name="componentId">Optional mount id for Engine vs Thruster name checks.</param>
+        public static List<ShipComponentStatCategory> InferDefaultStatCategoriesForPartType(
+            string partType,
+            string componentId = null)
+        {
+            partType = ShipFamilyPartTypes.Normalize(
+                string.IsNullOrEmpty(partType) ? string.Empty : partType,
+                componentId);
 
             if (string.Equals(partType, ShipFamilyPartTypes.Cockpit, StringComparison.OrdinalIgnoreCase))
             {
@@ -193,7 +214,10 @@ namespace TitanOrbit.Data
             // [TITAN-ORBIT] Engines = Movement + Energy (power plant). Thrusters = Movement only
             // (move/accel/turn fields). Tail/Fin = Movement (turn fields only).
             if (ShipFamilyPartTypes.IsEngineProfile(partType)
-                || ShipFamilyPartTypes.IsEngineLikeName(componentId))
+                || (!string.IsNullOrEmpty(componentId) && ShipFamilyPartTypes.IsEngineLikeName(componentId)
+                    && !ShipFamilyPartTypes.IsThrusterProfile(partType)
+                    && !ShipFamilyPartTypes.IsTurn(partType)
+                    && !ShipFamilyPartTypes.IsWeapon(partType)))
             {
                 return new List<ShipComponentStatCategory>
                 {
@@ -203,9 +227,9 @@ namespace TitanOrbit.Data
             }
 
             if (ShipFamilyPartTypes.IsThrusterProfile(partType)
-                || ShipFamilyPartTypes.IsThrusterLikeName(componentId)
                 || ShipFamilyPartTypes.IsPropulsion(partType)
-                || ShipFamilyPartTypes.IsTurn(partType))
+                || ShipFamilyPartTypes.IsTurn(partType)
+                || (!string.IsNullOrEmpty(componentId) && ShipFamilyPartTypes.IsThrusterLikeName(componentId)))
             {
                 return new List<ShipComponentStatCategory> { ShipComponentStatCategory.Movement };
             }

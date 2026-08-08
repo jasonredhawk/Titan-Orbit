@@ -128,7 +128,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Appends moon-store-purchased components onto a prefab sum, then re-runs shared aggregation.
-        /// Propulsion parts use primary Move/Accel + 10% of primary per extra (not naive full add).
+        /// Stack pools use primary ×1 + extras × extraStackWeight of their own stats.
         /// </summary>
         public static SumResult AppendExtraComponentsAndAggregate(
             SumResult prefabSum,
@@ -170,17 +170,18 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Shared post-sum rules: propulsion pool, weapon projectile speed max, fire power/rate notes, fallbacks.
+        /// Shared post-sum rules: extra-stack pools, weapon projectile speed max, fire power/rate notes, fallbacks.
         /// </summary>
         public static void ApplySharedAggregationRules(ref SumResult result, ShipFamilyDefinition family, int shipLevel)
         {
-            // --- Propulsion + weapon aggregation ---
-            // [TITAN-ORBIT] Engines/thrusters share one move-speed pool — replace naive sum here.
-            result.TotalStats = ShipPropulsionAggregation.ApplyPropulsionToSummedStats(
-                result.TotalStats,
+            // --- Extra stack weight pools (primary ×1 + extras × weight) ---
+            // [TITAN-ORBIT] Rebuilds hull totals from per-part lists. Engines+Thrusters share
+            // Propulsion; other types pool separately. Replaces naive field-wise Add for stackables.
+            _ = shipLevel;
+            result.TotalStats = ShipComponentStackAggregation.AggregateAllPools(
                 result.MatchedComponentIds,
-                result.PerComponentStats,
-                shipLevel);
+                result.PerComponentStats);
+
             // [TITAN-ORBIT] Bullet speed is per-projectile — max across weapons, never N× sum.
             result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponProjectileSpeedToSummedStats(
                 result.TotalStats,

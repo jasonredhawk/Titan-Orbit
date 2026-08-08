@@ -61,6 +61,8 @@ namespace TitanOrbit.Data
                 tractorBeamPowerPerAbilityLevel = a.tractorBeamPowerPerAbilityLevel + b.tractorBeamPowerPerAbilityLevel,
                 maxPeople = a.maxPeople + b.maxPeople,
                 maxPeoplePerAbilityLevel = a.maxPeoplePerAbilityLevel + b.maxPeoplePerAbilityLevel,
+                // [TITAN-ORBIT] Weight is per-part authoring — do not sum into hull totals.
+                extraStackWeight = 0f,
             };
         }
 
@@ -416,6 +418,7 @@ namespace TitanOrbit.Data
                     tractorBeamPowerPerAbilityLevel = stats.tractorBeamPowerPerAbilityLevel,
                     maxPeople = stats.maxPeople,
                     maxPeoplePerAbilityLevel = stats.maxPeoplePerAbilityLevel,
+                    extraStackWeight = stats.extraStackWeight,
                 };
             }
 
@@ -425,6 +428,7 @@ namespace TitanOrbit.Data
             scaled.turnSpeedPerAbilityLevel = stats.turnSpeedPerAbilityLevel;
             scaled.rammingPower = stats.rammingPower;
             scaled.rammingPowerPerAbilityLevel = stats.rammingPowerPerAbilityLevel;
+            scaled.extraStackWeight = stats.extraStackWeight;
             if (IsPropulsionComponent(componentId))
             {
                 scaled.moveSpeed = stats.moveSpeed;
@@ -440,7 +444,7 @@ namespace TitanOrbit.Data
             return scaled;
         }
 
-        /// <summary>Multiplies every stat field by <paramref name="factor"/>.</summary>
+        /// <summary>Multiplies every <b>numeric</b> stat field by <paramref name="factor"/> (not extraStackWeight).</summary>
         public static ShipComponentAbilityStats Multiply(ShipComponentAbilityStats s, float factor)
         {
             // --- Multiply ---
@@ -482,6 +486,8 @@ namespace TitanOrbit.Data
                 tractorBeamPowerPerAbilityLevel = s.tractorBeamPowerPerAbilityLevel * factor,
                 maxPeople = s.maxPeople * factor,
                 maxPeoplePerAbilityLevel = s.maxPeoplePerAbilityLevel * factor,
+                // [TITAN-ORBIT] Stack weight is a fraction, not a scaled ability number.
+                extraStackWeight = s.extraStackWeight,
             };
         }
     }
