@@ -25,6 +25,8 @@ namespace TitanOrbit.UI
     /// and paint three purchase states: Ready (affordable), Locked (not enough gems), Maxed.
     /// Both rows share dark-glass + category-accent chrome (space-gamer HUD). Chip hover opens
     /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> when the STATS row is on.
+    /// Chip values and tip bodies are rebuilt only when the ship / ability snapshot key changes
+    /// (new ship or ability purchase) — never every frame for live HP/speed/cargo.
     /// </para>
     /// Strip layout: recomputed only when screen / canvas / minimap size changes; positions are
     /// snapped to whole canvas units so windowed (non-1:1) views do not shimmer.
@@ -97,12 +99,8 @@ namespace TitanOrbit.UI
         [SerializeField, Range(0f, 1f)] private float lockedDim = 0.55f;
         [Tooltip("Cost digits when LOCKED — amber “can’t afford” signal.")]
         [SerializeField] private Color lockedCostColor = new Color(0.72f, 0.55f, 0.35f, 0.85f);
-        [Tooltip("Gold chrome when the ability is fully MAXED for this ship level.")]
-        [SerializeField] private Color maxedAccentColor = new Color(0.95f, 0.82f, 0.35f, 0.95f);
-        [Tooltip("Title tint when MAXED.")]
-        [SerializeField] private Color maxedTitleColor = new Color(0.95f, 0.88f, 0.55f, 1f);
-        [Tooltip("MAX label colour.")]
-        [SerializeField] private Color maxedCostColor = new Color(1f, 0.9f, 0.45f, 1f);
+        [Tooltip("How much white is mixed into the ability colour for MAXED title / MAX label (proud completed chrome).")]
+        [SerializeField, Range(0f, 0.55f)] private float maxedTitleBrighten = 0.32f;
 
         [Header("Cost icon")]
         [Tooltip("Shown next to the gem cost on each bottom upgrade slot. If empty, falls back to WorldStatLabelIcons.Gem.")]
@@ -176,6 +174,12 @@ namespace TitanOrbit.UI
         private bool _triedSpeedometerLookup;
         private float _lastChipBandH = -1f;
         private bool _lastStatsChipsVisible = true;
+
+        /// <summary>
+        /// Fingerprint of ship identity + ability levels. When this changes we rebuild chips / tips.
+        /// [TITAN-ORBIT] Avoids StringBuilder + TMP ForceMeshUpdate every Update (Profiler GC spike).
+        /// </summary>
+        private int _statsSnapshotKey = int.MinValue;
 
         // --- STATS toggle (shows/hides chip row + hover tips) ---
         private RectTransform _statsToggleRect;
@@ -705,6 +709,11 @@ namespace TitanOrbit.UI
                 if (_abilityTipPanel != null && _abilityTipPanel.activeSelf)
                     _abilityTipPanel.SetActive(false);
             }
+            else
+            {
+                // Turning STATS back on — force one chip rebuild on the next Update.
+                _statsSnapshotKey = int.MinValue;
+            }
 
             if (_uiBuilt)
                 RefreshUpgradeStripLayout(force: true);
@@ -821,14 +830,19 @@ namespace TitanOrbit.UI
             switch (state)
             {
                 case UpgradeSlotVisualState.Maxed:
-                    // Gold “completed” chrome — proud, not greyed-out.
-                    accent = maxedAccentColor;
-                    fillCol = Color.Lerp(glassFillColor, maxedAccentColor, 0.22f);
+                    // --- Completed chrome in this ability’s own colour ---
+                    // Same proud full-tint treatment as the old gold MAXED look (fill wash, title,
+                    // key, MAX label, ticks) — but Fire Power stays orange, Move Speed cyan, etc.
+                    accent = category;
+                    accent.a = 0.95f;
+                    fillCol = Color.Lerp(glassFillColor, category, 0.22f);
                     fillCol.a = glassFillColor.a;
-                    titleCol = maxedTitleColor;
-                    keyCol = new Color(maxedAccentColor.r, maxedAccentColor.g, maxedAccentColor.b, 0.85f);
-                    costCol = maxedCostColor;
-                    gemCol = maxedCostColor;
+                    // Slightly brighter than the rail so title / MAX read clearly on dark glass.
+                    titleCol = Color.Lerp(category, Color.white, maxedTitleBrighten);
+                    titleCol.a = 1f;
+                    keyCol = new Color(category.r, category.g, category.b, 0.9f);
+                    costCol = titleCol;
+                    gemCol = titleCol;
                     interactable = false;
                     break;
 
@@ -883,24 +897,35 @@ namespace TitanOrbit.UI
             if (btn != null && btn.interactable != interactable)
                 btn.interactable = interactable;
 
-            // Tick marks: lit = category (Ready/Locked) or gold (Maxed); empty stays dim.
+            // Tick marks: lit ticks match the slot accent (category colour when MAXED).
             ApplyTickStateColors(index, state, category);
         }
 
-        /// <summary>Retints upgrade ticks when the slot state changes (esp. MAXED → gold lit ticks).</summary>
+        /// <summary>
+        /// Retints upgrade ticks when the slot state changes.
+        /// MAXED lit ticks use that ability’s category colour (same proud chrome as the button).
+        /// </summary>
         void ApplyTickStateColors(int index, UpgradeSlotVisualState state, Color category)
         {
             if (tickContainers == null || index < 0 || index >= tickContainers.Length || tickContainers[index] == null)
                 return;
 
-            Color lit = state == UpgradeSlotVisualState.Maxed
-                ? maxedAccentColor
-                : new Color(1f, 1f, 0.9f, 1f);
-            // Slight category wash on Ready lit ticks so they match the button accent.
-            if (state == UpgradeSlotVisualState.Ready)
-                lit = Color.Lerp(lit, category, 0.35f);
-            else if (state == UpgradeSlotVisualState.Locked)
-                lit = Color.Lerp(lit, new Color(0.45f, 0.48f, 0.52f, 1f), lockedDim);
+            Color lit;
+            if (state == UpgradeSlotVisualState.Maxed)
+            {
+                // Full ability colour — matches title / rail / MAX label on the maxed button.
+                lit = category;
+                lit.a = 1f;
+            }
+            else
+            {
+                lit = new Color(1f, 1f, 0.9f, 1f);
+                // Slight category wash on Ready lit ticks so they match the button accent.
+                if (state == UpgradeSlotVisualState.Ready)
+                    lit = Color.Lerp(lit, category, 0.35f);
+                else if (state == UpgradeSlotVisualState.Locked)
+                    lit = Color.Lerp(lit, new Color(0.45f, 0.48f, 0.52f, 1f), lockedDim);
+            }
 
             Color empty = state == UpgradeSlotVisualState.Locked
                 ? new Color(0.22f, 0.24f, 0.28f, 0.55f)
@@ -1003,12 +1028,44 @@ namespace TitanOrbit.UI
             ShipStatTooltipChrome.ApplyAccent(
                 in _abilityTipChrome,
                 ShipStatTooltipChrome.AccentForAbilityIndex(abilityIndex));
+            // Build once on enter — not every Update (LIVE vitals removed; body is static until upgrade).
             RefreshAbilityTipContent();
             PositionAbilityTipPanel(abilityIndex);
             // Draw above leaderboard / other HUD so bars and names cannot bleed through.
             _abilityTipPanel.transform.SetAsLastSibling();
             if (!_abilityTipPanel.activeSelf)
                 _abilityTipPanel.SetActive(true);
+        }
+
+        /// <summary>
+        /// Hash of ship chassis identity + the ten ability levels.
+        /// Used to dirty-check chip/tip rebuilds without allocating.
+        /// </summary>
+        /// <param name="ship">Local ship vitals (level / team / branch / family).</param>
+        /// <param name="attrs">Ghost attribute upgrade levels.</param>
+        /// <returns>Stable fingerprint for the current loadout matrix.</returns>
+        static int ComputeStatsSnapshotKey(in ShipState ship, in ShipAttributeUpgradeState attrs)
+        {
+            // [STANDARD] Unchecked hash combine — collisions are rare; worst case is one extra rebuild.
+            unchecked
+            {
+                int h = 17;
+                h = h * 31 + ship.ShipLevel;
+                h = h * 31 + (int)ship.Team;
+                h = h * 31 + ship.BranchIndex;
+                h = h * 31 + ship.ShipFamilyConfigIndex;
+                h = h * 31 + attrs.FirePower;
+                h = h * 31 + attrs.BulletSpeed;
+                h = h * 31 + attrs.MaxHealth;
+                h = h * 31 + attrs.HealthRegen;
+                h = h * 31 + attrs.EnergyCapacity;
+                h = h * 31 + attrs.EnergyRegen;
+                h = h * 31 + attrs.MovementSpeed;
+                h = h * 31 + attrs.RotationSpeed;
+                h = h * 31 + attrs.GemCapacity;
+                h = h * 31 + attrs.PeopleCapacity;
+                return h;
+            }
         }
 
         /// <summary>Pointer left a chip — defer hide so neighboring chips can cancel.</summary>
@@ -1032,6 +1089,10 @@ namespace TitanOrbit.UI
                 _abilityTipPanel.SetActive(false);
         }
 
+        /// <summary>
+        /// Rebuilds the open ability tip from a static capacity snapshot.
+        /// Call on pointer-enter or when <see cref="_statsSnapshotKey"/> changes — not every Update.
+        /// </summary>
         void RefreshAbilityTipContent()
         {
             if (_abilityTipLabel == null || !_activeAbilityTipIndex.HasValue)
@@ -1141,6 +1202,12 @@ namespace TitanOrbit.UI
             _abilityTipRect.anchoredPosition = new Vector2(preferredX, tipBottom);
         }
 
+        /// <summary>
+        /// Builds a static chip/tip snapshot from the current ship + ability levels.
+        /// Always re-applies attribute multipliers locally so an upgrade never sticks to the
+        /// previous speedometer frame. Parts / hull size / move-step preview may come from the
+        /// speedometer when available (expensive prefab cache).
+        /// </summary>
         bool TryResolveChipLiveContext(
             out ShipSpeedometerStatTooltips.PartCache parts,
             out ShipSpeedometerStatTooltips.LiveContext live,
@@ -1149,7 +1216,7 @@ namespace TitanOrbit.UI
             parts = default;
             live = default;
             attrs = default;
-            if (!TryGetUpgradeHudSnapshot(out _, out attrs))
+            if (!TryGetUpgradeHudSnapshot(out ShipState ship, out attrs))
                 return false;
 
             if (!_triedSpeedometerLookup)
@@ -1158,27 +1225,44 @@ namespace TitanOrbit.UI
                 _cachedSpeedometer = Object.FindFirstObjectByType<ShipSpeedometerHUD>();
             }
 
+            // Optional shared parts + hull size from speedometer (not live flight vitals).
+            float componentSize = ShipMassLogic.MinMass;
+            float moveStepPreview = 0f;
+            ShipWeaponConfig weapon = default;
+            float ramRating = 0f;
+            float ramAst = 0f;
+            float ramSelf = 0f;
+            float barMax = 0f;
+            float odCap = 1f;
             if (_cachedSpeedometer != null
-                && _cachedSpeedometer.TryGetTooltipSharedState(out parts, out live))
-                return true;
+                && _cachedSpeedometer.TryGetTooltipSharedState(out parts, out var shared))
+            {
+                if (shared.ComponentSize > ShipMassLogic.MinMass)
+                    componentSize = shared.ComponentSize;
+                moveStepPreview = shared.MoveStepPreview;
+                weapon = shared.Weapon;
+                ramRating = shared.RamRating;
+                ramAst = shared.RamAsteroidDamage;
+                ramSelf = shared.RamSelfDamage;
+                barMax = shared.BarMaxSpeed;
+                odCap = shared.OverdriveCapacityMult;
+            }
 
-            // Fallback before speedometer paints: ship vitals + local mass tax so MS/TS chips
-            // still show post-tax cruise/turn instead of raw chassis.
+            // --- Fresh chassis + ability multipliers (authoritative for this snapshot) ---
             live = new ShipSpeedometerStatTooltips.LiveContext
             {
-                Ship = _cachedShip,
-                ChassisMaxSpeed = 0f,
-                ChassisAccel = 0f,
-                ChassisTurnDeg = 0f,
-                CruiseMaxSpeed = 0f,
-                TaxedAccel = 0f,
-                TaxedTurnDeg = 0f,
-                TotalMass = 0f,
+                Ship = ship,
+                Weapon = weapon,
+                MoveStepPreview = moveStepPreview,
+                RamRating = ramRating,
+                RamAsteroidDamage = ramAst,
+                RamSelfDamage = ramSelf,
+                BarMaxSpeed = barMax,
+                OverdriveCapacityMult = odCap,
+                ComponentSize = componentSize,
             };
 
-            // Best-effort effective stats from chassis id when available.
-            if (EcsGameBridge.TryGetLocalShipState(out ShipState ship)
-                && ShipStatApplyLogic.TryResolveChassisId(
+            if (ShipStatApplyLogic.TryResolveChassisId(
                     ship.Team,
                     ship.ShipLevel,
                     ship.BranchIndex,
@@ -1191,14 +1275,8 @@ namespace TitanOrbit.UI
                 live.EffectiveStats = baseStats;
                 live.ChassisMaxSpeed = baseStats.moveSpeed;
                 live.ChassisAccel = baseStats.accelerationCap;
-                // turnSpeed on ability stats may be definition units; speedometer converts when present.
                 live.ChassisTurnDeg = baseStats.turnSpeed;
-                live.Ship = ship;
 
-                // [TITAN-ORBIT] Hull size unknown until speedometer paints — tax cargo only so
-                // MS/TS still drop below chassis instead of showing pre-tax. Full ComponentSize
-                // arrives via TryGetTooltipSharedState on the next speedometer frame.
-                float componentSize = ShipMassLogic.MinMass;
                 ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
                     live.ChassisMaxSpeed,
                     live.ChassisAccel,
@@ -1210,8 +1288,19 @@ namespace TitanOrbit.UI
                 live.CruiseMaxSpeed = taxed.MaxSpeed;
                 live.TaxedAccel = taxed.EngineThrust;
                 live.TaxedTurnDeg = taxed.RotationSpeed;
-                live.ComponentSize = componentSize;
+                live.LiveMaxSpeed = taxed.MaxSpeed;
+
+                // If speedometer has not filled max-ram yet, estimate at full cruise here.
+                if (ramAst <= 0.0001f && baseStats.rammingPower > 0.01f)
+                {
+                    // Rating/mass/speed product matches tip language; exact server formula lives in
+                    // ShipComponentRammingSuggestions — speedometer fills this when its snapshot runs.
+                    live.RamRating = baseStats.rammingPower;
+                }
             }
+
+            if (moveStepPreview <= 0.0001f)
+                live.MoveStepPreview = Mathf.Max(0f, live.EffectiveStats.moveSpeedPerAbilityLevel);
 
             return true;
         }
@@ -1572,13 +1661,17 @@ namespace TitanOrbit.UI
             _lastCost = cost;
             _slotVisualsSeeded = true;
 
-            // --- Quick-stat chips (value + step + Lv) ---
-            RefreshChipValues(in ship, in attrs);
-
-            if (_activeAbilityTipIndex.HasValue)
+            // --- Static chip / tip matrix (only when ship or ability levels change) ---
+            // [TITAN-ORBIT] Former path rebuilt tip StringBuilders + ForceMeshUpdate every frame while
+            // hovering, and refreshed chips from live cruise/cargo — Profiler median ~580 KB GC/frame.
+            int snapshotKey = ComputeStatsSnapshotKey(in ship, in attrs);
+            if (snapshotKey != _statsSnapshotKey)
             {
-                RefreshAbilityTipContent();
-                PositionAbilityTipPanel(_activeAbilityTipIndex.Value);
+                _statsSnapshotKey = snapshotKey;
+                // Fresh attrs-applied snapshot (does not depend on speedometer LateUpdate order).
+                RefreshChipValues(in ship, in attrs);
+                if (_activeAbilityTipIndex.HasValue)
+                    RefreshAbilityTipContent();
             }
 
             FlushPendingAbilityTipHide();
@@ -1587,6 +1680,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Paints top chips only: current effective value and +amount from the next purchase.
         /// Bottom buttons keep the static ability name (no duplicated stats).
+        /// Call when the stats snapshot key changes (new ship / ability purchase), not every frame.
         /// </summary>
         void RefreshChipValues(in ShipState ship, in ShipAttributeUpgradeState attrs)
         {

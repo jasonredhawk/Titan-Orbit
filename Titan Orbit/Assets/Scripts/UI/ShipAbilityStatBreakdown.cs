@@ -11,7 +11,13 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Telemetry-style calculation cards for the ten bottom Ship Ability chips.
     /// Builds grouped part grids (N× same component) and walks parts → stack → ship tier →
-    /// ability purchases → live modifiers. Presentation-only — never writes ECS.
+    /// ability purchases → static capacity readouts (max cruise, max ram at full speed).
+    /// Presentation-only — never writes ECS.
+    /// <para>
+    /// [TITAN-ORBIT] Intentionally <b>not</b> live: no per-frame HP/energy/speed/cargo vitals.
+    /// <see cref="ShipAttributeUpgradeHUD"/> rebuilds these strings only when the ship changes
+    /// or an ability is purchased — StringBuilder + TMP mesh work every frame was a major FPS hit.
+    /// </para>
     /// <para>
     /// Rich text is shown inside <see cref="ShipStatTooltipChrome"/> (Shift sci-fi frame).
     /// Paired with <see cref="ShipAttributeUpgradeHUD"/> chips and
@@ -20,6 +26,11 @@ namespace TitanOrbit.UI
     /// </summary>
     public static class ShipAbilityStatBreakdown
     {
+        /// <summary>
+        /// Reused across tip rebuilds so purchase/hover does not allocate a fresh 1 KB builder
+        /// every call. [STANDARD] Not thread-safe — UI main thread only.
+        /// </summary>
+        static readonly StringBuilder s_BuildSb = new StringBuilder(1024);
         /// <summary>Which authored float on a part contributes to a chip primary.</summary>
         public enum StatField
         {
@@ -109,8 +120,8 @@ namespace TitanOrbit.UI
                     nextStep = NextTenPercentStep(value, abilityLv);
                     break;
                 case 6:
-                    // [TITAN-ORBIT] Chip shows live cruise after mass tax (+ territory), matching the
-                    // speedometer SPD ceiling when OVERDRIVE is off — not pre-tax chassis Move.
+                    // [TITAN-ORBIT] Static snapshot cruise (mass-taxed at last rebuild), not per-frame
+                    // flight speed. HUD rebuilds chips only on ship purchase / ability upgrade.
                     value = Mathf.Max(0f, live.CruiseMaxSpeed > 0.01f
                         ? live.CruiseMaxSpeed
                         : live.ChassisMaxSpeed);
@@ -121,7 +132,7 @@ namespace TitanOrbit.UI
                         nextStep = Mathf.Max(0f, eff.moveSpeedPerAbilityLevel);
                     break;
                 case 7:
-                    // [TITAN-ORBIT] Show post–mass-tax turn when available; +10% step still from chassis.
+                    // [TITAN-ORBIT] Static post–mass-tax turn from the same snapshot; +10% from chassis.
                     float chassisTurn = live.ChassisTurnDeg > 0.01f ? live.ChassisTurnDeg : eff.turnSpeed;
                     value = Mathf.Max(0f, live.TaxedTurnDeg > 0.01f ? live.TaxedTurnDeg : chassisTurn);
                     unitSuffix = "°/s";
@@ -153,14 +164,20 @@ namespace TitanOrbit.UI
             return pre * ShipAttributeUpgradeLogic.MultiplierPerLevel;
         }
 
-        /// <summary>Full TMP card for one ability index (0–9).</summary>
+        /// <summary>
+        /// Full TMP card for one ability index (0–9). Call only on hover-enter or when the
+        /// ship / ability snapshot key changes — not every Update.
+        /// </summary>
         public static string BuildForAbilityIndex(
             int abilityIndex,
             in ShipSpeedometerStatTooltips.PartCache parts,
             in ShipSpeedometerStatTooltips.LiveContext live,
             in ShipAttributeUpgradeState attrs)
         {
-            var sb = new StringBuilder(1024);
+            // --- Reuse builder (main-thread UI only) ---
+            StringBuilder sb = s_BuildSb;
+            sb.Clear();
+
             int lv = Mathf.Max(0, ShipAttributeUpgradeLogic.GetAttributeLevel(in attrs, abilityIndex));
             int maxLv = ShipAttributeUpgradeLogic.GetMaxUpgrades(Mathf.Max(1, live.Ship.ShipLevel));
             string title = abilityIndex >= 0 && abilityIndex < ShipAbilityCategoryColors.PowerBreakdownStatFullLabels.Length
@@ -184,19 +201,14 @@ namespace TitanOrbit.UI
                     AppendGroupedFieldGrid(sb, parts, StatField.BulletRange, "Range", useStackWeight: true);
                     break;
                 case 2:
+                    // Cap only — no live HP vitals (those changed every frame and forced TMP rebuilds).
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.HealthCap, "Health Cap", lv, live.EffectiveStats.healthCap);
-                    ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE", "7EC8FF");
-                    sb.Append("Live HP  ").Append(FResult(live.Ship.Health))
-                        .Append(" / ").Append(FResult(live.Ship.MaxHealth)).AppendLine();
                     break;
                 case 3:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.HealthRegen, "Health Regen", lv, live.EffectiveStats.healthRegen);
                     break;
                 case 4:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.EnergyCap, "Energy Cap", lv, live.EffectiveStats.energyCap);
-                    ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE", "7EC8FF");
-                    sb.Append("Live Energy  ").Append(FResult(live.Ship.CurrentEnergy))
-                        .Append(" / ").Append(FResult(live.Ship.MaxEnergy)).AppendLine();
                     break;
                 case 5:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.EnergyRegen, "Energy Regen", lv, live.EffectiveStats.energyRegen);
@@ -210,13 +222,9 @@ namespace TitanOrbit.UI
                     break;
                 case 8:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.MaxGems, "Max Gems", lv, live.EffectiveStats.maxGems);
-                    ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE", "7EC8FF");
-                    sb.Append("Live gems  ").Append(F0(live.Ship.CurrentGems)).AppendLine();
                     break;
                 case 9:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.MaxPeople, "Max People", lv, live.EffectiveStats.maxPeople);
-                    ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE", "7EC8FF");
-                    sb.Append("Live people  ").Append(F0(live.Ship.CurrentPeople)).AppendLine();
                     break;
                 default:
                     sb.AppendLine("<color=#888888>Unknown ability</color>");
@@ -587,11 +595,14 @@ namespace TitanOrbit.UI
             AppendGroupedFieldGrid(sb, parts, StatField.MoveSpeed, "Move", useStackWeight: true, sectionTitle: "MOVE PARTS");
             AppendGroupedFieldGrid(sb, parts, StatField.AccelerationCap, "Accel", useStackWeight: true, sectionTitle: "ACCEL PARTS");
 
-            // --- Mass tax: composition + drag on Move and Accel (replaces the old one-liner) ---
+            // --- Mass tax: composition + drag on Move and Accel (snapshot at last rebuild) ---
             ShipSpeedometerStatTooltips.AppendMassTaxEffectsBreakdown(
                 sb, in live, includeMove: true, includeAccel: true);
 
-            ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE FLIGHT", "7EC8FF");
+            // --- Capacity ceilings (static — no "now flying at X" vitals) ---
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "CAPACITY", "7EC8FF");
+            float cruise = live.CruiseMaxSpeed > 0.01f ? live.CruiseMaxSpeed : live.ChassisMaxSpeed;
+            sb.Append("Cruise max  ").Append(FResult(cruise)).AppendLine();
             if (live.OverdriveCapacityMult > 1.001f)
                 sb.Append("<color=#FFCC66>OVERDRIVE bar ").Append(FResult(live.BarMaxSpeed)).Append("</color>")
                     .AppendLine();
@@ -601,10 +612,11 @@ namespace TitanOrbit.UI
                 moveStep = Mathf.Max(0f, parts.Propulsion.moveSpeedPerAbilityLevel);
             sb.Append("Purchased  Lv").Append(abilityLv.ToString(CultureInfo.InvariantCulture));
             sb.Append(" x +").Append(FDetail(moveStep)).Append(" Move/buy").AppendLine();
-            sb.Append("Now  ").Append(FResult(live.CurrentSpeed))
-                .Append(" / ").Append(FResult(live.LiveMaxSpeed)).AppendLine();
         }
 
+        /// <summary>
+        /// Related weapon DPS + max ramming at full cruise (not current flight speed).
+        /// </summary>
         static void AppendRelatedFireExtras(
             StringBuilder sb,
             in ShipSpeedometerStatTooltips.PartCache parts,
@@ -617,20 +629,26 @@ namespace TitanOrbit.UI
             sb.Append("<color=#5B7A94>").Append(FResult(live.Weapon.FireRate)).Append("/s</color>").AppendLine();
 
             AppendGroupedFieldGrid(sb, parts, StatField.RammingPower, "RAM", useStackWeight: true, sectionTitle: "RAM PARTS");
-            sb.Append("RAM live  ").Append(FDetail(live.RamRating))
+
+            // [TITAN-ORBIT] Max impact at full cruise — RamAsteroidDamage on LiveContext is filled
+            // with that static estimate by ShipSpeedometerHUD (not current speed).
+            float impactSpeed = live.CruiseMaxSpeed > 0.01f ? live.CruiseMaxSpeed : live.ChassisMaxSpeed;
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "MAX IMPACT", "FFCC66");
+            sb.Append("At full cruise  ").Append(FDetail(impactSpeed)).Append("/s").AppendLine();
+            sb.Append("RAM  ").Append(FDetail(live.RamRating))
                 .Append(" x m").Append(FDetail(live.TotalMass))
-                .Append(" x v").Append(FDetail(live.CurrentSpeed))
                 .Append(" -> ast ").Append(FResult(live.RamAsteroidDamage))
                 .Append("  hull ").Append(FResult(live.RamSelfDamage)).AppendLine();
         }
 
+        /// <summary>Static mass-tax drag on turn (from the last chip/tip snapshot).</summary>
         static void AppendTurnMassTax(StringBuilder sb, in ShipSpeedometerStatTooltips.LiveContext live)
         {
             ShipCargoMobilitySettings settings = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             if (settings == null)
                 return;
             float drag = live.TotalMass * settings.turnWeightPerMass;
-            ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE", "7EC8FF");
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "MASS TAX", "C9A0FF");
             sb.Append("Mass turn drag  -").Append(FDetail(drag)).Append("/s").AppendLine();
         }
 

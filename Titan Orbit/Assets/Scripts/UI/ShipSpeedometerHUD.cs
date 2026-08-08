@@ -246,6 +246,12 @@ namespace TitanOrbit.UI
         string _lastTooltipBody = "";
 
         /// <summary>
+        /// Fingerprint for static tip / shared LiveContext rebuilds (ship + abilities + part cache).
+        /// [TITAN-ORBIT] Tip copy used to rebuild every LateUpdate while hovered — large GC/FPS hit.
+        /// </summary>
+        int _tooltipSnapshotKey = int.MinValue;
+
+        /// <summary>
         /// [UNITY] Awake — subscribe to GameManager so we can disable this component when the
         /// speedometer is off (Unity then skips LateUpdate entirely). Unsubscribe only in OnDestroy
         /// so setting <c>enabled = false</c> does not drop the listener we need to turn back on.
@@ -768,7 +774,10 @@ namespace TitanOrbit.UI
                 _tooltipPanel.SetActive(false);
         }
 
-        /// <summary>Rebuilds tooltip TMP from the active section + cached parts + live context.</summary>
+        /// <summary>
+        /// Rebuilds tooltip TMP from the active section + cached parts + static capacity context.
+        /// Call on hover-enter or when <see cref="_tooltipSnapshotKey"/> changes — not every LateUpdate.
+        /// </summary>
         void RefreshTooltipContent()
         {
             if (_tooltipLabel == null || !_activeTooltipSection.HasValue)
@@ -794,6 +803,40 @@ namespace TitanOrbit.UI
                     100f * HudLayoutScale,
                     _tooltipLabel.preferredHeight + _tooltipChrome.ExtraHeightPadding);
                 _tooltipRect.sizeDelta = new Vector2(tipW, tipH);
+            }
+        }
+
+        /// <summary>
+        /// Fingerprint for static tip / shared LiveContext rebuilds.
+        /// Changes when the player buys a ship, upgrades an ability, or swaps store parts.
+        /// </summary>
+        static int ComputeTooltipSnapshotKey(
+            in ShipState ship,
+            in ShipAttributeUpgradeState attrs,
+            int equipmentHash,
+            string chassisId)
+        {
+            unchecked
+            {
+                int h = 17;
+                h = h * 31 + ship.ShipLevel;
+                h = h * 31 + (int)ship.Team;
+                h = h * 31 + ship.BranchIndex;
+                h = h * 31 + ship.ShipFamilyConfigIndex;
+                h = h * 31 + attrs.FirePower;
+                h = h * 31 + attrs.BulletSpeed;
+                h = h * 31 + attrs.MaxHealth;
+                h = h * 31 + attrs.HealthRegen;
+                h = h * 31 + attrs.EnergyCapacity;
+                h = h * 31 + attrs.EnergyRegen;
+                h = h * 31 + attrs.MovementSpeed;
+                h = h * 31 + attrs.RotationSpeed;
+                h = h * 31 + attrs.GemCapacity;
+                h = h * 31 + attrs.PeopleCapacity;
+                h = h * 31 + equipmentHash;
+                // Chassis id — rare rebuild; GetHashCode is acceptable here.
+                h = h * 31 + (chassisId != null ? chassisId.GetHashCode() : 0);
+                return h;
             }
         }
 
@@ -1655,9 +1698,9 @@ namespace TitanOrbit.UI
                 ? motor.BrakeDeceleration
                 : ShipMassLogic.DefaultBrakeDeceleration);
 
-            // --- Rollover context (parts + live numbers) ---
+            // --- Static tip / ability-chip shared context (not every flight frame) ---
             // [TITAN-ORBIT] Part cache Instantiates the chassis prefab only when chassis / store gear changes.
-            // LiveContext updates every frame so an open tip stays in sync with bars.
+            // Tip bodies are capacity / max-impact snapshots — rebuild on ship/ability/parts dirty only.
             if (vizWorld != null && vizWorld.IsCreated && !string.IsNullOrEmpty(_cachedChassisId))
             {
                 ShipSpeedometerStatTooltips.TryRefreshPartCache(
@@ -1668,53 +1711,62 @@ namespace TitanOrbit.UI
                     ref _partCache);
             }
 
-            GetRamDamageEstimate(
-                ship,
-                motor,
-                effectiveStats,
-                cur,
-                out float tipRamAst,
-                out float tipRamSelf,
-                out float tipRamRating,
-                out _);
-
-            _liveTooltipContext = new ShipSpeedometerStatTooltips.LiveContext
+            int tipSnapshotKey = ComputeTooltipSnapshotKey(
+                in ship, in _statsCacheAttrs, _partCache.EquipmentHash, _cachedChassisId);
+            bool tipSnapshotDirty = tipSnapshotKey != _tooltipSnapshotKey;
+            if (tipSnapshotDirty)
             {
-                Ship = ship,
-                Motor = motor,
-                EffectiveStats = effectiveStats,
-                Weapon = weapon,
-                CurrentSpeed = cur,
-                LiveMaxSpeed = liveMax,
-                CruiseMaxSpeed = cruiseMax,
-                BarMaxSpeed = barMax,
-                TerritoryMult = territoryMult,
-                TotalMass = taxed.TotalMass,
-                ChassisMaxSpeed = chassisMove,
-                ChassisAccel = chassisAccel,
-                ChassisTurnDeg = chassisTurnDeg,
-                TaxedAccel = taxed.EngineThrust,
-                // [TITAN-ORBIT] Pre-territory taxed turn — same subtract as drive; chips show this not chassis.
-                TaxedTurnDeg = taxed.RotationSpeed,
-                OverdriveCapacityMult = overdriveCapacityMult,
-                OverdriveActiveMult = overdriveActiveMult,
-                MovementMass = mass,
-                MaxForwardAccel = maxFwd,
-                MaxBrake = maxBrake,
-                RamAsteroidDamage = tipRamAst,
-                RamSelfDamage = tipRamSelf,
-                RamRating = tipRamRating,
-                ComponentSize = componentSize,
-                MoveSpeedAbilityLevel = _moveSpeedAbilityLevel,
-                MoveStepPreview = _partCache.Valid
-                    ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerAbilityLevel)
-                    : 0f,
-            };
+                _tooltipSnapshotKey = tipSnapshotKey;
 
-            if (_activeTooltipSection.HasValue)
-            {
-                RefreshTooltipContent();
-                PositionTooltipPanel();
+                // Max ramming at full cruise — not current closing speed (avoids per-frame tip churn).
+                GetRamDamageEstimate(
+                    ship,
+                    motor,
+                    effectiveStats,
+                    cruiseMax,
+                    out float tipRamAst,
+                    out float tipRamSelf,
+                    out float tipRamRating,
+                    out _);
+
+                _liveTooltipContext = new ShipSpeedometerStatTooltips.LiveContext
+                {
+                    Ship = ship,
+                    Motor = motor,
+                    EffectiveStats = effectiveStats,
+                    Weapon = weapon,
+                    CurrentSpeed = 0f,
+                    LiveMaxSpeed = cruiseMax,
+                    CruiseMaxSpeed = cruiseMax,
+                    BarMaxSpeed = barMax,
+                    TerritoryMult = territoryMult,
+                    TotalMass = taxed.TotalMass,
+                    ChassisMaxSpeed = chassisMove,
+                    ChassisAccel = chassisAccel,
+                    ChassisTurnDeg = chassisTurnDeg,
+                    TaxedAccel = taxed.EngineThrust,
+                    // [TITAN-ORBIT] Pre-territory taxed turn — same subtract as drive; chips show this not chassis.
+                    TaxedTurnDeg = taxed.RotationSpeed,
+                    OverdriveCapacityMult = overdriveCapacityMult,
+                    OverdriveActiveMult = 1f,
+                    MovementMass = mass,
+                    MaxForwardAccel = maxFwd,
+                    MaxBrake = maxBrake,
+                    RamAsteroidDamage = tipRamAst,
+                    RamSelfDamage = tipRamSelf,
+                    RamRating = tipRamRating,
+                    ComponentSize = componentSize,
+                    MoveSpeedAbilityLevel = _moveSpeedAbilityLevel,
+                    MoveStepPreview = _partCache.Valid
+                        ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerAbilityLevel)
+                        : 0f,
+                };
+
+                if (_activeTooltipSection.HasValue)
+                {
+                    RefreshTooltipContent();
+                    PositionTooltipPanel();
+                }
             }
 
             FlushPendingTooltipHide();

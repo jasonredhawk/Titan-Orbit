@@ -33,9 +33,15 @@ namespace TitanOrbit.UI
     /// (<see cref="ShipFamilyStatsCalculator"/>), then filters lines per section so players can see
     /// which components feed SPD / ACC / MASS / RAM / BUL.
     /// Presentation-only — never writes ECS. Caches the expensive prefab Instantiates across frames.
+    /// <para>
+    /// [TITAN-ORBIT] Tip bodies are static capacity / max-impact snapshots. The HUD rebuilds them
+    /// on hover-enter or when chassis / ability levels change — not every LateUpdate with live speed.
+    /// </para>
     /// </summary>
     public static class ShipSpeedometerStatTooltips
     {
+        /// <summary>Reused tip builder (main-thread UI only) to cut GC on hover rebuilds.</summary>
+        static readonly StringBuilder s_BuildSb = new StringBuilder(512);
         /// <summary>
         /// Cached chassis part list for tooltip rebuilds. Invalidated when chassis id, ship level,
         /// or equipped store-component hash changes.
@@ -68,8 +74,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Live numbers already computed by the speedometer for this frame. Passed into Build so the
-        /// rollover can show the same totals the bars display (territory, load, OD, mass, ram).
+        /// Static motor / capacity numbers for tip and ability-chip rebuilds.
+        /// Filled when chassis / ability levels change (or on tip hover), not every flight frame.
+        /// Ram fields are max impact at full cruise — not current closing speed.
         /// </summary>
         public struct LiveContext
         {
@@ -77,7 +84,9 @@ namespace TitanOrbit.UI
             public ShipMotorConfig Motor;
             public ShipComponentAbilityStats EffectiveStats;
             public ShipWeaponConfig Weapon;
+            /// <summary>Unused for tip copy (kept so older call sites compile); prefer cruise/bar max.</summary>
             public float CurrentSpeed;
+            /// <summary>Cruise ceiling used as “full speed” for max-impact ram estimates.</summary>
             public float LiveMaxSpeed;
             public float CruiseMaxSpeed;
             public float BarMaxSpeed;
@@ -107,7 +116,9 @@ namespace TitanOrbit.UI
             public float MovementMass;
             public float MaxForwardAccel;
             public float MaxBrake;
+            /// <summary>Asteroid impact at full cruise (static max).</summary>
             public float RamAsteroidDamage;
+            /// <summary>Self damage at full cruise (static max).</summary>
             public float RamSelfDamage;
             public float RamRating;
             /// <summary>
@@ -215,12 +226,13 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Builds TMP rich text for one section. Safe to call every hover enter; returns a short
-        /// fallback when the part cache is empty.
+        /// Builds TMP rich text for one section. Call on hover-enter or snapshot dirty — not every frame.
+        /// Returns a short fallback when the part cache is empty.
         /// </summary>
         public static string Build(SpeedometerStatSection section, in PartCache parts, in LiveContext live)
         {
-            var sb = new StringBuilder(512);
+            StringBuilder sb = s_BuildSb;
+            sb.Clear();
             switch (section)
             {
                 case SpeedometerStatSection.Speed:
@@ -247,11 +259,11 @@ namespace TitanOrbit.UI
         // Section builders
         // -------------------------------------------------------------------------
 
-        /// <summary>SPD: propulsion parts + empty-hold / territory / load / OVERDRIVE stack.</summary>
+        /// <summary>SPD: propulsion parts + mass tax + static cruise / OD capacity ceilings.</summary>
         static void AppendSpeedTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "SPD — top speed");
-            sb.AppendLine("<color=#5B7A94>See Move Speed chip for full ability pipeline. Bars show live cruise / OD.</color>");
+            sb.AppendLine("<color=#5B7A94>See Move Speed chip for full ability pipeline. Capacity values are static ceilings.</color>");
             ShipAbilityStatBreakdown.AppendGroupedFieldGrid(
                 sb, parts, ShipAbilityStatBreakdown.StatField.MoveSpeed, "Move", useStackWeight: true);
 
@@ -259,36 +271,25 @@ namespace TitanOrbit.UI
             AppendChassisMoveBreakdown(sb, parts, live);
             AppendMassTaxEffectsBreakdown(sb, in live, includeMove: true, includeAccel: false);
 
-            ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE FLIGHT", "7EC8FF");
+            // --- Static ceilings (no current flight speed) ---
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "CAPACITY", "7EC8FF");
+            float cruise = live.CruiseMaxSpeed > 0.01f ? live.CruiseMaxSpeed : live.ChassisMaxSpeed;
+            sb.Append("Cruise max  ").Append(FResult(cruise)).AppendLine();
             if (live.OverdriveCapacityMult > 1.001f)
             {
                 sb.Append("<color=#FFCC66>OVERDRIVE cap x")
                     .Append(FDetail(live.OverdriveCapacityMult))
                     .Append(" -> bar ")
                     .Append(FResult(live.BarMaxSpeed))
-                    .Append("</color>")
-                    .AppendLine();
+                    .Append("</color>");
             }
-
-            if (live.OverdriveActiveMult > 1.001f)
-            {
-                sb.Append("<color=#FFCC66>Burst ON x")
-                    .Append(FDetail(live.OverdriveActiveMult))
-                    .Append(" -> live ")
-                    .Append(FResult(live.LiveMaxSpeed))
-                    .Append("</color>")
-                    .AppendLine();
-            }
-
-            sb.Append("Now  ").Append(FResult(live.CurrentSpeed))
-                .Append(" / ").Append(FResult(live.LiveMaxSpeed));
         }
 
         /// <summary>ACC: primary Accel ×1 + extras × weight of their Accel → chassis → mass tax.</summary>
         static void AppendAccelTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "ACC — acceleration");
-            sb.AppendLine("<color=#5B7A94>See Move Speed chip for ability steps. Bars show live thrust / brake.</color>");
+            sb.AppendLine("<color=#5B7A94>See Move Speed chip for ability steps. Capacity values are static ceilings.</color>");
             ShipAbilityStatBreakdown.AppendGroupedFieldGrid(
                 sb, parts, ShipAbilityStatBreakdown.StatField.AccelerationCap, "Accel", useStackWeight: true);
 
@@ -296,10 +297,10 @@ namespace TitanOrbit.UI
             AppendChassisAccelBreakdown(sb, parts, live);
             AppendMassTaxEffectsBreakdown(sb, in live, includeMove: false, includeAccel: true);
 
-            ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE FLIGHT", "7EC8FF");
-            sb.Append("Live max a  <color=#40EB73>").Append(FResult(live.MaxForwardAccel)).Append("</color>");
-            if (live.TerritoryMult > 1.001f || live.OverdriveActiveMult > 1.001f)
-                sb.Append(" <color=#5B7A94>(x territory / OD)</color>");
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "CAPACITY", "7EC8FF");
+            sb.Append("Max thrust  <color=#40EB73>").Append(FResult(live.MaxForwardAccel)).Append("</color>");
+            if (live.TerritoryMult > 1.001f)
+                sb.Append(" <color=#5B7A94>(x territory)</color>");
             sb.AppendLine();
             sb.Append("Brake  ").Append(FResult(live.MaxBrake)).Append("/s");
         }
@@ -365,7 +366,7 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>RAM: parts with rammingPower + live impact estimate (rating × totalMass × speed).</summary>
+        /// <summary>RAM: parts with rammingPower + max impact at full cruise (rating × mass × cruise).</summary>
         static void AppendRamTooltip(StringBuilder sb, in PartCache parts, in LiveContext live)
         {
             AppendHeader(sb, "RAM — impact damage");
@@ -399,13 +400,14 @@ namespace TitanOrbit.UI
             float familyRam = live.Motor.RammingPower > 0f
                 ? live.Motor.RammingPower
                 : live.EffectiveStats.rammingPower;
-            ShipStatTooltipChrome.AppendSectionBanner(sb, "LIVE IMPACT", "FFCC66");
+            float fullCruise = live.CruiseMaxSpeed > 0.01f ? live.CruiseMaxSpeed : live.ChassisMaxSpeed;
+            ShipStatTooltipChrome.AppendSectionBanner(sb, "MAX IMPACT", "FFCC66");
             sb.Append("Motor Ramming  ").Append(F1(familyRam)).AppendLine();
             sb.Append("Rating  ").Append(F1(live.RamRating)).AppendLine();
             sb.Append("totalMass  ").Append(F1(live.TotalMass)).AppendLine();
             sb.Append("Taxed Accel  ").Append(F1(live.TaxedAccel));
             sb.Append(" <color=#5B7A94>(grind lever)</color>").AppendLine();
-            sb.Append("At ").Append(F1(live.CurrentSpeed)).Append("/s -> ");
+            sb.Append("At full cruise  ").Append(F1(fullCruise)).Append("/s -> ");
             sb.Append("ast <color=#FFAA66>").Append(F1(live.RamAsteroidDamage)).Append("</color>  ");
             sb.Append("hull <color=#FF6666>").Append(F1(live.RamSelfDamage)).Append("</color>");
         }
