@@ -5,18 +5,16 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// [TITAN-ORBIT] Client join settle + transform quarantine.
+    /// [TITAN-ORBIT] Client join settle state publisher for the seed-hydrate join model.
     /// <para>
-    /// Proven (Player.log 2026-07-18 13:57): <c>TransformSystemGroup RE-ENABLED</c> after Instantiates
-    /// ~630 asteroids → immediate Burst <c>Crash!!!</c> (even with MarkFromQuery disabled).
-    /// So while NetworkStreamInGame, TransformSystemGroup stays <b>OFF</b>. Ships render via hybrid
-    /// GameObject proxies when <see cref="ClientJoinSettleCache.TransformQuarantine"/> is true.
+    /// Asteroids are built locally from the match seed (<see cref="ClientMapHydrateSystem"/>),
+    /// so the old Instantiates=1 / session-long TransformQuarantine workaround is no longer
+    /// required for map load. <see cref="TransformSystemGroup"/> stays <b>enabled</b> during play.
     /// </para>
     /// <para>
-    /// Settling exits when <see cref="ClientJoinSettleCache.MapProxyBuildReady"/> (hybrid GO
-    /// proxies ≥ ~92% of meta N) or on hard timeout — <b>not</b> on a short GhostSpawn idle gap
-    /// (that froze loading at ~25/358). Waiting for idle forever also left Join Team stuck at
-    /// 314/315 while distance-importance Instantiates trickled.
+    /// Settling tracks pre-InGame hydrate + short post-InGame dynamic ghost catch-up.
+    /// Ship presentation still uses <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>
+    /// around TeamChoice Instantiates (<see cref="GhostSpawnBacklog"/> / holds).
     /// </para>
     /// World: ClientSimulation. Group: InitializationSystemGroup.
     /// </summary>
@@ -24,9 +22,11 @@ namespace TitanOrbit.ECS
     [UpdateInGroup(typeof(InitializationSystemGroup))]
     public partial struct TitanOrbitClientJoinTransformGateSystem : ISystem
     {
-        public const int IdleFramesRequired = 30;
-        public const int MinInGameFramesBeforeExit = 120;
-        public const int HardTimeoutFrames = 5400;
+        /// <summary>Minimum InGame frames before Settling can exit (dynamic ghost catch-up).</summary>
+        public const int MinInGameFramesBeforeExit = 30;
+
+        /// <summary>Hard escape if something stalls Settling forever.</summary>
+        public const int HardTimeoutFrames = 3600;
 
         EntityQuery _inGameQuery;
         EntityQuery _placeholderQuery;
@@ -55,21 +55,31 @@ namespace TitanOrbit.ECS
             state.RequireForUpdate<ClientJoinSettleState>();
         }
 
-        /// <summary>Updates Settling; keeps TransformSystemGroup off for entire in-game session.</summary>
+        /// <summary>Publishes Settling / backlog; keeps TransformSystemGroup enabled in play.</summary>
         public void OnUpdate(ref SystemState state)
         {
             ref var settle = ref SystemAPI.GetSingletonRW<ClientJoinSettleState>().ValueRW;
             bool inGame = !_inGameQuery.IsEmptyIgnoreFilter;
 
+            // --- Transform group: ON (seed-hydrate model — no session quarantine) ---
+            SetTransformGroupEnabled(ref state, enabled: true);
+
             if (!inGame)
             {
-                settle.Settling = 0;
+                // --- Pre-InGame: settling while recipe hydrate runs ---
+                bool hydrating = ClientMapHydrateCache.HasFullRecipe && !ClientMapHydrateCache.IsComplete;
+                settle.Settling = (byte)(hydrating ? 1 : 0);
                 settle.IdleClearFrames = 0;
                 settle.InGameFrames = 0;
                 settle.SawSpawnActivity = 0;
                 settle.JoinSettleCompleted = 0;
-                ClientJoinSettleCache.Clear();
-                SetTransformGroupEnabled(ref state, enabled: true);
+                ClientJoinSettleCache.Set(
+                    hydrating,
+                    transformQuarantine: false,
+                    inGameFrames: 0,
+                    joinSettleCompleted: false,
+                    ghostSpawnBacklog: false);
+                ClientJoinSettleCache.SetMapProxyBuildReady(ClientMapHydrateCache.IsComplete);
                 return;
             }
 
@@ -94,26 +104,21 @@ namespace TitanOrbit.ECS
 
             bool hardTimeout = settle.InGameFrames >= HardTimeoutFrames;
             bool minTime = settle.InGameFrames >= MinInGameFramesBeforeExit;
+            // --- Hydrate / recipe readiness ---
+            // Do NOT treat "no recipe yet" as ready — that exited Settling before meta arrived
+            // and opened Join Team with zero asteroids.
+            bool hydrateReady;
+            if (ClientMapHydrateCache.HasFullRecipe)
+                hydrateReady = ClientMapHydrateCache.IsComplete;
+            else if (ClientMapHydrateCache.HasRecipe)
+                hydrateReady = true; // counts-only / legacy meta (no seed hydrate)
+            else
+                hydrateReady = false;
+            ClientJoinSettleCache.SetMapProxyBuildReady(hydrateReady);
 
-            // --- Exit on map GO build ready OR hard timeout — NOT on GhostSpawn idle gaps ---
-            // [TITAN-ORBIT] Debug 1af271 / Local Host: GhostSpawnBuffer + placeholders can go empty
-            // briefly after the first ~25 Instantiates (planets) while MaxSendChunks=1 is still
-            // streaming the rest of the map. Idle-clear then latched JoinSettleCompleted at ~7%
-            // and the loading bar froze at 27/358. Distance-importance Instantiates can also keep
-            // placeholders non-empty forever (314/315 hang) — so idle is the wrong exit signal.
-            //
-            // MapProxyBuildReady: Game publishes when planet/asteroid GOs ≥ ~92% of meta N.
-            // TransformQuarantine stays on; GhostSpawnBacklog still tracks the live queue.
-            bool proxyBuildReady = ClientJoinSettleCache.MapProxyBuildReady;
-            bool canExit = hardTimeout ||
-                           (minTime &&
-                            settle.SawSpawnActivity != 0 &&
-                            proxyBuildReady);
+            // --- Exit when hydrate done + brief InGame catch-up (or timeout) ---
+            bool canExit = hardTimeout || (minTime && hydrateReady);
 
-            // --- Settling policy ---
-            // [TITAN-ORBIT] Initial join: Settling while Instantiates backlog drains.
-            // After the first exit, NEVER re-enter Settling for post-team ship Instantiates —
-            // Player.log 2026-07-18: TeamChoice → Settling ON (spawnBuf=1) → Crash!!!.
             bool shouldSettle;
             if (settle.JoinSettleCompleted != 0)
             {
@@ -122,8 +127,7 @@ namespace TitanOrbit.ECS
             else
             {
                 shouldSettle = !canExit;
-                // Latch only when Instantiates were observed, proxy-ready, or hard-timeout escape.
-                if (!shouldSettle && (settle.SawSpawnActivity != 0 || hardTimeout || proxyBuildReady))
+                if (!shouldSettle)
                     settle.JoinSettleCompleted = 1;
             }
 
@@ -131,35 +135,32 @@ namespace TitanOrbit.ECS
             bool settlingChanged = settle.Settling != newSettling;
             settle.Settling = newSettling;
 
-            // --- Quarantine: never RE-ENABLE TransformSystemGroup while in-game ---
-            // GhostSpawnBacklog stays true during post-team ship Instantiates even when Settling
-            // is latched off — presentation must not WithEntityAccess ships in that window.
+            // --- No TransformQuarantine — ships/map use normal Transform + hybrid as needed ---
             ClientJoinSettleCache.Set(
                 shouldSettle,
-                transformQuarantine: true,
+                transformQuarantine: false,
                 settle.InGameFrames,
                 settle.JoinSettleCompleted != 0,
                 ghostSpawnBacklog: backlog);
-            SetTransformGroupEnabled(ref state, enabled: false);
 
             if (settlingChanged)
             {
                 if (shouldSettle)
                 {
                     UnityEngine.Debug.Log(
-                        "[JoinSettle] Settling ON — TransformSystemGroup OFF (quarantine). " +
-                        "Ships use hybrid GO proxies. spawnBuf=" + spawnBufferLen +
-                        " placeholders=" + placeholderCount);
+                        "[JoinSettle] Settling ON (seed-hydrate / dynamic catch-up). " +
+                        "TransformSystemGroup ON. spawnBuf=" + spawnBufferLen +
+                        " placeholders=" + placeholderCount +
+                        " hydrate=" + ClientMapHydrateCache.BuiltBodies +
+                        "/" + ClientMapHydrateCache.ExpectedBodies);
                 }
                 else
                 {
                     UnityEngine.Debug.Log(
-                        "[JoinSettle] Settling OFF — TransformSystemGroup stays OFF (quarantine; " +
-                        "RE-ENABLE Crash!!!). Hybrid ship proxies remain. inGameFrames=" +
-                        settle.InGameFrames + " idleClear=" + settle.IdleClearFrames +
-                        " sawSpawn=" + settle.SawSpawnActivity +
+                        "[JoinSettle] Settling OFF — TransformSystemGroup ON (seed-hydrate model). " +
+                        "inGameFrames=" + settle.InGameFrames +
                         " joinSettleCompleted=" + settle.JoinSettleCompleted +
-                        " proxyReady=" + proxyBuildReady +
+                        " hydrateComplete=" + ClientMapHydrateCache.IsComplete +
                         (hardTimeout ? " (hard timeout)" : string.Empty));
                 }
             }
@@ -184,6 +185,9 @@ namespace TitanOrbit.ECS
             }
 
             _lastGroupEnabled = flag;
+            UnityEngine.Debug.Log(
+                "[JoinSettle] TransformSystemGroup " + (enabled ? "ENABLED" : "DISABLED") +
+                " (seed-hydrate join model).");
         }
     }
 }

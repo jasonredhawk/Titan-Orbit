@@ -309,7 +309,9 @@ namespace Unity.NetCode
             // planets/gems are interpolated. When both queues have ready ghosts, interpolated-first
             // (v14) spent every Instantiates slot on map bodies and left Join Team on
             // "Spawning your ship..." while the server hull already ran people transports.
-            const int k_MaxDelayedInstantiatesPerFrame = 1;
+            // [TITAN-ORBIT] Seed-hydrate join: asteroids are local (not Instantiates). Remaining
+            // ghosts are planets/ships/gems — allow a modest Instantiates budget (was 1 forever).
+            const int k_MaxDelayedInstantiatesPerFrame = 16;
             int delayedInstantiatesThisFrame = 0;
             int successfulInstantiatesThisFrame = 0;
 

@@ -139,6 +139,44 @@ namespace TitanOrbit.ECS
             }
 
             pending.Dispose();
+
+            // --- Pass 3: refill empty / undercounted wing+weapon buffers (no collider Instantiates) ---
+            // [TITAN-ORBIT] After Join Team, ShouldSkipShipEntityQueries can skip this system while
+            // ShipHullColliderSync still writes ShipHullColliderState → NeedsCatalogApply false forever
+            // with Length==0 wings. Also: old wing bake stopped at the first authoring marker so
+            // multi-wing hulls kept a single beam while the hybrid GO showed every wing.
+            // Collect first — AddBuffer is a structural change and cannot run inside the foreach.
+            var refill = new NativeList<PendingCatalogApply>(4, Allocator.Temp);
+            foreach (var (ship, entity) in SystemAPI
+                         .Query<RefRO<ShipState>>()
+                         .WithAll<ShipTag>()
+                         .WithEntityAccess())
+            {
+                if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
+                    continue;
+                if (!em.HasComponent<ShipHullColliderState>(entity))
+                    continue;
+
+                if (!NeedsAttachmentRefill(em, config, entity, ship.ValueRO))
+                    continue;
+
+                refill.Add(new PendingCatalogApply
+                {
+                    Entity = entity,
+                    BranchIndex = ship.ValueRO.BranchIndex,
+                });
+            }
+
+            for (int i = 0; i < refill.Length; i++)
+            {
+                var work = refill[i];
+                if (!em.Exists(work.Entity) || !em.HasComponent<ShipState>(work.Entity))
+                    continue;
+                TryRefillEmptyAttachmentBuffers(
+                    em, catalog, config, work.Entity, em.GetComponentData<ShipState>(work.Entity));
+            }
+
+            refill.Dispose();
         }
 
         /// <summary>
@@ -188,12 +226,121 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] ShipHullColliderSyncSystem early-outs when UseEntitiesGraphicsForShips
             // is true, so this catalog path owns attribute hull rebuilds in EG mode. Hybrid mode
             // leaves attribute dirty to ShipHullColliderSyncSystem to avoid double Instantiates.
-            // Do NOT treat empty wing buffers as stale (that Instantiates every frame → join stall).
+            // Do NOT treat empty wing buffers as full catalog dirty here — Pass 3 refills
+            // attachments without collider Instantiates (empty-as-dirty used to stall join).
             if (TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips
                 && applied.AppliedAttributeSum != attributeSum)
                 return true;
 
             return false;
+        }
+
+        /// <summary>
+        /// True when wing/weapon buffers are empty or the wing buffer has fewer slots than distinct
+        /// wing bodies on the chassis prefab (cheap name walk — no Instantiates).
+        /// </summary>
+        static bool NeedsAttachmentRefill(
+            EntityManager em,
+            PlanetShipFamilyConfig config,
+            Entity entity,
+            in ShipState ship)
+        {
+            bool wingsEmpty = !em.HasBuffer<ShipWingTractorBeamElement>(entity)
+                || em.GetBuffer<ShipWingTractorBeamElement>(entity).Length == 0;
+            bool weaponsEmpty = !em.HasBuffer<ShipWeaponMountElement>(entity)
+                || em.GetBuffer<ShipWeaponMountElement>(entity).Length == 0;
+
+            if (wingsEmpty || weaponsEmpty)
+                return true;
+
+            if (!ShipStatApplyLogic.TryResolveChassisId(
+                    ship.Team,
+                    ship.ShipLevel,
+                    ship.BranchIndex,
+                    out string chassisId,
+                    allowFallback: true,
+                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                return false;
+
+            var tier = config.GetTierEntryForChassisId(chassisId);
+            GameObject chassisPrefab = tier != null ? tier.prefab : null;
+            if (chassisPrefab == null)
+                return false;
+
+            // [TITAN-ORBIT] Prefab asset walk only — detects 1-slot buffers on multi-wing / multi-gun hulls.
+            int expectedWings = ShipChassisPrefabBakeUtility.CountDistinctWingBodies(chassisPrefab);
+            int currentWings = em.GetBuffer<ShipWingTractorBeamElement>(entity).Length;
+            if (expectedWings > currentWings)
+                return true;
+
+            int expectedWeapons = ShipChassisPrefabBakeUtility.CountDistinctWeaponBodies(chassisPrefab);
+            int currentWeapons = em.GetBuffer<ShipWeaponMountElement>(entity).Length;
+            return expectedWeapons > currentWeapons;
+        }
+
+        /// <summary>
+        /// When chassis identity is already applied but wing/weapon buffers are empty or undercounted,
+        /// refill them from the tier prefab / catalog without rebuilding PhysicsCollider.
+        /// </summary>
+        static void TryRefillEmptyAttachmentBuffers(
+            EntityManager em,
+            ShipChassisVisualCatalog catalog,
+            PlanetShipFamilyConfig config,
+            Entity entity,
+            in ShipState ship)
+        {
+            if (!ShipStatApplyLogic.TryResolveChassisId(
+                    ship.Team,
+                    ship.ShipLevel,
+                    ship.BranchIndex,
+                    out string chassisId,
+                    allowFallback: true,
+                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                return;
+
+            // Only refill when the applied chassis key still matches — otherwise Pass 1/2 owns it.
+            var applied = em.GetComponentData<ShipHullColliderState>(entity);
+            if (!applied.ChassisId.Equals(new FixedString64Bytes(chassisId)))
+                return;
+
+            catalog.TryGetEntry(chassisId, out var entry);
+            var tier = config.GetTierEntryForChassisId(chassisId);
+            GameObject chassisPrefab = tier != null ? tier.prefab : null;
+            if (entry == null && chassisPrefab == null)
+                return;
+
+            bool wingsEmpty = !em.HasBuffer<ShipWingTractorBeamElement>(entity)
+                || em.GetBuffer<ShipWingTractorBeamElement>(entity).Length == 0;
+            bool weaponsEmpty = !em.HasBuffer<ShipWeaponMountElement>(entity)
+                || em.GetBuffer<ShipWeaponMountElement>(entity).Length == 0;
+            bool wingsUndercounted = false;
+            bool weaponsUndercounted = false;
+            if (chassisPrefab != null)
+            {
+                if (!wingsEmpty)
+                {
+                    int expectedWings = ShipChassisPrefabBakeUtility.CountDistinctWingBodies(chassisPrefab);
+                    wingsUndercounted =
+                        expectedWings > em.GetBuffer<ShipWingTractorBeamElement>(entity).Length;
+                }
+
+                if (!weaponsEmpty)
+                {
+                    int expectedWeapons = ShipChassisPrefabBakeUtility.CountDistinctWeaponBodies(chassisPrefab);
+                    weaponsUndercounted =
+                        expectedWeapons > em.GetBuffer<ShipWeaponMountElement>(entity).Length;
+                }
+            }
+
+            if (weaponsEmpty || weaponsUndercounted)
+            {
+                ApplyWeaponMounts(em, entity, entry, chassisPrefab);
+                ShipStatApplyLogic.TryApplyPerMountWeaponCombat(
+                    em, entity, chassisId, ship.ShipLevel);
+            }
+
+            if (wingsEmpty || wingsUndercounted)
+                ApplyWingTractorBeams(em, entity, entry, chassisPrefab);
         }
 
         /// <summary>

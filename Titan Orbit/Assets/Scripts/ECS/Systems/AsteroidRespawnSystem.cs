@@ -1,6 +1,7 @@
 using TitanOrbit.Core;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Physics;
 using Unity.Transforms;
 
@@ -42,27 +43,57 @@ namespace TitanOrbit.ECS
             if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Asteroid == Entity.Null)
                 return;
 
-            // --- Drain due entries ---
-            // Delay was baked into RespawnAtElapsedTime at schedule time (settings.AsteroidRespawnDelaySeconds).
-            // [STANDARD] Walk backward so RemoveAt is O(1) per removal.
+            // --- Collect due entries first ---
+            // [ECS/DOTS] Instantiate / CreateEntity invalidates DynamicBuffer handles. Copy out,
+            // remove from the buffer, then spawn + send RPCs.
             var buffer = SystemAPI.GetSingletonBuffer<PendingAsteroidRespawnElement>();
             double now = SystemAPI.Time.ElapsedTime;
+            var due = new Unity.Collections.NativeList<PendingAsteroidRespawnElement>(8, Unity.Collections.Allocator.Temp);
             for (int i = buffer.Length - 1; i >= 0; i--)
             {
-                var pending = buffer[i];
-                if (now < pending.RespawnAtElapsedTime)
+                if (now < buffer[i].RespawnAtElapsedTime)
                     continue;
+                due.Add(buffer[i]);
+                buffer.RemoveAt(i);
+            }
 
+            if (due.Length == 0)
+            {
+                due.Dispose();
+                return;
+            }
+
+            var em = state.EntityManager;
+            var rpcEcb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
+
+            for (int i = 0; i < due.Length; i++)
+            {
+                var pending = due[i];
                 AsteroidSpawning.Spawn(
-                    state.EntityManager,
+                    em,
                     prefabs.Asteroid,
                     pending.Position,
                     pending.Scale,
                     pending.GemValue,
                     pending.MaxHealth,
                     pending.Size);
-                buffer.RemoveAt(i);
+
+                // --- Clients hydrate asteroids locally (not ghost-relevant) ---
+                Entity rpcEntity = rpcEcb.CreateEntity();
+                rpcEcb.AddComponent(rpcEntity, new AsteroidRespawnRpc
+                {
+                    Position = pending.Position,
+                    Scale = pending.Scale,
+                    GemValue = pending.GemValue,
+                    MaxHealth = pending.MaxHealth,
+                    Size = pending.Size,
+                });
+                rpcEcb.AddComponent(rpcEntity, new SendRpcCommandRequest());
             }
+
+            rpcEcb.Playback(em);
+            rpcEcb.Dispose();
+            due.Dispose();
         }
     }
 

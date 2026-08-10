@@ -1,13 +1,15 @@
 ---
-description: HARD STOP — TeamChoice / Join Team Crash!!! — required gate APIs before any client ECS query
+description: TeamChoice / join Crash!!! hard-stop for seed-hydrate era
 alwaysApply: true
 ---
 
-# TeamChoice Crash!!! — HARD STOP (read before any client ECS edit)
+# TeamChoice / join Crash!!! — HARD STOP (seed-hydrate)
 
-**Proven loop:** Join Team → `TeamChoiceResult` → ship Instantiates → `Settling` stays **OFF** → ungated client query → native `Crash!!!`. Agents keep reintroducing this (2026-07-19, 2026-07-22). Full detail: `titan-orbit-windows-join-crash.mdc`.
+**Architecture (2026-08):** Clients hydrate asteroids from the match seed (`MapSessionMetaRpc` + `ClientMapHydrateSystem`). Ghost relevancy streams Ship / Gem / PeopleTransport / Planet only — **not** asteroids. Do not reintroduce full-map asteroid GhostSpawn Instantiates floods.
 
-## Mandatory gates (copy these — do not invent weaker ones)
+Full verify checklist: `Titan Orbit/tools/netcode-patches/JOIN-CRASH-VERIFY.md`.
+
+## Mandatory gates
 
 | Query kind | Required early-out |
 |---|---|
@@ -16,38 +18,25 @@ alwaysApply: true
 
 `ShouldSkipShipEntityQueries` = Settling **OR** GhostSpawnBacklog **OR** deferred TeamChoice Confirm pending.
 
-`GhostSpawnBacklog` **must** include: queue/placeholders **+** post-ship Instantiates hold **+** post–TeamChoice hold. `ArmPostTeamChoiceHold` must set `GhostSpawnBacklog = true` **immediately**, and Confirm must be **deferred one frame** (`RequestDeferredConfirmTeamChoice` → `ClientDeferredTeamChoiceConfirmSystem`). Same-frame Confirm after Arm still Crash!!! (Player.log 2026-07-28). Hand-rolled `Settling || GhostSpawnBacklog` that misses the TeamChoice fold → Crash!!! (Player.log 2026-07-23). Prefer `ShouldSkipShipEntityQueries` everywhere.
-
-Never reimplement backlog as GhostSpawnBuffer/PendingSpawnPlaceholder-only.
-
-**Do not** gate forever on `TeamChoiceConfirmed && !HasOwnedShipSeed` — spawn-wait deadlock; use expiring `ArmPostTeamChoiceHold` + `LocalShipEntitySeed.TryRecoverOwnedShip`.
+Prefer helpers over hand-rolled `Settling || GhostSpawnBacklog`.
 
 ```csharp
-// Ships — Settling OR GhostSpawnBacklog OR post–TeamChoice hold
 if (ClientJoinSettleCache.ShouldSkipShipEntityQueries) return;
-
-// Map bodies — TransformQuarantine OR Settling (quarantine is session-long on Windows)
 if (ClientJoinSettleCache.ShouldSkipMapBodyQueries) return;
 ```
 
 ## Absolute forbidden
 
-1. Gate client map gathers on **`Settling` alone** — Settling is OFF after Join Team; Crash!!! still happens.
-2. Gate ship presentation on **`Settling` alone** — need `GhostSpawnBacklog` / `ShouldSkipShipEntityQueries`.
-3. Re-enable `TransformSystemGroup` after late-join.
-4. Add a new client `foreach` / `ToEntityArray` / `WithEntityAccess` over ships or map bodies **without** the helper above.
-5. `EntityManager.GetEntityTypeHandle()` + chunk walk in visualizer/systems — stale handle NRE kills Pending drain → bar stuck (Player.log 2026-07-22). Use `ToEntityArray` on Pending/SpawnRequest only.
-6. “Editor works so Windows is fine” — verify Windows Relay Player.log only.
-7. Treat removing these checks as cleanup/refactor — it is a **regression bug**.
-8. Permanent `TeamChoiceConfirmed && !HasOwnedShipSeed` ship skip — spawn-wait deadlock; use `ArmPostTeamChoiceHold` + seed recovery.
+1. Include `AsteroidTag` in `GhostRelevancy.DefaultRelevancyQuery` under `SetIsRelevant` (Instantiates flood).
+2. Enter `NetworkStreamInGame` before `ClientMapHydrateCache.IsComplete` when a full recipe was received.
+3. Dismiss loading / Join Team with zero hydrated asteroids when `HasFullRecipe` is true.
+4. Permanent `TeamChoiceConfirmed && !HasOwnedShipSeed` ship skip — spawn-wait deadlock.
+5. Treat removing `ShouldSkipShipEntityQueries` as cleanup — TeamChoice Instantiates still Crash!!! without it.
 
-## Pre-edit checklist (any client system / hybrid bridge)
+## Pre-edit checklist
 
 - [ ] New/changed client ECS query uses `ShouldSkipShipEntityQueries` or `ShouldSkipMapBodyQueries`?
-- [ ] No Settling-only early-out for ships or map bodies?
-- [ ] `RequireForUpdate<ShipTag>` systems: first run is often **exactly** TeamChoice Instantiates — gate before any map gather.
+- [ ] Asteroids still seed-hydrated (not relevant ghosts)?
 - [ ] Ran `powershell -File tools/verify-join-crash-gates.ps1` (exit 0) before claiming Windows-client-safe?
 
-If unsure → skip the query; do not ship ungated. Detail + ownership file list: `titan-orbit-windows-join-crash.mdc`.
-
-**Before every Windows client build:** run `tools/verify-join-crash-gates.ps1`. Exit `1` = do not ship. Smoke-test Join Team on Windows Relay anyway — static scan ≠ Player.log.
+**Before every Windows client build:** run `tools/verify-join-crash-gates.ps1`. Exit `1` = do not ship.

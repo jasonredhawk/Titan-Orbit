@@ -33,6 +33,9 @@ namespace TitanOrbit.ECS
         EntityQuery _visualPartsQuery;
         EntityQuery _bankPivotQuery;
 
+        /// <summary>True after we wiped leftover EG meshes once hybrid took over.</summary>
+        bool _clearedOrphanEgMeshes;
+
         struct PendingVisualResync
         {
             public Entity ShipEntity;
@@ -50,9 +53,25 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Quarantine: TransformSystemGroup off — EG ship meshes stay invisible;
             // EcsWorldVisualizer hybrid proxies own the hull instead.
             if (ClientJoinSettleCache.TransformQuarantine)
+            {
+                ClearAllEgShipMeshesOnce();
                 return;
+            }
 
+            // Also false when SRP Batcher is OFF (BatchRendererGroup unsupported).
+            // Hybrid owns thrusters / nameplates / muzzle — leave EG off or you get two hulls
+            // (stuck hybrid cosmetics + choppy EG mesh).
             if (!TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips)
+            {
+                ClearAllEgShipMeshesOnce();
+                return;
+            }
+
+            _clearedOrphanEgMeshes = false;
+
+            // [TITAN-ORBIT] TeamChoice Instantiates window — ship WithEntityAccess Crash!!! (2026-07-19).
+            // Hybrid path uses EnsureAndSyncLocalSeededShipProxy while this is true.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
                 return;
 
             var catalog = ShipChassisVisualCatalog.Instance;
@@ -308,6 +327,40 @@ namespace TitanOrbit.ECS
                 localToWorld.Value = math.mul(transform.ToMatrix(), float4x4.Scale(scale));
                 EntityManager.SetComponentData(child, localToWorld);
             }
+        }
+
+        /// <summary>
+        /// Destroys every EG ship mesh / bank pivot once when hybrid presentation owns ships.
+        /// Prevents a leftover choppy EG hull sitting next to the hybrid GameObject proxy.
+        /// </summary>
+        void ClearAllEgShipMeshesOnce()
+        {
+            if (_clearedOrphanEgMeshes)
+                return;
+            if (_visualPartsQuery.IsEmptyIgnoreFilter && _bankPivotQuery.IsEmptyIgnoreFilter)
+            {
+                _clearedOrphanEgMeshes = true;
+                return;
+            }
+
+            // --- Destroy all bank pivots (hierarchies) ---
+            using (var pivots = _bankPivotQuery.ToEntityArray(Allocator.Temp))
+            {
+                for (int i = 0; i < pivots.Length; i++)
+                    DestroyEntityHierarchy(pivots[i]);
+            }
+
+            // --- Destroy any remaining visual parts ---
+            CollectVisualPartsToDestroy(_ => true);
+            for (int i = 0; i < _partsToDestroy.Count; i++)
+            {
+                if (EntityManager.Exists(_partsToDestroy[i]))
+                    EntityManager.DestroyEntity(_partsToDestroy[i]);
+            }
+
+            _clearedOrphanEgMeshes = true;
+            Debug.Log(
+                "[ShipEG] Cleared leftover Entities Graphics ship meshes — hybrid GameObject proxies own hulls.");
         }
 
         void CollectVisualPartsToDestroy(Func<ShipVisualPartTag, bool> predicate)

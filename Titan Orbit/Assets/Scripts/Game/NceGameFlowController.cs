@@ -1096,10 +1096,16 @@ namespace TitanOrbit.Game
                 CleanupJoinTeamScreenUi();
 
             // --- Loading Map owns the screen ---
-            // [TITAN-ORBIT] Show loading while Relay connect is in flight OR while the map is
-            // still streaming. Join Game must be dismissed first — otherwise the lobby list stays
-            // active under a semi-transparent loading panel.
-            bool showLoadingOverlay = showLoading || (connectingDedicated && !connected);
+            // [TITAN-ORBIT] Show loading while Relay connect is in flight, while seed-hydrate
+            // builds asteroids (pre-InGame), or while post-InGame map catch-up runs.
+            bool seedHydrating = ClientMapHydrateCache.HasFullRecipe && !ClientMapHydrateCache.IsComplete;
+            bool awaitingGoInGame = ClientMapHydrateCache.HasFullRecipe &&
+                                    ClientMapHydrateCache.IsComplete &&
+                                    !connected;
+            bool showLoadingOverlay = showLoading ||
+                                      (connectingDedicated && !connected) ||
+                                      seedHydrating ||
+                                      awaitingGoInGame;
             if (showLoadingOverlay && _joinBrowser != null && _joinBrowser.IsVisible)
                 _joinBrowser.DismissForLoading();
 

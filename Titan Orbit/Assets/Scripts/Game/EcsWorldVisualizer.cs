@@ -810,10 +810,15 @@ namespace TitanOrbit.Game
             DrainPendingWorldBodyProxies(em, alive);
 
             // --- Ships ---
-            // [TITAN-ORBIT] TransformQuarantine: TransformSystemGroup stays OFF (RE-ENABLE Crash!!!).
-            // Entities Graphics needs Parent/LTW — use hybrid ship GO proxies instead.
-            bool hybridShips = ClientJoinSettleCache.TransformQuarantine ||
-                               !TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips;
+            // [TITAN-ORBIT] Prefer hybrid GameObject proxies. EG + hybrid dual-path produced:
+            // stuck hybrid (nameplate/thrusters/muzzle) at spawn + choppy EG mesh that flew.
+            // Thrusters / nameplates / shoot origin are wired to hybrid — keep one owner.
+            // UseEntitiesGraphicsForShips already folds WebGL + SRP Batcher; still require no
+            // TeamChoice Instantiates window before EG could ever own remotes alone.
+            bool egShipsSafe = TitanOrbitPresentationConfig.UseEntitiesGraphicsForShips &&
+                               !ClientJoinSettleCache.TransformQuarantine &&
+                               !ClientJoinSettleCache.ShouldSkipShipEntityQueries;
+            bool hybridShips = !egShipsSafe;
             if (hybridShips)
             {
                 // [TITAN-ORBIT] Both EnsureShipProxies AND SyncShipProxyTransforms use ship

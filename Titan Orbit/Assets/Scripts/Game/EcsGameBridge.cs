@@ -948,19 +948,31 @@ namespace TitanOrbit.Game
         /// </summary>
         static bool EvaluateMapLoadingComplete()
         {
+            // --- Seed-hydrate path (preferred) ---
+            // [TITAN-ORBIT] Map ready when local asteroid hydrate finished and Settling exited
+            // (or InGame + hydrate done for local host that forced InGame early).
+            if (ClientMapHydrateCache.HasFullRecipe)
+            {
+                if (!ClientMapHydrateCache.IsComplete)
+                    return false;
+
+                // Pre-InGame: hydrate alone is not "Join Team" yet — wait for InGame catch-up.
+                if (!IsNetworkInGame())
+                    return false;
+
+                return ClientJoinSettleCache.JoinSettleCompleted ||
+                       ClientJoinSettleCache.InGameFrames >=
+                       TitanOrbitClientJoinTransformGateSystem.MinInGameFramesBeforeExit;
+            }
+
             // --- Local host: server must finish generation, then wait for local GO proxies ---
-            // [TITAN-ORBIT] Never treat "server LoadingComplete + 0 denominator + 0 proxies" as done.
-            // That skipped the loading screen on second Editor Play when meta/totals were not ready
-            // yet but the server singleton was already LoadingComplete.
             if (IsLocalHost() &&
                 ServerWorld != null && ServerWorld.IsCreated &&
                 TryGetMapLoadingComplete(ServerWorld, out var serverComplete) &&
                 serverComplete)
                 return TryGetMapProxyBuildComplete();
 
-            // --- Remote / dedicated Windows client ---
-            // [TITAN-ORBIT] Do NOT treat ClientWorld MapStateSingleton.LoadingComplete alone as done —
-            // that dismissed the bar before hybrid GO Instantiates. Wait for proxy / meta gate.
+            // --- Remote / dedicated Windows client (legacy counts-only meta) ---
             if (IsRemoteMapObserverClient() && ClientWorld != null && ClientWorld.IsCreated)
                 return TryGetReplicatedMapLoadComplete(ClientWorld);
 
@@ -981,55 +993,72 @@ namespace TitanOrbit.Game
         public static bool TryGetJoinLoadProgress(out float progress)
         {
             progress = 0f;
-            if (!IsNetworkInGame())
-                return false;
 
-            // --- Keep join-gate mirror fresh every UI tick ---
-            // [TITAN-ORBIT] Settling exit uses MapProxyBuildReady; publish even before complete latches.
+            // --- Seed-hydrate model: progress before NetworkStreamInGame is valid ---
+            // [TITAN-ORBIT] Recipe arrives pre-InGame; bar tracks local asteroid hydrate, not
+            // GhostSpawn Instantiates=1 of the whole field.
             ClientJoinSettleCache.SetMapProxyBuildReady(
+                ClientMapHydrateCache.IsComplete ||
                 IsMapProxyCountReady(out _, out _, out _));
 
-            // --- Done ---
             if (IsMapLoadingComplete())
             {
                 progress = 1f;
                 return true;
             }
 
-            // --- Real progress: hybrid GO Instantiates / meta total ---
-            // [TITAN-ORBIT] MapLoadingProxyCount is a Dictionary count on the visualizer — safe.
+            // --- Phase: building map from seed ---
+            if (ClientMapHydrateCache.HasFullRecipe || ClientMapHydrateCache.HydrateStarted)
+            {
+                if (ClientMapHydrateCache.ExpectedBodies > 0)
+                    s_LatchedLoadingTotalSteps = ClientMapHydrateCache.ExpectedBodies;
+
+                // Hydrate is ~0–85% of the bar; remaining is InGame dynamic catch-up.
+                float hydrate = ClientMapHydrateCache.Progress01;
+                if (!IsNetworkInGame())
+                {
+                    progress = Mathf.Clamp01(hydrate * 0.85f);
+                    return true;
+                }
+
+                float catchUp = ClientJoinSettleCache.JoinSettleCompleted
+                    ? 1f
+                    : Mathf.Clamp01(ClientJoinSettleCache.InGameFrames / 30f);
+                progress = Mathf.Clamp01(0.85f * hydrate + 0.15f * catchUp);
+                return true;
+            }
+
+            // --- Waiting for recipe / connection ---
+            if (!IsNetworkInGame() && !MapSessionMetaCache.HasMeta)
+            {
+                if (s_JoinLoadSmoothStart < 0f)
+                    s_JoinLoadSmoothStart = Time.realtimeSinceStartup;
+
+                float elapsed = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
+                float t = Mathf.Max(0f, elapsed) / JoinLoadSmoothSeconds;
+                progress = (1f - Mathf.Exp(-2.2f * t)) * 0.08f;
+                return true;
+            }
+
+            // --- Legacy fallback: hybrid proxies / meta (no full recipe) ---
+            if (!IsNetworkInGame())
+                return false;
+
             int total = ResolveMapLoadingDenominator();
             int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
             if (total > 0)
             {
                 s_LatchedLoadingTotalSteps = total;
-
-                // --- Soft crawl while Instantiates have not started ---
-                // Local Host often latches meta N (server MapState / MapSessionMeta) before the
-                // client GhostSpawn queue fills. Showing hard 0/N looked like a permanent hang.
-                // Keep a gentle crawl until InstantiatesSession or proxies move; never dismiss.
-                if (proxies <= 0 && TitanOrbitJoinLoadCounters.InstantiatesSession <= 0)
-                {
-                    if (s_JoinLoadSmoothStart < 0f)
-                        s_JoinLoadSmoothStart = Time.realtimeSinceStartup;
-
-                    float waitElapsed = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
-                    float waitT = Mathf.Max(0f, waitElapsed) / JoinLoadSmoothSeconds;
-                    progress = (1f - Mathf.Exp(-2.2f * waitT)) * 0.12f;
-                    return true;
-                }
-
                 progress = Mathf.Clamp01((float)proxies / total);
                 return true;
             }
 
-            // --- Meta not yet: gentle crawl so the bar is not frozen at 0% ---
             if (s_JoinLoadSmoothStart < 0f)
                 s_JoinLoadSmoothStart = Time.realtimeSinceStartup;
 
-            float elapsed = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
-            float t = Mathf.Max(0f, elapsed) / JoinLoadSmoothSeconds;
-            progress = (1f - Mathf.Exp(-2.2f * t)) * 0.12f;
+            float waitElapsed2 = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
+            float waitT2 = Mathf.Max(0f, waitElapsed2) / JoinLoadSmoothSeconds;
+            progress = (1f - Mathf.Exp(-2.2f * waitT2)) * 0.12f;
             return true;
         }
 
@@ -1047,6 +1076,17 @@ namespace TitanOrbit.Game
         {
             completedSteps = 0;
             totalSteps = 0;
+
+            // --- Seed-hydrate counts (valid before InGame) ---
+            if (ClientMapHydrateCache.HasFullRecipe || ClientMapHydrateCache.HydrateStarted)
+            {
+                totalSteps = Mathf.Max(1, ClientMapHydrateCache.ExpectedBodies);
+                completedSteps = Mathf.Clamp(ClientMapHydrateCache.BuiltBodies, 0, totalSteps);
+                if (IsMapLoadingComplete())
+                    completedSteps = totalSteps;
+                return true;
+            }
+
             if (!IsNetworkInGame())
                 return false;
 

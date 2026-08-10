@@ -1,11 +1,11 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Static guard against Titan Orbit Windows late-join / TeamChoice Crash!!! regressions.
+  Static guard against Titan Orbit Windows late-join Crash!!! regressions (seed-hydrate era).
 
 .DESCRIPTION
-  Scans client-facing C# for patterns that historically cause native Crash!!! after Join Team
-  (TeamChoiceResult → ship Instantiates while Settling is OFF).
+  Scans client-facing C# for patterns that historically cause native Crash!!! after Join Team,
+  and for regressions that reintroduce full-map asteroid GhostSpawn Instantiates floods.
 
   Run before every Windows client build:
     powershell -File tools/verify-join-crash-gates.ps1
@@ -15,10 +15,7 @@
     1 = high-severity findings (do not ship Windows client)
     2 = script / path error
 
-  Paired rules:
-    .cursor/rules/titan-orbit-teamchoice-crash-hardstop.mdc
-    .cursor/rules/titan-orbit-windows-join-crash.mdc
-    .cursor/rules/titan-orbit-client-ecs-join-gates.mdc
+  Paired: Titan Orbit/tools/netcode-patches/JOIN-CRASH-VERIFY.md
 #>
 
 [CmdletBinding()]
@@ -37,7 +34,7 @@ if (-not (Test-Path -LiteralPath $AssetsScripts)) {
     exit 2
 }
 
-Write-Host "=== Titan Orbit join-crash gate verifier ==="
+Write-Host "=== Titan Orbit join-crash gate verifier (seed-hydrate) ==="
 Write-Host "Scanning: $AssetsScripts"
 Write-Host ""
 
@@ -56,14 +53,11 @@ function Test-IsLikelyServerOnly([string]$text) {
     return ($hasServer -and -not $hasClient)
 }
 
-# Accept helper APIs OR the expanded forms they expand to (ownership files use both).
-# TransformQuarantine is session-long on Windows — systems that early-return on it never
-# reach ship/map gathers during TeamChoice Instantiates.
 function Test-HasShipGate([string]$text) {
     return $text -match 'ShouldSkipShipEntityQueries|GhostSpawnBacklog|ArmPostTeamChoiceHold|TransformQuarantine'
 }
 function Test-HasMapGate([string]$text) {
-    return $text -match 'ShouldSkipMapBodyQueries|TransformQuarantine'
+    return $text -match 'ShouldSkipMapBodyQueries|TransformQuarantine|ClientSeedHydratedMapBody'
 }
 
 $clientRoots = @(
@@ -77,25 +71,24 @@ $csFiles = foreach ($root in $clientRoots) {
     Get-ChildItem -LiteralPath $root -Recurse -Filter *.cs -File
 }
 
-# --- Pass 1: FORBIDDEN TransformSystemGroup re-enable ---
+# --- Pass 1: FORBIDDEN mid-play Transform RE-ENABLE paths that fight seed-hydrate comments ---
+# Seed-hydrate intentionally enables TransformSystemGroup. Flag only "RE-ENABLE" crash comments
+# paired with Enabled=true outside the join gate, or explicit quarantine re-enable anti-patterns.
 foreach ($f in $csFiles) {
     $text = [System.IO.File]::ReadAllText($f.FullName)
-    if ($text -match 'TransformSystemGroup' -and $text -match '\.Enabled\s*=\s*true') {
-        Add-High ("FORBIDDEN TransformSystemGroup re-enable: {0}" -f (Get-Rel $f.FullName))
+    $rel = Get-Rel $f.FullName
+    if ($rel -match 'TitanOrbitClientJoinTransformGateSystem') { continue }
+    if ($text -match 'RE-ENABLE' -and $text -match 'TransformSystemGroup' -and $text -match '\.Enabled\s*=\s*true') {
+        Add-High ("Suspicious TransformSystemGroup RE-ENABLE outside join gate: {0}" -f $rel)
     }
 }
 
-# --- Pass 2: Settling-only early-outs (single-line and simple two-line forms) ---
+# --- Pass 2: Settling-only early-outs ---
 foreach ($f in $csFiles) {
     $rel = Get-Rel $f.FullName
     $text = [System.IO.File]::ReadAllText($f.FullName)
-
-    # Collapse whitespace for multi-line `if (Settling) return;`
     $compact = [regex]::Replace($text, '\s+', ' ')
 
-    # Match Settling-only returns that are NOT part of a compound condition with backlog/quarantine/helpers.
-    # Settling-only is a HIGH only when the file has no backlog / helper gate at all.
-    # Files that use Settling as stage-1 and GhostSpawnBacklog as stage-2 are OK (warn instead).
     $settlingOnly = [regex]::IsMatch(
         $compact,
         'if\s*\(\s*(?:state\.World\.IsClient\(\)\s*&&\s*)?ClientJoinSettleCache\.Settling\s*\)\s*return')
@@ -112,8 +105,6 @@ foreach ($f in $csFiles) {
 # --- Pass 3: client gather APIs without any recognized gate ---
 $gatherPattern = 'ToEntityArray|WithEntityAccess|ToComponentDataArray'
 
-# These are bakers / registries / Instantiates hooks that mention gather APIs in comments
-# or only walk tiny Pending queues — not full asteroid scans.
 $exemptBaseNames = @(
     'AsteroidGhostAuthoring',
     'PlanetGhostAuthoring',
@@ -132,6 +123,10 @@ $exemptBaseNames = @(
     'PeopleTransportPoseRpcClientSystem',
     'BulletHitRpcClientSystem',
     'BulletSpawnRpcClientSystem',
+    'AsteroidRespawnRpcClientSystem',
+    'ClientLocalMapBodySpawn',
+    'ClientMapHydrateSystem',
+    'MapLayoutBlueprint',
     'ShipHullColliderLogic',
     'ShipAttributeUpgradeLogic',
     'ShipHomeSpawnLogic',
@@ -155,12 +150,10 @@ foreach ($f in $csFiles) {
     $hasShipGate = Test-HasShipGate $text
     $hasMapGate = Test-HasMapGate $text
 
-    # Hard fail only when a gather file clearly targets ships/map and has ZERO recognized gate.
     if ($looksShip -and -not $hasShipGate) {
         Add-High ("Ship-oriented gather with no ship gate (need ShouldSkipShipEntityQueries or GhostSpawnBacklog): {0}" -f $rel)
     }
     if ($looksMap -and -not $hasMapGate) {
-        # Require an actual map query shape, not just a comment mentioning asteroids.
         if ($text -match 'CreateEntityQuery\([^\)]*(Asteroid|Planet|Gem|Moon)' -or
             $text -match 'WithAll<\s*(Asteroid|Planet|Gem)' -or
             $text -match 'Query<[^>]*(AsteroidState|PlanetState|GemState)') {
@@ -186,7 +179,7 @@ foreach ($f in $csFiles) {
     }
 }
 
-# --- Pass 5: GhostSpawn Instantiates budget ---
+# --- Pass 5: GhostSpawn patch + asteroid relevancy regression ---
 $ghostSpawnCandidates = @(
     (Join-Path $RepoRoot "Titan Orbit\Packages\com.unity.netcode\Runtime\Snapshot\GhostSpawnSystem.cs"),
     (Join-Path $RepoRoot "Packages\com.unity.netcode\Runtime\Snapshot\GhostSpawnSystem.cs"),
@@ -200,10 +193,28 @@ foreach ($gs in $ghostSpawnCandidates) {
     if ($text -notmatch 'TO_GhostSpawn_v1[3-9]|TO_GhostSpawn_v[2-9]\d') {
         Add-Warn ("GhostSpawn patch id may be older than v13: {0}" -f $rel)
     }
-    if ($text -match 'maxInstantiatesPerFrame\s*=\s*([2-9]|\d{2,})' -or
-        $text -match 'InstantiatesPerFrame\s*=\s*([2-9]|\d{2,})') {
-        Add-High ("GhostSpawn Instantiates budget > 1/frame: {0}" -f $rel)
+}
+
+$relevancyPath = Join-Path $RepoRoot "Titan Orbit\Assets\Scripts\NetCode\TitanOrbitDynamicGhostRelevancySystem.cs"
+if (-not (Test-Path -LiteralPath $relevancyPath)) {
+    Add-High "Missing TitanOrbitDynamicGhostRelevancySystem.cs (asteroids would stream again)."
+}
+else {
+    $relText = [System.IO.File]::ReadAllText($relevancyPath)
+    if ($relText -notmatch 'SetIsRelevant') {
+        Add-High "Ghost relevancy system must use SetIsRelevant so asteroids are not streamed."
     }
+    if ($relText -match 'AsteroidTag') {
+        Add-High "Do not include AsteroidTag in DefaultRelevancyQuery (reintroduces Instantiates flood)."
+    }
+    if ($relText -notmatch 'ClientMapHydrate') {
+        Add-Warn "Relevancy system should mention ClientMapHydrate in comments for agents."
+    }
+}
+
+$hydratePath = Join-Path $AssetsScripts "ECS\Systems\ClientMapHydrateSystem.cs"
+if (-not (Test-Path -LiteralPath $hydratePath)) {
+    Add-High "Missing ClientMapHydrateSystem.cs (seed-hydrate join required)."
 }
 
 # --- Report ---
@@ -219,9 +230,7 @@ else { $high | ForEach-Object { Write-Host "  HIGH  $_" } }
 Write-Host ""
 if ($high.Count -gt 0) {
     Write-Host "FAIL: Fix high findings before building a Windows client."
-    Write-Host "Required gates:"
-    Write-Host "  ships  -> if (ClientJoinSettleCache.ShouldSkipShipEntityQueries) return;"
-    Write-Host "  map    -> if (ClientJoinSettleCache.ShouldSkipMapBodyQueries) return;"
+    Write-Host "Seed-hydrate join: asteroids local from recipe; ships still use ShouldSkipShipEntityQueries."
     exit 1
 }
 

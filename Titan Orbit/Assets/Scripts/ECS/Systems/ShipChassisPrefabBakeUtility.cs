@@ -84,6 +84,21 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Counts distinct weapon <b>bodies</b> on a chassis prefab (no Instantiates).
+        /// Used to detect undercounted <see cref="ShipWeaponMountElement"/> buffers after the
+        /// old bake stopped at the first <see cref="ShipWeaponMountAuthoring"/>.
+        /// </summary>
+        public static int CountDistinctWeaponBodies(GameObject chassisPrefab)
+        {
+            if (chassisPrefab == null)
+                return 0;
+
+            var bodies = new List<Transform>(8);
+            CollectDistinctWeaponBodies(chassisPrefab.transform, bodies);
+            return bodies.Count;
+        }
+
+        /// <summary>
         /// Destroys a temporary prefab instance created during catalog bake.
         /// [EDITOR] Menu bake runs in edit mode — <c>Destroy</c> is invalid; use <c>DestroyImmediate</c>.
         /// </summary>
@@ -160,63 +175,159 @@ namespace TitanOrbit.ECS
             BakeWeaponMounts(root, entry.WeaponMounts, entry.ChassisId);
 
         /// <summary>
-        /// Shared weapon scan used by catalog bake and runtime <see cref="TryBakeWeaponMounts"/>.
-        /// Prefers <see cref="ShipWeaponMountAuthoring"/>; falls back to Weapon-named / family-id
-        /// children so upgrade prefabs without markers still get one muzzle per barrel.
+        /// One mount per distinct weapon <b>body</b> (not every Weapon-named tip/mesh child).
+        /// <para>
+        /// [TITAN-ORBIT] Old Path A returned after any <see cref="ShipWeaponMountAuthoring"/>, so a
+        /// hull with one marker + three unnamed Weapon children got a single fire slot while the
+        /// hybrid GO showed four barrels. Name-scan of every Weapon* child over-counted tips.
+        /// This bake walks distinct weapon bodies (same climb idea as wing bodies) and pulls
+        /// CannonIndex / angle from an authoring under that body when present.
+        /// </para>
         /// </summary>
         static void BakeWeaponMounts(Transform root, List<ShipWeaponMountBakeData> dst, string chassisIdForLog = null)
         {
             if (dst == null || root == null)
                 return;
 
-            // --- Authoring markers first ---
-            var mountAuthorings = root.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
-            for (int i = 0; i < mountAuthorings.Length; i++)
+            // --- Distinct weapon bodies (one muzzle slot each) ---
+            var bodies = new List<Transform>(8);
+            CollectDistinctWeaponBodies(root, bodies);
+            if (bodies.Count == 0)
             {
-                var mountAuth = mountAuthorings[i];
-                if (mountAuth == null || mountAuth.transform == root)
-                    continue;
+                // [TITAN-ORBIT] Zero mounts is valid (unarmed). Do not invent a centerline muzzle.
+                if (!string.IsNullOrEmpty(chassisIdForLog))
+                    Debug.Log($"[ChassisBake] Chassis '{chassisIdForLog}' has no Weapon mounts — unarmed.");
+                return;
+            }
 
-                GetHullRootLocalPose(root, mountAuth.transform, out float3 localPos, out quaternion localRot);
+            var authorings = root.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
+
+            for (int bi = 0; bi < bodies.Count; bi++)
+            {
+                Transform body = bodies[bi];
+                ShipWeaponMountAuthoring bestAuth = FindAuthoringForWeaponBody(root, body, authorings);
+
+                Transform poseSource = bestAuth != null ? bestAuth.transform : body;
+                GetHullRootLocalPose(root, poseSource, out float3 localPos, out quaternion localRot);
+
                 dst.Add(new ShipWeaponMountBakeData
                 {
                     LocalPosition = localPos,
                     // Planar yaw only — pitched meshes must not collapse ShipWeaponPose aim to +Z.
                     LocalRotation = ToPlanarYawLocalRotation(localRot),
-                    DirectionAngleDeg = mountAuth.DirectionAngleDeg,
-                    CannonIndex = mountAuth.CannonIndex,
+                    DirectionAngleDeg = bestAuth != null ? bestAuth.DirectionAngleDeg : 0f,
+                    // Prefer authored index; EnsureUniqueCannonIndices fixes all-zero prefabs.
+                    CannonIndex = bestAuth != null ? bestAuth.CannonIndex : bi,
                 });
             }
 
-            if (dst.Count > 0)
-            {
-                // [TITAN-ORBIT] Many prefabs leave every CannonIndex at 0 — assign discovery order
-                // so round-robin buffer slots stay paired with the same live GO barrel.
-                EnsureUniqueCannonIndices(dst);
+            // [TITAN-ORBIT] Many prefabs leave every CannonIndex at 0 — assign discovery order
+            // so round-robin buffer slots stay paired with the same live GO barrel.
+            EnsureUniqueCannonIndices(dst);
+        }
+
+        /// <summary>
+        /// Fills <paramref name="dst"/> with one transform per distinct weapon body under
+        /// <paramref name="root"/>. Dedupes nested Weapon tip/mesh children into their body root.
+        /// </summary>
+        static void CollectDistinctWeaponBodies(Transform root, List<Transform> dst)
+        {
+            dst.Clear();
+            if (root == null)
                 return;
-            }
 
-            // --- Name / family weapon id scan (matches ShipWeaponMountCollector + IsWeaponComponent) ---
-            foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            var seen = new HashSet<int>();
+            var all = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
             {
-                if (t == root)
-                    continue;
-                if (!LooksLikeWeaponChildForBake(t))
+                Transform t = all[i];
+                if (t == null || t == root || !LooksLikeWeaponChildForBake(t))
                     continue;
 
-                GetHullRootLocalPose(root, t, out float3 localPos, out quaternion localRot);
-                dst.Add(new ShipWeaponMountBakeData
-                {
-                    LocalPosition = localPos,
-                    LocalRotation = ToPlanarYawLocalRotation(localRot),
-                    DirectionAngleDeg = 0f,
-                    CannonIndex = dst.Count,
-                });
+                Transform body = ResolveWeaponBodyRoot(t, root);
+                if (body == null || !seen.Add(body.GetInstanceID()))
+                    continue;
+
+                dst.Add(body);
+            }
+        }
+
+        /// <summary>
+        /// Climb from a Weapon-named tip/marker to its single-weapon body. Stops before multi-weapon
+        /// group parents (e.g. a "Weapons" folder).
+        /// </summary>
+        static Transform ResolveWeaponBodyRoot(Transform weaponMarker, Transform hullRoot)
+        {
+            Transform body = weaponMarker;
+            Transform candidate = weaponMarker.parent;
+            int markersInBody = CountWeaponNamedUnder(body);
+
+            while (candidate != null && candidate != hullRoot && LooksLikeWeaponChildForBake(candidate))
+            {
+                int markersInCandidate = CountWeaponNamedUnder(candidate);
+                // Parent owns more weapon-named descendants than this branch → weapon group; stop.
+                if (markersInCandidate > markersInBody)
+                    break;
+
+                body = candidate;
+                markersInBody = markersInCandidate;
+                candidate = candidate.parent;
             }
 
-            // [TITAN-ORBIT] Zero mounts is valid (unarmed). Do not invent a centerline muzzle.
-            if (dst.Count == 0 && !string.IsNullOrEmpty(chassisIdForLog))
-                Debug.Log($"[ChassisBake] Chassis '{chassisIdForLog}' has no Weapon mounts — unarmed.");
+            return body;
+        }
+
+        /// <summary>Counts weapon-like transforms under <paramref name="root"/> inclusive.</summary>
+        static int CountWeaponNamedUnder(Transform root)
+        {
+            if (root == null)
+                return 0;
+
+            int count = 0;
+            var all = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null && LooksLikeWeaponChildForBake(all[i]))
+                    count++;
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// Picks a <see cref="ShipWeaponMountAuthoring"/> whose resolved weapon body matches
+        /// <paramref name="body"/>, preferring markers closest to the body transform.
+        /// </summary>
+        static ShipWeaponMountAuthoring FindAuthoringForWeaponBody(
+            Transform hullRoot,
+            Transform body,
+            ShipWeaponMountAuthoring[] authorings)
+        {
+            if (body == null || authorings == null || authorings.Length == 0)
+                return null;
+
+            ShipWeaponMountAuthoring best = null;
+            float bestDistSq = float.MaxValue;
+
+            for (int i = 0; i < authorings.Length; i++)
+            {
+                var auth = authorings[i];
+                if (auth == null || auth.transform == null || auth.transform == hullRoot)
+                    continue;
+
+                Transform authBody = ResolveWeaponBodyRoot(auth.transform, hullRoot);
+                if (authBody != body)
+                    continue;
+
+                float d = (auth.transform.position - body.position).sqrMagnitude;
+                if (d < bestDistSq)
+                {
+                    bestDistSq = d;
+                    best = auth;
+                }
+            }
+
+            return best;
         }
 
         /// <summary>
@@ -324,6 +435,7 @@ namespace TitanOrbit.ECS
             try
             {
                 // --- Temp instance at identity (same as BakeVisualEntry) ---
+                // [UNITY] InverseTransformPoint needs a consistent root pose; Instantiates at identity.
                 instance = Object.Instantiate(chassisPrefab);
                 instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
                 instance.transform.localScale = Vector3.one;
@@ -338,6 +450,21 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Counts distinct wing <b>bodies</b> on a chassis prefab (no Instantiates).
+        /// Used to detect undercounted <see cref="ShipWingTractorBeamElement"/> buffers after the
+        /// old bake stopped at the first <see cref="ShipWingTractorBeamAuthoring"/>.
+        /// </summary>
+        public static int CountDistinctWingBodies(GameObject chassisPrefab)
+        {
+            if (chassisPrefab == null)
+                return 0;
+
+            var bodies = new List<Transform>(8);
+            CollectDistinctWingBodies(chassisPrefab.transform, bodies);
+            return bodies.Count;
+        }
+
+        /// <summary>
         /// Collects wing tractor-beam children into the catalog entry.
         /// Positions are <b>hull-root-local unscaled prefab space</b> (same rule as weapon mounts) —
         /// nested Wing children must not use immediate-parent <c>localPosition</c>.
@@ -347,60 +474,178 @@ namespace TitanOrbit.ECS
             BakeWingTractorBeams(root, entry.WingTractorBeams);
 
         /// <summary>
-        /// Shared wing scan used by catalog bake and runtime <see cref="TryBakeWingTractorBeams"/>.
-        /// Prefers <see cref="ShipWingTractorBeamAuthoring"/>; falls back to Wing-named children
-        /// (same rule as <c>StarshipGhostAuthoring</c>) so upgrade prefabs without markers still get beams.
+        /// One tractor slot per distinct wing <b>body</b> (not every Wing-named tip/mesh child).
+        /// <para>
+        /// [TITAN-ORBIT] Old Path A returned after the first <see cref="ShipWingTractorBeamAuthoring"/>,
+        /// so multi-wing upgrade hulls got a single ECS beam while the hybrid GO still showed every
+        /// wing (EnsureWingTractorBeamsOnHierarchy). Path B name-scan of every Wing* child over-counted.
+        /// This bake walks distinct wing bodies (same climb rule as beam VFX mid-centers) and pulls
+        /// stats from an authoring under that body when present.
+        /// </para>
         /// </summary>
         static void BakeWingTractorBeams(Transform root, List<ShipWingTractorBeamBakeData> dst)
         {
-            // --- Path A: explicit authoring markers ---
-            var wingAuthorings = root.GetComponentsInChildren<ShipWingTractorBeamAuthoring>(true);
-            for (int i = 0; i < wingAuthorings.Length; i++)
-            {
-                var wing = wingAuthorings[i];
-                if (wing == null || wing.transform == root)
-                    continue;
-
-                // [TITAN-ORBIT] Hull-root local — mirrors BakeWeaponMounts. Parent-local offsets on
-                // multi-wing upgrade chassis placed beams far from the visible wing tips.
-                GetHullRootLocalPose(root, wing.transform, out float3 localPos, out _);
-                dst.Add(new ShipWingTractorBeamBakeData
-                {
-                    LocalPosition = localPos,
-                    TractorBeamDistance = wing.tractorBeamDistance,
-                    TractorBeamDistancePerLevel = wing.tractorBeamDistancePerAbilityLevel,
-                    TractorBeamPower = wing.tractorBeamPower,
-                    TractorBeamPowerPerLevel = wing.tractorBeamPowerPerAbilityLevel,
-                    MaxGems = wing.maxGems,
-                    MaxGemsPerLevel = wing.maxGemsPerAbilityLevel,
-                });
-            }
-
-            if (dst.Count > 0)
+            if (root == null || dst == null)
                 return;
 
-            // --- Path B: name scan (Wing*, exclude Weapon*) with default tractor stats ---
-            foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            // --- Distinct wing bodies (left/right/… not tip children or "Wings" folders) ---
+            var bodies = new List<Transform>(8);
+            CollectDistinctWingBodies(root, bodies);
+            if (bodies.Count == 0)
+                return;
+
+            var authorings = root.GetComponentsInChildren<ShipWingTractorBeamAuthoring>(true);
+
+            for (int bi = 0; bi < bodies.Count; bi++)
             {
-                if (t == root || string.IsNullOrEmpty(t.name))
-                    continue;
-                if (t.name.IndexOf("Wing", System.StringComparison.OrdinalIgnoreCase) < 0)
-                    continue;
-                if (t.name.IndexOf("Weapon", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                Transform body = bodies[bi];
+                ShipWingTractorBeamAuthoring bestAuth = FindAuthoringForWingBody(root, body, authorings);
+
+                // Prefer authoring marker pose (often the tip) when present; else wing body root.
+                Transform poseSource = bestAuth != null ? bestAuth.transform : body;
+                GetHullRootLocalPose(root, poseSource, out float3 localPos, out _);
+
+                if (bestAuth != null)
+                {
+                    dst.Add(new ShipWingTractorBeamBakeData
+                    {
+                        LocalPosition = localPos,
+                        TractorBeamDistance = bestAuth.tractorBeamDistance,
+                        TractorBeamDistancePerLevel = bestAuth.tractorBeamDistancePerAbilityLevel,
+                        TractorBeamPower = bestAuth.tractorBeamPower,
+                        TractorBeamPowerPerLevel = bestAuth.tractorBeamPowerPerAbilityLevel,
+                        MaxGems = bestAuth.maxGems,
+                        MaxGemsPerLevel = bestAuth.maxGemsPerAbilityLevel,
+                    });
+                }
+                else
+                {
+                    dst.Add(new ShipWingTractorBeamBakeData
+                    {
+                        LocalPosition = localPos,
+                        TractorBeamDistance = 3f,
+                        TractorBeamDistancePerLevel = 0.75f,
+                        TractorBeamPower = 4f,
+                        TractorBeamPowerPerLevel = 1f,
+                        MaxGems = 8f,
+                        MaxGemsPerLevel = 2f,
+                    });
+                }
+            }
+        }
+
+        /// <summary>
+        /// Fills <paramref name="dst"/> with one transform per distinct wing body under
+        /// <paramref name="root"/>. Dedupes nested Wing tip/mesh children into their body root.
+        /// </summary>
+        static void CollectDistinctWingBodies(Transform root, List<Transform> dst)
+        {
+            dst.Clear();
+            if (root == null)
+                return;
+
+            var seen = new HashSet<int>();
+            var all = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                Transform t = all[i];
+                if (t == null || t == root || !LooksLikeWingTransformName(t.name))
                     continue;
 
-                GetHullRootLocalPose(root, t, out float3 localPos, out _);
-                dst.Add(new ShipWingTractorBeamBakeData
-                {
-                    LocalPosition = localPos,
-                    TractorBeamDistance = 3f,
-                    TractorBeamDistancePerLevel = 0.75f,
-                    TractorBeamPower = 4f,
-                    TractorBeamPowerPerLevel = 1f,
-                    MaxGems = 8f,
-                    MaxGemsPerLevel = 2f,
-                });
+                Transform body = ResolveWingBodyRootByName(t, root);
+                if (body == null || !seen.Add(body.GetInstanceID()))
+                    continue;
+
+                dst.Add(body);
             }
+        }
+
+        /// <summary>
+        /// Climb from a Wing-named tip/marker to its single-wing body. Stops before multi-wing
+        /// group parents (e.g. a "Wings" folder) — same rule as <c>GemTractorBeamVisual</c>.
+        /// </summary>
+        static Transform ResolveWingBodyRootByName(Transform wingMarker, Transform hullRoot)
+        {
+            Transform body = wingMarker;
+            Transform candidate = wingMarker.parent;
+            int markersInBody = CountWingNamedUnder(body);
+
+            while (candidate != null && candidate != hullRoot && LooksLikeWingTransformName(candidate.name))
+            {
+                int markersInCandidate = CountWingNamedUnder(candidate);
+                // Parent owns more wing-named descendants than this branch → wing group; stop.
+                if (markersInCandidate > markersInBody)
+                    break;
+
+                body = candidate;
+                markersInBody = markersInCandidate;
+                candidate = candidate.parent;
+            }
+
+            return body;
+        }
+
+        /// <summary>Counts Wing-named (non-Weapon) transforms under <paramref name="root"/> inclusive.</summary>
+        static int CountWingNamedUnder(Transform root)
+        {
+            if (root == null)
+                return 0;
+
+            int count = 0;
+            var all = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null && LooksLikeWingTransformName(all[i].name))
+                    count++;
+            }
+
+            return count;
+        }
+
+        /// <summary>True when the transform name is a wing slot (Wing*, not Weapon*).</summary>
+        static bool LooksLikeWingTransformName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return false;
+            if (name.IndexOf("Weapon", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return false;
+            return name.IndexOf("Wing", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// Picks a <see cref="ShipWingTractorBeamAuthoring"/> whose resolved wing body matches
+        /// <paramref name="body"/>, preferring markers closest to the body transform.
+        /// </summary>
+        static ShipWingTractorBeamAuthoring FindAuthoringForWingBody(
+            Transform hullRoot,
+            Transform body,
+            ShipWingTractorBeamAuthoring[] authorings)
+        {
+            if (body == null || authorings == null || authorings.Length == 0)
+                return null;
+
+            ShipWingTractorBeamAuthoring best = null;
+            float bestDistSq = float.MaxValue;
+
+            for (int i = 0; i < authorings.Length; i++)
+            {
+                var auth = authorings[i];
+                if (auth == null || auth.transform == null || auth.transform == hullRoot)
+                    continue;
+
+                Transform authBody = ResolveWingBodyRootByName(auth.transform, hullRoot);
+                if (authBody != body)
+                    continue;
+
+                float d = (auth.transform.position - body.position).sqrMagnitude;
+                if (d < bestDistSq)
+                {
+                    bestDistSq = d;
+                    best = auth;
+                }
+            }
+
+            return best;
         }
 
         static void DecomposeMatrix(

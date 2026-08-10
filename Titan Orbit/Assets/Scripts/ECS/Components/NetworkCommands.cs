@@ -427,4 +427,27 @@ namespace TitanOrbit.ECS
         /// <summary>Planet level at flip time (fingerprint / bonuses).</summary>
         public int PlanetLevel;
     }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: an asteroid respawned after destroy.
+    /// Asteroids are not ghost-relevant under seed-hydrate join — clients spawn a local body.
+    /// Wire layout must match Linux headless.
+    /// </summary>
+    public struct AsteroidRespawnRpc : IRpcCommand
+    {
+        /// <summary>World position (Y forced to 0 on apply).</summary>
+        public float3 Position;
+
+        /// <summary>Uniform LocalTransform scale.</summary>
+        public float Scale;
+
+        /// <summary>Full gem capacity.</summary>
+        public float GemValue;
+
+        /// <summary>Full Health.</summary>
+        public float MaxHealth;
+
+        /// <summary>Designer Size for bounce mass.</summary>
+        public float Size;
+    }
 }
