@@ -10,14 +10,8 @@ namespace TitanOrbit.UI
     {
         private const float TheatricalSurfacePaddingWorld = 0.45f;
         private static readonly Quaternion GameplayTopDownRotation = Quaternion.Euler(90f, 0f, 0f);
-        private static TitanOrbit.Camera.CameraController s_cachedCameraController;
 
-        public static bool IsTheatricalEngaged()
-        {
-            if (s_cachedCameraController == null)
-                s_cachedCameraController = Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
-            return s_cachedCameraController != null && s_cachedCameraController.IsTheatricalCameraEngaged;
-        }
+        public static bool IsTheatricalEngaged() => false;
 
         public static void ApplyPanelPlacement(
             RectTransform panel,
@@ -26,6 +20,7 @@ namespace TitanOrbit.UI
             float gameplayLocalY,
             float gameplaySurfacePaddingWorld)
         {
+            // --- Gameplay top-down vs theatrical camera-facing ---
             if (panel == null || body == null) return;
 
             if (!IsTheatricalEngaged())

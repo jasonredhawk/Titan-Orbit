@@ -13,6 +13,7 @@ namespace TitanOrbit.Editor
         [MenuItem("Tools/Textures/Reduce Ship & Planet Textures For WebGL")]
         public static void ReduceShipAndPlanetTexturesForWebGL()
         {
+            // --- ReduceShipAndPlanetTexturesForWebGL ---
             int processed = WebGLTextureImportBuildFix.ApplyWebGlGameplayTextureImports(log: true);
 
             EditorUtility.DisplayDialog(

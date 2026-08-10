@@ -6,107 +6,85 @@ using TitanOrbit.Data;
 namespace TitanOrbit.Entities
 {
     /// <summary>
-    /// All starship prefabs should have this component on the root. Starship.cs reads it at runtime to get
-    /// summed ability stats (health, energy, fire power, etc.) from the ShipFamilyDefinition and component scales.
-    /// Engines and thrusters share one propulsion pool: top speed uses one base move speed (best engine/thruster)
-    /// plus half the sum of each additional engine/thruster's moveSpeedPerLevel; acceleration caps sum across all propulsion parts.
-    /// Attach to the prefab root; assign Ship Family to the matching ShipFamilyDefinition (e.g. AstroEagle).
-    /// Child names must follow Family_ComponentId (e.g. AstroEagle_Cockpit, AstroEagle_Weapon_1).
+    /// Editor/runtime MonoBehaviour that live-sums <see cref="ShipComponentAbilityStats"/> from prefab children
+    /// using <see cref="ShipFamilyStatsCalculator"/>. Attach to a chassis prefab root to preview matched parts
+    /// and totals while authoring. [UNITY] Recalculates on enable, child changes, and OnValidate.
+    /// Exposes propulsion breakdown and mass estimates for <see cref="Editor.ShipFamilyStatsPreviewEditor"/>.
     /// </summary>
     [ExecuteAlways]
     public class ShipFamilyStatsPreview : MonoBehaviour
     {
-        [Header("Config")]
-        [Tooltip("Ship family definition asset describing all component stats for this family.")]
-        [SerializeField] private ShipFamilyDefinition shipFamily;
+        [SerializeField] ShipFamilyDefinition shipFamily;
+        [SerializeField] string familyIdOverride;
+        [SerializeField] ShipComponentAbilityStats totalStats;
+        [SerializeField] List<string> matchedComponentIds = new List<string>();
+        [SerializeField] List<ShipComponentAbilityStats> perComponentStats = new List<ShipComponentAbilityStats>();
+        [SerializeField] List<float> matchedScaleFactors = new List<float>();
 
-        [Tooltip("If empty, uses shipFamily.familyId. Override to preview with a different family id prefix.")]
-        [SerializeField] private string familyIdOverride;
+        [SerializeField] float previewSumPropulsionAcceleration;
+        [SerializeField] float previewSumPropulsionAccelerationPerLevel;
+        [SerializeField] float previewPrimaryThrusterMoveSpeed;
+        [SerializeField] float previewExtraThrusterMoveSpeed;
+        [SerializeField] float previewTopSpeedMoveSpeed;
+        [SerializeField] float previewComponentMass;
+        [SerializeField] float previewHudHullMass;
 
-        [Header("Aggregated Stats (read-only)")]
-        [SerializeField] private ShipComponentAbilityStats totalStats;
-
-        [Tooltip("Optional: component ids found under this prefab (one per matched transform).")]
-        [SerializeField] private List<string> matchedComponentIds = new List<string>();
-
-        [Tooltip("Average scale (x+y+z)/3 per matched component; same order as Matched Component Ids.")]
-        [SerializeField] private List<float> matchedScaleFactors = new List<float>();
-
-        [Tooltip("Scaled stats per matched component; same order as Matched Component Ids.")]
-        [SerializeField] private List<ShipComponentAbilityStats> perComponentStats = new List<ShipComponentAbilityStats>();
-
-        [Header("Propulsion preview (engines + thrusters, ship level 1 base)")]
-        [Tooltip("Sum of engine and thruster Acceleration Cap — matches Starship thrust numerator (stacked before F/m).")]
-        [SerializeField] private float previewSumPropulsionAcceleration;
-        [Tooltip("Sum of engine and thruster Acceleration Cap / Level (per-level terms, ship level 1 adds 0).")]
-        [SerializeField] private float previewSumPropulsionAccelerationPerLevel;
-        [Tooltip("Extra top speed from non-primary engines/thrusters: half the sum of their moveSpeedPerLevel.")]
-        [SerializeField] private float previewExtraThrusterMoveSpeed;
-        [Tooltip("Primary thruster base move speed — first term in top speed cap.")]
-        [SerializeField] private float previewPrimaryThrusterMoveSpeed;
-        [Tooltip("Top speed cap: primary thruster move speed + extra thruster moveSpeedPerLevel terms.")]
-        [SerializeField] private float previewTopSpeedMoveSpeed;
-
-        [Header("Mass preview")]
-        [Tooltip("Chassis component mass from direct-child part scales + weapons — matches Starship / speedometer MASS.")]
-        [SerializeField] private float previewComponentMass;
-        [Tooltip("Estimated HUD hull mass at level 1, empty cargo (component mass × ShipFamilyDefinition.DefaultHullMassScale).")]
-        [SerializeField] private float previewHudHullMass;
-
+        /// <summary>Aggregated ability totals after shared propulsion / weapon rules + family bonuses.</summary>
         public ShipComponentAbilityStats TotalStats => totalStats;
-        public float PreviewComponentMass => previewComponentMass;
-        public float PreviewHudHullMass => previewHudHullMass;
-        public IReadOnlyList<string> MatchedComponentIds => matchedComponentIds;
-        public IReadOnlyList<float> MatchedScaleFactors => matchedScaleFactors;
-        public IReadOnlyList<ShipComponentAbilityStats> PerComponentStats => perComponentStats;
-        /// <summary>Sum of engine and thruster <see cref="ShipComponentAbilityStats.accelerationCap"/> (level 1). Matches Starship propulsion thrust stacking.</summary>
-        public float PreviewSumPropulsionAcceleration => previewSumPropulsionAcceleration;
-        /// <summary>Sum of engine and thruster <see cref="ShipComponentAbilityStats.accelerationCapPerLevel"/>.</summary>
-        public float PreviewSumPropulsionAccelerationPerLevel => previewSumPropulsionAccelerationPerLevel;
-        /// <summary>Effective extra top speed from non-primary propulsion parts (half summed moveSpeedPerLevel).</summary>
-        public float PreviewExtraThrusterMoveSpeed => previewExtraThrusterMoveSpeed;
-        /// <summary>Primary thruster base move speed before extras.</summary>
-        public float PreviewPrimaryThrusterMoveSpeed => previewPrimaryThrusterMoveSpeed;
-        /// <summary>Top speed cap from thruster aggregation (matches speedometer max).</summary>
-        public float PreviewTopSpeedMoveSpeed => previewTopSpeedMoveSpeed;
-        /// <summary>Ship family definition used for stats (so runtime can apply the same stats from prefab).</summary>
+
+        /// <summary>Family asset used for component id → stats lookup.</summary>
         public ShipFamilyDefinition ShipFamily => shipFamily;
 
-        private void OnEnable()
-        {
-            RecalculateFromChildren();
-        }
+        /// <summary>Prefab child ids that matched family component entries on the last scan.</summary>
+        public List<string> MatchedComponentIds => matchedComponentIds;
 
-        private void OnTransformChildrenChanged()
-        {
-            RecalculateFromChildren();
-        }
+        /// <summary>Average localScale factors parallel to <see cref="MatchedComponentIds"/>.</summary>
+        public List<float> MatchedScaleFactors => matchedScaleFactors;
+
+        /// <summary>Per-part scaled stats parallel to <see cref="MatchedComponentIds"/>.</summary>
+        public List<ShipComponentAbilityStats> PerComponentStats => perComponentStats;
+
+        /// <summary>Sum of accelerationCap on engine/thruster parts (level 1).</summary>
+        public float PreviewSumPropulsionAcceleration => previewSumPropulsionAcceleration;
+
+        /// <summary>Sum of accelerationCapPerAbilityLevel on engine/thruster parts.</summary>
+        public float PreviewSumPropulsionAccelerationPerLevel => previewSumPropulsionAccelerationPerLevel;
+
+        /// <summary>Best engine/thruster base moveSpeed (counted once toward top speed).</summary>
+        public float PreviewPrimaryThrusterMoveSpeed => previewPrimaryThrusterMoveSpeed;
+
+        /// <summary>Half the sum of moveSpeedPerAbilityLevel from non-primary propulsion parts.</summary>
+        public float PreviewExtraThrusterMoveSpeed => previewExtraThrusterMoveSpeed;
+
+        /// <summary>Primary + extra propulsion move speed (matches in-game top-speed feel at level 1).</summary>
+        public float PreviewTopSpeedMoveSpeed => previewTopSpeedMoveSpeed;
+
+        /// <summary>Sum of part scale factors — speedometer MASS before hullMassScale.</summary>
+        public float PreviewComponentMass => previewComponentMass;
+
+        /// <summary>Component mass × <see cref="ShipFamilyDefinition.DefaultHullMassScale"/>.</summary>
+        public float PreviewHudHullMass => previewHudHullMass;
+
+        void OnEnable() => RecalculateFromChildren();
+
+        void OnTransformChildrenChanged() => RecalculateFromChildren();
 
 #if UNITY_EDITOR
-        private void OnValidate()
-        {
-            // Keep preview up-to-date when editing in inspector
-            RecalculateFromChildren();
-        }
+        void OnValidate() => RecalculateFromChildren();
 #endif
 
-        /// <summary>
-        /// Scan all child transforms, parse names of the form Family_ComponentId, and sum their stats.
-        /// Each component's contribution is scaled by transform: non-weapons use average scale (x+y+z)/3 for most stats;
-        /// engine/thruster move speed, acceleration cap, and turn speed use authored values only (see <see cref="ShipComponentAbilityStats.ScaleStatsByTransform"/>).
-        /// Weapons: fire power scales by average(x,y); fire rate scales by 1/z (smaller z = faster); bullet speed is not scaled by transform.
-        /// Propulsion preview fields mirror <c>Starship.ApplyChassisComponentStats</c> for thruster parts at ship level 1.
-        /// </summary>
+        /// <summary>Re-scans child transforms and refreshes serialized total/matched lists for inspector display.</summary>
         public void RecalculateFromChildren()
         {
+            // --- Reset ---
             totalStats = default;
             matchedComponentIds.Clear();
-            matchedScaleFactors.Clear();
             perComponentStats.Clear();
+            matchedScaleFactors.Clear();
             previewSumPropulsionAcceleration = 0f;
             previewSumPropulsionAccelerationPerLevel = 0f;
-            previewExtraThrusterMoveSpeed = 0f;
             previewPrimaryThrusterMoveSpeed = 0f;
+            previewExtraThrusterMoveSpeed = 0f;
             previewTopSpeedMoveSpeed = 0f;
             previewComponentMass = 0f;
             previewHudHullMass = 0f;
@@ -114,72 +92,82 @@ namespace TitanOrbit.Entities
             if (shipFamily == null)
                 return;
 
+            // --- Full sum (aggregation + fallbacks + family bonuses) ---
+            var sum = ShipFamilyStatsCalculator.SumFromPrefabHierarchy(gameObject, shipFamily, shipLevel: 1);
+            totalStats = sum.TotalStats;
+            matchedComponentIds = sum.MatchedComponentIds ?? new List<string>();
+            perComponentStats = sum.PerComponentStats ?? new List<ShipComponentAbilityStats>();
+
+            // --- Scale factors for matched ids (editor display only) ---
             string familyId = !string.IsNullOrWhiteSpace(familyIdOverride)
                 ? familyIdOverride.Trim()
-                : shipFamily.familyId != null ? shipFamily.familyId.Trim() : string.Empty;
+                : (shipFamily.familyId ?? string.Empty).Trim();
+            RefreshMatchedScaleFactors(familyId);
 
-            if (string.IsNullOrEmpty(familyId))
-                return;
+            // --- Propulsion breakdown (engines + thrusters only) ---
+            RefreshPropulsionPreview(shipLevel: 1);
 
-#if UNITY_EDITOR
-            shipFamily.InvalidateComponentStatsLookup();
-#endif
-
-            var transforms = GetComponentsInChildren<Transform>(true);
-            for (int i = 0; i < transforms.Length; i++)
-            {
-                var t = transforms[i];
-                if (t == null || t == transform) continue;
-
-                string name = t.name;
-                if (string.IsNullOrEmpty(name)) continue;
-
-                // Expect "Family_ComponentId"
-                if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string componentId = name.Substring(familyId.Length + 1);
-                if (string.IsNullOrWhiteSpace(componentId))
-                    continue;
-
-                if (shipFamily.TryGetStatsForComponent(componentId, out var stats))
-                {
-                    ShipComponentAbilityStats scaled = ShipComponentAbilityStats.ScaleStatsByTransform(stats, t, componentId);
-                    totalStats.AddInPlace(scaled);
-                    matchedComponentIds.Add(componentId);
-                    matchedScaleFactors.Add(ShipComponentAbilityStats.GetNormalizedScaleFromTransform(t));
-                    perComponentStats.Add(scaled);
-                }
-            }
-
-            ShipPropulsionAggregation.Result propulsion = ShipPropulsionAggregation.ComputeThrusterPropulsion(
-                matchedComponentIds,
-                perComponentStats,
-                shipLevel: 1);
-            totalStats = ShipPropulsionAggregation.ApplyPropulsionToSummedStats(
-                totalStats,
-                matchedComponentIds,
-                perComponentStats,
-                shipLevel: 1);
-            totalStats = shipFamily.ApplyStatFallbacks(totalStats);
-
-            previewTopSpeedMoveSpeed = propulsion.topMoveSpeed;
-            previewSumPropulsionAcceleration = propulsion.sumAcceleration;
-            previewPrimaryThrusterMoveSpeed = propulsion.primaryIndex >= 0
-                ? perComponentStats[propulsion.primaryIndex].moveSpeed
-                : 0f;
-            previewExtraThrusterMoveSpeed = propulsion.extraMoveSpeedFromPerLevel;
-
-            for (int k = 0; k < matchedComponentIds.Count; k++)
-            {
-                if (!ShipComponentAbilityStats.IsPropulsionComponent(matchedComponentIds[k]))
-                    continue;
-                previewSumPropulsionAccelerationPerLevel += perComponentStats[k].accelerationCapPerLevel;
-            }
-
+            // --- Mass ---
             previewComponentMass = ChassisComponentStats.ComputeComponentMassFromTransform(transform, familyId);
             previewHudHullMass = Mathf.Max(0.5f, previewComponentMass * ShipFamilyDefinition.DefaultHullMassScale);
         }
+
+        /// <summary>Fills <see cref="matchedScaleFactors"/> from current hierarchy for each matched id.</summary>
+        void RefreshMatchedScaleFactors(string familyId)
+        {
+            matchedScaleFactors.Clear();
+            if (matchedComponentIds == null || matchedComponentIds.Count == 0)
+                return;
+
+            var transforms = GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < matchedComponentIds.Count; i++)
+            {
+                string id = matchedComponentIds[i];
+                float scale = 1f;
+                if (!string.IsNullOrEmpty(familyId) && !string.IsNullOrEmpty(id))
+                {
+                    string want = familyId + "_" + id;
+                    for (int t = 0; t < transforms.Length; t++)
+                    {
+                        Transform tr = transforms[t];
+                        if (tr == null)
+                            continue;
+                        string name = ShipFamilyDefinition.NormalizeComponentId(tr.name);
+                        if (string.Equals(name, want, StringComparison.OrdinalIgnoreCase)
+                            || name.EndsWith("_" + id, StringComparison.OrdinalIgnoreCase))
+                        {
+                            scale = ChassisComponentStats.GetScaleFactor(tr);
+                            break;
+                        }
+                    }
+                }
+
+                matchedScaleFactors.Add(scale);
+            }
+        }
+
+        /// <summary>
+        /// Computes primary / extra move-speed and accel sums from matched propulsion parts
+        /// using the same rules as <see cref="ShipPropulsionAggregation"/>.
+        /// </summary>
+        void RefreshPropulsionPreview(int shipLevel)
+        {
+            if (matchedComponentIds == null || perComponentStats == null)
+                return;
+
+            var propulsion = ShipPropulsionAggregation.ComputeThrusterPropulsion(
+                matchedComponentIds,
+                perComponentStats,
+                shipLevel);
+
+            previewPrimaryThrusterMoveSpeed = 0f;
+            previewExtraThrusterMoveSpeed = propulsion.extraMoveSpeedFromAdditional;
+            previewTopSpeedMoveSpeed = propulsion.topMoveSpeed;
+            previewSumPropulsionAcceleration = propulsion.sumAcceleration;
+            previewSumPropulsionAccelerationPerLevel = propulsion.accelerationCapPerAbilityLevel;
+
+            if (propulsion.primaryIndex >= 0 && propulsion.primaryIndex < perComponentStats.Count)
+                previewPrimaryThrusterMoveSpeed = perComponentStats[propulsion.primaryIndex].moveSpeed;
+        }
     }
 }
-

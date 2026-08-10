@@ -23,6 +23,7 @@ namespace TitanOrbit.UI
 
         void OnEnable()
         {
+            // --- Unity lifecycle ---
             if (addFriendButton != null)
             {
                 addFriendButton.onClick.RemoveListener(OnAddFriendClicked);
@@ -38,6 +39,7 @@ namespace TitanOrbit.UI
 
         void OnDisable()
         {
+            // --- Unity lifecycle ---
             if (addFriendButton != null)
                 addFriendButton.onClick.RemoveListener(OnAddFriendClicked);
             if (refreshButton != null)
@@ -46,6 +48,7 @@ namespace TitanOrbit.UI
 
         async void OnAddFriendClicked()
         {
+            // --- OnAddFriendClicked ---
             string raw = addFriendByIdOrNameField != null ? addFriendByIdOrNameField.text : null;
             raw = (raw ?? "").Trim();
             if (string.IsNullOrEmpty(raw))
@@ -82,6 +85,7 @@ namespace TitanOrbit.UI
 
         async Task RefreshFriendsUiAsync()
         {
+            // --- RefreshFriendsUiAsync ---
             if (!UnityGameServicesBootstrap.IsSignedIn)
             {
                 SetStatus("Sign in to use Friends.");

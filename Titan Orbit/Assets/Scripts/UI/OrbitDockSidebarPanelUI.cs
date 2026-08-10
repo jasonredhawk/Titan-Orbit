@@ -1,6 +1,6 @@
 using System;
 using TitanOrbit.Data;
-using TitanOrbit.Entities;
+using TitanOrbit.Simulation;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -8,7 +8,9 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Narrow left dock panel: navigation between Upgrades and Store, current ship, bank balance, and equipped loadout.
+    /// Narrow left Orbit Menu dock: Upgrades/Store nav, current ship, bank, and compact purchased loadout.
+    /// Upgrade Cards and Equipment hosts hold glance-sized cards (title + icon + power bar) so many
+    /// owned items fit on one scroll pass. Full ability text lives on the right-hand store purchase cards.
     /// </summary>
     public class OrbitDockSidebarPanelUI : MonoBehaviour
     {
@@ -18,7 +20,11 @@ namespace TitanOrbit.UI
             Store
         }
 
-        public const float PanelWidth = 252f;
+        /// <summary>
+        /// Fixed width of the left Orbit Menu dock (nav + Your Ship + purchased loadout).
+        /// Slightly wider than the old 252 so compact inventory cards can use a readable title row.
+        /// </summary>
+        public const float PanelWidth = 286f;
         public const string SectionTitleUpgradeCards = "Upgrade Cards";
         public const string SectionTitleEquipment = "Equipment";
 
@@ -30,8 +36,12 @@ namespace TitanOrbit.UI
         public static readonly Color BankBalanceAccent = new Color(0.95f, 0.78f, 0.22f, 1f);
 
         private const float NavStripHeight = 44f;
-        private const float CurrentShipNodeHeight = 232f;
-        private const float BankBalanceBannerHeight = 72f;
+        /// <summary>
+        /// Height of the "Your Ship" hero card (preview + labels + power bar).
+        /// Tall enough that the scaled power bar fits inside the card instead of spilling into Bank below.
+        /// </summary>
+        private const float CurrentShipNodeHeight = 256f;
+        private const float BankBalanceBannerHeight = 96f;
         private const float AutoDepositToggleHeight = 38f;
         public const string AutoDepositGemsPrefsKey = "TitanOrbit_AutoDepositGems";
         public const int AutoDepositGemsDefaultEnabled = 1;
@@ -45,7 +55,9 @@ namespace TitanOrbit.UI
         private RectTransform _loadoutHost;
         private RectTransform _equipmentHost;
         private TextMeshProUGUI _bankText;
-        private TextMeshProUGUI _bankAmountText;
+        private TextMeshProUGUI _shipGemsValueText;
+        private TextMeshProUGUI _bankValueText;
+        private TextMeshProUGUI _planetProgressText;
         private Button _autoDepositToggle;
         private Image _autoDepositToggleBg;
         private TextMeshProUGUI _autoDepositToggleStateLabel;
@@ -56,7 +68,7 @@ namespace TitanOrbit.UI
         private Button _navStoreBtn;
         private Image _navUpgradesBg;
         private Image _navStoreBg;
-        private OrbitStationUI _station;
+        private IOrbitStationHost _station;
         private Action<NavTarget> _onNavSelected;
         private NavTarget _activeNav = NavTarget.Upgrades;
         private bool _built;
@@ -67,12 +79,13 @@ namespace TitanOrbit.UI
 
         public void ConfigureVisuals(Sprite panelBg, Sprite btnSprite, TMP_FontAsset font)
         {
+            // --- ConfigureVisuals ---
             panelBackgroundSprite = panelBg;
             buttonSprite = btnSprite;
             fontAsset = font;
         }
 
-        public void BindStation(OrbitStationUI station)
+        public void BindStation(IOrbitStationHost station)
         {
             _station = station;
         }
@@ -90,6 +103,7 @@ namespace TitanOrbit.UI
 
         public void EnsureBuilt()
         {
+            // --- Ensure setup ---
             if (_built)
             {
                 if (_autoDepositToggle == null)
@@ -102,6 +116,9 @@ namespace TitanOrbit.UI
             var rootRt = transform as RectTransform;
             if (rootRt == null)
                 rootRt = gameObject.AddComponent<RectTransform>();
+            rootRt.anchorMin = Vector2.zero;
+            rootRt.anchorMax = Vector2.one;
+            rootRt.offsetMin = rootRt.offsetMax = Vector2.zero;
 
             var rootBg = gameObject.GetComponent<Image>();
             if (rootBg == null)
@@ -167,7 +184,7 @@ namespace TitanOrbit.UI
             CreateAutoDepositToggle(_contentRoot);
 
             CreateAccentSectionHeader(_contentRoot, SectionTitleUpgradeCards,
-                "Equipped cards — tap ✕ to remove.", UpgradeCardsAccent);
+                "Equipped cards ΓÇö tap Γ£ò to remove.", UpgradeCardsAccent);
             _loadoutHost = CreateStretchHost(_contentRoot, "LoadoutHost", 80f);
             var loadoutLe = _loadoutHost.GetComponent<LayoutElement>();
             loadoutLe.minHeight = 64f;
@@ -175,7 +192,7 @@ namespace TitanOrbit.UI
             loadoutLe.flexibleHeight = 0f;
 
             CreateAccentSectionHeader(_contentRoot, SectionTitleEquipment,
-                "Equipped store items — tap ✕ to remove.", EquipmentAccent);
+                "Equipped store items ΓÇö tap Γ£ò to remove.", EquipmentAccent);
             _equipmentHost = CreateStretchHost(_contentRoot, "EquipmentHost", 80f);
             var equipmentLe = _equipmentHost.GetComponent<LayoutElement>();
             equipmentLe.minHeight = 64f;
@@ -187,6 +204,7 @@ namespace TitanOrbit.UI
 
         private void BuildNavStrip()
         {
+            // --- Build data ---
             var navGo = new GameObject("NavStrip");
             navGo.transform.SetParent(transform, false);
             var navRt = navGo.AddComponent<RectTransform>();
@@ -210,6 +228,7 @@ namespace TitanOrbit.UI
 
         private Button CreateNavButton(Transform parent, string label, NavTarget target, out Image bg)
         {
+            // --- Create instance ---
             var go = new GameObject("Nav_" + label);
             go.transform.SetParent(parent, false);
             bg = go.AddComponent<Image>();
@@ -248,6 +267,7 @@ namespace TitanOrbit.UI
 
         private void ApplyNavVisuals()
         {
+            // --- Apply changes ---
             if (_navUpgradesBg == null || _navStoreBg == null)
                 return;
 
@@ -262,12 +282,27 @@ namespace TitanOrbit.UI
 
         public void EnsureCurrentShipNode(ShipUpgradeTreeNodeUI nodePrefab, Sprite nodeBackgroundSprite)
         {
+            // --- Ensure setup ---
             EnsureBuilt();
-            if (_currentShipNode != null || nodePrefab == null || _currentShipHost == null)
+            if (nodePrefab == null || _currentShipHost == null)
                 return;
 
             float innerW = PanelWidth - 32f;
             float trackW = Mathf.Max(48f, innerW - 56f);
+
+            // Node already built — still re-apply hero layout so name-above-art / hide-"You" edits stick after code changes.
+            if (_currentShipNode != null)
+            {
+                _currentShipNode.ApplySidebarHeroPreviewLayout(innerW, CurrentShipNodeHeight, trackW);
+                _currentShipNode.ConfigureLayout(true);
+                _currentShipNode.SetSidebarHeroCardClickHandler(() =>
+                {
+                    if (_station != null)
+                        _station.OnCurrentShipDisplayNodeClicked();
+                });
+                return;
+            }
+
             var view = Instantiate(nodePrefab, _currentShipHost);
             view.gameObject.SetActive(true);
             if (nodeBackgroundSprite != null)
@@ -282,8 +317,9 @@ namespace TitanOrbit.UI
 
             view.ApplySidebarHeroPreviewLayout(innerW, CurrentShipNodeHeight, trackW);
             view.ConfigureLayout(true);
-            view.EnsureStableButtonRendering();
-            view.SetPriceClickHandler(() =>
+            // [TITAN-ORBIT] Sidebar hero hides the dark price pill (it sat on top of the power bar).
+            // Hull-swap click goes on the whole card instead.
+            view.SetSidebarHeroCardClickHandler(() =>
             {
                 if (_station != null)
                     _station.OnCurrentShipDisplayNodeClicked();
@@ -302,17 +338,42 @@ namespace TitanOrbit.UI
             SetAutoDepositToggleVisual(enabled, notify: false);
         }
 
-        public void RefreshBank(float contributedGems)
+        public void RefreshBank(float contributedGems) =>
+            RefreshDepositStatus(0f, contributedGems, 0f, 1);
+
+        public void RefreshDepositStatus(float shipGems, float bankBalance, float planetGems, int planetLevel)
         {
+            // --- RefreshDepositStatus ---
             EnsureBuilt();
-            if (_bankAmountText != null)
-                _bankAmountText.text = $"{contributedGems:F0} g";
-            else if (_bankText != null)
-                _bankText.text = $"Bank balance: {contributedGems:F0} g";
+
+            // Dirty-check TMP — Orbit Menu called this every frame while open (ToString GC).
+            string shipStr = shipGems.ToString("F0");
+            string bankStr = bankBalance.ToString("F0");
+            if (_shipGemsValueText != null && _shipGemsValueText.text != shipStr)
+                _shipGemsValueText.text = shipStr;
+            if (_bankValueText != null && _bankValueText.text != bankStr)
+                _bankValueText.text = bankStr;
+
+            if (_planetProgressText == null)
+                return;
+
+            planetLevel = Mathf.Max(1, planetLevel);
+            string planetStr;
+            if (planetLevel >= PlanetEconomyMath.MaxPlanetLevel)
+                planetStr = $"Planet L{planetLevel} · max";
+            else
+            {
+                float maxGems = PlanetEconomyMath.GetMaxGemsForLevel(planetLevel);
+                planetStr = $"Planet L{planetLevel} · {planetGems:F0}/{maxGems:F0}";
+            }
+
+            if (_planetProgressText.text != planetStr)
+                _planetProgressText.text = planetStr;
         }
 
         public void RefreshCurrentShip(Action<ShipUpgradeTreeNodeUI, float> populateNode, float maxPower)
         {
+            // --- RefreshCurrentShip ---
             if (_currentShipNode == null || populateNode == null)
                 return;
             populateNode(_currentShipNode, maxPower);
@@ -401,6 +462,7 @@ namespace TitanOrbit.UI
 
         private void CreateBankBalanceBanner(Transform parent)
         {
+            // --- Create instance ---
             var bannerGo = new GameObject("BankBalance");
             bannerGo.transform.SetParent(parent, false);
             var bannerLe = bannerGo.AddComponent<LayoutElement>();
@@ -446,7 +508,7 @@ namespace TitanOrbit.UI
             labelLe.preferredHeight = 14f;
             labelLe.minHeight = 12f;
             _bankText = labelGo.AddComponent<TextMeshProUGUI>();
-            _bankText.text = "Bank balance";
+            _bankText.text = "GEM DEPOSITS";
             _bankText.fontSize = 11f;
             _bankText.fontStyle = FontStyles.Bold;
             _bankText.characterSpacing = 2f;
@@ -455,26 +517,123 @@ namespace TitanOrbit.UI
             _bankText.raycastTarget = false;
             ApplyFont(_bankText);
 
-            var amountGo = new GameObject("Amount");
-            amountGo.transform.SetParent(bannerGo.transform, false);
-            var amountLe = amountGo.AddComponent<LayoutElement>();
-            amountLe.preferredHeight = 32f;
-            amountLe.minHeight = 28f;
-            amountLe.flexibleHeight = 0f;
-            _bankAmountText = amountGo.AddComponent<TextMeshProUGUI>();
-            _bankAmountText.text = "0 g";
-            _bankAmountText.fontSize = 26f;
-            _bankAmountText.fontStyle = FontStyles.Bold;
-            _bankAmountText.alignment = TextAlignmentOptions.Center;
-            _bankAmountText.color = new Color(1f, 0.92f, 0.55f, 1f);
-            _bankAmountText.enableWordWrapping = false;
-            _bankAmountText.overflowMode = TextOverflowModes.Ellipsis;
-            _bankAmountText.raycastTarget = false;
-            ApplyFont(_bankAmountText);
+            var flowRowGo = new GameObject("GemFlowRow");
+            flowRowGo.transform.SetParent(bannerGo.transform, false);
+            var flowRowLe = flowRowGo.AddComponent<LayoutElement>();
+            flowRowLe.preferredHeight = 40f;
+            flowRowLe.minHeight = 36f;
+            flowRowLe.flexibleHeight = 0f;
+            var flowRow = flowRowGo.AddComponent<HorizontalLayoutGroup>();
+            flowRow.spacing = 4f;
+            flowRow.padding = new RectOffset(2, 2, 0, 0);
+            flowRow.childAlignment = TextAnchor.MiddleCenter;
+            flowRow.childControlWidth = true;
+            flowRow.childControlHeight = true;
+            flowRow.childForceExpandWidth = true;
+            flowRow.childForceExpandHeight = true;
+
+            _shipGemsValueText = CreateGemFlowColumn(
+                flowRowGo.transform,
+                "Ship",
+                "0",
+                new Color(0.82f, 0.92f, 1f, 1f));
+
+            CreateGemFlowArrow(flowRowGo.transform);
+
+            _bankValueText = CreateGemFlowColumn(
+                flowRowGo.transform,
+                "Bank",
+                "0",
+                new Color(1f, 0.92f, 0.55f, 1f));
+
+            var planetGo = new GameObject("PlanetProgress");
+            planetGo.transform.SetParent(bannerGo.transform, false);
+            var planetLe = planetGo.AddComponent<LayoutElement>();
+            planetLe.preferredHeight = 18f;
+            planetLe.minHeight = 16f;
+            planetLe.flexibleHeight = 0f;
+            _planetProgressText = planetGo.AddComponent<TextMeshProUGUI>();
+            _planetProgressText.text = "Planet L1 · 0/100";
+            _planetProgressText.fontSize = 11f;
+            _planetProgressText.alignment = TextAlignmentOptions.Center;
+            _planetProgressText.color = new Color(0.72f, 0.82f, 0.95f, 0.95f);
+            _planetProgressText.raycastTarget = false;
+            ApplyFont(_planetProgressText);
+        }
+
+        TextMeshProUGUI CreateGemFlowColumn(Transform parent, string label, string value, Color valueColor)
+        {
+            // --- Create instance ---
+            var colGo = new GameObject(label + "Column");
+            colGo.transform.SetParent(parent, false);
+            var colLe = colGo.AddComponent<LayoutElement>();
+            colLe.flexibleWidth = 1f;
+            colLe.minWidth = 56f;
+
+            var colVlg = colGo.AddComponent<VerticalLayoutGroup>();
+            colVlg.spacing = 0f;
+            colVlg.childAlignment = TextAnchor.MiddleCenter;
+            colVlg.childControlWidth = true;
+            colVlg.childControlHeight = true;
+            colVlg.childForceExpandWidth = true;
+            colVlg.childForceExpandHeight = false;
+
+            var labelGo = new GameObject("Label");
+            labelGo.transform.SetParent(colGo.transform, false);
+            var labelLe = labelGo.AddComponent<LayoutElement>();
+            labelLe.preferredHeight = 12f;
+            labelLe.minHeight = 10f;
+            var labelTmp = labelGo.AddComponent<TextMeshProUGUI>();
+            labelTmp.text = label;
+            labelTmp.fontSize = 10f;
+            labelTmp.fontStyle = FontStyles.Bold;
+            labelTmp.alignment = TextAlignmentOptions.Center;
+            labelTmp.color = new Color(0.72f, 0.78f, 0.88f, 0.95f);
+            labelTmp.raycastTarget = false;
+            ApplyFont(labelTmp);
+
+            var valueGo = new GameObject("Value");
+            valueGo.transform.SetParent(colGo.transform, false);
+            var valueLe = valueGo.AddComponent<LayoutElement>();
+            valueLe.preferredHeight = 24f;
+            valueLe.minHeight = 20f;
+            var valueTmp = valueGo.AddComponent<TextMeshProUGUI>();
+            valueTmp.text = value;
+            valueTmp.fontSize = 22f;
+            valueTmp.fontStyle = FontStyles.Bold;
+            valueTmp.alignment = TextAlignmentOptions.Center;
+            valueTmp.color = valueColor;
+            valueTmp.enableWordWrapping = false;
+            valueTmp.overflowMode = TextOverflowModes.Overflow;
+            valueTmp.raycastTarget = false;
+            ApplyFont(valueTmp);
+
+            return valueTmp;
+        }
+
+        void CreateGemFlowArrow(Transform parent)
+        {
+            // --- Create instance ---
+            var arrowGo = new GameObject("Arrow");
+            arrowGo.transform.SetParent(parent, false);
+            var arrowLe = arrowGo.AddComponent<LayoutElement>();
+            arrowLe.preferredWidth = 18f;
+            arrowLe.minWidth = 14f;
+            arrowLe.flexibleWidth = 0f;
+
+            var arrowTmp = arrowGo.AddComponent<TextMeshProUGUI>();
+            arrowTmp.text = "→";
+            arrowTmp.fontSize = 16f;
+            arrowTmp.fontStyle = FontStyles.Bold;
+            arrowTmp.alignment = TextAlignmentOptions.Center;
+            arrowTmp.color = new Color(0.55f, 0.62f, 0.72f, 0.9f);
+            arrowTmp.raycastTarget = false;
+            ApplyFont(arrowTmp);
         }
 
         private void CreateAutoDepositToggle(Transform parent)
         {
+            // --- Create instance ---
             var rowGo = new GameObject("AutoDepositToggle");
             rowGo.transform.SetParent(parent, false);
             var rowLe = rowGo.AddComponent<LayoutElement>();
@@ -558,6 +717,7 @@ namespace TitanOrbit.UI
 
         private void SetAutoDepositToggleVisual(bool enabled, bool notify)
         {
+            // --- SetAutoDepositToggleVisual ---
             _autoDepositEnabled = enabled;
             if (_autoDepositToggleBg != null)
             {
@@ -579,6 +739,7 @@ namespace TitanOrbit.UI
 
         private TextMeshProUGUI CreateBodyLabel(Transform parent, string name, string text, float height)
         {
+            // --- Create instance ---
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             var le = go.AddComponent<LayoutElement>();
@@ -597,6 +758,7 @@ namespace TitanOrbit.UI
 
         private static RectTransform CreateStretchHost(Transform parent, string name, float preferredHeight)
         {
+            // --- Create instance ---
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             var rt = go.AddComponent<RectTransform>();

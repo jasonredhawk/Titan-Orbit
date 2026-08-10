@@ -9,7 +9,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 4337982027370802}
-  - component: {fileID: 7532465018527707283}
   m_Layer: 0
   m_Name: AstroEagle_Spider
   m_TagString: Untagged
@@ -51,83 +50,6 @@ Transform:
   - {fileID: 1026746696798924958}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &7532465018527707283
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1277677898927696}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ced7d950b299c1943bcdaca377dec97b, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.ShipFamilyStatsPreview
-  shipFamily: {fileID: 11400000, guid: 31340acc0090ccc4e8c28a584729195f, type: 2}
-  familyIdOverride: 
-  totalStats:
-    firePower: 24.504509
-    firePowerPerLevel: 7.3513536
-    bulletSpeed: 24.504509
-    bulletSpeedPerLevel: 4.9009023
-    fireRate: 9.958189
-    fireRatePerLevel: 1.659698
-    healthCap: 137.91374
-    healthCapPerLevel: 28.913795
-    healthRegen: 29.417242
-    healthRegenPerLevel: 10.028775
-    energyCap: 71.43224
-    energyCapPerLevel: 23.64434
-    energyRegen: 19.380413
-    energyRegenPerLevel: 5.9609103
-    moveSpeed: 15.93022
-    moveSpeedPerLevel: 3.982555
-    turnSpeed: 16.223913
-    turnSpeedPerLevel: 4.0559783
-    maxGems: 78.95907
-    maxGemsPerLevel: 21.123798
-    maxPeople: 26.320187
-    maxPeoplePerLevel: 6.330434
-  matchedComponentIds:
-  - Cockpit
-  - Engine_2
-  - Part_1
-  - Part_1
-  - Part_2
-  - Part_2
-  - Thruster
-  - Weapon
-  - Weapon
-  - Weapon
-  - Weapon
-  - Weapon
-  - Weapon
-  - Wing_4
-  - Wing_4
-  - Wing_4
-  - Wing_4
-  - Wing_4
-  - Wing_4
-  matchedScaleFactors:
-  - 0.9984535
-  - 0.9956387
-  - 0.8722681
-  - 0.87227035
-  - 2.0852828
-  - 2.374428
-  - 0.9956387
-  - 0.7382197
-  - 0.73822284
-  - 0.73822165
-  - 0.7382213
-  - 0.73822254
-  - 0.73822415
-  - 0.08602894
-  - 0.08602894
-  - 0.08602894
-  - 0.08602894
-  - 0.08602894
-  - 0.08603057
 --- !u!1001 &23982082520623646
 PrefabInstance:
   m_ObjectHideFlags: 0

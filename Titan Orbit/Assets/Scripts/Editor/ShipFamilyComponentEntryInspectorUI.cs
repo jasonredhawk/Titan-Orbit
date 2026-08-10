@@ -42,8 +42,12 @@ namespace TitanOrbit.Editor
             SerializedProperty statCategoriesProp = element.FindPropertyRelative("statCategories");
             SerializedProperty statsProp = element.FindPropertyRelative("stats");
             SerializedProperty bulletPrefabIndexProp = element.FindPropertyRelative("bulletPrefabIndex");
+            SerializedProperty enableVfxProp = element.FindPropertyRelative("enablePropulsionVfx");
+            SerializedProperty vfxScaleProp = element.FindPropertyRelative("propulsionVfxScale");
             SerializedProperty menuPreviewSpriteProp = element.FindPropertyRelative("menuPreviewSprite");
+            SerializedProperty theatricalMenuPreviewSpriteProp = element.FindPropertyRelative("theatricalMenuPreviewSprite");
             SerializedProperty teamMenuPreviewSpritesProp = element.FindPropertyRelative("teamMenuPreviewSprites");
+            SerializedProperty teamTheatricalMenuPreviewSpritesProp = element.FindPropertyRelative("teamTheatricalMenuPreviewSprites");
             string componentId = componentIdProp.stringValue ?? string.Empty;
 
             string header = string.IsNullOrWhiteSpace(componentId)
@@ -87,13 +91,33 @@ namespace TitanOrbit.Editor
 
             y = DrawStatsByCategory(new Rect(position.x, y, width, line), statsProp, statCategories, componentId, line, gap);
 
-            if (ShipFamilyComponentPartKey.ShouldShowBulletPrefabIndex(statCategories, componentId))
+            // [TITAN-ORBIT] Stack weight is meta (not category-gated) — always editable on every part row.
+            y = DrawExtraStackWeight(new Rect(position.x, y, width, line), statsProp, componentId, line, gap);
+
+            if (ShipFamilyComponentPartKey.ShouldShowBulletPrefabIndex(statCategories, componentId)
+                && bulletPrefabIndexProp != null)
                 y = DrawStandardProperty(new Rect(position.x, y, width, line), bulletPrefabIndexProp, gap);
+
+            if (enableVfxProp != null)
+                y = DrawStandardProperty(new Rect(position.x, y, width, line), enableVfxProp, gap);
+            if (vfxScaleProp != null)
+                y = DrawStandardProperty(new Rect(position.x, y, width, line), vfxScaleProp, gap);
 
             float menuPreviewHeight = EditorGUI.GetPropertyHeight(menuPreviewSpriteProp, true);
             y = DrawPropertyBlock(new Rect(position.x, y, width, menuPreviewHeight), menuPreviewSpriteProp, gap);
+            if (theatricalMenuPreviewSpriteProp != null)
+            {
+                float th = EditorGUI.GetPropertyHeight(theatricalMenuPreviewSpriteProp, true);
+                y = DrawPropertyBlock(new Rect(position.x, y, width, th), theatricalMenuPreviewSpriteProp, gap);
+            }
+
             float teamPreviewHeight = EditorGUI.GetPropertyHeight(teamMenuPreviewSpritesProp, true);
-            DrawPropertyBlock(new Rect(position.x, y, width, teamPreviewHeight), teamMenuPreviewSpritesProp, gap);
+            y = DrawPropertyBlock(new Rect(position.x, y, width, teamPreviewHeight), teamMenuPreviewSpritesProp, gap);
+            if (teamTheatricalMenuPreviewSpritesProp != null)
+            {
+                float tth = EditorGUI.GetPropertyHeight(teamTheatricalMenuPreviewSpritesProp, true);
+                DrawPropertyBlock(new Rect(position.x, y, width, tth), teamTheatricalMenuPreviewSpritesProp, gap);
+            }
 
             EditorGUI.EndProperty();
         }
@@ -118,12 +142,22 @@ namespace TitanOrbit.Editor
             string componentId = element.FindPropertyRelative("componentId").stringValue ?? string.Empty;
             var statCategories = ReadStatCategories(statCategoriesProp);
             height += GetStatsByCategoryHeight(statCategories, componentId, line, gap);
+            height += line + (line + gap); // Stack header + Extra Stack Weight
 
             if (ShipFamilyComponentPartKey.ShouldShowBulletPrefabIndex(statCategories, componentId))
                 height += line + gap; // bulletPrefabIndex
 
+            height += line + gap; // enablePropulsionVfx
+            height += line + gap; // propulsionVfxScale
+
             height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("menuPreviewSprite"), true) + gap;
+            var thProp = element.FindPropertyRelative("theatricalMenuPreviewSprite");
+            if (thProp != null)
+                height += EditorGUI.GetPropertyHeight(thProp, true) + gap;
             height += EditorGUI.GetPropertyHeight(element.FindPropertyRelative("teamMenuPreviewSprites"), true) + gap;
+            var tthProp = element.FindPropertyRelative("teamTheatricalMenuPreviewSprites");
+            if (tthProp != null)
+                height += EditorGUI.GetPropertyHeight(tthProp, true) + gap;
 
             return height;
         }
@@ -161,6 +195,54 @@ namespace TitanOrbit.Editor
             }
 
             return y;
+        }
+
+        /// <summary>
+        /// Draws <c>extraStackWeight</c> under Stats. Primary in a pool contributes 100%;
+        /// each extra uses this fraction of its own stats (engines/thrusters default 0.1).
+        /// </summary>
+        private static float DrawExtraStackWeight(
+            Rect rect,
+            SerializedProperty statsProp,
+            string componentId,
+            float line,
+            float gap)
+        {
+            if (statsProp == null)
+                return rect.y;
+
+            SerializedProperty weightProp = statsProp.FindPropertyRelative("extraStackWeight");
+            if (weightProp == null)
+                return rect.y;
+
+            float y = rect.y;
+            float width = rect.width;
+
+            EditorGUI.LabelField(new Rect(rect.x, y, width, line), "Stack", EditorStyles.miniBoldLabel);
+            y += line;
+
+            // Seed a visible suggested value when still unset so designers see 0.1 / 1.0 in the field.
+            if (weightProp.floatValue <= 0.0001f)
+            {
+                weightProp.floatValue =
+                    ShipComponentStackAggregation.GetSuggestedExtraStackWeight(componentId);
+            }
+
+            float labelWidth = width * LabelWidthRatio;
+            var labelRect = new Rect(rect.x, y, labelWidth, line);
+            var fieldRect = new Rect(rect.x + labelWidth, y, width - labelWidth, line);
+            EditorGUI.LabelField(
+                labelRect,
+                new GUIContent(
+                    "Extra Stack Weight",
+                    "When multiple parts share a pool: primary = 100%; each extra adds this fraction of ITS stats. " +
+                    "1 = full sum; Engines/Thrusters = 0.1."));
+            EditorGUI.BeginChangeCheck();
+            float value = EditorGUI.FloatField(fieldRect, weightProp.floatValue);
+            if (EditorGUI.EndChangeCheck())
+                weightProp.floatValue = Mathf.Max(0f, value);
+
+            return y + line + gap;
         }
 
         private static float GetStatsByCategoryHeight(
@@ -235,8 +317,14 @@ namespace TitanOrbit.Editor
             child.NextVisible(true);
             while (!SerializedProperty.EqualContents(child, end))
             {
-                if (child.propertyType == SerializedPropertyType.Float && !allowed.Contains(child.name))
+                // [TITAN-ORBIT] Never clear stack weight — it is not category-gated.
+                if (child.propertyType == SerializedPropertyType.Float
+                    && !allowed.Contains(child.name)
+                    && !string.Equals(child.name, "extraStackWeight", StringComparison.Ordinal))
+                {
                     child.floatValue = 0f;
+                }
+
                 if (!child.NextVisible(false))
                     break;
             }

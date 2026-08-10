@@ -327,11 +327,25 @@ namespace TitanOrbit.Editor
 
                 string chassis = string.IsNullOrEmpty(tier.chassisId) ? $"tier_{i}" : tier.chassisId;
                 string fileBase = SanitizeFileName(chassis);
-                if (tier.teamMenuPreviewSprites == null)
-                    tier.teamMenuPreviewSprites = new List<ShipFamilyMenuPreviewSprite>();
+                bool theatrical = style == PreviewCameraStyle.Theatrical;
+                if (theatrical)
+                {
+                    if (tier.teamTheatricalMenuPreviewSprites == null)
+                        tier.teamTheatricalMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>();
+                    else
+                        tier.teamTheatricalMenuPreviewSprites.Clear();
+                }
                 else
-                    tier.teamMenuPreviewSprites.Clear();
-                List<ShipFamilyMenuPreviewSprite> teamSprites = tier.teamMenuPreviewSprites;
+                {
+                    if (tier.teamMenuPreviewSprites == null)
+                        tier.teamMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>();
+                    else
+                        tier.teamMenuPreviewSprites.Clear();
+                }
+
+                List<ShipFamilyTeamMenuPreview> teamSprites = theatrical
+                    ? tier.teamTheatricalMenuPreviewSprites
+                    : tier.teamMenuPreviewSprites;
 
                 for (int v = 0; v < variants.Length; v++)
                 {
@@ -366,14 +380,22 @@ namespace TitanOrbit.Editor
 
                     if (sprite != null)
                     {
-                        teamSprites.Add(new ShipFamilyMenuPreviewSprite
+                        teamSprites.Add(new ShipFamilyTeamMenuPreview
                         {
                             variantName = variant.name,
                             team = variant.team,
                             sprite = sprite
                         });
-                        if (v == 0 || tier.menuPreviewSprite == null)
+                        if (theatrical)
+                        {
+                            if (v == 0 || tier.theatricalMenuPreviewSprite == null)
+                                tier.theatricalMenuPreviewSprite = sprite;
+                        }
+                        else if (v == 0 || tier.menuPreviewSprite == null)
+                        {
                             tier.menuPreviewSprite = sprite;
+                        }
+
                         done++;
                     }
                     else
@@ -491,11 +513,25 @@ namespace TitanOrbit.Editor
                 }
 
                 string fileBase = SanitizeFileName(componentId);
-                if (entry.teamMenuPreviewSprites == null)
-                    entry.teamMenuPreviewSprites = new List<ShipFamilyMenuPreviewSprite>();
+                bool theatrical = style == PreviewCameraStyle.Theatrical;
+                if (theatrical)
+                {
+                    if (entry.teamTheatricalMenuPreviewSprites == null)
+                        entry.teamTheatricalMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>();
+                    else
+                        entry.teamTheatricalMenuPreviewSprites.Clear();
+                }
                 else
-                    entry.teamMenuPreviewSprites.Clear();
-                List<ShipFamilyMenuPreviewSprite> teamSprites = entry.teamMenuPreviewSprites;
+                {
+                    if (entry.teamMenuPreviewSprites == null)
+                        entry.teamMenuPreviewSprites = new List<ShipFamilyTeamMenuPreview>();
+                    else
+                        entry.teamMenuPreviewSprites.Clear();
+                }
+
+                List<ShipFamilyTeamMenuPreview> teamSprites = theatrical
+                    ? entry.teamTheatricalMenuPreviewSprites
+                    : entry.teamMenuPreviewSprites;
 
                 for (int v = 0; v < variants.Length; v++)
                 {
@@ -530,14 +566,22 @@ namespace TitanOrbit.Editor
 
                     if (sprite != null)
                     {
-                        teamSprites.Add(new ShipFamilyMenuPreviewSprite
+                        teamSprites.Add(new ShipFamilyTeamMenuPreview
                         {
                             variantName = variant.name,
                             team = variant.team,
                             sprite = sprite
                         });
-                        if (v == 0 || entry.menuPreviewSprite == null)
+                        if (theatrical)
+                        {
+                            if (v == 0 || entry.theatricalMenuPreviewSprite == null)
+                                entry.theatricalMenuPreviewSprite = sprite;
+                        }
+                        else if (v == 0 || entry.menuPreviewSprite == null)
+                        {
                             entry.menuPreviewSprite = sprite;
+                        }
+
                         done++;
                     }
                     else
@@ -798,7 +842,8 @@ namespace TitanOrbit.Editor
                     list.Add(new PreviewVariant
                     {
                         name = string.IsNullOrEmpty(label) ? $"Variant_{i + 1}" : label,
-                        team = set.team,
+                        // [TITAN-ORBIT] teamMaterials stores TeamId; preview variants use legacy TeamManager.Team.
+                        team = TeamManager.FromTeamId(set.team),
                         materials = set.materials.ToArray()
                     });
                 }

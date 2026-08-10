@@ -1,0 +1,59 @@
+using Unity.Collections;
+using Unity.Entities;
+using Unity.Mathematics;
+using Unity.NetCode;
+
+namespace TitanOrbit.ECS
+{
+    /// <summary>
+    /// Client: receives <see cref="PeopleTransportSpawnRpc"/> and feeds
+    /// <see cref="PeopleTransportVfxBridge"/> for <c>PeopleTransportVfxDriver</c> GameObjects.
+    /// Pose / combat positions arrive separately via <see cref="PeopleTransportPoseRpcClientSystem"/>.
+    /// Does not create ECS presentation entities — hybrid GO VFX is owned by the MonoBehaviour driver.
+    /// World: ClientSimulation. Group: SimulationSystemGroup.
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    public partial struct PeopleTransportSpawnRpcClientSystem : ISystem
+    {
+        /// <summary>
+        /// Re-queues broadcast RPCs into the VFX bridge (deduped with host in-process enqueue).
+        /// </summary>
+        public void OnUpdate(ref SystemState state)
+        {
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
+
+            // [NETCODE] ReceiveRpcCommandRequest marks inbound RPC entities from the network.
+            foreach (var (rpc, entity) in SystemAPI
+                         .Query<RefRO<PeopleTransportSpawnRpc>>()
+                         .WithAll<ReceiveRpcCommandRequest>()
+                         .WithEntityAccess())
+            {
+                var r = rpc.ValueRO;
+                float3 spawn = r.SpawnPosition;
+                spawn.y = 0f;
+                float3 target = r.TargetPosition;
+                target.y = 0f;
+
+                PeopleTransportVfxBridge.TryEnqueue(new PeopleTransportVfxBridge.SpawnRequest
+                {
+                    Sequence = r.Sequence,
+                    SpawnPosition = spawn,
+                    TargetPosition = target,
+                    Velocity = r.Velocity,
+                    CruiseSpeed = r.CruiseSpeed,
+                    Amount = r.Amount,
+                    TargetShipNetworkId = r.TargetShipNetworkId,
+                    SourcePlanetId = r.SourcePlanetId,
+                    TargetPlanetId = r.TargetPlanetId,
+                    IsLoad = r.IsLoad,
+                    Team = r.Team,
+                });
+                ecb.DestroyEntity(entity);
+            }
+
+            ecb.Playback(state.EntityManager);
+            ecb.Dispose();
+        }
+    }
+}

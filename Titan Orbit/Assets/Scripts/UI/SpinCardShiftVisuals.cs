@@ -2,6 +2,7 @@ using UnityEngine;
 
 namespace TitanOrbit.UI
 {
+    // --- Type members ---
     /// <summary>
     /// References sprites from the Shift — Complete Sci-Fi UI pack for spin-offer cards.
     /// Default instance: Resources/SpinCardShiftVisuals (optional inspector override on <see cref="OrbitStationUI"/>).

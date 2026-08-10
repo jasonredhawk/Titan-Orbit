@@ -1,0 +1,63 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ef0b84fd44d60c944907e38d32b904f2, type: 3}
+  m_Name: PlanetShipFamilyConfig
+  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.PlanetShipFamilyConfig
+  families:
+  - planetId: 0
+    shipFamilyDefinition: {fileID: 11400000, guid: 31340acc0090ccc4e8c28a584729195f, type: 2}
+    familyName: Astro Eagle
+    planetMaterial: {fileID: 2100000, guid: af05a47d27f7d6249a3e1c16e3f3b393, type: 2}
+  - planetId: 1
+    shipFamilyDefinition: {fileID: 11400000, guid: 11f6fd06b5e8cf94cb9209ba98225e3c, type: 2}
+    familyName: Cosmic Shark
+    planetMaterial: {fileID: 2100000, guid: 8ee854fb4abac864fa02cd2ef3cf9c2a, type: 2}
+  - planetId: 2
+    shipFamilyDefinition: {fileID: 11400000, guid: 57a959b0d300d8b4c8ea1788e3cd78e3, type: 2}
+    familyName: Force Badger
+    planetMaterial: {fileID: 2100000, guid: 4164e6e22b103e6479572771645c1abc, type: 2}
+  - planetId: 3
+    shipFamilyDefinition: {fileID: 11400000, guid: 95d97dd31153ea94e9f7ab5b33da4898, type: 2}
+    familyName: Galaxy Raptor
+    planetMaterial: {fileID: 2100000, guid: a8fb6bc52e58d6949873c4be59230bf3, type: 2}
+  - planetId: 4
+    shipFamilyDefinition: {fileID: 11400000, guid: a2f6946487f591946983f3cf2294bb1a, type: 2}
+    familyName: Hyper Falcon
+    planetMaterial: {fileID: 2100000, guid: 217984cb0862eac468f89fb338e32600, type: 2}
+  - planetId: 5
+    shipFamilyDefinition: {fileID: 11400000, guid: c307ffe11abae824e92511c373ad2929, type: 2}
+    familyName: Light Fox
+    planetMaterial: {fileID: 2100000, guid: ca435658c72311648bd039fdff049338, type: 2}
+  - planetId: 6
+    shipFamilyDefinition: {fileID: 11400000, guid: 5c2193d74e8a8804b865833083bff4b9, type: 2}
+    familyName: Meteor Mantis
+    planetMaterial: {fileID: 2100000, guid: 8a760c18a75a97641b37ece3b12d2ed9, type: 2}
+  - planetId: 7
+    shipFamilyDefinition: {fileID: 11400000, guid: afdd78c768b8ea24abbbe7e216402a45, type: 2}
+    familyName: Night Aye
+    planetMaterial: {fileID: 2100000, guid: 56253bc0396fb324bb2024ad5bd7c77f, type: 2}
+  - planetId: 8
+    shipFamilyDefinition: {fileID: 11400000, guid: 35801f81e4d2502438891aff43f23025, type: 2}
+    familyName: Proton Legacy
+    planetMaterial: {fileID: 2100000, guid: c3a1f54b1632f7a43935fbbc4ae42afa, type: 2}
+  - planetId: 9
+    shipFamilyDefinition: {fileID: 11400000, guid: 433622f0516dd72458eeb97201b623d1, type: 2}
+    familyName: Space Excalibur
+    planetMaterial: {fileID: 2100000, guid: e06593835fc603c4594597dfa287b5c0, type: 2}
+  - planetId: 10
+    shipFamilyDefinition: {fileID: 11400000, guid: 1205a86a830414242a537b3e472c01a0, type: 2}
+    familyName: Star Force
+    planetMaterial: {fileID: 2100000, guid: f75d4ce9c37827046ad7812de5698c75, type: 2}
+  - planetId: 11
+    shipFamilyDefinition: {fileID: 11400000, guid: d90fd3b8e782cac43acd7dd8f4a9dcf6, type: 2}
+    familyName: Strider Ox
+    planetMaterial: {fileID: 2100000, guid: 14a35224a9fe4e54996616e698d08cfe, type: 2}

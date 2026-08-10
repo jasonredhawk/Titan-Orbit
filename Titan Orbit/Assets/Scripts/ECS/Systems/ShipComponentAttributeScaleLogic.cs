@@ -1,0 +1,764 @@
+using System.Collections.Generic;
+using TitanOrbit.Data;
+using TitanOrbit.Simulation;
+using UnityEngine;
+
+namespace TitanOrbit.ECS
+{
+    /// <summary>
+    /// Maps bottom-bar attribute upgrade levels to per-component scale factors on ship parts.
+    /// Each chassis part group grows by its Part Profile <b>per-level percent of base</b>
+    /// (<c>perLevel / base</c> from <c>ShipFamilyPartCalcProfileSet.asset</c>
+    /// <c>EvaluateAtVersion(1)</c>). Multiple bottom-bar drivers on one part <b>share</b> growth
+    /// (each contributes <c>1/N</c> of its percent) and are <b>added</b> — never multiplied —
+    /// then <see cref="ShipFamilyPartCalcProfileSet.globalUpgradeScaleMultiplier"/> (default 0.25)
+    /// dampens that growth on every part.
+    /// <para>
+    /// Used by:
+    /// <list type="bullet">
+    /// <item><see cref="Game.ShipComponentAttributeScaleApplier"/> — hybrid proxy mesh grow</item>
+    /// <item><see cref="ShipHullColliderLogic"/> — Unity Physics hull rebuild so colliders match</item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// Example: Wing has N=4 drivers, <c>healthCap=10</c>, <c>healthCapPerAbilityLevel=1</c> → one
+    /// MaxHealth purchase grows the wing by +(10%/4)=+2.5%. Full single-driver feel returns when
+    /// all N drivers are maxed at the same fraction (sum of shares ≈ one full percent curve).
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Scale factors grow visuals <b>and</b> the ECS <c>PhysicsCollider</c> compound
+    /// (same math on server + client). They must still never rewrite fire power / fire rate —
+    /// those come from family Weapon stats × <b>authored prefab</b> localScale
+    /// (via <c>ShipWeaponMountCombatLogic</c>) plus ship level and numeric attribute multipliers.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Whole-ship tier size (+10%/level) is <c>LocalTransform.Scale</c> /
+    /// <see cref="BodyCollisionMath.GetShipTierScale"/> — not this per-part grow. Attribute
+    /// scale stacks on top of that uniform hull size.
+    /// </para>
+    /// <para>
+    /// Keep driver field maps in sync with <c>Assets/Resources/ShipFamilyPartCalcProfileSet.asset</c>
+    /// <c>partProfiles</c> rows. Do not use flat <c>ShipAttributeUpgradeLogic.MultiplierPerLevel</c>
+    /// for mesh/collider size — that is combat/stat math only.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Ability → mesh map after Engine/Thruster split:
+    /// Weapons grow from FirePower + BulletSpeed; Engines from MovementSpeed + EnergyCap + EnergyRegen;
+    /// Thrusters from MovementSpeed + RotationSpeed; Tail from RotationSpeed; Wing/Cockpit/Hull unchanged.
+    /// </para>
+    /// </summary>
+    public static class ShipComponentAttributeScaleLogic
+    {
+        /// <summary>Ignore tiny bases so we never divide by near-zero.</summary>
+        const float BaseEpsilon = 0.0001f;
+
+        /// <summary>
+        /// Cached <c>perLevel / base</c> fractions per part group, built once at proxy bind from
+        /// ProfileSet <c>EvaluateAtVersion(1)</c>. Zero means that driver does not grow the mesh.
+        /// </summary>
+        public struct ProfileScaleRates
+        {
+            /// <summary>
+            /// From <see cref="ShipFamilyPartCalcProfileSet.globalUpgradeScaleMultiplier"/>.
+            /// Multiplies growth on every part after 1/N sharing (0.25 = 25% of computed growth).
+            /// </summary>
+            public float GlobalUpgradeScaleMultiplier;
+
+            // --- Cockpit: Offense (ramming stand-in) + Health + Capacity ---
+            /// <summary>FirePower → rammingPower fraction (presentation stand-in; no ramming bottom-bar).</summary>
+            public float CockpitOffense;
+            public float CockpitHealth;
+            public float CockpitHealthRegen;
+            public float CockpitGems;
+            public float CockpitPeople;
+
+            // --- Wing: Health + Capacity (tractor has no bottom-bar attr) ---
+            public float WingHealth;
+            public float WingHealthRegen;
+            public float WingGems;
+            public float WingPeople;
+
+            // --- Engine/Thrust: MovementSpeed + Energy Cap/Regen (engines are the power plant) ---
+            public float EngineMove;
+            public float EngineEnergyCap;
+            public float EngineEnergyRegen;
+
+            // --- Thruster mounts: MovementSpeed + RotationSpeed (turn) ---
+            public float ThrusterMove;
+            public float ThrusterTurn;
+
+            // --- Tail: RotationSpeed → turnSpeed ---
+            public float TailTurn;
+
+            // --- Weapon Bullet/Cannon: Offense + Energy Cap (battery; no Regen grow) ---
+            public float WeaponFirePower;
+            public float WeaponBulletSpeed;
+            public float WeaponEnergyCap;
+
+            // --- Hull (legacy Part_*): Health ---
+            public float HullHealth;
+            public float HullHealthRegen;
+        }
+
+        /// <summary>
+        /// One chassis part bucket: parallel lists of transforms and their authored local scale/position
+        /// captured at bind time so we can re-apply a factor without compounding.
+        /// </summary>
+        public struct ScaleGroup
+        {
+            /// <summary>Mounts in this bucket (outermost only after prune).</summary>
+            public List<Transform> Transforms;
+            /// <summary>Authored localScale at bind — multiplied by the group factor each apply.</summary>
+            public List<Vector3> BaseScales;
+            /// <summary>Authored localPosition at bind — scaled outward with the same factor.</summary>
+            public List<Vector3> BasePositions;
+        }
+
+        /// <summary>
+        /// Builds per-group <c>perLevel/base</c> fractions from the shared ProfileSet (version 1).
+        /// Returns default (all zeros → no grow) when the asset is missing.
+        /// </summary>
+        public static ProfileScaleRates BuildRatesFromProfileSet(ShipFamilyPartCalcProfileSet profileSet)
+        {
+            var rates = new ProfileScaleRates
+            {
+                // Default 25% when asset missing — matches ScriptableObject field default.
+                GlobalUpgradeScaleMultiplier = ShipFamilyPartCalcProfileSet.DefaultGlobalUpgradeScaleMultiplier,
+            };
+            if (profileSet == null)
+                return rates;
+
+            // --- Global dampener (editable on the ProfileSet asset in the Inspector) ---
+            rates.GlobalUpgradeScaleMultiplier = Mathf.Max(0f, profileSet.globalUpgradeScaleMultiplier);
+
+            // --- Resolve version-1 stats (FillPerLevelIfZero runs inside EvaluateAtVersion) ---
+            ShipComponentAbilityStats cockpit = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Cockpit);
+            ShipComponentAbilityStats wing = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Wing);
+            ShipComponentAbilityStats engine = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Engine);
+            ShipComponentAbilityStats thruster = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Thruster);
+            ShipComponentAbilityStats tail = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Tail);
+            ShipComponentAbilityStats hull = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.Hull);
+            ShipComponentAbilityStats weaponBullet = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.WeaponBullet);
+            ShipComponentAbilityStats weaponCannon = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.WeaponCannon);
+
+            // Cockpit Offense uses rammingPower (FirePower is the bottom-bar stand-in).
+            rates.CockpitOffense = PerLevelFraction(cockpit.rammingPower, cockpit.rammingPowerPerAbilityLevel);
+            rates.CockpitHealth = PerLevelFraction(cockpit.healthCap, cockpit.healthCapPerAbilityLevel);
+            rates.CockpitHealthRegen = PerLevelFraction(cockpit.healthRegen, cockpit.healthRegenPerAbilityLevel);
+            rates.CockpitGems = PerLevelFraction(cockpit.maxGems, cockpit.maxGemsPerAbilityLevel);
+            rates.CockpitPeople = PerLevelFraction(cockpit.maxPeople, cockpit.maxPeoplePerAbilityLevel);
+
+            rates.WingHealth = PerLevelFraction(wing.healthCap, wing.healthCapPerAbilityLevel);
+            rates.WingHealthRegen = PerLevelFraction(wing.healthRegen, wing.healthRegenPerAbilityLevel);
+            rates.WingGems = PerLevelFraction(wing.maxGems, wing.maxGemsPerAbilityLevel);
+            rates.WingPeople = PerLevelFraction(wing.maxPeople, wing.maxPeoplePerAbilityLevel);
+
+            // Engine: MovementSpeed + Energy Cap/Regen (power plant).
+            rates.EngineMove = AverageFraction(
+                PerLevelFraction(engine.moveSpeed, engine.moveSpeedPerAbilityLevel),
+                PerLevelFraction(engine.accelerationCap, engine.accelerationCapPerAbilityLevel));
+            rates.EngineEnergyCap = PerLevelFraction(engine.energyCap, engine.energyCapPerAbilityLevel);
+            rates.EngineEnergyRegen = PerLevelFraction(engine.energyRegen, engine.energyRegenPerAbilityLevel);
+
+            // Thruster: MovementSpeed + RotationSpeed (Fin-scale turn on the Thruster profile).
+            rates.ThrusterMove = AverageFraction(
+                PerLevelFraction(thruster.moveSpeed, thruster.moveSpeedPerAbilityLevel),
+                PerLevelFraction(thruster.accelerationCap, thruster.accelerationCapPerAbilityLevel));
+            // Fallback if Thruster profile missing move seeds — use Engine move curve.
+            if (rates.ThrusterMove <= 0.0001f)
+                rates.ThrusterMove = rates.EngineMove;
+            rates.ThrusterTurn = PerLevelFraction(thruster.turnSpeed, thruster.turnSpeedPerAbilityLevel);
+            if (rates.ThrusterTurn <= 0.0001f)
+            {
+                rates.ThrusterTurn = PerLevelFraction(
+                    ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(1),
+                    ShipComponentTurnSpeedSuggestions.GetSuggestedTurnSpeedPerLevel(
+                        ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(1)));
+            }
+
+            rates.TailTurn = PerLevelFraction(tail.turnSpeed, tail.turnSpeedPerAbilityLevel);
+
+            rates.WeaponFirePower = AverageFraction(
+                PerLevelFraction(weaponBullet.firePower, weaponBullet.firePowerPerAbilityLevel),
+                PerLevelFraction(weaponCannon.firePower, weaponCannon.firePowerPerAbilityLevel));
+            rates.WeaponBulletSpeed = AverageFraction(
+                PerLevelFraction(weaponBullet.bulletSpeed, weaponBullet.bulletSpeedPerAbilityLevel),
+                PerLevelFraction(weaponCannon.bulletSpeed, weaponCannon.bulletSpeedPerAbilityLevel));
+            // [TITAN-ORBIT] Weapons add Cap storage; EnergyCapacity upgrades grow gun meshes slightly.
+            rates.WeaponEnergyCap = AverageFraction(
+                PerLevelFraction(weaponBullet.energyCap, weaponBullet.energyCapPerAbilityLevel),
+                PerLevelFraction(weaponCannon.energyCap, weaponCannon.energyCapPerAbilityLevel));
+
+            rates.HullHealth = PerLevelFraction(hull.healthCap, hull.healthCapPerAbilityLevel);
+            rates.HullHealthRegen = PerLevelFraction(hull.healthRegen, hull.healthRegenPerAbilityLevel);
+
+            return rates;
+        }
+
+        /// <summary>Evaluates a Part Profile at version 1, or default stats when the row is missing.</summary>
+        static ShipComponentAbilityStats EvaluateOrDefault(ShipFamilyPartCalcProfileSet profileSet, string partType)
+        {
+            if (profileSet != null && profileSet.TryGetProfile(partType, out ShipFamilyPartCalcProfile profile) && profile != null)
+                return profile.EvaluateAtVersion(1);
+            return default;
+        }
+
+        /// <summary>
+        /// True when engine-like components in the family carry Cap or Regen.
+        /// [TITAN-ORBIT] Engines own Cap+Regen production; weapons may add Cap-only storage.
+        /// </summary>
+        public static bool FamilyHasEngineComponentEnergy(ShipFamilyDefinition family)
+        {
+            if (family?.components == null)
+                return false;
+
+            for (int i = 0; i < family.components.Count; i++)
+            {
+                var entry = family.components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+                if (!ShipFamilyPartTypes.IsEngineLikeName(entry.componentId))
+                    continue;
+                if (entry.stats.energyCap > 0.01f || entry.stats.energyRegen > 0.01f)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when any weapon component authors Energy Cap (battery / magazine storage).
+        /// </summary>
+        public static bool FamilyHasWeaponComponentEnergy(ShipFamilyDefinition family)
+        {
+            if (family?.components == null)
+                return false;
+
+            for (int i = 0; i < family.components.Count; i++)
+            {
+                var entry = family.components[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.componentId))
+                    continue;
+                if (!ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
+                    continue;
+                if (entry.stats.energyCap > 0.01f)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Captures current local scale/position for each transform in a component group.
+        /// Nested same-group children are dropped — see <see cref="PruneNestedTransforms"/>.
+        /// </summary>
+        public static ScaleGroup BuildGroup(List<Transform> transforms)
+        {
+            var group = new ScaleGroup
+            {
+                Transforms = new List<Transform>(),
+                BaseScales = new List<Vector3>(),
+                BasePositions = new List<Vector3>(),
+            };
+
+            if (transforms == null)
+                return group;
+
+            for (int i = 0; i < transforms.Count; i++)
+            {
+                Transform t = transforms[i];
+                if (t == null)
+                    continue;
+                group.Transforms.Add(t);
+                group.BaseScales.Add(t.localScale);
+                group.BasePositions.Add(t.localPosition);
+            }
+
+            // --- Outermost-only ---
+            // ChassisComponentStats also lists nested Wing/Thruster/etc. children. Scaling both
+            // parent and child multiplies in world space (scaleFactor²) — wings looked enormous.
+            // Keep the outer mount; children inherit its scale.
+            PruneNestedTransforms(ref group);
+            return group;
+        }
+
+        /// <summary>
+        /// Removes any transform that is a descendant of another transform already in the group.
+        /// Call again after manually appending transforms (e.g. Hull → cockpit group).
+        /// </summary>
+        /// <param name="group">Scale group whose parallel lists are kept in sync.</param>
+        public static void PruneNestedTransforms(ref ScaleGroup group)
+        {
+            if (group.Transforms == null || group.Transforms.Count <= 1)
+                return;
+
+            // Walk backward so removals do not shift unvisited indices.
+            for (int i = group.Transforms.Count - 1; i >= 0; i--)
+            {
+                Transform candidate = group.Transforms[i];
+                if (candidate == null)
+                {
+                    RemoveAt(ref group, i);
+                    continue;
+                }
+
+                // --- Is this transform under another group member? ---
+                // [UNITY] IsChildOf is true for any ancestor in the hierarchy (not only direct parent).
+                bool nestedUnderSibling = false;
+                for (int j = 0; j < group.Transforms.Count; j++)
+                {
+                    if (i == j)
+                        continue;
+                    Transform other = group.Transforms[j];
+                    if (other != null && candidate.IsChildOf(other))
+                    {
+                        nestedUnderSibling = true;
+                        break;
+                    }
+                }
+
+                if (nestedUnderSibling)
+                    RemoveAt(ref group, i);
+            }
+        }
+
+        /// <summary>Drops one index from all three parallel lists on a scale group.</summary>
+        static void RemoveAt(ref ScaleGroup group, int index)
+        {
+            group.Transforms.RemoveAt(index);
+            if (index < group.BaseScales.Count)
+                group.BaseScales.RemoveAt(index);
+            if (index < group.BasePositions.Count)
+                group.BasePositions.RemoveAt(index);
+        }
+
+        /// <summary>
+        /// Removes transforms that sit under a member of <b>any</b> scale group (not only the same bucket).
+        /// Call once after all groups are built so a Cover under a Wing is not scaled again as Part.
+        /// </summary>
+        public static void PruneNestedAcrossGroups(
+            ref ScaleGroup cockpit,
+            ref ScaleGroup wing,
+            ref ScaleGroup weapon,
+            ref ScaleGroup engine,
+            ref ScaleGroup thruster,
+            ref ScaleGroup tail,
+            ref ScaleGroup part)
+        {
+            // --- Flatten every mount we might scale ---
+            var all = new List<Transform>(64);
+            AppendGroupTransforms(cockpit, all);
+            AppendGroupTransforms(wing, all);
+            AppendGroupTransforms(weapon, all);
+            AppendGroupTransforms(engine, all);
+            AppendGroupTransforms(thruster, all);
+            AppendGroupTransforms(tail, all);
+            AppendGroupTransforms(part, all);
+
+            if (all.Count <= 1)
+                return;
+
+            // --- Drop any transform that is a descendant of another scaled mount ---
+            // [TITAN-ORBIT] Same-group prune is not enough: ProfileSet put Hull cosmetics in Part
+            // while their Wing/Engine parents also grow → world scale multiplies across buckets.
+            PruneIfNestedUnderAny(ref cockpit, all);
+            PruneIfNestedUnderAny(ref wing, all);
+            PruneIfNestedUnderAny(ref weapon, all);
+            PruneIfNestedUnderAny(ref engine, all);
+            PruneIfNestedUnderAny(ref thruster, all);
+            PruneIfNestedUnderAny(ref tail, all);
+            PruneIfNestedUnderAny(ref part, all);
+        }
+
+        /// <summary>Appends non-null transforms from <paramref name="group"/> into <paramref name="dst"/>.</summary>
+        static void AppendGroupTransforms(in ScaleGroup group, List<Transform> dst)
+        {
+            if (group.Transforms == null || dst == null)
+                return;
+            for (int i = 0; i < group.Transforms.Count; i++)
+            {
+                Transform t = group.Transforms[i];
+                if (t != null)
+                    dst.Add(t);
+            }
+        }
+
+        /// <summary>
+        /// Removes group members that are children of any transform in <paramref name="allScaled"/>
+        /// (other than themselves).
+        /// </summary>
+        static void PruneIfNestedUnderAny(ref ScaleGroup group, List<Transform> allScaled)
+        {
+            if (group.Transforms == null || allScaled == null || group.Transforms.Count == 0)
+                return;
+
+            for (int i = group.Transforms.Count - 1; i >= 0; i--)
+            {
+                Transform candidate = group.Transforms[i];
+                if (candidate == null)
+                {
+                    RemoveAt(ref group, i);
+                    continue;
+                }
+
+                bool nested = false;
+                for (int j = 0; j < allScaled.Count; j++)
+                {
+                    Transform other = allScaled[j];
+                    if (other == null || other == candidate)
+                        continue;
+                    // [UNITY] IsChildOf — true when other is any ancestor.
+                    if (candidate.IsChildOf(other))
+                    {
+                        nested = true;
+                        break;
+                    }
+                }
+
+                if (nested)
+                    RemoveAt(ref group, i);
+            }
+        }
+
+        /// <summary>
+        /// Computes scale factors from upgrade levels × cached ProfileSet fractions and applies them.
+        /// </summary>
+        /// <param name="rates">Per-group <c>perLevel/base</c> fractions from <see cref="BuildRatesFromProfileSet"/>.</param>
+        /// <param name="territoryMovementMult">
+        /// Friendly-triangle speed multiplier (usually 1). Scales Engine/Thruster meshes for territory feedback.
+        /// Presentation-only — pass 1 for physics collider bakes so server and client hulls match.
+        /// </param>
+        /// <param name="overdriveThrusterMult">
+        /// [TITAN-ORBIT] OVERDRIVE visual boost (usually 1). Scales <b>thruster</b> mounts only to match
+        /// the burst speed feel (<see cref="ShipOverdriveTuning.SpeedMultiplier"/>). Pass 1 for colliders.
+        /// </param>
+        public static void Apply(
+            in ShipAttributeUpgradeState attrs,
+            in ProfileScaleRates rates,
+            ScaleGroup cockpit,
+            ScaleGroup wing,
+            ScaleGroup weapon,
+            ScaleGroup engine,
+            ScaleGroup thruster,
+            ScaleGroup tail,
+            ScaleGroup part,
+            float territoryMovementMult = 1f,
+            float overdriveThrusterMult = 1f)
+        {
+            ComputeScaleFactors(
+                attrs,
+                rates,
+                out float cockpitScale,
+                out float wingScale,
+                out float weaponScale,
+                out float engineScale,
+                out float thrusterScale,
+                out float tailScale,
+                out float partScale);
+
+            // --- Territory speed feedback (Engine + Thruster mounts) ---
+            // [TITAN-ORBIT] Faster in friendly triangles → bigger propulsion meshes.
+            // Collider bake must pass 1 — territory is local-owner presentation, not sim size.
+            float tMult = Mathf.Max(1f, territoryMovementMult);
+            engineScale *= tMult;
+            thrusterScale *= tMult;
+
+            // --- OVERDRIVE thruster bloom (thrusters only) ---
+            // [TITAN-ORBIT] Shift+RMB burst → jets grow with the same proportion as the speed mult.
+            thrusterScale *= Mathf.Max(1f, overdriveThrusterMult);
+
+            ApplyGroup(cockpit, cockpitScale);
+            ApplyGroup(wing, wingScale);
+            ApplyGroup(weapon, weaponScale);
+            ApplyGroup(engine, engineScale);
+            ApplyGroup(thruster, thrusterScale);
+            ApplyGroup(tail, tailScale);
+            ApplyGroup(part, partScale);
+        }
+
+        /// <summary>
+        /// Builds USC part groups under <paramref name="root"/>, then applies attribute scale factors.
+        /// Shared by hybrid proxy presentation and <see cref="ShipHullColliderLogic"/> so grown
+        /// meshes and Unity Physics child colliders use the same hierarchy transforms.
+        /// </summary>
+        /// <param name="root">Chassis prefab instance or hybrid hull proxy root.</param>
+        /// <param name="familyPrefix">USC family token (e.g. AstroEagle from AstroEagle_Wing_2).</param>
+        /// <param name="attrs">Ghosted bottom-bar upgrade levels on the ship entity.</param>
+        /// <param name="territoryMovementMult">
+        /// Pass 1 for collider bake. Presentation may pass friendly-triangle speed mult.
+        /// </param>
+        /// <returns>True when at least one part group was found and scaled.</returns>
+        public static bool ApplyToHierarchy(
+            Transform root,
+            string familyPrefix,
+            in ShipAttributeUpgradeState attrs,
+            float territoryMovementMult = 1f)
+        {
+            if (root == null)
+                return false;
+
+            // --- ProfileSet rates (version 1) ---
+            var profileSet = ShipFamilyPartCalcProfileSet.LoadShared();
+            ProfileScaleRates rates = BuildRatesFromProfileSet(profileSet);
+
+            // --- Classify mounts (same filters as ShipComponentAttributeScaleApplier) ---
+            string prefix = string.IsNullOrWhiteSpace(familyPrefix) ? "AstroEagle" : familyPrefix.Trim();
+            BuildGroupsFromHierarchy(
+                root,
+                prefix,
+                out ScaleGroup cockpit,
+                out ScaleGroup wing,
+                out ScaleGroup weapon,
+                out ScaleGroup engine,
+                out ScaleGroup thruster,
+                out ScaleGroup tail,
+                out ScaleGroup part);
+
+            bool any = (cockpit.Transforms != null && cockpit.Transforms.Count > 0)
+                || (wing.Transforms != null && wing.Transforms.Count > 0)
+                || (weapon.Transforms != null && weapon.Transforms.Count > 0)
+                || (engine.Transforms != null && engine.Transforms.Count > 0)
+                || (thruster.Transforms != null && thruster.Transforms.Count > 0)
+                || (tail.Transforms != null && tail.Transforms.Count > 0)
+                || (part.Transforms != null && part.Transforms.Count > 0);
+            if (!any)
+                return false;
+
+            Apply(
+                attrs,
+                rates,
+                cockpit,
+                wing,
+                weapon,
+                engine,
+                thruster,
+                tail,
+                part,
+                territoryMovementMult);
+            return true;
+        }
+
+        /// <summary>
+        /// Scans a chassis hierarchy into legacy USC attribute-scale groups (outermost mounts only).
+        /// </summary>
+        public static void BuildGroupsFromHierarchy(
+            Transform root,
+            string familyPrefix,
+            out ScaleGroup cockpit,
+            out ScaleGroup wing,
+            out ScaleGroup weapon,
+            out ScaleGroup engine,
+            out ScaleGroup thruster,
+            out ScaleGroup tail,
+            out ScaleGroup part)
+        {
+            cockpit = default;
+            wing = default;
+            weapon = default;
+            engine = default;
+            thruster = default;
+            tail = default;
+            part = default;
+            if (root == null)
+                return;
+
+            var stats = ChassisComponentStats.FromTransform(root, familyPrefix);
+
+            // [TITAN-ORBIT] Legacy USC tokens only — Body/Cover/EngineComp must not get a second grow.
+            cockpit = BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.cockpitTransforms, familyPrefix, "Cockpit"));
+            wing = BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.wingTransforms, familyPrefix, "Wing"));
+            weapon = BuildGroup(stats.weaponTransforms);
+            engine = BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.engineTransforms, familyPrefix, "Engine"));
+            thruster = BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.thrusterTransforms, familyPrefix, "Thruster"));
+            tail = BuildGroup(
+                ChassisComponentStats.FilterLegacyTailAttributeScaleTransforms(
+                    stats.tailTransforms, familyPrefix));
+            part = BuildGroup(
+                ChassisComponentStats.FilterLegacyAttributeScaleTransforms(
+                    stats.partTransforms, familyPrefix, "Part"));
+
+            // --- Optional Hull root (cockpit body grow) ---
+            Transform hull = root.Find("Hull");
+            if (hull != null)
+            {
+                if (cockpit.Transforms == null)
+                    cockpit = BuildGroup(null);
+                cockpit.Transforms.Add(hull);
+                cockpit.BaseScales.Add(hull.localScale);
+                cockpit.BasePositions.Add(hull.localPosition);
+                PruneNestedTransforms(ref cockpit);
+            }
+
+            PruneNestedAcrossGroups(
+                ref cockpit,
+                ref wing,
+                ref weapon,
+                ref engine,
+                ref thruster,
+                ref tail,
+                ref part);
+        }
+
+        /// <summary>
+        /// Derives per-group scale: shared <c>1/N</c> of each driver's percent-of-base growth, summed.
+        /// </summary>
+        public static void ComputeScaleFactors(
+            in ShipAttributeUpgradeState attrs,
+            in ProfileScaleRates rates,
+            out float cockpitScale,
+            out float wingScale,
+            out float weaponScale,
+            out float engineScale,
+            out float thrusterScale,
+            out float tailScale,
+            out float partScale)
+        {
+            // [NETCODE] Levels come from ghosted ShipAttributeUpgradeState on the ship entity.
+            //
+            // [TITAN-ORBIT] N = bottom-bar ability slots for that Part Profile (not tractor).
+            // Each slot contributes (level × fraction) / N so product compounding cannot explode.
+
+            float globalMul = rates.GlobalUpgradeScaleMultiplier;
+
+            // --- Cockpit: Offense + Health + Capacity (5 drivers) ---
+            cockpitScale = SharedAbilityScale(
+                5,
+                globalMul,
+                attrs.FirePower * rates.CockpitOffense,
+                attrs.MaxHealth * rates.CockpitHealth,
+                attrs.HealthRegen * rates.CockpitHealthRegen,
+                attrs.GemCapacity * rates.CockpitGems,
+                attrs.PeopleCapacity * rates.CockpitPeople);
+
+            // --- Wing: Health + Capacity (4 drivers; tractor omitted) ---
+            wingScale = SharedAbilityScale(
+                4,
+                globalMul,
+                attrs.MaxHealth * rates.WingHealth,
+                attrs.HealthRegen * rates.WingHealthRegen,
+                attrs.GemCapacity * rates.WingGems,
+                attrs.PeopleCapacity * rates.WingPeople);
+
+            // --- Weapon Bullet/Cannon: Offense + Energy Cap (3 drivers) ---
+            weaponScale = SharedAbilityScale(
+                3,
+                globalMul,
+                attrs.FirePower * rates.WeaponFirePower,
+                attrs.BulletSpeed * rates.WeaponBulletSpeed,
+                attrs.EnergyCapacity * rates.WeaponEnergyCap);
+
+            // --- Engine-like: MovementSpeed + Energy Cap/Regen (power plant) ---
+            engineScale = SharedAbilityScale(
+                3,
+                globalMul,
+                attrs.MovementSpeed * rates.EngineMove,
+                attrs.EnergyCapacity * rates.EngineEnergyCap,
+                attrs.EnergyRegen * rates.EngineEnergyRegen);
+
+            // --- Thruster-like: MovementSpeed + RotationSpeed (turn) ---
+            thrusterScale = SharedAbilityScale(
+                2,
+                globalMul,
+                attrs.MovementSpeed * rates.ThrusterMove,
+                attrs.RotationSpeed * rates.ThrusterTurn);
+
+            // --- Tail: RotationSpeed only ---
+            tailScale = SharedAbilityScale(1, globalMul, attrs.RotationSpeed * rates.TailTurn);
+
+            // --- Hull Part_*: Health (2 drivers) ---
+            partScale = SharedAbilityScale(
+                2,
+                globalMul,
+                attrs.MaxHealth * rates.HullHealth,
+                attrs.HealthRegen * rates.HullHealthRegen);
+        }
+
+        /// <summary>
+        /// <c>perLevel / base</c> when base is meaningful; otherwise 0 (driver disabled).
+        /// </summary>
+        public static float PerLevelFraction(float baseValue, float perLevel)
+        {
+            if (baseValue <= BaseEpsilon)
+                return 0f;
+            return Mathf.Max(0f, perLevel) / baseValue;
+        }
+
+        /// <summary>
+        /// Combines ability drivers without multiplicative compounding.
+        /// Each entry is <c>attributeLevel × (perLevel/base)</c>; the part has
+        /// <paramref name="driverCount"/> slots so each contributes only <c>1/N</c> of that growth,
+        /// then <paramref name="globalUpgradeScaleMultiplier"/> scales that growth globally:
+        /// <c>scale = 1 + globalMul × sum(growth_i / N)</c>.
+        /// </summary>
+        /// <param name="driverCount">Fixed ability-slot count for the part (e.g. 4 for Wing/Weapon).</param>
+        /// <param name="globalUpgradeScaleMultiplier">
+        /// From ProfileSet (default 0.25). 1 = full growth; 0 = no grow.
+        /// </param>
+        /// <param name="levelTimesFraction">
+        /// Per-driver <c>level × fraction</c> terms (same length as the part's driver list).
+        /// </param>
+        public static float SharedAbilityScale(
+            int driverCount,
+            float globalUpgradeScaleMultiplier,
+            params float[] levelTimesFraction)
+        {
+            int n = Mathf.Max(1, driverCount);
+            float growth = 0f;
+            if (levelTimesFraction != null)
+            {
+                for (int i = 0; i < levelTimesFraction.Length; i++)
+                    growth += Mathf.Max(0f, levelTimesFraction[i]) / n;
+            }
+
+            // --- Global dampener ---
+            // [TITAN-ORBIT] Tunable on ShipFamilyPartCalcProfileSet.globalUpgradeScaleMultiplier.
+            float globalMul = Mathf.Max(0f, globalUpgradeScaleMultiplier);
+            return 1f + growth * globalMul;
+        }
+
+        /// <summary>
+        /// Averages positive fractions; ignores zeros so a missing profile field does not dilute.
+        /// Both zero → 0.
+        /// </summary>
+        static float AverageFraction(float a, float b)
+        {
+            bool hasA = a > BaseEpsilon;
+            bool hasB = b > BaseEpsilon;
+            if (hasA && hasB)
+                return (a + b) * 0.5f;
+            if (hasA)
+                return a;
+            if (hasB)
+                return b;
+            return 0f;
+        }
+
+        /// <summary>
+        /// Writes <paramref name="scaleFactor"/> × bind-time localScale/localPosition onto each mount.
+        /// </summary>
+        static void ApplyGroup(ScaleGroup group, float scaleFactor)
+        {
+            if (group.Transforms == null)
+                return;
+
+            for (int i = 0; i < group.Transforms.Count; i++)
+            {
+                Transform t = group.Transforms[i];
+                if (t == null || i >= group.BaseScales.Count)
+                    continue;
+
+                t.localScale = group.BaseScales[i] * scaleFactor;
+                if (i < group.BasePositions.Count)
+                    t.localPosition = group.BasePositions[i] * scaleFactor;
+            }
+        }
+    }
+}

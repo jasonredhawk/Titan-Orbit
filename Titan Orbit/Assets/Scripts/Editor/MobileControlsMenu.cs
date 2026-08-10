@@ -4,14 +4,21 @@ using UnityEngine.UI;
 
 namespace TitanOrbit.Editor
 {
-    /// <summary>Menu commands that only touch mobile UI, not the full scene setup.</summary>
+    /// <summary>
+    /// [EDITOR] Menu command to add the mobile touch canvas (virtual steer + fire zones) beside an
+    /// existing UI Canvas. Does not modify gameplay scenes wholesale — only inserts
+    /// <see cref="MobileControlsEditorUtility.MobileTouchRootName"/>. Paired with
+    /// <see cref="MobileControlsEditorUtility"/>.
+    /// </summary>
     public static class MobileControlsMenu
     {
         private const string MenuPath = "Titan Orbit/Add Mobile Touch Canvas";
 
+        /// <summary>Resolves target Canvas from selection or first Canvas in open scene, then adds controls.</summary>
         [MenuItem(MenuPath, false, 11)]
         public static void AddMobileControls()
         {
+            // --- Resolve target canvas from selection or scene ---
             Canvas canvas = ResolveTargetCanvas();
             if (canvas == null)
             {
@@ -24,6 +31,7 @@ namespace TitanOrbit.Editor
                 return;
             }
 
+            // --- Build or replace mobile touch root ---
             Transform root = canvas.transform;
             Transform existing = root.parent != null ? root.parent.Find(MobileControlsEditorUtility.MobileTouchRootName) : root.Find(MobileControlsEditorUtility.MobileTouchRootName);
             if (existing == null)

@@ -22,6 +22,7 @@ namespace TitanOrbit.Services
 
         public void TryInitializeAdvertisement()
         {
+            // --- Attempt resolution ---
             IsAdvertisementInitialized = false;
             if (!TitanOrbitAdsGate.ShouldShowAds)
             {
@@ -47,6 +48,7 @@ namespace TitanOrbit.Services
 
         public static void LogUaFunnelEvent(string eventName, string parameterJson = null)
         {
+            // --- LogUaFunnelEvent ---
             if (string.IsNullOrEmpty(eventName))
                 return;
             if (string.IsNullOrEmpty(parameterJson))

@@ -1,15 +1,30 @@
 /Titan Orbit/Library
 /Titan Orbit/Logs
-/Titan Orbit/Packages
+# Track Packages/manifest + lock + embedded NetCode (GhostSpawn crash fix).
+# Ignore other local/UPM noise under Packages if Unity adds it later.
+/Titan Orbit/Packages/*
+!/Titan Orbit/Packages/manifest.json
+!/Titan Orbit/Packages/packages-lock.json
+!/Titan Orbit/Packages/com.unity.netcode/
+!/Titan Orbit/Packages/com.unity.netcode/**
 /Titan Orbit/Temp
 Titan Orbit/Assets/UltimateSpaceshipsCreator/SRP/HDRP_Upgrade.unitypackage
 Titan Orbit/Assets/UltimateSpaceshipsCreator/SRP/HDRP_Upgrade.unitypackage.meta
 /Titan Orbit/Assets/_Diagnostics
 Titan Orbit/debug-bac766.log
 /Titan Orbit/ProfilerCaptures
+# Runtime instruction-reference screen grabs (keep README under Captures/InstructionRefs).
+/Titan Orbit/Captures/InstructionRefs/*/
+!/Titan Orbit/Captures/InstructionRefs/README.md
 Titan Orbit/Assets/StreamingAssets/debug-441e0e.log
 Titan Orbit/debug-bac766.log
 Titan Orbit/Assets/StreamingAssets/debug-441e0e.log
 /Titan Orbit/BuildOutput
 /Titan Orbit/BuildOutput
+/Titan Orbit/Builds
 /Titan Orbit/Assets/Nebula Skyboxes
+Titan Orbit/TitanOrbitDedicatedServer.log
+Titan Orbit/TitanOrbitDedicatedServer.log.prev
+Titan Orbit/TitanOrbitDedicatedServer.log
+Titan Orbit/TitanOrbitDedicatedServer.log
+*.log

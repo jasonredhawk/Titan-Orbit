@@ -6,6 +6,37 @@ This mirrors the idea of `tools/gcs/deploy_webgl_gcs.bat`: one main script for d
 
 **Build the binary in Unity:** **TitanOrbit → Build → Headless Server (Linux — Google Cloud)** (requires **Linux Dedicated Server** Hub module).
 
+### Fast path: Unity stays open (recommended day-to-day)
+
+Closing Unity and using batchmode is **slower** (full project reopen). When the Editor is already open:
+
+**TitanOrbit → Build → Headless Server (Linux — Google Cloud) + Deploy**
+
+That builds in the open Editor, copies output to `BuildOutput/Server/deploy-staging/TitanOrbitLinux1`, then launches the existing **`deploy_server_gce.bat freeDisk useGcs`** in a console window. Unity stays open.
+
+Build-only (no upload): **TitanOrbit → Build → Headless Server (Linux — Google Cloud)**.
+
+### One-shot from PowerShell (Editor must be closed)
+
+Use **`build_and_deploy_server_gce.bat`** only when Unity is **closed** (CI, or you are not in the Editor). Batchmode cannot open a project the GUI already holds.
+
+From `tools\gce`:
+
+```bat
+build_and_deploy_server_gce.bat
+```
+
+That runs Unity headless (`BuildHeadlessServerLinuxBatchMode`) → `BuildOutput/Server/TitanOrbitLinux1` → then **`deploy_server_gce.bat`** defaults (**`freeDisk useGcs`**).
+
+| Command | Meaning |
+|---------|---------|
+| `build_and_deploy_server_gce.bat` | Build + deploy (`freeDisk useGcs`) |
+| `build_and_deploy_server_gce.bat freeDisk useGcs useIap` | Build + deploy with IAP / VM reset |
+| `build_and_deploy_server_gce.bat buildOnly` | Unity build only |
+| `build_and_deploy_server_gce.bat deployOnly freeDisk useGcs` | Skip build; deploy existing folder |
+
+Optional: set **`TITANORBIT_UNITY_EDITOR`** to a full `Unity.exe` path if Hub auto-detect fails. Build logs land in **`BuildOutput/Logs/`**.
+
 **Stable Windows pipeline (recommended):** Install **OpenSSH Client** (Windows optional feature). **`upload_linux_build_to_gce.bat`** and **`deploy_server_gce.bat`** call **`upload_linux_build_to_gce_openssh.ps1`**, which uses **`ssh.exe` / `scp.exe` + `gcloud compute start-iap-tunnel`** — **not** `gcloud compute ssh` / `scp` (those use PuTTY **plink** and are flaky). **`restart_titanorbit_server_on_gce.bat`** uses **`restart_server_remote.ps1`**, which prefers **OpenSSH** (direct to external IP when present, then IAP tunnel + ssh.exe; plink only as an explicit last resort). If Windows SSH is still unusable, use the **GCS + Cloud Shell** path below (no PC SSH).
 
 ## Recommended: dedicated server without Windows SSH (GCS + Cloud Shell)
@@ -115,6 +146,27 @@ tail -n 100 TitanOrbitDedicatedServer.log 2>/dev/null || true
 command -v ldd >/dev/null && ldd ./TitanOrbitServer 2>/dev/null | head -n 40
 command -v ldd >/dev/null && ldd ./TitanOrbitServer.x86_64 2>/dev/null | head -n 40
 ```
+
+### Dedicated match availability (UGS lobbies)
+
+The headless server publishes **Unity Gaming Services (UGS) lobbies** so clients can browse and join. **`TitanOrbitDedicatedServerHost`** keeps matches available:
+
+| Trigger | When | Action |
+|---------|------|--------|
+| Boot | systemd starts | Relay + lobby (`IsLatest=1`, `IsOpen=1`) + heartbeat every 15s |
+| Empty recreate | 0 players for `--emptyMatchRecreateSeconds` (default 1800s; countdown starts when last player leaves) | In-process new Relay + lobby — **never while players are connected** |
+| Empty process recycle | Idle count / RSS / STRUGGLING while empty | **Spawn IsLatest sibling first**, wait until browseable, close old, exit **0** (`Restart=on-failure`). Failure → demote-keep-open + exit 1 |
+| Memory telemetry | Every `--memoryLogIntervalSeconds` (default **60**) + after each idle recreate | `memory` lines: `rssMb`, `emptyRecreates`, `rssDeltaMb`, entity counts |
+| Main-thread hang | Update stamps stale for `--mainThreadHangQuitSeconds` (default **300**; paused during recreate) | Background watchdog `Environment.Exit(1)` → systemd restart |
+| Stale lobby | Our lobby closed or heartbeat-stale while empty (`--staleLobbyRecreateSeconds=120`) | In-process recreate as latest |
+| Self-heal | No joinable `IsLatest` lobby in UGS while this server is empty | Immediate in-process recreate (never exits — repairing availability) |
+| Age rotation | Match age ≥ 30 min, players present, not full | **`SpawnNextMatch`** + demote `IsLatest` but **keep `IsOpen=1`** (occupied maps stay joinable) |
+| Full rotation | Lobby at max players | Close listing + **`SpawnNextMatch`** (sibling OS process; not managed by systemd) |
+| Match request | Client publishes wake lobby when browse is empty | Idle server recreates immediately |
+
+**Rotation spawns sibling processes** (`SpawnNextMatch`) using `--serverExecutablePath` from **`titanorbit-server.service`**. Those children are **not** restarted by systemd; if a successor dies after handoff, the **self-heal** and **heartbeat-failure** paths recreate a joinable lobby from the main process when it is empty.
+
+**If Join Game shows no matches:** check `journalctl -u titanorbit-server -f` for `Dedicated host loops started`, `Heartbeat failed`, `Self-heal`, or `SpawnNextMatch`. Stale ghost lobbies in UGS are filtered client-side after **45s** without heartbeat.
 
 **Run the same command as `ExecStart` in the foreground** (after install, **`systemctl cat titanorbit-server`** should show **`run_titanorbit_server.sh`** as the entry point). You should see the same exit code and often a clearer last line on the terminal.
 

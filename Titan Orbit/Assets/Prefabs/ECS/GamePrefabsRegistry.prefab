@@ -1,0 +1,52 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1256172475586373086
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7606224602911943241}
+  - component: {fileID: 8466685185674666549}
+  m_Layer: 0
+  m_Name: GamePrefabsRegistry
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7606224602911943241
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1256172475586373086}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &8466685185674666549
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1256172475586373086}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 772a6879e525246449c72eb4be46be65, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: TitanOrbit.ECS::TitanOrbit.ECS.Authoring.GamePrefabsRegistryAuthoring
+  ShipPrefab: {fileID: 7711092121584760130, guid: 46b721c000e50574c92893d79c724790, type: 3}
+  PlanetPrefab: {fileID: 8546532577817128093, guid: d2bb2d4af6c89304681eb44c16749262, type: 3}
+  AsteroidPrefab: {fileID: 2813993484288205705, guid: 503b485dd1149ee489153a62f8ed9048, type: 3}
+  GemPrefab: {fileID: 8386783635121585160, guid: 496efe33dba520249859bdf7214ca71b, type: 3}
+  PeopleTransportPrefab: {fileID: 7123456789012345678, guid: e7c9a1b3d5f24a6081c2e3f4a5b6c7d8, type: 3}
+  MapGenerationSettings: {fileID: 11400000, guid: 3fea612f27b86134d969d0c57c181c4d, type: 2}

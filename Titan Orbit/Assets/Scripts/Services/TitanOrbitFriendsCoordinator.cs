@@ -16,6 +16,7 @@ namespace TitanOrbit.Services
 
         public static async Task<bool> EnsureFriendsInitializedAsync()
         {
+            // --- Ensure setup ---
             if (_friendsInitialized)
                 return true;
             if (!UnityGameServicesBootstrap.IsSignedIn)

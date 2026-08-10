@@ -17,7 +17,7 @@ namespace TitanOrbit.UI
         public RectTransform menuRect;
         public Image backgroundImage;
         
-        private System.Action<MinimapMarker.MarkerType> onMarkerSelected;
+        private System.Action<MinimapMarkerKind> onMarkerSelected;
         private Vector2 targetPosition;
         private bool justShown = false;
         private float showTime = 0f;
@@ -25,12 +25,13 @@ namespace TitanOrbit.UI
         
         private void Start()
         {
+            // --- Unity lifecycle ---
             if (attackButton != null)
             {
                 attackButton.onClick.RemoveAllListeners(); // Clear any existing listeners
                 attackButton.onClick.AddListener(() => {
                     Debug.Log("Attack button clicked!");
-                    OnMarkerSelected(MinimapMarker.MarkerType.Attack);
+                    OnMarkerSelected(MinimapMarkerKind.Attack);
                 });
             }
             else
@@ -43,7 +44,7 @@ namespace TitanOrbit.UI
                 defendButton.onClick.RemoveAllListeners(); // Clear any existing listeners
                 defendButton.onClick.AddListener(() => {
                     Debug.Log("Defend button clicked!");
-                    OnMarkerSelected(MinimapMarker.MarkerType.Defend);
+                    OnMarkerSelected(MinimapMarkerKind.Defend);
                 });
             }
             else
@@ -55,8 +56,9 @@ namespace TitanOrbit.UI
             gameObject.SetActive(false);
         }
         
-        public void Show(Vector2 screenPosition, System.Action<MinimapMarker.MarkerType> callback)
+        public void Show(Vector2 screenPosition, System.Action<MinimapMarkerKind> callback)
         {
+            // --- Show ---
             Debug.Log($"MarkerPlacementMenu.Show called at screen pos: {screenPosition}");
             
             onMarkerSelected = callback;
@@ -216,8 +218,9 @@ namespace TitanOrbit.UI
             onMarkerSelected = null;
         }
         
-        private void OnMarkerSelected(MinimapMarker.MarkerType markerType)
+        private void OnMarkerSelected(MinimapMarkerKind markerType)
         {
+            // --- OnMarkerSelected ---
             Debug.Log($"OnMarkerSelected called with type: {markerType}");
             if (onMarkerSelected != null)
             {
@@ -233,6 +236,7 @@ namespace TitanOrbit.UI
         
         private void Update()
         {
+            // --- Per-frame refresh ---
             if (!gameObject.activeSelf) return; // Don't process if menu is hidden
             
             // Don't hide immediately after showing (prevent immediate dismissal from the click that opened it)
@@ -261,6 +265,7 @@ namespace TitanOrbit.UI
             // Touch input (mobile) - new Input System
             else if (Touchscreen.current != null && Touchscreen.current.touches.Count > 0)
             {
+                // --- if ---
                 var touch = Touchscreen.current.touches[0];
                 if (touch.press.wasPressedThisFrame)
                 {

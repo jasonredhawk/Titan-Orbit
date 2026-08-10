@@ -23,6 +23,7 @@ namespace TitanOrbit.Systems
 
         public void Initialize(string message, Color color, float duration)
         {
+            // --- Initialize ---
             lifetime = Mathf.Max(0.1f, duration);
 
             // Prefer assigned TMP_Text, else find one in children.
@@ -62,6 +63,7 @@ namespace TitanOrbit.Systems
 
         private void Update()
         {
+            // --- Per-frame refresh ---
             if (lifetime <= 0f)
             {
                 Destroy(gameObject);
@@ -91,6 +93,7 @@ namespace TitanOrbit.Systems
             }
             else if (textMesh != null)
             {
+                // --- if ---
                 Color c = baseColor;
                 c.a = Mathf.Clamp01(alpha);
                 textMesh.color = c;

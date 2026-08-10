@@ -21,6 +21,7 @@ namespace TitanOrbit.Core
 
         static void DisableSrpBatcherForWebGl()
         {
+            // --- DisableSrpBatcherForWebGl ---
 #if UNITY_WEBGL && !UNITY_EDITOR
             // Same mitigation documented on ScrollingSpaceBackground (MPB + SRP Batcher on GLES/WebGL).
             GraphicsSettings.useScriptableRenderPipelineBatching = false;

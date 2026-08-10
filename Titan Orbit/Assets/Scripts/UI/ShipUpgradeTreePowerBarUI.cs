@@ -7,7 +7,7 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Ten-segment power bar grouped into five category pairs (no gap within a pair).
     /// Each segment width is proportional to its stat value; category pairs share only a visual grouping gap.
-    /// Assign segment images in the inspector (pair order: offense … capacity).
+    /// Assign segment images in the inspector (pair order: offense ΓÇª capacity).
     /// </summary>
     public class ShipUpgradeTreePowerBarUI : MonoBehaviour
     {
@@ -25,6 +25,7 @@ namespace TitanOrbit.UI
 
         public void Initialize(Image[] segmentImages, float height, float gap)
         {
+            // --- Initialize ---
             segments = segmentImages;
             barHeight = height;
             pairGap = gap;
@@ -142,6 +143,7 @@ namespace TitanOrbit.UI
 
         public static float GetMoonTreeBarStatValue(ShipFamilyPowerScoreBreakdown breakdown, int statIndex)
         {
+            // --- Compute value ---
             float value = breakdown.GetDisplayStatValue(statIndex);
             if (statIndex == 8 || statIndex == 9)
                 return value * MoonTreeCapacityStatBarScale;
@@ -154,6 +156,7 @@ namespace TitanOrbit.UI
         /// </summary>
         public static float GetEquipmentBarStatValue(ShipFamilyPowerScoreBreakdown breakdown, int statIndex)
         {
+            // --- Compute value ---
             switch (statIndex)
             {
                 case 0: return breakdown.firePower + breakdown.rammingPower;
@@ -164,6 +167,7 @@ namespace TitanOrbit.UI
 
         public static float GetEquipmentBarDisplayTotal(ShipFamilyPowerScoreBreakdown breakdown)
         {
+            // --- Compute value ---
             float total = 0f;
             for (int i = 0; i < ShipFamilyPowerScoreBreakdown.DisplayStatCount; i++)
                 total += GetEquipmentBarStatValue(breakdown, i);
@@ -172,6 +176,7 @@ namespace TitanOrbit.UI
 
         public static float GetMoonTreeBarDisplayTotal(ShipFamilyPowerScoreBreakdown breakdown)
         {
+            // --- Compute value ---
             float total = 0f;
             for (int i = 0; i < ShipFamilyPowerScoreBreakdown.DisplayStatCount; i++)
                 total += GetMoonTreeBarStatValue(breakdown, i);
@@ -183,6 +188,7 @@ namespace TitanOrbit.UI
 
         public void ConfigureLayoutScale(float widthScale, float heightScale)
         {
+            // --- ConfigureLayoutScale ---
             _widthScale = Mathf.Max(0.01f, widthScale);
             _heightScale = Mathf.Max(0.01f, heightScale);
 
@@ -219,6 +225,7 @@ namespace TitanOrbit.UI
             float maxDen = Mathf.Max(strongestTotalPower, 0.001f);
             float nodeW = TrackWidth > 0.01f ? TrackWidth : 100f;
             float scaledBarHeight = barHeight * _heightScale;
+            // Bar fill width scales with this node's total vs the strongest reference on the tree.
             float barFillW = hasData ? nodeW * total / maxDen : nodeW;
 
             int pairCount = ShipAbilityCategoryColors.PowerBreakdownPairCount;
@@ -316,6 +323,7 @@ namespace TitanOrbit.UI
 
         private void ApplyPairWidth(int statIndex, float pairWidth, float scaledBarHeight)
         {
+            // --- Apply changes ---
             if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
                 return;
 
@@ -337,6 +345,7 @@ namespace TitanOrbit.UI
 
         private void ApplySegmentWidth(int statIndex, float segW, bool hasData, float scaledBarHeight)
         {
+            // --- Apply changes ---
             if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
                 return;
 

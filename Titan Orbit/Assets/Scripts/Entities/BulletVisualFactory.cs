@@ -1,173 +1,84 @@
-using UnityEngine;
-using Unity.Netcode;
+using TitanOrbit;
+using TitanOrbit.Audio;
 using TitanOrbit.Core;
-using TitanOrbit.Generation;
-using TitanOrbit.Systems;
+using TitanOrbit.Data;
+using UnityEngine;
 
 namespace TitanOrbit.Entities
 {
+    /// <summary>Procedural bullet mesh shape when bank prefab is unavailable.</summary>
+    public enum BulletShape
+    {
+        Sphere,
+        Square,
+    }
+
     /// <summary>
-    /// Builds bullet visuals (bank prefab particle, optional procedural core + trail) without
-    /// requiring a Bullet NetworkBehaviour. Used by <see cref="ClientBulletTracer"/> so the
-    /// lightweight server-authoritative bullet path matches the legacy networked Bullet look.
-    /// Defaults mirror the values on <c>Assets/Prefabs/Bullet.prefab</c>.
+    /// Builds bullet visuals (bank prefab particle, optional procedural core + trail) and spawns
+    /// muzzle/impact VFX for ECS client tracers. Consumes <see cref="BulletVfxBank"/> team-colored
+    /// prefabs and <see cref="Simulation.BulletVisualScale"/> for per-shot sizing.
+    /// Muzzle/impact Instantiates go through <see cref="BulletOneShotVfxPool"/> so kill/fire
+    /// frames reuse shells. Presentation only — hit detection stays on server
+    /// <see cref="ECS.Systems.BulletSimulationSystem"/>.
     /// </summary>
     public static class BulletVisualFactory
     {
         public const float DefaultBulletVisualScale = 1.2f;
+        /// <summary>Legacy CombatSystem global bullet VFX scale when no bank is assigned.</summary>
+        public const float LegacyGlobalVisualScale = 0.5f;
         public const float DefaultCoreSize = 0.5f;
         public const float DefaultTailLength = 0.8f;
         public const float DefaultTailWidth = 0.12f;
         public const float DefaultTailFade = 0.7f;
-        public const float DefaultImpactScale = 0.5f;
-        /// <summary>Legacy asteroid-only shrink; impacts now follow <see cref="GetBulletVisualScale"/> like bullets.</summary>
-        public const float AsteroidImpactScaleFactor = 0.25f;
         public const float DefaultImpactDuration = 3f;
 
-        /// <summary>Same transform scale applied to client bullet visuals (<see cref="BuildVisual"/>).</summary>
-        public static float GetBulletVisualScale(float scaleMultiplier)
+        static Material trailMat;
+        static Material defaultBulletMat;
+
+        /// <summary>
+        /// Final VFX size = factory baseline × per-shot fire-power scale ×
+        /// (bank Global × category Global). Category defaults to 1 (100%).
+        /// </summary>
+        /// <param name="bankIndex">
+        /// Category index for the per-family global knob; negative skips category (bank only).
+        /// </param>
+        public static float GetBulletVisualScale(BulletVfxBank bank, float scaleMultiplier, int bankIndex = -1)
         {
-            float globalScale = CombatSystem.Instance != null ? CombatSystem.Instance.BulletVisualScaleMultiplier : 1f;
+            // --- Bank-wide + optional per-category global ---
+            float globalScale;
+            if (bank == null)
+                globalScale = LegacyGlobalVisualScale;
+            else if (bankIndex >= 0)
+                globalScale = bank.GetCombinedGlobalVisualScaleMultiplier(bankIndex);
+            else
+                globalScale = bank.GlobalVisualScaleMultiplier;
+
             return DefaultBulletVisualScale * Mathf.Max(0.1f, scaleMultiplier) * globalScale;
         }
 
-        /// <summary>Impact burst scale — matches bullet/muzzle visual size for this shot.</summary>
-        public static float GetImpactScale(float bulletScaleMultiplier, bool isAsteroidHit = false) =>
-            GetBulletVisualScale(bulletScaleMultiplier);
+        /// <summary>Impact burst uses the same size stack as in-flight tracers.</summary>
+        public static float GetImpactScale(BulletVfxBank bank, float bulletScaleMultiplier, int bankIndex = -1) =>
+            GetBulletVisualScale(bank, bulletScaleMultiplier, bankIndex);
 
-        /// <summary>
-        /// Server / host use logical physics coordinates for VFX. Pure clients remap logical hit
-        /// points into the toroidal display tile the local camera sees (matches <see cref="ToroidalRenderer"/>).
-        /// </summary>
-        public static Vector3 ResolveClientImpactWorldPosition(Vector3 worldOrLogicalPosition)
-        {
-            var nm = NetworkManager.Singleton;
-            if (nm == null || !nm.IsClient || nm.IsServer)
-            {
-                Vector3 logical = worldOrLogicalPosition;
-                logical.y = 0f;
-                return logical;
-            }
+        public static Color GetTeamBulletColor(TeamId team) => team.ToColor();
 
-            Vector3 reference = ResolveToroidalVfxReference();
-            Vector3 logicalPos = worldOrLogicalPosition;
-            logicalPos.y = 0f;
-            return ToroidalMap.GetDisplayPosition(logicalPos, reference);
-        }
-
-        private static Vector3 ResolveToroidalVfxReference()
-        {
-            UnityEngine.Camera cam = UnityEngine.Camera.main;
-            if (cam == null || !cam.isActiveAndEnabled)
-            {
-                var cc = Object.FindFirstObjectByType<TitanOrbit.Camera.CameraController>();
-                if (cc != null)
-                    cam = cc.GetComponent<UnityEngine.Camera>();
-            }
-
-            Vector3 reference = cam != null ? cam.transform.position : Vector3.zero;
-            var nm = NetworkManager.Singleton;
-            if (nm != null && nm.IsClient && nm.SpawnManager != null)
-            {
-                NetworkObject localPlayer = nm.SpawnManager.GetLocalPlayerObject();
-                if (localPlayer != null)
-                {
-                    var ship = localPlayer.GetComponent<Starship>();
-                    if (ship != null)
-                    {
-                        Vector3 shipRef = ship.GetCameraFollowWorldPosition();
-                        reference.x = shipRef.x;
-                        reference.z = shipRef.z;
-                    }
-                }
-            }
-
-            return reference;
-        }
-
-        /// <summary>Spawns bank impact VFX (or procedural fallback) at a hit point on this client.</summary>
-        public static void SpawnBulletImpactVfx(
-            Vector3 worldOrLogicalPosition,
-            GameObject prefab,
-            TeamManager.Team team,
-            float pitch,
-            float scale,
-            float duration,
-            Transform attachParent = null,
-            Vector3 localOffset = default,
-            float loopingDuration = 0f)
-        {
-            Vector3 position = ResolveClientImpactWorldPosition(worldOrLogicalPosition);
-
-            if (Application.isMobilePlatform)
-            {
-                SpawnMobileImpact(position, team, scale);
-                return;
-            }
-
-            if (prefab == null)
-            {
-                SpawnMobileImpact(position, team, scale);
-                return;
-            }
-
-            if (loopingDuration > 0.05f)
-            {
-                SpawnLoopingImpactAt(
-                    position,
-                    prefab,
-                    pitch,
-                    scale,
-                    loopingDuration,
-                    attachParent,
-                    localOffset);
-            }
-            else
-            {
-                SpawnImpactAt(position, prefab, pitch, scale, duration);
-            }
-        }
-
-        private static Material trailMat;
-        private static Material defaultBulletMat;
-
-        public static Color GetTeamBulletColor(TeamManager.Team team)
-        {
-            if (team == TeamManager.Team.None)
-                return new Color(0.75f, 0.88f, 1f);
-            if (TeamManager.Instance != null)
-                return TeamManager.GetTeamColor(team);
-            switch (team)
-            {
-                case TeamManager.Team.TeamA: return new Color(1f, 0.3f, 0.3f);
-                case TeamManager.Team.TeamB: return new Color(0.3f, 0.5f, 1f);
-                case TeamManager.Team.TeamC: return new Color(0.2f, 0.7f, 0.28f);
-                case TeamManager.Team.TeamD: return new Color(0.95f, 0.55f, 0.12f);
-                case TeamManager.Team.TeamE: return new Color(0.65f, 0.25f, 0.85f);
-                default: return new Color(0.75f, 0.88f, 1f);
-            }
-        }
-
-        /// <summary>
-        /// Creates the bullet visual under <paramref name="parent"/>, using the bank prefab when
-        /// available (and we are not on mobile, where Sci-Fi Arsenal materials misbehave) and
-        /// falling back to a procedural core + TrailRenderer otherwise.
-        /// </summary>
         public static GameObject BuildVisual(
             Transform parent,
-            int visualPrefabBankIndex,
-            TeamManager.Team team,
+            BulletVfxBank bank,
+            int bankIndex,
+            TeamId team,
             BulletShape shape,
             float scaleMultiplier,
             float bulletSpeed,
             bool noTrail)
         {
-            float scale = GetBulletVisualScale(scaleMultiplier);
+            // [TITAN-ORBIT] bankIndex also selects per-category Global Visual Scale (default 1).
+            float scale = GetBulletVisualScale(bank, scaleMultiplier, bankIndex);
             Color color = GetTeamBulletColor(team);
 
             GameObject visualPrefab = null;
-            if (!Application.isMobilePlatform && visualPrefabBankIndex >= 0 && CombatSystem.Instance != null)
-                visualPrefab = CombatSystem.Instance.GetVisualPrefabFromBank(visualPrefabBankIndex, team);
+            if (!Application.isMobilePlatform && bank != null)
+                visualPrefab = bank.GetProjectileVisualPrefab(bankIndex, team);
 
             GameObject visual;
             if (visualPrefab != null)
@@ -175,12 +86,16 @@ namespace TitanOrbit.Entities
                 visual = Object.Instantiate(visualPrefab, parent);
                 VfxUrpCompat.FixAllIn1MaterialsForUrp(visual);
                 ApplyColorToVisual(visual, color);
+                VfxUrpCompat.ApplyImpactVisualScale(visual, scale);
                 VfxUrpCompat.PlayParticleSystemsInHierarchy(visual);
                 if (noTrail)
                 {
                     var trails = visual.GetComponentsInChildren<TrailRenderer>(true);
                     for (int i = 0; i < trails.Length; i++)
-                        if (trails[i] != null) trails[i].enabled = false;
+                    {
+                        if (trails[i] != null)
+                            trails[i].enabled = false;
+                    }
                 }
             }
             else
@@ -191,13 +106,91 @@ namespace TitanOrbit.Entities
 
             visual.transform.localPosition = Vector3.zero;
             visual.transform.localRotation = Quaternion.identity;
-            visual.transform.localScale = Vector3.one * scale;
+            if (visualPrefab == null)
+                visual.transform.localScale = Vector3.one * scale;
             SetAudioPitchInHierarchy(visual, GetProjectileSoundPitchBySpeed(bulletSpeed));
             return visual;
         }
 
+        public static void PlayMuzzleVfx(
+            Vector3 position,
+            Vector3 direction,
+            BulletVfxBank bank,
+            int bankIndex,
+            TeamId team,
+            float scaleMultiplier,
+            float bulletSpeed)
+        {
+            // Keep authored / mount world Y so the flash sits on the weapon, not the ground plane.
+            Vector3 dir = direction;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.0001f)
+                dir = Vector3.forward;
+            dir.Normalize();
+
+            float visualScale = GetBulletVisualScale(bank, scaleMultiplier, bankIndex);
+            float pitch = GetProjectileSoundPitchBySpeed(bulletSpeed);
+            Color flashColor = GetTeamBulletColor(team);
+
+            if (!Application.isMobilePlatform && bank != null)
+            {
+                GameObject muzzlePrefab = bank.GetMuzzlePrefab(bankIndex, team);
+                if (muzzlePrefab != null)
+                {
+                    // [TITAN-ORBIT] Pool muzzle flashes — Instantiates-per-shot was ~18–20ms with impacts.
+                    if (!BulletOneShotVfxPool.TryRent(muzzlePrefab, out GameObject muzzle) || muzzle == null)
+                        return;
+
+                    muzzle.transform.SetPositionAndRotation(position, Quaternion.LookRotation(-dir));
+                    VfxUrpCompat.ApplyImpactVisualScale(muzzle, visualScale);
+                    VfxUrpCompat.PrepareVfxInstance(muzzle);
+                    SetAudioPitchInHierarchy(muzzle, pitch);
+                    BulletOneShotVfxPool.ScheduleReturn(muzzle, 1.5f);
+                    return;
+                }
+            }
+
+            VfxUrpCompat.SpawnMobileMuzzleFlash(position, dir, flashColor, visualScale);
+        }
+
+        public static void SpawnBulletImpactVfx(
+            Vector3 position,
+            BulletVfxBank bank,
+            int bankIndex,
+            TeamId team,
+            float damage,
+            float scaleMultiplier)
+        {
+            // [TITAN-ORBIT] Isolation F1 — skip impact Instantiates/Rent to bisect destroy stutter.
+            if (TitanOrbitDebugFlags.IsolateDisableImpactVfx)
+                return;
+
+            position.y = 0f;
+            float impactScale = GetImpactScale(bank, scaleMultiplier, bankIndex);
+            float pitch = GetImpactSoundPitch(damage);
+
+            if (Application.isMobilePlatform)
+            {
+                VfxUrpCompat.SpawnMobileImpactBurst(position, GetTeamBulletColor(team), impactScale);
+                AudioManager.Instance?.PlayImpactSound(pitch);
+                return;
+            }
+
+            GameObject prefab = bank != null ? bank.GetImpactPrefab(bankIndex, team) : null;
+            if (prefab == null)
+            {
+                VfxUrpCompat.SpawnMobileImpactBurst(position, GetTeamBulletColor(team), impactScale);
+                AudioManager.Instance?.PlayImpactSound(pitch);
+                return;
+            }
+
+            SpawnImpactAt(position, prefab, pitch, impactScale, DefaultImpactDuration);
+            AudioManager.Instance?.PlayImpactSound(pitch);
+        }
+
         public static void ApplyColorToVisual(GameObject root, Color color)
         {
+            // --- Apply changes ---
             foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
             {
                 if (r.sharedMaterials == null) continue;
@@ -212,6 +205,7 @@ namespace TitanOrbit.Entities
                     if (mat.HasProperty("_MainColor")) mat.SetColor("_MainColor", color);
                 }
             }
+
             foreach (var ps in root.GetComponentsInChildren<ParticleSystem>(true))
             {
                 var main = ps.main;
@@ -221,18 +215,19 @@ namespace TitanOrbit.Entities
 
         public static void SetAudioPitchInHierarchy(GameObject root, float pitch)
         {
+            // --- SetAudioPitchInHierarchy ---
             if (root == null) return;
             AudioSource[] sources = root.GetComponentsInChildren<AudioSource>(true);
             for (int i = 0; i < sources.Length; i++)
             {
-                AudioSource src = sources[i];
-                if (src == null) continue;
-                src.pitch = pitch;
+                if (sources[i] != null)
+                    sources[i].pitch = pitch;
             }
         }
 
         public static float GetProjectileSoundPitchBySpeed(float projectileSpeed)
         {
+            // --- Compute value ---
             float s = Mathf.Max(0.01f, projectileSpeed);
             const float minSpeed = 1f;
             const float maxSpeed = 30f;
@@ -248,79 +243,43 @@ namespace TitanOrbit.Entities
             return Mathf.Lerp(lowPitch, highPitch, emphasized);
         }
 
-        /// <summary>Spawns the desktop/non-mobile impact effect at <paramref name="position"/>.</summary>
-        public static void SpawnImpactAt(Vector3 position, GameObject prefab, float pitch, float scale, float duration)
+        public static float GetImpactSoundPitch(float damage)
         {
-            if (prefab == null) return;
-            GameObject go = Object.Instantiate(prefab, position, Quaternion.identity);
-            VfxUrpCompat.ApplyImpactVisualScale(go, scale);
-            SetAudioPitchInHierarchy(go, pitch);
-            VfxUrpCompat.PrepareVfxInstance(go);
-            Object.Destroy(go, duration);
+            // --- Compute value ---
+            float d = Mathf.Max(0.01f, damage);
+            const float minDamage = 1f;
+            const float maxDamage = 40f;
+            const float lowPitch = 0.45f;
+            const float highPitch = 1.8f;
+            float t = Mathf.InverseLerp(minDamage, maxDamage, d);
+            return Mathf.Lerp(lowPitch, highPitch, t);
         }
 
         /// <summary>
-        /// Spawns the bank impact prefab (e.g. fire) and loops it for <paramref name="duration"/> seconds.
-        /// When <paramref name="attachParent"/> is set, uses <see cref="ShipBurnVfxAnchor"/> so fire sticks to a moving hull.
+        /// Places a one-shot impact flash. Rents from <see cref="BulletOneShotVfxPool"/> so
+        /// asteroid kills do not Instantiates a fresh prefab every HitRpc.
         /// </summary>
-        public static GameObject SpawnLoopingImpactAt(
-            Vector3 position,
-            GameObject prefab,
-            float pitch,
-            float scale,
-            float duration,
-            Transform attachParent = null,
-            Vector3 localOffset = default)
+        public static void SpawnImpactAt(Vector3 position, GameObject prefab, float pitch, float scale, float duration)
         {
-            if (prefab == null || duration <= 0f) return null;
+            // --- SpawnImpactAt (pooled) ---
+            if (prefab == null)
+                return;
 
-            if (attachParent != null)
-            {
-                return ShipBurnVfxAnchor.SpawnAttached(
-                    attachParent, localOffset, prefab, pitch, scale, duration);
-            }
+            if (!BulletOneShotVfxPool.TryRent(prefab, out GameObject go) || go == null)
+                return;
 
-            GameObject go = Object.Instantiate(prefab, position, Quaternion.identity);
+            go.transform.SetPositionAndRotation(position, Quaternion.identity);
             VfxUrpCompat.ApplyImpactVisualScale(go, scale);
             SetAudioPitchInHierarchy(go, pitch);
-            ConfigureLoopingImpactParticles(go, duration, simulateInLocalSpace: false);
+            // [UNITY] PrepareVfxInstance restarts ParticleSystems — required after pool Return cleared them.
+            // Cold Instantiates also pays FixAllIn1 / light strip here once (marker after).
             VfxUrpCompat.PrepareVfxInstance(go);
-            Object.Destroy(go, duration + 0.25f);
-            return go;
+            BulletOneShotVfxPool.ScheduleReturn(go, duration);
         }
 
-        public static void ConfigureLoopingImpactParticles(
-            GameObject root,
-            float duration,
-            bool simulateInLocalSpace = false)
+        static GameObject CreateCustomizableVfxStyle(BulletShape shape, float scale, float bulletSpeed, bool noTrailVisual, Color color)
         {
-            if (root == null) return;
-            foreach (ParticleSystem ps in root.GetComponentsInChildren<ParticleSystem>(true))
-            {
-                if (ps == null) continue;
-                var main = ps.main;
-                main.loop = true;
-                if (main.duration < duration)
-                    main.duration = duration;
-                main.stopAction = ParticleSystemStopAction.None;
-                if (simulateInLocalSpace)
-                    main.simulationSpace = ParticleSystemSimulationSpace.Local;
-
-                var emission = ps.emission;
-                if (emission.rateOverTime.constant <= 0.01f && emission.burstCount > 0)
-                {
-                    emission.rateOverTime = Mathf.Max(4f, emission.burstCount * 2f);
-                }
-            }
-        }
-
-        public static void SpawnMobileImpact(Vector3 position, TeamManager.Team team, float scale)
-        {
-            VfxUrpCompat.SpawnMobileImpactBurst(position, GetTeamBulletColor(team), scale);
-        }
-
-        private static GameObject CreateCustomizableVfxStyle(BulletShape shape, float scale, float bulletSpeed, bool noTrailVisual, Color color)
-        {
+            // --- Create instance ---
             Material baseMat = CreateDefaultBulletMaterial();
             Material instanced = new Material(baseMat);
             instanced.color = color;
@@ -358,7 +317,7 @@ namespace TitanOrbit.Entities
                     new GradientAlphaKey[]
                     {
                         new GradientAlphaKey(0.95f, 0f),
-                        new GradientAlphaKey(0.5f, Mathf.Clamp01(1f - DefaultTailFade * 0.5f)),
+                        new GradientAlphaKey(0.5f, 1f - Mathf.Clamp01(DefaultTailFade * 0.5f)),
                         new GradientAlphaKey(0f, 1f)
                     });
                 trail.colorGradient = grad;
@@ -369,8 +328,9 @@ namespace TitanOrbit.Entities
             return root;
         }
 
-        private static Material GetTrailMaterial()
+        static Material GetTrailMaterial()
         {
+            // --- Compute value ---
             if (trailMat != null) return trailMat;
             Shader s = Shader.Find("Universal Render Pipeline/Particles/Unlit")
                 ?? Shader.Find("Particles/Standard Unlit")
@@ -382,8 +342,9 @@ namespace TitanOrbit.Entities
             return trailMat;
         }
 
-        private static Material CreateDefaultBulletMaterial()
+        static Material CreateDefaultBulletMaterial()
         {
+            // --- Create instance ---
             if (defaultBulletMat != null) return defaultBulletMat;
             defaultBulletMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
             defaultBulletMat.color = new Color(0.75f, 0.88f, 1f);

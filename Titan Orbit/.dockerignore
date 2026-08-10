@@ -1,0 +1,13 @@
+# Keep Docker build context tiny — Edgegap plugin runs `docker build` from the Unity project root.
+# The Dockerfile only COPYs Builds/EdgegapServer and tools/edgegap/start-server.sh.
+
+*
+!Builds/
+Builds/*
+!Builds/EdgegapServer/
+!Builds/EdgegapServer/**
+
+!tools/
+tools/*
+!tools/edgegap/
+!tools/edgegap/start-server.sh

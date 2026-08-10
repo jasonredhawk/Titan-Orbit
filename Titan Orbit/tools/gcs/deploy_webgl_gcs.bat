@@ -4,11 +4,13 @@ setlocal
 REM One-step deploy: sync WebGL folder to GCS, then fix Content-Type / Content-Encoding for Brotli.
 REM Same arguments as upload_webgl_to_gcs.bat / set_webgl_gcs_metadata.bat.
 REM
-REM Cache busting: if the site fails with "function signature mismatch" or odd WebGL crashes after
-REM a new Unity build, the browser may still be serving an OLD .data.unityweb from IndexedDB while
-REM loading NEW .js/.wasm. Fix: rename the build output folder (e.g. TitanOrbitWeb2), update the
-REM site to load that folder, or clear site data for the origin. UnityCache "revalidated" in the
-REM console often means stale data was reused.
+REM Cache busting: if the site fails with "function signature mismatch", "memory access out of
+REM bounds" at Module._main / removeRunDependency, or odd WebGL crashes after a new Unity build,
+REM the browser may still be serving an OLD .data.unityweb from IndexedDB while loading NEW
+REM .js/.wasm. Production builds now use PlayerSettings.WebGL.nameFilesAsHashes so each Build/*
+REM file gets a content-hash name (index.html points at the new URLs). Still required once after
+REM deploy: purge Cloudflare cache + clear site data for titanorbit.io so the new index.html loads.
+REM UnityCache "revalidated" in the console often means stale data was reused.
 REM Invisible ships/planets (game otherwise OK): rebuild after TitanOrbit WebGL texture fix
 REM (disable Crunch on WebGL imports) — see tools/gcs/README.md troubleshooting section.
 REM WASM LinkError / ERR_HTTP2_PROTOCOL_ERROR on .data.unityweb: rerun metadata after upload;

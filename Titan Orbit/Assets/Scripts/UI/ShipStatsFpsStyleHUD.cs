@@ -1,79 +1,108 @@
-using UnityEngine;
-using Unity.Netcode;
-using UnityEngine.UI;
+using TitanOrbit.Core;
+using TitanOrbit.ECS;
+using TitanOrbit.Game;
+using TitanOrbit.Shared;
 using TMPro;
-using TitanOrbit.Entities;
+using UnityEngine;
+using UnityEngine.UI;
 
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Top-left ship stats HUD: horizontal progress bars (Health, Energy, Gems, People)
-    /// with icons, square-edged fills, and current/max labels.
+    /// Top-left FPS-style ship vitals HUD (health, energy, gems, people). Reads local ship state from
+    /// <see cref="EcsGameBridge"/> each <c>LateUpdate</c> — presentation only, not authoritative sim.
+    /// Auto-binds Row0..Row3 child sliders when inspector references are empty.
+    /// <para>
+    /// [TITAN-ORBIT] Holds a last-good <see cref="ShipState"/> during GhostSpawnBacklog so asteroid→gem
+    /// Instantiates do not flash the bars to 0/0 (same combat flicker class as the upgrade strip).
+    /// During gem deposit, the gems row prefers <see cref="MoonOrbitClientState"/> optimistic cargo
+    /// so it decrements by deposit-chunk size in sync with the metronome SFX.
+    /// </para>
     /// </summary>
     public class ShipStatsFpsStyleHUD : MonoBehaviour
     {
-        private struct StatBarRow
+        struct StatBarRow
         {
             public Slider Bar;
             public TextMeshProUGUI Value;
         }
 
         [Header("Layout")]
-        [SerializeField] private float valueColumnWidth = 120f;
-        [SerializeField] private float valueColumnInset = 8f;
-        [SerializeField] private float barValueGap = 12f;
+        [SerializeField] float valueColumnWidth = 120f;
+        [SerializeField] float valueColumnInset = 8f;
+        [SerializeField] float barValueGap = 12f;
 
-        [Header("References (assigned by GameSetup or inspector)")]
-        [SerializeField] private Image iconHealth;
-        [SerializeField] private Image iconEnergy;
-        [SerializeField] private Image iconGems;
-        [SerializeField] private Image iconPeople;
-        [SerializeField] private Slider barHealth;
-        [SerializeField] private Slider barEnergy;
-        [SerializeField] private Slider barGems;
-        [SerializeField] private Slider barPeople;
-        [SerializeField] private TextMeshProUGUI valueHealth;
-        [SerializeField] private TextMeshProUGUI valueEnergy;
-        [SerializeField] private TextMeshProUGUI valueGems;
-        [SerializeField] private TextMeshProUGUI valuePeople;
+        [Header("References (auto-bound from Row0..Row3 if empty)")]
+        [SerializeField] Slider barHealth;
+        [SerializeField] Slider barEnergy;
+        [SerializeField] Slider barGems;
+        [SerializeField] Slider barPeople;
+        [SerializeField] TextMeshProUGUI valueHealth;
+        [SerializeField] TextMeshProUGUI valueEnergy;
+        [SerializeField] TextMeshProUGUI valueGems;
+        [SerializeField] TextMeshProUGUI valuePeople;
 
-        [Header("Orbit-only (shown at end of Gems/People bars when in orbit)")]
-        [SerializeField] private Button btnDepositGems;
-        [SerializeField] private Button btnLoadPeopleUp;
-        [SerializeField] private Button btnUnloadPeopleDown;
+        static Sprite s_squareBarSprite;
+        bool _barsStyled;
+        bool _layoutApplied;
+        StatBarRow[] _rows;
 
-        private Starship _playerShip;
-        private ulong _boundShipNetworkId;
-        private static Sprite s_squareBarSprite;
-        private bool _barsStyled;
-        private bool _layoutApplied;
-        private StatBarRow[] _rows;
+        /// <summary>Last successful vitals snapshot — kept across brief Instantiates lookup gaps.</summary>
+        bool _hasHudCache;
+        ShipState _cachedShip;
 
-        private void Awake()
+        /// <summary>Dirty-check strings so TMP does not rebuild every frame while farming gems.</summary>
+        readonly string[] _lastValueText = new string[4];
+
+        void Awake()
         {
+            // --- Unity lifecycle ---
+            AutoBindReferences();
             CacheRows();
             ApplyLayoutToAllRows();
             ApplySquareBarStyleToAll();
         }
 
-        private void OnEnable()
+        void OnEnable()
         {
+            // --- Unity lifecycle ---
+            AutoBindReferences();
             CacheRows();
             ApplyLayoutToAllRows();
             ApplySquareBarStyleToAll();
-            InvalidateShipBinding();
-
-            if (btnDepositGems != null) btnDepositGems.onClick.RemoveAllListeners();
-            if (btnLoadPeopleUp != null) btnLoadPeopleUp.onClick.RemoveAllListeners();
-            if (btnUnloadPeopleDown != null) btnUnloadPeopleDown.onClick.RemoveAllListeners();
-
-            if (btnDepositGems != null) btnDepositGems.onClick.AddListener(OnDepositGemsClick);
-            if (btnLoadPeopleUp != null) btnLoadPeopleUp.onClick.AddListener(OnLoadPeopleUp);
-            if (btnUnloadPeopleDown != null) btnUnloadPeopleDown.onClick.AddListener(OnUnloadPeopleDown);
         }
 
-        private void CacheRows()
+        /// <summary>Finds Bar/Value children under Row0..Row3 when serialized fields are unset.</summary>
+        void AutoBindReferences()
         {
+            // --- AutoBindReferences ---
+            if (barHealth != null)
+                return;
+
+            int bound = 0;
+            for (int i = 0; i < transform.childCount && bound < 4; i++)
+            {
+                Transform row = transform.GetChild(i);
+                if (!row.name.StartsWith("Row"))
+                    continue;
+
+                var bar = row.Find("Bar")?.GetComponent<Slider>();
+                var value = row.Find("Value")?.GetComponent<TextMeshProUGUI>();
+                switch (bound)
+                {
+                    case 0: barHealth = bar; valueHealth = value; break;
+                    case 1: barEnergy = bar; valueEnergy = value; break;
+                    case 2: barGems = bar; valueGems = value; break;
+                    case 3: barPeople = bar; valuePeople = value; break;
+                }
+
+                bound++;
+            }
+        }
+
+        void CacheRows()
+        {
+            // --- CacheRows ---
             _rows = new[]
             {
                 new StatBarRow { Bar = barHealth, Value = valueHealth },
@@ -83,104 +112,92 @@ namespace TitanOrbit.UI
             };
         }
 
-        private void InvalidateShipBinding()
+        /// <summary>
+        /// Polls ECS each frame and updates four stat rows. Uses last-good cache when ship entity
+        /// lookups are gated; only zeros bars when the local ship is truly gone.
+        /// </summary>
+        void LateUpdate()
         {
-            _playerShip = null;
-            _boundShipNetworkId = 0;
-        }
-
-        private Starship GetPlayerShip()
-        {
-            if (_playerShip != null)
-            {
-                if (_playerShip.IsSpawned && !_playerShip.IsDead && _playerShip.IsOwner)
-                {
-                    var net = _playerShip.NetworkObject;
-                    if (net != null && net.NetworkObjectId == _boundShipNetworkId)
-                        return _playerShip;
-                }
-                InvalidateShipBinding();
-            }
-
-            Starship resolved = TryResolveLocalStarship();
-            if (resolved != null)
-            {
-                _playerShip = resolved;
-                _boundShipNetworkId = resolved.NetworkObject != null ? resolved.NetworkObject.NetworkObjectId : 0;
-            }
-            return _playerShip;
-        }
-
-        private static Starship TryResolveLocalStarship()
-        {
-            if (NetworkManager.Singleton != null && NetworkManager.Singleton.SpawnManager != null)
-            {
-                NetworkObject localPlayer = NetworkManager.Singleton.SpawnManager.GetLocalPlayerObject();
-                if (localPlayer != null)
-                {
-                    Starship ship = localPlayer.GetComponent<Starship>();
-                    if (ship == null)
-                        ship = localPlayer.GetComponentInChildren<Starship>(true);
-                    if (ship != null && ship.IsSpawned && !ship.IsDead && ship.IsOwner)
-                        return ship;
-                }
-            }
-
-            Starship[] ships = Object.FindObjectsByType<Starship>(FindObjectsSortMode.None);
-            for (int i = 0; i < ships.Length; i++)
-            {
-                Starship ship = ships[i];
-                if (ship != null && ship.IsOwner && ship.IsSpawned && !ship.IsDead)
-                    return ship;
-            }
-            return null;
-        }
-
-        private void LateUpdate()
-        {
+            // --- Per-frame refresh ---
             if (!_layoutApplied)
                 ApplyLayoutToAllRows();
             if (!_barsStyled)
                 ApplySquareBarStyleToAll();
 
-            Starship ship = GetPlayerShip();
-            if (ship == null)
+            bool hasShip = EcsGameBridge.TryGetLocalShipState(out var ship);
+            if (hasShip)
             {
-                UpdateRow(ref _rows[0], 0f, 0f);
-                UpdateRow(ref _rows[1], 0f, 0f);
-                UpdateRow(ref _rows[2], 0f, 0f);
-                UpdateRow(ref _rows[3], 0f, 0f);
-                SetOrbitButtonsVisible(false);
+                _cachedShip = ship;
+                _hasHudCache = true;
+            }
+            else if (_hasHudCache &&
+                     (EcsGameBridge.HasLocalPlayerShip() || ShipDisplayPose.HasLocalPose) &&
+                     !ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+            {
+                // [TITAN-ORBIT] GhostSpawnBacklog briefly skips ship scans — keep last vitals painted.
+                ship = _cachedShip;
+                hasShip = true;
+            }
+
+            if (!hasShip)
+            {
+                UpdateRow(ref _rows[0], 0f, 0f, 0);
+                UpdateRow(ref _rows[1], 0f, 0f, 1);
+                UpdateRow(ref _rows[2], 0f, 0f, 2);
+                UpdateRow(ref _rows[3], 0f, 0f, 3);
                 return;
             }
 
-            UpdateRow(ref _rows[0], ship.GetHealthForDisplay(), ship.MaxHealth);
-            UpdateRow(ref _rows[1], ship.GetEnergyForDisplay(), ship.EnergyCapacity);
-            UpdateRow(ref _rows[2], ship.CurrentGems, ship.GemCapacity);
-            UpdateRow(ref _rows[3], ship.CurrentPeople, ship.PeopleCapacity);
+            UpdateRow(ref _rows[0], ship.Health, ship.MaxHealth, 0);
+            UpdateRow(ref _rows[1], ship.CurrentEnergy, ship.MaxEnergy, 1);
 
-            SetOrbitButtonsVisible(false);
+            // --- Gems row ---
+            // [TITAN-ORBIT] While depositing, show metronome chunk cargo so the bar drops by
+            // ShipLevel with each beat — not ghost drip. Ignore a false optimistic 0 while ghost
+            // still has cargo (bad seed).
+            float displayGems = ship.CurrentGems;
+            if (MoonOrbitClientState.WantDepositGems &&
+                MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optimisticCargo) &&
+                !(optimisticCargo <= 0.001f && ship.CurrentGems > 0.001f))
+            {
+                displayGems = optimisticCargo;
+            }
+            else if (MoonOrbitClientState.WantDepositGems)
+            {
+                MoonOrbitClientState.EnsureOptimisticDepositCargoSeed(ship.CurrentGems);
+            }
+
+            UpdateRow(ref _rows[2], displayGems, ship.GemCapacity, 2);
+            UpdateRow(ref _rows[3], ship.CurrentPeople, ship.PeopleCapacity, 3);
         }
 
-        private void UpdateRow(ref StatBarRow row, float current, float max)
+        void UpdateRow(ref StatBarRow row, float current, float max, int dirtyIndex)
         {
+            // --- Per-frame refresh ---
             float displayCurrent = max > 0.0001f ? Mathf.Min(current, max) : current;
             float fill01 = max > 0.0001f ? Mathf.Clamp01(displayCurrent / max) : 0f;
             SetBarFill(row.Bar, fill01);
 
-            if (row.Value != null)
-            {
-                int curInt = Mathf.RoundToInt(displayCurrent);
-                int maxInt = Mathf.RoundToInt(max);
-                row.Value.text = maxInt > 0 ? $"{curInt}/{maxInt}" : curInt.ToString();
-            }
+            if (row.Value == null)
+                return;
+
+            int curInt = Mathf.RoundToInt(displayCurrent);
+            int maxInt = Mathf.RoundToInt(max);
+            string text = maxInt > 0 ? $"{curInt}/{maxInt}" : curInt.ToString();
+            if (_lastValueText[dirtyIndex] == text)
+                return;
+
+            row.Value.text = text;
+            _lastValueText[dirtyIndex] = text;
         }
 
-        private static void SetBarFill(Slider bar, float fill01)
+        static void SetBarFill(Slider bar, float fill01)
         {
-            if (bar == null) return;
-            fill01 = Mathf.Clamp01(fill01);
+            // --- SetBarFill ---
+            if (bar == null)
+                return;
 
+            fill01 = Mathf.Clamp01(fill01);
             if (bar.fillRect != null)
             {
                 Vector2 min = bar.fillRect.anchorMin;
@@ -193,38 +210,39 @@ namespace TitanOrbit.UI
             bar.SetValueWithoutNotify(fill01);
         }
 
-        private void ApplyLayoutToAllRows()
+        void ApplyLayoutToAllRows()
         {
-            if (_rows == null) CacheRows();
+            // --- Apply changes ---
+            if (_rows == null)
+                CacheRows();
             for (int i = 0; i < _rows.Length; i++)
                 ApplyRowLayout(ref _rows[i]);
             _layoutApplied = true;
         }
 
-        private void ApplyRowLayout(ref StatBarRow row)
+        void ApplyRowLayout(ref StatBarRow row)
         {
-            float columnWidth = valueColumnWidth;
+            // --- Apply changes ---
             if (row.Value != null)
             {
-                TextMeshProUGUI tmp = row.Value;
+                var tmp = row.Value;
                 tmp.enableWordWrapping = false;
                 tmp.overflowMode = TextOverflowModes.Overflow;
                 tmp.alignment = TextAlignmentOptions.MidlineLeft;
-                if (tmp.fontSize < 13f) tmp.fontSize = 14f;
+                if (tmp.fontSize < 13f)
+                    tmp.fontSize = 14f;
 
                 RectTransform valueRect = tmp.rectTransform;
                 valueRect.anchorMin = new Vector2(1f, 0.5f);
                 valueRect.anchorMax = new Vector2(1f, 0.5f);
                 valueRect.pivot = new Vector2(1f, 0.5f);
                 valueRect.anchoredPosition = new Vector2(-valueColumnInset, 0f);
-                columnWidth = Mathf.Max(valueColumnWidth, valueRect.sizeDelta.x);
+                float columnWidth = Mathf.Max(valueColumnWidth, valueRect.sizeDelta.x);
                 valueRect.sizeDelta = new Vector2(columnWidth, valueRect.sizeDelta.y);
             }
 
             if (row.Bar != null)
             {
-                RemoveExistingNotches(row.Bar);
-
                 RectTransform barRect = row.Bar.GetComponent<RectTransform>();
                 barRect.anchorMin = new Vector2(0f, 0f);
                 barRect.anchorMax = new Vector2(1f, 1f);
@@ -237,42 +255,36 @@ namespace TitanOrbit.UI
                 if (icon is RectTransform iconRect)
                     barLeft = iconRect.anchoredPosition.x + iconRect.sizeDelta.x + 8f;
 
-                float barRightInset = columnWidth + valueColumnInset + barValueGap;
+                float barRightInset = valueColumnWidth + valueColumnInset + barValueGap;
                 barRect.offsetMin = new Vector2(barLeft, 2f);
                 barRect.offsetMax = new Vector2(-barRightInset, -2f);
             }
         }
 
-        private static void RemoveExistingNotches(Slider bar)
+        void ApplySquareBarStyleToAll()
         {
-            if (bar == null) return;
-            Transform existing = bar.transform.Find("Notches");
-            if (existing != null)
-                Object.Destroy(existing.gameObject);
-        }
-
-        private void ApplySquareBarStyleToAll()
-        {
-            if (_rows == null) CacheRows();
+            // --- Apply changes ---
+            if (_rows == null)
+                CacheRows();
             for (int i = 0; i < _rows.Length; i++)
                 ApplySquareBarStyle(_rows[i].Bar);
             _barsStyled = true;
         }
 
-        private static void ApplySquareBarStyle(Slider slider)
+        static void ApplySquareBarStyle(Slider slider)
         {
-            if (slider == null) return;
-
-            RemoveExistingNotches(slider);
+            // --- Apply changes ---
+            if (slider == null)
+                return;
 
             Sprite square = GetSquareBarSprite();
-            Image[] images = slider.GetComponentsInChildren<Image>(true);
+            var images = slider.GetComponentsInChildren<Image>(true);
             for (int i = 0; i < images.Length; i++)
             {
-                Image img = images[i];
-                if (img == null) continue;
-                img.sprite = square;
-                img.type = Image.Type.Simple;
+                if (images[i] == null)
+                    continue;
+                images[i].sprite = square;
+                images[i].type = Image.Type.Simple;
             }
 
             RectTransform fillArea = slider.fillRect != null ? slider.fillRect.parent as RectTransform : null;
@@ -285,48 +297,17 @@ namespace TitanOrbit.UI
             }
         }
 
-        private static Sprite GetSquareBarSprite()
+        static Sprite GetSquareBarSprite()
         {
-            if (s_squareBarSprite != null) return s_squareBarSprite;
+            // --- Compute value ---
+            if (s_squareBarSprite != null)
+                return s_squareBarSprite;
+
             var tex = new Texture2D(1, 1, TextureFormat.RGBA32, false);
             tex.SetPixel(0, 0, Color.white);
             tex.Apply();
             s_squareBarSprite = Sprite.Create(tex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f), 1f);
             return s_squareBarSprite;
-        }
-
-        private void SetOrbitButtonsVisible(bool visible)
-        {
-            if (btnDepositGems != null) btnDepositGems.gameObject.SetActive(visible);
-            if (btnLoadPeopleUp != null) btnLoadPeopleUp.gameObject.SetActive(visible);
-            if (btnUnloadPeopleDown != null) btnUnloadPeopleDown.gameObject.SetActive(visible);
-        }
-
-        private void OnDepositGemsClick()
-        {
-            var ship = GetPlayerShip();
-            if (ship == null) return;
-            ship.SetWantToDepositGemsServerRpc(!ship.WantToDepositGems);
-        }
-
-        private void OnLoadPeopleUp()
-        {
-            var ship = GetPlayerShip();
-            if (ship != null && ship.IsInOrbit)
-            {
-                ship.SetWantToLoadPeopleServerRpc(true);
-                ship.SetWantToUnloadPeopleServerRpc(false);
-            }
-        }
-
-        private void OnUnloadPeopleDown()
-        {
-            var ship = GetPlayerShip();
-            if (ship != null && ship.IsInOrbit)
-            {
-                ship.SetWantToUnloadPeopleServerRpc(true);
-                ship.SetWantToLoadPeopleServerRpc(false);
-            }
         }
     }
 }

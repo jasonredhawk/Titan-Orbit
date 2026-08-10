@@ -12,15 +12,18 @@ MonoBehaviour:
   m_Script: {fileID: 15024, guid: 0000000000000000e000000000000000, type: 0}
   m_Name: TitanOrbitServer
   m_EditorClassIdentifier: UnityEditor.MultiplayerModule.dll::Unity.Multiplayer.PlayMode.Editor.ScenarioConfig
-  m_Description: 
+  m_Description: 'Join GCE Relay: both editors Client (not Server). m_Role 2 = Client.'
   m_EnableEditors: 1
   m_MainEditorInstance:
     Name: Main Editor
-    <CorrespondingNodeId>k__BackingField: 
-    m_Nodes: []
+    <CorrespondingNodeId>k__BackingField: Main Editor|0_run
+    m_Nodes:
+    - Main Editor|0_run
+    - Main Editor|0_deploy
     m_Role: 2
     m_PlayerTag: 
     m_InitialScene: {fileID: 0}
+    PlayerInstanceIndex: 0
   m_EditorInstances: []
   m_LocalInstances: []
   m_RemoteInstances: []

@@ -73,14 +73,9 @@ namespace TitanOrbit.Entities
             if (IsTailOrFin(partType))
                 return ComputeRearCentered(index, count, avg, spacing);
 
-            // Part / engine / hull / default — stack centered like wings but tighter.
             return ComputeStackedCentered(index, count, avg, DefaultStackSpacing * 0.85f);
         }
 
-        /// <summary>
-        /// Recomputes placements for all items of a type (chassis + equipped ordinals).
-        /// Returns one position per total count; caller maps indices to chassis vs equipped slots.
-        /// </summary>
         public static void ComputeAllPlacementsForType(
             string partType,
             int totalCount,
@@ -104,6 +99,7 @@ namespace TitanOrbit.Entities
 
         public static void ApplyPlacementToEntry(ref EquippedEquipmentEntry entry, Vector3 localPosition, Quaternion localRotation)
         {
+            // --- Apply changes ---
             Vector3 euler = localRotation.eulerAngles;
             entry.localPosX = localPosition.x;
             entry.localPosY = localPosition.y;
@@ -146,6 +142,7 @@ namespace TitanOrbit.Entities
 
         private static Vector3 AveragePosition(List<Vector3> positions)
         {
+            // --- AveragePosition ---
             if (positions == null || positions.Count == 0)
                 return Vector3.zero;
 
@@ -157,6 +154,7 @@ namespace TitanOrbit.Entities
 
         private static float InferSpacing(List<Vector3> positions, float fallback)
         {
+            // --- InferSpacing ---
             if (positions == null || positions.Count < 2)
                 return fallback;
 
@@ -176,6 +174,7 @@ namespace TitanOrbit.Entities
 
         private static Vector3 ComputeStackedCentered(int index, int count, Vector3 referenceAvg, float stackSpacing)
         {
+            // --- Compute value ---
             float centerOffset = (count - 1) * 0.5f;
             float y = referenceAvg.y + (index - centerOffset) * stackSpacing;
             return new Vector3(0f, y, referenceAvg.z);
@@ -183,14 +182,15 @@ namespace TitanOrbit.Entities
 
         private static Vector3 ComputeHorizontalCentered(int index, int count, Vector3 referenceAvg, float spacing)
         {
+            // --- Compute value ---
             float centerOffset = (count - 1) * 0.5f;
             float x = (index - centerOffset) * spacing;
             return new Vector3(x, referenceAvg.y, referenceAvg.z);
         }
 
-        /// <summary>Cockpits line up side-by-side on X; Y/Z stay on the reference row.</summary>
         private static Vector3 ComputeCockpitHorizontal(int index, int count, Vector3 referenceAvg, float spacing)
         {
+            // --- Compute value ---
             float useSpacing = Mathf.Max(spacing, DefaultCockpitSpacing);
             float centerOffset = (count - 1) * 0.5f;
             float x = (index - centerOffset) * useSpacing;
@@ -199,6 +199,7 @@ namespace TitanOrbit.Entities
 
         private static Vector3 ComputeRearCentered(int index, int count, Vector3 referenceAvg, float spacing)
         {
+            // --- Compute value ---
             float rearZ = referenceAvg.z - DefaultRearOffset;
             if (referenceAvg.z < -0.01f)
                 rearZ = referenceAvg.z - DefaultRearOffset * 0.5f;

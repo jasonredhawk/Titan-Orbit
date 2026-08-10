@@ -3,12 +3,13 @@ using UnityEngine;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Canonical colors for ship ability stats. The bottom upgrade bar and orbit ship-tree power bars
-    /// share the same two-tone palette via <see cref="GetPowerBreakdownStatColor"/> /
-    /// <see cref="GetPowerBreakdownStatColorForHud"/> (lighter primary stat, darker secondary per category).
+    /// Canonical two-tone color palette for the ten ship power-bar stats (offense through capacity).
+    /// Shared by upgrade-tree nodes, equipment cards, and attribute HUD buttons via
+    /// <see cref="GetPowerBreakdownStatColor"/> / <see cref="GetPowerBreakdownStatColorForHud"/>.
     /// </summary>
     public static class ShipAbilityCategoryColors
     {
+        // --- HUD category shortcuts (five tabs) ---
         public const int PowerBreakdownStatCount = 10;
 
         public static readonly Color WeaponForHud = new Color(0.9f, 0.35f, 0.2f, 0.9f);
@@ -55,6 +56,7 @@ namespace TitanOrbit.UI
             "Offense", "Defense", "Energy", "Movement", "Capacity"
         };
 
+        /// <summary>Returns category title for legend pair index (Offense, Defense, …).</summary>
         public static string GetPowerBreakdownCategoryTitle(int pairIndex)
         {
             if (pairIndex < 0 || pairIndex >= PowerBreakdownCategoryTitles.Length)
@@ -82,6 +84,7 @@ namespace TitanOrbit.UI
 
         private static Color[] BuildPowerBreakdownStatColors()
         {
+            // --- Two tones per ODEMC category pair ---
             var colors = new Color[PowerBreakdownStatCount];
             for (int category = 0; category < PowerBreakdownOdEmc.Length; category++)
             {

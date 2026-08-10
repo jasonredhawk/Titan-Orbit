@@ -62,7 +62,7 @@ namespace TitanOrbit.Editor
             bool hasPreview = TryGetStatPreview(familyDefinition, prefab, minHomePlanetLevel, out ShipFamilyUpgradeTreeStatScanner.UpgradeTreeStatPreview preview);
             bool hasMissingStats = hasPreview && HasMissingStats(preview);
             if (hasMissingStats)
-                header += "  — missing components";
+                header += "  ΓÇö missing components";
 
             bool expanded = element.isExpanded;
             Color previousContentColor = GUI.contentColor;
@@ -245,7 +245,7 @@ namespace TitanOrbit.Editor
                 GUI.contentColor = MissingStatText;
                 EditorGUI.LabelField(
                     new Rect(rect.x, y, width, line),
-                    "Red rows: base stat is 0 — prefab is likely missing parts (e.g. tail/fin for Turn Speed).",
+                    "Red rows: base stat is 0 ΓÇö prefab is likely missing parts (e.g. tail/fin for Turn Speed).",
                     EditorStyles.miniLabel);
                 GUI.contentColor = previousHelpColor;
                 y += line + gap;

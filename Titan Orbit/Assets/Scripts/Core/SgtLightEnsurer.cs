@@ -12,6 +12,7 @@ namespace TitanOrbit.Core
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void EnsureSgtLightOnLights()
         {
+            // --- Walk scene lights and add SgtLight wrapper ---
             Light[] lights = Object.FindObjectsOfType<Light>();
             foreach (Light light in lights)
             {

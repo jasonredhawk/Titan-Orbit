@@ -77,6 +77,7 @@ namespace TitanOrbit.Data
 
         public static BulletBankStatModifiers Combine(BulletBankStatModifiers a, BulletBankStatModifiers b)
         {
+            // --- Combine ---
             return new BulletBankStatModifiers
             {
                 firePowerMultiplier = SafeMul(a.firePowerMultiplier, b.firePowerMultiplier),
@@ -89,6 +90,7 @@ namespace TitanOrbit.Data
 
         private static float SafeMul(float x, float y)
         {
+            // --- SafeMul ---
             if (x <= 0f) x = 1f;
             if (y <= 0f) y = 1f;
             return x * y;
@@ -103,6 +105,11 @@ namespace TitanOrbit.Data
     }
 
     [Serializable]
+    /// <summary>
+    /// One special behavior row on a <see cref="BulletBankProfile"/>. Magnitude/duration/radius meaning
+    /// depends on <see cref="type"/> — see <see cref="BulletBankAbilityType"/> tooltips. Server sim
+    /// reads these in <c>BulletSimulationSystem</c>; client VFX reads stretch/gravity profiles only.
+    /// </summary>
     public class BulletBankAbility
     {
         public BulletBankAbilityType type = BulletBankAbilityType.BurnOverTime;
@@ -118,7 +125,12 @@ namespace TitanOrbit.Data
         public BulletBankDamageTarget damageTarget = BulletBankDamageTarget.Asteroid;
     }
 
-    /// <summary>Authoring profile for one bullet bank category. Referenced from <see cref="TitanOrbit.Systems.BulletBankCategory"/>.</summary>
+    /// <summary>
+    /// Authoring profile for one bullet bank category (Needle, Rocket, Laserbolt, …). Referenced from
+    /// <see cref="TitanOrbit.Systems.BulletBankCategory"/> index and mirrored on
+    /// <see cref="BulletVfxBank.Category.profile"/> for client tracers. Stat modifiers stack
+    /// multiplicatively at fire time with ship family stats.
+    /// </summary>
     [Serializable]
     public class BulletBankProfile
     {
@@ -126,8 +138,10 @@ namespace TitanOrbit.Data
         [Tooltip("Unique special behaviors for this bullet type. Duplicate types stack where noted.")]
         public List<BulletBankAbility> abilities = new List<BulletBankAbility>();
 
+        /// <summary>Returns true when any ability row matches <paramref name="type"/>.</summary>
         public bool HasAbility(BulletBankAbilityType type)
         {
+            // --- HasAbility ---
             if (abilities == null || abilities.Count == 0) return false;
             for (int i = 0; i < abilities.Count; i++)
             {
@@ -137,8 +151,10 @@ namespace TitanOrbit.Data
             return false;
         }
 
+        /// <summary>First matching ability row, or false when none.</summary>
         public bool TryGetAbility(BulletBankAbilityType type, out BulletBankAbility ability)
         {
+            // --- Attempt resolution ---
             ability = null;
             if (abilities == null) return false;
             for (int i = 0; i < abilities.Count; i++)
@@ -152,8 +168,10 @@ namespace TitanOrbit.Data
             return false;
         }
 
+        /// <summary>Multiplies all damage-multiplier abilities that match <paramref name="target"/>.</summary>
         public float GetDamageMultiplier(BulletBankDamageTarget target)
         {
+            // --- Compute value ---
             float mul = 1f;
             if (abilities == null) return mul;
             for (int i = 0; i < abilities.Count; i++)
@@ -170,6 +188,7 @@ namespace TitanOrbit.Data
         /// <summary>Longest burn DoT duration on this profile (0 if none).</summary>
         public float GetBurnDuration()
         {
+            // --- Compute value ---
             float best = 0f;
             if (abilities == null) return 0f;
             for (int i = 0; i < abilities.Count; i++)
@@ -184,6 +203,7 @@ namespace TitanOrbit.Data
         /// <summary>Max bullet travel range multiplier from burn abilities (1 = unchanged).</summary>
         public float GetBurnBulletRangeMultiplier()
         {
+            // --- Compute value ---
             float best = 1f;
             if (abilities == null) return 1f;
             for (int i = 0; i < abilities.Count; i++)
@@ -203,6 +223,7 @@ namespace TitanOrbit.Data
         /// <summary>Start/end length multipliers for <see cref="BulletBankAbilityType.StretchLengthInFlight"/> (defaults 0.5 → 2).</summary>
         public bool TryGetStretchLengthFactors(out float startFactor, out float endFactor)
         {
+            // --- Attempt resolution ---
             startFactor = 0.5f;
             endFactor = 2f;
             if (!TryGetAbility(BulletBankAbilityType.StretchLengthInFlight, out BulletBankAbility ability) || ability == null)

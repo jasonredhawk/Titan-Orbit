@@ -39,6 +39,7 @@ namespace TitanOrbit.Services
         /// <summary>Call from <see cref="TitanOrbitIapManager"/> after a successful <c>ProcessPurchase</c>.</summary>
         public static void NotifyPurchaseCompleted(string productId, string transactionId)
         {
+            // --- NotifyPurchaseCompleted ---
             string playerId = UnityGameServicesBootstrap.PlayerId;
             LastPurchasePlayerId = playerId;
             PurchaseRecordedForPlayer?.Invoke(productId ?? "", transactionId ?? "");
@@ -52,6 +53,7 @@ namespace TitanOrbit.Services
         /// <summary>Used after store init / restore when a non-consumable already has a receipt.</summary>
         public static void ApplyReconciledNonConsumable(string productId, bool hasReceipt)
         {
+            // --- Apply changes ---
             if (!hasReceipt || string.IsNullOrEmpty(productId))
                 return;
             if (!string.IsNullOrEmpty(RemoveAdsProductId) &&
@@ -61,6 +63,7 @@ namespace TitanOrbit.Services
 
         public static void SetRemoveAdsOwned(bool owned)
         {
+            // --- SetRemoveAdsOwned ---
             if (IsRemoveAdsOwned == owned)
                 return;
             IsRemoveAdsOwned = owned;

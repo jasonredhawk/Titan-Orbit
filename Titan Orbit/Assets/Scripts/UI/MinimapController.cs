@@ -2,26 +2,37 @@ using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
-using Unity.Netcode;
 using TMPro;
 using System.Collections.Generic;
-using TitanOrbit.Entities;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
-using TitanOrbit.AI;
+using TitanOrbit.Game;
+using TitanOrbit.Simulation;
 using Shapes;
 
 namespace TitanOrbit.UI
 {
     /// <summary>
     /// Minimap showing a larger region around the player (not full map).
-    /// Displays: player ship (cross blip), friendly/enemy ships (cross, team colors), planets, home planets, gem moons, asteroids.
-    /// Each team has its own color.
+    /// Displays: player/remote ships as team-colored Cross (X) blips, with a small colored circle
+    /// when that ship is their team's top killer (blue) / gem miner (red) / transporter (yellow).
+    /// Also planets, home planets, gem moons, and asteroids. Each team has its own color.
+    /// Planet blips also draw a thin team-colored ring at the gem-moon / ship orbit radius
+    /// (<see cref="PlanetOrbitMath.GetOrbitRingCenterRadiusLocal"/>) so the orbit path is readable on the map.
+    /// Collapsed world radius scales with ship-level camera zoom (<see cref="CameraFollowEcs.CurrentHeightZoomFactor"/>)
+    /// so the circle shows proportionally more map as the gameplay camera rises. Expanded mode still fits the full torus.
+    /// Client presentation only — reads <see cref="MinimapBlipAnchor"/> caches, never map-body ECS gathers.
     /// </summary>
     public class MinimapController : MonoBehaviour
     {
         [Header("Minimap Settings")]
-        [SerializeField] private float minimapRadius = 40f; // Reduced from 80f - zoomed in to show less map area
+        [SerializeField] private float minimapRadius = 40f;
+        [SerializeField] private float collapsedZoomOutMultiplier = 1.5f;
+        [Tooltip(
+            "When on, collapsed minimap world radius grows with ship-level camera height " +
+            "(same proportion as CameraFollowEcs: CurrentHeight / heightAtLevel1). Expanded full-map mode is unchanged.")]
+        [SerializeField] private bool scaleCollapsedRadiusWithShipLevel = true;
         [SerializeField] private float displaySize = 150f;
         [SerializeField] private RectTransform minimapContent;
         [SerializeField] private float sizeScaleFactor = 1.2f; // Increased from 0.5f - makes entities more visible when zoomed in
@@ -29,6 +40,8 @@ namespace TitanOrbit.UI
         [SerializeField] private float asteroidBlipScaleFactor = 1f; // Asteroids use physical scale for blip size
         [SerializeField] private float moonBlipScaleFactor = 0.85f;
         [SerializeField] private float moonBlipMinSize = 5f;
+        [Tooltip("Alpha of the thin moon-orbit ring around each planet blip (team tint).")]
+        [SerializeField] [Range(0.15f, 1f)] private float planetOrbitRingAlpha = 0.4f;
         [SerializeField] private float edgeMarkerSize = 36f; // Base size of edge markers for planets outside visible area
         [SerializeField] private float edgeMarkerMinSize = 20f; // Minimum size for farthest planets
         [SerializeField] private float edgeMarkerMaxSize = 48f; // Maximum size for closest planets
@@ -37,8 +50,9 @@ namespace TitanOrbit.UI
         [Header("Expand Settings")]
         [SerializeField] private float expandedSizePercent = 0.85f; // Percentage of screen to fill (85%)
         [SerializeField] private float expandedBackgroundAlpha = 0.9f;
-        [Tooltip("World-space radius visible around the player when expanded. Smaller = zoomed in, larger = zoomed out. Set to 0 or less to auto-fit the full toroidal map.")]
-        [SerializeField] private float fullMapRadius = 212f;
+        [Tooltip("World-space radius when expanded. Leave at 0 to auto-fit the full toroidal map.")]
+        [SerializeField] private float fullMapRadius = 0f;
+        [SerializeField] private float expandedMapFitPadding = 1.03f;
         [SerializeField] private float markerHeight = 1f; // Height above ground for markers
 
         [Header("Map size label")]
@@ -59,8 +73,34 @@ namespace TitanOrbit.UI
         private Vector2 originalSizeDelta;
         private Vector2 originalAnchorMin;
         private Vector2 originalAnchorMax;
-        /// <summary>World radius shown when minimap is collapsed; restored after fullscreen so zoom matches pre-expand.</summary>
+        /// <summary>
+        /// Level-1 collapsed world radius (after <see cref="collapsedZoomOutMultiplier"/>).
+        /// Expand/collapse restore this base; ship-level zoom multiplies it each blip pass.
+        /// </summary>
         private float originalMinimapRadius;
+
+        /// <summary>
+        /// Designer <see cref="minimapRadius"/> × collapsed multiplier at level 1.
+        /// Never stores the ship-level-scaled value — that would double-scale on collapse.
+        /// </summary>
+        private float _baseCollapsedMinimapRadius;
+
+        /// <summary>
+        /// Designer <see cref="maxPlanetDistance"/> at level 1; scales with the same zoom factor
+        /// so edge-marker falloff stays relative to the visible circle.
+        /// </summary>
+        private float _baseMaxPlanetDistance;
+
+        /// <summary>
+        /// Cached gameplay camera follow — supplies <see cref="CameraFollowEcs.CurrentHeightZoomFactor"/>.
+        /// Null until found; missing camera falls back to <see cref="CameraFollowSettings"/> math from the player anchor level.
+        /// </summary>
+        private CameraFollowEcs _cameraFollow;
+
+        /// <summary>
+        /// Last good local ship level for zoom when the camera is missing and the player anchor has no level yet.
+        /// </summary>
+        private int _lastKnownShipLevelForZoom = 1;
 
         /// <summary>When expanded, other UI roots are faded via CanvasGroup; we restore previous values on collapse.</summary>
         private struct NonMinimapUiRestoreState
@@ -95,13 +135,30 @@ namespace TitanOrbit.UI
         [SerializeField] private Color asteroidColor = new Color(0.8f, 0.8f, 0.8f); // Light grey for better visibility
         [SerializeField] private Color moonColor = new Color(0.55f, 0.88f, 1f); // Neutral gem-moon tint when planet is uncaptured
 
-        private Starship playerShip;
+        private MinimapBlipAnchor playerAnchor;
         private Transform playerTransform;
         private Dictionary<Transform, RectTransform> blips = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> blipImages = new Dictionary<Transform, Image>();
         private Dictionary<Transform, BlipType> blipTypes = new Dictionary<Transform, BlipType>();
         private Dictionary<Transform, float> bullseyePulseTime = new Dictionary<Transform, float>(); // Track pulse animation time for bullseye blips
-        
+
+        // --- Top-of-team role dots on ship Cross blips (anchor stats only — no ECS walks) ---
+        /// <summary>Child root under each ship blip for 0–3 small role circles.</summary>
+        readonly Dictionary<Transform, RectTransform> _shipRoleDotRoots = new Dictionary<Transform, RectTransform>();
+        /// <summary>Last role mask per ship (bit0 killer, bit1 miner, bit2 transporter).</summary>
+        readonly Dictionary<Transform, byte> _shipRoleDotMask = new Dictionary<Transform, byte>();
+        /// <summary>
+        /// Scratch list for <see cref="ShipTopOfTeamRoles.Recompute"/> — filled from
+        /// <see cref="cachedShips"/> each blip pass (no ECS gathers).
+        /// </summary>
+        readonly List<ShipTopOfTeamRoles.Candidate> _topRoleCandidates = new List<ShipTopOfTeamRoles.Candidate>(32);
+        /// <summary>Shared white circle sprite, tinted blue / red / yellow per role.</summary>
+        static Sprite _shipRoleDotSprite;
+        // [TITAN-ORBIT] Role colors: blue = killer, red = gems (miner), yellow = transports.
+        static readonly Color RoleDotKiller = new Color(0.35f, 0.55f, 1f, 0.95f);
+        static readonly Color RoleDotMiner = new Color(1f, 0.28f, 0.28f, 0.95f);
+        static readonly Color RoleDotTransporter = new Color(1f, 0.88f, 0.25f, 0.95f);
+
         // Edge markers for planets outside visible area
         private Dictionary<Transform, RectTransform> edgeMarkers = new Dictionary<Transform, RectTransform>();
         private Dictionary<Transform, Image> edgeMarkerImages = new Dictionary<Transform, Image>();
@@ -116,11 +173,11 @@ namespace TitanOrbit.UI
         /// <summary>While dead asteroid ghosts exist, only rescan asteroids on this interval (full RefreshEntityCache(true) every blip tick was very expensive).</summary>
         private float nextGhostAsteroidRescanTime = -999f;
         private const float GhostAsteroidRescanInterval = 0.25f;
-        private Starship[] cachedShips = new Starship[0];
-        private Planet[] cachedPlanets = new Planet[0];
-        private HomePlanet[] cachedHomePlanets = new HomePlanet[0];
-        private Asteroid[] cachedAsteroids = new Asteroid[0];
-        private MinimapMarker[] cachedMarkers = new MinimapMarker[0];
+        private MinimapBlipAnchor[] cachedShips = System.Array.Empty<MinimapBlipAnchor>();
+        private MinimapBlipAnchor[] cachedPlanets = System.Array.Empty<MinimapBlipAnchor>();
+        private MinimapBlipAnchor[] cachedHomePlanets = System.Array.Empty<MinimapBlipAnchor>();
+        private MinimapBlipAnchor[] cachedAsteroids = System.Array.Empty<MinimapBlipAnchor>();
+        private MinimapBlipAnchor[] cachedGemMoons = System.Array.Empty<MinimapBlipAnchor>();
         private int skippedNullShips = 0;
         private int skippedNullPlanets = 0;
         private int skippedNullHomePlanets = 0;
@@ -145,8 +202,12 @@ namespace TitanOrbit.UI
         private struct PlanetBlipLayoutState
         {
             public float QuantizedSize;
+            /// <summary>Quantized world→minimap scale used for orbit ring radius (position scale).</summary>
+            public float QuantizedWorldToMinimapScale;
             public int Population;
             public int Level;
+            /// <summary>Bitmask of slots with active turrets (filled vs ring dots).</summary>
+            public byte DefenseTurretBuiltMask;
             public Color32 Color;
         }
 
@@ -167,25 +228,29 @@ namespace TitanOrbit.UI
             Triangle,    // (legacy directional blip)
             Cross,       // Ships (player + others)
             Irregular,   // Asteroids
-            Bullseye     // Markers (attack/defend)
+            Bullseye,    // Markers (attack/defend)
+            Ring         // Thin annulus — planet moon-orbit path on the minimap
         }
 
+        /// <summary>
+        /// Shortest XZ delta on the Pac-Man map so blips wrap around the player instead of
+        /// drawing a long Euclidean line across the full map.
+        /// </summary>
         private static void GetToroidalDelta(Vector3 from, Vector3 to, out float dx, out float dz)
         {
-            float mapW = Mathf.Max(1f, ToroidalMap.GetMapWidth());
-            float mapH = Mathf.Max(1f, ToroidalMap.GetMapHeight());
+            // --- Periodic shortest-path delta (matches ToroidalMap / ToroidalMapEcs) ---
+            // Missing map size → Euclidean delta (caller should prefer skipping when unset).
             dx = to.x - from.x;
             dz = to.z - from.z;
+            if (!ToroidalMap.TryGetMapSize(out float mapW, out float mapH))
+                return;
             dx -= mapW * Mathf.Round(dx / mapW);
             dz -= mapH * Mathf.Round(dz / mapH);
         }
 
-        /// <summary>World-space radius used for expanded minimap zoom (player-centered).</summary>
-        private float GetExpandedWorldRadius()
+        /// <summary>Half-diagonal of the toroidal map — circle radius that fits every world point around the player.</summary>
+        private float GetFullMapToroidalRadius()
         {
-            if (fullMapRadius > 0f)
-                return fullMapRadius;
-
             float w = ToroidalMap.GetMapWidth();
             float h = ToroidalMap.GetMapHeight();
             if (w > 1f && h > 1f)
@@ -195,19 +260,138 @@ namespace TitanOrbit.UI
                 return Mathf.Sqrt(hw * hw + hh * hh);
             }
 
-            return 212f;
+            return fullMapRadius > 0f ? fullMapRadius : 212f;
+        }
+
+        private float GetMaxCachedEntityToroidalDistance(Vector3 playerPos)
+        {
+            float maxDist = 0f;
+            AccumulateMaxToroidalDistance(playerPos, cachedShips, ref maxDist);
+            AccumulateMaxToroidalDistance(playerPos, cachedPlanets, ref maxDist);
+            AccumulateMaxToroidalDistance(playerPos, cachedHomePlanets, ref maxDist);
+            AccumulateMaxToroidalDistance(playerPos, cachedAsteroids, ref maxDist);
+            AccumulateMaxToroidalDistance(playerPos, cachedGemMoons, ref maxDist);
+            return maxDist;
+        }
+
+        static void AccumulateMaxToroidalDistance(Vector3 playerPos, MinimapBlipAnchor[] entities, ref float maxDist)
+        {
+            if (entities == null)
+                return;
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                var entity = entities[i];
+                if (entity == null)
+                    continue;
+
+                GetToroidalDelta(playerPos, entity.transform.position, out float dx, out float dz);
+                float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                if (dist > maxDist)
+                    maxDist = dist;
+            }
+        }
+
+        /// <summary>
+        /// World-space radius for expanded minimap: fit the full toroidal map (half-diagonal)
+        /// zoomed to the rolled map size. Does not inflate from blip display positions — those can
+        /// sit many tiles away and made the map look tiny when size was wrong or unbounded.
+        /// </summary>
+        private float GetExpandedWorldRadius(Vector3 playerPos)
+        {
+            _ = playerPos;
+            // --- Full map fit: half-diagonal of W×H period cell ---
+            float radius = GetFullMapToroidalRadius();
+            return Mathf.Max(1f, radius * expandedMapFitPadding);
         }
 
         private void OnValidate()
         {
             if (!Application.isPlaying || !isExpanded)
                 return;
-            minimapRadius = GetExpandedWorldRadius();
+            minimapRadius = GetExpandedWorldRadius(PlayerPosition);
+        }
+
+        /// <summary>
+        /// World-radius multiplier matching gameplay camera zoom-out from ship level.
+        /// Level 1 → 1; higher levels track <see cref="CameraFollowEcs.CurrentHeightZoomFactor"/>
+        /// (smoothed height / heightAtLevel1). Falls back to the same formula from the player blip level
+        /// when the follow camera is not in the scene yet.
+        /// </summary>
+        /// <returns>Factor ≥ ~0.01 to multiply the level-1 collapsed radius.</returns>
+        private float GetShipLevelZoomFactor()
+        {
+            // --- Prefer live camera height (includes SmoothDamp during level-up) ---
+            if (_cameraFollow == null)
+                _cameraFollow = FindFirstObjectByType<CameraFollowEcs>();
+
+            if (_cameraFollow != null)
+                return _cameraFollow.CurrentHeightZoomFactor;
+
+            // --- Fallback: same curve as CameraFollowSettings without a camera instance ---
+            // [HYBRID] playerAnchor.ShipLevel is filled by MinimapEcsEntitySync — no new ECS gathers.
+            int level = 1;
+            if (playerAnchor != null && playerAnchor.ShipLevel > 0)
+                level = playerAnchor.ShipLevel;
+            _lastKnownShipLevelForZoom = Mathf.Max(1, level);
+
+            // Code defaults match CameraFollowSettings field defaults (25 + 3×(L−1)).
+            float heightAtLevel1 = 25f;
+            float heightPerLevel = 3f;
+            float height = heightAtLevel1 + heightPerLevel * Mathf.Max(0, _lastKnownShipLevelForZoom - 1);
+            return Mathf.Max(0.01f, height / heightAtLevel1);
+        }
+
+        /// <summary>
+        /// Applies ship-level proportional zoom to the collapsed minimap.
+        /// Sets <see cref="minimapRadius"/> and <see cref="maxPlanetDistance"/> from level-1 bases × zoom factor.
+        /// No-op while expanded (full-map fit owns radius) or when scaling is disabled.
+        /// </summary>
+        private void ApplyCollapsedShipLevelZoom()
+        {
+            // --- Expanded mode shows the whole torus — do not ship-level scale that radius ---
+            if (isExpanded || !scaleCollapsedRadiusWithShipLevel)
+                return;
+
+            // Bases are captured in Start after collapsedZoomOutMultiplier; guard if Start has not run yet.
+            float baseRadius = _baseCollapsedMinimapRadius > 0.01f
+                ? _baseCollapsedMinimapRadius
+                : Mathf.Max(0.01f, minimapRadius);
+            float baseMaxDist = _baseMaxPlanetDistance > 0.01f
+                ? _baseMaxPlanetDistance
+                : Mathf.Max(baseRadius, maxPlanetDistance);
+
+            float factor = GetShipLevelZoomFactor();
+            minimapRadius = baseRadius * factor;
+            maxPlanetDistance = baseMaxDist * factor;
         }
 
         // Exposed read‑only helpers so other systems (like Shapes panels) can match minimap math.
         public float MinimapRadius => minimapRadius;
         public float DisplaySize => displaySize;
+
+        /// <summary>True while the minimap is expanded to (near) full-map view.</summary>
+        public bool IsExpanded => isExpanded;
+
+        /// <summary>
+        /// Programmatically expand or collapse the minimap (same as the M key / expand button).
+        /// Used by <see cref="TitanOrbit.Game.InstructionReferenceCaptureSession"/> for a full-map plate.
+        /// No-op when already in the requested state.
+        /// </summary>
+        /// <param name="expanded">True = full toroidal map overlay; false = collapsed corner circle.</param>
+        public void SetExpanded(bool expanded)
+        {
+            // --- Idempotent toggle ---
+            // [TITAN-ORBIT] Capture tools need a deterministic "show full map" without simulating keypresses.
+            if (isExpanded == expanded)
+                return;
+
+            isExpanded = expanded;
+            if (isExpanded)
+                ExpandMinimap();
+            else
+                CollapseMinimap();
+        }
         public Vector3 PlayerPosition => playerTransform != null ? playerTransform.position : Vector3.zero;
 
         public void GetToroidalDeltaForMinimap(Vector3 from, Vector3 to, out float dx, out float dz)
@@ -220,22 +404,50 @@ namespace TitanOrbit.UI
             if (!Application.isPlaying) return;
             if (!force && Time.time - lastEntityCacheRefreshTime < EntityCacheRefreshInterval) return;
 
-            cachedShips = FindObjectsByType<Starship>(FindObjectsSortMode.None);
-            cachedPlanets = Planet.AllPlanets.ToArray();
-            cachedHomePlanets = HomePlanet.AllHomePlanets.ToArray();
-            cachedAsteroids = FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
-            cachedMarkers = FindObjectsByType<MinimapMarker>(FindObjectsSortMode.None);
+            var sync = MinimapEcsEntitySync.Instance;
+            if (sync == null)
+                return;
+
+            cachedShips = ToArray(sync.Ships);
+            cachedPlanets = ToArray(sync.Planets);
+            cachedHomePlanets = ToArray(sync.HomePlanets);
+            cachedAsteroids = ToArray(sync.Asteroids);
+            cachedGemMoons = ToArray(sync.GemMoons);
             lastEntityCacheRefreshTime = Time.time;
+        }
+
+        static MinimapBlipAnchor[] ToArray(IReadOnlyList<MinimapBlipAnchor> list)
+        {
+            if (list == null || list.Count == 0)
+                return System.Array.Empty<MinimapBlipAnchor>();
+            var arr = new MinimapBlipAnchor[list.Count];
+            for (int i = 0; i < list.Count; i++)
+                arr[i] = list[i];
+            return arr;
         }
 
         private void Start()
         {
+            // --- Unity lifecycle ---
+            if (MinimapEcsEntitySync.Instance == null)
+                gameObject.AddComponent<MinimapEcsEntitySync>();
+
             minimapRect = GetComponent<RectTransform>();
             if (minimapRect != null)
             {
                 // Update display size to match actual minimap size
                 displaySize = minimapRect.sizeDelta.x; // Square, so x = y
             }
+
+            if (collapsedZoomOutMultiplier > 0f && !Mathf.Approximately(collapsedZoomOutMultiplier, 1f))
+                minimapRadius *= collapsedZoomOutMultiplier;
+
+            // --- Level-1 bases for ship-level proportional zoom ---
+            // [TITAN-ORBIT] collapsedZoomOutMultiplier is baked into the base once; each blip pass
+            // multiplies by CameraFollowEcs.CurrentHeightZoomFactor so L2+ shows more world.
+            _baseCollapsedMinimapRadius = minimapRadius;
+            _baseMaxPlanetDistance = maxPlanetDistance;
+            ApplyCollapsedShipLevelZoom();
             
             // Setup circular background
             SetupCircularBackground();
@@ -284,14 +496,16 @@ namespace TitanOrbit.UI
                 canvas.gameObject.AddComponent<TitanOrbit.UI.TitanOrbitShapesCanvas>();
             }
 
-            // Ensure a panel exists for drawing planet connection lines/triangles on the minimap.
-            // Parent under minimapContent so the circular Mask clips triangles/lines to the circle.
+            // Territory triangles: UGUI MinimapConnectionsUI under minimapContent so the circular
+            // Mask clips them. Draws wrap copies for expanded full-map view (toroidal seams).
+            Transform connectionsParent = minimapContent != null ? minimapContent : minimapRect;
+
             var connectionsUI = GetComponentInChildren<MinimapConnectionsUI>(true);
             if (connectionsUI == null)
             {
                 GameObject panelObj = new GameObject("MinimapConnectionsUI");
-                panelObj.transform.SetParent(minimapContent != null ? minimapContent : minimapRect, false);
-                panelObj.transform.SetAsLastSibling(); // Draw on top of content/blips so lines and triangles are visible
+                panelObj.transform.SetParent(connectionsParent, false);
+                panelObj.transform.SetAsLastSibling();
                 var rt = panelObj.AddComponent<RectTransform>();
                 rt.anchorMin = Vector2.zero;
                 rt.anchorMax = Vector2.one;
@@ -301,9 +515,9 @@ namespace TitanOrbit.UI
             }
             else
             {
-                if (minimapContent != null && connectionsUI.transform.parent != minimapContent)
-                    connectionsUI.transform.SetParent(minimapContent, false);
-                connectionsUI.transform.SetAsLastSibling(); // Ensure it draws on top (in case it was created with old order)
+                if (connectionsParent != null && connectionsUI.transform.parent != connectionsParent)
+                    connectionsUI.transform.SetParent(connectionsParent, false);
+                connectionsUI.transform.SetAsLastSibling();
             }
         }
         
@@ -530,7 +744,10 @@ namespace TitanOrbit.UI
                 originalAnchorMax = minimapRect.anchorMax;
             }
 
-            originalMinimapRadius = minimapRadius;
+            // Store level-1 base (not the live ship-level-scaled radius) so collapse never double-scales.
+            originalMinimapRadius = _baseCollapsedMinimapRadius > 0.01f
+                ? _baseCollapsedMinimapRadius
+                : minimapRadius;
         }
 
         /// <summary>Show or hide minimap using CanvasGroup so Update() keeps running and we can show again after team is chosen.</summary>
@@ -662,22 +879,21 @@ namespace TitanOrbit.UI
         private void ToggleExpand()
         {
             isExpanded = !isExpanded;
-            
+
             if (isExpanded)
-            {
                 ExpandMinimap();
-            }
             else
-            {
                 CollapseMinimap();
-            }
         }
         
         private void ExpandMinimap()
         {
             if (minimapRect == null) return;
 
-            originalMinimapRadius = minimapRadius;
+            // Save level-1 base radius for collapse — not the live ship-level-scaled value.
+            originalMinimapRadius = _baseCollapsedMinimapRadius > 0.01f
+                ? _baseCollapsedMinimapRadius
+                : minimapRadius;
             
             // Same minimap: only change zoom (visible radius) and circle size. Content and coordinate system unchanged.
             Canvas canvas = GetComponentInParent<Canvas>();
@@ -714,7 +930,7 @@ namespace TitanOrbit.UI
                 
                 // Same minimap: larger circle (displaySize) and zoom to fit full map
                 displaySize = calculatedExpandedSize;
-                minimapRadius = GetExpandedWorldRadius();
+                minimapRadius = GetExpandedWorldRadius(playerTransform != null ? playerTransform.position : Vector3.zero);
                 
                 // Update mask and background
                 SetupCircularBackground();
@@ -853,6 +1069,9 @@ namespace TitanOrbit.UI
 
         private void OnEnable()
         {
+            // Force role-dot rebuild next frame (size/color tweaks after script reload).
+            _shipRoleDotMask.Clear();
+
             if (isExpanded)
                 ApplyHideNonMinimapUi();
         }
@@ -873,8 +1092,13 @@ namespace TitanOrbit.UI
             // Restore display size
             displaySize = originalSizeDelta.x;
             
-            // Restore minimap radius (must match pre-expand; was incorrectly hardcoded to 40f)
-            minimapRadius = originalMinimapRadius;
+            // Restore level-1 base, then re-apply ship-level zoom so collapse matches current camera height.
+            minimapRadius = originalMinimapRadius > 0.01f
+                ? originalMinimapRadius
+                : _baseCollapsedMinimapRadius;
+            if (_baseMaxPlanetDistance > 0.01f)
+                maxPlanetDistance = _baseMaxPlanetDistance;
+            ApplyCollapsedShipLevelZoom();
             
             // Update mask and background
             SetupCircularBackground();
@@ -1127,6 +1351,7 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
+            // --- Per-frame refresh ---
             // Update display size if minimap size changed
             if (minimapRect != null)
             {
@@ -1144,74 +1369,40 @@ namespace TitanOrbit.UI
             RefreshMapSizeLabelText();
 
             // Clear stale reference if player ship was destroyed
-            if (playerShip != null && !playerShip)
-            {
-                playerShip = null;
+            if (playerAnchor == null)
                 playerTransform = null;
-            }
-            
-            NetworkObject localPlayerObject = null;
-            if (NetworkManager.Singleton != null && NetworkManager.Singleton.SpawnManager != null)
-                localPlayerObject = NetworkManager.Singleton.SpawnManager.GetLocalPlayerObject();
 
-            bool needResolvePlayer = playerShip == null || playerTransform == null;
-            if (!needResolvePlayer && localPlayerObject != null)
-            {
-                var pno = playerShip.GetComponent<NetworkObject>();
-                needResolvePlayer = pno == null || pno != localPlayerObject;
-            }
-            else if (!needResolvePlayer && localPlayerObject == null && playerShip != null && playerShip.GetComponent<AIShipMarker>() != null)
-            {
-                needResolvePlayer = true;
-            }
-
+            bool needResolvePlayer = playerAnchor == null || playerTransform == null;
             if (needResolvePlayer)
             {
-                RefreshEntityCache();
-                playerShip = null;
+                RefreshEntityCache(true);
+                playerAnchor = null;
                 playerTransform = null;
-                if (localPlayerObject != null)
+
+                var sync = MinimapEcsEntitySync.Instance;
+                if (sync != null && sync.TryGetLocalPlayer(out playerAnchor) && playerAnchor != null)
+                    playerTransform = playerAnchor.transform;
+
+                if (playerAnchor == null)
                 {
                     foreach (var ship in cachedShips)
                     {
-                        if (ship == null || !ship) continue;
-                        var no = ship.GetComponent<NetworkObject>();
-                        if (no != null && no == localPlayerObject)
-                        {
-                            playerShip = ship;
-                            playerTransform = ship.transform;
-                            break;
-                        }
+                        if (ship == null || !ship.IsLocalPlayer)
+                            continue;
+                        playerAnchor = ship;
+                        playerTransform = ship.transform;
+                        break;
                     }
                 }
-                if (playerShip == null)
-                {
-                    foreach (var ship in cachedShips)
-                    {
-                        if (ship == null || !ship) continue;
-                        if (ship.GetComponent<AIShipMarker>() != null) continue;
-                        if (ship.IsOwner)
-                        {
-                            playerShip = ship;
-                            playerTransform = ship.transform;
-                            break;
-                        }
-                    }
-                }
-                if (playerShip == null)
+
+                if (playerAnchor == null)
                 {
                     SetMinimapVisible(false);
                     return;
                 }
             }
 
-            if (HUDController.ShipUpgradeTreeObscuresHud)
-            {
-                SetMinimapVisible(false);
-                return;
-            }
-
-            if (playerShip.ShipTeam == TeamManager.Team.None)
+            if (playerAnchor.AwaitingTeamSelection || playerAnchor.Team == TeamId.None)
             {
                 SetMinimapVisible(false);
                 return;
@@ -1419,79 +1610,32 @@ namespace TitanOrbit.UI
             }
         }
         
-        private void PlaceMarker(Vector2 minimapLocalPos, MinimapMarker.MarkerType markerType)
+        private void PlaceMarker(Vector2 minimapLocalPos, MinimapMarkerKind markerType)
         {
-            if (playerTransform == null)
-            {
-                Debug.LogWarning("PlaceMarker: playerTransform is null!");
-                return;
-            }
-            
-            // Use actual minimap rect size instead of constant displaySize for accurate positioning
-            float actualMinimapSize = minimapRect != null ? minimapRect.sizeDelta.x : displaySize;
-            
-            Debug.Log($"PlaceMarker called: minimapLocalPos={minimapLocalPos}, markerType={markerType}, actualMinimapSize={actualMinimapSize}, displaySize={displaySize}, isExpanded={isExpanded}");
-            
-            // Convert minimap local position to normalized position (-1 to 1)
-            // minimapLocalPos is relative to minimap center, so divide by radius (half of actual minimap size)
-            float normalizedX = (minimapLocalPos.x / (actualMinimapSize / 2f));
-            float normalizedZ = (minimapLocalPos.y / (actualMinimapSize / 2f));
-            
-            // Clamp to circle (minimap is circular)
-            float dist = Mathf.Sqrt(normalizedX * normalizedX + normalizedZ * normalizedZ);
-            if (dist > 1f)
-            {
-                normalizedX /= dist;
-                normalizedZ /= dist;
-            }
-            
-            // Convert to world position - use current minimap radius (changes when expanded)
-            Vector3 playerPos = playerTransform.position;
-            float currentRadius = isExpanded ? GetExpandedWorldRadius() : minimapRadius;
-            
-            // The normalized position represents the direction from player, scaled by minimap radius
-            // So multiply normalized direction by radius to get world offset
-            float worldX = playerPos.x + normalizedX * currentRadius;
-            float worldZ = playerPos.z + normalizedZ * currentRadius;
-            Vector3 worldPosition = new Vector3(worldX, markerHeight, worldZ);
-            
-            Debug.Log($"Normalized: ({normalizedX}, {normalizedZ}), currentRadius: {currentRadius}, playerPos: {playerPos}, worldPosition: {worldPosition}");
-            
-            Debug.Log($"Player pos: {playerPos}, currentRadius: {currentRadius}, normalized: ({normalizedX}, {normalizedZ}), worldPosition: {worldPosition}");
-            
-            // Get player's team
-            TeamManager.Team playerTeam = TeamManager.Team.None;
-            if (playerShip != null)
-            {
-                playerTeam = playerShip.ShipTeam;
-            }
-            
-            Debug.Log($"Creating marker: worldPosition={worldPosition}, markerType={markerType}, team={playerTeam}");
-            
-            // Create marker via network
-            if (MinimapMarkerManager.Instance != null)
-            {
-                MinimapMarkerManager.Instance.CreateMarkerServerRpc(worldPosition, markerType, playerTeam);
-                Debug.Log("Marker creation ServerRpc called");
-            }
-            else
-            {
-                Debug.LogError("MinimapMarkerManager.Instance is null! Cannot create marker.");
-            }
+            // Attack/defend markers are not wired to NetCode for Entities yet.
+            Debug.Log($"Minimap marker placement ({markerType}) is not available in the ECS build yet.");
         }
 
         private void UpdateBlips()
         {
-            if (playerTransform == null || playerShip == null || !playerShip)
+            if (playerTransform == null || playerAnchor == null)
                 return;
             // Normal 6s full refresh. Do NOT force full FindObjects every tick while ghosts exist — that was a major hitch.
             RefreshEntityCache(false);
+            // Player + entity proxies share logical/display space; toroidal delta handles the seam.
+            Vector3 playerPos = playerTransform.position;
+            if (isExpanded)
+                minimapRadius = GetExpandedWorldRadius(playerPos);
+            else
+                ApplyCollapsedShipLevelZoom();
+
             if (deadAsteroidGhosts.Count > 0 && Time.time >= nextGhostAsteroidRescanTime)
             {
                 nextGhostAsteroidRescanTime = Time.time + GhostAsteroidRescanInterval;
-                cachedAsteroids = FindObjectsByType<Asteroid>(FindObjectsSortMode.None);
+                var sync = MinimapEcsEntitySync.Instance;
+                if (sync != null)
+                    cachedAsteroids = ToArray(sync.Asteroids);
             }
-            Vector3 playerPos = playerTransform.position;
             // 1 world unit → minimap pixels (used for blip sizing and asteroid scale updates every frame)
             float worldToMinimapScale = displaySize / (minimapRadius * 2f);
             blipsToRemove.Clear();
@@ -1510,33 +1654,11 @@ namespace TitanOrbit.UI
                 asteroidBlipPixelSizeByInstanceId.Remove(id);
             }
 
+            blipsToRemove.Clear();
             foreach (var kv in blips)
             {
                 if (kv.Key == null) { blipsToRemove.Add(kv.Key); continue; }
                 if (!kv.Key.gameObject.activeInHierarchy) { blipsToRemove.Add(kv.Key); continue; }
-
-                Vector3 worldPos = kv.Key.position;
-                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
-
-                float dist = Mathf.Sqrt(dx * dx + dz * dz);
-                if (dist > minimapRadius) { kv.Value.gameObject.SetActive(false); continue; }
-                kv.Value.gameObject.SetActive(true);
-
-                float normX = dx / minimapRadius;
-                float normZ = dz / minimapRadius;
-                kv.Value.anchoredPosition = new Vector2(normX * displaySize * 0.5f, normZ * displaySize * 0.5f);
-
-                if (blipTypes.TryGetValue(kv.Key, out var bt) && bt == BlipType.Irregular)
-                {
-                    // Asteroids can animate scale (e.g. respawn grow); keep blip size in sync — not only at first create.
-                    float physicalSize = (kv.Key.localScale.x + kv.Key.localScale.y + kv.Key.localScale.z) / 3f;
-                    float asteroidBlipSize = physicalSize * worldToMinimapScale * sizeScaleFactor * asteroidBlipScaleFactor;
-                    UpdateBlip(kv.Key, asteroidColor, asteroidBlipSize);
-
-                    int instanceId = kv.Key.GetInstanceID();
-                    asteroidLastWorldPosByInstanceId[instanceId] = worldPos;
-                    asteroidBlipPixelSizeByInstanceId[instanceId] = asteroidBlipSize;
-                }
             }
 
             foreach (var t in blipsToRemove)
@@ -1547,7 +1669,9 @@ namespace TitanOrbit.UI
                 blipTypes.Remove(t);
                 bullseyePulseTime.Remove(t); // Clean up pulse time tracking
                 planetBlipLayoutState.Remove(t);
-                
+                _shipRoleDotRoots.Remove(t);
+                _shipRoleDotMask.Remove(t);
+
                 // Also remove edge markers
                 if (edgeMarkers.TryGetValue(t, out var edgeRt) && edgeRt != null) Destroy(edgeRt.gameObject);
                 edgeMarkers.Remove(t);
@@ -1586,19 +1710,22 @@ namespace TitanOrbit.UI
                 markerEdgeMarkerImages.Remove(t);
             }
 
-            // Add new entities
-            EnsureBlip(playerTransform, () => CreateBlip(Color.white, playerBlipSize, BlipType.Cross), true);
+            // --- Top-of-team leaders (O(ships)) before drawing role dots ---
+            RecomputeTopOfTeamFromCachedShips();
+
+            // --- Local player Cross ---
+            TeamId playerTeam = playerAnchor.Team;
+            Color playerColor = playerTeam == TeamId.None ? Color.white : GetTeamColor(playerTeam);
+            EnsureBlip(playerTransform, () => CreateShipCrossBlip(playerTransform, playerColor, playerBlipSize), true);
             if (blips.TryGetValue(playerTransform, out var playerRt) && playerRt != null)
             {
                 playerRt.localEulerAngles = Vector3.zero;
-
-                TeamManager.Team playerTeam = playerShip.ShipTeam;
-                Color playerColor = playerTeam == TeamManager.Team.None ? Color.white : GetTeamColor(playerTeam);
                 UpdateBlip(playerTransform, playerColor, playerBlipSize);
+                UpdateShipRoleDots(playerAnchor);
             }
 
             // Show all ships (friendly and enemy, including AI) on the minimap
-            float currentRadius = isExpanded ? GetExpandedWorldRadius() : minimapRadius;
+            float currentRadius = minimapRadius;
             foreach (var ship in cachedShips)
             {
                 if (ship == null)
@@ -1606,20 +1733,22 @@ namespace TitanOrbit.UI
                     skippedNullShips++;
                     continue;
                 }
-                if (ship == playerShip || ship.IsDead) continue;
-                
+                if (ship == playerAnchor || ship.IsDead) continue;
+
                 // Calculate distance to check if ship is within visible area
                 Vector3 worldPos = ship.transform.position;
                 GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
-                
+
                 float dist = Mathf.Sqrt(dx * dx + dz * dz);
-                bool friendly = ship.ShipTeam == playerShip.ShipTeam && ship.ShipTeam != TeamManager.Team.None;
-                Color shipColor = friendly ? GetTeamColor(playerShip.ShipTeam) : GetEnemyColor(ship.ShipTeam);
-                
+                bool friendly = ship.Team == playerAnchor.Team && ship.Team != TeamId.None;
+                Color shipColor = friendly ? GetTeamColor(playerAnchor.Team) : GetEnemyColor(ship.Team);
+
                 if (dist <= currentRadius)
                 {
                     // Show blip when within visible area
-                    EnsureBlip(ship.transform, () => CreateBlip(shipColor, 12f, BlipType.Cross));
+                    EnsureBlip(ship.transform, () => CreateShipCrossBlip(ship.transform, shipColor, 12f));
+                    UpdateBlip(ship.transform, shipColor, 12f);
+                    UpdateShipRoleDots(ship);
                     // Remove any old ship edge marker (markers only for planets)
                     RemoveShipEdgeMarker(ship.transform);
                 }
@@ -1647,7 +1776,6 @@ namespace TitanOrbit.UI
                     skippedNullPlanets++;
                     continue;
                 }
-                if (p is HomePlanet) continue;
                 
                 Vector3 worldPos = p.transform.position;
                 GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
@@ -1662,7 +1790,7 @@ namespace TitanOrbit.UI
                     {
                         blips[p.transform].gameObject.SetActive(false);
                     }
-                    UpdateEdgeMarker(p.transform, dx, dz, dist, false, p.TeamOwnership);
+                    UpdateEdgeMarker(p.transform, dx, dz, dist, false, p.Team);
                 }
                 else
                 {
@@ -1673,22 +1801,22 @@ namespace TitanOrbit.UI
                     }
                     
                     // Use team color if captured, otherwise grey
-                    Color planetBlipColor = p.TeamOwnership == TeamManager.Team.None 
+                    Color planetBlipColor = p.Team == TeamId.None 
                         ? planetColor 
-                        : GetTeamColor(p.TeamOwnership);
-                    // Get actual planet size from transform scale (fallback to PlanetSize property)
+                        : GetTeamColor(p.Team);
+                    // Get actual planet size from transform scale (fallback to BodySize property)
                     float actualPlanetSize = (p.transform.localScale.x + p.transform.localScale.y + p.transform.localScale.z) / 3f;
-                    if (actualPlanetSize < 0.1f) actualPlanetSize = p.PlanetSize;
+                    if (actualPlanetSize < 0.1f) actualPlanetSize = p.BodySize;
                     // Use same scale factor for all entities - directly proportional to world size
                     float planetBlipSize = actualPlanetSize * worldToMinimapScale * sizeScaleFactor;
                     if (blips.ContainsKey(p.transform))
                     {
                         blips[p.transform].gameObject.SetActive(true);
-                        UpdatePlanetBlip(blips[p.transform], p, planetBlipColor, planetBlipSize);
+                        UpdatePlanetBlip(blips[p.transform], p, planetBlipColor, planetBlipSize, worldToMinimapScale);
                     }
                     else
                     {
-                        EnsureBlip(p.transform, () => CreatePlanetBlip(p, planetBlipColor, planetBlipSize));
+                        EnsureBlip(p.transform, () => CreatePlanetBlip(p, planetBlipColor, planetBlipSize, worldToMinimapScale));
                     }
                 }
             }
@@ -1713,7 +1841,7 @@ namespace TitanOrbit.UI
                     {
                         blips[hp.transform].gameObject.SetActive(false);
                     }
-                    UpdateEdgeMarker(hp.transform, dx, dz, dist, true, hp.TeamOwnership);
+                    UpdateEdgeMarker(hp.transform, dx, dz, dist, true, hp.Team);
                 }
                 else
                 {
@@ -1724,110 +1852,68 @@ namespace TitanOrbit.UI
                     }
                     
                     // Use team color for home planets; same blip treatment as planets (rings + population text)
-                    Color homeBlipColor = hp.TeamOwnership == TeamManager.Team.None 
+                    Color homeBlipColor = hp.Team == TeamId.None 
                         ? homePlanetColor 
-                        : GetTeamColor(hp.TeamOwnership);
+                        : GetTeamColor(hp.Team);
                     float actualHomeSize = (hp.transform.localScale.x + hp.transform.localScale.y + hp.transform.localScale.z) / 3f;
-                    if (actualHomeSize < 0.1f) actualHomeSize = hp.PlanetSize;
+                    if (actualHomeSize < 0.1f) actualHomeSize = hp.BodySize;
                     float homeBlipSize = actualHomeSize * worldToMinimapScale * sizeScaleFactor;
                     if (blips.ContainsKey(hp.transform))
                     {
                         blips[hp.transform].gameObject.SetActive(true);
-                        UpdatePlanetBlip(blips[hp.transform], hp, homeBlipColor, homeBlipSize);
+                        UpdatePlanetBlip(blips[hp.transform], hp, homeBlipColor, homeBlipSize, worldToMinimapScale);
                     }
                     else
                     {
-                        EnsureBlip(hp.transform, () => CreatePlanetBlip(hp, homeBlipColor, homeBlipSize));
+                        EnsureBlip(hp.transform, () => CreatePlanetBlip(hp, homeBlipColor, homeBlipSize, worldToMinimapScale));
                     }
                 }
             }
 
             UpdateGemMoonBlips(playerPos, worldToMinimapScale);
- 
-            // Update minimap markers
-            var allMarkers = cachedMarkers;
-            
-            foreach (var marker in allMarkers)
-            {
-                if (marker == null)
-                {
-                    skippedNullMarkers++;
-                    continue;
-                }
-                if (!marker.IsSpawned) continue;
-                
-                Vector3 worldPos = marker.transform.position;
-                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
-                
-                float dist = Mathf.Sqrt(dx * dx + dz * dz);
-                bool isOutsideVisibleArea = dist > currentRadius;
-                
-                // Get marker color based on type and team
-                Color markerColor = marker.Type == MinimapMarker.MarkerType.Defend
-                    ? new Color(0.2f, 0.8f, 0.2f, 1f) // Green for defend
-                    : new Color(0.8f, 0.2f, 0.2f, 1f); // Red for attack
-                
-                // Blend with team color
-                TeamManager.Team markerTeam = marker.Team;
-                if (markerTeam != TeamManager.Team.None)
-                {
-                    Color teamColor = GetTeamColor(markerTeam);
-                    markerColor = Color.Lerp(markerColor, teamColor, 0.3f);
-                }
-                
-                if (isOutsideVisibleArea)
-                {
-                    // Hide the blip and show edge marker instead
-                    if (blips.ContainsKey(marker.transform))
-                    {
-                        blips[marker.transform].gameObject.SetActive(false);
-                    }
-                    UpdateMarkerEdgeMarker(marker.transform, dx, dz, dist, markerColor, marker.Type);
-                }
-                else
-                {
-                    // Show the blip and hide edge marker
-                    if (markerEdgeMarkers.ContainsKey(marker.transform))
-                    {
-                        markerEdgeMarkers[marker.transform].gameObject.SetActive(false);
-                    }
-                    
-                    float markerBlipSize = 8f;
-                    float baseBlipSize = markerBlipSize;
-                    
-                    // Add pulsing animation for bullseye markers
-                    if (blips.ContainsKey(marker.transform))
-                    {
-                        // Initialize pulse time if not already set
-                        if (!bullseyePulseTime.ContainsKey(marker.transform))
-                        {
-                            bullseyePulseTime[marker.transform] = 0f;
-                        }
-                        
-                        // Update pulse animation
-                        float pulseTime = bullseyePulseTime[marker.transform];
-                        pulseTime += Time.deltaTime * 8f; // Pulse speed (8 pulses per second - much faster)
-                        if (pulseTime > Mathf.PI * 2f) pulseTime -= Mathf.PI * 2f;
-                        bullseyePulseTime[marker.transform] = pulseTime;
-                        
-                        // Pulse size: base size to 3x base size, using sine wave for dramatic effect
-                        // Using (1 + sin) / 2 to map sine from [-1,1] to [0,1], then scale to [1, 3]
-                        float pulseScale = 1f + (Mathf.Sin(pulseTime) + 1f) * 1f; // Pulse between 1.0 and 3.0 (200% increase)
-                        float pulsedSize = baseBlipSize * pulseScale;
-                        
-                        UpdateBlip(marker.transform, markerColor, pulsedSize);
-                    }
-                    else
-                    {
-                        EnsureBlip(marker.transform, () => CreateBlip(markerColor, markerBlipSize, BlipType.Bullseye));
-                        // Initialize pulse time for new bullseye
-                        bullseyePulseTime[marker.transform] = 0f;
-                    }
-                }
-            }
+
+            // Position after all EnsureBlip calls so new blips never flash at center (0,0) for a frame.
+            UpdateBlipPositions(playerPos, worldToMinimapScale);
 
             RebuildLastFrameAsteroidInstanceIds();
             UpdateDeadAsteroidGhosts(playerPos);
+        }
+
+        private void UpdateBlipPositions(Vector3 playerPos, float worldToMinimapScale)
+        {
+            foreach (var kv in blips)
+            {
+                if (kv.Key == null || kv.Value == null)
+                    continue;
+
+                Vector3 worldPos = kv.Key.position;
+                GetToroidalDelta(playerPos, worldPos, out float dx, out float dz);
+
+                float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                if (dist > minimapRadius)
+                {
+                    kv.Value.gameObject.SetActive(false);
+                    continue;
+                }
+
+                kv.Value.gameObject.SetActive(true);
+
+                float normX = dx / minimapRadius;
+                float normZ = dz / minimapRadius;
+                kv.Value.anchoredPosition = new Vector2(normX * displaySize * 0.5f, normZ * displaySize * 0.5f);
+
+                if (blipTypes.TryGetValue(kv.Key, out var bt) && bt == BlipType.Irregular)
+                {
+                    // Asteroids can animate scale (e.g. respawn grow); keep blip size in sync — not only at first create.
+                    float physicalSize = (kv.Key.localScale.x + kv.Key.localScale.y + kv.Key.localScale.z) / 3f;
+                    float asteroidBlipSize = physicalSize * worldToMinimapScale * sizeScaleFactor * asteroidBlipScaleFactor;
+                    UpdateBlip(kv.Key, asteroidColor, asteroidBlipSize);
+
+                    int instanceId = kv.Key.GetInstanceID();
+                    asteroidLastWorldPosByInstanceId[instanceId] = worldPos;
+                    asteroidBlipPixelSizeByInstanceId[instanceId] = asteroidBlipSize;
+                }
+            }
         }
 
         private void BuildCurrentAsteroidInstanceIdsFromBlips()
@@ -1970,6 +2056,7 @@ namespace TitanOrbit.UI
 
             var go = new GameObject("Blip");
             go.transform.SetParent(minimapContent, false);
+            go.SetActive(false);
 
             var img = go.AddComponent<Image>();
             img.color = color;
@@ -1988,19 +2075,205 @@ namespace TitanOrbit.UI
             return rt;
         }
 
-        private RectTransform CreatePlanetBlip(Planet p, Color color, float size)
+        /// <summary>
+        /// Team-colored Cross blip plus an empty role-dot stack (filled later when this ship
+        /// leads killer / miner / transporter on their team).
+        /// </summary>
+        RectTransform CreateShipCrossBlip(Transform shipTransform, Color color, float size)
+        {
+            var rt = CreateBlip(color, size, BlipType.Cross);
+            if (rt == null || shipTransform == null)
+                return rt;
+
+            EnsureShipRoleDotRoot(shipTransform, rt);
+            return rt;
+        }
+
+        /// <summary>Attaches the RoleDots child under a ship Cross blip if missing.</summary>
+        void EnsureShipRoleDotRoot(Transform shipTransform, RectTransform blipRt)
+        {
+            if (shipTransform == null || blipRt == null)
+                return;
+            if (_shipRoleDotRoots.TryGetValue(shipTransform, out var existing) && existing != null)
+                return;
+
+            var dotsGo = new GameObject("RoleDots", typeof(RectTransform));
+            dotsGo.transform.SetParent(blipRt, false);
+            var dotsRt = dotsGo.GetComponent<RectTransform>();
+            dotsRt.anchorMin = new Vector2(1f, 1f);
+            dotsRt.anchorMax = new Vector2(1f, 1f);
+            dotsRt.pivot = new Vector2(0f, 1f);
+            dotsRt.anchoredPosition = new Vector2(1f, 1f);
+            dotsRt.sizeDelta = new Vector2(16f, 16f);
+            dotsGo.SetActive(false);
+            _shipRoleDotRoots[shipTransform] = dotsRt;
+        }
+
+        /// <summary>
+        /// Picks each team's top killer / miner / transporter from <see cref="cachedShips"/>
+        /// via shared <see cref="ShipTopOfTeamRoles"/> (same rules as ship nameplates).
+        /// Ties → lowest <see cref="MinimapBlipAnchor.OwnerNetworkId"/>. Zero scores never win.
+        /// </summary>
+        void RecomputeTopOfTeamFromCachedShips()
+        {
+            // --- Copy anchor rows into shared candidate list ---
+            _topRoleCandidates.Clear();
+            if (cachedShips == null)
+            {
+                ShipTopOfTeamRoles.Recompute(_topRoleCandidates);
+                return;
+            }
+
+            for (int i = 0; i < cachedShips.Length; i++)
+            {
+                var ship = cachedShips[i];
+                if (ship == null)
+                    continue;
+
+                _topRoleCandidates.Add(new ShipTopOfTeamRoles.Candidate
+                {
+                    Team = ship.Team,
+                    OwnerNetworkId = ship.OwnerNetworkId,
+                    Kills = ship.Kills,
+                    GemsDeposited = ship.GemsDeposited,
+                    PeopleDelivered = ship.PeopleDelivered,
+                    IsDead = ship.IsDead,
+                });
+            }
+
+            ShipTopOfTeamRoles.Recompute(_topRoleCandidates);
+        }
+
+        /// <summary>
+        /// Shows up to three small circles next to the X: blue = top killer, red = top gem miner,
+        /// yellow = top transporter (per team, from match stats on the blip anchor).
+        /// </summary>
+        void UpdateShipRoleDots(MinimapBlipAnchor ship)
+        {
+            if (ship == null || ship.transform == null)
+                return;
+
+            // Hot-reload / blips created before role dots existed — attach the stack once.
+            if (!_shipRoleDotRoots.TryGetValue(ship.transform, out var dotsRoot) || dotsRoot == null)
+            {
+                if (!blips.TryGetValue(ship.transform, out var blipRt) || blipRt == null)
+                    return;
+                EnsureShipRoleDotRoot(ship.transform, blipRt);
+                if (!_shipRoleDotRoots.TryGetValue(ship.transform, out dotsRoot) || dotsRoot == null)
+                    return;
+            }
+
+            // --- Role winners from shared helper (recomputed from cachedShips this pass) ---
+            bool isKiller = ShipTopOfTeamRoles.IsKiller(ship.Team, ship.OwnerNetworkId);
+            bool isMiner = ShipTopOfTeamRoles.IsMiner(ship.Team, ship.OwnerNetworkId);
+            bool isTransporter = ShipTopOfTeamRoles.IsTransporter(ship.Team, ship.OwnerNetworkId);
+
+            byte mask = 0;
+            if (isKiller) mask |= 1;
+            if (isMiner) mask |= 2;
+            if (isTransporter) mask |= 4;
+
+            if (!_shipRoleDotMask.TryGetValue(ship.transform, out byte prevMask) || prevMask != mask)
+            {
+                for (int i = dotsRoot.childCount - 1; i >= 0; i--)
+                    Destroy(dotsRoot.GetChild(i).gameObject);
+
+                int slot = 0;
+                if (isKiller)
+                    AddRoleDot(dotsRoot, RoleDotKiller, ref slot);
+                if (isMiner)
+                    AddRoleDot(dotsRoot, RoleDotMiner, ref slot);
+                if (isTransporter)
+                    AddRoleDot(dotsRoot, RoleDotTransporter, ref slot);
+
+                _shipRoleDotMask[ship.transform] = mask;
+                dotsRoot.gameObject.SetActive(slot > 0);
+            }
+        }
+
+        /// <summary>Adds one tinted circle into the role-dot stack (stacked downward).</summary>
+        static void AddRoleDot(RectTransform dotsRoot, Color color, ref int slot)
+        {
+            if (dotsRoot == null)
+                return;
+
+            // Smaller than the Cross so the X stays readable; stacked downward beside it.
+            const float dotSize = 4f;
+            var go = new GameObject($"RoleDot_{slot}", typeof(RectTransform));
+            go.transform.SetParent(dotsRoot, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.sizeDelta = new Vector2(dotSize, dotSize);
+            rt.anchoredPosition = new Vector2(0f, -slot * (dotSize + 1f));
+            var img = go.AddComponent<Image>();
+            img.raycastTarget = false;
+            img.sprite = GetOrCreateShipRoleDotSprite();
+            img.color = color;
+            slot++;
+        }
+
+        /// <summary>Lazy-builds the shared white circle used for all role dots.</summary>
+        static Sprite GetOrCreateShipRoleDotSprite()
+        {
+            if (_shipRoleDotSprite != null)
+                return _shipRoleDotSprite;
+
+            const int size = 24;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            var pixels = new Color[size * size];
+            float cx = (size - 1) * 0.5f;
+            float cy = (size - 1) * 0.5f;
+            float rSq = (size * 0.48f) * (size * 0.48f);
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = x - cx;
+                    float dy = y - cy;
+                    pixels[y * size + x] = (dx * dx + dy * dy) <= rSq ? Color.white : Color.clear;
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply(false, true);
+            _shipRoleDotSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
+            _shipRoleDotSprite.name = "ShipRoleDot";
+            return _shipRoleDotSprite;
+        }
+
+        /// <summary>
+        /// Builds a layered planet blip under <see cref="minimapContent"/>: orbit ring, level dots,
+        /// filled disc, and population label. Ring radius matches the gem-moon / ship orbit centerline.
+        /// </summary>
+        /// <param name="p">Planet (or home) anchor with team, level, and population.</param>
+        /// <param name="color">Team tint, or neutral grey / gold when unowned.</param>
+        /// <param name="size">Planet disc diameter in minimap UI pixels (includes sizeScaleFactor).</param>
+        /// <param name="worldToMinimapScale">World→UI scale used for blip <em>positions</em> (no sizeScaleFactor).</param>
+        private RectTransform CreatePlanetBlip(MinimapBlipAnchor p, Color color, float size, float worldToMinimapScale)
         {
             if (minimapContent == null || p == null) return null;
 
+            // --- Root blip (positioned later by UpdateBlipPositions) ---
             var go = new GameObject("Blip", typeof(RectTransform));
             go.transform.SetParent(minimapContent, false);
+            go.SetActive(false);
             var rt = go.GetComponent<RectTransform>();
             rt.sizeDelta = new Vector2(size, size);
             rt.anchorMin = new Vector2(0.5f, 0.5f);
             rt.anchorMax = new Vector2(0.5f, 0.5f);
             rt.pivot = new Vector2(0.5f, 0.5f);
 
-            // Level dots (small circles around the planet, behind fill)
+            // --- Moon / ship orbit ring (behind everything else) ---
+            // [TITAN-ORBIT] Same centerline as PlanetOrbitMath / gem moon — not the tight level-dot ring.
+            // Ring uses worldToMinimapScale (position scale), not the enlarged planet disc size.
+            float planetWorldSize = ResolvePlanetWorldSize(p);
+            AddOrUpdatePlanetOrbitRing(rt, planetWorldSize, worldToMinimapScale, color);
+
+            // --- Level dots (small circles just outside the planet fill) ---
             var dotsGo = new GameObject("LevelDots", typeof(RectTransform));
             dotsGo.transform.SetParent(rt, false);
             var dotsRect = dotsGo.GetComponent<RectTransform>();
@@ -2008,9 +2281,11 @@ namespace TitanOrbit.UI
             dotsRect.anchorMax = Vector2.one;
             dotsRect.offsetMin = Vector2.zero;
             dotsRect.offsetMax = Vector2.zero;
-            AddLevelDotsToContainer(dotsRect, p.PlanetLevel, size, color);
+            AddLevelDotsToContainer(
+                dotsRect, p.PlanetLevel, size, color, p.DefenseTurretBuiltMask,
+                planetWorldSize, worldToMinimapScale);
 
-            // Planet circle on top of lines
+            // --- Planet fill disc ---
             var fillGo = new GameObject("PlanetFill", typeof(RectTransform));
             fillGo.transform.SetParent(rt, false);
             var fillRt = fillGo.GetComponent<RectTransform>();
@@ -2023,7 +2298,7 @@ namespace TitanOrbit.UI
             fillImg.color = color;
             fillImg.raycastTarget = false;
 
-            // Population text on top; auto-sized to stay inside the circle (no wrap)
+            // --- Population text (auto-sized inside the disc) ---
             var textGo = new GameObject("PopulationText", typeof(RectTransform));
             textGo.transform.SetParent(rt, false);
             var textRect = textGo.GetComponent<RectTransform>();
@@ -2032,13 +2307,134 @@ namespace TitanOrbit.UI
             textRect.pivot = new Vector2(0.5f, 0.5f);
             textRect.anchoredPosition = Vector2.zero;
             var tmp = textGo.AddComponent<TextMeshProUGUI>();
-            tmp.text = Mathf.RoundToInt(p.CurrentPopulation).ToString();
+            tmp.text = p.Population.ToString();
             tmp.alignment = TextAlignmentOptions.Center;
             tmp.color = Color.white;
             tmp.raycastTarget = false;
             ApplyPlanetPopulationTextLayout(tmp, size);
 
             return rt;
+        }
+
+        /// <summary>
+        /// Planet uniform scale used for moon orbit math — same value as
+        /// <see cref="MinimapEcsEntitySync"/> passes into <c>GetMoonOrbitOffset</c>.
+        /// </summary>
+        private static float ResolvePlanetWorldSize(MinimapBlipAnchor p)
+        {
+            if (p == null) return 1f;
+            // Prefer ECS BodySize — hybrid planet proxy roots are unit-scale now; blip
+            // anchors still store diameter in BodySize from MinimapEcsEntitySync.
+            if (p.BodySize >= 0.1f)
+                return p.BodySize;
+            float fromScale = (p.transform.localScale.x + p.transform.localScale.y + p.transform.localScale.z) / 3f;
+            return Mathf.Max(0.25f, fromScale);
+        }
+
+        /// <summary>
+        /// UI diameter (pixels) of the moon-orbit ring so its path matches the moon blip position.
+        /// Uses world orbit centerline × <paramref name="worldToMinimapScale"/> — the same scale as
+        /// blip positions — not the enlarged planet disc (<c>sizeScaleFactor</c>).
+        /// </summary>
+        /// <param name="planetWorldSize">Planet <c>LocalTransform.Scale</c> / BodySize (world units).</param>
+        /// <param name="worldToMinimapScale">displaySize / (minimapRadius × 2).</param>
+        /// <returns>Ring Image sizeDelta (diameter) in minimap pixels.</returns>
+        private static float GetPlanetOrbitRingBlipDiameter(float planetWorldSize, float worldToMinimapScale)
+        {
+            // --- Match moon blip distance from planet ---
+            // World moon offset length ≈ centerWorld from PlanetOrbitMath.GetRingRadiiWorld.
+            // Minimap positions: uiDelta = worldDelta * worldToMinimapScale (no sizeScaleFactor).
+            // Intentional: planet fill is enlarged for readability; the orbit ring is not.
+            PlanetOrbitMath.GetRingRadiiWorld(
+                Mathf.Max(0.01f, planetWorldSize),
+                1,
+                out _,
+                out _,
+                out float centerWorld);
+            // Stroke centerline sits slightly inside the texture edge (see BlipType.Ring) —
+            // scale sizeDelta so that centerline lands on centerWorld * worldToMinimapScale.
+            const float ringTexHalf = 128f;       // CreateBlipSprite(256) → half = 128
+            const float ringTexMid = 128f - 1.5f; // matches midRadius in Ring pixel gen
+            float centerlineScale = ringTexHalf / ringTexMid;
+            float diameter = 2f * centerWorld * Mathf.Max(0.0001f, worldToMinimapScale) * centerlineScale;
+            return Mathf.Max(4f, diameter);
+        }
+
+        /// <summary>
+        /// Creates or refreshes the thin OrbitRing child under a planet blip.
+        /// Drawn behind LevelDots / PlanetFill; tinted with the planet team color.
+        /// Radius follows the gem-moon orbit centerline in UI space.
+        /// </summary>
+        /// <param name="planetBlipRoot">Root RectTransform of the planet blip hierarchy.</param>
+        /// <param name="planetWorldSize">Planet world scale for <see cref="PlanetOrbitMath"/>.</param>
+        /// <param name="worldToMinimapScale">Same scale used to project moon/planet positions.</param>
+        /// <param name="planetColor">Team (or neutral) color used for the planet fill.</param>
+        private void AddOrUpdatePlanetOrbitRing(
+            RectTransform planetBlipRoot,
+            float planetWorldSize,
+            float worldToMinimapScale,
+            Color planetColor)
+        {
+            if (planetBlipRoot == null) return;
+
+            // --- Resolve / create OrbitRing child ---
+            Transform ringTf = planetBlipRoot.Find("OrbitRing");
+            RectTransform ringRt;
+            Image ringImg;
+            if (ringTf == null)
+            {
+                var ringGo = new GameObject("OrbitRing", typeof(RectTransform));
+                ringGo.transform.SetParent(planetBlipRoot, false);
+                ringRt = ringGo.GetComponent<RectTransform>();
+                // Centered on the planet; sizeDelta is the ring diameter (through the moon path).
+                ringRt.anchorMin = new Vector2(0.5f, 0.5f);
+                ringRt.anchorMax = new Vector2(0.5f, 0.5f);
+                ringRt.pivot = new Vector2(0.5f, 0.5f);
+                ringRt.anchoredPosition = Vector2.zero;
+                ringImg = ringGo.AddComponent<Image>();
+                ringImg.sprite = GetMinimapOrbitRingSprite();
+                ringImg.type = Image.Type.Simple;
+                ringImg.raycastTarget = false;
+                // [UNITY] First sibling draws behind later siblings under the same parent.
+                ringGo.transform.SetAsFirstSibling();
+            }
+            else
+            {
+                ringRt = ringTf as RectTransform;
+                ringImg = ringTf.GetComponent<Image>();
+                if (ringRt == null || ringImg == null) return;
+                // Hot-reload / thickness tweak: refresh sprite if an older thick ring is cached.
+                if (ringImg.sprite == null || ringImg.sprite.name != "MinimapOrbitRing_v3")
+                    ringImg.sprite = GetMinimapOrbitRingSprite();
+                ringTf.SetAsFirstSibling();
+            }
+
+            // --- Size + team tint ---
+            float ringDiameter = GetPlanetOrbitRingBlipDiameter(planetWorldSize, worldToMinimapScale);
+            ringRt.sizeDelta = new Vector2(ringDiameter, ringDiameter);
+            Color ringColor = planetColor;
+            ringColor.a = planetOrbitRingAlpha;
+            ringImg.color = ringColor;
+        }
+
+        /// <summary>
+        /// Cached thin-ring sprite shared by all planet orbit rings (white, tinted by Image.color).
+        /// </summary>
+        private Sprite _minimapOrbitRingSpriteCache;
+
+        /// <summary>
+        /// Returns a high-resolution thin annulus sprite for planet orbit rings on the minimap.
+        /// Generated once and reused; RGB is white so Image.color supplies the team tint.
+        /// </summary>
+        private Sprite GetMinimapOrbitRingSprite()
+        {
+            // v3 = medium-thin stroke; recreate if an older cache is still hanging around in Play Mode.
+            if (_minimapOrbitRingSpriteCache != null && _minimapOrbitRingSpriteCache.name == "MinimapOrbitRing_v3")
+                return _minimapOrbitRingSpriteCache;
+            _minimapOrbitRingSpriteCache = CreateBlipSprite(256, BlipType.Ring);
+            if (_minimapOrbitRingSpriteCache != null)
+                _minimapOrbitRingSpriteCache.name = "MinimapOrbitRing_v3";
+            return _minimapOrbitRingSpriteCache;
         }
 
         /// <summary>Single-line population label: shrinks font to fit inside the planet, no wrapping.</summary>
@@ -2054,22 +2450,42 @@ namespace TitanOrbit.UI
             tmp.overflowMode = TextOverflowModes.Overflow;
         }
 
-        private Sprite _minimapLevelDotSpriteCache;
+        private Sprite _minimapLevelDotFilledSpriteCache;
+        private Sprite _minimapLevelDotRingSpriteCache;
 
-        private Sprite GetMinimapLevelDotSprite()
+        /// <summary>Filled disc — planetary defense slot with an active turret.</summary>
+        private Sprite GetMinimapLevelDotFilledSprite()
         {
-            if (_minimapLevelDotSpriteCache != null) return _minimapLevelDotSpriteCache;
-            _minimapLevelDotSpriteCache = CreateBlipSprite(24, BlipType.Circle);
-            if (_minimapLevelDotSpriteCache != null)
-                _minimapLevelDotSpriteCache.name = "MinimapLevelDot";
-            return _minimapLevelDotSpriteCache;
+            if (_minimapLevelDotFilledSpriteCache != null) return _minimapLevelDotFilledSpriteCache;
+            _minimapLevelDotFilledSpriteCache = CreateBlipSprite(24, BlipType.Circle);
+            if (_minimapLevelDotFilledSpriteCache != null)
+                _minimapLevelDotFilledSpriteCache.name = "MinimapLevelDotFilled";
+            return _minimapLevelDotFilledSpriteCache;
         }
 
-        private void AddLevelDotsToContainer(RectTransform container, int level, float blipSize, Color teamColor)
+        /// <summary>Hollow ring — empty planetary defense pad (no turret yet).</summary>
+        private Sprite GetMinimapLevelDotRingSprite()
+        {
+            if (_minimapLevelDotRingSpriteCache != null) return _minimapLevelDotRingSpriteCache;
+            _minimapLevelDotRingSpriteCache = CreateBlipSprite(24, BlipType.Ring);
+            if (_minimapLevelDotRingSpriteCache != null)
+                _minimapLevelDotRingSpriteCache.name = "MinimapLevelDotRing";
+            return _minimapLevelDotRingSpriteCache;
+        }
+
+        private void AddLevelDotsToContainer(
+            RectTransform container,
+            int level,
+            float blipSize,
+            Color teamColor,
+            byte defenseTurretBuiltMask,
+            float planetWorldSize,
+            float worldToMinimapScale)
         {
             if (container == null || level < 1) return;
-            Sprite dotSprite = GetMinimapLevelDotSprite();
-            if (dotSprite == null) return;
+            Sprite filled = GetMinimapLevelDotFilledSprite();
+            Sprite ring = GetMinimapLevelDotRingSprite();
+            if (filled == null || ring == null) return;
 
             for (int i = 0; i < level; i++)
             {
@@ -2080,63 +2496,113 @@ namespace TitanOrbit.UI
                 dotRect.anchorMax = new Vector2(0.5f, 0.5f);
                 dotRect.pivot = new Vector2(0.5f, 0.5f);
                 var img = dotGo.AddComponent<Image>();
-                img.sprite = dotSprite;
+                bool hasTurret = (defenseTurretBuiltMask & (1 << i)) != 0;
+                img.sprite = hasTurret ? filled : ring;
                 img.type = Image.Type.Simple;
                 img.color = teamColor;
                 img.raycastTarget = false;
             }
 
-            LayoutLevelDots(container, level, blipSize, teamColor);
+            LayoutLevelDots(
+                container, level, blipSize, teamColor, defenseTurretBuiltMask,
+                planetWorldSize, worldToMinimapScale);
         }
 
-        private void LayoutLevelDots(RectTransform container, int level, float blipSize, Color teamColor)
+        /// <summary>
+        /// Positions defense/level dots at the same ring as world pads:
+        /// <see cref="PlanetaryDefenseMath.GetSlotRingRadiusWorld"/> × position scale
+        /// (midpoint surface↔orbit), not the enlarged planet-fill rim.
+        /// Filled = turret built; ring = empty pad.
+        /// </summary>
+        private void LayoutLevelDots(
+            RectTransform container,
+            int level,
+            float blipSize,
+            Color teamColor,
+            byte defenseTurretBuiltMask,
+            float planetWorldSize,
+            float worldToMinimapScale)
         {
             if (container == null || level < 1) return;
-            float half = blipSize * 0.5f;
+            // Dot size still scales with the (enlarged) planet disc for readability.
             float dotSize = Mathf.Max(3f, Mathf.Round(blipSize * 0.12f));
-            float orbitR = half + dotSize * 0.5f + 1f;
+            // [TITAN-ORBIT] Match world pad radius — same formula as PlanetaryDefenseVisualDriver.
+            float slotRadiusWorld = PlanetaryDefenseMath.GetSlotRingRadiusWorld(
+                Mathf.Max(0.01f, planetWorldSize), level);
+            float orbitR = slotRadiusWorld * Mathf.Max(0.0001f, worldToMinimapScale);
+            // Keep dots readable if the planet disc is huge vs the true ring (rare).
+            orbitR = Mathf.Max(orbitR, dotSize);
+            Sprite filled = GetMinimapLevelDotFilledSprite();
+            Sprite ring = GetMinimapLevelDotRingSprite();
 
             for (int i = 0; i < level; i++)
             {
                 var dotRect = container.GetChild(i) as RectTransform;
                 if (dotRect == null) continue;
                 dotRect.sizeDelta = new Vector2(dotSize, dotSize);
-                // Evenly around the planet; first dot at top (+y), then CCW
-                float angle = Mathf.PI * 0.5f + (Mathf.PI * 2f * i) / level;
+                // Same even-ring angles as world defense pads (index 0 = +Z / UI +Y).
+                float angle = PlanetaryDefenseMath.GetEvenRingSlotAngle(i, level);
                 float x = orbitR * Mathf.Cos(angle);
                 float y = orbitR * Mathf.Sin(angle);
                 dotRect.anchoredPosition = new Vector2(Mathf.Round(x), Mathf.Round(y));
                 if (dotRect.GetComponent<Image>() is Image img)
+                {
+                    bool hasTurret = (defenseTurretBuiltMask & (1 << i)) != 0;
+                    if (filled != null && ring != null)
+                        img.sprite = hasTurret ? filled : ring;
                     img.color = teamColor;
+                }
             }
         }
 
-        private void UpdatePlanetBlip(RectTransform blipRt, Planet p, Color color, float size)
+        /// <summary>
+        /// Refreshes planet blip layout when size, population, level, or team color changes.
+        /// Also keeps the moon-orbit ring sized/tinted to the gem-moon path (position scale).
+        /// </summary>
+        private void UpdatePlanetBlip(
+            RectTransform blipRt,
+            MinimapBlipAnchor p,
+            Color color,
+            float size,
+            float worldToMinimapScale)
         {
             if (blipRt == null || p == null) return;
 
+            // --- Quantize size so float jitter does not rebuild sprites every frame ---
             const float sizeQuantStep = 0.5f;
             float qSize = Mathf.Round(size / sizeQuantStep) * sizeQuantStep;
-            int pop = Mathf.RoundToInt(p.CurrentPopulation);
+            // Quantize position-scale too — ring radius uses this, not the enlarged disc size.
+            float qWorldScale = Mathf.Round(worldToMinimapScale * 1000f) / 1000f;
+            int pop = p.Population;
             int level = p.PlanetLevel;
+            byte turretMask = p.DefenseTurretBuiltMask;
             Color32 c32 = color;
 
             if (planetBlipLayoutState.TryGetValue(p.transform, out var prev) &&
                 Mathf.Approximately(prev.QuantizedSize, qSize) &&
+                Mathf.Approximately(prev.QuantizedWorldToMinimapScale, qWorldScale) &&
                 prev.Population == pop &&
                 prev.Level == level &&
+                prev.DefenseTurretBuiltMask == turretMask &&
                 prev.Color.r == c32.r && prev.Color.g == c32.g && prev.Color.b == c32.b && prev.Color.a == c32.a)
                 return;
 
             planetBlipLayoutState[p.transform] = new PlanetBlipLayoutState
             {
                 QuantizedSize = qSize,
+                QuantizedWorldToMinimapScale = qWorldScale,
                 Population = pop,
                 Level = level,
+                DefenseTurretBuiltMask = turretMask,
                 Color = c32
             };
 
+            // --- Root + orbit ring (ring follows moon path; disc may be larger for readability) ---
             blipRt.sizeDelta = new Vector2(qSize, qSize);
+            float planetWorldSize = ResolvePlanetWorldSize(p);
+            AddOrUpdatePlanetOrbitRing(blipRt, planetWorldSize, worldToMinimapScale, color);
+
+            // --- Planet fill tint ---
             Image planetImg = null;
             var fillTf = blipRt.Find("PlanetFill");
             if (fillTf != null)
@@ -2146,6 +2612,7 @@ namespace TitanOrbit.UI
             if (planetImg != null)
                 planetImg.color = color;
 
+            // --- Population label ---
             var textGo = blipRt.Find("PopulationText");
             if (textGo != null && textGo.GetComponent<TextMeshProUGUI>() is TextMeshProUGUI tmp)
             {
@@ -2153,6 +2620,7 @@ namespace TitanOrbit.UI
                 ApplyPlanetPopulationTextLayout(tmp, qSize);
             }
 
+            // --- Defense dots at world pad radius (ring = empty, filled = turret) ---
             var dotsGo = blipRt.Find("LevelDots");
             if (dotsGo != null)
             {
@@ -2165,10 +2633,16 @@ namespace TitanOrbit.UI
                 else if (dotsGo.childCount != needed)
                 {
                     ClearLevelDotsChildrenImmediate(dotsGo.transform);
-                    AddLevelDotsToContainer(dotsRect, needed, qSize, color);
+                    AddLevelDotsToContainer(
+                        dotsRect, needed, qSize, color, turretMask,
+                        planetWorldSize, worldToMinimapScale);
                 }
                 else
-                    LayoutLevelDots(dotsRect, needed, qSize, color);
+                {
+                    LayoutLevelDots(
+                        dotsRect, needed, qSize, color, turretMask,
+                        planetWorldSize, worldToMinimapScale);
+                }
             }
         }
 
@@ -2185,11 +2659,9 @@ namespace TitanOrbit.UI
         /// </summary>
         private void UpdateGemMoonBlips(Vector3 playerPos, float worldToMinimapScale)
         {
-            foreach (var p in cachedPlanets)
+            foreach (var moon in cachedGemMoons)
             {
-                if (p == null) continue;
-                PlanetGemMoon moon = p.GemMoon;
-                if (moon == null || !moon.isActiveAndEnabled) continue;
+                if (moon == null) continue;
 
                 Transform moonTransform = moon.transform;
                 Vector3 worldPos = moonTransform.position;
@@ -2197,10 +2669,10 @@ namespace TitanOrbit.UI
 
                 float dist = Mathf.Sqrt(dx * dx + dz * dz);
                 bool isOutsideVisibleArea = dist > minimapRadius;
-                bool isHome = p is HomePlanet;
-                TeamManager.Team team = p.TeamOwnership;
+                bool isHome = moon.IsHomePlanet;
+                TeamId team = moon.Team;
 
-                Color moonBlipColor = team == TeamManager.Team.None
+                Color moonBlipColor = team == TeamId.None
                     ? (isHome ? Color.Lerp(moonColor, homePlanetColor, 0.35f) : moonColor)
                     : GetTeamColor(team);
                 float moonBlipSize = GetGemMoonBlipSize(moon, worldToMinimapScale);
@@ -2226,15 +2698,11 @@ namespace TitanOrbit.UI
             }
         }
 
-        private float GetGemMoonBlipSize(PlanetGemMoon moon, float worldToMinimapScale)
+        private float GetGemMoonBlipSize(MinimapBlipAnchor moon, float worldToMinimapScale)
         {
-            float physicalSize = 1f;
-            Transform vis = moon.transform.Find("GemMoonVisual");
-            if (vis != null)
-            {
-                Vector3 worldScale = vis.lossyScale;
-                physicalSize = (worldScale.x + worldScale.y + worldScale.z) / 3f;
-            }
+            float physicalSize = moon.MoonVisualSize > 0f
+                ? moon.MoonVisualSize
+                : (moon.transform.localScale.x + moon.transform.localScale.y + moon.transform.localScale.z) / 3f;
 
             return Mathf.Max(
                 moonBlipMinSize,
@@ -2440,6 +2908,35 @@ namespace TitanOrbit.UI
                     }
                     break;
                 }
+
+                case BlipType.Ring:
+                {
+                    // Thin anti-aliased annulus for planet moon-orbit path on the minimap.
+                    // Stroke is centered near the outer edge so Image sizeDelta ≈ orbit diameter
+                    // (centerline through the moon). Slightly thicker than a hairline for readability.
+                    float midRadius = textureSize * 0.5f - 1.5f;
+                    float halfStroke = Mathf.Max(1.1f, textureSize * 0.008f); // ~2px @ 256
+                    float aa = Mathf.Max(0.9f, textureSize * 0.007f);
+                    for (int y = 0; y < textureSize; y++)
+                    {
+                        for (int x = 0; x < textureSize; x++)
+                        {
+                            float dx = x - centerX;
+                            float dy = y - centerY;
+                            float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                            float outside = Mathf.Abs(dist - midRadius) - halfStroke;
+                            float alpha;
+                            if (outside <= 0f)
+                                alpha = 1f;
+                            else if (outside < aa)
+                                alpha = 1f - Mathf.SmoothStep(0f, aa, outside);
+                            else
+                                alpha = 0f;
+                            pixels[y * textureSize + x] = new Color(1f, 1f, 1f, alpha);
+                        }
+                    }
+                    break;
+                }
             }
             
             texture.SetPixels(pixels);
@@ -2454,6 +2951,7 @@ namespace TitanOrbit.UI
                 case BlipType.Cross: spriteName = "Cross"; break;
                 case BlipType.Irregular: spriteName = "Irregular"; break;
                 case BlipType.Bullseye: spriteName = "Bullseye"; break;
+                case BlipType.Ring: spriteName = "Ring"; break;
             }
             
             Sprite sprite = Sprite.Create(texture, new Rect(0, 0, textureSize, textureSize), new Vector2(0.5f, 0.5f), 100f);
@@ -2462,22 +2960,9 @@ namespace TitanOrbit.UI
             return sprite;
         }
 
-        private Color GetTeamColor(TeamManager.Team team)
-        {
-            if (TeamManager.Instance != null)
-                return TeamManager.GetTeamColor(team);
-            switch (team)
-            {
-                case TeamManager.Team.TeamA: return teamAColor;
-                case TeamManager.Team.TeamB: return teamBColor;
-                case TeamManager.Team.TeamC: return teamCColor;
-                case TeamManager.Team.TeamD: return teamDColor;
-                case TeamManager.Team.TeamE: return teamEColor;
-                default: return Color.gray;
-            }
-        }
+        private Color GetTeamColor(TeamId team) => team.ToColor();
 
-        private Color GetEnemyColor(TeamManager.Team team)
+        private Color GetEnemyColor(TeamId team)
         {
             Color c = GetTeamColor(team);
             return new Color(c.r * 0.7f, c.g * 0.7f, c.b * 0.7f);
@@ -2493,7 +2978,7 @@ namespace TitanOrbit.UI
             edgeMarkerIsHomePlanet.Remove(shipTransform);
         }
 
-        private void UpdateEdgeMarker(Transform planetTransform, float dx, float dz, float distance, bool isHomePlanet, TeamManager.Team team)
+        private void UpdateEdgeMarker(Transform planetTransform, float dx, float dz, float distance, bool isHomePlanet, TeamId team)
         {
             if (edgeMarkerContainer == null) return;
             
@@ -2507,8 +2992,8 @@ namespace TitanOrbit.UI
             
             // Get color
             Color markerColor = isHomePlanet 
-                ? (team == TeamManager.Team.None ? homePlanetColor : GetTeamColor(team))
-                : (team == TeamManager.Team.None ? planetColor : GetTeamColor(team));
+                ? (team == TeamId.None ? homePlanetColor : GetTeamColor(team))
+                : (team == TeamId.None ? planetColor : GetTeamColor(team));
             
             // Calculate marker size based on distance (closer = bigger, farther = smaller)
             // Distance ranges from minimapRadius to maxPlanetDistance
@@ -2539,11 +3024,11 @@ namespace TitanOrbit.UI
             }
         }
         
-        private void UpdateMarkerEdgeMarker(Transform markerTransform, float dx, float dz, float distance, Color markerColor, MinimapMarker.MarkerType markerType)
+        private void UpdateMarkerEdgeMarker(Transform markerTransform, float dx, float dz, float distance, Color markerColor, MinimapMarkerKind markerType)
         {
             if (edgeMarkerContainer == null) return;
             
-            float currentRadius = isExpanded ? GetExpandedWorldRadius() : minimapRadius;
+            float currentRadius = minimapRadius;
             
             // Calculate angle and position on edge
             float angle = Mathf.Atan2(dz, dx);
@@ -2582,9 +3067,9 @@ namespace TitanOrbit.UI
             }
         }
         
-        private void CreateMarkerEdgeMarker(Transform markerTransform, float x, float z, float angle, Color color, MinimapMarker.MarkerType markerType, float size)
+        private void CreateMarkerEdgeMarker(Transform markerTransform, float x, float z, float angle, Color color, MinimapMarkerKind markerType, float size)
         {
-            GameObject markerObj = new GameObject(markerType == MinimapMarker.MarkerType.Defend ? "DefendMarkerEdge" : "AttackMarkerEdge");
+            GameObject markerObj = new GameObject(markerType == MinimapMarkerKind.Defend ? "DefendMarkerEdge" : "AttackMarkerEdge");
             markerObj.transform.SetParent(edgeMarkerContainer, false);
             
             Image img = markerObj.AddComponent<Image>();
@@ -2592,7 +3077,7 @@ namespace TitanOrbit.UI
             img.raycastTarget = false; // Don't block clicks
             
             // Create bullseye sprite for attack/defend markers
-            Sprite markerSprite = CreateBullseyeSprite(markerType == MinimapMarker.MarkerType.Defend, (int)edgeMarkerSize);
+            Sprite markerSprite = CreateBullseyeSprite(markerType == MinimapMarkerKind.Defend, (int)edgeMarkerSize);
             img.sprite = markerSprite;
             
             RectTransform rt = markerObj.GetComponent<RectTransform>();

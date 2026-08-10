@@ -1,11 +1,15 @@
+using TitanOrbit.Game;
+using TitanOrbit.Shared;
 using UnityEngine;
 
 namespace TitanOrbit.Camera
 {
     /// <summary>
     /// Renders a tiled space background that scrolls as the camera (player ship) moves.
-    /// Uses the DinV Dynamic Space Background Lite textures - assign any of the nebula/star
-    /// textures for a seamless parallax effect.
+    /// Uses DinV Dynamic Space Background Lite textures — assign nebula/star textures for
+    /// seamless parallax. [HYBRID] Follows <see cref="ShipDisplayPose.LocalPosition"/> when
+    /// available, else camera position. WebGL/Android: uses TitanOrbit/SpaceBackgroundUnlit
+    /// and _UVScroll on instance material (no MaterialPropertyBlock) for GLES compatibility.
     /// </summary>
     /// <remarks>
     /// WebGL and Android GLES often fail to animate URP Unlit UVs when mixing MaterialPropertyBlock
@@ -13,7 +17,7 @@ namespace TitanOrbit.Camera
     /// <c>TitanOrbit/SpaceBackgroundUnlit</c> and drives scrolling only via <c>_UVScroll</c> on the
     /// instance material (no property block).
     /// </remarks>
-    [DefaultExecutionOrder(300)]
+    [DefaultExecutionOrder(67100)]
     public class ScrollingSpaceBackground : MonoBehaviour
     {
         /// <summary>Resources material that references the scrolling background shader (included in player builds).</summary>
@@ -22,11 +26,8 @@ namespace TitanOrbit.Camera
         private const string ScrollShaderName = "TitanOrbit/SpaceBackgroundUnlit";
 
         [Header("References")]
-        [Tooltip("Camera to follow (defaults to Main Camera or Camera on CameraController)")]
+        [Tooltip("Camera to follow (defaults to Main Camera)")]
         [SerializeField] private UnityEngine.Camera targetCamera;
-
-        [Tooltip("Optional: resolves the same camera as gameplay. Prefer assigning on WebGL / multiplayer.")]
-        [SerializeField] private CameraController cameraController;
 
         [Header("Texture")]
         [Tooltip("Space background texture - use Nebula Blue, Nebula Aqua-Pink, Nebula Red, Stars Small, or Stars Big from DinV asset. Must have Wrap Mode: Repeat.")]
@@ -51,9 +52,14 @@ namespace TitanOrbit.Camera
         private static readonly int MainTex = Shader.PropertyToID("_MainTex");
         private static readonly int UVScroll = Shader.PropertyToID("_UVScroll");
 
+        private bool hasLastScrollPos;
+        private Vector3 lastScrollPos;
+        private float scrollOffsetX;
+        private float scrollOffsetZ;
+
         private void Awake()
         {
-            ResolveCameraController();
+            // --- Unity lifecycle ---
             ResolveTargetCamera();
             if (targetCamera == null)
             {
@@ -66,38 +72,22 @@ namespace TitanOrbit.Camera
 
         private void OnEnable()
         {
-            ResolveCameraController();
+            // --- Unity lifecycle ---
             if (targetCamera == null)
                 ResolveTargetCamera();
             if (meshRenderer == null && targetCamera != null)
                 EnsureBackgroundQuad();
         }
 
-        private void ResolveCameraController()
-        {
-            if (cameraController != null) return;
-            if (targetCamera != null)
-                cameraController = targetCamera.GetComponent<CameraController>();
-            if (cameraController == null)
-                cameraController = FindFirstObjectByType<CameraController>();
-        }
-
         private void ResolveTargetCamera()
         {
             if (targetCamera != null) return;
-            ResolveCameraController();
-            if (cameraController != null)
-            {
-                targetCamera = cameraController.GetComponent<UnityEngine.Camera>();
-                if (targetCamera == null)
-                    targetCamera = cameraController.GetComponentInChildren<UnityEngine.Camera>();
-            }
-            if (targetCamera == null)
-                targetCamera = UnityEngine.Camera.main;
+            targetCamera = UnityEngine.Camera.main;
         }
 
         private void EnsureBackgroundQuad()
         {
+            // --- Ensure setup ---
             if (meshRenderer != null) return;
 
             if (spaceTexture == null)
@@ -160,7 +150,7 @@ namespace TitanOrbit.Camera
 
         private void LateUpdate()
         {
-            ResolveCameraController();
+            // --- Per-frame refresh ---
             ResolveTargetCamera();
             if (targetCamera == null) return;
 
@@ -168,17 +158,37 @@ namespace TitanOrbit.Camera
                 EnsureBackgroundQuad();
             if (bgMaterial == null) return;
 
-            Vector3 camPos = targetCamera.transform.position;
-            transform.position = new Vector3(camPos.x, -Mathf.Abs(depthOffset), camPos.z);
+            Vector3 followPos;
+            if (ShipDisplayPose.HasLocalPose)
+                followPos = ShipDisplayPose.LocalPosition;
+            else if (targetCamera != null)
+                followPos = targetCamera.transform.position;
+            else
+                return;
+
+            transform.position = new Vector3(followPos.x, -Mathf.Abs(depthOffset), followPos.z);
             ResizeQuadToCoverView();
 
-            float offsetX = camPos.x * scrollScale;
-            float offsetZ = camPos.z * scrollScale;
-            bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, offsetX, offsetZ));
+            if (!hasLastScrollPos)
+            {
+                lastScrollPos = followPos;
+                hasLastScrollPos = true;
+                scrollOffsetX = followPos.x * scrollScale;
+                scrollOffsetZ = followPos.z * scrollScale;
+            }
+            else
+            {
+                scrollOffsetX += (followPos.x - lastScrollPos.x) * scrollScale;
+                scrollOffsetZ += (followPos.z - lastScrollPos.z) * scrollScale;
+                lastScrollPos = followPos;
+            }
+
+            bgMaterial.SetVector(UVScroll, new Vector4(textureTiling, textureTiling, scrollOffsetX, scrollOffsetZ));
         }
 
         private void ResizeQuadToCoverView()
         {
+            // --- ResizeQuadToCoverView ---
             if (targetCamera == null || backgroundQuadTransform == null)
                 return;
 
@@ -206,6 +216,7 @@ namespace TitanOrbit.Camera
 
         private static void ApplyMainTexture(Material m, Texture2D tex)
         {
+            // --- Apply changes ---
             if (m == null || tex == null) return;
             m.mainTexture = tex;
             if (m.HasProperty(MainTex))
@@ -220,6 +231,7 @@ namespace TitanOrbit.Camera
 
         private static void TrySetTextureRepeatWrap(Texture2D tex)
         {
+            // --- Attempt resolution ---
             if (tex == null) return;
             try
             {
@@ -239,6 +251,7 @@ namespace TitanOrbit.Camera
         /// </summary>
         public void SetTemporarilyHidden(bool hidden)
         {
+            // --- SetTemporarilyHidden ---
             if (meshRenderer == null)
                 EnsureBackgroundQuad();
 

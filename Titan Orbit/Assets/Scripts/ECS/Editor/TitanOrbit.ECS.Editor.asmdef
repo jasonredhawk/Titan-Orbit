@@ -1,0 +1,32 @@
+{
+    "name": "TitanOrbit.ECS.Editor",
+    "rootNamespace": "TitanOrbit.ECS.Editor",
+    "references": [
+        "TitanOrbit.Core",
+        "TitanOrbit.Data",
+        "TitanOrbit.ECS",
+        "TitanOrbit.Game",
+        "TitanOrbit.Input",
+        "TitanOrbit.NetCode",
+        "TitanOrbit.Shared",
+        "Unity.Collections",
+        "Unity.Entities",
+        "Unity.Entities.Hybrid",
+        "Unity.NetCode",
+        "Unity.NetCode.Authoring.Hybrid",
+        "Unity.NetCode.Editor",
+        "Unity.InputSystem",
+        "Unity.Scenes"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

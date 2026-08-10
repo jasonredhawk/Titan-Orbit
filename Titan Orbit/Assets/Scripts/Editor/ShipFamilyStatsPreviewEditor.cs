@@ -62,7 +62,7 @@ namespace TitanOrbit.Editor
             {
                 EditorGUILayout.HelpBox(
                     "No stats found yet. Assign a ShipFamilyDefinition and ensure child names follow 'Family_ComponentId' (e.g. AstroEagle_Cockpit). " +
-                    "Non-weapons: most stats scale by average scale (x+y+z)/3. Engines and thrusters use authored move speed and acceleration cap; thrusters also use turn speed — none scaled by part size. " +
+                    "Non-weapons: most stats scale by average scale (x+y+z)/3. Engines and thrusters use authored move speed and acceleration cap; thrusters also use turn speed (with Tail/Fin) — none scaled by part size. Engines own Energy Cap/Regen. " +
                     "Weapons: fire power scales by average(x,y); fire rate by 1/z (smaller z = faster); bullet speed is not scaled by part size.",
                     MessageType.Info);
             }
@@ -80,88 +80,98 @@ namespace TitanOrbit.Editor
             {
                 EditorGUILayout.LabelField("Offense", EditorStyles.miniBoldLabel);
                 EditorGUILayout.FloatField("Fire Power", total.firePower);
-                EditorGUILayout.FloatField("Fire Power / Level", total.firePowerPerLevel);
+                EditorGUILayout.FloatField("Fire Power / Level", total.firePowerPerAbilityLevel);
                 EditorGUILayout.FloatField("Bullet Speed", total.bulletSpeed);
-                EditorGUILayout.FloatField("Bullet Speed / Level", total.bulletSpeedPerLevel);
+                EditorGUILayout.FloatField("Bullet Speed / Level", total.bulletSpeedPerAbilityLevel);
+                EditorGUILayout.FloatField("Bullet Range", total.bulletRange);
+                EditorGUILayout.FloatField("Bullet Range / Level", total.bulletRangePerAbilityLevel);
                 EditorGUILayout.FloatField("Fire Rate (shots/s)", total.fireRate);
-                EditorGUILayout.FloatField("Fire Rate / Level", total.fireRatePerLevel);
+                EditorGUILayout.FloatField("Fire Rate / Level", total.fireRatePerAbilityLevel);
                 EditorGUILayout.FloatField("Ramming Power", total.rammingPower);
-                EditorGUILayout.FloatField("Ramming Power / Level", total.rammingPowerPerLevel);
+                EditorGUILayout.FloatField("Ramming Power / Level", total.rammingPowerPerAbilityLevel);
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Health", EditorStyles.miniBoldLabel);
                 EditorGUILayout.FloatField("Health Cap", total.healthCap);
-                EditorGUILayout.FloatField("Health Cap / Level", total.healthCapPerLevel);
+                EditorGUILayout.FloatField("Health Cap / Level", total.healthCapPerAbilityLevel);
                 EditorGUILayout.FloatField("Health Regen", total.healthRegen);
-                EditorGUILayout.FloatField("Health Regen / Level", total.healthRegenPerLevel);
+                EditorGUILayout.FloatField("Health Regen / Level", total.healthRegenPerAbilityLevel);
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Energy", EditorStyles.miniBoldLabel);
                 EditorGUILayout.FloatField("Energy Cap", total.energyCap);
-                EditorGUILayout.FloatField("Energy Cap / Level", total.energyCapPerLevel);
+                EditorGUILayout.FloatField("Energy Cap / Level", total.energyCapPerAbilityLevel);
                 EditorGUILayout.FloatField("Energy Regen", total.energyRegen);
-                EditorGUILayout.FloatField("Energy Regen / Level", total.energyRegenPerLevel);
+                EditorGUILayout.FloatField("Energy Regen / Level", total.energyRegenPerAbilityLevel);
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Movement", EditorStyles.miniBoldLabel);
                 EditorGUILayout.FloatField(
-                    new GUIContent("Acceleration Cap (sum, all parts)", "Sum of every matched part’s Acceleration Cap (definition units)."),
+                    new GUIContent(
+                        "Acceleration Cap (aggregated)",
+                        "Primary Accel ×1 + each extra's Accel × extraStackWeight (default 0.1 for engines/thrusters)."),
                     total.accelerationCap);
                 EditorGUILayout.FloatField(
-                    new GUIContent("Acceleration Cap / Level (sum, all parts)", "Sum of per-level acceleration terms."),
-                    total.accelerationCapPerLevel);
+                    new GUIContent(
+                        "Acceleration Cap / Level (aggregated)",
+                        "Primary Accel/Lvl ×1 + each extra's Accel/Lvl × extraStackWeight."),
+                    total.accelerationCapPerAbilityLevel);
                 EditorGUILayout.FloatField(
-                    new GUIContent("Move Speed (aggregated)", "Shared engine/thruster pool: best base move speed once + half the sum of other parts' moveSpeedPerLevel."),
+                    new GUIContent(
+                        "Move Speed (aggregated)",
+                        "Primary Move ×1 + each extra's Move × extraStackWeight. Same pool weights for Energy Cap/Regen."),
                     total.moveSpeed);
                 EditorGUILayout.FloatField(
-                    new GUIContent("Move Speed / Level (primary)", "Primary propulsion part's moveSpeedPerLevel after aggregation."),
-                    total.moveSpeedPerLevel);
+                    new GUIContent(
+                        "Move Speed / Level (aggregated)",
+                        "Primary Move/Lvl ×1 + each extra's Move/Lvl × extraStackWeight."),
+                    total.moveSpeedPerAbilityLevel);
                 if (preview != null)
                 {
                     EditorGUILayout.LabelField("Propulsion (engines + thrusters)", EditorStyles.miniBoldLabel);
                     EditorGUILayout.FloatField(
                         new GUIContent(
-                            "Acceleration Cap (sum)",
-                            "Sum of Acceleration Cap on all engine/thruster parts — matches Starship thrust stacking at ship level 1 (before mass divides force)."),
+                            "Acceleration Cap (stacked)",
+                            "Primary Accel ×1 + extras × extraStackWeight — matches flight after stack aggregation."),
                         preview.PreviewSumPropulsionAcceleration);
                     EditorGUILayout.FloatField(
                         new GUIContent(
-                            "Acceleration Cap / Level (sum)",
-                            "Sum of per-level acceleration on engine/thruster parts."),
+                            "Acceleration Cap / Level (stacked)",
+                            "Primary Accel/Lvl ×1 + each extra's Accel/Lvl × extraStackWeight."),
                         preview.PreviewSumPropulsionAccelerationPerLevel);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Primary propulsion Move Speed",
-                            "Best engine/thruster base move speed — counted once toward top speed cap."),
+                            "Best engine/thruster base move speed — counted at 100%."),
                         preview.PreviewPrimaryThrusterMoveSpeed);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Extra propulsion Move Speed",
-                            "Half the sum of moveSpeedPerLevel from every other engine/thruster (not their full moveSpeed)."),
+                            "Sum of each non-primary engine/thruster Move × its extraStackWeight."),
                         preview.PreviewExtraThrusterMoveSpeed);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Top speed cap",
-                            "Primary move speed + extra propulsion move speed — matches in-game max speed / speedometer."),
+                            "Primary Move + weighted extras — matches in-game max speed / speedometer."),
                         preview.PreviewTopSpeedMoveSpeed);
                 }
                 EditorGUILayout.FloatField(
                     new GUIContent(
                         "Turn Speed",
-                        "Sum of all matched parts (thrusters, wings, fins, etc.). Definition units; Starship converts to °/s when rotating."),
+                        "Sum of all matched parts (thrusters, wings, fins, etc.). Definition units; Starship converts to ┬░/s when rotating."),
                     total.turnSpeed);
                 EditorGUILayout.FloatField(
                     new GUIContent(
                         "Turn Speed / Level",
                         "Sum of per-level turn terms. Starship applies ship-level mobility scaling when rotating."),
-                    total.turnSpeedPerLevel);
+                    total.turnSpeedPerAbilityLevel);
 
                 EditorGUILayout.Space(2);
                 EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
                 EditorGUILayout.FloatField("Max Gems", total.maxGems);
-                EditorGUILayout.FloatField("Max Gems / Level", total.maxGemsPerLevel);
+                EditorGUILayout.FloatField("Max Gems / Level", total.maxGemsPerAbilityLevel);
                 EditorGUILayout.FloatField("Max People", total.maxPeople);
-                EditorGUILayout.FloatField("Max People / Level", total.maxPeoplePerLevel);
+                EditorGUILayout.FloatField("Max People / Level", total.maxPeoplePerAbilityLevel);
 
                 if (preview != null)
                 {
@@ -170,12 +180,12 @@ namespace TitanOrbit.Editor
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "Component Mass",
-                            "Sum of part scale factors on this prefab — matches speedometer MASS (before hullMassScale and gems)."),
+                            "Sum of part scale factors on this prefab ΓÇö matches speedometer MASS (before hullMassScale and gems)."),
                         preview.PreviewComponentMass);
                     EditorGUILayout.FloatField(
                         new GUIContent(
                             "HUD Hull Mass (est.)",
-                            "Component mass × 0.7 — typical movement mass at level 1 with empty cargo."),
+                            "Component mass ├ù 0.7 ΓÇö typical movement mass at level 1 with empty cargo."),
                         preview.PreviewHudHullMass);
                 }
             }
@@ -197,11 +207,11 @@ namespace TitanOrbit.Editor
                     bool isWeapon = TitanOrbit.Data.ShipComponentAbilityStats.IsWeaponComponent(label);
                     bool isPropulsion = TitanOrbit.Data.ShipComponentAbilityStats.IsPropulsionComponent(label);
                     if (scales != null && i < scales.Count && scales[i] != 1f)
-                        label += " (scale " + scales[i].ToString("F2") + "×)";
+                        label += " (scale " + scales[i].ToString("F2") + "├ù)";
                     if (isWeapon)
-                        label += " [weapon: xy=power, 1/z=rate; offense + energy]";
+                        label += " [weapon: xy=power, 1/z=rate; offense only]";
                     if (isPropulsion)
-                        label += " [engine/thruster: one base move speed + half sum of others' moveSpeedPerLevel; accel sums]";
+                        label += " [engine/thruster: primary ×100% + extras × extraStackWeight of own stats]";
                     EditorGUILayout.LabelField("- " + label);
 
                     if (showPerComponent && perStats != null && i < perStats.Count)
@@ -212,25 +222,27 @@ namespace TitanOrbit.Editor
                             EditorGUI.indentLevel++;
                             EditorGUILayout.LabelField("Offense", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Fire Power", s.firePower);
-                            EditorGUILayout.FloatField("  Fire Power / Level", s.firePowerPerLevel);
+                            EditorGUILayout.FloatField("  Fire Power / Level", s.firePowerPerAbilityLevel);
                             EditorGUILayout.FloatField("  Bullet Speed", s.bulletSpeed);
-                            EditorGUILayout.FloatField("  Bullet Speed / Level", s.bulletSpeedPerLevel);
+                            EditorGUILayout.FloatField("  Bullet Speed / Level", s.bulletSpeedPerAbilityLevel);
+                            EditorGUILayout.FloatField("  Bullet Range", s.bulletRange);
+                            EditorGUILayout.FloatField("  Bullet Range / Level", s.bulletRangePerAbilityLevel);
                             EditorGUILayout.FloatField("  Fire Rate (shots/s)", s.fireRate);
-                            EditorGUILayout.FloatField("  Fire Rate / Level", s.fireRatePerLevel);
+                            EditorGUILayout.FloatField("  Fire Rate / Level", s.fireRatePerAbilityLevel);
                             EditorGUILayout.FloatField("  Ramming Power", s.rammingPower);
-                            EditorGUILayout.FloatField("  Ramming Power / Level", s.rammingPowerPerLevel);
+                            EditorGUILayout.FloatField("  Ramming Power / Level", s.rammingPowerPerAbilityLevel);
 
                             EditorGUILayout.LabelField("Health", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Health Cap", s.healthCap);
-                            EditorGUILayout.FloatField("  Health Cap / Level", s.healthCapPerLevel);
+                            EditorGUILayout.FloatField("  Health Cap / Level", s.healthCapPerAbilityLevel);
                             EditorGUILayout.FloatField("  Health Regen", s.healthRegen);
-                            EditorGUILayout.FloatField("  Health Regen / Level", s.healthRegenPerLevel);
+                            EditorGUILayout.FloatField("  Health Regen / Level", s.healthRegenPerAbilityLevel);
 
                             EditorGUILayout.LabelField("Energy", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Energy Cap", s.energyCap);
-                            EditorGUILayout.FloatField("  Energy Cap / Level", s.energyCapPerLevel);
+                            EditorGUILayout.FloatField("  Energy Cap / Level", s.energyCapPerAbilityLevel);
                             EditorGUILayout.FloatField("  Energy Regen", s.energyRegen);
-                            EditorGUILayout.FloatField("  Energy Regen / Level", s.energyRegenPerLevel);
+                            EditorGUILayout.FloatField("  Energy Regen / Level", s.energyRegenPerAbilityLevel);
 
                             EditorGUILayout.LabelField("Movement", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField(
@@ -242,7 +254,7 @@ namespace TitanOrbit.Editor
                                 isPropulsion
                                     ? new GUIContent("  Move Speed / Level", "Authoritative for engines/thrusters; not multiplied by transform scale.")
                                     : new GUIContent("  Move Speed / Level"),
-                                s.moveSpeedPerLevel);
+                                s.moveSpeedPerAbilityLevel);
                             EditorGUILayout.FloatField(
                                 isPropulsion
                                     ? new GUIContent(
@@ -256,23 +268,28 @@ namespace TitanOrbit.Editor
                                         "  Acceleration Cap / Level",
                                         "Added per ship level for each engine/thruster; stacked with base acceleration cap.")
                                     : new GUIContent("  Acceleration Cap / Level"),
-                                s.accelerationCapPerLevel);
+                                s.accelerationCapPerAbilityLevel);
                             EditorGUILayout.FloatField(
                                 new GUIContent(
                                     "  Turn Speed",
-                                    "Definition units. Starship converts to °/s only when rotating."),
+                                    "Definition units. Starship converts to ┬░/s only when rotating."),
                                 s.turnSpeed);
                             EditorGUILayout.FloatField(
                                 new GUIContent(
                                     "  Turn Speed / Level",
-                                    "Definition units per ship level. Starship converts to °/s only when rotating."),
-                                s.turnSpeedPerLevel);
+                                    "Definition units per ship level. Starship converts to ┬░/s only when rotating."),
+                                s.turnSpeedPerAbilityLevel);
 
                             EditorGUILayout.LabelField("Capacity", EditorStyles.miniBoldLabel);
                             EditorGUILayout.FloatField("  Max Gems", s.maxGems);
-                            EditorGUILayout.FloatField("  Max Gems / Level", s.maxGemsPerLevel);
+                            EditorGUILayout.FloatField("  Max Gems / Level", s.maxGemsPerAbilityLevel);
                             EditorGUILayout.FloatField("  Max People", s.maxPeople);
-                            EditorGUILayout.FloatField("  Max People / Level", s.maxPeoplePerLevel);
+                            EditorGUILayout.FloatField("  Max People / Level", s.maxPeoplePerAbilityLevel);
+                            EditorGUILayout.FloatField(
+                                new GUIContent(
+                                    "  Extra Stack Weight",
+                                    "Primary = 100%; each extra in the same pool adds this fraction of ITS stats."),
+                                s.extraStackWeight);
                             EditorGUI.indentLevel--;
                         }
                     }

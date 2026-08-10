@@ -192,11 +192,9 @@ GameObject:
   - component: {fileID: 807676317360203233}
   - component: {fileID: 4837591169628047860}
   - component: {fileID: 3847291056284729103}
-  - component: {fileID: 2847391827364519284}
-  - component: {fileID: 1798764570720657789}
-  - component: {fileID: 2284905166689752975}
-  - component: {fileID: 1032728760940274408}
   - component: {fileID: 1589875963611201967}
+  - component: {fileID: 7517972451291164828}
+  - component: {fileID: 6665681477029282493}
   m_Layer: 0
   m_Name: Planet
   m_TagString: Untagged
@@ -263,101 +261,6 @@ SphereCollider:
   serializedVersion: 3
   m_Radius: 0.9562501
   m_Center: {x: 0, y: 0, z: 0}
---- !u!114 &2847391827364519284
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1039601997937951391}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 57122f3e6ef95c342a9a73bd29bd8730, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.PlanetOrbitZone
-  planet: {fileID: 2284905166689752975}
---- !u!114 &1798764570720657789
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1039601997937951391}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 926897643
-  InScenePlacedSourceGlobalObjectIdHash: 0
-  DeferredDespawnTick: 0
-  Ownership: 1
-  AlwaysReplicateAsRoot: 0
-  SynchronizeTransform: 1
-  ActiveSceneSynchronization: 0
-  SceneMigrationSynchronization: 1
-  SpawnWithObservers: 1
-  DontDestroyWithOwner: 0
-  AutoObjectParentSync: 1
-  SyncOwnerTransformWhenParented: 1
-  AllowOwnerToParent: 0
---- !u!114 &2284905166689752975
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1039601997937951391}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ba696169cfb351a48b9ce42cd3f9816d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.Planet
-  ShowTopMostFoldoutHeaderGroup: 1
-  planetId: 0
-  baseMaxPopulation: 100
-  baseGrowthRate: 0.033333335
-  populationGrowthPauseAfterAttackSeconds: 1
-  planetSize: 1
-  captureRadius: 5
-  baseMaxGemsLevel1: 100
-  minStartingLevel: 1
-  maxStartingLevel: 6
-  randomizeNeutralStartingLevel: 1
-  planetRenderer: {fileID: 0}
-  sgtPlanet: {fileID: 1589875963611201967}
-  materialPool: {fileID: 11400000, guid: 2c144f1300271b94bb6f0dcbe286a441, type: 2}
-  neutralMaterial: {fileID: 2100000, guid: 57ff010bc1e509542920f30825e3fcc9, type: 2}
-  teamAMaterial: {fileID: 2100000, guid: 801d289287ec4a041a954f2a7d8608f1, type: 2}
-  teamBMaterial: {fileID: 2100000, guid: d1ac48592d2dcf0418cf1214399a4941, type: 2}
-  teamCMaterial: {fileID: 2100000, guid: ce7531fc382a1224c9b4cc6e27ab88b1, type: 2}
-  teamDMaterial: {fileID: 0}
-  teamEMaterial: {fileID: 0}
-  populationText: {fileID: 1822999505890776246}
-  planetStatsDisplay: {fileID: 0}
-  regularPlanetTintIntensity: 0.2
-  atmosphereSourceMaterial: {fileID: 0}
-  atmosphereOuterMesh: {fileID: 0}
-  enableSpin: 1
-  spinDegreesPerSecond: 2
-  gemMoonMatrixShieldRedPrefab: {fileID: 1102373107344675128, guid: 5960e14214e58194bb0947343028f736, type: 3}
-  gemMoonMatrixShieldBluePrefab: {fileID: 3042584515699202285, guid: d51f631c8638abd45a64b8bb5298c153, type: 3}
-  gemMoonMatrixShieldGreenPrefab: {fileID: 2201477345632416392, guid: 505fe711ce4d402408f14facd555199c, type: 3}
-  gemMoonMatrixShieldModularPrefab: {fileID: 1336921843473261954, guid: 5e2d9fe5137c8ff48b18f518c09baab1, type: 3}
-  gemMoonHudGemIcon: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
-  gemMoonHudShieldIcon: {fileID: 21300000, guid: d2d4f225d1dcff441b06778ecf922ad5, type: 3}
---- !u!114 &1032728760940274408
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1039601997937951391}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c5bd6eac371b8084e9837231e2f650e9, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.ToroidalRenderer
 --- !u!114 &1589875963611201967
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -381,6 +284,39 @@ MonoBehaviour:
   displace: 1
   displacement: 0.054
   clampWater: 0
+--- !u!114 &7517972451291164828
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1039601997937951391}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e65dd9aac6291fb4eaac97f18bf846f5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.SgtPlanetWaterGradient
+  shallow: {r: 0.75, g: 0.75, b: 1, a: 1}
+  deep: {r: 0.25, g: 0.25, b: 1, a: 1}
+  ease: 1
+  sharpness: 1
+  scale: 10
+--- !u!114 &6665681477029282493
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1039601997937951391}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dd1536fd5b394514fb9ecc8dc1ed81f7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SpaceGraphicsToolkit::SpaceGraphicsToolkit.SgtPlanetWaterTexture
+  baseTexture: {fileID: 0}
+  strength: 1
+  speed: 5
+  age: 0
 --- !u!1 &5754775015515473423
 GameObject:
   m_ObjectHideFlags: 0
@@ -390,7 +326,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1389413635080927886}
-  - component: {fileID: 5936996994572611762}
   m_Layer: 0
   m_Name: PlanetRings
   m_TagString: Untagged
@@ -413,28 +348,3 @@ Transform:
   m_Children: []
   m_Father: {fileID: 807676317360203233}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &5936996994572611762
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5754775015515473423}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 7abd498cc5489cb4586f17be56fc1101, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.PlanetRingsDrawer
-  useCullingMasks: 0
-  tiltDegrees: -26.7
-  innerRadius: 0.68
-  ringThickness: 0.06
-  gapBetweenBands: 0.022
-  ringOpacity: 0.6
-  drawOrbitZoneFill: 1
-  orbitZoneTint: {r: 0.5, g: 0.7, b: 0.95, a: 1}
-  orbitZonePeakAlpha: 0.3
-  orbitZoneHeightBelowPlanet: 0.08
-  renderMeshBackupGeometry: 0
-  orbitMeshInnerAlpha: 0.28
-  meshSegments: 96

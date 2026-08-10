@@ -38,6 +38,7 @@ namespace TitanOrbit.UI
 
         public void OnDrag(PointerEventData eventData)
         {
+            // --- Vertical drag → scroll normalized position ---
             if (!IsValid() || !_scrollRect.vertical) return;
 
             RectTransform viewport = _scrollRect.viewport;
@@ -62,6 +63,7 @@ namespace TitanOrbit.UI
 
         public void OnScroll(PointerEventData eventData)
         {
+            // --- Mouse wheel → vertical scroll ---
             if (!IsValid() || !_scrollRect.vertical) return;
 
             // eventData.scrollDelta.y: positive when scrolling wheel up. Scroll up = see content above = decrease normalized.

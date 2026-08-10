@@ -1,18 +1,45 @@
+using TitanOrbit.Core;
+using TitanOrbit.Data;
+using TitanOrbit.ECS;
+using TitanOrbit.Game;
+using TitanOrbit.Shared;
+using TitanOrbit.Simulation;
+using TMPro;
+using Unity.Entities;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.Serialization;
 using UnityEngine.UI;
-using UnityEngine.InputSystem;
-using TMPro;
-using TitanOrbit.Entities;
-using TitanOrbit.Core;
 
 namespace TitanOrbit.UI
 {
-        /// <summary>
-        /// Ship Upgrade Menu at bottom-left of the screen, sized to end before the minimap. 10 abilities bound to keys 1-9 and 0.
-        /// Strip position: <b>Screen / strip placement</b> on this component (defaults anchor the strip to the root canvas bottom-left with small padding; re-applied every frame in Play mode).
-        /// Each upgrade costs ShipLevel * 5 gems. Max upgrades per ability = ShipLevel.
-        /// </summary>
+    /// <summary>
+    /// Bottom-left ship attribute upgrade bar (10 slots, keys 1–9 and 0). Reads local ship
+    /// ShipState and ShipAttributeUpgradeState from EcsGameBridge; sends purchases via
+    /// MoonOrbitRpcClient.PurchaseAttributeUpgrade (server validates in ShipAttributeUpgradeSystem).
+    /// Cost = ShipLevel × 5 gems; max levels per attribute = ShipLevel.
+    /// Most abilities are +10% per purchase; Move Speed adds one chassis PerAbilityLevel step
+    /// (move + accel + OD drain together) — see ShipAttributeUpgradeLogic.
+    /// <para>
+    /// [TITAN-ORBIT] Optional quick-stat chips above each button show <b>current</b> and
+    /// <c>+per-buy</c> (toggle via a small STATS control). Bottom buttons keep name + gem cost
+    /// and paint three purchase states: Ready (affordable), Locked (not enough gems), Maxed.
+    /// Both rows share dark-glass + category-accent chrome (space-gamer HUD). Chip hover opens
+    /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> when the STATS row is on.
+    /// Chip values and tip bodies are rebuilt when the ship / ability snapshot key changes
+    /// (new ship or ability purchase) — never every frame for live HP/speed/cargo.
+    /// The snapshot key latches only after chassis stats <b>and</b> hull ComponentSize are ready
+    /// (mass tax for MS/TS). Painting with a MinMass placeholder froze an untaxed Move Speed until
+    /// the player toggled [STATS]. ComponentSize is part of the snapshot key so late hull refs repaint.
+    /// </para>
+    /// Strip layout: recomputed only when screen / canvas / minimap size changes; positions are
+    /// snapped to whole canvas units so windowed (non-1:1) views do not shimmer.
+    /// <para>
+    /// [TITAN-ORBIT] Holds a last-good HUD cache during <see cref="ClientJoinSettleCache.GhostSpawnBacklog"/>
+    /// (gem Instantiates after asteroid destroy). Without it the strip hid or zeroed ticks for a frame —
+    /// the same combat flicker class already fixed in <see cref="ShipSpeedometerHUD"/>.
+    /// </para>
+    /// </summary>
     public class ShipAttributeUpgradeHUD : MonoBehaviour
     {
         [Header("Enable")]
@@ -20,23 +47,25 @@ namespace TitanOrbit.UI
         [SerializeField] private bool upgradeBarEnabled = true;
 
         [Header("Screen / strip placement")]
-        [Tooltip("When on (recommended), the strip sits on the root canvas bottom-left plus the insets below — Inspector values apply every frame in Play mode. When off, the anchor follows Screen.safeArea mapped through the canvas pixel rect (useful on some notched layouts).")]
+        [Tooltip("When on (recommended), the strip sits on the root canvas bottom-left plus the insets below. Layout only recomputes on screen/minimap size changes (not every frame). When off, reserved for safe-area anchoring on notched layouts.")]
         [SerializeField] private bool stripAnchorUseCanvasRectPadding = true;
-        [Tooltip("Padding from the root canvas rect’s left (before mobile scale). Positive moves right; negative moves left. Applied live in Play mode.")]
+        [Tooltip("Padding from the root canvas rect's left (before mobile scale). Positive moves right; negative moves left. Applied live in Play mode.")]
         [SerializeField] private float upgradeStripInsetFromLeft = 12f;
-        [Tooltip("Padding from the root canvas rect’s bottom (before mobile scale). Applied live in Play mode.")]
+        [Tooltip("Padding from the root canvas rect's bottom (before mobile scale). Applied live in Play mode.")]
         [SerializeField] private float upgradeStripInsetFromBottom = 12f;
-        [Tooltip("Horizontal gap between the strip’s right edge and the minimap (logical pixels before mobile scale).")]
+        [Tooltip("Horizontal gap between the strip's right edge and the minimap (logical pixels before mobile scale).")]
         [SerializeField] private float minimapHorizontalGap = 12f;
         [Tooltip("When no minimap is found: reserve this width on the right (logical pixels before mobile scale).")]
         [SerializeField] private float fallbackRightReserve = 400f;
         [Tooltip("Minimum horizontal squeeze when space is tight (1 = full nominal width).")]
-        [SerializeField, Range(0.05f, 1f)] private float minWidthFitScale = 0.32f;
+        [SerializeField, Range(0.25f, 1f)] private float minWidthFitScale = 0.55f;
 
         [Header("Layout")]
         [SerializeField] private float barHeight = 68f;
         [SerializeField] private float buttonWidth = 136f;
         [SerializeField] private float buttonSpacing = 10f;
+        [Tooltip("Height of the quick-stat chip band (value + +per-buy only — no title line).")]
+        [SerializeField] private float chipBandHeight = 34f;
         [Header("Mobile / touch")]
         [Tooltip("Multiplies bar height, button width, fonts, ticks, and padding on phones/tablets so the bottom upgrade strip is easier to read and tap.")]
         [SerializeField] private float mobileHudScale = 1.48f;
@@ -51,18 +80,55 @@ namespace TitanOrbit.UI
         [Tooltip("Uniform font size for all ability titles (scaled on mobile with the upgrade bar).")]
         [SerializeField, FormerlySerializedAs("titleFontSizeMax")] private float titleFontSize = 12f;
 
-        [Header("Visual Styling")]
-        [SerializeField] private Color buttonFrameColor = new Color(0.95f, 0.98f, 1f, 0.42f);
-        [SerializeField] private Color buttonInnerShadeColor = new Color(0f, 0f, 0f, 0.22f);
-        [SerializeField] private Color buttonAccentColor = new Color(0.75f, 0.88f, 1f, 0.28f);
-        [SerializeField] private Color buttonShadowColor = new Color(0f, 0f, 0f, 0.45f);
+        [Header("STATS row toggle")]
+        [Tooltip("When on, the top value/+per-buy chips and their hover tips are available.")]
+        [SerializeField] private bool statsChipsVisible = true;
+        [Tooltip("Width of the small STATS toggle control (logical pixels before scale).")]
+        [SerializeField] private float statsToggleWidth = 58f;
+        [Tooltip("Height of the small STATS toggle control (logical pixels before scale).")]
+        [SerializeField] private float statsToggleHeight = 18f;
 
-        [Header("Cost icon (assign in Inspector)")]
-        [Tooltip("Shown next to the gem cost number on each upgrade slot. Leave empty until you have a sprite.")]
+        [Header("Visual Styling — dark glass HUD")]
+        [Tooltip("Near-black void glass fill shared by top chips and bottom upgrade buttons.")]
+        [SerializeField] private Color glassFillColor = new Color(0.04f, 0.06f, 0.09f, 0.92f);
+        [Tooltip("How much category colour bleeds into the glass fill when READY (0 = pure void, 1 = full flood).")]
+        [SerializeField, Range(0f, 0.45f)] private float categoryFillBlend = 0.16f;
+        [Tooltip("Subtle inner shade on bottom buttons (kept very dark).")]
+        [SerializeField] private Color buttonInnerShadeColor = new Color(0f, 0f, 0f, 0.28f);
+
+        [Header("Upgrade button states")]
+        [Tooltip("Title / body text when the slot can be purchased (enough gems).")]
+        [SerializeField] private Color readyTitleColor = new Color(0.88f, 0.92f, 0.98f, 1f);
+        [Tooltip("Fill darken + desaturate when LOCKED (not enough gems). Higher = flatter / greyer.")]
+        [SerializeField, Range(0f, 1f)] private float lockedDim = 0.55f;
+        [Tooltip("Cost digits when LOCKED — amber “can’t afford” signal.")]
+        [SerializeField] private Color lockedCostColor = new Color(0.72f, 0.55f, 0.35f, 0.85f);
+        [Tooltip("How much white is mixed into the ability colour for MAXED title / MAX label (proud completed chrome).")]
+        [SerializeField, Range(0f, 0.55f)] private float maxedTitleBrighten = 0.32f;
+
+        [Header("Cost icon")]
+        [Tooltip("Shown next to the gem cost on each bottom upgrade slot. If empty, falls back to WorldStatLabelIcons.Gem.")]
         [SerializeField] private Sprite gemCostIconSprite;
-        [SerializeField] private float gemIconSize = 14f;
+        [SerializeField] private float gemIconSize = 11f;
+        /// <summary>
+        /// Off-white tint for gem icon + cost digits when READY. Not moon-label red.
+        /// </summary>
+        [SerializeField] private Color gemCostIconColor = new Color(0.9f, 0.92f, 0.95f, 1f);
 
-        private static readonly string[] Titles = new[]
+        const string StatsChipsPrefsKey = "TitanOrbit.AbilityStatsChipsVisible";
+
+        /// <summary>
+        /// Purchase affordance for one bottom upgrade slot.
+        /// Ready = can buy; Locked = room to level but not enough gems; Maxed = at ship-level cap.
+        /// </summary>
+        enum UpgradeSlotVisualState
+        {
+            Ready = 0,
+            Locked = 1,
+            Maxed = 2
+        }
+
+        private static readonly string[] Titles =
         {
             "Fire Power", "Bullet Speed",
             "Max Health", "Health Regen",
@@ -71,226 +137,1336 @@ namespace TitanOrbit.UI
             "Max Gems", "Max People"
         };
 
-        private Starship playerShip;
-        private float lastShipLookupTime = -999f;
-        private const float ShipLookupInterval = 0.3f;
-
         private GameObject rootPanel;
-        /// <summary>After <see cref="BuildUI"/>, used to re-apply strip position when you tweak insets in the Inspector or the window resizes.</summary>
-        private Canvas _stripRootCanvas;
-        private RectTransform _stripPlacementParent;
         private RectTransform _stripRootRect;
-        private bool _stripPlacementReady;
+        private RectTransform _layoutCanvasRect;
+        private RectTransform[] _buttonRects = new RectTransform[10];
+        private bool _uiBuilt;
+        private float _lastLayoutWidth = -1f;
 
         private Button[] buttons = new Button[10];
         private TextMeshProUGUI[] titleTexts = new TextMeshProUGUI[10];
         private GameObject[] tickContainers = new GameObject[10];
         private Image[] buttonImages = new Image[10];
+        private Outline[] buttonOutlines = new Outline[10];
+        private Image[] buttonAccentRails = new Image[10];
+        private Color[] buttonCategoryColors = new Color[10];
         private TextMeshProUGUI[] keyLabels = new TextMeshProUGUI[10];
         private TextMeshProUGUI[] costLabels = new TextMeshProUGUI[10];
         private Image[] costGemIcons = new Image[10];
+        private readonly UpgradeSlotVisualState[] _lastSlotVisualState =
+        {
+            (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1),
+            (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1),
+            (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1), (UpgradeSlotVisualState)(-1),
+            (UpgradeSlotVisualState)(-1)
+        };
 
-        /// <summary>1 on desktop; <see cref="mobileHudScale"/> on mobile, clamped for safety.</summary>
+        // --- Quick-stat chips above each ability button ---
+        private RectTransform[] _chipRects = new RectTransform[10];
+        private TextMeshProUGUI[] _chipValueTexts = new TextMeshProUGUI[10];
+        private readonly string[] _lastChipText = new string[10];
+        private GameObject _abilityTipPanel;
+        private RectTransform _abilityTipRect;
+        private TextMeshProUGUI _abilityTipLabel;
+        /// <summary>[TITAN-ORBIT] Sci-fi chrome handles — accent stripe recolors per ability category.</summary>
+        private ShipStatTooltipChrome.Handles _abilityTipChrome;
+        private int? _activeAbilityTipIndex;
+        private int? _pendingHideAbilityTip;
+        private string _lastAbilityTipBody = "";
+        private ShipSpeedometerHUD _cachedSpeedometer;
+        private bool _triedSpeedometerLookup;
+        private float _lastChipBandH = -1f;
+        private bool _lastStatsChipsVisible = true;
+
+        /// <summary>
+        /// Fingerprint of ship identity + ability levels. When this changes we rebuild chips / tips.
+        /// [TITAN-ORBIT] Avoids StringBuilder + TMP ForceMeshUpdate every Update (Profiler GC spike).
+        /// </summary>
+        private int _statsSnapshotKey = int.MinValue;
+
+        // --- STATS toggle (shows/hides chip row + hover tips) ---
+        private RectTransform _statsToggleRect;
+        private TextMeshProUGUI _statsToggleLabel;
+        private Image _statsToggleBg;
+
         private float _layoutScale = 1f;
-        /// <summary><see cref="_layoutScale"/> × width fit so the bar fits left of the minimap.</summary>
         private float _elementScale = 1f;
 
         private const float FontSizeScale = 1f;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Last successful ship + attribute snapshot. GhostSpawnBacklog skips full ship
+        /// scans; brief misses used to SetActive(false) the strip or paint zero ticks mid-combat.
+        /// </summary>
+        private bool _hasHudCache;
+        private ShipState _cachedShip;
+        private ShipAttributeUpgradeState _cachedAttrs;
+        private bool _lastShowActive;
+        private readonly int[] _lastTickLevels = { -1, -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+        private int _lastMaxUpgrades = -1;
+        private int _lastCost = -1;
+        private readonly string[] _lastCostText = new string[10];
+        private bool _slotVisualsSeeded;
+
+        /// <summary>Cached minimap rect so layout dirty-checks do not FindFirstObjectByType every frame.</summary>
+        private RectTransform _cachedMinimapRect;
+
+        /// <summary>
+        /// Ignore sub-pixel noise when deciding whether the strip must relayout.
+        /// Windowed / non-integer canvas scale makes 0.01–0.4 unit wobble look like the whole bar jittering.
+        /// </summary>
+        private const float LayoutDirtyEpsilon = 0.5f;
+
+        private int _lastScreenW = -1;
+        private int _lastScreenH = -1;
+        private Vector2 _lastCanvasSize = new Vector2(-1f, -1f);
+        private Vector2 _lastMinimapSize = new Vector2(-1f, -1f);
+        private Vector2 _lastMinimapPos = new Vector2(float.NaN, float.NaN);
+        private float _lastInsetL = float.NaN;
+        private float _lastInsetB = float.NaN;
+        private float _lastBarH = -1f;
+        private float _lastButtonW = -1f;
+        private float _lastSpacing = -1f;
 
         private float S(float v) => v * _layoutScale;
         private float E(float v) => v * _elementScale;
         private float F(float nominalFontSize) => E(nominalFontSize * FontSizeScale);
 
-        /// <summary>Height of the upgrade strip in canvas units (for stacking other HUDs above it).</summary>
         public float GetUpgradeBarCanvasHeight()
         {
             if (rootPanel == null) return 0f;
             return ((RectTransform)rootPanel.transform).sizeDelta.y;
         }
 
-        /// <summary>
-        /// Distance from the root canvas bottom edge to the top of the upgrade strip (inset + bar height).
-        /// Matches the strip's live anchored layout so HUDs stacked above it do not overlap.
-        /// </summary>
         public float GetUpgradeStripReserveHeight()
         {
             if (_stripRootRect == null) return GetUpgradeBarCanvasHeight();
             return _stripRootRect.anchoredPosition.y + _stripRootRect.sizeDelta.y;
         }
 
-        private void Start()
+        private void OnEnable()
         {
-            if (!upgradeBarEnabled) return;
-            BuildUI();
+            // [TITAN-ORBIT] Do not force-hide here — this component lives on gameplayRoot, so any
+            // brief OnDisable/OnEnable would blink the whole strip for a frame.
+            _lastShowActive = false;
         }
 
-        private static bool TryGetMinimapLeftLocalX(RectTransform layoutSpace, out float minimapLeftLocalX)
+        private void OnDisable()
         {
+            if (rootPanel != null)
+                rootPanel.SetActive(false);
+            _lastShowActive = false;
+        }
+
+        /// <summary>
+        /// Resolves live ship + attrs, or holds the last-good cache while Instantiates gate ship scans.
+        /// </summary>
+        /// <returns>False only when there is no ship and no cache to show.</returns>
+        private bool TryGetUpgradeHudSnapshot(out ShipState ship, out ShipAttributeUpgradeState attrs)
+        {
+            // --- Live ECS read ---
+            bool hasShip = EcsGameBridge.TryGetLocalShipState(out ship);
+            bool hasAttrs = EcsGameBridge.TryGetLocalShipAttributeUpgrades(out attrs);
+
+            if (hasShip)
+            {
+                _cachedShip = ship;
+                if (hasAttrs)
+                    _cachedAttrs = attrs;
+                else if (_hasHudCache)
+                    attrs = _cachedAttrs;
+                else
+                    attrs = default;
+                _hasHudCache = true;
+                return true;
+            }
+
+            // --- Hold last good snapshot during GhostSpawnBacklog ---
+            // [TITAN-ORBIT] Same pattern as ShipSpeedometerHUD: pose / HasLocalPlayerShip means the
+            // ship still exists; only the entity query was skipped for Crash!!! safety.
+            if (_hasHudCache &&
+                (EcsGameBridge.HasLocalPlayerShip() || ShipDisplayPose.HasLocalPose) &&
+                !ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
+            {
+                ship = _cachedShip;
+                attrs = _cachedAttrs;
+                return true;
+            }
+
+            ship = default;
+            attrs = default;
+            return false;
+        }
+
+        /// <summary>Gameplay gate only — does not require the bar to already exist.</summary>
+        private bool CanShowUpgradeBar()
+        {
+            // --- CanShowUpgradeBar ---
+            if (!upgradeBarEnabled)
+                return false;
+            if (!EcsGameBridge.HasLocalPlayerShip() && !(_hasHudCache && ShipDisplayPose.HasLocalPose))
+                return false;
+            if (!TryGetUpgradeHudSnapshot(out var ship, out _))
+                return false;
+            return !ship.IsDead
+                && !ship.AwaitingTeamSelection
+                && ship.Team != TeamId.None
+                && !HUDController.ShipUpgradeTreeObscuresHud;
+        }
+
+        private bool ShouldShowUpgradeBar() =>
+            _uiBuilt && rootPanel != null && CanShowUpgradeBar();
+
+        private bool TryResolveLayoutCanvas()
+        {
+            // --- Attempt resolution ---
+            if (_layoutCanvasRect != null)
+                return true;
+
+            var canvas = GetComponentInParent<Canvas>();
+            if (canvas == null)
+                canvas = UnityEngine.Object.FindFirstObjectByType<Canvas>();
+            if (canvas == null)
+                return false;
+
+            canvas = canvas.rootCanvas != null ? canvas.rootCanvas : canvas;
+            _layoutCanvasRect = canvas.transform as RectTransform;
+            return _layoutCanvasRect != null;
+        }
+
+        /// <summary>Whole-canvas-unit snap — stops half-pixel shimmer in windowed / scaled canvases.</summary>
+        private static float SnapUi(float v) => Mathf.Round(v);
+
+        private static bool NearlyEqual(float a, float b) => Mathf.Abs(a - b) < LayoutDirtyEpsilon;
+
+        private void EnsureMinimapRectCached()
+        {
+            // --- Cache minimap RectTransform ---
+            if (_cachedMinimapRect != null)
+                return;
+            var minimap = UnityEngine.Object.FindFirstObjectByType<MinimapController>();
+            if (minimap != null)
+                _cachedMinimapRect = minimap.transform as RectTransform;
+        }
+
+        private static bool TryGetMinimapLeftLocalX(RectTransform layoutSpace, RectTransform minimapRect, out float minimapLeftLocalX)
+        {
+            // --- Attempt resolution ---
             minimapLeftLocalX = 0f;
-            if (layoutSpace == null) return false;
-            var minimap = Object.FindFirstObjectByType<MinimapController>();
-            if (minimap == null) return false;
-            var mmRt = minimap.transform as RectTransform;
-            if (mmRt == null) return false;
-            Bounds b = RectTransformUtility.CalculateRelativeRectTransformBounds(layoutSpace, mmRt);
+            if (layoutSpace == null || minimapRect == null)
+                return false;
+            Bounds b = RectTransformUtility.CalculateRelativeRectTransformBounds(layoutSpace, minimapRect);
             minimapLeftLocalX = b.min.x;
             return true;
         }
 
         /// <summary>
-        /// Maps a screen pixel (bottom-left origin) into <paramref name="canvasRt"/> local space by lerping across
-        /// <see cref="Canvas.pixelRect"/> vs the rect’s local corners. Matches the visible canvas viewport better than a lone UI-camera ray.
+        /// True when screen, canvas, or minimap geometry changed enough to justify a strip relayout.
+        /// Sub-pixel wobble from CalculateRelativeRectTransformBounds is intentionally ignored.
         /// </summary>
-        private static bool TryScreenPointToCanvasLocal(RectTransform canvasRt, Canvas rootCanvas, Vector2 screenPoint, out Vector2 localPoint)
+        private bool IsStripLayoutDirty()
         {
-            localPoint = default;
-            if (canvasRt == null || rootCanvas == null) return false;
-            Rect pr = rootCanvas.pixelRect;
-            if (pr.width < 1f || pr.height < 1f) return false;
-            float u = (screenPoint.x - pr.x) / pr.width;
-            float v = (screenPoint.y - pr.y) / pr.height;
-            Rect r = canvasRt.rect;
-            localPoint = new Vector2(
-                Mathf.Lerp(r.xMin, r.xMax, u),
-                Mathf.Lerp(r.yMin, r.yMax, v));
-            return true;
-        }
+            // --- Dirty check (no writes) ---
+            if (Screen.width != _lastScreenW || Screen.height != _lastScreenH)
+                return true;
 
-        /// <summary>Bottom-left of the strip’s pivot (0,0) in <paramref name="placementParent"/> local space.</summary>
-        private void GetStripBottomLeftInParentLocal(Canvas rootCanvas, RectTransform placementParent, out Vector2 localBottomLeft)
-        {
-            float insetL = S(upgradeStripInsetFromLeft);
-            float insetB = S(upgradeStripInsetFromBottom);
-            if (stripAnchorUseCanvasRectPadding)
+            if (!TryResolveLayoutCanvas())
+                return false;
+
+            Vector2 canvasSize = _layoutCanvasRect.rect.size;
+            if (!NearlyEqual(canvasSize.x, _lastCanvasSize.x) || !NearlyEqual(canvasSize.y, _lastCanvasSize.y))
+                return true;
+
+            EnsureMinimapRectCached();
+            if (_cachedMinimapRect != null)
             {
-                localBottomLeft = new Vector2(placementParent.rect.xMin + insetL, placementParent.rect.yMin + insetB);
-                return;
+                Vector2 mmSize = _cachedMinimapRect.sizeDelta;
+                Vector2 mmPos = _cachedMinimapRect.anchoredPosition;
+                if (!NearlyEqual(mmSize.x, _lastMinimapSize.x) || !NearlyEqual(mmSize.y, _lastMinimapSize.y))
+                    return true;
+                if (float.IsNaN(_lastMinimapPos.x) ||
+                    !NearlyEqual(mmPos.x, _lastMinimapPos.x) ||
+                    !NearlyEqual(mmPos.y, _lastMinimapPos.y))
+                    return true;
             }
 
-            Vector2 screenBl = new Vector2(Screen.safeArea.xMin + insetL, Screen.safeArea.yMin + insetB);
-            if (TryScreenPointToCanvasLocal(placementParent, rootCanvas, screenBl, out localBottomLeft))
-                return;
-
-            UnityEngine.Camera uiCam = rootCanvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : rootCanvas.worldCamera;
-            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(placementParent, screenBl, uiCam, out localBottomLeft))
-                return;
-
-            localBottomLeft = new Vector2(placementParent.rect.xMin + insetL, placementParent.rect.yMin + insetB);
+            return false;
         }
 
-        private void RefreshUpgradeStripPlacement()
+        private void RememberLayoutInputs()
         {
-            if (!_stripPlacementReady || _stripRootRect == null || _stripPlacementParent == null || _stripRootCanvas == null) return;
-            GetStripBottomLeftInParentLocal(_stripRootCanvas, _stripPlacementParent, out Vector2 localBl);
-            Vector2 canvasCornerLocal = new Vector2(_stripPlacementParent.rect.xMin, _stripPlacementParent.rect.yMin);
-            _stripRootRect.anchoredPosition = localBl - canvasCornerLocal;
+            // --- Latch inputs after a successful layout pass ---
+            _lastScreenW = Screen.width;
+            _lastScreenH = Screen.height;
+            if (_layoutCanvasRect != null)
+                _lastCanvasSize = _layoutCanvasRect.rect.size;
+            EnsureMinimapRectCached();
+            if (_cachedMinimapRect != null)
+            {
+                _lastMinimapSize = _cachedMinimapRect.sizeDelta;
+                _lastMinimapPos = _cachedMinimapRect.anchoredPosition;
+            }
+        }
+
+        private bool TryComputeStripMetrics(out float insetL, out float insetB, out float availableWidth, out float barH, out float buttonW, out float spacing, bool forceCanvasUpdate)
+        {
+            // --- Attempt resolution ---
+            insetL = insetB = availableWidth = barH = buttonW = spacing = 0f;
+            if (!TryResolveLayoutCanvas())
+                return false;
+
+            // [UNITY] ForceUpdateCanvases is expensive — only on first build / forced layout.
+            if (forceCanvasUpdate)
+                Canvas.ForceUpdateCanvases();
+
+            Rect canvasRect = _layoutCanvasRect.rect;
+            float canvasW = canvasRect.width;
+            float canvasH = canvasRect.height;
+            if (canvasW < 100f || canvasH < 100f)
+            {
+                var scaler = _layoutCanvasRect.GetComponent<CanvasScaler>();
+                if (scaler != null)
+                {
+                    canvasW = scaler.referenceResolution.x;
+                    canvasH = scaler.referenceResolution.y;
+                }
+            }
+
+            if (canvasW < 100f || canvasH < 100f)
+                return false;
+
+            _layoutScale = Application.isMobilePlatform ? Mathf.Clamp(mobileHudScale, 1f, 2.25f) : 1f;
+            insetL = S(upgradeStripInsetFromLeft);
+            insetB = S(upgradeStripInsetFromBottom);
+            spacing = S(buttonSpacing);
+            barH = S(barHeight);
+
+            float leftEdgeX = canvasRect.xMin + insetL;
+            float rightEdgeX = canvasRect.xMax;
+
+            EnsureMinimapRectCached();
+            if (TryGetMinimapLeftLocalX(_layoutCanvasRect, _cachedMinimapRect, out float minimapLeftLocalX))
+                rightEdgeX = minimapLeftLocalX - S(minimapHorizontalGap);
+            else
+                rightEdgeX = canvasRect.xMin + canvasW - S(fallbackRightReserve);
+
+            availableWidth = rightEdgeX - leftEdgeX;
+            float nominalW = 10f * S(buttonWidth) + 9f * spacing;
+            float minW = nominalW * minWidthFitScale;
+            availableWidth = Mathf.Max(minW, availableWidth);
+
+            // Fill the strip between the left edge and minimap (scale up as well as down).
+            _elementScale = _layoutScale * (nominalW > 0.01f ? availableWidth / nominalW : 1f);
+            buttonW = Mathf.Max(24f, (availableWidth - 9f * spacing) / 10f);
+
+            // --- Pixel snap (stable under windowed / non-integer canvas scale) ---
+            // [UNITY] Fractional RectTransform sizes shimmer when the game view is not 1:1 pixels.
+            insetL = SnapUi(insetL);
+            insetB = SnapUi(insetB);
+            spacing = SnapUi(spacing);
+            barH = SnapUi(barH);
+            buttonW = SnapUi(buttonW);
+            availableWidth = 10f * buttonW + 9f * spacing;
+            return availableWidth > 1f;
+        }
+
+        private void RefreshUpgradeStripLayout(bool force)
+        {
+            // --- RefreshUpgradeStripLayout ---
+            if (!_uiBuilt || _stripRootRect == null)
+                return;
+            if (!TryComputeStripMetrics(out float insetL, out float insetB, out float availableWidth, out float barH, out float buttonW, out float spacing, forceCanvasUpdate: force))
+                return;
+
+            RememberLayoutInputs();
+
+            // Skip writes when snapped metrics match last apply — no per-frame position chase.
+            float chipH = SnapUi(S(chipBandHeight));
+            bool chipsOn = statsChipsVisible;
+            bool metricsUnchanged =
+                !force &&
+                NearlyEqual(availableWidth, _lastLayoutWidth) &&
+                NearlyEqual(insetL, _lastInsetL) &&
+                NearlyEqual(insetB, _lastInsetB) &&
+                NearlyEqual(barH, _lastBarH) &&
+                NearlyEqual(buttonW, _lastButtonW) &&
+                NearlyEqual(spacing, _lastSpacing) &&
+                NearlyEqual(chipH, _lastChipBandH) &&
+                chipsOn == _lastStatsChipsVisible;
+            if (metricsUnchanged)
+                return;
+
+            _lastLayoutWidth = availableWidth;
+            _lastInsetL = insetL;
+            _lastInsetB = insetB;
+            _lastBarH = barH;
+            _lastButtonW = buttonW;
+            _lastSpacing = spacing;
+            _lastChipBandH = chipH;
+            _lastStatsChipsVisible = chipsOn;
+
+            // [TITAN-ORBIT] Strip = optional chip band + ability buttons. STATS toggle sits top-left.
+            float gap = SnapUi(E(4f));
+            float buttonH = SnapUi(barH - E(6f));
+            float toggleH = SnapUi(S(statsToggleHeight));
+            float chipBand = chipsOn ? chipH : 0f;
+            float chipGap = chipsOn ? gap : 0f;
+            // Toggle always peeks above the button row (and above chips when they are on).
+            float totalH = SnapUi(buttonH + chipGap + chipBand + gap + toggleH);
+            _stripRootRect.anchoredPosition = new Vector2(insetL, insetB);
+            _stripRootRect.sizeDelta = new Vector2(availableWidth, totalH);
+
+            float toggleW = SnapUi(S(statsToggleWidth));
+            if (_statsToggleRect != null)
+            {
+                _statsToggleRect.anchorMin = new Vector2(0f, 0f);
+                _statsToggleRect.anchorMax = new Vector2(0f, 0f);
+                _statsToggleRect.pivot = new Vector2(0f, 0f);
+                _statsToggleRect.anchoredPosition = new Vector2(0f, buttonH + chipGap + chipBand + gap);
+                _statsToggleRect.sizeDelta = new Vector2(toggleW, toggleH);
+            }
+
+            if (_statsToggleLabel != null)
+                _statsToggleLabel.fontSize = F(10f);
+
+            for (int i = 0; i < 10; i++)
+            {
+                float x = i * (buttonW + spacing);
+                if (_buttonRects[i] != null)
+                {
+                    // Buttons sit on the strip floor.
+                    _buttonRects[i].anchorMin = new Vector2(0f, 0f);
+                    _buttonRects[i].anchorMax = new Vector2(0f, 0f);
+                    _buttonRects[i].pivot = new Vector2(0f, 0f);
+                    _buttonRects[i].anchoredPosition = new Vector2(x, 0f);
+                    _buttonRects[i].sizeDelta = new Vector2(buttonW, buttonH);
+                }
+
+                if (_chipRects[i] != null)
+                {
+                    bool showChip = chipsOn;
+                    if (_chipRects[i].gameObject.activeSelf != showChip)
+                        _chipRects[i].gameObject.SetActive(showChip);
+                    if (showChip)
+                    {
+                        _chipRects[i].anchorMin = new Vector2(0f, 0f);
+                        _chipRects[i].anchorMax = new Vector2(0f, 0f);
+                        _chipRects[i].pivot = new Vector2(0f, 0f);
+                        _chipRects[i].anchoredPosition = new Vector2(x, buttonH + gap);
+                        _chipRects[i].sizeDelta = new Vector2(buttonW, chipH);
+                    }
+                }
+
+                if (titleTexts[i] != null)
+                    titleTexts[i].fontSize = E(titleFontSize);
+                if (keyLabels[i] != null)
+                    keyLabels[i].fontSize = F(13f);
+                if (costLabels[i] != null)
+                    costLabels[i].fontSize = F(11f);
+                if (_chipValueTexts[i] != null)
+                    _chipValueTexts[i].fontSize = F(12f);
+            }
+
+            RefreshStatsToggleVisual();
         }
 
         private void OnValidate()
         {
-            if (Application.isPlaying && _stripPlacementReady)
-                RefreshUpgradeStripPlacement();
+            if (Application.isPlaying && _uiBuilt)
+                RefreshUpgradeStripLayout(force: true);
+        }
+
+        private void EnsureUiBuilt()
+        {
+            // --- Ensure setup ---
+            if (_uiBuilt || !upgradeBarEnabled || !CanShowUpgradeBar())
+                return;
+            BuildUI();
         }
 
         private void BuildUI()
         {
-            Canvas canvas = GetComponentInParent<Canvas>();
-            if (canvas == null)
-                canvas = Object.FindFirstObjectByType<Canvas>();
-            if (canvas == null) return;
+            // --- Build data ---
+            if (_uiBuilt || !TryResolveLayoutCanvas())
+                return;
 
-            Canvas rootCanvas = canvas.rootCanvas != null ? canvas.rootCanvas : canvas;
-            RectTransform placementParent = rootCanvas.transform as RectTransform;
-            if (placementParent == null) return;
-
-            _layoutScale = Application.isMobilePlatform ? Mathf.Clamp(mobileHudScale, 1f, 2.25f) : 1f;
-
-            // Must be a RectTransform from creation; SetParent before AddComponent<RectTransform> breaks layout on some Unity versions.
             rootPanel = new GameObject("ShipAttributeUpgradeBar", typeof(RectTransform));
             RectTransform rootRect = rootPanel.GetComponent<RectTransform>();
-            rootRect.SetParent(placementParent, false);
+            rootRect.SetParent(_layoutCanvasRect, false);
+            rootRect.SetAsLastSibling();
             rootRect.localScale = Vector3.one;
-            // Keep draw order with the HUD object (same canvas as minimap).
-            int hudSibling = transform.GetSiblingIndex();
-            if (rootPanel.transform.parent == transform.parent)
-                rootPanel.transform.SetSiblingIndex(Mathf.Min(hudSibling + 1, rootPanel.transform.parent.childCount - 1));
-
-            GetStripBottomLeftInParentLocal(rootCanvas, placementParent, out Vector2 localStripBl);
-            float leftEdgeX = localStripBl.x;
-            Vector2 canvasCornerLocal = new Vector2(placementParent.rect.xMin, placementParent.rect.yMin);
-
-            float nominalW = 10f * S(buttonWidth) + 9f * S(buttonSpacing);
-            float availableW = Mathf.Max(80f, placementParent.rect.xMax - leftEdgeX - S(fallbackRightReserve));
-            if (TryGetMinimapLeftLocalX(placementParent, out float minimapLeftLocalX))
-            {
-                float capByMinimap = minimapLeftLocalX - S(minimapHorizontalGap) - leftEdgeX;
-                availableW = Mathf.Max(80f, Mathf.Min(availableW, capByMinimap));
-            }
-
-            float widthFit = nominalW > 0.01f
-                ? Mathf.Clamp(availableW / nominalW, minWidthFitScale, 1f)
-                : 1f;
-            _elementScale = _layoutScale * widthFit;
-
-            float bw = E(buttonWidth);
-            float sp = E(buttonSpacing);
-            float bh = E(barHeight);
-            float totalWidth = 10f * bw + 9f * sp;
-
-            // Bottom-left: anchors (0,0), pivot (0,0). anchoredPosition = bottom-left in parent local minus canvas rect corner (see GetStripBottomLeftInParentLocal).
             rootRect.anchorMin = Vector2.zero;
             rootRect.anchorMax = Vector2.zero;
             rootRect.pivot = Vector2.zero;
-            rootRect.sizeDelta = new Vector2(totalWidth, bh);
-            rootRect.anchoredPosition = localStripBl - canvasCornerLocal;
 
-            _stripRootCanvas = rootCanvas;
-            _stripPlacementParent = placementParent;
             _stripRootRect = rootRect;
-            _stripPlacementReady = true;
+            _uiBuilt = true;
 
             Image bgImage = rootPanel.AddComponent<Image>();
             bgImage.color = new Color(0f, 0f, 0f, 0f);
             bgImage.raycastTarget = false;
+            rootPanel.SetActive(false);
+
+            // Restore last STATS-row choice (default on for first-time players).
+            if (PlayerPrefs.HasKey(StatsChipsPrefsKey))
+                statsChipsVisible = PlayerPrefs.GetInt(StatsChipsPrefsKey, 1) != 0;
 
             string[] keyStrings = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" };
 
+            CreateStatsToggle(rootPanel.transform);
+
             for (int i = 0; i < 10; i++)
             {
-                float x = bw / 2f + i * (bw + sp);
                 Color statColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(i);
-                var btn = CreateUpgradeButton(rootPanel.transform, x, i, statColor, keyStrings[i], bw, bh);
+                var btn = CreateUpgradeButton(rootPanel.transform, i, statColor, keyStrings[i]);
                 buttons[i] = btn.button;
                 titleTexts[i] = btn.titleText;
                 tickContainers[i] = btn.tickContainer;
                 buttonImages[i] = btn.bgImage;
+                buttonOutlines[i] = btn.outline;
+                buttonAccentRails[i] = btn.accentRail;
+                buttonCategoryColors[i] = statColor;
                 keyLabels[i] = btn.keyLabel;
                 costLabels[i] = btn.costLabel;
                 costGemIcons[i] = btn.costGemIcon;
+                _buttonRects[i] = btn.buttonRect;
+                _lastSlotVisualState[i] = (UpgradeSlotVisualState)(-1);
+
+                var chip = CreateStatChip(rootPanel.transform, i, statColor);
+                _chipRects[i] = chip.chipRect;
+                _chipValueTexts[i] = chip.valueText;
+            }
+
+            BuildAbilityTipPanel();
+            RefreshUpgradeStripLayout(force: true);
+        }
+
+        /// <summary>
+        /// Small top-left STATS control — toggles the chip row and its hover tips on/off.
+        /// </summary>
+        void CreateStatsToggle(Transform parent)
+        {
+            GameObject go = new GameObject("StatsToggle");
+            go.transform.SetParent(parent, false);
+            _statsToggleRect = go.AddComponent<RectTransform>();
+
+            _statsToggleBg = go.AddComponent<Image>();
+            _statsToggleBg.raycastTarget = true;
+            var outline = go.AddComponent<Outline>();
+            outline.effectDistance = new Vector2(E(1f), E(1f));
+
+            // Cool ice accent (not category-specific) — cockpit toggle chrome.
+            Color ice = new Color(0.35f, 0.72f, 0.95f, 0.95f);
+            ApplyGamerGlassChrome(_statsToggleBg, outline, ice, includeInnerShade: false);
+
+            Button btn = go.AddComponent<Button>();
+            btn.targetGraphic = _statsToggleBg;
+            btn.onClick.AddListener(ToggleStatsChipsVisible);
+
+            GameObject textGo = new GameObject("Label");
+            textGo.transform.SetParent(go.transform, false);
+            RectTransform textRt = textGo.AddComponent<RectTransform>();
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.offsetMin = new Vector2(E(2f), E(1f));
+            textRt.offsetMax = new Vector2(E(-2f), E(-1f));
+            _statsToggleLabel = textGo.AddComponent<TextMeshProUGUI>();
+            _statsToggleLabel.alignment = TextAlignmentOptions.Center;
+            _statsToggleLabel.fontStyle = FontStyles.Bold;
+            _statsToggleLabel.fontSize = F(10f);
+            _statsToggleLabel.color = new Color(0.88f, 0.92f, 0.98f, 1f);
+            _statsToggleLabel.raycastTarget = false;
+            if (TMP_Settings.defaultFontAsset != null)
+                _statsToggleLabel.font = TMP_Settings.defaultFontAsset;
+
+            RefreshStatsToggleVisual();
+        }
+
+        /// <summary>Flips the STATS chip row and persists the choice.</summary>
+        void ToggleStatsChipsVisible()
+        {
+            SetStatsChipsVisible(!statsChipsVisible);
+        }
+
+        /// <summary>
+        /// Shows or hides the top value chips and their hover tooltips.
+        /// Bottom upgrade buttons stay available either way.
+        /// </summary>
+        public void SetStatsChipsVisible(bool visible)
+        {
+            if (statsChipsVisible == visible && _uiBuilt)
+            {
+                RefreshStatsToggleVisual();
+                return;
+            }
+
+            statsChipsVisible = visible;
+            PlayerPrefs.SetInt(StatsChipsPrefsKey, visible ? 1 : 0);
+            PlayerPrefs.Save();
+
+            // Hide any open tip when collapsing the row (hover functionality off).
+            if (!visible)
+            {
+                _activeAbilityTipIndex = null;
+                _pendingHideAbilityTip = null;
+                if (_abilityTipPanel != null && _abilityTipPanel.activeSelf)
+                    _abilityTipPanel.SetActive(false);
+            }
+            else
+            {
+                // Turning STATS back on — force one chip rebuild on the next Update.
+                _statsSnapshotKey = int.MinValue;
+            }
+
+            if (_uiBuilt)
+                RefreshUpgradeStripLayout(force: true);
+            else
+                RefreshStatsToggleVisual();
+        }
+
+        /// <summary>Paints STATS label + accent for the current on/off state.</summary>
+        void RefreshStatsToggleVisual()
+        {
+            if (_statsToggleLabel != null)
+                _statsToggleLabel.text = "[STATS]";
+            // Dim when off so the control still reads as a toggle, not a missing button.
+            if (_statsToggleBg != null)
+            {
+                Color ice = new Color(0.35f, 0.72f, 0.95f, statsChipsVisible ? 0.95f : 0.45f);
+                Color fill = Color.Lerp(glassFillColor, ice, statsChipsVisible ? categoryFillBlend : categoryFillBlend * 0.5f);
+                fill.a = glassFillColor.a;
+                _statsToggleBg.color = fill;
+                var outline = _statsToggleBg.GetComponent<Outline>();
+                if (outline != null)
+                {
+                    Color o = ice;
+                    o.a = statsChipsVisible ? 0.9f : 0.4f;
+                    outline.effectColor = o;
+                }
+            }
+
+            if (_statsToggleLabel != null)
+            {
+                float a = statsChipsVisible ? 1f : 0.55f;
+                _statsToggleLabel.color = new Color(0.88f, 0.92f, 0.98f, a);
             }
         }
 
-        private (Button button, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, float x, int index, Color statColor, string keyStr, float scaledButtonWidth, float scaledBarHeight)
+        /// <summary>
+        /// Shared dark-void glass + thin category accent — used by chips and bottom buttons.
+        /// [TITAN-ORBIT] Matches titan-orbit-ui-space-gamer-theme (no full-panel colour floods).
+        /// </summary>
+        void ApplyGamerGlassChrome(Image fill, Outline outline, Color categoryAccent, bool includeInnerShade)
+        {
+            Color fillCol = Color.Lerp(glassFillColor, categoryAccent, categoryFillBlend);
+            fillCol.a = glassFillColor.a;
+            fill.color = fillCol;
+
+            Color outlineCol = categoryAccent;
+            outlineCol.a = 0.85f;
+            outline.effectColor = outlineCol;
+            outline.effectDistance = new Vector2(E(1f), E(1f));
+            _ = includeInnerShade; // reserved — callers add InnerShade child when needed
+        }
+
+        /// <summary>
+        /// Thin top accent rail (category tint only). Shared by chips and upgrade buttons.
+        /// Returns the Image so hosts can recolor per Ready / Locked / Maxed state.
+        /// </summary>
+        static Image AddCategoryAccentRail(Transform parent, Color accent, float insetX, float thickness)
+        {
+            GameObject accentGo = new GameObject("Accent");
+            accentGo.transform.SetParent(parent, false);
+            RectTransform accentRt = accentGo.AddComponent<RectTransform>();
+            accentRt.anchorMin = new Vector2(0f, 1f);
+            accentRt.anchorMax = new Vector2(1f, 1f);
+            accentRt.pivot = new Vector2(0.5f, 1f);
+            accentRt.offsetMin = new Vector2(insetX, -thickness);
+            accentRt.offsetMax = new Vector2(-insetX, -1f);
+            Image accentImg = accentGo.AddComponent<Image>();
+            Color c = accent;
+            c.a = 0.9f;
+            accentImg.color = c;
+            accentImg.raycastTarget = false;
+            return accentImg;
+        }
+
+        /// <summary>
+        /// Resolves Ready / Locked / Maxed from level vs ship-level cap and current gems.
+        /// </summary>
+        static UpgradeSlotVisualState ResolveUpgradeSlotState(int currentLevel, int maxUpgrades, float currentGems, int cost)
+        {
+            if (currentLevel >= maxUpgrades)
+                return UpgradeSlotVisualState.Maxed;
+            if (currentGems >= cost - 0.01f)
+                return UpgradeSlotVisualState.Ready;
+            return UpgradeSlotVisualState.Locked;
+        }
+
+        /// <summary>
+        /// Paints one bottom upgrade button for Ready / Locked / Maxed.
+        /// We drive colours ourselves — Unity's default Button grey fade fights dark-glass chrome.
+        /// </summary>
+        void ApplyUpgradeSlotVisual(int index, UpgradeSlotVisualState state)
+        {
+            if (index < 0 || index >= 10 || buttonImages[index] == null)
+                return;
+
+            Color category = buttonCategoryColors[index];
+            Image fill = buttonImages[index];
+            Outline outline = buttonOutlines[index];
+            Image rail = buttonAccentRails[index];
+            TextMeshProUGUI title = titleTexts[index];
+            TextMeshProUGUI key = keyLabels[index];
+            TextMeshProUGUI cost = costLabels[index];
+            Image gem = costGemIcons[index];
+            Button btn = buttons[index];
+
+            Color accent;
+            Color fillCol;
+            Color titleCol;
+            Color keyCol;
+            Color costCol;
+            Color gemCol;
+            bool interactable;
+
+            switch (state)
+            {
+                case UpgradeSlotVisualState.Maxed:
+                    // --- Completed chrome in this ability’s own colour ---
+                    // Same proud full-tint treatment as the old gold MAXED look (fill wash, title,
+                    // key, MAX label, ticks) — but Fire Power stays orange, Move Speed cyan, etc.
+                    accent = category;
+                    accent.a = 0.95f;
+                    fillCol = Color.Lerp(glassFillColor, category, 0.22f);
+                    fillCol.a = glassFillColor.a;
+                    // Slightly brighter than the rail so title / MAX read clearly on dark glass.
+                    titleCol = Color.Lerp(category, Color.white, maxedTitleBrighten);
+                    titleCol.a = 1f;
+                    keyCol = new Color(category.r, category.g, category.b, 0.9f);
+                    costCol = titleCol;
+                    gemCol = titleCol;
+                    interactable = false;
+                    break;
+
+                case UpgradeSlotVisualState.Locked:
+                    // Dimmed category glass + amber cost (“need more gems”).
+                    accent = Color.Lerp(category, new Color(0.35f, 0.38f, 0.42f, 1f), lockedDim);
+                    accent.a = 0.45f;
+                    fillCol = Color.Lerp(glassFillColor, accent, categoryFillBlend * 0.35f);
+                    fillCol.a = glassFillColor.a * 0.92f;
+                    titleCol = Color.Lerp(readyTitleColor, new Color(0.45f, 0.48f, 0.52f, 1f), lockedDim);
+                    keyCol = new Color(0.4f, 0.45f, 0.52f, 0.65f);
+                    costCol = lockedCostColor;
+                    gemCol = lockedCostColor;
+                    interactable = false;
+                    break;
+
+                default: // Ready
+                    accent = category;
+                    accent.a = 0.9f;
+                    fillCol = Color.Lerp(glassFillColor, category, categoryFillBlend);
+                    fillCol.a = glassFillColor.a;
+                    titleCol = readyTitleColor;
+                    keyCol = new Color(0.62f, 0.78f, 0.95f, 0.92f);
+                    costCol = gemCostIconColor;
+                    gemCol = gemCostIconColor;
+                    interactable = true;
+                    break;
+            }
+
+            fill.color = fillCol;
+            if (outline != null)
+            {
+                Color o = accent;
+                o.a = state == UpgradeSlotVisualState.Ready ? 0.9f
+                    : state == UpgradeSlotVisualState.Maxed ? 0.95f
+                    : 0.4f;
+                outline.effectColor = o;
+            }
+
+            if (rail != null)
+            {
+                Color r = accent;
+                r.a = state == UpgradeSlotVisualState.Locked ? 0.4f : 0.95f;
+                rail.color = r;
+            }
+
+            if (title != null) title.color = titleCol;
+            if (key != null) key.color = keyCol;
+            if (cost != null) cost.color = costCol;
+            if (gem != null && gem.enabled) gem.color = gemCol;
+
+            if (btn != null && btn.interactable != interactable)
+                btn.interactable = interactable;
+
+            // Tick marks: lit ticks match the slot accent (category colour when MAXED).
+            ApplyTickStateColors(index, state, category);
+        }
+
+        /// <summary>
+        /// Retints upgrade ticks when the slot state changes.
+        /// MAXED lit ticks use that ability’s category colour (same proud chrome as the button).
+        /// </summary>
+        void ApplyTickStateColors(int index, UpgradeSlotVisualState state, Color category)
+        {
+            if (tickContainers == null || index < 0 || index >= tickContainers.Length || tickContainers[index] == null)
+                return;
+
+            Color lit;
+            if (state == UpgradeSlotVisualState.Maxed)
+            {
+                // Full ability colour — matches title / rail / MAX label on the maxed button.
+                lit = category;
+                lit.a = 1f;
+            }
+            else
+            {
+                lit = new Color(1f, 1f, 0.9f, 1f);
+                // Slight category wash on Ready lit ticks so they match the button accent.
+                if (state == UpgradeSlotVisualState.Ready)
+                    lit = Color.Lerp(lit, category, 0.35f);
+                else if (state == UpgradeSlotVisualState.Locked)
+                    lit = Color.Lerp(lit, new Color(0.45f, 0.48f, 0.52f, 1f), lockedDim);
+            }
+
+            Color empty = state == UpgradeSlotVisualState.Locked
+                ? new Color(0.22f, 0.24f, 0.28f, 0.55f)
+                : new Color(0.3f, 0.3f, 0.35f, 0.8f);
+
+            Transform container = tickContainers[index].transform;
+            int litCount = _lastTickLevels[index];
+            for (int i = 0; i < container.childCount; i++)
+            {
+                Image img = container.GetChild(i).GetComponent<Image>();
+                if (img == null) continue;
+                img.color = i < litCount ? lit : empty;
+            }
+        }
+
+        /// <summary>
+        /// Quick-stat chip above one ability button — value and +per-buy only (no title).
+        /// Hover opens the calculation tip when the STATS row is visible.
+        /// </summary>
+        (RectTransform chipRect, TextMeshProUGUI valueText) CreateStatChip(Transform parent, int index, Color statColor)
+        {
+            GameObject chipObj = new GameObject($"StatChip_{index}");
+            chipObj.transform.SetParent(parent, false);
+            RectTransform chipRect = chipObj.AddComponent<RectTransform>();
+
+            Image bg = chipObj.AddComponent<Image>();
+            bg.raycastTarget = true;
+            var outline = chipObj.AddComponent<Outline>();
+            ApplyGamerGlassChrome(bg, outline, statColor, includeInnerShade: false);
+            AddCategoryAccentRail(chipObj.transform, statColor, E(2f), E(3f));
+
+            GameObject textGo = new GameObject("ChipText");
+            textGo.transform.SetParent(chipObj.transform, false);
+            RectTransform textRt = textGo.AddComponent<RectTransform>();
+            textRt.anchorMin = Vector2.zero;
+            textRt.anchorMax = Vector2.one;
+            textRt.offsetMin = new Vector2(E(3f), E(2f));
+            textRt.offsetMax = new Vector2(E(-3f), E(-4f));
+            TextMeshProUGUI valueText = textGo.AddComponent<TextMeshProUGUI>();
+            valueText.richText = true;
+            valueText.enableWordWrapping = true;
+            // [UNITY] Overflow (not Truncate) so the +per-buy number is never clipped off.
+            valueText.overflowMode = TextOverflowModes.Overflow;
+            valueText.alignment = TextAlignmentOptions.Center;
+            valueText.fontSize = F(12f);
+            valueText.color = new Color(0.88f, 0.92f, 0.98f, 1f);
+            valueText.raycastTarget = false;
+            if (TMP_Settings.defaultFontAsset != null)
+                valueText.font = TMP_Settings.defaultFontAsset;
+            valueText.text = "—";
+
+            var zone = chipObj.AddComponent<ShipAbilityStatHoverZone>();
+            zone.Owner = this;
+            zone.AbilityIndex = index;
+
+            return (chipRect, valueText);
+        }
+
+        /// <summary>
+        /// Floating calculation card for ability-chip rollovers.
+        /// [TITAN-ORBIT] Uses <see cref="ShipStatTooltipChrome"/> (Shift cut-frame + accent) so the
+        /// tip matches orbit-station / spin-card sci-fi language instead of a plain debug box.
+        /// </summary>
+        void BuildAbilityTipPanel()
+        {
+            // Same canvas parent as the strip so anchoredPosition math matches GetUpgradeStripReserveHeight space.
+            Transform tipParent = _layoutCanvasRect != null ? (Transform)_layoutCanvasRect : transform;
+            _abilityTipChrome = ShipStatTooltipChrome.Build(
+                "ShipAbilityStatTooltip",
+                tipParent,
+                "ABILITY MATRIX",
+                E(560f),
+                E(160f),
+                _elementScale);
+            _abilityTipPanel = _abilityTipChrome.Root;
+            _abilityTipRect = _abilityTipChrome.RootRect;
+            _abilityTipLabel = _abilityTipChrome.BodyLabel;
+            if (_abilityTipRect != null)
+                _abilityTipRect.pivot = new Vector2(0.5f, 0f);
+            if (_abilityTipLabel != null)
+                _abilityTipLabel.fontSize = F(11f);
+
+            _abilityTipPanel.transform.SetAsLastSibling();
+        }
+
+        /// <summary>Pointer entered a quick-stat chip — show that ability's calculation card.</summary>
+        public void ShowAbilityStatTooltip(int abilityIndex)
+        {
+            // STATS row off → chips hidden and hover tips stay dormant.
+            if (!statsChipsVisible)
+                return;
+            if (!_uiBuilt || _abilityTipPanel == null || _abilityTipLabel == null)
+                return;
+            if (abilityIndex < 0 || abilityIndex > 9)
+                return;
+
+            _pendingHideAbilityTip = null;
+            _activeAbilityTipIndex = abilityIndex;
+            // [TITAN-ORBIT] Recolor chrome accent to the hovered ability's ODEMC category tone.
+            ShipStatTooltipChrome.ApplyAccent(
+                in _abilityTipChrome,
+                ShipStatTooltipChrome.AccentForAbilityIndex(abilityIndex));
+            // Build once on enter — not every Update (LIVE vitals removed; body is static until upgrade).
+            RefreshAbilityTipContent();
+            PositionAbilityTipPanel(abilityIndex);
+            // Draw above leaderboard / other HUD so bars and names cannot bleed through.
+            _abilityTipPanel.transform.SetAsLastSibling();
+            if (!_abilityTipPanel.activeSelf)
+                _abilityTipPanel.SetActive(true);
+        }
+
+        /// <summary>
+        /// Hash of ship chassis identity + the ten ability levels + hull ComponentSize.
+        /// Used to dirty-check chip/tip rebuilds without allocating.
+        /// </summary>
+        /// <param name="ship">Local ship vitals (level / team / branch / family).</param>
+        /// <param name="attrs">Ghost attribute upgrade levels.</param>
+        /// <param name="componentSize">
+        /// Hull ComponentSize used for mass tax. Included so MS/TS chips repaint when
+        /// <see cref="ShipMotorConfig.HullMassReference"/> arrives after the first chassis paint.
+        /// </param>
+        /// <returns>Stable fingerprint for the current loadout matrix.</returns>
+        static int ComputeStatsSnapshotKey(
+            in ShipState ship,
+            in ShipAttributeUpgradeState attrs,
+            float componentSize)
+        {
+            // [STANDARD] Unchecked hash combine — collisions are rare; worst case is one extra rebuild.
+            unchecked
+            {
+                int h = 17;
+                h = h * 31 + ship.ShipLevel;
+                h = h * 31 + (int)ship.Team;
+                h = h * 31 + ship.BranchIndex;
+                h = h * 31 + ship.ShipFamilyConfigIndex;
+                h = h * 31 + attrs.FirePower;
+                h = h * 31 + attrs.BulletSpeed;
+                h = h * 31 + attrs.MaxHealth;
+                h = h * 31 + attrs.HealthRegen;
+                h = h * 31 + attrs.EnergyCapacity;
+                h = h * 31 + attrs.EnergyRegen;
+                h = h * 31 + attrs.MovementSpeed;
+                h = h * 31 + attrs.RotationSpeed;
+                h = h * 31 + attrs.GemCapacity;
+                h = h * 31 + attrs.PeopleCapacity;
+                // Centi-units — ignores sub-0.01 noise, still catches MinMass → real hull size.
+                h = h * 31 + Mathf.RoundToInt(componentSize * 100f);
+                return h;
+            }
+        }
+
+        /// <summary>Pointer left a chip — defer hide so neighboring chips can cancel.</summary>
+        public void HideAbilityStatTooltip(int abilityIndex)
+        {
+            if (_activeAbilityTipIndex != abilityIndex)
+                return;
+            _pendingHideAbilityTip = abilityIndex;
+        }
+
+        void FlushPendingAbilityTipHide()
+        {
+            if (!_pendingHideAbilityTip.HasValue)
+                return;
+            int pending = _pendingHideAbilityTip.Value;
+            _pendingHideAbilityTip = null;
+            if (_activeAbilityTipIndex != pending)
+                return;
+            _activeAbilityTipIndex = null;
+            if (_abilityTipPanel != null && _abilityTipPanel.activeSelf)
+                _abilityTipPanel.SetActive(false);
+        }
+
+        /// <summary>
+        /// Rebuilds the open ability tip from a static capacity snapshot.
+        /// Call on pointer-enter or when <see cref="_statsSnapshotKey"/> changes — not every Update.
+        /// </summary>
+        void RefreshAbilityTipContent()
+        {
+            if (_abilityTipLabel == null || !_activeAbilityTipIndex.HasValue)
+                return;
+            if (!TryResolveChipLiveContext(out var parts, out var live, out var attrs))
+            {
+                _abilityTipLabel.text = "<color=#5B7A94>// AWAITING SHIP LINK...</color>";
+                return;
+            }
+
+            string body = ShipAbilityStatBreakdown.BuildForAbilityIndex(
+                _activeAbilityTipIndex.Value, in parts, in live, in attrs);
+            if (body == _lastAbilityTipBody)
+                return;
+            _lastAbilityTipBody = body;
+            _abilityTipLabel.text = body;
+            _abilityTipLabel.ForceMeshUpdate(true);
+            if (_abilityTipRect != null)
+            {
+                float tipW = _abilityTipRect.sizeDelta.x;
+                // [TITAN-ORBIT] ExtraHeightPadding covers caption bar + frame insets from chrome.
+                float tipH = Mathf.Max(
+                    E(120f),
+                    _abilityTipLabel.preferredHeight + _abilityTipChrome.ExtraHeightPadding);
+                _abilityTipRect.sizeDelta = new Vector2(tipW, tipH);
+            }
+        }
+
+        /// <summary>
+        /// Places the ability calculation card above the hovered chip, then clamps X/Y so the tip
+        /// stays on-screen and clear of the bottom-right minimap (wide tips near slot 0 or 9
+        /// used to spill off the left edge or cover the map).
+        /// </summary>
+        /// <param name="abilityIndex">0–9 chip/button index.</param>
+        void PositionAbilityTipPanel(int abilityIndex)
+        {
+            if (_abilityTipRect == null || _chipRects[abilityIndex] == null || _stripRootRect == null)
+                return;
+
+            // --- Preferred spot: above the chip, horizontally centered on that slot ---
+            // Tip is parented to the layout canvas with the same anchors as the strip (bottom-left).
+            // anchoredPosition is therefore in the same space as strip.anchoredPosition + chip local X.
+            RectTransform chip = _chipRects[abilityIndex];
+            _abilityTipRect.anchorMin = _stripRootRect.anchorMin;
+            _abilityTipRect.anchorMax = _stripRootRect.anchorMax;
+            _abilityTipRect.pivot = new Vector2(0.5f, 0f);
+
+            float stripX = _stripRootRect.anchoredPosition.x;
+            float stripY = _stripRootRect.anchoredPosition.y;
+            float preferredX = stripX + chip.anchoredPosition.x + chip.sizeDelta.x * 0.5f;
+            float tipBottom = stripY + chip.anchoredPosition.y + chip.sizeDelta.y + E(8f);
+
+            float tipW = _abilityTipRect.sizeDelta.x;
+            float tipH = _abilityTipRect.sizeDelta.y;
+            float margin = E(8f);
+
+            // --- Horizontal clamp (canvas left ↔ minimap left) ---
+            // [TITAN-ORBIT] Same bounds the upgrade strip uses when measuring availableWidth.
+            if (TryResolveLayoutCanvas())
+            {
+                Rect canvasRect = _layoutCanvasRect.rect;
+                float canvasXMin = canvasRect.xMin;
+                float halfW = tipW * 0.5f;
+
+                // Tip left edge in canvas-local = canvasXMin + (centerX - halfW).
+                // Keep at least `margin` inside the canvas left.
+                float minCenterX = halfW + margin;
+
+                // Tip right edge must stay left of the minimap (or canvas right if no minimap).
+                EnsureMinimapRectCached();
+                float maxCenterX;
+                if (TryGetMinimapLeftLocalX(_layoutCanvasRect, _cachedMinimapRect, out float minimapLeftLocalX))
+                {
+                    // canvasXMin + centerX + halfW <= minimapLeft - gap
+                    maxCenterX = minimapLeftLocalX - S(minimapHorizontalGap) - canvasXMin - halfW;
+                }
+                else
+                {
+                    maxCenterX = canvasRect.width - margin - halfW;
+                }
+
+                // If the tip is wider than the safe band, shrink width so clamp can succeed.
+                float safeSpan = maxCenterX - minCenterX;
+                if (safeSpan < 0f)
+                {
+                    float maxTipW = tipW + safeSpan * 2f;
+                    maxTipW = Mathf.Max(E(220f), maxTipW);
+                    tipW = maxTipW;
+                    _abilityTipRect.sizeDelta = new Vector2(tipW, tipH);
+                    halfW = tipW * 0.5f;
+                    minCenterX = halfW + margin;
+                    if (TryGetMinimapLeftLocalX(_layoutCanvasRect, _cachedMinimapRect, out minimapLeftLocalX))
+                        maxCenterX = minimapLeftLocalX - S(minimapHorizontalGap) - canvasXMin - halfW;
+                    else
+                        maxCenterX = canvasRect.width - margin - halfW;
+                }
+
+                preferredX = Mathf.Clamp(preferredX, minCenterX, Mathf.Max(minCenterX, maxCenterX));
+
+                // --- Vertical clamp (keep tip under the top of the canvas) ---
+                // Tip top in canvas-local = canvas.yMin + tipBottom + tipH.
+                float maxBottom = canvasRect.height - margin - tipH;
+                if (tipBottom > maxBottom)
+                    tipBottom = Mathf.Max(stripY + chip.sizeDelta.y + E(4f), maxBottom);
+            }
+
+            _abilityTipRect.anchoredPosition = new Vector2(preferredX, tipBottom);
+        }
+
+        /// <summary>
+        /// Builds a static chip/tip snapshot from the current ship + ability levels.
+        /// Re-applies level growth + attribute multipliers locally so an upgrade never sticks to the
+        /// previous speedometer frame. Parts / ram / OD extras may still come from the speedometer
+        /// when its part cache is ready (expensive prefab Instantiates).
+        /// </summary>
+        /// <returns>
+        /// True when a ship snapshot exists. Callers must also check <see cref="IsChipLiveContextReady"/>
+        /// before latching chip text — chassis catalogs can lag the first Update after spawn.
+        /// </returns>
+        bool TryResolveChipLiveContext(
+            out ShipSpeedometerStatTooltips.PartCache parts,
+            out ShipSpeedometerStatTooltips.LiveContext live,
+            out ShipAttributeUpgradeState attrs)
+        {
+            parts = default;
+            live = default;
+            attrs = default;
+            if (!TryGetUpgradeHudSnapshot(out ShipState ship, out attrs))
+                return false;
+
+            if (!_triedSpeedometerLookup)
+            {
+                _triedSpeedometerLookup = true;
+                _cachedSpeedometer = UnityEngine.Object.FindFirstObjectByType<ShipSpeedometerHUD>();
+            }
+
+            // --- Hull size for mass tax ---
+            // [TITAN-ORBIT] ComponentSize = ShipMotorConfig.HullMassReference. Never fall back to
+            // MinMass and latch — that paints nearly untaxed MS/TS until the player toggles [STATS].
+            // Leave ComponentSize/Cruise at 0 until motor or speedometer mobility is ready.
+            bool hasComponentSize = TryGetLocalHullComponentSize(out float componentSize);
+            float moveStepPreview = 0f;
+            ShipWeaponConfig weapon = default;
+            float ramRating = 0f;
+            float ramAst = 0f;
+            float ramSelf = 0f;
+            float barMax = 0f;
+            float odCap = 1f;
+
+            // Mobility shared does not require part-cache Instantiates (unlike tip grids).
+            ShipSpeedometerStatTooltips.LiveContext mobilityShared = default;
+            bool gotMobilityShared = _cachedSpeedometer != null
+                && _cachedSpeedometer.TryGetMobilitySharedState(out mobilityShared);
+
+            if (!hasComponentSize
+                && gotMobilityShared
+                && mobilityShared.ComponentSize > ShipMassLogic.MinMass + 0.0001f)
+            {
+                // [TITAN-ORBIT] Reject MinMass-only speedometer placeholders (HullMassReference lag) —
+                // that painted nearly untaxed MS until [STATS] was toggled. Real hulls may equal
+                // MinMass; those are accepted via TryGetLocalHullComponentSize above.
+                componentSize = mobilityShared.ComponentSize;
+                hasComponentSize = true;
+            }
+
+            if (gotMobilityShared)
+            {
+                // Move-step / ram / OD extras — independent of whether hull size came from motor.
+                if (mobilityShared.MoveStepPreview > 0.0001f)
+                    moveStepPreview = mobilityShared.MoveStepPreview;
+                weapon = mobilityShared.Weapon;
+                ramRating = mobilityShared.RamRating;
+                ramAst = mobilityShared.RamAsteroidDamage;
+                ramSelf = mobilityShared.RamSelfDamage;
+                barMax = mobilityShared.BarMaxSpeed;
+                odCap = mobilityShared.OverdriveCapacityMult;
+            }
+
+            // Tip part grids still need the stricter parts.Valid shared state when available.
+            if (_cachedSpeedometer != null)
+                _cachedSpeedometer.TryGetTooltipSharedState(out parts, out _);
+
+            // --- Fresh chassis pipeline (same steps as ShipSpeedometerHUD stats cache) ---
+            // [TITAN-ORBIT] TryGetBaseStatsForChassis returns level-1 sums — we must call
+            // GetEffectiveStatsAtShipLevel, then ApplyMultipliers, then ApplyMoveSpeedAbilitySteps.
+            live = new ShipSpeedometerStatTooltips.LiveContext
+            {
+                Ship = ship,
+                Weapon = weapon,
+                MoveStepPreview = moveStepPreview,
+                RamRating = ramRating,
+                RamAsteroidDamage = ramAst,
+                RamSelfDamage = ramSelf,
+                BarMaxSpeed = barMax,
+                OverdriveCapacityMult = odCap,
+                ComponentSize = hasComponentSize ? componentSize : 0f,
+            };
+
+            if (ShipStatApplyLogic.TryResolveChassisId(
+                    ship.Team,
+                    ship.ShipLevel,
+                    ship.BranchIndex,
+                    out string chassisId,
+                    allowFallback: true,
+                    ship.ShipFamilyConfigIndex)
+                && ShipStatApplyLogic.TryGetBaseStatsForChassis(
+                    chassisId, ship.ShipLevel, out ShipComponentAbilityStats levelOneSummed))
+            {
+                // Family growth fraction — same source the speedometer / ApplyToShip use.
+                float growth = ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
+                if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
+                    && family != null)
+                    growth = family.ResolveShipLevelStatGrowthFraction();
+
+                ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
+                    levelOneSummed, ship.ShipLevel, growth);
+                ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, in attrs);
+                ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
+                    levelOneSummed, out float moveStep, out float accelStep, out float odDrainStep);
+                ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
+                    ref effective, attrs, moveStep, accelStep, odDrainStep);
+
+                live.EffectiveStats = effective;
+                live.ChassisMaxSpeed = effective.moveSpeed;
+                live.ChassisAccel = effective.accelerationCap > 0.1f
+                    ? effective.accelerationCap
+                    : effective.moveSpeed;
+                // [TITAN-ORBIT] turnSpeed on the stats block is definition units — convert like the bar.
+                live.ChassisTurnDeg = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
+                    effective.turnSpeed);
+
+                // Mass tax only when ComponentSize is known — otherwise leave CruiseMaxSpeed at 0
+                // so IsChipLiveContextReady keeps retrying (MS would look like chassis / no drag).
+                if (hasComponentSize)
+                {
+                    ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+                        live.ChassisMaxSpeed,
+                        live.ChassisAccel,
+                        live.ChassisTurnDeg,
+                        ship.CurrentGems,
+                        ship.CurrentPeople,
+                        componentSize);
+                    live.TotalMass = taxed.TotalMass;
+                    live.CruiseMaxSpeed = taxed.MaxSpeed;
+                    live.TaxedAccel = taxed.EngineThrust;
+                    live.TaxedTurnDeg = taxed.RotationSpeed;
+                    live.LiveMaxSpeed = taxed.MaxSpeed;
+                }
+
+                // If speedometer has not filled max-ram yet, estimate at full cruise here.
+                if (ramAst <= 0.0001f && effective.rammingPower > 0.01f)
+                {
+                    // Rating/mass/speed product matches tip language; exact server formula lives in
+                    // ShipComponentRammingSuggestions — speedometer fills this when its snapshot runs.
+                    live.RamRating = effective.rammingPower;
+                }
+
+                if (moveStepPreview <= 0.0001f)
+                    live.MoveStepPreview = Mathf.Max(0f, moveStep);
+            }
+
+            if (live.MoveStepPreview <= 0.0001f)
+                live.MoveStepPreview = Mathf.Max(0f, live.EffectiveStats.moveSpeedPerAbilityLevel);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Reads <see cref="ShipMotorConfig.HullMassReference"/> from the seeded local ship.
+        /// Uses Instantiates-hook seed only — no ship archetype gather (Join Team Crash!!! safe).
+        /// </summary>
+        /// <param name="componentSize">Hull ComponentSize for mass tax when known.</param>
+        /// <returns>True when the motor has a positive HullMassReference.</returns>
+        static bool TryGetLocalHullComponentSize(out float componentSize)
+        {
+            componentSize = 0f;
+
+            // --- Seeded entity only (no CalculateEntityCount / WithEntityAccess) ---
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
+                || ship == Entity.Null
+                || !em.Exists(ship)
+                || !em.HasComponent<ShipMotorConfig>(ship))
+                return false;
+
+            float hull = em.GetComponentData<ShipMotorConfig>(ship).HullMassReference;
+            if (hull <= 0f)
+                return false;
+
+            componentSize = hull;
+            return true;
+        }
+
+        /// <summary>
+        /// Chip glance text: <b>current</b> and green <c>+per-buy</c> only (no FP/MS title).
+        /// Ability name lives on the bottom button; full math is on hover.
+        /// </summary>
+        static string FormatChipText(int index, float value, float nextStep, int abilityLv, string unit)
+        {
+            _ = index;
+            _ = abilityLv;
+            var sb = new System.Text.StringBuilder(48);
+            AppendCurrentAndPerBuy(sb, value, nextStep, unit, sizePercent: 100);
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Appends <c>12.5/hit  +1.25</c> — the two glance stats on each top chip (not the bottom button).
+        /// </summary>
+        /// <param name="sb">TMP rich-text builder.</param>
+        /// <param name="value">Current effective value.</param>
+        /// <param name="nextStep">Gain from the next gem purchase (0 hides the +).</param>
+        /// <param name="unit">Optional unit suffix on the current value (e.g. <c>/s</c>, <c>°/s</c>).</param>
+        /// <param name="sizePercent">TMP size tag for the whole stats line (100 = default).</param>
+        static void AppendCurrentAndPerBuy(
+            System.Text.StringBuilder sb,
+            float value,
+            float nextStep,
+            string unit,
+            int sizePercent)
+        {
+            string val = value.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+            bool wrapSize = sizePercent > 0 && sizePercent != 100;
+            if (wrapSize)
+                sb.Append("<size=").Append(sizePercent).Append("%>");
+
+            sb.Append("<b>").Append(val).Append(unit).Append("</b>");
+            if (nextStep > 0.0001f)
+            {
+                // Green delta — gamification “what you get if you buy” signal.
+                sb.Append(" <color=#7DFFB2>+")
+                    .Append(nextStep.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))
+                    .Append("</color>");
+            }
+
+            if (wrapSize)
+                sb.Append("</size>");
+        }
+
+        private (Button button, RectTransform buttonRect, TextMeshProUGUI titleText, GameObject tickContainer, Image bgImage, Outline outline, Image accentRail, TextMeshProUGUI keyLabel, TextMeshProUGUI costLabel, Image costGemIcon) CreateUpgradeButton(Transform parent, int index, Color statColor, string keyStr)
         {
             GameObject btnObj = new GameObject($"UpgradeBtn_{index}");
             btnObj.transform.SetParent(parent, false);
 
             RectTransform btnRect = btnObj.AddComponent<RectTransform>();
-            btnRect.anchorMin = new Vector2(0.5f, 0.5f);
-            btnRect.anchorMax = new Vector2(0.5f, 0.5f);
-            btnRect.pivot = new Vector2(0.5f, 0.5f);
-            btnRect.anchoredPosition = new Vector2(x, 0f);
-            btnRect.sizeDelta = new Vector2(scaledButtonWidth, scaledBarHeight - E(6f));
+            btnRect.anchorMin = new Vector2(0f, 0.5f);
+            btnRect.anchorMax = new Vector2(0f, 0.5f);
+            btnRect.pivot = new Vector2(0f, 0.5f);
 
+            // --- Dark glass + category accent (same language as the top STATS chips) ---
+            // [TITAN-ORBIT] No full-panel category flood — thin rail + outline carry the tint.
+            // Per-frame ApplyUpgradeSlotVisual recolors for Ready / Locked / Maxed.
             Image bgImage = btnObj.AddComponent<Image>();
-            bgImage.color = statColor;
             bgImage.raycastTarget = true;
             var buttonOutline = btnObj.AddComponent<Outline>();
-            buttonOutline.effectColor = buttonFrameColor;
-            buttonOutline.effectDistance = new Vector2(E(1f), E(1f));
-            var buttonShadow = btnObj.AddComponent<Shadow>();
-            buttonShadow.effectColor = buttonShadowColor;
-            buttonShadow.effectDistance = new Vector2(0f, E(-2f));
+            ApplyGamerGlassChrome(bgImage, buttonOutline, statColor, includeInnerShade: true);
+            Image accentRail = AddCategoryAccentRail(btnObj.transform, statColor, E(4f), E(3f));
 
             GameObject innerShade = new GameObject("InnerShade");
             innerShade.transform.SetParent(btnObj.transform, false);
@@ -303,40 +1479,36 @@ namespace TitanOrbit.UI
             shadeImage.color = buttonInnerShadeColor;
             shadeImage.raycastTarget = false;
 
-            GameObject accentLine = new GameObject("AccentLine");
-            accentLine.transform.SetParent(btnObj.transform, false);
-            RectTransform accentRect = accentLine.AddComponent<RectTransform>();
-            accentRect.anchorMin = new Vector2(0f, 1f);
-            accentRect.anchorMax = new Vector2(1f, 1f);
-            accentRect.pivot = new Vector2(0.5f, 1f);
-            accentRect.offsetMin = new Vector2(E(5f), E(-3f));
-            accentRect.offsetMax = new Vector2(E(-5f), E(-1f));
-            Image accentImage = accentLine.AddComponent<Image>();
-            accentImage.color = buttonAccentColor;
-            accentImage.raycastTarget = false;
-
             Button button = btnObj.AddComponent<Button>();
             button.targetGraphic = bgImage;
+            // [UNITY] Neutral ColorBlock so interactable=false does not wash our custom state paints grey.
+            var colors = button.colors;
+            colors.normalColor = Color.white;
+            colors.highlightedColor = new Color(1.05f, 1.05f, 1.05f, 1f);
+            colors.pressedColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            colors.selectedColor = Color.white;
+            colors.disabledColor = Color.white;
+            colors.colorMultiplier = 1f;
+            button.colors = colors;
             int capturedIndex = index;
             button.onClick.AddListener(() => TryUpgrade(capturedIndex));
 
-            // Key label (top-left)
             GameObject keyObj = new GameObject("KeyLabel");
             keyObj.transform.SetParent(btnObj.transform, false);
             RectTransform keyRect = keyObj.AddComponent<RectTransform>();
             keyRect.anchorMin = new Vector2(0f, 1f);
             keyRect.anchorMax = new Vector2(0f, 1f);
             keyRect.pivot = new Vector2(0f, 1f);
-            keyRect.anchoredPosition = new Vector2(E(4f), E(-4f));
+            keyRect.anchoredPosition = new Vector2(E(4f), E(-5f));
             keyRect.sizeDelta = new Vector2(E(20f), E(16f));
             TextMeshProUGUI keyLabel = keyObj.AddComponent<TextMeshProUGUI>();
             keyLabel.text = keyStr;
             keyLabel.fontSize = F(13f);
             if (TMP_Settings.defaultFontAsset != null) keyLabel.font = TMP_Settings.defaultFontAsset;
-            keyLabel.color = new Color(1f, 1f, 1f, 0.9f);
+            // Cool caption tone (space-gamer theme), not pure white glare.
+            keyLabel.color = new Color(0.62f, 0.78f, 0.95f, 0.92f);
             keyLabel.alignment = TextAlignmentOptions.TopLeft;
 
-            // Title: centered in the main area (above cost row, leaves right strip for ticks); one font size for every slot.
             GameObject titleObj = new GameObject("Title");
             titleObj.transform.SetParent(btnObj.transform, false);
             RectTransform titleRect = titleObj.AddComponent<RectTransform>();
@@ -347,9 +1519,10 @@ namespace TitanOrbit.UI
             titleRect.offsetMin = new Vector2(E(4f), bottomForCost);
             titleRect.offsetMax = new Vector2(-E(tickColumnRightInset), -E(titleAreaTopInset));
             TextMeshProUGUI titleText = titleObj.AddComponent<TextMeshProUGUI>();
+            // [TITAN-ORBIT] Bottom button = ability name only. Current / +per-buy live on the chip above.
             titleText.text = Titles[index];
             if (TMP_Settings.defaultFontAsset != null) titleText.font = TMP_Settings.defaultFontAsset;
-            titleText.color = Color.white;
+            titleText.color = new Color(0.88f, 0.92f, 0.98f, 1f);
             titleText.fontStyle = FontStyles.Bold;
             titleText.alignment = TextAlignmentOptions.Center;
             titleText.enableWordWrapping = true;
@@ -358,7 +1531,6 @@ namespace TitanOrbit.UI
             titleText.fontSize = E(titleFontSize);
             titleText.raycastTarget = false;
 
-            // Tick container: vertical stack, flush to the right edge of the button
             GameObject tickContainer = new GameObject("Ticks");
             tickContainer.transform.SetParent(btnObj.transform, false);
             RectTransform tickRect = tickContainer.AddComponent<RectTransform>();
@@ -378,7 +1550,6 @@ namespace TitanOrbit.UI
             tickLayout.childForceExpandWidth = false;
             tickLayout.childForceExpandHeight = false;
 
-            // Cost row: number + gem icon (assign gem sprite on ShipAttributeUpgradeHUD in Inspector)
             GameObject costRow = new GameObject("CostRow");
             costRow.transform.SetParent(btnObj.transform, false);
             RectTransform costRowRect = costRow.AddComponent<RectTransform>();
@@ -387,16 +1558,35 @@ namespace TitanOrbit.UI
             costRowRect.pivot = new Vector2(0.5f, 0f);
             costRowRect.anchoredPosition = new Vector2(0f, E(3f));
             float scaledGem = E(gemIconSize);
-            costRowRect.sizeDelta = new Vector2(scaledButtonWidth - E(6f), Mathf.Max(E(14f), scaledGem + E(2f)));
+            costRowRect.sizeDelta = new Vector2(E(buttonWidth) - E(6f), Mathf.Max(E(14f), scaledGem + E(2f)));
 
             HorizontalLayoutGroup costRowLayout = costRow.AddComponent<HorizontalLayoutGroup>();
             costRowLayout.childAlignment = TextAnchor.MiddleCenter;
-            costRowLayout.spacing = E(1f);
+            costRowLayout.spacing = E(2f);
             costRowLayout.padding = new RectOffset(0, 0, 0, 0);
             costRowLayout.childForceExpandWidth = false;
             costRowLayout.childForceExpandHeight = false;
             costRowLayout.childControlWidth = true;
             costRowLayout.childControlHeight = true;
+
+            // --- Gem icon then cost digits: [💎] 15 ---
+            // [TITAN-ORBIT] Same gem art as moon / defense-pad labels when Inspector sprite is empty.
+            Sprite gemSprite = ResolveGemCostIcon();
+            GameObject gemObj = new GameObject("GemIcon");
+            gemObj.transform.SetParent(costRow.transform, false);
+            RectTransform gemRect = gemObj.AddComponent<RectTransform>();
+            float gemSz = E(gemIconSize);
+            gemRect.sizeDelta = new Vector2(gemSz, gemSz);
+            Image costGemIcon = gemObj.AddComponent<Image>();
+            costGemIcon.raycastTarget = false;
+            costGemIcon.preserveAspect = true;
+            costGemIcon.color = gemCostIconColor;
+            costGemIcon.sprite = gemSprite;
+            costGemIcon.enabled = gemSprite != null;
+            LayoutElement gemLe = gemObj.AddComponent<LayoutElement>();
+            gemLe.preferredWidth = gemSz;
+            gemLe.preferredHeight = gemSz;
+            gemLe.flexibleWidth = 0f;
 
             GameObject costObj = new GameObject("CostLabel");
             costObj.transform.SetParent(costRow.transform, false);
@@ -406,8 +1596,9 @@ namespace TitanOrbit.UI
             costLabel.text = "";
             costLabel.fontSize = F(11f);
             if (TMP_Settings.defaultFontAsset != null) costLabel.font = TMP_Settings.defaultFontAsset;
-            costLabel.color = new Color(0.9f, 0.9f, 0.6f, 1f);
-            costLabel.alignment = TextAlignmentOptions.MidlineRight;
+            // Same warm gold as gemCostIconColor so icon + digits match.
+            costLabel.color = gemCostIconColor;
+            costLabel.alignment = TextAlignmentOptions.MidlineLeft;
             costLabel.overflowMode = TextOverflowModes.Overflow;
             ContentSizeFitter costCsf = costObj.AddComponent<ContentSizeFitter>();
             costCsf.horizontalFit = ContentSizeFitter.FitMode.PreferredSize;
@@ -415,26 +1606,27 @@ namespace TitanOrbit.UI
             LayoutElement costLe = costObj.AddComponent<LayoutElement>();
             costLe.flexibleWidth = 0f;
 
-            GameObject gemObj = new GameObject("GemIcon");
-            gemObj.transform.SetParent(costRow.transform, false);
-            RectTransform gemRect = gemObj.AddComponent<RectTransform>();
-            float gemSz = E(gemIconSize);
-            gemRect.sizeDelta = new Vector2(gemSz, gemSz);
-            Image costGemIcon = gemObj.AddComponent<Image>();
-            costGemIcon.raycastTarget = false;
-            costGemIcon.preserveAspect = true;
-            costGemIcon.enabled = gemCostIconSprite != null;
-            if (gemCostIconSprite != null) costGemIcon.sprite = gemCostIconSprite;
-            LayoutElement gemLe = gemObj.AddComponent<LayoutElement>();
-            gemLe.preferredWidth = gemSz;
-            gemLe.preferredHeight = gemSz;
-            gemLe.flexibleWidth = 0f;
+            return (button, btnRect, titleText, tickContainer, bgImage, buttonOutline, accentRail, keyLabel, costLabel, costGemIcon);
+        }
 
-            return (button, titleText, tickContainer, bgImage, keyLabel, costLabel, costGemIcon);
+        /// <summary>
+        /// Gem sprite for the cost row: Inspector override, else shared <see cref="WorldStatLabelIcons.Gem"/>.
+        /// </summary>
+        Sprite ResolveGemCostIcon()
+        {
+            if (gemCostIconSprite != null)
+                return gemCostIconSprite;
+
+            // [HYBRID] Same CleanFlatIcon gem used by moon gem counts / defense pad costs.
+            Sprite shared = WorldStatLabelIcons.Gem;
+            if (shared != null)
+                gemCostIconSprite = shared;
+            return shared;
         }
 
         private void CreateTickMarks(GameObject container, int maxCount)
         {
+            // --- Create instance ---
             maxCount = Mathf.Clamp(maxCount, 0, 7);
             for (int i = 0; i < maxCount; i++)
             {
@@ -449,92 +1641,224 @@ namespace TitanOrbit.UI
             }
         }
 
-        private void UpdateTickMarks(int index, int currentLevel, int maxLevel)
+        private void UpdateTickMarks(int index, int currentLevel, int maxLevel, UpgradeSlotVisualState slotState)
         {
+            // --- Per-slot tick paint ---
             if (tickContainers == null || index < 0 || index >= tickContainers.Length || tickContainers[index] == null) return;
             maxLevel = Mathf.Clamp(maxLevel, 0, 7);
             Transform container = tickContainers[index].transform;
             int childCount = container.childCount;
 
+            // Rebuild only when the allowed max level changes (ship level-up).
+            // [UNITY] Destroy() is deferred to end-of-frame — CreateTickMarks right after would
+            // duplicate children until then (same bug MinimapController fixed with DestroyImmediate).
             if (childCount != maxLevel)
             {
                 for (int i = container.childCount - 1; i >= 0; i--)
-                    Destroy(container.GetChild(i).gameObject);
+                    DestroyImmediate(container.GetChild(i).gameObject);
                 CreateTickMarks(tickContainers[index], maxLevel);
                 childCount = maxLevel;
+                _lastTickLevels[index] = -1; // force color refresh after rebuild
             }
 
-            for (int i = 0; i < childCount; i++)
-            {
-                Image img = container.GetChild(i).GetComponent<Image>();
-                if (img != null)
-                    img.color = i < currentLevel ? new Color(1f, 1f, 0.9f, 1f) : new Color(0.3f, 0.3f, 0.35f, 0.8f);
-            }
+            // Skip Image.color writes when fill count + state are unchanged (avoids per-frame dirty).
+            if (_lastTickLevels[index] == currentLevel
+                && _lastMaxUpgrades == maxLevel
+                && _lastSlotVisualState[index] == slotState)
+                return;
+
+            _lastTickLevels[index] = currentLevel;
+            ApplyTickStateColors(index, slotState, buttonCategoryColors[index]);
         }
 
         private void Update()
         {
-            if (!upgradeBarEnabled || rootPanel == null) return;
+            // --- Per-frame refresh ---
+            if (!upgradeBarEnabled)
+                return;
 
-            if (playerShip == null || !playerShip.IsSpawned)
+            EnsureUiBuilt();
+            if (rootPanel == null)
+                return;
+
+            bool show = CanShowUpgradeBar();
+
+            // Only toggle active when visibility actually changes (avoids layout rebuild thrash).
+            if (show != _lastShowActive)
             {
-                if (Time.time - lastShipLookupTime >= ShipLookupInterval)
+                rootPanel.SetActive(show);
+                _lastShowActive = show;
+                if (!show && _abilityTipPanel != null)
                 {
-                    lastShipLookupTime = Time.time;
-                    foreach (var ship in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
-                    {
-                        if (ship.IsOwner)
-                        {
-                            playerShip = ship;
-                            break;
-                        }
-                    }
+                    _activeAbilityTipIndex = null;
+                    _pendingHideAbilityTip = null;
+                    _abilityTipPanel.SetActive(false);
                 }
             }
 
-            bool show = playerShip != null && playerShip.IsSpawned && !playerShip.IsDead
-                && playerShip.ShipTeam != TeamManager.Team.None
-                && !HUDController.ShipUpgradeTreeObscuresHud;
-            rootPanel.SetActive(show);
+            if (!show)
+                return;
 
-            if (!show || playerShip == null) return;
+            if (!TryGetUpgradeHudSnapshot(out var ship, out var attrs))
+                return;
 
-            int maxUpgrades = playerShip.MaxAttributeUpgrades;
-            int cost = playerShip.AttributeUpgradeCost;
+            int maxUpgrades = ShipAttributeUpgradeLogic.GetMaxUpgrades(ship.ShipLevel);
+            int cost = ShipAttributeUpgradeLogic.GetUpgradeCost(ship.ShipLevel);
+            bool maxChanged = maxUpgrades != _lastMaxUpgrades;
+            bool costChanged = cost != _lastCost;
 
             for (int i = 0; i < 10; i++)
             {
-                int current = playerShip.GetAttributeLevel(i);
-                UpdateTickMarks(i, current, maxUpgrades);
+                int current = ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, i);
 
-                bool canUpgrade = current < maxUpgrades && playerShip.CurrentGems >= cost - 0.01f;
-                if (buttons[i] != null)
-                    buttons[i].interactable = canUpgrade;
+                // --- Slot state: Ready (buyable) / Locked (broke) / Maxed (cap) ---
+                UpgradeSlotVisualState slotState = ResolveUpgradeSlotState(
+                    current, maxUpgrades, ship.CurrentGems, cost);
+                UpdateTickMarks(i, current, maxUpgrades, slotState);
 
-                if (costLabels[i] != null)
+                if (costLabels[i] == null)
+                    continue;
+
+                string costText;
+                bool showGemIcon;
+                if (slotState == UpgradeSlotVisualState.Maxed)
                 {
-                    if (current >= maxUpgrades)
+                    // At cap — hide the gem; "MAX" is enough.
+                    costText = "MAX";
+                    showGemIcon = false;
+                }
+                else
+                {
+                    costText = cost.ToString();
+                    showGemIcon = ResolveGemCostIcon() != null;
+                }
+
+                // Dirty-check TMP / icon — farming asteroids changes gems every frame; skip when text identical.
+                if (costChanged || maxChanged || _lastCostText[i] != costText)
+                {
+                    costLabels[i].text = costText;
+                    _lastCostText[i] = costText;
+                    if (costGemIcons[i] != null)
                     {
-                        costLabels[i].text = "MAX";
-                        if (costGemIcons[i] != null) costGemIcons[i].enabled = false;
-                    }
-                    else
-                    {
-                        costLabels[i].text = $"{cost}";
-                        if (costGemIcons[i] != null)
-                            costGemIcons[i].enabled = gemCostIconSprite != null;
+                        Sprite gemSprite = ResolveGemCostIcon();
+                        if (costGemIcons[i].sprite == null && gemSprite != null)
+                            costGemIcons[i].sprite = gemSprite;
+                        costGemIcons[i].enabled = showGemIcon && costGemIcons[i].sprite != null;
                     }
                 }
+
+                // Repaint chrome when affordance changes (gems cross the cost threshold, or hit MAX).
+                if (!_slotVisualsSeeded || _lastSlotVisualState[i] != slotState)
+                {
+                    ApplyUpgradeSlotVisual(i, slotState);
+                    _lastSlotVisualState[i] = slotState;
+                }
             }
+
+            _lastMaxUpgrades = maxUpgrades;
+            _lastCost = cost;
+            _slotVisualsSeeded = true;
+
+            FlushPendingAbilityTipHide();
+        }
+
+        /// <summary>
+        /// Rebuilds STATS chips when the loadout / hull-size snapshot changes.
+        /// Runs from LateUpdate so <see cref="ShipSpeedometerHUD"/> can publish ComponentSize first.
+        /// </summary>
+        void TryRefreshAbilityChipSnapshot(in ShipState ship, in ShipAttributeUpgradeState attrs)
+        {
+            // STATS row off — do not latch; SetStatsChipsVisible resets the key when turned back on.
+            if (!statsChipsVisible)
+                return;
+
+            if (!TryResolveChipLiveContext(out _, out var live, out _) || !IsChipLiveContextReady(in live))
+                return;
+
+            // Key includes ComponentSize so MinMass→real hull (or late HullMassReference) repaints MS/TS.
+            int snapshotKey = ComputeStatsSnapshotKey(in ship, in attrs, live.ComponentSize);
+            if (snapshotKey == _statsSnapshotKey)
+                return;
+
+            _statsSnapshotKey = snapshotKey;
+            PaintChipValues(in live, in attrs);
+            if (_activeAbilityTipIndex.HasValue)
+                RefreshAbilityTipContent();
+        }
+
+        /// <summary>
+        /// Writes glance text onto every visible chip from a ready live context.
+        /// </summary>
+        void PaintChipValues(
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            in ShipAttributeUpgradeState attrs)
+        {
+            for (int i = 0; i < 10; i++)
+            {
+                if (_chipValueTexts[i] == null)
+                    continue;
+
+                ShipAbilityStatBreakdown.ResolveChipDisplay(
+                    i, in live, in attrs, out float value, out float nextStep, out int abilityLv, out string unit);
+                string chipText = FormatChipText(i, value, nextStep, abilityLv, unit);
+                if (_lastChipText[i] == chipText)
+                    continue;
+                _lastChipText[i] = chipText;
+                _chipValueTexts[i].text = chipText;
+            }
+        }
+
+        /// <summary>
+        /// True when chassis EffectiveStats and mass-tax inputs are ready to paint.
+        /// Missing ComponentSize / CruiseMaxSpeed means MS/TS would show untaxed chassis speed.
+        /// </summary>
+        static bool IsChipLiveContextReady(in ShipSpeedometerStatTooltips.LiveContext live)
+        {
+            // Any primary pool above epsilon means GetEffectiveStatsAtShipLevel + attrs ran.
+            ShipComponentAbilityStats eff = live.EffectiveStats;
+            bool statsReady = eff.healthCap > 0.01f
+                || eff.firePower > 0.01f
+                || eff.energyCap > 0.01f
+                || eff.moveSpeed > 0.01f;
+            if (!statsReady)
+                return false;
+
+            // [TITAN-ORBIT] ComponentSize 0 = unknown (we refuse MinMass placeholders). A real hull
+            // may equal MinMass (0.5); CruiseMaxSpeed > 0 means mass tax ran with that size.
+            if (live.ComponentSize <= 0.01f)
+                return false;
+            if (live.CruiseMaxSpeed <= 0.01f)
+                return false;
+
+            return true;
         }
 
         private void LateUpdate()
         {
-            if (!upgradeBarEnabled) return;
-            RefreshUpgradeStripPlacement();
+            // --- Per-frame refresh ---
+            if (!upgradeBarEnabled)
+                return;
+
+            EnsureUiBuilt();
+
+            // Layout only when screen / canvas / minimap geometry actually changes — not every frame.
+            // Continuous remeasure against the minimap left edge caused sub-pixel button jitter
+            // (especially visible in a windowed Game view that is not 1:1 with canvas units).
+            if (_uiBuilt && IsStripLayoutDirty())
+                RefreshUpgradeStripLayout(force: false);
+
+            if (!ShouldShowUpgradeBar())
+                return;
+
+            // --- STATS chips after speedometer LateUpdate when possible ---
+            // [TITAN-ORBIT] Chip mass tax needs HullMassReference / speedometer ComponentSize.
+            // Update() often runs before those exist; LateUpdate retries until ready then latches.
+            if (TryGetUpgradeHudSnapshot(out var ship, out var attrs))
+                TryRefreshAbilityChipSnapshot(in ship, in attrs);
 
             var keyboard = Keyboard.current;
-            if (keyboard == null || playerShip == null || !playerShip.IsSpawned) return;
+            if (keyboard == null)
+                return;
 
             for (int i = 0; i < 9; i++)
             {
@@ -549,16 +1873,25 @@ namespace TitanOrbit.UI
                 TryUpgrade(9);
         }
 
+        /// <summary>
+        /// Client-side pre-check then RPC — server re-validates gems/caps in ShipAttributeUpgradeLogic.
+        /// </summary>
         private void TryUpgrade(int index)
         {
-            if (playerShip == null || !playerShip.IsSpawned || !playerShip.IsOwner) return;
-            if (index < 0 || index > 9) return;
+            // --- Attempt resolution ---
+            if (!CanShowUpgradeBar())
+                return;
+            if (index < 0 || index > 9)
+                return;
+            if (!TryGetUpgradeHudSnapshot(out var ship, out var attrs))
+                return;
 
-            int current = playerShip.GetAttributeLevel(index);
-            if (current >= playerShip.MaxAttributeUpgrades) return;
-            if (playerShip.CurrentGems < playerShip.AttributeUpgradeCost - 0.01f) return;
+            int current = ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, index);
+            if (current >= ShipAttributeUpgradeLogic.GetMaxUpgrades(ship.ShipLevel)) return;
+            if (ship.CurrentGems < ShipAttributeUpgradeLogic.GetUpgradeCost(ship.ShipLevel) - 0.01f) return;
 
-            playerShip.UpgradeAttributeServerRpc(index);
+            // [NETCODE] Authoritative purchase runs on server after RPC delivery.
+            MoonOrbitRpcClient.PurchaseAttributeUpgrade(index);
         }
     }
 }

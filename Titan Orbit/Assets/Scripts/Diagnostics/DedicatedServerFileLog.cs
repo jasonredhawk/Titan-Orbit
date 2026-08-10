@@ -6,18 +6,31 @@ using UnityEngine;
 namespace TitanOrbit.Diagnostics
 {
     /// <summary>
-    /// Plain-text diagnostics written next to the player data folder (same directory as on Linux: deploy root).
-    /// Use on the VM alongside <c>Player.log</c> when diagnosing missing UGS lobbies.
+    /// Append-only plain-text log beside the player data folder (Linux deploy root on GCE).
+    /// Used when journald or Unity Player.log is insufficient — e.g. UGS lobby registration
+    /// failures on headless boot. Thread-safe via lock; rotates at 512 KB to .prev file.
+    /// Not compiled into WebGL client builds in practice (dedicated server path only).
     /// </summary>
     public static class DedicatedServerFileLog
     {
+        // [STANDARD] Serialize concurrent Append calls from boot marker and session manager.
         private static readonly object Gate = new object();
+
+        /// <summary>Max log size before rename to TitanOrbitDedicatedServer.log.prev.</summary>
         private const int MaxFileBytes = 512 * 1024;
 
+        /// <summary>
+        /// Appends one UTC-stamped line to TitanOrbitDedicatedServer.log and mirrors to Debug.Log.
+        /// Swallows all IO errors so boot never fails because logging failed.
+        /// </summary>
+        /// <param name="phase">Short category (boot, lobby, relay) for grep on the VM.</param>
+        /// <param name="message">Human-readable detail without newlines.</param>
+        /// <param name="ex">Optional exception — type, message, and capped stack trace appended.</param>
         public static void Append(string phase, string message, Exception ex = null)
         {
             try
             {
+                // --- Resolve log path next to build root (parent of Assets on server) ---
                 string dir = Application.dataPath != null ? Path.GetDirectoryName(Application.dataPath) : null;
                 if (string.IsNullOrEmpty(dir))
                     return;
@@ -38,6 +51,9 @@ namespace TitanOrbit.Diagnostics
 
                 sb.AppendLine();
                 string line = sb.ToString();
+                Debug.Log("[DedicatedServerFileLog] " + line.TrimEnd());
+
+                // --- Atomic append under lock ---
                 lock (Gate)
                 {
                     if (File.Exists(path))
@@ -54,6 +70,7 @@ namespace TitanOrbit.Diagnostics
                                 }
                                 catch
                                 {
+                                    // [STANDARD] Best-effort rotation — ignore delete failures.
                                 }
 
                                 File.Move(path, prev);
@@ -69,6 +86,7 @@ namespace TitanOrbit.Diagnostics
             }
             catch
             {
+                // [STANDARD] Logging must never crash the dedicated server process.
             }
         }
     }

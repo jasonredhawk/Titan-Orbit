@@ -1,0 +1,1313 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d13c412d6ed32d9499c4edaa0dbec345, type: 3}
+  m_Name: ShipFamilyPartCalcProfileSet
+  m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.ShipFamilyPartCalcProfileSet
+  globalUpgradeScaleMultiplier: 0.25
+  nameMappings:
+  - discoveredName: Acc
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Ammunition
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Arm
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis,ProtonLegacy,StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Armor_01
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Armor_02
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Barrel
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Body
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark,LightFox,MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Body1
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StarForce
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Body2
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StarForce
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Body_01
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Body_02
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Body_03
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Cockpit
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle,ForceBadger,GalaxyRaptor,HyperFalcon,LightFox,MeteorMantis,NightAye,ProtonLegacy,SpaceExcalibur,StarForce,StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: CockpitCover
+    partType: Cockpit
+    contributesAbilityStats: 0
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Cockpit_Base
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Cockpit_Base_1
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Cockpit_Base_2
+    partType: Cockpit
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Core
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon,ProtonLegacy,StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Cover
+    partType: Hull
+    contributesAbilityStats: 0
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Cylinder
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Detail
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Engine
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ForceBadger,GalaxyRaptor,HyperFalcon,MeteorMantis,NightAye,ProtonLegacy,StarForce,StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Engine1
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark,LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Engine2
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark,LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: EngineComp1
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StarForce
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: EngineComp2
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StarForce
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Engine_1
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Engine_2
+    partType: Engine
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Exhaust
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Fin
+    partType: Tail
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle,ForceBadger,ProtonLegacy,StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Flap
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: StarForce
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Gun
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Hatch
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Hood
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Hull
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark,NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Joint
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Knob
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Machinegun
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MainBody1
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MainBody2
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MainBody3
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: MainBody4
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Missile
+    partType: Weapon Cannon
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye,SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Missile_Launcher
+    partType: Weapon Cannon
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Part_1
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Part_2
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Ring
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ProtonLegacy
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Sensor
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ForceBadger
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Shell
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Small_Wing
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Solar
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ProtonLegacy
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Something
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Spike
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Support
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ForceBadger,HyperFalcon,StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Tail
+    partType: Tail
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle,ForceBadger,MeteorMantis
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: ThrustCover
+    partType: Thruster
+    contributesAbilityStats: 0
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Thruster
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle,CosmicShark,ForceBadger,HyperFalcon,StarForce,StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Thrusters
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Thrusters_Big
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 1.5
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Thruster_Place
+    partType: Thruster
+    contributesAbilityStats: 0
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Tiny_Thrusters
+    partType: Thruster
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 1
+    propulsionVfxScale: 0.45
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Tiny_Wing
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Tracks
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Vents
+    partType: Hull
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: HyperFalcon
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Weapon
+    partType: Weapon Bullet
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle,CosmicShark,ForceBadger,LightFox,MeteorMantis,ProtonLegacy,StarForce,StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: ForceBadger,MeteorMantis,ProtonLegacy,StarForce,StriderOx
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing1
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark,GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing2
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: CosmicShark,GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing3
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing4
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: WingHolder
+    partType: Wing
+    contributesAbilityStats: 0
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: GalaxyRaptor
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: WingMain
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: WingMini
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: WingTip
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: WingWide
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: NightAye
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing_01
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing_02
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing_03
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: SpaceExcalibur
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing_1
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle,HyperFalcon,LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing_2
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle,HyperFalcon,LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing_3
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle,LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing_4
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle,LightFox
+    notes: 
+    includeInPopulate: 1
+  - discoveredName: Wing_5
+    partType: Wing
+    contributesAbilityStats: 1
+    enablePropulsionVfx: 0
+    propulsionVfxScale: 1
+    seenInFamilies: AstroEagle
+    notes: 
+    includeInPopulate: 1
+  partProfiles:
+  - partType: Cockpit
+    defaultCategories: 000000000100000004000000
+    baseAtVersion1:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 1
+      rammingPowerPerAbilityLevel: 0.25
+      healthCap: 6.3
+      healthCapPerAbilityLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerAbilityLevel: 0.056250006
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 8
+      maxGemsPerAbilityLevel: 2
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 2
+      maxPeoplePerAbilityLevel: 0.5
+      extraStackWeight: 1
+    perVersionIncrement:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0.12
+      rammingPowerPerAbilityLevel: 0.03
+      healthCap: 1.8
+      healthCapPerAbilityLevel: 0.45
+      healthRegen: 0.06428572
+      healthRegenPerAbilityLevel: 0.01607143
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 8
+      maxGemsPerAbilityLevel: 2
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 2
+      maxPeoplePerAbilityLevel: 0.5
+      extraStackWeight: 0
+    perLevelFractionOverride: 0
+  - partType: Weapon Bullet
+    defaultCategories: 0000000002000000
+    baseAtVersion1:
+      firePower: 3
+      firePowerPerAbilityLevel: 0.75
+      bulletSpeed: 12
+      bulletSpeedPerAbilityLevel: 3
+      bulletRange: 30
+      bulletRangePerAbilityLevel: 7.5
+      fireRate: 3
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 0
+      healthCapPerAbilityLevel: 0
+      healthRegen: 0
+      healthRegenPerAbilityLevel: 0
+      energyCap: 18
+      energyCapPerAbilityLevel: 9
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
+    perVersionIncrement:
+      firePower: 3
+      firePowerPerAbilityLevel: 0.75
+      bulletSpeed: 12
+      bulletSpeedPerAbilityLevel: 3
+      bulletRange: 4
+      bulletRangePerAbilityLevel: 1
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 0
+      healthCapPerAbilityLevel: 0
+      healthRegen: 0
+      healthRegenPerAbilityLevel: 0
+      energyCap: 15
+      energyCapPerAbilityLevel: 3
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
+    perLevelFractionOverride: 0
+  - partType: Weapon Cannon
+    defaultCategories: 0000000002000000
+    baseAtVersion1:
+      firePower: 12
+      firePowerPerAbilityLevel: 3
+      bulletSpeed: 10
+      bulletSpeedPerAbilityLevel: 2.5
+      bulletRange: 36
+      bulletRangePerAbilityLevel: 9
+      fireRate: 1
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 0
+      healthCapPerAbilityLevel: 0
+      healthRegen: 0
+      healthRegenPerAbilityLevel: 0
+      energyCap: 60
+      energyCapPerAbilityLevel: 15
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
+    perVersionIncrement:
+      firePower: 12
+      firePowerPerAbilityLevel: 3
+      bulletSpeed: 2.5
+      bulletSpeedPerAbilityLevel: 0.625
+      bulletRange: 5
+      bulletRangePerAbilityLevel: 1.25
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 0
+      healthCapPerAbilityLevel: 0
+      healthRegen: 0
+      healthRegenPerAbilityLevel: 0
+      energyCap: 20
+      energyCapPerAbilityLevel: 5
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
+    perLevelFractionOverride: 0
+  - partType: Wing
+    defaultCategories: 0100000004000000
+    baseAtVersion1:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 6.3
+      healthCapPerAbilityLevel: 1.575
+      healthRegen: 0.22500002
+      healthRegenPerAbilityLevel: 0.056250006
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 8
+      maxGemsPerAbilityLevel: 2
+      tractorBeamDistance: 3
+      tractorBeamDistancePerAbilityLevel: 0.75
+      tractorBeamPower: 4
+      tractorBeamPowerPerAbilityLevel: 1
+      maxPeople: 2
+      maxPeoplePerAbilityLevel: 0.5
+      extraStackWeight: 1
+    perVersionIncrement:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 1.8
+      healthCapPerAbilityLevel: 0.45
+      healthRegen: 0.06428572
+      healthRegenPerAbilityLevel: 0.01607143
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 8
+      maxGemsPerAbilityLevel: 2
+      tractorBeamDistance: 3
+      tractorBeamDistancePerAbilityLevel: 0.75
+      tractorBeamPower: 4
+      tractorBeamPowerPerAbilityLevel: 1
+      maxPeople: 2
+      maxPeoplePerAbilityLevel: 0.5
+      extraStackWeight: 0
+    perLevelFractionOverride: 0
+  - partType: Engine
+    defaultCategories: 0300000002000000
+    baseAtVersion1:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 0
+      healthCapPerAbilityLevel: 0
+      healthRegen: 0
+      healthRegenPerAbilityLevel: 0
+      energyCap: 18
+      energyCapPerAbilityLevel: 6
+      energyRegen: 18
+      energyRegenPerAbilityLevel: 6
+      moveSpeed: 6
+      moveSpeedPerAbilityLevel: 0.5
+      accelerationCap: 6
+      accelerationCapPerAbilityLevel: 1
+      extraSpeedPercent: 0.5
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 36
+      extraSpeedEnergyDrainPerAbilityLevel: 12
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
+    perVersionIncrement:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 0
+      healthCapPerAbilityLevel: 0
+      healthRegen: 0
+      healthRegenPerAbilityLevel: 0
+      energyCap: 6
+      energyCapPerAbilityLevel: 2
+      energyRegen: 6
+      energyRegenPerAbilityLevel: 2
+      moveSpeed: 2
+      moveSpeedPerAbilityLevel: 0.16666667
+      accelerationCap: 5
+      accelerationCapPerAbilityLevel: 1
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 12
+      extraSpeedEnergyDrainPerAbilityLevel: 4
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
+    perLevelFractionOverride: 0
+  - partType: Thruster
+    defaultCategories: 03000000
+    baseAtVersion1:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 0
+      healthCapPerAbilityLevel: 0
+      healthRegen: 0
+      healthRegenPerAbilityLevel: 0
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 6
+      moveSpeedPerAbilityLevel: 0.5
+      accelerationCap: 3
+      accelerationCapPerAbilityLevel: 0.6
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 4.1621623
+      turnSpeedPerAbilityLevel: 1.0405406
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
+    perVersionIncrement:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 0
+      healthCapPerAbilityLevel: 0
+      healthRegen: 0
+      healthRegenPerAbilityLevel: 0
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 2
+      moveSpeedPerAbilityLevel: 0.1666667
+      accelerationCap: 1
+      accelerationCapPerAbilityLevel: 0.2
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 4.1621623
+      turnSpeedPerAbilityLevel: 1.0405406
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
+    perLevelFractionOverride: 0
+  - partType: Tail
+    defaultCategories: 03000000
+    baseAtVersion1:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 0
+      healthCapPerAbilityLevel: 0
+      healthRegen: 0
+      healthRegenPerAbilityLevel: 0
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 10.7027025
+      turnSpeedPerAbilityLevel: 2.6756756
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
+    perVersionIncrement:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 0
+      healthCapPerAbilityLevel: 0
+      healthRegen: 0
+      healthRegenPerAbilityLevel: 0
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 10.7027025
+      turnSpeedPerAbilityLevel: 2.6756756
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
+    perLevelFractionOverride: 0
+  - partType: Hull
+    defaultCategories: 01000000
+    baseAtVersion1:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.15
+      healthCapPerAbilityLevel: 0.7875
+      healthRegen: 0.11250001
+      healthRegenPerAbilityLevel: 0.028125003
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
+    perVersionIncrement:
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
+      rammingPower: 0
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 0.9
+      healthCapPerAbilityLevel: 0.225
+      healthRegen: 0.03214286
+      healthRegenPerAbilityLevel: 0.008035715
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
+      energyRegen: 0
+      energyRegenPerAbilityLevel: 0
+      moveSpeed: 0
+      moveSpeedPerAbilityLevel: 0
+      accelerationCap: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
+      turnSpeed: 0
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 0
+      maxGemsPerAbilityLevel: 0
+      tractorBeamDistance: 0
+      tractorBeamDistancePerAbilityLevel: 0
+      tractorBeamPower: 0
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
+    perLevelFractionOverride: 0

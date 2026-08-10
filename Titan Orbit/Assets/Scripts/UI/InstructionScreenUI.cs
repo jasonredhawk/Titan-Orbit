@@ -20,6 +20,7 @@ namespace TitanOrbit.UI
 
             public InstructionStep(string title, string body, string spriteResourcePath)
             {
+                // --- InstructionStep ---
                 Title = title;
                 Body = body;
                 SpriteResourcePath = spriteResourcePath;
@@ -102,6 +103,7 @@ namespace TitanOrbit.UI
 
         private void OnEnable()
         {
+            // --- Unity lifecycle ---
             if (continueButton != null)
             {
                 continueButton.onClick.RemoveListener(OnContinueClicked);
@@ -111,6 +113,7 @@ namespace TitanOrbit.UI
 
         public void Show(Action onContinueCallback)
         {
+            // --- Show ---
             BuildUi();
             onContinue = onContinueCallback;
             transform.SetAsLastSibling();
@@ -126,6 +129,7 @@ namespace TitanOrbit.UI
 
         public void SetStepScreenshots(Sprite[] sprites)
         {
+            // --- SetStepScreenshots ---
             stepScreenshots = sprites;
             if (uiBuilt)
                 ApplySprites();
@@ -133,6 +137,7 @@ namespace TitanOrbit.UI
 
         public void Hide()
         {
+            // --- Hide ---
             if (layoutRoutine != null)
             {
                 StopCoroutine(layoutRoutine);
@@ -146,6 +151,7 @@ namespace TitanOrbit.UI
 
         private void OnContinueClicked()
         {
+            // --- OnContinueClicked ---
             var callback = onContinue;
             Hide();
             callback?.Invoke();
@@ -153,6 +159,7 @@ namespace TitanOrbit.UI
 
         private IEnumerator CoLayoutAfterShow()
         {
+            // --- CoLayoutAfterShow ---
             yield return null;
             LayoutColumns();
             ApplySprites();
@@ -167,6 +174,7 @@ namespace TitanOrbit.UI
 
         private void BuildUi()
         {
+            // --- Build data ---
             if (uiBuilt)
                 return;
 
@@ -200,6 +208,7 @@ namespace TitanOrbit.UI
 
         private StepColumn CreateColumn(RectTransform row, InstructionStep step, int index)
         {
+            // --- Create instance ---
             var columnRoot = CreateRect("Column_" + (index + 1), row);
             var cardBg = columnRoot.gameObject.AddComponent<Image>();
             cardBg.color = new Color(0.07f, 0.1f, 0.18f, 0.94f);
@@ -245,6 +254,7 @@ namespace TitanOrbit.UI
 
         private void LayoutColumns()
         {
+            // --- LayoutColumns ---
             if (columnsRow == null || columns.Count == 0)
                 return;
 
@@ -291,6 +301,7 @@ namespace TitanOrbit.UI
 
         private void LayoutHeader(float panelTopFromRootBottom)
         {
+            // --- LayoutHeader ---
             if (headerRoot == null || headerTitle == null || headerSubtitle == null)
                 return;
 
@@ -321,6 +332,7 @@ namespace TitanOrbit.UI
 
         private static ColumnLayoutMetrics ComputeColumnMetrics(StepColumn col, float columnWidth, float rowHeight)
         {
+            // --- Compute value ---
             const float accentHeight = 4f;
             const float titleGap = 8f;
             const float imageGap = 10f;
@@ -361,6 +373,7 @@ namespace TitanOrbit.UI
 
         private static void ApplyColumnLayout(StepColumn col, float columnWidth, ColumnLayoutMetrics metrics)
         {
+            // --- Apply changes ---
             const float accentHeight = 4f;
             const float titleGap = 8f;
             const float imageGap = 10f;
@@ -408,6 +421,7 @@ namespace TitanOrbit.UI
 
         private void ApplySprites()
         {
+            // --- Apply changes ---
             for (int i = 0; i < columns.Count; i++)
             {
                 Image image = columns[i].Illustration;
@@ -427,6 +441,7 @@ namespace TitanOrbit.UI
 
         private Sprite LoadSprite(string resourcePath)
         {
+            // --- LoadSprite ---
             if (string.IsNullOrEmpty(resourcePath))
                 return null;
 
@@ -456,6 +471,7 @@ namespace TitanOrbit.UI
 
         private static Button CreateContinueButton(RectTransform panel)
         {
+            // --- Create instance ---
             var buttonRect = CreateRect("ContinueButton", panel);
             buttonRect.anchorMin = new Vector2(0.5f, 0f);
             buttonRect.anchorMax = new Vector2(0.5f, 0f);
@@ -476,6 +492,7 @@ namespace TitanOrbit.UI
 
         private static RectTransform CreateRect(string name, Transform parent)
         {
+            // --- Create instance ---
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent, false);
             return go.GetComponent<RectTransform>();
@@ -483,6 +500,7 @@ namespace TitanOrbit.UI
 
         private static void StretchFill(RectTransform rt, float left, float bottom, float right, float top)
         {
+            // --- StretchFill ---
             rt.anchorMin = Vector2.zero;
             rt.anchorMax = Vector2.one;
             rt.offsetMin = new Vector2(left, bottom);
@@ -491,6 +509,7 @@ namespace TitanOrbit.UI
 
         private static void AnchorTopBand(RectTransform rt, float height)
         {
+            // --- AnchorTopBand ---
             rt.anchorMin = new Vector2(0f, 1f);
             rt.anchorMax = new Vector2(1f, 1f);
             rt.pivot = new Vector2(0.5f, 1f);
@@ -500,6 +519,7 @@ namespace TitanOrbit.UI
 
         private static TextMeshProUGUI CreateText(Transform parent, string name, string text, int fontSize, FontStyles style, TextAlignmentOptions alignment)
         {
+            // --- Create instance ---
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(parent, false);
             var tmp = go.AddComponent<TextMeshProUGUI>();

@@ -1,0 +1,366 @@
+---
+description: Project-wide richly commented code — teach every topic inline (ECS, UI, NetCode, Game, Data, Editor) for learners.
+alwaysApply: true
+---
+
+# Titan Orbit — educational commenting standard (all files)
+
+The project owner edits code by hand and learns by reading source. **Comments are part of the product**, not an afterthought. Every file you touch should read like a **well-written tutorial**: clear structure, patient explanations, and inline teaching at the points where confusion usually happens.
+
+This rule is the **single source of truth** for comment style and density **across the entire project** — ECS sim, NetCode, UI, GameObject bridges, data assets, editor tools, services, input, camera, diagnostics, and tests. Architecture behavior lives in `titan-orbit-ship-simulation.mdc`; **how to document code lives here only**.
+
+**Default expectation:** If you add or change code, the resulting file should be **beautifully commented** — someone with basic C# but little Unity/multiplayer experience can follow it without external docs.
+
+---
+
+## North star
+
+```
+Open any .cs file
+  → File summary explains what this file is for and where it sits in the game
+  → Every type, field group, and non-trivial member is introduced
+  → Every method explains purpose, when it runs, inputs, outputs, side effects
+  → Inside methods: section headers + inline comments on steps, branches, loops, and API calls
+  → Domain terms defined on first use; standard vs Titan-Orbit choices labeled
+```
+
+**When editing:** Do not comment only the diff. Bring the **whole method, type, or logical block** up to this standard. If you touch a 50-line method with no comments, comment the full method before you finish.
+
+---
+
+## Audience and tone
+
+Write for someone who:
+- Knows basic C# (classes, methods, `if`, loops) but may not know Unity lifecycle, DOTS, NetCode, or multiplayer jargon.
+- Cannot infer *why* a line exists from naming alone.
+- Wants to learn **what things are called**, **what they do**, and **whether this is normal industry practice or a Titan Orbit custom choice**.
+
+Tone: **patient teacher**, not expert shorthand. Plain language first. Define acronyms on first use in each file. Short sentences. Prefer "we" or "this method" over passive voice.
+
+**Beautiful comments** means:
+- Scannable layout (`// --- Section ---`, blank line between phases).
+- Each comment adds **what**, **why**, or **when** — not a restatement of the identifier.
+- Paired systems named (`Paired with ShipMovementSystem on the server`).
+- Surprises called out (`// Intentional: we skip X because Y`).
+
+---
+
+## Comment layers (use every layer that applies)
+
+| Layer | Where | Required content |
+|-------|--------|------------------|
+| **File** | Top `/// <summary>` on primary type | 3–6 sentences: role in the game, client/server/editor, reads/writes, neighbors in the pipeline, link to paired files if any. |
+| **Type** | `/// <summary>` on every class, struct, enum, interface | What it represents in gameplay or tech terms; who creates/owns it. |
+| **Members** | Fields, properties, constants, events, serialized `[SerializeField]` | What it holds, units if any, who sets it, lifecycle (scene load, spawn, per-frame). |
+| **Method** | `/// <summary>` on every method (public, private, static) | Purpose, when called (Awake, fixed step, RPC, button click), inputs/outputs, side effects, failure modes. Use `<param>` / `<returns>` when not obvious. |
+| **Section** | `// --- Name ---` inside methods and long types | One header per logical phase (cache refs → query ECS → apply to proxy). |
+| **Inline** | Above or beside lines and small blocks | What this step does, why this branch, what this variable means **right now**. |
+| **Closing** | End of complex methods (optional) | One line if helpful: what state the world is in after this method returns. |
+
+**Density inside methods:** Comment the **flow**. For a typical method:
+- **1–5 lines:** at least one inline comment if anything is non-obvious; otherwise a one-line method summary may suffice.
+- **6–15 lines:** section header(s) + inline comments on each meaningful step.
+- **16+ lines:** section headers for every phase + inline on branches, loops, math, and external calls.
+
+Do **not** leave multi-line blocks with zero explanation. Do **not** add noise on truly empty lines or closing braces alone.
+
+---
+
+## Label standard vs custom
+
+Tag comments where the reader might think "is this just Unity?" or "is this our game logic?":
+
+| Tag | Meaning |
+|-----|---------|
+| `[STANDARD]` | Normal C#, software engineering, or widely used patterns |
+| `[UNITY]` | Unity engine lifecycle, serialization, scenes, prefabs, UGUI |
+| `[ECS/DOTS]` | Entities, components, systems, jobs, baking |
+| `[NETCODE]` | NetCode for Entities: ghosts, prediction, RPCs, replication |
+| `[PHYSICS]` | Unity Physics package behavior |
+| `[TITAN-ORBIT]` | Custom design for this game — explain the game reason |
+| `[HYBRID]` | Bridge between ECS sim and GameObject presentation (this project pattern) |
+| `[EDITOR]` | Editor-only tooling; not in player/server builds |
+| `[LEGACY]` | Old path kept temporarily — say what replaces it |
+
+Example:
+```csharp
+// [NETCODE] GhostOwnerIsLocal — true only for the ship this player controls on this machine.
+// [TITAN-ORBIT] We read presentation pose here, not raw sim — see ship-simulation rule §4.
+```
+
+---
+
+## Teach terms inline (glossary on first use)
+
+Whenever a domain word appears, teach it once per file (or per method if the file is huge):
+
+```csharp
+// Ghost — NetCode's name for a networked entity replica on client or server (not a visual "ghost sprite").
+// RPC (Remote Procedure Call) — client asks server to run an action; server validates then applies.
+// ScriptableObject — Unity asset file holding design data (stats, catalogs), loaded at runtime.
+// MonoBehaviour — Unity component on a GameObject; runs on main thread with Update/LateUpdate.
+// World (ECS) — DOTS container for entities/components/systems; separate from Unity "scene".
+// Fixed step — simulation tick at fixed dt (e.g. 60 Hz); movement should use this, not frame delta.
+// Presentation — phase after sim where transforms are smoothed for rendering.
+```
+
+If two concepts interact, say both:
+```csharp
+// ShipInputApplySystem runs in GhostInputSystemGroup — NetCode's slot for copying player input onto ghosts before prediction.
+```
+
+---
+
+## What to comment (checklist for every code construct)
+
+Apply to **all** topics — not only ship movement:
+
+| Construct | Teach in comments |
+|-----------|-------------------|
+| **Class / file** | Responsibility, which assembly/build (client, server, editor), entry points |
+| **Fields & SerializeField** | Source of truth, default meaning, inspector vs code-set |
+| **Properties** | Computed vs stored; thread/world safety |
+| **Constructors / Awake / OnEnable** | Order vs other components; what must exist first |
+| **Start / OnDisable / OnDestroy** | Cleanup, unsubscribe, release native refs |
+| **Update / LateUpdate / FixedUpdate** | Why this loop rate; what must NOT move here (sim authority) |
+| **Coroutines / async** | What waits; what thread; cancellation |
+| **if / else / switch** | Gameplay or network meaning of each branch |
+| **Loops** | What one iteration represents; early-exit reason |
+| **LINQ / allocations** | If hot path, note cost; if cold, say "runs once at load" |
+| **Try/catch** | What failure looks like for player or server |
+| **Math / vectors** | Units, space (world vs local), normalized or not |
+| **Queries** | Included/excluded entities; performance note if broad |
+| **Component reads/writes** | Who owns writes; prediction vs authority |
+| **Instantiate / Destroy** | Pool vs spawn; network spawn if relevant |
+| **UI bindings** | What player sees; what ECS/RPC it triggers |
+| **ScriptableObject fields** | Designer-tunable vs code constant |
+| **#if UNITY_EDITOR / SERVER** | Which build strips this; why the split exists |
+
+---
+
+## Topic guides (all areas — same depth)
+
+### ECS / Systems (`Assets/Scripts/ECS/**`)
+
+- File summary: world filter (`ClientSimulation`, `ServerSimulation`, `Presentation`), system group, `[UpdateBefore/After]`.
+- `OnCreate`: what singletons/queries are cached and why caching matters for performance.
+- `OnUpdate`: per-phase comments — query → read components → write components → dispose.
+- Every `WithAll` / `WithNone`: who is in the query and why.
+- Burst: `[BurstCompile]` meaning; what cannot run in Burst (managed strings, EntityManager in hot path).
+- Pair client prediction with server authority by name.
+
+### ECS / Components & Authoring
+
+- Each `IComponentData` field: gameplay meaning, units, who writes, ghost-serialized or local-only.
+- Bakers: what GameObject/prefab data becomes which entity components at bake time.
+- Ghost fields: what replicates to clients; prediction importance if applicable.
+
+### NetCode & session (`NetCode/**`, RPCs, session managers)
+
+- Connection lifecycle: listen, join, disconnect, host vs dedicated server.
+- RPC handlers: what client sends, what server validates, what can cheat if missing.
+- Bootstrap / dedicated server: `#if UNITY_SERVER` paths; what runs headless only.
+
+### Game / presentation bridges (`Game/**`, visual appliers, `EcsWorldVisualizer`)
+
+- `[HYBRID]` — ECS sim state → GameObject proxy; **render only**, never drive sim.
+- Which transform source (presentation cache vs sim) and why.
+- Per-frame sync: what is cosmetic smoothing vs forbidden movement smoothing.
+
+### UI (`UI/**`)
+
+- What screen/panel this is; which player state it reflects.
+- Button/handler → which RPC or local action; server authority for gameplay changes.
+- Mobile vs desktop branches if present.
+
+### Input (`Input/**`)
+
+- How input becomes `ShipInput` or UI events; client-only path.
+- Dead zones, sticks, hold-to-shoot — tie to feel and NetCode input buffer.
+
+### Data (`Data/**`, ScriptableObjects, catalogs)
+
+- What designers edit in Inspector; what systems consume at runtime.
+- Cache/load path; when data is baked vs read live.
+
+### Services (`Services/**`, ads, friends, platform)
+
+- External SDK boundaries; what is stubbed in editor.
+- Threading and main-thread dispatch back to Unity.
+
+### Camera (`Camera/**`)
+
+- Follow target source (presentation pose); not sim for local owner if rule forbids.
+
+### Editor (`Editor/**`, `ECS/Editor/**`)
+
+- `[EDITOR]` — menu item purpose; what asset/scene it modifies; safe to run when.
+
+### Diagnostics (`Diagnostics/**`)
+
+- What gets logged; server file log vs client console; performance impact.
+
+---
+
+## Examples across file kinds
+
+### ECS system (good density)
+
+```csharp
+/// <summary>
+/// Server-authoritative ship movement. Runs the shared motor for every ship ghost each fixed step,
+/// before Unity Physics integrates hull position. Paired with ShipClientPredictedMovementSystem (client).
+/// World: ServerSimulation. Group: PredictedFixedStepSimulationSystemGroup, before PhysicsSystemGroup.
+/// </summary>
+[UpdateBefore(typeof(PhysicsSystemGroup))]
+public partial struct ShipMovementSystem : ISystem
+{
+    public void OnUpdate(ref SystemState state)
+    {
+        // --- Fixed timestep ---
+        // [UNITY] TimeStep from FixedStepSimulationSystemGroup — same dt as client prediction.
+        float dt = SystemAPI.Time.DeltaTime;
+
+        // --- Motor pass (velocity + rotation only) ---
+        // [ECS/DOTS] RefRW = read/write access; we mutate PhysicsVelocity and LocalTransform.Rotation.
+        // [TITAN-ORBIT] Position is NOT integrated here — PhysicsSystemGroup owns Position.
+        foreach (var (transform, velocity, input, entity) in SystemAPI.Query<...>().WithAll<ShipTag, Simulate>())
+        {
+            // [NETCODE] Simulate — entity participates in prediction on client; server still uses tag for same query shape.
+            ShipMovementLogic.StepShip(ref transform.ValueRW, ref velocity.ValueRW, input, dt, ...);
+        }
+    }
+}
+```
+
+### MonoBehaviour bridge (good density)
+
+```csharp
+/// <summary>
+/// Copies the local ship's presentation transform from ECS into the camera follow target.
+/// Runs in LateUpdate after ShipVisualSyncSystem has written the presentation cache.
+/// Client only — server has no camera.
+/// </summary>
+public class CameraFollowEcs : MonoBehaviour
+{
+    [SerializeField] Transform followTarget;
+
+    void LateUpdate()
+    {
+        // --- Resolve local ship pose ---
+        // [HYBRID] Read presentation cache, not sim LocalTransform — avoids jitter on predicted owner.
+        if (!GhostPresentationTransformCache.TryGetLocalShip(out var pose))
+            return; // [STANDARD] No ship yet (loading, dead, or not spawned).
+
+        // --- Apply to camera rig ---
+        // [UNITY] followTarget is the camera pivot in the scene hierarchy.
+        followTarget.SetPositionAndRotation(pose.Position, pose.Rotation);
+    }
+}
+```
+
+### UI + RPC (good density)
+
+```csharp
+/// <summary>
+/// Moon orbit menu: player picks an orbit slot; sends request to server for validation.
+/// </summary>
+void OnOrbitSlotClicked(int slotIndex)
+{
+    // --- Guard local state ---
+    // [TITAN-ORBIT] Slot 0 is reserved for homeworld; UI hides it but we double-check.
+    if (slotIndex < 1 || slotIndex > MaxSlots)
+        return;
+
+    // --- Ask server ---
+    // [NETCODE] RPC — server decides if orbit is legal (range, team, cooldown).
+    _rpcClient.SendMoonOrbitRequest(slotIndex);
+}
+```
+
+### Data component (good density)
+
+```csharp
+/// <summary>
+/// Designer-tunable thrust cap for a ship class. Loaded from ShipPartCatalog ScriptableObject.
+/// </summary>
+public struct ShipMotorConfig : IComponentData
+{
+  /// <summary>Max speed in world units per second (top-down XZ plane).</summary>
+    public float MaxSpeed;
+
+    /// <summary>Acceleration in units/s². [TITAN-ORBIT] Used by ShipMotorSimulator, not Unity Rigidbody.</summary>
+    public float Acceleration;
+}
+```
+
+### Too thin (never ship like this)
+
+```csharp
+void LateUpdate()
+{
+    if (GhostPresentationTransformCache.TryGetLocalShip(out var pose))
+        followTarget.SetPositionAndRotation(pose.Position, pose.Rotation);
+}
+```
+
+---
+
+## When you touch a file (agent checklist)
+
+Before finishing any task that edits `.cs` (or other code) under the project:
+
+- [ ] **File** has a teaching `/// <summary>` on the primary type.
+- [ ] **Every type** in the file has a summary (nested types too).
+- [ ] **Every method** has `/// <summary>`; params/returns documented if not obvious.
+- [ ] **Fields and serialized members** have `///` or `//` explaining purpose and who sets them.
+- [ ] **Every method you touched** is fully commented inside (sections + inline), not just new lines.
+- [ ] **Branches, loops, queries, RPCs, math** have inline teaching comments.
+- [ ] **Terms** defined on first use in the file.
+- [ ] **Tags** `[STANDARD]` / `[UNITY]` / `[NETCODE]` / `[ECS/DOTS]` / `[TITAN-ORBIT]` / `[HYBRID]` used where source of pattern matters.
+- [ ] **Pipeline order** stated when execution order matters.
+- [ ] **No large uncommented blocks** remain in the file regions you edited; prefer whole-file pass if the file is small.
+
+If the user asks only for a one-line fix in a huge file, still upgrade **the entire containing method** to this standard minimum.
+
+---
+
+## Scope — all project code
+
+Apply **equal comment depth** to:
+
+- `Assets/Scripts/ECS/**`
+- `Assets/Scripts/Game/**`
+- `Assets/Scripts/UI/**`
+- `Assets/Scripts/NetCode/**`
+- `Assets/Scripts/Input/**`
+- `Assets/Scripts/Data/**`
+- `Assets/Scripts/Services/**`
+- `Assets/Scripts/Camera/**`
+- `Assets/Scripts/Diagnostics/**`
+- `Assets/Scripts/Editor/**` and `Assets/Editor/**`
+- Any other gameplay or tooling C# under `Titan Orbit/Assets/`
+
+No "presentation-only = fewer comments" exception. UI and VFX files still teach **what the player sees** and **what sim/network truth** they reflect.
+
+---
+
+## Do not
+
+- Delete teaching comments unless wrong — update them.
+- Write `// increment i` or `// set x to 5` with no teaching value.
+- Assume NetCode, Burst, ghosts, toroidal map, or orbit mechanics are known.
+- Hide intentional quirks — explain and tag `[TITAN-ORBIT]`.
+- Leave methods with multiple responsibilities and zero section headers.
+- Comment only the diff when the surrounding method is still opaque.
+
+---
+
+## Quick reference — file should feel like
+
+1. **Textbook chapter** at the top (file + type summaries).
+2. **Lab walkthrough** inside methods (sections + inline steps).
+3. **Margin notes** for jargon and standard-vs-custom tags.
+4. **Cross-links** to paired systems and `titan-orbit-ship-simulation.mdc` when sim rules apply.
+
+The goal: open any file in Titan Orbit and **learn the game and the tech stack from the comments alone**.

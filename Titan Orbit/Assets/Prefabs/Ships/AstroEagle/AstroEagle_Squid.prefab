@@ -9,7 +9,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 2829331563695812030}
-  - component: {fileID: 5654298418617396321}
   m_Layer: 0
   m_Name: AstroEagle_Squid
   m_TagString: Untagged
@@ -50,81 +49,6 @@ Transform:
   - {fileID: 5080743088501217095}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &5654298418617396321
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2830926078676568530}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: ced7d950b299c1943bcdaca377dec97b, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Entities.ShipFamilyStatsPreview
-  shipFamily: {fileID: 11400000, guid: 31340acc0090ccc4e8c28a584729195f, type: 2}
-  familyIdOverride: 
-  totalStats:
-    firePower: 20
-    firePowerPerLevel: 6
-    bulletSpeed: 20
-    bulletSpeedPerLevel: 4
-    fireRate: 6
-    fireRatePerLevel: 1
-    healthCap: 145.75565
-    healthCapPerLevel: 31.451128
-    healthRegen: 35.91855
-    healthRegenPerLevel: 9.733709
-    energyCap: 85.91855
-    energyCapPerLevel: 26.975563
-    energyRegen: 29.951128
-    energyRegenPerLevel: 7.9918547
-    moveSpeed: 16
-    moveSpeedPerLevel: 4
-    turnSpeed: 54
-    turnSpeedPerLevel: 12
-    maxGems: 90.91855
-    maxGemsPerLevel: 20.48371
-    maxPeople: 29.918547
-    maxPeoplePerLevel: 6.4837093
-  matchedComponentIds:
-  - Cockpit
-  - Cockpit_Base_1
-  - Cockpit_Base_2
-  - Engine_2
-  - Part_1
-  - Part_2
-  - Part_2
-  - Tail
-  - Tail
-  - Thruster
-  - Weapon
-  - Weapon
-  - Weapon
-  - Weapon
-  - Wing_1
-  - Wing_1
-  - Wing_1_Mirrored
-  - Wing_1_Mirrored
-  matchedScaleFactors:
-  - 0.9837092
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
-  - 1
 --- !u!1001 &1188271010049598894
 PrefabInstance:
   m_ObjectHideFlags: 0

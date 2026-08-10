@@ -6,6 +6,7 @@ using UnityEngine.UI;
 using TMPro;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
+using TitanOrbit.Game;
 using TitanOrbit.Systems;
 using TitanOrbit.Data;
 #if ENABLE_INPUT_SYSTEM
@@ -18,7 +19,7 @@ namespace TitanOrbit.UI
     /// Combined orbit station UI: ship loadout grids (stacked vertically) at top, orbit actions and store below.
     /// Single left-anchored panel. Optional Shift Sci-Fi UI sprites/font assignable in inspector.
     /// </summary>
-    public partial class OrbitStationUI : MonoBehaviour
+    public partial class OrbitStationUI : MonoBehaviour, IOrbitStationHost
     {
         [Header("Shift Sci-Fi UI (optional)")]
         [Tooltip("Assign Shift UI panel/sprite for sci-fi look.")]
@@ -50,26 +51,36 @@ namespace TitanOrbit.UI
         private const float SlotCellSpacing = 11f;
         private const float SlotPanelWidthConst = 12f + 6 * SlotCardWidth + 5 * SlotCellSpacing + 12f; // 6 cards + spacing
         private const float SlotPanelHeaderHeight = 28f;
+        // --- Left dock purchased inventory (Upgrade Cards + Equipment) ---
+        // [TITAN-ORBIT] Compact glance cards: title + icon + colorful power bar only.
+        // Line-by-line ability stats stay on the right store purchase cards — do not duplicate here.
         private const int SidebarSlotColumns = 1;
-        private const float SidebarSlotCardWidth = 228f;
+        private const float SidebarSlotCardWidth = 262f;
         private const float SidebarSlotCardHeight = 68f;
-        private const float SidebarSlotCellSpacing = 8f;
-        private const float SidebarEquipmentSlotCardHeight = 300f;
-        private const float SidebarEquipmentIconHeight = 64f;
-        private const float SidebarEquipmentIconMinHeight = 48f;
-        private const float SidebarEquipmentAbilityFontSize = 10f;
-        private const float SidebarEquipmentAbilityAreaHeight = 54f;
-        private const float SidebarEquipmentStatsFooterHeight = 74f;
+        private const float SidebarSlotCellSpacing = 5f;
+        /// <summary>Filled equipment card without mount-adjust panel (icon + power bar + subline).</summary>
+        private const float SidebarEquipmentSlotCardHeight = 88f;
+        /// <summary>Empty equipment slot — title row only so unused slots do not waste scroll space.</summary>
+        private const float SidebarEquipmentSlotCardHeightEmpty = 40f;
+        /// <summary>Extra height when the player expands mount Move/Turn controls on a component.</summary>
+        private const float SidebarEquipmentPlacementPanelHeight = 118f;
+        /// <summary>Height of the collapsed "Adjust mount" toggle row on component cards.</summary>
+        private const float SidebarEquipmentPlacementToggleHeight = 18f;
+        private const float SidebarEquipmentIconHeight = 34f;
+        private const float SidebarEquipmentIconMinHeight = 28f;
+        /// <summary>Stats footer holds only the colourful category power bar (no ability text, no dark track chrome).</summary>
+        private const float SidebarEquipmentStatsFooterHeight = 10f;
         private static readonly Color SidebarEquipmentEmptyAccent = new Color(0.35f, 0.4f, 0.48f, 0.85f);
         private const float MoonDockUpgradeSpinCardHeight = 168f;
         private const float MoonDockUpgradeSpinIconHeight = 48f;
         private const float MoonDockUpgradeSpinDescHeight = 44f;
         private const float MoonDockUpgradeSpinDescFontSize = 10f;
-        private const float SidebarUpgradeCardSlotHeight = 172f;
-        private const float SidebarUpgradeCardIconHeight = 56f;
-        private const float SidebarUpgradeCardIconMinHeight = 44f;
-        private const float SidebarUpgradeCardDescHeight = 52f;
-        private const float SidebarUpgradeCardDescFontSize = 10f;
+        /// <summary>Owned upgrade-card glance height (title + icon + equipped subline; no description block).</summary>
+        private const float SidebarUpgradeCardSlotHeight = 70f;
+        /// <summary>Empty upgrade-card slot height.</summary>
+        private const float SidebarUpgradeCardSlotHeightEmpty = 38f;
+        private const float SidebarUpgradeCardIconHeight = 30f;
+        private const float SidebarUpgradeCardIconMinHeight = 24f;
         private static readonly Color SidebarUpgradeCardEmptyAccent = new Color(0.35f, 0.42f, 0.55f, 0.85f);
 
         private GameObject rootPanel;
@@ -182,7 +193,7 @@ namespace TitanOrbit.UI
         private GridLayoutGroup _moonDockStoreGrid;
         private string _moonDockStoreBuiltForFamilyKey;
         private int _moonDockEquipmentCardLayoutVersionBuilt = -1;
-        private const int MoonDockEquipmentCardLayoutVersion = 3;
+        private const int MoonDockEquipmentCardLayoutVersion = 4;
 
         private sealed class MoonDockStoreCardBinding
         {
@@ -207,8 +218,14 @@ namespace TitanOrbit.UI
         private const float EquipmentPlacementNudgeStep = 0.03f;
         private const float EquipmentRotationSnapStep = 45f;
 
+        /// <summary>
+        /// Runtime wiring for one compact Equipment card in the left Orbit Menu dock.
+        /// Holds presentation refs plus mount-adjust expand state (placement starts collapsed).
+        /// </summary>
         private sealed class SidebarEquipmentSlotUi
         {
+            /// <summary>LayoutElement on the card root — preferredHeight updates when empty/filled/placement expands.</summary>
+            public LayoutElement cardLayout;
             public Image accentImage;
             public Image iconImage;
             public TextMeshProUGUI iconGlyph;
@@ -216,37 +233,47 @@ namespace TitanOrbit.UI
             public ShipUpgradeTreePowerBarUI powerBar;
             public GameObject statsFooter;
             public GameObject iconRoot;
+            /// <summary>Small "Adjust mount" control; only shown for ship components.</summary>
+            public GameObject placementToggleRow;
+            public TextMeshProUGUI placementToggleLabel;
             public GameObject placementPanel;
             public TextMeshProUGUI placementReadout;
+            /// <summary>[TITAN-ORBIT] Mount Move/Turn rows stay collapsed so the inventory list stays scannable.</summary>
+            public bool placementExpanded;
         }
 
         private SidebarEquipmentSlotUi[] _sidebarEquipmentSlotUi;
         private bool _equipmentSlotRichLayoutActive;
 
+        /// <summary>
+        /// Runtime wiring for one compact Upgrade Card slot in the left Orbit Menu dock.
+        /// Full card descriptions live on store spin offers — owned slots show title + icon + level/rarity only.
+        /// </summary>
         private sealed class SidebarUpgradeCardSlotUi
         {
+            /// <summary>LayoutElement on the card root — short when empty, taller when filled.</summary>
+            public LayoutElement cardLayout;
             public Image accentImage;
             public Image iconImage;
             public TextMeshProUGUI iconGlyph;
             public TextMeshProUGUI sublineText;
             public GameObject iconRoot;
-            public GameObject descFooter;
         }
 
         private SidebarUpgradeCardSlotUi[] _sidebarUpgradeCardSlotUi;
         private bool _upgradeCardSlotRichLayoutActive;
         private bool _upgradeSpinRowUsesTallLayout;
 
-        private const int MoonDockStoreTilesPerRow = 7;
-        private const float MoonDockStoreTileSpacing = 6f;
-        private const float MoonDockStoreTileMinWidth = 72f;
+        private const int MoonDockStoreTilesPerRow = 4;
+        private const float MoonDockStoreTileSpacing = 8f;
+        private const float MoonDockStoreTileMinWidth = 140f;
         private const float MoonDockStoreCardHeight = 118f;
-        private const float MoonDockEquipmentCardHeight = 324f;
-        private const float MoonDockEquipmentIconHeight = 136f;
-        private const float MoonDockEquipmentIconMinHeight = 104f;
-        private const float MoonDockEquipmentAbilityFontSize = 11f;
-        private const float MoonDockEquipmentAbilityAreaHeight = 80f;
-        private const float MoonDockEquipmentStatsFooterHeight = 112f;
+        private const float MoonDockEquipmentCardHeight = 380f;
+        private const float MoonDockEquipmentIconHeight = 72f;
+        private const float MoonDockEquipmentIconMinHeight = 56f;
+        private const float MoonDockEquipmentAbilityFontSize = 9.5f;
+        private const float MoonDockEquipmentAbilityAreaHeight = 168f;
+        private const float MoonDockEquipmentStatsFooterHeight = 200f;
         private const float MoonDockEquipmentPowerBarHeight = 8f;
         private const float MoonDockEquipmentPowerBarPairGap = 2f;
         private const float MoonDockEquipmentScrollMinHeight = 200f;
@@ -297,7 +324,11 @@ namespace TitanOrbit.UI
         public static OrbitStationUI GetOrCreate()
         {
             var existing = UnityEngine.Object.FindFirstObjectByType<OrbitStationUI>();
-            if (existing != null) return existing;
+            if (existing != null)
+            {
+                Instance = existing;
+                return existing;
+            }
 
             Canvas canvas = UnityEngine.Object.FindFirstObjectByType<Canvas>();
             if (canvas == null)
@@ -313,13 +344,17 @@ namespace TitanOrbit.UI
 
             var uiObj = new GameObject("OrbitStationUI");
             uiObj.transform.SetParent(canvas.transform, false);
-            return uiObj.AddComponent<OrbitStationUI>();
+            var ui = uiObj.AddComponent<OrbitStationUI>();
+            Instance = ui;
+            return ui;
         }
 
         public static void OnContributedGemsReceived(float gems)
         {
             lastReceivedGems = gems;
             pendingGemsRequest = false;
+            // Keep metronome Bank seed in sync with the latest authoritative total.
+            MoonOrbitClientState.RememberContributedGems(gems);
             var ui = UnityEngine.Object.FindFirstObjectByType<OrbitStationUI>();
             if (ui != null) ui.RefreshFromReceivedGems();
         }
@@ -346,20 +381,33 @@ namespace TitanOrbit.UI
 
         private void Awake()
         {
+            // --- Unity lifecycle ---
+            OnOrbitStationEcsAwake();
             EnsurePanelExists();
             if (rootPanel != null) rootPanel.SetActive(false);
         }
+
+        void OnDestroy()
+        {
+            OnOrbitStationEcsDestroy();
+        }
+
+        partial void OnOrbitStationEcsUpdate();
+        partial void OnOrbitStationEcsHide();
 
         private void OnEnable()
         {
             CardShopSystem.ClientSpinOfferReceived += OnClientSpinOfferReceived;
             CardShopSystem.ClientSpinOfferConsumed += OnClientSpinOfferConsumed;
+            // Bank GEM DEPOSITS ticks with deposit metronome (not only the 1s contributed-gems poll).
+            MoonOrbitClientState.LocalDepositBeat += OnLocalDepositBeatForBank;
         }
 
         private void OnDisable()
         {
             CardShopSystem.ClientSpinOfferReceived -= OnClientSpinOfferReceived;
             CardShopSystem.ClientSpinOfferConsumed -= OnClientSpinOfferConsumed;
+            MoonOrbitClientState.LocalDepositBeat -= OnLocalDepositBeatForBank;
         }
 
         private void OnClientSpinOfferReceived()
@@ -446,6 +494,8 @@ namespace TitanOrbit.UI
 
         private void Update()
         {
+            // --- Per-frame refresh ---
+            OnOrbitStationEcsUpdate();
             HandleMoonDockDismissInput();
             if (currentShip == null || currentPlanet == null) return;
             if (!_moonDockLayoutActive && (rootPanel == null || !rootPanel.activeSelf)) return;
@@ -458,8 +508,10 @@ namespace TitanOrbit.UI
                 RefreshSlots();
                 RefreshEquipmentSlots();
             }
-            // Periodically request contributed gems so deposits show up without closing/reopening
-            if (contributedGemsRequestAccum >= ContributedGemsRequestInterval && HomePlanetStoreSystem.Instance != null)
+            // Periodically request contributed gems (soft-reconcile while depositing — never skip
+            // entirely or Bank freezes if a beat was missed).
+            if (contributedGemsRequestAccum >= ContributedGemsRequestInterval &&
+                HomePlanetStoreSystem.Instance != null)
             {
                 contributedGemsRequestAccum = 0f;
                 HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
@@ -623,7 +675,10 @@ namespace TitanOrbit.UI
                     if (h != null && h.AssignedTeam == ship.ShipTeam) { currentHomePlanet = h; break; }
                 }
             }
-            contributedGems = 0f;
+            contributedGems = lastReceivedGems;
+            MoonOrbitClientState.RememberContributedGems(contributedGems);
+            // One-shot auto-deposit apply on open (not every sidebar refresh — that raced Windows SFX).
+            ApplyAutoDepositPreferenceToShip();
             EnsurePanelExists();
             EnterMoonDockLayout();
             if (rootPanel != null)
@@ -669,32 +724,41 @@ namespace TitanOrbit.UI
             currentPlanet = null;
             currentHomePlanet = null; // Clear so next Show does fresh lookup
             if (rootPanel != null) rootPanel.SetActive(false);
+            OnOrbitStationEcsHide();
         }
 
         public void RefreshFromReceivedGems()
         {
-            contributedGems = lastReceivedGems;
+            // --- Authoritative Bank from RPC / live ledger ---
+            // [TITAN-ORBIT] While the deposit metronome is driving Ship+Bank, do not snap the
+            // displayed Bank to the server clock (that made GEM DEPOSITS rise independently of
+            // the audible chunk). Soft-reconcile into optimistic Bank instead.
+            if (MoonOrbitClientState.WantDepositGems)
+            {
+                MoonOrbitClientState.EnsureOptimisticDepositBankSeed(lastReceivedGems);
+                // RPC path may correct a late/stale seed; per-frame live ledger must not.
+                MoonOrbitClientState.ApplyAuthoritativeBankBaseline(lastReceivedGems);
+                if (MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+                    contributedGems = optBank;
+                else
+                    contributedGems = lastReceivedGems;
+            }
+            else
+            {
+                contributedGems = lastReceivedGems;
+            }
+
             RefreshStoreLabels();
         }
 
         private void SubscribeEquipmentUiWatch(Starship ship)
         {
-            if (ship?.EquippedEquipmentNetworkList == null)
-                return;
             _equipmentUiWatchShip = ship;
-            ship.EquippedEquipmentNetworkList.OnListChanged += OnWatchedEquipmentListChanged;
         }
 
         private void UnsubscribeEquipmentUiWatch()
         {
-            if (_equipmentUiWatchShip?.EquippedEquipmentNetworkList != null)
-                _equipmentUiWatchShip.EquippedEquipmentNetworkList.OnListChanged -= OnWatchedEquipmentListChanged;
             _equipmentUiWatchShip = null;
-        }
-
-        private void OnWatchedEquipmentListChanged(Unity.Netcode.NetworkListEvent<EquippedEquipmentEntry> changeEvent)
-        {
-            RefreshEquipmentSlots();
         }
 
         private void RefreshAll()
@@ -1868,6 +1932,19 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Builds one compact Equipment card for the left Orbit Menu purchased list.
+        /// Layout: accent → title → icon → colorful power bar → subline → optional Adjust mount → delete.
+        /// Ability text is intentionally omitted — the right-hand store cards already show line-by-line stats.
+        /// </summary>
+        /// <param name="gridParent">Equipment grid under the sidebar Equipment host.</param>
+        /// <param name="index">Zero-based equipment slot index (used for delete / placement RPCs).</param>
+        /// <param name="boxRoot">Card root GameObject.</param>
+        /// <param name="bgImage">Card background image.</param>
+        /// <param name="titleText">Item name (or "Empty").</param>
+        /// <param name="descText">Unused on compact cards — kept for array wiring compatibility (hidden).</param>
+        /// <param name="deleteButton">Remove-from-loadout control (top-left ×).</param>
+        /// <param name="slotUi">Runtime refs for refresh / placement toggle.</param>
         private void CreateSidebarEquipmentSlotCard(
             Transform gridParent,
             int index,
@@ -1878,18 +1955,21 @@ namespace TitanOrbit.UI
             out Button deleteButton,
             out SidebarEquipmentSlotUi slotUi)
         {
+            // --- Card shell ---
+            // [TITAN-ORBIT] Preferred height starts at the empty-slot size; RefreshSidebarEquipmentSlotRich
+            // grows it when filled and when the player expands mount controls.
             slotUi = new SidebarEquipmentSlotUi();
             float trackWidth = Mathf.Max(40f, SidebarSlotCardWidth - 22f);
 
             boxRoot = new GameObject("EquipmentSlot_" + (index + 1));
             boxRoot.transform.SetParent(gridParent, false);
-            var cardLe = boxRoot.AddComponent<LayoutElement>();
-            cardLe.flexibleWidth = 0f;
-            cardLe.flexibleHeight = 0f;
-            cardLe.preferredWidth = SidebarSlotCardWidth;
-            cardLe.minWidth = SidebarSlotCardWidth;
-            cardLe.preferredHeight = SidebarEquipmentSlotCardHeight;
-            cardLe.minHeight = SidebarEquipmentSlotCardHeight;
+            slotUi.cardLayout = boxRoot.AddComponent<LayoutElement>();
+            slotUi.cardLayout.flexibleWidth = 0f;
+            slotUi.cardLayout.flexibleHeight = 0f;
+            slotUi.cardLayout.preferredWidth = SidebarSlotCardWidth;
+            slotUi.cardLayout.minWidth = SidebarSlotCardWidth;
+            slotUi.cardLayout.preferredHeight = SidebarEquipmentSlotCardHeightEmpty;
+            slotUi.cardLayout.minHeight = SidebarEquipmentSlotCardHeightEmpty;
 
             bgImage = boxRoot.AddComponent<Image>();
             bgImage.color = MoonDockEquipmentCardBg;
@@ -1899,27 +1979,29 @@ namespace TitanOrbit.UI
             cardOutline.effectDistance = new Vector2(1f, 1f);
 
             var cardVlg = boxRoot.AddComponent<VerticalLayoutGroup>();
-            cardVlg.spacing = 3f;
-            cardVlg.padding = new RectOffset(4, 4, 5, 4);
+            cardVlg.spacing = 2f;
+            cardVlg.padding = new RectOffset(4, 4, 3, 3);
             cardVlg.childAlignment = TextAnchor.UpperCenter;
             cardVlg.childControlWidth = true;
             cardVlg.childControlHeight = true;
             cardVlg.childForceExpandWidth = true;
             cardVlg.childForceExpandHeight = false;
 
+            // --- Category accent stripe ---
             var accentGo = new GameObject("Accent");
             accentGo.transform.SetParent(boxRoot.transform, false);
             var accentLe = accentGo.AddComponent<LayoutElement>();
-            accentLe.preferredHeight = 4f;
-            accentLe.minHeight = 4f;
+            accentLe.preferredHeight = 3f;
+            accentLe.minHeight = 3f;
             slotUi.accentImage = accentGo.AddComponent<Image>();
             slotUi.accentImage.color = SidebarEquipmentEmptyAccent;
             slotUi.accentImage.raycastTarget = false;
 
+            // --- Title ---
             var titleGo = new GameObject("Title");
             titleGo.transform.SetParent(boxRoot.transform, false);
             var titleLe = titleGo.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = 14f;
+            titleLe.preferredHeight = 13f;
             titleLe.minHeight = 12f;
             titleText = titleGo.AddComponent<TextMeshProUGUI>();
             titleText.text = "Empty";
@@ -1931,6 +2013,7 @@ namespace TitanOrbit.UI
             titleText.raycastTarget = false;
             if (fontAsset != null) titleText.font = fontAsset;
 
+            // --- Icon / glyph (hidden when slot is empty) ---
             slotUi.iconRoot = new GameObject("Icon");
             slotUi.iconRoot.transform.SetParent(boxRoot.transform, false);
             var iconLe = slotUi.iconRoot.AddComponent<LayoutElement>();
@@ -1950,62 +2033,51 @@ namespace TitanOrbit.UI
             glyphRt.offsetMin = Vector2.zero;
             glyphRt.offsetMax = Vector2.zero;
             slotUi.iconGlyph = glyphGo.AddComponent<TextMeshProUGUI>();
-            slotUi.iconGlyph.fontSize = 34f;
+            slotUi.iconGlyph.fontSize = 22f;
             slotUi.iconGlyph.alignment = TextAlignmentOptions.Center;
             slotUi.iconGlyph.color = new Color(1f, 1f, 1f, 0.95f);
             slotUi.iconGlyph.raycastTarget = false;
             if (fontAsset != null) slotUi.iconGlyph.font = fontAsset;
 
+            // --- Power-bar-only footer (no duplicated ability lines, no dark track plate) ---
+            // [TITAN-ORBIT] Earlier builds wrapped the bar in a near-black StatsFooter + PowerBarTrack;
+            // that read as a useless black strip above the coloured segments — keep the bar bare.
             slotUi.statsFooter = new GameObject("StatsFooter");
             slotUi.statsFooter.transform.SetParent(boxRoot.transform, false);
             var statsFooterLe = slotUi.statsFooter.AddComponent<LayoutElement>();
             statsFooterLe.flexibleHeight = 0f;
             statsFooterLe.minHeight = SidebarEquipmentStatsFooterHeight;
             statsFooterLe.preferredHeight = SidebarEquipmentStatsFooterHeight;
-            var statsFooterBg = slotUi.statsFooter.AddComponent<Image>();
-            statsFooterBg.color = MoonDockEquipmentStatsFooterBg;
-            statsFooterBg.raycastTarget = false;
             var statsFooterVlg = slotUi.statsFooter.AddComponent<VerticalLayoutGroup>();
-            statsFooterVlg.spacing = 2f;
-            statsFooterVlg.padding = new RectOffset(4, 4, 4, 4);
-            statsFooterVlg.childAlignment = TextAnchor.UpperCenter;
+            statsFooterVlg.spacing = 0f;
+            statsFooterVlg.padding = new RectOffset(0, 0, 0, 0);
+            statsFooterVlg.childAlignment = TextAnchor.MiddleCenter;
             statsFooterVlg.childControlWidth = true;
             statsFooterVlg.childControlHeight = true;
             statsFooterVlg.childForceExpandWidth = true;
             statsFooterVlg.childForceExpandHeight = false;
 
+            // Hidden desc stub keeps equipmentDescTexts[] non-null for legacy refresh branches.
             var descriptionGo = new GameObject("Description");
             descriptionGo.transform.SetParent(slotUi.statsFooter.transform, false);
-            var descriptionLe = descriptionGo.AddComponent<LayoutElement>();
-            descriptionLe.flexibleHeight = 0f;
-            descriptionLe.minHeight = SidebarEquipmentAbilityAreaHeight;
-            descriptionLe.preferredHeight = SidebarEquipmentAbilityAreaHeight;
+            descriptionGo.SetActive(false);
             descText = descriptionGo.AddComponent<TextMeshProUGUI>();
-            descText.text = string.Empty;
-            descText.fontSize = SidebarEquipmentAbilityFontSize;
-            descText.alignment = TextAlignmentOptions.Top;
-            descText.color = new Color(0.92f, 0.95f, 1f, 0.92f);
-            descText.enableWordWrapping = true;
-            descText.richText = true;
-            descText.overflowMode = TextOverflowModes.Overflow;
-            descText.maxVisibleLines = 6;
-            descText.raycastTarget = false;
-            if (fontAsset != null) descText.font = fontAsset;
+            descText.gameObject.SetActive(false);
 
-            slotUi.powerBar = ShipUpgradeTreePowerBarUI.CreateInTrack(
+            slotUi.powerBar = ShipUpgradeTreePowerBarUI.Create(
                 slotUi.statsFooter.transform,
-                MoonDockEquipmentPowerBarTrackBg,
                 MoonDockEquipmentPowerBarHeight,
                 MoonDockEquipmentPowerBarPairGap,
                 trackWidth);
 
+            // --- Equipped / charges subline ---
             var sublineGo = new GameObject("Subline");
             sublineGo.transform.SetParent(boxRoot.transform, false);
             var sublineLe = sublineGo.AddComponent<LayoutElement>();
-            sublineLe.preferredHeight = 11f;
-            sublineLe.minHeight = 10f;
+            sublineLe.preferredHeight = 10f;
+            sublineLe.minHeight = 9f;
             slotUi.sublineText = sublineGo.AddComponent<TextMeshProUGUI>();
-            slotUi.sublineText.fontSize = 8.5f;
+            slotUi.sublineText.fontSize = 8f;
             slotUi.sublineText.fontStyle = FontStyles.Bold;
             slotUi.sublineText.alignment = TextAlignmentOptions.Center;
             slotUi.sublineText.color = new Color(1f, 1f, 1f, 0.82f);
@@ -2013,13 +2085,48 @@ namespace TitanOrbit.UI
             slotUi.sublineText.raycastTarget = false;
             if (fontAsset != null) slotUi.sublineText.font = fontAsset;
 
+            // --- Adjust mount toggle (collapsed by default to keep the list short) ---
+            slotUi.placementToggleRow = new GameObject("PlacementToggle");
+            slotUi.placementToggleRow.transform.SetParent(boxRoot.transform, false);
+            var toggleLe = slotUi.placementToggleRow.AddComponent<LayoutElement>();
+            toggleLe.preferredHeight = SidebarEquipmentPlacementToggleHeight;
+            toggleLe.minHeight = SidebarEquipmentPlacementToggleHeight;
+            var toggleBg = slotUi.placementToggleRow.AddComponent<Image>();
+            toggleBg.color = new Color(0.1f, 0.14f, 0.22f, 0.95f);
+            if (buttonSprite != null)
+            {
+                toggleBg.sprite = buttonSprite;
+                toggleBg.type = Image.Type.Sliced;
+            }
+            var toggleBtn = slotUi.placementToggleRow.AddComponent<Button>();
+            int capturedSlot = index;
+            toggleBtn.onClick.AddListener(() => ToggleSidebarEquipmentPlacementExpanded(capturedSlot));
+
+            var toggleLabelGo = new GameObject("Label");
+            toggleLabelGo.transform.SetParent(slotUi.placementToggleRow.transform, false);
+            var toggleLabelRt = toggleLabelGo.AddComponent<RectTransform>();
+            toggleLabelRt.anchorMin = Vector2.zero;
+            toggleLabelRt.anchorMax = Vector2.one;
+            toggleLabelRt.offsetMin = new Vector2(4f, 0f);
+            toggleLabelRt.offsetMax = new Vector2(-4f, 0f);
+            slotUi.placementToggleLabel = toggleLabelGo.AddComponent<TextMeshProUGUI>();
+            slotUi.placementToggleLabel.text = "Adjust mount ▸";
+            slotUi.placementToggleLabel.fontSize = 8f;
+            slotUi.placementToggleLabel.fontStyle = FontStyles.Bold;
+            slotUi.placementToggleLabel.alignment = TextAlignmentOptions.Center;
+            slotUi.placementToggleLabel.color = new Color(0.78f, 0.88f, 1f, 0.95f);
+            slotUi.placementToggleLabel.raycastTarget = false;
+            if (fontAsset != null) slotUi.placementToggleLabel.font = fontAsset;
+            slotUi.placementToggleRow.SetActive(false);
+
+            // --- Mount Move/Turn rows (shown only when expanded) ---
             slotUi.placementPanel = new GameObject("Placement");
             slotUi.placementPanel.transform.SetParent(boxRoot.transform, false);
             var placementLe = slotUi.placementPanel.AddComponent<LayoutElement>();
-            placementLe.preferredHeight = 112f;
-            placementLe.minHeight = 112f;
+            placementLe.preferredHeight = SidebarEquipmentPlacementPanelHeight;
+            placementLe.minHeight = SidebarEquipmentPlacementPanelHeight;
             var placementVlg = slotUi.placementPanel.AddComponent<VerticalLayoutGroup>();
-            placementVlg.spacing = 3f;
+            placementVlg.spacing = 2f;
             placementVlg.padding = new RectOffset(2, 2, 0, 0);
             placementVlg.childAlignment = TextAnchor.UpperCenter;
             placementVlg.childControlWidth = true;
@@ -2037,25 +2144,27 @@ namespace TitanOrbit.UI
             var readoutGo = new GameObject("PlacementReadout");
             readoutGo.transform.SetParent(slotUi.placementPanel.transform, false);
             var readoutLe = readoutGo.AddComponent<LayoutElement>();
-            readoutLe.preferredHeight = 12f;
-            readoutLe.minHeight = 11f;
+            readoutLe.preferredHeight = 11f;
+            readoutLe.minHeight = 10f;
             slotUi.placementReadout = readoutGo.AddComponent<TextMeshProUGUI>();
-            slotUi.placementReadout.fontSize = 7.5f;
+            slotUi.placementReadout.fontSize = 7f;
             slotUi.placementReadout.alignment = TextAlignmentOptions.Center;
             slotUi.placementReadout.color = new Color(0.72f, 0.8f, 0.92f, 0.88f);
             slotUi.placementReadout.raycastTarget = false;
             if (fontAsset != null) slotUi.placementReadout.font = fontAsset;
 
             slotUi.placementPanel.SetActive(false);
+            slotUi.placementExpanded = false;
 
+            // --- Delete × (layout-ignored overlay) ---
             var delGo = new GameObject("Delete");
             delGo.transform.SetParent(boxRoot.transform, false);
             var delRt = delGo.AddComponent<RectTransform>();
             delRt.anchorMin = new Vector2(0f, 1f);
             delRt.anchorMax = new Vector2(0f, 1f);
             delRt.pivot = new Vector2(0f, 1f);
-            delRt.anchoredPosition = new Vector2(4f, -8f);
-            delRt.sizeDelta = new Vector2(22f, 22f);
+            delRt.anchoredPosition = new Vector2(3f, -6f);
+            delRt.sizeDelta = new Vector2(18f, 18f);
             delGo.AddComponent<LayoutElement>().ignoreLayout = true;
             var delImg = delGo.AddComponent<Image>();
             delImg.color = new Color(0.42f, 0.18f, 0.2f, 0.96f);
@@ -2070,12 +2179,31 @@ namespace TitanOrbit.UI
             delTxtRect.offsetMax = Vector2.zero;
             var delTmp = delTxtGo.AddComponent<TextMeshProUGUI>();
             delTmp.text = "×";
-            delTmp.fontSize = 16;
+            delTmp.fontSize = 14;
             delTmp.alignment = TextAlignmentOptions.Center;
             delTmp.color = new Color(1f, 0.92f, 0.92f, 1f);
             if (fontAsset != null) delTmp.font = fontAsset;
             delTmp.raycastTarget = false;
             deleteButton.gameObject.SetActive(false);
+        }
+
+        /// <summary>
+        /// Toggles the mount Move/Turn panel on one owned component card, then relayouts the equipment list.
+        /// </summary>
+        /// <param name="slotIndex">Equipment slot whose Adjust mount control was clicked.</param>
+        private void ToggleSidebarEquipmentPlacementExpanded(int slotIndex)
+        {
+            // --- Guard ---
+            if (_sidebarEquipmentSlotUi == null || slotIndex < 0 || slotIndex >= _sidebarEquipmentSlotUi.Length)
+                return;
+            SidebarEquipmentSlotUi slotUi = _sidebarEquipmentSlotUi[slotIndex];
+            if (slotUi == null)
+                return;
+
+            // --- Flip expand state and refresh that slot + list height ---
+            // [TITAN-ORBIT] Placement starts collapsed so many purchased components fit on one screen.
+            slotUi.placementExpanded = !slotUi.placementExpanded;
+            RefreshEquipmentSlots();
         }
 
         private void CreateSidebarEquipmentPlacementMoveRow(Transform parent, string label, int slotIndex, int moveAxis)
@@ -2278,6 +2406,10 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Builds one compact Upgrade Card slot for the left Orbit Menu purchased list.
+        /// Layout: accent → title → icon → equipped subline. Full descriptions stay on store spin offers.
+        /// </summary>
         private void CreateSidebarUpgradeCardSlotCard(
             Transform gridParent,
             int index,
@@ -2288,17 +2420,18 @@ namespace TitanOrbit.UI
             out Button deleteButton,
             out SidebarUpgradeCardSlotUi slotUi)
         {
+            // --- Card shell ---
             slotUi = new SidebarUpgradeCardSlotUi();
 
             boxRoot = new GameObject("UpgradeCardSlot_" + (index + 1));
             boxRoot.transform.SetParent(gridParent, false);
-            var cardLe = boxRoot.AddComponent<LayoutElement>();
-            cardLe.flexibleWidth = 0f;
-            cardLe.flexibleHeight = 0f;
-            cardLe.preferredWidth = SidebarSlotCardWidth;
-            cardLe.minWidth = SidebarSlotCardWidth;
-            cardLe.preferredHeight = SidebarUpgradeCardSlotHeight;
-            cardLe.minHeight = SidebarUpgradeCardSlotHeight;
+            slotUi.cardLayout = boxRoot.AddComponent<LayoutElement>();
+            slotUi.cardLayout.flexibleWidth = 0f;
+            slotUi.cardLayout.flexibleHeight = 0f;
+            slotUi.cardLayout.preferredWidth = SidebarSlotCardWidth;
+            slotUi.cardLayout.minWidth = SidebarSlotCardWidth;
+            slotUi.cardLayout.preferredHeight = SidebarUpgradeCardSlotHeightEmpty;
+            slotUi.cardLayout.minHeight = SidebarUpgradeCardSlotHeightEmpty;
 
             bgImage = boxRoot.AddComponent<Image>();
             bgImage.color = MoonDockEquipmentCardBg;
@@ -2308,27 +2441,29 @@ namespace TitanOrbit.UI
             cardOutline.effectDistance = new Vector2(1f, 1f);
 
             var cardVlg = boxRoot.AddComponent<VerticalLayoutGroup>();
-            cardVlg.spacing = 3f;
-            cardVlg.padding = new RectOffset(4, 4, 5, 4);
+            cardVlg.spacing = 2f;
+            cardVlg.padding = new RectOffset(4, 4, 3, 3);
             cardVlg.childAlignment = TextAnchor.UpperCenter;
             cardVlg.childControlWidth = true;
             cardVlg.childControlHeight = true;
             cardVlg.childForceExpandWidth = true;
             cardVlg.childForceExpandHeight = false;
 
+            // --- Slot-type accent ---
             var accentGo = new GameObject("Accent");
             accentGo.transform.SetParent(boxRoot.transform, false);
             var accentLe = accentGo.AddComponent<LayoutElement>();
-            accentLe.preferredHeight = 4f;
-            accentLe.minHeight = 4f;
+            accentLe.preferredHeight = 3f;
+            accentLe.minHeight = 3f;
             slotUi.accentImage = accentGo.AddComponent<Image>();
             slotUi.accentImage.color = SidebarUpgradeCardEmptyAccent;
             slotUi.accentImage.raycastTarget = false;
 
+            // --- Title ---
             var titleGo = new GameObject("Title");
             titleGo.transform.SetParent(boxRoot.transform, false);
             var titleLe = titleGo.AddComponent<LayoutElement>();
-            titleLe.preferredHeight = 14f;
+            titleLe.preferredHeight = 13f;
             titleLe.minHeight = 12f;
             titleText = titleGo.AddComponent<TextMeshProUGUI>();
             titleText.text = "Empty";
@@ -2340,6 +2475,7 @@ namespace TitanOrbit.UI
             titleText.raycastTarget = false;
             if (fontAsset != null) titleText.font = fontAsset;
 
+            // --- Icon / glyph ---
             slotUi.iconRoot = new GameObject("Icon");
             slotUi.iconRoot.transform.SetParent(boxRoot.transform, false);
             var iconLe = slotUi.iconRoot.AddComponent<LayoutElement>();
@@ -2359,52 +2495,28 @@ namespace TitanOrbit.UI
             glyphRt.offsetMin = Vector2.zero;
             glyphRt.offsetMax = Vector2.zero;
             slotUi.iconGlyph = glyphGo.AddComponent<TextMeshProUGUI>();
-            slotUi.iconGlyph.fontSize = 32f;
+            slotUi.iconGlyph.fontSize = 20f;
             slotUi.iconGlyph.alignment = TextAlignmentOptions.Center;
             slotUi.iconGlyph.color = new Color(1f, 1f, 1f, 0.95f);
             slotUi.iconGlyph.raycastTarget = false;
             if (fontAsset != null) slotUi.iconGlyph.font = fontAsset;
 
-            slotUi.descFooter = new GameObject("DescFooter");
-            slotUi.descFooter.transform.SetParent(boxRoot.transform, false);
-            var descFooterLe = slotUi.descFooter.AddComponent<LayoutElement>();
-            descFooterLe.flexibleHeight = 0f;
-            descFooterLe.minHeight = SidebarUpgradeCardDescHeight;
-            descFooterLe.preferredHeight = SidebarUpgradeCardDescHeight;
-            var descFooterBg = slotUi.descFooter.AddComponent<Image>();
-            descFooterBg.color = MoonDockEquipmentStatsFooterBg;
-            descFooterBg.raycastTarget = false;
-            var descFooterVlg = slotUi.descFooter.AddComponent<VerticalLayoutGroup>();
-            descFooterVlg.padding = new RectOffset(4, 4, 4, 4);
-            descFooterVlg.childAlignment = TextAnchor.UpperCenter;
-            descFooterVlg.childControlWidth = true;
-            descFooterVlg.childControlHeight = true;
-            descFooterVlg.childForceExpandWidth = true;
-            descFooterVlg.childForceExpandHeight = true;
-
+            // Hidden desc stub keeps slotDescTexts[] non-null for legacy refresh branches.
             var descriptionGo = new GameObject("Description");
-            descriptionGo.transform.SetParent(slotUi.descFooter.transform, false);
+            descriptionGo.transform.SetParent(boxRoot.transform, false);
+            descriptionGo.SetActive(false);
             var descriptionLe = descriptionGo.AddComponent<LayoutElement>();
-            descriptionLe.flexibleHeight = 1f;
-            descriptionLe.minHeight = SidebarUpgradeCardDescHeight - 8f;
+            descriptionLe.ignoreLayout = true;
             descText = descriptionGo.AddComponent<TextMeshProUGUI>();
-            descText.text = string.Empty;
-            descText.fontSize = SidebarUpgradeCardDescFontSize;
-            descText.alignment = TextAlignmentOptions.Top;
-            descText.color = new Color(0.92f, 0.95f, 1f, 0.92f);
-            descText.enableWordWrapping = true;
-            descText.overflowMode = TextOverflowModes.Ellipsis;
-            descText.maxVisibleLines = 5;
-            descText.raycastTarget = false;
-            if (fontAsset != null) descText.font = fontAsset;
 
+            // --- Equipped · Lv · rarity ---
             var sublineGo = new GameObject("Subline");
             sublineGo.transform.SetParent(boxRoot.transform, false);
             var sublineLe = sublineGo.AddComponent<LayoutElement>();
-            sublineLe.preferredHeight = 11f;
-            sublineLe.minHeight = 10f;
+            sublineLe.preferredHeight = 10f;
+            sublineLe.minHeight = 9f;
             slotUi.sublineText = sublineGo.AddComponent<TextMeshProUGUI>();
-            slotUi.sublineText.fontSize = 8.5f;
+            slotUi.sublineText.fontSize = 8f;
             slotUi.sublineText.fontStyle = FontStyles.Bold;
             slotUi.sublineText.alignment = TextAlignmentOptions.Center;
             slotUi.sublineText.color = new Color(1f, 1f, 1f, 0.82f);
@@ -2412,14 +2524,15 @@ namespace TitanOrbit.UI
             slotUi.sublineText.raycastTarget = false;
             if (fontAsset != null) slotUi.sublineText.font = fontAsset;
 
+            // --- Delete × ---
             var delGo = new GameObject("Delete");
             delGo.transform.SetParent(boxRoot.transform, false);
             var delRt = delGo.AddComponent<RectTransform>();
             delRt.anchorMin = new Vector2(0f, 1f);
             delRt.anchorMax = new Vector2(0f, 1f);
             delRt.pivot = new Vector2(0f, 1f);
-            delRt.anchoredPosition = new Vector2(4f, -8f);
-            delRt.sizeDelta = new Vector2(22f, 22f);
+            delRt.anchoredPosition = new Vector2(3f, -6f);
+            delRt.sizeDelta = new Vector2(18f, 18f);
             delGo.AddComponent<LayoutElement>().ignoreLayout = true;
             var delImg = delGo.AddComponent<Image>();
             delImg.color = new Color(0.42f, 0.18f, 0.2f, 0.96f);
@@ -2434,7 +2547,7 @@ namespace TitanOrbit.UI
             delTxtRect.offsetMax = Vector2.zero;
             var delTmp = delTxtGo.AddComponent<TextMeshProUGUI>();
             delTmp.text = "×";
-            delTmp.fontSize = 16;
+            delTmp.fontSize = 14;
             delTmp.alignment = TextAlignmentOptions.Center;
             delTmp.color = new Color(1f, 0.92f, 0.92f, 1f);
             if (fontAsset != null) delTmp.font = fontAsset;
@@ -3115,8 +3228,21 @@ namespace TitanOrbit.UI
 
         private void RefreshStoreLabels()
         {
-            // Server is source of truth (Show() was zeroing contributedGems while pendingGemsRequest blocked syncing).
-            contributedGems = lastReceivedGems;
+            // --- Bank label + sidebar ---
+            // Prefer metronome optimistic Bank while depositing so GEM DEPOSITS stays in phase
+            // with Ship cargo drops and SFX (not the 0.35s / 1s poll clocks).
+            if (MoonOrbitClientState.WantDepositGems &&
+                MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+            {
+                contributedGems = optBank;
+            }
+            else
+            {
+                // Server is source of truth when not mid-deposit metronome.
+                // (Show() was zeroing contributedGems while pendingGemsRequest blocked syncing.)
+                contributedGems = lastReceivedGems;
+            }
+
             if (gemsText != null)
             {
                 gemsText.text = $"Your contributed gems: {contributedGems:F0}";
@@ -3280,8 +3406,94 @@ namespace TitanOrbit.UI
             if (!_moonDockLayoutActive || orbitDockSidebar == null)
                 return;
 
-            orbitDockSidebar.RefreshBank(contributedGems);
-            ApplyAutoDepositPreferenceToShip();
+            // --- Bank (GEM DEPOSITS) ---
+            // [TITAN-ORBIT] While depositing, Bank ticks from server ShipDepositFeedback beats
+            // (NotifyLocalDepositBeat). Live ledger must not paint independently — soft-reconcile only.
+            float bankBalance = contributedGems;
+            bool depositingSynced = MoonOrbitClientState.WantDepositGems;
+
+            if (OrbitStationEcsContext.HomePlanetId > 0 &&
+                EcsGameBridge.TryGetContributedGems(OrbitStationEcsContext.HomePlanetId, out float liveBank))
+            {
+                MoonOrbitClientState.RememberContributedGems(liveBank);
+
+                if (depositingSynced)
+                {
+                    MoonOrbitClientState.EnsureOptimisticDepositBankSeed(contributedGems);
+                    // Per-frame live: epsilon snap only. Late RPC baseline uses ApplyAuthoritativeBankBaseline.
+                    MoonOrbitClientState.ReconcileOptimisticDepositBank(liveBank);
+                    if (MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+                    {
+                        bankBalance = optBank;
+                        contributedGems = optBank;
+                    }
+                    else
+                    {
+                        bankBalance = contributedGems;
+                    }
+                }
+                else
+                {
+                    bankBalance = liveBank;
+                    if (Mathf.Abs(liveBank - lastReceivedGems) > 0.01f)
+                        OnContributedGemsReceived(liveBank);
+                }
+            }
+            else if (depositingSynced)
+            {
+                MoonOrbitClientState.EnsureOptimisticDepositBankSeed(contributedGems);
+                if (MoonOrbitClientState.TryGetOptimisticDepositBank(out float optBank))
+                {
+                    bankBalance = optBank;
+                    contributedGems = optBank;
+                }
+            }
+
+            // --- Ship cargo (prefer metronome estimate while depositing) ---
+            // Prefer optimistic only when it is a real seeded value — never stick on a false 0
+            // while the ghost still reports cargo (seed bug / Instantiates gap).
+            float shipGems = 0f;
+            bool haveGhostShip = EcsGameBridge.TryGetLocalShipState(out var shipState);
+            float ghostShipGems = haveGhostShip ? shipState.CurrentGems : 0f;
+
+            if (MoonOrbitClientState.WantDepositGems &&
+                MoonOrbitClientState.TryGetOptimisticDepositCargo(out float optimisticCargo) &&
+                !(optimisticCargo <= 0.001f && ghostShipGems > 0.001f))
+            {
+                shipGems = optimisticCargo;
+            }
+            else if (haveGhostShip)
+            {
+                shipGems = ghostShipGems;
+                if (MoonOrbitClientState.WantDepositGems)
+                    MoonOrbitClientState.EnsureOptimisticDepositCargoSeed(ghostShipGems);
+            }
+
+            float planetGems = 0f;
+            int planetLevel = 1;
+            int storePlanetId = OrbitStationEcsContext.StorePlanetId;
+            if (storePlanetId <= 0 && currentPlanet != null)
+                storePlanetId = currentPlanet.PlanetId;
+            if (storePlanetId > 0 && EcsGameBridge.TryGetPlanetStateByPlanetId(storePlanetId, out var planetState))
+            {
+                planetGems = planetState.CurrentGems;
+                planetLevel = Mathf.Max(1, planetState.PlanetLevel);
+            }
+
+            // While depositing with a valid optimistic pair, keep Ship+Bank from the same beat.
+            if (depositingSynced &&
+                MoonOrbitClientState.TryGetOptimisticDepositCargo(out float beatCargo) &&
+                MoonOrbitClientState.TryGetOptimisticDepositBank(out float beatBank) &&
+                !(beatCargo <= 0.001f && ghostShipGems > 0.001f))
+            {
+                shipGems = beatCargo;
+                bankBalance = beatBank;
+                contributedGems = beatBank;
+            }
+
+            orbitDockSidebar.RefreshDepositStatus(shipGems, bankBalance, planetGems, planetLevel);
+            // Do NOT re-apply auto-deposit every sidebar refresh — that spammed SetWantDepositGems
+            // RPCs and could race HideMenu / metronome clear on the Windows client.
             orbitDockSidebar.RefreshAutoDepositToggle(GetSavedAutoDepositGems());
             float maxPower = shipUpgradeTree != null ? shipUpgradeTree.GetMaxDisplayPower() : 0.001f;
             orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxPower);
@@ -3306,11 +3518,10 @@ namespace TitanOrbit.UI
 
         private void ApplyAutoDepositToShip(bool wantDeposit)
         {
-            if (currentShip == null)
-                return;
-            if (currentShip.WantToDepositGems == wantDeposit)
-                return;
-            currentShip.SetWantToDepositGemsServerRpc(wantDeposit);
+            if (currentShip != null)
+                currentShip.SetWantToDepositGemsServerRpc(wantDeposit);
+            else
+                MoonOrbitRpcClient.SetWantDepositGems(wantDeposit);
         }
 
         private void RefreshMoonDockStore()
@@ -3319,9 +3530,12 @@ namespace TitanOrbit.UI
                 return;
 
             EnsureMoonDockStoreSection();
-            ShipFamilyDefinition family = CardShopSystem.Instance != null && currentShip != null
-                ? CardShopSystem.Instance.GetShipFamilyForShip(currentShip)
-                : null;
+            Planet storePlanet = GetShipUpgradeStorePlanet();
+            ShipFamilyDefinition family = null;
+            if (CardShopSystem.Instance != null && storePlanet != null)
+                family = CardShopSystem.Instance.GetShipFamilyForStorePlanet(storePlanet.PlanetId, currentShip);
+            else if (CardShopSystem.Instance != null && currentShip != null)
+                family = CardShopSystem.Instance.GetShipFamilyForShip(currentShip);
             string familyKey = family != null ? family.familyId : string.Empty;
             bool needsEquipmentRebuild = !string.Equals(familyKey, _moonDockStoreBuiltForFamilyKey, StringComparison.Ordinal)
                 || _moonDockEquipmentCardLayoutVersionBuilt != MoonDockEquipmentCardLayoutVersion;
@@ -3382,10 +3596,18 @@ namespace TitanOrbit.UI
                 }
                 else
                 {
-                    price = StoreItemData.GetPrice(card.supportItem);
+                    price = StoreItemData.GetPrice(card.supportItem, shipLevel);
                     int count = CountSupportItem(currentShip, card.supportItem);
                     canBuy = currentShip != null && contributedGems >= price && currentShip.HasEmptyEquipmentSlot;
-                    subline = count > 0 ? $"\u00d7{count} owned" : StoreItemData.GetDescription(card.supportItem);
+                    string supportDesc = StoreItemData.GetDescription(card.supportItem, shipLevel);
+                    string supportName = StoreItemData.IsLeveledDrone(card.supportItem)
+                        ? StoreItemData.GetDisplayName(card.supportItem, shipLevel)
+                        : null;
+                    if (card.titleText != null && supportName != null)
+                        card.titleText.text = supportName;
+                    if (card.descriptionText != null && StoreItemData.IsLeveledDrone(card.supportItem))
+                        card.descriptionText.text = supportDesc;
+                    subline = count > 0 ? $"\u00d7{count} owned" : supportDesc;
                 }
 
                 if (card.sublineText != null)
@@ -3700,12 +3922,13 @@ namespace TitanOrbit.UI
             Color cardColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
                 StoreItemData.GetAbilityColorStatIndex(itemType), 0.92f);
 
+            int shipLevel = currentShip != null ? Mathf.Max(1, currentShip.ShipLevel) : 1;
             CreateMoonDockEquipmentItemTile(
                 parent,
                 "Support_" + itemType,
                 cardColor,
                 OrbitDockSidebarPanelUI.EquipmentAccent,
-                $"{StoreItemData.GetPrice(itemType):F0}g",
+                $"{StoreItemData.GetPrice(itemType, shipLevel):F0}g",
                 componentStatLayout: false,
                 out GameObject root,
                 out _,
@@ -3720,9 +3943,13 @@ namespace TitanOrbit.UI
                 out Image buyImg);
 
             if (titleTmp != null)
-                titleTmp.text = StoreItemData.GetShortDisplayName(itemType);
+            {
+                titleTmp.text = StoreItemData.IsLeveledDrone(itemType)
+                    ? StoreItemData.GetDisplayName(itemType, shipLevel)
+                    : StoreItemData.GetShortDisplayName(itemType);
+            }
             if (descriptionTmp != null)
-                descriptionTmp.text = StoreItemData.GetDescription(itemType);
+                descriptionTmp.text = StoreItemData.GetDescription(itemType, shipLevel);
             ApplyMoonDockEquipmentTileIcon(iconImg, iconGlyph, null, StoreItemData.GetIconGlyph(itemType));
 
             _moonDockStoreCards.Add(new MoonDockStoreCardBinding
@@ -3768,54 +3995,10 @@ namespace TitanOrbit.UI
             return $"Lv {level} · PWR {power:F0}";
         }
 
-        private static string BuildMoonDockComponentStatRichText(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family, int maxLines = 8)
+        private static string BuildMoonDockComponentStatRichText(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family, int maxLines = 14)
         {
-            if (entry == null)
-                return string.Empty;
-
-            ShipFamilyPowerScoreBreakdown breakdown = ShipComponentStoreData.GetPowerBreakdown(entry, shipLevel, family);
-            ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsForDisplay(entry, shipLevel, family);
-            string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(entry.componentId);
-            var sb = new StringBuilder(128);
-            int count = 0;
-            for (int i = 0; i < ShipFamilyPowerScoreBreakdown.DisplayStatCount; i++)
-            {
-                float value = breakdown.GetDisplayStatValue(i);
-                if (Mathf.Abs(value) < 0.05f)
-                    continue;
-                if (count >= maxLines)
-                    break;
-
-                AppendMoonDockComponentStatLine(sb, ref count, maxLines, value, ShipAbilityCategoryColors.PowerBreakdownStatFullLabels[i], i);
-            }
-
-            if (partType == "Weapon")
-                AppendMoonDockComponentStatLine(sb, ref count, maxLines, effective.fireRate, "Fire Rate", 1);
-            AppendMoonDockComponentStatLine(sb, ref count, maxLines, effective.rammingPower, "Ramming Power", 0);
-
-            return count == 0 ? "<color=#888888>—</color>" : sb.ToString();
-        }
-
-        private static void AppendMoonDockComponentStatLine(
-            StringBuilder sb,
-            ref int count,
-            int maxLines,
-            float value,
-            string label,
-            int colorStatIndex)
-        {
-            if (count >= maxLines || Mathf.Abs(value) < 0.05f)
-                return;
-
-            if (count > 0)
-                sb.Append('\n');
-
-            Color statColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColor(colorStatIndex);
-            sb.Append("<color=#").Append(ColorUtility.ToHtmlStringRGB(statColor)).Append('>');
-            sb.Append('+').Append(FormatMoonDockComponentStatValue(value)).Append(' ');
-            sb.Append(label);
-            sb.Append("</color>");
-            count++;
+            // [TITAN-ORBIT] Ability list with base vs cumulative propulsion gains (ShipComponentStoreData).
+            return ShipComponentStoreData.BuildAbilityDescriptionRichText(entry, shipLevel, family, maxLines);
         }
 
         private static void ApplyEquipmentCardAbilityDescription(
@@ -3840,13 +4023,6 @@ namespace TitanOrbit.UI
                 if (layoutRoot is RectTransform parentRt)
                     LayoutRebuilder.ForceRebuildLayoutImmediate(parentRt);
             }
-        }
-
-        private static string FormatMoonDockComponentStatValue(float value)
-        {
-            if (Mathf.Abs(value - Mathf.Round(value)) < 0.05f)
-                return Mathf.RoundToInt(value).ToString();
-            return value.ToString("0.#");
         }
 
         private float GetMoonDockComponentMaxDisplayPower(ShipFamilyDefinition family, int shipLevel)
@@ -3976,7 +4152,7 @@ namespace TitanOrbit.UI
             glyphRt.offsetMin = Vector2.zero;
             glyphRt.offsetMax = Vector2.zero;
             iconGlyphText = glyphGo.AddComponent<TextMeshProUGUI>();
-            iconGlyphText.fontSize = componentStatLayout ? 42f : 22f;
+            iconGlyphText.fontSize = componentStatLayout ? 28f : 22f;
             iconGlyphText.alignment = TextAlignmentOptions.Center;
             iconGlyphText.color = new Color(1f, 1f, 1f, 0.95f);
             iconGlyphText.raycastTarget = false;
@@ -4027,7 +4203,7 @@ namespace TitanOrbit.UI
             descriptionText.enableWordWrapping = true;
             descriptionText.richText = componentStatLayout;
             descriptionText.overflowMode = componentStatLayout ? TextOverflowModes.Overflow : TextOverflowModes.Ellipsis;
-            descriptionText.maxVisibleLines = componentStatLayout ? 8 : 4;
+            descriptionText.maxVisibleLines = componentStatLayout ? 16 : 4;
             descriptionText.raycastTarget = false;
             if (fontAsset != null) descriptionText.font = fontAsset;
 
@@ -4134,6 +4310,13 @@ namespace TitanOrbit.UI
                 return;
             if (StoreItemData.IsShipComponent(item))
                 return;
+            if (OrbitStationEcsContext.UseEcsStoreRpc)
+            {
+                HomePlanetStoreSystem.Instance.PurchaseItemServerRpc(0, 0, item);
+                pendingGemsRequest = true;
+                HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+                return;
+            }
             var homeNo = currentHomePlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (homeNo == null || !homeNo.IsSpawned)
                 return;
@@ -4148,6 +4331,15 @@ namespace TitanOrbit.UI
                 return;
             if (string.IsNullOrWhiteSpace(componentId))
                 return;
+            // [TITAN-ORBIT] ECS orbit context — do not require NGO NetworkObject.IsSpawned
+            // (LegacyNetcodeStubs always report false and silently blocked all component buys).
+            if (OrbitStationEcsContext.UseEcsStoreRpc)
+            {
+                HomePlanetStoreSystem.Instance.PurchaseComponentServerRpc(0, 0, componentId);
+                pendingGemsRequest = true;
+                HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+                return;
+            }
             var homeNo = currentHomePlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (homeNo == null || !homeNo.IsSpawned)
                 return;
@@ -4156,22 +4348,146 @@ namespace TitanOrbit.UI
             HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
         }
 
+        /// <summary>
+        /// Removes any LayoutGroup from a sidebar card list root so we can stack cards manually.
+        /// [UNITY] Only one LayoutGroup is allowed per GameObject — we avoid adding a second type.
+        /// </summary>
+        /// <param name="root">SlotGrid or EquipmentGrid GameObject.</param>
+        private static void ClearSidebarListLayoutGroups(GameObject root)
+        {
+            if (root == null)
+                return;
+
+            // Disable first, then DestroyImmediate so same-frame manual layout is not fought by Grid.
+            var gridLayout = root.GetComponent<GridLayoutGroup>();
+            if (gridLayout != null)
+            {
+                gridLayout.enabled = false;
+                UnityEngine.Object.DestroyImmediate(gridLayout);
+            }
+
+            var vlg = root.GetComponent<VerticalLayoutGroup>();
+            if (vlg != null)
+            {
+                vlg.enabled = false;
+                UnityEngine.Object.DestroyImmediate(vlg);
+            }
+
+            var hlg = root.GetComponent<HorizontalLayoutGroup>();
+            if (hlg != null)
+            {
+                hlg.enabled = false;
+                UnityEngine.Object.DestroyImmediate(hlg);
+            }
+
+            // Belt-and-suspenders: if destroy did not take (rare Play Mode edge), keep groups disabled.
+            var leftover = root.GetComponent<LayoutGroup>();
+            if (leftover != null)
+                leftover.enabled = false;
+        }
+
+        /// <summary>
+        /// Stacks visible sidebar cards top-to-bottom using each card's LayoutElement height.
+        /// No LayoutGroup on the parent — avoids Grid+VLG conflicts and supports empty vs filled heights.
+        /// </summary>
+        /// <param name="boxes">Card roots (upgrade or equipment slots).</param>
+        /// <param name="slotCount">How many slots are active for this ship.</param>
+        /// <param name="spacing">Gap between cards.</param>
+        /// <param name="fallbackHeight">Height used when a card has no LayoutElement.</param>
+        /// <returns>Total stacked height including spacing.</returns>
+        private static float StackSidebarCardsManually(
+            GameObject[] boxes,
+            int slotCount,
+            float spacing,
+            float fallbackHeight)
+        {
+            float y = 0f;
+            int visible = 0;
+            int rows = Mathf.Max(0, Mathf.Min(boxes != null ? boxes.Length : 0, slotCount));
+
+            for (int i = 0; i < rows; i++)
+            {
+                if (boxes[i] == null || !boxes[i].activeSelf)
+                    continue;
+
+                var le = boxes[i].GetComponent<LayoutElement>();
+                float h = le != null ? le.preferredHeight : fallbackHeight;
+                float w = le != null && le.preferredWidth > 0f ? le.preferredWidth : SidebarSlotCardWidth;
+
+                if (visible > 0)
+                    y += spacing;
+
+                var rt = boxes[i].transform as RectTransform;
+                if (rt != null)
+                {
+                    // --- Top-center stack ---
+                    // [UNITY] Parent has no LayoutGroup; we own Y placement here.
+                    rt.anchorMin = new Vector2(0.5f, 1f);
+                    rt.anchorMax = new Vector2(0.5f, 1f);
+                    rt.pivot = new Vector2(0.5f, 1f);
+                    rt.sizeDelta = new Vector2(w, h);
+                    rt.anchoredPosition = new Vector2(0f, -y);
+                }
+
+                y += h;
+                visible++;
+            }
+
+            return visible == 0 ? fallbackHeight : y;
+        }
+
+        /// <summary>
+        /// Restores a GridLayoutGroup on a list root for legacy (non–moon-dock) equal-cell layout.
+        /// </summary>
+        private static GridLayoutGroup EnsureSidebarEqualCellGridLayout(GameObject root)
+        {
+            if (root == null)
+                return null;
+
+            ClearSidebarListLayoutGroups(root);
+
+            var gridLayout = root.GetComponent<GridLayoutGroup>();
+            if (gridLayout == null)
+                gridLayout = root.AddComponent<GridLayoutGroup>();
+            gridLayout.enabled = true;
+            return gridLayout;
+        }
+
+        /// <summary>
+        /// Sizes the left-dock Upgrade Cards host from each compact card's LayoutElement height.
+        /// Rich mode stacks cards manually (no LayoutGroup) so empty slots stay short.
+        /// </summary>
         private void ApplySidebarSlotGridLayout(int slotCount)
         {
             if (slotGridRoot == null)
                 return;
 
-            var gridLayout = slotGridRoot.GetComponent<GridLayoutGroup>();
-            if (gridLayout == null)
-                return;
+            float slotGridTotalH;
 
-            int rows = Mathf.Max(1, Mathf.Min(MaxSlotRows, slotCount));
-            float cardHeight = _upgradeCardSlotRichLayoutActive ? SidebarUpgradeCardSlotHeight : SidebarSlotCardHeight;
-            float slotGridTotalH = rows * cardHeight + (rows - 1) * SidebarSlotCellSpacing;
-            gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-            gridLayout.constraintCount = SidebarSlotColumns;
-            gridLayout.cellSize = new Vector2(SidebarSlotCardWidth, cardHeight);
-            gridLayout.spacing = new Vector2(SidebarSlotCellSpacing, SidebarSlotCellSpacing);
+            if (_upgradeCardSlotRichLayoutActive)
+            {
+                // --- Variable-height list without LayoutGroup ---
+                ClearSidebarListLayoutGroups(slotGridRoot);
+                slotGridTotalH = StackSidebarCardsManually(
+                    slotBoxes,
+                    slotCount,
+                    SidebarSlotCellSpacing,
+                    SidebarUpgradeCardSlotHeightEmpty);
+            }
+            else
+            {
+                var gridLayout = EnsureSidebarEqualCellGridLayout(slotGridRoot);
+                if (gridLayout == null)
+                    return;
+
+                int rows = Mathf.Max(1, Mathf.Min(MaxSlotRows, slotCount));
+                float cardHeight = SidebarSlotCardHeight;
+                slotGridTotalH = rows * cardHeight + (rows - 1) * SidebarSlotCellSpacing;
+                gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+                gridLayout.constraintCount = SidebarSlotColumns;
+                gridLayout.cellSize = new Vector2(SidebarSlotCardWidth, cardHeight);
+                gridLayout.spacing = new Vector2(SidebarSlotCellSpacing, SidebarSlotCellSpacing);
+            }
 
             if (slotPanelRect != null)
             {
@@ -4742,10 +5058,6 @@ namespace TitanOrbit.UI
                 slotPanelRect.offsetMax = new Vector2(-12f, 0f);
                 slotGridRect.sizeDelta = new Vector2(-24f, slotGridTotalH);
             }
-            else if (_moonDockLayoutActive && slotPanelRect != null && slotGridRect != null)
-            {
-                ApplySidebarSlotGridLayout(slotCount);
-            }
             if (loadoutSectionLabel != null)
                 loadoutSectionLabel.text = OrbitDockSidebarPanelUI.SectionTitleUpgradeCards;
             var cards = currentShip.EquippedCards;
@@ -4790,10 +5102,19 @@ namespace TitanOrbit.UI
                     slotDeleteButtons[i].interactable = card != null;
                 }
             }
+
+            // Relayout after card heights are known (empty vs filled).
+            if (_moonDockLayoutActive && slotPanelRect != null && slotGridRect != null)
+                ApplySidebarSlotGridLayout(slotCount);
         }
 
+        /// <summary>
+        /// Paints one compact owned upgrade-card slot: accent, title, icon, equipped subline.
+        /// Skips description text — store spin offers already show full card copy.
+        /// </summary>
         private void RefreshSidebarUpgradeCardSlotRich(int index, CardData card, SidebarUpgradeCardSlotUi slotUi)
         {
+            // --- Card chrome ---
             if (slotBgImages != null && index < slotBgImages.Length && slotBgImages[index] != null)
                 slotBgImages[index].color = MoonDockEquipmentCardBg;
 
@@ -4801,17 +5122,15 @@ namespace TitanOrbit.UI
             if (slotUi?.accentImage != null)
                 slotUi.accentImage.color = accentColor;
 
+            // --- Title ---
             if (slotTitleTexts != null && index < slotTitleTexts.Length && slotTitleTexts[index] != null)
                 slotTitleTexts[index].text = card != null ? card.GetDisplayNameOrDefault() : "Empty";
 
+            // Description intentionally unused on compact owned cards (store offers keep full text).
             if (slotDescTexts != null && index < slotDescTexts.Length && slotDescTexts[index] != null)
-            {
-                if (card != null && !string.IsNullOrEmpty(card.description))
-                    slotDescTexts[index].text = card.description;
-                else
-                    slotDescTexts[index].text = card != null ? "No description." : "Spin cards from the store below.";
-            }
+                slotDescTexts[index].text = string.Empty;
 
+            // --- Equipped subline ---
             if (slotUi?.sublineText != null)
             {
                 if (card != null)
@@ -4825,6 +5144,7 @@ namespace TitanOrbit.UI
                     slotUi.sublineText.gameObject.SetActive(false);
             }
 
+            // --- Icon / empty ---
             if (slotUi != null)
             {
                 if (card != null)
@@ -4849,7 +5169,6 @@ namespace TitanOrbit.UI
                             slotUi.iconGlyph.text = GetSlotTypeIconChar(card.slotType);
                         }
                     }
-
                     if (slotUi.iconRoot != null)
                         slotUi.iconRoot.SetActive(true);
                 }
@@ -4861,6 +5180,14 @@ namespace TitanOrbit.UI
             {
                 slotDeleteButtons[index].gameObject.SetActive(card != null);
                 slotDeleteButtons[index].interactable = card != null;
+            }
+
+            // --- Variable card height (empty vs filled) ---
+            if (slotUi?.cardLayout != null)
+            {
+                float h = card != null ? SidebarUpgradeCardSlotHeight : SidebarUpgradeCardSlotHeightEmpty;
+                slotUi.cardLayout.preferredHeight = h;
+                slotUi.cardLayout.minHeight = h;
             }
         }
 
@@ -4917,11 +5244,6 @@ namespace TitanOrbit.UI
             if (currentShip == null || equipmentBoxes == null) return;
 
             int slotCount = currentShip.EquipmentSlotCount;
-
-            if (_moonDockLayoutActive && equipmentPanelRect != null && equipmentGridRect != null)
-            {
-                ApplySidebarEquipmentGridLayout(slotCount);
-            }
 
             if (equipmentSectionLabel != null)
                 equipmentSectionLabel.text = OrbitDockSidebarPanelUI.SectionTitleEquipment;
@@ -5029,9 +5351,18 @@ namespace TitanOrbit.UI
                 }
             }
 
+            // Relayout after per-card heights are known (empty / filled / mount expanded).
+            if (_moonDockLayoutActive && equipmentPanelRect != null && equipmentGridRect != null)
+                ApplySidebarEquipmentGridLayout(slotCount);
+
             UpdateLegacyOrbitStorePanelTop(currentShip.SlotCount, slotCount);
         }
 
+        /// <summary>
+        /// Paints one compact owned Equipment card: accent, title, icon, colorful power bar, subline.
+        /// Ability line-by-line stats are omitted (store purchase cards already show them).
+        /// Mount Move/Turn controls stay behind Adjust mount until the player expands them.
+        /// </summary>
         private void RefreshSidebarEquipmentSlotRich(
             int index,
             bool filled,
@@ -5073,25 +5404,20 @@ namespace TitanOrbit.UI
                     equipmentTitleTexts[index].text = ShipComponentStoreData.GetDisplayName(componentEntry);
                 else if (entry.IsShipComponent)
                     equipmentTitleTexts[index].text = ShipComponentStoreData.FormatComponentId(entry.ComponentId);
+                else if (StoreItemData.IsLeveledDrone(itemType))
+                {
+                    int titleLevel = entry.itemLevel > 0
+                        ? entry.itemLevel
+                        : StoreItemData.DroneReferenceMaxLevel;
+                    equipmentTitleTexts[index].text = StoreItemData.GetDisplayName(itemType, titleLevel);
+                }
                 else
                     equipmentTitleTexts[index].text = StoreItemData.GetShortDisplayName(itemType);
             }
 
+            // Description intentionally unused — colorful power bar + store purchase cards carry the stats.
             if (equipmentDescTexts != null && index < equipmentDescTexts.Length && equipmentDescTexts[index] != null)
-            {
-                if (!filled)
-                    equipmentDescTexts[index].text = "<color=#888888>Buy from equipment store</color>";
-                else if (entry.IsShipComponent && componentEntry != null)
-                {
-                    equipmentDescTexts[index].richText = true;
-                    ApplyEquipmentCardAbilityDescription(equipmentDescTexts[index], componentEntry, shipLevel, family);
-                }
-                else
-                {
-                    equipmentDescTexts[index].richText = false;
-                    equipmentDescTexts[index].text = StoreItemData.GetDescription(itemType);
-                }
-            }
+                equipmentDescTexts[index].text = string.Empty;
 
             if (slotUi?.sublineText != null)
             {
@@ -5103,8 +5429,17 @@ namespace TitanOrbit.UI
                 }
                 else if (filled && StoreItemData.IsDrone(itemType))
                 {
-                    int maxHp = StoreItemData.GetDroneMaxHp(itemType);
-                    slotUi.sublineText.text = $"{entry.remainingCharges}/{maxHp} HP";
+                    int droneLevel = entry.itemLevel > 0
+                        ? entry.itemLevel
+                        : StoreItemData.DroneReferenceMaxLevel;
+                    int maxHp = StoreItemData.GetDroneMaxHp(itemType, droneLevel);
+                    if (StoreItemData.IsLeveledDrone(itemType))
+                    {
+                        slotUi.sublineText.text =
+                            $"Lv.{droneLevel} · {entry.remainingCharges}/{maxHp} HP";
+                    }
+                    else
+                        slotUi.sublineText.text = $"{entry.remainingCharges}/{maxHp} HP";
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else if (filled && !entry.IsShipComponent)
@@ -5113,10 +5448,15 @@ namespace TitanOrbit.UI
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else
-                    slotUi.sublineText.gameObject.SetActive(false);
+                {
+                    slotUi.sublineText.text = "Buy from store";
+                    slotUi.sublineText.gameObject.SetActive(true);
+                }
             }
 
             bool showComponentPowerBar = filled && entry.IsShipComponent && componentEntry != null;
+            if (slotUi?.statsFooter != null)
+                slotUi.statsFooter.SetActive(showComponentPowerBar);
             if (slotUi?.powerBar != null)
             {
                 slotUi.powerBar.gameObject.SetActive(showComponentPowerBar);
@@ -5165,14 +5505,44 @@ namespace TitanOrbit.UI
                 equipmentDeleteButtons[index].interactable = filled;
             }
 
-            bool showPlacement = filled && entry.IsShipComponent && componentEntry != null;
+            // --- Mount adjust (collapsed by default) ---
+            bool canAdjustMount = filled && entry.IsShipComponent && componentEntry != null;
+            if (!canAdjustMount && slotUi != null)
+                slotUi.placementExpanded = false;
+
+            bool showPlacement = canAdjustMount && slotUi != null && slotUi.placementExpanded;
+            if (slotUi?.placementToggleRow != null)
+            {
+                slotUi.placementToggleRow.SetActive(canAdjustMount);
+                if (slotUi.placementToggleLabel != null)
+                    slotUi.placementToggleLabel.text = showPlacement ? "Hide mount ▾" : "Adjust mount ▸";
+            }
             if (slotUi?.placementPanel != null)
                 slotUi.placementPanel.SetActive(showPlacement);
 
-            if (showPlacement && slotUi != null)
+            if (showPlacement && slotUi != null && slotUi.placementReadout != null)
+                slotUi.placementReadout.text = FormatEquipmentPlacementCompact(entry.LocalPosition, entry.LocalEulerAngles);
+
+            // --- Variable card height ---
+            // Empty = short title row; filled = glance card; expanded mount adds placement panel height.
+            if (slotUi?.cardLayout != null)
             {
-                if (slotUi.placementReadout != null)
-                    slotUi.placementReadout.text = FormatEquipmentPlacementCompact(entry.LocalPosition, entry.LocalEulerAngles);
+                float h;
+                if (!filled)
+                    h = SidebarEquipmentSlotCardHeightEmpty;
+                else
+                {
+                    h = SidebarEquipmentSlotCardHeight;
+                    if (canAdjustMount)
+                        h += SidebarEquipmentPlacementToggleHeight;
+                    if (showPlacement)
+                        h += SidebarEquipmentPlacementPanelHeight;
+                    // Non-component filled items have no power-bar footer — shave that reserved space.
+                    if (!showComponentPowerBar)
+                        h -= SidebarEquipmentStatsFooterHeight + 2f;
+                }
+                slotUi.cardLayout.preferredHeight = h;
+                slotUi.cardLayout.minHeight = h;
             }
         }
 
@@ -5203,22 +5573,42 @@ namespace TitanOrbit.UI
             storePanelRect.offsetMax = new Vector2(-12f, -storePanelTop);
         }
 
+        /// <summary>
+        /// Sizes the left-dock Equipment host from each compact card's LayoutElement height.
+        /// Rich mode stacks cards manually (no LayoutGroup) so empty/expanded heights can differ.
+        /// </summary>
         private void ApplySidebarEquipmentGridLayout(int slotCount)
         {
             if (equipmentGridRoot == null)
                 return;
 
-            var gridLayout = equipmentGridRoot.GetComponent<GridLayoutGroup>();
-            if (gridLayout == null)
-                return;
+            float equipmentGridTotalH;
 
-            int rows = Mathf.Max(1, Mathf.Min(MaxSlotRows, slotCount));
-            float cardHeight = _equipmentSlotRichLayoutActive ? SidebarEquipmentSlotCardHeight : SidebarSlotCardHeight;
-            float equipmentGridTotalH = rows * cardHeight + (rows - 1) * SidebarSlotCellSpacing;
-            gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
-            gridLayout.constraintCount = SidebarSlotColumns;
-            gridLayout.cellSize = new Vector2(SidebarSlotCardWidth, cardHeight);
-            gridLayout.spacing = new Vector2(SidebarSlotCellSpacing, SidebarSlotCellSpacing);
+            if (_equipmentSlotRichLayoutActive)
+            {
+                // --- Variable-height list without LayoutGroup ---
+                ClearSidebarListLayoutGroups(equipmentGridRoot);
+                equipmentGridTotalH = StackSidebarCardsManually(
+                    equipmentBoxes,
+                    slotCount,
+                    SidebarSlotCellSpacing,
+                    SidebarEquipmentSlotCardHeightEmpty);
+            }
+            else
+            {
+                // --- Legacy equal-cell grid ---
+                var gridLayout = EnsureSidebarEqualCellGridLayout(equipmentGridRoot);
+                if (gridLayout == null)
+                    return;
+
+                int rows = Mathf.Max(1, Mathf.Min(MaxSlotRows, slotCount));
+                float cardHeight = SidebarSlotCardHeight;
+                equipmentGridTotalH = rows * cardHeight + (rows - 1) * SidebarSlotCellSpacing;
+                gridLayout.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+                gridLayout.constraintCount = SidebarSlotColumns;
+                gridLayout.cellSize = new Vector2(SidebarSlotCardWidth, cardHeight);
+                gridLayout.spacing = new Vector2(SidebarSlotCellSpacing, SidebarSlotCellSpacing);
+            }
 
             if (equipmentPanelRect != null)
             {
@@ -5257,6 +5647,15 @@ namespace TitanOrbit.UI
         private void OnCardSpinClick()
         {
             if (currentShip == null || currentPlanet == null || CardShopSystem.Instance == null) return;
+            // [TITAN-ORBIT] ECS path — skip NGO NetworkObject gates (stubs always fail IsSpawned).
+            if (OrbitStationEcsContext.UseEcsStoreRpc)
+            {
+                CardShopSystem.Instance.CardSpinServerRpc(0, 0);
+                pendingGemsRequest = true;
+                if (HomePlanetStoreSystem.Instance != null)
+                    HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+                return;
+            }
             var planetNo = currentPlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (planetNo == null || !planetNo.IsSpawned) return;
             var shipNo = currentShip.GetComponent<Unity.Netcode.NetworkObject>();
@@ -5272,6 +5671,14 @@ namespace TitanOrbit.UI
             if (cardEntries == null || index < 0 || index >= cardEntries.Length) return;
             CardData card = cardEntries[index];
             if (card == null) return;
+            if (OrbitStationEcsContext.UseEcsStoreRpc)
+            {
+                CardShopSystem.Instance.PurchaseCardServerRpc(0, 0, card.GetStableCardId());
+                pendingGemsRequest = true;
+                if (HomePlanetStoreSystem.Instance != null)
+                    HomePlanetStoreSystem.Instance.RequestContributedGemsServerRpc();
+                return;
+            }
             var planetNo = currentPlanet.GetComponent<Unity.Netcode.NetworkObject>();
             if (planetNo == null || !planetNo.IsSpawned) return;
             var shipNo = currentShip.GetComponent<Unity.Netcode.NetworkObject>();
@@ -5928,9 +6335,20 @@ namespace TitanOrbit.UI
 
         private Planet GetShipUpgradeStorePlanet()
         {
+            // --- Prefer ECS moon-dock store planet ---
+            // [TITAN-ORBIT] Captured neutrals must keep their ShipFamilyConfigIndex tree (Cosmic Shark…).
+            // Falling back to currentHomePlanet forced AstroEagle whenever the store view looked like a home.
+            if (OrbitStationEcsContext.IsActive && _ecsStorePlanetView != null && _ecsStorePlanetId > 0)
+            {
+                if (_ecsStorePlanetView.PlanetId != _ecsStorePlanetId)
+                    _ecsStorePlanetView.PlanetId = _ecsStorePlanetId;
+                return _ecsStorePlanetView;
+            }
+
             if (currentShip == null) return null;
             if (currentPlanet != null)
             {
+                // [TITAN-ORBIT] HomePlanet is a Planet subclass — only treat as home when AssignedTeam matches.
                 bool isHome = currentPlanet is HomePlanet hp && hp.AssignedTeam == currentShip.ShipTeam;
                 bool isCaptured = !isHome && currentPlanet.TeamOwnership == currentShip.ShipTeam;
                 if (isHome || isCaptured)

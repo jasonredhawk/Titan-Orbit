@@ -6,15 +6,24 @@ using TitanOrbit.Core;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Maps each planet to a ship family. Prefabs and unlock tiers come from each entry's ShipFamilyDefinition upgradeTree.
+    /// ScriptableObject mapping each planet to a <see cref="ShipFamilyDefinition"/> and optional planet skin.
+    /// Home planet (id 0) always resolves to AstroEagle; neutrals / captured planets use indices 1–11 rolled
+    /// at spawn into <c>PlanetState.ShipFamilyConfigIndex</c>. Prefabs, chassis ids, unlock tiers, and gem
+    /// costs come from each family's <c>upgradeTree</c>. <see cref="ShipFamilyEntry.planetMaterial"/> ties
+    /// that family to a recognizable CW PLANETS surface so players can spot the ship tree from the planet
+    /// look even when neutral placement is randomized. Paired with <see cref="PlanetShipFamilyAssignment"/>.
     /// </summary>
     [CreateAssetMenu(fileName = "PlanetShipFamilyConfig", menuName = "Titan Orbit/Planet Ship Family Config")]
     public class PlanetShipFamilyConfig : ScriptableObject
     {
+        /// <summary>
+        /// One config-list slot: ship family + optional world-skin material for neutrals that roll this index.
+        /// Index 0 is reserved for home / AstroEagle (homes still use tropical water materials by team).
+        /// </summary>
         [Serializable]
         public class ShipFamilyEntry
         {
-            [Tooltip("Planet ID this family is for. 0 = home. 1, 2, 3... = captured planets.")]
+            [Tooltip("List-slot label only (0 = home). Runtime neutrals use ShipFamilyConfigIndex, not this id.")]
             public int planetId;
 
             [Tooltip("Ship family definition. Prefabs and unlock tiers come from its upgradeTree.")]
@@ -22,6 +31,17 @@ namespace TitanOrbit.Data
 
             [Tooltip("Optional display name; when empty, familyId from shipFamilyDefinition is used.")]
             public string familyName;
+
+            [Tooltip(
+                "Neutral / captured planet surface material for this family. Homes ignore this and use " +
+                "PlanetMaterialPool water materials by team. Leave empty to fall back to planetId % pool.")]
+            public Material planetMaterial;
+
+            [Tooltip(
+                "Optional override for this list slot's turret recipe. Prefer authoring " +
+                "ShipFamilyDefinition.planetaryDefense instead. Leave empty to use the family " +
+                "definition's recipe, then Resources/PlanetaryDefenseConfig.")]
+            public PlanetaryDefenseConfig defenseConfig;
         }
 
         [Tooltip("Ordered list: index 0 = home planet family, index 1 = planet 1, etc.")]
@@ -33,6 +53,7 @@ namespace TitanOrbit.Data
         /// </summary>
         public static int GetLadderLinearIndex(int level, int branchIndex)
         {
+            // --- Compute value ---
             if (level < 1 || level > 7) return -1;
             int count = UpgradeTree.GetShipCountForLevel(level);
             if (branchIndex < 0 || branchIndex >= count) return -1;
@@ -42,17 +63,109 @@ namespace TitanOrbit.Data
             return offset + branchIndex;
         }
 
-        /// <summary>Chassis ID at the ladder slot for this planet's family tree, or null.</summary>
-        public string GetChassisIdForLadderSlot(int planetId, int level, int branchIndex)
+        /// <summary>Gets the family entry for the given planet.</summary>
+        public ShipFamilyEntry GetFamilyForPlanet(int planetId) =>
+            GetFamilyForPlanet(planetId, isHomePlanet: false, shipFamilyConfigIndex: -1);
+
+        /// <summary>Resolves ship family using ECS planet state when available.</summary>
+        public ShipFamilyEntry GetFamilyForPlanet(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
         {
-            int idx = GetLadderLinearIndex(level, branchIndex);
-            if (idx < 0) return null;
-            return GetChassisIdForPlanetAndIndex(planetId, idx);
+            int configIndex = ResolveConfigIndex(planetId, isHomePlanet, shipFamilyConfigIndex);
+            return GetFamilyByConfigIndex(configIndex);
         }
 
-        /// <summary>Gets the family entry for the given planet.</summary>
-        public ShipFamilyEntry GetFamilyForPlanet(int planetId)
+        /// <summary>Gets a family entry by config list index (0 = home / AstroEagle).</summary>
+        public ShipFamilyEntry GetFamilyByConfigIndex(int configIndex)
         {
+            // --- Compute value ---
+            if (families == null || families.Count == 0)
+                return null;
+            configIndex = Mathf.Clamp(configIndex, 0, families.Count - 1);
+            return families[configIndex];
+        }
+
+        /// <summary>
+        /// Planet surface material authored on the family entry at <paramref name="configIndex"/>.
+        /// Returns null for missing entries or when the designer left <see cref="ShipFamilyEntry.planetMaterial"/> empty
+        /// (caller should fall back to <see cref="PlanetMaterialPool"/>).
+        /// </summary>
+        /// <param name="configIndex">Index into <see cref="families"/> (same as ghosted ShipFamilyConfigIndex).</param>
+        public Material GetPlanetMaterialForConfigIndex(int configIndex)
+        {
+            // --- Resolve authored skin ---
+            ShipFamilyEntry entry = GetFamilyByConfigIndex(configIndex);
+            return entry != null ? entry.planetMaterial : null;
+        }
+
+        /// <summary>Resolves config list index for a planet. Home planets always use AstroEagle (index 0).</summary>
+        public int ResolveConfigIndex(int planetId, bool isHomePlanet, int shipFamilyConfigIndex = -1)
+        {
+            // --- Resolve value ---
+            if (families == null || families.Count == 0)
+                return 0;
+
+            if (isHomePlanet || planetId == 0)
+                return GetHomeFamilyConfigIndex();
+
+            if (shipFamilyConfigIndex > 0 && shipFamilyConfigIndex < families.Count)
+                return shipFamilyConfigIndex;
+
+            if (planetId >= 100)
+                return GetNonHomeFamilyConfigIndex(planetId - 100);
+
+            for (int i = 0; i < families.Count; i++)
+            {
+                var f = families[i];
+                if (f != null && f.planetId == planetId)
+                    return i;
+            }
+
+            return GetNonHomeFamilyConfigIndex(Mathf.Abs(planetId));
+        }
+
+        /// <summary>Config list index for home planets (AstroEagle). [TITAN-ORBIT] Home always uses index 0.</summary>
+        public int GetHomeFamilyConfigIndex()
+        {
+            // --- Compute value ---
+            if (families == null || families.Count == 0)
+                return 0;
+
+            for (int i = 0; i < families.Count; i++)
+            {
+                if (families[i]?.planetId == 0)
+                    return i;
+            }
+
+            return 0;
+        }
+
+        /// <summary>Number of captured-planet families (excludes home entry at index 0).</summary>
+        public int GetNonHomeFamilyCount() => families == null ? 0 : Mathf.Max(0, families.Count - 1);
+
+        /// <summary>Wraps a procedural ordinal into a non-home config index (1-based slot).</summary>
+        public int GetNonHomeFamilyConfigIndex(int ordinal)
+        {
+            // --- Compute value ---
+            int nonHomeCount = GetNonHomeFamilyCount();
+            if (nonHomeCount <= 0)
+                return GetHomeFamilyConfigIndex();
+            return 1 + (Mathf.Abs(ordinal) % nonHomeCount);
+        }
+
+        /// <summary>Chassis ID at the ladder slot for this planet's resolved ship family.</summary>
+        public string GetChassisIdForLadderSlot(int planetId, int level, int branchIndex, bool isHomePlanet = false, int shipFamilyConfigIndex = -1)
+        {
+            // --- Compute value ---
+            int idx = GetLadderLinearIndex(level, branchIndex);
+            if (idx < 0)
+                return null;
+            return GetChassisIdForPlanetAndIndex(planetId, idx, isHomePlanet, shipFamilyConfigIndex);
+        }
+
+        /// <summary>Legacy lookup by planet id only — prefer overload with isHomePlanet / config index.</summary>
+        public ShipFamilyEntry GetFamilyForPlanetLegacy(int planetId)
+        {
+            // --- Compute value ---
             if (families == null || families.Count == 0) return null;
             for (int i = 0; i < families.Count; i++)
             {
@@ -70,6 +183,7 @@ namespace TitanOrbit.Data
         /// </summary>
         public string GetPlanetDisplayNameFromFamilyId(int planetId)
         {
+            // --- Compute value ---
             ShipFamilyEntry entry = GetFamilyForPlanet(planetId);
             string familyId = entry?.shipFamilyDefinition != null ? entry.shipFamilyDefinition.familyId : null;
             if (string.IsNullOrWhiteSpace(familyId))
@@ -82,6 +196,7 @@ namespace TitanOrbit.Data
         /// </summary>
         public ShipFamilyDefinition GetShipFamilyDefinitionForChassisId(string chassisId)
         {
+            // --- Compute value ---
             if (string.IsNullOrEmpty(chassisId) || families == null) return null;
             int underscoreIdx = chassisId.IndexOf('_');
             if (underscoreIdx <= 0) return null;
@@ -102,6 +217,7 @@ namespace TitanOrbit.Data
         /// <summary>Gets the ship prefab for chassisId and planet. Resolves from the entry's ShipFamilyDefinition upgradeTree.</summary>
         public GameObject GetPrefabForChassisAndPlanet(string chassisId, int planetId)
         {
+            // --- Compute value ---
             if (string.IsNullOrEmpty(chassisId)) return null;
             ShipFamilyEntry family = GetFamilyForPlanet(planetId);
             if (family?.shipFamilyDefinition?.upgradeTree == null) return null;
@@ -117,6 +233,7 @@ namespace TitanOrbit.Data
         /// <summary>Gets prefab by chassisId. Resolves family by name prefix in chassisId from each entry's ShipFamilyDefinition.</summary>
         public GameObject GetPrefabByChassisId(string chassisId)
         {
+            // --- Compute value ---
             if (string.IsNullOrEmpty(chassisId) || families == null) return null;
             int underscoreIdx = chassisId.IndexOf('_');
             if (underscoreIdx <= 0) return null;
@@ -142,6 +259,7 @@ namespace TitanOrbit.Data
         /// <summary>Menu thumbnail for this chassis. Prefers team-specific <see cref="ShipFamilyChassisTierEntry.teamMenuPreviewSprites"/>, then falls back to <see cref="ShipFamilyChassisTierEntry.menuPreviewSprite"/>.</summary>
         public Sprite GetMenuPreviewSpriteForChassisId(string chassisId, TeamManager.Team team = TeamManager.Team.None)
         {
+            // --- Compute value ---
             if (string.IsNullOrEmpty(chassisId) || families == null) return null;
             int underscoreIdx = chassisId.IndexOf('_');
             if (underscoreIdx <= 0) return null;
@@ -181,6 +299,7 @@ namespace TitanOrbit.Data
         /// <summary>Upgrade-tree display name from <see cref="ShipFamilyChassisTierEntry.upgradeTreeShipName"/> for this chassis, or null if unset.</summary>
         public string GetUpgradeTreeShipNameForChassisId(string chassisId)
         {
+            // --- Compute value ---
             if (string.IsNullOrEmpty(chassisId) || families == null) return null;
             int underscoreIdx = chassisId.IndexOf('_');
             if (underscoreIdx <= 0) return null;
@@ -210,6 +329,7 @@ namespace TitanOrbit.Data
         /// <summary>Upgrade-tree tier entry for a chassis ID, or null.</summary>
         public ShipFamilyChassisTierEntry GetTierEntryForChassisId(string chassisId)
         {
+            // --- Compute value ---
             if (string.IsNullOrEmpty(chassisId) || families == null) return null;
             int underscoreIdx = chassisId.IndexOf('_');
             if (underscoreIdx <= 0) return null;
@@ -238,9 +358,10 @@ namespace TitanOrbit.Data
             return ShipFamilyPowerScoreBreakdown.GetPurchaseGemCost(GetTierEntryForChassisId(chassisId), shipLevel);
         }
 
-        /// <summary>Power score breakdown for this chassis from <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdown"/>.</summary>
+        /// <summary>Power score breakdown for this chassis from baked data or live prefab sum.</summary>
         public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisId(string chassisId)
         {
+            // --- Compute value ---
             if (string.IsNullOrEmpty(chassisId) || families == null) return default;
             int underscoreIdx = chassisId.IndexOf('_');
             if (underscoreIdx <= 0) return default;
@@ -255,8 +376,24 @@ namespace TitanOrbit.Data
 
                 foreach (var tier in f.shipFamilyDefinition.upgradeTree)
                 {
-                    if (tier != null && tier.chassisId == chassisId)
+                    if (tier == null || tier.chassisId != chassisId)
+                        continue;
+
+                    if (tier.powerScoreBreakdown.HasDisplayStats)
                         return tier.powerScoreBreakdown;
+
+                    if (tier.prefab != null &&
+                        ShipFamilyStatsCalculator.TrySumFromPrefab(
+                            tier.prefab,
+                            f.shipFamilyDefinition,
+                            shipLevel: 1,
+                            out ShipComponentAbilityStats stats))
+                    {
+                        return ShipFamilyPowerScoreBreakdown.FromSummedShipStats(
+                            ShipComponentStoreData.GetEffectiveStatsAtShipLevel(stats, 1));
+                    }
+
+                    return default;
                 }
                 return default;
             }
@@ -264,9 +401,10 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>Gets chassis ID for the given planet and ship index (0-based). Uses the entry's ShipFamilyDefinition upgradeTree.</summary>
-        public string GetChassisIdForPlanetAndIndex(int planetId, int index)
+        public string GetChassisIdForPlanetAndIndex(int planetId, int index, bool isHomePlanet = false, int shipFamilyConfigIndex = -1)
         {
-            ShipFamilyEntry family = GetFamilyForPlanet(planetId);
+            // --- Compute value ---
+            ShipFamilyEntry family = GetFamilyForPlanet(planetId, isHomePlanet, shipFamilyConfigIndex);
             if (family?.shipFamilyDefinition?.upgradeTree == null) return null;
             if (index < 0 || index >= family.shipFamilyDefinition.upgradeTree.Count) return null;
 
@@ -278,6 +416,7 @@ namespace TitanOrbit.Data
         /// <summary>Gets the chassis at the given index for the planet (from that planet's ShipFamilyDefinition upgrade tree).</summary>
         public ShipChassisDefinition GetChassisByIndex(int planetId, int index)
         {
+            // --- Compute value ---
             if (index < 0) return null;
             ShipFamilyEntry family = GetFamilyForPlanet(planetId);
             if (family?.shipFamilyDefinition?.upgradeTree == null) return null;
@@ -299,6 +438,7 @@ namespace TitanOrbit.Data
         /// <summary>Gets the index of the chassis in the given planet's upgrade tree, or -1.</summary>
         public int GetIndexForChassisIdForPlanet(string chassisId, int planetId)
         {
+            // --- Compute value ---
             if (string.IsNullOrEmpty(chassisId)) return -1;
             ShipFamilyEntry family = GetFamilyForPlanet(planetId);
             if (family?.shipFamilyDefinition?.upgradeTree == null) return -1;
@@ -320,6 +460,7 @@ namespace TitanOrbit.Data
         /// <summary>Gets chassis by ID by searching all families' upgrade trees.</summary>
         public ShipChassisDefinition GetChassisByChassisId(string chassisId)
         {
+            // --- Compute value ---
             if (string.IsNullOrEmpty(chassisId) || families == null) return null;
             foreach (var f in families)
             {
@@ -351,6 +492,7 @@ namespace TitanOrbit.Data
         /// <summary>Builds unlock entries for the given planet at the given home planet level (tier filtering by minHomePlanetLevel).</summary>
         public List<ShipUnlockEntry> GetUnlockedEntriesForPlanet(int homePlanetLevel, int planetId)
         {
+            // --- Compute value ---
             var result = new List<ShipUnlockEntry>();
             ShipFamilyEntry family = GetFamilyForPlanet(planetId);
             if (family?.shipFamilyDefinition?.upgradeTree == null) return result;
@@ -381,6 +523,7 @@ namespace TitanOrbit.Data
         /// <summary>Returns all chassis unlocked at the given home planet level for the home planet (planet 0).</summary>
         public List<ShipChassisDefinition> GetUnlockedChassis(int homePlanetLevel)
         {
+            // --- Compute value ---
             var entries = GetUnlockedEntriesForPlanet(homePlanetLevel, 0);
             var result = new List<ShipChassisDefinition>();
             foreach (var e in entries)

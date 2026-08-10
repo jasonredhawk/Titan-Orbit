@@ -12,6 +12,7 @@ namespace TitanOrbit.Core
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void EnsureSgtCameraOnMainCamera()
         {
+            // --- Attach SgtCamera to Main Camera if missing ---
             UnityEngine.Camera main = UnityEngine.Camera.main;
             if (main == null) return;
             if (main.GetComponent<SgtCamera>() != null) return;

@@ -1,0 +1,165 @@
+using System.Collections.Generic;
+using Unity.Collections;
+using Unity.Entities;
+using Unity.PerformanceTesting;
+using Unity.Profiling;
+
+namespace Unity.NetCode.Tests
+{
+#if UNITY_EDITOR
+    [DisableAutoCreation]
+    [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup), OrderLast = true)]
+    [UpdateBefore(typeof(GhostSendSystem))]
+    [UpdateAfter(typeof(EndSimulationEntityCommandBufferSystem))]
+    internal partial class SimpleGhostSendSystemProxy : SystemBase
+    {
+        static readonly ProfilerMarker k_Update = new ProfilerMarker("GhostSendSystem_OnUpdate");
+        static readonly ProfilerMarker k_CompleteTrackedJobs = new ProfilerMarker("GhostSendSystem_CompleteAllTrackedJobs");
+
+        protected override void OnUpdate()
+        {
+            EntityManager.CompleteAllTrackedJobs();
+
+            var systemHandle = World.GetExistingSystem<GhostSendSystem>();
+            var unmanagedSystem = World.Unmanaged.GetExistingSystemState<GhostSendSystem>();
+            unmanagedSystem.Enabled = false;
+
+            k_CompleteTrackedJobs.Begin();
+            k_Update.Begin();
+            systemHandle.Update(World.Unmanaged);
+            k_Update.End();
+            EntityManager.CompleteAllTrackedJobs();
+            k_CompleteTrackedJobs.End();
+        }
+    }
+
+    [DisableAutoCreation]
+    [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup), OrderLast = true)]
+    [UpdateBefore(typeof(GhostSendSystem))]
+    [UpdateAfter(typeof(EndSimulationEntityCommandBufferSystem))]
+    internal partial class GhostSendSystemProxy : SystemBase
+    {
+        List<SampleGroup> m_GhostSampleGroups;
+        readonly SampleGroup m_SerializationGroup = new SampleGroup("SpeedOfLightGroup", SampleUnit.Nanosecond);
+
+        int m_ConnectionCount;
+        bool m_IsSetup;
+
+        public void ConfigureSendSystem(NetcodeScenarioUtils.ScenarioParams parameters)
+        {
+            ref var ghostSendSystemData = ref SystemAPI.GetSingletonRW<GhostSendSystemData>().ValueRW;
+            ghostSendSystemData.ForceSingleBaseline = parameters.GhostSystemParams.ForceSingleBaseline;
+            ghostSendSystemData.ForcePreSerialize = parameters.GhostSystemParams.ForcePreSerialize;
+        }
+
+        public void SetupStats(int prefabCount, NetcodeScenarioUtils.ScenarioParams parameters)
+        {
+            m_ConnectionCount = parameters.NumClients;
+
+            var capacity = 2 + (3 * prefabCount);
+            m_GhostSampleGroups = new List<SampleGroup>(capacity)
+            {
+                new SampleGroup("Total Replicated Ghosts", SampleUnit.Undefined),
+                new SampleGroup("Total Replicated Ghost Length in Bytes", SampleUnit.Byte)
+            };
+
+            var id = 0;
+            for (int i = 2; i < capacity; i += 3)
+            {
+                m_GhostSampleGroups.Add(new SampleGroup($"GhostType[{id}] Serialized Entities", SampleUnit.Undefined));
+                m_GhostSampleGroups.Add(new SampleGroup($"GhostType[{id}] Total Length in Bytes", SampleUnit.Byte));
+                m_GhostSampleGroups.Add(new SampleGroup($"GhostType[{id}] Bits / Entity", SampleUnit.Byte));
+                id++;
+            }
+
+            m_IsSetup = true;
+        }
+
+        protected override void OnUpdate()
+        {
+            var numLoadedPrefabs = SystemAPI.GetSingleton<GhostCollection>().NumLoadedPrefabs;
+
+            EntityManager.CompleteAllTrackedJobs();
+
+            var systemHandle = World.GetExistingSystem<GhostSendSystem>();
+            var unmanagedSystem = World.Unmanaged.GetExistingSystemState<GhostSendSystem>();
+            unmanagedSystem.Enabled = false;
+
+            var markers = new[]
+            {
+                "PrioritizeChunks", "GhostGroup",
+                "GhostSendSystem:SerializeJob",
+                "GhostSendSystem:SerializeJob (Burst)"
+            };
+
+            EntityManager.CompleteAllTrackedJobs();
+
+            var k_MarkerName = "GhostSendSystem:SerializeJob (Burst)";
+            using (var recorder = new ProfilerRecorder(new ProfilerCategory("SpeedOfLight.GhostSendSystem"),
+                       k_MarkerName,
+                       1,
+                       ProfilerRecorderOptions.SumAllSamplesInFrame))
+            {
+                recorder.Reset();
+                recorder.Start();
+                if (m_IsSetup)
+                {
+                    using (Measure.ProfilerMarkers(markers))
+                    {
+                        using (Measure.Scope("GhostSendSystem_OnUpdate"))
+                        {
+                            systemHandle.Update(World.Unmanaged);
+                            EntityManager.CompleteAllTrackedJobs();
+
+#if UNITY_EDITOR || NETCODE_DEBUG
+                            ref var snapshotStatsSingleton = ref SystemAPI.GetSingletonRW<GhostStatsSnapshotSingleton>().ValueRW;
+                            for (int worker = 1; worker < snapshotStatsSingleton.allGhostStatsParallelWrites.Length; ++worker)
+                            {
+                                var currentWorkerStat = snapshotStatsSingleton.allGhostStatsParallelWrites.ElementAt(worker);
+                                snapshotStatsSingleton.MainStatsWrite.IncrementWith(currentWorkerStat);
+                                currentWorkerStat.ResetToDefault();
+                            }
+
+                            uint totalCount = 0;
+                            uint totalLength = 0;
+
+                            for (int i = 0; i < numLoadedPrefabs; ++i)
+                            {
+                                var perGhostTypeStat = snapshotStatsSingleton.MainStatsWrite.PerGhostTypeStatsListRefRW.ElementAt(i);
+                                var count = perGhostTypeStat.EntityCount;
+                                var length = perGhostTypeStat.SizeInBits;
+                                uint soloLength = 0;
+                                if (count > 0)
+                                    soloLength = length / count;
+
+                                Measure.Custom(m_GhostSampleGroups[2 + 3 * i],
+                                    count / m_ConnectionCount); // Serialized Entities
+                                Measure.Custom(m_GhostSampleGroups[2 + 3 * i + 1],
+                                    length / m_ConnectionCount / 8); // Total Length in Bytes
+                                Measure.Custom(m_GhostSampleGroups[2 + 3 * i + 2], soloLength); // Bits / Entity
+
+                                totalCount += count;
+                                totalLength += length;
+                            }
+
+                            Measure.Custom(m_GhostSampleGroups[0], totalCount / m_ConnectionCount);
+                            Measure.Custom(m_GhostSampleGroups[1], totalLength / m_ConnectionCount / 8);
+#endif
+                        }
+                    }
+                }
+                else
+                {
+                    systemHandle.Update(World.Unmanaged);
+                    EntityManager.CompleteAllTrackedJobs();
+                }
+
+                if (m_IsSetup)
+                    Measure.Custom(m_SerializationGroup, recorder.CurrentValueAsDouble / (1000 * 1000));
+            }
+        }
+    }
+#endif
+}

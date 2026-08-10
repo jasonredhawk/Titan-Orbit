@@ -1,200 +1,44 @@
-using UnityEngine;
-using Unity.Netcode;
-using TitanOrbit.Entities;
 using TitanOrbit.Data;
-using TitanOrbit.Core;
+using UnityEngine;
 
 namespace TitanOrbit.Systems
 {
     /// <summary>
-    /// Handles ship and planet upgrade mechanics
+    /// Legacy upgrade-tree ScriptableObject holder for <see cref="UI.OrbitStationUI"/>. ECS sim
+    /// applies real stat changes server-side; this MonoBehaviour only supplies designer tree data
+    /// from Resources. Spawned by <see cref="UI.OrbitStationBootstrap"/> if not in scene.
     /// </summary>
-    public class UpgradeSystem : NetworkBehaviour
+    public class UpgradeSystem : MonoBehaviour
     {
+        /// <summary>Singleton for UI code that cannot reference scene instances directly.</summary>
         public static UpgradeSystem Instance { get; private set; }
 
-        [Header("Upgrade Settings")]
-        [SerializeField] private UpgradeTree upgradeTree;
+        // [UNITY] Optional inspector reference; falls back to Resources/UpgradeTree at runtime.
+        [SerializeField] UpgradeTree upgradeTree;
 
+        /// <summary>Designer-authored node graph for orbit-station upgrade UI display.</summary>
         public UpgradeTree UpgradeTree => upgradeTree;
 
-        private void Awake()
+        /// <summary>[UNITY] Awake — singleton guard and Resources fallback load.</summary>
+        void Awake()
         {
-            if (Instance == null)
-            {
-                Instance = this;
-            }
-            else
+            // --- Unity lifecycle ---
+            if (Instance != null && Instance != this)
             {
                 Destroy(gameObject);
                 return;
             }
-            // Fallback: if tree not assigned (e.g. scene set up before tree existed), try Resources
+
+            Instance = this;
             if (upgradeTree == null)
                 upgradeTree = Resources.Load<UpgradeTree>("UpgradeTree");
         }
 
-        [ServerRpc(RequireOwnership = false)]
-        public void UpgradeShipServerRpc(ulong shipNetworkId, int targetLevel, ShipFocusType targetFocus, int shipIndex)
+        /// <summary>[UNITY] OnDestroy — release singleton when bootstrap object is destroyed.</summary>
+        void OnDestroy()
         {
-            if (upgradeTree == null) return;
-            NetworkObject shipNetObj = GetNetworkObject(shipNetworkId);
-            if (shipNetObj == null) return;
-
-            Starship ship = shipNetObj.GetComponent<Starship>();
-            if (ship == null) return;
-
-            const float fullEpsilon = 0.01f;
-            if (ship.CurrentGems < ship.GemCapacity - fullEpsilon) return; // must be full of gems
-            float gemCost = upgradeTree.GetGemCostForLevel(targetLevel);
-            float actualCharge = Mathf.Min(gemCost, ship.CurrentGems); // never charge more than they have
-
-            HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
-            if (homePlanet == null) return;
-
-            // Ship level cannot exceed home planet level (enforced in code, not serialized array). Level 7 only when planet 6 + full gems.
-            int planetLevel = homePlanet.HomePlanetLevel;
-            if (targetLevel == 7)
-            {
-                if (planetLevel < 6 || !homePlanet.IsFullGemsForLevel7Unlock()) return;
-            }
-            else if (targetLevel > planetLevel)
-            {
-                return; // e.g. planet 4 → ship can only go up to 4
-            }
-
-            var availableUpgrades = upgradeTree.GetAvailableUpgrades(ship.ShipLevel, ship.BranchIndex);
-            if (shipIndex < 0 || shipIndex >= availableUpgrades.Count) return;
-
-            ShipUpgradeNode upgradeNode = availableUpgrades[shipIndex];
-            int previousBranchIndex = ship.BranchIndex;
-
-            ship.RemoveGemsServerRpc(actualCharge);
-            ApplyShipUpgrade(ship, upgradeNode, targetLevel);
-
-            UpgradeShipClientRpc(shipNetworkId, targetLevel, previousBranchIndex, shipIndex);
-        }
-
-        private void ApplyShipUpgrade(Starship ship, ShipUpgradeNode upgradeNode, int newLevel)
-        {
-            if (upgradeNode.shipData != null)
-            {
-                ship.SetShipData(upgradeNode.shipData);
-            }
-
-            // Apply multipliers to ship stats
-            // Note: This would need to be implemented in Starship class
-            // For now, we'll rely on ShipData
-        }
-
-        /// <summary>Server-only: auto-level ships in orbit when planet levels up. Ships with full base gems (no card bonuses) get free upgrade to match new planet level.</summary>
-        public void TryAutoLevelShipsInOrbit(Planet planetThatLeveledUp)
-        {
-            if (planetThatLeveledUp == null || upgradeTree == null || !IsServer) return;
-            int newPlanetLevel = planetThatLeveledUp.PlanetLevel;
-            if (newPlanetLevel <= 1) return;
-
-            foreach (Starship ship in Object.FindObjectsByType<Starship>(FindObjectsSortMode.None))
-            {
-                if (ship.IsDead || ship.CurrentOrbitPlanet != planetThatLeveledUp) continue;
-                if (ship.ShipLevel >= 7) continue;
-
-                HomePlanet shipHome = GetHomePlanetForTeam(ship.ShipTeam);
-                int maxShipLevel = shipHome != null ? shipHome.GetMaxShipLevelForPlanetLevel(shipHome.HomePlanetLevel) : 6;
-                if (ship.ShipLevel >= maxShipLevel) continue;
-                if (ship.ShipLevel >= newPlanetLevel) continue;
-
-                const float fullEpsilon = 0.01f;
-                if (ship.CurrentGems < ship.BaseGemCapacity - fullEpsilon) continue;
-
-                int nextLevel = ship.ShipLevel + 1;
-                if (nextLevel == 7 && (shipHome == null || !shipHome.IsFullGemsForLevel7Unlock() || shipHome.HomePlanetLevel < 6)) continue;
-
-                var available = upgradeTree.GetAvailableUpgrades(ship.ShipLevel, ship.BranchIndex);
-                if (available.Count == 0) continue;
-
-                var upgradeNode = available[0];
-                if (upgradeNode.shipData != null)
-                {
-                    ship.SetShipData(upgradeNode.shipData);
-                }
-            }
-        }
-
-        /// <summary>True when ship is full of gems and can upgrade. Ship level cannot exceed home planet level; level 7 requires planet 6 + full gems.</summary>
-        public bool CanUpgradeStarshipLevel(Starship ship)
-        {
-            if (ship == null || upgradeTree == null) return false;
-            if (ship.ShipLevel >= 7) return false;
-            const float fullEpsilon = 0.01f;
-            if (ship.CurrentGems < ship.GemCapacity - fullEpsilon) return false; // must be full of gems
-            int nextLevel = ship.ShipLevel + 1;
-
-            HomePlanet homePlanet = GetHomePlanetForTeam(ship.ShipTeam);
-            if (homePlanet == null) return false;
-            int planetLevel = homePlanet.HomePlanetLevel; // use level directly so cap works regardless of serialized array
-            if (nextLevel == 7)
-            {
-                if (planetLevel < 6 || !homePlanet.IsFullGemsForLevel7Unlock()) return false;
-            }
-            else if (nextLevel > planetLevel)
-            {
-                return false; // e.g. planet 4 → ship can only go up to 4
-            }
-            return upgradeTree.GetAvailableUpgrades(ship.ShipLevel, ship.BranchIndex).Count > 0;
-        }
-
-        private HomePlanet GetHomePlanetForTeam(TeamManager.Team team)
-        {
-            foreach (var homePlanet in HomePlanet.AllHomePlanets)
-            {
-                if (homePlanet != null && homePlanet.AssignedTeam == team)
-                {
-                    return homePlanet;
-                }
-            }
-            return null;
-        }
-
-        [ClientRpc]
-        private void UpgradeShipClientRpc(ulong shipNetworkId, int newLevel, int previousBranchIndex, int shipIndex)
-        {
-            if (upgradeTree == null) return;
-            int previousLevel = newLevel - 1;
-            var available = upgradeTree.GetAvailableUpgrades(previousLevel, previousBranchIndex);
-            if (shipIndex < 0 || shipIndex >= available.Count || available[shipIndex].shipData == null) return;
-            NetworkObject netObj = GetNetworkObject(shipNetworkId);
-            if (netObj == null) return;
-            Starship ship = netObj.GetComponent<Starship>();
-            if (ship != null)
-                ship.SetShipData(available[shipIndex].shipData);
-        }
-
-        [ServerRpc(RequireOwnership = false)]
-        public void UpgradePlanetServerRpc(ulong planetNetworkId, PlanetUpgradeType upgradeType)
-        {
-            NetworkObject planetNetObj = GetNetworkObject(planetNetworkId);
-            if (planetNetObj == null) return;
-
-            Planet planet = planetNetObj.GetComponent<Planet>();
-            if (planet == null) return;
-
-            // Apply planet upgrade
-            switch (upgradeType)
-            {
-                case PlanetUpgradeType.MaxPopulation:
-                    // Increase max population
-                    break;
-                case PlanetUpgradeType.GrowthRate:
-                    // Increase growth rate
-                    break;
-            }
-        }
-
-        public enum PlanetUpgradeType
-        {
-            MaxPopulation,
-            GrowthRate
+            if (Instance == this)
+                Instance = null;
         }
     }
 }

@@ -143,9 +143,10 @@ PlayerSettings:
   loadStoreDebugModeEnabled: 0
   visionOSBundleVersion: 1.0
   tvOSBundleVersion: 1.0
-  bundleVersion: 0.1.0
+  bundleVersion: 20260810.1103
   preloadedAssets:
   - {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
+  - {fileID: 11400000, guid: 8ca1507bb02cc594780e64e7061633ed, type: 2}
   metroInputSource: 0
   wsaTransparentSwapchain: 0
   xboxOneDisableKinectGpuReservation: 1
@@ -808,13 +809,13 @@ PlayerSettings:
   splashScreenBackgroundSourcePortrait: {fileID: 0}
   blurSplashScreenBackground: 1
   spritePackerPolicy: 
-  webGLMemorySize: 1024
+  webGLMemorySize: 128
   webGLExceptionSupport: 1
-  webGLNameFilesAsHashes: 0
+  webGLNameFilesAsHashes: 1
   webGLShowDiagnostics: 0
-  webGLDataCaching: 1
+  webGLDataCaching: 0
   webGLDebugSymbols: 0
-  webGLEmscriptenArgs: -sSTACK_SIZE=33554432
+  webGLEmscriptenArgs: -sSTACK_SIZE=8388608
   webGLModulesDirectory: 
   webGLTemplate: PROJECT:FullscreenViewport
   webGLAnalyzeBuildSize: 0
@@ -824,8 +825,8 @@ PlayerSettings:
   webGLLinkerTarget: 1
   webGLThreadsSupport: 0
   webGLDecompressionFallback: 1
-  webGLInitialMemorySize: 1024
-  webGLMaximumMemorySize: 4096
+  webGLInitialMemorySize: 128
+  webGLMaximumMemorySize: 2048
   webGLMemoryGrowthMode: 2
   webGLMemoryLinearGrowthStep: 32
   webGLMemoryGeometricGrowthStep: 0.2
@@ -838,8 +839,9 @@ PlayerSettings:
   webEnableSubmoduleStrippingCompatibility: 0
   scriptingDefineSymbols:
     Android: SHAPES_URP
-    Standalone: SHAPES_URP
-    WebGL: SHAPES_URP
+    Server: EDGEGAP_PLUGIN_SERVERS
+    Standalone: SHAPES_URP;SENTIS_ANALYTICS_ENABLED;APP_UI_EDITOR_ONLY;EDGEGAP_PLUGIN_SERVERS
+    WebGL: SHAPES_URP;EDGEGAP_PLUGIN_SERVERS;APP_UI_EDITOR_ONLY;SENTIS_ANALYTICS_ENABLED
     iPhone: SHAPES_URP
   additionalCompilerArguments: {}
   platformArchitecture: {}

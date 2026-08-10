@@ -51,6 +51,7 @@ namespace TitanOrbit.Editor
 
         public static void ResetNeutralStats(CardData c)
         {
+            // --- ResetNeutralStats ---
             c.movementSpeedAdd = 0f;
             c.rotationSpeedAdd = 0f;
             c.maxHealthAdd = 0f;
@@ -69,6 +70,7 @@ namespace TitanOrbit.Editor
 
         public static Sprite LoadSprite(string assetPath)
         {
+            // --- LoadSprite ---
             var s = AssetDatabase.LoadAssetAtPath<Sprite>(assetPath);
             if (s == null)
                 Debug.LogWarning($"CardDeckAssetWriteHelper: could not load sprite at '{assetPath}'.");
@@ -87,6 +89,7 @@ namespace TitanOrbit.Editor
 
             public DefaultCardIcons(Sprite game, Sprite shield, Sprite store, Sprite device, Sprite traffic, Sprite tool, Sprite feeling)
             {
+                // --- DefaultCardIcons ---
                 Game = game;
                 Shield = shield;
                 Store = store;
@@ -99,6 +102,7 @@ namespace TitanOrbit.Editor
 
         public static DefaultCardIcons LoadDefaultCardIcons()
         {
+            // --- LoadDefaultCardIcons ---
             return new DefaultCardIcons(
                 LoadSprite("Assets/CleanFlatIcon/png_128/icon_line/icon_line_game/icon_line_game_1.png"),
                 LoadSprite("Assets/CleanFlatIcon/png_128/icon_line/icon_line_shield/icon_line_shield_1.png"),
@@ -112,6 +116,7 @@ namespace TitanOrbit.Editor
         /// <summary>Stable short prefix for card filenames. AstroEagle keeps <c>ae</c>.</summary>
         public static string GetCardIdFilePrefix(string familyId)
         {
+            // --- Compute value ---
             if (string.IsNullOrWhiteSpace(familyId))
                 return "card";
             familyId = familyId.Trim();
@@ -144,6 +149,7 @@ namespace TitanOrbit.Editor
 
         public static int StableStringHash(string s)
         {
+            // --- StableStringHash ---
             unchecked
             {
                 int h = 5381;

@@ -4,6 +4,7 @@ using TitanOrbit.Input;
 
 namespace TitanOrbit.UI
 {
+    // --- Type members ---
     /// <summary>
     /// Reliable hold-to-fire on the shoot control. Prefer this over Button.onClick + EventTrigger (ordering conflicts).
     /// </summary>

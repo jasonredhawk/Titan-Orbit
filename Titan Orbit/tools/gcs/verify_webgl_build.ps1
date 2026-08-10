@@ -42,7 +42,7 @@ foreach ($pair in @(
         Write-Warning "Missing expected $($pair.Label) artifact in Build\"
         continue
     }
-    $enc = & $encodingScript -FilePath $pair.File.FullName
+    $enc = ((& $encodingScript -FilePath $pair.File.FullName) | Out-String).Trim()
     $encLabel = if ([string]::IsNullOrEmpty($enc)) { "(none - uncompressed on disk)" } else { $enc }
     $sizeMb = [Math]::Round($pair.File.Length / 1MB, 2)
     Write-Host ("{0,-10} {1,-42} {2,8} MB  encoding={3}" -f $pair.Label, $pair.File.Name, $sizeMb, $encLabel)
@@ -51,7 +51,7 @@ foreach ($pair in @(
 Write-Host ""
 Write-Host "All Build\ files:"
 foreach ($f in $artifacts) {
-    $enc = & $encodingScript -FilePath $f.FullName
+    $enc = ((& $encodingScript -FilePath $f.FullName) | Out-String).Trim()
     $encLabel = if ([string]::IsNullOrEmpty($enc)) { "-" } else { $enc }
     Write-Host ("  {0,-44} {1,8} MB  {2}" -f $f.Name, [Math]::Round($f.Length / 1MB, 2), $encLabel)
 }
