@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using UnityEditor;
@@ -200,29 +201,33 @@ namespace TitanOrbit.Editor.Build
             // Data caching OFF: stack traces with IndexedDB transaction.oncomplete → _main OOB were
             // from UnityCache replaying a corrupt prior download (Content-Encoding mishap).
             //
-            // Memory budget (Player.log / DevTools, build 20260805.2113):
-            //   wasm ≈ 109 MB decoded + data ≈ 290 MB decoded already sit in JS ArrayBuffers.
-            //   Reserving a huge WASM heap on top OOMs some tabs at Module._main with
-            //   "memory access out of bounds" (1024 was too high; 512 still failed on 2026-08-05).
-            //   Prefer a smaller initial heap and let geometric growth expand as systems boot.
-            // Stack: 32 MiB was oversized vs WebServer/Dev profiles (16 MiB) and steals from the same pool.
+            // Memory budget (Chrome console [WebGLBoot] 2026-08-09):
+            //   SystemInfo.systemMemorySize reported **360 MB** on WebGLPlayer, then Crash!!!
+            //   "memory access out of bounds" at Module._main BEFORE BeforeSceneLoad.
+            //   256 MiB initial heap left almost no room for ECS/NetCode boot inside that budget.
+            //   128 MiB initial + geometric growth + 8 MiB stack. Keep decompressionFallback ON so
+            //   Build/* stay *.unityweb (GCS deploy / Content-Encoding:br pipeline).
             PlayerSettings.WebGL.nameFilesAsHashes = true;
             PlayerSettings.WebGL.dataCaching = false;
-            PlayerSettings.WebGL.initialMemorySize = 256;
-            if (PlayerSettings.WebGL.maximumMemorySize < 2048)
-                PlayerSettings.WebGL.maximumMemorySize = 2048;
-            PlayerSettings.WebGL.emscriptenArgs = "-sSTACK_SIZE=16777216";
+            PlayerSettings.WebGL.initialMemorySize = 128;
+            PlayerSettings.WebGL.maximumMemorySize = 2048;
+            PlayerSettings.WebGL.decompressionFallback = true;
+            PlayerSettings.WebGL.emscriptenArgs = "-sSTACK_SIZE=8388608";
             // [TITAN-ORBIT] App UI ships via com.unity.ai.inference. Standalone strips it with
-            // APP_UI_EDITOR_ONLY; WebGL was missing that define → InitializeInPlayer at boot
-            // ("Unable to find an AppUISettings…") right before Module._main OOB.
+            // APP_UI_EDITOR_ONLY; WebGL must match (smaller player + no InitializeInPlayer at boot).
             EnsureWebGlScriptingDefine("APP_UI_EDITOR_ONLY");
+            // [TITAN-ORBIT] Do NOT set HYBRID_RENDERER_DISABLED on WebGL — BuildPlayer then hits
+            // EntitiesGraphicsSystemUtility.RootsHandlerDelegate NRE (registeredAssets) ×N during
+            // EntitiesAssetGC, which can corrupt SubScene/UnityObjectRef bake. Runtime instead
+            // filters Unity.Rendering.* out of CreateClientWorld (see TitanOrbitBootstrap).
+            RemoveWebGlScriptingDefine("HYBRID_RENDERER_DISABLED");
 
             // --- Stamp bundleVersion so any leftover cache key still misses ---
             // [UNITY] companyName+productName+productVersion participate in UnityCache identity.
             string stamp = DateTime.UtcNow.ToString("yyyyMMdd.HHmm");
             PlayerSettings.bundleVersion = stamp;
             Debug.Log("[TitanOrbitBuild] WebGL PlayerSettings: nameFilesAsHashes=true dataCaching=false " +
-                      "initialMemorySize=256 stack=16MiB APP_UI_EDITOR_ONLY bundleVersion=" + stamp);
+                      "initialMemorySize=128 stack=8MiB APP_UI_EDITOR_ONLY bundleVersion=" + stamp);
 
             // --- Wipe prior output so stale Build/* cannot ship beside the new index ---
             CleanWebGlOutputFolder();
@@ -316,6 +321,42 @@ namespace TitanOrbit.Editor.Build
             string next = current.TrimEnd(';') + ";" + define;
             PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.WebGL, next);
             Debug.Log("[TitanOrbitBuild] WebGL scripting defines → " + next);
+        }
+
+
+        /// <summary>
+        /// Removes a scripting define from the WebGL named build target if present.
+        /// </summary>
+        /// <param name="define">Define symbol to remove (e.g. <c>HYBRID_RENDERER_DISABLED</c>).</param>
+        static void RemoveWebGlScriptingDefine(string define)
+        {
+            // --- Read current WebGL defines ---
+            string current = PlayerSettings.GetScriptingDefineSymbols(NamedBuildTarget.WebGL);
+            if (string.IsNullOrEmpty(current))
+                return;
+
+            // --- Rebuild list without the target define ---
+            var parts = new List<string>();
+            bool removed = false;
+            foreach (string part in current.Split(';'))
+            {
+                string trimmed = part.Trim();
+                if (string.IsNullOrEmpty(trimmed))
+                    continue;
+                if (string.Equals(trimmed, define, StringComparison.Ordinal))
+                {
+                    removed = true;
+                    continue;
+                }
+                parts.Add(trimmed);
+            }
+
+            if (!removed)
+                return;
+
+            string next = string.Join(";", parts);
+            PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.WebGL, next);
+            Debug.Log("[TitanOrbitBuild] WebGL scripting defines removed " + define + " → " + next);
         }
 
         static string GetPendingWebGlBuildPath()

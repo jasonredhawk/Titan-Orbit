@@ -318,6 +318,34 @@ namespace TitanOrbit.Game
             /// <summary>Matches <see cref="InfoStyleVersion"/> after outline / hierarchy are applied.</summary>
             public byte StyleVersion;
 
+            /// <summary>
+            /// Last painted level line (skip TMP assign + ForceMeshUpdate when unchanged).
+            /// [TITAN-ORBIT] Profiler: UpdateInfoPlate allocated strings + ForceMeshUpdate ×2 per pad
+            /// every LateUpdate (~4k mesh updates/sec with 25 planets × 81 pads).
+            /// </summary>
+            public string CachedLevelText;
+
+            /// <summary>Last painted cost line (e.g. <c>12 / 174</c> or <c>MAX</c>).</summary>
+            public string CachedCostText;
+
+            /// <summary>Last Floor(BuildProgress) used for cost digits (avoids string rebuild).</summary>
+            public int CachedCostCurrent;
+
+            /// <summary>Last Ceil(gemsToNext) used for cost digits.</summary>
+            public int CachedCostMax;
+
+            /// <summary>Last at-cap flag (controls MAX vs progress + gem icon).</summary>
+            public bool CachedAtCap;
+
+            /// <summary>True after first successful LayoutInfoLines for this plate.</summary>
+            public bool PlateLayoutSeeded;
+
+            /// <summary>Cached half-height of Level+cost stack (InfoRoot local) for pad-below offset.</summary>
+            public float CachedHalfStackLocal;
+
+            /// <summary>Pad radius used when <see cref="CachedHalfStackLocal"/> was computed.</summary>
+            public float CachedPadRadiusForPos;
+
             // --- Cosmetic bank (yaw vs roll kept separate so aim slerp stays clean) ---
 
             /// <summary>
@@ -667,6 +695,7 @@ namespace TitanOrbit.Game
         /// Places level + gem cost <b>screen-below</b> the soft pad (world −Z), with the same
         /// flat TMP orientation as planet/moon labels — not aimed radially off the planet.
         /// World units under the unit-scale planet root — no ÷ planetScale.
+        /// Rebuilds TMP / layout only when level, build progress, or cap state changes.
         /// </summary>
         void UpdateInfoPlate(
             ref SlotVisual vis,
@@ -696,67 +725,130 @@ namespace TitanOrbit.Game
                 }
 
                 CreateInfoPlate(ref vis);
+                // New hierarchy — force a full paint + layout on this frame.
+                vis.CachedLevelText = null;
+                vis.CachedCostText = null;
+                vis.PlateLayoutSeeded = false;
             }
 
             if (vis.InfoRoot == null)
                 return;
 
-            // --- Paint copy ---
+            // --- Resolve desired copy (no TMP writes yet) ---
             // Empty pad → placeholder title (not “Lv 0”). Built pads → “Lv N”.
-            if (vis.LevelText != null)
+            // Crown rung shows as Lv 7 (Solfeggio 963) once unlocked + built.
+            string levelText = slot.TurretLevel <= 0
+                ? EmptyPadPlaceholder
+                : slot.TurretLevel >= PlanetaryDefenseMath.CrownTurretLevel
+                    ? "Lv 7"
+                    : ResolveLevelLabel(slot.TurretLevel);
+
+            bool atCap = slot.TurretLevel >= maxTurretLevel && slot.TurretLevel > 0;
+            int costCurrent = 0;
+            int costMax = 1;
+            string costText;
+            if (atCap)
+            {
+                // At Lv6 with crown locked → MAX until the moon is full again.
+                costText = "MAX";
+            }
+            else
+            {
+                float cost = config.GetGemsToNextLevel(slot.TurretLevel);
+                costCurrent = Mathf.FloorToInt(math.max(0f, slot.BuildProgress));
+                costMax = Mathf.Max(1, Mathf.CeilToInt(cost));
+                // Reuse cached string when digits unchanged (deposit ticks only change Floor progress).
+                if (vis.CachedCostText != null
+                    && !vis.CachedAtCap
+                    && vis.CachedCostCurrent == costCurrent
+                    && vis.CachedCostMax == costMax)
+                {
+                    costText = vis.CachedCostText;
+                }
+                else
+                {
+                    costText = costCurrent + " / " + costMax;
+                }
+            }
+
+            bool levelChanged = vis.CachedLevelText != levelText;
+            bool costChanged = vis.CachedCostText != costText || vis.CachedAtCap != atCap;
+            bool needsLayout = !vis.PlateLayoutSeeded || levelChanged || costChanged;
+
+            // --- Paint TMP only when copy changed ---
+            if (vis.LevelText != null && levelChanged)
             {
                 vis.LevelText.fontSize = LevelFontSize;
                 vis.LevelText.fontStyle = FontStyles.Bold;
                 vis.LevelText.color = Color.white;
-                // Crown rung shows as Lv 7 (Solfeggio 963) once unlocked + built.
-                vis.LevelText.text = slot.TurretLevel <= 0
-                    ? EmptyPadPlaceholder
-                    : slot.TurretLevel >= PlanetaryDefenseMath.CrownTurretLevel
-                        ? "Lv 7"
-                        : "Lv " + slot.TurretLevel;
+                vis.LevelText.text = levelText;
+                vis.CachedLevelText = levelText;
             }
 
-            bool atCap = slot.TurretLevel >= maxTurretLevel && slot.TurretLevel > 0;
-            if (vis.CostText != null)
+            if (vis.CostText != null && costChanged)
             {
                 vis.CostText.fontSize = CostFontSize;
                 vis.CostText.fontStyle = FontStyles.Normal;
                 // Match moon gem current color family for the digits next to the icon.
                 vis.CostText.color = new Color(GemIconColor.r, GemIconColor.g, GemIconColor.b, CostLineAlpha);
-
-                if (atCap)
-                {
-                    // At Lv6 with crown locked → MAX until the moon is full again.
-                    vis.CostText.text = "MAX";
-                }
-                else
-                {
-                    float cost = config.GetGemsToNextLevel(slot.TurretLevel);
-                    int current = Mathf.FloorToInt(math.max(0f, slot.BuildProgress));
-                    int max = Mathf.Max(1, Mathf.CeilToInt(cost));
-                    vis.CostText.text = current + " / " + max;
-                }
+                vis.CostText.text = costText;
+                vis.CachedCostText = costText;
+                vis.CachedCostCurrent = costCurrent;
+                vis.CachedCostMax = costMax;
+                vis.CachedAtCap = atCap;
             }
 
-            if (vis.GemIcon != null)
+            if (vis.GemIcon != null && (needsLayout || costChanged))
             {
                 // Hide the gem icon on the MAX line — no deposit target left.
-                vis.GemIcon.enabled = !atCap && WorldStatLabelIcons.Gem != null;
-                if (vis.GemIcon.enabled)
+                bool gemOn = !atCap && WorldStatLabelIcons.Gem != null;
+                if (vis.GemIcon.enabled != gemOn)
+                    vis.GemIcon.enabled = gemOn;
+                if (gemOn)
                     vis.GemIcon.color = GemIconColor;
             }
 
-            // --- Same flat orientation as planet / moon labels (fixes inverted LookRotation) ---
+            // --- Orientation once (cheap); layout + ForceMeshUpdate only when copy dirty ---
             float s = InfoTextWorldScale;
             vis.InfoRoot.localRotation = Quaternion.Euler(-90f, 0f, 0f);
             vis.InfoRoot.localScale = new Vector3(s, -s, s);
 
-            LayoutInfoLines(ref vis);
+            if (needsLayout)
+            {
+                LayoutInfoLines(ref vis);
+                vis.CachedHalfStackLocal = GetInfoStackHalfHeightLocal(vis);
+                vis.PlateLayoutSeeded = true;
+            }
 
             // Screen-below the pad: offset on world −Z from the slot center (not radial-out).
-            float halfStackWorld = GetInfoStackHalfHeightLocal(vis) * InfoTextWorldScale;
-            float belowDist = padWorldRadius + InfoGapPastRimWorld + halfStackWorld;
-            vis.InfoRoot.localPosition = new Vector3(0f, InfoAbovePadWorld, -belowDist);
+            // Skip SetLocalPosition when pad radius + stack height are unchanged.
+            if (!vis.PlateLayoutSeeded
+                || needsLayout
+                || !Mathf.Approximately(vis.CachedPadRadiusForPos, padWorldRadius))
+            {
+                float halfStackWorld = vis.CachedHalfStackLocal * InfoTextWorldScale;
+                float belowDist = padWorldRadius + InfoGapPastRimWorld + halfStackWorld;
+                vis.InfoRoot.localPosition = new Vector3(0f, InfoAbovePadWorld, -belowDist);
+                vis.CachedPadRadiusForPos = padWorldRadius;
+            }
+        }
+
+        /// <summary>
+        /// Interned-style level labels for common turret levels (avoids <c>"Lv " + n</c> every paint).
+        /// </summary>
+        /// <param name="turretLevel">1–6 (caller handles 0 / crown).</param>
+        static string ResolveLevelLabel(int turretLevel)
+        {
+            switch (turretLevel)
+            {
+                case 1: return "Lv 1";
+                case 2: return "Lv 2";
+                case 3: return "Lv 3";
+                case 4: return "Lv 4";
+                case 5: return "Lv 5";
+                case 6: return "Lv 6";
+                default: return "Lv " + turretLevel;
+            }
         }
 
         /// <summary>

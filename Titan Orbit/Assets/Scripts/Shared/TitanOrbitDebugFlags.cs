@@ -26,6 +26,13 @@ namespace TitanOrbit
         /// </summary>
         public static bool StutterIsolatorEnabled;
 
+        /// <summary>
+        /// When true, <c>InstructionReferenceCaptureSession</c> shows its status banner and accepts
+        /// F8/F9 (and Esc / Shift+F8 cancel) to gather InstructionScreens reference plates.
+        /// Off by default — enable from GameManager Inspector only when rebuilding instruction art.
+        /// </summary>
+        public static bool InstructionImageCaptureEnabled;
+
         // --- Stutter / destroy isolation (Shift+F1–F5 while isolator enabled) ---
 
         /// <summary>Skip bullet impact one-shot VFX (HitRpc + predicted impact).</summary>

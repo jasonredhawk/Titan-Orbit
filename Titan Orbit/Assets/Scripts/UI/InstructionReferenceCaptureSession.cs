@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using TitanOrbit;
 using TitanOrbit.ECS;
 using TitanOrbit.NetCode;
 using TitanOrbit.UI;
@@ -12,9 +13,15 @@ using UnityEngine.InputSystem;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// In-game debug tool: press <b>F8</b>/<b>F9</b> after Join Team to gather reference plates for
-    /// rebuilding <c>Resources/InstructionScreens/</c>. Writes PNGs + <c>manifest.json</c> under
-    /// <c>Titan Orbit/Captures/InstructionRefs/&lt;timestamp&gt;/</c>.
+    /// In-game debug tool: when enabled on <c>GameManager</c> (NceGameRoot Inspector →
+    /// <b>Debug — Instruction Image Capture</b>), press <b>F8</b>/<b>F9</b> after Join Team to
+    /// gather reference plates for rebuilding <c>Resources/InstructionScreens/</c>. Writes PNGs +
+    /// <c>manifest.json</c> under <c>Titan Orbit/Captures/InstructionRefs/&lt;timestamp&gt;/</c>.
+    /// <para>
+    /// Master switch: <see cref="TitanOrbitDebugFlags.InstructionImageCaptureEnabled"/> (published
+    /// from GameManager). When OFF (default), the status banner stays hidden and F8/F9 do nothing —
+    /// same pattern as <see cref="ClientStutterIsolator"/>.
+    /// </para>
     /// <para>
     /// Shot plan (what later art needs):
     /// <list type="bullet">
@@ -150,8 +157,9 @@ namespace TitanOrbit.Game
         readonly List<HiddenHudState> _hiddenHud = new List<HiddenHudState>(32);
 
         /// <summary>
-        /// [UNITY] Auto-install after scene load so Play Mode always has the hotkey —
-        /// same pattern as <see cref="ClientStutterIsolator"/>.
+        /// [UNITY] Auto-install after scene load so Play Mode can enable the tool from GameManager —
+        /// same pattern as <see cref="ClientStutterIsolator"/>. Stays idle until
+        /// <see cref="TitanOrbitDebugFlags.InstructionImageCaptureEnabled"/> is true.
         /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void EnsureInstalled()
@@ -168,23 +176,38 @@ namespace TitanOrbit.Game
             if (session != null)
             {
                 session.gameObject.AddComponent<InstructionReferenceCaptureSession>();
-                Debug.Log("[InstructionCapture] Installed on TitanOrbitSessionManager — press F8 (or F9) after Join Team.");
+                Debug.Log(
+                    "[InstructionCapture] Installed on TitanOrbitSessionManager — " +
+                    "enable Debug → Instruction Image Capture on GameManager, then F8/F9 after Join Team.");
                 return;
             }
 
             var go = new GameObject("InstructionReferenceCaptureSession");
             DontDestroyOnLoad(go);
             go.AddComponent<InstructionReferenceCaptureSession>();
-            Debug.Log("[InstructionCapture] Installed (standalone DDOL) — press F8 (or F9) after Join Team.");
+            Debug.Log(
+                "[InstructionCapture] Installed (standalone DDOL) — " +
+                "enable Debug → Instruction Image Capture on GameManager, then F8/F9 after Join Team.");
         }
 
         /// <summary>
         /// [UNITY] Per-frame hotkey + status. F8/F9 starts / confirms guided; Esc or Shift+F8 cancels.
+        /// No-op unless GameManager has Instruction Image Capture enabled.
         /// </summary>
         void Update()
         {
             if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
                 return;
+
+            // --- Master switch from GameManager Inspector ---
+            // [TITAN-ORBIT] Off by default so normal play never shows the banner or steals F8/F9.
+            if (!TitanOrbitDebugFlags.InstructionImageCaptureEnabled)
+            {
+                // If you flip the toggle mid-session, cancel so the camera / HUD restore path runs.
+                if (_phase != Phase.Idle && _phase != Phase.Done)
+                    RequestCancel("Disabled via GameManager (Instruction Image Capture off).");
+                return;
+            }
 
             // --- Read keys (Input System preferred; legacy fallback if Keyboard.current is null) ---
             bool f8 = WasCaptureKeyPressed(out bool shiftHeld, out bool escapePressed);
@@ -247,6 +270,10 @@ namespace TitanOrbit.Game
         void OnGUI()
         {
             if (!TitanOrbitDedicatedServerAutoBoot.ShouldRunClientPresentation())
+                return;
+
+            // --- Hidden unless the GameManager toggle is on ---
+            if (!TitanOrbitDebugFlags.InstructionImageCaptureEnabled)
                 return;
 
             // --- Never bake the status strip into reference plates ---

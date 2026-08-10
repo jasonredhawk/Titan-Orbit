@@ -25,8 +25,16 @@ namespace TitanOrbit.Data
             }
         }
 
-        /// <summary>True when ship hulls should render through Entities Graphics (pure ECS client path).</summary>
+        /// <summary>
+        /// True when ship hulls should render through Entities Graphics (pure ECS client path).
+        /// [TITAN-ORBIT] WebGL always uses hybrid GameObject proxies — Entities Graphics needs compute
+        /// shaders, which WebGL does not expose; forcing EG on WebGL participated in CreateClientWorld OOB.
+        /// </summary>
         public static bool UseEntitiesGraphicsForShips =>
+#if UNITY_WEBGL && !UNITY_EDITOR
+            false;
+#else
             Instance == null || Instance.useEntitiesGraphicsForShips;
+#endif
     }
 }

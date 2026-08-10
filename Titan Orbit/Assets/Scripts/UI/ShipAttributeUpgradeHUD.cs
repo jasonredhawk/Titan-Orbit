@@ -5,6 +5,7 @@ using TitanOrbit.Game;
 using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using TMPro;
+using Unity.Entities;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Serialization;
@@ -25,8 +26,11 @@ namespace TitanOrbit.UI
     /// and paint three purchase states: Ready (affordable), Locked (not enough gems), Maxed.
     /// Both rows share dark-glass + category-accent chrome (space-gamer HUD). Chip hover opens
     /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> when the STATS row is on.
-    /// Chip values and tip bodies are rebuilt only when the ship / ability snapshot key changes
+    /// Chip values and tip bodies are rebuilt when the ship / ability snapshot key changes
     /// (new ship or ability purchase) — never every frame for live HP/speed/cargo.
+    /// The snapshot key latches only after chassis stats <b>and</b> hull ComponentSize are ready
+    /// (mass tax for MS/TS). Painting with a MinMass placeholder froze an untaxed Move Speed until
+    /// the player toggled [STATS]. ComponentSize is part of the snapshot key so late hull refs repaint.
     /// </para>
     /// Strip layout: recomputed only when screen / canvas / minimap size changes; positions are
     /// snapped to whole canvas units so windowed (non-1:1) views do not shimmer.
@@ -322,7 +326,7 @@ namespace TitanOrbit.UI
 
             var canvas = GetComponentInParent<Canvas>();
             if (canvas == null)
-                canvas = Object.FindFirstObjectByType<Canvas>();
+                canvas = UnityEngine.Object.FindFirstObjectByType<Canvas>();
             if (canvas == null)
                 return false;
 
@@ -341,7 +345,7 @@ namespace TitanOrbit.UI
             // --- Cache minimap RectTransform ---
             if (_cachedMinimapRect != null)
                 return;
-            var minimap = Object.FindFirstObjectByType<MinimapController>();
+            var minimap = UnityEngine.Object.FindFirstObjectByType<MinimapController>();
             if (minimap != null)
                 _cachedMinimapRect = minimap.transform as RectTransform;
         }
@@ -1038,13 +1042,20 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Hash of ship chassis identity + the ten ability levels.
+        /// Hash of ship chassis identity + the ten ability levels + hull ComponentSize.
         /// Used to dirty-check chip/tip rebuilds without allocating.
         /// </summary>
         /// <param name="ship">Local ship vitals (level / team / branch / family).</param>
         /// <param name="attrs">Ghost attribute upgrade levels.</param>
+        /// <param name="componentSize">
+        /// Hull ComponentSize used for mass tax. Included so MS/TS chips repaint when
+        /// <see cref="ShipMotorConfig.HullMassReference"/> arrives after the first chassis paint.
+        /// </param>
         /// <returns>Stable fingerprint for the current loadout matrix.</returns>
-        static int ComputeStatsSnapshotKey(in ShipState ship, in ShipAttributeUpgradeState attrs)
+        static int ComputeStatsSnapshotKey(
+            in ShipState ship,
+            in ShipAttributeUpgradeState attrs,
+            float componentSize)
         {
             // [STANDARD] Unchecked hash combine — collisions are rare; worst case is one extra rebuild.
             unchecked
@@ -1064,6 +1075,8 @@ namespace TitanOrbit.UI
                 h = h * 31 + attrs.RotationSpeed;
                 h = h * 31 + attrs.GemCapacity;
                 h = h * 31 + attrs.PeopleCapacity;
+                // Centi-units — ignores sub-0.01 noise, still catches MinMass → real hull size.
+                h = h * 31 + Mathf.RoundToInt(componentSize * 100f);
                 return h;
             }
         }
@@ -1204,10 +1217,14 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Builds a static chip/tip snapshot from the current ship + ability levels.
-        /// Always re-applies attribute multipliers locally so an upgrade never sticks to the
-        /// previous speedometer frame. Parts / hull size / move-step preview may come from the
-        /// speedometer when available (expensive prefab cache).
+        /// Re-applies level growth + attribute multipliers locally so an upgrade never sticks to the
+        /// previous speedometer frame. Parts / ram / OD extras may still come from the speedometer
+        /// when its part cache is ready (expensive prefab Instantiates).
         /// </summary>
+        /// <returns>
+        /// True when a ship snapshot exists. Callers must also check <see cref="IsChipLiveContextReady"/>
+        /// before latching chip text — chassis catalogs can lag the first Update after spawn.
+        /// </returns>
         bool TryResolveChipLiveContext(
             out ShipSpeedometerStatTooltips.PartCache parts,
             out ShipSpeedometerStatTooltips.LiveContext live,
@@ -1222,11 +1239,14 @@ namespace TitanOrbit.UI
             if (!_triedSpeedometerLookup)
             {
                 _triedSpeedometerLookup = true;
-                _cachedSpeedometer = Object.FindFirstObjectByType<ShipSpeedometerHUD>();
+                _cachedSpeedometer = UnityEngine.Object.FindFirstObjectByType<ShipSpeedometerHUD>();
             }
 
-            // Optional shared parts + hull size from speedometer (not live flight vitals).
-            float componentSize = ShipMassLogic.MinMass;
+            // --- Hull size for mass tax ---
+            // [TITAN-ORBIT] ComponentSize = ShipMotorConfig.HullMassReference. Never fall back to
+            // MinMass and latch — that paints nearly untaxed MS/TS until the player toggles [STATS].
+            // Leave ComponentSize/Cruise at 0 until motor or speedometer mobility is ready.
+            bool hasComponentSize = TryGetLocalHullComponentSize(out float componentSize);
             float moveStepPreview = 0f;
             ShipWeaponConfig weapon = default;
             float ramRating = 0f;
@@ -1234,21 +1254,43 @@ namespace TitanOrbit.UI
             float ramSelf = 0f;
             float barMax = 0f;
             float odCap = 1f;
-            if (_cachedSpeedometer != null
-                && _cachedSpeedometer.TryGetTooltipSharedState(out parts, out var shared))
+
+            // Mobility shared does not require part-cache Instantiates (unlike tip grids).
+            ShipSpeedometerStatTooltips.LiveContext mobilityShared = default;
+            bool gotMobilityShared = _cachedSpeedometer != null
+                && _cachedSpeedometer.TryGetMobilitySharedState(out mobilityShared);
+
+            if (!hasComponentSize
+                && gotMobilityShared
+                && mobilityShared.ComponentSize > ShipMassLogic.MinMass + 0.0001f)
             {
-                if (shared.ComponentSize > ShipMassLogic.MinMass)
-                    componentSize = shared.ComponentSize;
-                moveStepPreview = shared.MoveStepPreview;
-                weapon = shared.Weapon;
-                ramRating = shared.RamRating;
-                ramAst = shared.RamAsteroidDamage;
-                ramSelf = shared.RamSelfDamage;
-                barMax = shared.BarMaxSpeed;
-                odCap = shared.OverdriveCapacityMult;
+                // [TITAN-ORBIT] Reject MinMass-only speedometer placeholders (HullMassReference lag) —
+                // that painted nearly untaxed MS until [STATS] was toggled. Real hulls may equal
+                // MinMass; those are accepted via TryGetLocalHullComponentSize above.
+                componentSize = mobilityShared.ComponentSize;
+                hasComponentSize = true;
             }
 
-            // --- Fresh chassis + ability multipliers (authoritative for this snapshot) ---
+            if (gotMobilityShared)
+            {
+                // Move-step / ram / OD extras — independent of whether hull size came from motor.
+                if (mobilityShared.MoveStepPreview > 0.0001f)
+                    moveStepPreview = mobilityShared.MoveStepPreview;
+                weapon = mobilityShared.Weapon;
+                ramRating = mobilityShared.RamRating;
+                ramAst = mobilityShared.RamAsteroidDamage;
+                ramSelf = mobilityShared.RamSelfDamage;
+                barMax = mobilityShared.BarMaxSpeed;
+                odCap = mobilityShared.OverdriveCapacityMult;
+            }
+
+            // Tip part grids still need the stricter parts.Valid shared state when available.
+            if (_cachedSpeedometer != null)
+                _cachedSpeedometer.TryGetTooltipSharedState(out parts, out _);
+
+            // --- Fresh chassis pipeline (same steps as ShipSpeedometerHUD stats cache) ---
+            // [TITAN-ORBIT] TryGetBaseStatsForChassis returns level-1 sums — we must call
+            // GetEffectiveStatsAtShipLevel, then ApplyMultipliers, then ApplyMoveSpeedAbilitySteps.
             live = new ShipSpeedometerStatTooltips.LiveContext
             {
                 Ship = ship,
@@ -1259,7 +1301,7 @@ namespace TitanOrbit.UI
                 RamSelfDamage = ramSelf,
                 BarMaxSpeed = barMax,
                 OverdriveCapacityMult = odCap,
-                ComponentSize = componentSize,
+                ComponentSize = hasComponentSize ? componentSize : 0f,
             };
 
             if (ShipStatApplyLogic.TryResolveChassisId(
@@ -1269,39 +1311,95 @@ namespace TitanOrbit.UI
                     out string chassisId,
                     allowFallback: true,
                     ship.ShipFamilyConfigIndex)
-                && ShipStatApplyLogic.TryGetBaseStatsForChassis(chassisId, ship.ShipLevel, out ShipComponentAbilityStats baseStats))
+                && ShipStatApplyLogic.TryGetBaseStatsForChassis(
+                    chassisId, ship.ShipLevel, out ShipComponentAbilityStats levelOneSummed))
             {
-                ShipAttributeUpgradeLogic.ApplyMultipliers(ref baseStats, in attrs);
-                live.EffectiveStats = baseStats;
-                live.ChassisMaxSpeed = baseStats.moveSpeed;
-                live.ChassisAccel = baseStats.accelerationCap;
-                live.ChassisTurnDeg = baseStats.turnSpeed;
+                // Family growth fraction — same source the speedometer / ApplyToShip use.
+                float growth = ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
+                if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
+                    && family != null)
+                    growth = family.ResolveShipLevelStatGrowthFraction();
 
-                ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
-                    live.ChassisMaxSpeed,
-                    live.ChassisAccel,
-                    live.ChassisTurnDeg,
-                    ship.CurrentGems,
-                    ship.CurrentPeople,
-                    componentSize);
-                live.TotalMass = taxed.TotalMass;
-                live.CruiseMaxSpeed = taxed.MaxSpeed;
-                live.TaxedAccel = taxed.EngineThrust;
-                live.TaxedTurnDeg = taxed.RotationSpeed;
-                live.LiveMaxSpeed = taxed.MaxSpeed;
+                ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
+                    levelOneSummed, ship.ShipLevel, growth);
+                ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, in attrs);
+                ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
+                    levelOneSummed, out float moveStep, out float accelStep, out float odDrainStep);
+                ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
+                    ref effective, attrs, moveStep, accelStep, odDrainStep);
+
+                live.EffectiveStats = effective;
+                live.ChassisMaxSpeed = effective.moveSpeed;
+                live.ChassisAccel = effective.accelerationCap > 0.1f
+                    ? effective.accelerationCap
+                    : effective.moveSpeed;
+                // [TITAN-ORBIT] turnSpeed on the stats block is definition units — convert like the bar.
+                live.ChassisTurnDeg = ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
+                    effective.turnSpeed);
+
+                // Mass tax only when ComponentSize is known — otherwise leave CruiseMaxSpeed at 0
+                // so IsChipLiveContextReady keeps retrying (MS would look like chassis / no drag).
+                if (hasComponentSize)
+                {
+                    ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+                        live.ChassisMaxSpeed,
+                        live.ChassisAccel,
+                        live.ChassisTurnDeg,
+                        ship.CurrentGems,
+                        ship.CurrentPeople,
+                        componentSize);
+                    live.TotalMass = taxed.TotalMass;
+                    live.CruiseMaxSpeed = taxed.MaxSpeed;
+                    live.TaxedAccel = taxed.EngineThrust;
+                    live.TaxedTurnDeg = taxed.RotationSpeed;
+                    live.LiveMaxSpeed = taxed.MaxSpeed;
+                }
 
                 // If speedometer has not filled max-ram yet, estimate at full cruise here.
-                if (ramAst <= 0.0001f && baseStats.rammingPower > 0.01f)
+                if (ramAst <= 0.0001f && effective.rammingPower > 0.01f)
                 {
                     // Rating/mass/speed product matches tip language; exact server formula lives in
                     // ShipComponentRammingSuggestions — speedometer fills this when its snapshot runs.
-                    live.RamRating = baseStats.rammingPower;
+                    live.RamRating = effective.rammingPower;
                 }
+
+                if (moveStepPreview <= 0.0001f)
+                    live.MoveStepPreview = Mathf.Max(0f, moveStep);
             }
 
-            if (moveStepPreview <= 0.0001f)
+            if (live.MoveStepPreview <= 0.0001f)
                 live.MoveStepPreview = Mathf.Max(0f, live.EffectiveStats.moveSpeedPerAbilityLevel);
 
+            return true;
+        }
+
+        /// <summary>
+        /// Reads <see cref="ShipMotorConfig.HullMassReference"/> from the seeded local ship.
+        /// Uses Instantiates-hook seed only — no ship archetype gather (Join Team Crash!!! safe).
+        /// </summary>
+        /// <param name="componentSize">Hull ComponentSize for mass tax when known.</param>
+        /// <returns>True when the motor has a positive HullMassReference.</returns>
+        static bool TryGetLocalHullComponentSize(out float componentSize)
+        {
+            componentSize = 0f;
+
+            // --- Seeded entity only (no CalculateEntityCount / WithEntityAccess) ---
+            var world = EcsGameBridge.GetLocalPlayerShipWorld();
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            if (!LocalShipEntitySeed.TryGetSeededShip(em, out Entity ship)
+                || ship == Entity.Null
+                || !em.Exists(ship)
+                || !em.HasComponent<ShipMotorConfig>(ship))
+                return false;
+
+            float hull = em.GetComponentData<ShipMotorConfig>(ship).HullMassReference;
+            if (hull <= 0f)
+                return false;
+
+            componentSize = hull;
             return true;
         }
 
@@ -1661,35 +1759,40 @@ namespace TitanOrbit.UI
             _lastCost = cost;
             _slotVisualsSeeded = true;
 
-            // --- Static chip / tip matrix (only when ship or ability levels change) ---
-            // [TITAN-ORBIT] Former path rebuilt tip StringBuilders + ForceMeshUpdate every frame while
-            // hovering, and refreshed chips from live cruise/cargo — Profiler median ~580 KB GC/frame.
-            int snapshotKey = ComputeStatsSnapshotKey(in ship, in attrs);
-            if (snapshotKey != _statsSnapshotKey)
-            {
-                _statsSnapshotKey = snapshotKey;
-                // Fresh attrs-applied snapshot (does not depend on speedometer LateUpdate order).
-                RefreshChipValues(in ship, in attrs);
-                if (_activeAbilityTipIndex.HasValue)
-                    RefreshAbilityTipContent();
-            }
-
             FlushPendingAbilityTipHide();
         }
 
         /// <summary>
-        /// Paints top chips only: current effective value and +amount from the next purchase.
-        /// Bottom buttons keep the static ability name (no duplicated stats).
-        /// Call when the stats snapshot key changes (new ship / ability purchase), not every frame.
+        /// Rebuilds STATS chips when the loadout / hull-size snapshot changes.
+        /// Runs from LateUpdate so <see cref="ShipSpeedometerHUD"/> can publish ComponentSize first.
         /// </summary>
-        void RefreshChipValues(in ShipState ship, in ShipAttributeUpgradeState attrs)
+        void TryRefreshAbilityChipSnapshot(in ShipState ship, in ShipAttributeUpgradeState attrs)
         {
-            _ = ship;
-            // Skip work while the STATS row is collapsed (chips + hover are off).
+            // STATS row off — do not latch; SetStatsChipsVisible resets the key when turned back on.
             if (!statsChipsVisible)
                 return;
 
-            TryResolveChipLiveContext(out _, out var live, out _);
+            if (!TryResolveChipLiveContext(out _, out var live, out _) || !IsChipLiveContextReady(in live))
+                return;
+
+            // Key includes ComponentSize so MinMass→real hull (or late HullMassReference) repaints MS/TS.
+            int snapshotKey = ComputeStatsSnapshotKey(in ship, in attrs, live.ComponentSize);
+            if (snapshotKey == _statsSnapshotKey)
+                return;
+
+            _statsSnapshotKey = snapshotKey;
+            PaintChipValues(in live, in attrs);
+            if (_activeAbilityTipIndex.HasValue)
+                RefreshAbilityTipContent();
+        }
+
+        /// <summary>
+        /// Writes glance text onto every visible chip from a ready live context.
+        /// </summary>
+        void PaintChipValues(
+            in ShipSpeedometerStatTooltips.LiveContext live,
+            in ShipAttributeUpgradeState attrs)
+        {
             for (int i = 0; i < 10; i++)
             {
                 if (_chipValueTexts[i] == null)
@@ -1703,6 +1806,31 @@ namespace TitanOrbit.UI
                 _lastChipText[i] = chipText;
                 _chipValueTexts[i].text = chipText;
             }
+        }
+
+        /// <summary>
+        /// True when chassis EffectiveStats and mass-tax inputs are ready to paint.
+        /// Missing ComponentSize / CruiseMaxSpeed means MS/TS would show untaxed chassis speed.
+        /// </summary>
+        static bool IsChipLiveContextReady(in ShipSpeedometerStatTooltips.LiveContext live)
+        {
+            // Any primary pool above epsilon means GetEffectiveStatsAtShipLevel + attrs ran.
+            ShipComponentAbilityStats eff = live.EffectiveStats;
+            bool statsReady = eff.healthCap > 0.01f
+                || eff.firePower > 0.01f
+                || eff.energyCap > 0.01f
+                || eff.moveSpeed > 0.01f;
+            if (!statsReady)
+                return false;
+
+            // [TITAN-ORBIT] ComponentSize 0 = unknown (we refuse MinMass placeholders). A real hull
+            // may equal MinMass (0.5); CruiseMaxSpeed > 0 means mass tax ran with that size.
+            if (live.ComponentSize <= 0.01f)
+                return false;
+            if (live.CruiseMaxSpeed <= 0.01f)
+                return false;
+
+            return true;
         }
 
         private void LateUpdate()
@@ -1721,6 +1849,12 @@ namespace TitanOrbit.UI
 
             if (!ShouldShowUpgradeBar())
                 return;
+
+            // --- STATS chips after speedometer LateUpdate when possible ---
+            // [TITAN-ORBIT] Chip mass tax needs HullMassReference / speedometer ComponentSize.
+            // Update() often runs before those exist; LateUpdate retries until ready then latches.
+            if (TryGetUpgradeHudSnapshot(out var ship, out var attrs))
+                TryRefreshAbilityChipSnapshot(in ship, in attrs);
 
             var keyboard = Keyboard.current;
             if (keyboard == null)

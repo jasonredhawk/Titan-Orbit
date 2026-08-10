@@ -23,8 +23,9 @@ namespace TitanOrbit.Core
     /// Scene singleton that holds designer-tunable HUD options, debug flags for local play, and the
     /// Editor Test / Production multiplayer toggle. Lives on <c>NceGameRoot</c> in SampleScene
     /// (Inspector → Game Manager). Moon orbit ship-tree UI reads <see cref="DebugFreeShipUpgradeTree"/>
-    /// so you can click any upgrade-tree node for free during testing. Publishes debug values to
-    /// <see cref="TitanOrbitDebugFlags"/> so the ECS server store can honor free selects without
+    /// so you can click any upgrade-tree node for free during testing. Also gates optional tools such as
+    /// Instruction Image Capture (F8/F9 reference plates) and the stutter isolator. Publishes debug
+    /// values to <see cref="TitanOrbitDebugFlags"/> so other assemblies can honor toggles without
     /// referencing this Core assembly. Dedicated server builds normally leave debug flags false.
     /// </summary>
     public class GameManager : MonoBehaviour
@@ -67,6 +68,10 @@ namespace TitanOrbit.Core
         [Tooltip("Logs [AsteroidDestroy] timings in the Console when an asteroid explodes (local gem Instantiates + urgent gem proxies). Filter the Console with that tag.")]
         [SerializeField] bool debugLogAsteroidDestroyPerf;
 
+        [Header("Debug — Instruction Image Capture")]
+        [Tooltip("When enabled in Play Mode, shows the Instruction capture status banner and accepts F8/F9 after Join Team to gather reference plates for Resources/InstructionScreens art. Leave OFF for normal play (hides UI and ignores capture keys).")]
+        [SerializeField] bool debugEnableInstructionImageCapture;
+
         [Header("Debug — Stutter Isolator")]
         [Tooltip("When enabled in Play Mode, shows an on-screen panel and accepts Shift+F1–F5 to temporarily disable impact VFX, floats, asteroid toroidal collision, ship soft-track, or gem burst. Leave OFF for normal play.")]
         [SerializeField] bool debugEnableStutterIsolator;
@@ -94,6 +99,9 @@ namespace TitanOrbit.Core
 
         /// <summary>True when asteroid-destroy hitch logging is enabled in the Inspector.</summary>
         public bool DebugLogAsteroidDestroyPerf => debugLogAsteroidDestroyPerf;
+
+        /// <summary>True when the InstructionScreens reference-capture tool (F8/F9) is enabled.</summary>
+        public bool DebugEnableInstructionImageCapture => debugEnableInstructionImageCapture;
 
         /// <summary>True when the Shift+F stutter isolator overlay is enabled.</summary>
         public bool DebugEnableStutterIsolator => debugEnableStutterIsolator;
@@ -178,6 +186,7 @@ namespace TitanOrbit.Core
                 Instance = null;
                 TitanOrbitDebugFlags.FreeShipUpgradeTree = false;
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
+                TitanOrbitDebugFlags.InstructionImageCaptureEnabled = false;
                 TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
                 ClearIsolationFlags();
                 _hasPublishedShowSpeedometer = false;
@@ -193,6 +202,9 @@ namespace TitanOrbit.Core
             // [TITAN-ORBIT] ECS MoonOrbitStoreSystem cannot reference TitanOrbit.Core — Shared bridge.
             TitanOrbitDebugFlags.FreeShipUpgradeTree = debugFreeShipUpgradeTree;
             TitanOrbitDebugFlags.LogAsteroidDestroyPerf = debugLogAsteroidDestroyPerf;
+            // [TITAN-ORBIT] Instruction capture stays OFF unless you flip this for art rebuilds —
+            // otherwise F8/F9 and the bottom status banner stay inactive during normal play.
+            TitanOrbitDebugFlags.InstructionImageCaptureEnabled = debugEnableInstructionImageCapture;
             TitanOrbitDebugFlags.StutterIsolatorEnabled = debugEnableStutterIsolator;
 
             // Seed isolation bits from Inspector when enabling; when master switch is OFF, clear them

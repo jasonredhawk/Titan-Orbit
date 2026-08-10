@@ -43,6 +43,14 @@ namespace TitanOrbit.Data
         /// <summary>Cached default asset from Resources (or runtime fallback).</summary>
         static PlanetaryDefenseConfig s_Default;
 
+        /// <summary>
+        /// True after the first successful ladder build this play session.
+        /// [TITAN-ORBIT] GetLevelStats used to call EnsureLevelsInitialized every fire/visual tick,
+        /// and EnsureSecondaryRowsExist allocated a fresh defaults array even when levels were full
+        /// (Profiler: thousands of allocs/sec → ~half of frame GC). Latch once; Editor OnValidate resets.
+        /// </summary>
+        [NonSerialized] bool _runtimeLadderReady;
+
         // --- Prefabs ---
 
         [Header("Prefabs")]
@@ -294,11 +302,17 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Ensures the 7-row ladder exists, then overwrites combat + gem stats from ranges /
         /// Solfeggio. Preserves authored visualScale / hitRadius when already set.
+        /// Safe to call every frame — after the first success it is a single bool check.
         /// </summary>
         public void EnsureLevelsInitialized()
         {
+            // Hot path: combat + client visuals call this via GetLevelStats every tick.
+            if (_runtimeLadderReady && levels != null && levels.Length >= MaxTurretLevel)
+                return;
+
             EnsureSecondaryRowsExist();
             ApplyCombatRangesToLevels();
+            _runtimeLadderReady = levels != null && levels.Length >= MaxTurretLevel;
         }
 
         /// <summary>
@@ -356,24 +370,30 @@ namespace TitanOrbit.Data
         /// </summary>
         void OnValidate()
         {
+            // Designer changed ranges — force a rebuild so Inspector preview matches knobs.
+            _runtimeLadderReady = false;
             EnsureLevelsInitialized();
         }
 #endif
 
         /// <summary>
         /// Allocates / pads the secondary ladder (visual, hit) with defaults when missing.
+        /// Does <b>not</b> allocate when <see cref="levels"/> is already length <see cref="MaxTurretLevel"/>.
         /// </summary>
         void EnsureSecondaryRowsExist()
         {
+            // --- Fast path: ladder already sized (common after first EnsureLevelsInitialized) ---
+            // [TITAN-ORBIT] Must return BEFORE GenerateDefaultSecondaryLevelStats — that new[] was
+            // the Profiler GC storm (thousands of allocs/sec when GetLevelStats ran every tick).
+            if (levels != null && levels.Length >= MaxTurretLevel)
+                return;
+
             var defaults = GenerateDefaultSecondaryLevelStats();
             if (levels == null || levels.Length == 0)
             {
                 levels = defaults;
                 return;
             }
-
-            if (levels.Length >= MaxTurretLevel)
-                return;
 
             var merged = new TurretLevelStats[MaxTurretLevel];
             for (int i = 0; i < MaxTurretLevel; i++)

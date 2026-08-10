@@ -65,8 +65,8 @@ namespace TitanOrbit.UI
     /// queries, no bar math, no TMP rebuilds. Presentation-only — never writes ECS.
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] Compact top-center SPD + ACC bars only (no numeric body text). Hover pads
-    /// open short rollovers; full part pipelines live on ability chips —
+    /// [TITAN-ORBIT] Compact top-center SPD + ACC bars only (no numeric body text, no bar hover).
+    /// Part-pipeline rollovers live on ability chips —
     /// <see cref="ShipSpeedometerStatTooltips"/> / <see cref="ShipAttributeUpgradeHUD"/>.
     /// </para>
     /// Hidden during team select, death, and when the upgrade tree obscures HUD.
@@ -213,41 +213,20 @@ namespace TitanOrbit.UI
         /// </summary>
         bool _idleBecauseDisabled;
 
-        // --- Rollover tooltips (hover pads → floating TMP) ---
+        // --- Shared tip context for ability chips (bars themselves have no hover) ---
 
-        /// <summary>Floating breakdown panel (inactive until a hover zone is entered).</summary>
-        GameObject _tooltipPanel;
-
-        /// <summary>Rich-text body inside <see cref="_tooltipPanel"/>.</summary>
-        TextMeshProUGUI _tooltipLabel;
-
-        /// <summary>Rect on the tooltip panel for positioning beside the speedometer.</summary>
-        RectTransform _tooltipRect;
-
-        /// <summary>[TITAN-ORBIT] Sci-fi chrome — accent recolors per speedometer section.</summary>
-        ShipStatTooltipChrome.Handles _tooltipChrome;
-
-        /// <summary>Cached chassis part list for tooltip copy (refreshed on chassis / store change).</summary>
+        /// <summary>Cached chassis part list for ability-chip tip copy (refreshed on chassis / store change).</summary>
         ShipSpeedometerStatTooltips.PartCache _partCache;
 
-        /// <summary>Last live numbers passed into tooltip Build (updated every LateUpdate while shown).</summary>
+        /// <summary>
+        /// Live motor / cargo numbers for <see cref="ShipAttributeUpgradeHUD"/> tip builders.
+        /// Rebuilt when ship / abilities / parts change — not every flight frame.
+        /// </summary>
         ShipSpeedometerStatTooltips.LiveContext _liveTooltipContext;
 
-        /// <summary>Section currently under the pointer, or null when the rollover is hidden.</summary>
-        SpeedometerStatSection? _activeTooltipSection;
-
         /// <summary>
-        /// Section scheduled to hide at end of LateUpdate. Cancelled if another pad calls
-        /// <see cref="ShowStatTooltip"/> in the same frame (bar → line handoff).
-        /// </summary>
-        SpeedometerStatSection? _pendingHideSection;
-
-        /// <summary>Last rich text written to the tooltip (skip TMP writes when unchanged).</summary>
-        string _lastTooltipBody = "";
-
-        /// <summary>
-        /// Fingerprint for static tip / shared LiveContext rebuilds (ship + abilities + part cache).
-        /// [TITAN-ORBIT] Tip copy used to rebuild every LateUpdate while hovered — large GC/FPS hit.
+        /// Fingerprint for shared LiveContext rebuilds (ship + abilities + part cache).
+        /// [TITAN-ORBIT] Avoids per-frame tip context churn for ability chips.
         /// </summary>
         int _tooltipSnapshotKey = int.MinValue;
 
@@ -583,18 +562,8 @@ namespace TitanOrbit.UI
             lastTickMaxSpeed = -1f;
             lastTickAccelSkew = -1f;
 
-            CreateHoverZone(
-                "Hover_SPD_Bar",
-                new Vector2(0f, speedTickB),
-                new Vector2(1f, speedBarT),
-                SpeedometerStatSection.Speed);
-            CreateHoverZone(
-                "Hover_ACC_Bar",
-                new Vector2(0f, accelTickB),
-                new Vector2(1f, accelBarT),
-                SpeedometerStatSection.Accel);
-
-            BuildTooltipPanel(canvas);
+            // [TITAN-ORBIT] No hover pads / rollovers on SPD+ACC — bars are display-only.
+            // Ability-chip tips still use TryGetTooltipSharedState + ShipSpeedometerStatTooltips.
 
             uiBuilt = true;
         }
@@ -650,65 +619,9 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Adds a full-stretch invisible Image + <see cref="ShipSpeedometerHoverZone"/> under the
-        /// root panel. Anchors are normalized Y bands matching the bar / body layout.
-        /// </summary>
-        void CreateHoverZone(string name, Vector2 anchorMin, Vector2 anchorMax, SpeedometerStatSection section)
-        {
-            GameObject go = new GameObject(name);
-            go.transform.SetParent(rootPanel.transform, false);
-            RectTransform rt = go.AddComponent<RectTransform>();
-            rt.anchorMin = anchorMin;
-            rt.anchorMax = anchorMax;
-            rt.offsetMin = Vector2.zero;
-            rt.offsetMax = Vector2.zero;
-
-            // [UNITY] Transparent Image is required for GraphicRaycaster hit testing.
-            Image img = go.AddComponent<Image>();
-            img.color = new Color(0f, 0f, 0f, 0f);
-            img.raycastTarget = true;
-
-            var zone = go.AddComponent<ShipSpeedometerHoverZone>();
-            zone.Owner = this;
-            zone.Section = section;
-        }
-
-        /// <summary>
-        /// Builds the floating breakdown panel as a sibling of the speedometer (under this HUD
-        /// transform so it follows the same canvas). Starts inactive — only shown on hover.
-        /// [TITAN-ORBIT] Uses <see cref="ShipStatTooltipChrome"/> so speedometer tips match the
-        /// ability-chip calculation cards (Shift cut-frame + category accent).
-        /// </summary>
-        void BuildTooltipPanel(Canvas canvas)
-        {
-            // [UNITY] Parent under the same HUD host as the speedometer so canvas scale matches.
-            _tooltipChrome = ShipStatTooltipChrome.Build(
-                "ShipSpeedometerTooltip",
-                transform,
-                "TELEMETRY",
-                520f * HudLayoutScale,
-                120f * HudLayoutScale,
-                HudLayoutScale);
-            _tooltipPanel = _tooltipChrome.Root;
-            _tooltipRect = _tooltipChrome.RootRect;
-            _tooltipLabel = _tooltipChrome.BodyLabel;
-            if (_tooltipRect != null)
-                _tooltipRect.pivot = new Vector2(0f, 0f);
-            if (_tooltipLabel != null)
-            {
-                _tooltipLabel.fontSize = 11f * HudLayoutScale;
-                _tooltipLabel.color = textColor;
-                _tooltipLabel.text = "";
-            }
-
-            // Sort above the speedometer panel so the tip is never covered by its background.
-            if (canvas != null && _tooltipPanel != null)
-                _tooltipPanel.transform.SetAsLastSibling();
-        }
-
-        /// <summary>
         /// Copies the latest part cache + live motor context for ability-chip rollovers.
-        /// Returns false until the speedometer has painted at least one frame with a ship.
+        /// Returns false until the speedometer has painted at least one frame with a ship
+        /// and the chassis part cache is valid (needed for tip part grids).
         /// </summary>
         public bool TryGetTooltipSharedState(
             out ShipSpeedometerStatTooltips.PartCache parts,
@@ -720,94 +633,23 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// [UNITY] Pointer entered a hover pad — show that section's component breakdown.
-        /// Safe to call repeatedly for the same section (refreshes copy from latest live context).
+        /// Mass-taxed cruise / turn / ComponentSize for ability chips — does not wait on part-cache
+        /// Instantiates. <see cref="TryGetTooltipSharedState"/> stays stricter for tip part grids.
         /// </summary>
-        public void ShowStatTooltip(SpeedometerStatSection section)
+        /// <param name="live">Last speedometer mobility snapshot (may have empty part list).</param>
+        /// <returns>True when this HUD has painted a ship with a real hull ComponentSize.</returns>
+        public bool TryGetMobilitySharedState(out ShipSpeedometerStatTooltips.LiveContext live)
         {
-            if (!uiBuilt || _tooltipPanel == null || _tooltipLabel == null)
-                return;
-
-            // Entering any pad cancels a pending hide from a sibling pad this frame.
-            _pendingHideSection = null;
-            _activeTooltipSection = section;
-            // [TITAN-ORBIT] Recolor chrome accent for SPD / ACC / MASS / RAM / BUL.
-            ShipStatTooltipChrome.ApplyAccent(
-                in _tooltipChrome,
-                ShipStatTooltipChrome.AccentForSpeedometerSection(section));
-            RefreshTooltipContent();
-            PositionTooltipPanel();
-            // Draw above other HUD chrome so bars / names cannot bleed through.
-            _tooltipPanel.transform.SetAsLastSibling();
-            if (!_tooltipPanel.activeSelf)
-                _tooltipPanel.SetActive(true);
+            live = _liveTooltipContext;
+            // [TITAN-ORBIT] ComponentSize > 0 means LateUpdate applied hull size (may equal MinMass
+            // for tiny hulls). parts.Valid is intentionally not required for chip mass drag.
+            return _hasHudCache
+                && live.ComponentSize > 0.01f
+                && live.CruiseMaxSpeed > 0.01f;
         }
 
         /// <summary>
-        /// [UNITY] Pointer left a hover pad. Defers hide to LateUpdate so moving between the
-        /// SPD bar and SPD line (same section) does not flicker the tip off for a frame.
-        /// </summary>
-        public void HideStatTooltip(SpeedometerStatSection section)
-        {
-            if (_activeTooltipSection != section)
-                return;
-
-            _pendingHideSection = section;
-        }
-
-        /// <summary>
-        /// Applies a deferred hide after EventSystem pointer callbacks for this frame are done.
-        /// Called from LateUpdate so bar→line handoffs can cancel via <see cref="ShowStatTooltip"/>.
-        /// </summary>
-        void FlushPendingTooltipHide()
-        {
-            if (!_pendingHideSection.HasValue)
-                return;
-
-            SpeedometerStatSection pending = _pendingHideSection.Value;
-            _pendingHideSection = null;
-            if (_activeTooltipSection != pending)
-                return;
-
-            _activeTooltipSection = null;
-            if (_tooltipPanel != null && _tooltipPanel.activeSelf)
-                _tooltipPanel.SetActive(false);
-        }
-
-        /// <summary>
-        /// Rebuilds tooltip TMP from the active section + cached parts + static capacity context.
-        /// Call on hover-enter or when <see cref="_tooltipSnapshotKey"/> changes — not every LateUpdate.
-        /// </summary>
-        void RefreshTooltipContent()
-        {
-            if (_tooltipLabel == null || !_activeTooltipSection.HasValue)
-                return;
-
-            string body = ShipSpeedometerStatTooltips.Build(
-                _activeTooltipSection.Value,
-                _partCache,
-                _liveTooltipContext);
-            if (body == _lastTooltipBody)
-                return;
-
-            _lastTooltipBody = body;
-            _tooltipLabel.text = body;
-            // [UNITY] Size tip height to the wrapped text so BottomLeft "above panel" placement
-            // does not leave a huge empty box or clip long breakdowns.
-            _tooltipLabel.ForceMeshUpdate(true);
-            if (_tooltipRect != null)
-            {
-                // [TITAN-ORBIT] ExtraHeightPadding covers caption bar + frame insets from chrome.
-                float tipW = _tooltipRect.sizeDelta.x;
-                float tipH = Mathf.Max(
-                    100f * HudLayoutScale,
-                    _tooltipLabel.preferredHeight + _tooltipChrome.ExtraHeightPadding);
-                _tooltipRect.sizeDelta = new Vector2(tipW, tipH);
-            }
-        }
-
-        /// <summary>
-        /// Fingerprint for static tip / shared LiveContext rebuilds.
+        /// Fingerprint for shared LiveContext rebuilds.
         /// Changes when the player buys a ship, upgrades an ability, or swaps store parts.
         /// </summary>
         static int ComputeTooltipSnapshotKey(
@@ -837,56 +679,6 @@ namespace TitanOrbit.UI
                 // Chassis id — rare rebuild; GetHashCode is acceptable here.
                 h = h * 31 + (chassisId != null ? chassisId.GetHashCode() : 0);
                 return h;
-            }
-        }
-
-        /// <summary>
-        /// Places the tip clear of the speedometer.
-        /// TopCenter: tip hangs below the panel toward the map.
-        /// Bottom placements: tip sits above the panel.
-        /// Top corners: tip sits beside the panel.
-        /// </summary>
-        void PositionTooltipPanel()
-        {
-            if (_tooltipRect == null)
-                return;
-            if (_rootRect == null && rootPanel != null)
-                _rootRect = rootPanel.GetComponent<RectTransform>();
-            if (_rootRect == null)
-                return;
-
-            Vector2 panelPos = _rootRect.anchoredPosition;
-            Vector2 panelSize = _rootRect.sizeDelta;
-            float gap = 10f * HudLayoutScale;
-            _tooltipRect.anchorMin = _rootRect.anchorMin;
-            _tooltipRect.anchorMax = _rootRect.anchorMax;
-
-            if (placement == SpeedometerPlacement.TopCenter)
-            {
-                // [TITAN-ORBIT] Below the bars so the tip does not clip off the top of the screen.
-                _tooltipRect.pivot = new Vector2(0.5f, 1f);
-                _tooltipRect.anchoredPosition = new Vector2(panelPos.x, panelPos.y - panelSize.y - gap);
-                return;
-            }
-
-            bool bottom = placement == SpeedometerPlacement.BottomLeft
-                || placement == SpeedometerPlacement.BottomRight;
-            bool left = placement == SpeedometerPlacement.BottomLeft
-                || placement == SpeedometerPlacement.TopLeft;
-
-            if (bottom)
-            {
-                _tooltipRect.pivot = left ? new Vector2(0f, 0f) : new Vector2(1f, 0f);
-                float x = left ? panelPos.x : panelPos.x;
-                _tooltipRect.anchoredPosition = new Vector2(x, panelPos.y + panelSize.y + gap);
-            }
-            else
-            {
-                _tooltipRect.pivot = left ? new Vector2(0f, 1f) : new Vector2(1f, 1f);
-                float x = left
-                    ? panelPos.x + panelSize.x + gap
-                    : panelPos.x - gap;
-                _tooltipRect.anchoredPosition = new Vector2(x, panelPos.y);
             }
         }
 
@@ -1623,13 +1415,6 @@ namespace TitanOrbit.UI
                 hasLastHorizontalSpeed = false;
                 accelSampleShip = Entity.Null;
                 smoothedHorizontalAccel = 0f;
-                // --- Hide rollover when the speedometer itself is hidden ---
-                if (_tooltipPanel != null && _tooltipPanel.activeSelf)
-                {
-                    _activeTooltipSection = null;
-                    _pendingHideSection = null;
-                    _tooltipPanel.SetActive(false);
-                }
                 return;
             }
 
@@ -1761,15 +1546,7 @@ namespace TitanOrbit.UI
                         ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerAbilityLevel)
                         : 0f,
                 };
-
-                if (_activeTooltipSection.HasValue)
-                {
-                    RefreshTooltipContent();
-                    PositionTooltipPanel();
-                }
             }
-
-            FlushPendingTooltipHide();
 
             // --- Accel bar from frame-to-frame speed delta ---
             // [TITAN-ORBIT] Presentation-only. Editor ~30 FPS amplifies sample noise; dead-zone + cruise flatten.
@@ -1820,12 +1597,6 @@ namespace TitanOrbit.UI
             _idleBecauseDisabled = true;
             if (rootPanel != null)
                 rootPanel.SetActive(false);
-            if (_tooltipPanel != null && _tooltipPanel.activeSelf)
-            {
-                _activeTooltipSection = null;
-                _pendingHideSection = null;
-                _tooltipPanel.SetActive(false);
-            }
 
             // --- Drop transient sample state so re-enable does not flash a stale accel spike ---
             hasLastHorizontalSpeed = false;
