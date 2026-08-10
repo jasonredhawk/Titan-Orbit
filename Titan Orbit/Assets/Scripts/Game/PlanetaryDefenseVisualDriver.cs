@@ -255,6 +255,15 @@ namespace TitanOrbit.Game
         readonly List<Entity> _shipEntitiesScratch = new List<Entity>(32);
 
         /// <summary>
+        /// Cached <see cref="MapStateSingleton"/> query — created once, disposed in OnDestroy.
+        /// Avoids <c>CreateEntityQuery</c> every LateUpdate (GC tax on the PD path).
+        /// </summary>
+        EntityQuery _mapQuery;
+
+        /// <summary>True after <see cref="_mapQuery"/> has been created for the current world lifetime.</summary>
+        bool _mapQueryCreated;
+
+        /// <summary>
         /// Scratch for people-transport VFX aim samples (no ECS gather — VFX driver list walk).
         /// </summary>
         readonly List<PeopleTransportVfxDriver.AimFlightSample> _transportAimScratch =
@@ -467,11 +476,31 @@ namespace TitanOrbit.Game
             if (s_Instance == this)
                 s_Instance = null;
             ClearAllGroups();
+
+            // --- Dispose cached map singleton query ---
+            // [ECS/DOTS] EntityQuery owns native allocations; leave them when the driver dies.
+            // This Entities version has no EntityQuery.IsCreated — track lifetime with _mapQueryCreated.
+            if (_mapQueryCreated)
+            {
+                _mapQuery.Dispose();
+                _mapQueryCreated = false;
+            }
         }
 
         void LateUpdate()
         {
             if (ClientJoinSettleCache.Settling)
+            {
+                ClearAllGroups();
+                return;
+            }
+
+            // --- Wait for map GO load before Instantiates pads/turrets ---
+            // [TITAN-ORBIT] Settling can latch OFF while MapLoadingProxyCount is still below the
+            // Join Team gate. RebuildSlots then Instantiates ~80 turret prefabs + TMP plates in a
+            // burst and the hybrid map drain stalls. Pads are presentation-only — defer until
+            // the map proxy build is ready.
+            if (!EcsGameBridge.IsMapProxyCountReady(out _, out _, out _))
             {
                 ClearAllGroups();
                 return;
@@ -1681,23 +1710,37 @@ namespace TitanOrbit.Game
             return found;
         }
 
-        static bool TryResolveMapSize(EntityManager em, out float mapW, out float mapH)
+        /// <summary>
+        /// Resolves torus map size for aim math. Prefers session meta (no ECS query alloc),
+        /// then a cached singleton query — never <c>CreateEntityQuery</c> every LateUpdate.
+        /// </summary>
+        bool TryResolveMapSize(EntityManager em, out float mapW, out float mapH)
         {
             mapW = 0f;
             mapH = 0f;
-            using var mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
-            if (mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
+
+            // --- Fast path: join meta already published ---
+            if (MapSessionMetaCache.HasMapSize
+                && ToroidalMapEcs.IsValidMapSize(MapSessionMetaCache.MapWidth, MapSessionMetaCache.MapHeight))
+            {
+                mapW = MapSessionMetaCache.MapWidth;
+                mapH = MapSessionMetaCache.MapHeight;
+                return true;
+            }
+
+            // --- Cached singleton query (created once) ---
+            // [ECS/DOTS] CreateEntityQuery every frame was a GC tax on the PD LateUpdate path.
+            if (!_mapQueryCreated)
+            {
+                _mapQuery = em.CreateEntityQuery(typeof(MapStateSingleton));
+                _mapQueryCreated = true;
+            }
+
+            if (_mapQuery.TryGetSingleton<MapStateSingleton>(out var map) &&
                 ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
             {
                 mapW = map.MapWidth;
                 mapH = map.MapHeight;
-                return true;
-            }
-
-            if (MapSessionMetaCache.HasMapSize)
-            {
-                mapW = MapSessionMetaCache.MapWidth;
-                mapH = MapSessionMetaCache.MapHeight;
                 return true;
             }
 

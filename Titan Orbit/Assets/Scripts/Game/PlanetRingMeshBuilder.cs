@@ -6,7 +6,12 @@ namespace TitanOrbit.Game
     /// <summary>Shared ring/orbit mesh geometry and planet orbit-ring drawing helpers (Shapes immediate mode).</summary>
     internal static class PlanetRingMeshBuilder
     {
-        internal const int OrbitRingShapeGradientSteps = 32;
+        /// <summary>
+        /// Soft fill ring count for orbit / moon zones.
+        /// [TITAN-ORBIT] Was 32 — dozens of ImmediateMode drawers × 32 rings dominated Render Shapes.
+        /// 12 keeps a readable soft falloff at far less cost.
+        /// </summary>
+        internal const int OrbitRingShapeGradientSteps = 12;
         const int MinSubRingsPerLevelBand = 2;
         const int MaxSubRingsPerLevelBand = 5;
 

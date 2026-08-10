@@ -68,12 +68,31 @@ namespace TitanOrbit.Game
             return outer / _planetSize;
         }
 
+        /// <summary>
+        /// Skip Shapes work when the planet is far from the camera (presentation only).
+        /// Matches pad-zone cull distance so nearby combat stays rich without drawing the whole map.
+        /// </summary>
+        const float MaxDrawDistance = 90f;
+
+        /// <summary>
+        /// [HYBRID] Soft orbit fill + decorative level bands for this planet proxy.
+        /// Distance-culled so map-wide planets do not each pay a full Shapes pass.
+        /// </summary>
         public override void DrawShapes(Camera cam)
         {
             if (_planetRoot == null)
                 _planetRoot = transform.parent;
             if (_planetRoot == null)
                 return;
+
+            // --- Distance cull ---
+            // [TITAN-ORBIT] Each planet used to draw 32+ rings every camera pass map-wide.
+            if (cam != null)
+            {
+                float maxDistSq = MaxDrawDistance * MaxDrawDistance;
+                if ((_planetRoot.position - cam.transform.position).sqrMagnitude > maxDistSq)
+                    return;
+            }
 
             float innerLocal = GetInnerRadiusLocal();
             float outerLocal = GetOuterRadiusLocal();

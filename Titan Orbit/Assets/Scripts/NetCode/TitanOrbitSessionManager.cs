@@ -2385,6 +2385,12 @@ namespace TitanOrbit.NetCode
             // Block late-arriving ship ghosts from opening the rejoin screen after a normal team pick.
             ClientTeamFlowState.NotifyTeamPickRequested(team);
 
+            // --- Drop stale local-ship seed from a prior Play / failed TeamChoice ---
+            // [TITAN-ORBIT] Domain Reload disabled: SeededShip can stay non-null while destroyed,
+            // which blocked ClientPredictedShipSpawnRequest and bounced UI back to Join Team.
+            LocalShipEntitySeed.Clear();
+            ClientPredictedShipSpawnRequest.Clear();
+
             // --- Pre-arm ship Instantiates hold before the server can reply ---
             // [TITAN-ORBIT] Player.log 2026-07-31: TeamChoiceResult → Crash!!! the same frame.
             // Server spawn + TeamChoiceResultRpc often share one snapshot; GhostSpawn can

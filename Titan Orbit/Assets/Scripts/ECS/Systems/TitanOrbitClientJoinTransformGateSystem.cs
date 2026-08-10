@@ -13,8 +13,9 @@ namespace TitanOrbit.ECS
     /// GameObject proxies when <see cref="ClientJoinSettleCache.TransformQuarantine"/> is true.
     /// </para>
     /// <para>
-    /// Settling also exits when <see cref="ClientJoinSettleCache.MapProxyBuildReady"/> (hybrid GO
-    /// proxies ≥ ~92% of meta N). Waiting for GhostSpawn idle forever left Join Team stuck at
+    /// Settling exits when <see cref="ClientJoinSettleCache.MapProxyBuildReady"/> (hybrid GO
+    /// proxies ≥ ~92% of meta N) or on hard timeout — <b>not</b> on a short GhostSpawn idle gap
+    /// (that froze loading at ~25/358). Waiting for idle forever also left Join Team stuck at
     /// 314/315 while distance-importance Instantiates trickled.
     /// </para>
     /// World: ClientSimulation. Group: InitializationSystemGroup.
@@ -93,26 +94,18 @@ namespace TitanOrbit.ECS
 
             bool hardTimeout = settle.InGameFrames >= HardTimeoutFrames;
             bool minTime = settle.InGameFrames >= MinInGameFramesBeforeExit;
-            // [TITAN-ORBIT] After any Instantiates activity, require a longer idle so we do not
-            // declare settle complete mid-stream (distance importance still trickles ghosts).
-            int idleNeeded = IdleFramesRequired * 2;
 
-            // --- Exit after Instantiates were seen + idle, OR map GO build ready, OR hard timeout ---
-            // [TITAN-ORBIT] Editor Local Host previously exited Settling at MinInGameFrames with
-            // spawnBuf=0 / placeholders=0 (SawSpawnActivity never set). Meta already showed N
-            // (e.g. 248) so the loading bar froze at 0/N while Instantiates had not started yet.
-            // Keep Settling ON until GhostSpawn actually creates placeholders/Instantiates, then
-            // idle-clear — unless HardTimeoutFrames elapses (map stream truly stuck).
+            // --- Exit on map GO build ready OR hard timeout — NOT on GhostSpawn idle gaps ---
+            // [TITAN-ORBIT] Debug 1af271 / Local Host: GhostSpawnBuffer + placeholders can go empty
+            // briefly after the first ~25 Instantiates (planets) while MaxSendChunks=1 is still
+            // streaming the rest of the map. Idle-clear then latched JoinSettleCompleted at ~7%
+            // and the loading bar froze at 27/358. Distance-importance Instantiates can also keep
+            // placeholders non-empty forever (314/315 hang) — so idle is the wrong exit signal.
             //
             // MapProxyBuildReady: Game publishes when planet/asteroid GOs ≥ ~92% of meta N.
-            // Distance-importance Instantiates can keep placeholders non-empty forever — idle-clear
-            // alone left Join Team unreachable at 314/315. Proxy-ready exits Settling safely;
-            // TransformQuarantine stays on; GhostSpawnBacklog still tracks live queue.
+            // TransformQuarantine stays on; GhostSpawnBacklog still tracks the live queue.
             bool proxyBuildReady = ClientJoinSettleCache.MapProxyBuildReady;
             bool canExit = hardTimeout ||
-                           (minTime &&
-                            settle.SawSpawnActivity != 0 &&
-                            settle.IdleClearFrames >= idleNeeded) ||
                            (minTime &&
                             settle.SawSpawnActivity != 0 &&
                             proxyBuildReady);

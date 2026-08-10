@@ -1,6 +1,7 @@
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
@@ -22,6 +23,12 @@ namespace TitanOrbit.ECS
     /// ServerTick is the same integer timeline on server and predicted client (including rollback
     /// resim inside <see cref="PredictedSimulationSystemGroup"/>).
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Presentation (<see cref="TryGetElapsedSeconds"/>) falls back when ClientWorld
+    /// ServerTick stalls (Join Team hang / quiet snapshots) so moons keep orbiting while axial spin
+    /// (deltaTime) still runs. Physics / combat keep calling <see cref="GetElapsedSeconds"/> on
+    /// their world tick — no presentation fallback there.
+    /// </para>
     /// </summary>
     public static class PlanetGemMoonOrbitClock
     {
@@ -31,6 +38,15 @@ namespace TitanOrbit.ECS
         /// Duplicated here because TitanOrbit.ECS cannot reference TitanOrbit.NetCode (cycle).
         /// </summary>
         public const int FallbackSimulationHz = 60;
+
+        /// <summary>Last ClientWorld ServerTick index seen by presentation (stall detection).</summary>
+        static uint s_LastPresentationTick;
+
+        /// <summary>Realtime when <see cref="s_LastPresentationTick"/> last changed.</summary>
+        static float s_LastPresentationTickRealtime = -1f;
+
+        /// <summary>Realtime seconds with unchanged ClientWorld tick before presentation fallback.</summary>
+        const float PresentationTickStallSeconds = 0.35f;
 
         /// <summary>
         /// Converts a NetCode <see cref="NetworkTime"/> sample into orbit elapsed seconds.
@@ -120,23 +136,76 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// MonoBehaviour / hybrid helper: prefer ClientWorld (matches predicted colliders), else ServerWorld.
+        /// MonoBehaviour / hybrid helper for presentation moons.
+        /// Prefers ClientWorld tick; if that tick stalls while real time advances, falls back to
+        /// ServerWorld (Local Host) then <see cref="Time.timeAsDouble"/> so orbit keeps moving.
         /// </summary>
         /// <param name="elapsedSeconds">Orbit elapsed when true.</param>
         /// <param name="includeTickFraction">True for mesh/minimap smoothing between ticks.</param>
-        /// <returns>False when no NetCode world / NetworkTime is available.</returns>
+        /// <returns>False only when no usable timeline exists at all.</returns>
         public static bool TryGetElapsedSeconds(out double elapsedSeconds, bool includeTickFraction = true)
         {
             elapsedSeconds = 0d;
 
-            // --- Pick world ---
-            // [NETCODE] ClientWorld first so host visuals track the same predicted tick as client
-            // moon hulls / shield repel (not ServerWorld.ElapsedTime, which used to diverge).
-            World world = null;
-            if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
-                world = ClientServerBootstrap.ClientWorld;
-            else if (ClientServerBootstrap.ServerWorld != null && ClientServerBootstrap.ServerWorld.IsCreated)
-                world = ClientServerBootstrap.ServerWorld;
+            // --- ClientWorld first (matches predicted colliders when snapshots advance) ---
+            if (TryReadWorldElapsed(
+                    ClientServerBootstrap.ClientWorld,
+                    includeTickFraction,
+                    out elapsedSeconds,
+                    out uint clientTick,
+                    out bool clientValid))
+            {
+                // --- Stall detection ---
+                // [TITAN-ORBIT] Debug 1af271: after map load / Join Team, ClientWorld ServerTick can
+                // freeze while axial spin (deltaTime) keeps going — moons look glued to the ring.
+                float now = Time.realtimeSinceStartup;
+                if (clientValid)
+                {
+                    if (clientTick != s_LastPresentationTick)
+                    {
+                        s_LastPresentationTick = clientTick;
+                        s_LastPresentationTickRealtime = now;
+                        return true;
+                    }
+
+                    if (s_LastPresentationTickRealtime < 0f)
+                        s_LastPresentationTickRealtime = now;
+
+                    if (now - s_LastPresentationTickRealtime < PresentationTickStallSeconds)
+                        return true;
+                }
+            }
+
+            // --- Local Host: ServerWorld tick still advances during client quiet ---
+            if (TryReadWorldElapsed(
+                    ClientServerBootstrap.ServerWorld,
+                    includeTickFraction,
+                    out elapsedSeconds,
+                    out _,
+                    out bool serverValid) &&
+                serverValid)
+            {
+                return true;
+            }
+
+            // --- Last resort presentation: wall clock (cosmetic only — not used by sim) ---
+            elapsedSeconds = Time.timeAsDouble;
+            return true;
+        }
+
+        /// <summary>
+        /// Reads ServerTick elapsed from one world. Returns false when the world/singleton is missing.
+        /// </summary>
+        static bool TryReadWorldElapsed(
+            World world,
+            bool includeTickFraction,
+            out double elapsedSeconds,
+            out uint tickIndex,
+            out bool tickValid)
+        {
+            elapsedSeconds = 0d;
+            tickIndex = 0;
+            tickValid = false;
 
             if (world == null || !world.IsCreated)
                 return false;
@@ -154,6 +223,8 @@ namespace TitanOrbit.ECS
                 hz = tickRate.SimulationTickRate;
             }
 
+            tickIndex = networkTime.ServerTick.TickIndexForValidTick;
+            tickValid = true;
             elapsedSeconds = ToElapsedSeconds(networkTime, hz, includeTickFraction);
             return true;
         }

@@ -36,7 +36,7 @@ namespace TitanOrbit.ECS.Editor
             "Library/PackageCache/com.unity.netcode@6437771c174a/Runtime/Snapshot/GhostSpawnSystem.cs";
 
         /// <summary>IL-surviving patch id declared on GhostSpawnSystem.</summary>
-        public const string PatchIdMarker = "TO_GhostSpawn_v15_predictedBeforeInterpolated";
+        public const string PatchIdMarker = "TO_GhostSpawn_v16_requeueFailedInstantiate";
 
         /// <summary>Older markers that must not be the only evidence of a “good” patch.</summary>
         public const string SafeCopyMarker = "TryCopySnapshotBufferSafe";

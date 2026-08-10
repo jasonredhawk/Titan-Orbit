@@ -63,12 +63,27 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Skip moon-zone Shapes when far from the camera (presentation only).
+        /// Same distance as <see cref="PlanetOrbitRingVisual"/> / pad batch cull.
+        /// </summary>
+        const float MaxDrawDistance = 90f;
+
+        /// <summary>
         /// [HYBRID] Shapes draw pass — filled annulus under moon showing ship orbit capture shell.
         /// </summary>
         public override void DrawShapes(Camera cam)
         {
             if (!drawOrbitZoneFill || _moon == null)
                 return;
+
+            // --- Distance cull ---
+            // [TITAN-ORBIT] Avoid map-wide soft discs; nearby moons keep the capture-zone cue.
+            if (cam != null)
+            {
+                float maxDistSq = MaxDrawDistance * MaxDrawDistance;
+                if ((transform.position - cam.transform.position).sqrMagnitude > maxDistSq)
+                    return;
+            }
 
             // --- Radii from moon proxy (local space) ---
             float outerLocal = _moon.MoonVisualShellOuterRadiusLocal;

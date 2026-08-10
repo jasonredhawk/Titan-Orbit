@@ -301,5 +301,18 @@ namespace TitanOrbit.ECS
             // [NETCODE] GhostSpawn join counters — next Relay join starts from zero.
             TitanOrbitJoinLoadCounters.Reset();
         }
+
+        /// <summary>
+        /// [UNITY] Domain Reload off leaves JoinSettleCompleted / quarantine sticky across Play Mode.
+        /// BeforeSceneLoad runs every enter; SubsystemRegistration only after assembly reload.
+        /// </summary>
+        [UnityEngine.RuntimeInitializeOnLoadMethod(
+            UnityEngine.RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void ResetBeforeSceneLoad() => Clear();
+
+        /// <summary>Domain reload path.</summary>
+        [UnityEngine.RuntimeInitializeOnLoadMethod(
+            UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetSubsystemRegistration() => Clear();
     }
 }

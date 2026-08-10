@@ -1807,7 +1807,7 @@ namespace TitanOrbit.Game
                 Debug.LogWarning(
                     "[MapLoad] Proxy count still 0/" + total +
                     " after Instantiates settle — keeping loading screen. " +
-                    "Check TO_GhostSpawn_v15 hook + MapBodyHybridVisualSpawnRequest drain.");
+                    "Check TO_GhostSpawn_v16 hook + MapBodyHybridVisualSpawnRequest drain.");
             }
 
             return false;

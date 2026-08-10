@@ -2,6 +2,7 @@ using TitanOrbit.Core;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
 
 namespace TitanOrbit.ECS
@@ -65,8 +66,16 @@ namespace TitanOrbit.ECS
                 // Flush: ClientDeferredTeamChoiceConfirmSystem (waits for hold clear).
                 ClientJoinSettleCache.ArmPostTeamChoiceHold();
                 ClientTeamFlowState.RequestDeferredConfirmTeamChoice();
+
+                // --- Predicted hull when GhostReceive never delivers the server ship ---
+                // [TITAN-ORBIT] Dedicated/Relay path — Local Host queues from TeamManagementSystem.
+                // ClientPredictedShipSpawnSystem finds home ring (RPC has no spawn pose yet).
+                var team = (TeamId)rpc.AssignedTeam;
+                ClientPredictedShipSpawnRequest.Request(
+                    rpc.NetworkId, team, float3.zero, hasSpawnPos: false);
+
                 UnityEngine.Debug.Log(
-                    $"[TeamChoiceResult] Assigned to {(TeamId)rpc.AssignedTeam} (networkId={rpc.NetworkId}). " +
+                    $"[TeamChoiceResult] Assigned to {team} (networkId={rpc.NetworkId}). " +
                     "Confirm deferred until post-TeamChoice Instantiates hold expires (join-crash guard).");
             }
             else

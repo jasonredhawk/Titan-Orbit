@@ -1,3 +1,5 @@
+using UnityEngine;
+
 namespace TitanOrbit.Core
 {
     /// <summary>
@@ -8,6 +10,17 @@ namespace TitanOrbit.Core
     /// </summary>
     public static class ClientTeamFlowState
     {
+        /// <summary>
+        /// [UNITY] Domain Reload disabled leaves TeamChoiceConfirmed sticky across Play Mode —
+        /// second Join Team then skips Local Host Result apply / predicted spawn. Reset every enter.
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void ResetBeforeSceneLoad() => Reset();
+
+        /// <summary>Also clear after assemblies load (Domain Reload on).</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetSubsystemRegistration() => Reset();
+
         /// <summary>Player decision when reconnecting to a match with a saved ship.</summary>
         public enum RejoinShipChoice
         {
@@ -108,6 +121,18 @@ namespace TitanOrbit.Core
                 return;
             _teamPickRequested = false;
             // Keep LastRequestedTeam so a watchdog can resend the same pick.
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Confirm succeeded but no local hull arrived (debug 1af271 Instantiates stuck
+        /// at map meta-N). Clears confirm + pick latches so UI can leave endless
+        /// "Spawning your ship..." and retry Join Team. Keeps <see cref="LastRequestedTeam"/>.
+        /// </summary>
+        public static void ResetTeamChoiceForShipSpawnFailure()
+        {
+            TeamChoiceConfirmed = false;
+            _deferredConfirmPending = false;
+            _teamPickRequested = false;
         }
 
         static void LockRejoinEligibility() => _rejoinEligibilityLocked = true;

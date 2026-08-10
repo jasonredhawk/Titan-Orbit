@@ -33,6 +33,11 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// True when Instantiates already recorded a locally owned ship (seeded or pending).
         /// Used by presentation / spawn-wait UI while ship gathers are still gated.
+        /// <para>
+        /// [TITAN-ORBIT] With Domain Reload disabled this can stay non-null across Play Mode
+        /// while the entity is already destroyed — prefer <see cref="HasLiveOwnedShipSeed"/> /
+        /// <see cref="PruneStale"/> before trusting this for spawn decisions.
+        /// </para>
         /// </summary>
         public static bool HasOwnedShipSeed =>
             SeededShip != Entity.Null || s_PendingOwnedShip != Entity.Null;
@@ -48,13 +53,50 @@ namespace TitanOrbit.ECS
         /// </summary>
         static Entity s_UnresolvedOwnershipShip;
 
-        /// <summary>Clears seed on domain reload / leave match.</summary>
+        /// <summary>
+        /// Clears seed on domain reload. Also use <see cref="BeforeSceneLoad"/> — Editor may run
+        /// with Domain Reload disabled so SubsystemRegistration does not re-fire each Play.
+        /// </summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics()
+        static void ResetStaticsSubsystem() => Clear();
+
+        /// <summary>
+        /// [UNITY] Runs every Play Mode enter even when Domain Reload is disabled
+        /// (Editor.log: "Entering Playmode with Reload Domain disabled").
+        /// </summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void ResetStaticsBeforeSceneLoad() => Clear();
+
+        /// <summary>
+        /// True when a seeded/pending handle still exists in <paramref name="em"/> with ShipTag.
+        /// Prunes stale handles left over from a prior Play Mode (Domain Reload off).
+        /// </summary>
+        /// <param name="em">Client EntityManager for Exists checks.</param>
+        public static bool HasLiveOwnedShipSeed(EntityManager em)
         {
-            SeededShip = Entity.Null;
-            s_PendingOwnedShip = Entity.Null;
-            s_UnresolvedOwnershipShip = Entity.Null;
+            PruneStale(em);
+            return HasOwnedShipSeed;
+        }
+
+        /// <summary>
+        /// Drops SeededShip / pending / unresolved handles that no longer exist in this world.
+        /// Safe to call every frame from ClientWorld systems.
+        /// </summary>
+        /// <param name="em">Client EntityManager.</param>
+        public static void PruneStale(EntityManager em)
+        {
+            if (SeededShip != Entity.Null &&
+                (!em.Exists(SeededShip) || !em.HasComponent<ShipTag>(SeededShip)))
+                SeededShip = Entity.Null;
+
+            if (s_PendingOwnedShip != Entity.Null &&
+                (!em.Exists(s_PendingOwnedShip) || !em.HasComponent<ShipTag>(s_PendingOwnedShip)))
+                s_PendingOwnedShip = Entity.Null;
+
+            if (s_UnresolvedOwnershipShip != Entity.Null &&
+                (!em.Exists(s_UnresolvedOwnershipShip) ||
+                 !em.HasComponent<ShipTag>(s_UnresolvedOwnershipShip)))
+                s_UnresolvedOwnershipShip = Entity.Null;
         }
 
         /// <summary>
@@ -70,17 +112,24 @@ namespace TitanOrbit.ECS
             if (!em.HasComponent<ShipTag>(entity))
                 return;
 
-            // --- Ownership may lag Instantiates by a frame (local NetworkId not ready) ---
-            if (!TryIsLocallyOwnedShip(em, entity, out bool localIdReady))
+            // --- Ownership may lag Instantiates by a frame ---
+            // [TITAN-ORBIT] Two races (Editor.log 2026-08-10):
+            // 1) local NetworkId not ready yet
+            // 2) GhostOwner.NetworkId still 0 on the first Instantiates frame (snapshot lag /
+            //    predicted spawn before owner field applies). Dropping the entity forever left
+            //    hasSeed=false while InstantiatesSession already counted the hull.
+            if (!TryIsLocallyOwnedShip(em, entity, out bool localIdReady, out int ownerId))
             {
-                if (!localIdReady && em.HasComponent<GhostOwner>(entity))
+                if (em.HasComponent<GhostOwner>(entity) &&
+                    (!localIdReady || ownerId == 0))
                 {
-                    // Retry from TryGetSeededShip / TryRecover once NetworkId exists.
+                    // Retry from TryGetSeededShip / TryRecover once NetworkId + owner resolve.
                     s_UnresolvedOwnershipShip = entity;
                     Debug.Log(
-                        "[LocalShipEntitySeed] Ship Instantiates before local NetworkId — " +
-                        "deferred ownership check.");
+                        "[LocalShipEntitySeed] Ship Instantiates before ownership ready — deferred " +
+                        $"(localIdReady={localIdReady}, ownerId={ownerId}).");
                 }
+
                 return;
             }
 
@@ -206,11 +255,14 @@ namespace TitanOrbit.ECS
                 return;
             }
 
-            if (!TryIsLocallyOwnedShip(em, s_UnresolvedOwnershipShip, out bool localIdReady))
+            if (!TryIsLocallyOwnedShip(
+                    em, s_UnresolvedOwnershipShip, out bool localIdReady, out int ownerId))
             {
-                if (!localIdReady)
+                // Still waiting for local id or GhostOwner.NetworkId to leave 0.
+                if (!localIdReady || ownerId == 0)
                     return;
-                // Local id ready but not our ship — drop.
+
+                // Local id ready, owner set, but not our ship — drop.
                 s_UnresolvedOwnershipShip = Entity.Null;
                 return;
             }
@@ -219,15 +271,26 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Ownership check with a ready flag so Instantiates can defer when NetworkId is missing.
+        /// Ownership check with ready / owner-id outs so Instantiates can defer when NetworkId
+        /// or GhostOwner is still settling.
         /// </summary>
-        static bool TryIsLocallyOwnedShip(EntityManager em, Entity entity, out bool localIdReady)
+        /// <param name="em">Client EntityManager.</param>
+        /// <param name="entity">Candidate ship.</param>
+        /// <param name="localIdReady">True when this machine's NetworkId is readable (&gt; 0).</param>
+        /// <param name="ownerId">GhostOwner.NetworkId on the entity (0 if missing).</param>
+        /// <returns>True when the entity is owned by the local NetworkId.</returns>
+        static bool TryIsLocallyOwnedShip(
+            EntityManager em,
+            Entity entity,
+            out bool localIdReady,
+            out int ownerId)
         {
             localIdReady = false;
+            ownerId = 0;
             if (!em.HasComponent<GhostOwner>(entity))
                 return false;
 
-            int ownerId = em.GetComponentData<GhostOwner>(entity).NetworkId;
+            ownerId = em.GetComponentData<GhostOwner>(entity).NetworkId;
             int localId = ReadLocalNetworkId(em);
             localIdReady = localId > 0;
             return localIdReady && ownerId == localId;

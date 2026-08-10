@@ -2257,6 +2257,10 @@ MonoBehaviour:
   glassFillColor: {r: 0.04, g: 0.06, b: 0.09, a: 0.92}
   categoryFillBlend: 0.16
   buttonInnerShadeColor: {r: 0, g: 0, b: 0, a: 0.22}
+  readyTitleColor: {r: 0.88, g: 0.92, b: 0.98, a: 1}
+  lockedDim: 0.55
+  lockedCostColor: {r: 0.72, g: 0.55, b: 0.35, a: 0.85}
+  maxedTitleBrighten: 0.32
   gemCostIconSprite: {fileID: 21300000, guid: 5d8b9ef9bf130d44981ab9dadbc7cb37, type: 3}
   gemIconSize: 11
   gemCostIconColor: {r: 0.9, g: 0.92, b: 0.95, a: 1}
@@ -8668,6 +8672,7 @@ MonoBehaviour:
   showSpeedometer: 1
   debugFreeShipUpgradeTree: 1
   debugLogAsteroidDestroyPerf: 0
+  debugEnableInstructionImageCapture: 0
   debugEnableStutterIsolator: 0
   isolatorStartDisableImpactVfx: 0
   isolatorStartDisableFloatingCounts: 0

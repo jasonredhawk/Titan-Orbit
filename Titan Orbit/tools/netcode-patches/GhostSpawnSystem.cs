@@ -128,7 +128,10 @@ namespace Unity.NetCode
         //       v14 priority only reordered within one queue; interpolated-first left Join Team ships
         //       stuck behind 1/frame asteroid Instantiates → "Spawning your ship..." forever while
         //       the server ship already received people transports (~50% when map stream still busy).
-        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v15_predictedBeforeInterpolated";
+        // v16 = v15 + on Instantiates failure REQUEUE the pick (do not orphan placeholders).
+        //       Debug 1af271: Instantiates froze at 25 with placeholders=48 — failed TrySpawn dropped
+        //       the delayed entry while PendingSpawnPlaceholder remained → backlog never drained.
+        public static readonly string TitanOrbitGhostSpawnPatchId = "TO_GhostSpawn_v16_requeueFailedInstantiate";
 
         // Touched in OnCreate so the linker cannot strip the marker.
         static char s_PatchIdTouch;
@@ -520,13 +523,14 @@ namespace Unity.NetCode
             }
 
             int pick = priorityReady >= 0 ? priorityReady : firstReady;
-            bool attempted = false;
+            bool consumed = false;
             if (pick >= 0)
             {
-                attempted = true;
                 var chosen = all[pick];
                 if (TrySpawnFromDelayedQueue(ref state, chosen, spawnType, prefabs, ghostCollectionSingleton, out var entity))
                 {
+                    // Success — consume this pick (do not requeue). Placeholder is destroyed inside TrySpawn.
+                    consumed = true;
                     spawnedGhosts.Add(new SpawnedGhostMapping
                     {
                         ghost = new SpawnedGhost { ghostId = chosen.ghostId, spawnTick = chosen.serverSpawnTick },
@@ -536,18 +540,23 @@ namespace Unity.NetCode
                     successfulInstantiatesThisFrame++;
                     TitanOrbitJoinLoadCounters.NotifyDelayedGhostInstantiate(state.EntityManager, entity);
                 }
+                // TITAN-ORBIT v16: failure must REQUEUE. Dropping the pick left orphan
+                // PendingSpawnPlaceholder entities and froze Instantiates mid-join (debug 1af271).
             }
 
-            // --- Requeue everyone except the consumed pick (same relative order) ---
+            // --- Requeue everyone except a successfully Instantiated pick (same relative order) ---
             for (int i = 0; i < all.Length; i++)
             {
-                if (attempted && i == pick)
+                if (consumed && i == pick)
                     continue;
                 queue.Enqueue(all[i]);
             }
 
             all.Dispose();
-            return attempted;
+            // True if we selected a ready ghost this call (success or fail). Failed picks are
+            // requeued above; returning true still burns the 1/frame Instantiates slot so we
+            // do not spin the same broken placeholder every iteration in one frame.
+            return pick >= 0;
         }
 
         unsafe bool TrySpawnFromDelayedQueue(ref SystemState state, in DelayedSpawnGhost ghost, GhostSpawnBuffer.Type spawnType, in NativeArray<GhostCollectionPrefab> prefabs, Entity ghostCollectionSingleton, out Entity entity)
