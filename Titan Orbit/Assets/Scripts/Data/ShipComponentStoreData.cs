@@ -34,6 +34,11 @@ namespace TitanOrbit.Data
         /// Faster bullets come from attribute upgrades / Shard cards, not ship tier.
         /// </para>
         /// <para>
+        /// [TITAN-ORBIT] Intentional exception: <c>fireRate</c> does <b>not</b> grow with ship level.
+        /// Cadence is authored per barrel (and mesh-scale clamped); higher tiers gain firepower via
+        /// <c>firePower</c> / cargo / survivability instead of becoming machineguns.
+        /// </para>
+        /// <para>
         /// [TITAN-ORBIT] <c>bulletRange</c> <b>does</b> grow with ship level (unlike bulletSpeed).
         /// </para>
         /// </summary>
@@ -63,7 +68,7 @@ namespace TitanOrbit.Data
                 turnAtLevel, perLvl, mobility.levelTurnPenaltyFractionPerLevel);
 
             // --- Tier growth on bases; pass through PerAbilityLevel for HUD ability apply ---
-            // bulletSpeed: base only (no tierMul) — see method summary.
+            // bulletSpeed / fireRate: base only (no tierMul) — see method summary.
             return new ShipComponentAbilityStats
             {
                 firePower = stats.firePower * tierMul,
@@ -72,7 +77,7 @@ namespace TitanOrbit.Data
                 bulletSpeedPerAbilityLevel = stats.bulletSpeedPerAbilityLevel,
                 bulletRange = stats.bulletRange * tierMul,
                 bulletRangePerAbilityLevel = stats.bulletRangePerAbilityLevel,
-                fireRate = stats.fireRate * tierMul,
+                fireRate = stats.fireRate,
                 fireRatePerAbilityLevel = stats.fireRatePerAbilityLevel,
                 rammingPower = stats.rammingPower * tierMul,
                 rammingPowerPerAbilityLevel = stats.rammingPowerPerAbilityLevel,

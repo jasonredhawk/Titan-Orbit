@@ -116,12 +116,20 @@ namespace TitanOrbit.Editor
             int shipLevel,
             ShipFamilyDefinition def)
         {
-            ShipComponentAbilityStats summed = SumStatsAtShipLevel(total, matchedIds, perComponentStats, shipLevel);
-            if (def == null)
-                return summed;
-            summed = def.ApplyStatFallbacks(summed);
-            // [TITAN-ORBIT] Match runtime ShipFamilyStatsCalculator (fallbacks then family bonuses).
-            return def.ApplySpecialBonuses(summed);
+            // [TITAN-ORBIT] Same stack pools + weapon max + energy complementarity as runtime.
+            _ = total;
+            var result = new ShipFamilyStatsCalculator.SumResult
+            {
+                TotalStats = default,
+                MatchedComponentIds = matchedIds != null
+                    ? new List<string>(matchedIds)
+                    : new List<string>(),
+                PerComponentStats = perComponentStats != null
+                    ? new List<ShipComponentAbilityStats>(perComponentStats)
+                    : new List<ShipComponentAbilityStats>(),
+            };
+            ShipFamilyStatsCalculator.ApplySharedAggregationRules(ref result, def, shipLevel);
+            return result.TotalStats;
         }
 
         /// <inheritdoc cref="ShipFamilyPowerScoreBreakdown.GetMaxUpgradeCountForTier"/>
@@ -252,29 +260,17 @@ namespace TitanOrbit.Editor
             if (root == null || def == null || string.IsNullOrEmpty(familyId))
                 return;
 
-            var transforms = root.GetComponentsInChildren<Transform>(true);
-            foreach (var t in transforms)
-            {
-                if (t == null)
-                    continue;
-                string name = t.name;
-                if (string.IsNullOrEmpty(name))
-                    continue;
-                if (!name.StartsWith(familyId + "_", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                string componentId = name.Substring(familyId.Length + 1);
-                if (string.IsNullOrWhiteSpace(componentId))
-                    continue;
-
-                if (!def.TryGetStatsForComponent(componentId, out var stats))
-                    continue;
-
-                ShipComponentAbilityStats scaled = ShipComponentAbilityStatsMath.ScaleStatsByTransform(stats, t, componentId);
-                matchedIds.Add(componentId);
-                perComponentStats.Add(scaled);
-                total.AddInPlace(scaled);
-            }
+            // [TITAN-ORBIT] Prefer the shared runtime hierarchy walk (nested-mesh skip +
+            // same-id weapon collapse). applyPropulsionAndWeaponRules:false — caller runs
+            // ApplySharedAggregationRules via SumStatsAtShipLevelWithFallbacks.
+            ShipFamilyStatsCalculator.SumResult sum = ShipFamilyStatsCalculator.SumFromPrefabHierarchy(
+                root,
+                def,
+                shipLevel: 1,
+                applyPropulsionAndWeaponRules: false);
+            matchedIds = sum.MatchedComponentIds ?? new List<string>();
+            perComponentStats = sum.PerComponentStats ?? new List<ShipComponentAbilityStats>();
+            total = sum.TotalStats;
         }
     }
 }

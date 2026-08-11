@@ -354,6 +354,24 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Soft floor / ceiling for weapon mesh → fire-power scale.
+        /// Stops mirrored negative axes and tiny art scales from inventing god-tier DPS.
+        /// </summary>
+        public const float WeaponFirePowerScaleMin = 0.35f;
+
+        /// <summary>Soft ceiling for weapon mesh → fire-power scale (huge art meshes stay readable).</summary>
+        public const float WeaponFirePowerScaleMax = 2.5f;
+
+        /// <summary>
+        /// Soft floor for weapon mesh → fire-rate scale (<c>1 / |z|</c>).
+        /// Tiny Z used to explode cadence (e.g. z=0.01 → 100× fireRate).
+        /// </summary>
+        public const float WeaponFireRateScaleMin = 0.4f;
+
+        /// <summary>Soft ceiling for weapon mesh → fire-rate scale.</summary>
+        public const float WeaponFireRateScaleMax = 2.5f;
+
+        /// <summary>
         /// Scales authored stats by prefab child transform size. Weapons: XY → fire power, Z → fire rate.
         /// Propulsion move/accel ignore scale; turn and ramming are never scaled.
         /// <para>
@@ -362,6 +380,10 @@ namespace TitanOrbit.Data
         /// combat already applies Fire Power attributes as numeric multipliers (mesh/collider grow
         /// is separate from firePower / fireRate).
         /// </para>
+        /// <para>
+        /// [TITAN-ORBIT] Scales use absolute local axes and are clamped — USC mirrors (negative X)
+        /// and needle-thin Z must not invert damage or create machinegun outliers.
+        /// </para>
         /// </summary>
         public static ShipComponentAbilityStats ScaleStatsByTransform(
             ShipComponentAbilityStats stats,
@@ -369,16 +391,17 @@ namespace TitanOrbit.Data
             string componentId)
         {
             if (t == null) return stats;
-            float x = t.localScale.x;
-            float y = t.localScale.y;
-            float z = Mathf.Max(t.localScale.z, 0.01f);
+            // [TITAN-ORBIT] Abs — mirrored weapon/engine children keep positive contribution.
+            float x = Mathf.Abs(t.localScale.x);
+            float y = Mathf.Abs(t.localScale.y);
+            float z = Mathf.Max(Mathf.Abs(t.localScale.z), 0.01f);
 
             if (IsWeaponComponent(componentId))
             {
                 // [TITAN-ORBIT] Wider weapon mesh → more fire power; deeper (Z) mesh → slower fire rate.
                 // Written onto each ShipWeaponMountElement for independent barrels.
-                float firePowerScale = (x + y) * 0.5f;
-                float fireRateScale = 1f / z;
+                float firePowerScale = Mathf.Clamp((x + y) * 0.5f, WeaponFirePowerScaleMin, WeaponFirePowerScaleMax);
+                float fireRateScale = Mathf.Clamp(1f / z, WeaponFireRateScaleMin, WeaponFireRateScaleMax);
                 return new ShipComponentAbilityStats
                 {
                     firePower = stats.firePower * firePowerScale,

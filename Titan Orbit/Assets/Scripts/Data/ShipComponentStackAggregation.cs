@@ -25,6 +25,13 @@ namespace TitanOrbit.Data
         public const float DefaultPropulsionExtraStackWeight = 0.1f;
 
         /// <summary>
+        /// Default extra weight for weapon barrels when unset.
+        /// [TITAN-ORBIT] Prefabs often nest several same-named Weapon/Missile meshes; full-sum
+        /// extras created overgunned outliers. Primary barrel keeps 100%; each extra adds 25%.
+        /// </summary>
+        public const float DefaultWeaponExtraStackWeight = 0.25f;
+
+        /// <summary>
         /// Pool key for stacking: Engines+Thrusters → <see cref="PropulsionPoolKey"/>;
         /// otherwise canonical part type (Wing, Cockpit, Weapon, …).
         /// </summary>
@@ -41,7 +48,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Resolves the weight used when this part is an <b>extra</b> in its pool.
-        /// Authored <c>&gt; 0</c> wins; else propulsion → 0.1, everything else → 1.
+        /// Authored <c>&gt; 0</c> wins; else propulsion → 0.1, weapons → 0.25, everything else → 1.
         /// </summary>
         public static float ResolveExtraStackWeight(in ShipComponentAbilityStats stats, string componentId)
         {
@@ -51,25 +58,36 @@ namespace TitanOrbit.Data
             if (ShipComponentAbilityStats.IsPropulsionComponent(componentId))
                 return DefaultPropulsionExtraStackWeight;
 
+            if (ShipComponentAbilityStats.IsWeaponComponent(componentId))
+                return DefaultWeaponExtraStackWeight;
+
             return DefaultExtraStackWeight;
         }
 
         /// <summary>
-        /// Suggested seed for Scan / ProfileSet: 0.1 for engines/thrusters, else 1.
+        /// Suggested seed for Scan / ProfileSet: 0.1 engines/thrusters, 0.25 weapons, else 1.
         /// </summary>
-        public static float GetSuggestedExtraStackWeight(string componentId) =>
-            ShipComponentAbilityStats.IsPropulsionComponent(componentId)
-                ? DefaultPropulsionExtraStackWeight
-                : DefaultExtraStackWeight;
+        public static float GetSuggestedExtraStackWeight(string componentId)
+        {
+            if (ShipComponentAbilityStats.IsPropulsionComponent(componentId))
+                return DefaultPropulsionExtraStackWeight;
+            if (ShipComponentAbilityStats.IsWeaponComponent(componentId))
+                return DefaultWeaponExtraStackWeight;
+            return DefaultExtraStackWeight;
+        }
 
         /// <summary>
         /// Same seed as <see cref="GetSuggestedExtraStackWeight"/> when you only have a part type
         /// (ProfileSet defaults), not a component id.
         /// </summary>
-        public static float GetSuggestedExtraStackWeightForPartType(string partType) =>
-            ShipFamilyPartTypes.IsPropulsion(partType)
-                ? DefaultPropulsionExtraStackWeight
-                : DefaultExtraStackWeight;
+        public static float GetSuggestedExtraStackWeightForPartType(string partType)
+        {
+            if (ShipFamilyPartTypes.IsPropulsion(partType))
+                return DefaultPropulsionExtraStackWeight;
+            if (ShipFamilyPartTypes.IsWeapon(partType))
+                return DefaultWeaponExtraStackWeight;
+            return DefaultExtraStackWeight;
+        }
 
         /// <summary>
         /// Rebuilds hull totals from per-part lists using weighted stack pools (formula B).

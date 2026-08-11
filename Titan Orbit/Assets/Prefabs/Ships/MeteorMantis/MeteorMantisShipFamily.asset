@@ -13,39 +13,45 @@ MonoBehaviour:
   m_Name: MeteorMantisShipFamily
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
   familyId: MeteorMantis
+  shipLevelStatGrowthFraction: 0.1
   defaultFallbackStats:
     firePower: 3
-    firePowerPerLevel: 0.75
+    firePowerPerAbilityLevel: 0.75
     bulletSpeed: 12
-    bulletSpeedPerLevel: 3
+    bulletSpeedPerAbilityLevel: 3
     bulletRange: 0
-    bulletRangePerLevel: 0
+    bulletRangePerAbilityLevel: 0
     fireRate: 3
-    fireRatePerLevel: 0
+    fireRatePerAbilityLevel: 0
     rammingPower: 1
-    rammingPowerPerLevel: 0.25
+    rammingPowerPerAbilityLevel: 0.25
     healthCap: 6.3
-    healthCapPerLevel: 1.575
+    healthCapPerAbilityLevel: 1.575
     healthRegen: 0.22500002
-    healthRegenPerLevel: 0.056250006
+    healthRegenPerAbilityLevel: 0.056250006
     energyCap: 18
-    energyCapPerLevel: 4.5
+    energyCapPerAbilityLevel: 4.5
     energyRegen: 3
-    energyRegenPerLevel: 0.75
+    energyRegenPerAbilityLevel: 0.75
     moveSpeed: 9
-    moveSpeedPerLevel: 1.8000001
+    moveSpeedPerAbilityLevel: 1.8000001
     accelerationCap: 2.4
-    accelerationCapPerLevel: 0.6
+    accelerationCapPerAbilityLevel: 0.6
+    extraSpeedPercent: 0
+    extraSpeedPercentPerAbilityLevel: 0
+    extraSpeedEnergyDrain: 0
+    extraSpeedEnergyDrainPerAbilityLevel: 0
     turnSpeed: 14
-    turnSpeedPerLevel: 3.5
+    turnSpeedPerAbilityLevel: 3.5
     maxGems: 8
-    maxGemsPerLevel: 2
+    maxGemsPerAbilityLevel: 2
     tractorBeamDistance: 3
-    tractorBeamDistancePerLevel: 0.75
+    tractorBeamDistancePerAbilityLevel: 0.75
     tractorBeamPower: 4
-    tractorBeamPowerPerLevel: 1
+    tractorBeamPowerPerAbilityLevel: 1
     maxPeople: 2
-    maxPeoplePerLevel: 0
+    maxPeoplePerAbilityLevel: 0
+    extraStackWeight: 0
   specialBonuses:
     moveSpeedMul: 1
     accelerationMul: 1
@@ -59,12 +65,14 @@ MonoBehaviour:
     healthRegenMul: 1
     energyCapMul: 1
     energyRegenMul: 1
-    overdrivePercentMul: 1
+    extraSpeedPercentMul: 1
+    extraSpeedEnergyDrainMul: 1
     maxGemsMul: 1
     maxPeopleMul: 1
     tractorDistanceMul: 1
     tractorPowerMul: 1
   bulletPrefabIndex: 0
+  weaponFireMode: 0
   planetaryDefense: {fileID: 0}
   cameraFollowSettings: {fileID: 11400000, guid: 90d7e8197d9477d40bc1400865e6a4af, type: 2}
   damageSmokeSettings: {fileID: 11400000, guid: 9a2f168e386dd484c9335fb37c499705, type: 2}
@@ -77,37 +85,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: b7c76189089ae82479d8f178111d5d53, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -135,37 +148,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: fcd91b3dd1a942743809ed4c807dde36, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -193,37 +211,42 @@ MonoBehaviour:
     statCategories: 000000000100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 1
-      rammingPowerPerLevel: 0.25
-      healthCap: 6.3
-      healthCapPerLevel: 1.575
-      healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      rammingPowerPerAbilityLevel: 0.25
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 8
-      maxGemsPerLevel: 2
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: d7edbff956fc8d24eb0a1883f32011c3, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -251,37 +274,42 @@ MonoBehaviour:
     statCategories: 000000000100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 1
-      rammingPowerPerLevel: 0.25
-      healthCap: 6.3
-      healthCapPerLevel: 1.575
-      healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      rammingPowerPerAbilityLevel: 0.25
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 8
-      maxGemsPerLevel: 2
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 4cce9af1ec4eaed4eb1b7bf974061d67, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -309,37 +337,42 @@ MonoBehaviour:
     statCategories: 0300000002000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 15.300001
-      energyCapPerLevel: 3.8250003
-      energyRegen: 3.1499999
-      energyRegenPerLevel: 0.78749996
-      moveSpeed: 6
-      moveSpeedPerLevel: 1.2
-      accelerationCap: 3
-      accelerationCapPerLevel: 0.6
+      healthRegenPerAbilityLevel: 0
+      energyCap: 27
+      energyCapPerAbilityLevel: 6.75
+      energyRegen: 2.7
+      energyRegenPerAbilityLevel: 0.675
+      moveSpeed: 8
+      moveSpeedPerAbilityLevel: 1.6
+      accelerationCap: 6
+      accelerationCapPerAbilityLevel: 1.2
+      extraSpeedPercent: 0.75
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 2
+      extraSpeedEnergyDrainPerAbilityLevel: 0.4
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: ed036552b8dc2254893679ef291f4b09, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -367,37 +400,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 1873c65575aed874f95093892cea18c2, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -425,37 +463,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 04fd1abd78603684d80cb25048f371a0, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -483,37 +526,42 @@ MonoBehaviour:
     statCategories: 03000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 10.7027025
-      turnSpeedPerLevel: 2.6756756
+      turnSpeedPerAbilityLevel: 2.6756756
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 28cdc1229bbafa9458b3adaec17f632d, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -538,40 +586,45 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: Weapon
     displayName: Weapon 1
-    statCategories: 00000000
+    statCategories: 0000000002000000
     stats:
       firePower: 3
-      firePowerPerLevel: 0.75
+      firePowerPerAbilityLevel: 0.75
       bulletSpeed: 12
-      bulletSpeedPerLevel: 3
+      bulletSpeedPerAbilityLevel: 3
       bulletRange: 30
-      bulletRangePerLevel: 7.5
+      bulletRangePerAbilityLevel: 7.5
       fireRate: 3
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.25
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: d71232759a450734b9aaa5c8025ae3b2, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -599,37 +652,42 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 6.3
-      healthCapPerLevel: 1.575
-      healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 8
-      maxGemsPerLevel: 2
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 3
-      tractorBeamDistancePerLevel: 0.75
+      tractorBeamDistancePerAbilityLevel: 0.75
       tractorBeamPower: 4
-      tractorBeamPowerPerLevel: 1
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      tractorBeamPowerPerAbilityLevel: 1
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 93c21f5c95712a842bbc80e9ec17dba0, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -676,72 +734,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 1
-    powerScore: 139.67548
-    powerScoreAtMaxLevel: 219.22433
+    powerScore: 117.06196
+    powerScoreAtMaxLevel: 192.55745
     powerScoreBreakdown:
       offense: 49
-      defense: 34.930622
-      energy: 43.550636
-      mobility: 31.485405
-      capacity: 19.50881
+      defense: 37.425663
+      energy: 29.7
+      mobility: 36.805405
+      capacity: 4.7308865
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 33.726116
-      healthRegen: 1.2045043
-      energyCap: 36.11516
-      energyRegen: 7.4354734
-      moveSpeed: 5.28
+      healthCap: 36.135124
+      healthRegen: 1.2905402
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 21.405405
-      gemCap: 15.607048
-      peopleCap: 3.901762
+      gemCap: 39.01762
+      peopleCap: 3.3164978
     componentMass: 15.083791
     lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_05
+  - chassisId: MeteorMantis_06
     upgradeTreeShipName: 
-    prefab: {fileID: 7539151618137602507, guid: a6098ea9ae8f73d44849b2763edca48c, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
+    prefab: {fileID: 7777344892903085196, guid: 8ec20642cae99f94a8b786e455233b0c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e1f23d0facf6853469256fb416f99b55, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
+      sprite: {fileID: 21300000, guid: e1f23d0facf6853469256fb416f99b55, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 104e0ec510498494793c43e5b1907e64, type: 3}
+      sprite: {fileID: 21300000, guid: c68d814a883ffda459fd9a1a9224dff5, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: e1603a46d3bd6234ca19691cd1a60b48, type: 3}
+      sprite: {fileID: 21300000, guid: 6ffc6aaf1ae60b8458a2cc3ba3993b5a, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 915f2d0d122595c49a5e6e0d7e388da2, type: 3}
+      sprite: {fileID: 21300000, guid: e67b90b4f47e06e4ab287ccb7aabc525, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: edbff3c5d9ac2dd4487af3da43d11b87, type: 3}
+      sprite: {fileID: 21300000, guid: 212378e21a186df4f9e43c8afdb86103, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 163.38576
-    powerScoreAtMaxLevel: 300.20236
+    powerScore: 129.99338
+    powerScoreAtMaxLevel: 204.87006
     powerScoreBreakdown:
-      offense: 51.62388
-      defense: 46.605446
-      energy: 44.040154
-      mobility: 24.08
-      capacity: 40
-      firePower: 1.460157
+      offense: 20
+      defense: 52.059963
+      energy: 29.7
+      mobility: 32.2
+      capacity: 8.833409
+      firePower: 3
       bulletSpeed: 12
-      fireRate: 6.1637206
+      fireRate: 3
       rammingPower: 2
-      healthCap: 44.99836
-      healthRegen: 1.6070845
-      energyCap: 36.521103
-      energyRegen: 7.51905
-      moveSpeed: 5.28
+      healthCap: 50.264793
+      healthRegen: 1.7951713
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 10.400001
       turnSpeed: 14
-      gemCap: 32
-      peopleCap: 8
-    componentMass: 13.158913
+      gemCap: 72.85286
+      peopleCap: 6.1924934
+    componentMass: 14.996915
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_03
     upgradeTreeShipName: 
@@ -766,117 +824,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 148.81142
-    powerScoreAtMaxLevel: 230.17712
+    powerScore: 127.24366
+    powerScoreAtMaxLevel: 199.2255
     powerScoreBreakdown:
       offense: 20
-      defense: 48.864468
-      energy: 35.197327
-      mobility: 24.08
-      capacity: 30.469618
+      defense: 52.35478
+      energy: 29.7
+      mobility: 29.4
+      capacity: 7.3888826
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 2
-      healthCap: 47.179485
-      healthRegen: 1.6849813
-      energyCap: 29.188026
-      energyRegen: 6.009299
-      moveSpeed: 5.28
+      healthCap: 50.549442
+      healthRegen: 1.8053373
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 14
-      gemCap: 24.375694
-      peopleCap: 6.0939236
+      gemCap: 60.93924
+      peopleCap: 5.1798353
     componentMass: 13.838364
     lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_09
+  - chassisId: MeteorMantis_05
     upgradeTreeShipName: 
-    prefab: {fileID: 2992356408760926301, guid: 0e459eb81426b1d45ac628c7b5a13b98, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 61a4641fde1640340863b60d01d7ae12, type: 3}
+    prefab: {fileID: 7539151618137602507, guid: a6098ea9ae8f73d44849b2763edca48c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 61a4641fde1640340863b60d01d7ae12, type: 3}
+      sprite: {fileID: 21300000, guid: e13aaecc07c6aa4409a35e68b53e849d, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: e471777633e604e4898cee61f021fea7, type: 3}
+      sprite: {fileID: 21300000, guid: 104e0ec510498494793c43e5b1907e64, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 9b4e62900325abc4e9c74b5cf9baa324, type: 3}
+      sprite: {fileID: 21300000, guid: e1603a46d3bd6234ca19691cd1a60b48, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 6cbdb0404fe5f964b80f7ef30b4ad0aa, type: 3}
+      sprite: {fileID: 21300000, guid: 915f2d0d122595c49a5e6e0d7e388da2, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 70635431f27c0254cbe56f784c58f51e, type: 3}
+      sprite: {fileID: 21300000, guid: edbff3c5d9ac2dd4487af3da43d11b87, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 159.72087
-    powerScoreAtMaxLevel: 338.39117
+    powerScore: 125.59457
+    powerScoreAtMaxLevel: 282.1942
     powerScoreBreakdown:
-      offense: 50.183617
-      defense: 49.2641
-      energy: 36.9
-      mobility: 24.08
-      capacity: 39.932816
-      firePower: 2.3439598
+      offense: 51.62388
+      defense: 49.93441
+      energy: 29.7
+      mobility: 29.4
+      capacity: 9.7
+      firePower: 1.460157
       bulletSpeed: 12
-      fireRate: 3.8396564
+      fireRate: 6.1637206
       rammingPower: 2
-      healthCap: 47.56534
-      healthRegen: 1.698762
-      energyCap: 30.600002
-      energyRegen: 6.2999997
-      moveSpeed: 5.28
+      healthCap: 48.212532
+      healthRegen: 1.7218761
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 14
-      gemCap: 31.94625
-      peopleCap: 7.9865627
-    componentMass: 13.888145
-    lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_06
-    upgradeTreeShipName: 
-    prefab: {fileID: 7777344892903085196, guid: 8ec20642cae99f94a8b786e455233b0c, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: e1f23d0facf6853469256fb416f99b55, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: e1f23d0facf6853469256fb416f99b55, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: c68d814a883ffda459fd9a1a9224dff5, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 6ffc6aaf1ae60b8458a2cc3ba3993b5a, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: e67b90b4f47e06e4ab287ccb7aabc525, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 212378e21a186df4f9e43c8afdb86103, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 3
-    powerScore: 189.37468
-    powerScoreAtMaxLevel: 344.6257
-    powerScoreBreakdown:
-      offense: 20
-      defense: 48.58931
-      energy: 69.11894
-      mobility: 29.84
-      capacity: 36.42643
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      rammingPower: 2
-      healthCap: 46.913815
-      healthRegen: 1.6754935
-      energyCap: 57.31815
-      energyRegen: 11.800794
-      moveSpeed: 6.2400002
-      turnSpeed: 14
-      gemCap: 29.141144
-      peopleCap: 7.285286
-    componentMass: 14.996915
+      gemCap: 80
+      peopleCap: 6.8
+    componentMass: 13.158913
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_02
     upgradeTreeShipName: 
@@ -901,27 +914,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 164.49501
-    powerScoreAtMaxLevel: 293.40628
+    powerScore: 139.07887
+    powerScoreAtMaxLevel: 250.12805
     powerScoreBreakdown:
       offense: 20
-      defense: 41.964634
-      energy: 35.055
-      mobility: 42.18811
-      capacity: 35.08727
+      defense: 44.96211
+      energy: 29.7
+      mobility: 47.50811
+      capacity: 8.508663
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 2
-      healthCap: 40.51758
-      healthRegen: 1.4470565
-      energyCap: 29.070002
-      energyRegen: 5.9849997
-      moveSpeed: 5.28
+      healthCap: 43.41169
+      healthRegen: 1.5504174
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 32.10811
-      gemCap: 28.069815
-      peopleCap: 7.0174537
+      gemCap: 70.17454
+      peopleCap: 5.964836
     componentMass: 13.729518
+    lockedInUpgradeTree: 0
+  - chassisId: MeteorMantis_04
+    upgradeTreeShipName: 
+    prefab: {fileID: 5475663384806958609, guid: aaf45fc1848ede044b21a66de15725f4, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 40ec39a91bcdcc54e9482b61b5fc6bf5, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: fe22b5821aa2e0947b5ebad9888b8425, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: e482970e621cab2498969948d85cd818, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 568fc87c8e2e0e246af2dd483212fff0, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 3
+    powerScore: 117.0567
+    powerScoreAtMaxLevel: 264.75003
+    powerScoreBreakdown:
+      offense: 50.690613
+      defense: 37.488728
+      energy: 29.700005
+      mobility: 35.405403
+      capacity: 7.022744
+      firePower: 1.4398171
+      bulletSpeed: 12
+      fireRate: 6.2507944
+      rammingPower: 1
+      healthCap: 36.196014
+      healthRegen: 1.2927148
+      energyCap: 27.000004
+      energyRegen: 2.7000003
+      moveSpeed: 8
+      turnSpeed: 21.405405
+      gemCap: 57.91954
+      peopleCap: 4.923161
+    componentMass: 12.165972
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_13
     upgradeTreeShipName: 
@@ -946,26 +1004,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 183.25868
-    powerScoreAtMaxLevel: 481.63736
+    powerScore: 128.79381
+    powerScoreAtMaxLevel: 322.7076
     powerScoreBreakdown:
-      offense: 98
-      defense: 45.543396
-      energy: 36.9
-      mobility: 24.08
-      capacity: 51.535282
-      firePower: 6
-      bulletSpeed: 24
-      fireRate: 6
+      offense: 50
+      defense: 48.796497
+      energy: 29.7
+      mobility: 29.4
+      capacity: 12.497305
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
       rammingPower: 2
-      healthCap: 43.972935
-      healthRegen: 1.5704621
-      energyCap: 30.600002
-      energyRegen: 6.2999997
-      moveSpeed: 5.28
+      healthCap: 47.11386
+      healthRegen: 1.6826378
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 14
-      gemCap: 41.228226
-      peopleCap: 10.307056
+      gemCap: 103.07056
+      peopleCap: 8.760998
     componentMass: 12.806133
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_14
@@ -991,27 +1049,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 180.90315
-    powerScoreAtMaxLevel: 477.98553
+    powerScore: 141.08183
+    powerScoreAtMaxLevel: 347.8133
     powerScoreBreakdown:
-      offense: 98.158936
-      defense: 52.03926
-      energy: 28.253078
-      mobility: 31.485405
-      capacity: 44.825706
-      firePower: 5.099706
-      bulletSpeed: 24
-      fireRate: 7.05923
+      offense: 50.079468
+      defense: 55.756344
+      energy: 29.699997
+      mobility: 36.805405
+      capacity: 10.870235
+      firePower: 2.549853
+      bulletSpeed: 12
+      fireRate: 3.529615
       rammingPower: 2
-      healthCap: 50.244804
-      healthRegen: 1.7944573
-      energyCap: 23.429382
-      energyRegen: 4.8236957
-      moveSpeed: 5.28
+      healthCap: 53.83371
+      healthRegen: 1.9226326
+      energyCap: 26.999996
+      energyRegen: 2.6999998
+      moveSpeed: 8.8
       turnSpeed: 21.405405
-      gemCap: 35.860565
-      peopleCap: 8.965141
+      gemCap: 89.65142
+      peopleCap: 7.620371
     componentMass: 16.292568
+    lockedInUpgradeTree: 0
+  - chassisId: MeteorMantis_09
+    upgradeTreeShipName: 
+    prefab: {fileID: 2992356408760926301, guid: 0e459eb81426b1d45ac628c7b5a13b98, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 61a4641fde1640340863b60d01d7ae12, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 61a4641fde1640340863b60d01d7ae12, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: e471777633e604e4898cee61f021fea7, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 9b4e62900325abc4e9c74b5cf9baa324, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 6cbdb0404fe5f964b80f7ef30b4ad0aa, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 70635431f27c0254cbe56f784c58f51e, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 4
+    powerScore: 129.31062
+    powerScoreAtMaxLevel: 324.5809
+    powerScoreBreakdown:
+      offense: 50.183617
+      defense: 52.78296
+      energy: 29.7
+      mobility: 29.4
+      capacity: 9.683706
+      firePower: 2.3439598
+      bulletSpeed: 12
+      fireRate: 3.8396564
+      rammingPower: 2
+      healthCap: 50.962856
+      healthRegen: 1.8201021
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
+      turnSpeed: 14
+      gemCap: 79.865616
+      peopleCap: 6.788578
+    componentMass: 13.888145
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_07
     upgradeTreeShipName: 
@@ -1036,72 +1139,27 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 160.98828
-    powerScoreAtMaxLevel: 436.71597
+    powerScore: 115.725235
+    powerScoreAtMaxLevel: 296.3802
     powerScoreBreakdown:
-      offense: 98.02577
-      defense: 38.151062
-      energy: 43.683144
-      mobility: 24.08
-      capacity: 29.46772
-      firePower: 6.4063497
-      bulletSpeed: 24
-      fireRate: 5.619425
+      offense: 50.012886
+      defense: 40.876137
+      energy: 29.7
+      mobility: 29.4
+      capacity: 7.145922
+      firePower: 3.2031748
+      bulletSpeed: 12
+      fireRate: 2.8097124
       rammingPower: 2
-      healthCap: 36.835506
-      healthRegen: 1.3155539
-      energyCap: 36.225048
-      energyRegen: 7.4580975
-      moveSpeed: 5.28
+      healthCap: 39.466614
+      healthRegen: 1.4095219
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 14
-      gemCap: 23.574177
-      peopleCap: 5.893544
+      gemCap: 58.93544
+      peopleCap: 5.0095124
     componentMass: 13.250139
-    lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_04
-    upgradeTreeShipName: 
-    prefab: {fileID: 5475663384806958609, guid: aaf45fc1848ede044b21a66de15725f4, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: aa1cd010d4df875428d8a69346cba28e, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 40ec39a91bcdcc54e9482b61b5fc6bf5, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: fe22b5821aa2e0947b5ebad9888b8425, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: e482970e621cab2498969948d85cd818, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 568fc87c8e2e0e246af2dd483212fff0, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 4
-    powerScore: 138.87587
-    powerScoreAtMaxLevel: 393.0533
-    powerScoreBreakdown:
-      offense: 100.381226
-      defense: 34.989483
-      energy: 21.841572
-      mobility: 28.605406
-      capacity: 28.95977
-      firePower: 2.8796341
-      bulletSpeed: 24
-      fireRate: 12.501589
-      rammingPower: 1
-      healthCap: 33.782948
-      healthRegen: 1.2065339
-      energyCap: 18.112524
-      energyRegen: 3.7290487
-      moveSpeed: 4.8
-      turnSpeed: 21.405405
-      gemCap: 23.167816
-      peopleCap: 5.791954
-    componentMass: 12.165972
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_10
     upgradeTreeShipName: 
@@ -1126,72 +1184,27 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 215.12881
-    powerScoreAtMaxLevel: 486.73984
+    powerScore: 158.25415
+    powerScoreAtMaxLevel: 359.57184
     powerScoreBreakdown:
       offense: 20
-      defense: 62.58908
-      energy: 43.683144
-      mobility: 31.485405
-      capacity: 67.17118
+      defense: 67.05972
+      energy: 29.7
+      mobility: 36.805405
+      capacity: 16.289011
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 2
-      healthCap: 60.430836
-      healthRegen: 2.1582444
-      energyCap: 36.225048
-      energyRegen: 7.4580975
-      moveSpeed: 5.28
+      healthCap: 64.74732
+      healthRegen: 2.3124046
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 21.405405
-      gemCap: 53.736946
-      peopleCap: 13.434237
+      gemCap: 134.34236
+      peopleCap: 11.4191
     componentMass: 18.639439
-    lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_11
-    upgradeTreeShipName: 
-    prefab: {fileID: 3028100247762755984, guid: df102d12bcd9f9446b47075d61fd9c32, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: ed4c06a4d1c868248be090c262ac5cd8, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: ed4c06a4d1c868248be090c262ac5cd8, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: fdb3591b160a0dc439254849300947e5, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 151e694de4a17a84a865c2ffb2c63d4b, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 5d6f33c2b3516614c82016d639f7c471, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 66a73ac40b888e040811d89e7ec1b640, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 5
-    powerScore: 195.07661
-    powerScoreAtMaxLevel: 564.51044
-    powerScoreBreakdown:
-      offense: 99.70446
-      defense: 62.09433
-      energy: 21.663069
-      mobility: 28.605406
-      capacity: 56.84744
-      firePower: 4.266366
-      bulletSpeed: 24
-      fireRate: 8.438094
-      rammingPower: 3
-      healthCap: 59.953148
-      healthRegen: 2.1411839
-      energyCap: 17.964497
-      energyRegen: 3.6985724
-      moveSpeed: 4.8
-      turnSpeed: 21.405405
-      gemCap: 45.47795
-      peopleCap: 11.369488
-    componentMass: 17.944273
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_15
     upgradeTreeShipName: 
@@ -1216,27 +1229,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 242.16153
-    powerScoreAtMaxLevel: 621.05347
+    powerScore: 182.37424
+    powerScoreAtMaxLevel: 483.53204
     powerScoreBreakdown:
       offense: 50.337986
-      defense: 79.43555
-      energy: 62.42681
-      mobility: 45.068108
-      capacity: 48.2831
+      defense: 85.10952
+      energy: 29.700005
+      mobility: 48.908108
+      capacity: 11.7086525
       firePower: 2.147958
       bulletSpeed: 12
       fireRate: 4.1900263
       rammingPower: 2
-      healthCap: 76.69639
-      healthRegen: 2.7391567
-      energyCap: 51.768578
-      energyRegen: 10.658236
-      moveSpeed: 5.7599998
+      healthCap: 82.174706
+      healthRegen: 2.9348109
+      energyCap: 27.000004
+      energyRegen: 2.7000003
+      moveSpeed: 9.6
       turnSpeed: 32.10811
-      gemCap: 38.62648
-      peopleCap: 9.65662
+      gemCap: 96.5662
+      peopleCap: 8.208128
     componentMass: 25.48289
+    lockedInUpgradeTree: 0
+  - chassisId: MeteorMantis_18
+    upgradeTreeShipName: 
+    prefab: {fileID: 8810885618950878329, guid: fc782e22d6e6f4f4d9e24364635e4a77, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 201e422eda472e54980553291ad354df, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: cf4d6fd7dd5201a458f5ec5e310ef638, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 1b316cd6a7965d24793c269f1652f14f, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: efd6b17e2de596549b339d7621914707, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 5
+    powerScore: 141.32529
+    powerScoreAtMaxLevel: 389.17545
+    powerScoreBreakdown:
+      offense: 50.296494
+      defense: 60.49177
+      energy: 29.7
+      mobility: 30.8
+      capacity: 11.430567
+      firePower: 4.10295
+      bulletSpeed: 12
+      fireRate: 2.1935437
+      rammingPower: 2
+      healthCap: 58.40585
+      healthRegen: 2.085923
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 9.6
+      turnSpeed: 14
+      gemCap: 94.27272
+      peopleCap: 8.013182
+    componentMass: 18.63621
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_12
     upgradeTreeShipName: 
@@ -1261,26 +1319,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 211.43242
-    powerScoreAtMaxLevel: 602.0022
+    powerScore: 155.96962
+    powerScoreAtMaxLevel: 422.22128
     powerScoreBreakdown:
-      offense: 98.051
-      defense: 45.38364
-      energy: 41.89811
-      mobility: 52.890812
-      capacity: 46.58813
-      firePower: 5.471724
-      bulletSpeed: 24
-      fireRate: 6.579279
+      offense: 50.0255
+      defense: 48.625328
+      energy: 29.7
+      mobility: 58.21081
+      capacity: 11.297622
+      firePower: 2.735862
+      bulletSpeed: 12
+      fireRate: 3.2896395
       rammingPower: 2
-      healthCap: 43.818687
-      healthRegen: 1.5649531
-      energyCap: 34.744774
-      energyRegen: 7.1533346
-      moveSpeed: 5.28
+      healthCap: 46.948593
+      healthRegen: 1.6767354
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 42.81081
-      gemCap: 37.270504
-      peopleCap: 9.317626
+      gemCap: 93.17626
+      peopleCap: 7.9199824
     componentMass: 18.294838
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_08
@@ -1306,26 +1364,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 207.1585
-    powerScoreAtMaxLevel: 591.80664
+    powerScore: 157.29414
+    powerScoreAtMaxLevel: 424.91183
     powerScoreBreakdown:
-      offense: 98
-      defense: 48.099884
-      energy: 42.008034
-      mobility: 52.890812
-      capacity: 38.95977
-      firePower: 6
-      bulletSpeed: 24
-      fireRate: 6
+      offense: 50
+      defense: 51.535587
+      energy: 29.7
+      mobility: 58.21081
+      capacity: 9.447744
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
       rammingPower: 2
-      healthCap: 46.44127
-      healthRegen: 1.6586169
-      energyCap: 34.83593
-      energyRegen: 7.1721025
-      moveSpeed: 5.28
+      healthCap: 49.7585
+      healthRegen: 1.7770894
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 42.81081
-      gemCap: 31.167816
-      peopleCap: 7.791954
+      gemCap: 77.91954
+      peopleCap: 6.6231613
     componentMass: 19.51114
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_20
@@ -1351,26 +1409,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 277.07526
-    powerScoreAtMaxLevel: 829.5694
+    powerScore: 184.35576
+    powerScoreAtMaxLevel: 538.07
     powerScoreBreakdown:
-      offense: 98.05476
-      defense: 80.513214
-      energy: 43.683144
-      mobility: 31.485405
-      capacity: 96.739975
-      firePower: 5.453526
-      bulletSpeed: 24
-      fireRate: 6.601234
+      offense: 50.02738
+      defense: 86.264145
+      energy: 29.7
+      mobility: 36.805405
+      capacity: 23.459444
+      firePower: 2.726763
+      bulletSpeed: 12
+      fireRate: 3.300617
       rammingPower: 2
-      healthCap: 77.73689
-      healthRegen: 2.7763176
-      energyCap: 36.225048
-      energyRegen: 7.4580975
-      moveSpeed: 5.28
+      healthCap: 83.28952
+      healthRegen: 2.974626
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 21.405405
-      gemCap: 77.39198
-      peopleCap: 19.347996
+      gemCap: 193.47997
+      peopleCap: 16.445795
     componentMass: 21.383373
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_19
@@ -1396,26 +1454,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 241.37819
-    powerScoreAtMaxLevel: 736.94543
+    powerScore: 169.86298
+    powerScoreAtMaxLevel: 502.95743
     powerScoreBreakdown:
-      offense: 99
-      defense: 70.55766
-      energy: 31.480774
-      mobility: 28.605406
-      capacity: 83.134346
-      firePower: 6
-      bulletSpeed: 24
-      fireRate: 6
+      offense: 51
+      defense: 75.59749
+      energy: 29.7
+      mobility: 35.405403
+      capacity: 20.160076
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
       rammingPower: 3
-      healthCap: 68.12464
-      healthRegen: 2.4330227
-      energyCap: 26.106009
-      energyRegen: 5.374766
-      moveSpeed: 4.8
+      healthCap: 72.99068
+      healthRegen: 2.60681
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8
       turnSpeed: 21.405405
-      gemCap: 66.50748
-      peopleCap: 16.62687
+      gemCap: 166.26868
+      peopleCap: 14.132838
     componentMass: 19.019709
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_16
@@ -1441,26 +1499,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 296.50784
-    powerScoreAtMaxLevel: 994.678
+    powerScore: 206.49626
+    powerScoreAtMaxLevel: 585.81775
     powerScoreBreakdown:
-      offense: 195.52531
-      defense: 75.04688
-      energy: 21
+      offense: 50.38133
+      defense: 80.40737
+      energy: 29.7
       mobility: 64.91351
-      capacity: 81.53052
-      firePower: 8.41692
-      bulletSpeed: 48
-      fireRate: 17.108397
+      capacity: 19.771149
+      firePower: 2.10423
+      bulletSpeed: 12
+      fireRate: 4.277099
       rammingPower: 2
-      healthCap: 72.45906
-      healthRegen: 2.5878239
-      energyCap: 18
-      energyRegen: 3
+      healthCap: 77.634705
+      healthRegen: 2.7726684
+      energyCap: 27
+      energyRegen: 2.7
       moveSpeed: 9
       turnSpeed: 53.51351
-      gemCap: 65.22441
-      peopleCap: 16.306103
+      gemCap: 163.06102
+      peopleCap: 13.860187
     componentMass: 23.187592
     lockedInUpgradeTree: 0
   - chassisId: MeteorMantis_17
@@ -1486,72 +1544,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 215.73022
-    powerScoreAtMaxLevel: 799.34357
+    powerScore: 137.719
+    powerScoreAtMaxLevel: 422.11197
     powerScoreBreakdown:
-      offense: 194.88783
-      defense: 52.288624
-      energy: 25.535463
-      mobility: 24.08
-      capacity: 61.47631
-      firePower: 9.14982
-      bulletSpeed: 48
-      fireRate: 15.738014
+      offense: 50.22196
+      defense: 56.02353
+      energy: 29.7
+      mobility: 29.4
+      capacity: 14.908006
+      firePower: 2.287455
+      bulletSpeed: 12
+      fireRate: 3.9345036
       rammingPower: 2
-      healthCap: 50.48557
-      healthRegen: 1.8030562
-      energyCap: 21.17575
-      energyRegen: 4.359713
-      moveSpeed: 5.28
+      healthCap: 54.091682
+      healthRegen: 1.9318457
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 14
-      gemCap: 49.18105
-      peopleCap: 12.295262
+      gemCap: 122.95262
+      peopleCap: 10.4509735
     componentMass: 14.313509
     lockedInUpgradeTree: 0
-  - chassisId: MeteorMantis_18
+  - chassisId: MeteorMantis_11
     upgradeTreeShipName: 
-    prefab: {fileID: 8810885618950878329, guid: fc782e22d6e6f4f4d9e24364635e4a77, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
+    prefab: {fileID: 3028100247762755984, guid: df102d12bcd9f9446b47075d61fd9c32, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: ed4c06a4d1c868248be090c262ac5cd8, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 67b3a036ba79e2a42b42423de9bf38e4, type: 3}
+      sprite: {fileID: 21300000, guid: ed4c06a4d1c868248be090c262ac5cd8, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 201e422eda472e54980553291ad354df, type: 3}
+      sprite: {fileID: 21300000, guid: fdb3591b160a0dc439254849300947e5, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: cf4d6fd7dd5201a458f5ec5e310ef638, type: 3}
+      sprite: {fileID: 21300000, guid: 151e694de4a17a84a865c2ffb2c63d4b, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 1b316cd6a7965d24793c269f1652f14f, type: 3}
+      sprite: {fileID: 21300000, guid: 5d6f33c2b3516614c82016d639f7c471, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: efd6b17e2de596549b339d7621914707, type: 3}
+      sprite: {fileID: 21300000, guid: 66a73ac40b888e040811d89e7ec1b640, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 223.83858
-    powerScoreAtMaxLevel: 761.50665
+    powerScore: 153.55373
+    powerScoreAtMaxLevel: 463.40338
     powerScoreBreakdown:
-      offense: 146.48343
-      defense: 56.458984
-      energy: 55.350002
-      mobility: 26.96
-      capacity: 47.13636
-      firePower: 9.13323
-      bulletSpeed: 36
-      fireRate: 9.350203
-      rammingPower: 2
-      healthCap: 54.512123
-      healthRegen: 1.946862
-      energyCap: 45.9
-      energyRegen: 9.45
-      moveSpeed: 5.7599998
-      turnSpeed: 14
-      gemCap: 37.709087
-      peopleCap: 9.427272
-    componentMass: 18.63621
+      offense: 51.35223
+      defense: 66.52964
+      energy: 29.699997
+      mobility: 35.405403
+      capacity: 13.785505
+      firePower: 2.133183
+      bulletSpeed: 12
+      fireRate: 4.219047
+      rammingPower: 3
+      healthCap: 64.23551
+      healthRegen: 2.2941256
+      energyCap: 26.999996
+      energyRegen: 2.6999998
+      moveSpeed: 8
+      turnSpeed: 21.405405
+      gemCap: 113.694885
+      peopleCap: 9.664064
+    componentMass: 17.944273
     lockedInUpgradeTree: 0
   teamMaterials:
   - variantName: Red

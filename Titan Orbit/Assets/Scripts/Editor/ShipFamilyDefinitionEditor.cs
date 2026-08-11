@@ -1430,9 +1430,10 @@ namespace TitanOrbit.Editor
                     break;
 
                 case ShipComponentStatCategory.Capacity:
-                    stats.maxGems = 8f * v;
+                    // [TITAN-ORBIT] Cargo gems/people from GameBalanceTargets via suggestion helpers.
+                    stats.maxGems = ShipComponentGemCapacitySuggestions.GetSuggestedGemCapacity(version);
                     stats.maxPeople = ShipComponentPeopleCapacitySuggestions.GetSuggestedPeopleCapacity(version);
-                    stats.maxGemsPerAbilityLevel = PerLevelFromBase(stats.maxGems);
+                    stats.maxGemsPerAbilityLevel = ShipComponentGemCapacitySuggestions.GetSuggestedGemCapacityPerLevel(version);
                     stats.maxPeoplePerAbilityLevel = ShipComponentPeopleCapacitySuggestions.GetSuggestedPeopleCapacityPerLevel(version);
                     if (string.Equals(type, "Wing", StringComparison.OrdinalIgnoreCase) ||
                         string.Equals(type, "Arm", StringComparison.OrdinalIgnoreCase))

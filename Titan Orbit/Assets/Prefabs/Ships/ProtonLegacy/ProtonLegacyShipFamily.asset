@@ -13,39 +13,45 @@ MonoBehaviour:
   m_Name: ProtonLegacyShipFamily
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
   familyId: ProtonLegacy
+  shipLevelStatGrowthFraction: 0.1
   defaultFallbackStats:
     firePower: 3
-    firePowerPerLevel: 0.75
+    firePowerPerAbilityLevel: 0.75
     bulletSpeed: 12
-    bulletSpeedPerLevel: 3
+    bulletSpeedPerAbilityLevel: 3
     bulletRange: 0
-    bulletRangePerLevel: 0
+    bulletRangePerAbilityLevel: 0
     fireRate: 3
-    fireRatePerLevel: 0
+    fireRatePerAbilityLevel: 0
     rammingPower: 1
-    rammingPowerPerLevel: 0.25
+    rammingPowerPerAbilityLevel: 0.25
     healthCap: 6.3
-    healthCapPerLevel: 1.575
+    healthCapPerAbilityLevel: 1.575
     healthRegen: 0.22500002
-    healthRegenPerLevel: 0.056250006
+    healthRegenPerAbilityLevel: 0.056250006
     energyCap: 18
-    energyCapPerLevel: 4.5
+    energyCapPerAbilityLevel: 4.5
     energyRegen: 3
-    energyRegenPerLevel: 0.75
+    energyRegenPerAbilityLevel: 0.75
     moveSpeed: 9
-    moveSpeedPerLevel: 1.8000001
+    moveSpeedPerAbilityLevel: 1.8000001
     accelerationCap: 2.4
-    accelerationCapPerLevel: 0.6
+    accelerationCapPerAbilityLevel: 0.6
+    extraSpeedPercent: 0
+    extraSpeedPercentPerAbilityLevel: 0
+    extraSpeedEnergyDrain: 0
+    extraSpeedEnergyDrainPerAbilityLevel: 0
     turnSpeed: 14
-    turnSpeedPerLevel: 3.5
+    turnSpeedPerAbilityLevel: 3.5
     maxGems: 8
-    maxGemsPerLevel: 2
+    maxGemsPerAbilityLevel: 2
     tractorBeamDistance: 3
-    tractorBeamDistancePerLevel: 0.75
+    tractorBeamDistancePerAbilityLevel: 0.75
     tractorBeamPower: 4
-    tractorBeamPowerPerLevel: 1
+    tractorBeamPowerPerAbilityLevel: 1
     maxPeople: 2
-    maxPeoplePerLevel: 0
+    maxPeoplePerAbilityLevel: 0
+    extraStackWeight: 0
   specialBonuses:
     moveSpeedMul: 1
     accelerationMul: 1
@@ -59,12 +65,14 @@ MonoBehaviour:
     healthRegenMul: 1
     energyCapMul: 1
     energyRegenMul: 1
-    overdrivePercentMul: 1
+    extraSpeedPercentMul: 1
+    extraSpeedEnergyDrainMul: 1
     maxGemsMul: 1
     maxPeopleMul: 1
     tractorDistanceMul: 1
     tractorPowerMul: 1
   bulletPrefabIndex: 0
+  weaponFireMode: 0
   planetaryDefense: {fileID: 0}
   cameraFollowSettings: {fileID: 11400000, guid: 90d7e8197d9477d40bc1400865e6a4af, type: 2}
   damageSmokeSettings: {fileID: 11400000, guid: 9a2f168e386dd484c9335fb37c499705, type: 2}
@@ -77,37 +85,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 80575a124a8022e458f75902557e8c5c, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -135,37 +148,42 @@ MonoBehaviour:
     statCategories: 000000000100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 1
-      rammingPowerPerLevel: 0.25
-      healthCap: 6.3
-      healthCapPerLevel: 1.575
-      healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      rammingPowerPerAbilityLevel: 0.25
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 8
-      maxGemsPerLevel: 2
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: d6ee13b41bf0a8c4890bf5fa3ecaacea, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -193,37 +211,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 1ac9e58821a4f1f40b6f765f323bc669, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -251,37 +274,42 @@ MonoBehaviour:
     statCategories: 0300000002000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 15.300001
-      energyCapPerLevel: 3.8250003
-      energyRegen: 3.1499999
-      energyRegenPerLevel: 0.78749996
-      moveSpeed: 6
-      moveSpeedPerLevel: 1.2
-      accelerationCap: 3
-      accelerationCapPerLevel: 0.6
+      healthRegenPerAbilityLevel: 0
+      energyCap: 27
+      energyCapPerAbilityLevel: 6.75
+      energyRegen: 2.7
+      energyRegenPerAbilityLevel: 0.675
+      moveSpeed: 8
+      moveSpeedPerAbilityLevel: 1.6
+      accelerationCap: 6
+      accelerationCapPerAbilityLevel: 1.2
+      extraSpeedPercent: 0.75
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 2
+      extraSpeedEnergyDrainPerAbilityLevel: 0.4
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 0c27e5d7a4b30384eaf958eaaf9f899d, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -309,37 +337,42 @@ MonoBehaviour:
     statCategories: 03000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 10.7027025
-      turnSpeedPerLevel: 2.6756756
+      turnSpeedPerAbilityLevel: 2.6756756
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 03a12b4e8ba65b841b5d9a3462e01190, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -367,37 +400,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 06fb87e24ab5b1a428227f2f0a03796c, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -425,37 +463,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: cbff55fcf92f51c428b14af0c82459d9, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -480,40 +523,45 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: Weapon
     displayName: Weapon 1
-    statCategories: 00000000
+    statCategories: 0000000002000000
     stats:
       firePower: 3
-      firePowerPerLevel: 0.75
+      firePowerPerAbilityLevel: 0.75
       bulletSpeed: 12
-      bulletSpeedPerLevel: 3
+      bulletSpeedPerAbilityLevel: 3
       bulletRange: 30
-      bulletRangePerLevel: 7.5
+      bulletRangePerAbilityLevel: 7.5
       fireRate: 3
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.25
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: a07b59aa1133b8546bd2b8eb347d6de0, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -541,37 +589,42 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 6.3
-      healthCapPerLevel: 1.575
-      healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 8
-      maxGemsPerLevel: 2
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 3
-      tractorBeamDistancePerLevel: 0.75
+      tractorBeamDistancePerAbilityLevel: 0.75
       tractorBeamPower: 4
-      tractorBeamPowerPerLevel: 1
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      tractorBeamPowerPerAbilityLevel: 1
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 75fbe7ef06f187f40969bdb22334d5f4, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -618,26 +671,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 1
-    powerScore: 99.06939
-    powerScoreAtMaxLevel: 168.46674
+    powerScore: 89.85041
+    powerScoreAtMaxLevel: 158.54301
     powerScoreBreakdown:
       offense: 49
-      defense: 12.036791
-      energy: 36.9
-      mobility: 31.485405
-      capacity: 8.44719
+      defense: 12.896562
+      energy: 29.7
+      mobility: 36.805405
+      capacity: 2.0484438
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 11.621729
-      healthRegen: 0.41506183
-      energyCap: 30.600002
-      energyRegen: 6.2999997
-      moveSpeed: 5.28
+      healthCap: 12.451853
+      healthRegen: 0.44470906
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 21.405405
-      gemCap: 6.757752
-      peopleCap: 1.689438
+      gemCap: 16.89438
+      peopleCap: 1.4360223
     componentMass: 7.844719
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_02
@@ -663,72 +716,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 80.484215
-    powerScoreAtMaxLevel: 170.54536
+    powerScore: 89.19867
+    powerScoreAtMaxLevel: 187.61705
     powerScoreBreakdown:
       offense: 50.35223
-      defense: 16.19145
-      energy: 6.545101
-      mobility: 21.2
-      capacity: 24.814482
+      defense: 17.34798
+      energy: 29.699997
+      mobility: 28
+      capacity: 6.0175114
       firePower: 2.133183
       bulletSpeed: 12
       fireRate: 4.219047
       rammingPower: 2
-      healthCap: 15.633123
-      healthRegen: 0.5583259
-      energyCap: 5.427645
-      energyRegen: 1.1174562
-      moveSpeed: 4.8
+      healthCap: 16.749775
+      healthRegen: 0.5982063
+      energyCap: 26.999996
+      energyRegen: 2.6999998
+      moveSpeed: 8
       turnSpeed: 14
-      gemCap: 19.851585
-      peopleCap: 4.9628963
+      gemCap: 49.62896
+      peopleCap: 4.218462
     componentMass: 3.547257
     lockedInUpgradeTree: 0
-  - chassisId: ProtonLegacy_06
+  - chassisId: ProtonLegacy_04
     upgradeTreeShipName: 
-    prefab: {fileID: 6434850844271251766, guid: d9cb9e24194d6f94bb9d3e5fa5927d80, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 546db9c0bf80de040840f10aee2c000e, type: 3}
+    prefab: {fileID: 6859067629596015094, guid: 763e1208d347386488fa28c630242dd6, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: edd32001659b647428cf485f37670718, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 546db9c0bf80de040840f10aee2c000e, type: 3}
+      sprite: {fileID: 21300000, guid: edd32001659b647428cf485f37670718, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: acb78cf3fbbc5cd4a86b811e25a89494, type: 3}
+      sprite: {fileID: 21300000, guid: b2d152579af232f40afa29d55a31d5bc, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: e7edc98a1bae3054b99bf384c926d38c, type: 3}
+      sprite: {fileID: 21300000, guid: 0894e3eef5e6c2e4dbee03ee712c4a1a, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 589889c40f4ce8546bdc801aa5c1e6ce, type: 3}
+      sprite: {fileID: 21300000, guid: 037a33299a1422f49a7c953c598481ce, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 198edea5e897a774b9d5011d07f83af5, type: 3}
+      sprite: {fileID: 21300000, guid: 3592246b5f154c84cabc92da9818ba9a, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 121.50099
-    powerScoreAtMaxLevel: 232.71149
+    powerScore: 100.57605
+    powerScoreAtMaxLevel: 197.06409
     powerScoreBreakdown:
       offense: 49
-      defense: 41.22685
-      energy: 24.237247
-      mobility: 31.485405
-      capacity: 14.35149
+      defense: 23.045649
+      energy: 29.7
+      mobility: 32.805405
+      capacity: 2.425
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 39.805233
-      healthRegen: 1.4216155
-      energyCap: 20.099182
-      energyRegen: 4.1380663
-      moveSpeed: 5.28
+      healthCap: 22.25097
+      healthRegen: 0.7946775
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 9
       turnSpeed: 21.405405
-      gemCap: 11.481192
-      peopleCap: 2.870298
-    componentMass: 14.444475
+      gemCap: 20
+      peopleCap: 1.7
+    componentMass: 9.59288
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_05
     upgradeTreeShipName: 
@@ -753,27 +806,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 125.608345
-    powerScoreAtMaxLevel: 269.91248
+    powerScore: 124.03789
+    powerScoreAtMaxLevel: 267.16418
     powerScoreBreakdown:
       offense: 49.50266
-      defense: 47.10356
-      energy: 21
+      defense: 50.4681
+      energy: 29.7
       mobility: 25.4
-      capacity: 18
+      capacity: 4.365
       firePower: 4.504785
       bulletSpeed: 12
       fireRate: 1.9978756
       rammingPower: 1
-      healthCap: 45.4793
-      healthRegen: 1.6242607
-      energyCap: 18
-      energyRegen: 3
+      healthCap: 48.72782
+      healthRegen: 1.7402793
+      energyCap: 27
+      energyRegen: 2.7
       moveSpeed: 9
       turnSpeed: 14
-      gemCap: 14.4
-      peopleCap: 3.6
+      gemCap: 36
+      peopleCap: 3.06
     componentMass: 14.139466
+    lockedInUpgradeTree: 0
+  - chassisId: ProtonLegacy_06
+    upgradeTreeShipName: 
+    prefab: {fileID: 6434850844271251766, guid: d9cb9e24194d6f94bb9d3e5fa5927d80, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 546db9c0bf80de040840f10aee2c000e, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 546db9c0bf80de040840f10aee2c000e, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: acb78cf3fbbc5cd4a86b811e25a89494, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: e7edc98a1bae3054b99bf384c926d38c, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 589889c40f4ce8546bdc801aa5c1e6ce, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 198edea5e897a774b9d5011d07f83af5, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 3
+    powerScore: 122.55727
+    powerScoreAtMaxLevel: 271.9652
+    powerScoreBreakdown:
+      offense: 49
+      defense: 44.171623
+      energy: 29.7
+      mobility: 36.805405
+      capacity: 3.4802363
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 42.648464
+      healthRegen: 1.5231595
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
+      turnSpeed: 21.405405
+      gemCap: 28.70298
+      peopleCap: 2.4397535
+    componentMass: 14.444475
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_01
     upgradeTreeShipName: 
@@ -798,72 +896,27 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 149.59395
-    powerScoreAtMaxLevel: 265.5794
+    powerScore: 143.22565
+    powerScoreAtMaxLevel: 255.63487
     powerScoreBreakdown:
       offense: 19
-      defense: 68.41394
-      energy: 36.9
-      mobility: 24.08
-      capacity: 10
+      defense: 73.300644
+      energy: 29.7
+      mobility: 29.4
+      capacity: 2.425
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 66.05484
-      healthRegen: 2.3591015
-      energyCap: 30.600002
-      energyRegen: 6.2999997
-      moveSpeed: 5.28
+      healthCap: 70.77303
+      healthRegen: 2.5276089
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 14
-      gemCap: 8
-      peopleCap: 2
+      gemCap: 20
+      peopleCap: 1.7
     componentMass: 21.969788
-    lockedInUpgradeTree: 0
-  - chassisId: ProtonLegacy_04
-    upgradeTreeShipName: 
-    prefab: {fileID: 6859067629596015094, guid: 763e1208d347386488fa28c630242dd6, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: edd32001659b647428cf485f37670718, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: edd32001659b647428cf485f37670718, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: b2d152579af232f40afa29d55a31d5bc, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 0894e3eef5e6c2e4dbee03ee712c4a1a, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 037a33299a1422f49a7c953c598481ce, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 3592246b5f154c84cabc92da9818ba9a, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 3
-    powerScore: 112.91468
-    powerScoreAtMaxLevel: 295.20068
-    powerScoreBreakdown:
-      offense: 97
-      defense: 21.509274
-      energy: 21
-      mobility: 32.805405
-      capacity: 10
-      firePower: 6
-      bulletSpeed: 24
-      fireRate: 6
-      rammingPower: 1
-      healthCap: 20.767574
-      healthRegen: 0.74169904
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 9
-      turnSpeed: 21.405405
-      gemCap: 8
-      peopleCap: 2
-    componentMass: 9.59288
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_08
     upgradeTreeShipName: 
@@ -888,26 +941,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 156.0715
-    powerScoreAtMaxLevel: 418.47266
+    powerScore: 124.74795
+    powerScoreAtMaxLevel: 305.16074
     powerScoreBreakdown:
-      offense: 97.08431
-      defense: 44.577168
-      energy: 21
+      offense: 49.042156
+      defense: 47.76125
+      energy: 29.7
       mobility: 25.4
-      capacity: 36.739677
-      firePower: 6.75465
-      bulletSpeed: 24
-      fireRate: 5.329662
+      capacity: 8.909372
+      firePower: 3.377325
+      bulletSpeed: 12
+      fireRate: 2.664831
       rammingPower: 1
-      healthCap: 43.040024
-      healthRegen: 1.5371438
-      energyCap: 18
-      energyRegen: 3
+      healthCap: 46.11431
+      healthRegen: 1.6469399
+      energyCap: 27
+      energyRegen: 2.7
       moveSpeed: 9
       turnSpeed: 14
-      gemCap: 29.391743
-      peopleCap: 7.3479357
+      gemCap: 73.47936
+      peopleCap: 6.245746
     componentMass: 12.241082
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_09
@@ -933,26 +986,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 150.24507
-    powerScoreAtMaxLevel: 407.49014
+    powerScore: 123.229866
+    powerScoreAtMaxLevel: 302.45972
     powerScoreBreakdown:
-      offense: 97
-      defense: 28.136969
-      energy: 21
+      offense: 49
+      defense: 30.146755
+      energy: 29.7
       mobility: 43.50811
-      capacity: 30
-      firePower: 6
-      bulletSpeed: 24
-      fireRate: 6
+      capacity: 7.275
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
       rammingPower: 1
-      healthCap: 27.166729
-      healthRegen: 0.9702405
-      energyCap: 18
-      energyRegen: 3
+      healthCap: 29.107212
+      healthRegen: 1.0395434
+      energyCap: 27
+      energyRegen: 2.7
       moveSpeed: 9
       turnSpeed: 32.10811
-      gemCap: 24
-      peopleCap: 6
+      gemCap: 60
+      peopleCap: 5.1000004
     componentMass: 10.158516
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_14
@@ -978,26 +1031,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 149.23048
-    powerScoreAtMaxLevel: 411.58096
+    powerScore: 124.048996
+    powerScoreAtMaxLevel: 311.218
     powerScoreBreakdown:
-      offense: 97
-      defense: 39.258644
-      energy: 24.087437
-      mobility: 31.485405
-      capacity: 29.199
-      firePower: 6
-      bulletSpeed: 24
-      fireRate: 6
+      offense: 49
+      defense: 42.06283
+      energy: 29.7
+      mobility: 36.805405
+      capacity: 7.080758
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
       rammingPower: 1
-      healthCap: 37.904896
-      healthRegen: 1.3537464
-      energyCap: 19.974947
-      energyRegen: 4.1124887
-      moveSpeed: 5.28
+      healthCap: 40.61239
+      healthRegen: 1.4504426
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 21.405405
-      gemCap: 23.3592
-      peopleCap: 5.8398
+      gemCap: 58.398003
+      peopleCap: 4.96383
     componentMass: 13.684374
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_10
@@ -1023,72 +1076,27 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 133.28029
-    powerScoreAtMaxLevel: 379.68057
+    powerScore: 110.611885
+    powerScoreAtMaxLevel: 284.34378
     powerScoreBreakdown:
-      offense: 97
-      defense: 36.847565
-      energy: 21.874136
-      mobility: 20.782703
-      capacity: 28.57589
-      firePower: 6
-      bulletSpeed: 24
-      fireRate: 6
+      offense: 49
+      defense: 39.47953
+      energy: 29.7
+      mobility: 26.102703
+      capacity: 6.929653
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
       rammingPower: 1
-      healthCap: 35.576958
-      healthRegen: 1.2706058
-      energyCap: 18.139528
-      energyRegen: 3.7346084
-      moveSpeed: 5.28
+      healthCap: 38.118168
+      healthRegen: 1.3613632
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 10.7027025
-      gemCap: 22.860712
-      peopleCap: 5.715178
+      gemCap: 57.15178
+      peopleCap: 4.8579016
     componentMass: 12.340081
-    lockedInUpgradeTree: 0
-  - chassisId: ProtonLegacy_20
-    upgradeTreeShipName: 
-    prefab: {fileID: 4589359875737723059, guid: 4eb658a3d46a8d34592dd122120dbfff, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 9d0ef70e0777211418b79d08a8bebaf5, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 9d0ef70e0777211418b79d08a8bebaf5, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: b6010cb891f4b334389aa6ef9c36137a, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 7afbf54e2861ea04986f274d594becc1, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 9d3fd4f179ae86b4ba0b3943f9695398, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 6be553d3ed5eb6a4d9cabab80f7c0ecb, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 5
-    powerScore: 205.3442
-    powerScoreAtMaxLevel: 585.4744
-    powerScoreBreakdown:
-      offense: 97
-      defense: 49.831696
-      energy: 40.827087
-      mobility: 31.485405
-      capacity: 58
-      firePower: 6
-      bulletSpeed: 24
-      fireRate: 6
-      rammingPower: 1
-      healthCap: 48.11336
-      healthRegen: 1.7183344
-      energyCap: 33.85661
-      energyRegen: 6.9704776
-      moveSpeed: 5.28
-      turnSpeed: 21.405405
-      gemCap: 46.4
-      peopleCap: 11.6
-    componentMass: 14.646112
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_15
     upgradeTreeShipName: 
@@ -1113,27 +1121,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 181.58472
-    powerScoreAtMaxLevel: 532.0156
+    powerScore: 138.08118
+    powerScoreAtMaxLevel: 379.43265
     powerScoreBreakdown:
-      offense: 97
-      defense: 53.35697
-      energy: 23.636408
-      mobility: 24.08
-      capacity: 55.311337
-      firePower: 6
-      bulletSpeed: 24
-      fireRate: 6
+      offense: 49
+      defense: 57.168182
+      energy: 29.7
+      mobility: 29.4
+      capacity: 13.413
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
       rammingPower: 1
-      healthCap: 51.517075
-      healthRegen: 1.8398957
-      energyCap: 19.600924
-      energyRegen: 4.035484
-      moveSpeed: 5.28
+      healthCap: 55.196865
+      healthRegen: 1.9713166
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 14
-      gemCap: 44.24907
-      peopleCap: 11.062267
+      gemCap: 110.62268
+      peopleCap: 9.402928
     componentMass: 14.104599
+    lockedInUpgradeTree: 0
+  - chassisId: ProtonLegacy_11
+    upgradeTreeShipName: 
+    prefab: {fileID: 2066968638964048452, guid: 170707cf13f5dc64d8dd83af391e1140, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: d4347bae1bfea484daefa4c457d1ea2b, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: d4347bae1bfea484daefa4c457d1ea2b, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 0c905174e988f97418c73f6f28059f1e, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 41633c64021fc754387e971670fda127, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: dbcfc399fd3939a469545c495948f574, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 15f0fa8ec89e5aa4e9e8463bb25343f5, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 5
+    powerScore: 110.34469
+    powerScoreAtMaxLevel: 309.17557
+    powerScoreBreakdown:
+      offense: 49
+      defense: 27.964285
+      energy: 29.7
+      mobility: 32.805405
+      capacity: 7.275
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 27
+      healthRegen: 0.96428573
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 9
+      turnSpeed: 21.405405
+      gemCap: 60
+      peopleCap: 5.1000004
+    componentMass: 10.58576
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_17
     upgradeTreeShipName: 
@@ -1158,26 +1211,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 181.9567
-    powerScoreAtMaxLevel: 643.85254
+    powerScore: 105.59716
+    powerScoreAtMaxLevel: 306.34363
     powerScoreBreakdown:
-      offense: 193
-      defense: 22.108507
-      energy: 44.280006
-      mobility: 31.485405
-      capacity: 28.88277
-      firePower: 12
-      bulletSpeed: 48
-      fireRate: 12
+      offense: 49
+      defense: 23.687685
+      energy: 29.7
+      mobility: 36.805405
+      capacity: 7.0040717
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
       rammingPower: 1
-      healthCap: 21.346146
-      healthRegen: 0.7623624
-      energyCap: 36.720005
-      energyRegen: 7.56
-      moveSpeed: 5.28
+      healthCap: 22.870869
+      healthRegen: 0.8168168
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 21.405405
-      gemCap: 23.106216
-      peopleCap: 5.776554
+      gemCap: 57.76554
+      peopleCap: 4.910071
     componentMass: 12.288277
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_12
@@ -1203,26 +1256,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 163.0233
-    powerScoreAtMaxLevel: 601.25244
+    powerScore: 100.324715
+    powerScoreAtMaxLevel: 294.4806
     powerScoreBreakdown:
-      offense: 193
-      defense: 24.60738
-      energy: 32.498127
-      mobility: 24.08
-      capacity: 26.63779
-      firePower: 12
-      bulletSpeed: 48
-      fireRate: 12
+      offense: 49
+      defense: 26.36505
+      energy: 29.7
+      mobility: 29.4
+      capacity: 6.4596643
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
       rammingPower: 1
-      healthCap: 23.75885
-      healthRegen: 0.8485305
-      energyCap: 26.949667
-      energyRegen: 5.54846
-      moveSpeed: 5.28
+      healthCap: 25.45591
+      healthRegen: 0.9091397
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 14
-      gemCap: 21.310232
-      peopleCap: 5.327558
+      gemCap: 53.27558
+      peopleCap: 4.5284243
     componentMass: 10.640129
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_07
@@ -1248,26 +1301,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 148.50182
-    powerScoreAtMaxLevel: 567.6824
+    powerScore: 97.169586
+    powerScoreAtMaxLevel: 281.0699
     powerScoreBreakdown:
-      offense: 195.08574
-      defense: 22.569372
-      energy: 21
+      offense: 49.521435
+      defense: 24.181469
+      energy: 29.700005
       mobility: 25.4
-      capacity: 26
-      firePower: 7.9324446
-      bulletSpeed: 48
-      fireRate: 18.153296
+      capacity: 6.305
+      firePower: 1.9831111
+      bulletSpeed: 12
+      fireRate: 4.538324
       rammingPower: 1
-      healthCap: 21.791119
-      healthRegen: 0.7782543
-      energyCap: 18
-      energyRegen: 3
+      healthCap: 23.347626
+      healthRegen: 0.8338438
+      energyCap: 27.000004
+      energyRegen: 2.7000003
       moveSpeed: 9
       turnSpeed: 14
-      gemCap: 20.8
-      peopleCap: 5.2
+      gemCap: 52
+      peopleCap: 4.42
     componentMass: 6.961963
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_19
@@ -1293,27 +1346,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 269.9531
-    powerScoreAtMaxLevel: 1078.32
+    powerScore: 143.5754
+    powerScoreAtMaxLevel: 441.21243
     powerScoreBreakdown:
-      offense: 291.52414
-      defense: 54.988304
-      energy: 47.45233
-      mobility: 35.600002
-      capacity: 60.82551
-      firePower: 13.486957
-      bulletSpeed: 72
-      fireRate: 24.037188
+      offense: 50.283096
+      defense: 58.91604
+      energy: 29.7
+      mobility: 35
+      capacity: 14.750187
+      firePower: 2.209173
+      bulletSpeed: 12
+      fireRate: 4.0739226
       rammingPower: 2
-      healthCap: 53.092155
-      healthRegen: 1.8961487
-      energyCap: 39.350716
-      energyRegen: 8.101617
-      moveSpeed: 7.2000003
+      healthCap: 56.884453
+      healthRegen: 2.0315876
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 12.000001
       turnSpeed: 14
-      gemCap: 48.660408
-      peopleCap: 12.165102
+      gemCap: 121.65102
+      peopleCap: 10.340338
     componentMass: 17.839695
+    lockedInUpgradeTree: 0
+  - chassisId: ProtonLegacy_20
+    upgradeTreeShipName: 
+    prefab: {fileID: 4589359875737723059, guid: 4eb658a3d46a8d34592dd122120dbfff, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 9d0ef70e0777211418b79d08a8bebaf5, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 9d0ef70e0777211418b79d08a8bebaf5, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: b6010cb891f4b334389aa6ef9c36137a, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 7afbf54e2861ea04986f274d594becc1, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 9d3fd4f179ae86b4ba0b3943f9695398, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 6be553d3ed5eb6a4d9cabab80f7c0ecb, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 6
+    powerScore: 142.36151
+    powerScoreAtMaxLevel: 430.28375
+    powerScoreBreakdown:
+      offense: 49
+      defense: 53.391098
+      energy: 29.7
+      mobility: 36.805405
+      capacity: 14.065001
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 51.550026
+      healthRegen: 1.8410724
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
+      turnSpeed: 21.405405
+      gemCap: 116
+      peopleCap: 9.86
+    componentMass: 14.646112
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_18
     upgradeTreeShipName: 
@@ -1338,26 +1436,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 216.90614
-    powerScoreAtMaxLevel: 800.34106
+    powerScore: 143.70642
+    powerScoreAtMaxLevel: 434.71997
     powerScoreBreakdown:
-      offense: 194.13239
-      defense: 59.82316
-      energy: 27.766293
-      mobility: 24.08
-      capacity: 53.199997
-      firePower: 8.836692
-      bulletSpeed: 48
-      fireRate: 16.29569
+      offense: 49.283096
+      defense: 64.09624
+      energy: 29.7
+      mobility: 29.4
+      capacity: 12.901001
+      firePower: 2.209173
+      bulletSpeed: 12
+      fireRate: 4.0739226
       rammingPower: 1
-      healthCap: 57.760292
-      healthRegen: 2.0628676
-      energyCap: 23.025707
-      energyRegen: 4.7405863
-      moveSpeed: 5.28
+      healthCap: 61.886024
+      healthRegen: 2.210215
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
       turnSpeed: 14
-      gemCap: 42.559998
-      peopleCap: 10.639999
+      gemCap: 106.4
+      peopleCap: 9.044001
     componentMass: 17.467112
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_13
@@ -1383,72 +1481,27 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 188.61333
-    powerScoreAtMaxLevel: 717.3333
+    powerScore: 126.07081
+    powerScoreAtMaxLevel: 380.97702
     powerScoreBreakdown:
-      offense: 193
-      defense: 38.896584
-      energy: 21
+      offense: 49
+      defense: 41.674904
+      energy: 29.7
       mobility: 32.805405
-      capacity: 38.31134
-      firePower: 12
-      bulletSpeed: 48
-      fireRate: 12
+      capacity: 9.290501
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
       rammingPower: 1
-      healthCap: 37.55532
-      healthRegen: 1.3412614
-      energyCap: 18
-      energyRegen: 3
+      healthCap: 40.23784
+      healthRegen: 1.4370658
+      energyCap: 27
+      energyRegen: 2.7
       moveSpeed: 9
       turnSpeed: 21.405405
-      gemCap: 30.649073
-      peopleCap: 7.662268
+      gemCap: 76.62268
+      peopleCap: 6.512928
     componentMass: 14.091189
-    lockedInUpgradeTree: 0
-  - chassisId: ProtonLegacy_11
-    upgradeTreeShipName: 
-    prefab: {fileID: 2066968638964048452, guid: 170707cf13f5dc64d8dd83af391e1140, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: d4347bae1bfea484daefa4c457d1ea2b, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: d4347bae1bfea484daefa4c457d1ea2b, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 0c905174e988f97418c73f6f28059f1e, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 41633c64021fc754387e971670fda127, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: dbcfc399fd3939a469545c495948f574, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 15f0fa8ec89e5aa4e9e8463bb25343f5, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 6
-    powerScore: 167.5054
-    powerScoreAtMaxLevel: 664.56354
-    powerScoreBreakdown:
-      offense: 193
-      defense: 26.1
-      energy: 21
-      mobility: 32.805405
-      capacity: 30
-      firePower: 12
-      bulletSpeed: 48
-      fireRate: 12
-      rammingPower: 1
-      healthCap: 25.2
-      healthRegen: 0.9000001
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 9
-      turnSpeed: 21.405405
-      gemCap: 24
-      peopleCap: 6
-    componentMass: 10.58576
     lockedInUpgradeTree: 0
   - chassisId: ProtonLegacy_16
     upgradeTreeShipName: 
@@ -1473,26 +1526,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 206.9466
-    powerScoreAtMaxLevel: 894.3393
+    powerScore: 118.60988
+    powerScoreAtMaxLevel: 372.50107
     powerScoreBreakdown:
-      offense: 290.1089
-      defense: 35.20875
-      energy: 28.176546
-      mobility: 31.485405
-      capacity: 28.95977
-      firePower: 15.916128
-      bulletSpeed: 72
-      fireRate: 21.192753
+      offense: 49.55444
+      defense: 37.72366
+      energy: 29.700005
+      mobility: 36.805405
+      capacity: 7.022744
+      firePower: 1.9580641
+      bulletSpeed: 12
+      fireRate: 4.596377
       rammingPower: 1
-      healthCap: 33.994656
-      healthRegen: 1.2140949
-      energyCap: 23.365917
-      energyRegen: 4.8106294
-      moveSpeed: 5.28
+      healthCap: 36.422844
+      healthRegen: 1.3008159
+      energyCap: 27.000004
+      energyRegen: 2.7000003
+      moveSpeed: 8.8
       turnSpeed: 21.405405
-      gemCap: 23.167816
-      peopleCap: 5.791954
+      gemCap: 57.91954
+      peopleCap: 4.923161
     componentMass: 16.584858
     lockedInUpgradeTree: 0
   teamMaterials:

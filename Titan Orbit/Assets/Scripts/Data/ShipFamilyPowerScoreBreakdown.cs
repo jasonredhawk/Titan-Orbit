@@ -8,11 +8,31 @@ namespace TitanOrbit.Data
     /// Ten-stat power breakdown for ship upgrade tree UI bars and gem-cost derivation.
     /// Holds both legacy five-category totals (offense/defense/energy/mobility/capacity) and per-stat
     /// display fields used by <see cref="UI.ShipUpgradeTreePowerBarUI"/>. Baked on chassis tiers at edit time.
+    /// <para>
+    /// [TITAN-ORBIT] <see cref="gemCap"/> / <see cref="peopleCap"/> store <b>raw</b> cargo numbers
+    /// (purchase cost uses raw gemCap × 2). Power-score totals and bar segments use
+    /// <see cref="WeightedGemCapForPowerScore"/> / <see cref="WeightedPeopleCapForPowerScore"/>
+    /// so a gem hold of 142 contributes ~14.2 — comparable to firePower ~13 — instead of drowning
+    /// combat stats.
+    /// </para>
     /// </summary>
     [Serializable]
     public struct ShipFamilyPowerScoreBreakdown
     {
         public const int DisplayStatCount = 10;
+
+        /// <summary>
+        /// Raw gem capacity is divided by this for power-score / bar contribution.
+        /// Example: gemCap 142 → power contribution 14.2.
+        /// </summary>
+        public const float GemCapPowerScoreDivisor = 10f;
+
+        /// <summary>
+        /// Raw people capacity divisor for power-score (milder than gems — cargo people matter
+        /// for capture but should not dominate firepower bars).
+        /// Example: peopleCap 40 → power contribution 10.
+        /// </summary>
+        public const float PeopleCapPowerScoreDivisor = 4f;
 
         public float offense;
         public float defense;
@@ -29,14 +49,24 @@ namespace TitanOrbit.Data
         public float energyRegen;
         public float moveSpeed;
         public float turnSpeed;
+        /// <summary>Raw max gems (purchase cost). Power bars use <see cref="WeightedGemCapForPowerScore"/>.</summary>
         public float gemCap;
+        /// <summary>Raw max people. Power bars use <see cref="WeightedPeopleCapForPowerScore"/>.</summary>
         public float peopleCap;
+
+        /// <summary>Gem contribution to power score / UI bars (raw ÷ <see cref="GemCapPowerScoreDivisor"/>).</summary>
+        public float WeightedGemCapForPowerScore =>
+            gemCap / Mathf.Max(0.01f, GemCapPowerScoreDivisor);
+
+        /// <summary>People contribution to power score / UI bars (raw ÷ <see cref="PeopleCapPowerScoreDivisor"/>).</summary>
+        public float WeightedPeopleCapForPowerScore =>
+            peopleCap / Mathf.Max(0.01f, PeopleCapPowerScoreDivisor);
 
         public float Total => offense + defense + energy + mobility + capacity;
 
         public float DisplayTotal =>
             firePower + bulletSpeed + healthCap + healthRegen + energyCap + energyRegen +
-            moveSpeed + turnSpeed + gemCap + peopleCap;
+            moveSpeed + turnSpeed + WeightedGemCapForPowerScore + WeightedPeopleCapForPowerScore;
 
         public bool HasDisplayStats => DisplayTotal > 0.01f;
 
@@ -101,8 +131,9 @@ namespace TitanOrbit.Data
                     case 5: return energyRegen;
                     case 6: return moveSpeed;
                     case 7: return turnSpeed;
-                    case 8: return gemCap;
-                    case 9: return peopleCap;
+                    // Power bars show weighted cargo so gem/people hold does not dwarf firePower.
+                    case 8: return WeightedGemCapForPowerScore;
+                    case 9: return WeightedPeopleCapForPowerScore;
                 }
 
                 return 0f;
@@ -126,8 +157,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Gem purchase cost for a chassis tier: 2× gem cap from breakdown, with level-based fallback.
-        /// [TITAN-ORBIT] Hull swaps and upgrades use this formula across orbit station and CardShop.
+        /// Gem purchase cost for a chassis tier: 2× <b>raw</b> gem cap from breakdown, with level-based fallback.
+        /// [TITAN-ORBIT] Uses unweighted <see cref="gemCap"/> — power-score ÷10 must not shrink shop prices.
         /// </summary>
         public static int GetPurchaseGemCost(ShipFamilyChassisTierEntry tier, int shipLevel)
         {
@@ -144,6 +175,13 @@ namespace TitanOrbit.Data
         public static ShipFamilyPowerScoreBreakdown FromSummedShipStats(ShipComponentAbilityStats s)
         {
             // --- FromSummedShipStats ---
+            // Raw cargo stored; capacity category + DisplayTotal use weighted helpers via properties
+            // after construction (capacity field stores the weighted sum for legacy Total).
+            float rawGems = s.maxGems;
+            float rawPeople = s.maxPeople;
+            float weightedGems = rawGems / Mathf.Max(0.01f, GemCapPowerScoreDivisor);
+            float weightedPeople = rawPeople / Mathf.Max(0.01f, PeopleCapPowerScoreDivisor);
+
             return new ShipFamilyPowerScoreBreakdown
             {
                 firePower = s.firePower,
@@ -156,13 +194,13 @@ namespace TitanOrbit.Data
                 energyRegen = s.energyRegen,
                 moveSpeed = s.moveSpeed,
                 turnSpeed = s.turnSpeed,
-                gemCap = s.maxGems,
-                peopleCap = s.maxPeople,
+                gemCap = rawGems,
+                peopleCap = rawPeople,
                 offense = s.firePower + s.bulletSpeed + s.bulletRange + s.fireRate + s.rammingPower,
                 defense = s.healthCap + s.healthRegen,
                 energy = s.energyCap + s.energyRegen,
                 mobility = s.moveSpeed + s.turnSpeed + s.accelerationCap,
-                capacity = s.maxGems + s.maxPeople
+                capacity = weightedGems + weightedPeople
             };
         }
     }

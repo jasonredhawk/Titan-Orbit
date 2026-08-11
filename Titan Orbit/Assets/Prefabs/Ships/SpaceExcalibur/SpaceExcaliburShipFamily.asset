@@ -13,39 +13,45 @@ MonoBehaviour:
   m_Name: SpaceExcaliburShipFamily
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
   familyId: SpaceExcalibur
+  shipLevelStatGrowthFraction: 0.1
   defaultFallbackStats:
     firePower: 3
-    firePowerPerLevel: 0.75
+    firePowerPerAbilityLevel: 0.75
     bulletSpeed: 12
-    bulletSpeedPerLevel: 3
+    bulletSpeedPerAbilityLevel: 3
     bulletRange: 0
-    bulletRangePerLevel: 0
+    bulletRangePerAbilityLevel: 0
     fireRate: 3
-    fireRatePerLevel: 0
+    fireRatePerAbilityLevel: 0
     rammingPower: 1
-    rammingPowerPerLevel: 0.25
+    rammingPowerPerAbilityLevel: 0.25
     healthCap: 6.3
-    healthCapPerLevel: 1.575
+    healthCapPerAbilityLevel: 1.575
     healthRegen: 0.22500002
-    healthRegenPerLevel: 0.056250006
+    healthRegenPerAbilityLevel: 0.056250006
     energyCap: 18
-    energyCapPerLevel: 4.5
+    energyCapPerAbilityLevel: 4.5
     energyRegen: 3
-    energyRegenPerLevel: 0.75
+    energyRegenPerAbilityLevel: 0.75
     moveSpeed: 9
-    moveSpeedPerLevel: 1.8000001
+    moveSpeedPerAbilityLevel: 1.8000001
     accelerationCap: 2.4
-    accelerationCapPerLevel: 0.6
+    accelerationCapPerAbilityLevel: 0.6
+    extraSpeedPercent: 0
+    extraSpeedPercentPerAbilityLevel: 0
+    extraSpeedEnergyDrain: 0
+    extraSpeedEnergyDrainPerAbilityLevel: 0
     turnSpeed: 14
-    turnSpeedPerLevel: 3.5
+    turnSpeedPerAbilityLevel: 3.5
     maxGems: 8
-    maxGemsPerLevel: 2
+    maxGemsPerAbilityLevel: 2
     tractorBeamDistance: 3
-    tractorBeamDistancePerLevel: 0.75
+    tractorBeamDistancePerAbilityLevel: 0.75
     tractorBeamPower: 4
-    tractorBeamPowerPerLevel: 1
+    tractorBeamPowerPerAbilityLevel: 1
     maxPeople: 2
-    maxPeoplePerLevel: 0
+    maxPeoplePerAbilityLevel: 0
+    extraStackWeight: 0
   specialBonuses:
     moveSpeedMul: 1
     accelerationMul: 1
@@ -59,12 +65,14 @@ MonoBehaviour:
     healthRegenMul: 1
     energyCapMul: 1
     energyRegenMul: 1
-    overdrivePercentMul: 1
+    extraSpeedPercentMul: 1
+    extraSpeedEnergyDrainMul: 1
     maxGemsMul: 1
     maxPeopleMul: 1
     tractorDistanceMul: 1
     tractorPowerMul: 1
   bulletPrefabIndex: 0
+  weaponFireMode: 0
   planetaryDefense: {fileID: 0}
   cameraFollowSettings: {fileID: 11400000, guid: 90d7e8197d9477d40bc1400865e6a4af, type: 2}
   damageSmokeSettings: {fileID: 11400000, guid: 9a2f168e386dd484c9335fb37c499705, type: 2}
@@ -74,40 +82,45 @@ MonoBehaviour:
   components:
   - componentId: Ammunition
     displayName: Weapon 1
-    statCategories: 00000000
+    statCategories: 02000000
     stats:
-      firePower: 3
-      firePowerPerLevel: 0.75
-      bulletSpeed: 12
-      bulletSpeedPerLevel: 3
-      bulletRange: 30
-      bulletRangePerLevel: 7.5
-      fireRate: 3
-      fireRatePerLevel: 0
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 78e1cd1c011bb174185ed119c33cdeed, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -135,37 +148,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 70cf505a152461f46a98fe7581dd7367, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -193,37 +211,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 4.05
-      healthCapPerLevel: 1.0125
-      healthRegen: 0.14464287
-      healthRegenPerLevel: 0.03616072
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 58977d332a184f149858928cf54486c5, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -251,37 +274,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: af5fa48f52ed5874185cc8abfd6a3fb7, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -309,37 +337,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 4.05
-      healthCapPerLevel: 1.0125
-      healthRegen: 0.14464287
-      healthRegenPerLevel: 0.03616072
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: ea74002d6276c26478ad0f69ffa734e5, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -367,37 +400,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 4.95
-      healthCapPerLevel: 1.2375
-      healthRegen: 0.17678574
-      healthRegenPerLevel: 0.044196434
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 10.125
+      healthCapPerAbilityLevel: 2.53125
+      healthRegen: 0.36160713
+      healthRegenPerAbilityLevel: 0.09040178
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: c46d124919599fe4d99194ad12b641de, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -425,37 +463,42 @@ MonoBehaviour:
     statCategories: 000000000100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 1
-      rammingPowerPerLevel: 0.25
-      healthCap: 6.3
-      healthCapPerLevel: 1.575
-      healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      rammingPowerPerAbilityLevel: 0.25
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 8
-      maxGemsPerLevel: 2
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      tractorBeamPowerPerAbilityLevel: 0
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 97a6f4df425719e428ba924f7ab4f36b, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -483,37 +526,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: c614d7ee1ee41dc43b503b7dedc4d9ec, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -538,40 +586,45 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: Machinegun
     displayName: Weapon 1
-    statCategories: 00000000
+    statCategories: 0000000002000000
     stats:
       firePower: 3
-      firePowerPerLevel: 0.75
+      firePowerPerAbilityLevel: 0.75
       bulletSpeed: 12
-      bulletSpeedPerLevel: 3
+      bulletSpeedPerAbilityLevel: 3
       bulletRange: 30
-      bulletRangePerLevel: 7.5
+      bulletRangePerAbilityLevel: 7.5
       fireRate: 3
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.25
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 7e2a8e62d72583c4f861c7a5dc08ec5d, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -596,40 +649,45 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: Missile
     displayName: Weapon 1
-    statCategories: 00000000
+    statCategories: 0000000002000000
     stats:
       firePower: 12
-      firePowerPerLevel: 3
+      firePowerPerAbilityLevel: 3
       bulletSpeed: 10
-      bulletSpeedPerLevel: 2.5
+      bulletSpeedPerAbilityLevel: 2.5
       bulletRange: 36
-      bulletRangePerLevel: 9
+      bulletRangePerAbilityLevel: 9
       fireRate: 1
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.25
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 684d64db3f739354ab31753f40db5363, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -654,40 +712,45 @@ MonoBehaviour:
     propulsionVfxScale: 1
   - componentId: Missile_Launcher
     displayName: Weapon 1
-    statCategories: 00000000
+    statCategories: 02000000
     stats:
-      firePower: 12
-      firePowerPerLevel: 3
-      bulletSpeed: 10
-      bulletSpeedPerLevel: 2.5
-      bulletRange: 36
-      bulletRangePerLevel: 9
-      fireRate: 1
-      fireRatePerLevel: 0
+      firePower: 0
+      firePowerPerAbilityLevel: 0
+      bulletSpeed: 0
+      bulletSpeedPerAbilityLevel: 0
+      bulletRange: 0
+      bulletRangePerAbilityLevel: 0
+      fireRate: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 00f5ec4a3483ab44ea97bbf3e3f8b811, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -715,37 +778,42 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 6.3
-      healthCapPerLevel: 1.575
-      healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 8
-      maxGemsPerLevel: 2
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 3
-      tractorBeamDistancePerLevel: 0.75
+      tractorBeamDistancePerAbilityLevel: 0.75
       tractorBeamPower: 4
-      tractorBeamPowerPerLevel: 1
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      tractorBeamPowerPerAbilityLevel: 1
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 67e0734e198c6a84fa975f08b50a6f07, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -773,37 +841,42 @@ MonoBehaviour:
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 3.15
-      healthCapPerLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 309b84f9bdb8fff438fa2e7677b4960f, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -831,37 +904,42 @@ MonoBehaviour:
     statCategories: 0300000002000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 23.800003
-      energyCapPerLevel: 5.950001
-      energyRegen: 4.9
-      energyRegenPerLevel: 1.225
-      moveSpeed: 6
-      moveSpeedPerLevel: 1.2
-      accelerationCap: 3
-      accelerationCapPerLevel: 0.6
+      healthRegenPerAbilityLevel: 0
+      energyCap: 21
+      energyCapPerAbilityLevel: 5.25
+      energyRegen: 2.1000001
+      energyRegenPerAbilityLevel: 0.52500004
+      moveSpeed: 8
+      moveSpeedPerAbilityLevel: 1.6
+      accelerationCap: 6
+      accelerationCapPerAbilityLevel: 1.2
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 4.1621623
-      turnSpeedPerLevel: 1.0405406
+      turnSpeedPerAbilityLevel: 1.0405406
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: e8395d373bfb05847adc97897301b435, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -889,37 +967,42 @@ MonoBehaviour:
     statCategories: 0300000002000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 23.800003
-      energyCapPerLevel: 5.950001
-      energyRegen: 4.9
-      energyRegenPerLevel: 1.225
-      moveSpeed: 6
-      moveSpeedPerLevel: 1.2
-      accelerationCap: 3
-      accelerationCapPerLevel: 0.6
+      healthRegenPerAbilityLevel: 0
+      energyCap: 21
+      energyCapPerAbilityLevel: 5.25
+      energyRegen: 2.1000001
+      energyRegenPerAbilityLevel: 0.52500004
+      moveSpeed: 8
+      moveSpeedPerAbilityLevel: 1.6
+      accelerationCap: 6
+      accelerationCapPerAbilityLevel: 1.2
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 4.1621623
-      turnSpeedPerLevel: 1.0405406
+      turnSpeedPerAbilityLevel: 1.0405406
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 5eb761522aceb964da33215c70e1c7a5, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -947,37 +1030,42 @@ MonoBehaviour:
     statCategories: 03000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerAbilityLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerAbilityLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 0b7ee0a0bce35044f906c7ffdfc29689, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -1005,37 +1093,42 @@ MonoBehaviour:
     statCategories: 0300000002000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerAbilityLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerAbilityLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 23.800003
-      energyCapPerLevel: 5.950001
-      energyRegen: 4.9
-      energyRegenPerLevel: 1.225
-      moveSpeed: 6
-      moveSpeedPerLevel: 1.2
-      accelerationCap: 3
-      accelerationCapPerLevel: 0.6
+      healthRegenPerAbilityLevel: 0
+      energyCap: 21
+      energyCapPerAbilityLevel: 5.25
+      energyRegen: 2.1000001
+      energyRegenPerAbilityLevel: 0.52500004
+      moveSpeed: 8
+      moveSpeedPerAbilityLevel: 1.6
+      accelerationCap: 6
+      accelerationCapPerAbilityLevel: 1.2
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 4.1621623
-      turnSpeedPerLevel: 1.0405406
+      turnSpeedPerAbilityLevel: 1.0405406
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerAbilityLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerAbilityLevel: 0
+      extraStackWeight: 0.1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 35c076c57e25f6145a3eaa9524338a7e, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -1063,37 +1156,42 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 6.3
-      healthCapPerLevel: 1.575
-      healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 8
-      maxGemsPerLevel: 2
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 3
-      tractorBeamDistancePerLevel: 0.75
+      tractorBeamDistancePerAbilityLevel: 0.75
       tractorBeamPower: 4
-      tractorBeamPowerPerLevel: 1
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      tractorBeamPowerPerAbilityLevel: 1
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 09f49a45aeb3ebb4c93d1717abb2a6cc, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -1121,37 +1219,42 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 6.3
-      healthCapPerLevel: 1.575
-      healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 8
-      maxGemsPerLevel: 2
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 3
-      tractorBeamDistancePerLevel: 0.75
+      tractorBeamDistancePerAbilityLevel: 0.75
       tractorBeamPower: 4
-      tractorBeamPowerPerLevel: 1
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      tractorBeamPowerPerAbilityLevel: 1
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 211a95843f9770e408489c4d6de67ce0, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -1179,37 +1282,42 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 8.1
-      healthCapPerLevel: 2.025
-      healthRegen: 0.28928575
-      healthRegenPerLevel: 0.07232144
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 13.5
+      healthCapPerAbilityLevel: 3.375
+      healthRegen: 0.48214287
+      healthRegenPerAbilityLevel: 0.12053572
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 16
-      maxGemsPerLevel: 4
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 40
+      maxGemsPerAbilityLevel: 10
       tractorBeamDistance: 6
-      tractorBeamDistancePerLevel: 1.5
+      tractorBeamDistancePerAbilityLevel: 1.5
       tractorBeamPower: 8
-      tractorBeamPowerPerLevel: 2
-      maxPeople: 4
-      maxPeoplePerLevel: 1
+      tractorBeamPowerPerAbilityLevel: 2
+      maxPeople: 3.4
+      maxPeoplePerAbilityLevel: 0.85
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 6cff265181dabf940ad1dcce2ecd71a6, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -1237,37 +1345,42 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerAbilityLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerAbilityLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerAbilityLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerAbilityLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
-      healthCap: 9.9
-      healthCapPerLevel: 2.475
-      healthRegen: 0.35357147
-      healthRegenPerLevel: 0.08839287
+      rammingPowerPerAbilityLevel: 0
+      healthCap: 20.25
+      healthCapPerAbilityLevel: 5.0625
+      healthRegen: 0.72321427
+      healthRegenPerAbilityLevel: 0.18080357
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerAbilityLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerAbilityLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerAbilityLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerAbilityLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 24
-      maxGemsPerLevel: 6
+      turnSpeedPerAbilityLevel: 0
+      maxGems: 60
+      maxGemsPerAbilityLevel: 15
       tractorBeamDistance: 9
-      tractorBeamDistancePerLevel: 2.25
+      tractorBeamDistancePerAbilityLevel: 2.25
       tractorBeamPower: 12
-      tractorBeamPowerPerLevel: 3
-      maxPeople: 6
-      maxPeoplePerLevel: 1.5
+      tractorBeamPowerPerAbilityLevel: 3
+      maxPeople: 5.1000004
+      maxPeoplePerAbilityLevel: 1.2750001
+      extraStackWeight: 1
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 0bca8f83a4a43af41a40cf6d73469897, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -1314,26 +1427,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 1
-    powerScore: 254.72112
-    powerScoreAtMaxLevel: 491.4725
+    powerScore: 98.12424
+    powerScoreAtMaxLevel: 172.71228
     powerScoreBreakdown:
-      offense: 194.19032
-      defense: 25.730785
-      energy: 130.04816
-      mobility: 46.572975
-      capacity: 10
-      firePower: 8.769196
-      bulletSpeed: 48
-      fireRate: 16.421124
+      offense: 49.29837
+      defense: 33.564594
+      energy: 29.700005
+      mobility: 27.243244
+      capacity: 2.425
+      firePower: 2.1913934
+      bulletSpeed: 12
+      fireRate: 4.1069765
       rammingPower: 1
-      healthCap: 24.843517
-      healthRegen: 0.88726854
-      energyCap: 107.84481
-      energyRegen: 22.203342
-      moveSpeed: 7.2000003
-      turnSpeed: 24.972975
-      gemCap: 8
-      peopleCap: 2
+      healthCap: 32.407196
+      healthRegen: 1.1573999
+      energyCap: 27.000004
+      energyRegen: 2.7000003
+      moveSpeed: 12.000001
+      turnSpeed: 6.243244
+      gemCap: 20
+      peopleCap: 1.7
     componentMass: 10.732004
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_10
@@ -1359,26 +1472,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 235.15154
-    powerScoreAtMaxLevel: 537.81067
+    powerScore: 147.25351
+    powerScoreAtMaxLevel: 274.87512
     powerScoreBreakdown:
-      offense: 196.60583
-      defense: 63.615334
-      energy: 47.642014
-      mobility: 18.404325
-      capacity: 55.30737
-      firePower: 6.982497
-      bulletSpeed: 48
-      fireRate: 20.623337
+      offense: 49.887596
+      defense: 77.010376
+      energy: 29.7
+      mobility: 19.978378
+      capacity: 13.412037
+      firePower: 1.7527199
+      bulletSpeed: 12
+      fireRate: 5.1348763
       rammingPower: 1
-      healthCap: 61.4217
-      healthRegen: 2.1936324
-      energyCap: 39.50801
-      energyRegen: 8.134001
-      moveSpeed: 5.28
-      turnSpeed: 8.324325
-      gemCap: 44.245895
-      peopleCap: 11.061474
+      healthCap: 74.35484
+      healthRegen: 2.65553
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 8.8
+      turnSpeed: 4.5783787
+      gemCap: 110.61474
+      peopleCap: 9.402253
     componentMass: 16.615372
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_12
@@ -1404,72 +1517,27 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 313.4201
-    powerScoreAtMaxLevel: 667.08307
+    powerScore: 143.23225
+    powerScoreAtMaxLevel: 271.43762
     powerScoreBreakdown:
-      offense: 193.86905
-      defense: 49.695305
-      energy: 120.13352
-      mobility: 53.61514
-      capacity: 49.6
-      firePower: 9.176146
-      bulletSpeed: 48
-      fireRate: 15.692902
+      offense: 49.219772
+      defense: 67.75429
+      energy: 29.7
+      mobility: 29.059462
+      capacity: 12.028
+      firePower: 2.2905
+      bulletSpeed: 12
+      fireRate: 3.9292731
       rammingPower: 1
-      healthCap: 47.981674
-      healthRegen: 1.7136316
-      energyCap: 99.622925
-      energyRegen: 20.5106
-      moveSpeed: 7.6800003
-      turnSpeed: 29.135138
-      gemCap: 39.68
-      peopleCap: 9.92
+      healthCap: 65.41793
+      healthRegen: 2.3363547
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 12.800001
+      turnSpeed: 6.6594605
+      gemCap: 99.200005
+      peopleCap: 8.432
     componentMass: 14.27779
-    lockedInUpgradeTree: 0
-  - chassisId: SpaceExcalibur_11
-    upgradeTreeShipName: 
-    prefab: {fileID: 1245337896395948, guid: 2be0e9830f10f4841b05c672c4fe0937, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 676d2b17935b74942b482edf482c184d, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 676d2b17935b74942b482edf482c184d, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: f2002f6a44d1a524fb59fbfb0360ad5b, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 84ec7d89067bfa740b6c620f77b2b978, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: fa1ba2a39006ffb4dba513771abeca20, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: c215bfbf5df62464bac1571dd2dbed01, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 3
-    powerScore: 441.62466
-    powerScoreAtMaxLevel: 980.8946
-    powerScoreBreakdown:
-      offense: 194.26689
-      defense: 94.2754
-      energy: 114.80001
-      mobility: 32.48865
-      capacity: 152.97516
-      firePower: 8.68546
-      bulletSpeed: 48
-      fireRate: 16.581425
-      rammingPower: 1
-      healthCap: 91.02452
-      healthRegen: 3.2508757
-      energyCap: 95.20001
-      energyRegen: 19.6
-      moveSpeed: 6.2400002
-      turnSpeed: 16.64865
-      gemCap: 122.38013
-      peopleCap: 30.595032
-    componentMass: 18.591076
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_09
     upgradeTreeShipName: 
@@ -1494,26 +1562,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 491.87854
-    powerScoreAtMaxLevel: 1085.2719
+    powerScore: 161.13441
+    powerScoreAtMaxLevel: 345.91586
     powerScoreBreakdown:
-      offense: 194.81107
-      defense: 67.89342
-      energy: 246.52837
-      mobility: 60.6573
-      capacity: 79.84279
-      firePower: 8.1566925
-      bulletSpeed: 48
-      fireRate: 17.654366
+      offense: 49.445793
+      defense: 77.3517
+      energy: 29.700005
+      mobility: 30.875679
+      capacity: 19.361876
+      firePower: 2.04516
+      bulletSpeed: 12
+      fireRate: 4.400634
       rammingPower: 1
-      healthCap: 65.55226
-      healthRegen: 2.3411522
-      energyCap: 204.43816
-      energyRegen: 42.090206
-      moveSpeed: 8.16
-      turnSpeed: 33.2973
-      gemCap: 63.87423
-      peopleCap: 15.968557
+      healthCap: 74.6844
+      healthRegen: 2.6673
+      energyCap: 27.000004
+      energyRegen: 2.7000003
+      moveSpeed: 13.600001
+      turnSpeed: 7.0756764
+      gemCap: 159.68556
+      peopleCap: 13.573274
     componentMass: 22.888412
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_01
@@ -1539,72 +1607,117 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 239.06369
-    powerScoreAtMaxLevel: 665.4378
+    powerScore: 137.30092
+    powerScoreAtMaxLevel: 299.08002
     powerScoreBreakdown:
-      offense: 242.68184
-      defense: 51.48691
-      energy: 57.400005
-      mobility: 18.404325
-      capacity: 44.676956
-      firePower: 11.895496
-      bulletSpeed: 60
-      fireRate: 19.786348
+      offense: 49.399914
+      defense: 69.30184
+      energy: 29.700006
+      mobility: 19.978378
+      capacity: 10.834164
+      firePower: 2.0865302
+      bulletSpeed: 12
+      fireRate: 4.313382
       rammingPower: 1
-      healthCap: 49.711502
-      healthRegen: 1.775411
-      energyCap: 47.600006
-      energyRegen: 9.8
-      moveSpeed: 5.28
-      turnSpeed: 8.324325
-      gemCap: 35.741566
-      peopleCap: 8.935391
+      healthCap: 66.912125
+      healthRegen: 2.3897188
+      energyCap: 27.000006
+      energyRegen: 2.7000008
+      moveSpeed: 8.8
+      turnSpeed: 4.5783787
+      gemCap: 89.35392
+      peopleCap: 7.595083
     componentMass: 11.695979
     lockedInUpgradeTree: 0
-  - chassisId: SpaceExcalibur_17
+  - chassisId: SpaceExcalibur_06
     upgradeTreeShipName: 
-    prefab: {fileID: 1073909383232394, guid: 59788f76bfbf44c47a383b9bee66d8db, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 45da8342028a98c418d34ef1caf64307, type: 3}
+    prefab: {fileID: 1430591442999010, guid: 12108e32b36bf7b4a9eabd000d00eab7, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: f33dd050b63131f448afb0d1d411ab60, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 45da8342028a98c418d34ef1caf64307, type: 3}
+      sprite: {fileID: 21300000, guid: f33dd050b63131f448afb0d1d411ab60, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: bd6949ec1ac32f04fa5e42251790f117, type: 3}
+      sprite: {fileID: 21300000, guid: fa85932a0fe691644b6e109f8e694ccd, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 03213686d4f53534f99a1ea57e4e4d69, type: 3}
+      sprite: {fileID: 21300000, guid: 0ba2a283df0b12b488f017712190f740, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: dd637fe95a7a1ba4f9d02ad4c94d131c, type: 3}
+      sprite: {fileID: 21300000, guid: 98e6bcffbfb63f94096a7a623c5d41a9, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: dcbb43caa25210b4196b7d282f2cae38, type: 3}
+      sprite: {fileID: 21300000, guid: a894e144d2855564487edbee2d3a0c26, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 3
+    powerScore: 341.194
+    powerScoreAtMaxLevel: 667.0882
+    powerScoreBreakdown:
+      offense: 68.2538
+      defense: 56.497948
+      energy: 235.45183
+      mobility: 19.978378
+      capacity: 9.620705
+      firePower: 14.24514
+      bulletSpeed: 12
+      fireRate: 5.0086584
+      rammingPower: 1
+      healthCap: 54.549744
+      healthRegen: 1.948205
+      energyCap: 214.04712
+      energyRegen: 21.404713
+      moveSpeed: 8.8
+      turnSpeed: 4.5783787
+      gemCap: 79.346016
+      peopleCap: 6.7444115
+    componentMass: 12.026281
+    lockedInUpgradeTree: 0
+  - chassisId: SpaceExcalibur_11
+    upgradeTreeShipName: 
+    prefab: {fileID: 1245337896395948, guid: 2be0e9830f10f4841b05c672c4fe0937, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 676d2b17935b74942b482edf482c184d, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 676d2b17935b74942b482edf482c184d, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: f2002f6a44d1a524fb59fbfb0360ad5b, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 84ec7d89067bfa740b6c620f77b2b978, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: fa1ba2a39006ffb4dba513771abeca20, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: c215bfbf5df62464bac1571dd2dbed01, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 672.8793
-    powerScoreAtMaxLevel: 1600.4752
+    powerScore: 224.09892
+    powerScoreAtMaxLevel: 514.2578
     powerScoreBreakdown:
-      offense: 194.49095
-      defense: 131.49286
-      energy: 242.42885
-      mobility: 74.74162
-      capacity: 191.7616
-      firePower: 8.45437
-      bulletSpeed: 48
-      fireRate: 17.03658
+      offense: 49.2951
+      defense: 127.296486
+      energy: 29.700005
+      mobility: 23.610811
+      capacity: 37.096478
+      firePower: 2.195147
+      bulletSpeed: 12
+      fireRate: 4.0999537
       rammingPower: 1
-      healthCap: 126.95862
-      healthRegen: 4.5342364
-      energyCap: 201.03856
-      energyRegen: 41.39029
-      moveSpeed: 9.12
-      turnSpeed: 41.621624
-      gemCap: 153.40927
-      peopleCap: 38.352318
-    componentMass: 32.18712
+      healthCap: 122.90695
+      healthRegen: 4.389534
+      energyCap: 27.000004
+      energyRegen: 2.7000003
+      moveSpeed: 10.400001
+      turnSpeed: 5.4108114
+      gemCap: 305.95032
+      peopleCap: 26.00578
+    componentMass: 18.591076
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_02
     upgradeTreeShipName: 
@@ -1629,27 +1742,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 397.7469
-    powerScoreAtMaxLevel: 1266.7523
+    powerScore: 432.7358
+    powerScoreAtMaxLevel: 942.83167
     powerScoreBreakdown:
-      offense: 430.86926
-      defense: 91.010635
-      energy: 28.700003
-      mobility: 11.362163
-      capacity: 127.66325
-      firePower: 53.41085
-      bulletSpeed: 88
-      fireRate: 24.458427
+      offense: 68.09001
+      defense: 101.843735
+      energy: 262.84158
+      mobility: 18.162163
+      capacity: 30.95834
+      firePower: 12.929997
+      bulletSpeed: 12
+      fireRate: 6.1600137
       rammingPower: 1
-      healthCap: 87.87234
-      healthRegen: 3.138298
-      energyCap: 23.800003
-      energyRegen: 4.9
-      moveSpeed: 4.8
+      healthCap: 98.33188
+      healthRegen: 3.5118527
+      energyCap: 238.9469
+      energyRegen: 23.89469
+      moveSpeed: 8
       turnSpeed: 4.1621623
-      gemCap: 102.1306
-      peopleCap: 25.53265
+      gemCap: 255.3265
+      peopleCap: 21.702755
     componentMass: 15.633899
+    lockedInUpgradeTree: 0
+  - chassisId: SpaceExcalibur_04
+    upgradeTreeShipName: 
+    prefab: {fileID: 1152214231295606, guid: 069d364ac21694f4d86514710fc9f4e8, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 4ff219cc3130e544ba403ce56e44468f, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 4ff219cc3130e544ba403ce56e44468f, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 460159ea908fa854ca46803934956af7, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 3e6c8c306d4eeaa4bb494d892f96aefd, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 8d6617c0edd44224aa34b0755e556a18, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 672d8b53d910201498e5858dc6a5128c, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 4
+    powerScore: 495.54428
+    powerScoreAtMaxLevel: 1069.4767
+    powerScoreBreakdown:
+      offense: 71.47062
+      defense: 96.03139
+      energy: 335.1444
+      mobility: 19.978378
+      capacity: 22.78757
+      firePower: 16.20253
+      bulletSpeed: 12
+      fireRate: 6.2680893
+      rammingPower: 1
+      healthCap: 92.71996
+      healthRegen: 3.311427
+      energyCap: 304.67673
+      energyRegen: 30.467672
+      moveSpeed: 8.8
+      turnSpeed: 4.5783787
+      gemCap: 187.93872
+      peopleCap: 15.974792
+    componentMass: 15.888716
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_14
     upgradeTreeShipName: 
@@ -1674,72 +1832,27 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 366.16812
-    powerScoreAtMaxLevel: 1228.9587
+    powerScore: 329.71533
+    powerScoreAtMaxLevel: 737.1439
     powerScoreBreakdown:
-      offense: 428.52457
-      defense: 80.08035
-      energy: 46.494003
-      mobility: 18.404325
-      capacity: 91.967285
-      firePower: 50.022167
-      bulletSpeed: 84
-      fireRate: 17.502394
+      offense: 64.374954
+      defense: 91.70496
+      energy: 180.54822
+      mobility: 19.978378
+      capacity: 22.302069
+      firePower: 9.78168
+      bulletSpeed: 12
+      fireRate: 5.5932703
       rammingPower: 1
-      healthCap: 77.31896
-      healthRegen: 2.7613916
-      energyCap: 38.556004
-      energyRegen: 7.9379997
-      moveSpeed: 5.28
-      turnSpeed: 8.324325
-      gemCap: 73.57383
-      peopleCap: 18.393457
+      healthCap: 88.542725
+      healthRegen: 3.1622405
+      energyCap: 164.13475
+      energyRegen: 16.413475
+      moveSpeed: 8.8
+      turnSpeed: 4.5783787
+      gemCap: 183.9346
+      peopleCap: 15.63444
     componentMass: 18.293299
-    lockedInUpgradeTree: 0
-  - chassisId: SpaceExcalibur_06
-    upgradeTreeShipName: 
-    prefab: {fileID: 1430591442999010, guid: 12108e32b36bf7b4a9eabd000d00eab7, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: f33dd050b63131f448afb0d1d411ab60, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: f33dd050b63131f448afb0d1d411ab60, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: fa85932a0fe691644b6e109f8e694ccd, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 0ba2a283df0b12b488f017712190f740, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 98e6bcffbfb63f94096a7a623c5d41a9, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: a894e144d2855564487edbee2d3a0c26, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 4
-    powerScore: 372.23395
-    powerScoreAtMaxLevel: 1341.6497
-    powerScoreBreakdown:
-      offense: 548.02716
-      defense: 45.474354
-      energy: 84.516846
-      mobility: 18.404325
-      capacity: 39.673008
-      firePower: 80.96542
-      bulletSpeed: 108
-      fireRate: 22.061745
-      rammingPower: 1
-      healthCap: 43.906273
-      healthRegen: 1.5680813
-      energyCap: 70.08714
-      energyRegen: 14.429705
-      moveSpeed: 5.28
-      turnSpeed: 8.324325
-      gemCap: 31.738407
-      peopleCap: 7.934602
-    componentMass: 12.026281
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_19
     upgradeTreeShipName: 
@@ -1764,72 +1877,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 659.8023
-    powerScoreAtMaxLevel: 1752.4185
+    powerScore: 320.87793
+    powerScoreAtMaxLevel: 797.8253
     powerScoreBreakdown:
-      offense: 194.28247
-      defense: 149.2317
-      energy: 158.99817
-      mobility: 60.6573
-      capacity: 253.44592
-      firePower: 8.669206
-      bulletSpeed: 48
-      fireRate: 16.613266
+      offense: 49.2951
+      defense: 194.84647
+      energy: 29.700005
+      mobility: 30.875679
+      capacity: 61.46064
+      firePower: 2.1951468
+      bulletSpeed: 12
+      fireRate: 4.099954
       rammingPower: 1
-      healthCap: 144.08578
-      healthRegen: 5.145921
-      energyCap: 131.85214
-      energyRegen: 27.146027
-      moveSpeed: 8.16
-      turnSpeed: 33.2973
-      gemCap: 202.75674
-      peopleCap: 50.689186
+      healthCap: 188.12762
+      healthRegen: 6.718844
+      energyCap: 27.000004
+      energyRegen: 2.7000003
+      moveSpeed: 13.600001
+      turnSpeed: 7.075677
+      gemCap: 506.89188
+      peopleCap: 43.08581
     componentMass: 29.417253
     lockedInUpgradeTree: 0
-  - chassisId: SpaceExcalibur_18
+  - chassisId: SpaceExcalibur_17
     upgradeTreeShipName: 
-    prefab: {fileID: 1742835346186908, guid: ac52a5690827c454cbc1fd2e57410083, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 2154d070e394c244ea203c437fa02264, type: 3}
+    prefab: {fileID: 1073909383232394, guid: 59788f76bfbf44c47a383b9bee66d8db, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 45da8342028a98c418d34ef1caf64307, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 2154d070e394c244ea203c437fa02264, type: 3}
+      sprite: {fileID: 21300000, guid: 45da8342028a98c418d34ef1caf64307, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 11b0e15c78302614d8d76ab41b4a7591, type: 3}
+      sprite: {fileID: 21300000, guid: bd6949ec1ac32f04fa5e42251790f117, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 926910132a6757a4d9605f8643c3bd4c, type: 3}
+      sprite: {fileID: 21300000, guid: 03213686d4f53534f99a1ea57e4e4d69, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: e8c3263201abbfb4f9e616e1eab5cf6a, type: 3}
+      sprite: {fileID: 21300000, guid: dd637fe95a7a1ba4f9d02ad4c94d131c, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 90e3999a2aa129845ada02e989f7af33, type: 3}
+      sprite: {fileID: 21300000, guid: dcbb43caa25210b4196b7d282f2cae38, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 748.37146
-    powerScoreAtMaxLevel: 2354.4858
+    powerScore: 283.94888
+    powerScoreAtMaxLevel: 716.8291
     powerScoreBreakdown:
-      offense: 547
-      defense: 150.68988
-      energy: 172.20001
-      mobility: 46.572975
-      capacity: 201.30856
-      firePower: 84
-      bulletSpeed: 108
-      fireRate: 18
+      offense: 49.340004
+      defense: 170.49274
+      energy: 29.7
+      mobility: 34.508114
+      capacity: 46.50219
+      firePower: 2.1458364
+      bulletSpeed: 12
+      fireRate: 4.194169
       rammingPower: 1
-      healthCap: 145.49368
-      healthRegen: 5.1962023
-      energyCap: 142.80002
-      energyRegen: 29.4
-      moveSpeed: 7.2000003
-      turnSpeed: 24.972975
-      gemCap: 161.04684
-      peopleCap: 40.26171
-    componentMass: 35.184998
+      healthCap: 164.61368
+      healthRegen: 5.87906
+      energyCap: 27
+      energyRegen: 2.7
+      moveSpeed: 15.200002
+      turnSpeed: 7.9081097
+      gemCap: 383.52322
+      peopleCap: 32.599476
+    componentMass: 32.18712
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_13
     upgradeTreeShipName: 
@@ -1854,72 +1967,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 727.3485
-    powerScoreAtMaxLevel: 2325.778
+    powerScore: 490.13388
+    powerScoreAtMaxLevel: 1195.9856
     powerScoreBreakdown:
-      offense: 550.42633
-      defense: 126.34096
-      energy: 245.27429
-      mobility: 60.6573
-      capacity: 126.593414
-      firePower: 79.68257
-      bulletSpeed: 108
-      fireRate: 24.743736
+      offense: 69.60566
+      defense: 151.69624
+      energy: 261.14178
+      mobility: 30.875677
+      capacity: 30.698906
+      firePower: 13.921278
+      bulletSpeed: 12
+      fireRate: 5.684383
       rammingPower: 2
-      healthCap: 121.984375
-      healthRegen: 4.3565855
-      energyCap: 203.3982
-      energyRegen: 41.8761
-      moveSpeed: 8.16
-      turnSpeed: 33.2973
-      gemCap: 101.274734
-      peopleCap: 25.318684
+      healthCap: 146.46533
+      healthRegen: 5.2309046
+      energyCap: 237.40161
+      energyRegen: 23.740162
+      moveSpeed: 13.6
+      turnSpeed: 7.0756764
+      gemCap: 253.18686
+      peopleCap: 21.520884
     componentMass: 37.29792
     lockedInUpgradeTree: 0
-  - chassisId: SpaceExcalibur_04
+  - chassisId: SpaceExcalibur_08
     upgradeTreeShipName: 
-    prefab: {fileID: 1152214231295606, guid: 069d364ac21694f4d86514710fc9f4e8, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 4ff219cc3130e544ba403ce56e44468f, type: 3}
+    prefab: {fileID: 1865648301431312, guid: df3e148963f80b5488a6e5106a1c5d94, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: bfa8596eb7cfc4f48b5fc9a0ad7438fc, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 4ff219cc3130e544ba403ce56e44468f, type: 3}
+      sprite: {fileID: 21300000, guid: bfa8596eb7cfc4f48b5fc9a0ad7438fc, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 460159ea908fa854ca46803934956af7, type: 3}
+      sprite: {fileID: 21300000, guid: c79d048b582d3d0409153d853fe4ffed, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 3e6c8c306d4eeaa4bb494d892f96aefd, type: 3}
+      sprite: {fileID: 21300000, guid: e72f9fb38da32bb4dae7fd36dd02dd3e, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: 8d6617c0edd44224aa34b0755e556a18, type: 3}
+      sprite: {fileID: 21300000, guid: 89c638cc6c333ee41b3e84256ad5bcc0, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 672d8b53d910201498e5858dc6a5128c, type: 3}
+      sprite: {fileID: 21300000, guid: 10a387fbc3fadea4b9596e6dd44bf924, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 450.69614
-    powerScoreAtMaxLevel: 1674.1349
+    powerScore: 465.66452
+    powerScoreAtMaxLevel: 1140.7595
     powerScoreBreakdown:
-      offense: 565.55865
-      defense: 79.52671
-      energy: 61.6557
-      mobility: 18.404325
-      capacity: 93.96935
-      firePower: 93.94005
-      bulletSpeed: 108
-      fireRate: 26.61858
+      offense: 70.09487
+      defense: 64.84616
+      energy: 341.5599
+      mobility: 30.875679
+      capacity: 13.252277
+      firePower: 13.3305
+      bulletSpeed: 12
+      fireRate: 7.7643747
       rammingPower: 1
-      healthCap: 76.78441
-      healthRegen: 2.7423003
-      energyCap: 51.12912
-      energyRegen: 10.526583
-      moveSpeed: 5.28
-      turnSpeed: 8.324325
-      gemCap: 75.17548
-      peopleCap: 18.79387
-    componentMass: 15.888716
+      healthCap: 62.610085
+      healthRegen: 2.2360744
+      energyCap: 310.509
+      energyRegen: 31.050901
+      moveSpeed: 13.600001
+      turnSpeed: 7.075677
+      gemCap: 109.297134
+      peopleCap: 9.2902565
+    componentMass: 16.06291
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_05
     upgradeTreeShipName: 
@@ -1944,26 +2057,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 604.52484
-    powerScoreAtMaxLevel: 2322.1897
+    powerScore: 380.88495
+    powerScoreAtMaxLevel: 947.2758
     powerScoreBreakdown:
-      offense: 782.69354
-      defense: 45.675003
-      energy: 200.90002
-      mobility: 53.61514
-      capacity: 50
-      firePower: 123.13468
-      bulletSpeed: 148
-      fireRate: 30.558865
+      offense: 68.822334
+      defense: 48.9375
+      energy: 274.5754
+      mobility: 29.059462
+      capacity: 12.125
+      firePower: 13.787574
+      bulletSpeed: 12
+      fireRate: 6.0347576
       rammingPower: 1
-      healthCap: 44.100002
-      healthRegen: 1.5750002
-      energyCap: 166.60002
-      energyRegen: 34.300003
-      moveSpeed: 7.6800003
-      turnSpeed: 29.135138
-      gemCap: 40
-      peopleCap: 10
+      healthCap: 47.25
+      healthRegen: 1.6875
+      energyCap: 249.614
+      energyRegen: 24.961401
+      moveSpeed: 12.800001
+      turnSpeed: 6.6594605
+      gemCap: 100
+      peopleCap: 8.5
     componentMass: 16
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_20
@@ -1989,27 +2102,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 855.44556
-    powerScoreAtMaxLevel: 2805.1333
+    powerScore: 585.8992
+    powerScoreAtMaxLevel: 1558.7853
     powerScoreBreakdown:
-      offense: 477.43542
-      defense: 212.72348
-      energy: 114.80001
-      mobility: 32.48865
-      capacity: 355.7774
-      firePower: 53.25605
-      bulletSpeed: 96
-      fireRate: 21.17939
+      offense: 64.51977
+      defense: 279.97202
+      energy: 181.81783
+      mobility: 23.610811
+      capacity: 86.27603
+      firePower: 10.02252
+      bulletSpeed: 12
+      fireRate: 5.497251
       rammingPower: 1
-      healthCap: 205.38818
-      healthRegen: 7.335293
-      energyCap: 95.20001
-      energyRegen: 19.6
-      moveSpeed: 6.2400002
-      turnSpeed: 16.64865
-      gemCap: 284.62192
-      peopleCap: 71.15548
+      healthCap: 270.3178
+      healthRegen: 9.654207
+      energyCap: 165.28893
+      energyRegen: 16.528894
+      moveSpeed: 10.400001
+      turnSpeed: 5.4108114
+      gemCap: 711.5549
+      peopleCap: 60.482162
     componentMass: 38.758675
+    lockedInUpgradeTree: 0
+  - chassisId: SpaceExcalibur_18
+    upgradeTreeShipName: 
+    prefab: {fileID: 1742835346186908, guid: ac52a5690827c454cbc1fd2e57410083, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 2154d070e394c244ea203c437fa02264, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 2154d070e394c244ea203c437fa02264, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 11b0e15c78302614d8d76ab41b4a7591, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 926910132a6757a4d9605f8643c3bd4c, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: e8c3263201abbfb4f9e616e1eab5cf6a, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 90e3999a2aa129845ada02e989f7af33, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 6
+    powerScore: 496.09497
+    powerScoreAtMaxLevel: 1334.9374
+    powerScoreBreakdown:
+      offense: 68
+      defense: 204.03441
+      energy: 198
+      mobility: 27.243244
+      capacity: 48.817326
+      firePower: 15
+      bulletSpeed: 12
+      fireRate: 4
+      rammingPower: 1
+      healthCap: 196.99873
+      healthRegen: 7.0356693
+      energyCap: 180
+      energyRegen: 18
+      moveSpeed: 12.000001
+      turnSpeed: 6.243244
+      gemCap: 402.61713
+      peopleCap: 34.222458
+    componentMass: 35.184998
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_15
     upgradeTreeShipName: 
@@ -2034,26 +2192,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 702.2205
-    powerScoreAtMaxLevel: 2735.216
+    powerScore: 474.16708
+    powerScoreAtMaxLevel: 1281.315
     powerScoreBreakdown:
-      offense: 747.2676
-      defense: 126.16165
-      energy: 119.40267
-      mobility: 46.572975
-      capacity: 172.9805
-      firePower: 95.502716
-      bulletSpeed: 156
-      fireRate: 38.76483
+      offense: 68.55172
+      defense: 141.43013
+      energy: 246.19144
+      mobility: 27.243244
+      capacity: 41.947773
+      firePower: 14.354507
+      bulletSpeed: 12
+      fireRate: 5.197215
       rammingPower: 1
-      healthCap: 121.81125
-      healthRegen: 4.350402
-      energyCap: 99.01685
-      energyRegen: 20.38582
-      moveSpeed: 7.2000003
-      turnSpeed: 24.972975
-      gemCap: 138.3844
-      peopleCap: 34.5961
+      healthCap: 136.55322
+      healthRegen: 4.8769007
+      energyCap: 223.8104
+      energyRegen: 22.381039
+      moveSpeed: 12
+      turnSpeed: 6.2432437
+      gemCap: 345.961
+      peopleCap: 29.406687
     componentMass: 27.77203
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_16
@@ -2079,26 +2237,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 858.4803
-    powerScoreAtMaxLevel: 3586.5596
+    powerScore: 495.97263
+    powerScoreAtMaxLevel: 1336.4569
     powerScoreBreakdown:
-      offense: 1115.3994
-      defense: 117.4725
-      energy: 157.00745
-      mobility: 46.572975
-      capacity: 158.88678
-      firePower: 176.94058
-      bulletSpeed: 216
-      fireRate: 49.458824
+      offense: 68.69048
+      defense: 146.79633
+      energy: 266.53784
+      mobility: 27.243244
+      capacity: 38.530045
+      firePower: 13.86516
+      bulletSpeed: 12
+      fireRate: 5.8253236
       rammingPower: 1
-      healthCap: 113.42173
-      healthRegen: 4.0507765
-      energyCap: 130.2013
-      energyRegen: 26.806145
-      moveSpeed: 7.2000003
-      turnSpeed: 24.972975
-      gemCap: 127.10942
-      peopleCap: 31.777355
+      healthCap: 141.73439
+      healthRegen: 5.061943
+      energyCap: 242.30713
+      energyRegen: 24.230715
+      moveSpeed: 12.000001
+      turnSpeed: 6.243244
+      gemCap: 317.77356
+      peopleCap: 27.010752
     componentMass: 26.807652
     lockedInUpgradeTree: 0
   - chassisId: SpaceExcalibur_07
@@ -2124,72 +2282,27 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 496.40118
-    powerScoreAtMaxLevel: 2412.3438
+    powerScore: 421.8018
+    powerScoreAtMaxLevel: 1146.0184
     powerScoreBreakdown:
-      offense: 888.8679
-      defense: 70.581856
-      energy: 25.830004
-      mobility: 11.362163
-      capacity: 90
-      firePower: 133.02718
-      bulletSpeed: 168
-      fireRate: 34.840725
+      offense: 68.94014
+      defense: 80.61704
+      energy: 281.47147
+      mobility: 18.162163
+      capacity: 21.825
+      firePower: 13.726115
+      bulletSpeed: 12
+      fireRate: 6.2140217
       rammingPower: 1
-      healthCap: 68.147995
-      healthRegen: 2.4338574
-      energyCap: 21.420004
-      energyRegen: 4.4100003
-      moveSpeed: 4.8
+      healthCap: 77.83714
+      healthRegen: 2.7798982
+      energyCap: 255.88315
+      energyRegen: 25.588316
+      moveSpeed: 8
       turnSpeed: 4.1621623
-      gemCap: 72
-      peopleCap: 18
+      gemCap: 180
+      peopleCap: 15.3
     componentMass: 12.962855
-    lockedInUpgradeTree: 0
-  - chassisId: SpaceExcalibur_08
-    upgradeTreeShipName: 
-    prefab: {fileID: 1865648301431312, guid: df3e148963f80b5488a6e5106a1c5d94, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: bfa8596eb7cfc4f48b5fc9a0ad7438fc, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: bfa8596eb7cfc4f48b5fc9a0ad7438fc, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: c79d048b582d3d0409153d853fe4ffed, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: e72f9fb38da32bb4dae7fd36dd02dd3e, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 89c638cc6c333ee41b3e84256ad5bcc0, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 10a387fbc3fadea4b9596e6dd44bf924, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 6
-    powerScore: 610.4505
-    powerScoreAtMaxLevel: 2916.015
-    powerScoreBreakdown:
-      offense: 1002.48016
-      defense: 51.17557
-      energy: 161.11745
-      mobility: 60.6573
-      capacity: 54.648567
-      firePower: 96.051636
-      bulletSpeed: 206
-      fireRate: 63.42851
-      rammingPower: 1
-      healthCap: 49.410896
-      healthRegen: 1.7646749
-      energyCap: 133.60959
-      energyRegen: 27.507856
-      moveSpeed: 8.16
-      turnSpeed: 33.2973
-      gemCap: 43.718853
-      peopleCap: 10.929713
-    componentMass: 16.06291
     lockedInUpgradeTree: 0
   teamMaterials:
   - variantName: Red

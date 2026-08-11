@@ -876,7 +876,7 @@ namespace TitanOrbit.Data
             }
             else if (string.Equals(type, ShipFamilyPartTypes.WeaponBullet, StringComparison.OrdinalIgnoreCase))
             {
-                // 3 shots/sec. Offense + Cap-only battery (Cap = firePower × fireRate = 1 sec of fire).
+                // 3 shots/sec. Offense only — Cap/Regen cleared (engines own the 3s / 30% plant).
                 profile.baseAtVersion1 = new ShipComponentAbilityStats
                 {
                     firePower = ShipComponentWeaponSuggestions.FirePowerV1,
@@ -897,14 +897,14 @@ namespace TitanOrbit.Data
                     bulletRange = ShipComponentWeaponSuggestions.BulletRangePerVersion,
                     fireRate = 0f,
                     fireRatePerAbilityLevel = 0f,
-                    // Cap scales linearly with firePower; v2 firePower = 2×v1 ⇒ Cap step = Cap(v1).
-                    energyCap = profile.baseAtVersion1.energyCap,
-                    energyCapPerAbilityLevel = profile.baseAtVersion1.energyCapPerAbilityLevel,
+                    // Weapons do not author Cap — engine plant owns energy.
+                    energyCap = 0f,
+                    energyCapPerAbilityLevel = 0f,
                 };
             }
             else if (string.Equals(type, ShipFamilyPartTypes.WeaponCannon, StringComparison.OrdinalIgnoreCase))
             {
-                // 1 shot/sec, ~4× bullet fire power. Offense + Cap-only (Cap = firePower × fireRate).
+                // 1 shot/sec, ~4× bullet fire power. Offense only — Cap/Regen on engines.
                 profile.baseAtVersion1 = new ShipComponentAbilityStats
                 {
                     firePower = ShipComponentWeaponSuggestions.CannonFirePowerV1,
@@ -925,18 +925,19 @@ namespace TitanOrbit.Data
                     bulletRange = ShipComponentWeaponSuggestions.CannonBulletRangePerVersion,
                     fireRate = 0f,
                     fireRatePerAbilityLevel = 0f,
-                    energyCap = profile.baseAtVersion1.energyCap,
-                    energyCapPerAbilityLevel = profile.baseAtVersion1.energyCapPerAbilityLevel,
+                    energyCap = 0f,
+                    energyCapPerAbilityLevel = 0f,
                 };
             }
             else if (string.Equals(type, ShipFamilyPartTypes.Cockpit, StringComparison.OrdinalIgnoreCase))
             {
+                // [TITAN-ORBIT] Cargo people/gems from GameBalanceTargets via suggestion helpers.
                 profile.baseAtVersion1 = new ShipComponentAbilityStats
                 {
                     rammingPower = 1f,
                     healthCap = ShipComponentHealthSuggestions.GetSuggestedHealthCap(1),
                     healthRegen = ShipComponentHealthSuggestions.GetSuggestedHealthRegen(1),
-                    maxGems = 8f,
+                    maxGems = ShipComponentGemCapacitySuggestions.GetSuggestedGemCapacity(1),
                     maxPeople = ShipComponentPeopleCapacitySuggestions.GetSuggestedPeopleCapacity(1),
                 };
                 profile.perVersionIncrement = new ShipComponentAbilityStats
@@ -945,17 +946,18 @@ namespace TitanOrbit.Data
                     healthCap = ShipComponentHealthSuggestions.HealthCapPerVersion,
                     healthRegen = ShipComponentHealthSuggestions.HealthCapPerVersion
                         * ShipComponentHealthSuggestions.HealthRegenFractionOfCap,
-                    maxGems = 8f,
-                    maxPeople = ShipComponentPeopleCapacitySuggestions.PeopleCapacityV1,
+                    maxGems = ShipComponentGemCapacitySuggestions.GemCapacityPerVersion,
+                    maxPeople = ShipComponentPeopleCapacitySuggestions.PeopleCapacityPerVersion,
                 };
             }
             else if (string.Equals(type, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase))
             {
+                // [TITAN-ORBIT] Wings share cargo people/gems with Cockpit; tractor is wing-only.
                 profile.baseAtVersion1 = new ShipComponentAbilityStats
                 {
                     healthCap = ShipComponentHealthSuggestions.GetSuggestedHealthCap(1),
                     healthRegen = ShipComponentHealthSuggestions.GetSuggestedHealthRegen(1),
-                    maxGems = 8f,
+                    maxGems = ShipComponentGemCapacitySuggestions.GetSuggestedGemCapacity(1),
                     maxPeople = ShipComponentPeopleCapacitySuggestions.GetSuggestedPeopleCapacity(1),
                     tractorBeamDistance = ShipComponentTractorBeamSuggestions.GetSuggestedTractorDistance(1),
                     tractorBeamPower = ShipComponentTractorBeamSuggestions.GetSuggestedTractorPower(1),
@@ -965,8 +967,8 @@ namespace TitanOrbit.Data
                     healthCap = ShipComponentHealthSuggestions.HealthCapPerVersion,
                     healthRegen = ShipComponentHealthSuggestions.HealthCapPerVersion
                         * ShipComponentHealthSuggestions.HealthRegenFractionOfCap,
-                    maxGems = 8f,
-                    maxPeople = ShipComponentPeopleCapacitySuggestions.PeopleCapacityV1,
+                    maxGems = ShipComponentGemCapacitySuggestions.GemCapacityPerVersion,
+                    maxPeople = ShipComponentPeopleCapacitySuggestions.PeopleCapacityPerVersion,
                     tractorBeamDistance = ShipComponentTractorBeamSuggestions.TractorDistancePerVersion,
                     tractorBeamPower = ShipComponentTractorBeamSuggestions.TractorPowerPerVersion,
                 };
@@ -987,7 +989,8 @@ namespace TitanOrbit.Data
                 };
             }
 
-            // [TITAN-ORBIT] Seed stack weight on version-1 base (engines/thrusters → 0.1, else 1).
+            // [TITAN-ORBIT] Seed stack weight on version-1 base
+            // (engines/thrusters → 0.1, weapons → 0.25, else 1).
             // Not on perVersionIncrement — weight is a part property, not a tier delta.
             profile.baseAtVersion1.extraStackWeight =
                 ShipComponentStackAggregation.GetSuggestedExtraStackWeightForPartType(type);

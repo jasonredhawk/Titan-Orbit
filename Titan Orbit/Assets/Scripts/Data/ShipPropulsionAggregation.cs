@@ -125,13 +125,27 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>Scan/auto-populate move speed for engine/thruster version 1 (Engine_1).</summary>
-        public const float SuggestedPropulsionMoveSpeedV1 = 6f;
+        /// <summary>
+        /// Version-1 move contribution per Engine/Thruster mount.
+        /// [TITAN-ORBIT] Raised from 6 → 7 so single-engine hulls (Hippo-class outliers) stay
+        /// closer to playable speed after GameBalanceTargets rebalance; multi-engine ships still
+        /// use diminishing <c>extraStackWeight</c> on extras.
+        /// </summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Tuned for "fast &amp; nimble" feel — single-engine hulls should feel sprightly
+        /// before cargo / wing mass drag. Was 7; bumped so median L1 move sits near ~9 with scale.
+        /// </summary>
+        public const float SuggestedPropulsionMoveSpeedV1 = 8f;
 
         /// <summary>Move speed added per version tier (v2 = 8, v3 = 10, …), before global propulsion scale.</summary>
         public const float SuggestedPropulsionMoveSpeedPerVersion = 2f;
 
         /// <summary>Acceleration cap as a fraction of suggested move speed for that version.</summary>
-        public const float SuggestedPropulsionAccelerationFractionOfMoveSpeed = 0.5f;
+        /// <summary>
+        /// Accel as a fraction of move speed. [TITAN-ORBIT] Raised from 0.5 → 0.75 so
+        /// multi-engine / thruster hulls feel quick without raising top speed as aggressively.
+        /// </summary>
+        public const float SuggestedPropulsionAccelerationFractionOfMoveSpeed = 0.75f;
 
         /// <summary>
         /// Fraction of v1 energy Cap/Regen added per engine version step — same ratio as moveSpeed
@@ -381,9 +395,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// [TITAN-ORBIT] Weapons hold Energy Cap (battery) but never Energy Regen — engines produce.
+        /// [TITAN-ORBIT] Weapons neither store nor regenerate energy — engines own Cap + Regen.
         /// Clears weapon regen after Scan so leftover authored regen cannot inflate hull regen.
-        /// Does <b>not</b> clear Cap (use <see cref="ApplyWeaponEnergyCapSuggestionsForComponents"/> to seed).
+        /// Cap is cleared via <see cref="ApplyWeaponEnergyCapSuggestionsForComponents"/>.
         /// </summary>
         public static void ClearWeaponEnergyRegenForComponents(List<ShipFamilyComponentEntry> components)
         {
@@ -480,30 +494,34 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// [LEGACY] Old "seconds of drain" engine budget — replaced by weapon-style shot-cap balancing.
-        /// Kept so older comments/docs that cite the constant still compile if referenced.
+        /// Engine Cap seconds of weapon drain — aliases
+        /// <see cref="GameBalanceTargets.EnergyBatterySecondsOfSustainedFire"/> (~3s).
         /// </summary>
-        public const float EngineEnergyCapSecondsOfWeaponDrain = 4f;
+        public const float EngineEnergyCapSecondsOfWeaponDrain =
+            GameBalanceTargets.EnergyBatterySecondsOfSustainedFire;
 
         /// <summary>
-        /// [TITAN-ORBIT] Engine regen uses the same fraction as the old weapon self-contained pool
-        /// (<see cref="ShipComponentWeaponSuggestions.EnergyRegenFractionOfSustainedDrain"/> = 0.35).
+        /// [TITAN-ORBIT] Engine regen fraction of sustained weapon drain (~0.30).
         /// Holding fire still nets drain; thruster/overdrive compete for the same bar.
         /// </summary>
         public const float EngineEnergyRegenFractionOfWeaponDrain =
             ShipComponentWeaponSuggestions.EnergyRegenFractionOfSustainedDrain;
 
         /// <summary>
-        /// Fallback Cap when a hull has engines but no weapons — one v1 bullet weapon's 1-sec pool
-        /// (<c>FirePowerV1 × FireRate</c> = 3×3). Also the ProfileSet Engine baseAtVersion1 Cap.
+        /// Fallback Cap when a hull has engines but no weapons — v1 bullet drain × battery seconds
+        /// (<c>3 × 3 × 3 = 27</c>). Also the ProfileSet Engine baseAtVersion1 Cap.
         /// </summary>
-        public const float EngineEnergyFallbackCapPerVersion = 9f;
+        public static float EngineEnergyFallbackCapPerVersion =>
+            GameBalanceTargets.ReferenceL1BulletWeaponDps
+            * GameBalanceTargets.EnergyBatterySecondsOfSustainedFire;
 
         /// <summary>
-        /// Fallback Regen when a hull has engines but no weapons — 35% of v1 bullet sustained drain (3×3).
+        /// Fallback Regen when a hull has engines but no weapons — ~30% of v1 bullet sustained drain.
         /// Also the ProfileSet Engine baseAtVersion1 Regen.
         /// </summary>
-        public const float EngineEnergyFallbackRegenPerVersion = 3.15f;
+        public static float EngineEnergyFallbackRegenPerVersion =>
+            GameBalanceTargets.ReferenceL1BulletWeaponDps
+            * GameBalanceTargets.EnergyRegenFractionOfSustainedDrain;
 
         /// <summary>
         /// ProfileSet Engine perVersionIncrement Cap — moveSpeed-like step (2/6 of v1), not a full second plant.
@@ -519,15 +537,17 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// After Scan / Populate, size Energy Cap/Regen on <b>engine-like</b> mounts from the
-        /// hull's weapons: for each gun, Cap ≈ <c>firePower × fireRate</c> (1 sec of fire) and
-        /// Regen ≈ 35% of that gun's sustained drain. Totals are split across engines by
+        /// family's weapons: for each gun, Cap ≈ drain ×
+        /// <see cref="GameBalanceTargets.EnergyBatterySecondsOfSustainedFire"/> (~3s) and
+        /// Regen ≈ 30% of that gun's sustained drain. Totals are split across engines by
         /// <b>gentle</b> version weight (moveSpeed curve: v1=1, v2≈1.33 — not v2=2).
         /// Also clears thruster Cap/Regen (thrusters do not own the power plant) and seeds
         /// OVERDRIVE ExtraSpeed knobs on engines when unset.
         /// <para>
-        /// [TITAN-ORBIT] Weapon components separately author Cap-only batteries
-        /// (<see cref="BalanceWeaponEnergyForComponents"/>). Hull <c>MaxEnergy</c> sums engine Cap
-        /// + weapon Cap — weapons hold extra storage; only engines produce Regen.
+        /// [TITAN-ORBIT] Weapons clear Cap/Regen (<see cref="BalanceWeaponEnergyForComponents"/>).
+        /// Hull <c>MaxEnergy</c> comes from the engine plant only. Chassis prefab sums also
+        /// re-normalize Cap/Regen to the live weapon drain after mesh scale
+        /// (<see cref="ShipFamilyStatsCalculator.ApplySharedAggregationRules"/>).
         /// OD drain/sec = ExtraSpeedEnergyDrain on engines (absolute; not × speed %).
         /// </para>
         /// </summary>
@@ -570,14 +590,14 @@ namespace TitanOrbit.Data
 
                 if (ShipComponentAbilityStats.IsWeaponComponent(entry.componentId))
                 {
-                    // Mirror ApplyWeaponBatteryCap / ApplyBalancedEnergy regen without writing the gun.
+                    // Size the engine plant from this gun's authored drain (not written onto the gun).
                     float firePower = Mathf.Max(0f, entry.stats.firePower);
                     if (firePower <= 0f)
                         continue;
 
                     float fireRate = Mathf.Max(0.01f, entry.stats.fireRate);
                     float sustained = ShipComponentWeaponSuggestions.ComputeSustainedEnergyDrain(firePower, fireRate);
-                    totalCap += sustained; // 1 sec of fire — same as weapon Cap default
+                    totalCap += sustained * GameBalanceTargets.EnergyBatterySecondsOfSustainedFire;
                     totalRegen += sustained * ShipComponentWeaponSuggestions.EnergyRegenFractionOfSustainedDrain;
                     continue;
                 }

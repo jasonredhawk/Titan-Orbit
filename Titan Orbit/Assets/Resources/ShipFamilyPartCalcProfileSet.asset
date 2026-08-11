@@ -24,11 +24,11 @@ MonoBehaviour:
     includeInPopulate: 1
   - discoveredName: Ammunition
     partType: Weapon Bullet
-    contributesAbilityStats: 1
+    contributesAbilityStats: 0
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
     seenInFamilies: SpaceExcalibur
-    notes: 
+    notes: "Cosmetic mag mesh under Machinegun \u2014 stats come from Machinegun."
     includeInPopulate: 1
   - discoveredName: Arm
     partType: Hull
@@ -56,11 +56,11 @@ MonoBehaviour:
     includeInPopulate: 1
   - discoveredName: Barrel
     partType: Weapon Bullet
-    contributesAbilityStats: 1
+    contributesAbilityStats: 0
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
     seenInFamilies: GalaxyRaptor
-    notes: 
+    notes: "Cosmetic barrel mesh under Gun \u2014 stats come from Gun."
     includeInPopulate: 1
   - discoveredName: Body
     partType: Hull
@@ -360,11 +360,11 @@ MonoBehaviour:
     includeInPopulate: 1
   - discoveredName: Missile_Launcher
     partType: Weapon Cannon
-    contributesAbilityStats: 1
+    contributesAbilityStats: 0
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
     seenInFamilies: SpaceExcalibur
-    notes: 
+    notes: "Cosmetic launcher housing \u2014 stats come from Missile."
     includeInPopulate: 1
   - discoveredName: Part_1
     partType: Hull
@@ -692,10 +692,10 @@ MonoBehaviour:
       fireRatePerAbilityLevel: 0
       rammingPower: 1
       rammingPowerPerAbilityLevel: 0.25
-      healthCap: 6.3
-      healthCapPerAbilityLevel: 1.575
-      healthRegen: 0.22500002
-      healthRegenPerAbilityLevel: 0.056250006
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
       energyCapPerAbilityLevel: 0
       energyRegen: 0
@@ -710,14 +710,14 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
       turnSpeedPerAbilityLevel: 0
-      maxGems: 8
-      maxGemsPerAbilityLevel: 2
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 0
       tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerAbilityLevel: 0
-      maxPeople: 2
-      maxPeoplePerAbilityLevel: 0.5
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
       extraStackWeight: 1
     perVersionIncrement:
       firePower: 0
@@ -730,10 +730,10 @@ MonoBehaviour:
       fireRatePerAbilityLevel: 0
       rammingPower: 0.12
       rammingPowerPerAbilityLevel: 0.03
-      healthCap: 1.8
-      healthCapPerAbilityLevel: 0.45
-      healthRegen: 0.06428572
-      healthRegenPerAbilityLevel: 0.01607143
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
       energyCapPerAbilityLevel: 0
       energyRegen: 0
@@ -748,14 +748,14 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
       turnSpeedPerAbilityLevel: 0
-      maxGems: 8
-      maxGemsPerAbilityLevel: 2
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 0
       tractorBeamDistancePerAbilityLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerAbilityLevel: 0
-      maxPeople: 2
-      maxPeoplePerAbilityLevel: 0.5
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
       extraStackWeight: 0
     perLevelFractionOverride: 0
   - partType: Weapon Bullet
@@ -775,8 +775,8 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 18
-      energyCapPerAbilityLevel: 9
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 0
@@ -797,7 +797,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
-      extraStackWeight: 1
+      extraStackWeight: 0.25
     perVersionIncrement:
       firePower: 3
       firePowerPerAbilityLevel: 0.75
@@ -813,8 +813,8 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 15
-      energyCapPerAbilityLevel: 3
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 0
@@ -854,8 +854,8 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 60
-      energyCapPerAbilityLevel: 15
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 0
@@ -876,7 +876,7 @@ MonoBehaviour:
       tractorBeamPowerPerAbilityLevel: 0
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
-      extraStackWeight: 1
+      extraStackWeight: 0.25
     perVersionIncrement:
       firePower: 12
       firePowerPerAbilityLevel: 3
@@ -892,8 +892,8 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 20
-      energyCapPerAbilityLevel: 5
+      energyCap: 0
+      energyCapPerAbilityLevel: 0
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 0
@@ -929,10 +929,10 @@ MonoBehaviour:
       fireRatePerAbilityLevel: 0
       rammingPower: 0
       rammingPowerPerAbilityLevel: 0
-      healthCap: 6.3
-      healthCapPerAbilityLevel: 1.575
-      healthRegen: 0.22500002
-      healthRegenPerAbilityLevel: 0.056250006
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
       energyCapPerAbilityLevel: 0
       energyRegen: 0
@@ -947,14 +947,14 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
       turnSpeedPerAbilityLevel: 0
-      maxGems: 8
-      maxGemsPerAbilityLevel: 2
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 3
       tractorBeamDistancePerAbilityLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerAbilityLevel: 1
-      maxPeople: 2
-      maxPeoplePerAbilityLevel: 0.5
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
       extraStackWeight: 1
     perVersionIncrement:
       firePower: 0
@@ -967,10 +967,10 @@ MonoBehaviour:
       fireRatePerAbilityLevel: 0
       rammingPower: 0
       rammingPowerPerAbilityLevel: 0
-      healthCap: 1.8
-      healthCapPerAbilityLevel: 0.45
-      healthRegen: 0.06428572
-      healthRegenPerAbilityLevel: 0.01607143
+      healthCap: 6.75
+      healthCapPerAbilityLevel: 1.6875
+      healthRegen: 0.24107143
+      healthRegenPerAbilityLevel: 0.06026786
       energyCap: 0
       energyCapPerAbilityLevel: 0
       energyRegen: 0
@@ -985,14 +985,14 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
       turnSpeedPerAbilityLevel: 0
-      maxGems: 8
-      maxGemsPerAbilityLevel: 2
+      maxGems: 20
+      maxGemsPerAbilityLevel: 5
       tractorBeamDistance: 3
       tractorBeamDistancePerAbilityLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerAbilityLevel: 1
-      maxPeople: 2
-      maxPeoplePerAbilityLevel: 0.5
+      maxPeople: 1.7
+      maxPeoplePerAbilityLevel: 0.425
       extraStackWeight: 0
     perLevelFractionOverride: 0
   - partType: Engine
@@ -1012,18 +1012,18 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 18
-      energyCapPerAbilityLevel: 6
-      energyRegen: 18
-      energyRegenPerAbilityLevel: 6
-      moveSpeed: 6
-      moveSpeedPerAbilityLevel: 0.5
+      energyCap: 27
+      energyCapPerAbilityLevel: 5.4
+      energyRegen: 2.7
+      energyRegenPerAbilityLevel: 0.54
+      moveSpeed: 8
+      moveSpeedPerAbilityLevel: 1.6
       accelerationCap: 6
-      accelerationCapPerAbilityLevel: 1
-      extraSpeedPercent: 0.5
+      accelerationCapPerAbilityLevel: 1.2
+      extraSpeedPercent: 0.75
       extraSpeedPercentPerAbilityLevel: 0
-      extraSpeedEnergyDrain: 36
-      extraSpeedEnergyDrainPerAbilityLevel: 12
+      extraSpeedEnergyDrain: 2
+      extraSpeedEnergyDrainPerAbilityLevel: 0.4
       turnSpeed: 0
       turnSpeedPerAbilityLevel: 0
       maxGems: 0
@@ -1050,18 +1050,18 @@ MonoBehaviour:
       healthCapPerAbilityLevel: 0
       healthRegen: 0
       healthRegenPerAbilityLevel: 0
-      energyCap: 6
-      energyCapPerAbilityLevel: 2
-      energyRegen: 6
-      energyRegenPerAbilityLevel: 2
+      energyCap: 6.75
+      energyCapPerAbilityLevel: 1.35
+      energyRegen: 0.675
+      energyRegenPerAbilityLevel: 0.135
       moveSpeed: 2
-      moveSpeedPerAbilityLevel: 0.16666667
-      accelerationCap: 5
-      accelerationCapPerAbilityLevel: 1
+      moveSpeedPerAbilityLevel: 0.4
+      accelerationCap: 1.5
+      accelerationCapPerAbilityLevel: 0.3
       extraSpeedPercent: 0
       extraSpeedPercentPerAbilityLevel: 0
-      extraSpeedEnergyDrain: 12
-      extraSpeedEnergyDrainPerAbilityLevel: 4
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerAbilityLevel: 0
       turnSpeed: 0
       turnSpeedPerAbilityLevel: 0
       maxGems: 0
@@ -1073,7 +1073,7 @@ MonoBehaviour:
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
       extraStackWeight: 0
-    perLevelFractionOverride: 0
+    perLevelFractionOverride: 0.2
   - partType: Thruster
     defaultCategories: 03000000
     baseAtVersion1:
@@ -1095,10 +1095,10 @@ MonoBehaviour:
       energyCapPerAbilityLevel: 0
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
-      moveSpeed: 6
-      moveSpeedPerAbilityLevel: 0.5
-      accelerationCap: 3
-      accelerationCapPerAbilityLevel: 0.6
+      moveSpeed: 8
+      moveSpeedPerAbilityLevel: 1.6
+      accelerationCap: 6
+      accelerationCapPerAbilityLevel: 1.2
       extraSpeedPercent: 0
       extraSpeedPercentPerAbilityLevel: 0
       extraSpeedEnergyDrain: 0
@@ -1134,9 +1134,9 @@ MonoBehaviour:
       energyRegen: 0
       energyRegenPerAbilityLevel: 0
       moveSpeed: 2
-      moveSpeedPerAbilityLevel: 0.1666667
-      accelerationCap: 1
-      accelerationCapPerAbilityLevel: 0.2
+      moveSpeedPerAbilityLevel: 0.4
+      accelerationCap: 1.5
+      accelerationCapPerAbilityLevel: 0.3
       extraSpeedPercent: 0
       extraSpeedPercentPerAbilityLevel: 0
       extraSpeedEnergyDrain: 0
@@ -1152,7 +1152,7 @@ MonoBehaviour:
       maxPeople: 0
       maxPeoplePerAbilityLevel: 0
       extraStackWeight: 0
-    perLevelFractionOverride: 0
+    perLevelFractionOverride: 0.2
   - partType: Tail
     defaultCategories: 03000000
     baseAtVersion1:
@@ -1245,10 +1245,10 @@ MonoBehaviour:
       fireRatePerAbilityLevel: 0
       rammingPower: 0
       rammingPowerPerAbilityLevel: 0
-      healthCap: 3.15
-      healthCapPerAbilityLevel: 0.7875
-      healthRegen: 0.11250001
-      healthRegenPerAbilityLevel: 0.028125003
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
       energyCapPerAbilityLevel: 0
       energyRegen: 0
@@ -1283,10 +1283,10 @@ MonoBehaviour:
       fireRatePerAbilityLevel: 0
       rammingPower: 0
       rammingPowerPerAbilityLevel: 0
-      healthCap: 0.9
-      healthCapPerAbilityLevel: 0.225
-      healthRegen: 0.03214286
-      healthRegenPerAbilityLevel: 0.008035715
+      healthCap: 3.375
+      healthCapPerAbilityLevel: 0.84375
+      healthRegen: 0.12053572
+      healthRegenPerAbilityLevel: 0.03013393
       energyCap: 0
       energyCapPerAbilityLevel: 0
       energyRegen: 0

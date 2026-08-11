@@ -9,8 +9,17 @@ namespace TitanOrbit.Data
     /// </summary>
     public static class ShipComponentHealthSuggestions
     {
-        public const float HealthCapV1 = 6.3f;
-        public const float HealthCapPerVersion = 1.8f;
+        /// <summary>
+        /// Health on one contributing part at version 1.
+        /// [TITAN-ORBIT] Derived from <see cref="GameBalanceTargets.SuggestedHealthCapPerPartV1"/>
+        /// so median L1 hulls sit near 3 seconds of reference DPS.
+        /// </summary>
+        public static float HealthCapV1 => GameBalanceTargets.SuggestedHealthCapPerPartV1;
+
+        /// <summary>Per-version health step (same shape as people/gems — vN ≈ N × V1).</summary>
+        public static float HealthCapPerVersion => HealthCapV1;
+
+        /// <summary>Passive regen as a fraction of Cap (slow out-of-combat top-up).</summary>
         public const float HealthRegenFractionOfCap = 0.75f / 21f;
 
         public static float GetSuggestedHealthCap(int version)
@@ -68,9 +77,18 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Sustained fire must drain energy (regen &lt; firePower × fireRate).
-        /// 0.35 ⇒ holding fire empties the pool; waiting recovers between bursts.
+        /// Matches <see cref="GameBalanceTargets.EnergyRegenFractionOfSustainedDrain"/> (~0.30).
+        /// Holding fire empties the pool; waiting recovers between bursts.
         /// </summary>
-        public const float EnergyRegenFractionOfSustainedDrain = 0.35f;
+        public const float EnergyRegenFractionOfSustainedDrain =
+            GameBalanceTargets.EnergyRegenFractionOfSustainedDrain;
+
+        /// <summary>
+        /// Hull / engine battery size in seconds of continuous fire.
+        /// Matches <see cref="GameBalanceTargets.EnergyBatterySecondsOfSustainedFire"/>.
+        /// </summary>
+        public const float EnergyBatterySecondsOfSustainedFire =
+            GameBalanceTargets.EnergyBatterySecondsOfSustainedFire;
 
         /// <summary>
         /// [LEGACY] Old weapon Cap = N max-attribute shots. Weapon Cap now defaults to
@@ -156,62 +174,37 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Sizes weapon energy pool/regen from fire power + fire rate.
-        /// <para>
-        /// Combat spends <c>firePower</c> energy per shot. Cap defaults to
-        /// <c>firePower × fireRate</c> (1 second of sustained fire). Regen is a fraction of
-        /// sustained drain so holding fire always nets energy loss.
-        /// </para>
-        /// [TITAN-ORBIT] Prefer <see cref="ApplyWeaponBatteryCap"/> on weapon components — hull
-        /// Regen is owned by engines; weapons only add Cap storage.
+        /// Legacy helper: clears weapon Cap/Regen then (optionally) writes engine-style regen.
+        /// [TITAN-ORBIT] Prefer <see cref="ApplyWeaponBatteryCap"/> on guns +
+        /// <see cref="ShipPropulsionAggregation.BalanceEngineEnergyForComponents"/> on engines.
+        /// Weapons do not own the power plant — Cap and Regen live on engines.
         /// </summary>
-        /// <param name="stats">Weapon component stats (reads firePower / fireRate; writes energy).</param>
+        /// <param name="stats">Weapon component stats (writes energy fields).</param>
         public static void ApplyBalancedEnergy(ref ShipComponentAbilityStats stats)
         {
+            // Guns never author Cap or Regen — engines own the 3s / 30% plant.
             ApplyWeaponBatteryCap(ref stats);
-
-            // --- Regen: always slower than sustained fire drain (engine plant uses this formula) ---
-            float firePower = Mathf.Max(0f, stats.firePower);
-            float fireRate = Mathf.Max(0.01f, stats.fireRate);
-            if (firePower <= 0f)
-                return;
-
-            float sustainedDrain = ComputeSustainedEnergyDrain(firePower, fireRate);
-            stats.energyRegen = sustainedDrain * EnergyRegenFractionOfSustainedDrain;
-            stats.energyRegenPerAbilityLevel = stats.energyRegen * ShipPropulsionAggregation.PerLevelFractionOfBase;
         }
 
         /// <summary>
-        /// [TITAN-ORBIT] Weapon battery Cap only — no Regen. Engines produce energy; guns store it.
-        /// Default Cap = <c>firePower × fireRate</c> (enough for ~1 second of continuous fire
-        /// at base Offense stats). Designers can override Cap after Scan/Rebalance.
+        /// [TITAN-ORBIT] Weapons spend energy; they do <b>not</b> store or regenerate it.
+        /// Clears Cap/Regen on the gun so hull <c>MaxEnergy</c> comes from the engine plant
+        /// (~<see cref="EnergyBatterySecondsOfSustainedFire"/> seconds of fire at 30% regen).
         /// </summary>
-        /// <param name="stats">Weapon stats (reads firePower / fireRate; writes energyCap / PerLevel; clears regen).</param>
+        /// <param name="stats">Weapon stats (clears energy Cap / Regen / PerLevel).</param>
         public static void ApplyWeaponBatteryCap(ref ShipComponentAbilityStats stats)
         {
-            float firePower = Mathf.Max(0f, stats.firePower);
-            if (firePower <= 0f)
-            {
-                stats.energyRegen = 0f;
-                stats.energyRegenPerAbilityLevel = 0f;
-                return;
-            }
-
-            // --- Cap: 1 second of sustained fire at this gun's authored firePower × fireRate ---
-            float fireRate = Mathf.Max(0.01f, stats.fireRate);
-            stats.energyCap = ComputeSustainedEnergyDrain(firePower, fireRate);
-            stats.energyCapPerAbilityLevel = stats.energyCap * ShipPropulsionAggregation.PerLevelFractionOfBase;
-
-            // Weapons never produce Regen.
+            stats.energyCap = 0f;
+            stats.energyCapPerAbilityLevel = 0f;
             stats.energyRegen = 0f;
             stats.energyRegenPerAbilityLevel = 0f;
         }
 
-        /// <summary>Cannon energy: Cap = firePower × fireRate (1 sec); regen &lt; sustained drain.</summary>
+        /// <summary>Cannon energy clear — engines own Cap/Regen.</summary>
         public static void ApplyCannonBalancedEnergy(ref ShipComponentAbilityStats stats) =>
             ApplyBalancedEnergy(ref stats);
 
-        /// <summary>Bullet energy: Cap = firePower × fireRate (1 sec); regen &lt; sustained drain.</summary>
+        /// <summary>Bullet energy clear — engines own Cap/Regen.</summary>
         public static void ApplyBulletBalancedEnergy(ref ShipComponentAbilityStats stats) =>
             ApplyBalancedEnergy(ref stats);
     }
@@ -243,10 +236,21 @@ namespace TitanOrbit.Data
             GetSuggestedTractorPower(version) * ShipPropulsionAggregation.PerLevelFractionOfBase;
     }
 
-    /// <summary>Scan/auto-populate people capacity defaults.</summary>
+    /// <summary>
+    /// Scan/auto-populate people capacity defaults.
+    /// Sized from <see cref="GameBalanceTargets"/> so a median Cockpit+Wings hull can help
+    /// about three ships capture a same-level home planet in ~5 cargo unload cycles.
+    /// </summary>
     public static class ShipComponentPeopleCapacitySuggestions
     {
-        public const float PeopleCapacityV1 = 2f;
+        /// <summary>
+        /// People on one cargo part (Cockpit or Wing) at version 1.
+        /// [TITAN-ORBIT] Derived from capture targets ÷ expected cargo part count — not a free-hand guess.
+        /// </summary>
+        public static float PeopleCapacityV1 => GameBalanceTargets.SuggestedPeoplePerCargoPartV1;
+
+        /// <summary>Per-version step equals V1 so vN ≈ N × V1 (same shape as legacy linear versions).</summary>
+        public static float PeopleCapacityPerVersion => PeopleCapacityV1;
 
         public static float GetSuggestedPeopleCapacity(int version)
         {
@@ -257,6 +261,30 @@ namespace TitanOrbit.Data
         /// <summary>Per ship-level people growth — float only (no RoundToInt).</summary>
         public static float GetSuggestedPeopleCapacityPerLevel(int version) =>
             Mathf.Max(0f, GetSuggestedPeopleCapacity(version) * ShipPropulsionAggregation.PerLevelFractionOfBase);
+    }
+
+    /// <summary>
+    /// Scan/auto-populate gem capacity defaults for Cockpit / Wing cargo parts.
+    /// Sized so a median hull’s gemCap ≈ <see cref="GameBalanceTargets.TargetMedianGemCapAtShipLevel1"/>
+    /// and chassis purchase (<c>2 × gemCap</c>) stays ~two full cargo trips.
+    /// </summary>
+    public static class ShipComponentGemCapacitySuggestions
+    {
+        /// <summary>Gems on one cargo part at version 1 (from GameBalanceTargets).</summary>
+        public static float GemCapacityV1 => GameBalanceTargets.SuggestedGemsPerCargoPartV1;
+
+        /// <summary>Per-version gem step (linear versions, same as people).</summary>
+        public static float GemCapacityPerVersion => GemCapacityV1;
+
+        public static float GetSuggestedGemCapacity(int version)
+        {
+            int v = Mathf.Max(1, version);
+            return GemCapacityV1 * v;
+        }
+
+        /// <summary>Per ship-level gem growth — float only.</summary>
+        public static float GetSuggestedGemCapacityPerLevel(int version) =>
+            Mathf.Max(0f, GetSuggestedGemCapacity(version) * ShipPropulsionAggregation.PerLevelFractionOfBase);
     }
 
     /// <summary>
