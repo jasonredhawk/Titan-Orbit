@@ -9,8 +9,14 @@ namespace TitanOrbit.Data
     /// Walks child transforms named <c>{familyId}_{componentId}</c>, skips nested duplicate part meshes
     /// (same idea as chassis weapon-mount bake), scales stats by clamped transform size, then applies
     /// stack pools, weapon projectile-speed max (not sum), and family fallbacks.
-    /// Weapon fire power / rate stay pool-summed for power scores; live shots use per-mount combat from
-    /// <c>ShipWeaponMountCombatLogic</c>. Shared by editor previews, power-score baking, and runtime UI.
+    /// <para>
+    /// [TITAN-ORBIT] Same-named weapon <b>and</b> cargo (Wing/Cockpit) meshes collapse to one row
+    /// per component id (strongest scale wins) so LOD/segment meshes do not N× cargo or guns.
+    /// Distinct ids (Wing_1 + Wing_4) still stack. Hull fireRate is fitted so
+    /// <c>firePower × fireRate</c> equals Σ per-barrel DPS for energy / TTK / outliers.
+    /// Live shots still use per-mount combat from <c>ShipWeaponMountCombatLogic</c>.
+    /// </para>
+    /// Shared by editor previews, power-score baking, and runtime UI.
     /// </summary>
     public static class ShipFamilyStatsCalculator
     {
@@ -127,6 +133,11 @@ namespace TitanOrbit.Data
                 // Stacking them all created overgunned outliers; CountParts already uses a HashSet.
                 CollapseDuplicateWeaponComponentIds(ids, scaledStats);
 
+                // --- Phase 3: one cargo row per Wing/Cockpit id (keep strongest hold) ---
+                // [TITAN-ORBIT] LightFox-style hulls name many LOD/segment meshes Wing_4; full-sum
+                // extras made cargo_freak outliers while CountParts (unique ids) stayed at 2 wings.
+                CollapseDuplicateCargoComponentIds(ids, scaledStats);
+
                 for (int i = 0; i < ids.Count; i++)
                 {
                     result.TotalStats.AddInPlace(scaledStats[i]);
@@ -139,8 +150,9 @@ namespace TitanOrbit.Data
             }
             finally
             {
+                // [UNITY] Edit Mode must use DestroyImmediate — Destroy() only queues for Play Mode.
                 if (destroyInstance && instance != null)
-                    UnityEngine.Object.Destroy(instance);
+                    UnityEngine.Object.DestroyImmediate(instance);
             }
 
             return result;
@@ -191,7 +203,9 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Keeps at most one weapon entry per canonical component id (highest firePower×fireRate).
-        /// Non-weapon parts are left unchanged so mirrored engines / stacked wings still stack.
+        /// Non-weapon parts are left unchanged here — cargo uses
+        /// <see cref="CollapseDuplicateCargoComponentIds"/>; engines/thrusters still stack with
+        /// <c>extraStackWeight</c> (mirrored jets are intentional).
         /// </summary>
         /// <param name="ids">Parallel component ids (mutated in place).</param>
         /// <param name="stats">Parallel scaled stats (mutated in place).</param>
@@ -199,38 +213,98 @@ namespace TitanOrbit.Data
             List<string> ids,
             List<ShipComponentAbilityStats> stats)
         {
-            if (ids == null || stats == null || ids.Count <= 1)
+            CollapseDuplicateComponentIdsByScore(
+                ids,
+                stats,
+                isCandidate: ShipComponentAbilityStats.IsWeaponComponent,
+                scoreOf: static s => Mathf.Max(0f, s.firePower) * Mathf.Max(0f, s.fireRate));
+        }
+
+        /// <summary>
+        /// Keeps at most one Wing / Cockpit entry per canonical component id (highest people+gems).
+        /// <para>
+        /// [TITAN-ORBIT] Matches <c>CountParts</c> unique-id semantics used by fleet reports.
+        /// Distinct ids (Wing_1 vs Wing_4) still both contribute; nine meshes all named Wing_4
+        /// become one logical cargo part (strongest mesh scale wins).
+        /// </para>
+        /// </summary>
+        /// <param name="ids">Parallel component ids (mutated in place).</param>
+        /// <param name="stats">Parallel scaled stats (mutated in place).</param>
+        static void CollapseDuplicateCargoComponentIds(
+            List<string> ids,
+            List<ShipComponentAbilityStats> stats)
+        {
+            CollapseDuplicateComponentIdsByScore(
+                ids,
+                stats,
+                isCandidate: IsCargoHoldComponent,
+                scoreOf: static s => Mathf.Max(0f, s.maxPeople) + Mathf.Max(0f, s.maxGems) * 0.01f);
+        }
+
+        /// <summary>
+        /// True when this component id is a Wing or Cockpit cargo hold (not a cover with zero stats).
+        /// </summary>
+        static bool IsCargoHoldComponent(string componentId)
+        {
+            if (string.IsNullOrWhiteSpace(componentId))
+                return false;
+            string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
+            return string.Equals(partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(partType, ShipFamilyPartTypes.Cockpit, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Generic collapse: among candidates sharing a normalized component id, keep the highest
+        /// <paramref name="scoreOf"/> row and drop the rest (lists stay parallel).
+        /// </summary>
+        /// <param name="ids">Component ids (mutated).</param>
+        /// <param name="stats">Scaled stats (mutated).</param>
+        /// <param name="isCandidate">Which rows participate (weapons, cargo, …).</param>
+        /// <param name="scoreOf">Higher score wins for a duplicate id.</param>
+        static void CollapseDuplicateComponentIdsByScore(
+            List<string> ids,
+            List<ShipComponentAbilityStats> stats,
+            Func<string, bool> isCandidate,
+            Func<ShipComponentAbilityStats, float> scoreOf)
+        {
+            // --- Guards ---
+            if (ids == null || stats == null || isCandidate == null || scoreOf == null)
+                return;
+            if (ids.Count <= 1)
                 return;
 
             int count = Mathf.Min(ids.Count, stats.Count);
             var bestIndexById = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+            // --- Pick winner index per canonical id ---
             for (int i = 0; i < count; i++)
             {
                 string id = ids[i];
-                if (string.IsNullOrWhiteSpace(id) || !ShipComponentAbilityStats.IsWeaponComponent(id))
+                if (string.IsNullOrWhiteSpace(id) || !isCandidate(id))
                     continue;
 
                 string key = ShipFamilyDefinition.NormalizeComponentId(id);
                 if (string.IsNullOrEmpty(key))
                     key = id.Trim();
 
-                float dps = Mathf.Max(0f, stats[i].firePower) * Mathf.Max(0f, stats[i].fireRate);
-                if (!bestIndexById.TryGetValue(key, out int prev) || dps > Mathf.Max(0f, stats[prev].firePower) * Mathf.Max(0f, stats[prev].fireRate))
+                float score = scoreOf(stats[i]);
+                if (!bestIndexById.TryGetValue(key, out int prev) || score > scoreOf(stats[prev]))
                     bestIndexById[key] = i;
             }
 
             if (bestIndexById.Count == 0)
                 return;
 
-            var keepWeapon = new HashSet<int>();
+            var keep = new HashSet<int>();
             foreach (var pair in bestIndexById)
-                keepWeapon.Add(pair.Value);
+                keep.Add(pair.Value);
 
+            // --- Drop losing duplicates (walk backward so indices stay valid) ---
             for (int i = count - 1; i >= 0; i--)
             {
-                if (!ShipComponentAbilityStats.IsWeaponComponent(ids[i]))
+                if (!isCandidate(ids[i]))
                     continue;
-                if (keepWeapon.Contains(i))
+                if (keep.Contains(i))
                     continue;
                 ids.RemoveAt(i);
                 stats.RemoveAt(i);
@@ -301,12 +375,12 @@ namespace TitanOrbit.Data
                 result.TotalStats,
                 result.MatchedComponentIds,
                 result.PerComponentStats);
-            // [TITAN-ORBIT] Per-bullet damage lives on each mount — hull sum stays for power score.
+            // [TITAN-ORBIT] Per-bullet damage lives on each mount — hull FP sum stays for power score.
             result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponFirePowerToSummedStats(
                 result.TotalStats,
                 result.MatchedComponentIds,
                 result.PerComponentStats);
-            // [TITAN-ORBIT] Per-barrel cadence lives on each mount — hull sum stays for power score.
+            // [TITAN-ORBIT] Fit hull fireRate so FP×FR == Σ per-barrel DPS (energy / TTK / outliers).
             result.TotalStats = ShipComponentAbilityStatsMath.ApplyWeaponFireRateToSummedStats(
                 result.TotalStats,
                 result.MatchedComponentIds,

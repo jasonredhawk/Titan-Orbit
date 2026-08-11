@@ -85,28 +85,29 @@ MonoBehaviour:
       it to 30% of how much that weapon consumes. This is mainly between the engine
       and weapon components to compliment each other. We need to also balance fire
       power to ship health. There should be enough avg health cap to sustain 3 seconds
-      of avg dps.
+      of avg dps. Also remember to consider the special Engine and Thruster components
+      and how they stack, which currently is set to 10% of base for each extra
     enabled: 1
     priority: 95
   sessionNotes: "2\u20135 teams \xD7 ~20 players, domination matches ~0.5\u20132
     hours. Capture all planets to win. Balance ship levels vs planet levels vs turrets."
-  lastReviewUtc: 2026-08-11 16:00:37Z
+  lastReviewUtc: 2026-08-11 16:30:41Z
   lastChassisCount: 241
   lastReviewSummary: "# GameBalanceTargets\n\n- Session: 2\u20135 teams \xD7 20 players,
     ~30\u2013120 min domination\n- Capture: 3 ships \xD7 5 batches; home pop\u2248129
     \u2192 L3 peopleCap\u22488.6 (L1\u22487.2)\n- Cargo parts assumption: 1 cockpit
-    + 2 wings (median cargo\u22483) \u2192 people/part V1=1.70 (capture-tuned), gems/part
+    + 2 wings (median cargo\u22483) \u2192 people/part V1=2.55 (capture-tuned), gems/part
     V1\u224820.00 (gemCap target\xF72 L1 cargo parts)\n- Mid asteroid Size 35: TTK
     8\u201312s (ideal 10s); gem fill loop 45\u201390s\n- Target L1 gemCap\u224840;
     chassis cost = 2\xD7gemCap (\u22482 cargo trips)\n- Energy: Cap \u2248 3s of
     fire; regen fraction of sustained drain = 0.30; insolvency below 0.20\n- Health:
     \u2248 3s of own DPS (L1 target\u224827, part V1\u22486.75)\n- Attribute upgrade
-    cost = shipLevel \xD7 5\n\r\nReviewed 241 chassis at 2026-08-11 16:00:37Z UTC.\r\nOutliers:
-    134.\r\n\r\n### Economy\r\n- [PASS] mid_ttk_l1_sec = 10 (8-12)\r\n- [PASS] capture_batches
-    = 4.97 (4-6)\r\n- [INFO] median_l3_people = 8.653 (8.6)\r\n- [PASS] median_l1_gemCap
+    cost = shipLevel \xD7 5\n\r\nReviewed 241 chassis at 2026-08-11 16:30:41Z UTC.\r\nOutliers:
+    121.\r\n\r\n### Economy\r\n- [PASS] mid_ttk_l1_sec = 10 (8-12)\r\n- [PASS] capture_batches
+    = 5.009 (4-6)\r\n- [INFO] median_l3_people = 8.585 (8.6)\r\n- [PASS] median_l1_gemCap
     = 38.026 (40)\r\n- [PASS] median_wings = 2 (2)\r\n- [INFO] health_per_size =
     2.571 (AsteroidSettings)\r\n- [PASS] energy_cap_seconds_l1 = 3 (3)\r\n- [PASS]
-    energy_regen_frac_l1 = 0.3 (0.3)\r\n- [PASS] health_seconds_of_dps_l1 = 3.808
+    energy_regen_frac_l1 = 0.3 (0.3)\r\n- [PASS] health_seconds_of_dps_l1 = 3.132
     (3)\r\n- [INFO] gem_power_weight = raw/ 10 (power score only; purchase uses raw)\r\n"
   fleetAggregates:
   - metricName: Wings
@@ -161,9 +162,9 @@ MonoBehaviour:
     min: 9
     p10: 9.900001
     median: 12.599999
-    mean: 17.04231
+    mean: 13.119748
     p90: 15.599999
-    max: 144.90419
+    max: 31.500002
     sampleCount: 241
   - metricName: MoveSpeed
     min: 6
@@ -185,41 +186,41 @@ MonoBehaviour:
     min: 27
     p10: 29.7
     median: 37.8
-    mean: 51.126945
+    mean: 39.359264
     p90: 46.8
-    max: 434.7126
+    max: 94.500015
     sampleCount: 241
   - metricName: EnergyRegen
     min: 2.7
     p10: 2.97
     median: 3.78
-    mean: 5.1126943
+    mean: 3.9359262
     p90: 4.68
-    max: 43.47126
+    max: 9.450001
     sampleCount: 241
   - metricName: GemCap
     min: 8
-    p10: 22
-    median: 153.01599
-    mean: 226.46968
-    p90: 535.0866
-    max: 1351.3508
+    p10: 20.79297
+    median: 78.20779
+    mean: 102.67215
+    p90: 222.81021
+    max: 421.5
     sampleCount: 241
   - metricName: PeopleCap
-    min: 1.4360223
-    p10: 2.8
-    median: 13.006359
-    mean: 19.378637
-    p90: 45.48236
-    max: 114.86481
+    min: 1.9634604
+    p10: 2.805
+    median: 9.971493
+    mean: 13.186258
+    p90: 28.4083
+    max: 53.74124
     sampleCount: 241
   - metricName: PowerScore
     min: 75.525
-    p10: 102.118286
-    median: 176.3492
-    mean: 229.24374
-    p90: 475.67758
-    max: 860.99066
+    p10: 91.32693
+    median: 143.21135
+    mean: 159.0718
+    p90: 243.1427
+    max: 422.42593
     sampleCount: 241
   - metricName: PropulsionPerWing
     min: 0
@@ -230,194 +231,7 @@ MonoBehaviour:
     max: 3
     sampleCount: 241
   outliers:
-  - severity: 11.227146
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_20
-    prefabName: SpaceExcalibur5
-    shipLevel: 6
-    wings: 8
-    engines: 0
-    thrusters: 2
-    propulsion: 2
-    weapons: 2
-    moveSpeed: 7.8
-    dps: 82.64446
-    gemCap: 1067.3323
-    peopleCap: 90.72324
-    powerScore: 860.99066
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|overgunned
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
-  - severity: 10.500333
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_08
-    prefabName: SpaceExcalibur9
-    shipLevel: 5
-    wings: 1
-    engines: 0
-    thrusters: 1
-    propulsion: 1
-    weapons: 2
-    moveSpeed: 11.424001
-    dps: 144.90419
-    gemCap: 153.01599
-    peopleCap: 13.006359
-    powerScore: 635.55194
-    flags: overgunned
-    fixClass: 
-  - severity: 10.284322
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_04
-    prefabName: SpaceExcalibur8
-    shipLevel: 4
-    wings: 2
-    engines: 0
-    thrusters: 1
-    propulsion: 1
-    weapons: 2
-    moveSpeed: 8.007999
-    dps: 132.02657
-    gemCap: 244.32033
-    peopleCap: 20.76723
-    powerScore: 635.38995
-    flags: overgunned
-    fixClass: 
-  - severity: 10.182716
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_02
-    prefabName: SpaceExcalibur6
-    shipLevel: 4
-    wings: 1
-    engines: 0
-    thrusters: 1
-    propulsion: 1
-    weapons: 2
-    moveSpeed: 7.2799997
-    dps: 103.54365
-    gemCap: 331.92444
-    peopleCap: 28.213581
-    powerScore: 554.2133
-    flags: cargo_freak_people|cargo_freak_gems|overgunned
-    fixClass: needs_wing_stat_nerf
-  - severity: 10.030634
-    familyId: LightFox
-    chassisId: LightFox_17
-    prefabName: LightFox9
-    shipLevel: 5
-    wings: 2
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 7.3919997
-    dps: 12.599999
-    gemCap: 1011.4066
-    peopleCap: 85.96957
-    powerScore: 582.60504
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 10.027153
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_07
-    prefabName: SpaceExcalibur3
-    shipLevel: 6
-    wings: 4
-    engines: 0
-    thrusters: 1
-    propulsion: 1
-    weapons: 2
-    moveSpeed: 6
-    dps: 127.94157
-    gemCap: 270
-    peopleCap: 22.95
-    powerScore: 617.58105
-    flags: propulsion_starvation|overgunned|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
-  - severity: 10.008956
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_13
-    prefabName: SpaceExcalibur10
-    shipLevel: 5
-    wings: 2
-    engines: 0
-    thrusters: 3
-    propulsion: 3
-    weapons: 2
-    moveSpeed: 11.424001
-    dps: 110.787415
-    gemCap: 354.4616
-    peopleCap: 30.129236
-    powerScore: 669.809
-    flags: cargo_freak_people|cargo_freak_gems|overgunned
-    fixClass: needs_wing_stat_nerf
-  - severity: 8.494466
-    familyId: LightFox
-    chassisId: LightFox_13
-    prefabName: LightFox7
-    shipLevel: 5
-    wings: 4
-    engines: 3
-    thrusters: 0
-    propulsion: 3
-    weapons: 1
-    moveSpeed: 10.584
-    dps: 12.6
-    gemCap: 882.26215
-    peopleCap: 74.99228
-    powerScore: 502.68045
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 8.453515
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_18
-    prefabName: SpaceExcalibur1
-    shipLevel: 6
-    wings: 8
-    engines: 0
-    thrusters: 3
-    propulsion: 3
-    weapons: 2
-    moveSpeed: 9.000001
-    dps: 90
-    gemCap: 603.92566
-    peopleCap: 51.333687
-    powerScore: 724.46
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|overgunned
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
-  - severity: 8.244963
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_05
-    prefabName: SpaceExcalibur12
-    shipLevel: 5
-    wings: 2
-    engines: 0
-    thrusters: 3
-    propulsion: 3
-    weapons: 2
-    moveSpeed: 10.752001
-    dps: 116.48653
-    gemCap: 140
-    peopleCap: 11.9
-    powerScore: 517.5416
-    flags: overgunned
-    fixClass: 
-  - severity: 7.9743385
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_16
-    prefabName: SpaceExcalibur13
-    shipLevel: 6
-    wings: 4
-    engines: 0
-    thrusters: 3
-    propulsion: 3
-    weapons: 2
-    moveSpeed: 9.000001
-    dps: 121.15357
-    gemCap: 476.66034
-    peopleCap: 40.51613
-    powerScore: 724.2765
-    flags: overgunned
-    fixClass: 
-  - severity: 7.5470753
+  - severity: 7.560732
     familyId: GalaxyRaptor
     chassisId: GalaxyRaptor_04
     prefabName: GalaxyRaptor04
@@ -429,216 +243,29 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 6.72
     dps: 12.6
-    gemCap: 672.3082
-    peopleCap: 57.14621
-    powerScore: 511.26892
+    gemCap: 350.15417
+    peopleCap: 44.644653
+    powerScore: 363.31802
     flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 7.3125978
+  - severity: 7.240076
     familyId: LightFox
-    chassisId: LightFox_18
-    prefabName: LightFox2
-    shipLevel: 6
-    wings: 4
-    engines: 3
-    thrusters: 0
-    propulsion: 3
-    weapons: 1
-    moveSpeed: 12.450001
-    dps: 13.5
-    gemCap: 1351.3508
-    peopleCap: 114.86481
-    powerScore: 729.6587
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 7.2892737
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_15
-    prefabName: SpaceExcalibur7
-    shipLevel: 6
-    wings: 4
-    engines: 0
-    thrusters: 3
-    propulsion: 3
-    weapons: 2
-    moveSpeed: 9
-    dps: 111.9052
-    gemCap: 518.9415
-    peopleCap: 44.11003
-    powerScore: 691.5682
-    flags: overgunned
-    fixClass: 
-  - severity: 7.1079035
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_19
-    prefabName: SpaceExcalibur4
+    chassisId: LightFox_11
+    prefabName: LightFox8
     shipLevel: 5
-    wings: 6
-    engines: 0
-    thrusters: 2
-    propulsion: 2
+    wings: 4
+    engines: 1
+    thrusters: 0
+    propulsion: 1
     weapons: 1
-    moveSpeed: 11.424001
+    moveSpeed: 7.3919997
     dps: 12.600001
-    gemCap: 709.6486
-    peopleCap: 60.320137
-    powerScore: 432.8507
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
-  - severity: 7.0241904
-    familyId: LightFox
-    chassisId: LightFox_19
-    prefabName: LightFox4
-    shipLevel: 6
-    wings: 4
-    engines: 3
-    thrusters: 0
-    propulsion: 3
-    weapons: 1
-    moveSpeed: 8.85
-    dps: 13.5
-    gemCap: 1309.5
-    peopleCap: 111.3075
-    powerScore: 706.3552
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 6.927672
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_06
-    prefabName: SpaceExcalibur16
-    shipLevel: 3
-    wings: 1
-    engines: 0
-    thrusters: 1
-    propulsion: 1
-    weapons: 2
-    moveSpeed: 8.448
-    dps: 85.61886
-    gemCap: 95.215225
-    peopleCap: 8.093294
-    powerScore: 403.82202
-    flags: overgunned
-    fixClass: 
-  - severity: 6.7345314
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_10
-    prefabName: GalaxyRaptor12
-    shipLevel: 5
-    wings: 4
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 8.736
-    dps: 12.599999
-    gemCap: 603.9983
-    peopleCap: 51.33986
-    powerScore: 441.6227
+    gemCap: 336.1381
+    peopleCap: 42.857605
+    powerScore: 247.87483
     flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 6.5686483
-    familyId: LightFox
-    chassisId: LightFox_01
-    prefabName: LightFox12
-    shipLevel: 1
-    wings: 2
-    engines: 2
-    thrusters: 0
-    propulsion: 2
-    weapons: 0
-    moveSpeed: 11
-    dps: 9
-    gemCap: 153.40764
-    peopleCap: 13.03965
-    powerScore: 145.4204
-    flags: cargo_freak_people|cargo_freak_gems|weaponless
-    fixClass: needs_wing_stat_nerf|structural_prefab
-  - severity: 6.5525846
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_11
-    prefabName: GalaxyRaptor05
-    shipLevel: 6
-    wings: 4
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 7.2000003
-    dps: 13.5
-    gemCap: 1016.1447
-    peopleCap: 86.372314
-    powerScore: 722.8913
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 6.5457315
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_14
-    prefabName: SpaceExcalibur17
-    shipLevel: 4
-    wings: 3
-    engines: 0
-    thrusters: 1
-    propulsion: 1
-    weapons: 2
-    moveSpeed: 8.007999
-    dps: 71.12505
-    gemCap: 239.11497
-    peopleCap: 20.324772
-    powerScore: 419.81232
-    flags: propulsion_starvation|overgunned|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
-  - severity: 6.3100157
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_12
-    prefabName: GalaxyRaptor08
-    shipLevel: 5
-    wings: 4
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 8.736
-    dps: 12.599999
-    gemCap: 568.30963
-    peopleCap: 48.306316
-    powerScore: 475.67758
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 6.309186
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_18
-    prefabName: GalaxyRaptor01
-    shipLevel: 5
-    wings: 4
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 8.736
-    dps: 12.599999
-    gemCap: 568.23987
-    peopleCap: 48.30039
-    powerScore: 489.1445
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 6.0242634
-    familyId: LightFox
-    chassisId: LightFox_16
-    prefabName: LightFox3
-    shipLevel: 6
-    wings: 4
-    engines: 3
-    thrusters: 0
-    propulsion: 3
-    weapons: 1
-    moveSpeed: 12.450001
-    dps: 13.5
-    gemCap: 1164.4006
-    peopleCap: 98.974045
-    powerScore: 640.59625
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 5.9148297
+  - severity: 6.4977884
     familyId: LightFox
     chassisId: LightFox_12
     prefabName: LightFox15
@@ -650,63 +277,131 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 7.3919997
     dps: 12.6
-    gemCap: 535.0866
-    peopleCap: 45.48236
-    powerScore: 335.7189
+    gemCap: 303.69223
+    peopleCap: 38.720757
+    powerScore: 230.00433
     flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 5.7640243
-    familyId: LightFox
-    chassisId: LightFox_10
-    prefabName: LightFox18
+  - severity: 6.370307
+    familyId: GalaxyRaptor
+    chassisId: GalaxyRaptor_18
+    prefabName: GalaxyRaptor01
     shipLevel: 5
-    wings: 3
+    wings: 4
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 8.736
+    dps: 12.599999
+    gemCap: 298.11993
+    peopleCap: 38.01029
+    powerScore: 365.13858
+    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+  - severity: 6.1168385
+    familyId: GalaxyRaptor
+    chassisId: GalaxyRaptor_11
+    prefabName: GalaxyRaptor05
+    shipLevel: 6
+    wings: 4
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 7.2000003
+    dps: 13.5
+    gemCap: 369.60678
+    peopleCap: 47.124863
+    powerScore: 422.42593
+    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+  - severity: 5.4888296
+    familyId: LightFox
+    chassisId: LightFox_16
+    prefabName: LightFox3
+    shipLevel: 6
+    wings: 4
     engines: 3
     thrusters: 0
     propulsion: 3
-    weapons: 0
-    moveSpeed: 11.9279995
+    weapons: 1
+    moveSpeed: 12.450001
+    dps: 13.500001
+    gemCap: 421.5
+    peopleCap: 53.74124
+    powerScore: 295.31445
+    flags: cargo_freak_people|cargo_freak_gems
+    fixClass: needs_wing_stat_nerf
+  - severity: 5.405798
+    familyId: GalaxyRaptor
+    chassisId: GalaxyRaptor_10
+    prefabName: GalaxyRaptor12
+    shipLevel: 5
+    wings: 4
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 8.736
     dps: 12.599999
-    gemCap: 610.6812
-    peopleCap: 51.907906
-    powerScore: 373.87265
-    flags: cargo_freak_people|cargo_freak_gems|weaponless
-    fixClass: needs_wing_stat_nerf|structural_prefab
-  - severity: 5.751709
+    gemCap: 255.96063
+    peopleCap: 32.63498
+    powerScore: 280.48495
+    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+  - severity: 5.4053297
+    familyId: LightFox
+    chassisId: LightFox_13
+    prefabName: LightFox7
+    shipLevel: 5
+    wings: 4
+    engines: 3
+    thrusters: 0
+    propulsion: 3
+    weapons: 1
+    moveSpeed: 10.584
+    dps: 12.6
+    gemCap: 323.69168
+    peopleCap: 41.270683
+    powerScore: 243.1427
+    flags: cargo_freak_people|cargo_freak_gems
+    fixClass: needs_wing_stat_nerf
+  - severity: 5.291415
     familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_02
-    prefabName: GalaxyRaptor17
-    shipLevel: 3
-    wings: 3
+    chassisId: GalaxyRaptor_12
+    prefabName: GalaxyRaptor08
+    shipLevel: 5
+    wings: 4
     engines: 1
     thrusters: 0
     propulsion: 1
     weapons: 1
-    moveSpeed: 8.448
-    dps: 10.800001
-    gemCap: 319.89478
-    peopleCap: 27.191063
-    powerScore: 256.1195
+    moveSpeed: 8.736
+    dps: 12.599999
+    gemCap: 250.96089
+    peopleCap: 31.99751
+    powerScore: 328.93515
     flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 5.685495
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_08
-    prefabName: GalaxyRaptor07
-    shipLevel: 3
-    wings: 3
-    engines: 1
+  - severity: 5.275625
+    familyId: LightFox
+    chassisId: LightFox_19
+    prefabName: LightFox4
+    shipLevel: 6
+    wings: 4
+    engines: 3
     thrusters: 0
-    propulsion: 1
+    propulsion: 3
     weapons: 1
-    moveSpeed: 9.216001
-    dps: 10.8
-    gemCap: 316.52466
-    peopleCap: 26.904594
-    powerScore: 341.86432
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 5.6303744
+    moveSpeed: 8.85
+    dps: 13.5
+    gemCap: 409.5
+    peopleCap: 52.21125
+    powerScore: 286.98294
+    flags: cargo_freak_people|cargo_freak_gems
+    fixClass: needs_wing_stat_nerf
+  - severity: 5.040093
     familyId: LightFox
     chassisId: LightFox_15
     prefabName: LightFox5
@@ -718,80 +413,80 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 8.85
     dps: 13.5
-    gemCap: 1107.2434
-    peopleCap: 94.11568
-    powerScore: 610.3476
+    gemCap: 396.24335
+    peopleCap: 50.52103
+    powerScore: 279.81635
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
-  - severity: 5.5983
-    familyId: LightFox
-    chassisId: LightFox_11
-    prefabName: LightFox8
+  - severity: 4.93827
+    familyId: SpaceExcalibur
+    chassisId: SpaceExcalibur_19
+    prefabName: SpaceExcalibur4
     shipLevel: 5
-    wings: 4
-    engines: 1
-    thrusters: 0
-    propulsion: 1
+    wings: 6
+    engines: 0
+    thrusters: 2
+    propulsion: 2
     weapons: 1
-    moveSpeed: 7.3919997
-    dps: 12.6
-    gemCap: 508.47617
-    peopleCap: 43.220474
-    powerScore: 325.44077
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 5.2418933
+    moveSpeed: 11.424001
+    dps: 12.600001
+    gemCap: 274.13577
+    peopleCap: 34.95231
+    powerScore: 230.72241
+    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems
+    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
+  - severity: 4.66601
     familyId: LightFox
-    chassisId: LightFox_14
-    prefabName: LightFox6
+    chassisId: LightFox_10
+    prefabName: LightFox18
+    shipLevel: 5
+    wings: 3
+    engines: 3
+    thrusters: 0
+    propulsion: 3
+    weapons: 0
+    moveSpeed: 11.9279995
+    dps: 12.599999
+    gemCap: 269.5202
+    peopleCap: 34.363823
+    powerScore: 216.11649
+    flags: cargo_freak_people|cargo_freak_gems|weaponless
+    fixClass: needs_wing_stat_nerf|structural_prefab
+  - severity: 4.6461215
+    familyId: AstroEagle
+    chassisId: AstroEagle_19
+    prefabName: AstroEagle_Harvester
     shipLevel: 6
-    wings: 4
+    wings: 5
+    engines: 1
+    thrusters: 1
+    propulsion: 2
+    weapons: 1
+    moveSpeed: 12.150001
+    dps: 13.5
+    gemCap: 340.29883
+    peopleCap: 43.3881
+    powerScore: 261.6464
+    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems
+    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
+  - severity: 4.6182723
+    familyId: LightFox
+    chassisId: LightFox_20
+    prefabName: LightFox1
+    shipLevel: 3
+    wings: 3
     engines: 3
     thrusters: 0
     propulsion: 3
     weapons: 1
-    moveSpeed: 11.85
-    dps: 13.5
-    gemCap: 1050.8707
-    peopleCap: 89.324036
-    powerScore: 598.0361
+    moveSpeed: 11.328001
+    dps: 10.8
+    gemCap: 222.81021
+    peopleCap: 28.4083
+    powerScore: 187.46985
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
-  - severity: 4.4907875
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_20
-    prefabName: GalaxyRaptor03
-    shipLevel: 4
-    wings: 3
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 10.191999
-    dps: 11.699999
-    gemCap: 384.88196
-    peopleCap: 32.714962
-    powerScore: 335.05164
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 4.458698
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_05
-    prefabName: GalaxyRaptor18
-    shipLevel: 5
-    wings: 2
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 7.3919997
-    dps: 12.599999
-    gemCap: 542.97797
-    peopleCap: 46.153137
-    powerScore: 432.8429
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 4.449609
+  - severity: 4.608668
     familyId: LightFox
     chassisId: LightFox_09
     prefabName: LightFox10
@@ -803,29 +498,97 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 11.466
     dps: 11.7
-    gemCap: 494.08405
-    peopleCap: 41.997143
-    powerScore: 326.52542
+    gemCap: 262.30597
+    peopleCap: 33.444008
+    powerScore: 220.19048
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
-  - severity: 4.3867865
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_17
-    prefabName: SpaceExcalibur14
-    shipLevel: 5
-    wings: 4
-    engines: 0
-    thrusters: 3
-    propulsion: 3
+  - severity: 4.5873413
+    familyId: GalaxyRaptor
+    chassisId: GalaxyRaptor_20
+    prefabName: GalaxyRaptor03
+    shipLevel: 4
+    wings: 3
+    engines: 1
+    thrusters: 0
+    propulsion: 1
     weapons: 1
-    moveSpeed: 12.768002
-    dps: 12.6
-    gemCap: 536.9325
-    peopleCap: 45.639267
-    powerScore: 379.78787
+    moveSpeed: 10.191999
+    dps: 11.699999
+    gemCap: 203.24571
+    peopleCap: 25.91383
+    powerScore: 251.69615
+    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+  - severity: 4.574129
+    familyId: GalaxyRaptor
+    chassisId: GalaxyRaptor_02
+    prefabName: GalaxyRaptor17
+    shipLevel: 3
+    wings: 3
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 8.448
+    dps: 10.800001
+    gemCap: 171.94739
+    peopleCap: 21.923294
+    powerScore: 188.2923
+    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+  - severity: 4.55057
+    familyId: AstroEagle
+    chassisId: AstroEagle_04
+    prefabName: AstroEagle_Whale
+    shipLevel: 4
+    wings: 1
+    engines: 1
+    thrusters: 1
+    propulsion: 2
+    weapons: 1
+    moveSpeed: 9.828
+    dps: 11.7
+    gemCap: 260
+    peopleCap: 33.149998
+    powerScore: 189.9046
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
-  - severity: 4.379719
+  - severity: 4.5145044
+    familyId: LightFox
+    chassisId: LightFox_06
+    prefabName: LightFox20
+    shipLevel: 4
+    wings: 3
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 8.007999
+    dps: 11.7
+    gemCap: 200.35474
+    peopleCap: 25.545229
+    powerScore: 174.8176
+    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+  - severity: 4.4225035
+    familyId: SpaceExcalibur
+    chassisId: SpaceExcalibur_20
+    prefabName: SpaceExcalibur5
+    shipLevel: 6
+    wings: 8
+    engines: 0
+    thrusters: 2
+    propulsion: 2
+    weapons: 2
+    moveSpeed: 7.8
+    dps: 31.5
+    gemCap: 319.2702
+    peopleCap: 40.706947
+    powerScore: 343.4159
+    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems
+    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
+  - severity: 4.350731
     familyId: GalaxyRaptor
     chassisId: GalaxyRaptor_17
     prefabName: GalaxyRaptor10
@@ -836,64 +599,13 @@ MonoBehaviour:
     propulsion: 1
     weapons: 1
     moveSpeed: 7.2000003
-    dps: 13.5
-    gemCap: 712.9328
-    peopleCap: 60.599293
-    powerScore: 562.5199
+    dps: 13.499999
+    gemCap: 274.89383
+    peopleCap: 35.04896
+    powerScore: 359.21036
     flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 4.134343
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_19
-    prefabName: GalaxyRaptor09
-    shipLevel: 6
-    wings: 3
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 9.6
-    dps: 13.5
-    gemCap: 677.32635
-    peopleCap: 57.572742
-    powerScore: 576.0463
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 4.031276
-    familyId: NightAye
-    chassisId: NightAye_14
-    prefabName: NightAye2
-    shipLevel: 5
-    wings: 4
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 6.72
-    dps: 16.8
-    gemCap: 376.73764
-    peopleCap: 32.0227
-    powerScore: 302.8708
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 3.9648423
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_14
-    prefabName: GalaxyRaptor16
-    shipLevel: 4
-    wings: 2
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 10.92
-    dps: 11.700001
-    gemCap: 456.94757
-    peopleCap: 38.84055
-    powerScore: 336.6715
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 3.944822
+  - severity: 4.084007
     familyId: LightFox
     chassisId: LightFox_03
     prefabName: LightFox17
@@ -905,12 +617,29 @@ MonoBehaviour:
     weapons: 0
     moveSpeed: 10.89
     dps: 9.900001
-    gemCap: 210.70523
-    peopleCap: 17.909945
-    powerScore: 176.3492
+    gemCap: 151.21014
+    peopleCap: 19.279291
+    powerScore: 149.94531
     flags: cargo_freak_people|cargo_freak_gems|weaponless
     fixClass: needs_wing_stat_nerf|structural_prefab
-  - severity: 3.6981072
+  - severity: 3.9930592
+    familyId: LightFox
+    chassisId: LightFox_18
+    prefabName: LightFox2
+    shipLevel: 6
+    wings: 4
+    engines: 3
+    thrusters: 0
+    propulsion: 3
+    weapons: 1
+    moveSpeed: 12.450001
+    dps: 13.5
+    gemCap: 337.3123
+    peopleCap: 43.007317
+    powerScore: 255.82971
+    flags: cargo_freak_people|cargo_freak_gems
+    fixClass: needs_wing_stat_nerf
+  - severity: 3.9249516
     familyId: GalaxyRaptor
     chassisId: GalaxyRaptor_16
     prefabName: GalaxyRaptor06
@@ -922,131 +651,29 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 6.6000004
     dps: 13.5
-    gemCap: 614.02423
-    peopleCap: 52.192055
-    powerScore: 484.1625
+    gemCap: 250.92934
+    peopleCap: 31.993488
+    powerScore: 315.8823
     flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 3.6504369
-    familyId: NightAye
-    chassisId: NightAye_18
-    prefabName: NightAye20
-    shipLevel: 5
-    wings: 3
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 6.72
-    dps: 16.8
-    gemCap: 351.72653
-    peopleCap: 29.896755
-    powerScore: 288.49872
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 3.5608885
-    familyId: NightAye
-    chassisId: NightAye_17
-    prefabName: NightAye3
+  - severity: 3.8786118
+    familyId: LightFox
+    chassisId: LightFox_14
+    prefabName: LightFox6
     shipLevel: 6
     wings: 4
-    engines: 1
+    engines: 3
     thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 6
-    dps: 18
-    gemCap: 582.0199
-    peopleCap: 49.471695
-    powerScore: 419.27972
-    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 3.3209062
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_09
-    prefabName: GalaxyRaptor19
-    shipLevel: 4
-    wings: 2
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 9.464001
-    dps: 11.7
-    gemCap: 407.6177
-    peopleCap: 34.647507
-    powerScore: 322.58484
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 3.2577012
-    familyId: CosmicShark
-    chassisId: CosmicShark_15
-    prefabName: CosmicShark_Pony
-    shipLevel: 1
-    wings: 2
-    engines: 1
-    thrusters: 1
-    propulsion: 2
-    weapons: 0
-    moveSpeed: 17.8
-    dps: 9
-    gemCap: 90.457245
-    peopleCap: 7.6888657
-    powerScore: 116.60512
-    flags: cargo_freak_people|cargo_freak_gems|weaponless
-    fixClass: needs_wing_stat_nerf|structural_prefab
-  - severity: 3.191906
-    familyId: SpaceExcalibur
-    chassisId: SpaceExcalibur_11
-    prefabName: SpaceExcalibur2
-    shipLevel: 4
-    wings: 4
-    engines: 0
-    thrusters: 3
     propulsion: 3
     weapons: 1
-    moveSpeed: 9.464001
-    dps: 11.700002
-    gemCap: 397.7354
-    peopleCap: 33.80751
-    powerScore: 281.56238
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 3.168494
-    familyId: AstroEagle
-    chassisId: AstroEagle_13
-    prefabName: AstroEagle_Hippo
-    shipLevel: 6
-    wings: 1
-    engines: 1
-    thrusters: 1
-    propulsion: 2
-    weapons: 1
-    moveSpeed: 8.1
-    dps: 13.499999
-    gemCap: 750
-    peopleCap: 63.75
-    powerScore: 430.6108
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 3.1065962
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_13
-    prefabName: GalaxyRaptor13
-    shipLevel: 6
-    wings: 2
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 8.400001
+    moveSpeed: 11.85
     dps: 13.5
-    gemCap: 741.018
-    peopleCap: 62.98653
-    powerScore: 476.62317
+    gemCap: 330.87076
+    peopleCap: 42.18602
+    powerScore: 262.573
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
-  - severity: 3.0042226
+  - severity: 3.8142383
     familyId: LightFox
     chassisId: LightFox_08
     prefabName: LightFox14
@@ -1058,11 +685,62 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 11.466
     dps: 11.7
-    gemCap: 383.35757
-    peopleCap: 32.585396
-    powerScore: 263.7463
+    gemCap: 230.7741
+    peopleCap: 29.423697
+    powerScore: 194.36143
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
+  - severity: 3.7234967
+    familyId: SpaceExcalibur
+    chassisId: SpaceExcalibur_18
+    prefabName: SpaceExcalibur1
+    shipLevel: 6
+    wings: 8
+    engines: 0
+    thrusters: 3
+    propulsion: 3
+    weapons: 2
+    moveSpeed: 9.000001
+    dps: 31.5
+    gemCap: 286.9629
+    peopleCap: 36.58777
+    powerScore: 385.2318
+    flags: propulsion_starvation|cargo_freak_people|cargo_freak_gems
+    fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
+  - severity: 3.2564757
+    familyId: AstroEagle
+    chassisId: AstroEagle_10
+    prefabName: AstroEagle_Turkey
+    shipLevel: 5
+    wings: 2
+    engines: 1
+    thrusters: 1
+    propulsion: 2
+    weapons: 1
+    moveSpeed: 10.584
+    dps: 12.6000185
+    gemCap: 229.76387
+    peopleCap: 29.294895
+    powerScore: 204.9397
+    flags: cargo_freak_people|cargo_freak_gems
+    fixClass: needs_wing_stat_nerf
+  - severity: 3.0602853
+    familyId: LightFox
+    chassisId: LightFox_01
+    prefabName: LightFox12
+    shipLevel: 1
+    wings: 2
+    engines: 2
+    thrusters: 0
+    propulsion: 2
+    weapons: 0
+    moveSpeed: 11
+    dps: 9
+    gemCap: 86.70382
+    peopleCap: 11.054737
+    powerScore: 114.93723
+    flags: cargo_freak_people|cargo_freak_gems|weaponless
+    fixClass: needs_wing_stat_nerf|structural_prefab
   - severity: 2.8
     familyId: NightAye
     chassisId: NightAye_12
@@ -1075,9 +753,9 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 6.75
     dps: 18
-    gemCap: 480
-    peopleCap: 40.800003
-    powerScore: 377.86972
+    gemCap: 142.5
+    peopleCap: 18.16875
+    powerScore: 220.48758
     flags: propulsion_starvation|wing_balloon
     fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
   - severity: 2.8
@@ -1092,80 +770,46 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 6.75
     dps: 18
-    gemCap: 317.4721
-    peopleCap: 26.98513
-    powerScore: 276.59827
+    gemCap: 173.73605
+    peopleCap: 22.151348
+    powerScore: 210.77275
     flags: propulsion_starvation|wing_balloon
     fixClass: needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-  - severity: 2.6562324
-    familyId: LightFox
-    chassisId: LightFox_02
-    prefabName: LightFox13
-    shipLevel: 3
-    wings: 1
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 0
-    moveSpeed: 7.6800003
-    dps: 10.8
-    gemCap: 211.54308
-    peopleCap: 17.981161
-    powerScore: 178.00375
-    flags: cargo_freak_people|cargo_freak_gems|weaponless
-    fixClass: needs_wing_stat_nerf|structural_prefab
-  - severity: 2.4583411
-    familyId: LightFox
-    chassisId: LightFox_05
-    prefabName: LightFox11
-    shipLevel: 3
-    wings: 2
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 8.448
-    dps: 10.8
-    gemCap: 226.91974
-    peopleCap: 19.28818
-    powerScore: 184.15727
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 2.3776002
-    familyId: LightFox
-    chassisId: LightFox_20
-    prefabName: LightFox1
-    shipLevel: 3
+  - severity: 2.7106917
+    familyId: AstroEagle
+    chassisId: AstroEagle_20
+    prefabName: AstroEagle_Bee
+    shipLevel: 5
     wings: 3
-    engines: 3
-    thrusters: 0
+    engines: 2
+    thrusters: 1
     propulsion: 3
     weapons: 1
-    moveSpeed: 11.328001
-    dps: 10.8
-    gemCap: 222.81021
-    peopleCap: 18.938868
-    powerScore: 185.1025
+    moveSpeed: 16.295998
+    dps: 12.600013
+    gemCap: 205.90732
+    peopleCap: 26.253183
+    powerScore: 216.47925
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
-  - severity: 2.3755622
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_03
-    prefabName: GalaxyRaptor20
-    shipLevel: 3
-    wings: 2
-    engines: 1
-    thrusters: 0
-    propulsion: 1
+  - severity: 2.5404584
+    familyId: SpaceExcalibur
+    chassisId: SpaceExcalibur_17
+    prefabName: SpaceExcalibur14
+    shipLevel: 5
+    wings: 4
+    engines: 0
+    thrusters: 3
+    propulsion: 3
     weapons: 1
-    moveSpeed: 8.448
-    dps: 10.8
-    gemCap: 222.70647
-    peopleCap: 18.930052
-    powerScore: 232.50937
+    moveSpeed: 12.768002
+    dps: 12.6
+    gemCap: 198.46632
+    peopleCap: 25.304453
+    powerScore: 222.54549
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
-  - severity: 2.3279448
+  - severity: 2.480538
     familyId: AstroEagle
     chassisId: AstroEagle_14
     prefabName: AstroEagle_DoubleBarrel
@@ -1177,26 +821,43 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 10.584
     dps: 12.599999
-    gemCap: 363.84717
-    peopleCap: 30.92701
-    powerScore: 292.85394
+    gemCap: 195.84715
+    peopleCap: 24.970512
+    powerScore: 215.83983
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
-  - severity: 2.2915347
-    familyId: GalaxyRaptor
-    chassisId: GalaxyRaptor_06
-    prefabName: GalaxyRaptor11
-    shipLevel: 1
+  - severity: 2.4592352
+    familyId: SpaceExcalibur
+    chassisId: SpaceExcalibur_11
+    prefabName: SpaceExcalibur2
+    shipLevel: 4
+    wings: 4
+    engines: 0
+    thrusters: 3
+    propulsion: 3
+    weapons: 1
+    moveSpeed: 9.464001
+    dps: 11.700002
+    gemCap: 176.9924
+    peopleCap: 22.56653
+    powerScore: 179.51633
+    flags: cargo_freak_people|cargo_freak_gems
+    fixClass: needs_wing_stat_nerf
+  - severity: 2.2734308
+    familyId: AstroEagle
+    chassisId: AstroEagle_06
+    prefabName: AstroEagle_Turtle
+    shipLevel: 3
     wings: 1
     engines: 1
-    thrusters: 0
-    propulsion: 1
+    thrusters: 1
+    propulsion: 2
     weapons: 1
-    moveSpeed: 9.6
-    dps: 9
-    gemCap: 81.59412
-    peopleCap: 6.935499
-    powerScore: 186.72258
+    moveSpeed: 12.096001
+    dps: 10.800002
+    gemCap: 143.86897
+    peopleCap: 18.343292
+    powerScore: 183.71384
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
   - severity: 2.2076905
@@ -1212,28 +873,62 @@ MonoBehaviour:
     moveSpeed: 14.400001
     dps: 9
     gemCap: 80
-    peopleCap: 6.8
-    powerScore: 130.01581
+    peopleCap: 10.2
+    powerScore: 130.86581
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
-  - severity: 2.1919072
-    familyId: AstroEagle
-    chassisId: AstroEagle_10
-    prefabName: AstroEagle_Turkey
+  - severity: 2.1523523
+    familyId: LightFox
+    chassisId: LightFox_17
+    prefabName: LightFox9
     shipLevel: 5
     wings: 2
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 7.3919997
+    dps: 12.599999
+    gemCap: 181.50195
+    peopleCap: 23.141499
+    powerScore: 193.81146
+    flags: cargo_freak_people|cargo_freak_gems
+    fixClass: needs_wing_stat_nerf
+  - severity: 2.1125064
+    familyId: AstroEagle
+    chassisId: AstroEagle_05
+    prefabName: AstroEagle_Stringray
+    shipLevel: 4
+    wings: 1
     engines: 1
     thrusters: 1
     propulsion: 2
     weapons: 1
-    moveSpeed: 10.584
-    dps: 12.6000185
-    gemCap: 352.41058
-    peopleCap: 29.9549
-    powerScore: 260.24097
+    moveSpeed: 11.466
+    dps: 11.70001
+    gemCap: 163.23032
+    peopleCap: 20.811863
+    powerScore: 155.07317
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
-  - severity: 2.0738795
+  - severity: 2.090886
+    familyId: AstroEagle
+    chassisId: AstroEagle_15
+    prefabName: AstroEagle_DoubleDragon
+    shipLevel: 3
+    wings: 1
+    engines: 2
+    thrusters: 1
+    propulsion: 3
+    weapons: 1
+    moveSpeed: 14.4
+    dps: 10.80002
+    gemCap: 137.72342
+    peopleCap: 17.559738
+    powerScore: 175.99303
+    flags: cargo_freak_people|cargo_freak_gems
+    fixClass: needs_wing_stat_nerf
+  - severity: 2.0022995
     familyId: LightFox
     chassisId: LightFox_07
     prefabName: LightFox16
@@ -1244,61 +939,27 @@ MonoBehaviour:
     propulsion: 3
     weapons: 1
     moveSpeed: 12.193998
-    dps: 11.699999
-    gemCap: 312.08694
-    peopleCap: 26.527393
-    powerScore: 233.1871
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 2.0499687
-    familyId: AstroEagle
-    chassisId: AstroEagle_08
-    prefabName: AstroEagle_Slicer
-    shipLevel: 2
-    wings: 1
-    engines: 2
-    thrusters: 1
-    propulsion: 3
-    weapons: 1
-    moveSpeed: 14.058001
-    dps: 17.325
-    gemCap: 156.7268
-    peopleCap: 13.321779
-    powerScore: 193.3332
-    flags: cargo_freak_people|cargo_freak_gems
-    fixClass: needs_wing_stat_nerf
-  - severity: 2.033324
-    familyId: AstroEagle
-    chassisId: AstroEagle_20
-    prefabName: AstroEagle_Bee
-    shipLevel: 5
-    wings: 3
-    engines: 2
-    thrusters: 1
-    propulsion: 3
-    weapons: 1
-    moveSpeed: 16.295998
-    dps: 12.600013
-    gemCap: 339.0786
-    peopleCap: 28.821684
-    powerScore: 276.98898
+    dps: 11.7
+    gemCap: 158.85608
+    peopleCap: 20.254148
+    powerScore: 162.73329
     flags: cargo_freak_people|cargo_freak_gems
     fixClass: needs_wing_stat_nerf
   - severity: 1.8
     familyId: NightAye
-    chassisId: NightAye_13
-    prefabName: NightAye11
-    shipLevel: 3
+    chassisId: NightAye_16
+    prefabName: NightAye19
+    shipLevel: 5
     wings: 3
     engines: 0
     thrusters: 0
     propulsion: 0
     weapons: 1
-    moveSpeed: 8.64
-    dps: 14.4
-    gemCap: 189.74803
-    peopleCap: 16.128582
-    powerScore: 198.35077
+    moveSpeed: 7.5599995
+    dps: 16.8
+    gemCap: 105.397934
+    peopleCap: 13.438236
+    powerScore: 169.1916
     flags: propulsion_starvation|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.8
@@ -1313,9 +974,26 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 7.5599995
     dps: 16.8
-    gemCap: 295.09164
-    peopleCap: 25.082792
-    powerScore: 270.26428
+    gemCap: 111.454
+    peopleCap: 14.210385
+    powerScore: 184.9912
+    flags: propulsion_starvation|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.8
+    familyId: NightAye
+    chassisId: NightAye_13
+    prefabName: NightAye11
+    shipLevel: 3
+    wings: 3
+    engines: 0
+    thrusters: 0
+    propulsion: 0
+    weapons: 1
+    moveSpeed: 8.64
+    dps: 14.4
+    gemCap: 114.08866
+    peopleCap: 14.546304
+    powerScore: 163.94226
     flags: propulsion_starvation|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.8
@@ -1330,43 +1008,43 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 8.910001
     dps: 13.200002
-    gemCap: 154.34561
-    peopleCap: 13.119376
-    powerScore: 175.56906
-    flags: propulsion_starvation|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
-  - severity: 1.8
-    familyId: NightAye
-    chassisId: NightAye_16
-    prefabName: NightAye19
-    shipLevel: 5
-    wings: 3
-    engines: 0
-    thrusters: 0
-    propulsion: 0
-    weapons: 1
-    moveSpeed: 7.5599995
-    dps: 16.8
-    gemCap: 278.17368
-    peopleCap: 23.644762
-    powerScore: 249.41519
+    gemCap: 88.172806
+    peopleCap: 11.242033
+    powerScore: 145.3515
     flags: propulsion_starvation|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.55
     familyId: NightAye
-    chassisId: NightAye_20
-    prefabName: NightAye7
+    chassisId: NightAye_17
+    prefabName: NightAye3
     shipLevel: 6
     wings: 4
     engines: 1
     thrusters: 0
     propulsion: 1
     weapons: 1
-    moveSpeed: 6.6000004
+    moveSpeed: 6
     dps: 18
-    gemCap: 351.86646
-    peopleCap: 29.908646
-    powerScore: 296.30618
+    gemCap: 186.86624
+    peopleCap: 23.825447
+    powerScore: 235.22542
+    flags: propulsion_starvation|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.55
+    familyId: NightAye
+    chassisId: NightAye_14
+    prefabName: NightAye2
+    shipLevel: 5
+    wings: 4
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 6.72
+    dps: 16.8
+    gemCap: 128.8
+    peopleCap: 16.422
+    powerScore: 187.50932
     flags: propulsion_starvation|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.55
@@ -1381,26 +1059,60 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 6.6000004
     dps: 18
-    gemCap: 420.18604
-    peopleCap: 35.71582
-    powerScore: 327.60086
+    gemCap: 154.5
+    peopleCap: 19.698751
+    powerScore: 204.15645
+    flags: propulsion_starvation|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.55
+    familyId: SpaceExcalibur
+    chassisId: SpaceExcalibur_07
+    prefabName: SpaceExcalibur3
+    shipLevel: 6
+    wings: 4
+    engines: 0
+    thrusters: 1
+    propulsion: 1
+    weapons: 2
+    moveSpeed: 6
+    dps: 31.499998
+    gemCap: 120.000015
+    peopleCap: 15.300003
+    powerScore: 225.5092
+    flags: propulsion_starvation|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.55
+    familyId: NightAye
+    chassisId: NightAye_20
+    prefabName: NightAye7
+    shipLevel: 6
+    wings: 4
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 6.6000004
+    dps: 18
+    gemCap: 157.18323
+    peopleCap: 20.040863
+    powerScore: 206.31871
     flags: propulsion_starvation|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.5
     familyId: StarForce
-    chassisId: StarForce_09
-    prefabName: StarForce7
-    shipLevel: 3
+    chassisId: StarForce_18
+    prefabName: StarForce14
+    shipLevel: 6
     wings: 0
     engines: 0
     thrusters: 0
     propulsion: 0
     weapons: 0
-    moveSpeed: 8.64
-    dps: 10.8
-    gemCap: 9.6
-    peopleCap: 2.4
-    powerScore: 82.71001
+    moveSpeed: 6.75
+    dps: 13.5
+    gemCap: 12
+    peopleCap: 3
+    powerScore: 90.0375
     flags: propulsion_starvation|weaponless
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.5
@@ -1439,53 +1151,19 @@ MonoBehaviour:
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.5
     familyId: StarForce
-    chassisId: StarForce_01
-    prefabName: StarForce17
-    shipLevel: 4
+    chassisId: StarForce_19
+    prefabName: StarForce2
+    shipLevel: 5
     wings: 0
     engines: 0
     thrusters: 0
     propulsion: 0
     weapons: 0
-    moveSpeed: 8.19
-    dps: 11.7
-    gemCap: 10.4
-    peopleCap: 2.6
-    powerScore: 85.612495
-    flags: propulsion_starvation|weaponless
-    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
-  - severity: 1.5
-    familyId: StarForce
-    chassisId: StarForce_08
-    prefabName: StarForce20
-    shipLevel: 4
-    wings: 0
-    engines: 0
-    thrusters: 0
-    propulsion: 0
-    weapons: 0
-    moveSpeed: 8.19
-    dps: 11.7
-    gemCap: 10.4
-    peopleCap: 2.6
-    powerScore: 85.612495
-    flags: propulsion_starvation|weaponless
-    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
-  - severity: 1.5
-    familyId: StarForce
-    chassisId: StarForce_12
-    prefabName: StarForce16
-    shipLevel: 4
-    wings: 0
-    engines: 0
-    thrusters: 0
-    propulsion: 0
-    weapons: 0
-    moveSpeed: 8.19
-    dps: 11.7
-    gemCap: 10.4
-    peopleCap: 2.6
-    powerScore: 85.612495
+    moveSpeed: 7.5599995
+    dps: 12.599999
+    gemCap: 11.2
+    peopleCap: 2.8
+    powerScore: 88.055
     flags: propulsion_starvation|weaponless
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.5
@@ -1507,19 +1185,87 @@ MonoBehaviour:
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.5
     familyId: StarForce
-    chassisId: StarForce_10
-    prefabName: StarForce4
-    shipLevel: 3
+    chassisId: StarForce_15
+    prefabName: StarForce9
+    shipLevel: 5
     wings: 0
     engines: 0
     thrusters: 0
     propulsion: 0
     weapons: 0
-    moveSpeed: 8.64
-    dps: 10.8
-    gemCap: 9.6
-    peopleCap: 2.4
-    powerScore: 82.71001
+    moveSpeed: 7.5599995
+    dps: 12.599999
+    gemCap: 11.2
+    peopleCap: 2.8
+    powerScore: 88.055
+    flags: propulsion_starvation|weaponless
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.5
+    familyId: StarForce
+    chassisId: StarForce_13
+    prefabName: StarForce3
+    shipLevel: 5
+    wings: 0
+    engines: 0
+    thrusters: 0
+    propulsion: 0
+    weapons: 0
+    moveSpeed: 7.5599995
+    dps: 12.599999
+    gemCap: 11.2
+    peopleCap: 2.8
+    powerScore: 88.055
+    flags: propulsion_starvation|weaponless
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.5
+    familyId: StarForce
+    chassisId: StarForce_07
+    prefabName: StarForce19
+    shipLevel: 5
+    wings: 0
+    engines: 0
+    thrusters: 0
+    propulsion: 0
+    weapons: 0
+    moveSpeed: 7.5599995
+    dps: 12.599999
+    gemCap: 11.2
+    peopleCap: 2.8
+    powerScore: 88.055
+    flags: propulsion_starvation|weaponless
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.5
+    familyId: StarForce
+    chassisId: StarForce_12
+    prefabName: StarForce16
+    shipLevel: 4
+    wings: 0
+    engines: 0
+    thrusters: 0
+    propulsion: 0
+    weapons: 0
+    moveSpeed: 8.19
+    dps: 11.7
+    gemCap: 10.4
+    peopleCap: 2.6
+    powerScore: 85.612495
+    flags: propulsion_starvation|weaponless
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.5
+    familyId: StarForce
+    chassisId: StarForce_06
+    prefabName: StarForce10
+    shipLevel: 2
+    wings: 0
+    engines: 0
+    thrusters: 0
+    propulsion: 0
+    weapons: 0
+    moveSpeed: 8.910001
+    dps: 9.900001
+    gemCap: 8.8
+    peopleCap: 2.2
+    powerScore: 79.3475
     flags: propulsion_starvation|weaponless
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.5
@@ -1575,53 +1321,53 @@ MonoBehaviour:
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.5
     familyId: StarForce
-    chassisId: StarForce_19
-    prefabName: StarForce2
-    shipLevel: 5
+    chassisId: StarForce_09
+    prefabName: StarForce7
+    shipLevel: 3
     wings: 0
     engines: 0
     thrusters: 0
     propulsion: 0
     weapons: 0
-    moveSpeed: 7.5599995
-    dps: 12.599999
-    gemCap: 11.2
-    peopleCap: 2.8
-    powerScore: 88.055
+    moveSpeed: 8.64
+    dps: 10.8
+    gemCap: 9.6
+    peopleCap: 2.4
+    powerScore: 82.71001
     flags: propulsion_starvation|weaponless
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.5
     familyId: StarForce
-    chassisId: StarForce_15
-    prefabName: StarForce9
-    shipLevel: 5
+    chassisId: StarForce_10
+    prefabName: StarForce4
+    shipLevel: 3
     wings: 0
     engines: 0
     thrusters: 0
     propulsion: 0
     weapons: 0
-    moveSpeed: 7.5599995
-    dps: 12.599999
-    gemCap: 11.2
-    peopleCap: 2.8
-    powerScore: 88.055
+    moveSpeed: 8.64
+    dps: 10.8
+    gemCap: 9.6
+    peopleCap: 2.4
+    powerScore: 82.71001
     flags: propulsion_starvation|weaponless
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.5
     familyId: StarForce
-    chassisId: StarForce_13
-    prefabName: StarForce3
-    shipLevel: 5
+    chassisId: StarForce_08
+    prefabName: StarForce20
+    shipLevel: 4
     wings: 0
     engines: 0
     thrusters: 0
     propulsion: 0
     weapons: 0
-    moveSpeed: 7.5599995
-    dps: 12.599999
-    gemCap: 11.2
-    peopleCap: 2.8
-    powerScore: 88.055
+    moveSpeed: 8.19
+    dps: 11.7
+    gemCap: 10.4
+    peopleCap: 2.6
+    powerScore: 85.612495
     flags: propulsion_starvation|weaponless
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.5
@@ -1643,138 +1389,53 @@ MonoBehaviour:
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.5
     familyId: StarForce
-    chassisId: StarForce_06
-    prefabName: StarForce10
-    shipLevel: 2
-    wings: 0
-    engines: 0
-    thrusters: 0
-    propulsion: 0
-    weapons: 0
-    moveSpeed: 8.910001
-    dps: 9.900001
-    gemCap: 8.8
-    peopleCap: 2.2
-    powerScore: 79.3475
-    flags: propulsion_starvation|weaponless
-    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
-  - severity: 1.5
-    familyId: StarForce
-    chassisId: StarForce_18
-    prefabName: StarForce14
-    shipLevel: 6
-    wings: 0
-    engines: 0
-    thrusters: 0
-    propulsion: 0
-    weapons: 0
-    moveSpeed: 6.75
-    dps: 13.5
-    gemCap: 12
-    peopleCap: 3
-    powerScore: 90.0375
-    flags: propulsion_starvation|weaponless
-    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
-  - severity: 1.5
-    familyId: StarForce
-    chassisId: StarForce_07
-    prefabName: StarForce19
-    shipLevel: 5
-    wings: 0
-    engines: 0
-    thrusters: 0
-    propulsion: 0
-    weapons: 0
-    moveSpeed: 7.5599995
-    dps: 12.599999
-    gemCap: 11.2
-    peopleCap: 2.8
-    powerScore: 88.055
-    flags: propulsion_starvation|weaponless
-    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
-  - severity: 1.4666667
-    familyId: LightFox
-    chassisId: LightFox_06
-    prefabName: LightFox20
+    chassisId: StarForce_01
+    prefabName: StarForce17
     shipLevel: 4
-    wings: 3
-    engines: 1
+    wings: 0
+    engines: 0
     thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 8.007999
+    propulsion: 0
+    weapons: 0
+    moveSpeed: 8.19
     dps: 11.7
-    gemCap: 289.163
-    peopleCap: 24.578856
-    powerScore: 214.50008
+    gemCap: 10.4
+    peopleCap: 2.6
+    powerScore: 85.612495
+    flags: propulsion_starvation|weaponless
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.4666667
+    familyId: GalaxyRaptor
+    chassisId: GalaxyRaptor_19
+    prefabName: GalaxyRaptor09
+    shipLevel: 6
+    wings: 3
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 9.6
+    dps: 13.5
+    gemCap: 220.4588
+    peopleCap: 28.108498
+    powerScore: 363.29385
     flags: propulsion_starvation|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.4666667
-    familyId: NightAye
-    chassisId: NightAye_05
-    prefabName: NightAye16
+    familyId: SpaceExcalibur
+    chassisId: SpaceExcalibur_14
+    prefabName: SpaceExcalibur17
     shipLevel: 4
     wings: 3
-    engines: 1
-    thrusters: 0
+    engines: 0
+    thrusters: 1
     propulsion: 1
-    weapons: 1
-    moveSpeed: 7.2799997
-    dps: 15.599999
-    gemCap: 243.5992
-    peopleCap: 20.70593
-    powerScore: 223.09903
-    flags: propulsion_starvation|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
-  - severity: 1.4666667
-    familyId: NightAye
-    chassisId: NightAye_15
-    prefabName: NightAye17
-    shipLevel: 4
-    wings: 3
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 7.2799997
-    dps: 15.599999
-    gemCap: 185.0186
-    peopleCap: 15.72658
-    powerScore: 197.22662
-    flags: propulsion_starvation|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
-  - severity: 1.4666667
-    familyId: NightAye
-    chassisId: NightAye_09
-    prefabName: NightAye10
-    shipLevel: 3
-    wings: 3
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 7.6800003
-    dps: 14.400001
-    gemCap: 172.8
-    peopleCap: 14.688001
-    powerScore: 184.57065
-    flags: propulsion_starvation|hippo_class_structure
-    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
-  - severity: 1.4666667
-    familyId: NightAye
-    chassisId: NightAye_06
-    prefabName: NightAye15
-    shipLevel: 2
-    wings: 3
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 1
-    moveSpeed: 7.92
-    dps: 13.200001
-    gemCap: 144.29735
-    peopleCap: 12.265275
-    powerScore: 170.7393
+    weapons: 2
+    moveSpeed: 8.007999
+    dps: 27.299997
+    gemCap: 80.74135
+    peopleCap: 10.294522
+    powerScore: 201.48463
     flags: propulsion_starvation|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
   - severity: 1.4666667
@@ -1789,11 +1450,147 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 6.72
     dps: 16.800001
-    gemCap: 288.22302
-    peopleCap: 24.498955
-    powerScore: 245.90012
+    gemCap: 90.84253
+    peopleCap: 11.582422
+    powerScore: 153.93788
     flags: propulsion_starvation|hippo_class_structure
     fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.4666667
+    familyId: NightAye
+    chassisId: NightAye_18
+    prefabName: NightAye20
+    shipLevel: 5
+    wings: 3
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 6.72
+    dps: 16.8
+    gemCap: 149.28433
+    peopleCap: 19.033752
+    powerScore: 194.77437
+    flags: propulsion_starvation|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.4666667
+    familyId: NightAye
+    chassisId: NightAye_15
+    prefabName: NightAye17
+    shipLevel: 4
+    wings: 3
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 7.2799997
+    dps: 15.599999
+    gemCap: 105.5093
+    peopleCap: 13.452436
+    powerScore: 160.9144
+    flags: propulsion_starvation|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.4666667
+    familyId: NightAye
+    chassisId: NightAye_09
+    prefabName: NightAye10
+    shipLevel: 3
+    wings: 3
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 7.6800003
+    dps: 14.400001
+    gemCap: 98.4
+    peopleCap: 12.5460005
+    powerScore: 150.58836
+    flags: propulsion_starvation|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.4666667
+    familyId: GalaxyRaptor
+    chassisId: GalaxyRaptor_08
+    prefabName: GalaxyRaptor07
+    shipLevel: 3
+    wings: 3
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 9.216001
+    dps: 10.8
+    gemCap: 132.40132
+    peopleCap: 16.881168
+    powerScore: 256.58514
+    flags: propulsion_starvation|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.4666667
+    familyId: NightAye
+    chassisId: NightAye_06
+    prefabName: NightAye15
+    shipLevel: 2
+    wings: 3
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 7.92
+    dps: 13.200001
+    gemCap: 95.89734
+    peopleCap: 12.226912
+    powerScore: 148.97131
+    flags: propulsion_starvation|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1.4666667
+    familyId: NightAye
+    chassisId: NightAye_05
+    prefabName: NightAye16
+    shipLevel: 4
+    wings: 3
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 1
+    moveSpeed: 7.2799997
+    dps: 15.599999
+    gemCap: 105.5496
+    peopleCap: 13.457574
+    powerScore: 159.22626
+    flags: propulsion_starvation|hippo_class_structure
+    fixClass: needs_extra_engine_or_thruster_stats|structural_prefab
+  - severity: 1
+    familyId: ProtonLegacy
+    chassisId: ProtonLegacy_04
+    prefabName: ProtonLegacy17
+    shipLevel: 2
+    wings: 0
+    engines: 0
+    thrusters: 0
+    propulsion: 0
+    weapons: 1
+    moveSpeed: 8.910001
+    dps: 9.900001
+    gemCap: 22
+    peopleCap: 2.805
+    powerScore: 106.322815
+    flags: propulsion_starvation
+    fixClass: needs_extra_engine_or_thruster_stats
+  - severity: 1
+    familyId: ProtonLegacy
+    chassisId: ProtonLegacy_11
+    prefabName: ProtonLegacy15
+    shipLevel: 5
+    wings: 2
+    engines: 0
+    thrusters: 0
+    propulsion: 0
+    weapons: 1
+    moveSpeed: 7.5599995
+    dps: 12.599999
+    gemCap: 56
+    peopleCap: 7.14
+    powerScore: 120.06804
+    flags: propulsion_starvation
+    fixClass: needs_extra_engine_or_thruster_stats
   - severity: 1
     familyId: ForceBadger
     chassisId: ForceBadger_07
@@ -1807,93 +1604,8 @@ MonoBehaviour:
     moveSpeed: 7.5599995
     dps: 12.599999
     gemCap: 28
-    peopleCap: 2.38
-    powerScore: 138.95233
-    flags: propulsion_starvation
-    fixClass: needs_extra_engine_or_thruster_stats
-  - severity: 1
-    familyId: NightAye
-    chassisId: NightAye_07
-    prefabName: NightAye18
-    shipLevel: 3
-    wings: 2
-    engines: 0
-    thrusters: 0
-    propulsion: 0
-    weapons: 1
-    moveSpeed: 8.64
-    dps: 14.400002
-    gemCap: 178.68121
-    peopleCap: 15.187903
-    powerScore: 198.1719
-    flags: propulsion_starvation
-    fixClass: needs_extra_engine_or_thruster_stats
-  - severity: 1
-    familyId: ProtonLegacy
-    chassisId: ProtonLegacy_13
-    prefabName: ProtonLegacy19
-    shipLevel: 6
-    wings: 2
-    engines: 0
-    thrusters: 0
-    propulsion: 0
-    weapons: 1
-    moveSpeed: 6.75
-    dps: 13.5
-    gemCap: 114.93402
-    peopleCap: 9.769392
-    powerScore: 160.30215
-    flags: propulsion_starvation
-    fixClass: needs_extra_engine_or_thruster_stats
-  - severity: 1
-    familyId: MeteorMantis
-    chassisId: MeteorMantis_16
-    prefabName: MeteorMantis18
-    shipLevel: 6
-    wings: 1
-    engines: 0
-    thrusters: 0
-    propulsion: 0
-    weapons: 1
-    moveSpeed: 6.75
-    dps: 13.5
-    gemCap: 244.59152
-    peopleCap: 20.79028
-    powerScore: 256.85925
-    flags: propulsion_starvation
-    fixClass: needs_extra_engine_or_thruster_stats
-  - severity: 1
-    familyId: ProtonLegacy
-    chassisId: ProtonLegacy_07
-    prefabName: ProtonLegacy12
-    shipLevel: 5
-    wings: 2
-    engines: 0
-    thrusters: 0
-    propulsion: 0
-    weapons: 1
-    moveSpeed: 7.5599995
-    dps: 12.6
-    gemCap: 72.799995
-    peopleCap: 6.188
-    powerScore: 118.357414
-    flags: propulsion_starvation
-    fixClass: needs_extra_engine_or_thruster_stats
-  - severity: 1
-    familyId: ProtonLegacy
-    chassisId: ProtonLegacy_09
-    prefabName: ProtonLegacy18
-    shipLevel: 4
-    wings: 2
-    engines: 0
-    thrusters: 0
-    propulsion: 0
-    weapons: 1
-    moveSpeed: 8.19
-    dps: 11.7
-    gemCap: 78
-    peopleCap: 6.63
-    powerScore: 140.56665
+    peopleCap: 3.57
+    powerScore: 139.24983
     flags: propulsion_starvation
     fixClass: needs_extra_engine_or_thruster_stats
   - severity: 1
@@ -1908,15 +1620,15 @@ MonoBehaviour:
     weapons: 1
     moveSpeed: 8.19
     dps: 11.7
-    gemCap: 95.52317
-    peopleCap: 8.11947
-    powerScore: 149.60233
+    gemCap: 40.92317
+    peopleCap: 5.217704
+    powerScore: 124.33126
     flags: propulsion_starvation
     fixClass: needs_extra_engine_or_thruster_stats
   - severity: 1
-    familyId: NightAye
-    chassisId: NightAye_04
-    prefabName: NightAye6
+    familyId: ProtonLegacy
+    chassisId: ProtonLegacy_09
+    prefabName: ProtonLegacy18
     shipLevel: 4
     wings: 2
     engines: 0
@@ -1924,27 +1636,61 @@ MonoBehaviour:
     propulsion: 0
     weapons: 1
     moveSpeed: 8.19
-    dps: 15.599999
-    gemCap: 253.70778
-    peopleCap: 21.565159
-    powerScore: 239.9493
+    dps: 11.7
+    gemCap: 52
+    peopleCap: 6.6299996
+    powerScore: 128.87827
     flags: propulsion_starvation
     fixClass: needs_extra_engine_or_thruster_stats
   - severity: 1
     familyId: ProtonLegacy
-    chassisId: ProtonLegacy_04
-    prefabName: ProtonLegacy17
-    shipLevel: 2
-    wings: 0
+    chassisId: ProtonLegacy_05
+    prefabName: ProtonLegacy11
+    shipLevel: 3
+    wings: 2
     engines: 0
     thrusters: 0
     propulsion: 0
     weapons: 1
-    moveSpeed: 8.910001
-    dps: 9.900001
-    gemCap: 22
-    peopleCap: 1.8700001
-    powerScore: 106.089066
+    moveSpeed: 8.64
+    dps: 10.8
+    gemCap: 33.600002
+    peopleCap: 4.284
+    powerScore: 136.76276
+    flags: propulsion_starvation
+    fixClass: needs_extra_engine_or_thruster_stats
+  - severity: 1
+    familyId: MeteorMantis
+    chassisId: MeteorMantis_16
+    prefabName: MeteorMantis18
+    shipLevel: 6
+    wings: 1
+    engines: 0
+    thrusters: 0
+    propulsion: 0
+    weapons: 1
+    moveSpeed: 6.75
+    dps: 13.5
+    gemCap: 123.24454
+    peopleCap: 15.713676
+    powerScore: 201.03813
+    flags: propulsion_starvation
+    fixClass: needs_extra_engine_or_thruster_stats
+  - severity: 1
+    familyId: NightAye
+    chassisId: NightAye_07
+    prefabName: NightAye18
+    shipLevel: 3
+    wings: 2
+    engines: 0
+    thrusters: 0
+    propulsion: 0
+    weapons: 1
+    moveSpeed: 8.64
+    dps: 14.400002
+    gemCap: 79.19821
+    peopleCap: 10.097772
+    powerScore: 152.17644
     flags: propulsion_starvation
     fixClass: needs_extra_engine_or_thruster_stats
   - severity: 1
@@ -1960,14 +1706,14 @@ MonoBehaviour:
     moveSpeed: 9
     dps: 11.999999
     gemCap: 20
-    peopleCap: 1.7
-    powerScore: 109.3792
+    peopleCap: 2.55
+    powerScore: 109.591705
     flags: propulsion_starvation
     fixClass: needs_extra_engine_or_thruster_stats
   - severity: 1
     familyId: ProtonLegacy
-    chassisId: ProtonLegacy_11
-    prefabName: ProtonLegacy15
+    chassisId: ProtonLegacy_07
+    prefabName: ProtonLegacy12
     shipLevel: 5
     wings: 2
     engines: 0
@@ -1975,97 +1721,46 @@ MonoBehaviour:
     propulsion: 0
     weapons: 1
     moveSpeed: 7.5599995
-    dps: 12.599999
-    gemCap: 84
-    peopleCap: 7.1400003
-    powerScore: 132.65553
+    dps: 12.6
+    gemCap: 50.399998
+    peopleCap: 6.426
+    powerScore: 108.34692
     flags: propulsion_starvation
     fixClass: needs_extra_engine_or_thruster_stats
   - severity: 1
-    familyId: ProtonLegacy
-    chassisId: ProtonLegacy_05
-    prefabName: ProtonLegacy11
-    shipLevel: 3
+    familyId: NightAye
+    chassisId: NightAye_04
+    prefabName: NightAye6
+    shipLevel: 4
     wings: 2
     engines: 0
     thrusters: 0
     propulsion: 0
     weapons: 1
-    moveSpeed: 8.64
-    dps: 10.8
-    gemCap: 43.2
-    peopleCap: 3.6720002
-    powerScore: 140.92548
+    moveSpeed: 8.19
+    dps: 15.599999
+    gemCap: 78.20779
+    peopleCap: 9.971493
+    powerScore: 158.15422
     flags: propulsion_starvation
     fixClass: needs_extra_engine_or_thruster_stats
-  - severity: 0.6
-    familyId: AstroEagle
-    chassisId: AstroEagle_19
-    prefabName: AstroEagle_Harvester
+  - severity: 1
+    familyId: ProtonLegacy
+    chassisId: ProtonLegacy_13
+    prefabName: ProtonLegacy19
     shipLevel: 6
-    wings: 5
-    engines: 1
-    thrusters: 1
-    propulsion: 2
+    wings: 2
+    engines: 0
+    thrusters: 0
+    propulsion: 0
     weapons: 1
-    moveSpeed: 12.150001
+    moveSpeed: 6.75
     dps: 13.5
-    gemCap: 507.41043
-    peopleCap: 43.129887
-    powerScore: 336.7075
+    gemCap: 69.93402
+    peopleCap: 8.916587
+    powerScore: 139.85905
     flags: propulsion_starvation
     fixClass: needs_extra_engine_or_thruster_stats
-  - severity: 0.5
-    familyId: StarForce
-    chassisId: StarForce_20
-    prefabName: StarForce5
-    shipLevel: 6
-    wings: 1
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 0
-    moveSpeed: 8.25
-    dps: 13.5
-    gemCap: 76.83429
-    peopleCap: 6.5309143
-    powerScore: 153.50208
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: MeteorMantis
-    chassisId: MeteorMantis_06
-    prefabName: MeteorMantis10
-    shipLevel: 2
-    wings: 1
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 0
-    moveSpeed: 10.2960005
-    dps: 9.900001
-    gemCap: 80.138145
-    peopleCap: 6.811743
-    powerScore: 139.10872
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: MeteorMantis
-    chassisId: MeteorMantis_10
-    prefabName: MeteorMantis17
-    shipLevel: 5
-    wings: 1
-    engines: 1
-    thrusters: 0
-    propulsion: 1
-    weapons: 0
-    moveSpeed: 7.3919997
-    dps: 12.599999
-    gemCap: 188.0793
-    peopleCap: 15.986739
-    powerScore: 199.84077
-    flags: weaponless
-    fixClass: structural_prefab
   - severity: 0.5
     familyId: ForceBadger
     chassisId: ForceBadger_01
@@ -2079,161 +1774,229 @@ MonoBehaviour:
     moveSpeed: 10.2960005
     dps: 9.900001
     gemCap: 36.791172
-    peopleCap: 3.1272497
-    powerScore: 131.03632
+    peopleCap: 4.6908746
+    powerScore: 131.42723
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
-    familyId: HyperFalcon
-    chassisId: HyperFalcon_01
-    prefabName: HyperFalcon13
+    familyId: CosmicShark
+    chassisId: CosmicShark_15
+    prefabName: CosmicShark_Pony
     shipLevel: 1
-    wings: 1
-    engines: 1
-    thrusters: 2
-    propulsion: 3
-    weapons: 0
-    moveSpeed: 11.200001
-    dps: 9
-    gemCap: 37.0336
-    peopleCap: 3.147856
-    powerScore: 102.118286
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: HyperFalcon
-    chassisId: HyperFalcon_10
-    prefabName: HyperFalcon7
-    shipLevel: 2
-    wings: 1
-    engines: 1
-    thrusters: 2
-    propulsion: 3
-    weapons: 0
-    moveSpeed: 12.672002
-    dps: 9.900001
-    gemCap: 83.6
-    peopleCap: 7.1060004
-    powerScore: 120.51788
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: HyperFalcon
-    chassisId: HyperFalcon_03
-    prefabName: HyperFalcon17
-    shipLevel: 2
     wings: 2
     engines: 1
     thrusters: 1
     propulsion: 2
     weapons: 0
-    moveSpeed: 9.504001
-    dps: 9.900001
-    gemCap: 78.62114
-    peopleCap: 6.682797
-    powerScore: 111.561424
+    moveSpeed: 17.8
+    dps: 9
+    gemCap: 45.22862
+    peopleCap: 5.766649
+    powerScore: 95.79188
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: StarForce
+    chassisId: StarForce_20
+    prefabName: StarForce5
+    shipLevel: 6
+    wings: 1
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 0
+    moveSpeed: 8.25
+    dps: 13.5
+    gemCap: 53.41714
+    peopleCap: 6.810686
+    powerScore: 143.04475
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
     familyId: HyperFalcon
-    chassisId: HyperFalcon_02
-    prefabName: HyperFalcon14
-    shipLevel: 3
+    chassisId: HyperFalcon_17
+    prefabName: HyperFalcon10
+    shipLevel: 6
     wings: 2
+    engines: 1
+    thrusters: 2
+    propulsion: 3
+    weapons: 0
+    moveSpeed: 10.800001
+    dps: 13.5
+    gemCap: 143.48386
+    peopleCap: 18.29419
+    powerScore: 164.08557
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: HyperFalcon
+    chassisId: HyperFalcon_05
+    prefabName: HyperFalcon15
+    shipLevel: 5
+    wings: 2
+    engines: 1
+    thrusters: 2
+    propulsion: 3
+    weapons: 0
+    moveSpeed: 8.736
+    dps: 12.599999
+    gemCap: 98.13854
+    peopleCap: 12.512664
+    powerScore: 144.947
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: HyperFalcon
+    chassisId: HyperFalcon_19
+    prefabName: HyperFalcon1
+    shipLevel: 6
+    wings: 2
+    engines: 1
+    thrusters: 2
+    propulsion: 3
+    weapons: 0
+    moveSpeed: 10.200001
+    dps: 13.5
+    gemCap: 120
+    peopleCap: 15.299999
+    powerScore: 167.59753
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: HyperFalcon
+    chassisId: HyperFalcon_16
+    prefabName: HyperFalcon4
+    shipLevel: 6
+    wings: 2
+    engines: 1
+    thrusters: 2
+    propulsion: 3
+    weapons: 0
+    moveSpeed: 10.800001
+    dps: 13.5
+    gemCap: 105
+    peopleCap: 13.387499
+    powerScore: 148.70433
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: HyperFalcon
+    chassisId: HyperFalcon_11
+    prefabName: HyperFalcon12
+    shipLevel: 6
+    wings: 2
+    engines: 1
+    thrusters: 1
+    propulsion: 2
+    weapons: 0
+    moveSpeed: 7.2000003
+    dps: 13.5
+    gemCap: 120
+    peopleCap: 15.299999
+    powerScore: 158.97012
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: HyperFalcon
+    chassisId: HyperFalcon_18
+    prefabName: HyperFalcon3
+    shipLevel: 6
+    wings: 2
+    engines: 1
+    thrusters: 2
+    propulsion: 3
+    weapons: 0
+    moveSpeed: 10.200001
+    dps: 13.5
+    gemCap: 111
+    peopleCap: 14.152499
+    powerScore: 159.33218
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: HyperFalcon
+    chassisId: HyperFalcon_13
+    prefabName: HyperFalcon6
+    shipLevel: 5
+    wings: 2
+    engines: 1
+    thrusters: 2
+    propulsion: 3
+    weapons: 0
+    moveSpeed: 10.080001
+    dps: 12.599999
+    gemCap: 93.799995
+    peopleCap: 11.959499
+    powerScore: 147.2046
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: HyperFalcon
+    chassisId: HyperFalcon_14
+    prefabName: HyperFalcon5
+    shipLevel: 5
+    wings: 2
+    engines: 0
+    thrusters: 2
+    propulsion: 2
+    weapons: 0
+    moveSpeed: 11.424001
+    dps: 12.599999
+    gemCap: 103.6
+    peopleCap: 13.208999
+    powerScore: 145.08794
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: HyperFalcon
+    chassisId: HyperFalcon_12
+    prefabName: HyperFalcon11
+    shipLevel: 5
+    wings: 2
+    engines: 1
+    thrusters: 2
+    propulsion: 3
+    weapons: 0
+    moveSpeed: 9.408001
+    dps: 12.599999
+    gemCap: 112
+    peopleCap: 14.28
+    powerScore: 139.6426
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: LightFox
+    chassisId: LightFox_02
+    prefabName: LightFox13
+    shipLevel: 3
+    wings: 1
     engines: 1
     thrusters: 0
     propulsion: 1
     weapons: 0
     moveSpeed: 7.6800003
     dps: 10.8
-    gemCap: 141.60574
-    peopleCap: 12.036488
-    powerScore: 151.61241
+    gemCap: 57.77153
+    peopleCap: 7.36587
+    powerScore: 106.22138
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
     familyId: HyperFalcon
-    chassisId: HyperFalcon_08
-    prefabName: HyperFalcon9
-    shipLevel: 3
+    chassisId: HyperFalcon_20
+    prefabName: HyperFalcon8
+    shipLevel: 5
     wings: 2
     engines: 1
     thrusters: 2
     propulsion: 3
     weapons: 0
-    moveSpeed: 12.288001
-    dps: 10.8
-    gemCap: 125.05464
-    peopleCap: 10.629644
-    powerScore: 149.98933
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: HyperFalcon
-    chassisId: HyperFalcon_09
-    prefabName: HyperFalcon18
-    shipLevel: 3
-    wings: 1
-    engines: 1
-    thrusters: 2
-    propulsion: 3
-    weapons: 0
-    moveSpeed: 11.520001
-    dps: 10.8
-    gemCap: 114.884254
-    peopleCap: 9.765162
-    powerScore: 138.62027
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: HyperFalcon
-    chassisId: HyperFalcon_07
-    prefabName: HyperFalcon19
-    shipLevel: 4
-    wings: 2
-    engines: 1
-    thrusters: 1
-    propulsion: 2
-    weapons: 0
-    moveSpeed: 8.007999
-    dps: 11.7
-    gemCap: 179.97963
-    peopleCap: 15.29827
-    powerScore: 155.1259
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: HyperFalcon
-    chassisId: HyperFalcon_06
-    prefabName: HyperFalcon16
-    shipLevel: 4
-    wings: 2
-    engines: 0
-    thrusters: 1
-    propulsion: 1
-    weapons: 0
-    moveSpeed: 8.007999
-    dps: 11.7
-    gemCap: 163.80379
-    peopleCap: 13.923322
-    powerScore: 151.86143
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: HyperFalcon
-    chassisId: HyperFalcon_04
-    prefabName: HyperFalcon20
-    shipLevel: 4
-    wings: 2
-    engines: 0
-    thrusters: 2
-    propulsion: 2
-    weapons: 0
-    moveSpeed: 8.736
-    dps: 11.7
-    gemCap: 156
-    peopleCap: 13.26
-    powerScore: 145.78064
+    moveSpeed: 10.752001
+    dps: 12.599999
+    gemCap: 92.4
+    peopleCap: 11.781
+    powerScore: 133.78181
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
@@ -2248,9 +2011,26 @@ MonoBehaviour:
     weapons: 0
     moveSpeed: 12.376
     dps: 11.7
-    gemCap: 153.82945
-    peopleCap: 13.075504
-    powerScore: 167.81424
+    gemCap: 88.61472
+    peopleCap: 11.298378
+    powerScore: 138.05244
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: HyperFalcon
+    chassisId: HyperFalcon_04
+    prefabName: HyperFalcon20
+    shipLevel: 4
+    wings: 2
+    engines: 0
+    thrusters: 2
+    propulsion: 2
+    weapons: 0
+    moveSpeed: 8.736
+    dps: 11.7
+    gemCap: 104
+    peopleCap: 13.259999
+    powerScore: 122.40385
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
@@ -2266,161 +2046,127 @@ MonoBehaviour:
     moveSpeed: 8.448
     dps: 10.8
     gemCap: 24
-    peopleCap: 2.0400002
-    powerScore: 163.99878
+    peopleCap: 3.0600002
+    powerScore: 164.25377
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
     familyId: HyperFalcon
-    chassisId: HyperFalcon_20
-    prefabName: HyperFalcon8
-    shipLevel: 5
-    wings: 2
-    engines: 1
-    thrusters: 2
-    propulsion: 3
-    weapons: 0
-    moveSpeed: 10.752001
-    dps: 12.599999
-    gemCap: 225.4
-    peopleCap: 19.158998
-    powerScore: 195.41695
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: HyperFalcon
-    chassisId: HyperFalcon_14
-    prefabName: HyperFalcon5
-    shipLevel: 5
+    chassisId: HyperFalcon_06
+    prefabName: HyperFalcon16
+    shipLevel: 4
     wings: 2
     engines: 0
-    thrusters: 2
-    propulsion: 2
+    thrusters: 1
+    propulsion: 1
     weapons: 0
-    moveSpeed: 11.424001
-    dps: 12.599999
-    gemCap: 187.59999
-    peopleCap: 15.946002
-    powerScore: 183.5347
+    moveSpeed: 8.007999
+    dps: 11.7
+    gemCap: 94.9019
+    peopleCap: 12.099991
+    powerScore: 120.43051
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
     familyId: HyperFalcon
-    chassisId: HyperFalcon_13
-    prefabName: HyperFalcon6
-    shipLevel: 5
+    chassisId: HyperFalcon_09
+    prefabName: HyperFalcon18
+    shipLevel: 3
+    wings: 1
+    engines: 1
+    thrusters: 2
+    propulsion: 3
+    weapons: 0
+    moveSpeed: 11.520001
+    dps: 10.8
+    gemCap: 66.88426
+    peopleCap: 8.527742
+    powerScore: 116.732346
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: HyperFalcon
+    chassisId: HyperFalcon_08
+    prefabName: HyperFalcon9
+    shipLevel: 3
     wings: 2
     engines: 1
     thrusters: 2
     propulsion: 3
     weapons: 0
-    moveSpeed: 10.080001
-    dps: 12.599999
-    gemCap: 175
-    peopleCap: 14.875001
-    powerScore: 184.43724
+    moveSpeed: 12.288001
+    dps: 10.8
+    gemCap: 69.52054
+    peopleCap: 8.863869
+    powerScore: 124.582344
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
     familyId: HyperFalcon
-    chassisId: HyperFalcon_05
-    prefabName: HyperFalcon15
-    shipLevel: 5
+    chassisId: HyperFalcon_02
+    prefabName: HyperFalcon14
+    shipLevel: 3
     wings: 2
     engines: 1
-    thrusters: 2
-    propulsion: 3
+    thrusters: 0
+    propulsion: 1
     weapons: 0
-    moveSpeed: 8.736
-    dps: 12.599999
-    gemCap: 168.27708
-    peopleCap: 14.303552
-    powerScore: 176.92575
+    moveSpeed: 7.6800003
+    dps: 10.8
+    gemCap: 90.30358
+    peopleCap: 11.513706
+    powerScore: 128.41866
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
     familyId: HyperFalcon
-    chassisId: HyperFalcon_17
-    prefabName: HyperFalcon10
-    shipLevel: 6
-    wings: 2
-    engines: 1
-    thrusters: 2
-    propulsion: 3
-    weapons: 0
-    moveSpeed: 10.800001
-    dps: 13.5
-    gemCap: 373.38074
-    peopleCap: 31.737368
-    powerScore: 270.79733
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: HyperFalcon
-    chassisId: HyperFalcon_19
-    prefabName: HyperFalcon1
-    shipLevel: 6
-    wings: 2
-    engines: 1
-    thrusters: 2
-    propulsion: 3
-    weapons: 0
-    moveSpeed: 10.200001
-    dps: 13.5
-    gemCap: 344.82068
-    peopleCap: 29.309765
-    powerScore: 272.1689
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: HyperFalcon
-    chassisId: HyperFalcon_16
-    prefabName: HyperFalcon4
-    shipLevel: 6
-    wings: 2
-    engines: 1
-    thrusters: 2
-    propulsion: 3
-    weapons: 0
-    moveSpeed: 10.800001
-    dps: 13.5
-    gemCap: 304.5
-    peopleCap: 25.8825
-    powerScore: 241.51404
-    flags: weaponless
-    fixClass: structural_prefab
-  - severity: 0.5
-    familyId: HyperFalcon
-    chassisId: HyperFalcon_11
-    prefabName: HyperFalcon12
-    shipLevel: 6
+    chassisId: HyperFalcon_03
+    prefabName: HyperFalcon17
+    shipLevel: 2
     wings: 2
     engines: 1
     thrusters: 1
     propulsion: 2
     weapons: 0
-    moveSpeed: 7.2000003
-    dps: 13.5
-    gemCap: 254.5561
-    peopleCap: 21.637268
-    powerScore: 221.04465
+    moveSpeed: 9.504001
+    dps: 9.900001
+    gemCap: 78.62114
+    peopleCap: 10.024196
+    powerScore: 112.396774
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
     familyId: HyperFalcon
-    chassisId: HyperFalcon_18
-    prefabName: HyperFalcon3
-    shipLevel: 6
-    wings: 2
+    chassisId: HyperFalcon_10
+    prefabName: HyperFalcon7
+    shipLevel: 2
+    wings: 1
     engines: 1
     thrusters: 2
     propulsion: 3
     weapons: 0
-    moveSpeed: 10.200001
-    dps: 13.5
-    gemCap: 241.80637
-    peopleCap: 20.55354
-    powerScore: 219.73692
+    moveSpeed: 12.672002
+    dps: 9.900001
+    gemCap: 52.800003
+    peopleCap: 6.732
+    powerScore: 106.57813
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: HyperFalcon
+    chassisId: HyperFalcon_01
+    prefabName: HyperFalcon13
+    shipLevel: 1
+    wings: 1
+    engines: 1
+    thrusters: 2
+    propulsion: 3
+    weapons: 0
+    moveSpeed: 11.200001
+    dps: 9
+    gemCap: 37.0336
+    peopleCap: 4.7217836
+    powerScore: 102.51177
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
@@ -2436,8 +2182,25 @@ MonoBehaviour:
     moveSpeed: 11.200001
     dps: 9
     gemCap: 40
-    peopleCap: 3.4
-    powerScore: 84.039314
+    peopleCap: 5.1
+    powerScore: 84.46432
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: MeteorMantis
+    chassisId: MeteorMantis_06
+    prefabName: MeteorMantis10
+    shipLevel: 2
+    wings: 1
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 0
+    moveSpeed: 10.2960005
+    dps: 9.900001
+    gemCap: 63.821297
+    peopleCap: 8.137215
+    powerScore: 132.10478
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
@@ -2452,9 +2215,9 @@ MonoBehaviour:
     weapons: 0
     moveSpeed: 8.712
     dps: 9.900001
-    gemCap: 67.033165
-    peopleCap: 5.6978188
-    powerScore: 136.26004
+    gemCap: 55.516582
+    peopleCap: 7.0783644
+    powerScore: 131.42784
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
@@ -2469,26 +2232,43 @@ MonoBehaviour:
     weapons: 0
     moveSpeed: 8.448
     dps: 10.8
-    gemCap: 84.20945
-    peopleCap: 7.1578035
-    powerScore: 154.67671
+    gemCap: 68.139
+    peopleCap: 8.687723
+    powerScore: 147.83467
+    flags: weaponless
+    fixClass: structural_prefab
+  - severity: 0.5
+    familyId: MeteorMantis
+    chassisId: MeteorMantis_10
+    prefabName: MeteorMantis17
+    shipLevel: 5
+    wings: 1
+    engines: 1
+    thrusters: 0
+    propulsion: 1
+    weapons: 0
+    moveSpeed: 7.3919997
+    dps: 12.599999
+    gemCap: 94.03965
+    peopleCap: 11.990055
+    powerScore: 156.56573
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
     familyId: HyperFalcon
-    chassisId: HyperFalcon_12
-    prefabName: HyperFalcon11
-    shipLevel: 5
+    chassisId: HyperFalcon_07
+    prefabName: HyperFalcon19
+    shipLevel: 4
     wings: 2
     engines: 1
-    thrusters: 2
-    propulsion: 3
+    thrusters: 1
+    propulsion: 2
     weapons: 0
-    moveSpeed: 9.408001
-    dps: 12.599999
-    gemCap: 196
-    peopleCap: 16.66
-    powerScore: 178.00009
+    moveSpeed: 8.007999
+    dps: 11.7
+    gemCap: 100.218796
+    peopleCap: 12.777895
+    powerScore: 118.639046
     flags: weaponless
     fixClass: structural_prefab
   - severity: 0.5
@@ -2503,9 +2283,9 @@ MonoBehaviour:
     weapons: 0
     moveSpeed: 9.216001
     dps: 10.8
-    gemCap: 72
-    peopleCap: 6.120001
-    powerScore: 122.20616
+    gemCap: 48
+    peopleCap: 6.1200004
+    powerScore: 111.41688
     flags: weaponless
     fixClass: structural_prefab
   economyChecks:
@@ -2514,11 +2294,11 @@ MonoBehaviour:
     targetOrNote: 8-12
     status: PASS
   - checkId: capture_batches
-    value: 4.97
+    value: 5.009
     targetOrNote: 4-6
     status: PASS
   - checkId: median_l3_people
-    value: 8.653
+    value: 8.585
     targetOrNote: 8.6
     status: INFO
   - checkId: median_l1_gemCap
@@ -2542,7 +2322,7 @@ MonoBehaviour:
     targetOrNote: 0.3
     status: PASS
   - checkId: health_seconds_of_dps_l1
-    value: 3.808
+    value: 3.132
     targetOrNote: 3
     status: PASS
   - checkId: gem_power_weight

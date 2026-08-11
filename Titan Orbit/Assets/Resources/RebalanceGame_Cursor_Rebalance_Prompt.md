@@ -13,10 +13,11 @@ Do **not** invent a parallel CSV pipeline — after changes, the designer clicks
 
 - Session: 2–5 teams × 20 players, ~30–120 min domination
 - Capture: 3 ships × 5 batches; home pop≈129 → L3 peopleCap≈8.6 (L1≈7.2)
-- Cargo parts assumption: 1 cockpit + 2 wings (median cargo≈3) → people/part V1=1.70 (capture-tuned), gems/part V1≈20.00 (gemCap target÷2 L1 cargo parts)
+- Cargo parts assumption: 1 cockpit + 2 wings (median cargo≈3) → people/part V1=2.55 (capture-tuned), gems/part V1≈20.00 (gemCap target÷2 L1 cargo parts)
 - Mid asteroid Size 35: TTK 8–12s (ideal 10s); gem fill loop 45–90s
 - Target L1 gemCap≈40; chassis cost = 2×gemCap (≈2 cargo trips)
-- Energy: regen fraction of sustained drain = 0.35; insolvency below 0.20
+- Energy: Cap ≈ 3s of fire; regen fraction of sustained drain = 0.30; insolvency below 0.20
+- Health: ≈ 3s of own DPS (L1 target≈27, part V1≈6.75)
 - Attribute upgrade cost = shipLevel × 5
 
 
@@ -30,7 +31,7 @@ Do **not** invent a parallel CSV pipeline — after changes, the designer clicks
 About 3 ships with average people capacity for their level should be able to capture an equal-level average-sized planet (full population) without needing a 10-ship zerg. Coordinate with planet population caps and unload batch sizes.
 
 ### 2. Ship's health vs energy cap/regen vs firing power/rate ratio and sustained fire. (priority 95)
-Ships should have enough avg energy capacity to sustain avg firing of bullets so that we get about 3 seconds of full firing, and energy regen balance it to 30% of how much that weapon consumes. This is mainly between the engine and weapon components to compliment each other. We need to also balance fire power to ship health. There should be enough avg health cap to sustain 3 seconds of avg dps.
+Ships should have enough avg energy capacity to sustain avg firing of bullets so that we get about 3 seconds of full firing, and energy regen balance it to 30% of how much that weapon consumes. This is mainly between the engine and weapon components to compliment each other. We need to also balance fire power to ship health. There should be enough avg health cap to sustain 3 seconds of avg dps. Also remember to consider the special Engine and Thruster components and how they stack, which currently is set to 10% of base for each extra
 
 ### 3. Ship feel — fast & nimble (priority 90)
 Ships should feel fast and nimble. Acceleration should make most average multi-engine/thruster fairly quick.
@@ -81,51 +82,55 @@ Gem capacity must not dominate ship power score vs firepower — keep gem power 
 
 - Session: 2–5 teams × 20 players, ~30–120 min domination
 - Capture: 3 ships × 5 batches; home pop≈129 → L3 peopleCap≈8.6 (L1≈7.2)
-- Cargo parts assumption: 1 cockpit + 2 wings (median cargo≈3) → people/part V1=1.70 (capture-tuned), gems/part V1≈20.00 (gemCap target÷2 L1 cargo parts)
+- Cargo parts assumption: 1 cockpit + 2 wings (median cargo≈3) → people/part V1=2.55 (capture-tuned), gems/part V1≈20.00 (gemCap target÷2 L1 cargo parts)
 - Mid asteroid Size 35: TTK 8–12s (ideal 10s); gem fill loop 45–90s
 - Target L1 gemCap≈40; chassis cost = 2×gemCap (≈2 cargo trips)
-- Energy: regen fraction of sustained drain = 0.35; insolvency below 0.20
+- Energy: Cap ≈ 3s of fire; regen fraction of sustained drain = 0.30; insolvency below 0.20
+- Health: ≈ 3s of own DPS (L1 target≈27, part V1≈6.75)
 - Attribute upgrade cost = shipLevel × 5
 
-Reviewed 241 chassis at 2026-08-11 15:21:40Z UTC.
-Outliers: 175.
+Reviewed 241 chassis at 2026-08-11 16:30:41Z UTC.
+Outliers: 121.
 
 ### Economy
 - [PASS] mid_ttk_l1_sec = 10 (8-12)
-- [PASS] capture_batches = 4.97 (4-6)
-- [INFO] median_l3_people = 8.653 (8.6)
+- [PASS] capture_batches = 5.009 (4-6)
+- [INFO] median_l3_people = 8.585 (8.6)
 - [PASS] median_l1_gemCap = 38.026 (40)
 - [PASS] median_wings = 2 (2)
 - [INFO] health_per_size = 2.571 (AsteroidSettings)
+- [PASS] energy_cap_seconds_l1 = 3 (3)
+- [PASS] energy_regen_frac_l1 = 0.3 (0.3)
+- [PASS] health_seconds_of_dps_l1 = 3.132 (3)
 - [INFO] gem_power_weight = raw/ 10 (power score only; purchase uses raw)
 
 
 ## Outliers (top 25 by severity)
-- `36.24` SpaceExcalibur/SpaceExcalibur_08 L5 flags=energy_insolvency|overgunned fix=needs_extra_engine_or_thruster_stats
-- `23.62` SpaceExcalibur/SpaceExcalibur_16 L6 flags=energy_insolvency|overgunned fix=needs_extra_engine_or_thruster_stats
-- `22.41` SpaceExcalibur/SpaceExcalibur_05 L5 flags=energy_insolvency|overgunned fix=needs_extra_engine_or_thruster_stats
-- `21.18` SpaceExcalibur/SpaceExcalibur_04 L4 flags=energy_insolvency|overgunned fix=needs_extra_engine_or_thruster_stats
-- `15.29` SpaceExcalibur/SpaceExcalibur_07 L6 flags=propulsion_starvation|energy_insolvency|overgunned|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|structural_prefab
-- `15.28` SpaceExcalibur/SpaceExcalibur_02 L4 flags=cargo_freak_people|cargo_freak_gems|energy_insolvency|overgunned fix=needs_wing_stat_nerf|needs_extra_engine_or_thruster_stats
-- `15.14` SpaceExcalibur/SpaceExcalibur_06 L3 flags=energy_insolvency|overgunned fix=needs_extra_engine_or_thruster_stats
-- `14.62` SpaceExcalibur/SpaceExcalibur_13 L5 flags=cargo_freak_people|cargo_freak_gems|energy_insolvency|overgunned fix=needs_wing_stat_nerf|needs_extra_engine_or_thruster_stats
-- `10.78` LightFox/LightFox_17 L5 flags=cargo_freak_people|cargo_freak_gems|energy_insolvency fix=needs_wing_stat_nerf|needs_extra_engine_or_thruster_stats
-- `10.4` SpaceExcalibur/SpaceExcalibur_20 L6 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|energy_insolvency|overgunned fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
-- `9.24` LightFox/LightFox_13 L5 flags=cargo_freak_people|cargo_freak_gems|energy_insolvency fix=needs_wing_stat_nerf|needs_extra_engine_or_thruster_stats
-- `8.67` SpaceExcalibur/SpaceExcalibur_14 L4 flags=propulsion_starvation|energy_insolvency|overgunned|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|structural_prefab
-- `8.04` SpaceExcalibur/SpaceExcalibur_15 L6 flags=energy_insolvency|overgunned fix=needs_extra_engine_or_thruster_stats
-- `7.55` GalaxyRaptor/GalaxyRaptor_04 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-- `7.48` SpaceExcalibur/SpaceExcalibur_18 L6 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|energy_insolvency|overgunned fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
-- `7.31` LightFox/LightFox_18 L6 flags=cargo_freak_people|cargo_freak_gems fix=needs_wing_stat_nerf
-- `7.11` SpaceExcalibur/SpaceExcalibur_19 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
-- `7.06` GalaxyRaptor/GalaxyRaptor_18 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|energy_insolvency|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-- `7.02` LightFox/LightFox_19 L6 flags=cargo_freak_people|cargo_freak_gems fix=needs_wing_stat_nerf
-- `6.73` GalaxyRaptor/GalaxyRaptor_10 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-- `6.66` LightFox/LightFox_12 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|energy_insolvency|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-- `6.57` LightFox/LightFox_01 L1 flags=cargo_freak_people|cargo_freak_gems|weaponless fix=needs_wing_stat_nerf|structural_prefab
-- `6.55` GalaxyRaptor/GalaxyRaptor_11 L6 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-- `6.5` GalaxyRaptor/GalaxyRaptor_02 L3 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|energy_insolvency|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
-- `6.35` LightFox/LightFox_11 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|energy_insolvency|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `7.56` GalaxyRaptor/GalaxyRaptor_04 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `7.24` LightFox/LightFox_11 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `6.5` LightFox/LightFox_12 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `6.37` GalaxyRaptor/GalaxyRaptor_18 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `6.12` GalaxyRaptor/GalaxyRaptor_11 L6 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `5.49` LightFox/LightFox_16 L6 flags=cargo_freak_people|cargo_freak_gems fix=needs_wing_stat_nerf
+- `5.41` GalaxyRaptor/GalaxyRaptor_10 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `5.41` LightFox/LightFox_13 L5 flags=cargo_freak_people|cargo_freak_gems fix=needs_wing_stat_nerf
+- `5.29` GalaxyRaptor/GalaxyRaptor_12 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `5.28` LightFox/LightFox_19 L6 flags=cargo_freak_people|cargo_freak_gems fix=needs_wing_stat_nerf
+- `5.04` LightFox/LightFox_15 L6 flags=cargo_freak_people|cargo_freak_gems fix=needs_wing_stat_nerf
+- `4.94` SpaceExcalibur/SpaceExcalibur_19 L5 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
+- `4.67` LightFox/LightFox_10 L5 flags=cargo_freak_people|cargo_freak_gems|weaponless fix=needs_wing_stat_nerf|structural_prefab
+- `4.65` AstroEagle/AstroEagle_19 L6 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
+- `4.62` LightFox/LightFox_20 L3 flags=cargo_freak_people|cargo_freak_gems fix=needs_wing_stat_nerf
+- `4.61` LightFox/LightFox_09 L4 flags=cargo_freak_people|cargo_freak_gems fix=needs_wing_stat_nerf
+- `4.59` GalaxyRaptor/GalaxyRaptor_20 L4 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `4.57` GalaxyRaptor/GalaxyRaptor_02 L3 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `4.55` AstroEagle/AstroEagle_04 L4 flags=cargo_freak_people|cargo_freak_gems fix=needs_wing_stat_nerf
+- `4.51` LightFox/LightFox_06 L4 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `4.42` SpaceExcalibur/SpaceExcalibur_20 L6 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf
+- `4.35` GalaxyRaptor/GalaxyRaptor_17 L6 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
+- `4.08` LightFox/LightFox_03 L2 flags=cargo_freak_people|cargo_freak_gems|weaponless fix=needs_wing_stat_nerf|structural_prefab
+- `3.99` LightFox/LightFox_18 L6 flags=cargo_freak_people|cargo_freak_gems fix=needs_wing_stat_nerf
+- `3.92` GalaxyRaptor/GalaxyRaptor_16 L6 flags=propulsion_starvation|cargo_freak_people|cargo_freak_gems|hippo_class_structure fix=needs_extra_engine_or_thruster_stats|needs_wing_stat_nerf|structural_prefab
 
 ## When done
 1. Save all modified `.asset` / seed `.cs` files.

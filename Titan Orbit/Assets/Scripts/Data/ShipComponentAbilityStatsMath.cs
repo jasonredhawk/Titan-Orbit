@@ -171,13 +171,15 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Intentionally keeps naively summed weapon <c>firePower</c> (total across barrels).
+        /// Keeps naively summed weapon <c>firePower</c> (total across barrels).
         /// <para>
         /// [TITAN-ORBIT] Live bullets use <b>per-mount</b> firePower from
         /// <c>ShipWeaponMountCombatLogic</c> — not this hull total. The summed value is for power
         /// score / UI “how much gun does this hull carry.” Older code averaged here so a single
         /// shared <c>ShipWeaponConfig.BulletDamage</c> would not N×; that is obsolete.
         /// </para>
+        /// Pair with <see cref="ApplyWeaponFireRateToSummedStats"/> so hull
+        /// <c>firePower × fireRate</c> equals true sustained DPS (sum of per-barrel products).
         /// </summary>
         public static ShipComponentAbilityStats ApplyWeaponFirePowerToSummedStats(
             ShipComponentAbilityStats total,
@@ -191,21 +193,98 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Intentionally keeps naively summed weapon <c>fireRate</c> (total across barrels).
+        /// Rewrites hull <c>fireRate</c> so <c>firePower × fireRate</c> equals the sum of
+        /// per-weapon <c>firePower × fireRate</c> (true sustained DPS / energy drain).
         /// <para>
-        /// [TITAN-ORBIT] Live fire uses <b>per-mount</b> fireRate / FireCooldown so a fat cannon
-        /// can shoot slowly while side guns shoot fast. Hull sum is for power-score capacity only.
+        /// [TITAN-ORBIT] Live fire uses <b>per-mount</b> cadence from
+        /// <c>ShipWeaponMountCombatLogic</c>. Naively summing fireRate across a Machinegun +
+        /// Missile made <c>(Σ FP) × (Σ FR)</c> explode (e.g. 13 × 7.8 ≈ 100 DPS when real
+        /// combined fire is ≈ 21). Energy complementarity, mid-rock TTK, and overgunned
+        /// outliers all read the hull product — so the product must match Σ(FPᵢ×FRᵢ).
         /// </para>
+        /// Hull <c>firePower</c> stays the barrel sum (gun “size” for power score); effective
+        /// fireRate becomes <c>trueDps / firePower</c>.
         /// </summary>
+        /// <param name="total">Aggregated hull stats after stack pools (weapon FP already summed).</param>
+        /// <param name="componentIds">Parallel matched part ids (post weapon-id collapse).</param>
+        /// <param name="perComponentStats">Parallel scaled per-part stats.</param>
+        /// <returns>Hull stats with fireRate fitted to true sustained DPS.</returns>
         public static ShipComponentAbilityStats ApplyWeaponFireRateToSummedStats(
             ShipComponentAbilityStats total,
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
         {
-            // --- Keep sum (per-barrel cadence lives on each ShipWeaponMountElement) ---
-            _ = componentIds;
-            _ = perComponentStats;
+            // --- Guard ---
+            // [STANDARD] Missing lists → leave total unchanged (caller may be mid-refactor).
+            if (componentIds == null || perComponentStats == null)
+                return total;
+
+            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            if (count == 0)
+                return total;
+
+            // --- True sustained DPS = sum of per-barrel products ---
+            // [TITAN-ORBIT] Each mount fires independently; drain/DPS add, they do not cross-multiply.
+            float trueDps = 0f;
+            bool anyWeapon = false;
+            for (int i = 0; i < count; i++)
+            {
+                if (!IsWeaponComponent(componentIds[i]))
+                    continue;
+
+                ShipComponentAbilityStats s = perComponentStats[i];
+                float fp = Mathf.Max(0f, s.firePower);
+                float fr = Mathf.Max(0f, s.fireRate);
+                trueDps += fp * fr;
+                anyWeapon = true;
+            }
+
+            if (!anyWeapon || trueDps <= 0.0001f)
+                return total;
+
+            // --- Fit effective fireRate so hull FP × FR == trueDps ---
+            // [TITAN-ORBIT] firePower already equals Σ barrel FP from stack aggregation.
+            float hullFirePower = Mathf.Max(0f, total.firePower);
+            if (hullFirePower <= 0.0001f)
+            {
+                // No summed FP (odd catalog) — store DPS on firePower with FR=1.
+                total.firePower = trueDps;
+                total.fireRate = 1f;
+                total.fireRatePerAbilityLevel = 0f;
+                return total;
+            }
+
+            total.fireRate = trueDps / hullFirePower;
+            // Per-level fireRate stays 0 for weapons by design; clear any leaked sum.
+            total.fireRatePerAbilityLevel = 0f;
             return total;
+        }
+
+        /// <summary>
+        /// Sustained damage-per-second across weapon parts: Σ(<c>firePower × fireRate</c>).
+        /// Use this instead of multiplying hull sums when you only have the per-part lists.
+        /// </summary>
+        /// <param name="componentIds">Matched part ids.</param>
+        /// <param name="perComponentStats">Scaled per-part stats (same order).</param>
+        /// <returns>Non-negative sustained DPS.</returns>
+        public static float ComputeSustainedWeaponDps(
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
+        {
+            if (componentIds == null || perComponentStats == null)
+                return 0f;
+
+            int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
+            float dps = 0f;
+            for (int i = 0; i < count; i++)
+            {
+                if (!IsWeaponComponent(componentIds[i]))
+                    continue;
+                ShipComponentAbilityStats s = perComponentStats[i];
+                dps += Mathf.Max(0f, s.firePower) * Mathf.Max(0f, s.fireRate);
+            }
+
+            return dps;
         }
 
         /// <summary>True when every base and per-level field is exactly zero.</summary>

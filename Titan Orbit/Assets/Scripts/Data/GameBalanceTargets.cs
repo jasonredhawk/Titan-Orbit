@@ -92,10 +92,14 @@ namespace TitanOrbit.Data
         /// Per cargo part people at version 1.
         /// Tuned so measured L3 median peopleCap stays near <see cref="TargetMedianPeopleCapAtShipLevel3"/>
         /// after fleet Scan (capture batches ≈ 4–6 with <see cref="CaptureShipCount"/> = 3).
-        /// Prior 2-ship tuning used 2.2; scaled down for the 3-ship capture target.
+        /// <para>
+        /// [TITAN-ORBIT] Prefab sum collapses duplicate Wing/Cockpit meshes to one row per component
+        /// id (same as CountParts unique-id semantics). That removed LOD multi-counts, so the
+        /// per-part seed is higher than the old 1.7 full-sum tuning (~2.55 restores L3 ≈ 8.6).
+        /// </para>
         /// Gems use a separate per-part formula below.
         /// </summary>
-        public static readonly float AuthoredPeoplePerCargoPartV1 = 1.7f;
+        public static readonly float AuthoredPeoplePerCargoPartV1 = 2.55f;
 
         /// <summary>People seed for Cockpit/Wing ProfileSet rows (capture-tuned, not gem-coupled).</summary>
         public static float SuggestedPeoplePerCargoPartV1 => AuthoredPeoplePerCargoPartV1;
