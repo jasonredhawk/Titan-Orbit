@@ -174,6 +174,9 @@ namespace TitanOrbit.ECS
 
             StripGhostNetworking(em, e);
             TagSeedHydratedGroup(em, e);
+            // [TITAN-ORBIT] Combat sync / HitRpc matching uses this registry before the hybrid GO
+            // drain finishes — register as soon as the local ECS body exists.
+            AsteroidClientEntityRegistry.NotifyInstantiated(e);
             QueueHybridVisual(em, e);
             return e;
         }

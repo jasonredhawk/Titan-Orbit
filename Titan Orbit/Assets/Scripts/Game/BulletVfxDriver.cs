@@ -398,7 +398,8 @@ namespace TitanOrbit.Game
                         IsAnticipation = false,
                     };
                     TryShowAsteroidFloatForHitRpc(
-                        hitPos, hit.Damage, (TeamId)hit.OwnerTeam, hit.AsteroidHealthAfter, in synth);
+                        hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
+                        hit.AsteroidHealthAfter, in synth);
                     TryNotifyPlanetaryDefenseHitRpc(in hit);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                     continue;
@@ -425,7 +426,8 @@ namespace TitanOrbit.Game
                     var tracer = _tracers[idx];
                     // Always show float on HitRpc — even when VFX was client-predicted.
                     TryShowAsteroidFloatForHitRpc(
-                        hitPos, hit.Damage, (TeamId)hit.OwnerTeam, hit.AsteroidHealthAfter, in tracer);
+                        hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
+                        hit.AsteroidHealthAfter, in tracer);
                     TryNotifyPlanetaryDefenseHitRpc(in hit);
 
                     DestroyTracerGo(tracer);
@@ -444,8 +446,8 @@ namespace TitanOrbit.Game
                 {
                     var nearTracer = _tracers[nearIdx];
                     TryShowAsteroidFloatForHitRpc(
-                        hitPos, hit.Damage, (TeamId)hit.OwnerTeam, hit.AsteroidHealthAfter,
-                        in nearTracer);
+                        hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
+                        hit.AsteroidHealthAfter, in nearTracer);
                     TryNotifyPlanetaryDefenseHitRpc(in hit);
 
                     DestroyTracerGo(nearTracer);
@@ -460,13 +462,18 @@ namespace TitanOrbit.Game
                         IsAnticipation = true,
                     };
                     TryShowAsteroidFloatForHitRpc(
-                        hitPos, hit.Damage, (TeamId)hit.OwnerTeam, hit.AsteroidHealthAfter, in synth);
+                        hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
+                        hit.AsteroidHealthAfter, in synth);
                     TryNotifyPlanetaryDefenseHitRpc(in hit);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                 }
                 else
                 {
-                    // No tracer to destroy — still punch PD HP bar from authoritative HitRpc.
+                    // No tracer to destroy — still punch PD HP bar / asteroid teardown from HitRpc.
+                    var synth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
+                    TryShowAsteroidFloatForHitRpc(
+                        hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
+                        hit.AsteroidHealthAfter, in synth);
                     TryNotifyPlanetaryDefenseHitRpc(in hit);
                 }
             }
@@ -493,13 +500,16 @@ namespace TitanOrbit.Game
         /// HitRpc path: local asteroid impact → +Damage and server-authored HP Left.
         /// <para>
         /// [TITAN-ORBIT] <paramref name="asteroidHealthAfter"/> comes from the server on
-        /// <see cref="BulletHitRpc"/> — do not subtract from lagging ghost Health. When the value
-        /// is 0, hide the hybrid proxy immediately (ghost despawn / IsDestroyed can lag MaxSendRate).
+        /// <see cref="BulletHitRpc"/> — do not subtract from lagging ghost Health. Seed-hydrate
+        /// asteroids are not ghosts: <see cref="BulletHitRpcClientSystem"/> writes Health /
+        /// IsDestroyed; this path shows floats (local shots) and hides/tears down the hybrid GO
+        /// on kill. Do not DestroyEntity here — sim-group soft-destroy owns ECS teardown.
         /// Non-asteroid hits pass &lt; 0 and skip mining floats entirely.
         /// </para>
         /// </summary>
         static void TryShowAsteroidFloatForHitRpc(
             Vector3 hitDisplayPos,
+            float3 hitLogicalPos,
             float damage,
             TeamId ownerTeam,
             float asteroidHealthAfter,
@@ -511,26 +521,35 @@ namespace TitanOrbit.Game
 
             bool localShot = tracer.IsAnticipation ||
                              BulletMuzzlePresentation.IsLocalOwner(tracer.OwnerNetworkId);
-            if (!localShot)
-                return;
 
             // Impact must land on this rock’s hit sphere (cluster-safe surface fit).
-            if (!BulletCosmeticHitQuery.TryFindAsteroidAtImpact(
-                    hitDisplayPos, out Entity asteroidEntity, asteroidHealthAfter))
+            // Kill hits also match just-culled seed-hydrated rocks (HP already written in ECS).
+            BulletCosmeticHitQuery.TryFindAsteroidAtImpact(
+                hitDisplayPos, out Entity asteroidEntity, asteroidHealthAfter);
+
+            // --- Mining floats (local shots only — cosmetics) ---
+            if (localShot && asteroidEntity != Entity.Null)
+            {
+                EcsFloatingCountPresenter.TryNotifyLocalAsteroidBulletHit(
+                    asteroidEntity,
+                    damage,
+                    ownerTeam,
+                    authoritativeRemainingHealth: asteroidHealthAfter);
+            }
+
+            // --- Kill: hide GO only on the presentation thread ---
+            // [TITAN-ORBIT] Do NOT EntityManager.DestroyEntity from BulletVfxDriver (Update/LateUpdate).
+            // Structural changes outside SimulationSystemGroup while NetCode/physics jobs run can
+            // corrupt the client world and freeze predicted ship movement. Authoritative teardown
+            // is AsteroidDestroyedRpcClientSystem + BulletHitRpcClientSystem (sim group).
+            if (asteroidHealthAfter > 0.01f)
                 return;
 
-            // Server-authored remaining HP (includes 0 on kill).
-            EcsFloatingCountPresenter.TryNotifyLocalAsteroidBulletHit(
-                asteroidEntity,
-                damage,
-                ownerTeam,
-                authoritativeRemainingHealth: asteroidHealthAfter);
-
-            // Kill frame: hide proxy now — logs proved ghost Health stays >0 after server destroy.
-            if (asteroidHealthAfter <= 0.01f)
+            var visualizer = EcsWorldVisualizer.Active;
+            if (asteroidEntity != Entity.Null)
             {
-                var visualizer = EcsWorldVisualizer.Active;
                 visualizer?.TryHideAsteroidProxyFromHitRpc(asteroidEntity);
+                ClientLocalAsteroidCombatSync.QueueProxyDestroy(asteroidEntity);
             }
         }
 

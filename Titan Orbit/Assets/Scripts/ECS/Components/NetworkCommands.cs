@@ -429,6 +429,24 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// [NETCODE] Server → all clients: an asteroid was destroyed (bullet / mine / ram).
+    /// Asteroids are not ghost-relevant under seed-hydrate — clients must destroy their local
+    /// body immediately. HitRpc alone is not enough (mining/ram have no HitRpc; surface hits
+    /// can miss a fixed MatchRadius). Wire layout must match Linux headless.
+    /// </summary>
+    public struct AsteroidDestroyedRpc : IRpcCommand
+    {
+        /// <summary>World position of the destroyed rock (Y forced to 0 on apply).</summary>
+        public float3 Position;
+
+        /// <summary>
+        /// Uniform LocalTransform scale at destroy time — clients match with
+        /// <c>AsteroidHitRadius(scale)</c> so large rocks are not missed.
+        /// </summary>
+        public float Scale;
+    }
+
+    /// <summary>
     /// [NETCODE] Server → all clients: an asteroid respawned after destroy.
     /// Asteroids are not ghost-relevant under seed-hydrate join — clients spawn a local body.
     /// Wire layout must match Linux headless.

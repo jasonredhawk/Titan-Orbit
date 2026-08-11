@@ -79,10 +79,16 @@ namespace TitanOrbit.ECS
             destroyEcb.Playback(em);
             destroyEcb.Dispose();
 
-            // --- Phase 3: spawn local asteroids (structural changes OK now) ---
+            // --- Phase 3: clear zombies at pose, then spawn ---
+            // [TITAN-ORBIT] Kill only culled/hid the old local rock — without this, respawn
+            // Instantiates a second body on top of the invulnerable leftover.
             for (int i = 0; i < pending.Length; i++)
             {
                 var p = pending[i];
+                float3 pos = p.Position;
+                pos.y = 0f;
+                ClientLocalAsteroidCombatSync.DestroyLocalAsteroidsNear(em, pos, p.Scale);
+
                 var body = new MapLayoutBlueprint.Body
                 {
                     EntityKind = 3,

@@ -779,6 +779,30 @@ namespace TitanOrbit.Game
             alive.Clear();
             bool settling = ClientJoinSettleCache.Settling;
 
+            // --- Seed-hydrate asteroid kills (sim queued GO teardown) ---
+            // [TITAN-ORBIT] Kill frames soft-destroy (cull + hide). Hybrid GOs tear down here.
+            // If the ECS rock still exists as a culled zombie, do NOT AsteroidClientEntityRegistry
+            // NotifyDestroyed — respawn hard-destroy still needs that registry entry. Full
+            // DestroyProxy (registry drop) only when the entity is already gone.
+            // Never DestroyProxy a ship hull from this queue.
+            ClientLocalAsteroidCombatSync.DrainPendingProxyDestroys(_removeScratch);
+            for (int i = 0; i < _removeScratch.Count; i++)
+            {
+                Entity doomed = _removeScratch[i];
+                // Only tear down asteroid (or unknown) proxies — never a ship hull GO.
+                if (_proxyKinds.TryGetValue(doomed, out var kind) && kind == ProxyVisualKind.Ship)
+                    continue;
+
+                bool softZombie =
+                    em.Exists(doomed) &&
+                    em.HasComponent<AsteroidTag>(doomed) &&
+                    em.HasComponent<ClientSeedHydratedMapBody>(doomed);
+                if (softZombie)
+                    TearDownAsteroidProxyKeepRegistry(doomed);
+                else
+                    DestroyProxy(doomed);
+            }
+
             // --- Toroidal display: unbounded local ship; each body picks its own tile ---
             ToroidalDisplay.BeginFrame();
             ToroidalDisplay.SyncMapSize(em);
@@ -1221,6 +1245,21 @@ namespace TitanOrbit.Game
                 // --- Already has a live GameObject ---
                 if (_proxies.TryGetValue(entity, out var go) && go != null)
                     continue;
+
+                // --- Do not rebuild proxies for rocks the server already killed ---
+                // [TITAN-ORBIT] Culled / IsDestroyed seed-hydrated asteroids must not get a new GO
+                // after DestroyProxy (that recreated the phantom mesh).
+                if (!isPlanetRegistry &&
+                    em.HasComponent<AsteroidState>(entity))
+                {
+                    var asteroid = em.GetComponentData<AsteroidState>(entity);
+                    if (asteroid.IsDestroyed || asteroid.Health <= 0f ||
+                        em.HasComponent<AsteroidClientCulledTag>(entity))
+                    {
+                        AsteroidClientEntityRegistry.NotifyDestroyed(entity);
+                        continue;
+                    }
+                }
 
                 // --- Already in Pending / SpawnRequest drain queue ---
                 if (em.HasComponent<MapBodyHybridVisualPending>(entity) ||
@@ -2497,6 +2536,40 @@ namespace TitanOrbit.Game
             }
         }
 
+        /// <summary>
+        /// Soft-kill GO teardown: destroy/hide the hybrid mesh but keep
+        /// <see cref="AsteroidClientEntityRegistry"/> so respawn can hard-DestroyEntity the zombie.
+        /// </summary>
+        void TearDownAsteroidProxyKeepRegistry(Entity entity)
+        {
+            if (entity == Entity.Null)
+                return;
+
+            // Kill-handled so DetectAsteroidGemBursts does not re-fire on this rock.
+            _asteroidBurstFired.Add(entity);
+            _asteroidLastKnown.Remove(entity);
+            ToroidalDisplay.RemoveEntity(entity);
+
+            if (!_proxies.TryGetValue(entity, out var go))
+                return;
+
+            if (go != null)
+            {
+                if (!GemVisualPool.TryReturn(go))
+                    Destroy(go);
+            }
+
+            if (_proxyKinds.TryGetValue(entity, out var registeredKind))
+            {
+                UnregisterProxyKindCounts(registeredKind);
+                _proxyKinds.Remove(entity);
+            }
+
+            _proxies.Remove(entity);
+            _proxyNetworkIds.Remove(entity);
+            // Intentionally skip AsteroidClientEntityRegistry.NotifyDestroyed — ECS zombie remains.
+        }
+
         /// <summary>Tears down proxy GameObject and clears all per-entity registry entries.</summary>
         void DestroyProxy(Entity entity)
         {
@@ -2517,6 +2590,13 @@ namespace TitanOrbit.Game
                     ShipWeaponProxyRegistry.Unregister(networkId, go.transform);
                 if (go != null)
                 {
+                    // Keep camera / thruster refs from pointing at a destroyed hull GO.
+                    if (LocalPlayerShipProxy == go)
+                    {
+                        LocalPlayerShipProxy = null;
+                        LocalPlayerShipVisualRoot = null;
+                    }
+
                     // [TITAN-ORBIT] Gem visuals recycle via GemVisualPool — Destroy only non-pooled proxies.
                     if (!GemVisualPool.TryReturn(go))
                         Destroy(go);

@@ -535,19 +535,25 @@ namespace TitanOrbit.Game
 
                 // Already-hidden kill proxies stay in the dictionary — skip them so a neighbor
                 // hit cannot re-attribute floats/hide to a dead GO.
-                if (!visualizer.TryGetProxy(entity, out var proxyGo) ||
-                    proxyGo == null ||
-                    !proxyGo.activeSelf)
+                // [TITAN-ORBIT] Exception: HitRpc kill (healthAfter≈0) must still match a just-culled
+                // seed-hydrated rock so presentation can DestroyEntity / tear down the GO.
+                bool killHit = hasAuthHp && asteroidHealthAfter <= 0.01f;
+                if (!visualizer.TryGetProxy(entity, out var proxyGo) || proxyGo == null)
+                    continue;
+                if (!proxyGo.activeSelf && !killHit)
                     continue;
 
                 var state = em.GetComponentData<AsteroidState>(entity);
-                if (state.IsDestroyed || state.Health <= 0f)
+                if (!killHit && (state.IsDestroyed || state.Health <= 0f))
+                    continue;
+                if (!killHit && em.HasComponent<AsteroidClientCulledTag>(entity))
                     continue;
 
                 // Ghost already below server post-hit HP → cannot be the rock that was just hit
                 // (that rock's ghost is equal or still higher due to lag). Rejects wrong neighbors
                 // that had lower HP than the authoritative remaining (log line 78: rem 39 vs ghost 25).
-                if (hasAuthHp && state.Health + 0.5f < asteroidHealthAfter)
+                // Kill hits skip this — seed-hydrate already wrote Health=0 before presentation.
+                if (hasAuthHp && !killHit && state.Health + 0.5f < asteroidHealthAfter)
                     continue;
 
                 var lt = em.GetComponentData<LocalTransform>(entity);

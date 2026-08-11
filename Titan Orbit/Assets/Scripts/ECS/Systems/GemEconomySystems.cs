@@ -881,6 +881,17 @@ namespace TitanOrbit.ECS
                     now,
                     settings.AsteroidRespawnDelaySeconds);
 
+                // --- Clients: destroy seed-hydrated local rock now ---
+                // [NETCODE] Asteroids are not ghost-relevant. HitRpc alone misses mining/ram kills
+                // and can miss large rocks (surface hit far from center). Broadcast pose+scale.
+                Entity destroyRpc = ecb.CreateEntity();
+                ecb.AddComponent(destroyRpc, new AsteroidDestroyedRpc
+                {
+                    Position = pos,
+                    Scale = asteroidTransform.ValueRO.Scale,
+                });
+                ecb.AddComponent(destroyRpc, new SendRpcCommandRequest());
+
                 ecb.DestroyEntity(entity);
             }
 
