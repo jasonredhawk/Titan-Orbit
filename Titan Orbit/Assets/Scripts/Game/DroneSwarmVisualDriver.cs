@@ -296,6 +296,20 @@ namespace TitanOrbit.Game
                 if (netId <= 0)
                     continue;
 
+                // --- Hide drones while the owner is stowed in a planetary defense turret ---
+                // [TITAN-ORBIT] Same possession mode that hides the hull — swarm GOs must not
+                // keep orbiting an invisible pad-parked ship.
+                if (em.HasComponent<ShipTurretControlState>(shipEntity) &&
+                    em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                {
+                    if (_groupsByNetId.TryGetValue(netId, out var stowedGroup))
+                    {
+                        DestroyGroup(stowedGroup);
+                        _groupsByNetId.Remove(netId);
+                    }
+                    continue;
+                }
+
                 if (!TryGetShipPresentationPose(em, shipEntity, netId, out Vector3 shipPos, out Quaternion shipRot, out float shipScale))
                     continue;
 

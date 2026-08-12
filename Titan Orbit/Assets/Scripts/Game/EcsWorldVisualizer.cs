@@ -256,6 +256,11 @@ namespace TitanOrbit.Game
             /// True when the ship is fully moon-docked — nameplate stays hidden for that state.
             /// </summary>
             public bool IsLandedOnMoon;
+
+            /// <summary>
+            /// True when the ship is stowed in a planetary defense turret — nameplate stays hidden.
+            /// </summary>
+            public bool IsStowedInTurret;
         }
 
         /// <summary>
@@ -1943,10 +1948,11 @@ namespace TitanOrbit.Game
                     peopleDelivered = stats.PeopleDelivered;
                 }
 
-                // [TITAN-ORBIT] Same fully-landed gate as the batched nameplate path.
+                // [TITAN-ORBIT] Same fully-landed / turret-stow gates as the batched nameplate path.
                 bool landedOnMoon = IsShipFullyLandedOnMoon(em, shipEntity);
                 ApplyShipNameplatePresentation(
-                    proxyGo, networkId, ship, kills, gemsDeposited, peopleDelivered, landedOnMoon);
+                    proxyGo, networkId, ship, kills, gemsDeposited, peopleDelivered,
+                    landedOnMoon, stowedInTurret);
             }
         }
 
@@ -2308,6 +2314,9 @@ namespace TitanOrbit.Game
         /// <param name="isLandedOnMoon">
         /// True when the ship is fully docked on a gem moon — plate is hidden for that state.
         /// </param>
+        /// <param name="isStowedInTurret">
+        /// True when the ship is piloting a planetary defense pad — plate is hidden.
+        /// </param>
         void ApplyShipNameplatePresentation(
             GameObject proxyGo,
             int networkId,
@@ -2315,7 +2324,8 @@ namespace TitanOrbit.Game
             int kills,
             int gemsDeposited,
             int peopleDelivered,
-            bool isLandedOnMoon)
+            bool isLandedOnMoon,
+            bool isStowedInTurret)
         {
             // --- ApplyShipNameplatePresentation ---
             if (proxyGo == null)
@@ -2337,6 +2347,7 @@ namespace TitanOrbit.Game
                 ship.IsDead,
                 ship.AwaitingTeamSelection,
                 isLandedOnMoon,
+                isStowedInTurret,
                 ship.ShipLevel,
                 score,
                 rank,
@@ -2372,7 +2383,8 @@ namespace TitanOrbit.Game
                     pending.Kills,
                     pending.GemsDeposited,
                     pending.PeopleDelivered,
-                    pending.IsLandedOnMoon);
+                    pending.IsLandedOnMoon,
+                    pending.IsStowedInTurret);
             }
 
             _pendingShipNameplates.Clear();
@@ -2409,6 +2421,10 @@ namespace TitanOrbit.Game
 
             // [NETCODE] ShipMoonDockState is ghosted — same component the orbit menu / dock VFX read.
             bool landedOnMoon = IsShipFullyLandedOnMoon(em, entity);
+            // [NETCODE] ShipTurretControlState is ghosted — nameplate root is unparented, so we
+            // must hide explicitly (SetActive(false) on the hull proxy is not enough).
+            bool stowedInTurret = em.HasComponent<ShipTurretControlState>(entity) &&
+                em.GetComponentData<ShipTurretControlState>(entity).IsControlling;
 
             _nameplateRoleCandidates.Add(new ShipTopOfTeamRoles.Candidate
             {
@@ -2429,6 +2445,7 @@ namespace TitanOrbit.Game
                 GemsDeposited = gemsDeposited,
                 PeopleDelivered = peopleDelivered,
                 IsLandedOnMoon = landedOnMoon,
+                IsStowedInTurret = stowedInTurret,
             });
         }
 

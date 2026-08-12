@@ -201,12 +201,15 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Pushes live vitals, name, ship level, match score / team rank, badge, and top-role flags.
-        /// Hides the plate while the ship is dead, awaiting team pick, unteamed, or fully
-        /// landed on a gem moon (orbit menu covers that state).
+        /// Hides the plate while the ship is dead, awaiting team pick, unteamed, fully landed on a
+        /// gem moon, or stowed in a planetary defense turret (label root is unparented from the hull).
         /// </summary>
         /// <param name="isLandedOnMoon">
         /// True when <c>ShipMoonDockState</c> reports a completed moon landing
         /// (<c>MoonPlanetId != 0</c> and landing progress at the complete threshold).
+        /// </param>
+        /// <param name="isStowedInTurret">
+        /// True when <c>ShipTurretControlState.IsControlling</c> — hull is hidden on a pad.
         /// </param>
         public void ApplyPresentation(
             int networkId,
@@ -215,6 +218,7 @@ namespace TitanOrbit.Game
             bool isDead,
             bool awaitingTeamSelection,
             bool isLandedOnMoon,
+            bool isStowedInTurret,
             int shipLevel,
             int matchScore,
             int teamRank,
@@ -237,11 +241,12 @@ namespace TitanOrbit.Game
             EnsureLayoutCurrent();
 
             // --- Visibility ---
-            // [TITAN-ORBIT] Moon dock: hide the world plate once the hull is fully landed so it
-            // does not float over the moon / orbit-station UI. Thrust clears dock → plate returns.
+            // [TITAN-ORBIT] Moon dock: hide once fully landed (orbit-station UI owns that state).
+            // Turret stow: label root is SetParent(null) so hiding the ship proxy alone is not enough.
             bool visible = !isDead
                            && !awaitingTeamSelection
                            && !isLandedOnMoon
+                           && !isStowedInTurret
                            && team != TeamId.None;
             if (visible != _cachedVisible)
             {

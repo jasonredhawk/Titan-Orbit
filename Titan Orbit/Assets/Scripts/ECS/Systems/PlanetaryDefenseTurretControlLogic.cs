@@ -36,6 +36,18 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// True when this ship ghost is currently stowed in a planetary defense pad.
+        /// Used by moon dock, drones, nameplates, and other systems that must ignore occupied hulls.
+        /// </summary>
+        public static bool IsControllingTurret(EntityManager em, Entity shipEntity)
+        {
+            return shipEntity != Entity.Null &&
+                   em.Exists(shipEntity) &&
+                   em.HasComponent<ShipTurretControlState>(shipEntity) &&
+                   em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling;
+        }
+
+        /// <summary>
         /// Clears control state on the ship and frees the slot occupancy when it still points
         /// at this NetworkId. Restores the hull at the pad world position with zero velocity.
         /// </summary>
@@ -220,6 +232,11 @@ namespace TitanOrbit.ECS
                 PlanetId = planetId,
                 SlotIndex = slotIndex,
             });
+
+            // --- Clear moon dock so a passing gem-moon cannot open Orbit Menu on the pad ---
+            // [TITAN-ORBIT] Stow parks the hull at the pad; home moons often sweep that zone.
+            if (em.HasComponent<ShipMoonDockState>(shipEntity))
+                em.SetComponentData(shipEntity, default(ShipMoonDockState));
 
             if (em.HasComponent<LocalTransform>(shipEntity))
             {

@@ -22,9 +22,11 @@ namespace TitanOrbit.Game
     /// [HYBRID] Pad = Shapes soft blue disc matching the planet orbit-ring fill and
     /// <see cref="GemMoonOrbitZoneVisual"/> tint. Turret sits in the disc center; level +
     /// gem cost text (with the same gem icon as the moon label) sits screen-below the pad.
-    /// Active turrets also show a thin horizontal HP bar under the mesh. Empty pads show
-    /// placeholder copy instead of “Lv 0”. Parents to the unit-scale planet proxy root so
-    /// pad/text/turret use true world sizes (no ÷ planetScale). See <see cref="PlanetVisualBody"/>.
+    /// When a player occupies the pad, the level line also shows their display name
+    /// (ship nameplate is hidden while stowed). Active turrets also show a thin horizontal
+    /// HP bar under the mesh. Empty pads show placeholder copy instead of “Lv 0”. Parents to
+    /// the unit-scale planet proxy root so pad/text/turret use true world sizes (no ÷ planetScale).
+    /// See <see cref="PlanetVisualBody"/>.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Active turrets bank (roll) while turning to aim — same cosmetic curve as
@@ -212,6 +214,12 @@ namespace TitanOrbit.Game
 
         /// <summary>Bold level line (top of the stack, closer to the pad).</summary>
         const float LevelFontSize = 9.35f;
+
+        /// <summary>
+        /// Max characters for the occupant name under “Lv N” (pad labels are small).
+        /// Longer names truncate with an ellipsis.
+        /// </summary>
+        const int MaxOccupantNameChars = 14;
 
         /// <summary>Gem progress line under the level (slightly smaller / softer).</summary>
         const float CostFontSize = 6.875f;
@@ -542,6 +550,11 @@ namespace TitanOrbit.Game
             float mapW = 0f, mapH = 0f;
             bool hasMap = TryResolveMapSize(em, out mapW, out mapH);
 
+            // --- Player names for occupied-pad labels (Lv N + name) ---
+            // [HYBRID] Singleton PlayerNameElement buffer only — no ship gathers.
+            // Needed because ship nameplates hide while the hull is stowed in a turret.
+            EcsGameBridge.RefreshPlayerDisplayNameCache();
+
             _alivePlanetIds.Clear();
             bool canAimShips = !ClientJoinSettleCache.ShouldSkipShipEntityQueries;
 
@@ -801,12 +814,9 @@ namespace TitanOrbit.Game
 
             // --- Resolve desired copy (no TMP writes yet) ---
             // Empty pad → placeholder title (not “Lv 0”). Built pads → “Lv N”.
+            // Occupied pads → “Lv N” + player display name (second line) so others see who pilots.
             // Crown rung shows as Lv 7 (Solfeggio 963) once unlocked + built.
-            string levelText = slot.TurretLevel <= 0
-                ? EmptyPadPlaceholder
-                : slot.TurretLevel >= PlanetaryDefenseMath.CrownTurretLevel
-                    ? "Lv 7"
-                    : ResolveLevelLabel(slot.TurretLevel);
+            string levelText = ResolvePadTitleLabel(slot);
 
             bool atCap = slot.TurretLevel >= maxTurretLevel && slot.TurretLevel > 0;
             int costCurrent = 0;
@@ -846,6 +856,13 @@ namespace TitanOrbit.Game
                 vis.LevelText.fontSize = LevelFontSize;
                 vis.LevelText.fontStyle = FontStyles.Bold;
                 vis.LevelText.color = Color.white;
+                // Occupant name is a second line — allow height growth for layout preferredHeight.
+                bool twoLine = levelText.IndexOf('\n') >= 0;
+                vis.LevelText.enableWordWrapping = false;
+                vis.LevelText.overflowMode = TextOverflowModes.Overflow;
+                vis.LevelText.rectTransform.sizeDelta = twoLine
+                    ? new Vector2(18f, 6.4f)
+                    : new Vector2(18f, 3.2f);
                 vis.LevelText.text = levelText;
                 vis.CachedLevelText = levelText;
             }
@@ -899,6 +916,32 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Pad title line(s): Empty / Lv N, or Lv N + occupant display name when controlled.
+        /// </summary>
+        /// <param name="slot">Ghosted defense slot (level + OccupiedByNetworkId).</param>
+        static string ResolvePadTitleLabel(in PlanetaryDefenseSlotElement slot)
+        {
+            // --- Empty pad ---
+            if (slot.TurretLevel <= 0)
+                return EmptyPadPlaceholder;
+
+            // --- Level label ---
+            string levelLabel = slot.TurretLevel >= PlanetaryDefenseMath.CrownTurretLevel
+                ? "Lv 7"
+                : ResolveLevelLabel(slot.TurretLevel);
+
+            // --- Free pad: level only ---
+            if (slot.OccupiedByNetworkId <= 0)
+                return levelLabel;
+
+            // --- Occupied: show who is piloting (nameplate is hidden on the stowed hull) ---
+            // [HYBRID] Names come from EcsGameBridge cache (refreshed once per LateUpdate).
+            string rawName = EcsGameBridge.GetCachedPlayerDisplayName(slot.OccupiedByNetworkId);
+            string shortName = TruncateOccupantName(rawName);
+            return levelLabel + "\n" + shortName;
+        }
+
+        /// <summary>
         /// Interned-style level labels for common turret levels (avoids <c>"Lv " + n</c> every paint).
         /// </summary>
         /// <param name="turretLevel">1–6 (caller handles 0 / crown).</param>
@@ -914,6 +957,23 @@ namespace TitanOrbit.Game
                 case 6: return "Lv 6";
                 default: return "Lv " + turretLevel;
             }
+        }
+
+        /// <summary>
+        /// Shortens a player display name for pad labels (fixed char budget + ellipsis).
+        /// </summary>
+        static string TruncateOccupantName(string raw)
+        {
+            if (string.IsNullOrEmpty(raw))
+                return "Player";
+
+            string trimmed = raw.Trim();
+            if (trimmed.Length <= MaxOccupantNameChars)
+                return trimmed;
+
+            // Keep room for "…" so the glyph budget stays MaxOccupantNameChars.
+            int keep = Mathf.Max(1, MaxOccupantNameChars - 1);
+            return trimmed.Substring(0, keep) + "…";
         }
 
         /// <summary>

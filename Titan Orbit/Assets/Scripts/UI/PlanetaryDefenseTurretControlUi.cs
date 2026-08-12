@@ -19,7 +19,7 @@ namespace TitanOrbit.UI
     /// <summary>
     /// Client host for planetary defense turret possession UI.
     /// Publishes pad eligibility / camera pose / engage-range zoom radius, and shows <b>one</b>
-    /// screen-space Take Control button under the eligible pad's labels (never per-pad WorldSpace
+    /// screen-space Take Control button above the eligible turret (never per-pad WorldSpace
     /// canvases — those GraphicRaycasters destroyed FPS).
     /// <para>
     /// [TITAN-ORBIT] Gem auto-deposit still waits 2s of stillness on the server; enter does not.
@@ -44,8 +44,11 @@ namespace TitanOrbit.UI
 
         readonly List<Entity> _planetScratch = new List<Entity>(32);
 
-        /// <summary>Pixels below the projected pad center for the button (under Lv/gem labels).</summary>
-        const float ScreenOffsetBelowPadPx = 52f;
+        /// <summary>
+        /// Pixels above the projected pad center for the button (screen +Y = toward the top of
+        /// the view on the top-down camera — above the turret mesh, not under the Lv/gem labels).
+        /// </summary>
+        const float ScreenOffsetAbovePadPx = 48f;
 
         /// <summary>[UNITY] Spawn a DontDestroyOnLoad host after the first scene loads.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -75,7 +78,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Each frame: resolve eligibility, place the single button under the pad, update camera pose.
+        /// Each frame: resolve eligibility, place the single button above the pad, update camera pose.
         /// </summary>
         void LateUpdate()
         {
@@ -159,7 +162,7 @@ namespace TitanOrbit.UI
             PlanetaryDefenseTurretClientState.SetEligibility(
                 true, planetId, slotIndex, 0f, padV, true);
 
-            ShowButtonUnderPad(padV);
+            ShowButtonAbovePad(padV);
         }
 
         /// <summary>Builds one overlay canvas + dark Take Control button.</summary>
@@ -236,8 +239,10 @@ namespace TitanOrbit.UI
                 PlanetaryDefenseTurretClientState.EligibleSlotIndex);
         }
 
-        /// <summary>Places the button under the pad on screen (below Lv / gem labels).</summary>
-        void ShowButtonUnderPad(Vector3 padWorld)
+        /// <summary>
+        /// Places the button above the turret on screen (opposite side from Lv / gem labels).
+        /// </summary>
+        void ShowButtonAbovePad(Vector3 padWorld)
         {
             if (_buttonRoot == null)
                 return;
@@ -250,8 +255,9 @@ namespace TitanOrbit.UI
                 return;
             }
 
-            // Project pad + a little world −Z so we sit under the info plate stack.
-            Vector3 anchorWorld = padWorld + new Vector3(0f, 0.2f, -1.35f);
+            // [TITAN-ORBIT] Pad labels sit on world −Z (screen-below). Anchor on +Z so the
+            // Take Control button projects above the turret mesh instead.
+            Vector3 anchorWorld = padWorld + new Vector3(0f, 0.2f, 1.35f);
             Vector3 screen = _cachedCamera.WorldToScreenPoint(anchorWorld);
             if (screen.z <= 0.01f)
             {
@@ -266,12 +272,12 @@ namespace TitanOrbit.UI
                 RectTransformUtility.ScreenPointToLocalPointInRectangle(
                     canvasRt, screen, null, out Vector2 local))
             {
-                local.y -= ScreenOffsetBelowPadPx;
+                local.y += ScreenOffsetAbovePadPx;
                 _buttonRoot.anchoredPosition = local;
             }
             else
             {
-                _buttonRoot.position = new Vector3(screen.x, screen.y - ScreenOffsetBelowPadPx, 0f);
+                _buttonRoot.position = new Vector3(screen.x, screen.y + ScreenOffsetAbovePadPx, 0f);
             }
 
             if (!_buttonRoot.gameObject.activeSelf)
