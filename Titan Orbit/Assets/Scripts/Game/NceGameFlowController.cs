@@ -689,10 +689,17 @@ namespace TitanOrbit.Game
         void TickPostConfirmShipWatchdog(bool teamConfirmed, bool hasShipLive)
         {
             // --- Idle / success ---
-            if (!teamConfirmed || hasShipLive || _latchedHasShipThisSession)
+            // Also treat a live owned-ship seed as success — HasLocalPlayerShip can lag one frame
+            // after Confirm promotes PendingOwnedShip, and RequestTeam.Clear must not wipe it.
+            World clientWorld = EcsGameBridge.ClientWorld;
+            bool hasLiveSeed = clientWorld != null &&
+                               clientWorld.IsCreated &&
+                               LocalShipEntitySeed.HasLiveOwnedShipSeed(clientWorld.EntityManager);
+
+            if (!teamConfirmed || hasShipLive || hasLiveSeed || _latchedHasShipThisSession)
             {
                 _postConfirmShipWaitAt = -1f;
-                if (hasShipLive || _latchedHasShipThisSession)
+                if (hasShipLive || hasLiveSeed || _latchedHasShipThisSession)
                     _postConfirmShipRetryCount = 0;
                 return;
             }
@@ -708,12 +715,14 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] TryRecoverOwnedShip is Crash!!!-gated; only call when safe.
             if (!ClientJoinSettleCache.ShouldSkipShipEntityQueries)
             {
-                World clientWorld = EcsGameBridge.ClientWorld;
                 if (clientWorld != null && clientWorld.IsCreated)
                     LocalShipEntitySeed.TryRecoverOwnedShip(clientWorld.EntityManager);
             }
 
-            if (EcsGameBridge.HasLocalPlayerShip())
+            if (EcsGameBridge.HasLocalPlayerShip() ||
+                (clientWorld != null &&
+                 clientWorld.IsCreated &&
+                 LocalShipEntitySeed.HasLiveOwnedShipSeed(clientWorld.EntityManager)))
             {
                 _postConfirmShipWaitAt = -1f;
                 _postConfirmShipRetryCount = 0;
@@ -724,9 +733,10 @@ namespace TitanOrbit.Game
                 return;
 
             // --- Timeout: no hull after Confirm ---
+            // [TITAN-ORBIT] Do not Clear() a seed we never saw — RequestTeam clears on retry.
+            // Clearing here wiped a same-frame seed and bounced UI back to Join Team.
             var team = ClientTeamFlowState.LastRequestedTeam;
             ClientTeamFlowState.ResetTeamChoiceForShipSpawnFailure();
-            LocalShipEntitySeed.Clear();
             _postConfirmShipWaitAt = -1f;
             _latchedHasShipThisSession = false;
 

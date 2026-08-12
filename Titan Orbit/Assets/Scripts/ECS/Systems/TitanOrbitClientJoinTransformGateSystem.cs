@@ -79,7 +79,9 @@ namespace TitanOrbit.ECS
                     inGameFrames: 0,
                     joinSettleCompleted: false,
                     ghostSpawnBacklog: false);
-                ClientJoinSettleCache.SetMapProxyBuildReady(ClientMapHydrateCache.IsComplete);
+                // --- Proxy-ready is owned by the hybrid visualizer / EcsGameBridge ---
+                // [TITAN-ORBIT] Do not treat hydrate-complete as GO-ready — Join Team waits on
+                // MapLoadingProxyCount separately (second loading bar).
                 return;
             }
 
@@ -114,9 +116,12 @@ namespace TitanOrbit.ECS
                 hydrateReady = true; // counts-only / legacy meta (no seed hydrate)
             else
                 hydrateReady = false;
-            ClientJoinSettleCache.SetMapProxyBuildReady(hydrateReady);
+            // MapProxyBuildReady is published by EcsWorldVisualizer / EcsGameBridge from GO counts.
 
-            // --- Exit when hydrate done + brief InGame catch-up (or timeout) ---
+            // --- Exit Settling when hydrate done + brief InGame catch-up (or timeout) ---
+            // [TITAN-ORBIT] Settling exit does NOT wait for GO proxies — the loading overlay /
+            // Join Team gate does (IsMapLoadingComplete → proxy-ready). That keeps Transform /
+            // backlog logic separate from hybrid Instantiates drain.
             bool canExit = hardTimeout || (minTime && hydrateReady);
 
             bool shouldSettle;

@@ -25,10 +25,10 @@ namespace TitanOrbit.ECS
     /// LocalHostPredictedShipSpawn hack.
     /// </para>
     /// <para>
-    /// Editor.log 2026-08-10: predicted Instantiates worked on the first Play after compile, then
-    /// every later Play (Domain Reload disabled) skipped it — stale
-    /// <see cref="LocalShipEntitySeed"/> / flow statics blocked <see cref="Request"/>. Always arm
-    /// Pending; prune live seed before skipping Instantiates.
+    /// Editor.log 2026-08-12: after waiting on Join Team, Request stayed Pending for 240 frames
+    /// with no Instantiates — <see cref="ClientPredictedShipSpawnSystem"/> was gated on
+    /// RequireForUpdate and often ran a full frame after Local Host Result. Drain is now a static
+    /// <see cref="TryDrainPending"/> callable from Init (deferred Confirm) and from Result apply.
     /// </para>
     /// </summary>
     public static class ClientPredictedShipSpawnRequest
@@ -85,60 +85,37 @@ namespace TitanOrbit.ECS
             HasSpawnPos = false;
         }
 
-        /// <summary>Domain reload.</summary>
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStaticsSubsystem() => Clear();
-
-        /// <summary>Every Play Mode enter (Domain Reload may be off).</summary>
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        static void ResetStaticsBeforeSceneLoad() => Clear();
-    }
-
-    /// <summary>
-    /// ClientSimulation: drains <see cref="ClientPredictedShipSpawnRequest"/> and Instantiates
-    /// the GhostCollection ship prefab with PredictedGhostSpawnRequest so classification can
-    /// adopt the server ghost when its snapshot finally arrives.
-    /// </summary>
-    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
-    [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(TeamChoiceResultClientSystem))]
-    public partial struct ClientPredictedShipSpawnSystem : ISystem
-    {
-        /// <summary>Requires GhostCollection so the ship prefab index is valid.</summary>
-        public void OnCreate(ref SystemState state)
-        {
-            state.RequireForUpdate<GhostCollection>();
-            state.RequireForUpdate<NetworkStreamInGame>();
-        }
-
         /// <summary>
-        /// Instantiates one predicted ship when a TeamChoice request is pending and no live seed exists.
+        /// Instantiates the pending predicted hull on <paramref name="em"/> if armed.
+        /// Safe to call from Init, Simulation, or Local Host Result apply (ClientWorld EM only).
         /// </summary>
-        public void OnUpdate(ref SystemState state)
+        /// <param name="em">ClientWorld EntityManager.</param>
+        /// <returns>True when a hull was Instantiated or a live seed already existed.</returns>
+        public static bool TryDrainPending(EntityManager em)
         {
-            var em = state.EntityManager;
+            // --- Nothing queued ---
+            if (!Pending)
+                return false;
 
             // --- Drop handles from a previous Play Mode (Domain Reload off) ---
             LocalShipEntitySeed.PruneStale(em);
 
-            if (!ClientPredictedShipSpawnRequest.Pending)
-                return;
-
             // --- Live hull already present (GhostReceive or prior predicted Instantiates) ---
             if (LocalShipEntitySeed.HasLiveOwnedShipSeed(em))
             {
-                ClientPredictedShipSpawnRequest.Clear();
-                return;
+                Clear();
+                return true;
             }
 
-            int networkId = ClientPredictedShipSpawnRequest.NetworkId;
-            TeamId team = ClientPredictedShipSpawnRequest.Team;
-            bool hasSpawnPos = ClientPredictedShipSpawnRequest.HasSpawnPos;
-            float3 spawnPos = ClientPredictedShipSpawnRequest.SpawnPos;
-            ClientPredictedShipSpawnRequest.Clear();
+            int networkId = NetworkId;
+            TeamId team = Team;
+            bool hasSpawnPos = HasSpawnPos;
+            float3 spawnPos = SpawnPos;
+            // Clear before Instantiates so a throw cannot leave Pending stuck forever.
+            Clear();
 
             if (networkId <= 0 || team == TeamId.None)
-                return;
+                return false;
 
             // --- Resolve client GhostCollection ship prefab ---
             if (!TryResolveClientShipPrefab(em, out Entity shipPrefab))
@@ -146,18 +123,29 @@ namespace TitanOrbit.ECS
                 Debug.LogError(
                     "[ClientPredictedShipSpawn] No ShipTag prefab in ClientWorld GhostCollection — " +
                     "cannot predicted-spawn hull after TeamChoice.");
-                return;
+                return false;
             }
 
             // --- Spawn pose: server hint, else home ring on client map ---
             if (!hasSpawnPos)
             {
-                int hz = 0;
-                if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate))
-                    hz = tickRate.SimulationTickRate;
-                double orbitElapsed = SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
-                    ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
-                    : SystemAPI.Time.ElapsedTime;
+                double orbitElapsed = 0.0;
+                using (var timeQ = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkTime>()))
+                {
+                    if (!timeQ.IsEmptyIgnoreFilter)
+                    {
+                        int hz = 0;
+                        using (var rateQ = em.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>()))
+                        {
+                            if (!rateQ.IsEmptyIgnoreFilter)
+                                hz = rateQ.GetSingleton<ClientServerTickRate>().SimulationTickRate;
+                        }
+
+                        orbitElapsed = PlanetGemMoonOrbitClock.GetElapsedSeconds(
+                            timeQ.GetSingleton<NetworkTime>(), hz, includeTickFraction: false);
+                    }
+                }
+
                 spawnPos = ShipHomeSpawnLogic.FindHomeSpawnPosition(em, team, orbitElapsed);
             }
 
@@ -172,7 +160,7 @@ namespace TitanOrbit.ECS
                     "[ClientPredictedShipSpawn] Ship prefab lacks PredictedGhostSpawnRequest — " +
                     "destroying Instantiates (would log invalid ghostId==0). Check OwnerPredicted bake.");
                 em.DestroyEntity(ship);
-                return;
+                return false;
             }
 
             if (em.HasComponent<GhostOwner>(ship))
@@ -197,12 +185,15 @@ namespace TitanOrbit.ECS
                 em.SetComponentData(ship, shipState);
             }
 
-            // --- Seed presentation even while post–TeamChoice suppress is on ---
-            LocalShipEntitySeed.NotifyShipInstantiated(em, ship);
+            // --- Seed with known NetworkId (do not trust GhostOwner readback) ---
+            // [TITAN-ORBIT] Editor.log 2026-08-12: NotifyShipInstantiated saw ownerId=0 right after
+            // SetComponentData(NetworkId=1) — seed never latched, Confirm waited 240 frames empty.
+            LocalShipEntitySeed.ForceAcceptOwnedShip(ship);
 
             Debug.Log(
                 $"[ClientPredictedShipSpawn] Predicted hull Instantiates for networkId={networkId} " +
                 $"team={team} at {spawnPos} (awaits GhostSpawn classification when server snapshot arrives).");
+            return true;
         }
 
         /// <summary>
@@ -277,6 +268,41 @@ namespace TitanOrbit.ECS
 
             shipPrefab = gamePrefabsShip;
             return shipPrefab != Entity.Null;
+        }
+
+        /// <summary>Domain reload.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStaticsSubsystem() => Clear();
+
+        /// <summary>Every Play Mode enter (Domain Reload may be off).</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void ResetStaticsBeforeSceneLoad() => Clear();
+    }
+
+    /// <summary>
+    /// ClientSimulation: drains <see cref="ClientPredictedShipSpawnRequest"/> each sim tick.
+    /// Prefer <see cref="ClientPredictedShipSpawnRequest.TryDrainPending"/> from Init / Result too —
+    /// Local Host Result is applied on ServerWorld after ClientSimulation may already have run.
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(TeamChoiceResultClientSystem))]
+    public partial struct ClientPredictedShipSpawnSystem : ISystem
+    {
+        /// <summary>
+        /// No RequireForUpdate — a missing GhostCollection singleton used to disable this system
+        /// entirely while Request stayed Pending (Join Team late-click hang).
+        /// </summary>
+        public void OnCreate(ref SystemState state)
+        {
+        }
+
+        /// <summary>
+        /// Instantiates one predicted ship when a TeamChoice request is pending and no live seed exists.
+        /// </summary>
+        public void OnUpdate(ref SystemState state)
+        {
+            ClientPredictedShipSpawnRequest.TryDrainPending(state.EntityManager);
         }
     }
 }

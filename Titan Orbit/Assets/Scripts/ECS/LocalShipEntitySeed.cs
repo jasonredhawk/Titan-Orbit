@@ -243,6 +243,22 @@ namespace TitanOrbit.ECS
             ClientJoinSettleCache.ArmPostShipInstantiateHold();
         }
 
+        /// <summary>
+        /// Accepts a predicted / known-local hull without re-reading <see cref="GhostOwner"/>.
+        /// <para>
+        /// [TITAN-ORBIT] Editor.log 2026-08-12: after predicted Instantiates,
+        /// <see cref="NotifyShipInstantiated"/> saw <c>ownerId=0</c> even though the caller had
+        /// just written NetworkId — seed never latched and Join Team timed out after waiting.
+        /// </para>
+        /// </summary>
+        /// <param name="entity">ClientWorld ship entity that this player owns.</param>
+        public static void ForceAcceptOwnedShip(Entity entity)
+        {
+            if (entity == Entity.Null)
+                return;
+            AcceptOwnedShip(entity);
+        }
+
         /// <summary>Promotes <see cref="s_UnresolvedOwnershipShip"/> once NetworkId is ready.</summary>
         static void TryResolveDeferredOwnership(EntityManager em)
         {

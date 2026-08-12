@@ -74,6 +74,13 @@ namespace TitanOrbit.ECS
                 ClientPredictedShipSpawnRequest.Request(
                     rpc.NetworkId, team, float3.zero, hasSpawnPos: false);
 
+                // --- Drain same frame on ClientWorld (dedicated / Relay path) ---
+                // [TITAN-ORBIT] Do not rely solely on ClientPredictedShipSpawnSystem later in the
+                // group — Init deferred Confirm also drains, but seeding here unlocks hull ASAP.
+                var client = ClientServerBootstrap.ClientWorld;
+                if (client != null && client.IsCreated)
+                    ClientPredictedShipSpawnRequest.TryDrainPending(client.EntityManager);
+
                 UnityEngine.Debug.Log(
                     $"[TeamChoiceResult] Assigned to {team} (networkId={rpc.NetworkId}). " +
                     "Confirm deferred until post-TeamChoice Instantiates hold expires (join-crash guard).");

@@ -184,6 +184,13 @@ namespace TitanOrbit.ECS
                 // classification adopts the server ghost when its snapshot arrives.
                 ClientPredictedShipSpawnRequest.Request(networkId, team, spawnPos, hasSpawnPos);
 
+                // --- Drain on ClientWorld immediately (do not wait for next ClientSimulation) ---
+                // [TITAN-ORBIT] ServerWorld applies this after ClientWorld already ticked this frame.
+                // Leaving Pending until next frame left Join Team hung when the player waited on
+                // the team screen (Editor.log: predPending=True for 240 frames, no Instantiates).
+                if (client.IsCreated)
+                    ClientPredictedShipSpawnRequest.TryDrainPending(client.EntityManager);
+
                 Debug.Log(
                     $"[TeamManagementSystem] Local Host TeamChoiceResult applied to ClientTeamFlowState " +
                     $"(networkId={networkId} team={team}). Confirm deferred until Instantiates hold expires.");

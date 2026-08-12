@@ -9,9 +9,13 @@ namespace TitanOrbit.Game
     /// Full-screen join overlay shown while the map builds on the client.
     /// Content sits in a tight vertical cluster in the middle of the screen (not pinned to
     /// the top/bottom edges): HOW TO PLAY → five instruction cards → BUILDING GALAXY →
-    /// status → progress bar → percent. Progress is driven by
-    /// <see cref="EcsGameBridge.TryGetJoinLoadProgress"/> (planet/asteroid GameObject proxies
-    /// vs server meta N).
+    /// two progress bars (world sync, then map visuals) → percents.
+    /// <para>
+    /// Bar 1 — <see cref="EcsGameBridge.TryGetNetworkJoinLoadProgress"/>: seed-hydrate ECS
+    /// bodies + short InGame ghost catch-up.
+    /// Bar 2 — <see cref="EcsGameBridge.TryGetProxyJoinLoadProgress"/>: hybrid planet/asteroid
+    /// GameObject Instantiates vs server meta N. Join Team stays hidden until both complete.
+    /// </para>
     /// <para>
     /// The instruction strip matches the five-step guide from <c>InstructionScreenUI</c>.
     /// Art loads from <c>Resources/InstructionScreens/</c>. Does not gather asteroid entities
@@ -24,6 +28,8 @@ namespace TitanOrbit.Game
         const float BarPadding = 2f;
         const float ProgressBarWidth = 520f;
         const float ProgressBarHeight = 18f;
+        const float BarLabelHeight = 20f;
+        const float BarStackGap = 10f;
 
         // --- Centered content cluster ---
         // [TITAN-ORBIT] Pack labels + cards + bar toward screen center so large monitors
@@ -113,15 +119,22 @@ namespace TitanOrbit.Game
             new Color(0.98f, 0.48f, 0.38f, 1f),
         };
 
+        /// <summary>One labeled progress bar (track + fill + status + percent).</summary>
+        sealed class ProgressBarUi
+        {
+            public TextMeshProUGUI Label;
+            public TextMeshProUGUI Status;
+            public RectTransform Track;
+            public Image Fill;
+            public TextMeshProUGUI Percent;
+        }
+
         RectTransform _panelRoot;
         RectTransform _contentRoot;
-        RectTransform _barTrackRect;
-        RectTransform _fillRect;
-        Image _fillImage;
+        ProgressBarUi _networkBar;
+        ProgressBarUi _proxyBar;
         TextMeshProUGUI _howToText;
         TextMeshProUGUI _titleText;
-        TextMeshProUGUI _statusText;
-        TextMeshProUGUI _percentText;
         RectTransform _instructionsRow;
         readonly List<StepColumn> _columns = new List<StepColumn>();
         readonly Dictionary<string, Sprite> _spriteCache = new Dictionary<string, Sprite>();
@@ -165,34 +178,47 @@ namespace TitanOrbit.Game
         float _stuckWatchSince = -1f;
 
         /// <summary>
-        /// Per-frame: fill from <see cref="EcsGameBridge.TryGetJoinLoadProgress"/>
-        /// (planet/asteroid GameObject proxies vs server meta N).
+        /// Per-frame: fill both bars from network/hydrate + hybrid GO proxy progress.
         /// </summary>
         void Update()
         {
             if (!IsVisible)
                 return;
 
-            // --- Map GO build progress ---
-            // [TITAN-ORBIT] Bar covers hybrid Instantiates cost — complete only when proxies ≈ N.
-            if (!EcsGameBridge.TryGetJoinLoadProgress(out float progress))
-                return;
-
-            if (_statusText != null)
+            // --- Bar 1: ECS seed hydrate + InGame catch-up ---
+            // Status is just "done / total" — the short label above carries the meaning.
+            float networkProgress = 0f;
+            EcsGameBridge.TryGetNetworkJoinLoadProgress(out networkProgress);
+            ApplyBarProgress(_networkBar, networkProgress);
+            if (_networkBar != null && _networkBar.Status != null)
             {
-                string baseStatus;
-                if (EcsGameBridge.TryGetMapLoadingStepCounts(out int done, out int total) && total > 0)
-                    baseStatus = "Loading map... " + done + " / " + total;
-                else
-                    baseStatus = "Loading map...";
+                _networkBar.Status.text =
+                    EcsGameBridge.TryGetNetworkJoinLoadStepCounts(out int netDone, out int netTotal) &&
+                    netTotal > 0
+                        ? netDone + " / " + netTotal
+                        : string.Empty;
+            }
+
+            // --- Bar 2: hybrid planet/asteroid GameObject Instantiates ---
+            float proxyProgress = 0f;
+            EcsGameBridge.TryGetProxyJoinLoadProgress(out proxyProgress);
+            ApplyBarProgress(_proxyBar, proxyProgress);
+
+            if (_proxyBar != null && _proxyBar.Status != null)
+            {
+                string counts =
+                    EcsGameBridge.TryGetProxyJoinLoadStepCounts(out int goDone, out int goTotal) &&
+                    goTotal > 0
+                        ? goDone + " / " + goTotal
+                        : string.Empty;
 
                 // --- Stuck hint after a few seconds (Settling vs Instantiates vs drain) ---
                 // [TITAN-ORBIT] 314/315 with Settling ON looked like a hang with no explanation.
                 bool proxyReady = EcsGameBridge.IsMapProxyCountReady(out _, out _, out _);
-                if (proxyReady || progress >= 0.99f)
+                if (proxyReady || proxyProgress >= 0.99f)
                 {
                     _stuckWatchSince = -1f;
-                    _statusText.text = baseStatus;
+                    _proxyBar.Status.text = counts;
                 }
                 else
                 {
@@ -203,13 +229,11 @@ namespace TitanOrbit.Game
                     if (Time.realtimeSinceStartup - _stuckWatchSince >= StuckHintAfterSeconds)
                         hint = EcsGameBridge.GetMapLoadStuckHint();
 
-                    _statusText.text = string.IsNullOrEmpty(hint)
-                        ? baseStatus
-                        : baseStatus + " — " + hint;
+                    _proxyBar.Status.text = string.IsNullOrEmpty(hint)
+                        ? counts
+                        : (string.IsNullOrEmpty(counts) ? hint : counts + " — " + hint);
                 }
             }
-
-            ApplyProgress(progress);
         }
 
         /// <summary>
@@ -225,10 +249,13 @@ namespace TitanOrbit.Game
         public void Show()
         {
             BuildUi();
-            ApplyProgress(0f);
+            ApplyBarProgress(_networkBar, 0f);
+            ApplyBarProgress(_proxyBar, 0f);
             _stuckWatchSince = Time.realtimeSinceStartup;
-            if (_statusText != null)
-                _statusText.text = "Loading map...";
+            if (_networkBar != null && _networkBar.Status != null)
+                _networkBar.Status.text = string.Empty;
+            if (_proxyBar != null && _proxyBar.Status != null)
+                _proxyBar.Status.text = string.Empty;
             if (_panelRoot != null)
             {
                 _panelRoot.SetAsLastSibling();
@@ -249,22 +276,25 @@ namespace TitanOrbit.Game
                 _panelRoot.gameObject.SetActive(false);
         }
 
-        /// <summary>Applies 0–1 fill amount and percent label.</summary>
-        void ApplyProgress(float progress)
+        /// <summary>Applies 0–1 fill amount and percent label to one bar.</summary>
+        static void ApplyBarProgress(ProgressBarUi bar, float progress)
         {
+            if (bar == null)
+                return;
+
             progress = Mathf.Clamp01(progress);
 
-            if (_fillImage != null)
-                _fillImage.fillAmount = progress;
+            if (bar.Fill != null)
+                bar.Fill.fillAmount = progress;
 
-            if (_percentText != null)
-                _percentText.text = Mathf.RoundToInt(progress * 100f) + "%";
+            if (bar.Percent != null)
+                bar.Percent.text = Mathf.RoundToInt(progress * 100f) + "%";
         }
 
         /// <summary>
         /// [UNITY] Builds the full-screen panel once under the parent Canvas:
         /// full-screen backdrop + centered content cluster
-        /// (HOW TO PLAY → cards → BUILDING GALAXY → status → bar → percent).
+        /// (HOW TO PLAY → cards → BUILDING GALAXY → sync bar → visuals bar).
         /// </summary>
         void BuildUi()
         {
@@ -314,34 +344,67 @@ namespace TitanOrbit.Game
             _titleText.alignment = TextAlignmentOptions.Center;
             _titleText.color = new Color(0.85f, 0.92f, 1f, 1f);
 
-            _statusText = CreateText(_contentRoot, "Status", "Loading map...", 17, FontStyles.Normal);
-            _statusText.alignment = TextAlignmentOptions.Center;
-            _statusText.color = new Color(0.62f, 0.76f, 0.92f, 0.95f);
-
-            // Progress bar
-            var barBackground = CreateRect("ProgressBarBackground", _contentRoot);
-            _barTrackRect = barBackground;
-            var barBgImage = barBackground.gameObject.AddComponent<Image>();
-            barBgImage.sprite = WhiteSprite;
-            barBgImage.color = new Color(0.08f, 0.12f, 0.2f, 0.95f);
-            barBgImage.raycastTarget = false;
-
-            _fillRect = CreateRect("Fill", barBackground);
-            StretchFill(_fillRect, BarPadding, BarPadding, BarPadding, BarPadding);
-            _fillImage = _fillRect.gameObject.AddComponent<Image>();
-            _fillImage.sprite = WhiteSprite;
-            _fillImage.type = Image.Type.Filled;
-            _fillImage.fillMethod = Image.FillMethod.Horizontal;
-            _fillImage.fillOrigin = (int)Image.OriginHorizontal.Left;
-            _fillImage.fillAmount = 0f;
-            _fillImage.color = new Color(0.28f, 0.62f, 0.98f, 1f);
-            _fillImage.raycastTarget = false;
-
-            _percentText = CreateText(_contentRoot, "Percent", "0%", 16, FontStyles.Bold);
-            _percentText.alignment = TextAlignmentOptions.Center;
-            _percentText.color = new Color(0.75f, 0.85f, 1f, 0.95f);
+            // --- Two bars: world sync (ECS) then map visuals (GameObjects) ---
+            _networkBar = CreateProgressBar(
+                _contentRoot,
+                "NetworkBar",
+                "World",
+                new Color(0.28f, 0.62f, 0.98f, 1f));
+            _proxyBar = CreateProgressBar(
+                _contentRoot,
+                "ProxyBar",
+                "Map",
+                new Color(0.34f, 0.78f, 0.62f, 1f));
 
             _uiBuilt = true;
+        }
+
+        /// <summary>
+        /// Builds one labeled progress stack: label → status → track/fill → percent.
+        /// </summary>
+        ProgressBarUi CreateProgressBar(
+            RectTransform parent,
+            string rootName,
+            string label,
+            Color fillColor)
+        {
+            var labelTmp = CreateText(parent, rootName + "Label", label, 15, FontStyles.Bold);
+            labelTmp.alignment = TextAlignmentOptions.Center;
+            labelTmp.color = new Color(0.78f, 0.88f, 1f, 0.95f);
+
+            var status = CreateText(parent, rootName + "Status", "...", 15, FontStyles.Normal);
+            status.alignment = TextAlignmentOptions.Center;
+            status.color = new Color(0.62f, 0.76f, 0.92f, 0.95f);
+
+            var track = CreateRect(rootName + "Track", parent);
+            var trackImage = track.gameObject.AddComponent<Image>();
+            trackImage.sprite = WhiteSprite;
+            trackImage.color = new Color(0.08f, 0.12f, 0.2f, 0.95f);
+            trackImage.raycastTarget = false;
+
+            var fillRect = CreateRect("Fill", track);
+            StretchFill(fillRect, BarPadding, BarPadding, BarPadding, BarPadding);
+            var fill = fillRect.gameObject.AddComponent<Image>();
+            fill.sprite = WhiteSprite;
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            fill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            fill.fillAmount = 0f;
+            fill.color = fillColor;
+            fill.raycastTarget = false;
+
+            var percent = CreateText(parent, rootName + "Percent", "0%", 15, FontStyles.Bold);
+            percent.alignment = TextAlignmentOptions.Center;
+            percent.color = new Color(0.75f, 0.85f, 1f, 0.95f);
+
+            return new ProgressBarUi
+            {
+                Label = labelTmp,
+                Status = status,
+                Track = track,
+                Fill = fill,
+                Percent = percent,
+            };
         }
 
         /// <summary>
@@ -399,7 +462,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Packs the content cluster toward screen center and lays out equal-width cards.
-        /// Order: HOW TO PLAY → cards → BUILDING GALAXY → status → bar → percent.
+        /// Order: HOW TO PLAY → cards → BUILDING GALAXY → sync bar → visuals bar.
         /// </summary>
         void LayoutContent()
         {
@@ -436,6 +499,16 @@ namespace TitanOrbit.Game
 
             float cardHeight = Mathf.Min(maxCardHeight, MaxCardHeight);
 
+            // One progress stack: label + status + track + percent (+ small gaps).
+            float oneBarStackHeight =
+                BarLabelHeight
+                + 2f
+                + StatusHeight
+                + 4f
+                + ProgressBarHeight
+                + 4f
+                + PercentHeight;
+
             // --- Total cluster height (tight stack) ---
             float clusterHeight =
                 HowToHeight
@@ -444,11 +517,9 @@ namespace TitanOrbit.Game
                 + SectionGap
                 + TitleHeight
                 + 6f
-                + StatusHeight
-                + SectionGap
-                + ProgressBarHeight
-                + 6f
-                + PercentHeight;
+                + oneBarStackHeight
+                + BarStackGap
+                + oneBarStackHeight;
 
             // Cap to ~78% of screen so it never feels edge-to-edge on short windows.
             float maxCluster = panelHeight * 0.78f;
@@ -463,11 +534,9 @@ namespace TitanOrbit.Game
                     + SectionGap
                     + TitleHeight
                     + 6f
-                    + StatusHeight
-                    + SectionGap
-                    + ProgressBarHeight
-                    + 6f
-                    + PercentHeight;
+                    + oneBarStackHeight
+                    + BarStackGap
+                    + oneBarStackHeight;
             }
 
             _contentRoot.sizeDelta = new Vector2(contentWidth, clusterHeight);
@@ -506,18 +575,34 @@ namespace TitanOrbit.Game
 
             PlaceTopBand(_titleText.rectTransform, contentWidth, TitleHeight, ref yFromTop);
             yFromTop += 6f;
-            PlaceTopBand(_statusText.rectTransform, contentWidth, StatusHeight, ref yFromTop);
-            yFromTop += SectionGap;
 
-            // Progress bar (fixed width, centered)
-            _barTrackRect.anchorMin = new Vector2(0.5f, 1f);
-            _barTrackRect.anchorMax = new Vector2(0.5f, 1f);
-            _barTrackRect.pivot = new Vector2(0.5f, 1f);
-            _barTrackRect.anchoredPosition = new Vector2(0f, -yFromTop);
-            _barTrackRect.sizeDelta = new Vector2(ProgressBarWidth, ProgressBarHeight);
-            yFromTop += ProgressBarHeight + 6f;
+            PlaceProgressBarStack(_networkBar, contentWidth, ref yFromTop);
+            yFromTop += BarStackGap;
+            PlaceProgressBarStack(_proxyBar, contentWidth, ref yFromTop);
+        }
 
-            PlaceTopBand(_percentText.rectTransform, contentWidth, PercentHeight, ref yFromTop);
+        /// <summary>
+        /// Places label → status → track → percent for one bar and advances
+        /// <paramref name="yFromTop"/>.
+        /// </summary>
+        void PlaceProgressBarStack(ProgressBarUi bar, float contentWidth, ref float yFromTop)
+        {
+            if (bar == null)
+                return;
+
+            PlaceTopBand(bar.Label.rectTransform, contentWidth, BarLabelHeight, ref yFromTop);
+            yFromTop += 2f;
+            PlaceTopBand(bar.Status.rectTransform, contentWidth, StatusHeight, ref yFromTop);
+            yFromTop += 4f;
+
+            bar.Track.anchorMin = new Vector2(0.5f, 1f);
+            bar.Track.anchorMax = new Vector2(0.5f, 1f);
+            bar.Track.pivot = new Vector2(0.5f, 1f);
+            bar.Track.anchoredPosition = new Vector2(0f, -yFromTop);
+            bar.Track.sizeDelta = new Vector2(ProgressBarWidth, ProgressBarHeight);
+            yFromTop += ProgressBarHeight + 4f;
+
+            PlaceTopBand(bar.Percent.rectTransform, contentWidth, PercentHeight, ref yFromTop);
         }
 
         /// <summary>
