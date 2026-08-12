@@ -100,24 +100,18 @@ namespace TitanOrbit.ECS
                 int slotCount = buffer.Length;
                 byte team = (byte)planet.Ownership;
 
-                // Soft deposit pad radius — visible gun sits on this disc; hit sphere should cover it.
-                float padRadius = math.clamp(config.depositZoneRadius, 0.8f, 2.5f);
-
+                // --- One sphere per live gun ---
+                // [TITAN-ORBIT] Pose is derived (planet center + even-ring angle). No turret ghosts.
+                // Radius is shared with client BulletCosmeticHitQuery so tracers stop on the same pad.
                 for (int i = 0; i < slotCount; i++)
                 {
                     var slot = buffer[i];
                     if (slot.TurretLevel == 0 || slot.Health <= 0f)
                         continue;
 
-                    var stats = config.GetLevelStats(slot.TurretLevel);
                     float3 slotPos = PlanetaryDefenseMath.GetSlotWorldPosition(
                         planetPos, planetSize, planet.PlanetLevel, i, slotCount);
                     slotPos.y = PlanetaryDefenseMath.FixedY;
-
-                    // Cover the pad + mesh, not a pinhead at the muzzle.
-                    float hitR = math.max(
-                        MinTurretHitRadiusWorld,
-                        math.max(stats.hitRadius * HitRadiusForgivenessMul, padRadius * 0.55f));
 
                     targetsOut.Add(new PlanetaryDefenseHitTarget
                     {
@@ -125,7 +119,7 @@ namespace TitanOrbit.ECS
                         SlotIndex = i,
                         Position = slotPos,
                         Team = team,
-                        HitRadius = hitR,
+                        HitRadius = ComputeTurretHitRadius(config, slot.TurretLevel),
                     });
                 }
             }
@@ -140,6 +134,16 @@ namespace TitanOrbit.ECS
         /// Friendly / same-team bullets pass through. Expands radius by bullet scale so heavy
         /// tracers connect like they do against ship hulls.
         /// </summary>
+        /// <param name="b">Flying bullet (team, scale, filter already applied by caller).</param>
+        /// <param name="from">Segment start this substep.</param>
+        /// <param name="to">Segment end this substep.</param>
+        /// <param name="mapW">Toroidal map width from MapStateSingleton.</param>
+        /// <param name="mapH">Toroidal map height from MapStateSingleton.</param>
+        /// <param name="targets">This tick's pad list from <see cref="RebuildTargets"/>.</param>
+        /// <param name="bestT">Nearest t so far (updated on a closer turret).</param>
+        /// <param name="bestHit">Contact point for that t.</param>
+        /// <param name="targetIndex">Index into <paramref name="targets"/>, or -1.</param>
+        /// <returns>True when at least one hostile turret intersected the segment.</returns>
         public static bool TryKeepNearestTurretHit(
             in BulletElement b,
             float3 from,
@@ -155,16 +159,16 @@ namespace TitanOrbit.ECS
             if (targets == null || targets.Count == 0)
                 return false;
 
-            float bulletPad = math.clamp(b.ScaleMultiplier * BulletScaleHitPad, 0f, MaxBulletScaleHitPad);
-
             bool found = false;
             for (int i = 0; i < targets.Count; i++)
             {
                 var t = targets[i];
+                // [TITAN-ORBIT] Friendly fire off — same-team pads must not eat your own bolts.
                 if (t.Team == b.OwnerTeam)
-                    continue; // Friendly fire off.
+                    continue;
 
-                float radius = t.HitRadius + bulletPad;
+                // Heavy tracers get a small extra pad (same idea as ship hull hits).
+                float radius = ExpandRadiusForBulletScale(t.HitRadius, b.ScaleMultiplier);
                 if (!BulletCollision.SegmentHitsSphereToroidal(
                         from, to, t.Position, radius, mapW, mapH, out float3 hit))
                     continue;
@@ -231,10 +235,47 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// World hit-sphere radius for one turret level. Shared by server combat and client
+        /// cosmetic tracers so both stop on the same pad-sized gun.
+        /// </summary>
+        /// <param name="config">Family / default turret recipe (pad radius + per-level hitRadius).</param>
+        /// <param name="turretLevel">Active turret level (1–7). Empty slots are skipped by callers.</param>
+        /// <returns>Radius in world units, never below <see cref="MinTurretHitRadiusWorld"/>.</returns>
+        public static float ComputeTurretHitRadius(PlanetaryDefenseConfig config, int turretLevel)
+        {
+            // Fallback when a family left the recipe empty — still a usable pad-sized sphere.
+            if (config == null)
+                return MinTurretHitRadiusWorld;
+
+            // Soft deposit pad — the visible gun sits on this disc; the sphere must cover it.
+            float padRadius = math.clamp(config.depositZoneRadius, 0.8f, 2.5f);
+            var stats = config.GetLevelStats(turretLevel);
+            return math.max(
+                MinTurretHitRadiusWorld,
+                math.max(stats.hitRadius * HitRadiusForgivenessMul, padRadius * 0.55f));
+        }
+
+        /// <summary>
+        /// Extra radius from the flying tracer's visual scale so heavy bolts connect like
+        /// they do against ship hulls. Caps so huge cosmetics do not become planet-wide magnets.
+        /// </summary>
+        /// <param name="hitRadius">Base turret sphere from <see cref="ComputeTurretHitRadius"/>.</param>
+        /// <param name="scaleMultiplier">Bullet <c>ScaleMultiplier</c> (1 = default tracer).</param>
+        /// <returns>Hit radius plus a clamped scale pad.</returns>
+        public static float ExpandRadiusForBulletScale(float hitRadius, float scaleMultiplier)
+        {
+            float bulletPad = math.clamp(scaleMultiplier * BulletScaleHitPad, 0f, MaxBulletScaleHitPad);
+            return hitRadius + bulletPad;
+        }
+
+        /// <summary>
         /// True when a same-planet turret hit should beat a slightly nearer planet-body chord.
         /// Stops “I shot the pad but the bullet died on the planet” when both spheres overlap
         /// on the segment within a small t window.
         /// </summary>
+        /// <param name="defenseT">Turret contact t along the segment (0 = start, 1 = end).</param>
+        /// <param name="planetBodyT">Planet-body contact t that currently leads.</param>
+        /// <returns>True when the turret should win despite a slightly nearer planet chord.</returns>
         public static bool PreferDefenseOverPlanetBody(float defenseT, float planetBodyT)
         {
             // Defense must still be a real hit on this segment.

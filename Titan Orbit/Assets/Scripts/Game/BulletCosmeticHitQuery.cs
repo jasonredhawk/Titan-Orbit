@@ -23,7 +23,9 @@ namespace TitanOrbit.Game
     /// <para>
     /// Damage stays server-authoritative in <see cref="BulletSimulationSystem"/>. This cache only
     /// lets <see cref="BulletVfxDriver"/> destroy tracers and play impact VFX early so bullets do
-    /// not visually tunnel through rocks while waiting for <see cref="BulletHitRpc"/>.
+    /// not visually tunnel through rocks / ships / planetary-defense turrets while waiting for
+    /// <see cref="BulletHitRpc"/>. Turrets are not ghosts — we derive the same pad spheres the
+    /// server uses in <see cref="PlanetaryDefenseHitScan"/> from the planet's slot buffer.
     /// </para>
     /// </summary>
     public static class BulletCosmeticHitQuery
@@ -31,7 +33,10 @@ namespace TitanOrbit.Game
         /// <summary>One sphere (or moon orbiting a planet) the cosmetic tracer may collide with.</summary>
         public struct Obstacle
         {
-            /// <summary>Planet body, asteroid rock, enemy ship hull, or gem-moon body/shield.</summary>
+            /// <summary>
+            /// Planet body, asteroid rock, enemy ship hull, gem-moon body/shield, or
+            /// planetary-defense turret pad.
+            /// </summary>
             public ObstacleKind Kind;
 
             /// <summary>
@@ -43,10 +48,15 @@ namespace TitanOrbit.Game
             /// <summary>
             /// Logical / unbounded XZ center. For moons this is the <b>planet</b> center —
             /// <see cref="TryHitSegment"/> recomputes the orbiting moon pose each test.
+            /// For planetary-defense pads this is the slot world position (not the planet center).
             /// </summary>
             public float3 LogicalCenter;
 
-            /// <summary>Hit radius in world units (asteroid / planet / ship). Moons recompute from shield.</summary>
+            /// <summary>
+            /// Hit radius in world units (asteroid / planet / ship / turret pad).
+            /// Moons recompute from shield. Turret radius is the base pad sphere —
+            /// <see cref="TryHitSegment"/> expands it by bullet scale like the server.
+            /// </summary>
             public float Radius;
 
             /// <summary>Transform scale used for planet/moon radius helpers.</summary>
@@ -74,6 +84,11 @@ namespace TitanOrbit.Game
             Moon = 1,
             Ship = 2,
             Asteroid = 3,
+            /// <summary>
+            /// Derived pad sphere on an owned planet (not a ghost). Same math as
+            /// <see cref="PlanetaryDefenseHitScan"/>.
+            /// </summary>
+            PlanetaryDefense = 4,
         }
 
         /// <summary>How often to rebuild the sphere list while tracers are flying (frames).</summary>
@@ -85,6 +100,15 @@ namespace TitanOrbit.Game
         // [TITAN-ORBIT] 0 = unset — never invent 1000×1000 for cosmetic hit tests.
         static float s_MapW;
         static float s_MapH;
+
+        /// <summary>
+        /// Family catalog for per-planet turret recipes. Loaded once — same Resources path
+        /// as server <c>PlanetaryDefenseHitScan</c>.
+        /// </summary>
+        static PlanetShipFamilyConfig s_FamilyConfig;
+
+        /// <summary>True after the first attempt to load family / default turret configs.</summary>
+        static bool s_DefenseConfigWarmed;
 
         /// <summary>Read-only view of the last rebuilt obstacle list.</summary>
         public static IReadOnlyList<Obstacle> CurrentObstacles => Obstacles;
@@ -187,6 +211,13 @@ namespace TitanOrbit.Game
                         });
                     }
 
+                    // --- Planetary defense turrets (derived pad spheres, not ghosts) ---
+                    // [TITAN-ORBIT] Server BulletSimulationSystem hits these via PlanetaryDefenseHitScan.
+                    // Without this list, tracers fly through the gun while HitRpc still punches HP —
+                    // the player sees damage with no impact. Same per-entity buffer read as
+                    // PlanetaryDefenseVisualDriver (proxy key only — no planet ToEntityArray).
+                    AppendPlanetaryDefenseObstacles(em, entity, in planet, lt.Position, planetScale);
+
                     continue;
                 }
 
@@ -244,10 +275,13 @@ namespace TitanOrbit.Game
         /// Swept segment vs all cached obstacles. Earliest contact along [from, to] wins.
         /// Must match server <c>BulletSimulationSystem.TryResolveBulletHit</c> nearest-t rule
         /// so optimistic floats/VFX land on the same body the server damages.
+        /// Planetary-defense pads can steal a slightly nearer planet-body chord
+        /// (<see cref="PlanetaryDefenseHitScan.PreferDefenseOverPlanetBody"/>) so tracers
+        /// stop on the gun instead of the hull behind it.
         /// </summary>
         /// <param name="from">Segment start (logical or display — must match <paramref name="isDisplaySpace"/>).</param>
         /// <param name="to">Segment end.</param>
-        /// <param name="ownerTeam">Firing team — skips friendly ships (moons always block).</param>
+        /// <param name="ownerTeam">Firing team — skips friendly ships and friendly turrets.</param>
         /// <param name="ownerNetworkId">Shooter NetworkId — skips own hull.</param>
         /// <param name="isDisplaySpace">True when the tracer flies in presentation / display coords.</param>
         /// <param name="hitPoint">Contact point in the same space as from/to.</param>
@@ -256,6 +290,10 @@ namespace TitanOrbit.Game
         /// <param name="damageFilter">
         /// [TITAN-ORBIT] Matches server <c>BulletDamageFilter</c> so mining tracers pass through
         /// ships and fighter tracers pass through asteroids.
+        /// </param>
+        /// <param name="scaleMultiplier">
+        /// Tracer visual scale. Expands turret (and only turret) spheres the same way
+        /// server <see cref="PlanetaryDefenseHitScan.ExpandRadiusForBulletScale"/> does.
         /// </param>
         public static bool TryHitSegment(
             float3 from,
@@ -266,7 +304,8 @@ namespace TitanOrbit.Game
             out float3 hitPoint,
             out ObstacleKind hitKind,
             out Entity hitEntity,
-            byte damageFilter = 0)
+            byte damageFilter = 0,
+            float scaleMultiplier = 1f)
         {
             hitPoint = to;
             hitKind = ObstacleKind.Asteroid;
@@ -288,6 +327,14 @@ namespace TitanOrbit.Game
             float3 delta = to - from;
             float deltaLenSq = math.lengthsq(delta);
             var filter = (BulletDamageFilter)damageFilter;
+
+            // --- Same-planet turret steal (mirrors server PreferDefenseOverPlanetBody) ---
+            // Planet body often wins nearest-t by a hair because the pad sits on the hull.
+            // We keep the best PD contact even when a planet chord was slightly nearer.
+            float bestDefenseT = float.MaxValue;
+            float3 bestDefenseHit = to;
+            Entity bestDefenseEntity = Entity.Null;
+            bool anyDefense = false;
 
             for (int i = 0; i < Obstacles.Count; i++)
             {
@@ -326,12 +373,35 @@ namespace TitanOrbit.Game
                     _ = isDisplaySpace;
                     _ = hasRef;
                     _ = reference;
+                    float radius = o.Radius;
+                    if (o.Kind == ObstacleKind.PlanetaryDefense)
+                    {
+                        // Heavy tracers get the same pad the server adds in TryKeepNearestTurretHit.
+                        radius = PlanetaryDefenseHitScan.ExpandRadiusForBulletScale(
+                            o.Radius, scaleMultiplier);
+                    }
+
                     hit = BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, o.LogicalCenter, o.Radius, s_MapW, s_MapH, out hp);
+                        from, to, o.LogicalCenter, radius, s_MapW, s_MapH, out hp);
                 }
 
                 if (!hit)
                     continue;
+
+                // Remember the nearest turret even if a planet chord currently leads.
+                if (o.Kind == ObstacleKind.PlanetaryDefense)
+                {
+                    float defenseT = deltaLenSq < 1e-8f
+                        ? 0f
+                        : math.dot(hp - from, delta) / deltaLenSq;
+                    if (defenseT <= bestDefenseT)
+                    {
+                        bestDefenseT = defenseT;
+                        bestDefenseHit = hp;
+                        bestDefenseEntity = o.SourceEntity;
+                        anyDefense = true;
+                    }
+                }
 
                 if (TryUpdateBest(from, delta, deltaLenSq, hp, ref bestT, ref bestHit))
                 {
@@ -343,6 +413,20 @@ namespace TitanOrbit.Game
 
             if (!any)
                 return false;
+
+            // --- Pad in front of the planet hull ---
+            // [TITAN-ORBIT] Server lets a same-planet turret steal when it is only slightly
+            // behind the body chord. Without this, tracers die on the planet (or fly through
+            // the gun when the body miss) while HitRpc still damages the turret.
+            if (anyDefense &&
+                bestKind == ObstacleKind.Planet &&
+                bestEntity == bestDefenseEntity &&
+                PlanetaryDefenseHitScan.PreferDefenseOverPlanetBody(bestDefenseT, bestT))
+            {
+                bestHit = bestDefenseHit;
+                bestKind = ObstacleKind.PlanetaryDefense;
+                bestEntity = bestDefenseEntity;
+            }
 
             hitPoint = bestHit;
             hitKind = bestKind;
@@ -392,7 +476,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Team / self filters matching server <c>TryResolveBulletHit</c>.
         /// Planets/asteroids always collide; moons always test (friendly uses body-only radius);
-        /// ships skip friendlies / self.
+        /// ships and planetary-defense turrets skip friendlies / self.
         /// </summary>
         static bool PassesTeamFilter(in Obstacle o, byte ownerTeam, int ownerNetworkId)
         {
@@ -405,14 +489,20 @@ namespace TitanOrbit.Game
                 return true;
             }
 
+            // [TITAN-ORBIT] Same-team pads are friendly-fire off on the server — tracers must
+            // pass through so they can still hit a hostile behind your own gun.
+            if (o.Kind == ObstacleKind.PlanetaryDefense)
+                return o.TeamOrOwnership != ownerTeam;
+
             // Planet / moon / asteroid — always test. Moon shield vs body is radius-gated above.
             return true;
         }
 
         /// <summary>
         /// [TITAN-ORBIT] Mirrors server <c>BulletSimulationSystem.AllowsHitKind</c> for cosmetic tracers.
-        /// Planets and moons always block; mining skips ships; fighters skip asteroids;
-        /// planetary defense clips ships and asteroids (transports are server-only for now).
+        /// Planets and moons always block; mining skips ships and turrets; fighters skip asteroids
+        /// but still stop on enemy turrets; planetary-defense bolts clip ships and asteroids
+        /// (transports are server-only for now).
         /// </summary>
         /// <param name="filter">Spawn-time mask from the tracer request (byte cast).</param>
         /// <param name="kind">Hybrid-proxy obstacle class under test.</param>
@@ -428,16 +518,92 @@ namespace TitanOrbit.Game
                 case BulletDamageFilter.Everything:
                     return true;
                 case BulletDamageFilter.AsteroidsOnly:
+                    // Mining: rocks only. Pass through ships, drones, and enemy turrets.
                     return kind == ObstacleKind.Asteroid;
                 case BulletDamageFilter.ShipsOnly:
-                    return kind == ObstacleKind.Ship;
+                    // Fighter: enemy ships + enemy planetary turrets (server also hits drones).
+                    return kind == ObstacleKind.Ship || kind == ObstacleKind.PlanetaryDefense;
                 case BulletDamageFilter.ShipsAndTransports:
                     // PD: ships + asteroids. Transports are not in this hybrid list yet —
-                    // server BulletSimulation owns real transport hits.
+                    // server BulletSimulation owns real transport hits. PD bolts do not
+                    // collide with other turrets (same as AllowsHitKind).
                     return kind == ObstacleKind.Ship || kind == ObstacleKind.Asteroid;
                 default:
                     return true;
             }
+        }
+
+        /// <summary>
+        /// Adds one pad sphere per active turret on this planet. Uses the same
+        /// <see cref="PlanetaryDefenseMath.GetSlotWorldPosition"/> +
+        /// <see cref="PlanetaryDefenseHitScan.ComputeTurretHitRadius"/> as the server so
+        /// cosmetic tracers stop where damage is applied.
+        /// </summary>
+        /// <param name="em">Client world EntityManager (ghosted slot buffer is readable).</param>
+        /// <param name="planetEntity">Planet hybrid-proxy entity (also the SourceEntity on each pad).</param>
+        /// <param name="planet">Ghosted planet state (ownership, family, level, id).</param>
+        /// <param name="planetPos">Logical planet center (unbounded XZ).</param>
+        /// <param name="planetScale">Planet <c>LocalTransform.Scale</c>.</param>
+        static void AppendPlanetaryDefenseObstacles(
+            EntityManager em,
+            Entity planetEntity,
+            in PlanetState planet,
+            float3 planetPos,
+            float planetScale)
+        {
+            // Neutral planets have no pads. Owned planets with an empty buffer are still building.
+            if (planet.Ownership == TeamId.None)
+                return;
+            if (!em.HasBuffer<PlanetaryDefenseSlotElement>(planetEntity))
+                return;
+
+            var buffer = em.GetBuffer<PlanetaryDefenseSlotElement>(planetEntity);
+            if (buffer.Length == 0)
+                return;
+
+            EnsureDefenseConfigWarmed();
+            var config = PlanetaryDefenseConfig.ResolveForFamily(
+                s_FamilyConfig, planet.ShipFamilyConfigIndex);
+            int slotCount = buffer.Length;
+
+            for (int i = 0; i < slotCount; i++)
+            {
+                var slot = buffer[i];
+                // Empty / destroyed placeholders have no gun to collide with.
+                if (slot.TurretLevel == 0 || slot.Health <= 0f)
+                    continue;
+
+                float3 slotPos = PlanetaryDefenseMath.GetSlotWorldPosition(
+                    planetPos, planetScale, planet.PlanetLevel, i, slotCount);
+                slotPos.y = PlanetaryDefenseMath.FixedY;
+
+                Obstacles.Add(new Obstacle
+                {
+                    Kind = ObstacleKind.PlanetaryDefense,
+                    SourceEntity = planetEntity,
+                    LogicalCenter = slotPos,
+                    Radius = PlanetaryDefenseHitScan.ComputeTurretHitRadius(config, slot.TurretLevel),
+                    Scale = planetScale,
+                    TeamOrOwnership = (byte)planet.Ownership,
+                    PlanetId = planet.PlanetId,
+                });
+            }
+        }
+
+        /// <summary>
+        /// Loads the family catalog once so per-planet turret recipes match the server.
+        /// Safe to call every refresh — no-ops after the first attempt.
+        /// </summary>
+        static void EnsureDefenseConfigWarmed()
+        {
+            if (s_DefenseConfigWarmed)
+                return;
+
+            // [UNITY] Resources.Load is a main-thread asset lookup; this runs from LateUpdate.
+            s_FamilyConfig = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            // LoadDefault also builds an in-memory fallback if the asset is missing.
+            PlanetaryDefenseConfig.LoadDefault();
+            s_DefenseConfigWarmed = true;
         }
 
         /// <summary>

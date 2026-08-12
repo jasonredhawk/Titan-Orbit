@@ -821,8 +821,9 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 var a = asteroidState.ValueRO;
-                // Bullet path sets IsDestroyed with Health=0; also accept Health<=0 alone.
-                bool shouldDestroy = a.IsDestroyed || a.Health <= 0f;
+                // Bullet path sets IsDestroyed with Health=0; also accept Health<=0 / NaN alone.
+                // 0-HP zombies that skip this destroy still raise PhysX ram contacts.
+                bool shouldDestroy = a.IsDestroyed || !(a.Health > 0.01f);
                 if (!shouldDestroy)
                     continue;
 

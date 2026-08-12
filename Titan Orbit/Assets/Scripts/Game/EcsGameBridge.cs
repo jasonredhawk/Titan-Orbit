@@ -47,6 +47,7 @@ namespace TitanOrbit.Game
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
             AsteroidClientEntityRegistry.Clear();
+            ClientLocalAsteroidCombatSync.ClearPendingQueues();
             PlanetConnectionGraphCache.Clear();
             PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();
@@ -1789,6 +1790,7 @@ namespace TitanOrbit.Game
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
             AsteroidClientEntityRegistry.Clear();
+            ClientLocalAsteroidCombatSync.ClearPendingQueues();
             PlanetConnectionGraphCache.Clear();
             PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();

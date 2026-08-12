@@ -25,6 +25,7 @@ namespace TitanOrbit.ECS
     /// <para>
     /// Targets: asteroids (impact + grind) and enemy ships (impact reciprocal damage).
     /// Hull/gem rules use <see cref="ShipDamageLogic"/>. Clients never predict this.
+    /// Dead / 0-HP asteroids are ignored even if PhysX still emits a contact (phantom grind).
     /// </para>
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderLast = true)]
@@ -94,6 +95,12 @@ namespace TitanOrbit.ECS
                 PendingRamContactElement pending = queue[i];
                 if (!TryNormalizePair(ref state, ref pending, out Entity shipEntity, out Entity other,
                         out bool otherIsShip, out float3 normalShipFromOther))
+                    continue;
+
+                // Dead rocks must not grind the hull. HitRpc already hid the mesh on clients;
+                // a 0-HP server zombie that missed DestroyEntity still raised PhysX contacts and
+                // ApplyShipSelfDamage kept pulsing — fly-through + phantom ram damage.
+                if (!otherIsShip && IsDeadAsteroid(ref state, other))
                     continue;
 
                 if (!state.EntityManager.HasComponent<ShipState>(shipEntity) ||
@@ -500,6 +507,21 @@ namespace TitanOrbit.ECS
         static long PackKey(Entity ship, Entity other) =>
             ((long)ship.Index << 32) ^ (uint)other.Index;
 
+        /// <summary>
+        /// True when this entity is an asteroid that should no longer ram or grind the hull
+        /// (already killed this tick, or a leftover 0-HP zombie waiting for DestroyEntity).
+        /// </summary>
+        static bool IsDeadAsteroid(ref SystemState state, Entity asteroid)
+        {
+            if (!state.EntityManager.Exists(asteroid))
+                return true;
+            if (!state.EntityManager.HasComponent<AsteroidState>(asteroid))
+                return true;
+
+            var a = state.EntityManager.GetComponentData<AsteroidState>(asteroid);
+            return a.IsDestroyed || !(a.Health > 0.01f);
+        }
+
         static void ApplyAsteroidDamage(ref SystemState state, Entity asteroid, float damage, TeamId interactTeam)
         {
             if (damage <= 0.0001f || !state.EntityManager.Exists(asteroid))
@@ -508,7 +530,7 @@ namespace TitanOrbit.ECS
                 return;
 
             var a = state.EntityManager.GetComponentData<AsteroidState>(asteroid);
-            if (a.IsDestroyed || a.Health <= 0f)
+            if (a.IsDestroyed || !(a.Health > 0.01f))
                 return;
 
             a.Health -= damage;

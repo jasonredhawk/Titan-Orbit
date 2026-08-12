@@ -2,13 +2,15 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Re-applies a no-collide <see cref="PhysicsCollider"/> on culled asteroid ghosts each predicted
-    /// fixed step so prediction / structural churn cannot restore a solid hull after HitRpc hide.
-    /// ClientSimulation only. Paired with <see cref="Game.ClientAsteroidCollisionCull"/>.
+    /// Re-applies a no-collide <see cref="PhysicsCollider"/> and tiny scale on culled asteroid
+    /// ghosts each predicted fixed step so prediction / structural churn cannot restore a solid
+    /// hull after HitRpc hide. ClientSimulation only. Paired with
+    /// <see cref="Game.ClientAsteroidCollisionCull"/>.
     /// </summary>
     // OrderFirst: before default-slot physics without UpdateInGroup(PhysicsSystemGroup) —
     // ClientWorld often lacks PhysicsSystemGroup as a PredictedFixedStep sibling (sorter spam).
@@ -27,7 +29,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// For every culled asteroid that still has a PhysicsCollider, force the no-collide blob.
+        /// Forces the no-collide blob on every culled collider (root + children) and keeps
+        /// asteroid-root scale squashed so a stale static PhysX hull cannot restore the old radius.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -38,13 +41,26 @@ namespace TitanOrbit.ECS
 
             EnsureNoCollideBlob();
 
+            // --- No-collide blob on every culled collider (root + LinkedEntityGroup children) ---
             foreach (var collider in SystemAPI
                          .Query<RefRW<PhysicsCollider>>()
-                         .WithAll<AsteroidClientCulledTag, AsteroidTag>())
+                         .WithAll<AsteroidClientCulledTag>())
             {
                 if (collider.ValueRO.Value == s_noCollide)
                     continue;
                 collider.ValueRW.Value = s_noCollide;
+            }
+
+            // --- Squash scale on asteroid roots only (children keep authored local scale) ---
+            foreach (var transform in SystemAPI
+                         .Query<RefRW<LocalTransform>>()
+                         .WithAll<AsteroidClientCulledTag, AsteroidTag>())
+            {
+                if (transform.ValueRO.Scale <= 0.011f)
+                    continue;
+                var lt = transform.ValueRW;
+                lt.Scale = 0.01f;
+                transform.ValueRW = lt;
             }
         }
 

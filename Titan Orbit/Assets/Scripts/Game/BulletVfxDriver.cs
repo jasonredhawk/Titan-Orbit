@@ -29,10 +29,11 @@ namespace TitanOrbit.Game
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Client-predicted impact: while tracers fly, swept-collide against hybrid-proxy
-    /// spheres (<see cref="BulletCosmeticHitQuery"/>) so cosmetics stop at the rock/ship surface
-    /// immediately (no visual tunnel waiting for RTT). <see cref="BulletHitRpc"/> then reconciles
-    /// (skip duplicate impact flash / destroy late misses) and applies authoritative mining floats
-    /// via <c>AsteroidHealthAfter</c> — cosmetics never write damage / HP.
+    /// spheres (<see cref="BulletCosmeticHitQuery"/>) so cosmetics stop at the rock / ship /
+    /// planetary-defense turret surface immediately (no visual tunnel waiting for RTT).
+    /// <see cref="BulletHitRpc"/> then reconciles (skip duplicate impact flash / destroy late
+    /// misses) and applies authoritative mining floats via <c>AsteroidHealthAfter</c> — cosmetics
+    /// never write damage / HP.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66150)]
@@ -861,6 +862,8 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Swept cosmetic collide for one tracer step using <see cref="BulletCosmeticHitQuery"/>.
         /// Hit kind / entity are available for future use; mining floats stay on HitRpc.
+        /// Passes <see cref="Tracer.ScaleMultiplier"/> so turret spheres match server
+        /// <c>ExpandRadiusForBulletScale</c> (heavy bolts connect like hull hits).
         /// </summary>
         static bool TryPredictCosmeticHit(
             in Tracer t,
@@ -870,6 +873,9 @@ namespace TitanOrbit.Game
             out BulletCosmeticHitQuery.ObstacleKind hitKind,
             out Entity hitEntity)
         {
+            // [HYBRID] Same obstacle set as server TryResolveBulletHit, including derived
+            // planetary-defense pad spheres. Without those, tracers tunnel through guns
+            // while BulletHitRpc still punches the HP bar.
             return BulletCosmeticHitQuery.TryHitSegment(
                 from,
                 to,
@@ -879,7 +885,8 @@ namespace TitanOrbit.Game
                 out hitPoint,
                 out hitKind,
                 out hitEntity,
-                t.DamageFilter);
+                t.DamageFilter,
+                t.ScaleMultiplier);
         }
 
         /// <summary>

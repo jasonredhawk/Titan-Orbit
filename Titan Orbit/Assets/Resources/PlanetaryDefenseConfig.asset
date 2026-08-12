@@ -26,25 +26,25 @@ MonoBehaviour:
   damageAtLevel1: 2
   damageAtLevel6: 10
   fireRateAtLevel1: 3
-  fireRateAtLevel6: 9
+  fireRateAtLevel6: 8
   engageRangeAtLevel1: 25
   engageRangeAtLevel6: 40
   cameraViewRadiusAtLevel1: 27
   cameraViewRadiusAtLevel6: 42
-  bulletSpeedAtLevel1: 10
-  bulletSpeedAtLevel6: 20
+  bulletSpeedAtLevel1: 12
+  bulletSpeedAtLevel6: 12
   useSolfeggioGemCosts: 1
   gemsAtLevel1: 174
   gemsAtLevel6: 852
   gemsAtLevel7: 963
-  bulletBankCategoryName: Bullets
-  bulletVisualScale: 1.15
+  bulletBankCategoryName: LaserSmall
+  bulletVisualScale: 1.25
   levels:
   - gemsToReachLevel: 174
     maxHealth: 174
     damage: 2
     fireRate: 3
-    bulletSpeed: 10
+    bulletSpeed: 12
     engageRange: 25
     cameraViewRadius: 27
     visualScale: 0.56
@@ -52,7 +52,7 @@ MonoBehaviour:
   - gemsToReachLevel: 285
     maxHealth: 309.6
     damage: 3.6
-    fireRate: 4.2
+    fireRate: 4
     bulletSpeed: 12
     engageRange: 28
     cameraViewRadius: 30
@@ -61,8 +61,8 @@ MonoBehaviour:
   - gemsToReachLevel: 396
     maxHealth: 445.2
     damage: 5.2
-    fireRate: 5.4
-    bulletSpeed: 14
+    fireRate: 5
+    bulletSpeed: 12
     engageRange: 31
     cameraViewRadius: 33
     visualScale: 0.72
@@ -70,8 +70,8 @@ MonoBehaviour:
   - gemsToReachLevel: 528
     maxHealth: 580.8
     damage: 6.8
-    fireRate: 6.6000004
-    bulletSpeed: 16
+    fireRate: 6
+    bulletSpeed: 12
     engageRange: 34
     cameraViewRadius: 36
     visualScale: 0.8
@@ -79,8 +79,8 @@ MonoBehaviour:
   - gemsToReachLevel: 639
     maxHealth: 716.4
     damage: 8.4
-    fireRate: 7.8
-    bulletSpeed: 18
+    fireRate: 7
+    bulletSpeed: 12
     engageRange: 37
     cameraViewRadius: 39
     visualScale: 0.88
@@ -88,8 +88,8 @@ MonoBehaviour:
   - gemsToReachLevel: 852
     maxHealth: 852
     damage: 10
-    fireRate: 9
-    bulletSpeed: 20
+    fireRate: 8
+    bulletSpeed: 12
     engageRange: 40
     cameraViewRadius: 42
     visualScale: 1
@@ -97,8 +97,8 @@ MonoBehaviour:
   - gemsToReachLevel: 963
     maxHealth: 987.60004
     damage: 11.6
-    fireRate: 10.200001
-    bulletSpeed: 22
+    fireRate: 9
+    bulletSpeed: 12
     engageRange: 43
     cameraViewRadius: 45
     visualScale: 1.1

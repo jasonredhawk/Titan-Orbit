@@ -140,7 +140,7 @@ namespace TitanOrbit.ECS
                          .WithAll<AsteroidTag>()
                          .WithEntityAccess())
             {
-                if (asteroidState.ValueRO.IsDestroyed || asteroidState.ValueRO.Health <= 0f)
+                if (asteroidState.ValueRO.IsDestroyed || !(asteroidState.ValueRO.Health > 0.01f))
                     continue;
                 if (state.EntityManager.HasComponent<AsteroidClientCulledTag>(entity))
                     continue;
