@@ -24,6 +24,7 @@ namespace TitanOrbit.Data
             fallback.hideFlags = HideFlags.HideAndDontSave;
             fallback.GlobalDamageMultiplier = 0.5f;
             fallback.SelfToAsteroidDamageRatio = 2f;
+            fallback.GrindPulseIntervalSeconds = 0.5f;
             Settings = fallback;
             return Settings;
         }

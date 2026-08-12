@@ -12,6 +12,7 @@ namespace TitanOrbit.Game
     /// — Health still &gt;0 so toroidal resolve could treat the rock as solid. Delegates to
     /// <see cref="ClientLocalAsteroidCombatSync.CullPhysics"/> so presentation-thread hide and
     /// sim-group soft-destroy share one cull (LinkedEntityGroup + no-collide blob + scale squash).
+    /// SimulationSystemGroup then removes PhysicsCollider; this presentation path must not.
     /// </para>
     /// </summary>
     public static class ClientAsteroidCollisionCull

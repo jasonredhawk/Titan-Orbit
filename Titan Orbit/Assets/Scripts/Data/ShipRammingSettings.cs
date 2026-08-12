@@ -4,7 +4,8 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// [UNITY] Designer-tunable ramming damage balance. Edit this asset in the Inspector —
-    /// no code changes needed for GlobalDamageMultiplier / SelfToAsteroidDamageRatio.
+    /// no code changes needed for GlobalDamageMultiplier / SelfToAsteroidDamageRatio /
+    /// GrindPulseIntervalSeconds.
     /// Sole asset: <c>Assets/Resources/ShipRammingSettings.asset</c>
     /// (Create via Assets → Create → Titan Orbit → Ship Ramming Settings).
     /// Loaded at play by <see cref="Game.ShipRammingSettingsLoader"/> via <c>Resources.Load</c>
@@ -35,7 +36,19 @@ namespace TitanOrbit.Data
         public float SelfToAsteroidDamageRatio = 2f;
 
         /// <summary>
-        /// Sanitizes self-damage ratio after Inspector edits.
+        /// Seconds between grind damage pulses while thrusting into a rock.
+        /// Damage per pulse already multiplies by this interval (same DPS at 0.5s as the old 0.25s).
+        /// </summary>
+        [Header("Grind pacing")]
+        [Tooltip(
+            "Seconds between grind damage pulses while thrusting into a rock. " +
+            "Damage per pulse already multiplies by this interval, so 0.5s deals the same DPS as " +
+            "the old 0.25s setting with half as many explosions / HitRpcs / gem spills. " +
+            "Values below 0.05 fall back to 0.5 (protects old assets that serialized as 0).")]
+        public float GrindPulseIntervalSeconds = 0.5f;
+
+        /// <summary>
+        /// Sanitizes self-damage ratio and grind interval after Inspector edits.
         /// <see cref="GlobalDamageMultiplier"/> is left as authored (not clamped).
         /// </summary>
         public void ClampValues()
@@ -44,8 +57,12 @@ namespace TitanOrbit.Data
             // [TITAN-ORBIT] GlobalDamageMultiplier is intentional free-range — designers may set
             // 0 (off), very small, or very large without a floor/ceiling rewrite.
             SelfToAsteroidDamageRatio = Mathf.Max(0f, SelfToAsteroidDamageRatio);
+            // Old ShipRammingSettings.asset files lack this field → Unity deserializes 0.
+            if (GrindPulseIntervalSeconds < 0.05f)
+                GrindPulseIntervalSeconds = 0.5f;
         }
 
+        /// <summary>[UNITY] Inspector edit — keep authored values legal.</summary>
         void OnValidate() => ClampValues();
     }
 }

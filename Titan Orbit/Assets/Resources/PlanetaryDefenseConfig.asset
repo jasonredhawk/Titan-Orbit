@@ -21,8 +21,8 @@ MonoBehaviour:
   regenerateHealth: 1
   healthRegenPerSecond: 3
   healthRegenDelayAfterDamage: 2.5
-  healthAtLevel1: 174
-  healthAtLevel6: 852
+  healthAtLevel1: 150
+  healthAtLevel6: 900
   damageAtLevel1: 3
   damageAtLevel6: 18
   fireRateAtLevel1: 5
@@ -41,7 +41,7 @@ MonoBehaviour:
   bulletVisualScale: 1.25
   levels:
   - gemsToReachLevel: 174
-    maxHealth: 174
+    maxHealth: 150
     damage: 3
     fireRate: 5
     bulletSpeed: 12
@@ -50,7 +50,7 @@ MonoBehaviour:
     visualScale: 0.56
     hitRadius: 0.5
   - gemsToReachLevel: 285
-    maxHealth: 309.6
+    maxHealth: 300
     damage: 6
     fireRate: 5
     bulletSpeed: 12
@@ -59,7 +59,7 @@ MonoBehaviour:
     visualScale: 0.64
     hitRadius: 0.55
   - gemsToReachLevel: 396
-    maxHealth: 445.2
+    maxHealth: 450
     damage: 9
     fireRate: 5
     bulletSpeed: 12
@@ -68,7 +68,7 @@ MonoBehaviour:
     visualScale: 0.72
     hitRadius: 0.6
   - gemsToReachLevel: 528
-    maxHealth: 580.8
+    maxHealth: 600
     damage: 12
     fireRate: 5
     bulletSpeed: 12
@@ -77,7 +77,7 @@ MonoBehaviour:
     visualScale: 0.8
     hitRadius: 0.65
   - gemsToReachLevel: 639
-    maxHealth: 716.4
+    maxHealth: 750
     damage: 15
     fireRate: 5
     bulletSpeed: 12
@@ -86,7 +86,7 @@ MonoBehaviour:
     visualScale: 0.88
     hitRadius: 0.7
   - gemsToReachLevel: 852
-    maxHealth: 852
+    maxHealth: 900
     damage: 18
     fireRate: 5
     bulletSpeed: 12
@@ -95,7 +95,7 @@ MonoBehaviour:
     visualScale: 1
     hitRadius: 0.8
   - gemsToReachLevel: 963
-    maxHealth: 987.60004
+    maxHealth: 1050
     damage: 21
     fireRate: 5
     bulletSpeed: 12

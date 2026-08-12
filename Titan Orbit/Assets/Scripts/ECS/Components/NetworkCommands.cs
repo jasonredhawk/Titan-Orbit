@@ -390,7 +390,7 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct BulletHitRpc : IRpcCommand
     {
-        /// <summary>Same id as <see cref="BulletSpawnRpc.Sequence"/>.</summary>
+        /// <summary>Same id as <see cref="BulletSpawnRpc.Sequence"/>. 0 = ram/grind (no tracer).</summary>
         public uint Sequence;
 
         /// <summary>World hit position (logical / unbounded XZ).</summary>

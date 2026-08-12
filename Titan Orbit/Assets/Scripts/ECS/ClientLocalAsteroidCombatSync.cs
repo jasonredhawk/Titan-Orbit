@@ -25,8 +25,14 @@ namespace TitanOrbit.ECS
     /// Phantom hulls after a visible kill are a sync miss: the hybrid mesh hid, but the ECS
     /// <see cref="PhysicsCollider"/> (or a stray ghost leftover) stayed solid. Bounce / grind
     /// then still fire. Soft-destroy therefore culls the whole LinkedEntityGroup, squashes
-    /// scale so a stale static PhysX hull cannot keep the old radius, and the predicted cull
-    /// system <b>removes</b> <see cref="PhysicsCollider"/> so Unity Physics actually drops the body.
+    /// scale so a stale static PhysX hull cannot keep the old radius, and SimulationSystemGroup
+    /// apply paths <b>remove</b> <see cref="PhysicsCollider"/> the same frame so Unity Physics
+    /// drops the body (blob-swap alone left a phantom hull that still stopped the ship).
+    /// DestroyRpc matches the <b>single nearest</b> rock at the pose — a radius wipe hid
+    /// neighbors in a dense belt while the server still simulated them as solid.
+    /// Respawn wipes only culled zombies at that exact slot (not live neighbors) and retries
+    /// if the RPC arrives during join skip — a missed respawn is an invisible server rock
+    /// that still rams the hull.
     /// </para>
     /// </summary>
     public static class ClientLocalAsteroidCombatSync
@@ -45,6 +51,13 @@ namespace TitanOrbit.ECS
         /// stray ghost). Retried each client sim tick until a cull lands or attempts expire.
         /// </summary>
         static readonly List<PendingDestroyPose> UnmatchedDestroys = new List<PendingDestroyPose>(16);
+
+        /// <summary>
+        /// RespawnRpc payloads that could not spawn yet (join skip, missing prefab). Retried
+        /// each client sim tick — a dropped respawn leaves a live server rock with no client
+        /// mesh, which rams the hull in empty space.
+        /// </summary>
+        static readonly List<PendingRespawnPose> UnmatchedRespawns = new List<PendingRespawnPose>(16);
 
         /// <summary>
         /// Fallback match radius when scale is unknown (small rocks). Prefer
@@ -68,6 +81,19 @@ namespace TitanOrbit.ECS
         /// </summary>
         const int MaxDestroyRetryAttempts = 600;
 
+        /// <summary>
+        /// Respawn retries last longer (~30s at 60 Hz). A missed respawn is a permanent
+        /// invisible server rock; join skip / prefab lag can outlast a destroy retry.
+        /// </summary>
+        const int MaxRespawnRetryAttempts = 1800;
+
+        /// <summary>
+        /// Max toroidal distance to treat two asteroid poses as "the same slot" on respawn.
+        /// Must stay tiny — <see cref="MatchRadiusForScale"/> is large enough to swallow
+        /// live neighbors in a dense belt (client hard-destroyed them, server kept ramming).
+        /// </summary>
+        const float RespawnPoseEpsilon = 0.75f;
+
         /// <summary>One unmatched <see cref="AsteroidDestroyedRpc"/> waiting for a local rock.</summary>
         struct PendingDestroyPose
         {
@@ -76,6 +102,28 @@ namespace TitanOrbit.ECS
 
             /// <summary>Uniform scale hint for match radius.</summary>
             public float Scale;
+
+            /// <summary>Ticks we have already retried this pose.</summary>
+            public int Attempts;
+        }
+
+        /// <summary>One unmatched <see cref="AsteroidRespawnRpc"/> waiting to Instantiates.</summary>
+        struct PendingRespawnPose
+        {
+            /// <summary>Logical XZ center (Y forced to 0).</summary>
+            public float3 Position;
+
+            /// <summary>Uniform LocalTransform scale to restore.</summary>
+            public float Scale;
+
+            /// <summary>Full gem capacity.</summary>
+            public float GemValue;
+
+            /// <summary>Full Health.</summary>
+            public float MaxHealth;
+
+            /// <summary>Designer Size for bounce mass.</summary>
+            public float Size;
 
             /// <summary>Ticks we have already retried this pose.</summary>
             public int Attempts;
@@ -147,6 +195,32 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Ram/grind HitRpc apply. Uses the PhysX hull radius (not the bullet hit-sphere) so the
+        /// contact point we authored as <c>center + normal × bodyRadius</c> selects the rock the
+        /// server damaged — bullet surface-fit picked a neighbor in a dense belt, hid it, and
+        /// left a live server rock that still rammed the hull in empty space.
+        /// </summary>
+        public static Entity ApplyRamHitAtPosition(
+            EntityManager em,
+            float3 hitPosition,
+            float asteroidHealthAfter)
+        {
+            if (asteroidHealthAfter < 0f || !em.World.IsCreated)
+                return Entity.Null;
+
+            bool liveOnly = asteroidHealthAfter > 0.01f;
+            if (!TryFindAsteroidAtRamContact(em, hitPosition, liveOnly, out Entity asteroid, out _))
+                return Entity.Null;
+
+            ApplyAuthoritativeHealth(em, asteroid, asteroidHealthAfter);
+
+            if (asteroidHealthAfter <= 0.01f)
+                SoftDestroyLocalAsteroidEntity(em, asteroid);
+
+            return asteroid;
+        }
+
+        /// <summary>
         /// Sets <see cref="AsteroidState.Health"/> from the server HitRpc value and flags destroy
         /// when Health reaches 0. Culls collision on kill frames.
         /// </summary>
@@ -174,28 +248,79 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Soft-destroys every local asteroid near <paramref name="position"/> (toroidal surface
-        /// radius). Used by <see cref="AsteroidDestroyedRpc"/> — keeps the ECS entity alive as a
-        /// culled zombie until respawn hard-destroys it.
+        /// Soft-destroys the single nearest local asteroid to <paramref name="position"/>
+        /// (toroidal center distance, within that rock's match radius). Used by
+        /// <see cref="AsteroidDestroyedRpc"/> — keeps the ECS entity alive as a culled zombie
+        /// until respawn hard-destroys it.
+        /// <para>
+        /// [TITAN-ORBIT] Must not cull every rock in the radius. A dense belt would hide
+        /// neighbors while the server still simulated them — empty space the ship cannot fly through.
+        /// Respawn still uses <see cref="DestroyLocalAsteroidsNear"/> to wipe stacked zombies.
+        /// </para>
         /// </summary>
-        /// <returns>How many rocks were culled. 0 means the pose should be retried.</returns>
+        /// <returns>1 if a rock was culled, 0 if the pose should be retried.</returns>
         public static int SoftDestroyLocalAsteroidsNear(
             EntityManager em,
             float3 position,
             float scaleHint = 0f)
         {
-            return ForEachNear(em, position, scaleHint, SoftDestroyLocalAsteroidEntity);
+            if (!TryFindNearestAsteroidAtCenter(em, position, scaleHint, out Entity asteroid, out _))
+                return 0;
+
+            SoftDestroyLocalAsteroidEntity(em, asteroid);
+            return 1;
         }
 
         /// <summary>
-        /// Hard-destroys every seed-hydrated local asteroid near <paramref name="position"/>.
-        /// Stray ghost leftovers at the same pose are only soft-destroyed (never DestroyEntity
-        /// a NetCode ghost — that punches a hole in the ghost map). Call only from respawn
-        /// apply — right before Instantiates a replacement — so zombies cannot stack.
+        /// Hard-destroys culled / dead zombies at this exact pose, then the caller Instantiates
+        /// a replacement. Live neighbors are never touched — a MatchRadius wipe deleted healthy
+        /// client rocks while the server still simulated them (invisible ram damage).
         /// </summary>
         public static int DestroyLocalAsteroidsNear(EntityManager em, float3 position, float scaleHint = 0f)
         {
-            return ForEachNear(em, position, scaleHint, DestroyOrCullLocalAsteroidEntity);
+            return DestroyCulledZombiesAtPose(em, position);
+        }
+
+        /// <summary>
+        /// Applies one <see cref="AsteroidRespawnRpc"/>: wipe zombies at the slot, skip if a live
+        /// rock is already there, otherwise Instantiates. Returns false when join skip / missing
+        /// prefab should retry.
+        /// </summary>
+        public static bool TryApplyAsteroidRespawn(
+            EntityManager em,
+            Entity asteroidPrefab,
+            float3 position,
+            float scale,
+            float gemValue,
+            float maxHealth,
+            float size)
+        {
+            if (!em.World.IsCreated)
+                return false;
+            if (asteroidPrefab == Entity.Null)
+                return false;
+            if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return false;
+
+            position.y = 0f;
+            DestroyCulledZombiesAtPose(em, position);
+
+            // --- Already hydrated (duplicate RPC / retry after a successful spawn) ---
+            if (HasLiveAsteroidAtPose(em, position))
+                return true;
+
+            var body = new MapLayoutBlueprint.Body
+            {
+                EntityKind = 3,
+                Position = position,
+                Scale = scale,
+                AsteroidScale = new float3(scale),
+                GemValue = gemValue,
+                MaxHealth = maxHealth,
+                Size = size,
+            };
+            Entity spawned = ClientLocalMapBodySpawn.SpawnAsteroid(em, asteroidPrefab, body);
+            return spawned != Entity.Null;
         }
 
         /// <summary>
@@ -258,24 +383,87 @@ namespace TitanOrbit.ECS
         public static void ClearPendingQueues()
         {
             UnmatchedDestroys.Clear();
+            UnmatchedRespawns.Clear();
             PendingProxyDestroy.Clear();
         }
 
         /// <summary>
-        /// Walks the Instantiates registry and invokes <paramref name="action"/> on each matching
-        /// asteroid root within surface match radius. Includes seed-hydrated locals and any stray
-        /// ghost leftovers (relevancy leak / mixed server build) so both get culled.
+        /// Remembers a respawn payload that could not Instantiates this tick.
         /// </summary>
-        static int ForEachNear(
-            EntityManager em,
+        public static void QueueUnmatchedRespawn(
             float3 position,
-            float scaleHint,
-            System.Action<EntityManager, Entity> action)
+            float scale,
+            float gemValue,
+            float maxHealth,
+            float size)
         {
-            if (!em.World.IsCreated)
-                return 0;
-            // Registry walk only (not asteroid ToEntityArray) — still skip during join Instantiates.
+            position.y = 0f;
+            for (int i = 0; i < UnmatchedRespawns.Count; i++)
+            {
+                float3 existing = UnmatchedRespawns[i].Position;
+                if (math.distancesq(existing, position) < 0.25f)
+                    return;
+            }
+
+            UnmatchedRespawns.Add(new PendingRespawnPose
+            {
+                Position = position,
+                Scale = scale,
+                GemValue = gemValue,
+                MaxHealth = maxHealth,
+                Size = size,
+                Attempts = 0,
+            });
+        }
+
+        /// <summary>
+        /// Re-applies unmatched respawn poses. Call every client SimulationSystemGroup tick
+        /// (not only on inbound RPC frames).
+        /// </summary>
+        public static void RetryUnmatchedRespawns(EntityManager em, Entity asteroidPrefab)
+        {
+            if (UnmatchedRespawns.Count == 0 || !em.World.IsCreated)
+                return;
             if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return;
+            if (asteroidPrefab == Entity.Null)
+                return;
+
+            for (int i = UnmatchedRespawns.Count - 1; i >= 0; i--)
+            {
+                PendingRespawnPose pending = UnmatchedRespawns[i];
+                if (TryApplyAsteroidRespawn(
+                    em,
+                    asteroidPrefab,
+                    pending.Position,
+                    pending.Scale,
+                    pending.GemValue,
+                    pending.MaxHealth,
+                    pending.Size))
+                {
+                    UnmatchedRespawns.RemoveAt(i);
+                    continue;
+                }
+
+                pending.Attempts++;
+                if (pending.Attempts >= MaxRespawnRetryAttempts)
+                {
+                    UnmatchedRespawns.RemoveAt(i);
+                    continue;
+                }
+
+                UnmatchedRespawns[i] = pending;
+            }
+        }
+
+        /// <summary>
+        /// Hard-destroys only culled / 0-HP zombies whose center sits in
+        /// <see cref="RespawnPoseEpsilon"/> of <paramref name="position"/>. Live rocks in the
+        /// belt are left alone.
+        /// </summary>
+        static int DestroyCulledZombiesAtPose(EntityManager em, float3 position)
+        {
+            if (!em.World.IsCreated || ClientJoinSettleCache.ShouldSkipMapBodyQueries)
                 return 0;
 
             AsteroidClientEntityRegistry.CopyLive(RegistryScratch);
@@ -284,16 +472,126 @@ namespace TitanOrbit.ECS
             bool haveMap = ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
             position.y = 0f;
 
-            float hintRadius = scaleHint > 0.01f ? MatchRadiusForScale(scaleHint) : 0f;
-
             int count = 0;
             var matched = new NativeList<Entity>(8, Allocator.Temp);
             for (int i = 0; i < RegistryScratch.Count; i++)
             {
                 Entity e = RegistryScratch[i];
+                if (!em.Exists(e) || !em.HasComponent<AsteroidTag>(e) || !em.HasComponent<LocalTransform>(e))
+                    continue;
+                if (IsClientLiveAsteroid(em, e))
+                    continue;
+
+                var lt = em.GetComponentData<LocalTransform>(e);
+                float3 pos = lt.Position;
+                pos.y = 0f;
+                float dist = haveMap
+                    ? ToroidalMapEcs.ToroidalDistance(position, pos, mapW, mapH)
+                    : math.distance(position, pos);
+                if (dist > RespawnPoseEpsilon)
+                    continue;
+
+                matched.Add(e);
+            }
+
+            for (int i = 0; i < matched.Length; i++)
+            {
+                DestroyOrCullLocalAsteroidEntity(em, matched[i]);
+                count++;
+            }
+
+            matched.Dispose();
+            return count;
+        }
+
+        /// <summary>
+        /// True when a healthy (not culled, Health &gt; 0) asteroid already occupies this slot.
+        /// </summary>
+        static bool HasLiveAsteroidAtPose(EntityManager em, float3 position)
+        {
+            if (!em.World.IsCreated || ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return false;
+
+            AsteroidClientEntityRegistry.CopyLive(RegistryScratch);
+            float mapW = 0f;
+            float mapH = 0f;
+            bool haveMap = ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
+            position.y = 0f;
+
+            for (int i = 0; i < RegistryScratch.Count; i++)
+            {
+                Entity e = RegistryScratch[i];
                 if (!em.Exists(e) || !em.HasComponent<LocalTransform>(e))
                     continue;
-                // [TITAN-ORBIT] Any asteroid root — seed-hydrated or stray ghost leftover.
+                if (!IsClientLiveAsteroid(em, e))
+                    continue;
+
+                var lt = em.GetComponentData<LocalTransform>(e);
+                float3 pos = lt.Position;
+                pos.y = 0f;
+                float dist = haveMap
+                    ? ToroidalMapEcs.ToroidalDistance(position, pos, mapW, mapH)
+                    : math.distance(position, pos);
+                if (dist <= RespawnPoseEpsilon)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// True when this client asteroid is still a real rock (not a kill-frame zombie).
+        /// </summary>
+        static bool IsClientLiveAsteroid(EntityManager em, Entity asteroid)
+        {
+            if (!em.Exists(asteroid) || !em.HasComponent<AsteroidTag>(asteroid))
+                return false;
+            if (em.HasComponent<AsteroidClientCulledTag>(asteroid))
+                return false;
+            if (!em.HasComponent<AsteroidState>(asteroid))
+                return false;
+
+            var state = em.GetComponentData<AsteroidState>(asteroid);
+            return !state.IsDestroyed && state.Health > 0.01f;
+        }
+
+        /// <summary>
+        /// Picks the single nearest asteroid root to <paramref name="position"/> (toroidal
+        /// center-to-center), within that rock's match radius (RPC scale hint wins when the
+        /// local body was already squashed by a prior cull).
+        /// </summary>
+        /// <param name="scaleHint">Uniform scale from <see cref="AsteroidDestroyedRpc"/>.</param>
+        /// <returns>True when a registry asteroid sits inside the match radius.</returns>
+        static bool TryFindNearestAsteroidAtCenter(
+            EntityManager em,
+            float3 position,
+            float scaleHint,
+            out Entity asteroid,
+            out float matchedScale)
+        {
+            asteroid = Entity.Null;
+            matchedScale = 0f;
+            if (!em.World.IsCreated)
+                return false;
+            if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return false;
+
+            AsteroidClientEntityRegistry.CopyLive(RegistryScratch);
+            float mapW = 0f;
+            float mapH = 0f;
+            bool haveMap = ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
+            position.y = 0f;
+
+            float hintRadius = scaleHint > 0.01f ? MatchRadiusForScale(scaleHint) : 0f;
+            float bestDist = float.MaxValue;
+            Entity bestEntity = Entity.Null;
+            float bestScale = 0f;
+
+            for (int i = 0; i < RegistryScratch.Count; i++)
+            {
+                Entity e = RegistryScratch[i];
+                if (!em.Exists(e) || !em.HasComponent<LocalTransform>(e))
+                    continue;
                 if (!em.HasComponent<AsteroidTag>(e))
                     continue;
 
@@ -308,21 +606,22 @@ namespace TitanOrbit.ECS
                 float radius = MatchRadiusForScale(math.max(lt.Scale, scaleHint));
                 if (hintRadius > radius)
                     radius = hintRadius;
-
                 if (dist > radius)
                     continue;
+                if (dist >= bestDist)
+                    continue;
 
-                matched.Add(e);
+                bestDist = dist;
+                bestEntity = e;
+                bestScale = lt.Scale;
             }
 
-            for (int i = 0; i < matched.Length; i++)
-            {
-                action(em, matched[i]);
-                count++;
-            }
+            if (bestEntity == Entity.Null)
+                return false;
 
-            matched.Dispose();
-            return count;
+            asteroid = bestEntity;
+            matchedScale = bestScale;
+            return true;
         }
 
         /// <summary>
@@ -405,6 +704,78 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Finds the asteroid whose PhysX hull best fits <paramref name="worldPos"/> (body-radius
+        /// residual). Ram HitRpc contact points are authored at
+        /// <c>center + normal × GetAsteroidBodyRadiusWorld</c> — the bullet hit-sphere residual
+        /// picked a packed neighbor instead.
+        /// </summary>
+        /// <param name="liveOnly">When true, skip IsDestroyed / culled rocks.</param>
+        public static bool TryFindAsteroidAtRamContact(
+            EntityManager em,
+            float3 worldPos,
+            bool liveOnly,
+            out Entity asteroid,
+            out float matchedScale)
+        {
+            asteroid = Entity.Null;
+            matchedScale = 0f;
+            if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return false;
+
+            AsteroidClientEntityRegistry.CopyLive(RegistryScratch);
+            if (RegistryScratch.Count == 0)
+                return false;
+
+            float mapW = 0f;
+            float mapH = 0f;
+            bool haveMap = ToroidalMapEcs.TryGetMapSize(out mapW, out mapH);
+            worldPos.y = 0f;
+
+            float bestError = float.MaxValue;
+            Entity bestEntity = Entity.Null;
+            float bestScale = 0f;
+
+            for (int i = 0; i < RegistryScratch.Count; i++)
+            {
+                Entity e = RegistryScratch[i];
+                if (!em.Exists(e) ||
+                    !em.HasComponent<AsteroidTag>(e) ||
+                    !em.HasComponent<AsteroidState>(e) ||
+                    !em.HasComponent<LocalTransform>(e))
+                    continue;
+
+                if (liveOnly && !IsClientLiveAsteroid(em, e))
+                    continue;
+
+                var lt = em.GetComponentData<LocalTransform>(e);
+                float3 pos = lt.Position;
+                pos.y = 0f;
+                float dist = haveMap
+                    ? ToroidalMapEcs.ToroidalDistance(worldPos, pos, mapW, mapH)
+                    : math.distance(worldPos, pos);
+                float bodyRadius = BodyCollisionMath.GetAsteroidBodyRadiusWorld(math.max(0.01f, lt.Scale));
+                float maxDist = MatchRadiusForScale(lt.Scale);
+                if (dist > maxDist)
+                    continue;
+
+                float surfaceError = math.abs(dist - bodyRadius);
+                if (surfaceError >= bestError)
+                    continue;
+
+                bestError = surfaceError;
+                bestEntity = e;
+                bestScale = lt.Scale;
+            }
+
+            if (bestEntity == Entity.Null)
+                return false;
+
+            asteroid = bestEntity;
+            matchedScale = bestScale;
+            return true;
+        }
+
+        /// <summary>
         /// Finds the nearest asteroid within its own surface match radius of
         /// <paramref name="worldPos"/>. Prefer <see cref="TryFindAsteroidAtSurfaceHit"/> for HitRpc.
         /// </summary>
@@ -451,6 +822,9 @@ namespace TitanOrbit.ECS
             }
 
             CullPhysics(em, asteroid);
+            // [PHYSICS] SimulationSystemGroup can RemoveComponent this frame. Blob-swap alone
+            // left a static sphere that pinned the hull while grinding inside the volume.
+            StripPhysicsCollidersImmediate(em, asteroid);
             // Keep registry entry until hard destroy — respawn matching still needs the pose.
         }
 
@@ -509,9 +883,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Marks culled and disables collision on the root and every LinkedEntityGroup child.
-        /// Presentation hide may call this; the predicted cull system then
-        /// <b>removes</b> <see cref="PhysicsCollider"/> so Unity Physics rebuilds the static world
-        /// (blob-swap alone left a phantom hull that still stopped the ship).
+        /// Presentation hide may call this (blob-swap only — jobs may still be in flight).
+        /// SimulationSystemGroup kill paths then call <see cref="StripPhysicsCollidersImmediate"/>.
         /// </summary>
         public static void CullPhysics(EntityManager em, Entity asteroid)
         {
@@ -600,6 +973,47 @@ namespace TitanOrbit.ECS
             var pc = em.GetComponentData<PhysicsCollider>(entity);
             if (pc.Value != noCollide)
                 em.SetComponentData(entity, new PhysicsCollider { Value = noCollide });
+        }
+
+        /// <summary>
+        /// Removes <see cref="PhysicsCollider"/> from the asteroid root and every LinkedEntityGroup
+        /// child so Unity Physics rebuilds the static world this frame. Call only from
+        /// SimulationSystemGroup (HitRpc / DestroyRpc apply). Presentation-thread hide must keep
+        /// using blob-swap via <see cref="CullPhysics"/>.
+        /// </summary>
+        public static void StripPhysicsCollidersImmediate(EntityManager em, Entity asteroid)
+        {
+            if (!em.Exists(asteroid))
+                return;
+
+            StripPhysicsColliderOnEntity(em, asteroid);
+
+            if (!em.HasBuffer<LinkedEntityGroup>(asteroid))
+                return;
+
+            // [ECS/DOTS] Copy member ids first — RemoveComponent is structural.
+            var group = em.GetBuffer<LinkedEntityGroup>(asteroid);
+            var members = new NativeArray<Entity>(group.Length, Allocator.Temp);
+            for (int i = 0; i < group.Length; i++)
+                members[i] = group[i].Value;
+
+            for (int i = 0; i < members.Length; i++)
+            {
+                Entity member = members[i];
+                if (member == asteroid || !em.Exists(member))
+                    continue;
+                StripPhysicsColliderOnEntity(em, member);
+            }
+
+            members.Dispose();
+        }
+
+        /// <summary>Drops PhysicsCollider on one entity when present.</summary>
+        static void StripPhysicsColliderOnEntity(EntityManager em, Entity entity)
+        {
+            if (!em.Exists(entity) || !em.HasComponent<PhysicsCollider>(entity))
+                return;
+            em.RemoveComponent<PhysicsCollider>(entity);
         }
     }
 }

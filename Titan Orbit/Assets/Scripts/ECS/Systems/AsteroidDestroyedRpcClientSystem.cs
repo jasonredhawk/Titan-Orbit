@@ -74,9 +74,10 @@ namespace TitanOrbit.ECS
                 destroyEcb.Dispose();
             }
 
-            // --- Phase 3: soft-destroy local rocks (no DestroyEntity) ---
+            // --- Phase 3: soft-destroy the single nearest local rock (no DestroyEntity) ---
             // [TITAN-ORBIT] Hard teardown on kill froze client predicted ship movement.
             // Respawn RPC hard-destroys the zombie immediately before Instantiates.
+            // Must not radius-wipe neighbors — that hid live rocks in a dense belt.
             for (int i = 0; i < pending.Length; i++)
             {
                 var p = pending[i];

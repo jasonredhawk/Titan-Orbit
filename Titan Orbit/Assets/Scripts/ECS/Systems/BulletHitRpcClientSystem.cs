@@ -10,8 +10,8 @@ namespace TitanOrbit.ECS
     /// <c>BulletVfxDriver</c> can play impact VFX and destroy the matching tracer.
     /// <para>
     /// [TITAN-ORBIT] Also applies <see cref="BulletHitRpc.AsteroidHealthAfter"/> onto seed-hydrated
-    /// local asteroids (not ghost-relevant). Without this, HitRpc only hid the hybrid mesh while
-    /// the ECS rock stayed at full HP — phantom collision until the delayed respawn RPC.
+    /// local asteroids (not ghost-relevant). Sequence 0 (ram/grind) uses body-radius matching so
+    /// a packed neighbor is not culled instead of the rock the server damaged.
     /// </para>
     /// World: ClientSimulation. Group: SimulationSystemGroup.
     /// </summary>
@@ -25,6 +25,8 @@ namespace TitanOrbit.ECS
         {
             public float3 HitPosition;
             public float AsteroidHealthAfter;
+            /// <summary>0 = ram/grind (body-radius match); non-zero = bullet (hit-sphere match).</summary>
+            public uint Sequence;
         }
 
         /// <summary>Re-queues broadcast hit RPCs into the VFX bridge and syncs local asteroid HP.</summary>
@@ -64,6 +66,7 @@ namespace TitanOrbit.ECS
                     {
                         HitPosition = hit,
                         AsteroidHealthAfter = r.AsteroidHealthAfter,
+                        Sequence = r.Sequence,
                     });
                 }
 
@@ -73,14 +76,24 @@ namespace TitanOrbit.ECS
             destroyEcb.Playback(em);
             destroyEcb.Dispose();
 
-            // --- Phase 2: apply HP; kill frames DestroyEntity immediately ---
+            // --- Phase 2: apply HP; kill frames soft-destroy (cull + strip collider) ---
             // Prefer AsteroidDestroyedRpc for authoritative teardown (mining/ram too).
-            // HitRpc still updates mid-fight HP and is a belt-and-suspenders kill path.
+            // HitRpc still updates mid-fight HP and is a belt-and-suspenders kill path
+            // (ram/grind now send HitRpc so clients cull the same way bullets do).
             for (int i = 0; i < asteroidHits.Length; i++)
             {
                 var hit = asteroidHits[i];
-                ClientLocalAsteroidCombatSync.ApplyHitAtPosition(
-                    em, hit.HitPosition, hit.AsteroidHealthAfter);
+                // Sequence 0 = ram/grind: match the PhysX hull, not the bullet hit-sphere.
+                if (hit.Sequence == 0)
+                {
+                    ClientLocalAsteroidCombatSync.ApplyRamHitAtPosition(
+                        em, hit.HitPosition, hit.AsteroidHealthAfter);
+                }
+                else
+                {
+                    ClientLocalAsteroidCombatSync.ApplyHitAtPosition(
+                        em, hit.HitPosition, hit.AsteroidHealthAfter);
+                }
             }
 
             asteroidHits.Dispose();

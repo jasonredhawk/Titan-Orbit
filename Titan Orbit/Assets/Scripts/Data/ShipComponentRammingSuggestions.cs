@@ -67,8 +67,33 @@ namespace TitanOrbit.Data
         /// </summary>
         public const float GrindMinPushNewtons = 8f;
 
-        /// <summary>Min seconds between grind damage pulses per asteroid contact (0.25 = 4 pulses/sec).</summary>
-        public const float GrindPulseIntervalSeconds = 0.25f;
+        /// <summary>
+        /// Extra visual scale on a ram/grind pulse that kills the rock. Grind chips stay at
+        /// <see cref="TitanOrbit.Simulation.BulletVisualScale.ComputePerShotScale"/>; the finishing
+        /// blow is a bigger boom.
+        /// </summary>
+        public const float RamKillImpactVisualScale = 1.75f;
+
+        /// <summary>
+        /// Fallback grind pulse interval when the settings asset is missing or authored 0
+        /// (old YAML without the field deserializes as 0 and would zero grind DPS).
+        /// </summary>
+        public const float DefaultGrindPulseIntervalSeconds = 0.5f;
+
+        /// <summary>
+        /// Min seconds between grind damage pulses per asteroid contact.
+        /// Source: <see cref="ShipRammingSettings.GrindPulseIntervalSeconds"/> (default 0.5 = 2 Hz).
+        /// Damage per pulse already multiplies by this interval, so raising it keeps the same DPS
+        /// with fewer HitRpcs / explosions / gem spills.
+        /// </summary>
+        public static float GrindPulseIntervalSeconds
+        {
+            get
+            {
+                float authored = ShipRammingSettingsCache.ResolveOrDefault().GrindPulseIntervalSeconds;
+                return authored >= 0.05f ? authored : DefaultGrindPulseIntervalSeconds;
+            }
+        }
 
         /// <summary>Ramming power at version 1 (cockpit) for Scan / ProfileSet seeds.</summary>
         public const float RammingPowerV1 = 1f;

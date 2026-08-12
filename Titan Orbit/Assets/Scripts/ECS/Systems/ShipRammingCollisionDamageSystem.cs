@@ -26,6 +26,8 @@ namespace TitanOrbit.ECS
     /// Targets: asteroids (impact + grind) and enemy ships (impact reciprocal damage).
     /// Hull/gem rules use <see cref="ShipDamageLogic"/>. Clients never predict this.
     /// Dead / 0-HP asteroids are ignored even if PhysX still emits a contact (phantom grind).
+    /// Each asteroid impact and grind pulse broadcasts <see cref="BulletHitRpc"/> (Sequence 0)
+    /// so every client plays the ship's bullet explosion and culls the rock the same way bullets do.
     /// </para>
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderLast = true)]
@@ -191,6 +193,9 @@ namespace TitanOrbit.ECS
                             impactForceN, selfDamage);
 
                         ApplyAsteroidDamage(ref state, other, asteroidDamage, ship.Team);
+                        NotifyRamAsteroidHit(
+                            ref state, ref ecb, shipEntity, other, normalShipFromOther,
+                            asteroidDamage, ship.Team);
                         // [TITAN-ORBIT] Asteroid self-damage — no player damager (network id 0).
                         ApplyShipSelfDamage(
                             ref state, ref ship, shipEntity, selfDamage, intensity,
@@ -215,7 +220,8 @@ namespace TitanOrbit.ECS
                 }
 
                 // --- Asteroid grind: rating × totalMass × taxedAccel × pulse (thrust into rock) ---
-                if (!otherIsShip && input.Thrust)
+                // Skip if impact already killed the rock this tick (would double the kill boom).
+                if (!otherIsShip && input.Thrust && !IsDeadAsteroid(ref state, other))
                 {
                     float3 forward = math.mul(
                         state.EntityManager.GetComponentData<LocalTransform>(shipEntity).Rotation,
@@ -244,6 +250,9 @@ namespace TitanOrbit.ECS
                                 taxedAccel, selfPulse);
 
                         ApplyAsteroidDamage(ref state, other, asteroidPulse, ship.Team);
+                        NotifyRamAsteroidHit(
+                            ref state, ref ecb, shipEntity, other, normalShipFromOther,
+                            asteroidPulse, ship.Team);
                         // [TITAN-ORBIT] Grind self-damage — environment, not a player kill.
                         ApplyShipSelfDamage(
                             ref state, ref ship, shipEntity, selfPulse, grindIntensity,
@@ -530,6 +539,10 @@ namespace TitanOrbit.ECS
             return a.IsDestroyed || !(a.Health > 0.01f);
         }
 
+        /// <summary>
+        /// Subtracts <paramref name="damage"/> from asteroid Health and flags <c>IsDestroyed</c>
+        /// at 0. No-ops on already-dead rocks. Callers then broadcast HitRpc from the new Health.
+        /// </summary>
         static void ApplyAsteroidDamage(ref SystemState state, Entity asteroid, float damage, TeamId interactTeam)
         {
             if (damage <= 0.0001f || !state.EntityManager.Exists(asteroid))
@@ -550,6 +563,99 @@ namespace TitanOrbit.ECS
             }
 
             state.EntityManager.SetComponentData(asteroid, a);
+        }
+
+        /// <summary>
+        /// Broadcasts a Sequence=0 <see cref="BulletHitRpc"/> so every client plays this ship's
+        /// bullet explosion at the ram contact and applies asteroid HP (kill frames cull the hull).
+        /// </summary>
+        /// <param name="shipEntity">Ramming ship (bank index + cannon scale).</param>
+        /// <param name="asteroid">Rock that just took damage.</param>
+        /// <param name="normalShipFromOther">Contact normal pointing from the rock toward the ship.</param>
+        /// <param name="asteroidDamage">Damage just applied (VFX intensity).</param>
+        /// <param name="team">Ramming ship's team.</param>
+        static void NotifyRamAsteroidHit(
+            ref SystemState state,
+            ref EntityCommandBuffer ecb,
+            Entity shipEntity,
+            Entity asteroid,
+            float3 normalShipFromOther,
+            float asteroidDamage,
+            TeamId team)
+        {
+            if (asteroidDamage <= 0.0001f)
+                return;
+            if (!state.EntityManager.Exists(asteroid) ||
+                !state.EntityManager.HasComponent<AsteroidState>(asteroid) ||
+                !state.EntityManager.HasComponent<LocalTransform>(asteroid))
+                return;
+
+            // --- Health after this pulse (0 = kill) ---
+            var asteroidState = state.EntityManager.GetComponentData<AsteroidState>(asteroid);
+            float healthAfter = asteroidState.IsDestroyed
+                ? 0f
+                : math.max(0f, asteroidState.Health);
+
+            // --- Contact on the rock hull (VFX origin) ---
+            // [TITAN-ORBIT] Clients apply ram HitRpc with body-radius fit, not the bullet
+            // hit-sphere. Sending this surface point keeps grind flashes on the hull; HP apply
+            // uses GetAsteroidBodyRadiusWorld so a packed neighbor is not culled instead.
+            float3 hitPos = ComputeRamSurfaceHitPosition(
+                ref state, asteroid, normalShipFromOther);
+
+            // --- This ship's current bullet bank (B-key cycle) ---
+            int bankIndex = 0;
+            if (state.EntityManager.HasComponent<ShipLoadoutState>(shipEntity))
+                bankIndex = math.max(0, state.EntityManager.GetComponentData<ShipLoadoutState>(shipEntity).RuntimeBulletIndex);
+
+            float cannonScale = 1f;
+            if (state.EntityManager.HasComponent<ShipWeaponConfig>(shipEntity))
+            {
+                float authored = state.EntityManager.GetComponentData<ShipWeaponConfig>(shipEntity).BulletScale;
+                if (authored > 0.1f)
+                    cannonScale = authored;
+            }
+
+            // --- Visual size from ram damage; finishing blows are a bigger boom ---
+            float scaleMul = BulletVisualScale.ComputePerShotScale(
+                cannonScale,
+                asteroidDamage,
+                0f);
+            if (healthAfter <= 0.01f)
+                scaleMul *= ShipComponentRammingSuggestions.RamKillImpactVisualScale;
+
+            BulletNetNotify.SendRamAsteroidHit(
+                ref ecb,
+                hitPos,
+                asteroidDamage,
+                (byte)team,
+                bankIndex,
+                scaleMul,
+                healthAfter);
+        }
+
+        /// <summary>
+        /// World XZ point on the asteroid hull facing the ship. Uses the PhysX contact normal
+        /// and <see cref="BodyCollisionMath.GetAsteroidBodyRadiusWorld"/>.
+        /// </summary>
+        static float3 ComputeRamSurfaceHitPosition(
+            ref SystemState state,
+            Entity asteroid,
+            float3 normalShipFromOther)
+        {
+            var lt = state.EntityManager.GetComponentData<LocalTransform>(asteroid);
+            float3 pos = lt.Position;
+            pos.y = 0f;
+
+            float3 n = normalShipFromOther;
+            n.y = 0f;
+            if (math.lengthsq(n) < 1e-8f)
+                n = new float3(0f, 0f, 1f);
+            else
+                n = math.normalize(n);
+
+            float radius = BodyCollisionMath.GetAsteroidBodyRadiusWorld(lt.Scale);
+            return pos + n * radius;
         }
 
         /// <summary>

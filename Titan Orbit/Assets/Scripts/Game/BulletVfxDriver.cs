@@ -35,6 +35,10 @@ namespace TitanOrbit.Game
     /// misses) and applies authoritative mining floats via <c>AsteroidHealthAfter</c> — cosmetics
     /// never write damage / HP.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Sequence 0 HitRpcs are ram/grind explosions (no tracer). They must play
+    /// impact VFX and must not adopt/destroy a nearby flying tracer.
+    /// </para>
     /// </summary>
     [DefaultExecutionOrder(66150)]
     public class BulletVfxDriver : MonoBehaviour
@@ -371,6 +375,7 @@ namespace TitanOrbit.Game
         /// Skips duplicate impact flash when client already predicted this Sequence / nearby impact.
         /// Mining floats always use HitRpc <c>AsteroidHealthAfter</c> (never cosmetic-predicted HP).
         /// Planetary-defense HP bars use <c>PlanetaryDefenseHealthAfter</c> (ghost MaxSendRate lag).
+        /// Sequence 0 (ram/grind) plays VFX only — never adopts a tracer.
         /// </summary>
         void DrainHits()
         {
@@ -381,6 +386,25 @@ namespace TitanOrbit.Game
                 if (ToroidalDisplay.TryGetReferencePosition(out var reference))
                     hitPos = ToroidalDisplay.ToDisplayPosition(hitPos, reference);
                 hitPos.y = 0f;
+
+                // --- Ram / grind: Sequence 0 means there is no tracer ---
+                // [TITAN-ORBIT] Reusing BulletHitRpc so every client gets the ship's bullet
+                // explosion scaled by ram damage. Nearest-tracer fallback would eat a live shot
+                // if you ram while firing. Predicted-bullet suppress would hide the ram boom.
+                if (hit.Sequence == 0)
+                {
+                    var ramTeam = (TeamId)hit.OwnerTeam;
+                    int ramBank = math.max(0, hit.BankIndex);
+                    float ramScale = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
+                    BulletVisualFactory.SpawnBulletImpactVfx(
+                        hitPos, _bank, ramBank, ramTeam, hit.Damage, ramScale);
+
+                    var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
+                    TryShowAsteroidFloatForHitRpc(
+                        hitPos, hit.HitPosition, hit.Damage, ramTeam,
+                        hit.AsteroidHealthAfter, in ramSynth);
+                    continue;
+                }
 
                 // --- Reconcile: client already showed impact for this Sequence ---
                 // Tracer + impact VFX already done; still apply authoritative mining float / PD bar.
