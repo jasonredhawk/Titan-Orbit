@@ -1042,10 +1042,10 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Hash of ship chassis identity + the ten ability levels + hull ComponentSize.
+        /// Hash of ship chassis identity + the ten ability levels + hull ComponentSize + cargo.
         /// Used to dirty-check chip/tip rebuilds without allocating.
         /// </summary>
-        /// <param name="ship">Local ship vitals (level / team / branch / family).</param>
+        /// <param name="ship">Local ship vitals (level / team / branch / family / cargo).</param>
         /// <param name="attrs">Ghost attribute upgrade levels.</param>
         /// <param name="componentSize">
         /// Hull ComponentSize used for mass tax. Included so MS/TS chips repaint when
@@ -1077,6 +1077,9 @@ namespace TitanOrbit.UI
                 h = h * 31 + attrs.PeopleCapacity;
                 // Centi-units — ignores sub-0.01 noise, still catches MinMass → real hull size.
                 h = h * 31 + Mathf.RoundToInt(componentSize * 100f);
+                // [TITAN-ORBIT] Gems / people change mass tax → Move Speed and Turn chips must repaint.
+                h = h * 31 + Mathf.RoundToInt(ship.CurrentGems);
+                h = h * 31 + ship.CurrentPeople;
                 return h;
             }
         }
@@ -1783,7 +1786,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Rebuilds STATS chips when the loadout / hull-size snapshot changes.
+        /// Rebuilds STATS chips when the loadout / hull-size / cargo snapshot changes.
+        /// Gems and people are in the fingerprint because mass tax changes Move / Turn chips.
         /// Runs from LateUpdate so <see cref="ShipSpeedometerHUD"/> can publish ComponentSize first.
         /// </summary>
         void TryRefreshAbilityChipSnapshot(in ShipState ship, in ShipAttributeUpgradeState attrs)
@@ -1795,7 +1799,7 @@ namespace TitanOrbit.UI
             if (!TryResolveChipLiveContext(out _, out var live, out _) || !IsChipLiveContextReady(in live))
                 return;
 
-            // Key includes ComponentSize so MinMass→real hull (or late HullMassReference) repaints MS/TS.
+            // Key includes ComponentSize + CurrentGems/People so cargo mass tax repaints MS/TS.
             int snapshotKey = ComputeStatsSnapshotKey(in ship, in attrs, live.ComponentSize);
             if (snapshotKey == _statsSnapshotKey)
                 return;

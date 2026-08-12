@@ -711,12 +711,12 @@ MonoBehaviour:
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
       maxGems: 8
-      maxGemsPerExtraLevel: 2
+      maxGemsPerExtraLevel: 4
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 20
+      maxPeople: 10
       maxPeoplePerExtraLevel: 5
     perVersionIncrement:
       firePower: 0
@@ -747,14 +747,14 @@ MonoBehaviour:
       extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
       turnSpeedPerExtraLevel: 0
-      maxGems: 8
+      maxGems: 4
       maxGemsPerExtraLevel: 2
       tractorBeamDistance: 0
       tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
       tractorBeamPowerPerExtraLevel: 0
-      maxPeople: 5
-      maxPeoplePerExtraLevel: 1
+      maxPeople: 4
+      maxPeoplePerExtraLevel: 2
     perLevelFractionOverride: 0
   - partType: Weapon Bullet
     defaultCategories: 0000000002000000
@@ -947,8 +947,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 10
-      maxPeoplePerExtraLevel: 2
+      maxPeople: 9
+      maxPeoplePerExtraLevel: 3
     perVersionIncrement:
       firePower: 0
       firePowerPerExtraLevel: 0
@@ -984,8 +984,8 @@ MonoBehaviour:
       tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
       tractorBeamPowerPerExtraLevel: 1
-      maxPeople: 5
-      maxPeoplePerExtraLevel: 1
+      maxPeople: 6
+      maxPeoplePerExtraLevel: 2
     perLevelFractionOverride: 0
   - partType: Engine
     defaultCategories: 0300000002000000
@@ -1012,7 +1012,7 @@ MonoBehaviour:
       moveSpeedPerExtraLevel: 0.5
       accelerationCap: 6
       accelerationCapPerExtraLevel: 1
-      extraSpeedPercent: 0.5
+      extraSpeedPercent: 0.25
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 36
       extraSpeedEnergyDrainPerExtraLevel: 12
