@@ -28,6 +28,9 @@ namespace TitanOrbit.ECS
     /// Dead / 0-HP asteroids are ignored even if PhysX still emits a contact (phantom grind).
     /// Each asteroid impact and grind pulse broadcasts <see cref="BulletHitRpc"/> (Sequence 0)
     /// so every client plays the ship's bullet explosion and culls the rock the same way bullets do.
+    /// Grind pulses at 4 Hz (<see cref="AsteroidSettings.GrindPulseIntervalSeconds"/>):
+    /// each pulse applies that interval's ship damage, then spawns one gem worth that pulse's
+    /// expelled cargo (four pulses → four gems per second, no banking).
     /// </para>
     /// </summary>
     [UpdateInGroup(typeof(PredictedFixedStepSimulationSystemGroup), OrderLast = true)]
@@ -161,14 +164,18 @@ namespace TitanOrbit.ECS
 
                 var contacts = state.EntityManager.GetBuffer<ShipRamContactElement>(shipEntity);
                 int contactIndex = FindContact(contacts, other);
-                bool isNew = contactIndex < 0 || contacts[contactIndex].WasColliding == 0;
+                // [TITAN-ORBIT] Impact only on a brand-new pair. WasColliding flicker (sticky miss)
+                // used to re-fire impact every few ticks and spray 1-value gems.
+                bool isNewContact = contactIndex < 0;
 
                 if (contactIndex < 0)
                 {
+                    float pulse = ShipComponentRammingSuggestions.GrindPulseIntervalSeconds;
                     contacts.Add(new ShipRamContactElement
                     {
                         Target = other,
-                        NextGrindTime = now,
+                        // First grind waits one pulse so contact-enter impact is the only burst.
+                        NextGrindTime = now + pulse,
                         WasColliding = 0,
                         MissedTicks = 0,
                     });
@@ -178,7 +185,7 @@ namespace TitanOrbit.ECS
                 var contact = contacts[contactIndex];
 
                 // --- Impact on contact enter: rating × totalMass × closingSpeed ---
-                if (isNew && closing >= ImpactMinClosingSpeed)
+                if (isNewContact && closing >= ImpactMinClosingSpeed)
                 {
                     if (!otherIsShip)
                     {
@@ -193,6 +200,12 @@ namespace TitanOrbit.ECS
                             impactForceN, selfDamage);
 
                         ApplyAsteroidDamage(ref state, other, asteroidDamage, ship.Team);
+                        if (IsDeadAsteroid(ref state, other))
+                        {
+                            // [PHYSICS] Drop the hull this tick so the next physics step cannot
+                            // ram an invisible 0-HP zombie while DestroyEntity is still pending.
+                            AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, other);
+                        }
                         NotifyRamAsteroidHit(
                             ref state, ref ecb, shipEntity, other, normalShipFromOther,
                             asteroidDamage, ship.Team);
@@ -219,7 +232,10 @@ namespace TitanOrbit.ECS
                     MarkColliding(ref state, other, shipEntity, now);
                 }
 
-                // --- Asteroid grind: rating × totalMass × taxedAccel × pulse (thrust into rock) ---
+                // --- Asteroid grind: rating × totalMass × taxedAccel × pulseInterval (4 Hz) ---
+                // [TITAN-ORBIT] Interval is authored on AsteroidSettings (default 0.25s).
+                // Damage per pulse already × interval, so four pulses/s = four gems/s, each gem
+                // sized to that pulse's expelled cargo (no bank-until-N).
                 // Skip if impact already killed the rock this tick (would double the kill boom).
                 if (!otherIsShip && input.Thrust && !IsDeadAsteroid(ref state, other))
                 {
@@ -250,10 +266,18 @@ namespace TitanOrbit.ECS
                                 taxedAccel, selfPulse);
 
                         ApplyAsteroidDamage(ref state, other, asteroidPulse, ship.Team);
+                        if (IsDeadAsteroid(ref state, other))
+                        {
+                            // [PHYSICS] Grind kill — same hull strip as impact so the rock cannot
+                            // keep generating contacts after HitRpc hid the mesh on clients.
+                            AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, other);
+                        }
                         NotifyRamAsteroidHit(
                             ref state, ref ecb, shipEntity, other, normalShipFromOther,
                             asteroidPulse, ship.Team);
                         // [TITAN-ORBIT] Grind self-damage — environment, not a player kill.
+                        // One pulse = this interval's hull/cargo damage; SpawnFromDamage emits
+                        // a single gem sized to GemsToExpel for this pulse (4 Hz → 4 gems/s).
                         ApplyShipSelfDamage(
                             ref state, ref ship, shipEntity, selfPulse, grindIntensity,
                             gemPrefab, shipPos, spawnServerTime, ecb, now,
@@ -541,7 +565,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Subtracts <paramref name="damage"/> from asteroid Health and flags <c>IsDestroyed</c>
-        /// at 0. No-ops on already-dead rocks. Callers then broadcast HitRpc from the new Health.
+        /// at 0. No-ops on already-dead rocks. Callers then broadcast HitRpc from the new Health
+        /// and must <see cref="AsteroidDeathPhysics.QueueStripColliders"/> on kill so the next
+        /// physics step cannot ram a 0-HP hull.
         /// </summary>
         static void ApplyAsteroidDamage(ref SystemState state, Entity asteroid, float damage, TeamId interactTeam)
         {
@@ -551,9 +577,12 @@ namespace TitanOrbit.ECS
                 return;
 
             var a = state.EntityManager.GetComponentData<AsteroidState>(asteroid);
+            // Already dead — caller still strips the hull if PhysX raised a leftover contact.
             if (a.IsDestroyed || !(a.Health > 0.01f))
                 return;
 
+            // --- Apply combat damage ---
+            // [TITAN-ORBIT] Health is independent of RemainingGems (AsteroidSettings ratios).
             a.Health -= damage;
             a.LastInteractTeam = interactTeam;
             if (a.Health <= 0f)
@@ -660,6 +689,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Applies ramming / grind hull damage to one ship and optionally stamps kill attribution.
+        /// Cargo spilled this pulse spawns immediately as one world gem sized to
+        /// <see cref="ShipDamageLogic.Result.GemsToExpel"/> (impact and 4 Hz grind share this path).
         /// </summary>
         /// <param name="damagerNetworkId">
         /// Attacker GhostOwner.NetworkId for ship-vs-ship; 0 for asteroid self-damage (no kill credit).
@@ -684,6 +715,9 @@ namespace TitanOrbit.ECS
             float gems = ship.CurrentGems;
             bool isDead = ship.IsDead;
 
+            // --- Hull then cargo ---
+            // [TITAN-ORBIT] Hull absorbs first. Cargo spills 1:1 with leftover / post-zero damage
+            // so a 4 Hz grind pulse that chips 1.5 hull+cargo becomes one gem of value 1.5 once hull is 0.
             var result = ShipDamageLogic.ApplyHullAndGemDamage(
                 ref health,
                 ref gems,
@@ -726,6 +760,7 @@ namespace TitanOrbit.ECS
                 if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
                     sourceNetworkId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
 
+                // [TITAN-ORBIT] One gem per pulse/impact — value is this interval's expelled cargo.
                 ShipGemExpulsion.SpawnFromDamage(
                     ecb,
                     gemPrefab,

@@ -16,6 +16,7 @@ namespace TitanOrbit.Data
     /// <para>
     /// Balance via <see cref="ShipRammingSettings"/> —
     /// <see cref="GlobalDamageMultiplier"/>, <see cref="SelfToAsteroidDamageRatio"/> —
+    /// grind pulse interval on <see cref="AsteroidSettings"/> —
     /// and each ShipFamilyDefinition component's <c>rammingPower</c>.
     /// No MaxHealth fraction caps — calculated damage is applied as-is.
     /// </para>
@@ -75,22 +76,23 @@ namespace TitanOrbit.Data
         public const float RamKillImpactVisualScale = 1.75f;
 
         /// <summary>
-        /// Fallback grind pulse interval when the settings asset is missing or authored 0
+        /// Fallback grind pulse interval when <see cref="AsteroidSettings"/> is missing or authored 0
         /// (old YAML without the field deserializes as 0 and would zero grind DPS).
+        /// 0.25 seconds = 4 Hz = four gems per second, each sized to that pulse's damage.
         /// </summary>
-        public const float DefaultGrindPulseIntervalSeconds = 0.5f;
+        public const float DefaultGrindPulseIntervalSeconds = 0.25f;
 
         /// <summary>
         /// Min seconds between grind damage pulses per asteroid contact.
-        /// Source: <see cref="ShipRammingSettings.GrindPulseIntervalSeconds"/> (default 0.5 = 2 Hz).
-        /// Damage per pulse already multiplies by this interval, so raising it keeps the same DPS
-        /// with fewer HitRpcs / explosions / gem spills.
+        /// Source: <see cref="AsteroidSettings.GrindPulseIntervalSeconds"/> (default 0.25 = 4 Hz).
+        /// Damage per pulse multiplies by this interval, then one gem spawns with that pulse's
+        /// expelled cargo — 4 Hz means 4 gems/s, no banking.
         /// </summary>
         public static float GrindPulseIntervalSeconds
         {
             get
             {
-                float authored = ShipRammingSettingsCache.ResolveOrDefault().GrindPulseIntervalSeconds;
+                float authored = AsteroidSettingsCache.ResolveOrDefault().GrindPulseIntervalSeconds;
                 return authored >= 0.05f ? authored : DefaultGrindPulseIntervalSeconds;
             }
         }

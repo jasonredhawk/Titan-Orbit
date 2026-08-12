@@ -15,6 +15,8 @@ namespace TitanOrbit.Data
     /// lerps from VisualScaleAtMinSize → VisualScaleAtMaxSize. Example: Size 50,
     /// HealthPerSize 3, GemsPerSize 0.5 → 150 HP and 25 gem capacity.
     /// Contact <see cref="Friction"/> controls how sticky rams/grinds feel against the rock.
+    /// <see cref="GrindPulseIntervalSeconds"/> is how often a thrusting hull chips the rock
+    /// (0.25 = 4 Hz; each pulse spawns one gem worth that pulse's ship damage).
     /// <see cref="CollisionMassPerSize"/> and <see cref="BounceRestitution"/> drive mass-aware
     /// ship bounce (rocks stay static; virtual mass still shapes rebound).
     /// Cosmetic tumble uses <see cref="MinSpinSpeed"/>–<see cref="MaxSpinSpeed"/>
@@ -77,6 +79,19 @@ namespace TitanOrbit.Data
         [Min(0f)]
         public float Friction = 1.5f;
 
+        /// <summary>
+        /// Seconds between grind damage pulses while a ship thrusts into this rock (0.25 = 4 Hz).
+        /// Damage per pulse multiplies by this interval, then one gem spawns with that pulse's
+        /// expelled cargo — four pulses per second means four gems per second, no banking.
+        /// </summary>
+        [Header("Grind pacing")]
+        [Tooltip(
+            "Seconds between grind damage pulses while thrusting into a rock. " +
+            "0.25 = 4 pulses per second (4 gems per second). Damage per pulse multiplies by " +
+            "this interval, then one gem spawns with that pulse's expelled cargo. " +
+            "Values below 0.05 fall back to 0.25 (protects old assets that serialized as 0).")]
+        public float GrindPulseIntervalSeconds = 0.25f;
+
         [Header("Collision bounce (mass-aware)")]
         [Tooltip(
             "Virtual collision mass = Size × this. Asteroids stay static (do not slide), but " +
@@ -118,6 +133,10 @@ namespace TitanOrbit.Data
             VisualScaleAtMinSize = Mathf.Max(0.01f, VisualScaleAtMinSize);
             VisualScaleAtMaxSize = Mathf.Max(0.01f, VisualScaleAtMaxSize);
             Friction = Mathf.Max(0f, Friction);
+            // Old AsteroidSettings.asset files lack this field → Unity deserializes 0 and would
+            // zero grind DPS. 0.25 = 4 Hz, one gem per pulse.
+            if (GrindPulseIntervalSeconds < 0.05f)
+                GrindPulseIntervalSeconds = 0.25f;
             CollisionMassPerSize = Mathf.Max(0.01f, CollisionMassPerSize);
             BounceRestitution = Mathf.Clamp01(BounceRestitution);
             MinSpinSpeed = Mathf.Max(0f, MinSpinSpeed);

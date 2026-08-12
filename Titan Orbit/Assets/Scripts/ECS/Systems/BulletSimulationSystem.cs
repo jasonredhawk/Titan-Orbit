@@ -883,6 +883,8 @@ namespace TitanOrbit.ECS
                     {
                         // Still report 0 so clients can hide a lingering proxy.
                         asteroidHealthAfter = 0f;
+                        // [PHYSICS] A 0-HP zombie that missed DestroyEntity still blocks the hull.
+                        AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, bestEntity);
                         return true;
                     }
 
@@ -898,6 +900,13 @@ namespace TitanOrbit.ECS
                     // Publish post-hit HP on BulletHitRpc — ghost snapshots lag MaxSendRate.
                     asteroidHealthAfter = asteroid.Health;
                     state.EntityManager.SetComponentData(bestEntity, asteroid);
+
+                    // [PHYSICS] Lethal hits drop the hull immediately. Waiting for
+                    // AsteroidDestructionSystem left a server PhysX sphere after the client hid
+                    // the mesh — the predicted ship then reconciled into empty space.
+                    if (asteroid.IsDestroyed || asteroid.Health <= 0.01f)
+                        AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, bestEntity);
+
                     return true;
                 }
 

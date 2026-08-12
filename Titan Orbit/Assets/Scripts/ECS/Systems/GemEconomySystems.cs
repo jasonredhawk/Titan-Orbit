@@ -219,6 +219,9 @@ namespace TitanOrbit.ECS
                     {
                         a.RemainingGems = 0f;
                         a.IsDestroyed = true;
+                        // [PHYSICS] Mining kill — drop the hull this tick so the ship cannot
+                        // keep grinding an empty volume while DestroyEntity is still pending.
+                        AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, asteroidEntity);
                     }
 
                     asteroidState.ValueRW = a;
@@ -784,33 +787,54 @@ namespace TitanOrbit.ECS
     /// [TITAN-ORBIT] Despawn triggers on <see cref="AsteroidState.IsDestroyed"/> <b>or</b>
     /// <c>Health &lt;= 0</c> (belt-and-suspenders for bullet kills). Missing Gem prefab must not
     /// leave 0-HP zombies — we still destroy the entity and only skip the gem burst.
+    /// Runs after predicted ram damage and bullet sim so a same-tick kill is despawned
+    /// before the next physics step.
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(PredictedFixedStepSimulationSystemGroup))]
     [UpdateAfter(typeof(BulletSimulationSystem))]
     [UpdateAfter(typeof(MiningSystem))]
     public partial struct AsteroidDestructionSystem : ISystem
     {
-        /// <summary>Requires gem prefab and ensures the respawn queue singleton exists.</summary>
+        /// <summary>
+        /// One dead rock copied out of the query so we can strip ghost identity (structural)
+        /// after the foreach, then destroy via ECB.
+        /// </summary>
+        struct PendingDestroy
+        {
+            public Entity Entity;
+            public float3 Position;
+            public float Scale;
+            public float RemainingGems;
+            public float MaxGems;
+            public float Health;
+            public float MaxHealth;
+            public float Size;
+            public TeamId LastInteractTeam;
+            public byte TerritoryTeamsMask;
+        }
+
+        /// <summary>Ensures the respawn queue exists. Gem prefab is optional for despawn.</summary>
         public void OnCreate(ref SystemState state)
         {
             AsteroidSpawning.EnsureRespawnQueue(state.EntityManager);
-            state.RequireForUpdate<GamePrefabs>();
             state.RequireForUpdate<AsteroidRespawnQueueTag>();
         }
 
         /// <summary>
-        /// For each destroyed asteroid: burst leftover gems, enqueue respawn, destroy entity.
+        /// For each destroyed asteroid: burst leftover gems, enqueue respawn, strip collision,
+        /// strip leftover ghost identity, destroy entity.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            // [TITAN-ORBIT] Gem prefab is optional for despawn — never early-out the whole system
-            // when Gem is null (that left Health=0 / IsDestroyed rocks alive forever).
-            if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs))
-                return;
-
-            bool canSpawnGems = prefabs.Gem != Entity.Null;
+            // [TITAN-ORBIT] Gem prefab is optional for despawn — never skip DestroyEntity when
+            // GamePrefabs / Gem is missing (that left Health=0 rocks alive forever).
+            Entity gemPrefab = Entity.Null;
+            if (SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs))
+                gemPrefab = prefabs.Gem;
+            bool canSpawnGems = gemPrefab != Entity.Null;
             var settings = GemExplosionSettingsCache.ResolveOrDefault();
             settings.ClampCounts();
             float spawnTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
@@ -818,9 +842,10 @@ namespace TitanOrbit.ECS
             // Respawn queue is server-only — World.Time is fine (not replicated to clients).
             double now = SystemAPI.Time.ElapsedTime;
             var respawnBuffer = SystemAPI.GetSingletonBuffer<PendingAsteroidRespawnElement>();
+            var em = state.EntityManager;
 
-            var ecb = new EntityCommandBuffer(Allocator.Temp);
-
+            // --- Phase 1: copy dead rocks (no structural changes inside the query) ---
+            var pending = new NativeList<PendingDestroy>(8, Allocator.Temp);
             foreach (var (asteroidState, asteroidTransform, entity) in SystemAPI
                          .Query<RefRO<AsteroidState>, RefRO<LocalTransform>>()
                          .WithAll<AsteroidTag>()
@@ -833,20 +858,56 @@ namespace TitanOrbit.ECS
                 if (!shouldDestroy)
                     continue;
 
-                float3 pos = asteroidTransform.ValueRO.Position;
-                float remaining = a.RemainingGems;
+                var lt = asteroidTransform.ValueRO;
+                pending.Add(new PendingDestroy
+                {
+                    Entity = entity,
+                    Position = lt.Position,
+                    Scale = lt.Scale,
+                    RemainingGems = a.RemainingGems,
+                    MaxGems = a.MaxGems,
+                    Health = a.Health,
+                    MaxHealth = a.MaxHealth,
+                    Size = a.Size,
+                    LastInteractTeam = a.LastInteractTeam,
+                    TerritoryTeamsMask = a.TerritoryTeamsMask,
+                });
+            }
+
+            if (pending.Length == 0)
+            {
+                pending.Dispose();
+                return;
+            }
+
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
+
+            for (int i = 0; i < pending.Length; i++)
+            {
+                PendingDestroy dead = pending[i];
+                Entity entity = dead.Entity;
+                if (!em.Exists(entity))
+                    continue;
+
+                float3 pos = dead.Position;
+                pos.y = 0f;
+                float remaining = dead.RemainingGems;
+                float rpcScale = dead.Scale;
+                if (rpcScale <= AsteroidDeathPhysics.CulledTransformScale + 0.001f)
+                    rpcScale = 1f;
+
                 float bonusExtra = 0f;
                 // --- Territory gem bonus on destroy burst ---
                 // [TITAN-ORBIT] Yellow gems only when the last miner/shooter's team owns this rock
                 // (mask bit). Enemy-tinted asteroids must not dump bonus gems on kill.
                 // Legacy bug: FriendlyTerritoryGemMultiplier(TerritoryTeam, TerritoryTeam) always
                 // matched for any non-None tint — ignored the destroyer.
-                if (a.LastInteractTeam != TeamId.None &&
+                if (dead.LastInteractTeam != TeamId.None &&
                     remaining >= GemEconomyConstants.MinGemSpawnValue)
                 {
-                    int homeLevel = PlanetConnectionGraphCache.GetHomePlanetLevel(a.LastInteractTeam);
+                    int homeLevel = PlanetConnectionGraphCache.GetHomePlanetLevel(dead.LastInteractTeam);
                     float mult = PlanetConnectionGraphLogic.FriendlyTerritoryGemMultiplier(
-                        a.LastInteractTeam, a.TerritoryTeamsMask, homeLevel);
+                        dead.LastInteractTeam, dead.TerritoryTeamsMask, homeLevel);
                     bonusExtra = remaining * (mult - 1f);
                 }
 
@@ -855,36 +916,36 @@ namespace TitanOrbit.ECS
                     // Deterministic seed so client immediate burst can match count/feel closely.
                     uint seed = math.hash(new uint2((uint)entity.Index, math.hash(pos)));
                     SpawnAsteroidDestructionGems(
-                        ecb, prefabs.Gem, pos, remaining, seed, settings, spawnTime, isBonusGem: false);
+                        ecb, gemPrefab, pos, remaining, seed, settings, spawnTime, isBonusGem: false);
                     if (bonusExtra >= GemEconomyConstants.MinGemSpawnValue)
                     {
                         SpawnAsteroidDestructionGems(
-                            ecb, prefabs.Gem, pos, bonusExtra, seed + 1337u, settings, spawnTime,
+                            ecb, gemPrefab, pos, bonusExtra, seed + 1337u, settings, spawnTime,
                             isBonusGem: true);
                     }
                 }
 
                 // --- Schedule respawn (original AsteroidRespawnManager.ScheduleRespawn) ---
                 // Prefer MaxGems / MaxHealth. Fallbacks cover older rocks that only had HP=gems.
-                float restoreGems = a.MaxGems;
+                float restoreGems = dead.MaxGems;
                 if (restoreGems < GemEconomyConstants.MinGemSpawnValue)
-                    restoreGems = math.max(a.Health, remaining);
+                    restoreGems = math.max(dead.Health, remaining);
                 if (restoreGems < GemEconomyConstants.MinGemSpawnValue)
                     restoreGems = 1f;
 
-                float restoreHealth = a.MaxHealth;
+                float restoreHealth = dead.MaxHealth;
                 if (restoreHealth < 1f)
-                    restoreHealth = math.max(a.Health, restoreGems);
+                    restoreHealth = math.max(dead.Health, restoreGems);
                 if (restoreHealth < 1f)
                     restoreHealth = 1f;
 
                 AsteroidSpawning.ScheduleRespawn(
                     respawnBuffer,
                     pos,
-                    asteroidTransform.ValueRO.Scale,
+                    rpcScale,
                     restoreGems,
                     restoreHealth,
-                    a.Size,
+                    dead.Size,
                     now,
                     settings.AsteroidRespawnDelaySeconds);
 
@@ -895,14 +956,20 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(destroyRpc, new AsteroidDestroyedRpc
                 {
                     Position = pos,
-                    Scale = asteroidTransform.ValueRO.Scale,
+                    Scale = rpcScale,
                 });
                 ecb.AddComponent(destroyRpc, new SendRpcCommandRequest());
 
+                // --- Drop the hull before DestroyEntity ---
+                // [PHYSICS] GhostCleanup zombies / stale static worlds kept colliding after
+                // DestroyEntity. Strip first; then strip leftover GhostInstance so destroy is real.
+                AsteroidDeathPhysics.QueueStripAndDisable(ecb, em, entity);
+                ClientLocalMapBodySpawn.StripGhostNetworking(em, entity);
                 ecb.DestroyEntity(entity);
             }
 
-            ecb.Playback(state.EntityManager);
+            pending.Dispose();
+            ecb.Playback(em);
             ecb.Dispose();
         }
 
