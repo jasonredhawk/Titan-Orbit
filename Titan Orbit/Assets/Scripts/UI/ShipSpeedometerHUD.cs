@@ -1079,23 +1079,49 @@ namespace TitanOrbit.UI
                 _cachedChassisId = chassisId;
             }
 
-            if (!string.IsNullOrEmpty(chassisId) &&
-                ShipStatApplyLogic.TryGetBaseStatsForChassis(chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))
+            if (!string.IsNullOrEmpty(chassisId))
             {
-                float growth = ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
-                if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family) &&
-                    family != null)
-                    growth = family.ResolveShipLevelStatGrowthFraction();
-                effectiveStats = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
-                    summed, ship.ShipLevel, growth);
-                if (hasAttrs)
+                // --- Prefer Extra Level AggregateAndEvaluate when part lists are available ---
+                // [TITAN-ORBIT] Part cache Instantiates the chassis prefab; matches ShipStatApplyLogic.
+                ShipSpeedometerStatTooltips.TryRefreshPartCache(
+                    em, shipEntity, chassisId, ship.ShipLevel, ref _partCache);
+
+                ShipAbilityLevelCounts abilityCounts = hasAttrs
+                    ? ShipAttributeUpgradeLogic.ToAbilityLevelCounts(in attrs)
+                    : default;
+
+                if (_partCache.Valid && _partCache.Ids != null && _partCache.Ids.Count > 0)
                 {
-                    ShipAttributeUpgradeLogic.ApplyMultipliers(ref effectiveStats, attrs);
-                    // [TITAN-ORBIT] Same additive Move Speed path as ShipStatApplyLogic (not ×1.1).
-                    ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
-                        summed, out float moveStep, out float accelStep, out float odDrainStep);
-                    ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
-                        ref effectiveStats, attrs, moveStep, accelStep, odDrainStep);
+                    effectiveStats = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                        _partCache.Ids,
+                        _partCache.Stats,
+                        ship.ShipLevel,
+                        in abilityCounts);
+                    effectiveStats = ShipComponentExtraLevelMath.ApplyMobilityPenalties(
+                        effectiveStats, ship.ShipLevel);
+                    if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
+                        && family != null)
+                    {
+                        effectiveStats = family.ApplyStatFallbacks(effectiveStats);
+                        effectiveStats = family.ApplySpecialBonuses(effectiveStats);
+                    }
+                }
+                else if (ShipStatApplyLogic.TryGetBaseStatsForChassis(
+                             chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))
+                {
+                    // Fallback: single-pool Extra Level (count=1) when prefab parts are unavailable.
+                    effectiveStats = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
+                        summed, ship.ShipLevel);
+                    if (hasAttrs)
+                    {
+                        // [LEGACY] ApplyMultipliers / ApplyMoveSpeedAbilitySteps are no-ops —
+                        // Extra Level already includes ability purchases when part lists exist.
+                        ShipAttributeUpgradeLogic.ApplyMultipliers(ref effectiveStats, attrs);
+                        ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
+                            summed, out float moveStep, out float accelStep, out float odDrainStep);
+                        ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
+                            ref effectiveStats, attrs, moveStep, accelStep, odDrainStep);
+                    }
                 }
             }
 
@@ -1543,7 +1569,7 @@ namespace TitanOrbit.UI
                     ComponentSize = componentSize,
                     MoveSpeedAbilityLevel = _moveSpeedAbilityLevel,
                     MoveStepPreview = _partCache.Valid
-                        ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerAbilityLevel)
+                        ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerExtraLevel)
                         : 0f,
                 };
             }

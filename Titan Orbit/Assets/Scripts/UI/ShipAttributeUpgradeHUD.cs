@@ -18,7 +18,7 @@ namespace TitanOrbit.UI
     /// ShipState and ShipAttributeUpgradeState from EcsGameBridge; sends purchases via
     /// MoonOrbitRpcClient.PurchaseAttributeUpgrade (server validates in ShipAttributeUpgradeSystem).
     /// Cost = ShipLevel × 5 gems; max levels per attribute = ShipLevel.
-    /// Most abilities are +10% per purchase; Move Speed adds one chassis PerAbilityLevel step
+    /// Most abilities are +10% per purchase; Move Speed adds one chassis PerExtraLevel step
     /// (move + accel + OD drain together) — see ShipAttributeUpgradeLogic.
     /// <para>
     /// [TITAN-ORBIT] Optional quick-stat chips above each button show <b>current</b> and
@@ -1288,9 +1288,8 @@ namespace TitanOrbit.UI
             if (_cachedSpeedometer != null)
                 _cachedSpeedometer.TryGetTooltipSharedState(out parts, out _);
 
-            // --- Fresh chassis pipeline (same steps as ShipSpeedometerHUD stats cache) ---
-            // [TITAN-ORBIT] TryGetBaseStatsForChassis returns level-1 sums — we must call
-            // GetEffectiveStatsAtShipLevel, then ApplyMultipliers, then ApplyMoveSpeedAbilitySteps.
+            // --- Fresh chassis pipeline (same Extra Level path as ShipSpeedometerHUD) ---
+            // [TITAN-ORBIT] Prefer AggregateAndEvaluate when part Ids/Stats are available.
             live = new ShipSpeedometerStatTooltips.LiveContext
             {
                 Ship = ship,
@@ -1310,23 +1309,44 @@ namespace TitanOrbit.UI
                     ship.BranchIndex,
                     out string chassisId,
                     allowFallback: true,
-                    ship.ShipFamilyConfigIndex)
-                && ShipStatApplyLogic.TryGetBaseStatsForChassis(
-                    chassisId, ship.ShipLevel, out ShipComponentAbilityStats levelOneSummed))
+                    ship.ShipFamilyConfigIndex))
             {
-                // Family growth fraction — same source the speedometer / ApplyToShip use.
-                float growth = ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
-                if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
-                    && family != null)
-                    growth = family.ResolveShipLevelStatGrowthFraction();
+                ShipAbilityLevelCounts abilityCounts =
+                    ShipAttributeUpgradeLogic.ToAbilityLevelCounts(in attrs);
+                ShipComponentAbilityStats effective;
 
-                ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
-                    levelOneSummed, ship.ShipLevel, growth);
-                ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, in attrs);
-                ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
-                    levelOneSummed, out float moveStep, out float accelStep, out float odDrainStep);
-                ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
-                    ref effective, attrs, moveStep, accelStep, odDrainStep);
+                if (parts.Valid && parts.Ids != null && parts.Ids.Count > 0)
+                {
+                    effective = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                        parts.Ids,
+                        parts.Stats,
+                        ship.ShipLevel,
+                        in abilityCounts);
+                    effective = ShipComponentExtraLevelMath.ApplyMobilityPenalties(effective, ship.ShipLevel);
+                    if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
+                        && family != null)
+                    {
+                        effective = family.ApplyStatFallbacks(effective);
+                        effective = family.ApplySpecialBonuses(effective);
+                    }
+                }
+                else if (ShipStatApplyLogic.TryGetBaseStatsForChassis(
+                             chassisId, ship.ShipLevel, out ShipComponentAbilityStats levelOneSummed))
+                {
+                    // Fallback when part cache is not ready yet.
+                    effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
+                        levelOneSummed, ship.ShipLevel);
+                    // [LEGACY] No-ops — kept so this path matches older call sites.
+                    ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, in attrs);
+                    ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
+                        levelOneSummed, out float moveStep, out float accelStep, out float odDrainStep);
+                    ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
+                        ref effective, attrs, moveStep, accelStep, odDrainStep);
+                }
+                else
+                {
+                    effective = default;
+                }
 
                 live.EffectiveStats = effective;
                 live.ChassisMaxSpeed = effective.moveSpeed;
@@ -1364,11 +1384,11 @@ namespace TitanOrbit.UI
                 }
 
                 if (moveStepPreview <= 0.0001f)
-                    live.MoveStepPreview = Mathf.Max(0f, moveStep);
+                    live.MoveStepPreview = Mathf.Max(0f, effective.moveSpeedPerExtraLevel);
             }
 
             if (live.MoveStepPreview <= 0.0001f)
-                live.MoveStepPreview = Mathf.Max(0f, live.EffectiveStats.moveSpeedPerAbilityLevel);
+                live.MoveStepPreview = Mathf.Max(0f, live.EffectiveStats.moveSpeedPerExtraLevel);
 
             return true;
         }

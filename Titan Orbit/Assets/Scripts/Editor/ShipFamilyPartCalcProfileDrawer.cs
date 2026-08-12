@@ -40,10 +40,8 @@ namespace TitanOrbit.Editor
                 categories = ShipFamilyComponentPartKey.InferDefaultStatCategories(partType);
 
             string[] fields = ShipFamilyComponentPartKey.GetAuthoringStatFieldNames(categories, partType);
-            // Two blocks (Base At Version 1, Per Version Increment): header + fields each
-            // Base also gets Extra Stack Weight (not on Per Version Increment).
+            // Two blocks (Base At Version 1, Per Version Increment): header + fields each.
             height += GetStatsBlockHeight(fields, line, gap) * 2f;
-            height += line + gap; // Extra Stack Weight under Base
             height += gap;
             return height;
         }
@@ -122,8 +120,6 @@ namespace TitanOrbit.Editor
                 fields,
                 line,
                 gap);
-            // [TITAN-ORBIT] Stack weight lives on the version-1 base only (not a per-version delta).
-            y = DrawExtraStackWeightField(new Rect(position.x, y, width, 0f), baseProp, partType, line, gap);
             y = DrawStatsBlock(
                 new Rect(position.x, y, width, 0f),
                 "Per Version Increment",
@@ -163,36 +159,36 @@ namespace TitanOrbit.Editor
             if (statsProp == null)
                 return;
 
-            TryFillPair(statsProp, "firePower", "firePowerPerAbilityLevel", frac);
-            TryFillPair(statsProp, "bulletSpeed", "bulletSpeedPerAbilityLevel", frac);
-            TryFillPair(statsProp, "bulletRange", "bulletRangePerAbilityLevel", frac);
-            // Weapons keep fireRate flat (EvaluateAtVersion zeroes fireRatePerAbilityLevel).
+            TryFillPair(statsProp, "firePower", "firePowerPerExtraLevel", frac);
+            TryFillPair(statsProp, "bulletSpeed", "bulletSpeedPerExtraLevel", frac);
+            TryFillPair(statsProp, "bulletRange", "bulletRangePerExtraLevel", frac);
+            // Weapons keep fireRate flat (EvaluateAtVersion zeroes fireRatePerExtraLevel).
             if (!ShipFamilyPartTypes.IsWeapon(partType))
-                TryFillPair(statsProp, "fireRate", "fireRatePerAbilityLevel", frac);
+                TryFillPair(statsProp, "fireRate", "fireRatePerExtraLevel", frac);
             else
             {
-                SerializedProperty fireRatePerAbilityLevel = statsProp.FindPropertyRelative("fireRatePerAbilityLevel");
-                if (fireRatePerAbilityLevel != null)
-                    fireRatePerAbilityLevel.floatValue = 0f;
+                SerializedProperty fireRatePerExtraLevel = statsProp.FindPropertyRelative("fireRatePerExtraLevel");
+                if (fireRatePerExtraLevel != null)
+                    fireRatePerExtraLevel.floatValue = 0f;
             }
 
-            TryFillPair(statsProp, "rammingPower", "rammingPowerPerAbilityLevel", frac);
-            TryFillPair(statsProp, "healthCap", "healthCapPerAbilityLevel", frac);
-            TryFillPair(statsProp, "healthRegen", "healthRegenPerAbilityLevel", frac);
-            TryFillPair(statsProp, "energyCap", "energyCapPerAbilityLevel", frac);
-            TryFillPair(statsProp, "energyRegen", "energyRegenPerAbilityLevel", frac);
-            TryFillPair(statsProp, "moveSpeed", "moveSpeedPerAbilityLevel", frac);
-            TryFillPair(statsProp, "accelerationCap", "accelerationCapPerAbilityLevel", frac);
+            TryFillPair(statsProp, "rammingPower", "rammingPowerPerExtraLevel", frac);
+            TryFillPair(statsProp, "healthCap", "healthCapPerExtraLevel", frac);
+            TryFillPair(statsProp, "healthRegen", "healthRegenPerExtraLevel", frac);
+            TryFillPair(statsProp, "energyCap", "energyCapPerExtraLevel", frac);
+            TryFillPair(statsProp, "energyRegen", "energyRegenPerExtraLevel", frac);
+            TryFillPair(statsProp, "moveSpeed", "moveSpeedPerExtraLevel", frac);
+            TryFillPair(statsProp, "accelerationCap", "accelerationCapPerExtraLevel", frac);
             // [TITAN-ORBIT] ExtraSpeedPercent ability step stays 0 unless designers type a value.
-            // ExtraSpeedEnergyDrain PerAbilityLevel matches moveSpeed's fraction of base (Move Speed HUD).
-            TryFillPair(statsProp, "extraSpeedEnergyDrain", "extraSpeedEnergyDrainPerAbilityLevel", frac);
-            TryFillPair(statsProp, "turnSpeed", "turnSpeedPerAbilityLevel", frac);
-            TryFillPair(statsProp, "maxGems", "maxGemsPerAbilityLevel", frac);
-            TryFillPair(statsProp, "tractorBeamDistance", "tractorBeamDistancePerAbilityLevel", frac);
-            TryFillPair(statsProp, "tractorBeamPower", "tractorBeamPowerPerAbilityLevel", frac);
+            // ExtraSpeedEnergyDrain PerExtraLevel matches moveSpeed's fraction of base (Move Speed HUD).
+            TryFillPair(statsProp, "extraSpeedEnergyDrain", "extraSpeedEnergyDrainPerExtraLevel", frac);
+            TryFillPair(statsProp, "turnSpeed", "turnSpeedPerExtraLevel", frac);
+            TryFillPair(statsProp, "maxGems", "maxGemsPerExtraLevel", frac);
+            TryFillPair(statsProp, "tractorBeamDistance", "tractorBeamDistancePerExtraLevel", frac);
+            TryFillPair(statsProp, "tractorBeamPower", "tractorBeamPowerPerExtraLevel", frac);
 
             // Same float multiply as FillPerLevelIfZero — no integer rounding.
-            TryFillPair(statsProp, "maxPeople", "maxPeoplePerAbilityLevel", frac);
+            TryFillPair(statsProp, "maxPeople", "maxPeoplePerExtraLevel", frac);
         }
 
         static void TryFillPair(SerializedProperty statsProp, string baseName, string perLevelName, float frac)
@@ -244,48 +240,6 @@ namespace TitanOrbit.Editor
             return y;
         }
 
-        /// <summary>
-        /// Draws Extra Stack Weight under Base At Version 1 and seeds 0.1 / 1.0 when unset.
-        /// </summary>
-        static float DrawExtraStackWeightField(
-            Rect rect,
-            SerializedProperty statsProp,
-            string partType,
-            float line,
-            float gap)
-        {
-            float y = rect.y;
-            float width = rect.width;
-            if (statsProp == null)
-                return y;
-
-            SerializedProperty weightProp = statsProp.FindPropertyRelative("extraStackWeight");
-            if (weightProp == null)
-                return y;
-
-            if (weightProp.floatValue <= 0.0001f)
-            {
-                weightProp.floatValue =
-                    ShipComponentStackAggregation.GetSuggestedExtraStackWeightForPartType(partType);
-            }
-
-            float labelWidth = width * LabelWidthRatio;
-            var labelRect = new Rect(rect.x, y, labelWidth, line);
-            var fieldRect = new Rect(rect.x + labelWidth, y, width - labelWidth, line);
-            EditorGUI.LabelField(
-                labelRect,
-                new GUIContent(
-                    "Extra Stack Weight",
-                    "When multiple parts share a pool: primary = 100%; each extra adds this fraction of ITS stats. " +
-                    "1 = full sum; Engines/Thrusters = 0.1. Not a per-version increment."));
-            EditorGUI.BeginChangeCheck();
-            float value = EditorGUI.FloatField(fieldRect, weightProp.floatValue);
-            if (EditorGUI.EndChangeCheck())
-                weightProp.floatValue = Mathf.Max(0f, value);
-
-            return y + line + gap;
-        }
-
         static float GetStatsBlockHeight(string[] fields, float line, float gap)
         {
             float height = line + gap; // title
@@ -324,10 +278,8 @@ namespace TitanOrbit.Editor
 
             while (!SerializedProperty.EqualContents(child, end))
             {
-                // [TITAN-ORBIT] Never clear stack weight — drawn separately; not category-gated.
                 if (child.propertyType == SerializedPropertyType.Float
-                    && !allowed.Contains(child.name)
-                    && !string.Equals(child.name, "extraStackWeight", StringComparison.Ordinal))
+                    && !allowed.Contains(child.name))
                 {
                     child.floatValue = 0f;
                 }

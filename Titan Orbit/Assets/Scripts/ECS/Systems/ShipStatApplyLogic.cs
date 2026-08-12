@@ -39,7 +39,7 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Shared stat-application pipeline: resolves a chassis id from team + level + branch, sums
     /// ship-family component stats, applies attribute upgrades (×10% for most; additive Move Speed
-    /// PerAbilityLevel), and writes untaxed MaxSpeed / EngineThrust (= accel) / RotationSpeed onto
+    /// PerExtraLevel), and writes untaxed MaxSpeed / EngineThrust (= accel) / RotationSpeed onto
     /// ShipMotorConfig. Live subtractive mass tax
     /// (<see cref="ShipMobilityResolution"/> / <see cref="ShipCargoMobilitySettings"/>) runs each
     /// drive tick from current gems/people + ComponentSize. Also writes ShipState, ShipWeaponConfig,
@@ -230,8 +230,8 @@ namespace TitanOrbit.ECS
                         baseStats.bulletSpeed = familyDefaults.bulletSpeed;
                     if (familyDefaults.bulletRange > 0.01f)
                         baseStats.bulletRange = familyDefaults.bulletRange;
-                    if (familyDefaults.bulletRangePerAbilityLevel > 0.01f)
-                        baseStats.bulletRangePerAbilityLevel = familyDefaults.bulletRangePerAbilityLevel;
+                    if (familyDefaults.bulletRangePerExtraLevel > 0.01f)
+                        baseStats.bulletRangePerExtraLevel = familyDefaults.bulletRangePerExtraLevel;
                     baseStats = family.ApplyStatFallbacks(baseStats);
                 }
                 return true;
@@ -281,24 +281,60 @@ namespace TitanOrbit.ECS
             if (!TryResolveChassisId(team, shipLevel, branchIndex, out string chassisId, allowFallback: true, familyIndex))
                 return;
 
-            // --- Chassis baseline (level-1 sum) ---
-            // When moon-store equipment includes ship components, rebuild chassis+store together so
-            // stack pools use primary ×1 + extras × extraStackWeight (not naive full add).
-            ShipComponentAbilityStats summed;
-            if (!TryGetBaseStatsWithStoreComponents(em, shipEntity, chassisId, out summed))
+            // --- Chassis parts (primary pools + counts) then Extra Level evaluate ---
+            // [TITAN-ORBIT] Non-weapons: Base + PerExtra × ((shipLevel−1) + ability + (N−1)).
+            // Weapons: Base + PerExtra × ((shipLevel−1) + ability) per barrel (no N stack).
+            if (!TryGetChassisPartSum(em, shipEntity, chassisId, out ShipFamilyStatsCalculator.SumResult partSum))
             {
-                if (!TryGetBaseStatsForChassis(chassisId, shipLevel, out summed))
+                // Fallback: legacy flat sum when prefab parts are unavailable.
+                if (!TryGetBaseStatsForChassis(chassisId, shipLevel, out ShipComponentAbilityStats summedFallback))
                     return;
+                partSum = new ShipFamilyStatsCalculator.SumResult
+                {
+                    TotalStats = summedFallback,
+                    MatchedComponentIds = new System.Collections.Generic.List<string>(),
+                    PerComponentStats = new System.Collections.Generic.List<ShipComponentAbilityStats>(),
+                };
             }
 
-            // [TITAN-ORBIT] Ship-tier growth = family shipLevelStatGrowthFraction (default 10% of base).
-            // Keep a pre-attribute copy so bullet VFX baselines reset on chassis swap without
-            // baking attribute FirePower boosts into ReferenceBullet* (that made tracers huge).
-            float shipTierGrowth = ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
-            if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition tierFamily) && tierFamily != null)
-                shipTierGrowth = tierFamily.ResolveShipLevelStatGrowthFraction();
-            ShipComponentAbilityStats chassisBaseline =
-                ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, shipLevel, shipTierGrowth);
+            ShipComponentAbilityStats summed = partSum.TotalStats;
+
+            int attributeSum = 0;
+            ShipAttributeUpgradeState attrs = default;
+            bool hasAttrs = false;
+            if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+            {
+                attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
+                hasAttrs = true;
+                attributeSum = SumAttributeLevels(attrs);
+            }
+
+            ShipAbilityLevelCounts abilityCounts = hasAttrs
+                ? ShipAttributeUpgradeLogic.ToAbilityLevelCounts(in attrs)
+                : default;
+
+            ShipComponentAbilityStats chassisBaseline;
+            if (partSum.MatchedComponentIds != null && partSum.MatchedComponentIds.Count > 0)
+            {
+                chassisBaseline = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                    partSum.MatchedComponentIds,
+                    partSum.PerComponentStats,
+                    shipLevel,
+                    in abilityCounts);
+                chassisBaseline = ShipComponentExtraLevelMath.ApplyMobilityPenalties(chassisBaseline, shipLevel);
+                if (TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition evalFamily) && evalFamily != null)
+                {
+                    chassisBaseline = evalFamily.ApplyStatFallbacks(chassisBaseline);
+                    chassisBaseline = evalFamily.ApplySpecialBonuses(chassisBaseline);
+                }
+            }
+            else
+            {
+                // No part list — treat fallback block as a single pool (count 1).
+                chassisBaseline = ShipComponentExtraLevelMath.EvaluatePool(
+                    summed, 1, shipLevel, in abilityCounts, isWeaponPool: false);
+                chassisBaseline = ShipComponentExtraLevelMath.ApplyMobilityPenalties(chassisBaseline, shipLevel);
+            }
 
             // --- Equipped upgrade cards (flat / multiplier modifiers on top of chassis+store) ---
             TryAddEquippedCardStatModifiers(em, shipEntity, chassisId, ref chassisBaseline);
@@ -317,24 +353,6 @@ namespace TitanOrbit.ECS
                 chassisIdentityChanged = !prevChassis.ChassisId.Equals(chassisKey)
                     || prevChassis.AppliedShipLevel != shipLevel
                     || prevChassis.AppliedBranchIndex != branchIndex;
-            }
-
-            int attributeSum = 0;
-            ShipAttributeUpgradeState attrs = default;
-            bool hasAttrs = false;
-            // --- Attribute upgrades (×10% for most; Move Speed = additive PerAbilityLevel) ---
-            if (em.HasComponent<ShipAttributeUpgradeState>(shipEntity))
-            {
-                attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
-                hasAttrs = true;
-                attributeSum = SumAttributeLevels(attrs);
-                ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, attrs);
-                // [TITAN-ORBIT] Move Speed HUD: add N × (move / accel / OD drain) PerAbilityLevel
-                // from the level-1 chassis sum — not ×1.1 and not ship-tier growth.
-                ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
-                    summed, out float moveStep, out float accelStep, out float odDrainStep);
-                ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
-                    ref effective, attrs, moveStep, accelStep, odDrainStep);
             }
 
             int equipmentFingerprint = ComputeEquippedLoadoutFingerprint(em, shipEntity);
@@ -459,9 +477,12 @@ namespace TitanOrbit.ECS
                 float liveHullSize = ShipMassLogic.ComputeHullMassReference(
                     liveComponentSize, ShipMassLogic.DefaultBaseMass);
 
-                // [TITAN-ORBIT] Mass reference uses level-1 health so upgrades change weight feel.
+                // [TITAN-ORBIT] Mass reference uses level-1 Extra Level health (ability 0).
                 ShipComponentAbilityStats levelOneStats =
-                    ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, 1);
+                    partSum.MatchedComponentIds != null && partSum.MatchedComponentIds.Count > 0
+                        ? ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                            partSum.MatchedComponentIds, partSum.PerComponentStats, shipLevel: 1)
+                        : ShipComponentStoreData.GetEffectiveStatsAtShipLevel(summed, 1);
                 float referenceHealth = Mathf.Max(1f, levelOneStats.healthCap);
 
                 var motor = em.GetComponentData<ShipMotorConfig>(shipEntity);
@@ -589,35 +610,17 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Rebuilds level-1 chassis stats including moon-store ship components, with correct
-        /// stack aggregation (primary ×1 + extras × extraStackWeight of own stats).
-        /// Returns false when there are no store ShipComponent rows (caller uses chassis-only path).
+        /// Collects chassis prefab parts (plus moon-store ship components when equipped) as a
+        /// raw <see cref="ShipFamilyStatsCalculator.SumResult"/> for Extra Level evaluation.
+        /// Aggregation here is primary-only; ship/ability scaling happens in ApplyToShip.
         /// </summary>
-        static bool TryGetBaseStatsWithStoreComponents(
+        static bool TryGetChassisPartSum(
             EntityManager em,
             Entity shipEntity,
             string chassisId,
-            out ShipComponentAbilityStats baseStats)
+            out ShipFamilyStatsCalculator.SumResult sum)
         {
-            baseStats = default;
-            if (!em.HasBuffer<EquippedEquipmentElement>(shipEntity))
-                return false;
-
-            var buf = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
-            var extraIds = new System.Collections.Generic.List<string>(4);
-            for (int i = 0; i < buf.Length; i++)
-            {
-                var e = buf[i];
-                if ((StoreItemType)e.ItemType != StoreItemType.ShipComponent)
-                    continue;
-                string id = e.ComponentId.ToString();
-                if (!string.IsNullOrWhiteSpace(id))
-                    extraIds.Add(id);
-            }
-
-            if (extraIds.Count == 0)
-                return false;
-
+            sum = default;
             var config = Config;
             if (config == null || string.IsNullOrEmpty(chassisId))
                 return false;
@@ -628,16 +631,38 @@ namespace TitanOrbit.ECS
             if (!TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family) || family == null)
                 return false;
 
-            // Raw prefab sum (no propulsion yet) → append store parts → shared aggregation.
+            // --- Raw prefab children (no Extra Level yet) ---
             var raw = ShipFamilyStatsCalculator.SumFromPrefabHierarchy(
                 tier.prefab, family, shipLevel: 1, applyPropulsionAndWeaponRules: false);
-            var merged = ShipFamilyStatsCalculator.AppendExtraComponentsAndAggregate(
-                raw, family, extraIds, shipLevel: 1);
-            if (ShipComponentAbilityStatsMath.IsAllZero(merged.TotalStats))
-                return false;
 
-            baseStats = merged.TotalStats;
-            return true;
+            // --- Optional moon-store equipment appended into the same part lists ---
+            var extraIds = new System.Collections.Generic.List<string>(4);
+            if (em.HasBuffer<EquippedEquipmentElement>(shipEntity))
+            {
+                var buf = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
+                for (int i = 0; i < buf.Length; i++)
+                {
+                    var e = buf[i];
+                    if ((StoreItemType)e.ItemType != StoreItemType.ShipComponent)
+                        continue;
+                    string id = e.ComponentId.ToString();
+                    if (!string.IsNullOrWhiteSpace(id))
+                        extraIds.Add(id);
+                }
+            }
+
+            if (extraIds.Count > 0)
+            {
+                sum = ShipFamilyStatsCalculator.AppendExtraComponentsAndAggregate(
+                    raw, family, extraIds, shipLevel: 1);
+            }
+            else
+            {
+                sum = raw;
+                ShipFamilyStatsCalculator.ApplySharedAggregationRules(ref sum, family, shipLevel: 1);
+            }
+
+            return sum.MatchedComponentIds != null && sum.MatchedComponentIds.Count > 0;
         }
 
         /// <summary>

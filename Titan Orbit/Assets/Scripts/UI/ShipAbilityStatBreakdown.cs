@@ -10,8 +10,10 @@ namespace TitanOrbit.UI
 {
     /// <summary>
     /// Telemetry-style calculation cards for the ten bottom Ship Ability chips.
-    /// Builds grouped part grids (N× same component) and walks parts → stack → ship tier →
-    /// ability purchases → static capacity readouts (max cruise, max ram at full speed).
+    /// Builds grouped part grids (N× same component) and walks Extra Level math:
+    /// non-weapons <c>Base + PerExtra × ((shipLevel−1) + abilityLevel + (N−1))</c>;
+    /// weapons <c>Base + PerExtra × ((shipLevel−1) + abilityLevel)</c> per barrel;
+    /// weapon bullet speed <c>Base + PerExtra × abilityLevel</c> only.
     /// Presentation-only — never writes ECS.
     /// <para>
     /// [TITAN-ORBIT] Intentionally <b>not</b> live: no per-frame HP/energy/speed/cargo vitals.
@@ -56,21 +58,21 @@ namespace TitanOrbit.UI
             public string DisplayName;
             /// <summary>How many instances of this id are the pool primary (0 or 1 usually).</summary>
             public int PrimaryCount;
-            /// <summary>How many instances of this id are extras (weighted).</summary>
+            /// <summary>How many instances of this id are extras (count toward Extra Level only).</summary>
             public int ExtraCount;
-            /// <summary>Authored field value per instance (before weight).</summary>
+            /// <summary>Authored field value per instance (Base shown for primary; extras ignored for Base).</summary>
             public float AuthoredEach;
-            /// <summary>Weight applied to each extra (primary always uses 1).</summary>
+            /// <summary>[LEGACY] Unused — Extra Stack Weight retired (kept so older tip builders compile).</summary>
             public float ExtraWeight;
-            /// <summary>PrimaryCount × AuthoredEach × 1.</summary>
+            /// <summary>Primary Base contribution (extras add 0 Base).</summary>
             public float PrimaryContrib;
-            /// <summary>ExtraCount × AuthoredEach × ExtraWeight.</summary>
+            /// <summary>Always 0 under Extra Level (extras raise count, not Base).</summary>
             public float ExtraContrib;
 
-            /// <summary>Total contribution to the pool from this id.</summary>
+            /// <summary>Total Base contribution to the pool from this id (primary only).</summary>
             public float ContribTotal => PrimaryContrib + ExtraContrib;
 
-            /// <summary>Total instance count.</summary>
+            /// <summary>Total instance count N (Extra Level uses (N−1) extras in the multiplier).</summary>
             public int Count => PrimaryCount + ExtraCount;
         }
 
@@ -95,29 +97,29 @@ namespace TitanOrbit.UI
                 case 0:
                     value = Mathf.Max(0f, eff.firePower);
                     unitSuffix = "/hit";
-                    nextStep = NextTenPercentStep(value, abilityLv);
+                    nextStep = Mathf.Max(0f, eff.firePowerPerExtraLevel);
                     break;
                 case 1:
                     value = Mathf.Max(0f, eff.bulletSpeed);
-                    nextStep = NextTenPercentStep(value, abilityLv);
+                    nextStep = Mathf.Max(0f, eff.bulletSpeedPerExtraLevel);
                     break;
                 case 2:
                     value = Mathf.Max(0f, eff.healthCap);
-                    nextStep = NextTenPercentStep(value, abilityLv);
+                    nextStep = Mathf.Max(0f, eff.healthCapPerExtraLevel);
                     break;
                 case 3:
                     value = Mathf.Max(0f, eff.healthRegen);
                     unitSuffix = "/s";
-                    nextStep = NextTenPercentStep(value, abilityLv);
+                    nextStep = Mathf.Max(0f, eff.healthRegenPerExtraLevel);
                     break;
                 case 4:
                     value = Mathf.Max(0f, eff.energyCap);
-                    nextStep = NextTenPercentStep(value, abilityLv);
+                    nextStep = Mathf.Max(0f, eff.energyCapPerExtraLevel);
                     break;
                 case 5:
                     value = Mathf.Max(0f, eff.energyRegen);
                     unitSuffix = "/s";
-                    nextStep = NextTenPercentStep(value, abilityLv);
+                    nextStep = Mathf.Max(0f, eff.energyRegenPerExtraLevel);
                     break;
                 case 6:
                     // [TITAN-ORBIT] Static snapshot cruise (mass-taxed at last rebuild), not per-frame
@@ -125,43 +127,32 @@ namespace TitanOrbit.UI
                     value = Mathf.Max(0f, live.CruiseMaxSpeed > 0.01f
                         ? live.CruiseMaxSpeed
                         : live.ChassisMaxSpeed);
-                    // Next purchase still adds a chassis PerAbilityLevel step (subtractive tax
-                    // does not shrink that delta), so preview stays MoveStepPreview.
+                    // Next purchase adds one Extra Level of primary Move PerExtraLevel.
                     nextStep = Mathf.Max(0f, live.MoveStepPreview);
                     if (nextStep <= 0.0001f)
-                        nextStep = Mathf.Max(0f, eff.moveSpeedPerAbilityLevel);
+                        nextStep = Mathf.Max(0f, eff.moveSpeedPerExtraLevel);
                     break;
                 case 7:
-                    // [TITAN-ORBIT] Static post–mass-tax turn from the same snapshot; +10% from chassis.
+                    // [TITAN-ORBIT] Static post–mass-tax turn from the same snapshot.
                     float chassisTurn = live.ChassisTurnDeg > 0.01f ? live.ChassisTurnDeg : eff.turnSpeed;
                     value = Mathf.Max(0f, live.TaxedTurnDeg > 0.01f ? live.TaxedTurnDeg : chassisTurn);
                     unitSuffix = "°/s";
-                    nextStep = NextTenPercentStep(chassisTurn, abilityLv);
+                    nextStep = Mathf.Max(0f, ShipPropulsionAggregation.ConvertTurnDefinitionToDegreesPerSecond(
+                        eff.turnSpeedPerExtraLevel));
                     break;
                 case 8:
                     value = Mathf.Max(0f, eff.maxGems);
-                    nextStep = NextTenPercentStep(value, abilityLv);
+                    nextStep = Mathf.Max(0f, eff.maxGemsPerExtraLevel);
                     break;
                 case 9:
                     value = Mathf.Max(0f, eff.maxPeople);
-                    nextStep = NextTenPercentStep(value, abilityLv);
+                    nextStep = Mathf.Max(0f, eff.maxPeoplePerExtraLevel);
                     break;
                 default:
                     value = 0f;
                     nextStep = 0f;
                     break;
             }
-        }
-
-        /// <summary>
-        /// Next +10% purchase adds MultiplierPerLevel of the <b>pre-ability</b> base.
-        /// Approximate: current / (1 + 0.1×Lv) × 0.1.
-        /// </summary>
-        static float NextTenPercentStep(float currentEffective, int abilityLv)
-        {
-            float mult = 1f + Mathf.Max(0, abilityLv) * ShipAttributeUpgradeLogic.MultiplierPerLevel;
-            float pre = currentEffective / Mathf.Max(0.0001f, mult);
-            return pre * ShipAttributeUpgradeLogic.MultiplierPerLevel;
         }
 
         /// <summary>
@@ -236,8 +227,8 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Groups parts that contribute to <paramref name="field"/>, collapsing identical ids.
-        /// When <paramref name="useStackWeight"/> is true, uses stack pool formula B (primary ×1,
-        /// extras × extraStackWeight).
+        /// When <paramref name="useStackWeight"/> is true (legacy name), uses primary-per-pool
+        /// Extra Level grouping: primary supplies Base; extras raise component count only.
         /// </summary>
         public static void CollectGroupedRows(
             in ShipSpeedometerStatTooltips.PartCache parts,
@@ -273,11 +264,11 @@ namespace TitanOrbit.UI
                         ComponentId = id,
                         DisplayName = ResolvePartName(parts.Family, id),
                         AuthoredEach = authored,
-                        ExtraWeight = 1f
+                        ExtraWeight = 0f
                     };
                 }
 
-                // No stack weight — every instance is a full add (treat as "primary" for display).
+                // Flat list mode — every instance is shown as primary for display.
                 row.PrimaryCount++;
                 row.PrimaryContrib += authored;
                 row.AuthoredEach = authored;
@@ -288,7 +279,9 @@ namespace TitanOrbit.UI
             into.Sort((a, b) => b.ContribTotal.CompareTo(a.ContribTotal));
         }
 
-        /// <summary>Formula B grouping across stack pools for one stat field.</summary>
+        /// <summary>
+        /// Primary-per-pool grouping for Extra Level: primary Base; extras count only.
+        /// </summary>
         static void CollectStackedGroupedRows(
             in ShipSpeedometerStatTooltips.PartCache parts,
             StatField field,
@@ -334,9 +327,6 @@ namespace TitanOrbit.UI
                     string id = parts.Ids[gi];
                     float authored = ReadField(parts.Stats[gi], field);
                     bool isPrimary = gi == primaryGlobal;
-                    float weight = isPrimary
-                        ? 1f
-                        : ShipComponentStackAggregation.ResolveExtraStackWeight(parts.Stats[gi], id);
 
                     if (!map.TryGetValue(id, out GroupedPartRow row))
                     {
@@ -345,29 +335,21 @@ namespace TitanOrbit.UI
                             ComponentId = id,
                             DisplayName = ResolvePartName(parts.Family, id),
                             AuthoredEach = authored,
-                            ExtraWeight = isPrimary
-                                ? ShipComponentStackAggregation.ResolveExtraStackWeight(parts.Stats[gi], id)
-                                : weight
+                            ExtraWeight = 0f
                         };
-                        // Prefer storing the extra weight even when first sighting is primary.
-                        if (isPrimary)
-                        {
-                            row.ExtraWeight = ShipComponentStackAggregation.ResolveExtraStackWeight(
-                                parts.Stats[gi], id);
-                        }
                     }
 
-                    row.AuthoredEach = authored;
                     if (isPrimary)
                     {
+                        row.AuthoredEach = authored;
                         row.PrimaryCount++;
-                        row.PrimaryContrib += authored; // ×100%
+                        row.PrimaryContrib += authored;
                     }
                     else
                     {
+                        // [TITAN-ORBIT] Extra Base is ignored — only raises numberOfComponents.
                         row.ExtraCount++;
-                        row.ExtraWeight = weight;
-                        row.ExtraContrib += authored * weight;
+                        row.ExtraContrib = 0f;
                     }
 
                     map[id] = row;
@@ -386,8 +368,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Appends a clear PRIMARY / EXTRAS parts grid.
-        /// Example: <c>1× Engine_1  base 12 ×100% = +12</c> then <c>2× Engine_1  base 12 ×10% = +2.4</c>.
+        /// Appends a clear PRIMARY / EXTRAS parts grid for Extra Level.
+        /// Example: <c>1× Engine_1  Base 12</c> then <c>2× Engine_1  count only</c>.
         /// </summary>
         /// <param name="sectionTitle">
         /// Optional inner-panel banner label. Null = default PARTS / STACK.
@@ -416,17 +398,17 @@ namespace TitanOrbit.UI
 
             if (useStackWeight)
             {
-                sb.AppendLine("<color=#5B7A94>primary x100% of base · extras x their extraStackWeight</color>");
+                sb.AppendLine("<color=#5B7A94>Base from PRIMARY only · extras raise Extra Level count</color>");
             }
             else
             {
-                sb.AppendLine("<color=#5B7A94>full sum — no stack weight</color>");
+                sb.AppendLine("<color=#5B7A94>flat list (no pool primary)</color>");
             }
 
             float poolSum = 0f;
             float primarySum = 0f;
-            float extrasSum = 0f;
             int extraInstances = 0;
+            int totalCount = 0;
 
             // --- PRIMARY block ---
             bool wrotePrimaryHeader = false;
@@ -438,12 +420,13 @@ namespace TitanOrbit.UI
                 if (!wrotePrimaryHeader)
                 {
                     ShipStatTooltipChrome.AppendSubDivider(sb);
-                    sb.AppendLine("<color=#5B9BD5>> PRIMARY</color> <color=#5B7A94>(x100% of base)</color>");
+                    sb.AppendLine("<color=#5B9BD5>> PRIMARY</color> <color=#5B7A94>(Base)</color>");
                     wrotePrimaryHeader = true;
                 }
 
                 primarySum += r.PrimaryContrib;
                 poolSum += r.PrimaryContrib;
+                totalCount += r.PrimaryCount;
                 AppendPartMathLine(
                     sb,
                     r.PrimaryCount,
@@ -452,7 +435,8 @@ namespace TitanOrbit.UI
                     1f,
                     r.PrimaryContrib,
                     unitLabel,
-                    highlight: true);
+                    highlight: true,
+                    countOnly: false);
             }
 
             if (!wrotePrimaryHeader && useStackWeight)
@@ -468,46 +452,48 @@ namespace TitanOrbit.UI
                 if (!wroteExtraHeader)
                 {
                     ShipStatTooltipChrome.AppendSubDivider(sb);
-                    sb.AppendLine("<color=#C9A0FF>> EXTRAS</color> <color=#5B7A94>(each x own weight)</color>");
+                    sb.AppendLine("<color=#C9A0FF>> EXTRAS</color> <color=#5B7A94>(count toward Extra Level)</color>");
                     wroteExtraHeader = true;
                 }
 
-                extrasSum += r.ExtraContrib;
-                poolSum += r.ExtraContrib;
                 extraInstances += r.ExtraCount;
+                totalCount += r.ExtraCount;
                 AppendPartMathLine(
                     sb,
                     r.ExtraCount,
                     r.DisplayName,
                     r.AuthoredEach,
-                    r.ExtraWeight,
-                    r.ExtraContrib,
+                    0f,
+                    0f,
                     unitLabel,
-                    highlight: false);
+                    highlight: false,
+                    countOnly: true);
             }
 
             if (useStackWeight && !wroteExtraHeader)
                 sb.AppendLine("<color=#888888>EXTRAS — none</color>");
 
             sb.AppendLine();
-            if (useStackWeight && (primarySum > 0.0001f || extrasSum > 0.0001f))
+            if (useStackWeight)
             {
-                sb.Append("Primary  +").Append(FDetail(primarySum)).Append(" ").Append(unitLabel);
+                sb.Append("Primary Base  +").Append(FDetail(primarySum)).Append(" ").Append(unitLabel);
                 if (extraInstances > 0)
                 {
-                    sb.Append("  +  ").Append(extraInstances.ToString(CultureInfo.InvariantCulture))
-                        .Append("× extras +").Append(FDetail(extrasSum)).Append(" ").Append(unitLabel);
+                    sb.Append("  ·  ").Append(extraInstances.ToString(CultureInfo.InvariantCulture))
+                        .Append("× extras (count)");
                 }
 
+                sb.Append("  ·  N=").Append(totalCount.ToString(CultureInfo.InvariantCulture));
                 sb.AppendLine();
             }
 
-            sb.Append("<color=#5B7A94>POOL</color>  <color=#AAEEDD>").Append(FDetail(poolSum)).Append("</color> ")
+            sb.Append("<color=#5B7A94>BASE</color>  <color=#AAEEDD>").Append(FDetail(poolSum)).Append("</color> ")
                 .Append(unitLabel).AppendLine();
         }
 
         /// <summary>
-        /// One math line: <c>2× Name  base 12.0 ×10% = +2.4 Move</c>.
+        /// One math line: primary <c>1× Name  Base 12.0 = +12 Move</c>,
+        /// or extras <c>2× Name  count only</c>.
         /// </summary>
         static void AppendPartMathLine(
             StringBuilder sb,
@@ -517,7 +503,8 @@ namespace TitanOrbit.UI
             float weight,
             float contribTotal,
             string unitLabel,
-            bool highlight)
+            bool highlight,
+            bool countOnly = false)
         {
             string countStr = count.ToString(CultureInfo.InvariantCulture) + "×";
             sb.Append("<mspace=0.58em>");
@@ -526,22 +513,28 @@ namespace TitanOrbit.UI
                 sb.Append("<color=#AAEEDD>").Append(PadRightPlain(displayName, 14)).Append("</color>");
             else
                 sb.Append(PadRightPlain(displayName, 14));
-            sb.Append(" base ").Append(PadLeftPlain(FDetail(authoredEach), 6));
-            sb.Append(" ").Append(FormatWeight(weight));
-            if (count > 1 && Mathf.Abs(weight - 1f) > 0.001f)
+
+            if (countOnly)
             {
-                // Show per-extra then total: 2 × (12×10%) = +2.4
-                float eachContrib = authoredEach * weight;
-                sb.Append(" → ").Append(count.ToString(CultureInfo.InvariantCulture))
-                    .Append("×").Append(FDetail(eachContrib));
+                sb.Append(" <color=#5B7A94>count only</color> (+")
+                    .Append(count.ToString(CultureInfo.InvariantCulture))
+                    .Append(" Extra Level)");
+            }
+            else
+            {
+                sb.Append(" Base ").Append(PadLeftPlain(FDetail(authoredEach), 6));
+                if (Mathf.Abs(weight - 1f) > 0.001f)
+                    sb.Append(" ").Append(FormatWeight(weight));
+                sb.Append(" = +").Append(FDetail(contribTotal)).Append(" ").Append(unitLabel);
             }
 
-            sb.Append(" = +").Append(FDetail(contribTotal)).Append(" ").Append(unitLabel);
             sb.Append("</mspace>");
             sb.AppendLine();
         }
 
-        /// <summary>+10% ability pipeline: parts → tier → ability × → equals chip.</summary>
+        /// <summary>
+        /// Extra Level pipeline: primary Base → + PerExtra × ((shipLv−1)+ability+(N−1)).
+        /// </summary>
         static void AppendTenPercentPipeline(
             StringBuilder sb,
             in ShipSpeedometerStatTooltips.PartCache parts,
@@ -557,29 +550,45 @@ namespace TitanOrbit.UI
 
             int shipLevel = Mathf.Max(1, live.Ship.ShipLevel);
             int perLvl = Mathf.Max(0, shipLevel - 1);
-            float growth = parts.Family != null
-                ? parts.Family.ResolveShipLevelStatGrowthFraction()
-                : ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
+            float perExtra = ReadPerExtraLevel(live.EffectiveStats, field);
+            int componentCount = CountFieldPoolMembers(in parts, field);
+            int extraLevels = ShipComponentExtraLevelMath.CountExtraLevels(shipLevel, abilityLv, componentCount);
 
-            // Reconstruct pool from grid sum already printed — approximate tier from final/ability.
-            float abilityMult = 1f + abilityLv * ShipAttributeUpgradeLogic.MultiplierPerLevel;
-            float afterAbility = finalEffective;
-            float afterTier = afterAbility / Mathf.Max(0.0001f, abilityMult);
-            float poolEst = afterTier / Mathf.Max(0.0001f, 1f + perLvl * growth);
-
-            // --- Pipeline block (tier → ability purchases) ---
+            // --- Pipeline block (Extra Level) ---
             ShipStatTooltipChrome.AppendSectionBanner(sb, "PIPELINE", "7DFFB2");
-            sb.Append("Ship Lv ").Append(shipLevel.ToString(CultureInfo.InvariantCulture));
-            if (perLvl > 0)
+            if (field == StatField.BulletSpeed)
             {
-                sb.Append("  +").Append(F0(growth * 100f)).Append("% x").Append(perLvl.ToString(CultureInfo.InvariantCulture));
-                sb.Append(" -> ").Append(FDetail(afterTier)).AppendLine();
+                // [TITAN-ORBIT] Weapon bullet speed: ability purchases only.
+                int speedLevels = ShipComponentExtraLevelMath.CountWeaponBulletSpeedExtraLevels(abilityLv);
+                sb.AppendLine("<color=#5B7A94>Base + PerExtra × ability  — no ship level, no N</color>");
+                sb.Append("Ability ").Append(abilityLv.ToString(CultureInfo.InvariantCulture));
+                sb.AppendLine();
+                sb.Append("Extra Levels  ").Append(speedLevels.ToString(CultureInfo.InvariantCulture));
+            }
+            else if (field == StatField.FirePower || field == StatField.BulletRange)
+            {
+                // [TITAN-ORBIT] Weapons ignore N — each barrel uses ship + ability only.
+                int weaponLevels = ShipComponentExtraLevelMath.CountWeaponExtraLevels(shipLevel, abilityLv);
+                sb.AppendLine("<color=#5B7A94>Base + PerExtra × ((shipLv−1) + ability)  — per barrel, no N stack</color>");
+                sb.Append("Ship Lv ").Append(shipLevel.ToString(CultureInfo.InvariantCulture));
+                sb.Append("  (shipLv−1=").Append(perLvl.ToString(CultureInfo.InvariantCulture)).Append(")");
+                sb.Append("  Ability ").Append(abilityLv.ToString(CultureInfo.InvariantCulture));
+                sb.AppendLine();
+                sb.Append("Extra Levels  ").Append(weaponLevels.ToString(CultureInfo.InvariantCulture));
             }
             else
-                sb.Append("  ").Append(FDetail(poolEst)).Append(" <color=#5B7A94>(no tier growth)</color>").AppendLine();
+            {
+                sb.AppendLine("<color=#5B7A94>Base + PerExtra × ((shipLv−1) + ability + (N−1))</color>");
+                sb.Append("Ship Lv ").Append(shipLevel.ToString(CultureInfo.InvariantCulture));
+                sb.Append("  (shipLv−1=").Append(perLvl.ToString(CultureInfo.InvariantCulture)).Append(")");
+                sb.Append("  Ability ").Append(abilityLv.ToString(CultureInfo.InvariantCulture));
+                sb.Append("  N=").Append(componentCount.ToString(CultureInfo.InvariantCulture));
+                sb.Append("  (N−1=").Append(Mathf.Max(0, componentCount - 1).ToString(CultureInfo.InvariantCulture)).Append(")");
+                sb.AppendLine();
+                sb.Append("Extra Levels  ").Append(extraLevels.ToString(CultureInfo.InvariantCulture));
+            }
 
-            sb.Append("Ability Lv").Append(abilityLv.ToString(CultureInfo.InvariantCulture));
-            sb.Append("  x").Append(FDetail(abilityMult));
+            sb.Append("  × PerExtra ").Append(FDetail(perExtra));
             sb.Append(" -> <b><color=#AAEEDD>").Append(FResult(finalEffective)).Append("</color></b>").AppendLine();
         }
 
@@ -591,7 +600,7 @@ namespace TitanOrbit.UI
             int abilityLv)
         {
             _ = attrs;
-            sb.AppendLine("<color=#5B7A94>PRIMARY x100% of base; each EXTRA at xextraStackWeight. Accel + OD drain share stacking.</color>");
+            sb.AppendLine("<color=#5B7A94>Extra Level: Base + PerExtra×((shipLv−1)+ability+(N−1)). Accel + OD drain share Move ability.</color>");
             AppendGroupedFieldGrid(sb, parts, StatField.MoveSpeed, "Move", useStackWeight: true, sectionTitle: "MOVE PARTS");
             AppendGroupedFieldGrid(sb, parts, StatField.AccelerationCap, "Accel", useStackWeight: true, sectionTitle: "ACCEL PARTS");
 
@@ -609,7 +618,7 @@ namespace TitanOrbit.UI
 
             float moveStep = live.MoveStepPreview;
             if (moveStep <= 0.0001f)
-                moveStep = Mathf.Max(0f, parts.Propulsion.moveSpeedPerAbilityLevel);
+                moveStep = Mathf.Max(0f, parts.Propulsion.moveSpeedPerExtraLevel);
             sb.Append("Purchased  Lv").Append(abilityLv.ToString(CultureInfo.InvariantCulture));
             sb.Append(" x +").Append(FDetail(moveStep)).Append(" Move/buy").AppendLine();
         }
@@ -712,6 +721,51 @@ namespace TitanOrbit.UI
                 StatField.RammingPower => s.rammingPower,
                 _ => 0f
             };
+
+        /// <summary>Primary PerExtraLevel step for the chip field (from evaluated hull stats).</summary>
+        static float ReadPerExtraLevel(in ShipComponentAbilityStats s, StatField field) =>
+            field switch
+            {
+                StatField.FirePower => s.firePowerPerExtraLevel,
+                StatField.BulletSpeed => s.bulletSpeedPerExtraLevel,
+                StatField.HealthCap => s.healthCapPerExtraLevel,
+                StatField.HealthRegen => s.healthRegenPerExtraLevel,
+                StatField.EnergyCap => s.energyCapPerExtraLevel,
+                StatField.EnergyRegen => s.energyRegenPerExtraLevel,
+                StatField.MoveSpeed => s.moveSpeedPerExtraLevel,
+                StatField.TurnSpeed => s.turnSpeedPerExtraLevel,
+                StatField.MaxGems => s.maxGemsPerExtraLevel,
+                StatField.MaxPeople => s.maxPeoplePerExtraLevel,
+                StatField.AccelerationCap => s.accelerationCapPerExtraLevel,
+                StatField.BulletRange => s.bulletRangePerExtraLevel,
+                StatField.RammingPower => s.rammingPowerPerExtraLevel,
+                _ => 0f
+            };
+
+        /// <summary>How many non-cosmetic parts sit in the same Extra Level pool for this field.</summary>
+        static int CountFieldPoolMembers(in ShipSpeedometerStatTooltips.PartCache parts, StatField field)
+        {
+            if (!parts.Valid || parts.Ids == null)
+                return 0;
+
+            if (field is StatField.MoveSpeed or StatField.AccelerationCap)
+                return ShipComponentStackAggregation.CountPoolMembers(
+                    ShipComponentStackAggregation.PropulsionPoolKey, parts.Ids);
+
+            // Prefer the first matching part's pool key; weapons share "Weapon".
+            for (int i = 0; i < parts.Ids.Count; i++)
+            {
+                string id = parts.Ids[i];
+                if (string.IsNullOrWhiteSpace(id) || ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
+                    continue;
+                if (i < parts.Stats.Count && ReadField(parts.Stats[i], field) <= 0.0001f)
+                    continue;
+                return ShipComponentStackAggregation.CountPoolMembers(
+                    ShipComponentStackAggregation.ResolveStackPoolKey(id), parts.Ids);
+            }
+
+            return 0;
+        }
 
         static string ResolvePartName(ShipFamilyDefinition family, string componentId)
         {

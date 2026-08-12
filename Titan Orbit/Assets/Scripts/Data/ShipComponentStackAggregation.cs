@@ -5,12 +5,12 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
-    /// Multi-part stack aggregation: primary contributes 100% of its stats; each extra contributes
-    /// <see cref="ShipComponentAbilityStats.extraStackWeight"/> of <b>its own</b> stats.
+    /// Multi-part stack aggregation: each pool keeps only the <b>primary</b> (highest-valued) part's
+    /// stats. Extra copies contribute through the Extra Level formula's <c>(N−1)</c>
+    /// term — not by adding discounted base stats.
     /// <para>
     /// [TITAN-ORBIT] Pools are by part type, except Engines + Thrusters share one
-    /// <see cref="PropulsionPoolKey"/> pool (same grouping as Move/Accel).
-    /// Default weight is 1 (full sum); propulsion defaults to 0.1 when unset.
+    /// <see cref="PropulsionPoolKey"/> pool. Paired with <see cref="ShipComponentExtraLevelMath"/>.
     /// </para>
     /// </summary>
     public static class ShipComponentStackAggregation
@@ -18,11 +18,23 @@ namespace TitanOrbit.Data
         /// <summary>Shared pool key for engines and thrusters.</summary>
         public const string PropulsionPoolKey = "Propulsion";
 
-        /// <summary>Default extra weight when a part did not author <c>extraStackWeight</c>.</summary>
-        public const float DefaultExtraStackWeight = 1f;
+        /// <summary>
+        /// One stack pool after primary selection — feeds Extra Level evaluation.
+        /// </summary>
+        public struct PoolContribution
+        {
+            /// <summary>Pool key (Weapon, Propulsion, Cockpit, …).</summary>
+            public string PoolKey;
 
-        /// <summary>Default extra weight for engines/thrusters when unset (matches legacy 10% extras).</summary>
-        public const float DefaultPropulsionExtraStackWeight = 0.1f;
+            /// <summary>Stats from the highest-valued member only.</summary>
+            public ShipComponentAbilityStats PrimaryStats;
+
+            /// <summary>Total members in the pool (including primary).</summary>
+            public int ComponentCount;
+
+            /// <summary>True when this pool is weapons (fire power divides by count).</summary>
+            public bool IsWeaponPool;
+        }
 
         /// <summary>
         /// Pool key for stacking: Engines+Thrusters → <see cref="PropulsionPoolKey"/>;
@@ -36,59 +48,51 @@ namespace TitanOrbit.Data
             string type = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
             if (string.IsNullOrWhiteSpace(type))
                 return "Other";
+
+            // [TITAN-ORBIT] Weapon Bullet / Weapon Cannon share one Weapon pool for Extra Level count.
+            if (ShipFamilyPartTypes.IsWeapon(type))
+                return "Weapon";
+
             return type.Trim();
         }
 
-        /// <summary>
-        /// Resolves the weight used when this part is an <b>extra</b> in its pool.
-        /// Authored <c>&gt; 0</c> wins; else propulsion → 0.1, everything else → 1.
-        /// </summary>
-        public static float ResolveExtraStackWeight(in ShipComponentAbilityStats stats, string componentId)
-        {
-            if (stats.extraStackWeight > 0.0001f)
-                return stats.extraStackWeight;
-
-            if (ShipComponentAbilityStats.IsPropulsionComponent(componentId))
-                return DefaultPropulsionExtraStackWeight;
-
-            return DefaultExtraStackWeight;
-        }
+        /// <summary>True when the pool key is the shared weapon pool.</summary>
+        public static bool IsWeaponPoolKey(string poolKey) =>
+            string.Equals(poolKey, "Weapon", StringComparison.OrdinalIgnoreCase);
 
         /// <summary>
-        /// Suggested seed for Scan / ProfileSet: 0.1 for engines/thrusters, else 1.
-        /// </summary>
-        public static float GetSuggestedExtraStackWeight(string componentId) =>
-            ShipComponentAbilityStats.IsPropulsionComponent(componentId)
-                ? DefaultPropulsionExtraStackWeight
-                : DefaultExtraStackWeight;
-
-        /// <summary>
-        /// Same seed as <see cref="GetSuggestedExtraStackWeight"/> when you only have a part type
-        /// (ProfileSet defaults), not a component id.
-        /// </summary>
-        public static float GetSuggestedExtraStackWeightForPartType(string partType) =>
-            ShipFamilyPartTypes.IsPropulsion(partType)
-                ? DefaultPropulsionExtraStackWeight
-                : DefaultExtraStackWeight;
-
-        /// <summary>
-        /// Rebuilds hull totals from per-part lists using weighted stack pools (formula B).
-        /// Call before weapon max / family fallback passes.
+        /// Rebuilds hull <b>primary</b> totals from per-part lists (no Extra Level yet).
+        /// Call before family fallbacks; evaluate later with <see cref="ShipComponentExtraLevelMath"/>.
         /// </summary>
         public static ShipComponentAbilityStats AggregateAllPools(
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
         {
-            var total = default(ShipComponentAbilityStats);
+            AggregatePrimaries(componentIds, perComponentStats, out ShipComponentAbilityStats combined, out _);
+            return combined;
+        }
+
+        /// <summary>
+        /// Primary-per-pool aggregation plus the list of pool contributions (count + primary stats).
+        /// </summary>
+        public static void AggregatePrimaries(
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats,
+            out ShipComponentAbilityStats combinedPrimary,
+            out List<PoolContribution> pools)
+        {
+            combinedPrimary = default;
+            pools = new List<PoolContribution>(8);
+
             if (componentIds == null || perComponentStats == null)
-                return total;
+                return;
 
             int count = Mathf.Min(componentIds.Count, perComponentStats.Count);
             if (count <= 0)
-                return total;
+                return;
 
             // --- Group indices by pool key ---
-            var pools = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+            var groups = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < count; i++)
             {
                 string id = componentIds[i];
@@ -98,28 +102,55 @@ namespace TitanOrbit.Data
                     continue;
 
                 string key = ResolveStackPoolKey(id);
-                if (!pools.TryGetValue(key, out List<int> list))
+                if (!groups.TryGetValue(key, out List<int> list))
                 {
                     list = new List<int>(4);
-                    pools[key] = list;
+                    groups[key] = list;
                 }
 
                 list.Add(i);
             }
 
-            foreach (KeyValuePair<string, List<int>> pair in pools)
+            foreach (KeyValuePair<string, List<int>> pair in groups)
             {
-                ShipComponentAbilityStats poolStats = AggregatePoolWeighted(
+                PoolContribution contrib = AggregatePoolPrimary(
                     pair.Key, pair.Value, componentIds, perComponentStats);
-                total.AddInPlace(poolStats);
+                pools.Add(contrib);
+                combinedPrimary.AddInPlace(contrib.PrimaryStats);
             }
-
-            return total;
         }
 
         /// <summary>
-        /// Weighted aggregate for one pool: primary ×1 + extras × ResolveExtraStackWeight.
-        /// <see cref="ShipComponentAbilityStats.extraSpeedPercent"/> uses max (unweighted).
+        /// Primary-only aggregate for one pool. Extras do not add base stats.
+        /// </summary>
+        public static PoolContribution AggregatePoolPrimary(
+            string poolKey,
+            List<int> memberIndices,
+            IReadOnlyList<string> componentIds,
+            IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
+        {
+            var result = new PoolContribution
+            {
+                PoolKey = poolKey ?? string.Empty,
+                PrimaryStats = default,
+                ComponentCount = 0,
+                IsWeaponPool = IsWeaponPoolKey(poolKey),
+            };
+
+            if (memberIndices == null || memberIndices.Count == 0)
+                return result;
+
+            int primaryLocal = PickPrimaryLocalIndex(poolKey, memberIndices, perComponentStats);
+            int primaryGlobal = memberIndices[primaryLocal];
+
+            result.PrimaryStats = perComponentStats[primaryGlobal];
+            result.ComponentCount = memberIndices.Count;
+            return result;
+        }
+
+        /// <summary>
+        /// [LEGACY name] Primary-only pool aggregate for older call sites.
+        /// Extras do not add base stats — they raise Extra Level <c>(N−1)</c> later.
         /// </summary>
         public static ShipComponentAbilityStats AggregatePoolWeighted(
             string poolKey,
@@ -127,41 +158,7 @@ namespace TitanOrbit.Data
             IReadOnlyList<string> componentIds,
             IReadOnlyList<ShipComponentAbilityStats> perComponentStats)
         {
-            var result = default(ShipComponentAbilityStats);
-            if (memberIndices == null || memberIndices.Count == 0)
-                return result;
-
-            int primaryLocal = PickPrimaryLocalIndex(poolKey, memberIndices, perComponentStats);
-            int primaryGlobal = memberIndices[primaryLocal];
-
-            float maxOdPct = 0f;
-            float maxOdPctPer = 0f;
-
-            for (int m = 0; m < memberIndices.Count; m++)
-            {
-                int gi = memberIndices[m];
-                string id = componentIds[gi];
-                ShipComponentAbilityStats stats = perComponentStats[gi];
-                bool isPrimary = gi == primaryGlobal;
-                float weight = isPrimary ? 1f : ResolveExtraStackWeight(in stats, id);
-
-                // Additive contribution (own stats × weight). Clear OD fractions — maxed below.
-                ShipComponentAbilityStats contrib = ShipComponentAbilityStatsMath.Multiply(stats, weight);
-                contrib.extraSpeedPercent = 0f;
-                contrib.extraSpeedPercentPerAbilityLevel = 0f;
-                result.AddInPlace(contrib);
-
-                // OD fraction: max across members (designer knob — do not dilute with weight).
-                if (stats.extraSpeedPercent > maxOdPct)
-                    maxOdPct = stats.extraSpeedPercent;
-                if (stats.extraSpeedPercentPerAbilityLevel > maxOdPctPer)
-                    maxOdPctPer = stats.extraSpeedPercentPerAbilityLevel;
-            }
-
-            result.extraSpeedPercent = maxOdPct;
-            result.extraSpeedPercentPerAbilityLevel = maxOdPctPer;
-            result.extraStackWeight = 0f;
-            return result;
+            return AggregatePoolPrimary(poolKey, memberIndices, componentIds, perComponentStats).PrimaryStats;
         }
 
         /// <summary>
@@ -215,6 +212,29 @@ namespace TitanOrbit.Data
 
             int local = PickPrimaryLocalIndex(PropulsionPoolKey, members, perComponentStats);
             return members[local];
+        }
+
+        /// <summary>Count of non-cosmetic parts in a pool key.</summary>
+        public static int CountPoolMembers(
+            string poolKey,
+            IReadOnlyList<string> componentIds)
+        {
+            if (componentIds == null || string.IsNullOrWhiteSpace(poolKey))
+                return 0;
+
+            int n = 0;
+            for (int i = 0; i < componentIds.Count; i++)
+            {
+                string id = componentIds[i];
+                if (string.IsNullOrWhiteSpace(id))
+                    continue;
+                if (ShipFamilyPartCalcProfileSet.IsCosmeticPartName(id))
+                    continue;
+                if (string.Equals(ResolveStackPoolKey(id), poolKey, StringComparison.OrdinalIgnoreCase))
+                    n++;
+            }
+
+            return n;
         }
 
         static float ScorePropulsionPrimary(in ShipComponentAbilityStats s)

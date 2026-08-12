@@ -98,46 +98,46 @@ namespace TitanOrbit.Data
             ShipComponentStatCategory.Capacity
         };
 
-        static readonly string[] RammingOffenseFields = { "rammingPower", "rammingPowerPerAbilityLevel" };
+        static readonly string[] RammingOffenseFields = { "rammingPower", "rammingPowerPerExtraLevel" };
         static readonly string[] WeaponOffenseFields =
         {
-            "firePower", "firePowerPerAbilityLevel", "bulletSpeed", "bulletSpeedPerAbilityLevel",
-            "bulletRange", "bulletRangePerAbilityLevel",
-            "fireRate", "fireRatePerAbilityLevel"
+            "firePower", "firePowerPerExtraLevel", "bulletSpeed", "bulletSpeedPerExtraLevel",
+            "bulletRange", "bulletRangePerExtraLevel",
+            "fireRate", "fireRatePerExtraLevel"
         };
         static readonly string[] HealthFields =
-            { "healthCap", "healthCapPerAbilityLevel", "healthRegen", "healthRegenPerAbilityLevel" };
+            { "healthCap", "healthCapPerExtraLevel", "healthRegen", "healthRegenPerExtraLevel" };
         static readonly string[] EnergyFields =
-            { "energyCap", "energyCapPerAbilityLevel", "energyRegen", "energyRegenPerAbilityLevel" };
+            { "energyCap", "energyCapPerExtraLevel", "energyRegen", "energyRegenPerExtraLevel" };
         /// <summary>
         /// [TITAN-ORBIT] Weapon Energy category — Cap only (battery / magazine). Engines own Regen.
         /// </summary>
         static readonly string[] WeaponEnergyCapFields =
-            { "energyCap", "energyCapPerAbilityLevel" };
+            { "energyCap", "energyCapPerExtraLevel" };
         /// <summary>Engine-like movement — move + accel + OVERDRIVE knobs (power plant; OD drain = esp × esep).</summary>
         static readonly string[] PropulsionMovementFields =
         {
-            "moveSpeed", "moveSpeedPerAbilityLevel",
-            "accelerationCap", "accelerationCapPerAbilityLevel",
-            "extraSpeedPercent", "extraSpeedPercentPerAbilityLevel",
-            "extraSpeedEnergyDrain", "extraSpeedEnergyDrainPerAbilityLevel"
+            "moveSpeed", "moveSpeedPerExtraLevel",
+            "accelerationCap", "accelerationCapPerExtraLevel",
+            "extraSpeedPercent", "extraSpeedPercentPerExtraLevel",
+            "extraSpeedEnergyDrain", "extraSpeedEnergyDrainPerExtraLevel"
         };
         /// <summary>Thruster-like movement — move + accel + turn (no OVERDRIVE knobs; engines own those).</summary>
         static readonly string[] ThrusterMovementFields =
         {
-            "moveSpeed", "moveSpeedPerAbilityLevel",
-            "accelerationCap", "accelerationCapPerAbilityLevel",
-            "turnSpeed", "turnSpeedPerAbilityLevel"
+            "moveSpeed", "moveSpeedPerExtraLevel",
+            "accelerationCap", "accelerationCapPerExtraLevel",
+            "turnSpeed", "turnSpeedPerExtraLevel"
         };
-        static readonly string[] TurnMovementFields = { "turnSpeed", "turnSpeedPerAbilityLevel" };
+        static readonly string[] TurnMovementFields = { "turnSpeed", "turnSpeedPerExtraLevel" };
         static readonly string[] CapacityFields =
-            { "maxGems", "maxGemsPerAbilityLevel", "maxPeople", "maxPeoplePerAbilityLevel" };
+            { "maxGems", "maxGemsPerExtraLevel", "maxPeople", "maxPeoplePerExtraLevel" };
         static readonly string[] WingCapacityFields =
         {
-            "maxGems", "maxGemsPerAbilityLevel",
-            "tractorBeamDistance", "tractorBeamDistancePerAbilityLevel",
-            "tractorBeamPower", "tractorBeamPowerPerAbilityLevel",
-            "maxPeople", "maxPeoplePerAbilityLevel"
+            "maxGems", "maxGemsPerExtraLevel",
+            "tractorBeamDistance", "tractorBeamDistancePerExtraLevel",
+            "tractorBeamPower", "tractorBeamPowerPerExtraLevel",
+            "maxPeople", "maxPeoplePerExtraLevel"
         };
 
         /// <summary>Strips version suffixes: Wing1 → Wing, Wing_3 → Wing, MainBody4 → MainBody.</summary>

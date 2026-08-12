@@ -279,11 +279,11 @@ namespace TitanOrbit.ECS.Authoring
                     {
                         LocalPosition = localPos,
                         TractorBeamDistance = wing.tractorBeamDistance,
-                        TractorBeamDistancePerLevel = wing.tractorBeamDistancePerAbilityLevel,
+                        TractorBeamDistancePerLevel = wing.tractorBeamDistancePerExtraLevel,
                         TractorBeamPower = wing.tractorBeamPower,
-                        TractorBeamPowerPerLevel = wing.tractorBeamPowerPerAbilityLevel,
+                        TractorBeamPowerPerLevel = wing.tractorBeamPowerPerExtraLevel,
                         MaxGems = wing.maxGems,
-                        MaxGemsPerLevel = wing.maxGemsPerAbilityLevel,
+                        MaxGemsPerLevel = wing.maxGemsPerExtraLevel,
                     });
                 }
 

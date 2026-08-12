@@ -22,131 +22,139 @@ namespace TitanOrbit.Data
 
     /// <summary>
     /// Serializable stat block for one ship part — base values plus
-    /// <c>*PerAbilityLevel</c> steps for bottom-HUD Ship Ability Upgrades.
-    /// Ship-tier growth is <b>not</b> authored here: each family uses
-    /// <see cref="ShipFamilyDefinition.shipLevelStatGrowthFraction"/> (default 10%)
-    /// in <see cref="ShipComponentStoreData.GetEffectiveStatsAtShipLevel"/>.
-    /// Summed across matched prefab children to produce hull totals.
+    /// <c>*PerExtraLevel</c> steps used by the unified Extra Level formula.
+    /// Non-weapons: <c>Base + PerExtraLevel × ((shipLevel−1) + abilityLevel + (N−1))</c>.
+    /// Weapons (each barrel): <c>Base + PerExtraLevel × ((shipLevel−1) + abilityLevel)</c>.
+    /// Non-weapon pools use primary-per-pool aggregation; weapons fire per-mount.
     /// </summary>
     [Serializable]
     public struct ShipComponentAbilityStats
     {
-        /// <summary>Damage per shot before weapon multipliers (per barrel; hull uses average across guns).</summary>
+        /// <summary>Damage per shot before Extra Level scaling (primary weapon; hull may divide by gun count).</summary>
         public float firePower;
-        /// <summary>Bottom-HUD Fire Power ability step (additive when that ability uses PerAbilityLevel).</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Fire Power Per Extra Level — scales with ship level, Fire Power ability
+        /// purchases, and weapon component count (see <see cref="ShipComponentExtraLevelMath"/>).
+        /// </summary>
+        [UnityEngine.Serialization.FormerlySerializedAs("firePowerPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("firePowerPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("firePowerPerShipLevel")]
-        public float firePowerPerAbilityLevel;
-        /// <summary>Projectile speed in world units per second.</summary>
+        public float firePowerPerExtraLevel;
+        /// <summary>
+        /// Projectile speed in world units per second.
+        /// [TITAN-ORBIT] On weapons: <c>Base + PerExtra × abilityLevel</c> only (no ship level, no N).
+        /// </summary>
         public float bulletSpeed;
+        [UnityEngine.Serialization.FormerlySerializedAs("bulletSpeedPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("bulletSpeedPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("bulletSpeedPerShipLevel")]
-        public float bulletSpeedPerAbilityLevel;
+        public float bulletSpeedPerExtraLevel;
         /// <summary>
         /// How far a bullet travels before expiring (world units). Writes <c>ShipWeaponConfig.BulletMaxDistance</c>.
-        /// [TITAN-ORBIT] Ship-tier growth uses family <c>shipLevelStatGrowthFraction</c> (not this field).
-        /// <see cref="bulletRangePerAbilityLevel"/> is reserved for ability / Scan authoring.
+        /// Scaled by Extra Level formula (no divide-by-gun-count).
         /// </summary>
         public float bulletRange;
+        [UnityEngine.Serialization.FormerlySerializedAs("bulletRangePerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("bulletRangePerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("bulletRangePerShipLevel")]
-        public float bulletRangePerAbilityLevel;
+        public float bulletRangePerExtraLevel;
         /// <summary>Shots per second baseline.</summary>
         public float fireRate;
+        [UnityEngine.Serialization.FormerlySerializedAs("fireRatePerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("fireRatePerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("fireRatePerShipLevel")]
-        public float fireRatePerAbilityLevel;
+        public float fireRatePerExtraLevel;
         /// <summary>Ramming offense rating for hull collisions.</summary>
         public float rammingPower;
+        [UnityEngine.Serialization.FormerlySerializedAs("rammingPowerPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("rammingPowerPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("rammingPowerPerShipLevel")]
-        public float rammingPowerPerAbilityLevel;
+        public float rammingPowerPerExtraLevel;
         public float healthCap;
+        [UnityEngine.Serialization.FormerlySerializedAs("healthCapPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("healthCapPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("healthCapPerShipLevel")]
-        public float healthCapPerAbilityLevel;
+        public float healthCapPerExtraLevel;
         public float healthRegen;
+        [UnityEngine.Serialization.FormerlySerializedAs("healthRegenPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("healthRegenPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("healthRegenPerShipLevel")]
-        public float healthRegenPerAbilityLevel;
+        public float healthRegenPerExtraLevel;
         public float energyCap;
+        [UnityEngine.Serialization.FormerlySerializedAs("energyCapPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("energyCapPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("energyCapPerShipLevel")]
-        public float energyCapPerAbilityLevel;
+        public float energyCapPerExtraLevel;
         public float energyRegen;
+        [UnityEngine.Serialization.FormerlySerializedAs("energyRegenPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("energyRegenPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("energyRegenPerShipLevel")]
-        public float energyRegenPerAbilityLevel;
+        public float energyRegenPerExtraLevel;
         public float moveSpeed;
         /// <summary>
-        /// [TITAN-ORBIT] Bottom-HUD Move Speed ability step (additive). Each purchase adds this
-        /// together with <see cref="accelerationCapPerAbilityLevel"/> and
-        /// <see cref="extraSpeedEnergyDrainPerAbilityLevel"/>.
+        /// [TITAN-ORBIT] Move Speed Per Extra Level — scales cruise speed with ship level,
+        /// Move Speed ability purchases, and propulsion component count.
         /// </summary>
+        [UnityEngine.Serialization.FormerlySerializedAs("moveSpeedPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("moveSpeedPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("moveSpeedPerShipLevel")]
-        public float moveSpeedPerAbilityLevel;
+        public float moveSpeedPerExtraLevel;
         /// <summary>Acceleration cap used by <see cref="ShipPropulsionAggregation"/>.</summary>
         public float accelerationCap;
+        [UnityEngine.Serialization.FormerlySerializedAs("accelerationCapPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("accelerationCapPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("accelerationCapPerShipLevel")]
-        public float accelerationCapPerAbilityLevel;
+        public float accelerationCapPerExtraLevel;
         /// <summary>
         /// [TITAN-ORBIT] OVERDRIVE extra speed/thrust fraction on this <b>engine</b> (0.5 = +50% → 1.5×).
         /// Authored on engines only — not thrusters. Hull uses the <b>max</b> across engines for speed/thrust.
         /// </summary>
         public float extraSpeedPercent;
-        /// <summary>Ability / Scan step for <see cref="extraSpeedPercent"/> (default 0 — designers opt in).</summary>
+        /// <summary>Per Extra Level step for <see cref="extraSpeedPercent"/> (default 0 — designers opt in).</summary>
+        [UnityEngine.Serialization.FormerlySerializedAs("extraSpeedPercentPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("extraSpeedPercentPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("extraSpeedPercentPerShipLevel")]
-        public float extraSpeedPercentPerAbilityLevel;
+        public float extraSpeedPercentPerExtraLevel;
         /// <summary>
         /// [TITAN-ORBIT] Absolute OVERDRIVE energy/sec from this engine (e.g. 2 = spend 2 energy/sec).
         /// Not multiplied by <see cref="extraSpeedPercent"/>. Hull sums into
-        /// <c>ShipMotorConfig.ThrustEnergyDrainPerSecond</c>. Move Speed ability adds
-        /// <see cref="extraSpeedEnergyDrainPerAbilityLevel"/> per purchase.
+        /// <c>ShipMotorConfig.ThrustEnergyDrainPerSecond</c>.
         /// </summary>
         [UnityEngine.Serialization.FormerlySerializedAs("extraSpeedEnergyPercent")]
         public float extraSpeedEnergyDrain;
-        /// <summary>Bottom-HUD Move Speed ability step for OVERDRIVE energy/sec (paired with move + accel).</summary>
+        /// <summary>Per Extra Level step for OVERDRIVE energy/sec (paired with move + accel).</summary>
+        [UnityEngine.Serialization.FormerlySerializedAs("extraSpeedEnergyDrainPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("extraSpeedEnergyPercentPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("extraSpeedEnergyDrainPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("extraSpeedEnergyDrainPerShipLevel")]
-        public float extraSpeedEnergyDrainPerAbilityLevel;
+        public float extraSpeedEnergyDrainPerExtraLevel;
         /// <summary>Yaw turn rate in degrees per second.</summary>
         public float turnSpeed;
+        [UnityEngine.Serialization.FormerlySerializedAs("turnSpeedPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("turnSpeedPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("turnSpeedPerShipLevel")]
-        public float turnSpeedPerAbilityLevel;
+        public float turnSpeedPerExtraLevel;
         public float maxGems;
+        [UnityEngine.Serialization.FormerlySerializedAs("maxGemsPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("maxGemsPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("maxGemsPerShipLevel")]
-        public float maxGemsPerAbilityLevel;
+        public float maxGemsPerExtraLevel;
         /// <summary>Wing tractor beam reach in world units.</summary>
         public float tractorBeamDistance;
+        [UnityEngine.Serialization.FormerlySerializedAs("tractorBeamDistancePerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("tractorBeamDistancePerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("tractorBeamDistancePerShipLevel")]
-        public float tractorBeamDistancePerAbilityLevel;
+        public float tractorBeamDistancePerExtraLevel;
         public float tractorBeamPower;
+        [UnityEngine.Serialization.FormerlySerializedAs("tractorBeamPowerPerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("tractorBeamPowerPerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("tractorBeamPowerPerShipLevel")]
-        public float tractorBeamPowerPerAbilityLevel;
+        public float tractorBeamPowerPerExtraLevel;
         public float maxPeople;
+        [UnityEngine.Serialization.FormerlySerializedAs("maxPeoplePerAbilityLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("maxPeoplePerLevel")]
         [UnityEngine.Serialization.FormerlySerializedAs("maxPeoplePerShipLevel")]
-        public float maxPeoplePerAbilityLevel;
-
-        /// <summary>
-        /// When multiple parts share a stack pool: the primary contributes 100% of its stats;
-        /// each extra contributes this fraction of <b>its own</b> stats.
-        /// Default 1 = full sum (wings, cockpits, …). Engines/Thrusters use 0.1.
-        /// Unset (≤0) is resolved at aggregate time by component id.
-        /// </summary>
-        [Tooltip(
-            "Extra stack weight: primary = 100%; each additional part in the same pool " +
-            "adds this fraction of ITS stats. 1 = full sum; Engines/Thrusters = 0.1.")]
-        [Min(0f)]
-        public float extraStackWeight;
+        public float maxPeoplePerExtraLevel;
 
         /// <summary>
         /// Guesses canonical Part Profile group from component id (see <see cref="ShipFamilyPartTypes"/>).
@@ -202,48 +210,45 @@ namespace TitanOrbit.Data
             var filtered = new ShipComponentAbilityStats();
 
             if (allowedSet.Contains("firePower")) filtered.firePower = stats.firePower;
-            if (allowedSet.Contains("firePowerPerAbilityLevel")) filtered.firePowerPerAbilityLevel = stats.firePowerPerAbilityLevel;
+            if (allowedSet.Contains("firePowerPerExtraLevel")) filtered.firePowerPerExtraLevel = stats.firePowerPerExtraLevel;
             if (allowedSet.Contains("bulletSpeed")) filtered.bulletSpeed = stats.bulletSpeed;
-            if (allowedSet.Contains("bulletSpeedPerAbilityLevel")) filtered.bulletSpeedPerAbilityLevel = stats.bulletSpeedPerAbilityLevel;
+            if (allowedSet.Contains("bulletSpeedPerExtraLevel")) filtered.bulletSpeedPerExtraLevel = stats.bulletSpeedPerExtraLevel;
             if (allowedSet.Contains("bulletRange")) filtered.bulletRange = stats.bulletRange;
-            if (allowedSet.Contains("bulletRangePerAbilityLevel")) filtered.bulletRangePerAbilityLevel = stats.bulletRangePerAbilityLevel;
+            if (allowedSet.Contains("bulletRangePerExtraLevel")) filtered.bulletRangePerExtraLevel = stats.bulletRangePerExtraLevel;
             if (allowedSet.Contains("fireRate")) filtered.fireRate = stats.fireRate;
-            if (allowedSet.Contains("fireRatePerAbilityLevel")) filtered.fireRatePerAbilityLevel = stats.fireRatePerAbilityLevel;
+            if (allowedSet.Contains("fireRatePerExtraLevel")) filtered.fireRatePerExtraLevel = stats.fireRatePerExtraLevel;
             if (allowedSet.Contains("rammingPower")) filtered.rammingPower = stats.rammingPower;
-            if (allowedSet.Contains("rammingPowerPerAbilityLevel")) filtered.rammingPowerPerAbilityLevel = stats.rammingPowerPerAbilityLevel;
+            if (allowedSet.Contains("rammingPowerPerExtraLevel")) filtered.rammingPowerPerExtraLevel = stats.rammingPowerPerExtraLevel;
             if (allowedSet.Contains("healthCap")) filtered.healthCap = stats.healthCap;
-            if (allowedSet.Contains("healthCapPerAbilityLevel")) filtered.healthCapPerAbilityLevel = stats.healthCapPerAbilityLevel;
+            if (allowedSet.Contains("healthCapPerExtraLevel")) filtered.healthCapPerExtraLevel = stats.healthCapPerExtraLevel;
             if (allowedSet.Contains("healthRegen")) filtered.healthRegen = stats.healthRegen;
-            if (allowedSet.Contains("healthRegenPerAbilityLevel")) filtered.healthRegenPerAbilityLevel = stats.healthRegenPerAbilityLevel;
+            if (allowedSet.Contains("healthRegenPerExtraLevel")) filtered.healthRegenPerExtraLevel = stats.healthRegenPerExtraLevel;
             if (allowedSet.Contains("energyCap")) filtered.energyCap = stats.energyCap;
-            if (allowedSet.Contains("energyCapPerAbilityLevel")) filtered.energyCapPerAbilityLevel = stats.energyCapPerAbilityLevel;
+            if (allowedSet.Contains("energyCapPerExtraLevel")) filtered.energyCapPerExtraLevel = stats.energyCapPerExtraLevel;
             if (allowedSet.Contains("energyRegen")) filtered.energyRegen = stats.energyRegen;
-            if (allowedSet.Contains("energyRegenPerAbilityLevel")) filtered.energyRegenPerAbilityLevel = stats.energyRegenPerAbilityLevel;
+            if (allowedSet.Contains("energyRegenPerExtraLevel")) filtered.energyRegenPerExtraLevel = stats.energyRegenPerExtraLevel;
             if (allowedSet.Contains("moveSpeed")) filtered.moveSpeed = stats.moveSpeed;
-            if (allowedSet.Contains("moveSpeedPerAbilityLevel")) filtered.moveSpeedPerAbilityLevel = stats.moveSpeedPerAbilityLevel;
+            if (allowedSet.Contains("moveSpeedPerExtraLevel")) filtered.moveSpeedPerExtraLevel = stats.moveSpeedPerExtraLevel;
             if (allowedSet.Contains("accelerationCap")) filtered.accelerationCap = stats.accelerationCap;
-            if (allowedSet.Contains("accelerationCapPerAbilityLevel"))
-                filtered.accelerationCapPerAbilityLevel = stats.accelerationCapPerAbilityLevel;
+            if (allowedSet.Contains("accelerationCapPerExtraLevel"))
+                filtered.accelerationCapPerExtraLevel = stats.accelerationCapPerExtraLevel;
             if (allowedSet.Contains("extraSpeedPercent")) filtered.extraSpeedPercent = stats.extraSpeedPercent;
-            if (allowedSet.Contains("extraSpeedPercentPerAbilityLevel"))
-                filtered.extraSpeedPercentPerAbilityLevel = stats.extraSpeedPercentPerAbilityLevel;
+            if (allowedSet.Contains("extraSpeedPercentPerExtraLevel"))
+                filtered.extraSpeedPercentPerExtraLevel = stats.extraSpeedPercentPerExtraLevel;
             if (allowedSet.Contains("extraSpeedEnergyDrain"))
                 filtered.extraSpeedEnergyDrain = stats.extraSpeedEnergyDrain;
-            if (allowedSet.Contains("extraSpeedEnergyDrainPerAbilityLevel"))
-                filtered.extraSpeedEnergyDrainPerAbilityLevel = stats.extraSpeedEnergyDrainPerAbilityLevel;
+            if (allowedSet.Contains("extraSpeedEnergyDrainPerExtraLevel"))
+                filtered.extraSpeedEnergyDrainPerExtraLevel = stats.extraSpeedEnergyDrainPerExtraLevel;
             if (allowedSet.Contains("turnSpeed")) filtered.turnSpeed = stats.turnSpeed;
-            if (allowedSet.Contains("turnSpeedPerAbilityLevel")) filtered.turnSpeedPerAbilityLevel = stats.turnSpeedPerAbilityLevel;
+            if (allowedSet.Contains("turnSpeedPerExtraLevel")) filtered.turnSpeedPerExtraLevel = stats.turnSpeedPerExtraLevel;
             if (allowedSet.Contains("maxGems")) filtered.maxGems = stats.maxGems;
-            if (allowedSet.Contains("maxGemsPerAbilityLevel")) filtered.maxGemsPerAbilityLevel = stats.maxGemsPerAbilityLevel;
+            if (allowedSet.Contains("maxGemsPerExtraLevel")) filtered.maxGemsPerExtraLevel = stats.maxGemsPerExtraLevel;
             if (allowedSet.Contains("tractorBeamDistance")) filtered.tractorBeamDistance = stats.tractorBeamDistance;
-            if (allowedSet.Contains("tractorBeamDistancePerAbilityLevel")) filtered.tractorBeamDistancePerAbilityLevel = stats.tractorBeamDistancePerAbilityLevel;
+            if (allowedSet.Contains("tractorBeamDistancePerExtraLevel")) filtered.tractorBeamDistancePerExtraLevel = stats.tractorBeamDistancePerExtraLevel;
             if (allowedSet.Contains("tractorBeamPower")) filtered.tractorBeamPower = stats.tractorBeamPower;
-            if (allowedSet.Contains("tractorBeamPowerPerAbilityLevel")) filtered.tractorBeamPowerPerAbilityLevel = stats.tractorBeamPowerPerAbilityLevel;
+            if (allowedSet.Contains("tractorBeamPowerPerExtraLevel")) filtered.tractorBeamPowerPerExtraLevel = stats.tractorBeamPowerPerExtraLevel;
             if (allowedSet.Contains("maxPeople")) filtered.maxPeople = stats.maxPeople;
-            if (allowedSet.Contains("maxPeoplePerAbilityLevel")) filtered.maxPeoplePerAbilityLevel = stats.maxPeoplePerAbilityLevel;
-
-            // [TITAN-ORBIT] Stack weight is meta for multi-part pools — always keep (not category-gated).
-            filtered.extraStackWeight = stats.extraStackWeight;
+            if (allowedSet.Contains("maxPeoplePerExtraLevel")) filtered.maxPeoplePerExtraLevel = stats.maxPeoplePerExtraLevel;
 
             return filtered;
         }
@@ -269,7 +274,7 @@ namespace TitanOrbit.Data
         public string displayName;
         /// <summary>Which stat categories tint the card border and filter Inspector fields.</summary>
         public List<ShipComponentStatCategory> statCategories = new List<ShipComponentStatCategory>();
-        /// <summary>Authoritative ability numbers for this part before level scaling.</summary>
+        /// <summary>Authoritative ability numbers for this part before Extra Level scaling.</summary>
         public ShipComponentAbilityStats stats;
         /// <summary>Optional bullet bank override for weapon parts (-1 = family default).</summary>
         public int bulletPrefabIndex = -1;

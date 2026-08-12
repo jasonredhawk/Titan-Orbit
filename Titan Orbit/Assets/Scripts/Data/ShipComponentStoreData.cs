@@ -21,20 +21,14 @@ namespace TitanOrbit.Data
         public const int MinimumComponentGemPrice = 8;
 
         /// <summary>
-        /// Applies family ship-tier growth to every base stat:
-        /// <c>effective = base × (1 + (shipLevel−1) × growthFraction)</c>.
-        /// Default growth is <see cref="ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction"/> (10%).
-        /// Optional mobility penalties on move / accel / turn from <see cref="ShipCargoMobilitySettings"/>.
+        /// Extra Level evaluation for a <b>single</b> component (store card / solo preview).
+        /// <c>value = base + perExtra × ((shipLevel−1) + abilityLevel + 1)</c> with abilityLevel = 0.
+        /// Then applies cargo mobility penalties.
         /// <para>
-        /// [TITAN-ORBIT] <c>*PerAbilityLevel</c> fields are passed through unchanged — they are
-        /// bottom-HUD ability steps authored on parts / ProfileSet, not ship-tier curves.
-        /// </para>
-        /// <para>
-        /// [TITAN-ORBIT] Intentional exception: <c>bulletSpeed</c> does <b>not</b> grow with ship level.
-        /// Faster bullets come from attribute upgrades / Shard cards, not ship tier.
-        /// </para>
-        /// <para>
-        /// [TITAN-ORBIT] <c>bulletRange</c> <b>does</b> grow with ship level (unlike bulletSpeed).
+        /// [TITAN-ORBIT] Full hulls with multiple parts must use
+        /// <see cref="ShipComponentExtraLevelMath.AggregateAndEvaluate"/> so each pool's
+        /// <c>numberOfComponents</c> is correct. <paramref name="shipLevelStatGrowthFraction"/> is
+        /// ignored (legacy % tier growth retired).
         /// </para>
         /// </summary>
         public static ShipComponentAbilityStats GetEffectiveStatsAtShipLevel(
@@ -42,68 +36,41 @@ namespace TitanOrbit.Data
             int shipLevel,
             float shipLevelStatGrowthFraction = -1f)
         {
-            int perLvl = Mathf.Max(0, shipLevel - 1);
-            float frac = shipLevelStatGrowthFraction > 0.0001f
-                ? shipLevelStatGrowthFraction
-                : ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
-            // --- Ship-tier scale: +frac of base per level above 1 (family-tunable, default 10%) ---
-            float tierMul = 1f + perLvl * frac;
+            _ = shipLevelStatGrowthFraction;
 
-            float moveAtLevel = stats.moveSpeed * tierMul;
-            float accelAtLevel = stats.accelerationCap * tierMul;
-            float turnAtLevel = stats.turnSpeed * tierMul;
+            // --- Single-part Extra Level (count = 1, no ability purchases) ---
+            var attrs = default(ShipAbilityLevelCounts);
+            ShipComponentAbilityStats evaluated = ShipComponentExtraLevelMath.EvaluatePool(
+                stats,
+                componentCount: 1,
+                shipLevel,
+                in attrs,
+                isWeaponPool: false);
 
-            // --- Level mobility drag from settings (0% = leave linear growth alone) ---
-            ShipCargoMobilitySettings mobility = ShipCargoMobilitySettingsCache.ResolveOrDefault();
-            float moveScaled = ShipPropulsionAggregation.ApplyShipLevelMobilityScale(
-                moveAtLevel, perLvl, mobility.levelMaxSpeedPenaltyFractionPerLevel);
-            float accelScaled = ShipPropulsionAggregation.ApplyShipLevelMobilityScale(
-                accelAtLevel, perLvl, mobility.levelAccelPenaltyFractionPerLevel);
-            float turnScaled = ShipPropulsionAggregation.ApplyShipLevelMobilityScale(
-                turnAtLevel, perLvl, mobility.levelTurnPenaltyFractionPerLevel);
-
-            // --- Tier growth on bases; pass through PerAbilityLevel for HUD ability apply ---
-            // bulletSpeed: base only (no tierMul) — see method summary.
-            return new ShipComponentAbilityStats
-            {
-                firePower = stats.firePower * tierMul,
-                firePowerPerAbilityLevel = stats.firePowerPerAbilityLevel,
-                bulletSpeed = stats.bulletSpeed,
-                bulletSpeedPerAbilityLevel = stats.bulletSpeedPerAbilityLevel,
-                bulletRange = stats.bulletRange * tierMul,
-                bulletRangePerAbilityLevel = stats.bulletRangePerAbilityLevel,
-                fireRate = stats.fireRate * tierMul,
-                fireRatePerAbilityLevel = stats.fireRatePerAbilityLevel,
-                rammingPower = stats.rammingPower * tierMul,
-                rammingPowerPerAbilityLevel = stats.rammingPowerPerAbilityLevel,
-                healthCap = stats.healthCap * tierMul,
-                healthCapPerAbilityLevel = stats.healthCapPerAbilityLevel,
-                healthRegen = stats.healthRegen * tierMul,
-                healthRegenPerAbilityLevel = stats.healthRegenPerAbilityLevel,
-                energyCap = stats.energyCap * tierMul,
-                energyCapPerAbilityLevel = stats.energyCapPerAbilityLevel,
-                energyRegen = stats.energyRegen * tierMul,
-                energyRegenPerAbilityLevel = stats.energyRegenPerAbilityLevel,
-                moveSpeed = moveScaled,
-                moveSpeedPerAbilityLevel = stats.moveSpeedPerAbilityLevel,
-                accelerationCap = accelScaled,
-                accelerationCapPerAbilityLevel = stats.accelerationCapPerAbilityLevel,
-                extraSpeedPercent = stats.extraSpeedPercent * tierMul,
-                extraSpeedPercentPerAbilityLevel = stats.extraSpeedPercentPerAbilityLevel,
-                extraSpeedEnergyDrain = stats.extraSpeedEnergyDrain * tierMul,
-                extraSpeedEnergyDrainPerAbilityLevel = stats.extraSpeedEnergyDrainPerAbilityLevel,
-                turnSpeed = turnScaled,
-                turnSpeedPerAbilityLevel = stats.turnSpeedPerAbilityLevel,
-                maxGems = stats.maxGems * tierMul,
-                maxGemsPerAbilityLevel = stats.maxGemsPerAbilityLevel,
-                tractorBeamDistance = stats.tractorBeamDistance * tierMul,
-                tractorBeamDistancePerAbilityLevel = stats.tractorBeamDistancePerAbilityLevel,
-                tractorBeamPower = stats.tractorBeamPower * tierMul,
-                tractorBeamPowerPerAbilityLevel = stats.tractorBeamPowerPerAbilityLevel,
-                maxPeople = stats.maxPeople * tierMul,
-                maxPeoplePerAbilityLevel = stats.maxPeoplePerAbilityLevel
-            };
+            return ShipComponentExtraLevelMath.ApplyMobilityPenalties(evaluated, shipLevel);
         }
+
+        /// <summary>
+        /// Single-component Extra Level with an explicit weapon flag (divides fire power when true).
+        /// </summary>
+        public static ShipComponentAbilityStats GetEffectiveStatsAtShipLevel(
+            ShipComponentAbilityStats stats,
+            int shipLevel,
+            string componentId,
+            float shipLevelStatGrowthFraction = -1f)
+        {
+            _ = shipLevelStatGrowthFraction;
+            var attrs = default(ShipAbilityLevelCounts);
+            bool weapon = ShipComponentAbilityStats.IsWeaponComponent(componentId);
+            ShipComponentAbilityStats evaluated = ShipComponentExtraLevelMath.EvaluatePool(
+                stats,
+                componentCount: 1,
+                shipLevel,
+                in attrs,
+                isWeaponPool: weapon);
+            return ShipComponentExtraLevelMath.ApplyMobilityPenalties(evaluated, shipLevel);
+        }
+
 
         /// <summary>Single scalar power number for gem pricing (sum of breakdown categories).</summary>
         public static float GetComponentPowerScore(ShipFamilyComponentEntry entry, int shipLevel, ShipFamilyDefinition family = null)
@@ -132,10 +99,9 @@ namespace TitanOrbit.Data
         {
             if (entry == null)
                 return default;
-            float growth = family != null
-                ? family.ResolveShipLevelStatGrowthFraction()
-                : ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
-            ShipComponentAbilityStats effective = GetEffectiveStatsAtShipLevel(entry.stats, shipLevel, growth);
+            // [TITAN-ORBIT] Solo store-card preview: Extra Level with count 1 + weapon divide when needed.
+            ShipComponentAbilityStats effective = GetEffectiveStatsAtShipLevel(
+                entry.stats, shipLevel, entry.componentId);
             return BulletBankProfileUtility.ApplyProfileToComponentStats(effective, entry, family);
         }
 
@@ -383,7 +349,7 @@ namespace TitanOrbit.Data
         /// <summary>
         /// How much hull top speed / accel this propulsion part contributes:
         /// aggregated result with the part minus without it (same rules as flight).
-        /// Move and Accel use primary ×1 + extras × extraStackWeight of their own stats.
+        /// Move and Accel use Extra Level on the primary (extras raise component count).
         /// </summary>
         public static void TryGetPropulsionCumulativeGain(
             ShipFamilyDefinition family,
