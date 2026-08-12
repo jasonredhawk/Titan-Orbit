@@ -23,10 +23,10 @@ MonoBehaviour:
   healthRegenDelayAfterDamage: 2.5
   healthAtLevel1: 174
   healthAtLevel6: 852
-  damageAtLevel1: 2
-  damageAtLevel6: 10
-  fireRateAtLevel1: 3
-  fireRateAtLevel6: 8
+  damageAtLevel1: 5
+  damageAtLevel6: 30
+  fireRateAtLevel1: 5
+  fireRateAtLevel6: 5
   engageRangeAtLevel1: 25
   engageRangeAtLevel6: 40
   cameraViewRadiusAtLevel1: 27
@@ -42,8 +42,8 @@ MonoBehaviour:
   levels:
   - gemsToReachLevel: 174
     maxHealth: 174
-    damage: 2
-    fireRate: 3
+    damage: 5
+    fireRate: 5
     bulletSpeed: 12
     engageRange: 25
     cameraViewRadius: 27
@@ -51,8 +51,8 @@ MonoBehaviour:
     hitRadius: 0.5
   - gemsToReachLevel: 285
     maxHealth: 309.6
-    damage: 3.6
-    fireRate: 4
+    damage: 10
+    fireRate: 5
     bulletSpeed: 12
     engageRange: 28
     cameraViewRadius: 30
@@ -60,7 +60,7 @@ MonoBehaviour:
     hitRadius: 0.55
   - gemsToReachLevel: 396
     maxHealth: 445.2
-    damage: 5.2
+    damage: 15
     fireRate: 5
     bulletSpeed: 12
     engageRange: 31
@@ -69,8 +69,8 @@ MonoBehaviour:
     hitRadius: 0.6
   - gemsToReachLevel: 528
     maxHealth: 580.8
-    damage: 6.8
-    fireRate: 6
+    damage: 20
+    fireRate: 5
     bulletSpeed: 12
     engageRange: 34
     cameraViewRadius: 36
@@ -78,8 +78,8 @@ MonoBehaviour:
     hitRadius: 0.65
   - gemsToReachLevel: 639
     maxHealth: 716.4
-    damage: 8.4
-    fireRate: 7
+    damage: 25
+    fireRate: 5
     bulletSpeed: 12
     engageRange: 37
     cameraViewRadius: 39
@@ -87,8 +87,8 @@ MonoBehaviour:
     hitRadius: 0.7
   - gemsToReachLevel: 852
     maxHealth: 852
-    damage: 10
-    fireRate: 8
+    damage: 30
+    fireRate: 5
     bulletSpeed: 12
     engageRange: 40
     cameraViewRadius: 42
@@ -96,8 +96,8 @@ MonoBehaviour:
     hitRadius: 0.8
   - gemsToReachLevel: 963
     maxHealth: 987.60004
-    damage: 11.6
-    fireRate: 9
+    damage: 35
+    fireRate: 5
     bulletSpeed: 12
     engageRange: 43
     cameraViewRadius: 45

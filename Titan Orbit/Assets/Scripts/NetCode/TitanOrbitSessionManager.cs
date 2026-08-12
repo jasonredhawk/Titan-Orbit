@@ -2389,7 +2389,7 @@ namespace TitanOrbit.NetCode
             // [TITAN-ORBIT] Domain Reload disabled: SeededShip can stay non-null while destroyed,
             // which blocked ClientPredictedShipSpawnRequest and bounced UI back to Join Team.
             LocalShipEntitySeed.Clear();
-            ClientPredictedShipSpawnRequest.Clear();
+            ClientPredictedShipSpawnRequest.ResetForTeamPick();
 
             // --- Pre-arm ship Instantiates hold before the server can reply ---
             // [TITAN-ORBIT] Player.log 2026-07-31: TeamChoiceResult → Crash!!! the same frame.

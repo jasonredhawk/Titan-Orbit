@@ -18,7 +18,10 @@ namespace TitanOrbit.Game
     /// <para>
     /// [TITAN-ORBIT] Local ship does <b>not</b> wrap — it flies unbound; camera follows that pose.
     /// World bodies reposition individually via <see cref="ToroidalDisplay"/> relative to this ship.
-    /// Soft-track on NetCode storms; H73 cruise for reconcile pops. GhostPredictionSmoothing is left
+    /// Soft-track on NetCode storms; H73 cruise for reconcile pops. While the hull is grinding an
+    /// asteroid, display raw-follows sim — bounce corrections are smaller than a teleport but
+    /// larger than vel×dt when speed is ~0, and coasting those made the whole map look stepped
+    /// (toroidal tiles follow this pose). GhostPredictionSmoothing is left
     /// off so this system alone owns local presentation (avoids double-smooth jitter).
     /// </para>
     /// <para>
@@ -77,6 +80,13 @@ namespace TitanOrbit.Game
         /// Larger gaps are treated as reconcile pops and use coast + capped correct.
         /// </summary>
         const float CruiseRawFollowSlopRatio = 1.15f;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Floor for raw-follow even when speed is ~0 (grind / ram stuck on a rock).
+        /// H73 used max(speed·dt, 0.02) — bounce/reconcile of a few centimeters then looked like a
+        /// pop, so coast ran every frame and the toroidal map stepped with the camera.
+        /// </summary>
+        const float CruiseMinRawFollowDistance = 0.45f;
 
         /// <summary>
         /// [TITAN-ORBIT] Frames the local ship must stay unresolved before we treat it as a real
@@ -227,10 +237,17 @@ namespace TitanOrbit.Game
             bool shipChanged = _smoothInitialized && _smoothShipEntity != Entity.Null && localShip != _smoothShipEntity;
             _smoothShipEntity = localShip;
 
+            // --- Asteroid grind / ram: raw-follow sim ---
+            // [TITAN-ORBIT] ShipAsteroidContactState is written this physics step (AfterPhysics).
+            // Presentation runs after that. InContact means bounce is shoving the hull every tick;
+            // coasting those micro-corrections steps the camera and every toroidal world body.
+            bool asteroidContact = EntityManager.HasComponent<ShipAsteroidContactState>(localShip) &&
+                                   EntityManager.GetComponentData<ShipAsteroidContactState>(localShip).InContact != 0;
+
             // --- Step display state ---
             // [TITAN-ORBIT] Isolation F4: raw sim pose only — if destroy stutter vanishes, soft-track
             // was amplifying physics reconcile pops from phantom asteroid hulls.
-            if (TitanOrbitDebugFlags.IsolateDisableShipSoftTrack)
+            if (TitanOrbitDebugFlags.IsolateDisableShipSoftTrack || asteroidContact)
             {
                 _smoothPos = targetPos;
                 _smoothRot = targetRot;
@@ -302,7 +319,9 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// H73 cruise: snap to sim when within one tick; otherwise coast + capped soft correct (H71).
+        /// H73 cruise: snap to sim when within one tick or a grind-sized nibble; otherwise coast
+        /// + capped soft correct (H71). The nibble floor stops ~0-speed ram contact from looking
+        /// like a teleport pop (which used to step the whole toroidal map).
         /// </summary>
         /// <param name="simPos">Predicted / reconciled pose this frame.</param>
         /// <param name="simRot">Sim rotation.</param>
@@ -312,10 +331,12 @@ namespace TitanOrbit.Game
         {
             float expected = math.max(math.length(simVel) * math.max(0f, dt), 0.02f);
             float dist = math.distance(_smoothPos, simPos);
+            float rawFollowSlop = math.max(expected * CruiseRawFollowSlopRatio, CruiseMinRawFollowDistance);
 
-            // --- Healthy frame: within one tick (+slop) — raw follow, no spring shimmer ---
+            // --- Healthy frame: within one tick (+slop) or a grind-sized nibble — raw follow ---
             // H72 failed because capped pull left a permanent >deadzone lag and corrected forever.
-            if (dist <= expected * CruiseRawFollowSlopRatio)
+            // Grind at ~0 speed used the 0.02 floor, so 5–20 cm bounce corrections coasted every frame.
+            if (dist <= rawFollowSlop)
             {
                 _smoothPos = simPos;
                 _smoothRot = simRot;

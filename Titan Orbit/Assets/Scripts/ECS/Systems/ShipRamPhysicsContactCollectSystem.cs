@@ -18,6 +18,12 @@ namespace TitanOrbit.ECS
     /// ship↔ship contacts appear here. Flybys with no collider contact produce no events.
     /// Cross-seam asteroid hits are added later by <see cref="ShipToroidalWorldCollisionSystem"/>.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Closing speed comes from <see cref="PhysicsVelocity"/> along the contact
+    /// normal — not <c>CollisionEvent.CalculateDetails</c>. That details call walks the contact
+    /// manifold every physics tick while grinding and hitch the server (and Local Host) so the
+    /// whole match looks stepped. Impulse is left 0; damage prefers measured closing.
+    /// </para>
     /// </summary>
     [UpdateInGroup(typeof(PhysicsSystemGroup))]
     [UpdateAfter(typeof(PhysicsSimulationGroup))]
@@ -52,12 +58,14 @@ namespace TitanOrbit.ECS
             queue.Clear();
 
             var pairs = new NativeList<RawPair>(32, state.WorldUpdateAllocator);
-            var physicsWorldSingleton = SystemAPI.GetSingleton<PhysicsWorldSingleton>();
+            var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(true);
+            var preVelLookup = SystemAPI.GetComponentLookup<ShipPreCollisionVelocity>(true);
 
             state.Dependency = new CollectCollisionEventsJob
             {
                 Pairs = pairs,
-                PhysicsWorldSingleton = physicsWorldSingleton,
+                Velocities = velocityLookup,
+                PreCollision = preVelLookup,
             }.Schedule(SystemAPI.GetSingleton<SimulationSingleton>(), state.Dependency);
 
             state.Dependency.Complete();
@@ -71,8 +79,8 @@ namespace TitanOrbit.ECS
                     Other = p.EntityB,
                     OtherIsShip = 0,
                     NormalShipFromOther = p.NormalAFromB,
-                    ClosingSpeed = 0f,
-                    EstimatedImpulse = p.EstimatedImpulse,
+                    ClosingSpeed = p.ClosingSpeed,
+                    EstimatedImpulse = 0f,
                 });
             }
         }
@@ -83,28 +91,25 @@ namespace TitanOrbit.ECS
             public Entity EntityA;
             public Entity EntityB;
             public float3 NormalAFromB;
-            public float EstimatedImpulse;
+            public float ClosingSpeed;
         }
 
         /// <summary>
-        /// Reads solver collision events. Does not classify tags; records EntityA/B and impulse
-        /// so the managed damage pass can resolve ship vs asteroid vs enemy ship.
+        /// Reads solver collision events. Does not classify tags; records EntityA/B and
+        /// planar closing speed so the managed damage pass can resolve ship vs asteroid vs
+        /// enemy ship without walking contact manifolds.
         /// </summary>
         [BurstCompile]
         struct CollectCollisionEventsJob : ICollisionEventsJob
         {
             public NativeList<RawPair> Pairs;
 
-            [ReadOnly] public PhysicsWorldSingleton PhysicsWorldSingleton;
+            [ReadOnly] public ComponentLookup<PhysicsVelocity> Velocities;
+            [ReadOnly] public ComponentLookup<ShipPreCollisionVelocity> PreCollision;
 
             /// <summary>One solver contact pair this tick.</summary>
             public void Execute(CollisionEvent collisionEvent)
             {
-                // --- Impulse from solver details (post-solve velocities are already reflected) ---
-                var world = PhysicsWorldSingleton.PhysicsWorld;
-                var details = collisionEvent.CalculateDetails(ref world);
-                float impulse = math.max(0f, details.EstimatedImpulse);
-
                 float3 normalAFromB = collisionEvent.Normal;
                 normalAFromB.y = 0f;
                 if (math.lengthsq(normalAFromB) > 1e-8f)
@@ -112,13 +117,33 @@ namespace TitanOrbit.ECS
                 else
                     normalAFromB = new float3(0f, 0f, 1f);
 
+                // --- Closing speed from pre-collision velocity (no CalculateDetails) ---
+                // [PHYSICS] Event normal is B → A. Closing when A moves toward B (against the normal).
+                // Prefer ShipPreCollisionVelocity (post-drive, pre-solve) so the first ram impact
+                // still sees approach speed after the inelastic PhysX solve has killed relative n-vel.
+                float3 vA = LinearOf(collisionEvent.EntityA);
+                float3 vB = LinearOf(collisionEvent.EntityB);
+                vA.y = 0f;
+                vB.y = 0f;
+                float closing = math.max(0f, -math.dot(vA - vB, normalAFromB));
+
                 Pairs.Add(new RawPair
                 {
                     EntityA = collisionEvent.EntityA,
                     EntityB = collisionEvent.EntityB,
                     NormalAFromB = normalAFromB,
-                    EstimatedImpulse = impulse,
+                    ClosingSpeed = closing,
                 });
+            }
+
+            /// <summary>Pre-collision ship vel, else PhysicsVelocity, else zero (static rock).</summary>
+            float3 LinearOf(Entity entity)
+            {
+                if (PreCollision.HasComponent(entity))
+                    return PreCollision[entity].Linear;
+                if (Velocities.HasComponent(entity))
+                    return Velocities[entity].Linear;
+                return float3.zero;
             }
         }
     }

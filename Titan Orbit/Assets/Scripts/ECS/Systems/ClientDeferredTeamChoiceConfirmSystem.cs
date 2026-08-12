@@ -89,6 +89,8 @@ namespace TitanOrbit.ECS
                 s_HullWaitFrames++;
 
                 // --- Re-arm + drain if the first Request was skipped / lost ---
+                // [TITAN-ORBIT] Request() reuses the remembered server ring pose when this
+                // call passes hasSpawnPos=false, so a retry cannot pick a new random angle.
                 if (!ClientPredictedShipSpawnRequest.Pending &&
                     (s_HullWaitFrames == 1 || s_HullWaitFrames % 30 == 0))
                 {

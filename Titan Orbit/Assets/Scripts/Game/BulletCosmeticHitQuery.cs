@@ -8,6 +8,7 @@ using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
 using Unity.Transforms;
 using UnityEngine;
 
@@ -255,12 +256,26 @@ namespace TitanOrbit.Game
                     if (em.HasComponent<GhostOwner>(entity))
                         networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
 
+                    // [TITAN-ORBIT] Match server BulletSimulationSystem — attribute-grown
+                    // PhysicsCollider XZ AABB (fallback tier sphere when collider missing).
+                    float shipRadius;
+                    if (em.HasComponent<PhysicsCollider>(entity))
+                    {
+                        var physicsCollider = em.GetComponentData<PhysicsCollider>(entity);
+                        shipRadius = ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
+                            physicsCollider, lt.Scale);
+                    }
+                    else
+                    {
+                        shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(lt.Scale);
+                    }
+
                     Obstacles.Add(new Obstacle
                     {
                         Kind = ObstacleKind.Ship,
                         SourceEntity = entity,
                         LogicalCenter = lt.Position,
-                        Radius = BodyCollisionMath.GetShipHullRadiusWorld(lt.Scale),
+                        Radius = shipRadius,
                         Scale = lt.Scale,
                         TeamOrOwnership = (byte)ship.Team,
                         OwnerNetworkId = networkId,

@@ -30,6 +30,12 @@ namespace TitanOrbit.ECS
     /// RequireForUpdate and often ran a full frame after Local Host Result. Drain is now a static
     /// <see cref="TryDrainPending"/> callable from Init (deferred Confirm) and from Result apply.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Predicted Instantiates must use the server home-ring pose from
+    /// <see cref="TeamChoiceResultRpc.SpawnPosition"/>. A client-side random angle looks like a
+    /// second spawn when GhostSpawn classification applies the real snapshot. Death respawn does
+    /// not Instantiates a new predicted hull, so it never showed this jump.
+    /// </para>
     /// </summary>
     public static class ClientPredictedShipSpawnRequest
     {
@@ -43,7 +49,8 @@ namespace TitanOrbit.ECS
         public static TeamId Team { get; private set; }
 
         /// <summary>
-        /// Preferred spawn pose (server Local Host). When zero, the client system finds home ring.
+        /// Preferred spawn pose from <see cref="TeamChoiceResultRpc"/> or Local Host.
+        /// When false, the client finds the home ring (legacy servers / home ghosts not ready).
         /// </summary>
         public static float3 SpawnPos { get; private set; }
 
@@ -55,6 +62,16 @@ namespace TitanOrbit.ECS
         /// Blocks duplicate Instantiates when seed was pruned after ghost classification.
         /// </summary>
         static Entity s_LastPredictedHull;
+
+        /// <summary>
+        /// Server ring pose kept after <see cref="Clear"/> consumes Pending.
+        /// DeferredConfirm re-arms with hasSpawnPos=false; without this a retry Instantiates at a
+        /// new random angle and the hull jumps on the ring when the snapshot arrives.
+        /// </summary>
+        static float3 s_RememberedSpawnPos;
+
+        /// <summary>True when <see cref="s_RememberedSpawnPos"/> is the server Join Team pose.</summary>
+        static bool s_RememberedHasSpawnPos;
 
         /// <summary>
         /// Arms a one-shot ClientWorld Instantiates after TeamChoice success.
@@ -70,6 +87,16 @@ namespace TitanOrbit.ECS
         {
             if (networkId <= 0 || team == TeamId.None)
                 return;
+
+            // --- Reuse the server pose after Pending was drained ---
+            // [TITAN-ORBIT] ClientDeferredTeamChoiceConfirmSystem re-arms with hasSpawnPos=false.
+            // Drain already called Clear(), so HasSpawnPos is gone — remembered pose is the
+            // only way a retry Instantiates at the same ring angle as the server.
+            if (!hasSpawnPos && s_RememberedHasSpawnPos)
+            {
+                spawnPos = s_RememberedSpawnPos;
+                hasSpawnPos = true;
+            }
 
             // --- Prefer keeping an authoritative spawn pose ---
             // [TITAN-ORBIT] Local Host arms hasSpawnPos=True first; TeamChoiceResult / DeferredConfirm
@@ -87,12 +114,22 @@ namespace TitanOrbit.ECS
             Team = team;
             SpawnPos = spawnPos;
             HasSpawnPos = hasSpawnPos;
+            if (hasSpawnPos)
+            {
+                s_RememberedSpawnPos = spawnPos;
+                s_RememberedHasSpawnPos = true;
+            }
+
             Debug.Log(
                 $"[ClientPredictedShipSpawn] Request armed networkId={networkId} team={team} " +
                 $"hasSpawnPos={hasSpawnPos}.");
         }
 
-        /// <summary>Clears the queue (consumed, domain reload, leave match).</summary>
+        /// <summary>
+        /// Clears the pending queue only. Does not drop <see cref="s_RememberedSpawnPos"/> —
+        /// <see cref="TryDrainPending"/> calls this before Instantiates, and DeferredConfirm
+        /// still needs that pose if it re-arms.
+        /// </summary>
         public static void Clear()
         {
             Pending = false;
@@ -103,6 +140,18 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Drops pending + remembered pose + last hull handle. Call on Join Team click so a new
+        /// pick cannot Instantiates at the previous ship's ring angle.
+        /// </summary>
+        public static void ResetForTeamPick()
+        {
+            Clear();
+            s_RememberedSpawnPos = float3.zero;
+            s_RememberedHasSpawnPos = false;
+            s_LastPredictedHull = Entity.Null;
+        }
+
+        /// <summary>
         /// Drops static handles across Play Mode (Domain Reload off).
         /// Does not clear a live Pending request mid-match.
         /// </summary>
@@ -110,8 +159,7 @@ namespace TitanOrbit.ECS
             UnityEngine.RuntimeInitializeLoadType.BeforeSceneLoad)]
         static void ResetStaticsBeforeSceneLoad()
         {
-            Clear();
-            s_LastPredictedHull = Entity.Null;
+            ResetForTeamPick();
         }
 
         /// <summary>
@@ -170,7 +218,10 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            // --- Spawn pose: server hint, else home ring on client map ---
+            // --- Spawn pose: server TeamChoiceResult / Local Host, else home ring on client map ---
+            // [TITAN-ORBIT] Client-side FindHomeSpawnPosition uses a different RNG seed than the
+            // server (orbit clock × 1000). That is why Join Team used to show the hull at one
+            // ring angle, then snap to another when the snapshot classified. Prefer HasSpawnPos.
             if (!hasSpawnPos)
             {
                 double orbitElapsed = 0.0;
@@ -327,12 +378,11 @@ namespace TitanOrbit.ECS
             return shipPrefab != Entity.Null;
         }
 
-        /// <summary>Domain reload — also drops last predicted hull handle.</summary>
+        /// <summary>Domain reload — also drops last predicted hull handle and remembered pose.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStaticsSubsystem()
         {
-            Clear();
-            s_LastPredictedHull = Entity.Null;
+            ResetForTeamPick();
         }
     }
 

@@ -10,8 +10,10 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// [NETCODE] Client-side handler for <see cref="TeamChoiceResultRpc"/> replies from
     /// <see cref="TeamManagementSystem"/>. Updates <see cref="ClientTeamFlowState"/> so team-pick UI
-    /// and input suppression know whether spawn succeeded. World: ClientSimulation.
-    /// Paired with TeamManagementSystem on the server.
+    /// and input suppression know whether spawn succeeded. Forwards the server home-ring pose into
+    /// <see cref="ClientPredictedShipSpawnRequest"/> so the predicted hull Instantiates at the same
+    /// angle the server used (avoids a Join Team snap to a second ring location).
+    /// World: ClientSimulation. Paired with TeamManagementSystem on the server.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -69,10 +71,13 @@ namespace TitanOrbit.ECS
 
                 // --- Predicted hull when GhostReceive never delivers the server ship ---
                 // [TITAN-ORBIT] Dedicated/Relay path — Local Host queues from TeamManagementSystem.
-                // ClientPredictedShipSpawnSystem finds home ring (RPC has no spawn pose yet).
+                // Use the server ring pose from this RPC so classification does not snap the hull
+                // to a second random angle (Join Team "spawned twice"). Fallback find-home only
+                // when an older server omitted HasSpawnPos.
                 var team = (TeamId)rpc.AssignedTeam;
+                bool hasSpawnPos = rpc.HasSpawnPos != 0;
                 ClientPredictedShipSpawnRequest.Request(
-                    rpc.NetworkId, team, float3.zero, hasSpawnPos: false);
+                    rpc.NetworkId, team, rpc.SpawnPosition, hasSpawnPos);
 
                 // --- Drain same frame on ClientWorld (dedicated / Relay path) ---
                 // [TITAN-ORBIT] Do not rely solely on ClientPredictedShipSpawnSystem later in the

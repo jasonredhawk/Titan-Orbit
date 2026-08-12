@@ -390,6 +390,8 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server: collects gems into ship cargo when within hull or wing tractor pickup radius.
     /// Runs after <see cref="GemTractorBeamSystem"/> so pulled gems can be collected at wings.
+    /// Skips ships with Health &lt;= <see cref="ShipDamageLogic.DeathThreshold"/> so a 0-HP hull
+    /// cannot magnet-sip cargo and stay undead under dual-resource death rules.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -428,7 +430,11 @@ namespace TitanOrbit.ECS
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
-                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                // [TITAN-ORBIT] Mirror GemTractorBeamSystem — 0-HP hull cannot magnet-sip gems
+                // that would keep dual-resource death from firing.
+                if (shipState.ValueRO.IsDead ||
+                    shipState.ValueRO.Health <= ShipDamageLogic.DeathThreshold ||
+                    shipState.ValueRO.AwaitingTeamSelection)
                     continue;
 
                 float capacityLeft = shipState.ValueRO.GemCapacity - shipState.ValueRO.CurrentGems;

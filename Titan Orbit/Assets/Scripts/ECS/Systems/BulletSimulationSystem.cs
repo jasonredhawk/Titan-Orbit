@@ -8,6 +8,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
+using Unity.Physics;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
@@ -627,7 +628,22 @@ namespace TitanOrbit.ECS
                     state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId == b.OwnerNetworkId)
                     continue;
 
-                float shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
+                // --- Hit radius from attribute-grown PhysicsCollider (XZ AABB) ---
+                // [TITAN-ORBIT] Component upgrades scale compound hull children via
+                // ShipHullColliderLogic — GetShipHullRadiusWorld only sees tier LocalTransform.Scale
+                // and under-hits fat ships. Same helper as ShipToroidalWorldCollisionLogic.
+                float shipRadius;
+                if (state.EntityManager.HasComponent<PhysicsCollider>(shipEntity))
+                {
+                    var physicsCollider = state.EntityManager.GetComponentData<PhysicsCollider>(shipEntity);
+                    shipRadius = ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
+                        physicsCollider, shipTransform.ValueRO.Scale);
+                }
+                else
+                {
+                    shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
+                }
+
                 // [TITAN-ORBIT] Heavier fire-power tracers (ScaleMultiplier) get a matching
                 // collision pad so big planetary-defense / upgraded shots do not skim past hulls.
                 float bulletPad = math.clamp(b.ScaleMultiplier * 0.18f, 0f, 0.85f);

@@ -28,6 +28,14 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// [NETCODE] Server confirms or rejects team choice; client reads in <see cref="TeamChoiceResultClientSystem"/>.
+    /// <para>
+    /// [TITAN-ORBIT] <see cref="SpawnPosition"/> must travel with the ack. Join Team Instantiates a
+    /// client predicted hull immediately (GhostReceive often never delivers the ship). Without this
+    /// pose the client picks its own random orbit-ring angle, then GhostSpawn classification snaps
+    /// the hull to the server angle — looks like the ship spawned twice. Death respawn reuses the
+    /// same entity, so it does not hit this path. Adding these fields changes the RPC layout:
+    /// client and Linux headless must rebuild together.
+    /// </para>
     /// </summary>
     public struct TeamChoiceResultRpc : IRpcCommand
     {
@@ -39,6 +47,18 @@ namespace TitanOrbit.ECS
 
         /// <summary>[STANDARD] 1 = success, 0 = failure.</summary>
         public byte Success;
+
+        /// <summary>
+        /// [TITAN-ORBIT] 1 when <see cref="SpawnPosition"/> is the server home-ring spawn.
+        /// 0 on failure, or when an older server omitted the pose (client finds the ring itself).
+        /// </summary>
+        public byte HasSpawnPos;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Unbounded world spawn on the home orbit ring (same value the server
+        /// wrote to the ship <c>LocalTransform</c>). Ignored when <see cref="HasSpawnPos"/> is 0.
+        /// </summary>
+        public float3 SpawnPosition;
 
         /// <summary>[TITAN-ORBIT] Human-readable rejection or confirmation message for lobby UI.</summary>
         public FixedString128Bytes Message;

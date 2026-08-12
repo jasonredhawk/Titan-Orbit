@@ -25,8 +25,8 @@ namespace TitanOrbit.ECS
     /// Phantom hulls after a visible kill are a sync miss: the hybrid mesh hid, but the ECS
     /// <see cref="PhysicsCollider"/> (or a stray ghost leftover) stayed solid. Bounce / grind
     /// then still fire. Soft-destroy therefore culls the whole LinkedEntityGroup, squashes
-    /// scale so a stale static PhysX hull cannot keep the old radius, and retries unmatched
-    /// destroy poses until a rock is found.
+    /// scale so a stale static PhysX hull cannot keep the old radius, and the predicted cull
+    /// system <b>removes</b> <see cref="PhysicsCollider"/> so Unity Physics actually drops the body.
     /// </para>
     /// </summary>
     public static class ClientLocalAsteroidCombatSync
@@ -508,8 +508,10 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Marks culled, squashes scale, and swaps every PhysicsCollider in the LinkedEntityGroup
-        /// to the shared no-collide blob. Public so presentation-thread hide uses the same path.
+        /// Marks culled and disables collision on the root and every LinkedEntityGroup child.
+        /// Presentation hide may call this; the predicted cull system then
+        /// <b>removes</b> <see cref="PhysicsCollider"/> so Unity Physics rebuilds the static world
+        /// (blob-swap alone left a phantom hull that still stopped the ship).
         /// </summary>
         public static void CullPhysics(EntityManager em, Entity asteroid)
         {
@@ -540,7 +542,37 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Registry walk: any dead local asteroid that still has a collider gets culled.
+        /// Catches HitRpc hide / GO teardown that never tagged the ECS body.
+        /// </summary>
+        public static void CullDeadAsteroidsStillSolid(EntityManager em)
+        {
+            if (!em.World.IsCreated || ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return;
+
+            AsteroidClientEntityRegistry.CopyLive(RegistryScratch);
+            for (int i = 0; i < RegistryScratch.Count; i++)
+            {
+                Entity e = RegistryScratch[i];
+                if (!em.Exists(e) || !em.HasComponent<AsteroidTag>(e))
+                    continue;
+                if (em.HasComponent<AsteroidClientCulledTag>(e))
+                    continue;
+                if (!em.HasComponent<AsteroidState>(e))
+                    continue;
+
+                var state = em.GetComponentData<AsteroidState>(e);
+                if (!state.IsDestroyed && state.Health > 0.01f)
+                    continue;
+
+                CullPhysics(em, e);
+            }
+        }
+
+        /// <summary>
         /// CulledTag + no-collide blob + tiny scale on one entity (root or child).
+        /// Does not RemoveComponent here — presentation-thread hide must not structurally
+        /// mutate PhysicsCollider while jobs may still be in flight. The predicted strip pass does that.
         /// </summary>
         static void ApplyCullOnEntity(EntityManager em, Entity entity)
         {
@@ -550,7 +582,7 @@ namespace TitanOrbit.ECS
             if (!em.HasComponent<AsteroidClientCulledTag>(entity))
                 em.AddComponent<AsteroidClientCulledTag>(entity);
 
-            // [PHYSICS] Nudge static-world dirty flags so a leftover sphere cannot keep the old radius.
+            // [PHYSICS] Nudge static-world dirty flags for the one frame before collider strip.
             if (em.HasComponent<LocalTransform>(entity))
             {
                 var lt = em.GetComponentData<LocalTransform>(entity);

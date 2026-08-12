@@ -2590,6 +2590,8 @@ namespace TitanOrbit.Game
 
             _proxies.Remove(entity);
             _proxyNetworkIds.Remove(entity);
+            // Mesh is gone — strip ECS collision now or the ship rams empty space.
+            ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
             // Intentionally skip AsteroidClientEntityRegistry.NotifyDestroyed — ECS zombie remains.
         }
 

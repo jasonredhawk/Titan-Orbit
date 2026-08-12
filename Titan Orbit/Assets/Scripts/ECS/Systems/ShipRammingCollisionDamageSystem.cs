@@ -74,16 +74,24 @@ namespace TitanOrbit.ECS
             float spawnServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
                 state.EntityManager, now);
 
-            // --- Ensure sticky buffers on ships ---
-            var ensureEcb = new EntityCommandBuffer(Allocator.Temp);
-            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>().WithEntityAccess())
+            // --- Ensure sticky buffers on ships that still lack them ---
+            // [ECS/DOTS] WithNone so we do not allocate an ECB every grind tick for ships that
+            // already have the buffer (all of them after the first spawn).
             {
-                if (!state.EntityManager.HasBuffer<ShipRamContactElement>(entity))
+                bool anyMissing = false;
+                var ensureEcb = new EntityCommandBuffer(Allocator.Temp);
+                foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                             .WithNone<ShipRamContactElement>()
+                             .WithEntityAccess())
+                {
                     ensureEcb.AddBuffer<ShipRamContactElement>(entity);
-            }
+                    anyMissing = true;
+                }
 
-            ensureEcb.Playback(state.EntityManager);
-            ensureEcb.Dispose();
+                if (anyMissing)
+                    ensureEcb.Playback(state.EntityManager);
+                ensureEcb.Dispose();
+            }
 
             // --- Mark which (ship, target) pairs collided this tick ---
             var hitThisTick = new NativeHashSet<long>(math.max(8, queue.Length * 2), Allocator.Temp);
