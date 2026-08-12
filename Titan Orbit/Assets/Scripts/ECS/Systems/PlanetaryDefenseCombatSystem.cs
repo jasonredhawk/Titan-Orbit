@@ -177,6 +177,12 @@ namespace TitanOrbit.ECS
                         }
                     }
 
+                    // --- Player-occupied pads: AI must not steal the fire cadence ---
+                    // [TITAN-ORBIT] PlanetaryDefensePlayerCombatSystem aims/fires from ShipInput.
+                    // Regen above still runs so occupied turrets heal out of combat.
+                    if (slot.OccupiedByNetworkId != 0)
+                        continue;
+
                     var stats = config.GetLevelStats(slot.TurretLevel);
                     float fireRate = math.max(0.05f, stats.fireRate);
                     float bulletSpeed = math.max(1f, stats.bulletSpeed);

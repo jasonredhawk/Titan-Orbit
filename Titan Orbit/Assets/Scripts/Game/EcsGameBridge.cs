@@ -1040,6 +1040,8 @@ namespace TitanOrbit.Game
         {
             progress = 0f;
 
+            // --- Only snap to 100% when this session actually finished loading ---
+            // Do not use a fake 1/1 InGame fallback — that flashed World at 100% before the recipe.
             if (IsMapLoadingComplete())
             {
                 progress = 1f;
@@ -1053,7 +1055,10 @@ namespace TitanOrbit.Game
                     s_LatchedLoadingTotalSteps = ClientMapHydrateCache.ExpectedBodies;
 
                 // Hydrate is ~0–85% of bar 1; remaining is InGame dynamic catch-up.
-                float hydrate = ClientMapHydrateCache.Progress01;
+                // Until ExpectedBodies is known, keep the fill near zero (not 100%).
+                float hydrate = ClientMapHydrateCache.ExpectedBodies > 0
+                    ? ClientMapHydrateCache.Progress01
+                    : 0f;
                 if (!IsNetworkInGame())
                 {
                     progress = Mathf.Clamp01(hydrate * 0.85f);
@@ -1069,26 +1074,15 @@ namespace TitanOrbit.Game
                 return true;
             }
 
-            // --- Waiting for recipe / connection ---
-            if (!IsNetworkInGame() && !MapSessionMetaCache.HasMeta)
-            {
-                if (s_JoinLoadSmoothStart < 0f)
-                    s_JoinLoadSmoothStart = Time.realtimeSinceStartup;
+            // --- Waiting for recipe / connection / InGame with no hydrate yet ---
+            // Soft crawl only — never report 1.0 here (legacy InGame→100% caused the 1/1 flash).
+            if (s_JoinLoadSmoothStart < 0f)
+                s_JoinLoadSmoothStart = Time.realtimeSinceStartup;
 
-                float elapsed = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
-                float t = Mathf.Max(0f, elapsed) / JoinLoadSmoothSeconds;
-                progress = (1f - Mathf.Exp(-2.2f * t)) * 0.08f;
-                return true;
-            }
-
-            // --- Legacy / counts-only: network phase complete once InGame ---
-            if (IsNetworkInGame())
-            {
-                progress = 1f;
-                return true;
-            }
-
-            return false;
+            float elapsed = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
+            float t = Mathf.Max(0f, elapsed) / JoinLoadSmoothSeconds;
+            progress = (1f - Mathf.Exp(-2.2f * t)) * 0.08f;
+            return true;
         }
 
         /// <summary>
@@ -1154,36 +1148,36 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Bar 1 status counts: local seed-hydrate bodies (asteroids) vs expected, or 1/1 after settle.
+        /// Bar 1 status counts: local seed-hydrate bodies (asteroids) vs expected.
+        /// Returns false until the recipe exposes a real denominator (avoids a fake 1/1 flash).
         /// </summary>
         public static bool TryGetNetworkJoinLoadStepCounts(out int completedSteps, out int totalSteps)
         {
             completedSteps = 0;
             totalSteps = 0;
 
-            if (ClientMapHydrateCache.HasFullRecipe || ClientMapHydrateCache.HydrateStarted)
-            {
-                totalSteps = Mathf.Max(1, ClientMapHydrateCache.ExpectedBodies);
-                completedSteps = Mathf.Clamp(ClientMapHydrateCache.BuiltBodies, 0, totalSteps);
-
-                // After hydrate + InGame settle, bar 1 is done even if GOs still Instantiates.
-                if (ClientMapHydrateCache.IsComplete &&
-                    IsNetworkInGame() &&
-                    (ClientJoinSettleCache.JoinSettleCompleted ||
-                     ClientJoinSettleCache.InGameFrames >=
-                     TitanOrbitClientJoinTransformGateSystem.MinInGameFramesBeforeExit))
-                {
-                    completedSteps = totalSteps;
-                }
-
-                return true;
-            }
-
-            if (!IsNetworkInGame())
+            // --- No fake 1/1 before recipe ---
+            // [TITAN-ORBIT] Legacy path used totalSteps=1 / completedSteps=1 once InGame, which
+            // painted "1 / 1" + 100% on the World bar for a frame before ExpectedBodies arrived.
+            if (!ClientMapHydrateCache.HasFullRecipe && !ClientMapHydrateCache.HydrateStarted)
                 return false;
 
-            totalSteps = 1;
-            completedSteps = 1;
+            if (ClientMapHydrateCache.ExpectedBodies <= 0)
+                return false;
+
+            totalSteps = ClientMapHydrateCache.ExpectedBodies;
+            completedSteps = Mathf.Clamp(ClientMapHydrateCache.BuiltBodies, 0, totalSteps);
+
+            // After hydrate + InGame settle, bar 1 is done even if GOs still Instantiates.
+            if (ClientMapHydrateCache.IsComplete &&
+                IsNetworkInGame() &&
+                (ClientJoinSettleCache.JoinSettleCompleted ||
+                 ClientJoinSettleCache.InGameFrames >=
+                 TitanOrbitClientJoinTransformGateSystem.MinInGameFramesBeforeExit))
+            {
+                completedSteps = totalSteps;
+            }
+
             return true;
         }
 

@@ -85,12 +85,15 @@ namespace TitanOrbit.Game
             if (_planetRoot == null)
                 return;
 
-            // --- Distance cull ---
+            // --- Distance cull (planar XZ only) ---
             // [TITAN-ORBIT] Each planet used to draw 32+ rings every camera pass map-wide.
+            // Use XZ distance — 3D distance includes camera height, so turret-possession zoom
+            // (camera high above the pad) incorrectly hid the local orbit ring.
             if (cam != null)
             {
                 float maxDistSq = MaxDrawDistance * MaxDrawDistance;
-                if ((_planetRoot.position - cam.transform.position).sqrMagnitude > maxDistSq)
+                Vector3 delta = _planetRoot.position - cam.transform.position;
+                if ((delta.x * delta.x + delta.z * delta.z) > maxDistSq)
                     return;
             }
 

@@ -2,6 +2,7 @@ using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Input;
 using TitanOrbit.NetCode;
+using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -111,6 +112,11 @@ namespace TitanOrbit.Game
                 return;
 
             if (MoonOrbitClientState.IsOrbitMenuVisible)
+                return;
+
+            // --- Turret possession: Fire drives the pad, not ship mounts ---
+            // [TITAN-ORBIT] Ship anticipation would fly hull-forward and steal PD SpawnRpc adopt.
+            if (PlanetaryDefenseTurretClientState.IsControlling)
                 return;
 
             if (!TryGetLocalShipCombatState(world.EntityManager, out Entity shipEntity, out ShipWeaponConfig weaponCfg,

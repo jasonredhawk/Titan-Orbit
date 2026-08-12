@@ -149,11 +149,45 @@ namespace TitanOrbit.Simulation
         public static float GetMoonShieldOuterRadiusWorld(float planetSize, bool isHomePlanet) =>
             GetMoonShieldOuterRadiusLocal(planetSize, isHomePlanet) * math.max(0.01f, planetSize);
 
-        /// <summary>World-space bullet hit radius: shield shell when up, body when down.</summary>
+        /// <summary>
+        /// World-space bullet hit radius for a hostile / neutral gem moon:
+        /// shield shell when shield &gt; 0, solid moon body when the shield is down.
+        /// </summary>
+        /// <param name="planetSize">Planet transform scale (same input as other moon radius helpers).</param>
+        /// <param name="isHomePlanet">Homeworlds use a larger moon body curve.</param>
+        /// <param name="currentShield">Ghosted moon shield points — &gt; 0 expands the hit shell.</param>
         public static float GetMoonBulletHitRadiusWorld(float planetSize, bool isHomePlanet, float currentShield) =>
-            currentShield > 0.001f
+            GetMoonBulletHitRadiusWorld(planetSize, isHomePlanet, currentShield, attackerFriendlyToMoon: false);
+
+        /// <summary>
+        /// World-space bullet hit radius with a friendly-fire shield gate.
+        /// <para>
+        /// [TITAN-ORBIT] Allied shots pass through the moon shield bubble and only collide with
+        /// the solid moon body. Enemy/neutral shots still hit the shield shell when it is up
+        /// (so combat damage / VFX land on the barrier).
+        /// </para>
+        /// </summary>
+        /// <param name="planetSize">Planet transform scale.</param>
+        /// <param name="isHomePlanet">Homeworlds use a larger moon body curve.</param>
+        /// <param name="currentShield">Ghosted moon shield points.</param>
+        /// <param name="attackerFriendlyToMoon">
+        /// True for same-team attackers — forces body-only radius so allied bullets ignore the shield.
+        /// </param>
+        public static float GetMoonBulletHitRadiusWorld(
+            float planetSize,
+            bool isHomePlanet,
+            float currentShield,
+            bool attackerFriendlyToMoon)
+        {
+            // --- Friendly: body only (shield is pass-through for allies) ---
+            if (attackerFriendlyToMoon)
+                return GetMoonBodyRadiusWorld(planetSize, isHomePlanet);
+
+            // --- Hostile / neutral: shield shell when alive, else the rock ---
+            return currentShield > 0.001f
                 ? GetMoonShieldOuterRadiusWorld(planetSize, isHomePlanet)
                 : GetMoonBodyRadiusWorld(planetSize, isHomePlanet);
+        }
 
         public static float GetMoonSurfaceLandingRangeWorld(float planetSize, bool isHomePlanet, float shipRadiusEstimate = 0.8f)
         {

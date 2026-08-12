@@ -106,6 +106,11 @@ namespace TitanOrbit.ECS
                 if (ship.IsDead || ship.AwaitingTeamSelection)
                     continue;
 
+                // --- Stowed in planetary defense turret: hull is removed from play ---
+                if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
+                    state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                    continue;
+
                 if (IsMoonDockImmune(ref state, shipEntity))
                     continue;
 

@@ -16,6 +16,8 @@ MonoBehaviour:
   placeholderPrefab: {fileID: 0}
   depositZoneRadius: 2.5
   depositChunkIntervalSeconds: 0.5
+  depositRequireStillSeconds: 2
+  depositStillSpeedEpsilon: 0.15
   regenerateHealth: 1
   healthRegenPerSecond: 3
   healthRegenDelayAfterDamage: 2.5
@@ -25,9 +27,11 @@ MonoBehaviour:
   damageAtLevel6: 10
   fireRateAtLevel1: 2
   fireRateAtLevel6: 2
-  engageRangeAtLevel1: 20
-  engageRangeAtLevel6: 30
-  bulletSpeedAtLevel1: 8
+  engageRangeAtLevel1: 25
+  engageRangeAtLevel6: 40
+  cameraViewRadiusAtLevel1: 27
+  cameraViewRadiusAtLevel6: 42
+  bulletSpeedAtLevel1: 10
   bulletSpeedAtLevel6: 20
   useSolfeggioGemCosts: 1
   gemsAtLevel1: 174
@@ -40,40 +44,45 @@ MonoBehaviour:
     maxHealth: 174
     damage: 2
     fireRate: 2
-    bulletSpeed: 8
-    engageRange: 20
+    bulletSpeed: 10
+    engageRange: 25
+    cameraViewRadius: 27
     visualScale: 0.56
     hitRadius: 0.5
   - gemsToReachLevel: 285
     maxHealth: 309.6
     damage: 3.6
     fireRate: 2
-    bulletSpeed: 10.4
-    engageRange: 22
+    bulletSpeed: 12
+    engageRange: 28
+    cameraViewRadius: 30
     visualScale: 0.64
     hitRadius: 0.55
   - gemsToReachLevel: 396
     maxHealth: 445.2
     damage: 5.2
     fireRate: 2
-    bulletSpeed: 12.8
-    engageRange: 24
+    bulletSpeed: 14
+    engageRange: 31
+    cameraViewRadius: 33
     visualScale: 0.72
     hitRadius: 0.6
   - gemsToReachLevel: 528
     maxHealth: 580.8
     damage: 6.8
     fireRate: 2
-    bulletSpeed: 15.200001
-    engageRange: 26
+    bulletSpeed: 16
+    engageRange: 34
+    cameraViewRadius: 36
     visualScale: 0.8
     hitRadius: 0.65
   - gemsToReachLevel: 639
     maxHealth: 716.4
     damage: 8.4
     fireRate: 2
-    bulletSpeed: 17.6
-    engageRange: 28
+    bulletSpeed: 18
+    engageRange: 37
+    cameraViewRadius: 39
     visualScale: 0.88
     hitRadius: 0.7
   - gemsToReachLevel: 852
@@ -81,14 +90,16 @@ MonoBehaviour:
     damage: 10
     fireRate: 2
     bulletSpeed: 20
-    engageRange: 30
+    engageRange: 40
+    cameraViewRadius: 42
     visualScale: 1
     hitRadius: 0.8
   - gemsToReachLevel: 963
     maxHealth: 987.60004
     damage: 11.6
     fireRate: 2
-    bulletSpeed: 22.400002
-    engageRange: 32
+    bulletSpeed: 22
+    engageRange: 43
+    cameraViewRadius: 45
     visualScale: 1.1
     hitRadius: 0.85

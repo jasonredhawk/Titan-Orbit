@@ -6,20 +6,21 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Designer-tunable planetary defense turret recipe for one ship / planet family.
     /// Holds the turret mesh prefab, bullet bank, regen knobs, and Level-1 → Level-6
-    /// combat ranges (HP, damage, fire rate, absolute engage range, bullet speed) plus gem
-    /// costs that default to Solfeggio / cymatic frequencies. Level 7 is the crown rung (963) —
-    /// only unlockable when the planet is max level and the gem-moon reservoir is full.
-    /// Runtime resolve: <see cref="ResolveForFamily"/>.
+    /// combat ranges (HP, damage, fire rate, absolute engage range, bullet speed), possession
+    /// camera view radius, plus gem costs that default to Solfeggio / cymatic frequencies.
+    /// Level 7 is the crown rung (963) — only unlockable when the planet is max level and the
+    /// gem-moon reservoir is full. Runtime resolve: <see cref="ResolveForFamily"/>.
     /// <para>
     /// [TITAN-ORBIT] Turrets are not NetCode ghosts — this asset only tunes build costs,
-    /// combat stats, and which GameObject prefabs the client Instantiates at ghosted slots.
+    /// combat stats, client Instantiates prefabs, and possession camera framing.
     /// Engage range is absolute world units (independent of planet size / pad→orbit gap),
     /// defaulting to 20 at Lv1 then +4 per level above 1 (Lv2=24, Lv3=28, …) so equal-level
     /// ships (30 base + 4/level) can out-range turrets while lower-level ships step into fire sooner.
+    /// <see cref="cameraViewRadiusAtLevel1"/> / <see cref="cameraViewRadiusAtLevel6"/> control
+    /// how far <c>CameraFollowEcs</c> zooms while piloting (match engage range to line up framing).
     /// Acquisition uses per-level engageRange; bullet <c>MaxDistance</c> is computed at fire
     /// time via <c>PlanetaryDefenseAimMath.ComputeBulletMaxDistance</c> (at least engageRange,
-    /// longer when lead intercept sits past the acquire sphere). There is no separate bullet
-    /// lifetime / max-distance designer field on this asset.
+    /// longer when lead intercept sits past the acquire sphere).
     /// </para>
     /// </summary>
     [CreateAssetMenu(fileName = "PlanetaryDefenseConfig", menuName = "Titan Orbit/Planetary Defense Config")]
@@ -75,6 +76,16 @@ namespace TitanOrbit.Data
         [Tooltip("Seconds between automatic cargo→slot gem chunks while a ship sits in the zone.")]
         public float depositChunkIntervalSeconds = 0.5f;
 
+        [Tooltip(
+            "Seconds the ship must stay nearly still inside a pad zone before gem auto-deposit " +
+            "starts. Motion resets the timer. Take Control uses the same still gate on the client.")]
+        public float depositRequireStillSeconds = 2f;
+
+        [Tooltip(
+            "Planar (XZ) speed below this counts as still for deposit / Take Control " +
+            "(world units per second from ShipKinematics).")]
+        public float depositStillSpeedEpsilon = 0.15f;
+
         // --- Health regen (ship-style: delayed after last damage) ---
 
         [Header("Health Regen")]
@@ -122,6 +133,17 @@ namespace TitanOrbit.Data
             "Max fire distance from the turret pad at level 6 (world units). " +
             "Default 40 = 20 at Lv1 + 4 × (levels above 1). Lv2=24, Lv3=28, … Lv6=40.")]
         public float engageRangeAtLevel6 = 40f;
+
+        [Tooltip(
+            "Gameplay camera view radius while piloting a level-1 turret (world units). " +
+            "CameraFollowEcs zooms so this circle fits on screen. Match engageRangeAtLevel1 " +
+            "to line framing with fire distance, or set higher/lower for feel.")]
+        public float cameraViewRadiusAtLevel1 = 20f;
+
+        [Tooltip(
+            "Gameplay camera view radius while piloting a level-6 turret (world units). " +
+            "Lerped like engage range; Lv7 extrapolates one step past Lv6.")]
+        public float cameraViewRadiusAtLevel6 = 40f;
 
         [Tooltip(
             "Bullet speed (world units/sec) at level 1 — lerped into the ladder. " +
@@ -231,6 +253,12 @@ namespace TitanOrbit.Data
             /// From engage-range Level 1→6 lerp (default 20 → 40 = +4 per level above 1); Lv7 steps past 6.
             /// </summary>
             public float engageRange;
+
+            /// <summary>
+            /// Camera view radius while a player pilots this level (world units).
+            /// From cameraViewRadius Level 1→6 lerp — presentation only, not combat.
+            /// </summary>
+            public float cameraViewRadius;
 
             /// <summary>Visual scale multiplier on the prefab root (1 = authored size).</summary>
             public float visualScale;
@@ -343,6 +371,16 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Camera view radius (world units) while piloting this turret level.
+        /// Used by client possession framing — not combat.
+        /// </summary>
+        public float GetCameraViewRadius(int turretLevel)
+        {
+            EnsureLevelsInitialized();
+            return Mathf.Max(0.5f, GetLevelStats(turretLevel).cameraViewRadius);
+        }
+
+        /// <summary>
         /// Stats for turret level L (1..7). Combat fields always reflect the authored ranges.
         /// </summary>
         public TurretLevelStats GetLevelStats(int turretLevel)
@@ -424,6 +462,11 @@ namespace TitanOrbit.Data
                 row.engageRange = Mathf.Max(
                     0.5f,
                     LerpLevelRange(engageRangeAtLevel1, engageRangeAtLevel6, level));
+                // [TITAN-ORBIT] Possession camera framing — independent of engage so designers
+                // can match fire range or bias zoom without changing combat reach.
+                row.cameraViewRadius = Mathf.Max(
+                    0.5f,
+                    LerpLevelRange(cameraViewRadiusAtLevel1, cameraViewRadiusAtLevel6, level));
                 row.bulletSpeed = Mathf.Max(
                     1f,
                     LerpLevelRange(bulletSpeedAtLevel1, bulletSpeedAtLevel6, level));

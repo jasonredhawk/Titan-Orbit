@@ -1919,7 +1919,10 @@ namespace TitanOrbit.Game
                 _proxyShipLevels[shipEntity] = Mathf.Max(1, ship.ShipLevel);
                 _proxyTeams[shipEntity] = ship.Team;
                 _proxyBranchIndices[shipEntity] = Mathf.Max(0, ship.BranchIndex);
-                if (ship.IsDead)
+                // --- Hide dead hulls and ships stowed in planetary defense turrets ---
+                bool stowedInTurret = em.HasComponent<ShipTurretControlState>(shipEntity) &&
+                    em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling;
+                if (ship.IsDead || stowedInTurret)
                     proxyGo.SetActive(false);
                 else if (!proxyGo.activeSelf)
                     proxyGo.SetActive(true);
@@ -2148,7 +2151,10 @@ namespace TitanOrbit.Game
                     _proxyShipLevels[entity] = Mathf.Max(1, ship.ShipLevel);
                     _proxyTeams[entity] = ship.Team;
                     _proxyBranchIndices[entity] = Mathf.Max(0, ship.BranchIndex);
-                    if (ship.IsDead)
+                    // --- Hide dead hulls and ships stowed in planetary defense turrets ---
+                    bool stowedInTurret = em.HasComponent<ShipTurretControlState>(entity) &&
+                        em.GetComponentData<ShipTurretControlState>(entity).IsControlling;
+                    if (ship.IsDead || stowedInTurret)
                         go.SetActive(false);
                     else if (!go.activeSelf)
                         go.SetActive(true);

@@ -80,6 +80,21 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// [NETCODE] Client requests to take control of a built planetary defense turret pad.
+    /// Server validates zone / team / occupancy, then sets <see cref="ShipTurretControlState"/>
+    /// and <see cref="PlanetaryDefenseSlotElement.OccupiedByNetworkId"/>. Exit is not an RPC —
+    /// server ejects when <see cref="ShipInput.Thrust"/> is held while controlling.
+    /// </summary>
+    public struct EnterPlanetaryDefenseTurretCommand : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Stable <see cref="PlanetState.PlanetId"/> hosting the pad.</summary>
+        public int PlanetId;
+
+        /// <summary>[TITAN-ORBIT] 0-based defense slot index on that planet.</summary>
+        public byte SlotIndex;
+    }
+
+    /// <summary>
     /// [NETCODE] Client purchases a ship upgrade at an orbit station store. Server validates gems,
     /// level prerequisites, and branch availability.
     /// </summary>

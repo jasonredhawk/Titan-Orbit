@@ -51,6 +51,12 @@ namespace TitanOrbit.ECS
         public static bool HasSpawnPos { get; private set; }
 
         /// <summary>
+        /// Last predicted hull Instantiates from this request path (not a gather — one handle).
+        /// Blocks duplicate Instantiates when seed was pruned after ghost classification.
+        /// </summary>
+        static Entity s_LastPredictedHull;
+
+        /// <summary>
         /// Arms a one-shot ClientWorld Instantiates after TeamChoice success.
         /// Safe to call from ServerWorld Local Host mirror or ClientWorld RPC handler.
         /// Always sets Pending — do not gate on <see cref="LocalShipEntitySeed.HasOwnedShipSeed"/>
@@ -64,6 +70,17 @@ namespace TitanOrbit.ECS
         {
             if (networkId <= 0 || team == TeamId.None)
                 return;
+
+            // --- Prefer keeping an authoritative spawn pose ---
+            // [TITAN-ORBIT] Local Host arms hasSpawnPos=True first; TeamChoiceResult / DeferredConfirm
+            // later re-arm with false. Do not clobber a good pose while still Pending.
+            if (Pending && HasSpawnPos && !hasSpawnPos && networkId == NetworkId && team == Team)
+            {
+                Debug.Log(
+                    "[ClientPredictedShipSpawn] Request ignored (keep pending server spawn pose) " +
+                    $"networkId={networkId} team={team}.");
+                return;
+            }
 
             Pending = true;
             NetworkId = networkId;
@@ -86,6 +103,18 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Drops static handles across Play Mode (Domain Reload off).
+        /// Does not clear a live Pending request mid-match.
+        /// </summary>
+        [UnityEngine.RuntimeInitializeOnLoadMethod(
+            UnityEngine.RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void ResetStaticsBeforeSceneLoad()
+        {
+            Clear();
+            s_LastPredictedHull = Entity.Null;
+        }
+
+        /// <summary>
         /// Instantiates the pending predicted hull on <paramref name="em"/> if armed.
         /// Safe to call from Init, Simulation, or Local Host Result apply (ClientWorld EM only).
         /// </summary>
@@ -99,11 +128,26 @@ namespace TitanOrbit.ECS
 
             // --- Drop handles from a previous Play Mode (Domain Reload off) ---
             LocalShipEntitySeed.PruneStale(em);
+            if (s_LastPredictedHull != Entity.Null &&
+                (!em.Exists(s_LastPredictedHull) || !em.HasComponent<ShipTag>(s_LastPredictedHull)))
+                s_LastPredictedHull = Entity.Null;
 
             // --- Live hull already present (GhostReceive or prior predicted Instantiates) ---
             if (LocalShipEntitySeed.HasLiveOwnedShipSeed(em))
             {
                 Clear();
+                return true;
+            }
+
+            // --- Same-session predicted hull still alive (seed pruned after classification) ---
+            // [TITAN-ORBIT] Without this, DeferredConfirm re-armed Instantiates at (0,0,0) while
+            // the good ring hull still existed — player stuck off-map / unable to drive the real ship.
+            if (s_LastPredictedHull != Entity.Null)
+            {
+                LocalShipEntitySeed.ForceAcceptOwnedShip(s_LastPredictedHull);
+                Clear();
+                Debug.Log(
+                    "[ClientPredictedShipSpawn] Re-seeded existing predicted hull — skipped duplicate Instantiates.");
                 return true;
             }
 
@@ -147,6 +191,18 @@ namespace TitanOrbit.ECS
                 }
 
                 spawnPos = ShipHomeSpawnLogic.FindHomeSpawnPosition(em, team, orbitElapsed);
+
+                // --- Never Instantiates at unresolved origin ---
+                // [TITAN-ORBIT] Home ghosts may not be ready yet. Re-arm Pending and retry next tick
+                // instead of spawning a second hull at (0,0,0) that steals CommandTarget.
+                if (math.lengthsq(spawnPos) < 0.0001f)
+                {
+                    Debug.LogWarning(
+                        "[ClientPredictedShipSpawn] Home ring pose not ready — re-arming Pending " +
+                        $"(networkId={networkId} team={team}).");
+                    Request(networkId, team, float3.zero, hasSpawnPos: false);
+                    return false;
+                }
             }
 
             // --- Instantiates on ClientWorld only (PredictedGhostSpawnRequest stays disabled) ---
@@ -189,6 +245,7 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Editor.log 2026-08-12: NotifyShipInstantiated saw ownerId=0 right after
             // SetComponentData(NetworkId=1) — seed never latched, Confirm waited 240 frames empty.
             LocalShipEntitySeed.ForceAcceptOwnedShip(ship);
+            s_LastPredictedHull = ship;
 
             Debug.Log(
                 $"[ClientPredictedShipSpawn] Predicted hull Instantiates for networkId={networkId} " +
@@ -270,13 +327,13 @@ namespace TitanOrbit.ECS
             return shipPrefab != Entity.Null;
         }
 
-        /// <summary>Domain reload.</summary>
+        /// <summary>Domain reload — also drops last predicted hull handle.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStaticsSubsystem() => Clear();
-
-        /// <summary>Every Play Mode enter (Domain Reload may be off).</summary>
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        static void ResetStaticsBeforeSceneLoad() => Clear();
+        static void ResetStaticsSubsystem()
+        {
+            Clear();
+            s_LastPredictedHull = Entity.Null;
+        }
     }
 
     /// <summary>

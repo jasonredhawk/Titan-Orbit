@@ -560,6 +560,13 @@ namespace TitanOrbit.Game
         /// </summary>
         bool TryAdoptAnticipation(in BulletVfxBridge.SpawnRequest req)
         {
+            // --- World / planetary-defense spawns (MountIndex < 0) ---
+            // [TITAN-ORBIT] Never adopt ship-mount anticipation. Local Fire while piloting a pad
+            // used to leave ship-gun tracers that stole PD SpawnRpcs and kept the wrong velocity
+            // (turret aimed at mouse, bullets flew hull-forward).
+            if (req.MountIndex < 0)
+                return false;
+
             // --- FIFO adopt (oldest AnticipationOrder for this owner + mount) ---
             // [TITAN-ORBIT] Prefer matching MountIndex so a 4-gun volley binds each server Sequence
             // onto the anticipation that left that barrel. Fall back to any mount if none match

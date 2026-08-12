@@ -122,6 +122,12 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipMoonDockState());
 
+            // --- Ghosted planetary-defense turret possession (prefer bake on ship ghost) ---
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipTurretControlState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipTurretControlState());
+
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipDepositIntent>()
                          .WithEntityAccess())

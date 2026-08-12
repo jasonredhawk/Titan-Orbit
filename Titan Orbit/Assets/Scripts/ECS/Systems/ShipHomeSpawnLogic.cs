@@ -3,19 +3,20 @@ using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Shared helper that finds a team's home-planet spawn point on the XZ flight plane.
-    /// Used by death respawn, rejoin resume, and Join Team ship spawn — any server path that must
-    /// place a hull at home rather than at its last world position.
+    /// Used by death respawn, rejoin resume, Join Team server spawn, and client predicted
+    /// TeamChoice Instantiates when the server pose was not forwarded.
     /// <para>
     /// [TITAN-ORBIT] Spawn sits on the planet's ship orbit ring centerline at a random angle,
     /// excluding the gem-moon dock zone so the hull does not instantly begin landing and open the
-    /// Orbit Menu. Client prediction does not call this — spawn pose is server-authoritative and
-    /// replicated via the ship ghost.
+    /// Orbit Menu. Server prefers <see cref="HomePlanetTag"/>; ClientWorld must use replicated
+    /// <see cref="PlanetState.IsHomePlanet"/> (the tag is not ghosted).
     /// </para>
     /// </summary>
     public static class ShipHomeSpawnLogic
@@ -33,11 +34,16 @@ namespace TitanOrbit.ECS
         const float MoonDockExclusionMarginWorld = 2.5f;
 
         /// <summary>
-        /// Resolves a random orbit-ring spawn for <paramref name="team"/>: live
-        /// <see cref="HomePlanetTag"/> entity first, then baked <see cref="MapLayoutEntryElement"/>
-        /// fallback, then origin.
+        /// Resolves a random orbit-ring spawn for <paramref name="team"/>: live home planet first,
+        /// then baked <see cref="MapLayoutEntryElement"/> fallback, then origin.
+        /// <para>
+        /// [TITAN-ORBIT] Server uses <see cref="HomePlanetTag"/>. Client ghosts do <b>not</b> have
+        /// that tag — they must use replicated <see cref="PlanetState.IsHomePlanet"/> (same trap as
+        /// orbit Bank / <c>EcsGameBridge.TryGetHomePlanetIdForTeam</c>). Without this, predicted
+        /// TeamChoice Instantiates landed at (0,0,0) and stole the local hull.
+        /// </para>
         /// </summary>
-        /// <param name="em">Server EntityManager used for planet and layout queries.</param>
+        /// <param name="em">Server or Client EntityManager for planet and layout queries.</param>
         /// <param name="team">Team whose home planet we want.</param>
         /// <param name="elapsedSeconds">
         /// Shared moon orbit clock (<see cref="PlanetGemMoonOrbitClock"/> / ServerTick seconds)
@@ -45,45 +51,23 @@ namespace TitanOrbit.ECS
         /// </param>
         /// <returns>
         /// World position on the home orbit ring centerline, outside the moon dock wedge.
+        /// Returns <c>float3.zero</c> only when no home can be resolved yet (caller should retry).
         /// </returns>
         public static float3 FindHomeSpawnPosition(EntityManager em, TeamId team, double elapsedSeconds)
         {
-            // --- Prefer live home planet entities ---
-            // [ECS/DOTS] HomePlanetTag marks team capitals after map generation.
+            // --- Resolve home planet pose ---
             // We need position + scale + PlanetId so we can place on the ring and skip the moon.
             float3 homePos = float3.zero;
             float planetSize = 0f;
             int planetId = 0;
             int planetLevel = 1;
-            bool found = false;
-
-            using (var homes = em.CreateEntityQuery(
-                       ComponentType.ReadOnly<PlanetState>(),
-                       ComponentType.ReadOnly<LocalTransform>(),
-                       ComponentType.ReadOnly<PlanetTag>(),
-                       ComponentType.ReadOnly<HomePlanetTag>()))
-            using (var entities = homes.ToEntityArray(Allocator.Temp))
-            {
-                for (int i = 0; i < entities.Length; i++)
-                {
-                    var planet = em.GetComponentData<PlanetState>(entities[i]);
-                    // Ownership must match — neutrals are never homes.
-                    if (planet.Ownership != team)
-                        continue;
-
-                    var lt = em.GetComponentData<LocalTransform>(entities[i]);
-                    homePos = lt.Position;
-                    planetSize = math.max(0.25f, lt.Scale);
-                    planetId = planet.PlanetId;
-                    planetLevel = math.max(1, planet.PlanetLevel);
-                    found = true;
-                    break;
-                }
-            }
+            bool found = TryFindLiveHomePlanet(
+                em, team, out homePos, out planetSize, out planetId, out planetLevel);
 
             // --- Fallback: baked map layout buffer on MapStateSingleton ---
             // [TITAN-ORBIT] EntityKind 1 = home planet slot written during map generation.
             // Layout has Position / Scale / PlanetId but not live PlanetLevel (ring ignores level).
+            // Often present on server only — clients usually rely on IsHomePlanet above.
             if (!found)
             {
                 using var mapQuery = em.CreateEntityQuery(ComponentType.ReadOnly<MapStateSingleton>());
@@ -122,6 +106,82 @@ namespace TitanOrbit.ECS
                 isHomePlanet: true,
                 elapsedSeconds,
                 BuildSpawnRandomSeed(team, planetId, elapsedSeconds));
+        }
+
+        /// <summary>
+        /// Finds the team's live home planet pose. Prefers server-only <see cref="HomePlanetTag"/>,
+        /// then replicated <see cref="PlanetState.IsHomePlanet"/> for ClientWorld ghosts.
+        /// </summary>
+        static bool TryFindLiveHomePlanet(
+            EntityManager em,
+            TeamId team,
+            out float3 homePos,
+            out float planetSize,
+            out int planetId,
+            out int planetLevel)
+        {
+            homePos = float3.zero;
+            planetSize = 0f;
+            planetId = 0;
+            planetLevel = 1;
+
+            // --- Server path: HomePlanetTag is a tiny set (one capital per team) ---
+            using (var homes = em.CreateEntityQuery(
+                       ComponentType.ReadOnly<PlanetState>(),
+                       ComponentType.ReadOnly<LocalTransform>(),
+                       ComponentType.ReadOnly<PlanetTag>(),
+                       ComponentType.ReadOnly<HomePlanetTag>()))
+            using (var entities = homes.ToEntityArray(Allocator.Temp))
+            {
+                for (int i = 0; i < entities.Length; i++)
+                {
+                    var planet = em.GetComponentData<PlanetState>(entities[i]);
+                    // Ownership must match — neutrals are never homes.
+                    if (planet.Ownership != team)
+                        continue;
+
+                    var lt = em.GetComponentData<LocalTransform>(entities[i]);
+                    homePos = lt.Position;
+                    planetSize = math.max(0.25f, lt.Scale);
+                    planetId = planet.PlanetId;
+                    planetLevel = math.max(1, planet.PlanetLevel);
+                    return true;
+                }
+            }
+
+            // --- Client path: HomePlanetTag is not replicated ---
+            // [NETCODE] Ghosted planets carry IsHomePlanet + Ownership + LocalTransform.
+            // [TITAN-ORBIT] Predicted TeamChoice Instantiates call this on ClientWorld — without
+            // this branch, spawn was float3.zero and the player appeared off-map / frozen.
+            // [TITAN-ORBIT] Skip planet gathers during Join Team Instantiates (Crash!!! window).
+            // ServerWorld must never honor the client settle statics (Local Host shares them).
+            var world = em.World;
+            bool isClient = world != null && world.IsClient();
+            if (isClient && ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return false;
+
+            using (var planets = em.CreateEntityQuery(
+                       ComponentType.ReadOnly<PlanetState>(),
+                       ComponentType.ReadOnly<LocalTransform>(),
+                       ComponentType.ReadOnly<PlanetTag>()))
+            using (var entities = planets.ToEntityArray(Allocator.Temp))
+            {
+                for (int i = 0; i < entities.Length; i++)
+                {
+                    var planet = em.GetComponentData<PlanetState>(entities[i]);
+                    if (!planet.IsHomePlanet || planet.Ownership != team)
+                        continue;
+
+                    var lt = em.GetComponentData<LocalTransform>(entities[i]);
+                    homePos = lt.Position;
+                    planetSize = math.max(0.25f, lt.Scale);
+                    planetId = planet.PlanetId;
+                    planetLevel = math.max(1, planet.PlanetLevel);
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

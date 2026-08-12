@@ -125,6 +125,8 @@ namespace TitanOrbit.ECS.Authoring
                     HoldUntilElapsed = -1.0,
                 });
                 AddComponent(entity, new ShipMoonDockState());
+                // [NETCODE] Turret possession mode — must bake so IsControlling / PlanetId replicate.
+                AddComponent(entity, new ShipTurretControlState());
                 AddComponent(entity, new ShipDepositIntent());
                 // [NETCODE] Server bumps BeatSequence each deposit chunk; clients play SFX/UI from it.
                 AddComponent(entity, new ShipDepositFeedback());

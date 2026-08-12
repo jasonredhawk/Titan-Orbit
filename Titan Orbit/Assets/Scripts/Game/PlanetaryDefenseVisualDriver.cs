@@ -8,6 +8,7 @@ using TitanOrbit.Simulation;
 using TMPro;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -232,7 +233,8 @@ namespace TitanOrbit.Game
         /// Bump when pad-label materials / hierarchy change so live SlotVisuals rebuild the
         /// info plate once (gem icon, orientation) without a turret-level fingerprint change.
         /// </summary>
-        const byte InfoStyleVersion = 3;
+        // Bump cleans orphan per-pad WorldSpace Canvas Take Control buttons (FPS regression).
+        const byte InfoStyleVersion = 6;
 
         static readonly int RenderQueueOverlay = (int)RenderQueue.Overlay;
 
@@ -262,6 +264,15 @@ namespace TitanOrbit.Game
 
         /// <summary>True after <see cref="_mapQuery"/> has been created for the current world lifetime.</summary>
         bool _mapQueryCreated;
+
+        /// <summary>
+        /// Cached ship-aim query for occupied pads (GhostOwner + ShipInput).
+        /// Created once — per-slot CreateEntityQuery was an FPS bomb while anyone piloted.
+        /// </summary>
+        EntityQuery _occupantAimQuery;
+
+        /// <summary>True after <see cref="_occupantAimQuery"/> has been created.</summary>
+        bool _occupantAimQueryCreated;
 
         /// <summary>
         /// Scratch for people-transport VFX aim samples (no ECS gather — VFX driver list walk).
@@ -477,13 +488,19 @@ namespace TitanOrbit.Game
                 s_Instance = null;
             ClearAllGroups();
 
-            // --- Dispose cached map singleton query ---
+            // --- Dispose cached ECS queries ---
             // [ECS/DOTS] EntityQuery owns native allocations; leave them when the driver dies.
-            // This Entities version has no EntityQuery.IsCreated — track lifetime with _mapQueryCreated.
+            // This Entities version has no EntityQuery.IsCreated — track lifetime with bool flags.
             if (_mapQueryCreated)
             {
                 _mapQuery.Dispose();
                 _mapQueryCreated = false;
+            }
+
+            if (_occupantAimQueryCreated)
+            {
+                _occupantAimQuery.Dispose();
+                _occupantAimQueryCreated = false;
             }
         }
 
@@ -621,6 +638,7 @@ namespace TitanOrbit.Game
                         vis.ZoneVisual.SetRadiusLocal(padWorldRadius);
 
                     // --- Level + gems just below / outside the pad rim ---
+                    // Take Control is a single screen-space HUD button (not per-pad Canvas).
                     UpdateInfoPlate(
                         ref vis, slot, config, maxTurretLevel,
                         padWorldRadius, planetDisplay, slotWorld);
@@ -659,13 +677,20 @@ namespace TitanOrbit.Game
                             // Rest pose = radially outward from planet center. When a hostile is
                             // in this pad’s engage range, ease toward the lead aim point instead
                             // (same PlanetaryDefenseAimMath as server fire direction).
+                            // Player-occupied pads aim from the occupant ship's ShipInput instead.
                             Vector3 outwardFlat = new Vector3(
                                 slotWorld.x - planetDisplay.x,
                                 0f,
                                 slotWorld.z - planetDisplay.z);
                             Vector3 aimFlat = outwardFlat;
                             float bulletSpeed = math.max(1f, levelStats.bulletSpeed);
-                            if (canAimShips &&
+                            if (slot.OccupiedByNetworkId != 0)
+                            {
+                                // [HYBRID] Manual control — ghosted AimPlanarDir from the piloting ship.
+                                if (TryGetOccupantAimFlat(em, slot.OccupiedByNetworkId, out Vector3 occupiedAim))
+                                    aimFlat = occupiedAim;
+                            }
+                            else if (canAimShips &&
                                 hasMap &&
                                 TryFindNearestHostileDisplay(
                                     em, planet.Ownership, slotWorld, engageFromTurret,
@@ -739,6 +764,17 @@ namespace TitanOrbit.Game
             // is pad-local (screen-below), not planet-radial.
             _ = planetDisplay;
             _ = slotWorld;
+
+            // --- Strip legacy per-pad WorldSpace Take Control canvases (FPS bomb) ---
+            // [TITAN-ORBIT] Style v5 parented a Canvas+GraphicRaycaster under every SlotRoot.
+            // Dozens of GraphicRaycasters made EventSystem crawl (~6 FPS). Always strip —
+            // do not wait for InfoStyleVersion rebuild (already-v6 pads can still hold orphans).
+            if (vis.SlotRoot != null)
+            {
+                Transform legacy = vis.SlotRoot.Find("TakeControlButton");
+                if (legacy != null)
+                    Destroy(legacy.gameObject);
+            }
 
             // --- Rebuild plate when style/hierarchy changes (adds gem icon, fixes orientation) ---
             // Do not key off GemIcon.sprite — Editor-only load can be null without looping Destroy.
@@ -1024,13 +1060,14 @@ namespace TitanOrbit.Game
 
             // Level on top (toward the pad when plate sits on −Z); cost row underneath.
             vis.LevelText.transform.localPosition = new Vector3(0f, top - levelH * 0.5f, 0f);
-            vis.CostText.transform.localPosition = new Vector3(textCenterX, -top + costH * 0.5f, 0f);
+            float costY = top - levelH - InfoLineGapLocal - costH * 0.5f;
+            vis.CostText.transform.localPosition = new Vector3(textCenterX, costY, 0f);
 
             if (vis.GemIcon != null && vis.GemIcon.enabled && vis.GemIcon.sprite != null)
             {
                 vis.GemIcon.transform.localPosition = new Vector3(
                     costRowLeft + iconW * 0.5f,
-                    -top + costH * 0.5f,
+                    costY,
                     0f);
             }
         }
@@ -1605,6 +1642,47 @@ namespace TitanOrbit.Game
                     hash = (hash * 31) + buffer[i].TurretLevel;
                 return hash;
             }
+        }
+
+        /// <summary>
+        /// Reads ghosted <see cref="ShipInput.AimPlanarDir"/> from the ship owned by
+        /// <paramref name="networkId"/> (player currently occupying a defense pad).
+        /// Skipped during <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>.
+        /// Uses a cached EntityQuery — never allocates a new query per occupied pad per frame.
+        /// </summary>
+        bool TryGetOccupantAimFlat(EntityManager em, int networkId, out Vector3 aimFlat)
+        {
+            aimFlat = Vector3.zero;
+            if (networkId <= 0 || ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
+            // --- Ensure cached ship-aim query ---
+            // [ECS/DOTS] CreateEntityQuery every LateUpdate (× occupied pads) destroyed FPS (~6).
+            if (!_occupantAimQueryCreated)
+            {
+                _occupantAimQuery = em.CreateEntityQuery(
+                    ComponentType.ReadOnly<ShipTag>(),
+                    ComponentType.ReadOnly<GhostOwner>(),
+                    ComponentType.ReadOnly<ShipInput>());
+                _occupantAimQueryCreated = true;
+            }
+
+            using var owners = _occupantAimQuery.ToComponentDataArray<GhostOwner>(
+                Unity.Collections.Allocator.Temp);
+            using var inputs = _occupantAimQuery.ToComponentDataArray<ShipInput>(
+                Unity.Collections.Allocator.Temp);
+            for (int i = 0; i < owners.Length; i++)
+            {
+                if (owners[i].NetworkId != networkId)
+                    continue;
+                float2 dir = inputs[i].AimPlanarDir;
+                if (math.lengthsq(dir) < 0.0001f)
+                    return false;
+                aimFlat = new Vector3(dir.x, 0f, dir.y);
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>

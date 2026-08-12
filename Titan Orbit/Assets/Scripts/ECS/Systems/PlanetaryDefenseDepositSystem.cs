@@ -11,13 +11,15 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server: when a friendly living ship sits in a planetary defense slot zone, automatically
+    /// Server: when a friendly living ship sits still in a planetary defense slot zone, automatically
     /// drains cargo gems into that slot's build/upgrade bar (metronome chunks).
     /// <para>
     /// [TITAN-ORBIT] Gems go <b>only</b> into the slot — never planet treasury / Bank
     /// (<see cref="PlanetEconomyMath.DepositGems"/> is intentionally not called).
     /// No deposit button and no moon dock required. Fully moon-docked ships skip this path so
-    /// moon treasury deposit remains the docked flow.
+    /// moon treasury deposit remains the docked flow. Ships must stay nearly still for
+    /// <see cref="PlanetaryDefenseConfig.depositRequireStillSeconds"/> before chunks start;
+    /// motion resets the still timer. Ships piloting a turret also skip deposit.
     /// </para>
     /// <para>
     /// [ECS/DOTS] <see cref="SystemBase"/> (not <c>ISystem</c>) because we keep managed
@@ -34,22 +36,28 @@ namespace TitanOrbit.ECS
         /// <summary>Per-ship metronome accumulator (seconds), keyed by ship entity index.</summary>
         NativeHashMap<int, float> _beatTimers;
 
+        /// <summary>Per-ship continuous still time in a pad zone (seconds), keyed by ship entity index.</summary>
+        NativeHashMap<int, float> _stillTimers;
+
         PlanetShipFamilyConfig _familyConfig;
         bool _familyResolved;
 
-        /// <summary>Allocate beat timers; require map + planets.</summary>
+        /// <summary>Allocate beat / still timers; require map + planets.</summary>
         protected override void OnCreate()
         {
             RequireForUpdate<PlanetTag>();
             RequireForUpdate<MapStateSingleton>();
             _beatTimers = new NativeHashMap<int, float>(64, Allocator.Persistent);
+            _stillTimers = new NativeHashMap<int, float>(64, Allocator.Persistent);
         }
 
-        /// <summary>Dispose persistent map.</summary>
+        /// <summary>Dispose persistent maps.</summary>
         protected override void OnDestroy()
         {
             if (_beatTimers.IsCreated)
                 _beatTimers.Dispose();
+            if (_stillTimers.IsCreated)
+                _stillTimers.Dispose();
         }
 
         /// <summary>Drain cargo into nearby friendly defense slots.</summary>
@@ -78,6 +86,15 @@ namespace TitanOrbit.ECS
                 if (ship.CurrentGems <= 0.001f)
                     continue;
 
+                // --- Skip ships currently piloting a defense turret ---
+                if (em.HasComponent<ShipTurretControlState>(shipEntity) &&
+                    em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                {
+                    _beatTimers[shipEntity.Index] = 0f;
+                    _stillTimers[shipEntity.Index] = 0f;
+                    continue;
+                }
+
                 // --- Skip fully moon-docked ships (moon treasury owns that flow) ---
                 if (em.HasComponent<ShipMoonDockState>(shipEntity))
                 {
@@ -95,6 +112,33 @@ namespace TitanOrbit.ECS
                         em, ship.Team, shipPos, mapW, mapH, _familyConfig, defaultConfig,
                         out Entity planetEntity, out int slotIndex, out PlanetaryDefenseConfig config))
                 {
+                    _beatTimers[shipEntity.Index] = 0f;
+                    _stillTimers[shipEntity.Index] = 0f;
+                    continue;
+                }
+
+                // --- Still gate: must sit nearly still before deposit metronome runs ---
+                // [TITAN-ORBIT] ShipKinematics mirrors PhysicsVelocity after physics — planar speed.
+                float stillSeconds = math.max(0f, config.depositRequireStillSeconds);
+                float speedEps = math.max(0.01f, config.depositStillSpeedEpsilon);
+                float planarSpeed = 0f;
+                if (em.HasComponent<ShipKinematics>(shipEntity))
+                {
+                    float3 vel = em.GetComponentData<ShipKinematics>(shipEntity).Velocity;
+                    planarSpeed = math.length(new float2(vel.x, vel.z));
+                }
+
+                float still = 0f;
+                _stillTimers.TryGetValue(shipEntity.Index, out still);
+                if (planarSpeed > speedEps)
+                    still = 0f;
+                else
+                    still += dt;
+                _stillTimers[shipEntity.Index] = still;
+
+                if (still < stillSeconds)
+                {
+                    // Not still long enough — do not advance deposit metronome.
                     _beatTimers[shipEntity.Index] = 0f;
                     continue;
                 }

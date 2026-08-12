@@ -271,9 +271,13 @@ namespace TitanOrbit.Game
                     if (radius <= 0.001f)
                         continue;
 
-                    // --- Distance cull (presentation only) ---
+                    // --- Distance cull (presentation only, planar XZ) ---
+                    // [TITAN-ORBIT] Ignore camera Y — turret possession zooms height above MaxDrawDistance
+                    // and used to cull every pad under the player even when XZ was nearby.
                     Vector3 worldPos = pad.transform.position;
-                    if ((worldPos - camPos).sqrMagnitude > maxDistSq)
+                    float dx = worldPos.x - camPos.x;
+                    float dz = worldPos.z - camPos.z;
+                    if ((dx * dx + dz * dz) > maxDistSq)
                         continue;
 
                     Matrix4x4 zoneMatrix = pad.transform.localToWorldMatrix * Matrix4x4.Rotate(flatXZ);

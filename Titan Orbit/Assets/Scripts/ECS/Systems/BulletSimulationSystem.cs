@@ -290,6 +290,11 @@ namespace TitanOrbit.ECS
                 if (shipState.ValueRO.IsDead)
                     continue;
 
+                // --- Turret possession: Fire drives the pad, not ship mounts ---
+                if (SystemAPI.HasComponent<ShipTurretControlState>(entity) &&
+                    SystemAPI.GetComponentRO<ShipTurretControlState>(entity).ValueRO.IsControlling)
+                    continue;
+
                 // [TITAN-ORBIT] Empty mounts = intentional unarmed — no fire, no default muzzle.
                 if (!SystemAPI.HasBuffer<ShipWeaponMountElement>(entity))
                     continue;
@@ -574,26 +579,27 @@ namespace TitanOrbit.ECS
                     bestEntity = planetEntity;
                 }
 
-                // Friendly moons do not absorb — bullets pass through to rocks/ships behind.
+                // --- Gem moon: body always blocks; friendly shields are pass-through ---
+                // [TITAN-ORBIT] Allied shots fly through the shield bubble and only stop on the
+                // solid moon (like a small asteroid). Enemy/neutral still collide with the shield
+                // shell when it is up. Damage in Pass 2 early-outs on friendlies.
                 var attackerTeam = (TeamId)b.OwnerTeam;
-                // [TITAN-ORBIT] Filtered drones skip moon HP (mining/fighter are rocks-only or ships-only).
-                if (AllowsHitKind(b.DamageFilter, BulletHitKind.Moon) &&
-                    !PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(planetState.ValueRO.Ownership, attackerTeam))
-                {
-                    float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
-                        planetSize,
-                        planetState.ValueRO.IsHomePlanet,
-                        moonState.ValueRO.CurrentShield);
+                bool friendlyMoon = PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(
+                    planetState.ValueRO.Ownership, attackerTeam);
+                float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                    planetSize,
+                    planetState.ValueRO.IsHomePlanet,
+                    moonState.ValueRO.CurrentShield,
+                    attackerFriendlyToMoon: friendlyMoon);
 
-                    if (BulletCollision.SegmentHitsMoonNear(
-                            from, to, planetPos, planetSize,
-                            planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, moonElapsed,
-                            planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out float3 moonHit) &&
-                        TryKeepNearestHit(from, to, moonHit, ref bestT, ref bestHit))
-                    {
-                        bestKind = BulletHitKind.Moon;
-                        bestEntity = planetEntity;
-                    }
+                if (BulletCollision.SegmentHitsMoonNear(
+                        from, to, planetPos, planetSize,
+                        planetState.ValueRO.PlanetLevel, planetState.ValueRO.PlanetId, moonElapsed,
+                        planetState.ValueRO.IsHomePlanet, hitRadius, mapW, mapH, out float3 moonHit) &&
+                    TryKeepNearestHit(from, to, moonHit, ref bestT, ref bestHit))
+                {
+                    bestKind = BulletHitKind.Moon;
+                    bestEntity = planetEntity;
                 }
             }
 
@@ -609,6 +615,10 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 if (shipState.ValueRO.IsDead)
+                    continue;
+                // --- Stowed in turret: hull is "removed" — ignore bullet hits ---
+                if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
+                    state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
                     continue;
                 if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam)
                     continue;
@@ -752,6 +762,8 @@ namespace TitanOrbit.ECS
                 case BulletHitKind.Moon:
                 {
                     // Gem-moon shield lives on the planet entity (same as bake / orbit systems).
+                    // Bullet always stops here (friendly or not). ApplyBulletDamage no-ops on
+                    // same-team moons so home moons block without taking HP.
                     if (!state.EntityManager.HasComponent<PlanetGemMoonState>(bestEntity) ||
                         !state.EntityManager.HasComponent<PlanetState>(bestEntity))
                         return true;
@@ -966,33 +978,34 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Whether this bullet's <see cref="BulletDamageFilter"/> may collide with / damage
-        /// the given hit kind. Planets always block (solid world). Mining drones skip ships;
-        /// fighters skip asteroids — Starblast-style pass-through. Planetary defense hits
-        /// ships, transports, and asteroids (rocks must not be pass-through).
+        /// the given hit kind. Planets and gem moons always block (solid world). Mining drones
+        /// skip ships; fighters skip asteroids — Starblast-style pass-through. Planetary defense
+        /// hits ships, transports, and asteroids (rocks must not be pass-through).
         /// </summary>
         /// <param name="filter">Per-bullet mask from spawn (ship / drone / PD).</param>
         /// <param name="kind">Candidate obstacle class from the swept test.</param>
         /// <returns>True when this bullet should stop on / damage that kind.</returns>
         static bool AllowsHitKind(BulletDamageFilter filter, BulletHitKind kind)
         {
-            // --- Planet bodies always block (no HP) ---
+            // --- Planet + moon bodies always block ---
             // [TITAN-ORBIT] Solid world geometry for every filter — even mining bolts stop here.
-            if (kind == BulletHitKind.Planet)
+            // Moon HP still only applies to enemy/neutral moons in Pass 2.
+            if (kind == BulletHitKind.Planet || kind == BulletHitKind.Moon)
                 return true;
 
             switch (filter)
             {
                 case BulletDamageFilter.Everything:
-                    // Ship guns: full collision set (planets already handled above).
+                    // Ship guns: full collision set (planets/moons already handled above).
                     return true;
 
                 case BulletDamageFilter.AsteroidsOnly:
-                    // Mining: rocks only. Pass through ships, drones, transports, moons.
+                    // Mining: rocks only. Pass through ships, drones, transports.
                     return kind == BulletHitKind.Asteroid;
 
                 case BulletDamageFilter.ShipsOnly:
                     // Fighter: enemy ships + their drones + enemy planetary turrets.
-                    // Pass through asteroids / transports / moons.
+                    // Pass through asteroids / transports.
                     return kind == BulletHitKind.Ship ||
                            kind == BulletHitKind.Drone ||
                            kind == BulletHitKind.PlanetaryDefense;

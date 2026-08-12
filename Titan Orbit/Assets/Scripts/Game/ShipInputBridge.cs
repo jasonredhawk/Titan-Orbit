@@ -89,10 +89,15 @@ namespace TitanOrbit.Game
             // [HYBRID] Prefer presentation pose (already synced) before ECS ship queries.
             // [TITAN-ORBIT] TryGet… — MPPM Player 2 often has NaN mouse until that Game view is focused;
             // leaving aimDir at zero keeps current facing (ShipPhysicsDriveLogic.AimWorldPoint).
+            // [TITAN-ORBIT] Turret control aims from the pad pose (hull is stowed/hidden).
+            bool turretControl = PlanetaryDefenseTurretClientState.IsControlling;
+
             if (cam != null && _input.TryGetMouseWorldPosition(cam, out Vector3 aimWorld))
             {
                 Vector3 shipPos = Vector3.zero;
-                if (ShipDisplayPose.HasLocalPose)
+                if (turretControl && PlanetaryDefenseTurretClientState.HasPadWorldPosition)
+                    shipPos = PlanetaryDefenseTurretClientState.PadWorldPosition;
+                else if (ShipDisplayPose.HasLocalPose)
                     shipPos = ShipDisplayPose.LocalPosition;
                 else if (!EcsGameBridge.TryGetLocalShipPosition(out shipPos))
                     shipPos = Vector3.zero;
@@ -105,6 +110,7 @@ namespace TitanOrbit.Game
                 }
             }
 
+            // While controlling a turret, RMB thrust is the exit signal (server ejects).
             bool thrust = _input.MoveForwardPressed;
 
             // [NETCODE] InputEvent.Set() marks fire as pressed this tick (one-shot for ghost input).
@@ -113,13 +119,15 @@ namespace TitanOrbit.Game
                 fire.Set();
 
             // [TITAN-ORBIT] B / CycleBullet — latch + Set; ShipPendingInput.Set merges latch again.
+            // Suppress cycle while in a turret (pad uses the turret bullet bank).
             var cycleBullet = new InputEvent();
-            if (cyclePressedThisFrame || ShipPendingInput.CycleBulletLatched)
+            if (!turretControl && (cyclePressedThisFrame || ShipPendingInput.CycleBulletLatched))
                 cycleBullet.Set();
 
             // [TITAN-ORBIT] OVERDRIVE intent = Shift alone (not AND thrust).
             // Latch re-engages at ≥25% energy while Shift stays held; burst applies when thrusting.
-            bool overdrive = _input.OverdriveHeld;
+            // Clear while stowed so prediction does not fight turret possession.
+            bool overdrive = !turretControl && _input.OverdriveHeld;
 
             return new ShipInput
             {

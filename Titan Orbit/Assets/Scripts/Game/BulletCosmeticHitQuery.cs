@@ -31,7 +31,7 @@ namespace TitanOrbit.Game
         /// <summary>One sphere (or moon orbiting a planet) the cosmetic tracer may collide with.</summary>
         public struct Obstacle
         {
-            /// <summary>Planet body, asteroid rock, enemy ship hull, or enemy gem-moon shield.</summary>
+            /// <summary>Planet body, asteroid rock, enemy ship hull, or gem-moon body/shield.</summary>
             public ObstacleKind Kind;
 
             /// <summary>
@@ -52,7 +52,9 @@ namespace TitanOrbit.Game
             /// <summary>Transform scale used for planet/moon radius helpers.</summary>
             public float Scale;
 
-            /// <summary>Ship team or moon ownership — used to skip friendly hits.</summary>
+            /// <summary>
+            /// Ship team (friendly/self skip) or moon ownership (friendly shield pass-through).
+            /// </summary>
             public byte TeamOrOwnership;
 
             /// <summary>[NETCODE] GhostOwner NetworkId for ships (skip own hull).</summary>
@@ -162,18 +164,20 @@ namespace TitanOrbit.Game
                         IsHomePlanet = planet.IsHomePlanet,
                     });
 
-                    // Enemy moon only when PlanetGemMoonState is present (ghosted with planet).
+                    // --- Gem moon (every ownership) — body always blocks; shield team-gated ---
+                    // [TITAN-ORBIT] Refresh stores ownership + shield; TryHitSegment picks body vs
+                    // shield radius from the firing team (friendly bullets ignore the bubble).
                     if (em.HasComponent<PlanetGemMoonState>(entity))
                     {
                         var moon = em.GetComponentData<PlanetGemMoonState>(entity);
-                        float hitRadius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
-                            planetScale, planet.IsHomePlanet, moon.CurrentShield);
                         Obstacles.Add(new Obstacle
                         {
                             Kind = ObstacleKind.Moon,
                             SourceEntity = entity,
                             LogicalCenter = lt.Position,
-                            Radius = hitRadius,
+                            // Placeholder — TryHitSegment recomputes body vs shield from ownerTeam.
+                            Radius = PlanetGemMoonMath.GetMoonBodyRadiusWorld(
+                                planetScale, planet.IsHomePlanet),
                             Scale = planetScale,
                             TeamOrOwnership = (byte)planet.Ownership,
                             PlanetLevel = planet.PlanetLevel,
@@ -243,7 +247,7 @@ namespace TitanOrbit.Game
         /// </summary>
         /// <param name="from">Segment start (logical or display — must match <paramref name="isDisplaySpace"/>).</param>
         /// <param name="to">Segment end.</param>
-        /// <param name="ownerTeam">Firing team — skips friendly ships/moons.</param>
+        /// <param name="ownerTeam">Firing team — skips friendly ships (moons always block).</param>
         /// <param name="ownerNetworkId">Shooter NetworkId — skips own hull.</param>
         /// <param name="isDisplaySpace">True when the tracer flies in presentation / display coords.</param>
         /// <param name="hitPoint">Contact point in the same space as from/to.</param>
@@ -301,8 +305,11 @@ namespace TitanOrbit.Game
                     // --- Same unwrap origin as server SegmentHitsMoonNear (segment start) ---
                     // [TITAN-ORBIT] Do not unwrap moons from the ship reference while the segment
                     // starts at the muzzle — that disagreed with server and mis-ordered hits.
+                    // Friendly: body only (pass through shield). Hostile: shield shell when up.
+                    bool friendlyMoon = PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon(
+                        (TeamId)o.TeamOrOwnership, (TeamId)ownerTeam);
                     float radius = PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
-                        o.Scale, o.IsHomePlanet, o.CurrentShield);
+                        o.Scale, o.IsHomePlanet, o.CurrentShield, friendlyMoon);
                     hit = BulletCollision.SegmentHitsMoonNear(
                         from, to, o.LogicalCenter, o.Scale,
                         o.PlanetLevel, o.PlanetId, moonElapsed,
@@ -384,18 +391,11 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Team / self filters matching server <c>TryResolveBulletHit</c>.
-        /// Planets and asteroids always collide; moons/ships skip friendlies.
+        /// Planets/asteroids always collide; moons always test (friendly uses body-only radius);
+        /// ships skip friendlies / self.
         /// </summary>
         static bool PassesTeamFilter(in Obstacle o, byte ownerTeam, int ownerNetworkId)
         {
-            var attacker = (TeamId)ownerTeam;
-
-            if (o.Kind == ObstacleKind.Moon)
-            {
-                // Same gate as server — friendly moons do not absorb bullets.
-                return !PlanetGemMoonCombatLogic.IsTeamFriendlyToMoon((TeamId)o.TeamOrOwnership, attacker);
-            }
-
             if (o.Kind == ObstacleKind.Ship)
             {
                 if (o.TeamOrOwnership == ownerTeam)
@@ -405,13 +405,13 @@ namespace TitanOrbit.Game
                 return true;
             }
 
-            // Planet absorb + asteroid mining — always test.
+            // Planet / moon / asteroid — always test. Moon shield vs body is radius-gated above.
             return true;
         }
 
         /// <summary>
         /// [TITAN-ORBIT] Mirrors server <c>BulletSimulationSystem.AllowsHitKind</c> for cosmetic tracers.
-        /// Planets always block; mining skips ships/moons; fighters skip asteroids/moons;
+        /// Planets and moons always block; mining skips ships; fighters skip asteroids;
         /// planetary defense clips ships and asteroids (transports are server-only for now).
         /// </summary>
         /// <param name="filter">Spawn-time mask from the tracer request (byte cast).</param>
@@ -419,8 +419,8 @@ namespace TitanOrbit.Game
         /// <returns>True when the cosmetic tracer should stop on this kind.</returns>
         static bool PassesDamageFilter(BulletDamageFilter filter, ObstacleKind kind)
         {
-            // Planets are solid world for every filter (same as server).
-            if (kind == ObstacleKind.Planet)
+            // Planets + moons are solid world for every filter (same as server).
+            if (kind == ObstacleKind.Planet || kind == ObstacleKind.Moon)
                 return true;
 
             switch (filter)

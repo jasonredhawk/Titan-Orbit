@@ -9,7 +9,7 @@ namespace TitanOrbit.Game
     /// Full-screen join overlay shown while the map builds on the client.
     /// Content sits in a tight vertical cluster in the middle of the screen (not pinned to
     /// the top/bottom edges): HOW TO PLAY → five instruction cards → BUILDING GALAXY →
-    /// two progress bars (world sync, then map visuals) → percents.
+    /// two compact progress bars (counts + % drawn inside each bar).
     /// <para>
     /// Bar 1 — <see cref="EcsGameBridge.TryGetNetworkJoinLoadProgress"/>: seed-hydrate ECS
     /// bodies + short InGame ghost catch-up.
@@ -25,11 +25,13 @@ namespace TitanOrbit.Game
     public class LoadingScreenControllerNce : MonoBehaviour
     {
         // --- Progress bar chrome ---
+        // [TITAN-ORBIT] Taller track so count + % fit inside; no separate status/percent rows.
         const float BarPadding = 2f;
-        const float ProgressBarWidth = 520f;
-        const float ProgressBarHeight = 18f;
-        const float BarLabelHeight = 20f;
-        const float BarStackGap = 10f;
+        const float ProgressBarWidth = 560f;
+        const float ProgressBarHeight = 28f;
+        const float BarLabelHeight = 18f;
+        const float BarStackGap = 8f;
+        const float BarLabelToTrackGap = 3f;
 
         // --- Centered content cluster ---
         // [TITAN-ORBIT] Pack labels + cards + bar toward screen center so large monitors
@@ -42,8 +44,6 @@ namespace TitanOrbit.Game
         const float SectionGap = 14f;
         const float HowToHeight = 36f;
         const float TitleHeight = 40f;
-        const float StatusHeight = 26f;
-        const float PercentHeight = 22f;
 
         // --- Instruction strip (matches InstructionScreenUI topics) ---
         const int StepCount = 5;
@@ -119,14 +119,17 @@ namespace TitanOrbit.Game
             new Color(0.98f, 0.48f, 0.38f, 1f),
         };
 
-        /// <summary>One labeled progress bar (track + fill + status + percent).</summary>
+        /// <summary>
+        /// One labeled progress bar: short title above, fill track with in-bar overlay text
+        /// (count + percent). Compact — no separate status/percent rows under the track.
+        /// </summary>
         sealed class ProgressBarUi
         {
             public TextMeshProUGUI Label;
-            public TextMeshProUGUI Status;
             public RectTransform Track;
             public Image Fill;
-            public TextMeshProUGUI Percent;
+            /// <summary>Centered overlay on the track: e.g. "120 / 678   45%".</summary>
+            public TextMeshProUGUI Overlay;
         }
 
         RectTransform _panelRoot;
@@ -179,6 +182,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Per-frame: fill both bars from network/hydrate + hybrid GO proxy progress.
+        /// Count and percent are drawn inside each taller track (compact layout).
         /// </summary>
         void Update()
         {
@@ -186,54 +190,42 @@ namespace TitanOrbit.Game
                 return;
 
             // --- Bar 1: ECS seed hydrate + InGame catch-up ---
-            // Status is just "done / total" — the short label above carries the meaning.
             float networkProgress = 0f;
             EcsGameBridge.TryGetNetworkJoinLoadProgress(out networkProgress);
-            ApplyBarProgress(_networkBar, networkProgress);
-            if (_networkBar != null && _networkBar.Status != null)
-            {
-                _networkBar.Status.text =
-                    EcsGameBridge.TryGetNetworkJoinLoadStepCounts(out int netDone, out int netTotal) &&
-                    netTotal > 0
-                        ? netDone + " / " + netTotal
-                        : string.Empty;
-            }
+            string netCounts =
+                EcsGameBridge.TryGetNetworkJoinLoadStepCounts(out int netDone, out int netTotal) &&
+                netTotal > 0
+                    ? netDone + " / " + netTotal
+                    : string.Empty;
+            ApplyBar(_networkBar, networkProgress, netCounts, stuckHint: null);
 
             // --- Bar 2: hybrid planet/asteroid GameObject Instantiates ---
             float proxyProgress = 0f;
             EcsGameBridge.TryGetProxyJoinLoadProgress(out proxyProgress);
-            ApplyBarProgress(_proxyBar, proxyProgress);
+            string goCounts =
+                EcsGameBridge.TryGetProxyJoinLoadStepCounts(out int goDone, out int goTotal) &&
+                goTotal > 0
+                    ? goDone + " / " + goTotal
+                    : string.Empty;
 
-            if (_proxyBar != null && _proxyBar.Status != null)
+            // --- Stuck hint after a few seconds (Settling vs Instantiates vs drain) ---
+            // [TITAN-ORBIT] 314/315 with Settling ON looked like a hang with no explanation.
+            string mapHint = null;
+            bool proxyReady = EcsGameBridge.IsMapProxyCountReady(out _, out _, out _);
+            if (proxyReady || proxyProgress >= 0.99f)
             {
-                string counts =
-                    EcsGameBridge.TryGetProxyJoinLoadStepCounts(out int goDone, out int goTotal) &&
-                    goTotal > 0
-                        ? goDone + " / " + goTotal
-                        : string.Empty;
-
-                // --- Stuck hint after a few seconds (Settling vs Instantiates vs drain) ---
-                // [TITAN-ORBIT] 314/315 with Settling ON looked like a hang with no explanation.
-                bool proxyReady = EcsGameBridge.IsMapProxyCountReady(out _, out _, out _);
-                if (proxyReady || proxyProgress >= 0.99f)
-                {
-                    _stuckWatchSince = -1f;
-                    _proxyBar.Status.text = counts;
-                }
-                else
-                {
-                    if (_stuckWatchSince < 0f)
-                        _stuckWatchSince = Time.realtimeSinceStartup;
-
-                    string hint = string.Empty;
-                    if (Time.realtimeSinceStartup - _stuckWatchSince >= StuckHintAfterSeconds)
-                        hint = EcsGameBridge.GetMapLoadStuckHint();
-
-                    _proxyBar.Status.text = string.IsNullOrEmpty(hint)
-                        ? counts
-                        : (string.IsNullOrEmpty(counts) ? hint : counts + " — " + hint);
-                }
+                _stuckWatchSince = -1f;
             }
+            else
+            {
+                if (_stuckWatchSince < 0f)
+                    _stuckWatchSince = Time.realtimeSinceStartup;
+
+                if (Time.realtimeSinceStartup - _stuckWatchSince >= StuckHintAfterSeconds)
+                    mapHint = EcsGameBridge.GetMapLoadStuckHint();
+            }
+
+            ApplyBar(_proxyBar, proxyProgress, goCounts, mapHint);
         }
 
         /// <summary>
@@ -249,13 +241,9 @@ namespace TitanOrbit.Game
         public void Show()
         {
             BuildUi();
-            ApplyBarProgress(_networkBar, 0f);
-            ApplyBarProgress(_proxyBar, 0f);
+            ApplyBar(_networkBar, 0f, counts: string.Empty, stuckHint: null);
+            ApplyBar(_proxyBar, 0f, counts: string.Empty, stuckHint: null);
             _stuckWatchSince = Time.realtimeSinceStartup;
-            if (_networkBar != null && _networkBar.Status != null)
-                _networkBar.Status.text = string.Empty;
-            if (_proxyBar != null && _proxyBar.Status != null)
-                _proxyBar.Status.text = string.Empty;
             if (_panelRoot != null)
             {
                 _panelRoot.SetAsLastSibling();
@@ -276,8 +264,14 @@ namespace TitanOrbit.Game
                 _panelRoot.gameObject.SetActive(false);
         }
 
-        /// <summary>Applies 0–1 fill amount and percent label to one bar.</summary>
-        static void ApplyBarProgress(ProgressBarUi bar, float progress)
+        /// <summary>
+        /// Updates fill amount and the in-bar overlay text (count + percent, optional stuck hint).
+        /// </summary>
+        /// <param name="bar">World or Map bar UI.</param>
+        /// <param name="progress">0–1 fill.</param>
+        /// <param name="counts">e.g. "120 / 678", or empty while waiting for meta.</param>
+        /// <param name="stuckHint">Optional short hint appended when load looks stuck.</param>
+        static void ApplyBar(ProgressBarUi bar, float progress, string counts, string stuckHint)
         {
             if (bar == null)
                 return;
@@ -287,8 +281,21 @@ namespace TitanOrbit.Game
             if (bar.Fill != null)
                 bar.Fill.fillAmount = progress;
 
-            if (bar.Percent != null)
-                bar.Percent.text = Mathf.RoundToInt(progress * 100f) + "%";
+            if (bar.Overlay == null)
+                return;
+
+            // --- In-bar text: "120 / 678   45%" ---
+            string percent = Mathf.RoundToInt(progress * 100f) + "%";
+            string overlay;
+            if (!string.IsNullOrEmpty(counts))
+                overlay = counts + "   " + percent;
+            else
+                overlay = percent;
+
+            if (!string.IsNullOrEmpty(stuckHint))
+                overlay += "  —  " + stuckHint;
+
+            bar.Overlay.text = overlay;
         }
 
         /// <summary>
@@ -360,7 +367,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Builds one labeled progress stack: label → status → track/fill → percent.
+        /// Builds one compact progress stack: short label above a taller track with in-bar overlay.
         /// </summary>
         ProgressBarUi CreateProgressBar(
             RectTransform parent,
@@ -368,13 +375,9 @@ namespace TitanOrbit.Game
             string label,
             Color fillColor)
         {
-            var labelTmp = CreateText(parent, rootName + "Label", label, 15, FontStyles.Bold);
+            var labelTmp = CreateText(parent, rootName + "Label", label, 14, FontStyles.Bold);
             labelTmp.alignment = TextAlignmentOptions.Center;
             labelTmp.color = new Color(0.78f, 0.88f, 1f, 0.95f);
-
-            var status = CreateText(parent, rootName + "Status", "...", 15, FontStyles.Normal);
-            status.alignment = TextAlignmentOptions.Center;
-            status.color = new Color(0.62f, 0.76f, 0.92f, 0.95f);
 
             var track = CreateRect(rootName + "Track", parent);
             var trackImage = track.gameObject.AddComponent<Image>();
@@ -393,17 +396,23 @@ namespace TitanOrbit.Game
             fill.color = fillColor;
             fill.raycastTarget = false;
 
-            var percent = CreateText(parent, rootName + "Percent", "0%", 15, FontStyles.Bold);
-            percent.alignment = TextAlignmentOptions.Center;
-            percent.color = new Color(0.75f, 0.85f, 1f, 0.95f);
+            // --- Overlay text sits on top of fill (sibling after Fill) ---
+            // Dark outline keeps "120 / 678   45%" readable on both empty track and filled color.
+            var overlay = CreateText(track, "Overlay", "0%", 15, FontStyles.Bold);
+            StretchFill(overlay.rectTransform, 8f, 8f, 0f, 0f);
+            overlay.alignment = TextAlignmentOptions.Center;
+            overlay.verticalAlignment = VerticalAlignmentOptions.Middle;
+            overlay.color = new Color(0.96f, 0.98f, 1f, 1f);
+            overlay.raycastTarget = false;
+            overlay.outlineWidth = 0.2f;
+            overlay.outlineColor = new Color32(8, 12, 22, 220);
 
             return new ProgressBarUi
             {
                 Label = labelTmp,
-                Status = status,
                 Track = track,
                 Fill = fill,
-                Percent = percent,
+                Overlay = overlay,
             };
         }
 
@@ -499,15 +508,8 @@ namespace TitanOrbit.Game
 
             float cardHeight = Mathf.Min(maxCardHeight, MaxCardHeight);
 
-            // One progress stack: label + status + track + percent (+ small gaps).
-            float oneBarStackHeight =
-                BarLabelHeight
-                + 2f
-                + StatusHeight
-                + 4f
-                + ProgressBarHeight
-                + 4f
-                + PercentHeight;
+            // Compact stack: short label + taller in-bar text track.
+            float oneBarStackHeight = BarLabelHeight + BarLabelToTrackGap + ProgressBarHeight;
 
             // --- Total cluster height (tight stack) ---
             float clusterHeight =
@@ -582,7 +584,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Places label → status → track → percent for one bar and advances
+        /// Places label + track (overlay is a child of the track) and advances
         /// <paramref name="yFromTop"/>.
         /// </summary>
         void PlaceProgressBarStack(ProgressBarUi bar, float contentWidth, ref float yFromTop)
@@ -591,18 +593,14 @@ namespace TitanOrbit.Game
                 return;
 
             PlaceTopBand(bar.Label.rectTransform, contentWidth, BarLabelHeight, ref yFromTop);
-            yFromTop += 2f;
-            PlaceTopBand(bar.Status.rectTransform, contentWidth, StatusHeight, ref yFromTop);
-            yFromTop += 4f;
+            yFromTop += BarLabelToTrackGap;
 
             bar.Track.anchorMin = new Vector2(0.5f, 1f);
             bar.Track.anchorMax = new Vector2(0.5f, 1f);
             bar.Track.pivot = new Vector2(0.5f, 1f);
             bar.Track.anchoredPosition = new Vector2(0f, -yFromTop);
             bar.Track.sizeDelta = new Vector2(ProgressBarWidth, ProgressBarHeight);
-            yFromTop += ProgressBarHeight + 4f;
-
-            PlaceTopBand(bar.Percent.rectTransform, contentWidth, PercentHeight, ref yFromTop);
+            yFromTop += ProgressBarHeight;
         }
 
         /// <summary>
