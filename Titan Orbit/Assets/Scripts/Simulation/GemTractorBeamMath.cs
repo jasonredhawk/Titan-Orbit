@@ -58,13 +58,21 @@ namespace TitanOrbit.Simulation
         public const float ActivePullTowardSpeedThreshold = 0.22f;
 
         /// <summary>
-        /// Deploy VFX: thin line shoots from wing → gem, then cone mouth opens, then pull starts.
-        /// Kept short for snappy feel but long enough to read (not instant).
+        /// Deploy VFX: thin line shoots from wing → gem, then cone mouth opens.
+        /// Pull physics starts on lock (same tick) so burst gems cannot coast out of range
+        /// during this animation. Kept short for snappy feel but long enough to read.
         /// </summary>
         public const float ExtendLineSpeed = 11f;
         public const float MinExtendDuration = 0.12f;
         public const float MaxExtendDuration = 0.42f;
         public const float WidthExpandDuration = 0.14f;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Drawn beam length may exceed search radius slightly (wing mesh mid-center
+        /// vs sim tip, gem size, one-frame presentation lag). Beyond this slack the line is a bug
+        /// (stale proxy / coast extrapolation) — do not draw it.
+        /// </summary>
+        public const float VisualRangeSlack = 1.25f;
 
         /// <summary>
         /// Converts wing Max Gems Capacity (at current ship level) into tractor reach and pull strength.
@@ -231,6 +239,20 @@ namespace TitanOrbit.Simulation
         public static bool IsWithinReach(float3 gemPos, float3 beamOrigin, float searchRadius, float mapW, float mapH)
         {
             return ToroidalDistance(gemPos, beamOrigin, mapW, mapH) <= searchRadius;
+        }
+
+        /// <summary>
+        /// True when an already-computed display-space beam length is still legal to draw.
+        /// Uses <see cref="VisualRangeSlack"/> so the cone does not pop at the exact sim radius.
+        /// </summary>
+        /// <param name="drawnXzDistance">Euclidean XZ length of the Shapes beam this frame.</param>
+        /// <param name="searchRadius">That wing's search radius (after level / orbit / settings).</param>
+        /// <returns>False when the line would stretch past reach — caller should skip the draw.</returns>
+        public static bool IsDrawnBeamWithinReach(float drawnXzDistance, float searchRadius)
+        {
+            float radius = math.max(0.5f, searchRadius);
+            float dist = math.max(0f, drawnXzDistance);
+            return dist <= radius * VisualRangeSlack;
         }
 
         public static float ComputeExtendDuration(float toroidalDistance)

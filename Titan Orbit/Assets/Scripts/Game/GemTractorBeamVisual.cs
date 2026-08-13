@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using Shapes;
 using TitanOrbit.Core;
+using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -12,8 +14,11 @@ namespace TitanOrbit.Game
 {
     /// <summary>
     /// [HYBRID] Client-only Shapes drawer for wing tractor beams.
-    /// Deploy beat: thin line shoots wing mid-center→gem, cone mouth opens at 90% of gem diameter,
-    /// then server/client pull begins. Start is pointy on the wing body center; gem end stays rounded.
+    /// Deploy beat: thin line shoots wing mid-center→gem, cone mouth opens at 90% of gem diameter.
+    /// Pull itself starts on lock (server); this animation is cosmetic. Start is pointy on the
+    /// wing body center; gem end stays rounded.
+    /// Drawn length is hard-capped to the wing search radius so a coasting burst gem cannot
+    /// stretch a beam off-screen after it has left reach.
     /// Pairs with <see cref="GemTractorBeamClientLogic"/>, <see cref="GemTractorBeamDeployTracker"/>,
     /// and <see cref="GemTractorBeamVisibilityTracker"/>. Cosmetic only — pull is
     /// <c>GemTractorBeamSystem</c> on the server.
@@ -202,6 +207,18 @@ namespace TitanOrbit.Game
                         Vector3 gemDisplay = ResolveGemBeamTipDisplay(
                             gem.Entity, gem.Transform.Position, beamOriginLogical, shipDisplay, mapW, mapH);
 
+                        // --- Hard cap: never draw a beam longer than this wing's search radius ---
+                        // [TITAN-ORBIT] Assignment uses presented logical pose, but the Shapes
+                        // endpoints are wing-mesh + gem-GO display. A wrap-tile or stale pool GO
+                        // can still produce a line that stretches off-screen. Skip that draw.
+                        float searchRadius = ResolvePairSearchRadius(
+                            em, ships[si], shipStates[si], wings, pair.WingIndex);
+                        float drawnXz = math.length(new float2(
+                            gemDisplay.x - shipDisplay.x,
+                            gemDisplay.z - shipDisplay.z));
+                        if (!GemTractorBeamMath.IsDrawnBeamWithinReach(drawnXz, searchRadius))
+                            continue;
+
                         float beamY = shipDisplay.y + heightAboveWing;
                         shipDisplay.y = beamY;
                         gemDisplay.y = beamY;
@@ -258,6 +275,33 @@ namespace TitanOrbit.Game
 
             gem = default;
             return false;
+        }
+
+        /// <summary>
+        /// Search radius for the wing that owns this pair (level + orbit + TractorBeamSettings).
+        /// Used to reject Shapes beams that would draw longer than gameplay reach.
+        /// </summary>
+        static float ResolvePairSearchRadius(
+            EntityManager em,
+            Entity shipEntity,
+            in ShipState shipState,
+            DynamicBuffer<ShipWingTractorBeamElement> wings,
+            int wingIndex)
+        {
+            int shipLevel = math.max(1, shipState.ShipLevel);
+            bool inOrbit = em.HasComponent<ShipOrbitState>(shipEntity) &&
+                           em.GetComponentData<ShipOrbitState>(shipEntity).InOrbitRing;
+
+            if (wings.IsCreated && wingIndex >= 0 && wingIndex < wings.Length)
+            {
+                ShipWingTractorBeamPose.GetTractorParams(
+                    wings[wingIndex], shipLevel, inOrbit, out float searchRadius, out _);
+                return searchRadius;
+            }
+
+            GemTractorBeamMath.GetTractorBeamFromMaxGems(8f, inOrbit, out float fallback, out _);
+            TractorBeamSettingsCache.ApplyReach(ref fallback);
+            return fallback;
         }
 
         /// <summary>

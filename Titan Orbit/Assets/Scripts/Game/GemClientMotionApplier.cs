@@ -18,8 +18,9 @@ namespace TitanOrbit.Game
     /// 3. Flight uses ghosted <see cref="GemKinematics.Velocity"/> / AngularVelocity — the same
     ///    fields the server writes in <see cref="GemMotionSystem"/>.
     /// 4. When LT samples advance, we blend toward them. When LT is stale during coast, we
-    ///    extrapolate with the latest ghost Velocity (no second invented burst, no extra damping —
-    ///    server already damped the ghosted Velocity).
+    ///    extrapolate with the latest ghost Velocity, capped so the GO cannot run away from the
+    ///    ghost (stretched tractor beams). No second invented burst, no extra damping beyond
+    ///    the server's already-damped ghosted Velocity.
     /// </para>
     /// Why not “copy LT only”: if LT snapshots lag during coast, a GO stuck on the spawn sample
     /// looks invisible until the idle pose finally arrives. Velocity is ghosted so the client can
@@ -36,6 +37,16 @@ namespace TitanOrbit.Game
         bool _hasGhostSample;
 
         /// <summary>
+        /// [TITAN-ORBIT] Hard cap on how far presentation may coast ahead of the last ghost
+        /// <see cref="LocalTransform"/>. Burst gems interpolate sparsely; without a cap the GO
+        /// can fly off-screen while the ghost pose (used by some systems) is still near the ship
+        /// — that is the stretched tractor-beam bug. Tractor assignment reads
+        /// <see cref="TryGetLogicalPosition"/> so the beam drops when this presented pose
+        /// leaves wing reach.
+        /// </summary>
+        const float MaxCoastAheadFromGhost = 8f;
+
+        /// <summary>
         /// Binds this GO to a gem ghost that has already Instantiated.
         /// Starts presentation at the ghost's current logical pose.
         /// </summary>
@@ -50,6 +61,19 @@ namespace TitanOrbit.Game
             _bound = true;
             _velocity = float3.zero;
             _angularVelocity = float3.zero;
+        }
+
+        /// <summary>
+        /// Presented logical XZ pose this frame (ghost LT plus coast extrapolation).
+        /// Tractor client assignment uses this so range matches the crystal the player sees,
+        /// not a lagged ghost snapshot that is still next to the wing.
+        /// </summary>
+        /// <param name="logicalPos">Unbounded sim-space position (same space as ECS LocalTransform).</param>
+        /// <returns>False when this shell is unbound (pooled / not yet Bind'd).</returns>
+        public bool TryGetLogicalPosition(out float3 logicalPos)
+        {
+            logicalPos = _logicalPos;
+            return _bound && _entity != Entity.Null;
         }
 
         /// <summary>
@@ -163,6 +187,19 @@ namespace TitanOrbit.Game
                 }
 
                 _logicalPos += _velocity * dt;
+            }
+
+            // --- Runaway coast guard ---
+            // [TITAN-ORBIT] If ghost LocalTransform stops advancing (sparse snapshots / stuck
+            // interpolation), the branch above keeps integrating Velocity forever. Clamp how far
+            // the crystal may lead the ghost so tractor range (which reads this pose) cannot
+            // stretch a beam across the screen.
+            {
+                float3 ahead = _logicalPos - ghostPos;
+                ahead.y = 0f;
+                float aheadDist = math.length(ahead);
+                if (aheadDist > MaxCoastAheadFromGhost && aheadDist > 0.0001f)
+                    _logicalPos = ghostPos + ahead * (MaxCoastAheadFromGhost / aheadDist);
             }
 
             // --- Toroidal display (ship reference) — same as other world bodies ---

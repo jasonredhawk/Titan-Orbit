@@ -11,8 +11,8 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server-only gem tractor beam: assigns gems in wing search radii to ship wings, runs deploy
-    /// timing (beam extend + width expand), then sets gem velocity toward wing pull targets.
+    /// Server-only gem tractor beam: assigns gems in wing search radii to ship wings, then
+    /// sets gem velocity toward wing pull targets on the same tick the lock starts.
     /// Writes ghosted <see cref="GemMotionState"/> lock fields so clients present the same pull
     /// without inventing wing assignment. Runs <b>before</b> <see cref="GemMotionSystem"/> so
     /// velocity and pose integrate in the same tick.
@@ -22,6 +22,8 @@ namespace TitanOrbit.ECS
     /// uses diminishing assists (<see cref="GemTractorBeamMath.StackedBeamPullScale"/>): primary
     /// 100%, each extra AssistPullScale (default 25%). Range/power multipliers apply via
     /// <see cref="ShipWingTractorBeamPose.GetTractorParams"/>.
+    /// Deploy extend/widen is VFX timing only (ghosted lock tick + duration) — burst gems are
+    /// captured immediately so they cannot coast out of search radius while the line animates.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -153,7 +155,6 @@ namespace TitanOrbit.ECS
                     wings,
                     mapW,
                     mapH,
-                    now,
                     serverTick);
             }
 
@@ -176,14 +177,16 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Writes <see cref="GemMotionState"/> lock fields for assigned gems; after deploy completes,
-        /// builds pull velocity from every wing on that gem (primary + spare assists).
+        /// Writes <see cref="GemMotionState"/> lock fields for assigned gems and applies pull
+        /// velocity from every wing on that gem (primary + spare assists) on the same tick.
         /// Primary contributes full wing pull; each assist adds AssistPullScale (settings,
         /// default 25%) of its own strength so three equal beams ≈ 150% rather than 300%.
         /// <para>
-        /// [TITAN-ORBIT] <see cref="GemMotionState.PhaseTractor"/> is applied only after a non-zero
-        /// pull velocity replaces <see cref="GemKinematics"/> — otherwise Coast keeps linear damping
-        /// so damage-spill gems do not fly forever.
+        /// [TITAN-ORBIT] Pull starts as soon as the wing locks the gem — not after the deploy
+        /// extend animation. Waiting left asteroid-burst / grinding-spill velocity intact, so
+        /// gems flew out of search radius while the beam VFX stayed connected (stretched line).
+        /// <see cref="GemMotionState.PhaseTractor"/> is applied only after a non-zero pull
+        /// velocity replaces <see cref="GemKinematics"/> — otherwise Coast keeps linear damping.
         /// </para>
         /// </summary>
         void ApplyLockAndPull(
@@ -196,7 +199,6 @@ namespace TitanOrbit.ECS
             DynamicBuffer<ShipWingTractorBeamElement> wings,
             float mapW,
             float mapH,
-            double now,
             uint serverTick)
         {
             if (_pairScratch.Count == 0)
@@ -238,8 +240,6 @@ namespace TitanOrbit.ECS
                 int primaryWing = _primaryWingByGem.TryGetValue(gemEntity.Index, out int pw) ? pw : wingList[0];
                 _gemsLockedThisFrame.Add(gemEntity.Index);
 
-                bool pullActive = IsPullPhysicsActive(deploy, now);
-
                 // --- Ghost lock fields (beam VFX) — always while assigned ---
                 // [TITAN-ORBIT] PhaseTractor is set ONLY after we overwrite GemKinematics with a
                 // real pull velocity. Setting Tractor phase first then failing the pull left
@@ -252,25 +252,10 @@ namespace TitanOrbit.ECS
                     motion.TractorWingIndex = (byte)math.clamp(primaryWing, 0, 255);
                     motion.TractorLockTick = deploy.LockTick != 0 ? deploy.LockTick : serverTick;
                     motion.TractorExtendDuration = deploy.ExtendDuration;
-
-                    // Deploy / no pull yet: Coast so linear damping still bleeds burst speed.
-                    if (!pullActive)
-                    {
-                        if (motion.Phase == GemMotionState.PhaseTractor)
-                            motion.Phase = GemMotionState.PhaseCoast;
-                        EntityManager.SetComponentData(gemEntity, motion);
-                        continue;
-                    }
-
-                    // Defer PhaseTractor write until pull velocity is applied (below).
                     EntityManager.SetComponentData(gemEntity, motion);
                 }
-                else if (!pullActive)
-                {
-                    continue;
-                }
 
-                // --- Stacked pull (diminishing assists) ---
+                // --- Stacked pull (diminishing assists) — starts on lock, not after deploy ---
                 // Spare assists only exist when AssignWings phase-3 ran (more beams than free gems)
                 // and MaxCooperatingBeams > 1. Primary = 100%; each assist = AssistPullScale.
                 // Direction still aims at each wing tip so multi-beam gems drift toward the cluster.
@@ -309,7 +294,7 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                // --- Active pull: replace kinematics (kills damage-spill burst) + Tractor phase ---
+                // --- Active pull: replace kinematics (kills damage-spill / asteroid burst) ---
                 var kin = gemKinematics.ValueRO;
                 kin.Velocity = velocity;
                 gemKinematics.ValueRW = kin;
@@ -554,7 +539,11 @@ namespace TitanOrbit.ECS
                 mapW, mapH, now, serverTick);
         }
 
-        /// <summary>Starts deploy timer for a new ship–gem pair (beam extend duration from distance).</summary>
+        /// <summary>
+        /// Starts the VFX deploy clock for a new ship–gem pair (extend duration from distance).
+        /// Pull physics no longer waits on this timer — it is ghosted so the client line/cone
+        /// animation matches without delaying capture of burst gems.
+        /// </summary>
         void EnsureDeployState(
             long pairKey,
             float3 origin,
@@ -574,14 +563,6 @@ namespace TitanOrbit.ECS
                 ExtendDuration = GemTractorBeamMath.ComputeExtendDuration(dist),
                 LockTick = serverTick,
             };
-        }
-
-        /// <summary>True after extend + width-expand phases complete — gem may be pulled.</summary>
-        static bool IsPullPhysicsActive(in DeployState state, double now)
-        {
-            double elapsed = now - state.LockStartTime;
-            double total = state.ExtendDuration + GemTractorBeamMath.WidthExpandDuration;
-            return elapsed >= total - 0.0001;
         }
 
         /// <summary>

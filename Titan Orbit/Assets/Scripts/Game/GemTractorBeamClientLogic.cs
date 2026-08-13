@@ -18,6 +18,8 @@ namespace TitanOrbit.Game
     /// (primary sticky, primary fill, spare assists capped by MaxCooperatingBeams).
     /// Authoritative pull velocity still comes from ghosted <see cref="GemMotionState"/>.
     /// [TITAN-ORBIT] Gems come from hybrid proxies — never a full gem <c>ToEntityArray</c>.
+    /// Range tests prefer <see cref="GemClientMotionApplier"/> presented pose over lagged ghost
+    /// <c>LocalTransform</c> so a burst gem that has already left the wing cannot keep a beam.
     /// Damage-spill self-pickup penalty uses ghosted <see cref="GemState.ExcludePickupNetworkId"/>
     /// so beams do not draw to gems the local ship cannot yet reclaim (matches server tractor skip).
     /// </summary>
@@ -182,7 +184,29 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Appends eligible gem snapshots from a candidate entity list (deduped by index).</summary>
+        /// <summary>
+        /// Presented logical pose from the hybrid gem GO when a motion applier is bound.
+        /// Same unbounded XZ space as ECS <c>LocalTransform</c> — safe for toroidal reach tests.
+        /// </summary>
+        /// <param name="gemEntity">Gem ghost the proxy is bound to.</param>
+        /// <param name="logicalPos">Presented sim-space position, or default when unavailable.</param>
+        /// <returns>True when the crystal's presented pose should override the ghost snapshot.</returns>
+        static bool TryGetPresentedLogicalPosition(Entity gemEntity, out float3 logicalPos)
+        {
+            logicalPos = default;
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null || !visualizer.TryGetProxy(gemEntity, out GameObject proxy) || proxy == null)
+                return false;
+
+            var motion = proxy.GetComponent<GemClientMotionApplier>();
+            return motion != null && motion.TryGetLogicalPosition(out logicalPos);
+        }
+
+        /// <summary>
+        /// Appends eligible gem snapshots from a candidate entity list (deduped by index).
+        /// Position is the presented crystal pose when a <see cref="GemClientMotionApplier"/> is
+        /// bound, otherwise the ghost <c>LocalTransform</c>.
+        /// </summary>
         static void AppendGemSnapshots(
             EntityManager em,
             List<Entity> candidates,
@@ -209,11 +233,19 @@ namespace TitanOrbit.Game
                     ? em.GetComponentData<GemKinematics>(entity)
                     : default;
 
+                // --- Range pose: prefer the crystal the player sees ---
+                // [TITAN-ORBIT] Ghost LocalTransform can lag a burst while GemClientMotionApplier
+                // coasts the GO ahead. Assignment / beam VFX must use that presented logical pose
+                // or the beam stays locked to a gem that already left the wing's search radius.
+                var transform = em.GetComponentData<LocalTransform>(entity);
+                if (TryGetPresentedLogicalPosition(entity, out float3 presentedPos))
+                    transform.Position = presentedPos;
+
                 dst.Add(new GemProxySnapshot
                 {
                     Entity = entity,
                     State = state,
-                    Transform = em.GetComponentData<LocalTransform>(entity),
+                    Transform = transform,
                     Kinematics = kinematics,
                 });
             }
