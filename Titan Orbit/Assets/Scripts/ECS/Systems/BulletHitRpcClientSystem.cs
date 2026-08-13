@@ -76,14 +76,16 @@ namespace TitanOrbit.ECS
             destroyEcb.Playback(em);
             destroyEcb.Dispose();
 
-            // --- Phase 2: apply HP; kill frames soft-destroy (cull + strip collider) ---
-            // Prefer AsteroidDestroyedRpc for authoritative teardown (mining/ram too).
-            // HitRpc still updates mid-fight HP and is a belt-and-suspenders kill path
-            // (ram/grind now send HitRpc so clients cull the same way bullets do).
+            // --- Phase 2: apply HP for living rocks only ---
+            // Kill frames (HealthAfter <= 0) must NOT cull here. Surface-fit / ram residual
+            // picks a packed neighbor, then DestroyRpc culls the real rock — two client hides,
+            // one server kill, invisible hull. DestroyRpc matches the server center.
             for (int i = 0; i < asteroidHits.Length; i++)
             {
                 var hit = asteroidHits[i];
-                // Sequence 0 = ram/grind: match the PhysX hull, not the bullet hit-sphere.
+                if (hit.AsteroidHealthAfter <= 0.01f)
+                    continue;
+
                 if (hit.Sequence == 0)
                 {
                     ClientLocalAsteroidCombatSync.ApplyRamHitAtPosition(

@@ -583,9 +583,12 @@ namespace TitanOrbit.ECS
             position.y = 0f;
 
             float hintRadius = scaleHint > 0.01f ? MatchRadiusForScale(scaleHint) : 0f;
-            float bestDist = float.MaxValue;
-            Entity bestEntity = Entity.Null;
-            float bestScale = 0f;
+            float bestLiveDist = float.MaxValue;
+            Entity bestLive = Entity.Null;
+            float bestLiveScale = 0f;
+            float bestAnyDist = float.MaxValue;
+            Entity bestAny = Entity.Null;
+            float bestAnyScale = 0f;
 
             for (int i = 0; i < RegistryScratch.Count; i++)
             {
@@ -608,19 +611,39 @@ namespace TitanOrbit.ECS
                     radius = hintRadius;
                 if (dist > radius)
                     continue;
-                if (dist >= bestDist)
+
+                if (dist < bestAnyDist)
+                {
+                    bestAnyDist = dist;
+                    bestAny = e;
+                    bestAnyScale = lt.Scale;
+                }
+
+                // [TITAN-ORBIT] DestroyRpc must cull the live rock at the server center.
+                // Preferring a nearby zombie (already hidden by a bad HitRpc) left the real
+                // neighbor alive on the server and dead on the client — or the reverse.
+                if (!IsClientLiveAsteroid(em, e))
+                    continue;
+                if (dist >= bestLiveDist)
                     continue;
 
-                bestDist = dist;
-                bestEntity = e;
-                bestScale = lt.Scale;
+                bestLiveDist = dist;
+                bestLive = e;
+                bestLiveScale = lt.Scale;
             }
 
-            if (bestEntity == Entity.Null)
+            if (bestLive != Entity.Null)
+            {
+                asteroid = bestLive;
+                matchedScale = bestLiveScale;
+                return true;
+            }
+
+            if (bestAny == Entity.Null)
                 return false;
 
-            asteroid = bestEntity;
-            matchedScale = bestScale;
+            asteroid = bestAny;
+            matchedScale = bestAnyScale;
             return true;
         }
 

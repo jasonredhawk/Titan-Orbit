@@ -562,20 +562,12 @@ namespace TitanOrbit.Game
                     authoritativeRemainingHealth: asteroidHealthAfter);
             }
 
-            // --- Kill: hide GO only on the presentation thread ---
-            // [TITAN-ORBIT] Do NOT EntityManager.DestroyEntity from BulletVfxDriver (Update/LateUpdate).
-            // Structural changes outside SimulationSystemGroup while NetCode/physics jobs run can
-            // corrupt the client world and freeze predicted ship movement. Authoritative teardown
-            // is AsteroidDestroyedRpcClientSystem + BulletHitRpcClientSystem (sim group).
-            if (asteroidHealthAfter > 0.01f)
+            // --- Kill: do not hide from HitRpc ---
+            // [TITAN-ORBIT] Surface-fit on a packed belt can hide a neighbor while DestroyRpc
+            // culls the rock the server actually killed (two client hides, one server destroy,
+            // leftover invisible hull). Authoritative teardown is AsteroidDestroyedRpc only.
+            if (asteroidHealthAfter <= 0.01f)
                 return;
-
-            var visualizer = EcsWorldVisualizer.Active;
-            if (asteroidEntity != Entity.Null)
-            {
-                visualizer?.TryHideAsteroidProxyFromHitRpc(asteroidEntity);
-                ClientLocalAsteroidCombatSync.QueueProxyDestroy(asteroidEntity);
-            }
         }
 
         /// <summary>

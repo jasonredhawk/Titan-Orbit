@@ -19,9 +19,10 @@ namespace TitanOrbit.Game
     /// [TITAN-ORBIT] Local ship does <b>not</b> wrap — it flies unbound; camera follows that pose.
     /// World bodies reposition individually via <see cref="ToroidalDisplay"/> relative to this ship.
     /// Soft-track on NetCode storms; H73 cruise for reconcile pops. While the hull is grinding an
-    /// asteroid, display raw-follows sim — bounce corrections are smaller than a teleport but
-    /// larger than vel×dt when speed is ~0, and coasting those made the whole map look stepped
-    /// (toroidal tiles follow this pose). GhostPredictionSmoothing is left
+    /// asteroid, display raw-follows sim (0-speed bounce nibbles used to coast and step the map).
+    /// After contact ends, post-kill thrust ramps ~0.4→8 u/s; raw-following hitch-sized 0.22–0.30u
+    /// sim steps (still under the 0.45 grind floor) looked stepped. Those frames coast + capped
+    /// pull instead. GhostPredictionSmoothing is left
     /// off so this system alone owns local presentation (avoids double-smooth jitter).
     /// </para>
     /// <para>
@@ -89,6 +90,27 @@ namespace TitanOrbit.Game
         const float CruiseMinRawFollowDistance = 0.45f;
 
         /// <summary>
+        /// InContact is cleared every physics tick then set from events, so it can drop for a
+        /// frame while still grinding. Keep raw-follow this many presentation frames so flicker
+        /// does not toggle H73 coast mid-grind.
+        /// </summary>
+        const int PostGrindFlickerRawFrames = 3;
+
+        /// <summary>
+        /// After grind contact ends, force H73 coast (tiny nibble floor) for this many frames.
+        /// Post-kill thrust ramps ~0.4→8 u/s; hitch-sized 0.22–0.30u sim steps sit under
+        /// <see cref="CruiseMinRawFollowDistance"/> (0.45), so H73 would snap them and the ship
+        /// looks stepped. Coasting those frames hides the hitch; the 0.45 floor stays for live grind.
+        /// </summary>
+        const int PostGrindCoastFrames = 24;
+
+        /// <summary>
+        /// Nibble floor used during <see cref="PostGrindCoastFrames"/> (original H73 0-speed floor).
+        /// Large enough to snap true sub-tick noise; small enough that 0.22u hitch steps coast.
+        /// </summary>
+        const float PostGrindCoastNibble = 0.02f;
+
+        /// <summary>
         /// [TITAN-ORBIT] Frames the local ship must stay unresolved before we treat it as a real
         /// despawn. Editor.log 2026-07-20: calling ResetSession every Null frame wiped ~283 tiles
         /// and blinked the whole map (Join Team suppress / brief lookup misses).
@@ -106,6 +128,12 @@ namespace TitanOrbit.Game
 
         /// <summary>True after we already ran one ResetSession/ClearLocalPose for this missing streak.</summary>
         bool _missingShipCleared;
+
+        /// <summary>Raw-follow frames left to cover InContact flicker (not post-kill accel).</summary>
+        int _postGrindRawFrames;
+
+        /// <summary>Frames left to force H73 coast after grind so hitch-sized sim steps do not snap.</summary>
+        int _postGrindCoastFrames;
 
         /// <summary>
         /// Each presentation frame: publish remotes raw (when safe), then soft-track or raw-follow
@@ -236,6 +264,11 @@ namespace TitanOrbit.Game
 
             bool shipChanged = _smoothInitialized && _smoothShipEntity != Entity.Null && localShip != _smoothShipEntity;
             _smoothShipEntity = localShip;
+            if (shipChanged)
+            {
+                _postGrindRawFrames = 0;
+                _postGrindCoastFrames = 0;
+            }
 
             // --- Asteroid grind / ram: raw-follow sim ---
             // [TITAN-ORBIT] ShipAsteroidContactState is written this physics step (AfterPhysics).
@@ -244,10 +277,30 @@ namespace TitanOrbit.Game
             bool asteroidContact = EntityManager.HasComponent<ShipAsteroidContactState>(localShip) &&
                                    EntityManager.GetComponentData<ShipAsteroidContactState>(localShip).InContact != 0;
 
+            // --- Grind flicker vs post-kill coast ---
+            // [TITAN-ORBIT] InContact flickers (cleared every physics tick). A few raw-follow
+            // frames cover that. After a kill, hitch-sized 0.22–0.30u/frame steps at cruise
+            // speed sit under the 0.45 grind floor — snapping them looks stepped. Force H73
+            // coast for a short window so those render steps blend.
+            if (asteroidContact)
+            {
+                _postGrindRawFrames = PostGrindFlickerRawFrames;
+                _postGrindCoastFrames = PostGrindCoastFrames;
+            }
+            else
+            {
+                if (_postGrindRawFrames > 0)
+                    _postGrindRawFrames--;
+                if (_postGrindCoastFrames > 0)
+                    _postGrindCoastFrames--;
+            }
+            bool grindRawFollow = asteroidContact || _postGrindRawFrames > 0;
+            bool postGrindCoast = !grindRawFollow && _postGrindCoastFrames > 0;
+
             // --- Step display state ---
             // [TITAN-ORBIT] Isolation F4: raw sim pose only — if destroy stutter vanishes, soft-track
             // was amplifying physics reconcile pops from phantom asteroid hulls.
-            if (TitanOrbitDebugFlags.IsolateDisableShipSoftTrack || asteroidContact)
+            if (TitanOrbitDebugFlags.IsolateDisableShipSoftTrack || grindRawFollow)
             {
                 _smoothPos = targetPos;
                 _smoothRot = targetRot;
@@ -279,7 +332,7 @@ namespace TitanOrbit.Game
                 }
                 else
                 {
-                    StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt);
+                    StepCruiseRawOrCoast(targetPos, targetRot, simVel, dt, postGrindCoast);
                 }
             }
 
@@ -327,11 +380,16 @@ namespace TitanOrbit.Game
         /// <param name="simRot">Sim rotation.</param>
         /// <param name="simVel">Kinematics velocity (world units/sec).</param>
         /// <param name="dt">Clamped unscaled frame delta.</param>
-        void StepCruiseRawOrCoast(float3 simPos, quaternion simRot, float3 simVel, float dt)
+        /// <param name="postGrindCoast">
+        /// True for a short window after asteroid contact: use the tiny nibble floor so hitch-sized
+        /// 0.22–0.30u sim steps coast instead of snapping (the 0.45 grind floor would snap them).
+        /// </param>
+        void StepCruiseRawOrCoast(float3 simPos, quaternion simRot, float3 simVel, float dt, bool postGrindCoast = false)
         {
             float expected = math.max(math.length(simVel) * math.max(0f, dt), 0.02f);
             float dist = math.distance(_smoothPos, simPos);
-            float rawFollowSlop = math.max(expected * CruiseRawFollowSlopRatio, CruiseMinRawFollowDistance);
+            float minNibble = postGrindCoast ? PostGrindCoastNibble : CruiseMinRawFollowDistance;
+            float rawFollowSlop = math.max(expected * CruiseRawFollowSlopRatio, minNibble);
 
             // --- Healthy frame: within one tick (+slop) or a grind-sized nibble — raw follow ---
             // H72 failed because capped pull left a permanent >deadzone lag and corrected forever.
