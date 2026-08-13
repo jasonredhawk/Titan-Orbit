@@ -1,11 +1,9 @@
 using System.Collections.Generic;
-using System.Globalization;
 using Stopwatch = System.Diagnostics.Stopwatch;
 using TitanOrbit;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
-using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
@@ -994,23 +992,6 @@ namespace TitanOrbit.Game
                     var gemState = em.GetComponentData<GemState>(entity);
                     if (gemState.IsConsumed)
                     {
-                        // #region agent log
-                        if (!DebugGemSyncLog.ShouldThrottle("chide:" + gemState.SpawnId, 500))
-                        {
-                            int ghostId = em.HasComponent<GhostInstance>(entity)
-                                ? em.GetComponentData<GhostInstance>(entity).ghostId
-                                : 0;
-                            DebugGemSyncLog.Write(
-                                "H-despawn",
-                                "EcsWorldVisualizer.SyncExisting",
-                                "client-hide-consumed",
-                                "{\"eIdx\":" + entity.Index.ToString(CultureInfo.InvariantCulture) +
-                                ",\"ghostId\":" + ghostId.ToString(CultureInfo.InvariantCulture) +
-                                ",\"val\":" + gemState.Value.ToString("R", CultureInfo.InvariantCulture) +
-                                "}",
-                                gemState.SpawnId);
-                        }
-                        // #endregion
                         if (go.activeSelf)
                             go.SetActive(false);
                         continue;
@@ -1025,31 +1006,6 @@ namespace TitanOrbit.Game
                         : (float)Time.timeAsDouble;
                     scale = GemVisualApplier.ComputeLifetimeVisualScale(
                         gemValue, gemState.SpawnServerTime, now);
-                    // #region agent log
-                    if (scale < 0.08f &&
-                        em.HasComponent<GemMotionState>(entity) &&
-                        em.GetComponentData<GemMotionState>(entity).TractorShipId != 0 &&
-                        !DebugGemSyncLog.ShouldThrottle("scale:" + entity.Index, 750))
-                    {
-                        var motion = em.GetComponentData<GemMotionState>(entity);
-                        int ghostId = em.HasComponent<GhostInstance>(entity)
-                            ? em.GetComponentData<GhostInstance>(entity).ghostId
-                            : 0;
-                        DebugGemSyncLog.Write(
-                            "H1",
-                            "EcsWorldVisualizer.SyncExisting",
-                            "tractored-gem-tiny-scale",
-                            "{\"eIdx\":" + entity.Index.ToString(CultureInfo.InvariantCulture) +
-                            ",\"ghostId\":" + ghostId.ToString(CultureInfo.InvariantCulture) +
-                            ",\"tractor\":" + motion.TractorShipId.ToString(CultureInfo.InvariantCulture) +
-                            ",\"scale\":" + scale.ToString("F4", CultureInfo.InvariantCulture) +
-                            ",\"spawnT\":" + gemState.SpawnServerTime.ToString("F2", CultureInfo.InvariantCulture) +
-                            ",\"nowT\":" + now.ToString("F2", CultureInfo.InvariantCulture) +
-                            ",\"val\":" + gemValue.ToString("F2", CultureInfo.InvariantCulture) +
-                            "}",
-                            gemState.SpawnId);
-                    }
-                    // #endregion
                 }
 
                 alive.Add(entity);

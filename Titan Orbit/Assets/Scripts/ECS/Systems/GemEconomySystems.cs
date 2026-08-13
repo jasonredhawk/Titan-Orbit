@@ -1,7 +1,6 @@
 using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
-using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -379,15 +378,12 @@ namespace TitanOrbit.ECS
 
             // --- Expire uncollected gems ---
             // [TITAN-ORBIT] Matches NGO Gem.FixedUpdate: elapsed >= lifetimeSeconds → Despawn.
-            // GemMotionState is in the query so debug logs never call EntityManager inside
-            // SystemAPI.Query foreach (that sync-point skipped DestroyEntity for locked gems).
-            foreach (var (gemState, motion, gemEntity) in SystemAPI
-                         .Query<RefRO<GemState>, RefRO<GemMotionState>>()
+            foreach (var (gemState, gemEntity) in SystemAPI
+                         .Query<RefRO<GemState>>()
                          .WithAll<GemTag>()
                          .WithEntityAccess())
             {
                 float spawnTime = gemState.ValueRO.SpawnServerTime;
-                int tractor = motion.ValueRO.TractorShipId;
                 if (spawnTime <= 0f)
                 {
                     // Prefab default leaked — stamp now so lifetime and self-pickup can run.
@@ -399,48 +395,12 @@ namespace TitanOrbit.ECS
                 }
 
                 float elapsed = now - spawnTime;
-                // #region agent log
-                if (tractor != 0 && elapsed >= 15f &&
-                    !DebugGemSyncLog.ShouldThrottle("lifehb:" + gemEntity.Index, 1000))
-                {
-                    DebugGemSyncLog.Write(
-                        "H5",
-                        "GemLifetimeDespawnSystem.OnUpdate",
-                        "tractored-gem-aging",
-                        "{\"eIdx\":" + gemEntity.Index +
-                        ",\"eVer\":" + gemEntity.Version +
-                        ",\"tractor\":" + tractor +
-                        ",\"spawnT\":" + spawnTime.ToString("R") +
-                        ",\"nowT\":" + now.ToString("R") +
-                        ",\"elapsed\":" + elapsed.ToString("R") +
-                        ",\"life\":" + lifetime.ToString("R") +
-                        "}",
-                        gemState.ValueRO.SpawnId);
-                }
-                // #endregion
-
                 if (gemState.ValueRO.IsConsumed)
                     continue;
 
                 if (elapsed < lifetime)
                     continue;
 
-                // #region agent log
-                if (!DebugGemSyncLog.ShouldThrottle("life:" + gemEntity.Index, 200))
-                {
-                    DebugGemSyncLog.Write(
-                        "H5",
-                        "GemLifetimeDespawnSystem.OnUpdate",
-                        "despawn-gem",
-                        "{\"eIdx\":" + gemEntity.Index +
-                        ",\"eVer\":" + gemEntity.Version +
-                        ",\"tractor\":" + tractor +
-                        ",\"spawnT\":" + spawnTime.ToString("R") +
-                        ",\"nowT\":" + now.ToString("R") +
-                        "}",
-                        gemState.ValueRO.SpawnId);
-                }
-                // #endregion
                 ecb.DestroyEntity(gemEntity);
             }
 
@@ -568,36 +528,7 @@ namespace TitanOrbit.ECS
 
                 float capacityLeft = shipState.ValueRO.GemCapacity - shipState.ValueRO.CurrentGems;
                 if (capacityLeft <= 0.001f)
-                {
-                    // #region agent log
-                    if (!DebugGemSyncLog.ShouldThrottle("cargo-full-skip:" + shipEntity.Index, 1000))
-                    {
-                        int nid = 0;
-                        if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
-                            nid = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
-                        int locked = 0;
-                        if (nid != 0)
-                        {
-                            for (int gi = 0; gi < gemCount; gi++)
-                            {
-                                if (gemMotions[gi].TractorShipId == nid)
-                                    locked++;
-                            }
-                        }
-
-                        DebugGemSyncLog.Write(
-                            "H9",
-                            "GemPickupSystem.OnUpdate",
-                            "cargo-full-skip-pickup",
-                            "{\"eIdx\":" + shipEntity.Index +
-                            ",\"cur\":" + shipState.ValueRO.CurrentGems.ToString("R") +
-                            ",\"cap\":" + shipState.ValueRO.GemCapacity.ToString("R") +
-                            ",\"locked\":" + locked +
-                            "}");
-                    }
-                    // #endregion
                     continue;
-                }
 
                 int shipNetworkId = 0;
                 if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
@@ -673,50 +604,11 @@ namespace TitanOrbit.ECS
                         continue;
 
                     if (pickupBlocked)
-                    {
-                        // #region agent log
-                        if (!DebugGemSyncLog.ShouldThrottle("pskip:" + gemEntity.Index, 1000))
-                        {
-                            DebugGemSyncLog.Write(
-                                "H11",
-                                "GemPickupSystem.OnUpdate",
-                                "pickup-skip-in-range",
-                                "{\"reason\":\"selfblock\",\"eIdx\":" + gemEntity.Index +
-                                ",\"ghostId\":" + (state.EntityManager.HasComponent<GhostInstance>(gemEntity)
-                                    ? state.EntityManager.GetComponentData<GhostInstance>(gemEntity).ghostId
-                                    : 0) +
-                                ",\"tractor\":" + gemMotions[gi].TractorShipId +
-                                ",\"val\":" + gemState.Value.ToString("R") +
-                                "}",
-                                gemState.SpawnId);
-                        }
-                        // #endregion
                         continue;
-                    }
 
                     float take = math.min(gemState.Value, capacityLeft);
                     if (take <= 0.001f)
-                    {
-                        // #region agent log
-                        if (!DebugGemSyncLog.ShouldThrottle("pskip:" + gemEntity.Index, 1000))
-                        {
-                            DebugGemSyncLog.Write(
-                                "H11",
-                                "GemPickupSystem.OnUpdate",
-                                "pickup-skip-in-range",
-                                "{\"reason\":\"notake\",\"eIdx\":" + gemEntity.Index +
-                                ",\"ghostId\":" + (state.EntityManager.HasComponent<GhostInstance>(gemEntity)
-                                    ? state.EntityManager.GetComponentData<GhostInstance>(gemEntity).ghostId
-                                    : 0) +
-                                ",\"cur\":" + shipState.ValueRO.CurrentGems.ToString("R") +
-                                ",\"cap\":" + shipState.ValueRO.GemCapacity.ToString("R") +
-                                ",\"val\":" + gemState.Value.ToString("R") +
-                                "}",
-                                gemState.SpawnId);
-                        }
-                        // #endregion
                         continue;
-                    }
 
                     var ship = shipState.ValueRO;
                     ship.CurrentGems += take;
@@ -747,95 +639,11 @@ namespace TitanOrbit.ECS
                         ecb.SetComponent(gemEntity, gemState);
                         if (!state.EntityManager.HasComponent<GemConsumedPendingDestroy>(gemEntity))
                             ecb.AddComponent(gemEntity, new GemConsumedPendingDestroy { SendsLeft = 2 });
-                        // #region agent log
-                        int tractor = gemMotions[gi].TractorShipId;
-                        if (!DebugGemSyncLog.ShouldThrottle("pick:" + gemEntity.Index, 200))
-                        {
-                            DebugGemSyncLog.Write(
-                                "H5",
-                                "GemPickupSystem.OnUpdate",
-                                "destroy-gem",
-                                "{\"eIdx\":" + gemEntity.Index +
-                                ",\"eVer\":" + gemEntity.Version +
-                                ",\"ghostId\":" + (state.EntityManager.HasComponent<GhostInstance>(gemEntity)
-                                    ? state.EntityManager.GetComponentData<GhostInstance>(gemEntity).ghostId
-                                    : 0) +
-                                ",\"tractor\":" + tractor +
-                                ",\"val\":" + gemState.Value.ToString("R") +
-                                ",\"consumed\":true}",
-                                gemState.SpawnId);
-                        }
-                        // #endregion
                     }
 
                     if (capacityLeft <= 0.001f)
                         break;
                 }
-
-                // #region agent log
-                // Tractor-locked gems this ship did not scoop — the leftover trail.
-                if (shipNetworkId != 0)
-                {
-                    for (int li = 0; li < gemCount; li++)
-                    {
-                        if (gemConsumed[li] || gemStates[li].IsConsumed ||
-                            gemMotions[li].TractorShipId != shipNetworkId)
-                            continue;
-                        int spawnId = gemStates[li].SpawnId;
-                        if (DebugGemSyncLog.ShouldThrottle("uncons:" + spawnId, 1000))
-                            continue;
-
-                        bool blocked = GemSelfPickupBlock.IsPickupBlockedForShip(
-                            gemStates[li], shipNetworkId, nowServerTime);
-                        bool inRange = IsWithinPickupRange(
-                            state.EntityManager,
-                            shipEntity,
-                            shipTransform.ValueRO,
-                            gemTransforms[li],
-                            gemStates[li],
-                            hasWings,
-                            pickupSettings,
-                            mapW,
-                            mapH);
-                        float minDist;
-                        float absorb;
-                        MeasurePickupGap(
-                            state.EntityManager,
-                            shipEntity,
-                            shipTransform.ValueRO,
-                            gemTransforms[li],
-                            gemStates[li],
-                            hasWings,
-                            pickupSettings,
-                            mapW,
-                            mapH,
-                            out minDist,
-                            out absorb);
-                        string reason = blocked
-                            ? "selfblock"
-                            : !inRange
-                                ? "far"
-                                : capacityLeft <= 0.001f
-                                    ? "full"
-                                    : "inrange-miss";
-                        DebugGemSyncLog.Write(
-                            "T",
-                            "GemPickupSystem.OnUpdate",
-                            "locked-unconsumed",
-                            "{\"reason\":\"" + reason +
-                            "\",\"dist\":" + minDist.ToString("R") +
-                            ",\"absorb\":" + absorb.ToString("R") +
-                            ",\"cur\":" + shipState.ValueRO.CurrentGems.ToString("R") +
-                            ",\"cap\":" + shipState.ValueRO.GemCapacity.ToString("R") +
-                            ",\"val\":" + gemStates[li].Value.ToString("R") +
-                            ",\"ghostId\":" + (state.EntityManager.HasComponent<GhostInstance>(gemEntities[li])
-                                ? state.EntityManager.GetComponentData<GhostInstance>(gemEntities[li]).ghostId
-                                : 0) +
-                            "}",
-                            spawnId);
-                    }
-                }
-                // #endregion
             }
 
             gemConsumed.Dispose();
@@ -901,43 +709,6 @@ namespace TitanOrbit.ECS
             return IsWithinHullPickupRange(shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
         }
 
-        /// <summary>Nearest wing/hull distance vs absorb radius (debug trail for leftovers).</summary>
-        static void MeasurePickupGap(
-            EntityManager em,
-            Entity shipEntity,
-            in LocalTransform shipTransform,
-            in LocalTransform gemTransform,
-            in GemState gemState,
-            bool hasWings,
-            TractorBeamSettings pickupSettings,
-            float mapW,
-            float mapH,
-            out float minDist,
-            out float absorb)
-        {
-            float3 gemPos = gemTransform.Position;
-            if (hasWings)
-            {
-                var wings = em.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
-                absorb = GemCollectMath.ResolveWingCollectRadius(
-                    pickupSettings, gemState.Value, gemState.Size);
-                minDist = float.MaxValue;
-                for (int wi = 0; wi < wings.Length; wi++)
-                {
-                    float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wi]);
-                    float d = GemTractorBeamMath.ToroidalDistance(gemPos, wingPos, mapW, mapH);
-                    if (d < minDist)
-                        minDist = d;
-                }
-
-                return;
-            }
-
-            absorb = GemCollectMath.ResolveHullCollectRadius(
-                pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale);
-            minDist = GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH);
-        }
-
         /// <summary>
         /// Hull-center absorb test. Designer hull range, collider floor, and visible crystal
         /// radius (see <see cref="GemCollectMath"/>) — overlapping the mesh the player sees counts.
@@ -972,10 +743,8 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
-            // GhostInstance is in the query so debug logs never call EntityManager inside foreach
-            // (that sync-point previously skipped DestroyEntity for locked gems).
-            foreach (var (pending, gemState, ghost, gemEntity) in SystemAPI
-                         .Query<RefRW<GemConsumedPendingDestroy>, RefRO<GemState>, RefRO<GhostInstance>>()
+            foreach (var (pending, gemEntity) in SystemAPI
+                         .Query<RefRW<GemConsumedPendingDestroy>>()
                          .WithAll<GemTag>()
                          .WithEntityAccess())
             {
@@ -985,21 +754,6 @@ namespace TitanOrbit.ECS
                     continue;
                 }
 
-                // #region agent log
-                if (!DebugGemSyncLog.ShouldThrottle("cdest:" + gemEntity.Index, 200))
-                {
-                    DebugGemSyncLog.Write(
-                        "H-despawn",
-                        "GemConsumedDestroySystem.OnUpdate",
-                        "consume-destroy",
-                        "{\"eIdx\":" + gemEntity.Index +
-                        ",\"eVer\":" + gemEntity.Version +
-                        ",\"ghostId\":" + ghost.ValueRO.ghostId +
-                        ",\"val\":" + gemState.ValueRO.Value.ToString("R") +
-                        "}",
-                        gemState.ValueRO.SpawnId);
-                }
-                // #endregion
                 ecb.DestroyEntity(gemEntity);
             }
 

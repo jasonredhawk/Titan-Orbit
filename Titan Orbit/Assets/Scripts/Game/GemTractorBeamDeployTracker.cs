@@ -113,13 +113,17 @@ namespace TitanOrbit.Game
                 return false;
 
             int hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
-            double lockSec = motion.TractorLockTick / (double)hz;
-            float extend = motion.TractorExtendDuration > 0.0001f
-                ? motion.TractorExtendDuration
-                : GemTractorBeamMath.MinExtendDuration;
-            float elapsed = (float)math.max(0d, nowSec - lockSec);
-            float total = extend + GemTractorBeamMath.WidthExpandDuration;
-            return elapsed >= total - 0.0001f;
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world != null && world.IsCreated)
+            {
+                using var rateQ = world.EntityManager.CreateEntityQuery(
+                    ComponentType.ReadOnly<ClientServerTickRate>());
+                if (!rateQ.IsEmptyIgnoreFilter)
+                    hz = math.max(1, rateQ.GetSingleton<ClientServerTickRate>().SimulationTickRate);
+            }
+
+            return GemTractorBeamMath.IsDeployPullReady(
+                motion.TractorLockTick, motion.TractorExtendDuration, nowSec, hz);
         }
 
         /// <summary>0–1 extend-line progress for this ship→gem ghost lock, or 0 if unlocked.</summary>

@@ -25,10 +25,10 @@ namespace TitanOrbit.ECS
     /// 100%, each extra AssistPullScale (default 25%). Range/power multipliers apply via
     /// <see cref="ShipWingTractorBeamPose.GetTractorParams"/>.
     /// Nearby gem scans use <see cref="GemSpatialHash"/> so 100 ships do not walk every gem.
-    /// Deploy extend/widen is VFX timing only (ghosted lock tick + duration) — burst gems are
-    /// captured immediately so they cannot coast out of search radius while the line animates.
-    /// Clients draw beams from these ghost lock fields only; they must not invent a second
-    /// wing assignment (that latched onto uncollectable / despawned crystals).
+    /// Deploy extend/widen is gameplay timing: lock + beam VFX start immediately, pull velocity
+    /// waits until the thin line reaches the gem and the cone has widened (distance-scaled).
+    /// Burst gems keep Coast damping during that wait. Clients draw beams from ghost lock
+    /// fields only; they must not invent a second wing assignment.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -129,6 +129,10 @@ namespace TitanOrbit.ECS
             // --- Same timeline as GemState.SpawnServerTime / self-pickup block stamps ---
             float nowServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
                 EntityManager, now);
+            int simHz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
+            if (SystemAPI.TryGetSingleton<ClientServerTickRate>(out var tickRate) &&
+                tickRate.SimulationTickRate > 0)
+                simHz = tickRate.SimulationTickRate;
 
             NativeArray<Entity> gemEntities = default;
             NativeArray<LocalTransform> gemTransforms = default;
@@ -153,20 +157,6 @@ namespace TitanOrbit.ECS
             {
                 if (!IsShipEligibleForPull(shipState.ValueRO, moonDock.ValueRO))
                 {
-                    // #region agent log
-                    if (shipState.ValueRO.CurrentGems >= shipState.ValueRO.GemCapacity - 0.001f &&
-                        !DebugGemSyncLog.ShouldThrottle("cargo-full-drop:" + shipEntity.Index, 1000))
-                    {
-                        DebugGemSyncLog.Write(
-                            "H9",
-                            "GemTractorBeamSystem.OnUpdate",
-                            "cargo-full-drop-locks",
-                            "{\"eIdx\":" + shipEntity.Index +
-                            ",\"cur\":" + shipState.ValueRO.CurrentGems.ToString("R") +
-                            ",\"cap\":" + shipState.ValueRO.GemCapacity.ToString("R") +
-                            "}");
-                    }
-                    // #endregion
                     _stickyLocksByShip.Remove(shipEntity.Index);
                     continue;
                 }
@@ -211,7 +201,8 @@ namespace TitanOrbit.ECS
                     wings,
                     mapW,
                     mapH,
-                    serverTick);
+                    serverTick,
+                    simHz);
             }
 
             // --- Clear ghost lock on gems no longer assigned to any ship ---
@@ -245,15 +236,16 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Writes <see cref="GemMotionState"/> lock fields for assigned gems and applies pull
-        /// velocity from every wing on that gem (primary + spare assists) on the same tick.
+        /// velocity from every wing on that gem (primary + spare assists) after deploy finishes.
         /// Primary contributes full wing pull; each assist adds AssistPullScale (settings,
         /// default 25%) of its own strength so three equal beams ≈ 150% rather than 300%.
         /// <para>
-        /// [TITAN-ORBIT] Pull starts as soon as the wing locks the gem — not after the deploy
-        /// extend animation. Waiting left asteroid-burst / grinding-spill velocity intact, so
-        /// gems flew out of search radius while the beam VFX stayed connected (stretched line).
+        /// Lock + beam VFX start immediately. Pull waits until the thin extend line reaches
+        /// the gem and the cone has widened (<see cref="GemTractorBeamMath.IsDeployPullReady"/>).
+        /// Duration scales with wing→gem distance. During the wait the gem stays
+        /// <see cref="GemMotionState.PhaseCoast"/> so burst damping still applies.
         /// <see cref="GemMotionState.PhaseTractor"/> is applied only after a non-zero pull
-        /// velocity replaces <see cref="GemKinematics"/> — otherwise Coast keeps linear damping.
+        /// velocity replaces <see cref="GemKinematics"/>.
         /// </para>
         /// </summary>
         void ApplyLockAndPull(
@@ -266,7 +258,8 @@ namespace TitanOrbit.ECS
             DynamicBuffer<ShipWingTractorBeamElement> wings,
             float mapW,
             float mapH,
-            uint serverTick)
+            uint serverTick,
+            int simHz)
         {
             if (_pairScratch.Count == 0)
                 return;
@@ -335,10 +328,43 @@ namespace TitanOrbit.ECS
                     EntityManager.SetComponentData(gemEntity, motion);
                 }
 
-                // --- Stacked pull — starts on lock, not after deploy ---
-                // Contract: a live TractorShipId means either (a) the gem is already in the
-                // absorb sphere (pickup consumes this tick) or (b) we overwrite velocity toward
-                // the wing. Never leave a beam on a coasting burst gem at search range.
+                // --- Wait for extend + widen before pull ---
+                // Lock is live (beam VFX). Coast damping still runs. Pull starts when the
+                // thin line has reached the gem and the cone has opened.
+                uint lockTick = deploy.LockTick != 0 ? deploy.LockTick : serverTick;
+                if (!GemTractorBeamMath.IsDeployPullReady(
+                        lockTick, deploy.ExtendDuration, nowServerTime, simHz))
+                {
+                    // #region agent log
+                    if (!DebugGemSyncLog.ShouldThrottle("depwait:" + gemState.SpawnId, 400))
+                    {
+                        float elapsed = GemTractorBeamMath.ComputeDeployElapsedSeconds(
+                            lockTick, nowServerTime, simHz);
+                        float total = GemTractorBeamMath.ComputeDeployTotalDuration(
+                            deploy.ExtendDuration);
+                        float3 waitOrigin = ResolvePullTarget(shipTransform, wings, primaryWing);
+                        float waitDist = GemTractorBeamMath.ToroidalDistance(
+                            gemTransform.Position, waitOrigin, mapW, mapH);
+                        DebugGemSyncLog.Write(
+                            "D1",
+                            "GemTractorBeamSystem.ApplyLockAndPull",
+                            "deploy-wait",
+                            "{\"spawnId\":" + gemState.SpawnId +
+                            ",\"elapsed\":" + elapsed.ToString("R") +
+                            ",\"extend\":" + deploy.ExtendDuration.ToString("R") +
+                            ",\"total\":" + total.ToString("R") +
+                            ",\"dist\":" + waitDist.ToString("R") +
+                            ",\"phase\":" + (EntityManager.HasComponent<GemMotionState>(gemEntity)
+                                ? EntityManager.GetComponentData<GemMotionState>(gemEntity).Phase
+                                : 0) +
+                            "}",
+                            gemState.SpawnId);
+                    }
+                    // #endregion
+                    continue;
+                }
+
+                // --- Stacked pull — after deploy ---
                 var beamSettings = TractorBeamSettingsCache.ResolveOrDefault();
                 float assistScale = beamSettings.AssistPullScale;
                 float3 gemPos = gemTransform.Position;
@@ -402,24 +428,22 @@ namespace TitanOrbit.ECS
                 }
 
                 // #region agent log
-                if (distToPrimary > absorbRadius + 0.5f &&
-                    !DebugGemSyncLog.ShouldThrottle("pull:" + gemEntity.Index, 1000))
+                if (!DebugGemSyncLog.ShouldThrottle("depull:" + gemState.SpawnId, 2000))
                 {
-                    int ghostId = EntityManager.HasComponent<GhostInstance>(gemEntity)
-                        ? EntityManager.GetComponentData<GhostInstance>(gemEntity).ghostId
-                        : 0;
-                    float velLen = math.length(new float2(velocity.x, velocity.z));
+                    float elapsed = GemTractorBeamMath.ComputeDeployElapsedSeconds(
+                        lockTick, nowServerTime, simHz);
+                    float total = GemTractorBeamMath.ComputeDeployTotalDuration(
+                        deploy.ExtendDuration);
                     DebugGemSyncLog.Write(
-                        "H8",
+                        "D1",
                         "GemTractorBeamSystem.ApplyLockAndPull",
-                        "tractored-gem-not-in-absorb",
-                        "{\"eIdx\":" + gemEntity.Index +
-                        ",\"eVer\":" + gemEntity.Version +
-                        ",\"ghostId\":" + ghostId +
+                        "deploy-pull-start",
+                        "{\"spawnId\":" + gemState.SpawnId +
+                        ",\"elapsed\":" + elapsed.ToString("R") +
+                        ",\"extend\":" + deploy.ExtendDuration.ToString("R") +
+                        ",\"total\":" + total.ToString("R") +
                         ",\"dist\":" + distToPrimary.ToString("R") +
-                        ",\"absorb\":" + absorbRadius.ToString("R") +
-                        ",\"vel\":" + velLen.ToString("R") +
-                        ",\"val\":" + gemState.Value.ToString("R") +
+                        ",\"vel\":" + math.length(new float2(velocity.x, velocity.z)).ToString("R") +
                         "}",
                         gemState.SpawnId);
                 }
@@ -693,9 +717,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Starts the VFX deploy clock for a new ship–gem pair (extend duration from distance).
-        /// Pull physics no longer waits on this timer — it is ghosted so the client line/cone
-        /// animation matches without delaying capture of burst gems.
+        /// Starts the deploy clock for a new ship–gem pair. Extend duration scales with
+        /// wing→gem distance so far crystals take longer for the thin line to arrive.
+        /// Pull waits on this clock (<see cref="GemTractorBeamMath.IsDeployPullReady"/>).
         /// </summary>
         void EnsureDeployState(
             long pairKey,

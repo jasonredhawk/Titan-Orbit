@@ -59,8 +59,9 @@ namespace TitanOrbit.Simulation
 
         /// <summary>
         /// Deploy VFX: thin line shoots from wing → gem, then cone mouth opens.
-        /// Pull physics starts on lock (same tick) so burst gems cannot coast out of range
-        /// during this animation. Kept short for snappy feel but long enough to read.
+        /// Pull physics waits until extend + widen finish (see
+        /// <see cref="IsDeployPullReady"/>). Duration scales with distance via
+        /// <see cref="ComputeExtendDuration"/>.
         /// </summary>
         public const float ExtendLineSpeed = 11f;
         public const float MinExtendDuration = 0.12f;
@@ -259,6 +260,46 @@ namespace TitanOrbit.Simulation
         {
             float dist = math.max(0f, toroidalDistance);
             return math.clamp(dist / ExtendLineSpeed, MinExtendDuration, MaxExtendDuration);
+        }
+
+        /// <summary>
+        /// Seconds since the ghosted lock tick on the ServerTick timeline.
+        /// <paramref name="nowServerSeconds"/> must use the same clock as
+        /// <c>PlanetGemMoonOrbitClock</c> (tick index / sim Hz).
+        /// </summary>
+        public static float ComputeDeployElapsedSeconds(
+            uint lockTick,
+            double nowServerSeconds,
+            int simulationTickRate)
+        {
+            if (lockTick == 0 || simulationTickRate <= 0)
+                return 0f;
+            double lockSec = lockTick / (double)simulationTickRate;
+            return (float)math.max(0d, nowServerSeconds - lockSec);
+        }
+
+        /// <summary>
+        /// Thin-line extend plus cone widen. Pull must not start before this elapses.
+        /// </summary>
+        public static float ComputeDeployTotalDuration(float extendDuration)
+        {
+            float extend = extendDuration > 0.0001f ? extendDuration : MinExtendDuration;
+            return extend + WidthExpandDuration;
+        }
+
+        /// <summary>
+        /// True when the extend line has reached the gem and the cone has finished widening.
+        /// </summary>
+        public static bool IsDeployPullReady(
+            uint lockTick,
+            float extendDuration,
+            double nowServerSeconds,
+            int simulationTickRate)
+        {
+            if (lockTick == 0)
+                return false;
+            float elapsed = ComputeDeployElapsedSeconds(lockTick, nowServerSeconds, simulationTickRate);
+            return elapsed >= ComputeDeployTotalDuration(extendDuration) - 0.0001f;
         }
 
         /// <summary>

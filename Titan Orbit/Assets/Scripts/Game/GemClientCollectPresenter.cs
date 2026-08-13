@@ -1,11 +1,6 @@
 using System.Collections.Generic;
-using System.Globalization;
-using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
-using TitanOrbit.Generation;
 using Unity.Entities;
-using Unity.NetCode;
-using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -30,8 +25,6 @@ namespace TitanOrbit.Game
         }
 
         readonly List<PendingHide> _pending = new List<PendingHide>(16);
-        readonly List<GemTractorBeamClientLogic.GemProxySnapshot> _gemScratch =
-            new List<GemTractorBeamClientLogic.GemProxySnapshot>(64);
 
         /// <summary>[UNITY] Ensures one presenter exists after scene load.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -76,12 +69,8 @@ namespace TitanOrbit.Game
 
             var em = world.EntityManager;
 
-            // --- Map period (seam scoop) ---
-            if (!ToroidalDisplay.ResolveMapSize(em, out float mapW, out float mapH))
-                return;
-
-            // --- Local hull (predicted pose) ---
-            if (!EcsGameBridge.TryGetLocalShipTransform(out var shipTransform))
+            // --- Local hull ---
+            if (!EcsGameBridge.TryGetLocalShipTransform(out _))
                 return;
 
             Entity shipEntity = Entity.Null;
@@ -93,69 +82,6 @@ namespace TitanOrbit.Game
 
             var visualizer = EcsWorldVisualizer.Active;
             RevealPendingHides(em, visualizer);
-
-            var wings = em.HasBuffer<ShipWingTractorBeamElement>(shipEntity)
-                ? em.GetBuffer<ShipWingTractorBeamElement>(shipEntity)
-                : default;
-
-            GemTractorBeamClientLogic.CollectGemProxies(em, _gemScratch);
-            int shipNetworkId = em.HasComponent<GhostOwner>(shipEntity)
-                ? em.GetComponentData<GhostOwner>(shipEntity).NetworkId
-                : 0;
-            float nowServer = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(em, Time.timeAsDouble);
-
-            for (int i = 0; i < _gemScratch.Count; i++)
-            {
-                var gem = _gemScratch[i];
-                if (!GemTractorBeamClientLogic.IsInsideCargoAbsorbZone(
-                        shipTransform, wings, gem.Transform, gem.State, mapW, mapH))
-                    continue;
-
-                bool blocked = GemSelfPickupBlock.IsPickupBlockedForShip(
-                    gem.State, shipNetworkId, nowServer);
-
-                // #region agent log
-                if (!DebugGemSyncLog.ShouldThrottle("overlap:" + gem.State.SpawnId, 500))
-                {
-                    DebugGemSyncLog.Write(
-                        "H3",
-                        "GemClientCollectPresenter.LateUpdate",
-                        "client-overlap",
-                        "{\"ghostId\":" + gem.GhostId.ToString(CultureInfo.InvariantCulture) +
-                        ",\"eIdx\":" + gem.Entity.Index.ToString(CultureInfo.InvariantCulture) +
-                        ",\"tractor\":" + gem.Motion.TractorShipId.ToString(CultureInfo.InvariantCulture) +
-                        ",\"phase\":" + gem.Motion.Phase.ToString(CultureInfo.InvariantCulture) +
-                        ",\"blocked\":" + (blocked ? "true" : "false") +
-                        ",\"cur\":" + shipState.CurrentGems.ToString("R", CultureInfo.InvariantCulture) +
-                        ",\"cap\":" + shipState.GemCapacity.ToString("R", CultureInfo.InvariantCulture) +
-                        ",\"val\":" + gem.State.Value.ToString("R", CultureInfo.InvariantCulture) +
-                        "}",
-                        gem.State.SpawnId);
-                }
-                // #endregion
-            }
-
-            for (int i = 0; i < _gemScratch.Count; i++)
-            {
-                var gem = _gemScratch[i];
-                if (gem.Motion.TractorShipId == 0)
-                    continue;
-                int spawnId = gem.State.SpawnId;
-                if (DebugGemSyncLog.ShouldThrottle("cli-lock:" + spawnId, 1000))
-                    continue;
-                DebugGemSyncLog.Write(
-                    "T",
-                    "GemClientCollectPresenter.LateUpdate",
-                    "client-locked",
-                    "{\"ghostId\":" + gem.GhostId.ToString(CultureInfo.InvariantCulture) +
-                    ",\"tractor\":" + gem.Motion.TractorShipId.ToString(CultureInfo.InvariantCulture) +
-                    ",\"phase\":" + gem.Motion.Phase.ToString(CultureInfo.InvariantCulture) +
-                    ",\"cur\":" + shipState.CurrentGems.ToString("R", CultureInfo.InvariantCulture) +
-                    ",\"cap\":" + shipState.GemCapacity.ToString("R", CultureInfo.InvariantCulture) +
-                    ",\"val\":" + gem.State.Value.ToString("R", CultureInfo.InvariantCulture) +
-                    "}",
-                    spawnId);
-            }
         }
 
         /// <summary>
