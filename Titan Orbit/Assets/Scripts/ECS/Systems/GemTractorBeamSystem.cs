@@ -1,7 +1,6 @@
 using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
-using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -334,35 +333,7 @@ namespace TitanOrbit.ECS
                 uint lockTick = deploy.LockTick != 0 ? deploy.LockTick : serverTick;
                 if (!GemTractorBeamMath.IsDeployPullReady(
                         lockTick, deploy.ExtendDuration, nowServerTime, simHz))
-                {
-                    // #region agent log
-                    if (!DebugGemSyncLog.ShouldThrottle("depwait:" + gemState.SpawnId, 400))
-                    {
-                        float elapsed = GemTractorBeamMath.ComputeDeployElapsedSeconds(
-                            lockTick, nowServerTime, simHz);
-                        float total = GemTractorBeamMath.ComputeDeployTotalDuration(
-                            deploy.ExtendDuration);
-                        float3 waitOrigin = ResolvePullTarget(shipTransform, wings, primaryWing);
-                        float waitDist = GemTractorBeamMath.ToroidalDistance(
-                            gemTransform.Position, waitOrigin, mapW, mapH);
-                        DebugGemSyncLog.Write(
-                            "D1",
-                            "GemTractorBeamSystem.ApplyLockAndPull",
-                            "deploy-wait",
-                            "{\"spawnId\":" + gemState.SpawnId +
-                            ",\"elapsed\":" + elapsed.ToString("R") +
-                            ",\"extend\":" + deploy.ExtendDuration.ToString("R") +
-                            ",\"total\":" + total.ToString("R") +
-                            ",\"dist\":" + waitDist.ToString("R") +
-                            ",\"phase\":" + (EntityManager.HasComponent<GemMotionState>(gemEntity)
-                                ? EntityManager.GetComponentData<GemMotionState>(gemEntity).Phase
-                                : 0) +
-                            "}",
-                            gemState.SpawnId);
-                    }
-                    // #endregion
                     continue;
-                }
 
                 // --- Stacked pull — after deploy ---
                 var beamSettings = TractorBeamSettingsCache.ResolveOrDefault();
@@ -426,28 +397,6 @@ namespace TitanOrbit.ECS
                     motion.Phase = GemMotionState.PhaseTractor;
                     EntityManager.SetComponentData(gemEntity, motion);
                 }
-
-                // #region agent log
-                if (!DebugGemSyncLog.ShouldThrottle("depull:" + gemState.SpawnId, 2000))
-                {
-                    float elapsed = GemTractorBeamMath.ComputeDeployElapsedSeconds(
-                        lockTick, nowServerTime, simHz);
-                    float total = GemTractorBeamMath.ComputeDeployTotalDuration(
-                        deploy.ExtendDuration);
-                    DebugGemSyncLog.Write(
-                        "D1",
-                        "GemTractorBeamSystem.ApplyLockAndPull",
-                        "deploy-pull-start",
-                        "{\"spawnId\":" + gemState.SpawnId +
-                        ",\"elapsed\":" + elapsed.ToString("R") +
-                        ",\"extend\":" + deploy.ExtendDuration.ToString("R") +
-                        ",\"total\":" + total.ToString("R") +
-                        ",\"dist\":" + distToPrimary.ToString("R") +
-                        ",\"vel\":" + math.length(new float2(velocity.x, velocity.z)).ToString("R") +
-                        "}",
-                        gemState.SpawnId);
-                }
-                // #endregion
             }
         }
 
