@@ -12,12 +12,17 @@ namespace TitanOrbit.Game
     /// [HYBRID] Client gem GameObject presenter. Puts the crystal at <b>estimated server-now</b>
     /// so the mesh you fly over is the gem <c>GemPickupSystem</c> will scoop.
     /// <para>
-    /// NetCode interpolated <c>LocalTransform</c> is the recent <em>past</em> (interpolation
-    /// delay). For remote ships that is correct (pillar 2). For pickups it is wrong: the player
-    /// overlaps yesterday's pose and the server gem has already moved. We start from that
-    /// interpolated sample, then advance it by ghosted <see cref="GemKinematics.Velocity"/> ×
-    /// the interpolation delay — the same velocity the server already applied. Cap the delay
-    /// so a starved snapshot cannot throw the crystal across the map.
+                /// NetCode interpolated <c>LocalTransform</c> is the recent <em>past</em> (interpolation
+                /// delay). For remote ships that is correct (pillar 2). For idle / coasting pickups
+                /// it is wrong: the player overlaps yesterday's pose and the server gem has already
+                /// moved. We start from that interpolated sample, then advance it by ghosted
+                /// <see cref="GemKinematics.Velocity"/> × the interpolation delay — the same velocity
+                /// the server already applied. Cap the delay so a starved snapshot cannot throw the
+                /// crystal across the map.
+                /// </para>
+                /// Tractor-locked gems skip that lead. Interpolated LT already includes server pull;
+                /// adding burst leftovers × delay put the last crystal inside the scoop on the client
+                /// while the server gem was still outside (beam connected, mesh shaking, never consumed).
     /// </para>
     /// When the gem is idle (velocity ≈ 0) we copy interpolated pose as-is.
     /// Tractor pull is server-authored; once snapshots include the pull, velocity points at
@@ -25,9 +30,19 @@ namespace TitanOrbit.Game
     /// </summary>
     public sealed class GemClientMotionApplier : MonoBehaviour
     {
+        int _bindSerial;
         Entity _entity;
         float3 _logicalPos;
         bool _bound;
+
+        /// <summary>
+        /// Increments on each <see cref="Bind"/>. Collect-hide must not revive a pooled shell
+        /// that was rebound to a different gem.
+        /// </summary>
+        public int BindSerial => _bindSerial;
+
+        /// <summary>Ghost entity this shell is currently posing; <see cref="Entity.Null"/> when unbound.</summary>
+        public Entity BoundEntity => _entity;
 
         /// <summary>Frame stamp for the shared interpolation-delay cache.</summary>
         static int s_delayFrame = -1;
@@ -48,6 +63,7 @@ namespace TitanOrbit.Game
         /// <param name="logicalPosition">Ghost <see cref="LocalTransform.Position"/> at bind time.</param>
         public void Bind(Entity entity, float3 logicalPosition)
         {
+            _bindSerial++;
             _entity = entity;
             _logicalPos = logicalPosition;
             _bound = true;
@@ -105,10 +121,20 @@ namespace TitanOrbit.Game
             var serverLt = em.GetComponentData<LocalTransform>(_entity);
             float3 present = serverLt.Position;
 
-            // --- Lead to estimated server-now ---
+            // --- Lead to estimated server-now (coast / burst only) ---
             // [NETCODE] InterpolationTick is what LocalTransform currently shows.
             // ServerTick is "now" on the server timeline. Velocity is ghosted from GemMotionSystem.
-            if (em.HasComponent<GemKinematics>(_entity))
+            // Tractor-locked gems must NOT take this lead: interpolated LT already includes
+            // server pull, and leftover asteroid-burst speed × delay throws the last crystal
+            // into the scoop zone on the client only (visible, shaking, unconsumable).
+            bool underTractor = false;
+            if (em.HasComponent<GemMotionState>(_entity))
+            {
+                var motion = em.GetComponentData<GemMotionState>(_entity);
+                underTractor = motion.Phase == GemMotionState.PhaseTractor && motion.TractorShipId != 0;
+            }
+
+            if (!underTractor && em.HasComponent<GemKinematics>(_entity))
             {
                 float3 vel = em.GetComponentData<GemKinematics>(_entity).Velocity;
                 vel.y = 0f;

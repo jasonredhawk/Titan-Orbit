@@ -26,18 +26,18 @@ namespace Unity.NetCode
         /// <summary>CreateEntity placeholders created this join (all ghost types).</summary>
         public static int PlaceholdersCreatedSession { get; private set; }
 
-        /// <summary>Successful delayed Instantiates this join (1/frame drain).</summary>
+        /// <summary>Successful delayed Instantiates this join (16/frame drain).</summary>
         public static int InstantiatesSession { get; private set; }
 
         /// <summary>
-        /// Optional game hook after each successful delayed Instantiates (1/frame).
+        /// Optional game hook after each successful delayed Instantiates (16/frame).
         /// Used to AddComponent non-ghost <c>MapBodyHybridVisualSpawnRequest</c> without scanning asteroids.
         /// </summary>
         public static Action<EntityManager, Entity> OnDelayedGhostInstantiate;
 
         /// <summary>
         /// Optional: return true for placeholders that should Instantiates before other ready ghosts
-        /// (still 1/frame). Titan Orbit resolves the ghost prefab from <c>GhostInstance.ghostType</c>
+        /// (16/frame). Titan Orbit resolves the ghost prefab from <c>GhostInstance.ghostType</c>
         /// (placeholders do not carry ShipTag/GemTag) so Join Team ships and gem bursts jump the
         /// asteroid Instantiates queue.
         /// </summary>
@@ -303,7 +303,7 @@ namespace Unity.NetCode
             // only defer the real Instantiate. Break without Dequeue so nothing is dropped.
             // Keep this at 1: even 4 Instantiates/frame still tripped Burst LocalToWorldSystem
             // (ComputeWorldSpaceLocalToWorldJob) on Windows late-join with ~500 asteroids.
-            // Keep Instantiates at 1/frame (join Crash!!! if raised). Prefer priority ghosts (gems)
+            // Keep Instantiates at 16/frame (was 1 forever; asteroids are seed-hydrated now). Prefer priority ghosts (gems)
             // among those already ready so destroy bursts are not stuck behind asteroid Instantiates.
             // TITAN-ORBIT v15: drain PREDICTED before INTERPOLATED. Ships are predicted; asteroids/
             // planets/gems are interpolated. When both queues have ready ghosts, interpolated-first

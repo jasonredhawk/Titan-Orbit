@@ -1,7 +1,9 @@
 using System.Collections.Generic;
+using System.Globalization;
 using Shapes;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
@@ -185,7 +187,7 @@ namespace TitanOrbit.Game
                     for (int pi = 0; pi < beamPairs.Count; pi++)
                     {
                         var pair = beamPairs[pi];
-                        if (!TryFindGemSnapshot(pair.GemId, out var gem))
+                        if (!TryFindGemSnapshot((int)pair.GemKey, out var gem))
                             continue;
                         if (!GemTractorBeamClientLogic.HasVisibleGemCrystal(gem.Entity))
                             continue;
@@ -254,11 +256,154 @@ namespace TitanOrbit.Game
 
                         Color colorShip = new Color(teamBase.r, teamBase.g, teamBase.b, pulsedAlphaAtShip * beamVisibility);
                         Color colorGem = new Color(teamBase.r, teamBase.g, teamBase.b, alphaAtGem * beamVisibility);
+                        // #region agent log
+                        AgentLogDrawnBeam(em, gem, gemDisplay, drawnXz, currentWidth);
+                        // #endregion
                         DrawConeBeamWithWraps(shipDisplay, gemDisplay, mapW, mapH, currentWidth, colorShip, colorGem);
                     }
                 }
             }
         }
+
+        // #region agent log
+        static float s_dbgSummaryAt;
+        static int s_dbgDrawn;
+        static int s_dbgTiny;
+        static int s_dbgNoRend;
+        static int s_dbgLife0;
+        static int s_dbgBindMismatch;
+
+        /// <summary>
+        /// Logs a drawn tractor beam when the crystal looks missing (tiny scale, no renderer,
+        /// lifetime shrink, or pooled bind mismatch) so empty-space beams can be classified.
+        /// </summary>
+        static void AgentLogDrawnBeam(
+            EntityManager em,
+            in GemTractorBeamClientLogic.GemProxySnapshot gem,
+            Vector3 gemDisplay,
+            float drawnXz,
+            float mouthWidth)
+        {
+            if (!Application.isPlaying)
+                return;
+
+            s_dbgDrawn++;
+
+            var visualizer = EcsWorldVisualizer.Active;
+            GameObject proxy = null;
+            bool proxyActive = visualizer != null &&
+                               visualizer.TryGetProxy(gem.Entity, out proxy) &&
+                               proxy != null &&
+                               proxy.activeInHierarchy;
+
+            float scaleX = 0f;
+            int rendCount = 0;
+            int rendEnabled = 0;
+            int rendVisible = 0;
+            float boundsMag = 0f;
+            float posDelta = -1f;
+            bool bindMatch = true;
+            if (proxy != null)
+            {
+                scaleX = proxy.transform.lossyScale.x;
+                var rends = proxy.GetComponentsInChildren<Renderer>(true);
+                rendCount = rends != null ? rends.Length : 0;
+                if (rends != null)
+                {
+                    for (int ri = 0; ri < rends.Length; ri++)
+                    {
+                        if (rends[ri] == null)
+                            continue;
+                        if (rends[ri].enabled)
+                            rendEnabled++;
+                        if (rends[ri].isVisible)
+                            rendVisible++;
+                        boundsMag = math.max(boundsMag, rends[ri].bounds.size.magnitude);
+                    }
+                }
+
+                Vector3 pp = proxy.transform.position;
+                posDelta = math.length(new float2(pp.x - gemDisplay.x, pp.z - gemDisplay.z));
+                var motion = proxy.GetComponent<GemClientMotionApplier>();
+                if (motion != null)
+                    bindMatch = motion.BoundEntity == gem.Entity;
+            }
+
+            float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
+                ? (float)tickNow
+                : (float)Time.timeAsDouble;
+            float spawnT = gem.State.SpawnServerTime;
+            var explosion = GemExplosionSettingsCache.ResolveOrDefault();
+            float lifeMul = GemExplosionMath.LifetimeScaleMultiplier(
+                spawnT, now, explosion.GemLifetimeSeconds, explosion.GemShrinkDurationSeconds);
+
+            bool tiny = scaleX < 0.08f || boundsMag < 0.05f;
+            bool noRend = !proxyActive || rendEnabled == 0;
+            bool life0 = lifeMul < 0.05f;
+            if (tiny) s_dbgTiny++;
+            if (noRend) s_dbgNoRend++;
+            if (life0) s_dbgLife0++;
+            if (!bindMatch) s_dbgBindMismatch++;
+
+            bool entityOk = em.Exists(gem.Entity) && em.HasComponent<GemTag>(gem.Entity);
+            string hyp = "H0";
+            if (!bindMatch)
+                hyp = "H4";
+            else if (life0 || tiny)
+                hyp = "H1";
+            else if (noRend)
+                hyp = "H2";
+            else if (posDelta > 3f)
+                hyp = "H3";
+
+            bool anomaly = tiny || noRend || life0 || posDelta > 3f || !entityOk || !bindMatch;
+            if (anomaly && !DebugGemSyncLog.ShouldThrottle("beam:" + gem.GhostId, 750))
+            {
+                string data =
+                    "{\"ghostId\":" + gem.GhostId.ToString(CultureInfo.InvariantCulture) +
+                    ",\"tractor\":" + gem.Motion.TractorShipId.ToString(CultureInfo.InvariantCulture) +
+                    ",\"phase\":" + gem.Motion.Phase.ToString(CultureInfo.InvariantCulture) +
+                    ",\"val\":" + gem.State.Value.ToString("F2", CultureInfo.InvariantCulture) +
+                    ",\"spawnT\":" + spawnT.ToString("F2", CultureInfo.InvariantCulture) +
+                    ",\"nowT\":" + now.ToString("F2", CultureInfo.InvariantCulture) +
+                    ",\"lifeMul\":" + lifeMul.ToString("F3", CultureInfo.InvariantCulture) +
+                    ",\"scaleX\":" + scaleX.ToString("F3", CultureInfo.InvariantCulture) +
+                    ",\"proxyOn\":" + (proxyActive ? "true" : "false") +
+                    ",\"rendN\":" + rendCount.ToString(CultureInfo.InvariantCulture) +
+                    ",\"rendEn\":" + rendEnabled.ToString(CultureInfo.InvariantCulture) +
+                    ",\"rendVis\":" + rendVisible.ToString(CultureInfo.InvariantCulture) +
+                    ",\"bounds\":" + boundsMag.ToString("F3", CultureInfo.InvariantCulture) +
+                    ",\"posD\":" + posDelta.ToString("F2", CultureInfo.InvariantCulture) +
+                    ",\"drawn\":" + drawnXz.ToString("F2", CultureInfo.InvariantCulture) +
+                    ",\"mouth\":" + mouthWidth.ToString("F3", CultureInfo.InvariantCulture) +
+                    ",\"entOk\":" + (entityOk ? "true" : "false") +
+                    ",\"bindOk\":" + (bindMatch ? "true" : "false") +
+                    ",\"eIdx\":" + gem.Entity.Index.ToString(CultureInfo.InvariantCulture) +
+                    ",\"eVer\":" + gem.Entity.Version.ToString(CultureInfo.InvariantCulture) +
+                    "}";
+                DebugGemSyncLog.Write(hyp, "GemTractorBeamVisual.DrawShapes", "drawn-beam-anomaly", data);
+            }
+
+            if (Time.unscaledTime - s_dbgSummaryAt >= 1f)
+            {
+                s_dbgSummaryAt = Time.unscaledTime;
+                string summary =
+                    "{\"drawn\":" + s_dbgDrawn.ToString(CultureInfo.InvariantCulture) +
+                    ",\"tiny\":" + s_dbgTiny.ToString(CultureInfo.InvariantCulture) +
+                    ",\"noRend\":" + s_dbgNoRend.ToString(CultureInfo.InvariantCulture) +
+                    ",\"life0\":" + s_dbgLife0.ToString(CultureInfo.InvariantCulture) +
+                    ",\"bindBad\":" + s_dbgBindMismatch.ToString(CultureInfo.InvariantCulture) +
+                    ",\"scratch\":" + GemScratch.Count.ToString(CultureInfo.InvariantCulture) +
+                    "}";
+                DebugGemSyncLog.Write("H0", "GemTractorBeamVisual.DrawShapes", "beam-summary", summary);
+                s_dbgDrawn = 0;
+                s_dbgTiny = 0;
+                s_dbgNoRend = 0;
+                s_dbgLife0 = 0;
+                s_dbgBindMismatch = 0;
+            }
+        }
+        // #endregion
 
         static bool IsGameplayCamera(Camera cam)
         {

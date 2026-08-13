@@ -1,9 +1,11 @@
 using System.Collections.Generic;
+using System.Globalization;
 using Stopwatch = System.Diagnostics.Stopwatch;
 using TitanOrbit;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
@@ -46,7 +48,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Cap while GhostSpawn Instantiates are still draining (Settling).
-        /// Instantiates are 1/frame — keep GO create modest so Instantiates + GO do not flood one frame.
+        /// Instantiates of relevant ghosts are 16/frame — keep GO create modest so Instantiates + GO do not flood one frame.
         /// Still drains every frame so the loading screen absorbs map-build cost.
         /// </summary>
         const int MaxNewWorldBodyProxiesWhileSettling = 8;
@@ -883,7 +885,28 @@ namespace TitanOrbit.Game
                 foreach (var kv in _proxies)
                 {
                     if (kv.Value == null || !em.Exists(kv.Key))
+                    {
                         _removeScratch.Add(kv.Key);
+                        continue;
+                    }
+
+                    // --- Gem ghost despawned but GO lingered (relevancy drop / DestroyEntity) ---
+                    if (_proxyKinds.TryGetValue(kv.Key, out var pruneKind) &&
+                        pruneKind == ProxyVisualKind.Gem)
+                    {
+                        if (!em.HasComponent<GemTag>(kv.Key))
+                        {
+                            _removeScratch.Add(kv.Key);
+                            continue;
+                        }
+
+                        if (em.HasComponent<GemState>(kv.Key) &&
+                            em.GetComponentData<GemState>(kv.Key).IsConsumed)
+                        {
+                            _removeScratch.Add(kv.Key);
+                            continue;
+                        }
+                    }
                 }
 
                 for (int i = 0; i < _removeScratch.Count; i++)
@@ -969,13 +992,64 @@ namespace TitanOrbit.Game
                 {
                     // --- Gem value scale + end-of-life shrink (original Gem.shrinkDuration) ---
                     var gemState = em.GetComponentData<GemState>(entity);
+                    if (gemState.IsConsumed)
+                    {
+                        // #region agent log
+                        if (!DebugGemSyncLog.ShouldThrottle("chide:" + gemState.SpawnId, 500))
+                        {
+                            int ghostId = em.HasComponent<GhostInstance>(entity)
+                                ? em.GetComponentData<GhostInstance>(entity).ghostId
+                                : 0;
+                            DebugGemSyncLog.Write(
+                                "H-despawn",
+                                "EcsWorldVisualizer.SyncExisting",
+                                "client-hide-consumed",
+                                "{\"eIdx\":" + entity.Index.ToString(CultureInfo.InvariantCulture) +
+                                ",\"ghostId\":" + ghostId.ToString(CultureInfo.InvariantCulture) +
+                                ",\"val\":" + gemState.Value.ToString("R", CultureInfo.InvariantCulture) +
+                                "}",
+                                gemState.SpawnId);
+                        }
+                        // #endregion
+                        if (go.activeSelf)
+                            go.SetActive(false);
+                        continue;
+                    }
                     gemValue = gemState.Value;
+                    // [TITAN-ORBIT] IsBonusGem can arrive one snapshot after Instantiates — retint
+                    // so a territory yellow gem does not stay on the pooled red material.
+                    GemVisualApplier.ApplyTintForBonusFlag(go, gemState.IsBonusGem);
                     // [TITAN-ORBIT] ServerTick clock — World.Time diverges on late-join (moon orbit rule).
                     float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
                         ? (float)tickNow
                         : (float)Time.timeAsDouble;
                     scale = GemVisualApplier.ComputeLifetimeVisualScale(
                         gemValue, gemState.SpawnServerTime, now);
+                    // #region agent log
+                    if (scale < 0.08f &&
+                        em.HasComponent<GemMotionState>(entity) &&
+                        em.GetComponentData<GemMotionState>(entity).TractorShipId != 0 &&
+                        !DebugGemSyncLog.ShouldThrottle("scale:" + entity.Index, 750))
+                    {
+                        var motion = em.GetComponentData<GemMotionState>(entity);
+                        int ghostId = em.HasComponent<GhostInstance>(entity)
+                            ? em.GetComponentData<GhostInstance>(entity).ghostId
+                            : 0;
+                        DebugGemSyncLog.Write(
+                            "H1",
+                            "EcsWorldVisualizer.SyncExisting",
+                            "tractored-gem-tiny-scale",
+                            "{\"eIdx\":" + entity.Index.ToString(CultureInfo.InvariantCulture) +
+                            ",\"ghostId\":" + ghostId.ToString(CultureInfo.InvariantCulture) +
+                            ",\"tractor\":" + motion.TractorShipId.ToString(CultureInfo.InvariantCulture) +
+                            ",\"scale\":" + scale.ToString("F4", CultureInfo.InvariantCulture) +
+                            ",\"spawnT\":" + gemState.SpawnServerTime.ToString("F2", CultureInfo.InvariantCulture) +
+                            ",\"nowT\":" + now.ToString("F2", CultureInfo.InvariantCulture) +
+                            ",\"val\":" + gemValue.ToString("F2", CultureInfo.InvariantCulture) +
+                            "}",
+                            gemState.SpawnId);
+                    }
+                    // #endregion
                 }
 
                 alive.Add(entity);
@@ -1307,7 +1381,7 @@ namespace TitanOrbit.Game
 
             // --- Collect up to this frame's budget, then mutate ---
             // [TITAN-ORBIT] Prefer GemTag first so destroy/mining pickups appear before leftover
-            // asteroid proxies fill the same budget (Instantiates stays 1/frame — unchanged).
+            // asteroid proxies fill the same budget (GhostSpawn Instantiates is 16/frame).
             //
             // Player.log 2026-07-22: EntityManager.GetEntityTypeHandle() + ToArchetypeChunkArray
             // → ArchetypeChunk.GetNativeArray NRE every LateUpdate (~2500×) → zero proxy climb →
@@ -1454,6 +1528,8 @@ namespace TitanOrbit.Game
             if (em.HasComponent<GemState>(entity) && em.HasComponent<GemTag>(entity))
             {
                 var state = em.GetComponentData<GemState>(entity);
+                if (state.IsConsumed)
+                    return false;
                 scale = GemVisualApplier.ComputeVisualScale(math.max(0.25f, state.Value));
                 Vector3 displayPos = GetVisualPosition(entity, lt.Position);
 
@@ -2482,7 +2558,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Max networked gem GO proxies per frame from the urgent Instantiates queue.
-        /// GhostSpawn Instantiates stays 1/frame (join-crash invariant). Once a gem ghost exists,
+        /// GhostSpawn Instantiates is 16/frame. Once a gem ghost exists,
         /// we may Rent several pool GOs per frame so a small destroy burst becomes visible
         /// within a split second — still server-driven (no local invent).
         /// </summary>
@@ -3025,7 +3101,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Per-frame GO Instantiates cap — tighter while Settling (GhostSpawn Instantiates 1/frame).
+        /// Per-frame GO Instantiates cap — tighter while Settling (GhostSpawn Instantiates 16/frame).
         /// </summary>
         static int GetWorldBodyProxyBudgetThisFrame()
         {

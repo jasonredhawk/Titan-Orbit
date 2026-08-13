@@ -6,6 +6,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Transforms;
+using UnityEngine;
 
 namespace TitanOrbit.NetCode
 {
@@ -13,14 +14,15 @@ namespace TitanOrbit.NetCode
     /// [NETCODE] Rebuilds <see cref="GhostRelevancy.GhostRelevancySet"/> each tick under
     /// <see cref="GhostRelevancyMode.SetIsRelevant"/>.
     /// <para>
-    /// <see cref="TitanOrbitDynamicGhostRelevancySystem"/> sets DefaultRelevancyQuery to
-    /// Ship / Planet. This system still writes those ghosts into the set every tick.
-    /// Gems are nearby the command-target hull, or nearby <b>any live ship</b> while that
-    /// connection has no hull yet (late-join window). Never "all gems on the map".
+    /// Ships and planets stay always-relevant (written into the set every tick).
+    /// Gems Instantiates only in a spatial subset: 40u around the command-target hull,
+    /// or around every live ship while that connection has no hull (late-join window).
+    /// Gems this connection is already tractoring stay relevant even outside 40u (pin)
+    /// so a mid-pull crystal cannot freeze or despawn on the scooping client.
+    /// Never all-map gems — Unity advises against tens of thousands relevant to one connection.
+    /// GhostSpawn Instantiates of that subset is required (16/frame budget).
     /// </para>
-    /// <para>
     /// World: ServerSimulation. Group: SimulationSystemGroup, before <see cref="GhostSendSystem"/>.
-    /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -33,12 +35,16 @@ namespace TitanOrbit.NetCode
         /// </summary>
         public const float RelevancyRadius = 40f;
 
+        /// <summary>How often we print [GemRelevancy] live vs inserted counts (seconds).</summary>
+        const float RelevancyLogIntervalSeconds = 5f;
+
         EntityQuery _alwaysRelevantQuery;
         EntityQuery _gemQuery;
         EntityQuery _connectionQuery;
         EntityQuery _shipQuery;
+        double _lastRelevancyLogElapsed;
 
-        /// <summary>Caches always-relevant, gem, and in-game connection queries.</summary>
+        /// <summary>Caches always-relevant, gem, ship, and in-game connection queries.</summary>
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<GhostRelevancy>();
@@ -57,7 +63,8 @@ namespace TitanOrbit.NetCode
             _gemQuery = state.GetEntityQuery(
                 ComponentType.ReadOnly<GemTag>(),
                 ComponentType.ReadOnly<LocalTransform>(),
-                ComponentType.ReadOnly<GhostInstance>());
+                ComponentType.ReadOnly<GhostInstance>(),
+                ComponentType.ReadOnly<GemMotionState>());
             _connectionQuery = state.GetEntityQuery(
                 ComponentType.ReadOnly<NetworkStreamInGame>(),
                 ComponentType.ReadOnly<NetworkId>());
@@ -68,8 +75,8 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>
-        /// Rebuilds the relevancy set: always-relevant ghosts for every connection, plus gems
-        /// near the command-target hull (or near any live ship during the join window).
+        /// Rebuilds the relevancy set: ships/planets for every connection, plus nearby gems
+        /// from the spatial hash and tractor-pinned gems for the scooping connection.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -86,26 +93,36 @@ namespace TitanOrbit.NetCode
             var alwaysGhosts = _alwaysRelevantQuery.ToComponentDataArray<GhostInstance>(Allocator.Temp);
             int alwaysCount = alwaysGhosts.Length;
 
-            int gemCount = _gemQuery.CalculateEntityCount();
-            NativeArray<LocalTransform> gemTransforms = default;
-            NativeArray<GhostInstance> gemGhosts = default;
-            if (gemCount > 0)
-            {
-                gemTransforms = _gemQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-                gemGhosts = _gemQuery.ToComponentDataArray<GhostInstance>(Allocator.Temp);
-            }
-
             bool haveMap = SystemAPI.TryGetSingleton<MapStateSingleton>(out var mapState) &&
                            ToroidalMapEcs.IsValidMapSize(mapState.MapWidth, mapState.MapHeight);
             float mapW = haveMap ? mapState.MapWidth : 0f;
             float mapH = haveMap ? mapState.MapHeight : 0f;
 
-            var em = state.EntityManager;
+            int gemCount = _gemQuery.CalculateEntityCount();
+            NativeArray<Entity> gemEntities = default;
+            NativeArray<LocalTransform> gemTransforms = default;
+            NativeArray<GhostInstance> gemGhosts = default;
+            NativeArray<GemMotionState> gemMotions = default;
+            GemSpatialHash hash = default;
+            if (gemCount > 0 && haveMap)
+            {
+                gemEntities = _gemQuery.ToEntityArray(Allocator.Temp);
+                gemTransforms = _gemQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+                gemGhosts = _gemQuery.ToComponentDataArray<GhostInstance>(Allocator.Temp);
+                gemMotions = _gemQuery.ToComponentDataArray<GemMotionState>(Allocator.Temp);
+                hash = GemSpatialHash.Build(
+                    gemEntities, gemTransforms, gemGhosts, gemMotions, mapW, mapH, Allocator.Temp);
+            }
 
+            var em = state.EntityManager;
             NativeArray<LocalTransform> shipTransforms = default;
             int shipCount = _shipQuery.CalculateEntityCount();
             if (shipCount > 0)
                 shipTransforms = _shipQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+
+            var nearby = new NativeList<int>(64, Allocator.Temp);
+            var seenScratch = new NativeHashSet<int>(64, Allocator.Temp);
+            int gemInserts = 0;
 
             for (int ci = 0; ci < connCount; ci++)
             {
@@ -122,7 +139,7 @@ namespace TitanOrbit.NetCode
                     set.TryAdd(new RelevantGhostForConnection(connectionId, ghostId), 1);
                 }
 
-                if (gemCount <= 0 || !haveMap)
+                if (!hash.IsCreated || gemCount <= 0)
                     continue;
 
                 bool haveOwnHull = false;
@@ -139,45 +156,63 @@ namespace TitanOrbit.NetCode
                     }
                 }
 
-                for (int gi = 0; gi < gemCount; gi++)
+                nearby.Clear();
+                seenScratch.Clear();
+                if (haveOwnHull)
                 {
-                    int ghostId = gemGhosts[gi].ghostId;
+                    hash.GatherNearby(ownPos, RelevancyRadius, nearby, seenScratch);
+                    hash.AppendPinnedToShip(connectionId, nearby, seenScratch);
+                }
+                else
+                {
+                    // --- Join window: gems near any live ship, still not all-map ---
+                    for (int s = 0; s < shipCount; s++)
+                    {
+                        hash.GatherNearby(
+                            shipTransforms[s].Position,
+                            RelevancyRadius,
+                            nearby,
+                            seenScratch,
+                            clearDst: s == 0);
+                    }
+                }
+
+                for (int n = 0; n < nearby.Length; n++)
+                {
+                    int ghostId = hash.Entries[nearby[n]].GhostId;
                     if (ghostId == 0)
                         continue;
-
-                    float3 gemPos = gemTransforms[gi].Position;
-                    bool nearby = false;
-                    if (haveOwnHull)
-                    {
-                        nearby = ToroidalMapEcs.ToroidalDistance(ownPos, gemPos, mapW, mapH) <= RelevancyRadius;
-                    }
-                    else
-                    {
-                        for (int s = 0; s < shipCount; s++)
-                        {
-                            if (ToroidalMapEcs.ToroidalDistance(
-                                    shipTransforms[s].Position, gemPos, mapW, mapH) <= RelevancyRadius)
-                            {
-                                nearby = true;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (!nearby)
-                        continue;
-
-                    set.TryAdd(new RelevantGhostForConnection(connectionId, ghostId), 1);
+                    if (set.TryAdd(new RelevantGhostForConnection(connectionId, ghostId), 1))
+                        gemInserts++;
                 }
             }
 
+            double now = SystemAPI.Time.ElapsedTime;
+            if (gemCount > 0 && now - _lastRelevancyLogElapsed >= RelevancyLogIntervalSeconds)
+            {
+                _lastRelevancyLogElapsed = now;
+                Debug.Log(
+                    "[GemRelevancy] live=" + gemCount +
+                    " gemInsertsThisTick=" + gemInserts +
+                    " connections=" + connCount +
+                    " (spatial + tractor pin, not all-map)");
+            }
+
+            nearby.Dispose();
+            seenScratch.Dispose();
             alwaysGhosts.Dispose();
             connEntities.Dispose();
             connIds.Dispose();
+            if (hash.IsCreated)
+                hash.Dispose();
+            if (gemEntities.IsCreated)
+                gemEntities.Dispose();
             if (gemTransforms.IsCreated)
                 gemTransforms.Dispose();
             if (gemGhosts.IsCreated)
                 gemGhosts.Dispose();
+            if (gemMotions.IsCreated)
+                gemMotions.Dispose();
             if (shipTransforms.IsCreated)
                 shipTransforms.Dispose();
         }

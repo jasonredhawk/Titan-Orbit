@@ -31,7 +31,8 @@ namespace TitanOrbit.Game
         static readonly Color GemTintColor = new Color(1f, 0.2f, 0.2f, 0.55f);
 
         /// <summary>
-        /// [TITAN-ORBIT] Territory bonus gem tint (NGO bonusGemTintColor ≈ yellow).
+        /// [TITAN-ORBIT] Extra-yield gem tint (NGO bonusGemTintColor ≈ yellow). Cosmetic only —
+        /// same pickup as the red crystal.
         /// </summary>
         static readonly Color BonusGemTintColor = new Color(1f, 0.9f, 0.15f, 0.55f);
 

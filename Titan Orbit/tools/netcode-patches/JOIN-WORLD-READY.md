@@ -11,7 +11,7 @@ Late-join must see the **current** match, not t=0 layout. Loading and Join Team 
 | Planets | Always-relevant ghosts. GhostSpawn Instantiates the prefab. | Planet ghosts ≥ 92% of `LivePlanetCount` |
 | Moons | Not separate ghosts. `PlanetGemMoonState` on the planet + `PlanetGemMoonVisualProxy` / colliders | Moon proxies ≥ 92% of expected planets |
 | Ships | Always-relevant ghosts. Instantiates at GhostSpawn budget (16/frame patch) | Ship ghosts ≥ 92% of `LiveShipCount`; 0 ships is ready |
-| Gems | Nearby relevancy (40u). Join window: near **any** live ship if the joiner has no CommandTarget hull. Never all-map. | Not a loading gate |
+| Gems | Interpolated ghosts. Nearby 40u (spatial hash) + **tractor pin** (stay relevant while this connection's ship is locking). Join window: near any live ship. GhostSpawn Instantiates that subset (16/frame). **Never all-map** and never skip Instantiates of relevant gems. | Not a loading gate |
 | People transports | Server `CreateEntity` + SpawnRpc / PoseRpc. **Not** ghosts. Late join: catch-up SpawnRpc + pose-from-unknown Active | Catch-up sent; VFX Instantiates from RPC or pose |
 | GhostCount | Unity `GhostCountReceivedOnClient` + `GhostCountInstantiatedOnClient` vs relevancy-filtered server count | Both ≥ 85%, or 20s timeout, or planets+ships+moons+proxy |
 
@@ -40,3 +40,6 @@ powershell -File tools/verify-join-crash-gates.ps1
 Do **not** put `AsteroidTag` in `GhostRelevancy` SetIsRelevant. Do **not** GoInGame before
 seed-hydrate when `HasFullRecipe`. Skip `ToEntityArray` only while that archetype’s
 GhostSpawn Instantiates is in flight (`ShouldSkipShipEntityQueries`).
+
+Gems Instantiates in the 40u band + tractor pin is required. Do not skip gem Instantiates
+and do not stream every gem on the torus.

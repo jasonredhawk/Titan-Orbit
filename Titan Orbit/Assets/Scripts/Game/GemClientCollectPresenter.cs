@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Globalization;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using Unity.Entities;
@@ -9,15 +11,9 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Local-player predicted hide when the hull or a wing tip overlaps a gem crystal.
-    /// <para>
-    /// Pickup is still server-authoritative (<c>GemPickupSystem</c>). RTT means the ghost
-    /// lingers after the server already consumed it — or the player overlaps the mesh and
-    /// waits a beat before the destroy snapshot arrives. Hiding the crystal on the same
-    /// absorb test the server uses makes collection feel instant. If the ghost is still
-    /// alive after a short timeout, we show it again (mispredict / self-pickup block).
-    /// </para>
-    /// Does not invent tractor locks. Does not destroy ECS entities.
+    /// Observes local-player overlap with gem crystals. Does <b>not</b> hide meshes —
+    /// crystals disappear only when the server destroys the ghost (actual consume).
+    /// Predicted-hide made fly-over look like a scoop, then the gem popped back.
     /// </summary>
     public sealed class GemClientCollectPresenter : MonoBehaviour
     {
@@ -29,6 +25,7 @@ namespace TitanOrbit.Game
         struct PendingHide
         {
             public Entity Gem;
+            public int BindSerial;
             public float ShowAgainAt;
         }
 
@@ -94,60 +91,91 @@ namespace TitanOrbit.Game
             if (shipState.IsDead || shipState.AwaitingTeamSelection)
                 return;
 
+            var visualizer = EcsWorldVisualizer.Active;
+            RevealPendingHides(em, visualizer);
+
             var wings = em.HasBuffer<ShipWingTractorBeamElement>(shipEntity)
                 ? em.GetBuffer<ShipWingTractorBeamElement>(shipEntity)
                 : default;
 
             GemTractorBeamClientLogic.CollectGemProxies(em, _gemScratch);
-            var visualizer = EcsWorldVisualizer.Active;
+            int shipNetworkId = em.HasComponent<GhostOwner>(shipEntity)
+                ? em.GetComponentData<GhostOwner>(shipEntity).NetworkId
+                : 0;
+            float nowServer = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(em, Time.timeAsDouble);
 
             for (int i = 0; i < _gemScratch.Count; i++)
             {
                 var gem = _gemScratch[i];
-                if (GemSelfPickupBlock.IsBlockedForShip(
-                        gem.State,
-                        em.HasComponent<GhostOwner>(shipEntity)
-                            ? em.GetComponentData<GhostOwner>(shipEntity).NetworkId
-                            : 0,
-                        PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(em, Time.timeAsDouble)))
-                    continue;
-
                 if (!GemTractorBeamClientLogic.IsInsideCargoAbsorbZone(
                         shipTransform, wings, gem.Transform, gem.State, mapW, mapH))
                     continue;
 
-                if (visualizer == null ||
-                    !visualizer.TryGetProxy(gem.Entity, out GameObject proxy) ||
-                    proxy == null ||
-                    !proxy.activeInHierarchy)
-                    continue;
+                bool blocked = GemSelfPickupBlock.IsPickupBlockedForShip(
+                    gem.State, shipNetworkId, nowServer);
 
-                proxy.SetActive(false);
-                _pending.Add(new PendingHide
+                // #region agent log
+                if (!DebugGemSyncLog.ShouldThrottle("overlap:" + gem.State.SpawnId, 500))
                 {
-                    Gem = gem.Entity,
-                    ShowAgainAt = Time.time + MispredictShowAgainSeconds,
-                });
+                    DebugGemSyncLog.Write(
+                        "H3",
+                        "GemClientCollectPresenter.LateUpdate",
+                        "client-overlap",
+                        "{\"ghostId\":" + gem.GhostId.ToString(CultureInfo.InvariantCulture) +
+                        ",\"eIdx\":" + gem.Entity.Index.ToString(CultureInfo.InvariantCulture) +
+                        ",\"tractor\":" + gem.Motion.TractorShipId.ToString(CultureInfo.InvariantCulture) +
+                        ",\"phase\":" + gem.Motion.Phase.ToString(CultureInfo.InvariantCulture) +
+                        ",\"blocked\":" + (blocked ? "true" : "false") +
+                        ",\"cur\":" + shipState.CurrentGems.ToString("R", CultureInfo.InvariantCulture) +
+                        ",\"cap\":" + shipState.GemCapacity.ToString("R", CultureInfo.InvariantCulture) +
+                        ",\"val\":" + gem.State.Value.ToString("R", CultureInfo.InvariantCulture) +
+                        "}",
+                        gem.State.SpawnId);
+                }
+                // #endregion
             }
 
-            // --- Mispredict / despawn cleanup ---
+            for (int i = 0; i < _gemScratch.Count; i++)
+            {
+                var gem = _gemScratch[i];
+                if (gem.Motion.TractorShipId == 0)
+                    continue;
+                int spawnId = gem.State.SpawnId;
+                if (DebugGemSyncLog.ShouldThrottle("cli-lock:" + spawnId, 1000))
+                    continue;
+                DebugGemSyncLog.Write(
+                    "T",
+                    "GemClientCollectPresenter.LateUpdate",
+                    "client-locked",
+                    "{\"ghostId\":" + gem.GhostId.ToString(CultureInfo.InvariantCulture) +
+                    ",\"tractor\":" + gem.Motion.TractorShipId.ToString(CultureInfo.InvariantCulture) +
+                    ",\"phase\":" + gem.Motion.Phase.ToString(CultureInfo.InvariantCulture) +
+                    ",\"cur\":" + shipState.CurrentGems.ToString("R", CultureInfo.InvariantCulture) +
+                    ",\"cap\":" + shipState.GemCapacity.ToString("R", CultureInfo.InvariantCulture) +
+                    ",\"val\":" + gem.State.Value.ToString("R", CultureInfo.InvariantCulture) +
+                    "}",
+                    spawnId);
+            }
+        }
+
+        /// <summary>
+        /// Immediately un-hides crystals that were predicted-hidden. Used when the hold is
+        /// full so leftovers stay visible on the wing until capacity opens.
+        /// </summary>
+        void RevealPendingHides(EntityManager em, EcsWorldVisualizer visualizer)
+        {
             for (int i = _pending.Count - 1; i >= 0; i--)
             {
                 var pending = _pending[i];
-                if (!em.Exists(pending.Gem))
+                if (!em.Exists(pending.Gem) || !em.HasComponent<GemTag>(pending.Gem))
                 {
                     _pending.RemoveAt(i);
                     continue;
                 }
 
-                if (Time.time < pending.ShowAgainAt)
-                    continue;
-
-                // Server did not consume — show the crystal again if the visualizer still owns it.
                 if (visualizer != null &&
                     visualizer.TryGetProxy(pending.Gem, out GameObject proxy) &&
-                    proxy != null &&
-                    !proxy.activeInHierarchy)
+                    proxy != null)
                 {
                     Transform poolRoot = proxy.transform.parent;
                     if (poolRoot != null && poolRoot.name == "GemVisualPool")
@@ -156,7 +184,15 @@ namespace TitanOrbit.Game
                         continue;
                     }
 
-                    proxy.SetActive(true);
+                    var motion = proxy.GetComponent<GemClientMotionApplier>();
+                    if (motion != null && motion.BindSerial != pending.BindSerial)
+                    {
+                        _pending.RemoveAt(i);
+                        continue;
+                    }
+
+                    if (!proxy.activeInHierarchy)
+                        proxy.SetActive(true);
                 }
 
                 _pending.RemoveAt(i);

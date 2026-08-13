@@ -168,7 +168,7 @@ namespace TitanOrbit.Game
                 pairs.Add(new GemTractorBeamAssignment.Pair
                 {
                     WingIndex = wingIndex,
-                    GemId = gemId,
+                    GemKey = gemId,
                     IsPrimary = true,
                 });
 
@@ -419,22 +419,39 @@ namespace TitanOrbit.Game
         {
             if (ship.IsDead || ship.AwaitingTeamSelection)
                 return false;
-            if (ship.CurrentGems >= ship.GemCapacity)
+            if (ship.CurrentGems >= ship.GemCapacity - 0.001f)
                 return false;
             return true;
         }
 
         /// <summary>
-        /// True when the hybrid gem crystal is active in the scene.
-        /// Pickup returns the GO to <see cref="GemVisualPool"/> immediately; a lingering ghost
-        /// without this mesh is what produced a tractor beam to empty space.
+        /// True when the hybrid gem crystal is actually on-screen as a mesh.
+        /// A live proxy GO is not enough: end-of-life shrink sets scale to 0 while
+        /// <c>TractorShipId</c> stays set, which used to draw beams at empty space.
+        /// Pickup also returns the GO to <see cref="GemVisualPool"/> immediately.
         /// </summary>
         public static bool HasVisibleGemCrystal(Entity gemEntity)
         {
             var visualizer = EcsWorldVisualizer.Active;
             if (visualizer == null || !visualizer.TryGetProxy(gemEntity, out GameObject proxy) || proxy == null)
                 return false;
-            return proxy.activeInHierarchy;
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world != null && world.IsCreated &&
+                world.EntityManager.Exists(gemEntity) &&
+                world.EntityManager.HasComponent<GemState>(gemEntity) &&
+                world.EntityManager.GetComponentData<GemState>(gemEntity).IsConsumed)
+                return false;
+            if (!proxy.activeInHierarchy)
+                return false;
+            // [TITAN-ORBIT] Lifetime shrink (and a pooled empty shell) leave the root active.
+            if (proxy.transform.lossyScale.x < 0.08f)
+                return false;
+            var renderer = proxy.GetComponentInChildren<Renderer>();
+            if (renderer == null || !renderer.enabled)
+                return false;
+            if (renderer.bounds.size.sqrMagnitude < 0.0025f)
+                return false;
+            return true;
         }
 
         /// <summary>
@@ -478,11 +495,12 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Gem has value and is not mid-deposit. Self-pickup is enforced on the server lock
+        /// Gem has value and is not mid-deposit. Colour / <c>IsBonusGem</c> is ignored — yellow
+        /// extra-yield gems beam like red. Self-pickup is enforced on the server lock
         /// (blocked gems never get <c>TractorShipId</c>) — we do not second-guess it here.
         /// </summary>
         public static bool IsGemEligibleForBeam(in GemState gem) =>
-            gem.Value > 0.001f && gem.DepositTeam == TeamId.None;
+            !gem.IsConsumed && gem.Value > 0.001f && gem.DepositTeam == TeamId.None;
 
         /// <summary>
         /// [NETCODE] Session-unique gem id from <see cref="GhostInstance"/>. False when the

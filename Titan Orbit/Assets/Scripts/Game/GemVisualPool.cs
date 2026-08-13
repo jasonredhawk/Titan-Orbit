@@ -181,6 +181,11 @@ namespace TitanOrbit.Game
                 }
             }
 
+            // --- Reset motion bind so a recycled shell cannot LateUpdate a dead entity ---
+            var motion = instance.GetComponent<GemClientMotionApplier>();
+            if (motion != null)
+                motion.Unbind();
+
             // --- Activate for world use ---
             instance.name = instanceName;
             instance.transform.SetParent(null, false);

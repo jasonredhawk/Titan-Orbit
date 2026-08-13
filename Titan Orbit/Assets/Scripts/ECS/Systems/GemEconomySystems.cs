@@ -1,6 +1,7 @@
 using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.Diagnostics;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -93,6 +94,14 @@ namespace TitanOrbit.ECS
 
         /// <summary>Smallest gem chunk worth spawning as an entity.</summary>
         public const float MinGemSpawnValue = 0.25f;
+
+        /// <summary>
+        /// Absorb-zone self-pickup grace after a ship spills cargo. Tractor stays blocked for
+        /// the full <see cref="GemExplosionSettings.SelfPickupBlockSeconds"/> so you cannot
+        /// magnet dumps back; fly-over scoop uses this shorter window so burst nuggets are not
+        /// uncollectable for seconds while they sit in the explosion cloud.
+        /// </summary>
+        public const float SelfPickupAbsorbBlockSeconds = 0.45f;
 
         /// <summary>
         /// Fallback explosion speed when <see cref="GemExplosionSettings"/> is missing.
@@ -201,10 +210,11 @@ namespace TitanOrbit.ECS
                     if (mined < GemEconomyConstants.MinGemSpawnValue)
                         continue;
 
-                    // --- Friendly territory gem bonus ---
-                    // [TITAN-ORBIT] Base mined chunk is red; bonus portion spawns as a separate yellow
-                    // gem (NGO isBonusGem). Asteroid loses RemainingGems at the base rate only.
-                    // Mask (not strongest-wins TerritoryTeam): overlap still grants bonus to each owner.
+                    // --- Friendly territory gem bonus (tint only once spawned) ---
+                    // [TITAN-ORBIT] Base mined chunk is red; extra value Instantiates as a yellow
+                    // gem so players see the triangle bonus. Same scoop rules as red — any ship.
+                    // Asteroid loses RemainingGems at the base rate only. Mask (not strongest-wins
+                    // TerritoryTeam): overlap still grants extra yield to each owner.
                     int homeLevel = PlanetConnectionGraphLogic.GetHomePlanetLevel(
                         shipState.ValueRO.Team, homeLevels);
                     float gemMult = PlanetConnectionGraphLogic.FriendlyTerritoryGemMultiplier(
@@ -212,7 +222,8 @@ namespace TitanOrbit.ECS
                     float bonusValue = mined * (gemMult - 1f);
 
                     a.RemainingGems -= mined;
-                    // [TITAN-ORBIT] Record miner team so destroy-burst yellow gems stay friendly-only.
+                    // [TITAN-ORBIT] Record miner team so destroy Instantiates extra yellow yield
+                    // only inside that team's triangle. Collection is still free-for-all.
                     a.LastInteractTeam = shipState.ValueRO.Team;
                     if (a.RemainingGems <= 0f)
                     {
@@ -368,19 +379,68 @@ namespace TitanOrbit.ECS
 
             // --- Expire uncollected gems ---
             // [TITAN-ORBIT] Matches NGO Gem.FixedUpdate: elapsed >= lifetimeSeconds → Despawn.
-            foreach (var (gemState, gemEntity) in SystemAPI
-                         .Query<RefRO<GemState>>()
+            // GemMotionState is in the query so debug logs never call EntityManager inside
+            // SystemAPI.Query foreach (that sync-point skipped DestroyEntity for locked gems).
+            foreach (var (gemState, motion, gemEntity) in SystemAPI
+                         .Query<RefRO<GemState>, RefRO<GemMotionState>>()
                          .WithAll<GemTag>()
                          .WithEntityAccess())
             {
                 float spawnTime = gemState.ValueRO.SpawnServerTime;
-                // Baked prefab default is 0 until spawn overwrites — skip unset stamps.
+                int tractor = motion.ValueRO.TractorShipId;
                 if (spawnTime <= 0f)
+                {
+                    // Prefab default leaked — stamp now so lifetime and self-pickup can run.
+                    // Leaving 0 made gems immortal and unblocked forever.
+                    var stamped = gemState.ValueRO;
+                    stamped.SpawnServerTime = now;
+                    ecb.SetComponent(gemEntity, stamped);
+                    continue;
+                }
+
+                float elapsed = now - spawnTime;
+                // #region agent log
+                if (tractor != 0 && elapsed >= 15f &&
+                    !DebugGemSyncLog.ShouldThrottle("lifehb:" + gemEntity.Index, 1000))
+                {
+                    DebugGemSyncLog.Write(
+                        "H5",
+                        "GemLifetimeDespawnSystem.OnUpdate",
+                        "tractored-gem-aging",
+                        "{\"eIdx\":" + gemEntity.Index +
+                        ",\"eVer\":" + gemEntity.Version +
+                        ",\"tractor\":" + tractor +
+                        ",\"spawnT\":" + spawnTime.ToString("R") +
+                        ",\"nowT\":" + now.ToString("R") +
+                        ",\"elapsed\":" + elapsed.ToString("R") +
+                        ",\"life\":" + lifetime.ToString("R") +
+                        "}",
+                        gemState.ValueRO.SpawnId);
+                }
+                // #endregion
+
+                if (gemState.ValueRO.IsConsumed)
                     continue;
 
-                if (now - spawnTime < lifetime)
+                if (elapsed < lifetime)
                     continue;
 
+                // #region agent log
+                if (!DebugGemSyncLog.ShouldThrottle("life:" + gemEntity.Index, 200))
+                {
+                    DebugGemSyncLog.Write(
+                        "H5",
+                        "GemLifetimeDespawnSystem.OnUpdate",
+                        "despawn-gem",
+                        "{\"eIdx\":" + gemEntity.Index +
+                        ",\"eVer\":" + gemEntity.Version +
+                        ",\"tractor\":" + tractor +
+                        ",\"spawnT\":" + spawnTime.ToString("R") +
+                        ",\"nowT\":" + now.ToString("R") +
+                        "}",
+                        gemState.ValueRO.SpawnId);
+                }
+                // #endregion
                 ecb.DestroyEntity(gemEntity);
             }
 
@@ -394,6 +454,9 @@ namespace TitanOrbit.ECS
     /// absorb sphere. Tractor beams only <b>pull</b> gems; this system is the actual consume.
     /// No tractor lock is required — flying a wing tip or the hull over a gem is enough.
     /// Radii come from <see cref="TractorBeamSettings"/> (Wing Collect Radius / Hull Pickup Range).
+    /// Candidates come from <see cref="GemSpatialHash"/> around the hull, each wing, and gems
+    /// already pinned to this ship's tractor (a lock on an outer wing sits outside a hull-only
+    /// gather). Colour / <c>IsBonusGem</c> is ignored — yellow extra-yield gems scoop like red.
     /// Runs after <see cref="GemMotionSystem"/> so same-tick tractor pull can land in the zone.
     /// Skips only <c>IsDead</c> / team-select ships. A living 0-HP hull with cargo still aboard
     /// may scoop — dual-resource death is hull AND gems empty, not hull alone.
@@ -406,9 +469,17 @@ namespace TitanOrbit.ECS
     public partial struct GemPickupSystem : ISystem
     {
         /// <summary>
+        /// Query radius around the hull <b>and each wing tip</b> when gathering pickup candidates.
+        /// Tractor search is ~3–4.5u from the wing; high-level hulls put those tips well outside a
+        /// hull-only 12u ball. Distance filter in <see cref="IsWithinPickupRange"/> is the real
+        /// consume test — this radius only builds the candidate set.
+        /// </summary>
+        const float PickupSpatialQueryRadius = 16f;
+
+        /// <summary>
         /// [ECS/DOTS] Cached gem query so we snapshot once per tick instead of nesting
         /// <c>SystemAPI.Query</c> inside the ship loop (nested foreach queries are unsupported).
-        /// Server-only — full gem <c>ToEntityArray</c> is join-crash safe here.
+        /// Server-only. Nearby cells come from <see cref="GemSpatialHash"/> — not every gem.
         /// </summary>
         EntityQuery _gemQuery;
 
@@ -422,7 +493,8 @@ namespace TitanOrbit.ECS
             _gemQuery = state.GetEntityQuery(
                 ComponentType.ReadOnly<GemTag>(),
                 ComponentType.ReadOnly<GemState>(),
-                ComponentType.ReadOnly<LocalTransform>());
+                ComponentType.ReadOnly<LocalTransform>(),
+                ComponentType.ReadOnly<GemMotionState>());
         }
 
         /// <summary>
@@ -465,7 +537,21 @@ namespace TitanOrbit.ECS
             var gemEntities = _gemQuery.ToEntityArray(Allocator.Temp);
             var gemStates = _gemQuery.ToComponentDataArray<GemState>(Allocator.Temp);
             var gemTransforms = _gemQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            var gemMotions = _gemQuery.ToComponentDataArray<GemMotionState>(Allocator.Temp);
             var gemConsumed = new NativeArray<bool>(gemCount, Allocator.Temp);
+            var entityToGi = new NativeHashMap<Entity, int>(gemCount, Allocator.Temp);
+            for (int i = 0; i < gemCount; i++)
+                entityToGi.TryAdd(gemEntities[i], i);
+
+            // --- Hash includes tractor pins ---
+            // [TITAN-ORBIT] A gem locked on an outer wing can sit outside a hull-only gather.
+            // Pin + per-wing cells so beam-connected crystals still enter the consume test.
+            // Red and yellow use this same path — tint is not a scoop filter.
+            var hash = GemSpatialHash.Build(
+                gemEntities, gemTransforms, default, gemMotions, mapW, mapH, Allocator.Temp);
+            var nearby = new NativeList<int>(32, Allocator.Temp);
+            var seenScratch = new NativeHashSet<int>(32, Allocator.Temp);
+            var candidateGi = new NativeHashSet<int>(32, Allocator.Temp);
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
@@ -482,29 +568,98 @@ namespace TitanOrbit.ECS
 
                 float capacityLeft = shipState.ValueRO.GemCapacity - shipState.ValueRO.CurrentGems;
                 if (capacityLeft <= 0.001f)
+                {
+                    // #region agent log
+                    if (!DebugGemSyncLog.ShouldThrottle("cargo-full-skip:" + shipEntity.Index, 1000))
+                    {
+                        int nid = 0;
+                        if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
+                            nid = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+                        int locked = 0;
+                        if (nid != 0)
+                        {
+                            for (int gi = 0; gi < gemCount; gi++)
+                            {
+                                if (gemMotions[gi].TractorShipId == nid)
+                                    locked++;
+                            }
+                        }
+
+                        DebugGemSyncLog.Write(
+                            "H9",
+                            "GemPickupSystem.OnUpdate",
+                            "cargo-full-skip-pickup",
+                            "{\"eIdx\":" + shipEntity.Index +
+                            ",\"cur\":" + shipState.ValueRO.CurrentGems.ToString("R") +
+                            ",\"cap\":" + shipState.ValueRO.GemCapacity.ToString("R") +
+                            ",\"locked\":" + locked +
+                            "}");
+                    }
+                    // #endregion
                     continue;
+                }
 
                 int shipNetworkId = 0;
                 if (state.EntityManager.HasComponent<GhostOwner>(shipEntity))
                     shipNetworkId = state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId;
 
-                bool hasWings = state.EntityManager.HasBuffer<ShipWingTractorBeamElement>(shipEntity) &&
-                                state.EntityManager.GetBuffer<ShipWingTractorBeamElement>(shipEntity).Length > 0;
-
-                for (int gi = 0; gi < gemCount; gi++)
+                bool hasWings = false;
+                DynamicBuffer<ShipWingTractorBeamElement> wings = default;
+                if (state.EntityManager.HasBuffer<ShipWingTractorBeamElement>(shipEntity))
                 {
-                    if (gemConsumed[gi])
+                    wings = state.EntityManager.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
+                    hasWings = wings.Length > 0;
+                }
+
+                hash.GatherNearby(
+                    shipTransform.ValueRO.Position, PickupSpatialQueryRadius, nearby, seenScratch);
+                if (hasWings)
+                {
+                    for (int wi = 0; wi < wings.Length; wi++)
+                    {
+                        float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(
+                            shipTransform.ValueRO, wings[wi]);
+                        hash.GatherNearby(
+                            wingPos, PickupSpatialQueryRadius, nearby, seenScratch, clearDst: false);
+                    }
+                }
+
+                // --- Candidate set: spatial nearby UNION gems this ship is already tractoring ---
+                // [TITAN-ORBIT] A lock at a far wing is the absorb destination. Hash cells can miss
+                // it; the motion array cannot. Every TractorShipId match is tested for scoop.
+                candidateGi.Clear();
+                for (int n = 0; n < nearby.Length; n++)
+                {
+                    Entity spatialGem = hash.Entries[nearby[n]].Entity;
+                    if (entityToGi.TryGetValue(spatialGem, out int spatialGi))
+                        candidateGi.Add(spatialGi);
+                }
+
+                if (shipNetworkId != 0)
+                {
+                    for (int i = 0; i < gemCount; i++)
+                    {
+                        if (gemConsumed[i])
+                            continue;
+                        if (gemMotions[i].TractorShipId == shipNetworkId)
+                            candidateGi.Add(i);
+                    }
+                }
+
+                foreach (int gi in candidateGi)
+                {
+                    if (gemConsumed[gi] || gemStates[gi].IsConsumed)
                         continue;
+
+                    Entity gemEntity = gemEntities[gi];
 
                     var gemState = gemStates[gi];
                     var gemTransform = gemTransforms[gi];
-                    Entity gemEntity = gemEntities[gi];
 
                     // [TITAN-ORBIT] Damage-spill penalty — source ship cannot reclaim yet.
-                    if (GemSelfPickupBlock.IsBlockedForShip(gemState, shipNetworkId, nowServerTime))
-                        continue;
-
-                    if (!IsWithinPickupRange(
+                    bool pickupBlocked = GemSelfPickupBlock.IsPickupBlockedForShip(
+                        gemState, shipNetworkId, nowServerTime);
+                    bool inRange = IsWithinPickupRange(
                             state.EntityManager,
                             shipEntity,
                             shipTransform.ValueRO,
@@ -513,12 +668,55 @@ namespace TitanOrbit.ECS
                             hasWings,
                             pickupSettings,
                             mapW,
-                            mapH))
+                            mapH);
+                    if (!inRange)
                         continue;
+
+                    if (pickupBlocked)
+                    {
+                        // #region agent log
+                        if (!DebugGemSyncLog.ShouldThrottle("pskip:" + gemEntity.Index, 1000))
+                        {
+                            DebugGemSyncLog.Write(
+                                "H11",
+                                "GemPickupSystem.OnUpdate",
+                                "pickup-skip-in-range",
+                                "{\"reason\":\"selfblock\",\"eIdx\":" + gemEntity.Index +
+                                ",\"ghostId\":" + (state.EntityManager.HasComponent<GhostInstance>(gemEntity)
+                                    ? state.EntityManager.GetComponentData<GhostInstance>(gemEntity).ghostId
+                                    : 0) +
+                                ",\"tractor\":" + gemMotions[gi].TractorShipId +
+                                ",\"val\":" + gemState.Value.ToString("R") +
+                                "}",
+                                gemState.SpawnId);
+                        }
+                        // #endregion
+                        continue;
+                    }
 
                     float take = math.min(gemState.Value, capacityLeft);
                     if (take <= 0.001f)
+                    {
+                        // #region agent log
+                        if (!DebugGemSyncLog.ShouldThrottle("pskip:" + gemEntity.Index, 1000))
+                        {
+                            DebugGemSyncLog.Write(
+                                "H11",
+                                "GemPickupSystem.OnUpdate",
+                                "pickup-skip-in-range",
+                                "{\"reason\":\"notake\",\"eIdx\":" + gemEntity.Index +
+                                ",\"ghostId\":" + (state.EntityManager.HasComponent<GhostInstance>(gemEntity)
+                                    ? state.EntityManager.GetComponentData<GhostInstance>(gemEntity).ghostId
+                                    : 0) +
+                                ",\"cur\":" + shipState.ValueRO.CurrentGems.ToString("R") +
+                                ",\"cap\":" + shipState.ValueRO.GemCapacity.ToString("R") +
+                                ",\"val\":" + gemState.Value.ToString("R") +
+                                "}",
+                                gemState.SpawnId);
+                        }
+                        // #endregion
                         continue;
+                    }
 
                     var ship = shipState.ValueRO;
                     ship.CurrentGems += take;
@@ -529,8 +727,6 @@ namespace TitanOrbit.ECS
                     if (remainder > 0.001f)
                     {
                         // --- Partial take (cargo filled mid-gem) ---
-                        // Write the leftover into the snapshot so a later ship this tick sees
-                        // the reduced value, not the original (would double-credit cargo).
                         gemState.Value = remainder;
                         float scale = math.clamp(math.sqrt(remainder) * 0.2f, 0.2f, 0.5f);
                         gemState.Size = scale;
@@ -546,18 +742,112 @@ namespace TitanOrbit.ECS
                     else
                     {
                         gemConsumed[gi] = true;
-                        ecb.DestroyEntity(gemEntity);
+                        gemState.IsConsumed = true;
+                        gemStates[gi] = gemState;
+                        ecb.SetComponent(gemEntity, gemState);
+                        if (!state.EntityManager.HasComponent<GemConsumedPendingDestroy>(gemEntity))
+                            ecb.AddComponent(gemEntity, new GemConsumedPendingDestroy { SendsLeft = 2 });
+                        // #region agent log
+                        int tractor = gemMotions[gi].TractorShipId;
+                        if (!DebugGemSyncLog.ShouldThrottle("pick:" + gemEntity.Index, 200))
+                        {
+                            DebugGemSyncLog.Write(
+                                "H5",
+                                "GemPickupSystem.OnUpdate",
+                                "destroy-gem",
+                                "{\"eIdx\":" + gemEntity.Index +
+                                ",\"eVer\":" + gemEntity.Version +
+                                ",\"ghostId\":" + (state.EntityManager.HasComponent<GhostInstance>(gemEntity)
+                                    ? state.EntityManager.GetComponentData<GhostInstance>(gemEntity).ghostId
+                                    : 0) +
+                                ",\"tractor\":" + tractor +
+                                ",\"val\":" + gemState.Value.ToString("R") +
+                                ",\"consumed\":true}",
+                                gemState.SpawnId);
+                        }
+                        // #endregion
                     }
 
                     if (capacityLeft <= 0.001f)
                         break;
                 }
+
+                // #region agent log
+                // Tractor-locked gems this ship did not scoop — the leftover trail.
+                if (shipNetworkId != 0)
+                {
+                    for (int li = 0; li < gemCount; li++)
+                    {
+                        if (gemConsumed[li] || gemStates[li].IsConsumed ||
+                            gemMotions[li].TractorShipId != shipNetworkId)
+                            continue;
+                        int spawnId = gemStates[li].SpawnId;
+                        if (DebugGemSyncLog.ShouldThrottle("uncons:" + spawnId, 1000))
+                            continue;
+
+                        bool blocked = GemSelfPickupBlock.IsPickupBlockedForShip(
+                            gemStates[li], shipNetworkId, nowServerTime);
+                        bool inRange = IsWithinPickupRange(
+                            state.EntityManager,
+                            shipEntity,
+                            shipTransform.ValueRO,
+                            gemTransforms[li],
+                            gemStates[li],
+                            hasWings,
+                            pickupSettings,
+                            mapW,
+                            mapH);
+                        float minDist;
+                        float absorb;
+                        MeasurePickupGap(
+                            state.EntityManager,
+                            shipEntity,
+                            shipTransform.ValueRO,
+                            gemTransforms[li],
+                            gemStates[li],
+                            hasWings,
+                            pickupSettings,
+                            mapW,
+                            mapH,
+                            out minDist,
+                            out absorb);
+                        string reason = blocked
+                            ? "selfblock"
+                            : !inRange
+                                ? "far"
+                                : capacityLeft <= 0.001f
+                                    ? "full"
+                                    : "inrange-miss";
+                        DebugGemSyncLog.Write(
+                            "T",
+                            "GemPickupSystem.OnUpdate",
+                            "locked-unconsumed",
+                            "{\"reason\":\"" + reason +
+                            "\",\"dist\":" + minDist.ToString("R") +
+                            ",\"absorb\":" + absorb.ToString("R") +
+                            ",\"cur\":" + shipState.ValueRO.CurrentGems.ToString("R") +
+                            ",\"cap\":" + shipState.ValueRO.GemCapacity.ToString("R") +
+                            ",\"val\":" + gemStates[li].Value.ToString("R") +
+                            ",\"ghostId\":" + (state.EntityManager.HasComponent<GhostInstance>(gemEntities[li])
+                                ? state.EntityManager.GetComponentData<GhostInstance>(gemEntities[li]).ghostId
+                                : 0) +
+                            "}",
+                            spawnId);
+                    }
+                }
+                // #endregion
             }
 
             gemConsumed.Dispose();
+            entityToGi.Dispose();
+            nearby.Dispose();
+            seenScratch.Dispose();
+            candidateGi.Dispose();
+            hash.Dispose();
             gemEntities.Dispose();
             gemStates.Dispose();
             gemTransforms.Dispose();
+            gemMotions.Dispose();
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
         }
@@ -611,6 +901,43 @@ namespace TitanOrbit.ECS
             return IsWithinHullPickupRange(shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
         }
 
+        /// <summary>Nearest wing/hull distance vs absorb radius (debug trail for leftovers).</summary>
+        static void MeasurePickupGap(
+            EntityManager em,
+            Entity shipEntity,
+            in LocalTransform shipTransform,
+            in LocalTransform gemTransform,
+            in GemState gemState,
+            bool hasWings,
+            TractorBeamSettings pickupSettings,
+            float mapW,
+            float mapH,
+            out float minDist,
+            out float absorb)
+        {
+            float3 gemPos = gemTransform.Position;
+            if (hasWings)
+            {
+                var wings = em.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
+                absorb = GemCollectMath.ResolveWingCollectRadius(
+                    pickupSettings, gemState.Value, gemState.Size);
+                minDist = float.MaxValue;
+                for (int wi = 0; wi < wings.Length; wi++)
+                {
+                    float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wi]);
+                    float d = GemTractorBeamMath.ToroidalDistance(gemPos, wingPos, mapW, mapH);
+                    if (d < minDist)
+                        minDist = d;
+                }
+
+                return;
+            }
+
+            absorb = GemCollectMath.ResolveHullCollectRadius(
+                pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale);
+            minDist = GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH);
+        }
+
         /// <summary>
         /// Hull-center absorb test. Designer hull range, collider floor, and visible crystal
         /// radius (see <see cref="GemCollectMath"/>) — overlapping the mesh the player sees counts.
@@ -627,6 +954,57 @@ namespace TitanOrbit.ECS
                 pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale);
             return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
                    hullRange;
+        }
+    }
+
+    /// <summary>
+    /// Server: after GhostSend has had a chance to replicate <see cref="GemState.IsConsumed"/>,
+    /// destroy scooped gem entities so NetCode can send the despawn. Pickup used to
+    /// DestroyEntity the same tick as cargo add, which left clients interpolating the last
+    /// alive snapshot until the 20s lifetime shrink.
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup), OrderLast = true)]
+    [UpdateAfter(typeof(GhostSendSystem))]
+    public partial struct GemConsumedDestroySystem : ISystem
+    {
+        /// <summary>Destroys scooped gems once their consume flag has been sent.</summary>
+        public void OnUpdate(ref SystemState state)
+        {
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
+            // GhostInstance is in the query so debug logs never call EntityManager inside foreach
+            // (that sync-point previously skipped DestroyEntity for locked gems).
+            foreach (var (pending, gemState, ghost, gemEntity) in SystemAPI
+                         .Query<RefRW<GemConsumedPendingDestroy>, RefRO<GemState>, RefRO<GhostInstance>>()
+                         .WithAll<GemTag>()
+                         .WithEntityAccess())
+            {
+                if (pending.ValueRO.SendsLeft > 0)
+                {
+                    pending.ValueRW.SendsLeft--;
+                    continue;
+                }
+
+                // #region agent log
+                if (!DebugGemSyncLog.ShouldThrottle("cdest:" + gemEntity.Index, 200))
+                {
+                    DebugGemSyncLog.Write(
+                        "H-despawn",
+                        "GemConsumedDestroySystem.OnUpdate",
+                        "consume-destroy",
+                        "{\"eIdx\":" + gemEntity.Index +
+                        ",\"eVer\":" + gemEntity.Version +
+                        ",\"ghostId\":" + ghost.ValueRO.ghostId +
+                        ",\"val\":" + gemState.ValueRO.Value.ToString("R") +
+                        "}",
+                        gemState.ValueRO.SpawnId);
+                }
+                // #endregion
+                ecb.DestroyEntity(gemEntity);
+            }
+
+            ecb.Playback(state.EntityManager);
+            ecb.Dispose();
         }
     }
 
@@ -969,9 +1347,10 @@ namespace TitanOrbit.ECS
                     rpcScale = 1f;
 
                 float bonusExtra = 0f;
-                // --- Territory gem bonus on destroy burst ---
-                // [TITAN-ORBIT] Yellow gems only when the last miner/shooter's team owns this rock
-                // (mask bit). Enemy-tinted asteroids must not dump bonus gems on kill.
+                // --- Territory gem bonus on destroy burst (extra yield, not exclusive loot) ---
+                // [TITAN-ORBIT] Extra yellow crystals Instantiates only when the last miner/shooter
+                // owns this rock (mask bit). Enemy-tinted asteroids must not dump bonus yield on
+                // kill. The gems themselves are free-for-all once they exist.
                 // Legacy bug: FriendlyTerritoryGemMultiplier(TerritoryTeam, TerritoryTeam) always
                 // matched for any non-None tint — ignored the destroyer.
                 if (dead.LastInteractTeam != TeamId.None &&
@@ -1099,6 +1478,10 @@ namespace TitanOrbit.ECS
     /// <summary>Shared gem entity spawn helper for mining and asteroid destruction bursts.</summary>
     public static class GemSpawning
     {
+        static int _nextSpawnId;
+
+        /// <summary>Monotonic session id for gem debug trails (never reuse, unlike ghostId).</summary>
+        public static int NextSpawnId() => System.Threading.Interlocked.Increment(ref _nextSpawnId);
         /// <summary>
         /// Instantiates a gem prefab with value, optional burst velocity/tumble, offset, and lifetime stamp.
         /// </summary>
@@ -1146,10 +1529,12 @@ namespace TitanOrbit.ECS
             ecb.SetComponent(gem, LocalTransform.FromPositionRotationScale(position + offset, quaternion.identity, scale));
             ecb.SetComponent(gem, new GemState
             {
+                SpawnId = NextSpawnId(),
                 Value = value,
                 Size = scale,
                 DepositTeam = TeamId.None,
                 SpawnServerTime = spawnServerTime,
+                // Tint only — tractor / pickup never read this flag.
                 IsBonusGem = isBonusGem,
                 // [TITAN-ORBIT] Damage-spill self-pickup penalty (ghosted — client hides beams too).
                 // Mining / asteroid bursts leave these 0.
@@ -1257,24 +1642,55 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Shared check: damage-spilled gems block the source ship from pickup / tractor until the
-    /// stamped <see cref="GemState.ExcludePickupUntilServerTime"/>.
+    /// Shared check: damage-spilled gems block the source ship from tractor / pickup.
+    /// Window is <c>SpawnServerTime + duration</c> on the ServerTick clock — not the ghosted
+    /// <see cref="GemState.ExcludePickupUntilServerTime"/> float (quantization could stick
+    /// the block on forever).
     /// </summary>
     public static class GemSelfPickupBlock
     {
         /// <summary>
-        /// True when <paramref name="shipNetworkId"/> is the expelling ship and the penalty window
-        /// has not elapsed yet on the SpawnServerTime timeline.
+        /// True when this ship expelled the gem and <paramref name="blockSeconds"/> has not
+        /// elapsed since <see cref="GemState.SpawnServerTime"/>.
         /// </summary>
-        public static bool IsBlockedForShip(in GemState gem, int shipNetworkId, float nowServerTime)
+        public static bool IsBlockedForShip(
+            in GemState gem,
+            int shipNetworkId,
+            float nowServerTime,
+            float blockSeconds)
         {
             if (shipNetworkId <= 0 || gem.ExcludePickupNetworkId <= 0)
                 return false;
             if (shipNetworkId != gem.ExcludePickupNetworkId)
                 return false;
-            if (gem.ExcludePickupUntilServerTime <= 0f)
+            if (blockSeconds <= 0f)
                 return false;
-            return nowServerTime < gem.ExcludePickupUntilServerTime;
+            float spawn = gem.SpawnServerTime;
+            if (spawn <= 0f)
+                return false;
+            return nowServerTime < spawn + blockSeconds;
+        }
+
+        /// <summary>Tractor window — full designer self-pickup penalty.</summary>
+        public static bool IsTractorBlockedForShip(
+            in GemState gem,
+            int shipNetworkId,
+            float nowServerTime)
+        {
+            var settings = GemExplosionSettingsCache.ResolveOrDefault();
+            return IsBlockedForShip(
+                gem, shipNetworkId, nowServerTime, settings.SelfPickupBlockSeconds);
+        }
+
+        /// <summary>Absorb-zone window — short anti-vacuum, then fly-over is allowed.</summary>
+        public static bool IsPickupBlockedForShip(
+            in GemState gem,
+            int shipNetworkId,
+            float nowServerTime)
+        {
+            var settings = GemExplosionSettingsCache.ResolveOrDefault();
+            float window = math.min(settings.SelfPickupBlockSeconds, GemEconomyConstants.SelfPickupAbsorbBlockSeconds);
+            return IsBlockedForShip(gem, shipNetworkId, nowServerTime, window);
         }
     }
 }

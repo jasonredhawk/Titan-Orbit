@@ -15,7 +15,7 @@ namespace TitanOrbit.NetCode
     /// <see cref="GhostRelevancy.DefaultRelevancyQuery"/> =
     /// Any(Ship, Planet). People transports are RPC VFX, not ghosts.
     /// <see cref="TitanOrbitGemGhostRelevancySystem"/> also writes ships/planets into
-    /// <see cref="GhostRelevancy.GhostRelevancySet"/> each tick (plus nearby gems).
+    /// <see cref="GhostRelevancy.GhostRelevancySet"/> each tick (nearby gems + tractor pin).
     /// Asteroids are never in this query — clients seed-hydrate them.
     /// </para>
     /// World: ServerSimulation. Initialization — runs once after GhostRelevancy exists.
@@ -52,7 +52,7 @@ namespace TitanOrbit.NetCode
 
             Debug.Log(
                 "[TitanOrbitGhostRelevancy] SetIsRelevant — Ship/Planet always; " +
-                "gems via TitanOrbitGemGhostRelevancySystem (nearby / join-window near any ship); " +
+                "gems via TitanOrbitGemGhostRelevancySystem (nearby / join-window / tractor pin); " +
                 "asteroids use client seed hydrate + occupancy catch-up; " +
                 "people transports are SpawnRpc (not ghosts).");
         }
