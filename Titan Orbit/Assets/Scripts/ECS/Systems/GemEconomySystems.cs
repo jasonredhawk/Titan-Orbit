@@ -26,18 +26,17 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Hull-center pickup radius when ship has no wing tractor buffers.
-        /// Runtime override: <see cref="TractorBeamSettings.HullPickupRange"/>.
+        /// Runtime override: <see cref="TractorBeamSettings.HullPickupRange"/> (asset default 2.5).
         /// </summary>
         public const float GemPickupRange = 2.5f;
 
         /// <summary>
-        /// Collect gems near the wing tip when tractor-pulled.
-        /// Effective radius = this + gem.Size × 0.25 so larger gems still touch slightly earlier.
-        /// Kept tight so gems ride into the wing before cargo absorb (was 0.65 — felt far from the tip).
+        /// Collect gems near the wing tip when tractor-pulled or when a tip flies over a gem.
+        /// Effective radius = WingCollectRadius + gem size pad (see TractorBeamSettings).
         /// Runtime override: <see cref="TractorBeamSettings.WingCollectRadius"/> /
         /// <see cref="TractorBeamSettings.GemSizeCollectFactor"/>.
         /// </summary>
-        public const float GemWingCollectRadius = 0.25f;
+        public const float GemWingCollectRadius = 0.65f;
 
         /// <summary>Legacy planet interaction radius (deposit uses moon dock instead).</summary>
         public const float PlanetInteractionRange = 20f;
@@ -391,8 +390,11 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Server: collects gems into ship cargo when within hull or wing tractor pickup radius.
-    /// Runs after <see cref="GemTractorBeamSystem"/> so pulled gems can be collected at wings.
+    /// Server: collects gems into ship cargo when a gem center is inside a wing-tip or hull
+    /// absorb sphere. Tractor beams only <b>pull</b> gems; this system is the actual consume.
+    /// No tractor lock is required — flying a wing tip or the hull over a gem is enough.
+    /// Radii come from <see cref="TractorBeamSettings"/> (Wing Collect Radius / Hull Pickup Range).
+    /// Runs after <see cref="GemMotionSystem"/> so same-tick tractor pull can land in the zone.
     /// Skips ships with Health &lt;= <see cref="ShipDamageLogic.DeathThreshold"/> so a 0-HP hull
     /// cannot magnet-sip cargo and stay undead under dual-resource death rules.
     /// </summary>
@@ -400,8 +402,33 @@ namespace TitanOrbit.ECS
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(AsteroidDestructionSystem))]
     [UpdateAfter(typeof(GemLifetimeDespawnSystem))]
+    [UpdateAfter(typeof(GemMotionSystem))]
     public partial struct GemPickupSystem : ISystem
     {
+        /// <summary>
+        /// [ECS/DOTS] Cached gem query so we snapshot once per tick instead of nesting
+        /// <c>SystemAPI.Query</c> inside the ship loop (nested foreach queries are unsupported).
+        /// Server-only — full gem <c>ToEntityArray</c> is join-crash safe here.
+        /// </summary>
+        EntityQuery _gemQuery;
+
+        /// <summary>
+        /// [ECS/DOTS] Builds the gem snapshot query before the first pickup tick.
+        /// </summary>
+        public void OnCreate(ref SystemState state)
+        {
+            // --- Gem snapshot query ---
+            // [ECS/DOTS] Read-only: we write cargo on the ship and destroy/update gems via ECB.
+            _gemQuery = state.GetEntityQuery(
+                ComponentType.ReadOnly<GemTag>(),
+                ComponentType.ReadOnly<GemState>(),
+                ComponentType.ReadOnly<LocalTransform>());
+        }
+
+        /// <summary>
+        /// Each server tick: snapshot gems, then for every living ship with cargo space absorb
+        /// any gem whose center is inside a wing-tip or hull pickup sphere (toroidal XZ).
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             // --- Map period for wing / hull collect radius ---
@@ -425,6 +452,20 @@ namespace TitanOrbit.ECS
             // --- Same timeline as GemState.SpawnServerTime / self-pickup block stamps ---
             float nowServerTime = PlanetGemMoonOrbitClock.GetElapsedSecondsOrFallback(
                 state.EntityManager, SystemAPI.Time.ElapsedTime);
+
+            // --- Snapshot gems once (no nested SystemAPI.Query) ---
+            // [ECS/DOTS] Copies stay valid while we iterate ships. Destroy/update goes through ECB
+            // so the arrays are not invalidated mid-tick. We write leftover value/size back into
+            // these copies (not `using var` — C# forbids mutating a using variable's indexer).
+            int gemCount = _gemQuery.CalculateEntityCount();
+            if (gemCount <= 0)
+                return;
+
+            var pickupSettings = TractorBeamSettingsCache.ResolveOrDefault();
+            var gemEntities = _gemQuery.ToEntityArray(Allocator.Temp);
+            var gemStates = _gemQuery.ToComponentDataArray<GemState>(Allocator.Temp);
+            var gemTransforms = _gemQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            var gemConsumed = new NativeArray<bool>(gemCount, Allocator.Temp);
 
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
@@ -451,27 +492,32 @@ namespace TitanOrbit.ECS
                 bool hasWings = state.EntityManager.HasBuffer<ShipWingTractorBeamElement>(shipEntity) &&
                                 state.EntityManager.GetBuffer<ShipWingTractorBeamElement>(shipEntity).Length > 0;
 
-                foreach (var (gemState, gemTransform, gemEntity) in SystemAPI
-                             .Query<RefRO<GemState>, RefRO<LocalTransform>>()
-                             .WithAll<GemTag>()
-                             .WithEntityAccess())
+                for (int gi = 0; gi < gemCount; gi++)
                 {
+                    if (gemConsumed[gi])
+                        continue;
+
+                    var gemState = gemStates[gi];
+                    var gemTransform = gemTransforms[gi];
+                    Entity gemEntity = gemEntities[gi];
+
                     // [TITAN-ORBIT] Damage-spill penalty — source ship cannot reclaim yet.
-                    if (GemSelfPickupBlock.IsBlockedForShip(gemState.ValueRO, shipNetworkId, nowServerTime))
+                    if (GemSelfPickupBlock.IsBlockedForShip(gemState, shipNetworkId, nowServerTime))
                         continue;
 
                     if (!IsWithinPickupRange(
                             state.EntityManager,
                             shipEntity,
                             shipTransform.ValueRO,
-                            gemTransform.ValueRO,
-                            gemState.ValueRO,
+                            gemTransform,
+                            gemState,
                             hasWings,
+                            pickupSettings,
                             mapW,
                             mapH))
                         continue;
 
-                    float take = math.min(gemState.ValueRO.Value, capacityLeft);
+                    float take = math.min(gemState.Value, capacityLeft);
                     if (take <= 0.001f)
                         continue;
 
@@ -480,21 +526,27 @@ namespace TitanOrbit.ECS
                     shipState.ValueRW = ship;
                     capacityLeft -= take;
 
-                    float remainder = gemState.ValueRO.Value - take;
+                    float remainder = gemState.Value - take;
                     if (remainder > 0.001f)
                     {
-                        var gem = gemState.ValueRO;
-                        gem.Value = remainder;
+                        // --- Partial take (cargo filled mid-gem) ---
+                        // Write the leftover into the snapshot so a later ship this tick sees
+                        // the reduced value, not the original (would double-credit cargo).
+                        gemState.Value = remainder;
                         float scale = math.clamp(math.sqrt(remainder) * 0.2f, 0.2f, 0.5f);
-                        gem.Size = scale;
-                        ecb.SetComponent(gemEntity, gem);
-                        ecb.SetComponent(gemEntity, LocalTransform.FromPositionRotationScale(
-                            gemTransform.ValueRO.Position,
-                            gemTransform.ValueRO.Rotation,
-                            scale));
+                        gemState.Size = scale;
+                        var leftoverXf = LocalTransform.FromPositionRotationScale(
+                            gemTransform.Position,
+                            gemTransform.Rotation,
+                            scale);
+                        gemStates[gi] = gemState;
+                        gemTransforms[gi] = leftoverXf;
+                        ecb.SetComponent(gemEntity, gemState);
+                        ecb.SetComponent(gemEntity, leftoverXf);
                     }
                     else
                     {
+                        gemConsumed[gi] = true;
                         ecb.DestroyEntity(gemEntity);
                     }
 
@@ -503,6 +555,10 @@ namespace TitanOrbit.ECS
                 }
             }
 
+            gemConsumed.Dispose();
+            gemEntities.Dispose();
+            gemStates.Dispose();
+            gemTransforms.Dispose();
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
         }
@@ -511,6 +567,7 @@ namespace TitanOrbit.ECS
         /// True when the gem is inside a cargo absorb zone for this ship.
         /// Uses <see cref="TractorBeamSettings"/> wing-tip and optional hull radii so designers
         /// can widen fly-over scoop without changing tractor search reach.
+        /// No tractor lock is required — distance alone consumes.
         /// </summary>
         static bool IsWithinPickupRange(
             EntityManager em,
@@ -519,15 +576,15 @@ namespace TitanOrbit.ECS
             in LocalTransform gemTransform,
             in GemState gemState,
             bool hasWings,
+            TractorBeamSettings pickupSettings,
             float mapW,
             float mapH)
         {
             float3 gemPos = gemTransform.Position;
-            var pickupSettings = TractorBeamSettingsCache.ResolveOrDefault();
 
             // --- Wing-tip collect (tractor destination + tip fly-over) ---
-            // [TITAN-ORBIT] Effective radius = WingCollectRadius + gem.Size × GemSizeCollectFactor.
-            // Tractor beams pull gems into this zone; cargo absorbs when the tip (or hull) touches.
+            // [TITAN-ORBIT] Effective radius = WingCollectRadius + gem size pad.
+            // Tractor beams pull gems into this zone; flying a tip over a gem also absorbs.
             if (hasWings)
             {
                 var wings = em.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
@@ -543,18 +600,34 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] When ON, flying the body over gem piles absorbs without waiting
                 // for a wing tip / tractor lock. When OFF, only tip zones collect (tight old feel).
                 if (pickupSettings.AlsoUseHullPickupWithWings)
-                {
-                    return GemTractorBeamMath.ToroidalDistance(
-                               gemPos, shipTransform.Position, mapW, mapH) <=
-                           pickupSettings.HullPickupRange;
-                }
+                    return IsWithinHullPickupRange(shipTransform, gemPos, gemState.Size, pickupSettings, mapW, mapH);
 
                 return false;
             }
 
             // --- No wings: hull-center only ---
+            return IsWithinHullPickupRange(shipTransform, gemPos, gemState.Size, pickupSettings, mapW, mapH);
+        }
+
+        /// <summary>
+        /// Hull-center absorb test. Designer <see cref="TractorBeamSettings.HullPickupRange"/> is
+        /// measured from the ship origin; we also floor at collision-hull radius + gem half-size
+        /// so overlapping the visible hull always collects even if the Inspector range is tiny.
+        /// </summary>
+        static bool IsWithinHullPickupRange(
+            in LocalTransform shipTransform,
+            float3 gemPos,
+            float gemSize,
+            TractorBeamSettings pickupSettings,
+            float mapW,
+            float mapH)
+        {
+            float designed = pickupSettings.ResolveHullPickupRange(gemSize);
+            float hullFloor = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.Scale) +
+                              math.max(0f, gemSize) * 0.5f;
+            float hullRange = math.max(designed, hullFloor);
             return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
-                   pickupSettings.HullPickupRange;
+                   hullRange;
         }
     }
 
