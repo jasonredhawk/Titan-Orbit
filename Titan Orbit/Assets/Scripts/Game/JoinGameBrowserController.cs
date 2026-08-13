@@ -70,10 +70,21 @@ namespace TitanOrbit.Game
 
         public bool IsVisible => _screenRoot != null && _screenRoot.activeSelf;
 
+        /// <summary>
+        /// True after <see cref="DismissForLoading"/> until the browser is shown or hidden again,
+        /// or <see cref="ClearLoadingHandoff"/> runs when the map overlay is done.
+        /// Keeps MainMenuPanel off during the handoff so Play cannot flash under the loading overlay.
+        /// </summary>
+        public bool IsHandedOffToLoading { get; private set; }
+
+        /// <summary>Stops the loading-handoff latch so Join Team / menu can show again.</summary>
+        public void ClearLoadingHandoff() => IsHandedOffToLoading = false;
+
         public void Configure(GameObject menuPanel) => mainMenuPanel = menuPanel;
 
         public void Show()
         {
+            IsHandedOffToLoading = false;
             // --- Show ---
             // Rebuild when status is still inside the list panel (last over-tight pass) or layout is outdated.
             bool statusInsideList = _screenRoot != null &&
@@ -144,6 +155,7 @@ namespace TitanOrbit.Game
         {
             // --- Hide (Back / leave join flow) ---
             // [UNITY] Deactivates this overlay and returns the player to the main menu panel.
+            IsHandedOffToLoading = false;
             if (_screenRoot != null)
                 _screenRoot.SetActive(false);
             if (mainMenuPanel != null)
@@ -160,8 +172,14 @@ namespace TitanOrbit.Game
             // --- Dismiss for loading ---
             // [TITAN-ORBIT] Do NOT call Hide() here: Hide() turns mainMenuPanel back on, which
             // would flash the Play menu under the loading screen for a frame.
+            IsHandedOffToLoading = true;
             if (_screenRoot != null)
                 _screenRoot.SetActive(false);
+            if (mainMenuPanel != null)
+                mainMenuPanel.SetActive(false);
+
+            // Cover this frame immediately — RefreshUi may have already run.
+            LoadingScreenControllerNce.ShowExisting();
         }
 
         void Update()

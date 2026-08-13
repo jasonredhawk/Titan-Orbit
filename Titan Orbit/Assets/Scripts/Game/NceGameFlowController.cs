@@ -83,6 +83,11 @@ namespace TitanOrbit.Game
         string _statusMessage = "Join a match or start local play.";
         bool _mainMenuButtonsBuilt;
         bool _initialized;
+        /// <summary>
+        /// Keeps the loading overlay up from the Play/join click until connecting flags catch up,
+        /// so MainMenuPanel cannot flash under the (slightly transparent) loading backdrop.
+        /// </summary>
+        bool _holdLoadingOverlay;
 
         /// <summary>
         /// [TITAN-ORBIT] Once the local ship has been seen this session, keep gameplay HUD up even if
@@ -808,6 +813,7 @@ namespace TitanOrbit.Game
                 _statusMessage = "Finding a dedicated match...";
                 if (playButton != null)
                     playButton.interactable = false;
+                BeginLoadingOverlay();
                 QuickJoinDedicatedFromMenuAsync();
                 return;
             }
@@ -832,6 +838,8 @@ namespace TitanOrbit.Game
                 : "Connecting to game server...";
             if (playButton != null)
                 playButton.interactable = false;
+
+            BeginLoadingOverlay();
 
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
                 TitanOrbitSessionManager.Instance.StartLocalClientForLanTest();
@@ -876,6 +884,9 @@ namespace TitanOrbit.Game
             {
                 if (playButton != null)
                     playButton.interactable = true;
+                if (!TitanOrbitSessionManager.IsJoinConnecting &&
+                    (TitanOrbitSessionManager.Instance == null || !TitanOrbitSessionManager.Instance.IsInGame))
+                    _holdLoadingOverlay = false;
             }
         }
 
@@ -1064,8 +1075,33 @@ namespace TitanOrbit.Game
                           " — team selection ready. Click Join on any team.");
             }
 
+            // --- Loading Map owns the screen ---
+            // [TITAN-ORBIT] Overlay until JoinWorldReady (via IsMapLoadingComplete) — not extra
+            // recipe/hydrate/GoInGame ORs that can disagree with Join Team.
+            // Compute this BEFORE toggling MainMenuPanel so Play cannot flash under the
+            // slightly transparent loading backdrop for a frame.
+            bool joinHandoff = _joinBrowser != null && _joinBrowser.IsHandedOffToLoading;
+            bool showLoadingOverlay =
+                _holdLoadingOverlay ||
+                joinHandoff ||
+                (connecting && !connected) ||
+                (EcsGameBridge.HasClientNetworkId() &&
+                 !EcsGameBridge.IsMapLoadingComplete() &&
+                 !ClientTeamFlowState.TeamChoiceConfirmed &&
+                 !ClientTeamFlowState.HasRequestedTeamPick);
+
+            if (EcsGameBridge.IsMapLoadingComplete() ||
+                ClientTeamFlowState.TeamChoiceConfirmed ||
+                ClientTeamFlowState.HasRequestedTeamPick)
+            {
+                _holdLoadingOverlay = false;
+                if (_joinBrowser != null)
+                    _joinBrowser.ClearLoadingHandoff();
+            }
+
             if (mainMenuPanel != null)
                 mainMenuPanel.SetActive(!connected && !connecting &&
+                                      !showLoadingOverlay &&
                                       (_joinBrowser == null || !_joinBrowser.IsVisible));
 
             if (showRejoinChoice && hasRejoinableShip && _rejoinChoice != null)
@@ -1114,15 +1150,6 @@ namespace TitanOrbit.Game
             if (showTeam)
                 CleanupJoinTeamScreenUi();
 
-            // --- Loading Map owns the screen ---
-            // [TITAN-ORBIT] Overlay until JoinWorldReady (via IsMapLoadingComplete) — not extra
-            // recipe/hydrate/GoInGame ORs that can disagree with Join Team.
-            bool showLoadingOverlay =
-                (connecting && !connected) ||
-                (EcsGameBridge.HasClientNetworkId() &&
-                 !EcsGameBridge.IsMapLoadingComplete() &&
-                 !ClientTeamFlowState.TeamChoiceConfirmed &&
-                 !ClientTeamFlowState.HasRequestedTeamPick);
             if (showLoadingOverlay && _joinBrowser != null && _joinBrowser.IsVisible)
                 _joinBrowser.DismissForLoading();
 
@@ -1166,6 +1193,22 @@ namespace TitanOrbit.Game
 
             if (shipStatsPanel != null)
                 shipStatsPanel.SetActive(showGameplayHud);
+        }
+
+        /// <summary>
+        /// Hides the main menu and shows the loading overlay immediately — before connecting
+        /// flags exist — so Play cannot peek through the backdrop for a frame.
+        /// </summary>
+        void BeginLoadingOverlay()
+        {
+            _holdLoadingOverlay = true;
+            if (mainMenuPanel != null)
+                mainMenuPanel.SetActive(false);
+            EnsureLoadingScreen();
+            if (loadingRoot != null)
+                loadingRoot.SetActive(true);
+            if (_loadingScreen != null)
+                _loadingScreen.Show();
         }
 
         void EnsureLoadingScreen()

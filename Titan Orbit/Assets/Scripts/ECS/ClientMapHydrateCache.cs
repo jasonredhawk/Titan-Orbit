@@ -70,7 +70,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Short World-bar label. Honest — never “looks busy” while waiting.
+        /// Short World-bar overlay (counts, or a wait phrase when there is no denominator yet).
+        /// Honest — never “looks busy” while waiting.
         /// </summary>
         public static string GetWorldBarStatusLabel()
         {

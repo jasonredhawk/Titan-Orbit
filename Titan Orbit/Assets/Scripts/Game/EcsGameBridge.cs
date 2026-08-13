@@ -1988,6 +1988,65 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// In-bar join status: a few words for the current phase, plus counts when we have them.
+        /// Honest — never “looks busy” while waiting. No ECS asteroid gathers.
+        /// </summary>
+        public static string GetJoinLoadStatusLabel()
+        {
+            if (IsMapLoadingComplete())
+                return "Ready";
+
+            if (!ClientMapHydrateCache.HasFullRecipe)
+                return "Syncing with server";
+            if (ClientMapHydrateCache.WaitingForPrefabs)
+                return "Loading map prefabs";
+            if (!ClientMapHydrateCache.HydrateStarted)
+                return "Preparing map";
+            if (!ClientMapHydrateCache.IsComplete)
+            {
+                if (ClientMapHydrateCache.ExpectedBodies > 0)
+                    return "Loading asteroids  " + ClientMapHydrateCache.BuiltBodies +
+                           " / " + ClientMapHydrateCache.ExpectedBodies;
+                return "Loading asteroids";
+            }
+
+            if (!JoinWorldReadyCache.OccupancyApplied)
+                return JoinWorldReadyCache.OccupancyReceived
+                    ? "Applying occupancy"
+                    : "Syncing with server";
+            if (JoinWorldReadyCache.InGameRealtime < 0f)
+                return "Syncing with server";
+
+            if (!JoinWorldReadyCache.PlanetsReady)
+            {
+                int expect = Mathf.Max(JoinWorldReadyCache.ExpectedPlanets, 0);
+                if (expect > 0)
+                    return "Loading planets  " + JoinWorldReadyCache.ReceivedPlanets + " / " + expect;
+                return "Loading planets";
+            }
+
+            if (!JoinWorldReadyCache.MoonsReady)
+                return "Loading moons";
+
+            if (!JoinWorldReadyCache.ShipsReady)
+            {
+                if (JoinWorldReadyCache.ExpectedShips > 0)
+                    return "Loading ships  " + JoinWorldReadyCache.ReceivedShips +
+                           " / " + JoinWorldReadyCache.ExpectedShips;
+                return "Loading ships";
+            }
+
+            if (!JoinWorldReadyCache.GhostCatchUpReady)
+                return "Syncing with server";
+
+            int total = ResolveMapLoadingDenominator();
+            int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
+            if (total > 0)
+                return "Loading map visuals  " + proxies + " / " + total;
+            return "Loading map visuals";
+        }
+
+        /// <summary>
         /// Short stuck-load hint for the loading status line (no ECS asteroid gathers).
         /// Honest labels — empty fill plus this text means we are waiting, not secretly loading.
         /// </summary>
