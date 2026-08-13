@@ -47,8 +47,14 @@ namespace TitanOrbit.ECS
             // Query/WithEntityAccess is still unsafe — SetComponentData on the known seed is OK.
             if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
             {
-                if (LocalShipEntitySeed.TryGetSeededShip(state.EntityManager, out var seeded) &&
-                    seeded != Entity.Null &&
+                Entity seeded = Entity.Null;
+                if (!LocalShipEntitySeed.TryGetSeededShip(state.EntityManager, out seeded) ||
+                    seeded == Entity.Null)
+                {
+                    LocalShipEntitySeed.TryGetOwnedShipEntityUnchecked(state.EntityManager, out seeded);
+                }
+
+                if (seeded != Entity.Null &&
                     state.EntityManager.HasComponent<ShipInput>(seeded))
                 {
                     state.EntityManager.SetComponentData(seeded, cmd);
@@ -66,6 +72,17 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Fallback tag added by LocalPlayerTagSystem for hybrid host paths.
             foreach (var input in SystemAPI.Query<RefRW<ShipInput>>().WithAll<ShipTag, LocalPlayerShipTag>())
                 input.ValueRW = cmd;
+
+            // --- Seeded hull when GhostOwnerIsLocal has not enabled yet ---
+            // [TITAN-ORBIT] GhostReceive Instantiates the owner ship; GhostOwnerIsLocal can lag
+            // one GhostUpdate. Write the same command onto the known seed so the motor has input
+            // even if both queries above matched nothing.
+            if (LocalShipEntitySeed.TryGetOwnedShipEntityUnchecked(state.EntityManager, out var seededHull) &&
+                seededHull != Entity.Null &&
+                state.EntityManager.HasComponent<ShipInput>(seededHull))
+            {
+                state.EntityManager.SetComponentData(seededHull, cmd);
+            }
 
             // --- Consume one-shots after copy ---
             // [TITAN-ORBIT] Latch survives across Unity Updates until this apply runs; clear now

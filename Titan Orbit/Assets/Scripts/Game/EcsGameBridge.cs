@@ -48,12 +48,15 @@ namespace TitanOrbit.Game
             PlanetClientEntityRegistry.Clear();
             AsteroidClientEntityRegistry.Clear();
             ClientLocalAsteroidCombatSync.ClearPendingQueues();
+            PlanetaryDefenseClientHealthSync.Clear();
             PlanetConnectionGraphCache.Clear();
             PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();
             s_PlanetPoseByIdCache.Clear();
             s_PlanetStateCacheFrame = -1;
             InvalidateLocalPlayerShipFrameCache();
+            PlayerNameRosterCache.Clear();
+            PlayerNameRpcClient.ResetSession();
         }
 
         // --- Per-frame local ship cache (avoids N× CreateEntityQuery in HUD / dock / deposit) ---
@@ -854,6 +857,23 @@ namespace TitanOrbit.Game
                 return true;
 #endif
             return false;
+        }
+
+        /// <summary>
+        /// True when the client connection has a <see cref="NetworkId"/> (handshake finished)
+        /// even if <see cref="NetworkStreamInGame"/> is not set yet. Used to keep the loading
+        /// overlay up while we wait for the map recipe before GoInGame.
+        /// </summary>
+        public static bool HasClientNetworkId()
+        {
+            var world = ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            using var query = world.EntityManager.CreateEntityQuery(
+                ComponentType.ReadOnly<NetworkStreamConnection>(),
+                ComponentType.ReadOnly<NetworkId>());
+            return query.CalculateEntityCount() > 0;
         }
 
         /// <summary>
@@ -1791,12 +1811,15 @@ namespace TitanOrbit.Game
             PlanetClientEntityRegistry.Clear();
             AsteroidClientEntityRegistry.Clear();
             ClientLocalAsteroidCombatSync.ClearPendingQueues();
+            PlanetaryDefenseClientHealthSync.Clear();
             PlanetConnectionGraphCache.Clear();
             PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();
             s_PlanetPoseByIdCache.Clear();
             s_PlanetStateCacheFrame = -1;
             GemTractorBeamVisibilityTracker.Clear();
+            PlayerNameRosterCache.Clear();
+            PlayerNameRpcClient.ResetSession();
         }
 
         /// <summary>
@@ -1984,12 +2007,27 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Short stuck-load hint for the loading status line (no ECS asteroid gathers).
-        /// Empty when progress is healthy or meta is not ready yet.
+        /// Works before InGame — the 8% crawl with no 0/N means the map recipe never latched.
         /// </summary>
         public static string GetMapLoadStuckHint()
         {
-            if (!IsNetworkInGame() || IsMapLoadingComplete())
+            if (IsMapLoadingComplete())
                 return string.Empty;
+
+            // --- Recipe / hydrate (pre-InGame is the 8% crawl) ---
+            if (!ClientMapHydrateCache.HasFullRecipe)
+                return "waiting for map recipe";
+
+            if (!ClientMapHydrateCache.IsComplete)
+            {
+                if (!ClientMapHydrateCache.HydrateStarted)
+                    return "waiting for map prefabs";
+                return "hydrating " + ClientMapHydrateCache.BuiltBodies +
+                       "/" + ClientMapHydrateCache.ExpectedBodies;
+            }
+
+            if (!IsNetworkInGame())
+                return "waiting to enter game";
 
             // --- Snapshot counts (IsMapProxyCountReady always fills outs) ---
             IsMapProxyCountReady(out int proxies, out int total, out int readyAt);
@@ -2081,9 +2119,6 @@ namespace TitanOrbit.Game
         /// is missing on the client (that field is not a GhostField).
         /// </summary>
         const int DefaultMaxPlayersPerTeam = 20;
-
-        /// <summary>Scratch NetworkId → display name for one Join Team refresh.</summary>
-        static readonly Dictionary<int, string> s_JoinTeamNameByNetworkId = new Dictionary<int, string>(16);
 
         /// <summary>Per-slot StringBuilders reused across Join Team refreshes (TeamA…E).</summary>
         static readonly System.Text.StringBuilder[] s_JoinTeamLabelBuilders =
@@ -2241,9 +2276,10 @@ namespace TitanOrbit.Game
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
 
             // --- Name lookup once per refresh ---
-            // [TITAN-ORBIT] PlayerNameElement lives on the match singleton; SetPlayerName RPC is not
-            // wired yet, so this map is often empty and labels fall back to "Player {id}".
-            FillJoinTeamNameLookup(em);
+            // [TITAN-ORBIT] Merge the server/client name buffer into PlayerNameRosterCache, then
+            // overlay the local Main Menu name so Join Team lists never wait on the RPC round-trip.
+            MergePlayerNamesFromWorld(em);
+            OverlayLocalPlayerDisplayName();
 
             for (int i = 0; i < slots; i++)
             {
@@ -2276,10 +2312,16 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Copies <see cref="PlayerNameElement"/> rows into <see cref="s_JoinTeamNameByNetworkId"/>.</summary>
-        static void FillJoinTeamNameLookup(EntityManager em)
+        /// <summary>
+        /// Copies <see cref="PlayerNameElement"/> rows from a world into <see cref="PlayerNameRosterCache"/>.
+        /// Does not clear existing cache entries — late announce RPCs stay until session reset.
+        /// </summary>
+        /// <param name="em">ServerWorld (Local Host) or ClientWorld EntityManager.</param>
+        static void MergePlayerNamesFromWorld(EntityManager em)
         {
-            s_JoinTeamNameByNetworkId.Clear();
+            // --- Singleton buffer only (no ship gather) ---
+            // [NETCODE] PlayerNameElement lives on the match singleton. Dedicated ClientWorld
+            // usually has no copy — then this no-ops and the announce RPC cache is the source.
             using var nameQuery = em.CreateEntityQuery(ComponentType.ReadOnly<PlayerNameElement>());
             if (nameQuery.IsEmptyIgnoreFilter)
                 return;
@@ -2294,57 +2336,73 @@ namespace TitanOrbit.Game
                 string name = buffer[i].DisplayName.ToString();
                 if (string.IsNullOrWhiteSpace(name))
                     continue;
-                s_JoinTeamNameByNetworkId[buffer[i].NetworkId] = name;
+                PlayerNameRosterCache.Upsert(buffer[i].NetworkId, name);
             }
         }
 
         /// <summary>
-        /// Resolves a display name from the cached name map; otherwise "Player {networkId}".
+        /// Forces the local Main Menu name onto this client's NetworkId so the owner plate
+        /// never shows "Player {id}" while the SetPlayerName RPC is in flight.
         /// </summary>
-        static string ResolveJoinTeamPlayerLabel(int networkId)
+        static void OverlayLocalPlayerDisplayName()
         {
-            if (networkId <= 0)
-                return "Player";
-
-            if (s_JoinTeamNameByNetworkId.TryGetValue(networkId, out string name) &&
-                !string.IsNullOrWhiteSpace(name))
-                return name;
-
-            return "Player " + networkId;
+            int localId = GetLocalNetworkId();
+            if (localId <= 0)
+                return;
+            PlayerNameRosterCache.Upsert(localId, LocalPlayerDisplayName.Get());
         }
 
         /// <summary>
-        /// Reloads <see cref="PlayerNameElement"/> into the shared name cache for scoreboards / HUD.
+        /// Resolves a display name from the roster cache; otherwise "Player {networkId}".
+        /// </summary>
+        static string ResolveJoinTeamPlayerLabel(int networkId) =>
+            GetCachedPlayerDisplayName(networkId);
+
+        /// <summary>
+        /// Reloads names into <see cref="PlayerNameRosterCache"/> for scoreboards / HUD.
         /// Safe on the client — reads a singleton buffer only; never walks ship or map-body entities.
         /// Call once at the start of a leaderboard refresh, then use <see cref="GetCachedPlayerDisplayName"/>.
         /// </summary>
         public static void RefreshPlayerDisplayNameCache()
         {
-            // --- Prefer ClientWorld (ghosted names); fall back to ServerWorld on Local Host ---
-            // [NETCODE] PlayerNameElement lives on the match singleton and replicates when SetPlayerName is wired.
+            // --- Prefer ServerWorld on Local Host (authoritative roster); else ClientWorld ---
+            // [NETCODE] PlayerNameElement is not ghosted. Dedicated clients fill the cache from
+            // PlayerNameAnnounceRpc; Local Host can read the server buffer directly.
             World world = null;
-            if (ClientWorld != null && ClientWorld.IsCreated)
+            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
+                world = ServerWorld;
+            else if (ClientWorld != null && ClientWorld.IsCreated)
                 world = ClientWorld;
             else if (ServerWorld != null && ServerWorld.IsCreated)
                 world = ServerWorld;
 
-            if (world == null || !world.IsCreated)
-            {
-                s_JoinTeamNameByNetworkId.Clear();
-                return;
-            }
+            if (world != null && world.IsCreated)
+                MergePlayerNamesFromWorld(world.EntityManager);
 
-            FillJoinTeamNameLookup(world.EntityManager);
+            OverlayLocalPlayerDisplayName();
         }
 
         /// <summary>
-        /// Display name from the last <see cref="RefreshPlayerDisplayNameCache"/> pass.
-        /// Falls back to "Player {networkId}" when the name RPC has not populated the buffer yet.
+        /// Display name from <see cref="PlayerNameRosterCache"/> (announce RPC + local overlay).
+        /// Falls back to "Player {networkId}" when this id has not published a name yet.
         /// </summary>
         /// <param name="networkId">GhostOwner.NetworkId for the ship / connection.</param>
         /// <returns>Cached custom name, or a stable fallback label.</returns>
-        public static string GetCachedPlayerDisplayName(int networkId) =>
-            ResolveJoinTeamPlayerLabel(networkId);
+        public static string GetCachedPlayerDisplayName(int networkId)
+        {
+            if (networkId <= 0)
+                return "Player";
+
+            if (PlayerNameRosterCache.TryGet(networkId, out string name))
+                return name;
+
+            // --- Last-chance local overlay ---
+            // Refresh may not have run this frame (first nameplate paint after Join Team).
+            if (networkId == GetLocalNetworkId())
+                return LocalPlayerDisplayName.Get();
+
+            return "Player " + networkId;
+        }
 
         /// <summary>Number of teams in this match (from home planets, then server team state).</summary>
         public static bool TryGetActiveTeamCount(out int activeTeamCount)

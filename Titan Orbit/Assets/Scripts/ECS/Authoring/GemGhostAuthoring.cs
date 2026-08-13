@@ -34,8 +34,8 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new GemState { Value = 1f, Size = 1f });
 
                 // --- Scripted motion (no PhysicsVelocity) ---
-                // [NETCODE] Velocity + AngularVelocity are GhostFields — client GemClientMotionApplier
-                // follows interpolated pose / velocity (server still owns authority + pickup).
+                // [NETCODE] Velocity + AngularVelocity are GhostFields (diagnostics / future use).
+                // Client presentation copies interpolated LocalTransform — no second integrator.
                 AddComponent(entity, new GemKinematics());
 
                 // --- Burst index + tractor lock (ghosted) ---

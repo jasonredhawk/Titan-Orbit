@@ -2,7 +2,6 @@ using TitanOrbit.Core;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
-using Unity.Mathematics;
 using Unity.NetCode;
 
 namespace TitanOrbit.ECS
@@ -10,9 +9,8 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// [NETCODE] Client-side handler for <see cref="TeamChoiceResultRpc"/> replies from
     /// <see cref="TeamManagementSystem"/>. Updates <see cref="ClientTeamFlowState"/> so team-pick UI
-    /// and input suppression know whether spawn succeeded. Forwards the server home-ring pose into
-    /// <see cref="ClientPredictedShipSpawnRequest"/> so the predicted hull Instantiates at the same
-    /// angle the server used (avoids a Join Team snap to a second ring location).
+    /// and input suppression know whether spawn succeeded. Does <b>not</b> Instantiates a client
+    /// predicted hull — Confirm waits for GhostReceive of the server ship.
     /// World: ClientSimulation. Paired with TeamManagementSystem on the server.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
@@ -69,26 +67,14 @@ namespace TitanOrbit.ECS
                 ClientJoinSettleCache.ArmPostTeamChoiceHold();
                 ClientTeamFlowState.RequestDeferredConfirmTeamChoice();
 
-                // --- Predicted hull when GhostReceive never delivers the server ship ---
-                // [TITAN-ORBIT] Dedicated/Relay path — Local Host queues from TeamManagementSystem.
-                // Use the server ring pose from this RPC so classification does not snap the hull
-                // to a second random angle (Join Team "spawned twice"). Fallback find-home only
-                // when an older server omitted HasSpawnPos.
+                // --- Wait for GhostReceive of the server ship ---
+                // [TITAN-ORBIT] Do not Instantiates a ClientWorld predicted hull. Overlay stays
+                // until LocalShipEntitySeed sees the owner ghost (real RTT), then Confirm flushes.
                 var team = (TeamId)rpc.AssignedTeam;
-                bool hasSpawnPos = rpc.HasSpawnPos != 0;
-                ClientPredictedShipSpawnRequest.Request(
-                    rpc.NetworkId, team, rpc.SpawnPosition, hasSpawnPos);
-
-                // --- Drain same frame on ClientWorld (dedicated / Relay path) ---
-                // [TITAN-ORBIT] Do not rely solely on ClientPredictedShipSpawnSystem later in the
-                // group — Init deferred Confirm also drains, but seeding here unlocks hull ASAP.
-                var client = ClientServerBootstrap.ClientWorld;
-                if (client != null && client.IsCreated)
-                    ClientPredictedShipSpawnRequest.TryDrainPending(client.EntityManager);
 
                 UnityEngine.Debug.Log(
                     $"[TeamChoiceResult] Assigned to {team} (networkId={rpc.NetworkId}). " +
-                    "Confirm deferred until post-TeamChoice Instantiates hold expires (join-crash guard).");
+                    "Confirm deferred until GhostReceive owner ship + Instantiates hold (join-crash guard).");
             }
             else
             {

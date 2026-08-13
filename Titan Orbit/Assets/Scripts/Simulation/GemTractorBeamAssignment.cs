@@ -4,8 +4,9 @@ namespace TitanOrbit.Simulation
 {
     /// <summary>
     /// Shared wing↔gem matching for tractor beams.
-    /// Used by server <c>GemTractorBeamSystem</c> (authoritative pull) and client
-    /// <c>GemTractorBeamClientLogic</c> (beam VFX) so both sides pick the same pairs.
+    /// Used by server <c>GemTractorBeamSystem</c> only — that system writes ghosted
+    /// <c>GemMotionState</c> locks. Client beam VFX presents those locks; it does not
+    /// re-run this matcher (a second assignment was how beams latched onto uncollectable gems).
     /// <para>
     /// Rules ([TITAN-ORBIT]):
     /// 1. <b>Sticky lock</b> — once a wing locks a gem, it keeps that gem until the gem leaves
@@ -32,7 +33,11 @@ namespace TitanOrbit.Simulation
             /// <summary>Index into the ship's wing tractor buffer.</summary>
             public int WingIndex;
 
-            /// <summary>Stable gem id for this frame (usually <c>Entity.Index</c>).</summary>
+            /// <summary>
+            /// Server-side gem key for this tick (currently <c>Entity.Index</c> on the server world).
+            /// Re-validated every tick against live in-range candidates, so index reuse after
+            /// DestroyEntity cannot keep a lock on a dead gem.
+            /// </summary>
             public int GemId;
 
             /// <summary>Toroidal XZ distance from wing origin to gem (world units).</summary>

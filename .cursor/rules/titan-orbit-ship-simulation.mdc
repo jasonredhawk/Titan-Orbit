@@ -1,8 +1,6 @@
 ---
-description: Starblast-style smooth multiplayer flight — five pillars + sim-calculated motion for Titan Orbit (NetCode for Entities)
-alwaysApply: true
+alwaysApply: false
 ---
-
 # Titan Orbit — Smooth networked ship flight (Starblast pillars)
 
 Smooth flight is **not** prettier lerps. It is server-authoritative sim + predictable motors + correct client presentation. Inspiration: Starblast.io’s five pillars + custom math-driven motion, adapted to **Unity NetCode for Entities** (NCE) — not Netcode for GameObjects (NGO).

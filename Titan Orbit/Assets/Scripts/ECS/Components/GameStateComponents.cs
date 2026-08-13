@@ -123,7 +123,11 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// [NETCODE] Display names keyed by network id — set via <see cref="SetPlayerNameCommand"/> RPC.
+    /// [NETCODE] Server-side display names keyed by network id — set via
+    /// <see cref="SetPlayerNameCommand"/>. Lives on the match singleton from
+    /// <see cref="GameBootstrapSystem"/>. That entity is not a ghost prefab, so these
+    /// <c>[GhostField]</c> marks do not replicate; clients learn names from
+    /// <see cref="PlayerNameAnnounceRpc"/> / <see cref="PlayerNameRosterCache"/>.
     /// </summary>
     public struct PlayerNameElement : IBufferElementData
     {

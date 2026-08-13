@@ -4,7 +4,7 @@ using Unity.NetCode;
 namespace TitanOrbit.NetCode
 {
     /// <summary>
-    /// Client tick tuning for predicted ship physics.
+    /// Client tick tuning for predicted ship physics (OwnerPredicted hull after GhostReceive).
     /// Forces prediction step batch size = 1 (no merged N×dt physics) and uses a higher
     /// <see cref="ClientServerTickRate.MaxSimulationStepsPerFrame"/> than Editor Local Host server
     /// so Relay clients can repay command-age debt.
@@ -14,6 +14,12 @@ namespace TitanOrbit.NetCode
     /// <c>NetworkTime.SimulationStepBatchSize</c> — on clients that field is predict-target
     /// delta (2–3 at ~30 FPS), not MaxSteps. Reverted. Presentation: raw+soft-track; H64 = player FPS test.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Join Team does <b>not</b> Instantiates a client predicted hull. The ship
+    /// arrives via GhostReceive; prediction starts when that ghost has PredictedGhost. Keep
+    /// <c>PredictionLoopUpdateMode.RequirePredictedGhost</c> (do not AlwaysRun the session).
+    /// Extra predicted-ghost lifetime still helps bullets / other predicted spawns.
+    /// </para>
     /// World: ClientSimulation. Group: InitializationSystemGroup (first).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
@@ -21,7 +27,22 @@ namespace TitanOrbit.NetCode
     public partial struct TitanOrbitClientTickRateSystem : ISystem
     {
         /// <summary>
-        /// Re-applies every frame so a later handshake cannot restore merged tick batches.
+        /// Extra simulation ticks a client predicted ghost stays alive while waiting for the
+        /// matching server snapshot. Package default is 0 (despawn as soon as interpolation
+        /// passes the spawn tick — often ~2 ticks / ~30ms). Used for bullets / other predicted
+        /// spawns — not a Join Team ship Instantiates.
+        /// </summary>
+        public const ushort PredictedGhostExtraLifetimeTicks = 120;
+
+        /// <summary>
+        /// ± tick window for NetCode's default predicted-spawn classifier (bullets / other
+        /// predicted ghosts). Package default is 5.
+        /// </summary>
+        public const ushort PredictedSpawnClassificationTickPeriod = 64;
+
+        /// <summary>
+        /// Re-applies every frame so a later handshake cannot restore merged tick batches
+        /// or the package's too-short predicted-spawn lifetime.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
@@ -46,6 +67,14 @@ namespace TitanOrbit.NetCode
             // [NETCODE] One predicted physics step per tick — required for deterministic hull motion.
             clientTickRate.MaxPredictionStepBatchSizeFirstTimeTick = 1;
             clientTickRate.MaxPredictionStepBatchSizeRepeatedTick = 1;
+            // [NETCODE] PredictedGhostDespawnSystem destroys unmatched predicted spawns once
+            // InterpolationTick passes spawnTick + this extra lifetime (bullets, not Join Team ships).
+            clientTickRate.NumAdditionalClientPredictedGhostLifetimeTicks = PredictedGhostExtraLifetimeTicks;
+            // [NETCODE] DefaultGhostSpawnClassificationSystem matches by ghost type + spawn tick.
+            clientTickRate.DefaultClassificationAllowableTickPeriod = PredictedSpawnClassificationTickPeriod;
+            // [NETCODE] RequirePredictedGhost — prediction runs after GhostReceive delivers the
+            // owner ship. Do not AlwaysRun; Join Team no longer Instantiates a fake hull.
+            clientTickRate.PredictionLoopUpdateMode = PredictionLoopUpdateMode.RequirePredictedGhost;
             state.EntityManager.SetComponentData(clientTickEntity, clientTickRate);
 
             // --- ClientServerTickRate: match Hz, allow Relay catch-up ---

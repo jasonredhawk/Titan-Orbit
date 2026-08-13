@@ -19,6 +19,10 @@ namespace TitanOrbit.ECS
     [UpdateInGroup(typeof(InitializationSystemGroup))]
     public partial struct GameBootstrapSystem : ISystem
     {
+        /// <summary>
+        /// [ECS/DOTS] Creates match singletons and shared buffers once per server world.
+        /// Skips if another bootstrap path already inserted <see cref="TeamStateSingleton"/>.
+        /// </summary>
         public void OnCreate(ref SystemState state)
         {
             // [STANDARD] Idempotent — skip if another bootstrap path already created singletons.
@@ -40,6 +44,7 @@ namespace TitanOrbit.ECS
             state.EntityManager.AddBuffer<BulletSpawnEventElement>(entity);
             state.EntityManager.AddBuffer<BulletHitEventElement>(entity);
             state.EntityManager.AddBuffer<MapLayoutEntryElement>(entity);
+            // [NETCODE] Server roster only — not a ghost. Clients get names via PlayerNameAnnounceRpc.
             state.EntityManager.AddBuffer<PlayerNameElement>(entity);
         }
 

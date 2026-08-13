@@ -32,8 +32,9 @@ namespace TitanOrbit.Game
     /// spheres (<see cref="BulletCosmeticHitQuery"/>) so cosmetics stop at the rock / ship /
     /// planetary-defense turret surface immediately (no visual tunnel waiting for RTT).
     /// <see cref="BulletHitRpc"/> then reconciles (skip duplicate impact flash / destroy late
-    /// misses) and applies authoritative mining floats via <c>AsteroidHealthAfter</c> — cosmetics
-    /// never write damage / HP.
+    /// misses) and applies authoritative mining floats via <c>AsteroidHealthAfter</c>. Turret HP
+    /// is applied in <see cref="BulletHitRpcClientSystem"/> via
+    /// <see cref="PlanetaryDefenseClientHealthSync"/> — this driver does not write pad Health.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Sequence 0 HitRpcs are ram/grind explosions (no tracer). They must play
@@ -250,6 +251,8 @@ namespace TitanOrbit.Game
                         in t, prevPos, t.LogicalPos,
                         out float3 hitPoint,
                         out _,
+                        out _,
+                        out _,
                         out _))
                 {
                     ApplyPredictedHit(i, in t, hitPoint);
@@ -374,7 +377,7 @@ namespace TitanOrbit.Game
         /// cosmetics do not keep flying through the rock after a real server hit.
         /// Skips duplicate impact flash when client already predicted this Sequence / nearby impact.
         /// Mining floats always use HitRpc <c>AsteroidHealthAfter</c> (never cosmetic-predicted HP).
-        /// Planetary-defense HP bars use <c>PlanetaryDefenseHealthAfter</c> (ghost MaxSendRate lag).
+        /// Turret HP is written in <see cref="BulletHitRpcClientSystem"/> (not here).
         /// Sequence 0 (ram/grind) plays VFX only — never adopts a tracer.
         /// </summary>
         void DrainHits()
@@ -407,7 +410,7 @@ namespace TitanOrbit.Game
                 }
 
                 // --- Reconcile: client already showed impact for this Sequence ---
-                // Tracer + impact VFX already done; still apply authoritative mining float / PD bar.
+                // Tracer + impact VFX already done; still apply authoritative mining float.
                 if (hit.Sequence != 0 && _clientPredictedHitSequences.Remove(hit.Sequence))
                 {
                     int ownerNetworkId = 0;
@@ -425,7 +428,6 @@ namespace TitanOrbit.Game
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
                         hit.AsteroidHealthAfter, in synth);
-                    TryNotifyPlanetaryDefenseHitRpc(in hit);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                     continue;
                 }
@@ -453,7 +455,6 @@ namespace TitanOrbit.Game
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
                         hit.AsteroidHealthAfter, in tracer);
-                    TryNotifyPlanetaryDefenseHitRpc(in hit);
 
                     DestroyTracerGo(tracer);
                     RemoveAtSwap(idx);
@@ -473,7 +474,6 @@ namespace TitanOrbit.Game
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
                         hit.AsteroidHealthAfter, in nearTracer);
-                    TryNotifyPlanetaryDefenseHitRpc(in hit);
 
                     DestroyTracerGo(nearTracer);
                     RemoveAtSwap(nearIdx);
@@ -489,36 +489,17 @@ namespace TitanOrbit.Game
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
                         hit.AsteroidHealthAfter, in synth);
-                    TryNotifyPlanetaryDefenseHitRpc(in hit);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                 }
                 else
                 {
-                    // No tracer to destroy — still punch PD HP bar / asteroid teardown from HitRpc.
+                    // No tracer to destroy — still apply asteroid teardown from HitRpc.
                     var synth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
                         hit.AsteroidHealthAfter, in synth);
-                    TryNotifyPlanetaryDefenseHitRpc(in hit);
                 }
             }
-        }
-
-        /// <summary>
-        /// Forwards server PD Health-after from <see cref="BulletHitRpc"/> into the hybrid
-        /// turret HP bar so it dips immediately (planet ghost MaxSendRate otherwise lags).
-        /// No-op when PlanetId is 0 (not a planetary-defense impact).
-        /// </summary>
-        /// <param name="hit">Dequeued HitRequest (already display-space for VFX position).</param>
-        static void TryNotifyPlanetaryDefenseHitRpc(in BulletVfxBridge.HitRequest hit)
-        {
-            if (hit.PlanetaryDefensePlanetId <= 0)
-                return;
-
-            PlanetaryDefenseVisualDriver.NotifyAuthoritativeHit(
-                hit.PlanetaryDefensePlanetId,
-                hit.PlanetaryDefenseSlotIndex,
-                hit.PlanetaryDefenseHealthAfter);
         }
 
         /// <summary>
@@ -877,7 +858,6 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Swept cosmetic collide for one tracer step using <see cref="BulletCosmeticHitQuery"/>.
-        /// Hit kind / entity are available for future use; mining floats stay on HitRpc.
         /// Passes <see cref="Tracer.ScaleMultiplier"/> so turret spheres match server
         /// <c>ExpandRadiusForBulletScale</c> (heavy bolts connect like hull hits).
         /// </summary>
@@ -887,11 +867,12 @@ namespace TitanOrbit.Game
             float3 to,
             out float3 hitPoint,
             out BulletCosmeticHitQuery.ObstacleKind hitKind,
-            out Entity hitEntity)
+            out Entity hitEntity,
+            out int hitPlanetId,
+            out int hitSlotIndex)
         {
             // [HYBRID] Same obstacle set as server TryResolveBulletHit, including derived
-            // planetary-defense pad spheres. Without those, tracers tunnel through guns
-            // while BulletHitRpc still punches the HP bar.
+            // planetary-defense pad spheres. Without those, tracers tunnel through guns.
             return BulletCosmeticHitQuery.TryHitSegment(
                 from,
                 to,
@@ -901,6 +882,8 @@ namespace TitanOrbit.Game
                 out hitPoint,
                 out hitKind,
                 out hitEntity,
+                out hitPlanetId,
+                out hitSlotIndex,
                 t.DamageFilter,
                 t.ScaleMultiplier);
         }
@@ -908,7 +891,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Plays impact VFX, records reconcile keys, destroys the tracer.
         /// Does not write damage / HP — server HitRpc still owns mining floats
-        /// (<c>AsteroidHealthAfter</c>) so optimistic “HP Left: 0” cannot drift from authority.
+        /// (<c>AsteroidHealthAfter</c>) and turret HP (<see cref="PlanetaryDefenseClientHealthSync"/>).
         /// </summary>
         void ApplyPredictedHit(int tracerIndex, in Tracer t, float3 hitPoint)
         {
@@ -927,7 +910,7 @@ namespace TitanOrbit.Game
                 hitDisplay, _bank, bankIndex, team, t.Damage, scaleMul);
 
             // --- Remember for HitRpc / SpawnRpc reconcile ---
-            // Mining floats intentionally wait for HitRpc (authoritative AsteroidHealthAfter).
+            // Mining floats and turret HP wait for HitRpc (authoritative remaining Health).
             float now = Time.unscaledTime;
             if (t.Sequence != 0)
                 RememberPredictedSequence(t.Sequence, t.OwnerNetworkId, now);

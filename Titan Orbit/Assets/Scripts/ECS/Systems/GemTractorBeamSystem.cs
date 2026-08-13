@@ -24,6 +24,8 @@ namespace TitanOrbit.ECS
     /// <see cref="ShipWingTractorBeamPose.GetTractorParams"/>.
     /// Deploy extend/widen is VFX timing only (ghosted lock tick + duration) — burst gems are
     /// captured immediately so they cannot coast out of search radius while the line animates.
+    /// Clients draw beams from these ghost lock fields only; they must not invent a second
+    /// wing assignment (that latched onto uncollectable / despawned crystals).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -566,15 +568,15 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// [TITAN-ORBIT] Ship cannot pull when dead, hull already empty (0 HP), picking team,
-        /// moon-docking, or at gem capacity. Zero-hull ships must not sip fractional gems that
-        /// keep dual-resource death from sticking (see <see cref="ShipDamageLogic"/>).
+        /// [TITAN-ORBIT] Ship cannot pull when dead, picking team, moon-docking, or at gem
+        /// capacity. A living 0-HP hull (cargo still aboard) may still lock — dual-resource
+        /// death is hull AND gems empty (see <see cref="ShipDamageLogic"/>).
         /// </summary>
         static bool IsShipEligibleForPull(in ShipState ship, in ShipMoonDockState moonDock)
         {
-            // [TITAN-ORBIT] Treat depleted hull like dead for pickup — tractor must not refill cargo
-            // while Health is at/below DeathThreshold and IsDead is still false.
-            if (ship.IsDead || ship.Health <= ShipDamageLogic.DeathThreshold || ship.AwaitingTeamSelection)
+            // [TITAN-ORBIT] Do not treat 0 HP as dead. Grind/ram often zeroes hull while cargo
+            // remains; blocking tractor there left beams on the client and no pull on the server.
+            if (ship.IsDead || ship.AwaitingTeamSelection)
                 return false;
             if (moonDock.MoonPlanetId != 0 && moonDock.LandingProgress > 0.01f)
                 return false;

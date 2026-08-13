@@ -9,7 +9,8 @@ namespace TitanOrbit.ECS
     /// [NETCODE] RPC commands (Remote Procedure Calls) — one-shot network messages outside ghost
     /// replication. Each struct implements <c>IRpcCommand</c>; clients send requests, server systems
     /// validate and reply. Handlers: <see cref="TeamManagementSystem"/>,
-    /// <see cref="RejoinShipManagementSystem"/>, moon orbit store systems, attribute upgrade systems.
+    /// <see cref="RejoinShipManagementSystem"/>, <see cref="PlayerNameServerSystem"/>,
+    /// moon orbit store systems, attribute upgrade systems.
     /// Ghost replication handles continuous state; RPCs handle discrete player actions.
     /// </summary>
 
@@ -29,12 +30,10 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// [NETCODE] Server confirms or rejects team choice; client reads in <see cref="TeamChoiceResultClientSystem"/>.
     /// <para>
-    /// [TITAN-ORBIT] <see cref="SpawnPosition"/> must travel with the ack. Join Team Instantiates a
-    /// client predicted hull immediately (GhostReceive often never delivers the ship). Without this
-    /// pose the client picks its own random orbit-ring angle, then GhostSpawn classification snaps
-    /// the hull to the server angle — looks like the ship spawned twice. Death respawn reuses the
-    /// same entity, so it does not hit this path. Adding these fields changes the RPC layout:
-    /// client and Linux headless must rebuild together.
+    /// [TITAN-ORBIT] <see cref="SpawnPosition"/> travels with the ack for logs / diagnostics.
+    /// Join Team does <b>not</b> Instantiates a client predicted hull — GhostReceive delivers
+    /// the server ship at this pose. Keep these fields: changing the RPC layout requires a
+    /// matching Linux headless rebuild.
     /// </para>
     /// </summary>
     public struct TeamChoiceResultRpc : IRpcCommand
@@ -64,10 +63,30 @@ namespace TitanOrbit.ECS
         public FixedString128Bytes Message;
     }
 
-    /// <summary>[NETCODE] Client sets display name shown in scoreboard and HUD.</summary>
+    /// <summary>
+    /// [NETCODE] Client publishes the Main Menu display name after GoInGame.
+    /// Server: <see cref="PlayerNameServerSystem"/> (NetworkId comes from the connection, not this
+    /// payload — clients cannot spoof another player's name). Adding fields changes RPC layout:
+    /// client and Linux headless must rebuild together.
+    /// </summary>
     public struct SetPlayerNameCommand : IRpcCommand
     {
         /// <summary>[TITAN-ORBIT] UTF-8 display name (length capped by FixedString64).</summary>
+        public FixedString64Bytes DisplayName;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: one player's display name for nameplates and leaderboards.
+    /// The match-singleton <see cref="PlayerNameElement"/> buffer is not a ghost (runtime entity,
+    /// not a ghost prefab), so names travel on this RPC instead of snapshot replication.
+    /// Late joiners get a one-shot dump tagged with <see cref="PlayerNameRosterSent"/>.
+    /// </summary>
+    public struct PlayerNameAnnounceRpc : IRpcCommand
+    {
+        /// <summary>[NETCODE] Owner connection id (GhostOwner.NetworkId on that player's ship).</summary>
+        public int NetworkId;
+
+        /// <summary>[TITAN-ORBIT] Sanitized UTF-8 display name.</summary>
         public FixedString64Bytes DisplayName;
     }
 
@@ -420,9 +439,10 @@ namespace TitanOrbit.ECS
         /// Stable <see cref="PlanetState.PlanetId"/> when this hit damaged a planetary-defense
         /// turret slot; 0 when the impact was not PD.
         /// <para>
-        /// [TITAN-ORBIT] Planet ghosts use low Importance / MaxSendRate (~15), so ghosted
-        /// <see cref="PlanetaryDefenseSlotElement.Health"/> can lag for a long time. Clients
-        /// punch the HP bar from this HitRpc payload, then reconcile when the ghost catches up.
+        /// [TITAN-ORBIT] Live turret HP is <b>this field</b>, applied on the client by
+        /// <see cref="PlanetaryDefenseClientHealthSync"/> — the same HitRpc channel asteroids
+        /// use. Planet ghost <see cref="PlanetaryDefenseSlotElement.Health"/> is layout seed
+        /// only; it is not the combat HP stream.
         /// </para>
         /// </summary>
         public int PlanetaryDefensePlanetId;

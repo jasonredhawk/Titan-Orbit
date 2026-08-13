@@ -76,6 +76,12 @@ namespace TitanOrbit.Game
             public int PlanetId;
             public bool IsHomePlanet;
             public float CurrentShield;
+
+            /// <summary>
+            /// Planetary-defense slot index on <see cref="PlanetId"/>. −1 for every other kind.
+            /// Identifies which pad this sphere belongs to (kill skip uses the HitRpc HP store).
+            /// </summary>
+            public int SlotIndex;
         }
 
         /// <summary>Obstacle category — mirrors server <c>TryResolveBulletHit</c> order.</summary>
@@ -302,6 +308,12 @@ namespace TitanOrbit.Game
         /// <param name="hitPoint">Contact point in the same space as from/to.</param>
         /// <param name="hitKind">Which obstacle category was hit (asteroid / planet / …).</param>
         /// <param name="hitEntity">Hybrid-proxy entity for the hit body (Null if none).</param>
+        /// <param name="hitPlanetId">
+        /// Stable planet id when <paramref name="hitKind"/> is planetary-defense; 0 otherwise.
+        /// </param>
+        /// <param name="hitSlotIndex">
+        /// Defense slot index when the hit is a turret pad; −1 otherwise.
+        /// </param>
         /// <param name="damageFilter">
         /// [TITAN-ORBIT] Matches server <c>BulletDamageFilter</c> so mining tracers pass through
         /// ships and fighter tracers pass through asteroids.
@@ -319,12 +331,16 @@ namespace TitanOrbit.Game
             out float3 hitPoint,
             out ObstacleKind hitKind,
             out Entity hitEntity,
+            out int hitPlanetId,
+            out int hitSlotIndex,
             byte damageFilter = 0,
             float scaleMultiplier = 1f)
         {
             hitPoint = to;
             hitKind = ObstacleKind.Asteroid;
             hitEntity = Entity.Null;
+            hitPlanetId = 0;
+            hitSlotIndex = -1;
             if (Obstacles.Count == 0)
                 return false;
 
@@ -338,6 +354,8 @@ namespace TitanOrbit.Game
             float3 bestHit = to;
             ObstacleKind bestKind = ObstacleKind.Asteroid;
             Entity bestEntity = Entity.Null;
+            int bestPlanetId = 0;
+            int bestSlotIndex = -1;
             bool any = false;
             float3 delta = to - from;
             float deltaLenSq = math.lengthsq(delta);
@@ -349,6 +367,8 @@ namespace TitanOrbit.Game
             float bestDefenseT = float.MaxValue;
             float3 bestDefenseHit = to;
             Entity bestDefenseEntity = Entity.Null;
+            int bestDefensePlanetId = 0;
+            int bestDefenseSlotIndex = -1;
             bool anyDefense = false;
 
             for (int i = 0; i < Obstacles.Count; i++)
@@ -414,6 +434,8 @@ namespace TitanOrbit.Game
                         bestDefenseT = defenseT;
                         bestDefenseHit = hp;
                         bestDefenseEntity = o.SourceEntity;
+                        bestDefensePlanetId = o.PlanetId;
+                        bestDefenseSlotIndex = o.SlotIndex;
                         anyDefense = true;
                     }
                 }
@@ -423,6 +445,8 @@ namespace TitanOrbit.Game
                     any = true;
                     bestKind = o.Kind;
                     bestEntity = o.SourceEntity;
+                    bestPlanetId = o.Kind == ObstacleKind.PlanetaryDefense ? o.PlanetId : 0;
+                    bestSlotIndex = o.Kind == ObstacleKind.PlanetaryDefense ? o.SlotIndex : -1;
                 }
             }
 
@@ -441,11 +465,15 @@ namespace TitanOrbit.Game
                 bestHit = bestDefenseHit;
                 bestKind = ObstacleKind.PlanetaryDefense;
                 bestEntity = bestDefenseEntity;
+                bestPlanetId = bestDefensePlanetId;
+                bestSlotIndex = bestDefenseSlotIndex;
             }
 
             hitPoint = bestHit;
             hitKind = bestKind;
             hitEntity = bestEntity;
+            hitPlanetId = bestPlanetId;
+            hitSlotIndex = bestSlotIndex;
             return true;
         }
 
@@ -462,7 +490,7 @@ namespace TitanOrbit.Game
         {
             return TryHitSegment(
                 from, to, ownerTeam, ownerNetworkId, isDisplaySpace,
-                out hitPoint, out _, out _);
+                out hitPoint, out _, out _, out _, out _);
         }
 
         /// <summary>Keeps the contact closest to segment start (parameter t in [0,1]).</summary>
@@ -588,6 +616,12 @@ namespace TitanOrbit.Game
                 if (slot.TurretLevel == 0 || slot.Health <= 0f)
                     continue;
 
+                // HitRpc store can already be 0 while ghost Health is still spawn HP —
+                // skip so tracers do not keep colliding with a dead gun.
+                if (PlanetaryDefenseClientHealthSync.TryGetHealth(planet.PlanetId, i, out float overlayHp) &&
+                    overlayHp <= 0.01f)
+                    continue;
+
                 float3 slotPos = PlanetaryDefenseMath.GetSlotWorldPosition(
                     planetPos, planetScale, planet.PlanetLevel, i, slotCount);
                 slotPos.y = PlanetaryDefenseMath.FixedY;
@@ -601,6 +635,7 @@ namespace TitanOrbit.Game
                     Scale = planetScale,
                     TeamOrOwnership = (byte)planet.Ownership,
                     PlanetId = planet.PlanetId,
+                    SlotIndex = i,
                 });
             }
         }

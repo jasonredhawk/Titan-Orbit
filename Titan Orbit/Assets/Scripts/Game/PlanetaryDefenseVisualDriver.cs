@@ -49,11 +49,11 @@ namespace TitanOrbit.Game
     /// session-long TransformQuarantine).
     /// </para>
     /// <para>
-    /// [NETCODE] Slot <see cref="PlanetaryDefenseSlotElement.Health"/> is ghosted, but planet
-    /// ghosts use a low MaxSendRate — the HP bar would look “stuck” for a long time after a
-    /// real hit. <see cref="NotifyAuthoritativeHit"/> applies a short optimistic bar punch from
-    /// <see cref="BulletHitRpc"/> (server Health-after), then reconciles when the ghost catches up.
-    /// Friendly fire is off: same-team shots never damage pads (no HitRpc PD payload).
+    /// [NETCODE] Pad layout (level, occupancy, MaxHealth) still comes from the planet ghost
+    /// buffer. Live turret HP does not: <see cref="BulletHitRpcClientSystem"/> writes remaining
+    /// HP into <see cref="PlanetaryDefenseClientHealthSync"/> the same way asteroid HitRpcs write
+    /// local rock Health. The bar reads that store so a slow planet snapshot cannot snap the
+    /// strip back to 100%. Friendly fire is off: same-team shots never damage pads.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66300)]
@@ -180,28 +180,13 @@ namespace TitanOrbit.Game
         static readonly Color HealthBarFillEmpty = new Color(1f, 0.15f, 0.12f, 0.98f);
 
         /// <summary>
-        /// Brief white/red flash tint while a HitRpc optimistic punch is live.
+        /// Brief white/red flash tint while a HitRpc HP apply is live.
         /// Client presentation only — does not affect server combat.
         /// </summary>
         static readonly Color HealthBarHitFlashColor = new Color(1f, 0.95f, 0.85f, 1f);
 
-        /// <summary>
-        /// How long (seconds) we prefer HitRpc Health-after over lagging ghost Health.
-        /// Safety timeout — ghost usually catches up sooner under MaxSendRate.
-        /// </summary>
-        const float OptimisticHpHoldSeconds = 2.5f;
-
-        /// <summary>How long (seconds) the bar/turret hit flash lasts after a HitRpc punch.</summary>
-        const float HitFlashSeconds = 0.22f;
-
         /// <summary>Turret scale mul at the peak of the hit punch (1 = no punch).</summary>
         const float HitPunchScalePeak = 1.12f;
-
-        /// <summary>
-        /// Ghost Health within this of optimistic Health → clear override (reconciled).
-        /// Quantization=100 on the ghost field is 0.01; this is a comfortable match window.
-        /// </summary>
-        const float OptimisticHpReconcileEpsilon = 0.75f;
 
         /// <summary>Shared 1×1 white sprite for outline + bg + fill (created once).</summary>
         static Sprite s_HealthBarSprite;
@@ -287,29 +272,6 @@ namespace TitanOrbit.Game
         /// </summary>
         readonly List<PeopleTransportVfxDriver.AimFlightSample> _transportAimScratch =
             new List<PeopleTransportVfxDriver.AimFlightSample>(32);
-
-        /// <summary>
-        /// HitRpc Health-after overrides keyed by planetId×slot (see <see cref="MakeOptimisticKey"/>).
-        /// Cleared when ghost Health catches up or the hold timer expires.
-        /// </summary>
-        readonly Dictionary<long, OptimisticSlotHp> _optimisticHpBySlot =
-            new Dictionary<long, OptimisticSlotHp>(32);
-
-        /// <summary>
-        /// Short-lived client display of server Health-after from <see cref="BulletHitRpc"/>.
-        /// Not a second sim — presentation only until the planet ghost buffer updates.
-        /// </summary>
-        struct OptimisticSlotHp
-        {
-            /// <summary>Authoritative remaining HP from the HitRpc (0 = destroyed this hit).</summary>
-            public float HealthAfter;
-
-            /// <summary>Unity <c>Time.time</c> when we stop preferring this over ghost Health.</summary>
-            public float ExpireAt;
-
-            /// <summary>Unity <c>Time.time</c> until the bar/turret flash ends.</summary>
-            public float FlashUntil;
-        }
 
         /// <summary>One planet's pad + turret GameObjects.</summary>
         sealed class PlanetDefenseGroup
@@ -428,67 +390,6 @@ namespace TitanOrbit.Game
             _defaultConfig = PlanetaryDefenseConfig.LoadDefault();
             _font = ResolveFont();
         }
-
-        /// <summary>
-        /// Applies a server-authored turret HP punch from <see cref="BulletHitRpc"/>.
-        /// Called by <see cref="BulletVfxDriver"/> when PlanetId &gt; 0 on the hit payload.
-        /// <para>
-        /// [TITAN-ORBIT] Planet ghosts lag MaxSendRate — without this the HP bar looks frozen
-        /// even though <see cref="PlanetaryDefenseHitScan.ApplyDamage"/> already ran on the server.
-        /// We never invent permanent HP: ghost Health wins as soon as it is ≤ this value
-        /// (or within epsilon), or when the hold timer expires.
-        /// </para>
-        /// </summary>
-        /// <param name="planetId">Stable <see cref="PlanetState.PlanetId"/>.</param>
-        /// <param name="slotIndex">Slot index in the planet’s defense buffer.</param>
-        /// <param name="healthAfter">
-        /// Remaining Health after the hit (0 = destroyed / empty placeholder).
-        /// </param>
-        public static void NotifyAuthoritativeHit(int planetId, int slotIndex, float healthAfter)
-        {
-            if (s_Instance == null || planetId <= 0 || slotIndex < 0)
-                return;
-
-            s_Instance.ApplyOptimisticHit(planetId, slotIndex, healthAfter);
-        }
-
-        /// <summary>
-        /// Stores or tightens the optimistic HP for one pad and arms the hit flash.
-        /// Instance path for <see cref="NotifyAuthoritativeHit"/>.
-        /// </summary>
-        /// <param name="planetId">Stable planet id.</param>
-        /// <param name="slotIndex">Defense slot index.</param>
-        /// <param name="healthAfter">Server Health after this hit.</param>
-        void ApplyOptimisticHit(int planetId, int slotIndex, float healthAfter)
-        {
-            // --- Key + clamp ---
-            // [STANDARD] Dictionary key packs planet + slot so multi-pad planets stay independent.
-            long key = MakeOptimisticKey(planetId, slotIndex);
-            float clampedHp = math.max(0f, healthAfter);
-            float now = Time.time;
-
-            // --- Prefer the lowest remaining HP when multiple HitRpcs race ---
-            // [TITAN-ORBIT] Rapid fire can enqueue several hits before LateUpdate reads once;
-            // keep the most damaged value so the bar never “heals” from an older RPC.
-            if (_optimisticHpBySlot.TryGetValue(key, out var existing) &&
-                existing.ExpireAt > now)
-            {
-                clampedHp = math.min(clampedHp, existing.HealthAfter);
-            }
-
-            _optimisticHpBySlot[key] = new OptimisticSlotHp
-            {
-                HealthAfter = clampedHp,
-                ExpireAt = now + OptimisticHpHoldSeconds,
-                FlashUntil = now + HitFlashSeconds,
-            };
-        }
-
-        /// <summary>
-        /// Packs planet id + slot into one dictionary key (planet in high bits, slot in low byte).
-        /// </summary>
-        static long MakeOptimisticKey(int planetId, int slotIndex) =>
-            ((long)planetId << 8) | (byte)math.clamp(slotIndex, 0, 255);
 
         void OnDestroy()
         {
@@ -734,7 +635,7 @@ namespace TitanOrbit.Game
                     }
 
                     // Thin HP strip under the turret footprint (hidden on empty pads).
-                    // [NETCODE] May punch from HitRpc optimistic Health before the ghost arrives.
+                    // [TITAN-ORBIT] HP from PlanetaryDefenseClientHealthSync (HitRpc), not planet ghost.
                     float turretScaleForBar = 0f;
                     if (vis.TurretInstance != null && vis.TurretInstance.activeSelf)
                         turretScaleForBar = vis.TurretInstance.transform.localScale.x;
@@ -1362,16 +1263,16 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Shows/hides the HP bar and sets fill width + color from ghosted Health / MaxHealth,
-        /// optionally punched by HitRpc optimistic Health-after (planet ghost MaxSendRate lag).
+        /// Shows/hides the HP bar and sets fill width + color from HitRpc remaining HP
+        /// (<see cref="PlanetaryDefenseClientHealthSync"/>) over ghost MaxHealth.
         /// Places the strip just past the turret mesh toward screen-below so it does not cut
         /// through the gun. Outline + bg always span full max HP; fill shrinks with current HP.
         /// </summary>
         /// <param name="turretWorldScale">
         /// Live turret <c>localScale.x</c> (0 when inactive) — drives bar offset and width.
         /// </param>
-        /// <param name="planetId">Stable planet id for optimistic HitRpc lookup.</param>
-        /// <param name="slotIndex">Slot index for optimistic HitRpc lookup.</param>
+        /// <param name="planetId">Stable planet id for the HitRpc HP store.</param>
+        /// <param name="slotIndex">Slot index for the HitRpc HP store.</param>
         void UpdateHealthBar(
             ref SlotVisual vis,
             PlanetaryDefenseSlotElement slot,
@@ -1382,47 +1283,23 @@ namespace TitanOrbit.Game
             if (vis.HealthBarRoot == null)
                 return;
 
-            // --- Resolve display HP (ghost vs HitRpc optimistic punch) ---
-            // [NETCODE] Ghost Health is truth long-term; HitRpc Health-after is truth for the
-            // short window after a confirmed server hit (same idea as asteroid AsteroidHealthAfter).
-            float displayHealth = slot.Health;
+            // --- Resolve display HP ---
+            // [TITAN-ORBIT] Same contract as asteroid HitRpc Health writes: remaining HP from
+            // BulletHitRpc is client truth. Planet ghost Health is layout seed / regen only.
             float maxHealth = slot.MaxHealth;
             bool showFromGhost = slot.TurretLevel > 0 && maxHealth > 0.01f;
-            bool hitFlash = false;
-            float flashT = 0f; // 1 = flash peak, 0 = flash done
-            bool optimisticDestroyed = false;
+            float displayHealth = PlanetaryDefenseClientHealthSync.ResolveDisplayHealth(
+                planetId,
+                slotIndex,
+                in slot,
+                Time.time,
+                out bool hitFlash,
+                out float flashT,
+                out bool overlayDestroyed);
 
-            long optKey = MakeOptimisticKey(planetId, slotIndex);
-            if (_optimisticHpBySlot.TryGetValue(optKey, out var opt))
-            {
-                float now = Time.time;
-                bool expired = now >= opt.ExpireAt;
-                // Ghost caught up (equal/lower) → drop override so regen / later snapshots win.
-                bool ghostCaughtUp = showFromGhost &&
-                    slot.Health <= opt.HealthAfter + OptimisticHpReconcileEpsilon;
-                // Ghost already shows empty/destroyed while we still hold a destroy punch.
-                bool ghostEmpty = !showFromGhost && opt.HealthAfter <= 0.01f;
-
-                if (expired || ghostCaughtUp || ghostEmpty)
-                {
-                    _optimisticHpBySlot.Remove(optKey);
-                }
-                else
-                {
-                    displayHealth = opt.HealthAfter;
-                    optimisticDestroyed = opt.HealthAfter <= 0.01f;
-                    if (now < opt.FlashUntil)
-                    {
-                        hitFlash = true;
-                        flashT = math.saturate(
-                            (opt.FlashUntil - now) / math.max(0.01f, HitFlashSeconds));
-                    }
-                }
-            }
-
-            // Show bar while the turret is alive on the ghost, or while we still punch a
-            // destroy-to-empty transition (bar drains to 0 before the mesh hides).
-            bool show = showFromGhost || (optimisticDestroyed && maxHealth > 0.01f);
+            // Show bar while the turret is alive on the ghost, or while we still drain a
+            // destroy-to-empty transition (bar empties before the mesh hides).
+            bool show = showFromGhost || (overlayDestroyed && maxHealth > 0.01f);
             if (vis.HealthBarRoot.gameObject.activeSelf != show)
                 vis.HealthBarRoot.gameObject.SetActive(show);
 
@@ -1886,15 +1763,14 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Destroys every pad hub and clears HitRpc optimistic HP (session leave / no proxies).
+        /// Destroys every pad hub (session leave / no proxies). Turret HP lives in
+        /// <see cref="PlanetaryDefenseClientHealthSync"/> and is cleared with the session.
         /// </summary>
         void ClearAllGroups()
         {
             foreach (var kv in _groupsByPlanetId)
                 DestroyGroup(kv.Value);
             _groupsByPlanetId.Clear();
-            // [TITAN-ORBIT] Drop stale punches so a new join cannot flash old planet ids.
-            _optimisticHpBySlot.Clear();
         }
 
         static void DestroyGroup(PlanetDefenseGroup group)

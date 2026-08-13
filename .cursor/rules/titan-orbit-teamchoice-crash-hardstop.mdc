@@ -1,8 +1,6 @@
 ---
-description: TeamChoice / join Crash!!! hard-stop for seed-hydrate era
-alwaysApply: true
+alwaysApply: false
 ---
-
 # TeamChoice / join Crash!!! — HARD STOP (seed-hydrate)
 
 **Architecture (2026-08):** Clients hydrate asteroids from the match seed (`MapSessionMetaRpc` + `ClientMapHydrateSystem`). Ghost relevancy streams Ship / Gem / PeopleTransport / Planet only — **not** asteroids. Do not reintroduce full-map asteroid GhostSpawn Instantiates floods.

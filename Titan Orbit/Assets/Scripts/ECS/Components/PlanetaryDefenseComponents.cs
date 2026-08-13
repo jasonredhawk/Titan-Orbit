@@ -38,7 +38,12 @@ namespace TitanOrbit.ECS
         /// <summary>Gems contributed toward the next activation or upgrade rung.</summary>
         [GhostField(Quantization = 100)] public float BuildProgress;
 
-        /// <summary>Current HP when <see cref="TurretLevel"/> &gt; 0; ignored when empty.</summary>
+        /// <summary>
+        /// Current HP when <see cref="TurretLevel"/> &gt; 0; ignored when empty.
+        /// Server combat writes this. On clients, live HP is
+        /// <see cref="PlanetaryDefenseClientHealthSync"/> (HitRpc); this ghost field is
+        /// layout seed / regen, not the combat channel.
+        /// </summary>
         [GhostField(Quantization = 100)] public float Health;
 
         /// <summary>Max HP for the current turret level (mirrors config at last activate/upgrade).</summary>

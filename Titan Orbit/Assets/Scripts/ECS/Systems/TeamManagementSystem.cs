@@ -114,7 +114,7 @@ namespace TitanOrbit.ECS
         /// [NETCODE] Delivers team-pick result to the client.
         /// Local Host applies <see cref="ClientTeamFlowState"/> directly (no ClientWorld entity inject —
         /// cross-world CreateEntity was ignored by the client RPC drain). Dedicated uses SendRpc
-        /// and includes the home-ring spawn pose so the client's predicted hull Instantiates there.
+        /// and includes the home-ring spawn pose for diagnostics / UI (client does not Instantiates a hull).
         /// </summary>
         /// <param name="ecb">Playback buffer for the RPC entity (dedicated path).</param>
         /// <param name="connection">Client connection that sent RequestTeam.</param>
@@ -140,9 +140,8 @@ namespace TitanOrbit.ECS
                 return;
 
             // --- Dedicated / remote: normal server → client RPC ---
-            // [TITAN-ORBIT] Spawn pose must be on this RPC. Local Host already forwards it via
-            // ClientPredictedShipSpawnRequest; dedicated used to omit it, so the client picked a
-            // different random ring angle and the hull jumped when the server snapshot arrived.
+            // [TITAN-ORBIT] Spawn pose stays on this RPC for logs / late diagnostics. The client
+            // does not Instantiates a predicted hull — GhostReceive delivers this server ship.
             var resultEntity = ecb.CreateEntity();
             ecb.AddComponent(resultEntity, new TeamChoiceResultRpc
             {
@@ -191,22 +190,15 @@ namespace TitanOrbit.ECS
                 ClientJoinSettleCache.ArmPostTeamChoiceHold();
                 ClientTeamFlowState.RequestDeferredConfirmTeamChoice();
 
-                // --- Queue ClientWorld predicted Instantiates (GhostReceive often never sees hull) ---
-                // [TITAN-ORBIT] Editor.log: server ghostId assigned, InstantiatesSession stuck at
-                // map meta-N, placeholders=0. Client predicted spawn unblocks presentation; NetCode
-                // classification adopts the server ghost when its snapshot arrives.
-                ClientPredictedShipSpawnRequest.Request(networkId, team, spawnPos, hasSpawnPos);
-
-                // --- Drain on ClientWorld immediately (do not wait for next ClientSimulation) ---
-                // [TITAN-ORBIT] ServerWorld applies this after ClientWorld already ticked this frame.
-                // Leaving Pending until next frame left Join Team hung when the player waited on
-                // the team screen (Editor.log: predPending=True for 240 frames, no Instantiates).
-                if (client.IsCreated)
-                    ClientPredictedShipSpawnRequest.TryDrainPending(client.EntityManager);
+                // --- No client predicted Instantiates ---
+                // [TITAN-ORBIT] GhostReceive delivers this server hull. Instantiating a fake
+                // OwnerPredicted ship on ClientWorld produced a visible hull that could not move.
+                // GhostConnectionPosition + CommandTarget are set in TrySpawnPlayerShip so the
+                // first snapshot is not starved at the origin.
 
                 Debug.Log(
                     $"[TeamManagementSystem] Local Host TeamChoiceResult applied to ClientTeamFlowState " +
-                    $"(networkId={networkId} team={team}). Confirm deferred until Instantiates hold expires.");
+                    $"(networkId={networkId} team={team}). Confirm waits for GhostReceive owner ship.");
             }
             else
             {

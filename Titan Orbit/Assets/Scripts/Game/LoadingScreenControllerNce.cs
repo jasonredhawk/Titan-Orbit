@@ -197,22 +197,13 @@ namespace TitanOrbit.Game
                 netTotal > 0
                     ? netDone + " / " + netTotal
                     : string.Empty;
-            ApplyBar(_networkBar, networkProgress, netCounts, stuckHint: null);
 
-            // --- Bar 2: hybrid planet/asteroid GameObject Instantiates ---
-            float proxyProgress = 0f;
-            EcsGameBridge.TryGetProxyJoinLoadProgress(out proxyProgress);
-            string goCounts =
-                EcsGameBridge.TryGetProxyJoinLoadStepCounts(out int goDone, out int goTotal) &&
-                goTotal > 0
-                    ? goDone + " / " + goTotal
-                    : string.Empty;
-
-            // --- Stuck hint after a few seconds (Settling vs Instantiates vs drain) ---
-            // [TITAN-ORBIT] 314/315 with Settling ON looked like a hang with no explanation.
+            // --- Stuck hint after a few seconds (recipe miss vs Instantiates vs drain) ---
+            // [TITAN-ORBIT] 8% with no 0/N is the pre-recipe crawl — say so on the World bar.
             string mapHint = null;
             bool proxyReady = EcsGameBridge.IsMapProxyCountReady(out _, out _, out _);
-            if (proxyReady || proxyProgress >= 0.99f)
+            bool networkLooksStuck = string.IsNullOrEmpty(netCounts) && networkProgress < 0.99f;
+            if (proxyReady || !networkLooksStuck)
             {
                 _stuckWatchSince = -1f;
             }
@@ -224,6 +215,17 @@ namespace TitanOrbit.Game
                 if (Time.realtimeSinceStartup - _stuckWatchSince >= StuckHintAfterSeconds)
                     mapHint = EcsGameBridge.GetMapLoadStuckHint();
             }
+
+            ApplyBar(_networkBar, networkProgress, netCounts, networkLooksStuck ? mapHint : null);
+
+            // --- Bar 2: hybrid planet/asteroid GameObject Instantiates ---
+            float proxyProgress = 0f;
+            EcsGameBridge.TryGetProxyJoinLoadProgress(out proxyProgress);
+            string goCounts =
+                EcsGameBridge.TryGetProxyJoinLoadStepCounts(out int goDone, out int goTotal) &&
+                goTotal > 0
+                    ? goDone + " / " + goTotal
+                    : string.Empty;
 
             ApplyBar(_proxyBar, proxyProgress, goCounts, mapHint);
         }

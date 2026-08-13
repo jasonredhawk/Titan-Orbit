@@ -17,11 +17,12 @@ namespace TitanOrbit.Game
     /// Deploy beat: thin line shoots wing mid-center→gem, cone mouth opens at 90% of gem diameter.
     /// Pull itself starts on lock (server); this animation is cosmetic. Start is pointy on the
     /// wing body center; gem end stays rounded.
-    /// Drawn length is hard-capped to the wing search radius so a coasting burst gem cannot
-    /// stretch a beam off-screen after it has left reach.
+    /// Drawn length is hard-capped to the wing search radius so a wrap-tile or stale proxy
+    /// cannot stretch a beam off-screen.
     /// Pairs with <see cref="GemTractorBeamClientLogic"/>, <see cref="GemTractorBeamDeployTracker"/>,
     /// and <see cref="GemTractorBeamVisibilityTracker"/>. Cosmetic only — pull is
-    /// <c>GemTractorBeamSystem</c> on the server.
+    /// <c>GemTractorBeamSystem</c> on the server. Drawn pairs come from ghosted
+    /// <see cref="GemMotionState"/> locks, never a client-invented assignment.
     /// </summary>
     [ExecuteAlways]
     public class GemTractorBeamVisual : ImmediateModeShapeDrawer
@@ -177,7 +178,7 @@ namespace TitanOrbit.Game
                         ? em.GetBuffer<ShipWingTractorBeamElement>(ships[si])
                         : default;
 
-                    // One draw per wing↔gem pair (sticky primary + spare assists on the same gem).
+                    // One draw per server lock (primary wing from ghost TractorWingIndex).
                     if (!GemTractorBeamClientLogic.TryGetShipBeamPairs(ships[si].Index, out var beamPairs))
                         continue;
 
@@ -186,12 +187,18 @@ namespace TitanOrbit.Game
                         var pair = beamPairs[pi];
                         if (!TryFindGemSnapshot(pair.GemId, out var gem))
                             continue;
+                        if (!GemTractorBeamClientLogic.HasVisibleGemCrystal(gem.Entity))
+                            continue;
+                        if (GemTractorBeamClientLogic.IsInsideCargoAbsorbZone(
+                                shipTransforms[si], wings, gem.Transform, gem.State, mapW, mapH))
+                            continue;
                         if (!GemTractorBeamClientLogic.IsWithinMagneticPullRange(
                                 em, ships[si], shipStates[si], shipTransforms[si], wings,
                                 gem.Entity, gem.Transform, mapW, mapH))
                             continue;
 
-                        float beamVisibility = GemTractorBeamVisibilityTracker.GetVisibility(ships[si].Index, gem.Entity.Index);
+                        float beamVisibility = GemTractorBeamVisibilityTracker.GetVisibility(
+                            ships[si].Index, gem.GhostId);
                         if (beamVisibility <= 0.001f)
                             continue;
 
@@ -208,7 +215,7 @@ namespace TitanOrbit.Game
                             gem.Entity, gem.Transform.Position, beamOriginLogical, shipDisplay, mapW, mapH);
 
                         // --- Hard cap: never draw a beam longer than this wing's search radius ---
-                        // [TITAN-ORBIT] Assignment uses presented logical pose, but the Shapes
+                        // [TITAN-ORBIT] Lock pose is interpolated LocalTransform, but Shapes
                         // endpoints are wing-mesh + gem-GO display. A wrap-tile or stale pool GO
                         // can still produce a line that stretches off-screen. Skip that draw.
                         float searchRadius = ResolvePairSearchRadius(
@@ -223,8 +230,8 @@ namespace TitanOrbit.Game
                         shipDisplay.y = beamY;
                         gemDisplay.y = beamY;
 
-                        float extension = GemTractorBeamDeployTracker.GetExtensionProgress(ships[si].Index, gem.Entity.Index);
-                        float widthExpand = GemTractorBeamDeployTracker.GetWidthExpandProgress(ships[si].Index, gem.Entity.Index);
+                        float extension = GemTractorBeamDeployTracker.GetExtensionProgress(ships[si].Index, gem.GhostId);
+                        float widthExpand = GemTractorBeamDeployTracker.GetWidthExpandProgress(ships[si].Index, gem.GhostId);
                         float extensionEased = Mathf.SmoothStep(0f, 1f, extension);
                         Vector3 tipDisplay = Vector3.Lerp(shipDisplay, gemDisplay, extensionEased);
 
@@ -233,7 +240,7 @@ namespace TitanOrbit.Game
 
                         if (extensionEased < 1f - 0.0001f)
                         {
-                            float extendVis = GemTractorBeamDeployTracker.IsInDeployAnimation(ships[si].Index, gem.Entity.Index)
+                            float extendVis = GemTractorBeamDeployTracker.IsInDeployAnimation(ships[si].Index, gem.GhostId)
                                 ? 1f
                                 : Mathf.Max(beamVisibility, 0.85f);
                             Color extendColor = new Color(teamBase.r, teamBase.g, teamBase.b, alphaExtendLine * extendVis);
@@ -262,12 +269,14 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        /// <summary>Finds a gem snapshot by entity index from the current <see cref="GemScratch"/> gather.</summary>
-        static bool TryFindGemSnapshot(int gemIndex, out GemTractorBeamClientLogic.GemProxySnapshot gem)
+        /// <summary>
+        /// Finds a gem snapshot by <see cref="GhostInstance.ghostId"/> from the current gather.
+        /// </summary>
+        static bool TryFindGemSnapshot(int gemGhostId, out GemTractorBeamClientLogic.GemProxySnapshot gem)
         {
             for (int i = 0; i < GemScratch.Count; i++)
             {
-                if (GemScratch[i].Entity.Index != gemIndex)
+                if (GemScratch[i].GhostId != gemGhostId)
                     continue;
                 gem = GemScratch[i];
                 return true;
@@ -497,10 +506,12 @@ namespace TitanOrbit.Game
             float mapH)
         {
             // --- Path A: hybrid GO already in display space (GemClientMotionApplier) ---
+            // Skip inactive pooled shells — their transform is at the pool root, not the gem.
             var visualizer = EcsWorldVisualizer.Active;
             if (visualizer != null &&
                 visualizer.TryGetProxy(gemEntity, out GameObject proxy) &&
-                proxy != null)
+                proxy != null &&
+                proxy.activeInHierarchy)
             {
                 Vector3 proxyPos = proxy.transform.position;
                 // Keep tip on the same map tile as the wing so a wrap copy of the mesh
@@ -602,7 +613,12 @@ namespace TitanOrbit.Game
             // Floor so tiny gems still read as a cone, not a hairline.
             raw = Mathf.Max(0.12f, raw);
 
+            // [NETCODE] Prefer ghostId so a recycled Entity.Index cannot inherit the old gem's width.
             int key = gemEntity.Index;
+            var world = EcsGameBridge.GetVisualizationWorld();
+            if (world != null && world.IsCreated &&
+                GemTractorBeamClientLogic.TryGetGemGhostId(world.EntityManager, gemEntity, out int ghostId))
+                key = ghostId;
             if (!SmoothedGemDiameterById.TryGetValue(key, out float smoothed))
             {
                 SmoothedGemDiameterById[key] = raw;

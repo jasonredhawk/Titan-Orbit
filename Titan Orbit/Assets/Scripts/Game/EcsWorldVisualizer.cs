@@ -981,7 +981,7 @@ namespace TitanOrbit.Game
                 alive.Add(entity);
 
                 // --- World-body / gem pose ---
-                // Gems: GemClientMotionApplier owns position from ghosted LocalTransform + GemKinematics.
+                // Gems: GemClientMotionApplier copies interpolated LocalTransform (no second sim).
                 // Other bodies: snap to toroidal display of LocalTransform.
                 if (isGem)
                 {
@@ -1458,9 +1458,8 @@ namespace TitanOrbit.Game
                 Vector3 displayPos = GetVisualPosition(entity, lt.Position);
 
                 // --- Network gem proxy from Instantiates ghost only ---
-                // [TITAN-ORBIT] No ClientGemBurstPresenter invent. Count/pose/velocity come from
-                // server gem ghosts; GemClientMotionApplier presents ghosted LocalTransform +
-                // GemKinematics between snapshots.
+                // [TITAN-ORBIT] No ClientGemBurstPresenter invent. Pose comes from the
+                // interpolated gem ghost; GemClientMotionApplier copies LocalTransform.
                 if (!GemVisualApplier.TryCreateGemVisual(
                         gemVisualPrefab, state.Value, state.IsBonusGem, out go))
                 {
@@ -1488,13 +1487,6 @@ namespace TitanOrbit.Game
                 if (motion == null)
                     motion = go.AddComponent<GemClientMotionApplier>();
                 motion.Bind(entity, lt.Position);
-
-                // Seed from server kinematics so the GO coasts immediately if LT snapshots lag.
-                if (em.HasComponent<GemKinematics>(entity))
-                {
-                    var kin = em.GetComponentData<GemKinematics>(entity);
-                    motion.SeedVelocity(kin.Velocity, kin.AngularVelocity);
-                }
 
                 return true;
             }
@@ -3029,11 +3021,6 @@ namespace TitanOrbit.Game
                 if (motion == null)
                     motion = go.AddComponent<GemClientMotionApplier>();
                 motion.Bind(entity, lt.Position);
-                if (em.HasComponent<GemKinematics>(entity))
-                {
-                    var kin = em.GetComponentData<GemKinematics>(entity);
-                    motion.SeedVelocity(kin.Velocity, kin.AngularVelocity);
-                }
             }
         }
 

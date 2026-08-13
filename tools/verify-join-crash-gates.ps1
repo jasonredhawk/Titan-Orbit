@@ -124,6 +124,7 @@ $exemptBaseNames = @(
     'BulletHitRpcClientSystem',
     'BulletSpawnRpcClientSystem',
     'AsteroidRespawnRpcClientSystem',
+    'PlayerNameAnnounceClientSystem',
     'ClientLocalMapBodySpawn',
     'ClientMapHydrateSystem',
     'MapLayoutBlueprint',

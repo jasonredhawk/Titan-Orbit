@@ -7,7 +7,8 @@ namespace TitanOrbit.Simulation
     /// Hull absorbs damage first. Death still requires both hull and carried gems depleted —
     /// not hull alone — but combat closes the stuck-alive loop: when hull hits or stays at 0 on
     /// the bullet path, remaining cargo dumps in full on that hit (no fractional drip).
-    /// Tractor/magnet pickup is blocked separately when Health &lt;= <see cref="DeathThreshold"/>.
+    /// A living 0-HP ship (cargo still aboard, <c>IsDead</c> false) may still tractor and scoop
+    /// gems — that is the dual-resource contract. Pickup is blocked only when <c>IsDead</c>.
     /// Pure math (no Entities / spawning); callers spawn world gems from <see cref="Result.GemsToExpel"/>.
     /// </summary>
     public static class ShipDamageLogic

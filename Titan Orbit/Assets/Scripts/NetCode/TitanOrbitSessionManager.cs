@@ -2386,10 +2386,16 @@ namespace TitanOrbit.NetCode
             ClientTeamFlowState.NotifyTeamPickRequested(team);
 
             // --- Drop stale local-ship seed from a prior Play / failed TeamChoice ---
-            // [TITAN-ORBIT] Domain Reload disabled: SeededShip can stay non-null while destroyed,
-            // which blocked ClientPredictedShipSpawnRequest and bounced UI back to Join Team.
-            LocalShipEntitySeed.Clear();
-            ClientPredictedShipSpawnRequest.ResetForTeamPick();
+            // [TITAN-ORBIT] Domain Reload disabled: SeededShip can stay non-null while destroyed.
+            // Watchdog retries call RequestTeam again — do not Clear a live hull that already
+            // Instantiated via GhostReceive (late Join Team click: seed exists, Result still in flight).
+            bool keepLiveHull = LocalShipEntitySeed.HasLiveOwnedShipSeed(world.EntityManager) &&
+                                ClientTeamFlowState.LastRequestedTeam == team;
+            if (!keepLiveHull)
+            {
+                LocalShipEntitySeed.Clear();
+                ClientPredictedShipSpawnRequest.ResetForTeamPick();
+            }
 
             // --- Pre-arm ship Instantiates hold before the server can reply ---
             // [TITAN-ORBIT] Player.log 2026-07-31: TeamChoiceResult → Crash!!! the same frame.

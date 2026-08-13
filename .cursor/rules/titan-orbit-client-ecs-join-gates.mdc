@@ -1,9 +1,6 @@
 ---
-description: Before any client ECS/Game/UI edit — mandatory join/TeamChoice gates (seed-hydrate)
-globs: Titan Orbit/Assets/Scripts/{ECS,Game,UI,Camera,NetCode}/**/*.cs
 alwaysApply: false
 ---
-
 # Client ECS edit → join / TeamChoice gate (MANDATORY)
 
 Windows client can still die with native `Crash!!!` after **Join Team** when ship gathers run during Instantiates. Asteroids are seed-hydrated (not GhostSpawn Instantiates); do not put them back in ghost relevancy.

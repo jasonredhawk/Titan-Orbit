@@ -395,8 +395,8 @@ namespace TitanOrbit.ECS
     /// No tractor lock is required — flying a wing tip or the hull over a gem is enough.
     /// Radii come from <see cref="TractorBeamSettings"/> (Wing Collect Radius / Hull Pickup Range).
     /// Runs after <see cref="GemMotionSystem"/> so same-tick tractor pull can land in the zone.
-    /// Skips ships with Health &lt;= <see cref="ShipDamageLogic.DeathThreshold"/> so a 0-HP hull
-    /// cannot magnet-sip cargo and stay undead under dual-resource death rules.
+    /// Skips only <c>IsDead</c> / team-select ships. A living 0-HP hull with cargo still aboard
+    /// may scoop — dual-resource death is hull AND gems empty, not hull alone.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -474,11 +474,10 @@ namespace TitanOrbit.ECS
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
-                // [TITAN-ORBIT] Mirror GemTractorBeamSystem — 0-HP hull cannot magnet-sip gems
-                // that would keep dual-resource death from firing.
-                if (shipState.ValueRO.IsDead ||
-                    shipState.ValueRO.Health <= ShipDamageLogic.DeathThreshold ||
-                    shipState.ValueRO.AwaitingTeamSelection)
+                // [TITAN-ORBIT] Dual-resource: only a dead ship is barred from scoop.
+                // 0-HP + remaining cargo is still alive (regen can restore hull). Blocking
+                // pickup here left grinding ships staring at gems they could never consume.
+                if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
                     continue;
 
                 float capacityLeft = shipState.ValueRO.GemCapacity - shipState.ValueRO.CurrentGems;

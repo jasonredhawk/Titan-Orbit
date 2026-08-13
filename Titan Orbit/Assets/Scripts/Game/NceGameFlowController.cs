@@ -101,7 +101,7 @@ namespace TitanOrbit.Game
         int _teamPickRetryCount;
 
         /// <summary>Seconds to wait for TeamChoiceResult before clearing spawn-wait and retrying.</summary>
-        const float TeamPickResultTimeoutSeconds = 3f;
+        const float TeamPickResultTimeoutSeconds = 8f;
 
         /// <summary>Max automatic retries after a TeamChoiceResult timeout (then re-enable manual pick).</summary>
         const int TeamPickMaxAutoRetries = 2;
@@ -615,8 +615,8 @@ namespace TitanOrbit.Game
         /// [TITAN-ORBIT] If Join Team was clicked but <see cref="TeamChoiceResultRpc"/> never arrives,
         /// clear the in-flight latch and retry (then re-enable buttons). Prevents soft-lock on
         /// "Spawning your ship..." when RequestTeam is lost under Local Host IPC load.
-        /// Does <b>not</b> fire while Confirm is deferred through the post–TeamChoice Instantiates
-        /// hold — that is a successful result waiting for Crash!!!-safe unlock, not a lost RPC.
+        /// Does <b>not</b> fire while Confirm is deferred or a live owned-ship seed already exists —
+        /// those are in-flight Join Team success (waiting on GhostReceive), not a lost RPC.
         /// </summary>
         /// <param name="teamPickInFlight">True while pick requested and not yet confirmed.</param>
         /// <param name="teamConfirmed">True after deferred Confirm flushed.</param>
@@ -626,9 +626,16 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Deferred Confirm keeps TeamChoiceConfirmed false for ~PostTeamChoiceHold
             // frames after a successful TeamChoiceResult. Treating that as a lost RPC would
             // ClearTeamPickRequest + re-send RequestTeam while the ship is Instantiating.
+            // Also wait while GhostReceive already seeded the owner hull — late Join Team clicks
+            // used to look like a lost RPC while the snapshot was still in flight.
+            World clientWorld = EcsGameBridge.ClientWorld;
+            bool hasLiveSeed = clientWorld != null &&
+                               clientWorld.IsCreated &&
+                               LocalShipEntitySeed.HasLiveOwnedShipSeed(clientWorld.EntityManager);
             if (teamConfirmed ||
                 !teamPickInFlight ||
-                ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending)
+                ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending ||
+                hasLiveSeed)
             {
                 _teamPickRequestedAt = -1f;
                 if (teamConfirmed || !IsInGameFlow())
@@ -1106,14 +1113,18 @@ namespace TitanOrbit.Game
                 CleanupJoinTeamScreenUi();
 
             // --- Loading Map owns the screen ---
-            // [TITAN-ORBIT] Show loading while Relay connect is in flight, while seed-hydrate
-            // builds asteroids (pre-InGame), or while post-InGame map catch-up runs.
+            // [TITAN-ORBIT] Show loading while Relay connect is in flight, while waiting for
+            // the map recipe (8% crawl), while seed-hydrate builds asteroids (pre-InGame),
+            // or while post-InGame map catch-up runs.
+            bool waitingForRecipe = EcsGameBridge.HasClientNetworkId() &&
+                                    !ClientMapHydrateCache.HasFullRecipe;
             bool seedHydrating = ClientMapHydrateCache.HasFullRecipe && !ClientMapHydrateCache.IsComplete;
             bool awaitingGoInGame = ClientMapHydrateCache.HasFullRecipe &&
                                     ClientMapHydrateCache.IsComplete &&
                                     !connected;
             bool showLoadingOverlay = showLoading ||
                                       (connectingDedicated && !connected) ||
+                                      waitingForRecipe ||
                                       seedHydrating ||
                                       awaitingGoInGame;
             if (showLoadingOverlay && _joinBrowser != null && _joinBrowser.IsVisible)

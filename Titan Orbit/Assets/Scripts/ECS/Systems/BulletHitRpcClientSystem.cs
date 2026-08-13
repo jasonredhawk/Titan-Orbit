@@ -12,6 +12,9 @@ namespace TitanOrbit.ECS
     /// [TITAN-ORBIT] Also applies <see cref="BulletHitRpc.AsteroidHealthAfter"/> onto seed-hydrated
     /// local asteroids (not ghost-relevant). Sequence 0 (ram/grind) uses body-radius matching so
     /// a packed neighbor is not culled instead of the rock the server damaged.
+    /// Planetary-defense remaining HP is applied the same way via
+    /// <see cref="PlanetaryDefenseClientHealthSync"/> — a client store filled from HitRpc,
+    /// not from the planet ghost buffer (layout channel: level, occupancy, MaxHealth).
     /// </para>
     /// World: ClientSimulation. Group: SimulationSystemGroup.
     /// </summary>
@@ -68,6 +71,18 @@ namespace TitanOrbit.ECS
                         AsteroidHealthAfter = r.AsteroidHealthAfter,
                         Sequence = r.Sequence,
                     });
+                }
+
+                // --- Turret combat HP (HitRpc channel, not planet ghost Health) ---
+                // [TITAN-ORBIT] Same phase as asteroid writes. Broadcast RPC — every client
+                // applies remaining HP so the bar stays injured after you stop firing.
+                if (r.PlanetaryDefensePlanetId > 0)
+                {
+                    PlanetaryDefenseClientHealthSync.ApplyHitRpc(
+                        em,
+                        r.PlanetaryDefensePlanetId,
+                        r.PlanetaryDefenseSlotIndex,
+                        r.PlanetaryDefenseHealthAfter);
                 }
 
                 destroyEcb.DestroyEntity(entity);
