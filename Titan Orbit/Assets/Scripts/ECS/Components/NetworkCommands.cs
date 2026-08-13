@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using Unity.Collections;
+using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
 
@@ -523,4 +524,60 @@ namespace TitanOrbit.ECS
         /// <summary>Designer Size for bounce mass.</summary>
         public float Size;
     }
+
+    /// <summary>
+    /// [NETCODE] Server → joining client: which seed-layout asteroid slots are currently alive.
+    /// Bit i = 1 means the rock at blueprint asteroid index i still exists (or has respawned).
+    /// Late joiners seed-hydrate t=0 then SoftDestroy dead slots. 16 ulongs cover 1024 rocks.
+    /// </summary>
+    public struct AsteroidOccupancyRpc : IRpcCommand
+    {
+        /// <summary>Match seed — ignore if it does not match the latched recipe.</summary>
+        public uint MatchSeed;
+
+        /// <summary>How many asteroid slots the bitmask describes (bits beyond this are unused).</summary>
+        public int SlotCount;
+
+        /// <summary>
+        /// Occupancy words: slot i is alive when bit (i % 64) in word (i / 64) is 1.
+        /// 16 ulongs = 1024 slots. IRpcCommand cannot carry a NativeArray, so the mask is flattened.
+        /// </summary>
+        public ulong Bits0;
+        /// <summary>Occupancy word 1 (slots 64–127). See <see cref="Bits0"/>.</summary>
+        public ulong Bits1;
+        /// <summary>Occupancy word 2 (slots 128–191). See <see cref="Bits0"/>.</summary>
+        public ulong Bits2;
+        /// <summary>Occupancy word 3 (slots 192–255). See <see cref="Bits0"/>.</summary>
+        public ulong Bits3;
+        /// <summary>Occupancy word 4 (slots 256–319). See <see cref="Bits0"/>.</summary>
+        public ulong Bits4;
+        /// <summary>Occupancy word 5 (slots 320–383). See <see cref="Bits0"/>.</summary>
+        public ulong Bits5;
+        /// <summary>Occupancy word 6 (slots 384–447). See <see cref="Bits0"/>.</summary>
+        public ulong Bits6;
+        /// <summary>Occupancy word 7 (slots 448–511). See <see cref="Bits0"/>.</summary>
+        public ulong Bits7;
+        /// <summary>Occupancy word 8 (slots 512–575). See <see cref="Bits0"/>.</summary>
+        public ulong Bits8;
+        /// <summary>Occupancy word 9 (slots 576–639). See <see cref="Bits0"/>.</summary>
+        public ulong Bits9;
+        /// <summary>Occupancy word 10 (slots 640–703). See <see cref="Bits0"/>.</summary>
+        public ulong Bits10;
+        /// <summary>Occupancy word 11 (slots 704–767). See <see cref="Bits0"/>.</summary>
+        public ulong Bits11;
+        /// <summary>Occupancy word 12 (slots 768–831). See <see cref="Bits0"/>.</summary>
+        public ulong Bits12;
+        /// <summary>Occupancy word 13 (slots 832–895). See <see cref="Bits0"/>.</summary>
+        public ulong Bits13;
+        /// <summary>Occupancy word 14 (slots 896–959). See <see cref="Bits0"/>.</summary>
+        public ulong Bits14;
+        /// <summary>Occupancy word 15 (slots 960–1023). See <see cref="Bits0"/>.</summary>
+        public ulong Bits15;
+    }
+
+    /// <summary>Server connection tag: occupancy RPC already queued for this joiner.</summary>
+    public struct AsteroidOccupancySent : IComponentData { }
+
+    /// <summary>Server connection tag: in-flight people-transport SpawnRpcs dumped once.</summary>
+    public struct PeopleTransportCatchUpSent : IComponentData { }
 }

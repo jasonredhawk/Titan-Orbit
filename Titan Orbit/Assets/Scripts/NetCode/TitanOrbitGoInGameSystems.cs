@@ -17,7 +17,8 @@ namespace TitanOrbit.NetCode
     /// [TITAN-ORBIT] Solid join: do <b>not</b> add <see cref="NetworkStreamInGame"/> until
     /// <see cref="ClientMapHydrateCache.IsComplete"/> (local seed map built) and the ghost
     /// collection is present. Then send <see cref="GoInGameRequest"/>. This matches Unity's
-    /// lobby→game pattern: hydrate first, then receive dynamic ghosts (ships/gems).
+    /// lobby→game pattern: hydrate first, occupancy catch-up, then GhostSpawn Instantiates of
+    /// live ships/planets/gems.
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]

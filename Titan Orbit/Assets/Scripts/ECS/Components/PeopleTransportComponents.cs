@@ -11,8 +11,9 @@ namespace TitanOrbit.ECS
     public struct PeopleTransportTag : IComponentData { }
 
     /// <summary>
-    /// Server-only in-flight people transport (combat + delivery). Not a ghost — clients mirror
-    /// pose via <see cref="PeopleTransportPoseRpc"/> so Windows GhostSpawn is never flooded.
+    /// Server-only in-flight people transport (combat + delivery). Not a ghost — clients Instantiates
+    /// VFX from <see cref="PeopleTransportSpawnRpc"/> (including late-join catch-up) and follow
+    /// <see cref="PeopleTransportPoseRpc"/>.
     /// Bullet hits use this entity’s <see cref="Unity.Transforms.LocalTransform"/> on the server.
     /// </summary>
     public struct PeopleTransportState : IComponentData

@@ -254,8 +254,27 @@ namespace TitanOrbit.Game
                     index < 0 || index >= _flights.Count ||
                     _flights[index].Sequence != pose.Sequence)
                 {
-                    // Instantiates lag (1/frame) — keep latest pose until the GO exists.
                     _pendingPoses[pose.Sequence] = pose;
+                    // Late join: SpawnRpc already fired before this client existed. Instantiates
+                    // a capsule from the live pose so the flight is visible.
+                    if (pose.Status == PeopleTransportPoseStatus.Active)
+                    {
+                        PeopleTransportVfxBridge.TryEnqueue(new PeopleTransportVfxBridge.SpawnRequest
+                        {
+                            Sequence = pose.Sequence,
+                            SpawnPosition = pose.Position,
+                            TargetPosition = pose.Position + pose.Velocity,
+                            Velocity = pose.Velocity,
+                            CruiseSpeed = math.length(pose.Velocity),
+                            Amount = 1f,
+                            TargetShipNetworkId = 0,
+                            SourcePlanetId = 0,
+                            TargetPlanetId = 0,
+                            IsLoad = 0,
+                            Team = 0,
+                        });
+                    }
+
                     continue;
                 }
 

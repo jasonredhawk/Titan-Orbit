@@ -31,6 +31,9 @@ namespace TitanOrbit.Game
                 ByPlanetId.Remove(proxy.PlanetId);
         }
 
+        /// <summary>How many moon visuals are currently registered.</summary>
+        public static int Count => ByPlanetId.Count;
+
         public static bool TryGetMoon(int planetId, out PlanetGemMoonVisualProxy proxy) =>
             ByPlanetId.TryGetValue(planetId, out proxy);
     }

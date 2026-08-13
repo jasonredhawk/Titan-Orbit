@@ -10,6 +10,16 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
+    /// [TITAN-ORBIT] Blueprint asteroid index on a seed-hydrated local rock.
+    /// Occupancy catch-up SoftDestroys slots whose live bit is 0.
+    /// </summary>
+    public struct ClientAsteroidLayoutSlot : IComponentData
+    {
+        /// <summary>Index among EntityKind==3 bodies in <see cref="MapLayoutBlueprint"/> order.</summary>
+        public int Slot;
+    }
+
+    /// <summary>
     /// [TITAN-ORBIT] Tag on client-only map bodies created from the match seed.
     /// These are not NetCode ghosts — layout comes from <see cref="MapLayoutBlueprint"/>,
     /// mutable state arrives via sparse RPCs (ownership, HitRpc HP, etc.).
@@ -155,7 +165,12 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>Spawns one local asteroid from a blueprint body.</summary>
-        public static Entity SpawnAsteroid(EntityManager em, Entity asteroidPrefab, in MapLayoutBlueprint.Body body)
+        /// <param name="layoutSlot">Blueprint asteroid index for occupancy catch-up.</param>
+        public static Entity SpawnAsteroid(
+            EntityManager em,
+            Entity asteroidPrefab,
+            in MapLayoutBlueprint.Body body,
+            int layoutSlot)
         {
             if (asteroidPrefab == Entity.Null)
                 return Entity.Null;
@@ -174,8 +189,13 @@ namespace TitanOrbit.ECS
 
             StripGhostNetworking(em, e);
             TagSeedHydratedGroup(em, e);
-            // [TITAN-ORBIT] Combat sync / HitRpc matching uses this registry before the hybrid GO
-            // drain finishes — register as soon as the local ECS body exists.
+            if (layoutSlot >= 0)
+            {
+                if (!em.HasComponent<ClientAsteroidLayoutSlot>(e))
+                    em.AddComponentData(e, new ClientAsteroidLayoutSlot { Slot = layoutSlot });
+                else
+                    em.SetComponentData(e, new ClientAsteroidLayoutSlot { Slot = layoutSlot });
+            }
             AsteroidClientEntityRegistry.NotifyInstantiated(e);
             QueueHybridVisual(em, e);
             return e;

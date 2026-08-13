@@ -319,7 +319,7 @@ namespace TitanOrbit.ECS
                 MaxHealth = maxHealth,
                 Size = size,
             };
-            Entity spawned = ClientLocalMapBodySpawn.SpawnAsteroid(em, asteroidPrefab, body);
+            Entity spawned = ClientLocalMapBodySpawn.SpawnAsteroid(em, asteroidPrefab, body, layoutSlot: -1);
             return spawned != Entity.Null;
         }
 

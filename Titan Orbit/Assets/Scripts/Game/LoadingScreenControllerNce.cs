@@ -12,10 +12,9 @@ namespace TitanOrbit.Game
     /// the top/bottom edges): HOW TO PLAY → five instruction cards → BUILDING GALAXY →
     /// two compact progress bars (counts + % drawn inside each bar).
     /// <para>
-    /// Bar 1 — <see cref="EcsGameBridge.TryGetNetworkJoinLoadProgress"/>: seed-hydrate ECS
-    /// bodies + short InGame ghost catch-up.
-    /// Bar 2 — <see cref="EcsGameBridge.TryGetProxyJoinLoadProgress"/>: hybrid planet/asteroid
-    /// GameObject Instantiates vs server meta N. Join Team stays hidden until both complete.
+    /// Bar 1 — seed-hydrate + occupancy + GhostCount Instantiates (JoinWorldReady).
+    /// Bar 2 — hybrid planet/asteroid GameObject Instantiates vs server meta N.
+    /// Join Team stays hidden until JoinWorldReadyCache.IsComplete.
     /// </para>
     /// <para>
     /// The instruction strip matches the five-step guide from <c>InstructionScreenUI</c>.
@@ -195,9 +194,11 @@ namespace TitanOrbit.Game
             EcsGameBridge.TryGetNetworkJoinLoadProgress(out networkProgress);
             string netCounts =
                 EcsGameBridge.TryGetNetworkJoinLoadStepCounts(out int netDone, out int netTotal) &&
-                netTotal > 0
+                netTotal > 0 && !ClientMapHydrateCache.IsComplete
                     ? netDone + " / " + netTotal
-                    : ClientMapHydrateCache.GetWorldBarStatusLabel();
+                    : ClientMapHydrateCache.IsComplete
+                        ? JoinWorldReadyCache.GetStatusLabel()
+                        : ClientMapHydrateCache.GetWorldBarStatusLabel();
 
             // --- Stuck hint after a few seconds (recipe / prefabs vs Instantiates drain) ---
             // [TITAN-ORBIT] Empty World fill with "Waiting for map recipe" is idle, not fake crawl.

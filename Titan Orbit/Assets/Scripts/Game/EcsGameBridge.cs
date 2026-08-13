@@ -967,31 +967,22 @@ namespace TitanOrbit.Game
         /// </summary>
         static bool EvaluateMapLoadingComplete()
         {
-            // --- Seed-hydrate path (preferred) ---
-            // [TITAN-ORBIT] Join Team needs three layers:
-            // 1) local asteroid hydrate complete
-            // 2) short InGame settle / dynamic ghost catch-up
-            // 3) hybrid planet+asteroid GameObject proxies near meta N
-            // Without (3), the first bar finished while rocks were still invisible and Join Team
-            // raced map Instantiates (late clicks bounced back to team select).
+            ClientJoinSettleCache.SetMapProxyBuildReady(
+                IsMapProxyCountReady(out _, out _, out _));
+            JoinWorldReadyCache.SetMoonProxyCount(PlanetGemMoonVisualRegistry.Count);
+
+            // --- Seed-hydrate live-join contract ---
+            // [TITAN-ORBIT] JoinWorldReadyCache is the only dismiss gate: hydrate, occupancy,
+            // InGame, planet/ship Instantiates, GhostCount, hybrid proxies.
             if (ClientMapHydrateCache.HasFullRecipe)
             {
                 if (!ClientMapHydrateCache.IsComplete)
                     return false;
 
-                // Pre-InGame: hydrate alone is not "Join Team" yet — wait for InGame catch-up.
                 if (!IsNetworkInGame())
                     return false;
 
-                bool settleReady = ClientJoinSettleCache.JoinSettleCompleted ||
-                                   ClientJoinSettleCache.InGameFrames >=
-                                   TitanOrbitClientJoinTransformGateSystem.MinInGameFramesBeforeExit;
-                if (!settleReady)
-                    return false;
-
-                // --- GO map visuals ---
-                // [HYBRID] Same proxy-ready gate as the legacy path — bar 2 tracks this count.
-                return TryGetMapProxyBuildComplete();
+                return JoinWorldReadyCache.IsComplete;
             }
 
             // --- Local host: server must finish generation, then wait for local GO proxies ---
@@ -1029,6 +1020,7 @@ namespace TitanOrbit.Game
             // dismissed Join Team before rocks had GameObjects.
             ClientJoinSettleCache.SetMapProxyBuildReady(
                 IsMapProxyCountReady(out _, out _, out _));
+            JoinWorldReadyCache.SetMoonProxyCount(PlanetGemMoonVisualRegistry.Count);
 
             if (IsMapLoadingComplete())
             {
@@ -1054,7 +1046,7 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Bar 1 (0–1): seed hydrate + short InGame ghost catch-up.
+        /// Bar 1 (0–1): seed hydrate + occupancy + GhostCount Instantiates.
         /// This is the “sync world / build ECS bodies” phase — not hybrid GameObject Instantiates.
         /// </summary>
         public static bool TryGetNetworkJoinLoadProgress(out float progress)
@@ -1084,12 +1076,19 @@ namespace TitanOrbit.Game
                     return true;
                 }
 
-                float catchUp = ClientJoinSettleCache.JoinSettleCompleted
-                    ? 1f
-                    : Mathf.Clamp01(
-                        ClientJoinSettleCache.InGameFrames /
-                        (float)TitanOrbitClientJoinTransformGateSystem.MinInGameFramesBeforeExit);
-                progress = Mathf.Clamp01(0.85f * hydrate + 0.15f * catchUp);
+                if (JoinWorldReadyCache.IsComplete)
+                {
+                    progress = 1f;
+                    return true;
+                }
+
+                float occ = JoinWorldReadyCache.OccupancyApplied ? 1f : 0.5f;
+                float ghosts = JoinWorldReadyCache.GhostCountOnServer > 0
+                    ? Mathf.Clamp01(
+                        (float)JoinWorldReadyCache.GhostCountInstantiated /
+                        JoinWorldReadyCache.GhostCountOnServer)
+                    : 0.5f;
+                progress = Mathf.Clamp01(0.70f * hydrate + 0.15f * occ + 0.15f * ghosts);
                 return true;
             }
 
@@ -1784,8 +1783,7 @@ namespace TitanOrbit.Game
             s_ProxyPlateauSince = -1f;
             // [TITAN-ORBIT] Drop latched MapSessionMetaRpc so the next join does not reuse old totals.
             MapSessionMetaCache.Clear();
-            // JoinSettleCompleted / TransformQuarantine are static — clear on session end so a second
-            // Editor Play does not think Instantiates already finished.
+            JoinWorldReadyCache.Clear();
             ClientJoinSettleCache.Clear();
             LocalShipEntitySeed.Clear();
             // Tear down hybrid GOs only on true leave-session — not a soft count reset.
@@ -1934,6 +1932,7 @@ namespace TitanOrbit.Game
             bool proxyReady = IsMapProxyCountReady(out int proxies, out int total, out int readyAt);
             // --- Mirror for ECS join gate (cannot reference this Game assembly) ---
             ClientJoinSettleCache.SetMapProxyBuildReady(proxyReady);
+            JoinWorldReadyCache.SetMoonProxyCount(PlanetGemMoonVisualRegistry.Count);
 
             if (proxyReady)
             {
@@ -2004,28 +2003,7 @@ namespace TitanOrbit.Game
             if (!ClientMapHydrateCache.IsComplete)
                 return ClientMapHydrateCache.GetWorldBarStatusLabel();
 
-            if (!IsNetworkInGame())
-                return "waiting to enter game";
-
-            // --- Snapshot counts (IsMapProxyCountReady always fills outs) ---
-            IsMapProxyCountReady(out int proxies, out int total, out int readyAt);
-
-            if (total <= 0)
-                return "waiting for map meta";
-
-            if (proxies <= 0 && TitanOrbitJoinLoadCounters.InstantiatesSession <= 0)
-                return "waiting for Instantiates";
-
-            if (proxies <= 0)
-                return "proxies=0 (SpawnRequest drain?)";
-
-            if (proxies < readyAt)
-                return $"proxies {proxies}/{readyAt} (settling={ClientJoinSettleCache.Settling})";
-
-            if (ClientJoinSettleCache.Settling)
-                return "proxy-ready, exiting settle";
-
-            return string.Empty;
+            return JoinWorldReadyCache.GetStatusLabel();
         }
 
         /// <summary>Length of ghost-replicated map layout buffer on the client (0 until finalize).</summary>

@@ -421,7 +421,7 @@ namespace TitanOrbit.ECS
             // Sequence ties server sim entity ↔ client VFX ↔ pose RPCs (not a ghost).
             uint sequence = PeopleTransportVfxBridge.NextSequence();
 
-            // --- Server-only sim entity (no GhostAuthoring / no client Instantiates) ---
+            // --- Server-only sim entity (RPC VFX on clients, not GhostSpawn) ---
             // Bullets / delivery read LocalTransform here. Clients mirror via PeopleTransportPoseRpc.
             Entity transport = ecb.CreateEntity();
             ecb.AddComponent<PeopleTransportTag>(transport);

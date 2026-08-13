@@ -16,8 +16,9 @@ namespace TitanOrbit.NetCode
     /// seed + generation config so the client can hydrate the map locally, plus size/team counts
     /// for UI and lobby.
     /// <para>
-    /// [TITAN-ORBIT] Solid join architecture: clients build planets/asteroids from this recipe
-    /// (<see cref="ClientMapHydrateSystem"/>). GhostSpawn no longer Instantiates the full field.
+    /// [TITAN-ORBIT] Solid join architecture: clients build asteroids from this recipe
+    /// (<see cref="ClientMapHydrateSystem"/>). Planets arrive as ghosts. Occupancy RPC
+    /// then culls rocks the server already destroyed.
     /// Loading bar tracks local hydrate progress, not hybrid Instantiates=1.
     /// </para>
     /// </summary>
@@ -73,6 +74,12 @@ namespace TitanOrbit.NetCode
 
         /// <summary>See <see cref="AsteroidMinSize"/>.</summary>
         public float AsteroidVisualScaleAtMaxSize;
+
+        /// <summary>Live planet ghosts on the server at send time (homes + neutrals still in play).</summary>
+        public int LivePlanetCount;
+
+        /// <summary>Live ship ghosts on the server at send time (0 in an empty match is valid).</summary>
+        public int LiveShipCount;
     }
 
     /// <summary>
@@ -116,6 +123,12 @@ namespace TitanOrbit.NetCode
 
         /// <summary>Asteroids for this match.</summary>
         public static int AsteroidCount { get; private set; }
+
+        /// <summary>Server live planet count at last recipe send.</summary>
+        public static int LivePlanetCount { get; private set; }
+
+        /// <summary>Server live ship count at last recipe send.</summary>
+        public static int LiveShipCount { get; private set; }
 
         /// <summary>Rolled map width from the server (0 until meta arrives).</summary>
         public static float MapWidth { get; private set; }
@@ -173,6 +186,13 @@ namespace TitanOrbit.NetCode
 
             var asteroid = ResolveAsteroidBodyTuning();
 
+            int livePlanets = 0;
+            int liveShips = 0;
+            using (var planetQ = em.CreateEntityQuery(ComponentType.ReadOnly<PlanetTag>()))
+                livePlanets = planetQ.CalculateEntityCount();
+            using (var shipQ = em.CreateEntityQuery(ComponentType.ReadOnly<ShipTag>()))
+                liveShips = shipQ.CalculateEntityCount();
+
             meta = new MapSessionMetaRpc
             {
                 LoadingTotalSteps = mapState.LoadingTotalSteps,
@@ -190,6 +210,8 @@ namespace TitanOrbit.NetCode
                 AsteroidGemsPerSize = asteroid.GemsPerSize,
                 AsteroidVisualScaleAtMinSize = asteroid.VisualScaleAtMinSize,
                 AsteroidVisualScaleAtMaxSize = asteroid.VisualScaleAtMaxSize,
+                LivePlanetCount = livePlanets,
+                LiveShipCount = liveShips,
             };
             return true;
         }
@@ -266,6 +288,13 @@ namespace TitanOrbit.NetCode
                 rpc.RecipeConfig,
                 asteroidBody,
                 full);
+
+            LivePlanetCount = Mathf.Max(0, rpc.LivePlanetCount);
+            LiveShipCount = Mathf.Max(0, rpc.LiveShipCount);
+            if (LivePlanetCount <= 0)
+                LivePlanetCount = Mathf.Max(0, TeamCount) + Mathf.Max(0, NeutralPlanetCount);
+            JoinWorldReadyCache.ExpectedPlanets = LivePlanetCount;
+            JoinWorldReadyCache.ExpectedShips = LiveShipCount;
         }
 
         /// <summary>
@@ -288,11 +317,14 @@ namespace TitanOrbit.NetCode
             TeamCount = 0;
             NeutralPlanetCount = 0;
             AsteroidCount = 0;
+            LivePlanetCount = 0;
+            LiveShipCount = 0;
             MapWidth = 0f;
             MapHeight = 0f;
             LastClientRecipeRequestRealtime = -999f;
             ToroidalMapEcs.ClearMapSize();
             ClientMapHydrateCache.Clear();
+            JoinWorldReadyCache.Clear();
         }
 
         /// <summary>

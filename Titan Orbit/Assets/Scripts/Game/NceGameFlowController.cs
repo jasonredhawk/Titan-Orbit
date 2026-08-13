@@ -1115,19 +1115,14 @@ namespace TitanOrbit.Game
                 CleanupJoinTeamScreenUi();
 
             // --- Loading Map owns the screen ---
-            // [TITAN-ORBIT] Overlay while connecting, waiting for recipe, hydrating asteroids,
-            // or finishing InGame catch-up. World bar only fills when asteroids actually spawn.
-            bool waitingForRecipe = EcsGameBridge.HasClientNetworkId() &&
-                                    !ClientMapHydrateCache.HasFullRecipe;
-            bool seedHydrating = ClientMapHydrateCache.HasFullRecipe && !ClientMapHydrateCache.IsComplete;
-            bool awaitingGoInGame = ClientMapHydrateCache.HasFullRecipe &&
-                                    ClientMapHydrateCache.IsComplete &&
-                                    !connected;
-            bool showLoadingOverlay = showLoading ||
-                                      (connecting && !connected) ||
-                                      waitingForRecipe ||
-                                      seedHydrating ||
-                                      awaitingGoInGame;
+            // [TITAN-ORBIT] Overlay until JoinWorldReady (via IsMapLoadingComplete) — not extra
+            // recipe/hydrate/GoInGame ORs that can disagree with Join Team.
+            bool showLoadingOverlay =
+                (connecting && !connected) ||
+                (EcsGameBridge.HasClientNetworkId() &&
+                 !EcsGameBridge.IsMapLoadingComplete() &&
+                 !ClientTeamFlowState.TeamChoiceConfirmed &&
+                 !ClientTeamFlowState.HasRequestedTeamPick);
             if (showLoadingOverlay && _joinBrowser != null && _joinBrowser.IsVisible)
                 _joinBrowser.DismissForLoading();
 

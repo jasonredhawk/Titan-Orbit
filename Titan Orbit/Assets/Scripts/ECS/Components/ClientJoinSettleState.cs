@@ -6,13 +6,12 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// [TITAN-ORBIT] Client singleton that tracks late-join Instantiates settle.
-    /// While <see cref="Settling"/> is non-zero, hybrid/UI code must skip full map-body
-    /// <c>ToEntityArray</c> scans. GameObject Instantiates stay rate-limited via Pending drain.
+    /// While <see cref="Settling"/> is non-zero, hybrid/UI code should skip full map-body
+    /// <c>ToEntityArray</c> scans (chunks may be structurally changing). GameObject Instantiates
+    /// stay rate-limited via Pending drain.
     /// <para>
-    /// Player.log proved <see cref="Unity.Transforms.TransformSystemGroup"/> RE-ENABLED after
-    /// Instantiates hundreds of asteroids → immediate Burst <c>Crash!!!</c>. So while in-game the
-    /// transform group stays off (<see cref="ClientJoinSettleCache.TransformQuarantine"/>) and
-    /// ships render as hybrid GameObject proxies instead of Entities Graphics.
+    /// <see cref="Unity.Transforms.TransformSystemGroup"/> stays <b>enabled</b> during play
+    /// (seed-hydrate model). Session-long Transform quarantine was retired.
     /// </para>
     /// Written by <see cref="TitanOrbitClientJoinTransformGateSystem"/>.
     /// </summary>
@@ -46,8 +45,8 @@ namespace TitanOrbit.ECS
         public static bool Settling { get; private set; }
 
         /// <summary>
-        /// True while in-game with TransformSystemGroup forced off (Windows late-join safety).
-        /// When true, ships must use hybrid GO proxies — Entities Graphics needs Parent/LTW.
+        /// True while in-game TransformSystemGroup is forced off. Always false in the seed-hydrate
+        /// model (Transform stays ON). Kept so older call sites compile.
         /// </summary>
         public static bool TransformQuarantine { get; private set; }
 
@@ -94,8 +93,7 @@ namespace TitanOrbit.ECS
         /// That deadlock stuck the lobby on "Spawning your ship..." when Instantiates-hook seeding
         /// missed once — recovery queries could never run (Editor.log 2026-07-23).
         /// </para>
-        /// Prefer this over hand-rolling flags so TeamChoice Crash!!! gates stay one-liners
-        /// (see titan-orbit-teamchoice-crash-hardstop.mdc).
+        /// Prefer this over hand-rolling flags so TeamChoice Instantiates skips stay one-liners.
         /// </summary>
         public static bool ShouldSkipShipEntityQueries =>
             Settling ||
@@ -140,15 +138,9 @@ namespace TitanOrbit.ECS
             ClientTeamFlowState.HasRequestedTeamPick && !ClientTeamFlowState.TeamChoiceConfirmed;
 
         /// <summary>
-        /// [TITAN-ORBIT] True when client code must not gather planets / asteroids / gems / moons
-        /// (<c>ToEntityArray</c>, <c>WithEntityAccess</c>, broad <c>foreach</c>).
-        /// <para>
-        /// <see cref="TransformQuarantine"/> stays true for the whole Windows in-game session.
-        /// Gating map gathers on <see cref="Settling"/> alone is forbidden: after Join Team,
-        /// Settling is OFF (<see cref="JoinSettleCompleted"/>) but full map gathers still
-        /// Crash!!! (Player.log 2026-07-18 Settling OFF; 2026-07-22 TeamChoice toroidal collide).
-        /// </para>
-        /// Prefer this helper over hand-rolled flags so new systems cannot omit quarantine.
+        /// [TITAN-ORBIT] True when client code should not gather planets / asteroids / gems / moons
+        /// while chunks are structurally changing (<see cref="Settling"/>).
+        /// Transform quarantine is retired (always false); prefer this helper over hand-rolled flags.
         /// </summary>
         public static bool ShouldSkipMapBodyQueries => TransformQuarantine || Settling;
 

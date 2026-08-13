@@ -167,7 +167,8 @@ namespace TitanOrbit.ECS
                 if (body.EntityKind != 3)
                     continue;
 
-                ClientLocalMapBodySpawn.SpawnAsteroid(em, asteroidPrefab, body);
+                int slot = _asteroidsSpawned;
+                ClientLocalMapBodySpawn.SpawnAsteroid(em, asteroidPrefab, body, slot);
                 spawnedThisFrame++;
                 _asteroidsSpawned++;
                 ClientMapHydrateCache.SetBuiltBodies(_asteroidsSpawned);
@@ -187,9 +188,6 @@ namespace TitanOrbit.ECS
                 " — GoInGame may proceed.");
         }
 
-        /// <summary>
-        /// Resolves the client asteroid prefab. SubScene bake can lag a few frames after connect.
-        /// </summary>
         /// <summary>
         /// Resolves the client asteroid prefab. SubScene bake can lag a few frames after connect.
         /// </summary>
