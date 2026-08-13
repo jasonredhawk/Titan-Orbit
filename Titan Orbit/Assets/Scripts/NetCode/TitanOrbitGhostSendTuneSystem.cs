@@ -27,11 +27,16 @@ namespace TitanOrbit.NetCode
     public partial struct TitanOrbitGhostSendTuneSystem : ISystem
     {
         /// <summary>
-        /// Max chunks written into one snapshot for one connection.
-        /// Asteroids share archetypes so one chunk can still hold many entities — keep this at 1
-        /// so late-join map floods create placeholders gradually instead of hundreds per tick.
+        /// Max chunks written into one snapshot for one connection during steady play.
+        /// [TITAN-ORBIT] This used to be 1 because asteroid ghosts shared one archetype and
+        /// one chunk delivered dozens of Instantiates (Crash!!!). Asteroids are seed-hydrated
+        /// now — they are not in the relevancy query. A cap of 1 starves gems: ship, gem,
+        /// transport, and planet are different archetypes, so only the highest-priority chunk
+        /// (usually the ship) left each tick. Nearby gems then sat on a stale interpolated
+        /// pose and could not be scooped. 4 = ship + gems + transport + planet in one packet.
+        /// Client Instantiates stays 1/frame regardless.
         /// </summary>
-        public const int MaxSendChunksPerSnapshot = 1;
+        public const int MaxSendChunksPerSnapshot = 4;
 
         /// <summary>
         /// During post–TeamChoice grace, allow more chunks so the OwnerPredicted ship tile is not
@@ -41,9 +46,10 @@ namespace TitanOrbit.NetCode
 
         /// <summary>
         /// How many chunks GhostSend may scan while filling the packet (steady-state).
-        /// NetCode recommends ≥ 2× <see cref="MaxSendChunksPerSnapshot"/>.
+        /// NetCode recommends ≥ 2× <see cref="MaxSendChunksPerSnapshot"/>. Play used to
+        /// iterate only 4 — nearby gem tiles could fill the scan and skip the ship chunk.
         /// </summary>
-        public const int MaxIterateChunksPerSnapshot = 4;
+        public const int MaxIterateChunksPerSnapshot = 8;
 
         /// <summary>
         /// Scan more tiles while loading or during ship-send grace.

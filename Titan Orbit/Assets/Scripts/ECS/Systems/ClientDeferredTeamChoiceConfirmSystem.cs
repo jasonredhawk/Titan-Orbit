@@ -74,6 +74,8 @@ namespace TitanOrbit.ECS
             // LocalShipEntitySeed.NotifyShipInstantiated records the client replica — no gather.
             bool hullArrived = LocalShipEntitySeed.HasLiveOwnedShipSeed(em);
 
+            int instantiates = TitanOrbitJoinLoadCounters.InstantiatesSession;
+
             if (!hullArrived && s_HullWaitFrames < MaxHullWaitFrames)
             {
                 s_HullWaitFrames++;
@@ -82,7 +84,7 @@ namespace TitanOrbit.ECS
                     UnityEngine.Debug.Log(
                         "[TeamChoiceResult] Waiting for GhostReceive owner ship before Confirm " +
                         $"(wait={s_HullWaitFrames}/{MaxHullWaitFrames}, " +
-                        $"instantiates={TitanOrbitJoinLoadCounters.InstantiatesSession}).");
+                        $"instantiates={instantiates}).");
                 }
 
                 return;

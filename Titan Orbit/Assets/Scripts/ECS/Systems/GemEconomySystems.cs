@@ -587,7 +587,9 @@ namespace TitanOrbit.ECS
             if (hasWings)
             {
                 var wings = em.GetBuffer<ShipWingTractorBeamElement>(shipEntity);
-                float collectRadius = pickupSettings.ResolveWingCollectRadius(gemState.Size);
+                // [TITAN-ORBIT] Floor at the visible crystal so overlapping the mesh consumes.
+                float collectRadius = GemCollectMath.ResolveWingCollectRadius(
+                    pickupSettings, gemState.Value, gemState.Size);
                 for (int wi = 0; wi < wings.Length; wi++)
                 {
                     float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wi]);
@@ -599,32 +601,30 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] When ON, flying the body over gem piles absorbs without waiting
                 // for a wing tip / tractor lock. When OFF, only tip zones collect (tight old feel).
                 if (pickupSettings.AlsoUseHullPickupWithWings)
-                    return IsWithinHullPickupRange(shipTransform, gemPos, gemState.Size, pickupSettings, mapW, mapH);
+                    return IsWithinHullPickupRange(
+                        shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
 
                 return false;
             }
 
             // --- No wings: hull-center only ---
-            return IsWithinHullPickupRange(shipTransform, gemPos, gemState.Size, pickupSettings, mapW, mapH);
+            return IsWithinHullPickupRange(shipTransform, gemPos, gemState, pickupSettings, mapW, mapH);
         }
 
         /// <summary>
-        /// Hull-center absorb test. Designer <see cref="TractorBeamSettings.HullPickupRange"/> is
-        /// measured from the ship origin; we also floor at collision-hull radius + gem half-size
-        /// so overlapping the visible hull always collects even if the Inspector range is tiny.
+        /// Hull-center absorb test. Designer hull range, collider floor, and visible crystal
+        /// radius (see <see cref="GemCollectMath"/>) — overlapping the mesh the player sees counts.
         /// </summary>
         static bool IsWithinHullPickupRange(
             in LocalTransform shipTransform,
             float3 gemPos,
-            float gemSize,
+            in GemState gemState,
             TractorBeamSettings pickupSettings,
             float mapW,
             float mapH)
         {
-            float designed = pickupSettings.ResolveHullPickupRange(gemSize);
-            float hullFloor = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.Scale) +
-                              math.max(0f, gemSize) * 0.5f;
-            float hullRange = math.max(designed, hullFloor);
+            float hullRange = GemCollectMath.ResolveHullCollectRadius(
+                pickupSettings, gemState.Value, gemState.Size, shipTransform.Scale);
             return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
                    hullRange;
         }

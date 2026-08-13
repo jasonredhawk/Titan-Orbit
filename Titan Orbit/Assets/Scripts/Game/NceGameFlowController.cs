@@ -977,11 +977,11 @@ namespace TitanOrbit.Game
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && IsInGameFlow() && _mppmConnectedSince < 0f)
                 _mppmConnectedSince = Time.time;
 
-            bool connectingDedicated = TitanOrbitSessionManager.IsDedicatedJoinConnecting;
+            bool connecting = TitanOrbitSessionManager.IsJoinConnecting;
             bool connected = IsInGameFlow();
             if (TitanOrbitSessionManager.IsDedicatedOnlineClient && connected && _dedicatedConnectedAt < 0f)
                 _dedicatedConnectedAt = Time.time;
-            if (!connected && !connectingDedicated)
+            if (!connected && !connecting)
                 _dedicatedConnectedAt = -1f;
 
             bool mapLoaded = connected && IsMapReadyForTeamSelection();
@@ -1065,7 +1065,7 @@ namespace TitanOrbit.Game
             }
 
             if (mainMenuPanel != null)
-                mainMenuPanel.SetActive(!connected && !connectingDedicated &&
+                mainMenuPanel.SetActive(!connected && !connecting &&
                                       (_joinBrowser == null || !_joinBrowser.IsVisible));
 
             if (showRejoinChoice && hasRejoinableShip && _rejoinChoice != null)
@@ -1080,9 +1080,11 @@ namespace TitanOrbit.Game
 
             if (statusText != null)
             {
-                if (!connected || showLoading || showRejoinChoice || showTeam || showTeamCountWait || showSpawnWait || connectingDedicated)
-                    statusText.text = connectingDedicated && !connected
-                        ? "Connecting to dedicated server..."
+                if (!connected || showLoading || showRejoinChoice || showTeam || showTeamCountWait || showSpawnWait || connecting)
+                    statusText.text = connecting && !connected
+                        ? (TitanOrbitSessionManager.IsDedicatedJoinConnecting
+                            ? "Connecting to dedicated server..."
+                            : "Connecting...")
                         : !connected
                         ? _statusMessage
                         : showLoading
@@ -1113,9 +1115,8 @@ namespace TitanOrbit.Game
                 CleanupJoinTeamScreenUi();
 
             // --- Loading Map owns the screen ---
-            // [TITAN-ORBIT] Show loading while Relay connect is in flight, while waiting for
-            // the map recipe (8% crawl), while seed-hydrate builds asteroids (pre-InGame),
-            // or while post-InGame map catch-up runs.
+            // [TITAN-ORBIT] Overlay while connecting, waiting for recipe, hydrating asteroids,
+            // or finishing InGame catch-up. World bar only fills when asteroids actually spawn.
             bool waitingForRecipe = EcsGameBridge.HasClientNetworkId() &&
                                     !ClientMapHydrateCache.HasFullRecipe;
             bool seedHydrating = ClientMapHydrateCache.HasFullRecipe && !ClientMapHydrateCache.IsComplete;
@@ -1123,7 +1124,7 @@ namespace TitanOrbit.Game
                                     ClientMapHydrateCache.IsComplete &&
                                     !connected;
             bool showLoadingOverlay = showLoading ||
-                                      (connectingDedicated && !connected) ||
+                                      (connecting && !connected) ||
                                       waitingForRecipe ||
                                       seedHydrating ||
                                       awaitingGoInGame;

@@ -12,7 +12,7 @@ alwaysApply: false
 |---|---|
 | Recipe | `MapSessionMetaRpc` carries match **seed** + `MapGenerationConfig` + asteroid body tuning |
 | Client map | `ClientMapHydrateSystem` Instantiates **local** asteroids from `MapLayoutBlueprint` (not GhostSpawn) |
-| Relevancy | `TitanOrbitDynamicGhostRelevancySystem`: `SetIsRelevant` for Ship / Gem / PeopleTransport / **Planet** only |
+| Relevancy | `TitanOrbitDynamicGhostRelevancySystem`: `SetIsRelevant` for Ship / PeopleTransport / **Planet**. Gems are nearby-only via `TitanOrbitGemGhostRelevancySystem`. Never asteroids. |
 | GoInGame | Client adds `NetworkStreamInGame` only after hydrate complete (+ GhostCollection) |
 | Progress | Loading bar = seed hydrate progress, then short InGame catch-up — not Instantiates=1 of 700 rocks |
 | Transform | `TransformSystemGroup` **ON** during play (session-long quarantine retired) |

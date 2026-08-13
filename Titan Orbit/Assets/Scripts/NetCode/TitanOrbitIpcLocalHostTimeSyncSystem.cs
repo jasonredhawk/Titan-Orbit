@@ -71,18 +71,10 @@ namespace TitanOrbit.NetCode
             ref var netTimeData = ref SystemAPI.GetSingletonRW<NetworkTimeSystemData>().ValueRW;
             NetworkTick snap = ack.LastReceivedSnapshotByLocal;
 
-            int estimateBehindSnap = 0;
-            if (netTimeData.latestSnapshotEstimate.IsValid)
-                estimateBehindSnap = snap.TicksSince(netTimeData.latestSnapshotEstimate);
-
             // [NETCODE] Documented IPC tandem: predictTarget = latestSnapshot + 1.
             // Do not use ServerWorld tick lead — basics7 showed that increased pull size / spikes.
             NetworkTick idealPredict = snap;
             idealPredict.Add(1);
-
-            int predictDeltaFromIdeal = 0;
-            if (netTimeData.predictTargetTick.IsValid)
-                predictDeltaFromIdeal = idealPredict.TicksSince(netTimeData.predictTargetTick);
 
             // --- Tandem overwrite (basics6 — only approach that kept bigBatch at 0) ---
             netTimeData.latestSnapshot = snap;
@@ -93,10 +85,6 @@ namespace TitanOrbit.NetCode
             // frame's ServerTickFraction < 1. basics13 (package partials) confirmed: simBatch~5,
             // spikes 13.5%. Force a full tick fraction on Local Host IPC (basics11 best).
             netTimeData.subPredictTargetTick = 1f;
-
-            // estimateBehindSnap / predictDeltaFromIdeal kept for easy probe re-enable.
-            _ = estimateBehindSnap;
-            _ = predictDeltaFromIdeal;
         }
     }
 }

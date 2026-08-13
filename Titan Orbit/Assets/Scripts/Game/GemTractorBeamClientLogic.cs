@@ -215,8 +215,25 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Presented logical pose from <see cref="GemClientMotionApplier"/> (interpolated LT
+        /// plus velocity lead to server-now). Same space as ECS pickup.
+        /// </summary>
+        static bool TryGetPresentedLogicalPosition(Entity gemEntity, out float3 logicalPos)
+        {
+            logicalPos = default;
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null || !visualizer.TryGetProxy(gemEntity, out GameObject proxy) || proxy == null)
+                return false;
+            if (!proxy.activeInHierarchy)
+                return false;
+
+            var motion = proxy.GetComponent<GemClientMotionApplier>();
+            return motion != null && motion.TryGetLogicalPosition(out logicalPos);
+        }
+
+        /// <summary>
         /// Appends live replicated gems from a candidate list (deduped by ghostId).
-        /// Pose is interpolated <c>LocalTransform</c> — the collectable position.
+        /// Pose prefers the presented (server-now) crystal when the motion applier is bound.
         /// </summary>
         static void AppendGemSnapshots(
             EntityManager em,
@@ -259,12 +276,19 @@ namespace TitanOrbit.Game
                     ? em.GetComponentData<GemMotionState>(entity)
                     : default;
 
+                // --- Pose: estimated server-now when the motion applier has posed this crystal ---
+                // [TITAN-ORBIT] That lead matches GemPickupSystem's server-now gem. Ghost
+                // LocalTransform alone is the interpolated past and misses fly-over scoop.
+                var transform = em.GetComponentData<LocalTransform>(entity);
+                if (TryGetPresentedLogicalPosition(entity, out var presentedPos))
+                    transform.Position = presentedPos;
+
                 dst.Add(new GemProxySnapshot
                 {
                     Entity = entity,
                     GhostId = ghostId,
                     State = state,
-                    Transform = em.GetComponentData<LocalTransform>(entity),
+                    Transform = transform,
                     Kinematics = kinematics,
                     Motion = motion,
                 });
@@ -434,7 +458,8 @@ namespace TitanOrbit.Game
             bool hasWings = wings.IsCreated && wings.Length > 0;
             if (hasWings)
             {
-                float collectRadius = settings.ResolveWingCollectRadius(gemState.Size) * slack;
+                float collectRadius = GemCollectMath.ResolveWingCollectRadius(
+                    settings, gemState.Value, gemState.Size) * slack;
                 for (int wi = 0; wi < wings.Length; wi++)
                 {
                     float3 wingPos = ShipWingTractorBeamPose.GetWorldPosition(shipTransform, wings[wi]);
@@ -446,10 +471,8 @@ namespace TitanOrbit.Game
                     return false;
             }
 
-            float designed = settings.ResolveHullPickupRange(gemState.Size) * slack;
-            float hullFloor = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.Scale) +
-                              math.max(0f, gemState.Size) * 0.5f;
-            float hullRange = math.max(designed, hullFloor);
+            float hullRange = GemCollectMath.ResolveHullCollectRadius(
+                settings, gemState.Value, gemState.Size, shipTransform.Scale) * slack;
             return GemTractorBeamMath.ToroidalDistance(gemPos, shipTransform.Position, mapW, mapH) <=
                    hullRange;
         }

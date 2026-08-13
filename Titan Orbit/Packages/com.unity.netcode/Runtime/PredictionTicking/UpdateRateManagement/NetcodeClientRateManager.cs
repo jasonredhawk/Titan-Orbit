@@ -112,8 +112,22 @@ namespace Unity.NetCode
 
             if (networkDeltaTime <= 0)
             {
-                m_NetDebugQuery.GetSingleton<NetDebug>().DebugLog($"[{group.World.Name}] Netcode's network delta time is negative: {networkDeltaTime}. To avoid undefined behaviour, the frame will be skipped.");
-                return false;
+                // [TITAN-ORBIT] Do not skip SimulationSystemGroup: that also skips GhostReceive.
+                // Local Host IPC forces subPredictTargetTick=1, so one frame without a new
+                // snapshot yields dt=0 and the client never drains later packets (second-load
+                // Join Team never Instantiates the hull).
+                if (!m_NetworkStreamInGameQuery.HasSingleton<NetworkStreamInGame>())
+                {
+                    m_NetDebugQuery.GetSingleton<NetDebug>().DebugLog(
+                        $"[{group.World.Name}] Netcode's network delta time is negative: {networkDeltaTime}. To avoid undefined behaviour, the frame will be skipped.");
+                    return false;
+                }
+
+                networkDeltaTime = currentTime.DeltaTime;
+                if (networkDeltaTime <= 0f)
+                    networkDeltaTime = tickRate.SimulationFixedTimeStep;
+                if (networkTime.SimulationStepBatchSize < 1)
+                    networkTime.SimulationStepBatchSize = 1;
             }
 
             if (!m_NetworkStreamInGameQuery.HasSingleton<NetworkStreamInGame>())

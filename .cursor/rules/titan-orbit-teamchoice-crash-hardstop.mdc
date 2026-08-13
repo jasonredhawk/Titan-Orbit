@@ -3,7 +3,7 @@ alwaysApply: false
 ---
 # TeamChoice / join Crash!!! — HARD STOP (seed-hydrate)
 
-**Architecture (2026-08):** Clients hydrate asteroids from the match seed (`MapSessionMetaRpc` + `ClientMapHydrateSystem`). Ghost relevancy streams Ship / Gem / PeopleTransport / Planet only — **not** asteroids. Do not reintroduce full-map asteroid GhostSpawn Instantiates floods.
+**Architecture (2026-08):** Clients hydrate asteroids from the match seed (`MapSessionMetaRpc` + `ClientMapHydrateSystem`). Ghost relevancy streams Ship / PeopleTransport / Planet always, and **nearby gems** via `TitanOrbitGemGhostRelevancySystem` — **not** asteroids. Do not reintroduce full-map asteroid GhostSpawn Instantiates floods.
 
 Full verify checklist: `Titan Orbit/tools/netcode-patches/JOIN-CRASH-VERIFY.md`.
 

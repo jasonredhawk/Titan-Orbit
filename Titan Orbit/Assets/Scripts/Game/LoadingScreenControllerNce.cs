@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit.ECS;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -196,13 +197,13 @@ namespace TitanOrbit.Game
                 EcsGameBridge.TryGetNetworkJoinLoadStepCounts(out int netDone, out int netTotal) &&
                 netTotal > 0
                     ? netDone + " / " + netTotal
-                    : string.Empty;
+                    : ClientMapHydrateCache.GetWorldBarStatusLabel();
 
-            // --- Stuck hint after a few seconds (recipe miss vs Instantiates vs drain) ---
-            // [TITAN-ORBIT] 8% with no 0/N is the pre-recipe crawl — say so on the World bar.
+            // --- Stuck hint after a few seconds (recipe / prefabs vs Instantiates drain) ---
+            // [TITAN-ORBIT] Empty World fill with "Waiting for map recipe" is idle, not fake crawl.
             string mapHint = null;
             bool proxyReady = EcsGameBridge.IsMapProxyCountReady(out _, out _, out _);
-            bool networkLooksStuck = string.IsNullOrEmpty(netCounts) && networkProgress < 0.99f;
+            bool networkLooksStuck = !ClientMapHydrateCache.HydrateStarted && networkProgress < 0.99f;
             if (proxyReady || !networkLooksStuck)
             {
                 _stuckWatchSince = -1f;

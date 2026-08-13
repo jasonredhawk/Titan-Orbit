@@ -1070,16 +1070,14 @@ namespace TitanOrbit.Game
             }
 
             // --- Phase: building map from seed (local asteroid Instantiates) ---
+            // Honest fill: 0 until hydrate actually Instantiates. No exponential crawl —
+            // that looked like loading while the client was idle (recipe / prefabs wait).
             if (ClientMapHydrateCache.HasFullRecipe || ClientMapHydrateCache.HydrateStarted)
             {
                 if (ClientMapHydrateCache.ExpectedBodies > 0)
                     s_LatchedLoadingTotalSteps = ClientMapHydrateCache.ExpectedBodies;
 
-                // Hydrate is ~0–85% of bar 1; remaining is InGame dynamic catch-up.
-                // Until ExpectedBodies is known, keep the fill near zero (not 100%).
-                float hydrate = ClientMapHydrateCache.ExpectedBodies > 0
-                    ? ClientMapHydrateCache.Progress01
-                    : 0f;
+                float hydrate = ClientMapHydrateCache.Progress01;
                 if (!IsNetworkInGame())
                 {
                     progress = Mathf.Clamp01(hydrate * 0.85f);
@@ -1095,14 +1093,7 @@ namespace TitanOrbit.Game
                 return true;
             }
 
-            // --- Waiting for recipe / connection / InGame with no hydrate yet ---
-            // Soft crawl only — never report 1.0 here (legacy InGame→100% caused the 1/1 flash).
-            if (s_JoinLoadSmoothStart < 0f)
-                s_JoinLoadSmoothStart = Time.realtimeSinceStartup;
-
-            float elapsed = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
-            float t = Mathf.Max(0f, elapsed) / JoinLoadSmoothSeconds;
-            progress = (1f - Mathf.Exp(-2.2f * t)) * 0.08f;
+            progress = 0f;
             return true;
         }
 
@@ -1121,24 +1112,16 @@ namespace TitanOrbit.Game
                 return true;
             }
 
-            // --- Soft crawl until meta N exists ---
             int total = ResolveMapLoadingDenominator();
             if (total <= 0)
             {
-                // During seed hydrate, meta may already expose LoadingTotalSteps; if not, crawl.
                 if (ClientMapHydrateCache.HasFullRecipe || ClientMapHydrateCache.HydrateStarted)
                 {
-                    // Approximate GO work from asteroid hydrate until planet meta latches.
                     progress = Mathf.Clamp01(ClientMapHydrateCache.Progress01 * 0.35f);
                     return true;
                 }
 
-                if (s_JoinLoadSmoothStart < 0f)
-                    s_JoinLoadSmoothStart = Time.realtimeSinceStartup;
-
-                float waitElapsed = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
-                float waitT = Mathf.Max(0f, waitElapsed) / JoinLoadSmoothSeconds;
-                progress = (1f - Mathf.Exp(-2.2f * waitT)) * 0.05f;
+                progress = 0f;
                 return true;
             }
 
@@ -2007,7 +1990,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Short stuck-load hint for the loading status line (no ECS asteroid gathers).
-        /// Works before InGame — the 8% crawl with no 0/N means the map recipe never latched.
+        /// Honest labels — empty fill plus this text means we are waiting, not secretly loading.
         /// </summary>
         public static string GetMapLoadStuckHint()
         {
@@ -2016,15 +1999,10 @@ namespace TitanOrbit.Game
 
             // --- Recipe / hydrate (pre-InGame is the 8% crawl) ---
             if (!ClientMapHydrateCache.HasFullRecipe)
-                return "waiting for map recipe";
+                return ClientMapHydrateCache.GetWorldBarStatusLabel();
 
             if (!ClientMapHydrateCache.IsComplete)
-            {
-                if (!ClientMapHydrateCache.HydrateStarted)
-                    return "waiting for map prefabs";
-                return "hydrating " + ClientMapHydrateCache.BuiltBodies +
-                       "/" + ClientMapHydrateCache.ExpectedBodies;
-            }
+                return ClientMapHydrateCache.GetWorldBarStatusLabel();
 
             if (!IsNetworkInGame())
                 return "waiting to enter game";

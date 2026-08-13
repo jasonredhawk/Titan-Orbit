@@ -1,7 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
 using Unity.Collections;
-// ToroidalMap / ToroidalMapEcs live in TitanOrbit.Generation (Shared asm).
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -13,22 +12,28 @@ namespace TitanOrbit.ECS
     /// [TITAN-ORBIT] Client builds the procedural map locally from the match seed recipe.
     /// Replaces GhostSpawn Instantiates of hundreds of planet/asteroid ghosts.
     /// <para>
-    /// Pipeline: <c>MapSessionMetaRpc</c> latches recipe → this system builds bodies in budgeted
-    /// batches → <see cref="ClientMapHydrateCache.IsComplete"/> →
-    /// <c>TitanOrbitGoInGameClientSystem</c> may add <see cref="NetworkStreamInGame"/>.
+    /// Pipeline: recipe latch (<see cref="ClientMapHydrateCache"/>) → budgeted asteroid
+    /// Instantiates → <see cref="ClientMapHydrateCache.IsComplete"/> →
+    /// <c>TitanOrbitGoInGameClientSystem</c> adds <see cref="NetworkStreamInGame"/>.
     /// </para>
-    /// World: ClientSimulation. GoInGame gates on <see cref="ClientMapHydrateCache.IsComplete"/>
-    /// (cannot UpdateBefore NetCode assembly — circular asmdef).
+    /// <para>
+    /// Watches <see cref="ClientMapHydrateCache.SessionGeneration"/>. Disconnect / Play-again
+    /// without Domain Reload used to leave <c>_blueprintReady</c> true with disposed lists,
+    /// so this system returned forever and the loading bar never moved for real.
+    /// </para>
+    /// World: ClientSimulation. Group: SimulationSystemGroup, OrderFirst.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup), OrderFirst = true)]
     public partial struct ClientMapHydrateSystem : ISystem
     {
-        /// <summary>How many local bodies to Instantiates per frame (smooth loading bar, not Crash!!!).</summary>
+        /// <summary>How many local asteroids to Instantiates per frame (smooth bar, not Crash!!!).</summary>
         public const int BodiesPerFrame = 24;
 
         bool _blueprintReady;
         bool _loggedWaitingPrefabs;
+        float _nextPrefabWaitLogRealtime;
+        int _appliedGeneration;
         NativeList<MapLayoutBlueprint.Body> _bodies;
         NativeList<MapLayoutBlueprint.Claim> _claims;
         NativeList<int> _neutralPlanetIds;
@@ -36,47 +41,65 @@ namespace TitanOrbit.ECS
         int _asteroidsSpawned;
         MapGenerationLogic.RolledParameters _rolled;
 
-        /// <summary>Needs GamePrefabs when hydrate starts; always ticks while recipe is pending.</summary>
+        /// <summary>Native lists start uncreated; generation is forced to mismatch so the first tick rebuilds.</summary>
         public void OnCreate(ref SystemState state)
         {
             _bodies = default;
             _claims = default;
             _neutralPlanetIds = default;
+            _appliedGeneration = int.MinValue;
+            _blueprintReady = false;
+            _loggedWaitingPrefabs = false;
+            _nextPrefabWaitLogRealtime = 0f;
         }
 
-        /// <summary>Disposes native blueprint lists.</summary>
+        /// <summary>Disposes native blueprint lists when the ClientWorld is destroyed.</summary>
         public void OnDestroy(ref SystemState state)
         {
             DisposeBlueprint();
         }
 
         /// <summary>
-        /// When a full recipe is latched and hydrate is incomplete, build local map bodies.
+        /// When a full recipe is latched and hydrate is incomplete, build local asteroid entities
+        /// in budgeted batches. Rebuilds if the join generation changed or the list was disposed.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            // --- Already done this session ---
+            // --- Generation fence ---
+            // [TITAN-ORBIT] Cache.Clear / a fresh ApplyRecipe bumps SessionGeneration. ISystem
+            // fields live as long as ClientWorld — they must not keep a finished or disposed
+            // blueprint across a second join in the same Play.
+            int generation = ClientMapHydrateCache.SessionGeneration;
+            if (generation != _appliedGeneration)
+            {
+                DisposeBlueprint();
+                _blueprintReady = false;
+                _loggedWaitingPrefabs = false;
+                _appliedGeneration = generation;
+            }
+
             if (ClientMapHydrateCache.IsComplete)
                 return;
 
-            // --- Need full seed recipe (not counts-only meta) ---
             if (!ClientMapHydrateCache.HasFullRecipe)
                 return;
 
             var em = state.EntityManager;
 
-            // --- Build blueprint once ---
-            if (!_blueprintReady)
+            // --- Build blueprint (or rebuild if lists vanished) ---
+            if (!_blueprintReady || !_bodies.IsCreated)
             {
-                if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) ||
-                    prefabs.Planet == Entity.Null ||
-                    prefabs.Asteroid == Entity.Null)
+                if (!TryGetAsteroidPrefab(ref state, out _))
                 {
-                    if (!_loggedWaitingPrefabs)
+                    ClientMapHydrateCache.WaitingForPrefabs = true;
+                    float now = Time.realtimeSinceStartup;
+                    if (!_loggedWaitingPrefabs || now >= _nextPrefabWaitLogRealtime)
                     {
                         _loggedWaitingPrefabs = true;
+                        _nextPrefabWaitLogRealtime = now + 3f;
                         Debug.Log(
-                            "[ClientMapHydrate] Waiting for GamePrefabs (Planet/Asteroid) before seed hydrate.");
+                            "[ClientMapHydrate] Waiting for GamePrefabs.Asteroid on ClientWorld " +
+                            "(SubScene streaming). World bar stays at 0 until prefabs exist.");
                     }
 
                     return;
@@ -92,9 +115,6 @@ namespace TitanOrbit.ECS
                     out _bodies,
                     out _claims);
 
-                // --- Count asteroids only ---
-                // [TITAN-ORBIT] Planets still replicate as ghosts (ownership/pop/shield). Asteroids
-                // are the Instantiates flood — hydrate those locally and skip planet Instantiates.
                 int asteroidCount = 0;
                 for (int i = 0; i < _bodies.Length; i++)
                 {
@@ -112,9 +132,9 @@ namespace TitanOrbit.ECS
                 _bodyIndex = 0;
                 _asteroidsSpawned = 0;
                 _blueprintReady = true;
+                ClientMapHydrateCache.WaitingForPrefabs = false;
                 ClientMapHydrateCache.MarkHydrateStarted(asteroidCount);
 
-                // --- Toroidal size from rolled recipe ---
                 if (ToroidalMapEcs.IsValidMapSize(_rolled.MapWidth, _rolled.MapHeight))
                 {
                     ToroidalMapEcs.SetMapSize(_rolled.MapWidth, _rolled.MapHeight);
@@ -123,7 +143,8 @@ namespace TitanOrbit.ECS
 
                 Debug.Log(
                     "[ClientMapHydrate] Blueprint ready bodies=" + _bodies.Length +
-                    " claims=" + _claims.Length +
+                    " asteroids=" + asteroidCount +
+                    " gen=" + generation +
                     " seed=" + ClientMapHydrateCache.MatchSeed +
                     " map=" + _rolled.MapWidth.ToString("F0") + "x" + _rolled.MapHeight.ToString("F0"));
             }
@@ -131,8 +152,11 @@ namespace TitanOrbit.ECS
             if (!_bodies.IsCreated)
                 return;
 
-            if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var gamePrefabs))
+            if (!TryGetAsteroidPrefab(ref state, out Entity asteroidPrefab))
+            {
+                ClientMapHydrateCache.WaitingForPrefabs = true;
                 return;
+            }
 
             // --- Spawn asteroid batch (skip planet kinds — those arrive as ghosts) ---
             int spawnedThisFrame = 0;
@@ -143,7 +167,7 @@ namespace TitanOrbit.ECS
                 if (body.EntityKind != 3)
                     continue;
 
-                ClientLocalMapBodySpawn.SpawnAsteroid(em, gamePrefabs.Asteroid, body);
+                ClientLocalMapBodySpawn.SpawnAsteroid(em, asteroidPrefab, body);
                 spawnedThisFrame++;
                 _asteroidsSpawned++;
                 ClientMapHydrateCache.SetBuiltBodies(_asteroidsSpawned);
@@ -152,7 +176,6 @@ namespace TitanOrbit.ECS
             if (_bodyIndex < _bodies.Length)
                 return;
 
-            // Claims apply on the server to planet ghosts; ownership RPCs / ghost fields cover clients.
             ClientMapHydrateCache.MarkComplete();
             DisposeBlueprint();
             _blueprintReady = false;
@@ -160,9 +183,28 @@ namespace TitanOrbit.ECS
             Debug.Log(
                 "[ClientMapHydrate] Asteroid hydrate complete built=" + ClientMapHydrateCache.BuiltBodies +
                 "/" + ClientMapHydrateCache.ExpectedBodies +
+                " gen=" + generation +
                 " — GoInGame may proceed.");
         }
 
+        /// <summary>
+        /// Resolves the client asteroid prefab. SubScene bake can lag a few frames after connect.
+        /// </summary>
+        /// <summary>
+        /// Resolves the client asteroid prefab. SubScene bake can lag a few frames after connect.
+        /// </summary>
+        bool TryGetAsteroidPrefab(ref SystemState state, out Entity asteroidPrefab)
+        {
+            asteroidPrefab = Entity.Null;
+            if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs))
+                return false;
+            if (prefabs.Asteroid == Entity.Null)
+                return false;
+            asteroidPrefab = prefabs.Asteroid;
+            return true;
+        }
+
+        /// <summary>Frees persistent blueprint lists and resets spawn cursors.</summary>
         void DisposeBlueprint()
         {
             if (_bodies.IsCreated)
