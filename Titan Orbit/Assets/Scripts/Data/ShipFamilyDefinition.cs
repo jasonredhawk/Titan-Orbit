@@ -530,10 +530,14 @@ namespace TitanOrbit.Data
                 : ShipPropulsionAggregation.VisualBankReferenceMaxTurnSpeedAuthoredUnits;
         }
 
-        /// <summary>Clears cached global max turn speed (call after upgrade-tree stat scans in the editor).</summary>
+        /// <summary>
+        /// Clears cached global max turn speed and upgrade-tree power-bar maxes
+        /// (call after upgrade-tree stat scans in the editor).
+        /// </summary>
         public static void InvalidateGlobalMaxUpgradeTreeTurnSpeedCache()
         {
             s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored = -1f;
+            ShipFamilyPowerBarNorm.InvalidateCache();
         }
 
 #if UNITY_EDITOR
@@ -571,7 +575,19 @@ namespace TitanOrbit.Data
         public int minHomePlanetLevel = 1;
         public float powerScore;
         public float powerScoreAtMaxLevel;
+        /// <summary>
+        /// Level-1 Extra Level sum (abilities = 0). Used for gem cost, tree sort, and
+        /// runtime chassis bases. Do not put ship-level PerExtra growth here — that
+        /// double-applies when the live ship is evaluated.
+        /// </summary>
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
+        /// <summary>
+        /// Same ten display stats evaluated at <see cref="minHomePlanetLevel"/> with zero
+        /// ability upgrades. Orbit Menu power bars compare each ship against the global
+        /// max of this field. Baked in the editor; live <see cref="ShipFamilyStatsCalculator.TrySumFromPrefab"/>
+        /// is the fallback when empty.
+        /// </summary>
+        public ShipFamilyPowerScoreBreakdown powerScoreBreakdownAtShipLevel;
         public float componentMass;
         public bool lockedInUpgradeTree;
 

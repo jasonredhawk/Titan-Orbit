@@ -370,7 +370,7 @@ namespace TitanOrbit.UI
             RefreshShipTree();
             RefreshStore();
             RefreshGemDepositFlow();
-            _sidebar?.RefreshCurrentShip(PopulateTreeNode, 100f);
+            _sidebar?.RefreshCurrentShip(PopulateTreeNode, ResolvePowerBarStatMaxes());
         }
 
         void EnsureUiBuilt()
@@ -694,7 +694,7 @@ namespace TitanOrbit.UI
             return true;
         }
 
-        public void RefreshShipUpgradeTreeNodeStates(IReadOnlyList<ShipUpgradeTreeNodeUI> nodes, float maxPower)
+        public void RefreshShipUpgradeTreeNodeStates(IReadOnlyList<ShipUpgradeTreeNodeUI> nodes, ShipPowerBarStatMaxes maxes)
         {
             // --- Hint line (debug vs normal purchase rules) ---
             UpdateShipTreeHintText();
@@ -702,7 +702,7 @@ namespace TitanOrbit.UI
             if (nodes == null)
                 return;
             for (int i = 0; i < nodes.Count; i++)
-                PopulateTreeNode(nodes[i], maxPower);
+                PopulateTreeNode(nodes[i], maxes);
         }
 
         /// <summary>
@@ -731,7 +731,7 @@ namespace TitanOrbit.UI
         /// Colors, prices, and click handlers for one tree node (or current-ship display).
         /// Debug mode unlocks every node; normal mode only next-tier purchases / current slot.
         /// </summary>
-        public void PopulateTreeNode(ShipUpgradeTreeNodeUI view, float maxPower)
+        public void PopulateTreeNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
             if (view == null || upgradeTree == null)
                 return;
@@ -740,7 +740,7 @@ namespace TitanOrbit.UI
             // [HYBRID] Left panel "You" node uses the same populate path with IsCurrentShipDisplay.
             if (view.IsCurrentShipDisplay)
             {
-                PopulateCurrentShipDisplayNode(view, maxPower);
+                PopulateCurrentShipDisplayNode(view, maxes);
                 return;
             }
 
@@ -748,7 +748,7 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] GameManager.DebugFreeShipUpgradeTree — Inspector toggle on NceGameRoot.
             if (IsDebugFreeShipUpgradeTree())
             {
-                PopulateTreeNodeDebug(view, maxPower);
+                PopulateTreeNodeDebug(view, maxes);
                 return;
             }
 
@@ -785,7 +785,7 @@ namespace TitanOrbit.UI
             else
                 view.SetPrice("—");
 
-            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxPower);
+            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxes);
             UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(view.Level, view.BranchIndex);
             view.SetClickHandler(canPurchase || isCurrent ? click : null);
             view.SetPriceClickHandler(canPurchase || isCurrent ? click : null);
@@ -794,7 +794,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Debug populate: every node is interactable and priced "Free" so designers can jump to any hull.
         /// </summary>
-        void PopulateTreeNodeDebug(ShipUpgradeTreeNodeUI view, float maxPower)
+        void PopulateTreeNodeDebug(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
             int level = view.Level;
             int branch = view.BranchIndex;
@@ -812,7 +812,7 @@ namespace TitanOrbit.UI
             view.SetShipName(GetShipDisplayNameForSlot(level, branch, chassisId));
             view.SetPreview(GetMenuPreviewForChassis(chassisId));
             view.SetPrice(hasChassis ? "Free" : "—");
-            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(level, branch), maxPower);
+            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(level, branch), maxes);
 
             // Whole card + Free button both purchase (not only the price chip).
             UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(level, branch);
@@ -821,7 +821,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>Sidebar "current ship" card — always shows your hull; debug mode still allows click-through.</summary>
-        void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, float maxPower)
+        void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
             bool debugFree = IsDebugFreeShipUpgradeTree();
             view.SetInteractable(debugFree);
@@ -833,7 +833,7 @@ namespace TitanOrbit.UI
                 view.SetLevelLabel("You");
             view.SetShipName($"Lv {ShipLevel}");
             view.SetPrice(debugFree ? "Free" : "—");
-            view.ApplyPowerBreakdown(GetCurrentShipPowerBreakdown(), maxPower);
+            view.ApplyPowerBreakdown(GetCurrentShipPowerBreakdown(), maxes);
         }
 
         /// <summary>
@@ -865,20 +865,35 @@ namespace TitanOrbit.UI
         public void OnCurrentShipDisplayNodeClicked() =>
             OnUpgradeTreeNodeClicked(ShipLevel, BranchIndex);
 
+        /// <summary>Your Ship bar: Extra Level at current ship level, no ability upgrades.</summary>
         public ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown()
         {
             if (!TryGetChassisIdForTreeSlot(ShipLevel, BranchIndex, out string chassisId))
                 return default;
             var config = ShipStatApplyLogic.Config;
-            return config != null ? config.GetPowerScoreBreakdownForChassisId(chassisId) : default;
+            return config != null
+                ? config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, ShipLevel)
+                : default;
         }
 
+        /// <summary>Tree node bar: Extra Level at the node's ship <paramref name="level"/>, no ability upgrades.</summary>
         public ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex)
         {
             if (!TryGetChassisIdForTreeSlot(level, branchIndex, out string chassisId))
                 return default;
             var config = ShipStatApplyLogic.Config;
-            return config != null ? config.GetPowerScoreBreakdownForChassisId(chassisId) : default;
+            return config != null
+                ? config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, level)
+                : default;
+        }
+
+        /// <summary>Global per-stat ceilings for equal-slot power bars (all families, tree-level Extra Level).</summary>
+        static ShipPowerBarStatMaxes ResolvePowerBarStatMaxes()
+        {
+            var config = ShipStatApplyLogic.Config;
+            return config != null
+                ? config.GetGlobalPowerBarStatMaxes()
+                : ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
         }
 
         /// <summary>

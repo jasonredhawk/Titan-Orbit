@@ -1378,7 +1378,11 @@ namespace TitanOrbit.Editor
                 int maxUpgrades = ShipFamilyPowerScoreBreakdown.GetMaxUpgradeCountForTier(tier.minHomePlanetLevel);
                 tier.powerScoreAtMaxLevel = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(
                     ShipFamilyPowerScoreBreakdown.ApplyMaxEffectiveLevels(stats, maxUpgrades)).Total;
+                // Extra Level at this chassis's tree level (abilities = 0) for equal-slot power bars.
+                ShipFamilyPowerBarNorm.BakeAtShipLevel(tier, def);
             }
+
+            ShipFamilyDefinition.InvalidateGlobalMaxUpgradeTreeTurnSpeedCache();
         }
 
         /// <summary>Scale-adjusted stats for power scoring (loads prefab contents so nested part localScale is included).</summary>

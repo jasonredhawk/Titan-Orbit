@@ -371,12 +371,14 @@ namespace TitanOrbit.UI
                 _planetProgressText.text = planetStr;
         }
 
-        public void RefreshCurrentShip(Action<ShipUpgradeTreeNodeUI, float> populateNode, float maxPower)
+        public void RefreshCurrentShip(
+            Action<ShipUpgradeTreeNodeUI, ShipPowerBarStatMaxes> populateNode,
+            ShipPowerBarStatMaxes maxes)
         {
             // --- RefreshCurrentShip ---
             if (_currentShipNode == null || populateNode == null)
                 return;
-            populateNode(_currentShipNode, maxPower);
+            populateNode(_currentShipNode, maxes);
         }
 
         private void CreateSectionHeader(Transform parent, string text, float height)

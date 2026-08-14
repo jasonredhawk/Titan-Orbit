@@ -176,6 +176,29 @@ namespace TitanOrbit.Systems
             return string.IsNullOrEmpty(cid) ? default : GetPowerScoreBreakdownForChassisId(cid);
         }
 
+        /// <summary>
+        /// Upgrade-tree power bar: Extra Level at the slot's ship <paramref name="level"/>,
+        /// no ability upgrades. Level-1 <see cref="GetPowerScoreBreakdownForUpgradeSlot"/> stays
+        /// for gem cost / sort.
+        /// </summary>
+        public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForUpgradeSlotAtShipLevel(
+            Starship ship, int storePlanetId, int level, int branchIndex)
+        {
+            string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, level, branchIndex);
+            return string.IsNullOrEmpty(cid)
+                ? default
+                : GetPowerScoreBreakdownForChassisIdAtShipLevel(cid, level);
+        }
+
+        /// <summary>At-ship-level power-bar breakdown (zero ability upgrades) for a chassis id.</summary>
+        public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisIdAtShipLevel(
+            string chassisId, int shipLevel)
+        {
+            return Config != null
+                ? Config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, shipLevel)
+                : default;
+        }
+
         public string GetUpgradeTreeShipNameForUpgradeSlot(Starship ship, int storePlanetId, int level, int branchIndex)
         {
             string cid = GetChassisIdForUpgradeLadderSlot(ship, storePlanetId, level, branchIndex);

@@ -701,8 +701,8 @@ namespace TitanOrbit.UI
         }
 #endif
 
-        /// <summary>Feeds power breakdown into the child bar, normalized against strongest ship on the tree.</summary>
-        public void ApplyPowerBreakdown(ShipFamilyPowerScoreBreakdown breakdown, float strongestShipTotal)
+        /// <summary>Feeds power breakdown into the child bar, each stat vs the global catalog max.</summary>
+        public void ApplyPowerBreakdown(ShipFamilyPowerScoreBreakdown breakdown, in ShipPowerBarStatMaxes globalMaxes)
         {
             // --- Apply changes ---
             if (powerBar == null)
@@ -714,7 +714,7 @@ namespace TitanOrbit.UI
                 powerBar.ConfigureLayoutScale(_lastWidthScale, _lastHeightScale);
 
             float track = PowerBarTrackWidth > 0.01f ? PowerBarTrackWidth : NodeButtonWidth;
-            powerBar.ApplyBreakdown(breakdown, strongestShipTotal, track);
+            powerBar.ApplyBreakdown(breakdown, in globalMaxes, track);
         }
 
         private static readonly Color PriceEnabledFill = new Color(0.14f, 0.46f, 0.24f, 1f);

@@ -3495,8 +3495,10 @@ namespace TitanOrbit.UI
             // Do NOT re-apply auto-deposit every sidebar refresh — that spammed SetWantDepositGems
             // RPCs and could race HideMenu / metronome clear on the Windows client.
             orbitDockSidebar.RefreshAutoDepositToggle(GetSavedAutoDepositGems());
-            float maxPower = shipUpgradeTree != null ? shipUpgradeTree.GetMaxDisplayPower() : 0.001f;
-            orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxPower);
+            ShipPowerBarStatMaxes maxes = shipUpgradeTree != null
+                ? shipUpgradeTree.GetPowerBarStatMaxes()
+                : ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
+            orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxes);
             RefreshMoonDockStore();
         }
 
