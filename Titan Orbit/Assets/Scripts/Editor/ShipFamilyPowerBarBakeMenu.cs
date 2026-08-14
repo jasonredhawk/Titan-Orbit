@@ -7,7 +7,7 @@ namespace TitanOrbit.Editor
     /// <summary>
     /// [EDITOR] Bakes <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdownAtShipLevel"/>
     /// on every family under Prefabs/Ships. Extra Level at each chassis's tree level,
-    /// ability purchases = 0. Does not resort the tree or rewrite level-1
+    /// every HUD ability maxed. Does not resort the tree or rewrite level-1
     /// <c>powerScoreBreakdown</c>. Menu: TitanOrbit → Ship Families → Bake Upgrade-Tree Power Bars At Ship Level.
     /// </summary>
     public static class ShipFamilyPowerBarBakeMenu

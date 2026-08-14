@@ -7,7 +7,7 @@ namespace TitanOrbit.Data
     /// Per-stat ceilings for the Orbit Menu upgrade-tree power bar. Each of the ten
     /// ability slots fills as <c>thisShip / globalMax</c>, so Health Regen is readable
     /// next to Health Cap. Values come from every family's chassis evaluated at that
-    /// chassis's tree level with zero ability upgrades. Paired with
+    /// chassis's tree level with every HUD ability maxed. Paired with
     /// <see cref="UI.ShipUpgradeTreePowerBarUI"/>.
     /// </summary>
     public struct ShipPowerBarStatMaxes
@@ -82,11 +82,11 @@ namespace TitanOrbit.Data
     }
 
     /// <summary>
-    /// Resolves upgrade-tree power-bar stats: Extra Level at ship level, ability purchases = 0.
-    /// Prefers the baked <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdownAtShipLevel"/>
-    /// so opening the Orbit Menu does not instantiate every chassis prefab. Live
-    /// <see cref="ShipFamilyStatsCalculator.TrySumFromPrefab"/> is cached per session when
-    /// the bake is missing. Also walks the catalog for the ten global maxes.
+    /// Resolves upgrade-tree power-bar stats: Extra Level at ship level with every HUD
+    /// ability maxed (<see cref="ShipAbilityLevelCounts.Maxed"/>). Same formulas as live
+    /// ships — non-weapons use <c>(ship−1) + ability + (N−1)</c>; weapons omit N;
+    /// weapon bullet speed is ability-only. Live prefab sums are cached per session.
+    /// Also walks the catalog for the ten global maxes.
     /// </summary>
     public static class ShipFamilyPowerBarNorm
     {
@@ -97,8 +97,8 @@ namespace TitanOrbit.Data
         static bool s_hasCachedMaxes;
 
         /// <summary>
-        /// Extra Level at <paramref name="entry"/>.<see cref="ShipFamilyChassisTierEntry.minHomePlanetLevel"/>
-        /// with zero abilities. Writes <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdownAtShipLevel"/>.
+        /// Extra Level at the tier's tree level with every HUD ability maxed.
+        /// Writes <see cref="ShipFamilyChassisTierEntry.powerScoreBreakdownAtShipLevel"/>.
         /// Editor bake path — call after the tier's ship level is assigned.
         /// </summary>
         public static void BakeAtShipLevel(ShipFamilyChassisTierEntry entry, ShipFamilyDefinition family)
@@ -113,8 +113,9 @@ namespace TitanOrbit.Data
             }
 
             int shipLevel = Mathf.Max(1, entry.minHomePlanetLevel);
+            ShipAbilityLevelCounts maxed = ShipAbilityLevelCounts.Maxed(shipLevel);
             if (ShipFamilyStatsCalculator.TrySumFromPrefab(
-                    entry.prefab, family, shipLevel, out ShipComponentAbilityStats stats))
+                    entry.prefab, family, shipLevel, in maxed, out ShipComponentAbilityStats stats))
             {
                 entry.powerScoreBreakdownAtShipLevel =
                     ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
@@ -125,9 +126,9 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Display breakdown for a chassis at <paramref name="shipLevel"/> (no ability upgrades).
-        /// Uses the bake when the requested level matches the tier's tree level; otherwise live-sums
-        /// the prefab once and caches it for this play session.
+        /// Display breakdown for a chassis at <paramref name="shipLevel"/> with every HUD
+        /// ability maxed. Live-sums the prefab (session-cached) so bars stay correct even
+        /// when the editor bake still has the older ability-0 values.
         /// </summary>
         public static ShipFamilyPowerScoreBreakdown GetBreakdownAtShipLevel(
             ShipFamilyDefinition family,
@@ -138,20 +139,15 @@ namespace TitanOrbit.Data
                 return default;
 
             shipLevel = Mathf.Max(1, shipLevel);
-            int bakedLevel = Mathf.Max(1, tier.minHomePlanetLevel);
-
-            // --- Baked path: tree node level matches the chassis unlock level ---
-            if (shipLevel == bakedLevel && tier.powerScoreBreakdownAtShipLevel.HasDisplayStats)
-                return tier.powerScoreBreakdownAtShipLevel;
-
-            string cacheKey = (tier.chassisId ?? string.Empty) + "@" + shipLevel;
+            string cacheKey = (tier.chassisId ?? string.Empty) + "@" + shipLevel + "@max";
             if (s_liveCache.TryGetValue(cacheKey, out ShipFamilyPowerScoreBreakdown cached))
                 return cached;
 
+            ShipAbilityLevelCounts maxed = ShipAbilityLevelCounts.Maxed(shipLevel);
             if (tier.prefab != null &&
                 family != null &&
                 ShipFamilyStatsCalculator.TrySumFromPrefab(
-                    tier.prefab, family, shipLevel, out ShipComponentAbilityStats stats))
+                    tier.prefab, family, shipLevel, in maxed, out ShipComponentAbilityStats stats))
             {
                 ShipFamilyPowerScoreBreakdown live =
                     ShipFamilyPowerScoreBreakdown.FromSummedShipStats(stats);
@@ -159,13 +155,13 @@ namespace TitanOrbit.Data
                 return live;
             }
 
-            // Last resort: level-1 bake so the bar is not blank before families are rebaked.
+            // Last resort: level-1 bake so the bar is not blank if the prefab cannot be summed.
             return tier.powerScoreBreakdown;
         }
 
         /// <summary>
         /// Highest value of each of the ten display stats across every upgrade-tree chassis,
-        /// each evaluated at that chassis's tree level with zero ability upgrades.
+        /// each evaluated at that chassis's tree level with every HUD ability maxed.
         /// Cached until <see cref="InvalidateCache"/>.
         /// </summary>
         public static ShipPowerBarStatMaxes GetGlobalMaxPerStat(PlanetShipFamilyConfig config = null)

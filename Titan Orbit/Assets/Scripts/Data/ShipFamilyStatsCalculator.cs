@@ -29,8 +29,8 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Sums prefab stats at level 1, then applies per-level scaling for <paramref name="shipLevel"/>.
-        /// Returns false when prefab or family is missing or the sum is all zero.
+        /// Sums prefab stats at level 1, then Extra Level at <paramref name="shipLevel"/> with
+        /// zero ability purchases. Returns false when prefab or family is missing or the sum is all zero.
         /// </summary>
         public static bool TrySumFromPrefab(
             GameObject prefab,
@@ -38,11 +38,27 @@ namespace TitanOrbit.Data
             int shipLevel,
             out ShipComponentAbilityStats effectiveAtLevel)
         {
+            var zeroAbilities = default(ShipAbilityLevelCounts);
+            return TrySumFromPrefab(prefab, family, shipLevel, in zeroAbilities, out effectiveAtLevel);
+        }
+
+        /// <summary>
+        /// Same prefab scan as <see cref="TrySumFromPrefab(GameObject, ShipFamilyDefinition, int, out ShipComponentAbilityStats)"/>,
+        /// then Extra Level with explicit ability purchases (use <see cref="ShipAbilityLevelCounts.Maxed"/>
+        /// for a fully upgraded preview).
+        /// </summary>
+        public static bool TrySumFromPrefab(
+            GameObject prefab,
+            ShipFamilyDefinition family,
+            int shipLevel,
+            in ShipAbilityLevelCounts abilities,
+            out ShipComponentAbilityStats effectiveAtLevel)
+        {
             effectiveAtLevel = default;
             if (prefab == null || family == null)
                 return false;
 
-            // Raw parts at authored bases — Extra Level uses shipLevel (abilities = 0 here).
+            // Raw parts at authored bases — Extra Level applies shipLevel + abilities below.
             SumResult sum = SumFromPrefabHierarchy(
                 prefab, family, shipLevel: 1, applyPropulsionAndWeaponRules: false);
             if (sum.MatchedComponentIds == null || sum.MatchedComponentIds.Count == 0)
@@ -51,7 +67,8 @@ namespace TitanOrbit.Data
             effectiveAtLevel = ShipComponentExtraLevelMath.AggregateAndEvaluate(
                 sum.MatchedComponentIds,
                 sum.PerComponentStats,
-                shipLevel);
+                shipLevel,
+                in abilities);
             effectiveAtLevel = ShipComponentExtraLevelMath.ApplyMobilityPenalties(effectiveAtLevel, shipLevel);
             if (family != null)
             {

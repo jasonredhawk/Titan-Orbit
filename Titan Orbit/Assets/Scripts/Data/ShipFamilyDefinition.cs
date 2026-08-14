@@ -582,10 +582,10 @@ namespace TitanOrbit.Data
         /// </summary>
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
         /// <summary>
-        /// Same ten display stats evaluated at <see cref="minHomePlanetLevel"/> with zero
-        /// ability upgrades. Orbit Menu power bars compare each ship against the global
-        /// max of this field. Baked in the editor; live <see cref="ShipFamilyStatsCalculator.TrySumFromPrefab"/>
-        /// is the fallback when empty.
+        /// Ten display stats at <see cref="minHomePlanetLevel"/> with every HUD ability
+        /// maxed (<c>abilityLevel = shipLevel</c>). Orbit Menu power bars use this so
+        /// higher-tier ships show their Extra Level ceiling (including weapon bullet speed).
+        /// Baked in the editor; live sum is the fallback when empty or stale.
         /// </summary>
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdownAtShipLevel;
         public float componentMass;

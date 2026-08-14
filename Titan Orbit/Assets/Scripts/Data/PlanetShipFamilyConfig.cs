@@ -401,7 +401,7 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// Upgrade-tree power-bar breakdown at <paramref name="shipLevel"/> (zero ability upgrades).
+        /// Upgrade-tree power-bar breakdown at <paramref name="shipLevel"/> with every HUD ability maxed.
         /// Prefers the baked at-ship-level field; does not change level-1
         /// <see cref="GetPowerScoreBreakdownForChassisId"/>.
         /// </summary>

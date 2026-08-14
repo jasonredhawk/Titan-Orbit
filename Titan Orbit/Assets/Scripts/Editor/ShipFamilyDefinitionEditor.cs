@@ -1378,7 +1378,7 @@ namespace TitanOrbit.Editor
                 int maxUpgrades = ShipFamilyPowerScoreBreakdown.GetMaxUpgradeCountForTier(tier.minHomePlanetLevel);
                 tier.powerScoreAtMaxLevel = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(
                     ShipFamilyPowerScoreBreakdown.ApplyMaxEffectiveLevels(stats, maxUpgrades)).Total;
-                // Extra Level at this chassis's tree level (abilities = 0) for equal-slot power bars.
+                // Extra Level at this chassis's tree level with every HUD ability maxed.
                 ShipFamilyPowerBarNorm.BakeAtShipLevel(tier, def);
             }
 

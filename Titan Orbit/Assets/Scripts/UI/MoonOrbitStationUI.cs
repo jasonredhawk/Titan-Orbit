@@ -865,7 +865,7 @@ namespace TitanOrbit.UI
         public void OnCurrentShipDisplayNodeClicked() =>
             OnUpgradeTreeNodeClicked(ShipLevel, BranchIndex);
 
-        /// <summary>Your Ship bar: Extra Level at current ship level, no ability upgrades.</summary>
+        /// <summary>Your Ship bar: Extra Level at current ship level with every HUD ability maxed.</summary>
         public ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown()
         {
             if (!TryGetChassisIdForTreeSlot(ShipLevel, BranchIndex, out string chassisId))
@@ -876,7 +876,7 @@ namespace TitanOrbit.UI
                 : default;
         }
 
-        /// <summary>Tree node bar: Extra Level at the node's ship <paramref name="level"/>, no ability upgrades.</summary>
+        /// <summary>Tree node bar: Extra Level at the node's ship <paramref name="level"/> with every HUD ability maxed.</summary>
         public ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex)
         {
             if (!TryGetChassisIdForTreeSlot(level, branchIndex, out string chassisId))
