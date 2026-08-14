@@ -30,6 +30,12 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField] public int RuntimeBulletIndex;
 
+        /// <summary>
+        /// Orbit Menu Damage vs Heal. When true, fire uses the shared EnergySpheres heal bank
+        /// instead of <see cref="RuntimeBulletIndex"/> (unless debug cycle-all is on).
+        /// </summary>
+        [GhostField] public bool HealingBulletsActive;
+
         /// <summary>Upgrade tree branch — selects chassis row from PlanetShipFamilyConfig.</summary>
         [GhostField] public int BranchIndex;
 

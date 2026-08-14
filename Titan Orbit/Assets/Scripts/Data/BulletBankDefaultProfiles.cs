@@ -6,6 +6,7 @@ namespace TitanOrbit.Data
     /// <summary>
     /// Name-token defaults for <see cref="BulletVfxBank"/> category profiles.
     /// Editor populate fills empty ability lists / unset stat mods; designers can override after.
+    /// Primaries are weak vs starting ~3 bullet damage; Per Extra scales with Fire Power Extra Levels.
     /// </summary>
     public static class BulletBankDefaultProfiles
     {
@@ -44,8 +45,8 @@ namespace TitanOrbit.Data
             if (Contains(n, "lightning"))
             {
                 stats.firePowerMultiplier = 0.9f;
-                stats.fireRateMultiplier = 0.85f;
-                abilities.Add(Shock(1.5f));
+                stats.fireRateMultiplier = 0.55f;
+                abilities.Add(Shock(0.75f, 0.12f));
                 return;
             }
 
@@ -53,15 +54,17 @@ namespace TitanOrbit.Data
             {
                 stats.bulletSpeedMultiplier = 0.8f;
                 stats.firePowerMultiplier = 1.15f;
+                stats.fireRateMultiplier = 0.6f;
                 stats.bulletRangeMultiplier = 1.2f;
-                abilities.Add(Burn(8f, 2.5f, 0.25f, 1.2f));
+                abilities.Add(Burn(1.5f, 0.4f, 2f, 0.25f, 0.25f, 1.2f, 0.03f));
                 return;
             }
 
             if (Contains(n, "liquid"))
             {
                 stats.bulletSpeedMultiplier = 0.85f;
-                abilities.Add(Burn(4f, 2f, 0.3f, 1.1f));
+                stats.fireRateMultiplier = 0.7f;
+                abilities.Add(Burn(1.2f, 0.3f, 1.8f, 0.2f, 0.3f, 1.1f, 0.02f));
                 return;
             }
 
@@ -69,20 +72,23 @@ namespace TitanOrbit.Data
             {
                 stats.firePowerMultiplier = 1.1f;
                 stats.bulletSpeedMultiplier = 0.9f;
+                stats.fireRateMultiplier = 0.65f;
                 stats.rammingPowerMultiplier = 1.15f;
-                abilities.Add(Push(16f));
+                abilities.Add(Push(8f, 1.5f, 5f, 0.4f));
                 return;
             }
 
             if (Contains(n, "rift"))
             {
-                abilities.Add(Gravity(12f, 18f, 2f));
+                stats.fireRateMultiplier = 0.55f;
+                abilities.Add(Gravity(6f, 0.5f, 9f, 1.5f, 1.2f, 0.15f));
                 return;
             }
 
             if (Contains(n, "ring2") || Contains(n, "ring"))
             {
-                abilities.Add(Gravity(8f, 12f, 1.5f));
+                stats.fireRateMultiplier = 0.7f;
+                abilities.Add(Gravity(4f, 0.4f, 6f, 1f, 1f, 0.12f));
                 return;
             }
 
@@ -90,18 +96,19 @@ namespace TitanOrbit.Data
             {
                 stats.firePowerMultiplier = 1.4f;
                 stats.bulletSpeedMultiplier = 0.7f;
-                stats.fireRateMultiplier = 0.6f;
+                stats.fireRateMultiplier = 0.55f;
                 stats.bulletRangeMultiplier = 1.3f;
                 stats.rammingPowerMultiplier = 1.15f;
-                abilities.Add(Push(18f));
-                abilities.Add(MulVs(BulletBankAbilityType.DamageMultiplierVsAsteroid, 1.35f));
+                abilities.Add(Push(9f, 1.8f, 5f, 0.4f));
+                abilities.Add(MulVs(BulletBankAbilityType.DamageMultiplierVsAsteroid, 1.2f, 0.04f));
                 return;
             }
 
             if (Contains(n, "energysphere") || Contains(n, "energy"))
             {
                 stats.firePowerMultiplier = 0.75f;
-                abilities.Add(Heal(12f));
+                stats.fireRateMultiplier = 0.5f;
+                abilities.Add(Heal(4f, 1.2f));
                 return;
             }
 
@@ -109,22 +116,24 @@ namespace TitanOrbit.Data
             {
                 stats.firePowerMultiplier = 1.2f;
                 stats.bulletSpeedMultiplier = 1.15f;
-                abilities.Add(MulVs(BulletBankAbilityType.DamageMultiplierVsShip, 1.25f));
+                stats.fireRateMultiplier = 0.9f;
+                abilities.Add(MulVs(BulletBankAbilityType.DamageMultiplierVsShip, 1.12f, 0.04f));
                 return;
             }
 
             if (Contains(n, "sparkler"))
             {
-                stats.fireRateMultiplier = 1.25f;
+                stats.fireRateMultiplier = 0.85f;
                 stats.firePowerMultiplier = 0.85f;
-                abilities.Add(Burn(2f, 1.2f, 0.2f, 1f));
+                abilities.Add(Burn(0.8f, 0.2f, 1f, 0.15f, 0.2f, 1f, 0.02f));
                 return;
             }
 
             if (Contains(n, "plasma"))
             {
-                abilities.Add(MulVs(BulletBankAbilityType.DamageMultiplierVsShip, 1.15f));
-                abilities.Add(Burn(3f, 1.5f, 0.25f, 1f));
+                stats.fireRateMultiplier = 0.65f;
+                abilities.Add(MulVs(BulletBankAbilityType.DamageMultiplierVsShip, 1.1f, 0.03f));
+                abilities.Add(Burn(1f, 0.25f, 1.2f, 0.15f, 0.25f, 1f, 0.02f));
                 return;
             }
 
@@ -133,71 +142,107 @@ namespace TitanOrbit.Data
                 stats.bulletSpeedMultiplier = 1.25f;
                 stats.bulletRangeMultiplier = 1.15f;
                 stats.firePowerMultiplier = 0.9f;
-                abilities.Add(Stretch(0.5f, 2f));
+                stats.fireRateMultiplier = 0.95f;
+                abilities.Add(Stretch(0.5f, 0.02f, 2f, 0.08f));
                 return;
             }
 
             if (Contains(n, "bullet"))
             {
-                stats.fireRateMultiplier = 1.2f;
-                abilities.Add(MulVs(BulletBankAbilityType.DamageMultiplierVsAsteroid, 1.2f));
+                stats.fireRateMultiplier = 1.05f;
+                abilities.Add(MulVs(BulletBankAbilityType.DamageMultiplierVsAsteroid, 1.12f, 0.03f));
             }
         }
 
         static bool Contains(string name, string token) =>
             name.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0;
 
-        static BulletBankAbility Shock(float duration) => new BulletBankAbility
+        static BulletBankAbility Shock(float duration, float durationPerExtra) => new BulletBankAbility
         {
             type = BulletBankAbilityType.ElectricShockDisable,
             duration = duration,
+            durationPerExtra = durationPerExtra,
             magnitude = 1f,
+            energyDrain = 3.5f,
+            energyDrainPerExtra = 0.5f,
         };
 
-        static BulletBankAbility Burn(float dps, float duration, float tick, float extraRange) =>
+        static BulletBankAbility Burn(
+            float dps, float dpsPerExtra,
+            float duration, float durationPerExtra,
+            float tick, float extraRange, float extraRangePerExtra) =>
             new BulletBankAbility
             {
                 type = BulletBankAbilityType.BurnOverTime,
                 magnitude = dps,
+                magnitudePerExtra = dpsPerExtra,
                 duration = duration,
+                durationPerExtra = durationPerExtra,
                 tickInterval = tick,
                 radius = extraRange,
+                radiusPerExtra = extraRangePerExtra,
+                energyDrain = 2.5f,
+                energyDrainPerExtra = 0.55f,
             };
 
-        static BulletBankAbility Heal(float amount) => new BulletBankAbility
+        static BulletBankAbility Heal(float amount, float amountPerExtra) => new BulletBankAbility
         {
             type = BulletBankAbilityType.HealFriendly,
             magnitude = amount,
+            magnitudePerExtra = amountPerExtra,
+            energyDrain = 5f,
+            energyDrainPerExtra = 0.9f,
         };
 
-        static BulletBankAbility Push(float force, float radius = 6f) => new BulletBankAbility
-        {
-            type = BulletBankAbilityType.ConcussivePush,
-            magnitude = force,
-            radius = radius,
-        };
+        static BulletBankAbility Push(float force, float forcePerExtra, float radius, float radiusPerExtra) =>
+            new BulletBankAbility
+            {
+                type = BulletBankAbilityType.ConcussivePush,
+                magnitude = force,
+                magnitudePerExtra = forcePerExtra,
+                radius = radius,
+                radiusPerExtra = radiusPerExtra,
+                energyDrain = 3f,
+                energyDrainPerExtra = 0.45f,
+            };
 
-        static BulletBankAbility Gravity(float radius, float force, float duration) =>
+        static BulletBankAbility Gravity(
+            float radius, float radiusPerExtra,
+            float force, float forcePerExtra,
+            float duration, float durationPerExtra) =>
             new BulletBankAbility
             {
                 type = BulletBankAbilityType.GravityPull,
                 radius = radius,
+                radiusPerExtra = radiusPerExtra,
                 magnitude = force,
+                magnitudePerExtra = forcePerExtra,
                 duration = duration,
+                durationPerExtra = durationPerExtra,
+                energyDrain = 3.5f,
+                energyDrainPerExtra = 0.55f,
             };
 
-        static BulletBankAbility MulVs(BulletBankAbilityType type, float magnitude) =>
+        static BulletBankAbility MulVs(BulletBankAbilityType type, float magnitude, float magnitudePerExtra) =>
             new BulletBankAbility
             {
                 type = type,
                 magnitude = magnitude,
+                magnitudePerExtra = magnitudePerExtra,
+                energyDrain = 0.75f,
+                energyDrainPerExtra = 0.12f,
             };
 
-        static BulletBankAbility Stretch(float start, float end) => new BulletBankAbility
-        {
-            type = BulletBankAbilityType.StretchLengthInFlight,
-            radius = start,
-            magnitude = end,
-        };
+        static BulletBankAbility Stretch(float start, float startPerExtra, float end, float endPerExtra) =>
+            new BulletBankAbility
+            {
+                type = BulletBankAbilityType.StretchLengthInFlight,
+                radius = start,
+                radiusPerExtra = startPerExtra,
+                magnitude = end,
+                magnitudePerExtra = endPerExtra,
+                energyDrain = 0.5f,
+                energyDrainPerExtra = 0.08f,
+            };
     }
 }

@@ -78,6 +78,40 @@ namespace TitanOrbit.UI
             em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
 
+        /// <summary>Orbit Menu Damage vs Heal. Writes ghosted loadout on Local Host and RPCs dedicated clients.</summary>
+        public static void SetHealingBullets(bool healingActive)
+        {
+            ApplyHealingBulletsOnWorld(EcsGameBridge.ClientWorld, healingActive);
+            if (!TitanOrbit.NetCode.TitanOrbitSessionManager.IsDedicatedOnlineClient)
+                ApplyHealingBulletsOnWorld(EcsGameBridge.ServerWorld, healingActive);
+
+            if (EcsGameBridge.IsLocalHost() || !EcsGameBridge.IsNetworkInGame())
+                return;
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            var em = world.EntityManager;
+            var entity = em.CreateEntity();
+            em.AddComponentData(entity, new SetHealingBulletsCommand { HealingActive = healingActive });
+            em.AddComponentData(entity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        static void ApplyHealingBulletsOnWorld(World world, bool healingActive)
+        {
+            if (world == null || !world.IsCreated)
+                return;
+            if (!EcsGameBridge.TryGetLocalShipEntityTagged(world, out var shipEntity))
+                return;
+            var em = world.EntityManager;
+            if (!em.HasComponent<ShipLoadoutState>(shipEntity))
+                return;
+            var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
+            loadout.HealingBulletsActive = healingActive;
+            em.SetComponentData(shipEntity, loadout);
+        }
+
         /// <summary>
         /// Writes deposit intent onto the Local Host server ship. No-op for dedicated online clients
         /// (they have no ServerWorld gameplay authority).

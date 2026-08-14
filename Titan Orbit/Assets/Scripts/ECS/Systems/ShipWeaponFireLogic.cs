@@ -85,7 +85,8 @@ namespace TitanOrbit.ECS
             MountShot[] shots,
             out int shotCount,
             out float totalEnergySpend,
-            out int nextMountIndexAfter)
+            out int nextMountIndexAfter,
+            float abilityEnergyPerShot = 0f)
         {
             shotCount = 0;
             totalEnergySpend = 0f;
@@ -95,6 +96,7 @@ namespace TitanOrbit.ECS
                 return false;
 
             int mountCount = mounts.Length;
+            float abilityAdd = math.max(0f, abilityEnergyPerShot);
 
             // --- Sum every barrel’s cost + check all cooldowns ready ---
             float totalCost = 0f;
@@ -102,7 +104,7 @@ namespace TitanOrbit.ECS
             for (int i = 0; i < mountCount; i++)
             {
                 ResolveMountCombat(mounts[i], fallbackDamage, fallbackFireRate,
-                    out float damage, out _, out float energyCost);
+                    out float damage, out _, out float energyCost, abilityAdd);
                 totalCost += energyCost;
                 if (mounts[i].FireCooldown > 0f)
                     allReady = false;
@@ -121,7 +123,7 @@ namespace TitanOrbit.ECS
                 for (int i = 0; i < capacity; i++)
                 {
                     ResolveMountCombat(mounts[i], fallbackDamage, fallbackFireRate,
-                        out float damage, out float fireRate, out float energyCost);
+                        out float damage, out float fireRate, out float energyCost, abilityAdd);
                     shots[shotCount++] = new MountShot
                     {
                         MountIndex = i,
@@ -155,7 +157,7 @@ namespace TitanOrbit.ECS
                 return false;
 
             ResolveMountCombat(mount, fallbackDamage, fallbackFireRate,
-                out float dripDamage, out float dripRate, out float dripCost);
+                out float dripDamage, out float dripRate, out float dripCost, abilityAdd);
             if (currentEnergy < dripCost)
                 return false;
 
@@ -192,7 +194,7 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Resolves per-barrel damage, fire rate, and energy cost (energy = firePower).
+        /// Resolves per-barrel damage, fire rate, and energy cost (energy = firePower + ability drain).
         /// </summary>
         static void ResolveMountCombat(
             in ShipWeaponMountElement mount,
@@ -200,7 +202,8 @@ namespace TitanOrbit.ECS
             float fallbackFireRate,
             out float damage,
             out float fireRate,
-            out float energyCost)
+            out float energyCost,
+            float abilityEnergyPerShot = 0f)
         {
             damage = mount.FirePower > 0.01f
                 ? mount.FirePower
@@ -210,7 +213,7 @@ namespace TitanOrbit.ECS
                 : math.max(0.1f, fallbackFireRate);
             damage = math.max(1f, damage);
             fireRate = math.max(0.1f, fireRate);
-            energyCost = math.max(0.01f, damage);
+            energyCost = math.max(0.01f, damage + math.max(0f, abilityEnergyPerShot));
         }
     }
 }

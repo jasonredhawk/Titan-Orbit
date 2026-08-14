@@ -83,6 +83,16 @@ namespace TitanOrbit.ECS
                 ecb.DestroyEntity(entity);
             }
 
+            // --- Damage vs Heal toggle (orbit station UI) ---
+            foreach (var (cmd, req, entity) in SystemAPI
+                         .Query<RefRO<SetHealingBulletsCommand>, RefRO<ReceiveRpcCommandRequest>>()
+                         .WithEntityAccess())
+            {
+                int networkId = GetSenderNetworkId(state.EntityManager, req.ValueRO.SourceConnection);
+                TrySetHealingBulletsForNetworkId(state.EntityManager, networkId, cmd.ValueRO.HealingActive);
+                ecb.DestroyEntity(entity);
+            }
+
             // --- Ship level / branch upgrade purchase ---
             foreach (var (cmd, req, entity) in SystemAPI
                          .Query<RefRO<PurchaseShipUpgradeCommand>, RefRO<ReceiveRpcCommandRequest>>()
@@ -283,6 +293,20 @@ namespace TitanOrbit.ECS
             }
 
             return 0f;
+        }
+
+        /// <summary>Writes <see cref="ShipLoadoutState.HealingBulletsActive"/> for the owning ship.</summary>
+        public static bool TrySetHealingBulletsForNetworkId(EntityManager em, int networkId, bool healingActive)
+        {
+            if (!TryGetOwnedShip(em, networkId, out var shipEntity))
+                return false;
+            if (!em.HasComponent<ShipLoadoutState>(shipEntity))
+                return false;
+
+            var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
+            loadout.HealingBulletsActive = healingActive;
+            em.SetComponentData(shipEntity, loadout);
+            return true;
         }
 
         /// <summary>
@@ -568,8 +592,11 @@ namespace TitanOrbit.ECS
 
             if (!family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry) || entry == null)
             {
-                message = "Component not in catalog.";
-                return false;
+                if (!BulletBankProfileUtility.TryFindComponentInAnyFamily(componentId, out entry) || entry == null)
+                {
+                    message = "Component not in catalog.";
+                    return false;
+                }
             }
 
             if (HasComponentEquipped(em, shipEntity, componentId))

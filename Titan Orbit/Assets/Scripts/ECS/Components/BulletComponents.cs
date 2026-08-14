@@ -61,6 +61,12 @@ namespace TitanOrbit.ECS
         public float ScaleMultiplier;
 
         /// <summary>
+        /// Fire Power Extra Levels on the shooter at fire time:
+        /// <c>(shipLevel−1) + Fire Power purchases</c>. Scales bank abilities.
+        /// </summary>
+        public int FirePowerExtraLevels;
+
+        /// <summary>
         /// [TITAN-ORBIT] Collision / damage mask. Ship guns use <see cref="BulletDamageFilter.Everything"/>;
         /// mining drones use <see cref="BulletDamageFilter.AsteroidsOnly"/>; fighters use
         /// <see cref="BulletDamageFilter.ShipsOnly"/>; planetary defense uses

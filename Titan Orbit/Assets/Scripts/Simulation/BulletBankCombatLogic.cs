@@ -35,6 +35,12 @@ namespace TitanOrbit.Simulation
         public static float SafeMul(float authored) => authored > 0f ? authored : 1f;
 
         /// <summary>
+        /// Extra Level steps for bank abilities: <c>(shipLevel−1) + Fire Power purchases</c>.
+        /// </summary>
+        public static int CountFirePowerExtraLevels(int shipLevel, int firePowerAbilityLevel) =>
+            BulletBankAbility.FirePowerExtraLevels(shipLevel, firePowerAbilityLevel);
+
+        /// <summary>
         /// Multiplies fire-time combat numbers by the category profile.
         /// When <paramref name="lifetime"/> is positive, it is rebuilt as range/speed (PD uses 0).
         /// </summary>
@@ -44,7 +50,8 @@ namespace TitanOrbit.Simulation
             ref float speed,
             ref float maxDistance,
             ref float lifetime,
-            ref float fireRate)
+            ref float fireRate,
+            int firePowerExtraLevels = 0)
         {
             if (!TryGetProfile(bankIndex, out BulletBankProfile profile))
                 return;
@@ -56,7 +63,7 @@ namespace TitanOrbit.Simulation
 
             float rangeMul = SafeMul(s.bulletRangeMultiplier);
             if (profile.HasBurn)
-                rangeMul *= profile.GetBurnBulletRangeMultiplier();
+                rangeMul *= profile.GetBurnBulletRangeMultiplier(firePowerExtraLevels);
             maxDistance *= rangeMul;
 
             if (lifetime > 0.001f)
@@ -83,19 +90,36 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>Base damage × stacked damage-multiplier abilities for this target class.</summary>
-        public static float ResolveHitDamage(BulletBankProfile profile, BulletBankDamageTarget target, float baseDamage)
+        public static float ResolveHitDamage(
+            BulletBankProfile profile,
+            BulletBankDamageTarget target,
+            float baseDamage,
+            int firePowerExtraLevels = 0)
         {
             if (profile == null)
                 return baseDamage;
-            return baseDamage * profile.GetDamageMultiplier(target);
+            return baseDamage * profile.GetDamageMultiplier(target, firePowerExtraLevels);
         }
 
         /// <summary>Looks up the profile then applies <see cref="ResolveHitDamage"/>.</summary>
-        public static float ResolveHitDamage(int bankIndex, byte hitKind, float baseDamage)
+        public static float ResolveHitDamage(
+            int bankIndex,
+            byte hitKind,
+            float baseDamage,
+            int firePowerExtraLevels = 0)
         {
             if (!TryGetProfile(bankIndex, out BulletBankProfile profile))
                 return baseDamage;
-            return ResolveHitDamage(profile, BulletBankAbilityTargeting.FromHitKind(hitKind), baseDamage);
+            return ResolveHitDamage(
+                profile, BulletBankAbilityTargeting.FromHitKind(hitKind), baseDamage, firePowerExtraLevels);
+        }
+
+        /// <summary>Sum of ability energy drains for this bank (0 when missing).</summary>
+        public static float GetAbilityEnergyDrain(int bankIndex, int firePowerExtraLevels = 0)
+        {
+            if (!TryGetProfile(bankIndex, out BulletBankProfile profile) || profile == null)
+                return 0f;
+            return math.max(0f, profile.GetTotalAbilityEnergyDrain(firePowerExtraLevels));
         }
 
         /// <summary>True when the profile heals same-team ships on contact.</summary>
@@ -103,9 +127,11 @@ namespace TitanOrbit.Simulation
             profile != null && profile.HasAbility(BulletBankAbilityType.HealFriendly);
 
         /// <summary>Heal amount per ally hit (0 when the ability is missing).</summary>
-        public static float GetHealFriendlyAmount(BulletBankProfile profile)
+        public static float GetHealFriendlyAmount(BulletBankProfile profile, int firePowerExtraLevels = 0)
         {
-            if (profile == null || !profile.TryGetAbility(BulletBankAbilityType.HealFriendly, out BulletBankAbility ability) ||
+            if (profile == null ||
+                !profile.TryGetResolvedAbility(
+                    BulletBankAbilityType.HealFriendly, firePowerExtraLevels, out BulletBankAbility ability) ||
                 ability == null)
                 return 0f;
             return math.max(0f, ability.magnitude);

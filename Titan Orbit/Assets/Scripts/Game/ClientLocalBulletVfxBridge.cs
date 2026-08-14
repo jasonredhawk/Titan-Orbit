@@ -156,6 +156,13 @@ namespace TitanOrbit.Game
             // --- Sync predicted energy with ghost (before planning fire) ---
             SyncPredictedEnergy(shipState.CurrentEnergy);
 
+            int firePowerAbilityLv = 0;
+            if (world.EntityManager.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                firePowerAbilityLv = world.EntityManager.GetComponentData<ShipAttributeUpgradeState>(shipEntity).FirePower;
+            int firePowerExtras = BulletBankCombatLogic.CountFirePowerExtraLevels(
+                shipState.ShipLevel, firePowerAbilityLv);
+            float abilityEnergy = BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
+
             // --- Same planner + FireMode as BulletSimulationSystem (server) ---
             if (!ShipWeaponFireLogic.TryPlanFire(
                     _predictedEnergy,
@@ -167,7 +174,8 @@ namespace TitanOrbit.Game
                     s_ShotScratch,
                     out int shotCount,
                     out float energySpend,
-                    out int nextMountIndexAfter))
+                    out int nextMountIndexAfter,
+                    abilityEnergy))
                 return;
 
             // --- Cap pending anticipations — do not arm cooldowns / cursor if the queue is full ---
@@ -211,7 +219,8 @@ namespace TitanOrbit.Game
                 float lifetime = weaponCfg.BulletLifetime;
                 float fireRate = weaponCfg.FireRate;
                 BulletBankCombatLogic.ApplyFireModifiers(
-                    bankIndex, ref damage, ref bulletSpeed, ref maxDistance, ref lifetime, ref fireRate);
+                    bankIndex, ref damage, ref bulletSpeed, ref maxDistance, ref lifetime, ref fireRate,
+                    firePowerExtras);
                 float fireRateMul = fireRate / math.max(0.1f, weaponCfg.FireRate);
 
                 float visualScale = BulletVisualScale.ComputePerShotScale(
@@ -324,7 +333,8 @@ namespace TitanOrbit.Game
                 ownerNetworkId = EcsGameBridge.GetLocalNetworkId();
 
             if (em.HasComponent<ShipLoadoutState>(shipEntity))
-                bankIndex = math.max(0, em.GetComponentData<ShipLoadoutState>(shipEntity).RuntimeBulletIndex);
+                bankIndex = BulletBankFireResolve.ResolveFireBankIndex(
+                    em.GetComponentData<ShipLoadoutState>(shipEntity));
 
             // --- Fire gate: ECS Fire InputEvent when present, else raw input ---
             if (em.HasComponent<ShipInput>(shipEntity) && em.GetComponentData<ShipInput>(shipEntity).Fire.IsSet)

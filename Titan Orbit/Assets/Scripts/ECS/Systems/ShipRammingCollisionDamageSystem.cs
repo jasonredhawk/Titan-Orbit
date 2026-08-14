@@ -151,7 +151,8 @@ namespace TitanOrbit.ECS
                     : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower;
                 int ramBankIndex = 0;
                 if (state.EntityManager.HasComponent<ShipLoadoutState>(shipEntity))
-                    ramBankIndex = math.max(0, state.EntityManager.GetComponentData<ShipLoadoutState>(shipEntity).RuntimeBulletIndex);
+                    ramBankIndex = BulletBankFireResolve.ResolveFireBankIndex(
+                        state.EntityManager.GetComponentData<ShipLoadoutState>(shipEntity));
                 familyRam *= BulletBankCombatLogic.GetRammingPowerMultiplier(ramBankIndex);
                 float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRam);
 
@@ -452,7 +453,8 @@ namespace TitanOrbit.ECS
             float ramPower = offMotor.RammingPower;
             int ramBankIndex = 0;
             if (state.EntityManager.HasComponent<ShipLoadoutState>(offender))
-                ramBankIndex = math.max(0, state.EntityManager.GetComponentData<ShipLoadoutState>(offender).RuntimeBulletIndex);
+                ramBankIndex = BulletBankFireResolve.ResolveFireBankIndex(
+                    state.EntityManager.GetComponentData<ShipLoadoutState>(offender));
             ramPower *= BulletBankCombatLogic.GetRammingPowerMultiplier(ramBankIndex);
             float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(ramPower);
 
@@ -643,7 +645,8 @@ namespace TitanOrbit.ECS
             // --- This ship's current bullet bank (B-key cycle) ---
             int bankIndex = 0;
             if (state.EntityManager.HasComponent<ShipLoadoutState>(shipEntity))
-                bankIndex = math.max(0, state.EntityManager.GetComponentData<ShipLoadoutState>(shipEntity).RuntimeBulletIndex);
+                bankIndex = BulletBankFireResolve.ResolveFireBankIndex(
+                    state.EntityManager.GetComponentData<ShipLoadoutState>(shipEntity));
 
             float cannonScale = 1f;
             if (state.EntityManager.HasComponent<ShipWeaponConfig>(shipEntity))

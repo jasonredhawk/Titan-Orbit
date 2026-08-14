@@ -26,15 +26,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 0.9
         bulletSpeedMultiplier: 1.25
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.95
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1.15
       abilities:
       - type: 10
         magnitude: 2
+        magnitudePerExtra: 0.08
         duration: 1
+        durationPerExtra: 0
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 0.5
+        radiusPerExtra: 0.02
+        energyDrain: 0.5
+        energyDrainPerExtra: 0.08
         damageTarget: 0
   - categoryName: Bullets
     globalVisualScaleMultiplier: 1
@@ -49,15 +55,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1
         bulletSpeedMultiplier: 1
-        fireRateMultiplier: 1.2
+        fireRateMultiplier: 1.05
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
       - type: 5
-        magnitude: 1.2
+        magnitude: 1.12
+        magnitudePerExtra: 0.03
         duration: 1
+        durationPerExtra: 0
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 0
+        radiusPerExtra: 0
+        energyDrain: 0.75
+        energyDrainPerExtra: 0.12
         damageTarget: 0
   - categoryName: EnergySpheres
     globalVisualScaleMultiplier: 1
@@ -72,15 +84,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 0.75
         bulletSpeedMultiplier: 1
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.5
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
       - type: 2
-        magnitude: 12
+        magnitude: 4
+        magnitudePerExtra: 1.2
         duration: 1
+        durationPerExtra: 0
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 0
+        radiusPerExtra: 0
+        energyDrain: 5
+        energyDrainPerExtra: 0.9
         damageTarget: 0
   - categoryName: Fireballs
     globalVisualScaleMultiplier: 1
@@ -95,15 +113,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1.15
         bulletSpeedMultiplier: 0.8
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.6
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1.2
       abilities:
       - type: 1
-        magnitude: 8
-        duration: 2.5
+        magnitude: 1.5
+        magnitudePerExtra: 0.4
+        duration: 2
+        durationPerExtra: 0.25
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 1.2
+        radiusPerExtra: 0.03
+        energyDrain: 2.5
+        energyDrainPerExtra: 0.55
         damageTarget: 0
   - categoryName: FireballsV2
     globalVisualScaleMultiplier: 1
@@ -118,15 +142,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1.15
         bulletSpeedMultiplier: 0.8
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.6
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1.2
       abilities:
       - type: 1
-        magnitude: 8
-        duration: 2.5
+        magnitude: 1.5
+        magnitudePerExtra: 0.4
+        duration: 2
+        durationPerExtra: 0.25
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 1.2
+        radiusPerExtra: 0.03
+        energyDrain: 2.5
+        energyDrainPerExtra: 0.55
         damageTarget: 0
   - categoryName: Laser
     globalVisualScaleMultiplier: 1
@@ -141,15 +171,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 0.9
         bulletSpeedMultiplier: 1.25
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.95
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1.15
       abilities:
       - type: 10
         magnitude: 2
+        magnitudePerExtra: 0.08
         duration: 1
+        durationPerExtra: 0
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 0.5
+        radiusPerExtra: 0.02
+        energyDrain: 0.5
+        energyDrainPerExtra: 0.08
         damageTarget: 0
   - categoryName: LaserSmall
     globalVisualScaleMultiplier: 1
@@ -164,15 +200,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 0.9
         bulletSpeedMultiplier: 1.25
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.95
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1.15
       abilities:
       - type: 10
         magnitude: 2
+        magnitudePerExtra: 0.08
         duration: 1
+        durationPerExtra: 0
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 0.5
+        radiusPerExtra: 0.02
+        energyDrain: 0.5
+        energyDrainPerExtra: 0.08
         damageTarget: 0
   - categoryName: Lightning
     globalVisualScaleMultiplier: 1
@@ -187,15 +229,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 0.9
         bulletSpeedMultiplier: 1
-        fireRateMultiplier: 0.85
+        fireRateMultiplier: 0.55
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
       - type: 0
         magnitude: 1
-        duration: 1.5
+        magnitudePerExtra: 0
+        duration: 0.75
+        durationPerExtra: 0.12
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 0
+        radiusPerExtra: 0
+        energyDrain: 3.5
+        energyDrainPerExtra: 0.5
         damageTarget: 0
   - categoryName: Liquid
     globalVisualScaleMultiplier: 1
@@ -211,15 +259,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1
         bulletSpeedMultiplier: 0.85
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.7
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
       - type: 1
-        magnitude: 4
-        duration: 2
+        magnitude: 1.2
+        magnitudePerExtra: 0.3
+        duration: 1.8
+        durationPerExtra: 0.2
         tickInterval: 0.3
+        tickIntervalPerExtra: 0
         radius: 1.1
+        radiusPerExtra: 0.02
+        energyDrain: 2.5
+        energyDrainPerExtra: 0.55
         damageTarget: 0
   - categoryName: Plasma
     globalVisualScaleMultiplier: 1
@@ -234,21 +288,33 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1
         bulletSpeedMultiplier: 1
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.65
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
       - type: 6
-        magnitude: 1.15
+        magnitude: 1.1
+        magnitudePerExtra: 0.03
         duration: 1
+        durationPerExtra: 0
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 0
+        radiusPerExtra: 0
+        energyDrain: 0.75
+        energyDrainPerExtra: 0.12
         damageTarget: 0
       - type: 1
-        magnitude: 3
-        duration: 1.5
+        magnitude: 1
+        magnitudePerExtra: 0.25
+        duration: 1.2
+        durationPerExtra: 0.15
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 1
+        radiusPerExtra: 0.02
+        energyDrain: 2.5
+        energyDrainPerExtra: 0.55
         damageTarget: 0
   - categoryName: Rift
     globalVisualScaleMultiplier: 1
@@ -263,15 +329,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1
         bulletSpeedMultiplier: 1
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.55
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
       - type: 4
-        magnitude: 18
-        duration: 2
+        magnitude: 9
+        magnitudePerExtra: 1.5
+        duration: 1.2
+        durationPerExtra: 0.15
         tickInterval: 0.25
-        radius: 12
+        tickIntervalPerExtra: 0
+        radius: 6
+        radiusPerExtra: 0.5
+        energyDrain: 3.5
+        energyDrainPerExtra: 0.55
         damageTarget: 0
   - categoryName: Ring
     globalVisualScaleMultiplier: 1
@@ -286,15 +358,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1
         bulletSpeedMultiplier: 1
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.7
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
       - type: 4
-        magnitude: 12
-        duration: 1.5
+        magnitude: 6
+        magnitudePerExtra: 1
+        duration: 1
+        durationPerExtra: 0.12
         tickInterval: 0.25
-        radius: 8
+        tickIntervalPerExtra: 0
+        radius: 4
+        radiusPerExtra: 0.4
+        energyDrain: 3.5
+        energyDrainPerExtra: 0.55
         damageTarget: 0
   - categoryName: Ring2
     globalVisualScaleMultiplier: 1
@@ -309,15 +387,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1
         bulletSpeedMultiplier: 1
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.7
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
       - type: 4
-        magnitude: 12
-        duration: 1.5
+        magnitude: 6
+        magnitudePerExtra: 1
+        duration: 1
+        durationPerExtra: 0.12
         tickInterval: 0.25
-        radius: 8
+        tickIntervalPerExtra: 0
+        radius: 4
+        radiusPerExtra: 0.4
+        energyDrain: 3.5
+        energyDrainPerExtra: 0.55
         damageTarget: 0
   - categoryName: Rockets
     globalVisualScaleMultiplier: 1
@@ -332,21 +416,33 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1.4
         bulletSpeedMultiplier: 0.7
-        fireRateMultiplier: 0.6
+        fireRateMultiplier: 0.55
         rammingPowerMultiplier: 1.15
         bulletRangeMultiplier: 1.3
       abilities:
       - type: 3
-        magnitude: 18
+        magnitude: 9
+        magnitudePerExtra: 1.8
         duration: 1
+        durationPerExtra: 0
         tickInterval: 0.25
-        radius: 0
+        tickIntervalPerExtra: 0
+        radius: 5
+        radiusPerExtra: 0.4
+        energyDrain: 3
+        energyDrainPerExtra: 0.45
         damageTarget: 0
       - type: 5
-        magnitude: 1.35
+        magnitude: 1.2
+        magnitudePerExtra: 0.04
         duration: 1
+        durationPerExtra: 0
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 0
+        radiusPerExtra: 0
+        energyDrain: 0.75
+        energyDrainPerExtra: 0.12
         damageTarget: 0
   - categoryName: Sharp
     globalVisualScaleMultiplier: 1
@@ -361,15 +457,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1.2
         bulletSpeedMultiplier: 1.15
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.9
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
       - type: 6
-        magnitude: 1.25
+        magnitude: 1.12
+        magnitudePerExtra: 0.04
         duration: 1
+        durationPerExtra: 0
         tickInterval: 0.25
+        tickIntervalPerExtra: 0
         radius: 0
+        radiusPerExtra: 0
+        energyDrain: 0.75
+        energyDrainPerExtra: 0.12
         damageTarget: 0
   - categoryName: Shockwave
     globalVisualScaleMultiplier: 1
@@ -384,15 +486,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 1.1
         bulletSpeedMultiplier: 0.9
-        fireRateMultiplier: 1
+        fireRateMultiplier: 0.65
         rammingPowerMultiplier: 1.15
         bulletRangeMultiplier: 1
       abilities:
       - type: 3
-        magnitude: 16
+        magnitude: 8
+        magnitudePerExtra: 1.5
         duration: 1
+        durationPerExtra: 0
         tickInterval: 0.25
-        radius: 0
+        tickIntervalPerExtra: 0
+        radius: 5
+        radiusPerExtra: 0.4
+        energyDrain: 3
+        energyDrainPerExtra: 0.45
         damageTarget: 0
   - categoryName: Sparkler
     globalVisualScaleMultiplier: 1
@@ -407,15 +515,21 @@ MonoBehaviour:
       statModifiers:
         firePowerMultiplier: 0.85
         bulletSpeedMultiplier: 1
-        fireRateMultiplier: 1.25
+        fireRateMultiplier: 0.85
         rammingPowerMultiplier: 1
         bulletRangeMultiplier: 1
       abilities:
       - type: 1
-        magnitude: 2
-        duration: 1.2
+        magnitude: 0.8
+        magnitudePerExtra: 0.2
+        duration: 1
+        durationPerExtra: 0.15
         tickInterval: 0.2
+        tickIntervalPerExtra: 0
         radius: 1
+        radiusPerExtra: 0.02
+        energyDrain: 2.5
+        energyDrainPerExtra: 0.55
         damageTarget: 0
   fallbackImpactPrefab: {fileID: 660604078598729712, guid: 28e3a12f83bb82d4187803aac2e18d7f, type: 3}
   globalVisualScaleMultiplier: 0.3

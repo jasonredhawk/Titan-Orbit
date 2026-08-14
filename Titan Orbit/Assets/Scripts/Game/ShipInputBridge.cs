@@ -1,6 +1,8 @@
 using System.Reflection;
+using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Shared;
+using Unity.Entities;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Input;
@@ -144,7 +146,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Spawns SimpleFloatingText with the next category name above the local ship.
-        /// Advances a local display index so the name walks the full bank list (not stuck on "Bullets").
+        /// Mirrors server B-key rules: owned damage banks, heal-mode lock, or debug cycle-all.
         /// </summary>
         void TryShowBulletCycleName()
         {
@@ -154,17 +156,33 @@ namespace TitanOrbit.Game
             if (_bank == null || _bank.CategoryCount < 1)
                 return;
 
-            // --- Sync display index from ghost when we have never cycled this session ---
-            if (_displayBankIndex < 0)
+            if (EcsGameBridge.TryGetLocalShipLoadout(out ShipLoadoutState loadout))
             {
-                _displayBankIndex = 0;
-                if (EcsGameBridge.TryGetLocalShipLoadout(out ShipLoadoutState loadout) &&
-                    loadout.RuntimeBulletIndex >= 0)
+                if (TitanOrbitDebugFlags.CycleAllBulletBanks)
+                {
+                    int current = loadout.RuntimeBulletIndex < 0 ? 0 : loadout.RuntimeBulletIndex;
+                    _displayBankIndex = (current + 1) % _bank.CategoryCount;
+                }
+                else if (loadout.HealingBulletsActive)
+                {
+                    int heal = BulletBankProfileUtility.FindHealBankIndex();
+                    _displayBankIndex = heal >= 0 ? heal : loadout.RuntimeBulletIndex;
+                }
+                else if (EcsGameBridge.TryGetLocalShipEntityOnWorld(
+                             EcsGameBridge.ClientWorld, out Entity shipEntity) &&
+                         EcsGameBridge.ClientWorld != null)
+                {
+                    _displayBankIndex = BulletBankOwnership.NextOwnedDamageBank(
+                        EcsGameBridge.ClientWorld.EntityManager,
+                        shipEntity,
+                        loadout.RuntimeBulletIndex);
+                }
+                else
                     _displayBankIndex = loadout.RuntimeBulletIndex;
             }
+            else if (_displayBankIndex < 0)
+                _displayBankIndex = 0;
 
-            // --- Advance (same math as ShipCycleBulletSystem) ---
-            _displayBankIndex = (_displayBankIndex + 1) % _bank.CategoryCount;
             string name = _bank.GetCategoryName(_displayBankIndex);
             if (string.IsNullOrEmpty(name))
                 return;

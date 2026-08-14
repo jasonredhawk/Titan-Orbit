@@ -15,6 +15,12 @@ namespace TitanOrbit
         public static bool FreeShipUpgradeTree;
 
         /// <summary>
+        /// When true, B-key cycles every <c>BulletVfxBank</c> category including heal.
+        /// Written by GameManager; dedicated server stays false.
+        /// </summary>
+        public static bool CycleAllBulletBanks;
+
+        /// <summary>
         /// When true, asteroid-destroy paths log millisecond timings (local gem burst, urgent gem
         /// proxies). Use this to find hitch frames — Console filter: <c>[AsteroidDestroy]</c>.
         /// </summary>

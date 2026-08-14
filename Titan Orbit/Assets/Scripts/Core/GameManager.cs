@@ -64,6 +64,10 @@ namespace TitanOrbit.Core
         [Tooltip("When enabled, the moon orbit ship upgrade tree unlocks every node. Click any ship to try it for free (local Editor / development only).")]
         [SerializeField] bool debugFreeShipUpgradeTree;
 
+        [Header("Debug — Bullet Banks")]
+        [Tooltip("When enabled, B-key cycles every bullet bank category including healing EnergySpheres. Leave OFF so B only cycles owned damage banks.")]
+        [SerializeField] bool debugCycleAllBulletBanks;
+
         [Header("Debug — Asteroid Destroy Hitch")]
         [Tooltip("Logs [AsteroidDestroy] timings in the Console when an asteroid explodes (local gem Instantiates + urgent gem proxies). Filter the Console with that tag.")]
         [SerializeField] bool debugLogAsteroidDestroyPerf;
@@ -96,6 +100,9 @@ namespace TitanOrbit.Core
 
         /// <summary>True when designers enabled free upgrades in the Inspector (client + local-host convenience).</summary>
         public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
+
+        /// <summary>True when B-key cycles every bullet bank including heal.</summary>
+        public bool DebugCycleAllBulletBanks => debugCycleAllBulletBanks;
 
         /// <summary>True when asteroid-destroy hitch logging is enabled in the Inspector.</summary>
         public bool DebugLogAsteroidDestroyPerf => debugLogAsteroidDestroyPerf;
@@ -185,6 +192,7 @@ namespace TitanOrbit.Core
             {
                 Instance = null;
                 TitanOrbitDebugFlags.FreeShipUpgradeTree = false;
+                TitanOrbitDebugFlags.CycleAllBulletBanks = false;
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
                 TitanOrbitDebugFlags.InstructionImageCaptureEnabled = false;
                 TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
@@ -201,6 +209,7 @@ namespace TitanOrbit.Core
         {
             // [TITAN-ORBIT] ECS MoonOrbitStoreSystem cannot reference TitanOrbit.Core — Shared bridge.
             TitanOrbitDebugFlags.FreeShipUpgradeTree = debugFreeShipUpgradeTree;
+            TitanOrbitDebugFlags.CycleAllBulletBanks = debugCycleAllBulletBanks;
             TitanOrbitDebugFlags.LogAsteroidDestroyPerf = debugLogAsteroidDestroyPerf;
             // [TITAN-ORBIT] Instruction capture stays OFF unless you flip this for art rebuilds —
             // otherwise F8/F9 and the bottom status banner stay inactive during normal play.

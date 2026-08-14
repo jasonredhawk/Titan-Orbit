@@ -201,9 +201,9 @@ namespace TitanOrbit.Data
 
         [Header("Bullets")]
         [Tooltip(
-            "BulletVfxBank category name (e.g. \"Bullets\"). When empty or unknown, " +
-            "combat falls back to the owning ShipFamilyDefinition.bulletPrefabIndex.")]
-        public string bulletBankCategoryName = "Bullets";
+            "Unused by combat. Planetary defense fires the owning family's default " +
+            "ShipFamilyDefinition.bulletPrefabIndex (and that bank's stat multipliers).")]
+        public string bulletBankCategoryName = "";
 
         [Tooltip(
             "Baseline cosmetic tracer scale (level-1 fire power). Higher turret damage grows " +

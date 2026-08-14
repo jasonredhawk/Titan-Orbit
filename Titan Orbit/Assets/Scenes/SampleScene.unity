@@ -8628,9 +8628,6 @@ MonoBehaviour:
     thrusterVfxLocalEuler: {x: 0, y: 180, z: 0}
     thrusterVfxIdleScale: 0.1
     thrusterVfxTransitionSpeed: 3
-  shipBankMaxAngleDegrees: 111
-  shipBankSensitivity: 1.35
-  shipBankSmoothing: 8
 --- !u!114 &1418200281
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -8671,6 +8668,7 @@ MonoBehaviour:
   editorMultiplayerMode: 0
   showSpeedometer: 1
   debugFreeShipUpgradeTree: 1
+  debugCycleAllBulletBanks: 1
   debugLogAsteroidDestroyPerf: 0
   debugEnableInstructionImageCapture: 0
   debugEnableStutterIsolator: 0

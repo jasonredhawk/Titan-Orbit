@@ -32,7 +32,6 @@ namespace TitanOrbit.ECS
         readonly Dictionary<int, float> _nextFireTime = new Dictionary<int, float>(32);
 
         PlanetShipFamilyConfig _familyConfig;
-        PlanetaryDefenseConfig _defaultConfig;
         BulletVfxBank _vfxBank;
         readonly Dictionary<int, int> _bankIndexByFamily = new Dictionary<int, int>(16);
         bool _warmed;
@@ -112,8 +111,6 @@ namespace TitanOrbit.ECS
                 var stats = config.GetLevelStats(slot.TurretLevel);
                 float fireRate = math.max(0.05f, stats.fireRate);
                 int cooldownKey = shipEntity.Index;
-                if (_nextFireTime.TryGetValue(cooldownKey, out float next) && now < next)
-                    continue;
 
                 // --- Aim from player ShipInput (planar) ---
                 float2 aim2 = input.ValueRO.AimPlanarDir;
@@ -133,11 +130,24 @@ namespace TitanOrbit.ECS
                 float bulletSpeed = math.max(1f, stats.bulletSpeed);
                 float damage = math.max(0.05f, stats.damage);
                 float engageRange = math.max(0.5f, stats.engageRange);
-                int bankIndex = ResolveBankIndex(config, familyDef);
+                int bankIndex = ResolveBankIndex(familyDef);
                 float unusedLifetime = 0f;
                 float rangeMul = 1f;
+                int firePowerAbilityLv = 0;
+                if (EntityManager.HasComponent<ShipAttributeUpgradeState>(shipEntity))
+                    firePowerAbilityLv = EntityManager.GetComponentData<ShipAttributeUpgradeState>(shipEntity).FirePower;
+                int firePowerExtras = 0;
+                if (EntityManager.HasComponent<ShipState>(shipEntity))
+                {
+                    firePowerExtras = BulletBankCombatLogic.CountFirePowerExtraLevels(
+                        EntityManager.GetComponentData<ShipState>(shipEntity).ShipLevel, firePowerAbilityLv);
+                }
+
                 BulletBankCombatLogic.ApplyFireModifiers(
-                    bankIndex, ref damage, ref bulletSpeed, ref rangeMul, ref unusedLifetime, ref fireRate);
+                    bankIndex, ref damage, ref bulletSpeed, ref rangeMul, ref unusedLifetime, ref fireRate,
+                    firePowerExtras);
+                if (_nextFireTime.TryGetValue(cooldownKey, out float next) && now < next)
+                    continue;
                 if (_vfxBank != null)
                     categoryUpgradeScale = _vfxBank.GetCategoryUpgradeVisualScaleMultiplier(bankIndex);
 
@@ -170,6 +180,7 @@ namespace TitanOrbit.ECS
                     BankIndex = math.max(0, bankIndex),
                     ScaleMultiplier = math.max(0.1f, visualScale),
                     DamageFilter = BulletDamageFilter.ShipsAndTransports,
+                    FirePowerExtraLevels = firePowerExtras,
                 };
 
                 spawnEvents.Add(new BulletSpawnEventElement
@@ -200,42 +211,19 @@ namespace TitanOrbit.ECS
             if (_warmed)
                 return;
             _familyConfig = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
-            _defaultConfig = PlanetaryDefenseConfig.LoadDefault();
             _vfxBank = BulletVfxBank.LoadDefault();
             _warmed = true;
         }
 
-        /// <summary>Resolves BulletVfxBank category: turret asset name first, then family bullet index.</summary>
-        int ResolveBankIndex(PlanetaryDefenseConfig config, ShipFamilyDefinition family)
+        /// <summary>Owning family's default damage bank (heal is never a family default).</summary>
+        int ResolveBankIndex(ShipFamilyDefinition family)
         {
-            if (config == null)
-                config = _defaultConfig;
             int familyBullet = family != null ? family.bulletPrefabIndex : 0;
-            int key = (config != null ? config.name.GetHashCode() : 0) ^ (familyBullet * 397);
-            if (_bankIndexByFamily.TryGetValue(key, out int cached))
+            if (_bankIndexByFamily.TryGetValue(familyBullet, out int cached))
                 return cached;
 
-            int idx = -1;
-            if (_vfxBank != null &&
-                config != null &&
-                !string.IsNullOrEmpty(config.bulletBankCategoryName) &&
-                _vfxBank.TryGetCategoryIndexByName(config.bulletBankCategoryName, out int found))
-            {
-                idx = found;
-            }
-
-            if (idx < 0)
-                idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family);
-
-            if (idx < 0 &&
-                _vfxBank != null &&
-                _vfxBank.TryGetCategoryIndexByName(DroneSwarmLogic.FighterBankCategoryName, out int fighter))
-            {
-                idx = fighter;
-            }
-
-            idx = math.max(0, idx);
-            _bankIndexByFamily[key] = idx;
+            int idx = BulletBankProfileUtility.ResolveBankIndexForPlanetaryDefense(family);
+            _bankIndexByFamily[familyBullet] = idx;
             return idx;
         }
     }

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
@@ -20,6 +21,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         public static void ApplyShipOnHit(
             EntityManager em,
+            EntityCommandBuffer ecb,
             Entity shipEntity,
             in BulletElement bullet,
             float3 hitPoint,
@@ -32,15 +34,16 @@ namespace TitanOrbit.ECS
             if (profile == null || shipEntity == Entity.Null)
                 return;
 
-            if (profile.TryGetAbility(BulletBankAbilityType.ElectricShockDisable, out BulletBankAbility shock) &&
+            int extras = bullet.FirePowerExtraLevels;
+            if (profile.TryGetResolvedAbility(BulletBankAbilityType.ElectricShockDisable, extras, out BulletBankAbility shock) &&
                 shock != null)
                 ApplyElectricShock(em, shipEntity, shock, bullet, serverElapsed);
 
-            if (profile.TryGetAbility(BulletBankAbilityType.BurnOverTime, out BulletBankAbility burn) &&
+            if (profile.TryGetResolvedAbility(BulletBankAbilityType.BurnOverTime, extras, out BulletBankAbility burn) &&
                 burn != null)
-                ApplyBurn(em, shipEntity, burn, bullet, hitPoint, shipPos, serverElapsed, mapW, mapH);
+                ApplyBurn(em, ecb, shipEntity, burn, bullet, hitPoint, shipPos, serverElapsed, mapW, mapH);
 
-            if (profile.TryGetAbility(BulletBankAbilityType.ConcussivePush, out BulletBankAbility push) &&
+            if (profile.TryGetResolvedAbility(BulletBankAbilityType.ConcussivePush, extras, out BulletBankAbility push) &&
                 push != null)
                 ApplyConcussivePush(em, shipEntity, hitPoint, shipPos, push, mapW, mapH);
         }
@@ -52,10 +55,12 @@ namespace TitanOrbit.ECS
             BulletBankProfile profile,
             double serverElapsed,
             int ownerNetworkId,
-            byte ownerTeam)
+            byte ownerTeam,
+            int firePowerExtraLevels = 0)
         {
             if (profile == null ||
-                !profile.TryGetAbility(BulletBankAbilityType.GravityPull, out BulletBankAbility gravity) ||
+                !profile.TryGetResolvedAbility(
+                    BulletBankAbilityType.GravityPull, firePowerExtraLevels, out BulletBankAbility gravity) ||
                 gravity == null)
                 return;
 
@@ -95,6 +100,7 @@ namespace TitanOrbit.ECS
 
         public static void ApplyBurn(
             EntityManager em,
+            EntityCommandBuffer ecb,
             Entity shipEntity,
             BulletBankAbility burn,
             in BulletElement bullet,
@@ -107,10 +113,8 @@ namespace TitanOrbit.ECS
             if (!em.HasComponent<ShipBurnOverTimeState>(shipEntity))
                 return;
 
-            EnsureBurnBuffer(em, shipEntity);
-            var instances = em.GetBuffer<BurnOverTimeElement>(shipEntity);
-            AddBurnInstance(instances, hitPoint, shipPos, burn, in bullet, serverElapsed, mapW, mapH);
-            SyncShipBurnSummary(em, shipEntity, instances);
+            EnqueueOrAddBurn(em, ecb, shipEntity, burn, in bullet, hitPoint, shipPos,
+                serverElapsed, mapW, mapH, syncShipSummary: true);
         }
 
         /// <summary>
@@ -118,6 +122,7 @@ namespace TitanOrbit.ECS
         /// </summary>
         public static void ApplyAsteroidBurn(
             EntityManager em,
+            EntityCommandBuffer ecb,
             Entity asteroidEntity,
             BulletBankAbility burn,
             in BulletElement bullet,
@@ -130,15 +135,115 @@ namespace TitanOrbit.ECS
             if (asteroidEntity == Entity.Null || burn == null)
                 return;
 
-            EnsureBurnBuffer(em, asteroidEntity);
-            var instances = em.GetBuffer<BurnOverTimeElement>(asteroidEntity);
-            AddBurnInstance(instances, hitPoint, asteroidPos, burn, in bullet, serverElapsed, mapW, mapH);
+            EnqueueOrAddBurn(em, ecb, asteroidEntity, burn, in bullet, hitPoint, asteroidPos,
+                serverElapsed, mapW, mapH, syncShipSummary: false);
         }
+
+        /// <summary>
+        /// First-hit <c>AddBuffer</c> is deferred to <paramref name="ecb"/> so
+        /// <see cref="BulletSimulationSystem"/> can keep mutating <c>BulletElement</c> this tick.
+        /// </summary>
+        static void EnqueueOrAddBurn(
+            EntityManager em,
+            EntityCommandBuffer ecb,
+            Entity entity,
+            BulletBankAbility burn,
+            in BulletElement bullet,
+            float3 hitPoint,
+            float3 bodyPos,
+            double serverElapsed,
+            float mapW,
+            float mapH,
+            bool syncShipSummary)
+        {
+            var instance = CreateBurnInstance(hitPoint, bodyPos, burn, in bullet, serverElapsed, mapW, mapH);
+            if (!em.HasBuffer<BurnOverTimeElement>(entity))
+            {
+                ecb.AddBuffer<BurnOverTimeElement>(entity);
+                s_PendingBurns.Add(new PendingBurn
+                {
+                    Entity = entity,
+                    Instance = instance,
+                    SyncShipSummary = syncShipSummary,
+                });
+                return;
+            }
+
+            var instances = em.GetBuffer<BurnOverTimeElement>(entity);
+            AddBurnInstance(instances, instance);
+            if (syncShipSummary)
+                SyncShipBurnSummary(em, entity, instances);
+        }
+
+        /// <summary>Drops queued first-hit burns (call at tick start so a thrown update cannot leak).</summary>
+        public static void ClearPendingBurns() => s_PendingBurns.Clear();
+
+        /// <summary>Applies burns queued because the target had no buffer until ECB playback.</summary>
+        public static void FlushPendingBurns(EntityManager em)
+        {
+            for (int i = 0; i < s_PendingBurns.Count; i++)
+            {
+                PendingBurn pending = s_PendingBurns[i];
+                if (pending.Entity == Entity.Null ||
+                    !em.Exists(pending.Entity) ||
+                    !em.HasBuffer<BurnOverTimeElement>(pending.Entity))
+                    continue;
+
+                var instances = em.GetBuffer<BurnOverTimeElement>(pending.Entity);
+                AddBurnInstance(instances, pending.Instance);
+                if (pending.SyncShipSummary)
+                    SyncShipBurnSummary(em, pending.Entity, instances);
+            }
+
+            s_PendingBurns.Clear();
+        }
+
+        struct PendingBurn
+        {
+            public Entity Entity;
+            public BurnOverTimeElement Instance;
+            public bool SyncShipSummary;
+        }
+
+        static readonly List<PendingBurn> s_PendingBurns = new List<PendingBurn>(8);
 
         public static void EnsureBurnBuffer(EntityManager em, Entity entity)
         {
             if (!em.HasBuffer<BurnOverTimeElement>(entity))
                 em.AddBuffer<BurnOverTimeElement>(entity);
+        }
+
+        public static BurnOverTimeElement CreateBurnInstance(
+            float3 hitPoint,
+            float3 bodyPos,
+            BulletBankAbility burn,
+            in BulletElement bullet,
+            double serverElapsed,
+            float mapW,
+            float mapH)
+        {
+            float duration = math.max(0.05f, burn.duration > 0f ? burn.duration : 2f);
+            float tick = math.max(0.05f, burn.tickInterval > 0f ? burn.tickInterval : 0.25f);
+            float dps = burn.magnitude > 0f ? burn.magnitude : 1f;
+            hitPoint.y = 0f;
+            bodyPos.y = 0f;
+            float3 offset = ToroidalMapEcs.IsValidMapSize(mapW, mapH)
+                ? ToroidalMapEcs.ShortestOffsetXZ(bodyPos, hitPoint, mapW, mapH)
+                : hitPoint - bodyPos;
+            offset.y = 0f;
+
+            return new BurnOverTimeElement
+            {
+                HitOffset = offset,
+                ExpiresAt = (float)(serverElapsed + duration),
+                NextTickAt = serverElapsed + tick,
+                Dps = dps,
+                TickInterval = tick,
+                VfxBankIndex = math.max(0, bullet.BankIndex),
+                VfxTeam = bullet.OwnerTeam,
+                SourceNetworkId = bullet.OwnerNetworkId,
+                SourceTeam = bullet.OwnerTeam,
+            };
         }
 
         public static void AddBurnInstance(
@@ -151,31 +256,18 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH)
         {
-            float duration = burn.duration > 0.05f ? burn.duration : 2f;
-            float tick = burn.tickInterval > 0.05f ? burn.tickInterval : 0.25f;
-            float dps = burn.magnitude > 0f ? burn.magnitude : 1f;
-            hitPoint.y = 0f;
-            bodyPos.y = 0f;
-            float3 offset = ToroidalMapEcs.IsValidMapSize(mapW, mapH)
-                ? ToroidalMapEcs.ShortestOffsetXZ(bodyPos, hitPoint, mapW, mapH)
-                : hitPoint - bodyPos;
-            offset.y = 0f;
+            AddBurnInstance(instances, CreateBurnInstance(
+                hitPoint, bodyPos, burn, in bullet, serverElapsed, mapW, mapH));
+        }
 
+        public static void AddBurnInstance(
+            DynamicBuffer<BurnOverTimeElement> instances,
+            in BurnOverTimeElement instance)
+        {
             if (instances.Length >= BurnOverTimeElement.MaxInstances)
                 instances.RemoveAt(0);
 
-            instances.Add(new BurnOverTimeElement
-            {
-                HitOffset = offset,
-                ExpiresAt = (float)(serverElapsed + duration),
-                NextTickAt = serverElapsed + tick,
-                Dps = dps,
-                TickInterval = tick,
-                VfxBankIndex = math.max(0, bullet.BankIndex),
-                VfxTeam = bullet.OwnerTeam,
-                SourceNetworkId = bullet.OwnerNetworkId,
-                SourceTeam = bullet.OwnerTeam,
-            });
+            instances.Add(instance);
         }
 
         public static void SyncShipBurnSummary(
@@ -251,10 +343,12 @@ namespace TitanOrbit.ECS
             float3 hitPoint,
             BulletBankProfile profile,
             float mapW,
-            float mapH)
+            float mapH,
+            int firePowerExtraLevels = 0)
         {
             if (profile == null ||
-                !profile.TryGetAbility(BulletBankAbilityType.ConcussivePush, out BulletBankAbility push) ||
+                !profile.TryGetResolvedAbility(
+                    BulletBankAbilityType.ConcussivePush, firePowerExtraLevels, out BulletBankAbility push) ||
                 push == null)
                 return;
 

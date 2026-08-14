@@ -6,6 +6,7 @@ using UnityEngine.UI;
 using TMPro;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
+using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Systems;
 using TitanOrbit.Data;
@@ -3495,6 +3496,9 @@ namespace TitanOrbit.UI
             // Do NOT re-apply auto-deposit every sidebar refresh — that spammed SetWantDepositGems
             // RPCs and could race HideMenu / metronome clear on the Windows client.
             orbitDockSidebar.RefreshAutoDepositToggle(GetSavedAutoDepositGems());
+            bool healingActive = EcsGameBridge.TryGetLocalShipLoadout(out ShipLoadoutState healLoadout)
+                && healLoadout.HealingBulletsActive;
+            orbitDockSidebar.RefreshHealingBulletsToggle(healingActive);
             ShipPowerBarStatMaxes maxes = shipUpgradeTree != null
                 ? shipUpgradeTree.GetPowerBarStatMaxes()
                 : ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
@@ -3511,6 +3515,11 @@ namespace TitanOrbit.UI
         private void OnAutoDepositToggleChanged(bool enabled)
         {
             ApplyAutoDepositToShip(enabled);
+        }
+
+        private void OnHealingBulletsToggleChanged(bool healingActive)
+        {
+            MoonOrbitRpcClient.SetHealingBullets(healingActive);
         }
 
         private void ApplyAutoDepositPreferenceToShip()
@@ -5744,6 +5753,7 @@ namespace TitanOrbit.UI
             orbitDockSidebar.BindStation(this);
             orbitDockSidebar.BindNavigation(OnSidebarNavSelected);
             orbitDockSidebar.BindAutoDeposit(OnAutoDepositToggleChanged);
+            orbitDockSidebar.BindHealingBullets(OnHealingBulletsToggleChanged);
             orbitDockSidebar.EnsureBuilt();
 
             moonDockMainHost = new GameObject("MoonDockMainHost").AddComponent<RectTransform>();

@@ -452,7 +452,21 @@ namespace TitanOrbit.ECS
                 TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition bankFamily))
             {
                 var loadout = em.GetComponentData<ShipLoadoutState>(shipEntity);
-                loadout.RuntimeBulletIndex = BulletBankProfileUtility.ResolveBankIndexForFamily(bankFamily);
+                int familyBank = BulletBankProfileUtility.ResolveBankIndexForFamily(bankFamily);
+                int[] owned = new int[16];
+                int ownedCount = BulletBankOwnership.CollectOwnedDamageBanks(em, shipEntity, owned);
+                bool stillOwned = false;
+                for (int i = 0; i < ownedCount; i++)
+                {
+                    if (owned[i] == loadout.RuntimeBulletIndex)
+                    {
+                        stillOwned = true;
+                        break;
+                    }
+                }
+
+                if (!stillOwned)
+                    loadout.RuntimeBulletIndex = familyBank;
                 em.SetComponentData(shipEntity, loadout);
             }
 

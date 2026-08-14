@@ -198,12 +198,12 @@ namespace TitanOrbit.ECS
             }
         }
 
-        static bool IsGravityWellFriendlyOrSelf(in ShipState ship, in GravityWellElement well)
+        static bool IsGravityWellFriendlyOrSelf(TeamId shipTeam, int shipNetworkId, in GravityWellElement well)
         {
-            if (well.OwnerNetworkId > 0 && ship.OwnerNetworkId == well.OwnerNetworkId)
+            if (well.OwnerNetworkId > 0 && shipNetworkId == well.OwnerNetworkId)
                 return true;
             var wellTeam = (TeamId)well.OwnerTeam;
-            return wellTeam != TeamId.None && wellTeam == ship.Team;
+            return wellTeam != TeamId.None && wellTeam == shipTeam;
         }
 
         /// <summary>
@@ -250,12 +250,17 @@ namespace TitanOrbit.ECS
             float mapW = mapState.MapWidth;
             float mapH = mapState.MapHeight;
 
-            foreach (var (transform, velRw, ship) in SystemAPI
+            foreach (var (transform, velRw, ship, entity) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRW<PhysicsVelocity>, RefRO<ShipState>>()
-                         .WithAll<ShipTag>())
+                         .WithAll<ShipTag>()
+                         .WithEntityAccess())
             {
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
                     continue;
+
+                int shipNetworkId = 0;
+                if (state.EntityManager.HasComponent<GhostOwner>(entity))
+                    shipNetworkId = state.EntityManager.GetComponentData<GhostOwner>(entity).NetworkId;
 
                 float3 pos = transform.ValueRO.Position;
                 // Skip own ship and same-team allies — wells only pull enemies (and gems).
@@ -263,7 +268,7 @@ namespace TitanOrbit.ECS
                 for (int i = 0; i < wells.Length; i++)
                 {
                     var well = wells[i];
-                    if (IsGravityWellFriendlyOrSelf(ship.ValueRO, well))
+                    if (IsGravityWellFriendlyOrSelf(ship.ValueRO.Team, shipNetworkId, well))
                         continue;
                     float dist = ToroidalMapEcs.ToroidalDistance(well.Center, pos, mapW, mapH);
                     if (dist > well.Radius || well.Radius < 0.05f)

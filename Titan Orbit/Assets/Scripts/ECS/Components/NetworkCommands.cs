@@ -120,6 +120,16 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// [NETCODE] Client toggles Damage vs Heal bullets from the Orbit Menu.
+    /// Server writes <see cref="ShipLoadoutState.HealingBulletsActive"/>.
+    /// </summary>
+    public struct SetHealingBulletsCommand : IRpcCommand
+    {
+        /// <summary>True = fire the shared EnergySpheres heal bank.</summary>
+        public bool HealingActive;
+    }
+
+    /// <summary>
     /// [NETCODE] Client requests to take control of a built planetary defense turret pad.
     /// Server validates zone / team / occupancy, then sets <see cref="ShipTurretControlState"/>
     /// and <see cref="PlanetaryDefenseSlotElement.OccupiedByNetworkId"/>. Exit is not an RPC —

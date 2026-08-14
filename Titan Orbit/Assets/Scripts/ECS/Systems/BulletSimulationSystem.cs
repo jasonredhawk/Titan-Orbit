@@ -137,8 +137,10 @@ namespace TitanOrbit.ECS
             // [UNITY] World elapsed — shield hit timestamps / regen cooldowns (not moon orbit phase).
             double serverElapsed = SystemAPI.Time.ElapsedTime;
 
-            // [NETCODE] ECB for spawn/hit RPCs + ship gem expulsion — playback after buffer mutations.
+            // [NETCODE] ECB for spawn/hit RPCs, gem expulsion, and first-hit burn buffers.
+            // Playback after BulletElement mutations — never AddBuffer on EntityManager mid-loop.
             var ecb = new EntityCommandBuffer(Allocator.Temp);
+            BulletBankHitEffects.ClearPendingBurns();
 
             // --- Shared orbit clock for moon hit tests ---
             // [TITAN-ORBIT] Bullet vs moon must use ServerTick seconds (same as collider / visuals).
@@ -261,6 +263,8 @@ namespace TitanOrbit.ECS
                     BulletNetNotify.SendHit(
                         ref ecb, b, hitPoint, asteroidHealthAfter,
                         pdPlanetId, pdSlotIndex, pdHealthAfter);
+                    // Hit resolution can DestroyEntity (transports). Re-acquire before mutate.
+                    bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
                     bullets.RemoveAtSwapBack(i);
                     continue;
                 }
@@ -278,6 +282,10 @@ namespace TitanOrbit.ECS
                 b.Position = endPos;
                 bullets[i] = b;
             }
+
+            // Hit resolution may have destroyed entities — refresh before fire mutates the same buffers.
+            bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
+            spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
 
             // --- Phase B: ship firing + same-frame spawn collide ---
             // [TITAN-ORBIT] Category Upgrade Visual Scale from Resources bank (once per tick).
@@ -328,7 +336,15 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
                 int bankIndex = 0;
                 if (SystemAPI.HasComponent<ShipLoadoutState>(entity))
-                    bankIndex = math.max(0, SystemAPI.GetComponentRO<ShipLoadoutState>(entity).ValueRO.RuntimeBulletIndex);
+                    bankIndex = BulletBankFireResolve.ResolveFireBankIndex(
+                        SystemAPI.GetComponentRO<ShipLoadoutState>(entity).ValueRO);
+
+                int firePowerAbilityLv = 0;
+                if (SystemAPI.HasComponent<ShipAttributeUpgradeState>(entity))
+                    firePowerAbilityLv = SystemAPI.GetComponentRO<ShipAttributeUpgradeState>(entity).ValueRO.FirePower;
+                int firePowerExtras = BulletBankCombatLogic.CountFirePowerExtraLevels(
+                    shipState.ValueRO.ShipLevel, firePowerAbilityLv);
+                float abilityEnergy = BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
 
                 // --- Volley / round-robin / hybrid per ShipWeaponConfig.FireMode ---
                 if (!ShipWeaponFireLogic.TryPlanFire(
@@ -341,7 +357,8 @@ namespace TitanOrbit.ECS
                         s_ShotScratch,
                         out int shotCount,
                         out float energySpend,
-                        out int nextMountIndexAfter))
+                        out int nextMountIndexAfter,
+                        abilityEnergy))
                     continue;
 
                 // Per-category Upgrade Visual Scale (default 1). Global category scale is applied
@@ -395,7 +412,8 @@ namespace TitanOrbit.ECS
                     float lifetime = weaponCfg.ValueRO.BulletLifetime;
                     float fireRate = weaponCfg.ValueRO.FireRate;
                     BulletBankCombatLogic.ApplyFireModifiers(
-                        bankIndex, ref damage, ref bulletSpeed, ref maxDistance, ref lifetime, ref fireRate);
+                        bankIndex, ref damage, ref bulletSpeed, ref maxDistance, ref lifetime, ref fireRate,
+                        firePowerExtras);
                     float fireRateMul = fireRate / math.max(0.1f, weaponCfg.ValueRO.FireRate);
 
                     float refDamage = mount.ReferenceFirePower > 0.01f
@@ -423,6 +441,7 @@ namespace TitanOrbit.ECS
                         Sequence = sequence,
                         BankIndex = bankIndex,
                         ScaleMultiplier = visualScale,
+                        FirePowerExtraLevels = firePowerExtras,
                     };
 
                     spawnEvents.Add(new BulletSpawnEventElement
@@ -463,6 +482,8 @@ namespace TitanOrbit.ECS
                         BulletNetNotify.SendHit(
                             ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter,
                             spawnPdPlanetId, spawnPdSlotIndex, spawnPdHealthAfter);
+                        bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
+                        spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
                         // Do not add to the live buffer — bullet resolved this frame.
                     }
                     else
@@ -479,6 +500,7 @@ namespace TitanOrbit.ECS
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
+            BulletBankHitEffects.FlushPendingBurns(state.EntityManager);
         }
 
         /// <summary>
@@ -787,7 +809,29 @@ namespace TitanOrbit.ECS
             // --- Pass 2: apply damage (or planet block) only to the nearest winner ---
             hitPoint = bestHit;
             float hitDamage = BulletBankCombatLogic.ResolveHitDamage(
-                profile, BulletBankAbilityTargeting.FromHitKind((byte)bestKind), b.Damage);
+                profile, BulletBankAbilityTargeting.FromHitKind((byte)bestKind), b.Damage,
+                b.FirePowerExtraLevels);
+
+            // Heal mode: allies gain HP; enemy ships / drones / PD / moons / transports take
+            // no damage and no on-hit status. Asteroids still take full damage.
+            if (healFriendly && bestKind != BulletHitKind.Asteroid)
+            {
+                if (bestKind == BulletHitKind.Ship &&
+                    state.EntityManager.HasComponent<ShipState>(bestEntity))
+                {
+                    var writable = SystemAPI.GetComponentRW<ShipState>(bestEntity);
+                    ref var ship = ref writable.ValueRW;
+                    if (ship.Team == (TeamId)b.OwnerTeam && !ship.IsDead)
+                    {
+                        float heal = BulletBankCombatLogic.GetHealFriendlyAmount(
+                            profile, b.FirePowerExtraLevels);
+                        if (heal > 0f)
+                            ship.Health = math.min(ship.MaxHealth, ship.Health + heal);
+                    }
+                }
+
+                return true;
+            }
 
             switch (bestKind)
             {
@@ -839,7 +883,7 @@ namespace TitanOrbit.ECS
                     // --- HealFriendly: ally hulls gain HP instead of taking damage ---
                     if (healFriendly && ship.Team == (TeamId)b.OwnerTeam)
                     {
-                        float heal = BulletBankCombatLogic.GetHealFriendlyAmount(profile);
+                        float heal = BulletBankCombatLogic.GetHealFriendlyAmount(profile, b.FirePowerExtraLevels);
                         if (heal > 0f && !ship.IsDead)
                             ship.Health = math.min(ship.MaxHealth, ship.Health + heal);
                         TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
@@ -912,7 +956,7 @@ namespace TitanOrbit.ECS
                             ? state.EntityManager.GetComponentData<LocalTransform>(bestEntity).Position
                             : hitPoint;
                         BulletBankHitEffects.ApplyShipOnHit(
-                            state.EntityManager, bestEntity, in b, hitPoint, shipPosForFx,
+                            state.EntityManager, ecb, bestEntity, in b, hitPoint, shipPosForFx,
                             profile, serverElapsed, mapW, mapH);
                     }
 
@@ -953,10 +997,12 @@ namespace TitanOrbit.ECS
                     if (asteroid.IsDestroyed || asteroid.Health <= 0.01f)
                         AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, bestEntity);
                     else if (profile != null &&
-                             profile.TryGetAbility(BulletBankAbilityType.BurnOverTime, out BulletBankAbility asteroidBurn) &&
+                             profile.TryGetResolvedAbility(
+                                 BulletBankAbilityType.BurnOverTime, b.FirePowerExtraLevels,
+                                 out BulletBankAbility asteroidBurn) &&
                              asteroidBurn != null)
                         BulletBankHitEffects.ApplyAsteroidBurn(
-                            state.EntityManager, bestEntity, asteroidBurn, in b, hitPoint,
+                            state.EntityManager, ecb, bestEntity, asteroidBurn, in b, hitPoint,
                             state.EntityManager.HasComponent<LocalTransform>(bestEntity)
                                 ? state.EntityManager.GetComponentData<LocalTransform>(bestEntity).Position
                                 : hitPoint,
@@ -1040,11 +1086,12 @@ namespace TitanOrbit.ECS
             {
                 var wells = state.EntityManager.GetBuffer<GravityWellElement>(bulletEntity);
                 BulletBankHitEffects.TrySpawnGravityWell(
-                    wells, hitPoint, profile, serverElapsed, bullet.OwnerNetworkId, bullet.OwnerTeam);
+                    wells, hitPoint, profile, serverElapsed, bullet.OwnerNetworkId, bullet.OwnerTeam,
+                    bullet.FirePowerExtraLevels);
             }
 
             BulletBankHitEffects.TryApplyConcussiveGemBlast(
-                state.EntityManager, hitPoint, profile, mapW, mapH);
+                state.EntityManager, hitPoint, profile, mapW, mapH, bullet.FirePowerExtraLevels);
         }
 
         /// <summary>Warm family/default defense configs once for hit-sphere rebuilds.</summary>

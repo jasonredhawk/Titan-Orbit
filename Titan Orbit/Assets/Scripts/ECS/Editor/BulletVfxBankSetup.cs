@@ -194,11 +194,24 @@ namespace TitanOrbit.ECS.Editor
                 var el = abilitiesProp.GetArrayElementAtIndex(i);
                 el.FindPropertyRelative("type").intValue = (int)a.type;
                 el.FindPropertyRelative("magnitude").floatValue = a.magnitude;
+                SetFloat(el, "magnitudePerExtra", a.magnitudePerExtra);
                 el.FindPropertyRelative("duration").floatValue = a.duration;
+                SetFloat(el, "durationPerExtra", a.durationPerExtra);
                 el.FindPropertyRelative("tickInterval").floatValue = a.tickInterval;
+                SetFloat(el, "tickIntervalPerExtra", a.tickIntervalPerExtra);
                 el.FindPropertyRelative("radius").floatValue = a.radius;
+                SetFloat(el, "radiusPerExtra", a.radiusPerExtra);
+                SetFloat(el, "energyDrain", a.energyDrain);
+                SetFloat(el, "energyDrainPerExtra", a.energyDrainPerExtra);
                 el.FindPropertyRelative("damageTarget").intValue = (int)a.damageTarget;
             }
+        }
+
+        static void SetFloat(SerializedProperty el, string name, float value)
+        {
+            var p = el.FindPropertyRelative(name);
+            if (p != null)
+                p.floatValue = value;
         }
 
         static void DeleteLegacyDataCopyIfPresent()

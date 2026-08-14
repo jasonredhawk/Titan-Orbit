@@ -200,6 +200,11 @@ namespace TitanOrbit.ECS
                 shipVel.y = 0f;
                 int ownerNetId = ghostOwner.NetworkId;
                 byte ownerTeam = (byte)shipState.Team;
+                int firePowerAbilityLv = 0;
+                if (EntityManager.HasComponent<ShipAttributeUpgradeState>(entity))
+                    firePowerAbilityLv = EntityManager.GetComponentData<ShipAttributeUpgradeState>(entity).FirePower;
+                int firePowerExtras = BulletBankCombatLogic.CountFirePowerExtraLevels(
+                    shipState.ShipLevel, firePowerAbilityLv);
                 // [TITAN-ORBIT] Combat drones use their purchase ItemLevel damage — NOT ship BulletDamage.
                 // Range / lifetime still borrow the hull weapon config so bolts travel a sensible distance.
                 float maxDist = math.max(10f, weaponCfg.BulletMaxDistance);
@@ -305,7 +310,8 @@ namespace TitanOrbit.ECS
                     float shotMax = maxDist;
                     float shotLife = lifetime;
                     BulletBankCombatLogic.ApplyFireModifiers(
-                        bankIndex, ref damage, ref bulletSpeed, ref shotMax, ref shotLife, ref fireRateForMods);
+                        bankIndex, ref damage, ref bulletSpeed, ref shotMax, ref shotLife, ref fireRateForMods,
+                        firePowerExtras);
                     float3 bulletVel = aimDir * math.max(1f, bulletSpeed) + shipVel;
                     uint sequence = BulletVfxBridge.NextSequence();
                     var spawn = new BulletElement
@@ -321,6 +327,7 @@ namespace TitanOrbit.ECS
                         BankIndex = math.max(0, bankIndex),
                         ScaleMultiplier = DroneSwarmLogic.DroneBulletVisualScale,
                         DamageFilter = damageFilter,
+                        FirePowerExtraLevels = firePowerExtras,
                     };
 
                     spawnEvents.Add(new BulletSpawnEventElement

@@ -61,7 +61,84 @@ namespace TitanOrbit.Data
             // [TITAN-ORBIT] Wired into ShipLoadoutState.RuntimeBulletIndex by ShipStatApplyLogic.
             if (family == null)
                 return 0;
-            return family.bulletPrefabIndex < 0 ? 0 : family.bulletPrefabIndex;
+            int index = family.bulletPrefabIndex < 0 ? 0 : family.bulletPrefabIndex;
+            return IsHealBankIndex(index) ? 0 : index;
+        }
+
+        /// <summary>
+        /// Planetary defense always uses the owning family's default damage bank (never heal).
+        /// </summary>
+        public static int ResolveBankIndexForPlanetaryDefense(ShipFamilyDefinition family) =>
+            Mathf.Max(0, ResolveBankIndexForFamily(family));
+
+        /// <summary>EnergySpheres / HealFriendly bank index, or -1 when missing.</summary>
+        public static int FindHealBankIndex()
+        {
+            var bank = BulletVfxBank.LoadDefault();
+            if (bank != null && bank.TryGetCategoryIndexByName("EnergySpheres", out int index))
+                return index;
+            return -1;
+        }
+
+        public static bool IsHealBankIndex(int bankIndex)
+        {
+            int heal = FindHealBankIndex();
+            if (heal >= 0 && bankIndex == heal)
+                return true;
+            var bank = BulletVfxBank.LoadDefault();
+            return bank != null &&
+                   bank.TryGetProfile(bankIndex, out BulletBankProfile profile) &&
+                   profile != null &&
+                   profile.HasAbility(BulletBankAbilityType.HealFriendly);
+        }
+
+        /// <summary>
+        /// Bank for a purchased component: authored override, else the part's source family default.
+        /// </summary>
+        public static int ResolveBankIndexForComponent(string componentId, PlanetShipFamilyConfig config = null)
+        {
+            if (string.IsNullOrWhiteSpace(componentId))
+                return 0;
+            if (config == null)
+                config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            if (config?.families == null)
+                return 0;
+
+            for (int i = 0; i < config.families.Count; i++)
+            {
+                var family = config.families[i]?.shipFamilyDefinition;
+                if (family == null || !family.TryGetComponentEntry(componentId, out ShipFamilyComponentEntry entry))
+                    continue;
+                if (entry.bulletPrefabIndex >= 0)
+                    return IsHealBankIndex(entry.bulletPrefabIndex) ? ResolveBankIndexForFamily(family) : entry.bulletPrefabIndex;
+                return ResolveBankIndexForFamily(family);
+            }
+
+            return 0;
+        }
+
+        /// <summary>Looks up a component id on any family in the planet config.</summary>
+        public static bool TryFindComponentInAnyFamily(
+            string componentId,
+            out ShipFamilyComponentEntry entry,
+            PlanetShipFamilyConfig config = null)
+        {
+            entry = null;
+            if (string.IsNullOrWhiteSpace(componentId))
+                return false;
+            if (config == null)
+                config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            if (config?.families == null)
+                return false;
+
+            for (int i = 0; i < config.families.Count; i++)
+            {
+                var family = config.families[i]?.shipFamilyDefinition;
+                if (family != null && family.TryGetComponentEntry(componentId, out entry) && entry != null)
+                    return true;
+            }
+
+            return false;
         }
     }
 }
