@@ -59,6 +59,12 @@ namespace TitanOrbit.Data
     /// <para>
     /// Non-weapon pools (engines, wings, cockpits, …) — primary Base, extras raise <c>(N−1)</c>:
     /// <c>Base + PerExtraLevel × ((shipLevel − 1) + abilityLevel + (numberOfComponents − 1))</c>
+    /// <para>
+    /// [TITAN-ORBIT] Callers pass Base / PerExtra already multiplied by prefab starting
+    /// <c>localScale</c> (<see cref="ShipComponentAbilityStatsMath.ScaleStatsByTransform"/>).
+    /// A Cockpit at scale 3 is <c>3 ×</c> catalog Health / Gems / People. Ability details
+    /// cards show that multiply as its own formula step.
+    /// </para>
     /// </para>
     /// <para>
     /// Weapon fire power / fire rate / range (no component-count term):
@@ -75,8 +81,8 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Evaluates one scalar with the Extra Level formula.
         /// </summary>
-        /// <param name="baseValue">Part base for this field (primary for stacked pools; per-mount for weapons).</param>
-        /// <param name="perExtraLevel">Authored Per Extra Level step for this field.</param>
+        /// <param name="baseValue">Part base for this field (primary for stacked pools; per-mount for weapons). Already includes prefab starting scale when the caller scanned a chassis prefab.</param>
+        /// <param name="perExtraLevel">Per Extra Level step for this field (same starting-scale multiply as <paramref name="baseValue"/>).</param>
         /// <param name="shipLevel">Chassis tier (1-based).</param>
         /// <param name="abilityLevel">Bottom-HUD purchases for the matching ability (0 if none).</param>
         /// <param name="componentCount">Parts in the owning stack pool (ignored when <paramref name="includeExtraComponentLevels"/> is false).</param>

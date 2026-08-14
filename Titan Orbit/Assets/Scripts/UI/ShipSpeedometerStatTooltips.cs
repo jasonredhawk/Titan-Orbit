@@ -66,8 +66,15 @@ namespace TitanOrbit.UI
             /// <summary>Matched prefab + store component ids (parallel to <see cref="Stats"/>).</summary>
             public List<string> Ids;
 
-            /// <summary>Level-1 scaled per-part stats (pre ship-tier growth / attributes).</summary>
+            /// <summary>Level-1 scaled per-part stats (catalog × prefab start scale, pre Extra Level).</summary>
             public List<ShipComponentAbilityStats> Stats;
+
+            /// <summary>
+            /// Authored prefab child <c>localScale</c> parallel to <see cref="Ids"/>.
+            /// Store extras are <c>(1,1,1)</c>. Ability details cards use this so Base / PerExtra
+            /// can show the starting-scale multiply (Cockpit at 3 → ×3 Health / Gems / People).
+            /// </summary>
+            public List<Vector3> LocalScales;
 
             /// <summary>Propulsion pool at ship level (Extra Level on primary; extras raise count).</summary>
             public ShipPropulsionAggregation.Result Propulsion;
@@ -162,7 +169,9 @@ namespace TitanOrbit.UI
                 && cache.ShipLevel == shipLevel
                 && cache.EquipmentHash == equipmentHash
                 && cache.Ids != null
-                && cache.Stats != null)
+                && cache.Stats != null
+                && cache.LocalScales != null
+                && cache.LocalScales.Count == cache.Ids.Count)
             {
                 return true;
             }
@@ -204,6 +213,10 @@ namespace TitanOrbit.UI
                 cache.Stats = new List<ShipComponentAbilityStats>(8);
             else
                 cache.Stats.Clear();
+            if (cache.LocalScales == null)
+                cache.LocalScales = new List<Vector3>(8);
+            else
+                cache.LocalScales.Clear();
 
             if (sum.MatchedComponentIds != null && sum.PerComponentStats != null)
             {
@@ -212,6 +225,11 @@ namespace TitanOrbit.UI
                 {
                     cache.Ids.Add(sum.MatchedComponentIds[i]);
                     cache.Stats.Add(sum.PerComponentStats[i]);
+                    // Missing scale list (older callers) → treat as authored 1,1,1.
+                    Vector3 scale = Vector3.one;
+                    if (sum.PerComponentLocalScales != null && i < sum.PerComponentLocalScales.Count)
+                        scale = sum.PerComponentLocalScales[i];
+                    cache.LocalScales.Add(scale);
                 }
             }
 

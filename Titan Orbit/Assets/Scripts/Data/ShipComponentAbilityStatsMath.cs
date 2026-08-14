@@ -5,6 +5,37 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
+    /// Which Base / PerExtra pair <see cref="ShipComponentAbilityStatsMath.GetScaleMultiplier"/> answers for.
+    /// Mirrors the branches inside <see cref="ShipComponentAbilityStatsMath.ScaleStatsByTransform"/> so the
+    /// ability details card can show <c>catalog × starting scale</c> with the same factor the motor applied.
+    /// </summary>
+    public enum ShipComponentScaleChannel
+    {
+        /// <summary>Weapon XY average; non-weapon average localScale.</summary>
+        FirePower = 0,
+        /// <summary>Weapon <c>1/Z</c>; non-weapon average localScale.</summary>
+        FireRate = 1,
+        /// <summary>Unscaled on weapons; average localScale on non-weapons.</summary>
+        BulletSpeed = 2,
+        /// <summary>Unscaled on weapons; average localScale on non-weapons.</summary>
+        BulletRange = 3,
+        /// <summary>Average localScale (cockpit / hull health fields).</summary>
+        Health = 4,
+        /// <summary>Average localScale (engine energy fields — not move/accel).</summary>
+        Energy = 5,
+        /// <summary>Unscaled on propulsion; average localScale otherwise.</summary>
+        MoveOrAccel = 6,
+        /// <summary>Never mesh-scaled (designer turn number).</summary>
+        Turn = 7,
+        /// <summary>Never mesh-scaled (ramming rating).</summary>
+        Ramming = 8,
+        /// <summary>Average localScale (gems / people / tractor).</summary>
+        Capacity = 9,
+        /// <summary>Unscaled on propulsion; average localScale otherwise.</summary>
+        Overdrive = 10
+    }
+
+    /// <summary>
     /// Pure math helpers for <see cref="ShipComponentAbilityStats"/> — addition, zero checks, fallback fill,
     /// transform-based scaling, weapon projectile-speed / range aggregation (max, not sum), and component-id
     /// classification (weapon vs engine vs thruster). Fire power / fire rate stay as field-wise sums
@@ -352,13 +383,82 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Multiplier <see cref="ScaleStatsByTransform"/> applies to one Base / PerExtra pair.
+        /// <para>
+        /// [TITAN-ORBIT] Starting prefab <c>localScale</c> is an art lever: a Cockpit at
+        /// scale 3 contributes <c>3 ×</c> catalog Health / Gems / People. Weapons use
+        /// wider XY for fire power and deeper Z for a slower fire rate. Turn, ramming,
+        /// propulsion move/accel, and weapon bullet speed/range stay at ×1.
+        /// </para>
+        /// Safe with a default <c>(1,1,1)</c> scale (moon-store extras have no prefab child).
+        /// </summary>
+        /// <param name="localScale">Authored chassis-prefab child scale (not live mesh grow).</param>
+        /// <param name="componentId">Part id used to classify weapon vs propulsion vs cockpit.</param>
+        /// <param name="channel">Which ability field we are scaling.</param>
+        /// <returns>Factor to multiply catalog Base and PerExtra by (≥ 0.01 for fire-rate Z).</returns>
+        public static float GetScaleMultiplier(
+            Vector3 localScale,
+            string componentId,
+            ShipComponentScaleChannel channel)
+        {
+            // --- Same branches as ScaleStatsByTransform (keep these twins in lockstep) ---
+            float x = localScale.x;
+            float y = localScale.y;
+            float z = Mathf.Max(localScale.z, 0.01f);
+            float average = (x + y + z) / 3f;
+
+            if (channel == ShipComponentScaleChannel.Turn
+                || channel == ShipComponentScaleChannel.Ramming)
+                return 1f;
+
+            if (IsWeaponComponent(componentId))
+            {
+                if (channel == ShipComponentScaleChannel.FirePower)
+                    return (x + y) * 0.5f;
+                if (channel == ShipComponentScaleChannel.FireRate)
+                    return 1f / z;
+                return 1f;
+            }
+
+            if (IsPropulsionComponent(componentId)
+                && (channel == ShipComponentScaleChannel.MoveOrAccel
+                    || channel == ShipComponentScaleChannel.Overdrive))
+                return 1f;
+
+            return average;
+        }
+
+        /// <summary>
+        /// Short HUD reason for the scale factor (empty when the multiplier is ~1).
+        /// </summary>
+        public static string DescribeScaleReason(
+            string componentId,
+            ShipComponentScaleChannel channel,
+            float multiplier)
+        {
+            if (Mathf.Abs(multiplier - 1f) <= 0.01f)
+                return string.Empty;
+
+            if (IsWeaponComponent(componentId))
+            {
+                if (channel == ShipComponentScaleChannel.FirePower)
+                    return "weapon XY";
+                if (channel == ShipComponentScaleChannel.FireRate)
+                    return "weapon 1/Z";
+            }
+
+            return "prefab start";
+        }
+
+        /// <summary>
         /// Scales authored stats by prefab child transform size. Weapons: XY → fire power, Z → fire rate.
         /// Propulsion move/accel ignore scale; turn and ramming are never scaled.
         /// <para>
         /// [TITAN-ORBIT] Call only with <b>chassis prefab</b> authored localScale (art lever for
         /// mixed calibers on one hull). Do not pass live hybrid proxies after attribute mesh grow —
         /// combat already applies Fire Power attributes as numeric multipliers (mesh/collider grow
-        /// is separate from firePower / fireRate).
+        /// is separate from firePower / fireRate). Ability-chip math uses
+        /// <see cref="GetScaleMultiplier"/> so the details card can show the same factor.
         /// </para>
         /// </summary>
         public static ShipComponentAbilityStats ScaleStatsByTransform(

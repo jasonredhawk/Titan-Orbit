@@ -18,7 +18,14 @@ namespace TitanOrbit.Data
         {
             public ShipComponentAbilityStats TotalStats;
             public List<string> MatchedComponentIds;
+            /// <summary>Scale-adjusted stats (catalog × prefab <c>localScale</c>) parallel to ids.</summary>
             public List<ShipComponentAbilityStats> PerComponentStats;
+            /// <summary>
+            /// Authored prefab child <c>localScale</c> parallel to ids.
+            /// Moon-store extras use <c>(1,1,1)</c> — they have no chassis-prefab transform.
+            /// Ability details cards read this so Base / PerExtra can show × starting scale.
+            /// </summary>
+            public List<Vector3> PerComponentLocalScales;
         }
 
         /// <summary>
@@ -74,6 +81,7 @@ namespace TitanOrbit.Data
                 TotalStats = default,
                 MatchedComponentIds = new List<string>(),
                 PerComponentStats = new List<ShipComponentAbilityStats>(),
+                PerComponentLocalScales = new List<Vector3>(),
             };
 
             if (prefab == null || family == null)
@@ -121,6 +129,9 @@ namespace TitanOrbit.Data
                     result.TotalStats.AddInPlace(scaled);
                     result.MatchedComponentIds.Add(componentId);
                     result.PerComponentStats.Add(scaled);
+                    // [TITAN-ORBIT] Keep the authored start scale so HUD formula cards can show
+                    // catalog × scale (a Cockpit at 3× multiplies Health / Gems / People by 3).
+                    result.PerComponentLocalScales.Add(t.localScale);
                 }
 
                 if (applyPropulsionAndWeaponRules)
@@ -156,6 +167,8 @@ namespace TitanOrbit.Data
                 result.MatchedComponentIds = new List<string>();
             if (result.PerComponentStats == null)
                 result.PerComponentStats = new List<ShipComponentAbilityStats>();
+            if (result.PerComponentLocalScales == null)
+                result.PerComponentLocalScales = new List<Vector3>();
 
             if (extraComponentIds != null)
             {
@@ -167,10 +180,11 @@ namespace TitanOrbit.Data
                     if (!family.TryGetStatsForComponent(componentId, out ShipComponentAbilityStats stats))
                         continue;
 
-                    // [TITAN-ORBIT] Store buys have no prefab transform scale — use catalog base stats.
+                    // [TITAN-ORBIT] Store buys have no prefab transform scale — catalog stats at ×1.
                     result.TotalStats.AddInPlace(stats);
                     result.MatchedComponentIds.Add(componentId);
                     result.PerComponentStats.Add(stats);
+                    result.PerComponentLocalScales.Add(Vector3.one);
                 }
             }
 
