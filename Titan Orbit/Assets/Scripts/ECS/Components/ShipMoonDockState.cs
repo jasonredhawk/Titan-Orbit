@@ -31,5 +31,24 @@ namespace TitanOrbit.ECS
         /// moves or fires weapons (prevents instant dock while fighting).
         /// </summary>
         [GhostField] public float LandingApproachDelay;
+
+        /// <summary>
+        /// True when this ship is fully docked on a gem moon. Same gate as bullet / ram immunity
+        /// and planetary-defense targeting (do not acquire landed hulls).
+        /// </summary>
+        public bool IsFullyLanded =>
+            MoonPlanetId != 0 &&
+            LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
+
+        /// <summary>
+        /// Reads <see cref="ShipMoonDockState"/> when present and reports
+        /// <see cref="IsFullyLanded"/>. False when the component is missing.
+        /// </summary>
+        public static bool IsFullyLandedOnMoon(EntityManager em, Entity ship)
+        {
+            if (!em.HasComponent<ShipMoonDockState>(ship))
+                return false;
+            return em.GetComponentData<ShipMoonDockState>(ship).IsFullyLanded;
+        }
     }
 }

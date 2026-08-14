@@ -1625,7 +1625,8 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Nearest enemy ship or people-transport VFX flight within
         /// <paramref name="engageRange"/> of the turret pad (<paramref name="muzzleDisplay"/>),
-        /// for cosmetic lead aim only. Returns planar velocity so
+        /// for cosmetic lead aim only. Ships fully landed on a gem moon are skipped so barrels
+        /// match server acquisition. Returns planar velocity so
         /// <see cref="PlanetaryDefenseAimMath"/> can match server fire direction.
         /// <para>
         /// Ships: presentation cache + ghosted <see cref="ShipKinematics"/> (dictionary walk —
@@ -1668,6 +1669,8 @@ namespace TitanOrbit.Game
 
                 var ship = em.GetComponentData<ShipState>(shipEntity);
                 if (ship.IsDead || ship.Team == TeamId.None || ship.Team == ownerTeam)
+                    continue;
+                if (ShipMoonDockState.IsFullyLandedOnMoon(em, shipEntity))
                     continue;
 
                 if (!GhostPresentationTransformCache.TryGetShip(shipEntity, out var snap))

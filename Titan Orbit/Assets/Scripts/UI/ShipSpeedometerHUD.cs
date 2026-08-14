@@ -70,6 +70,11 @@ namespace TitanOrbit.UI
     /// <see cref="ShipSpeedometerStatTooltips"/> / <see cref="ShipAttributeUpgradeHUD"/>.
     /// </para>
     /// Hidden during team select, death, and when the upgrade tree obscures HUD.
+    /// <para>
+    /// [TITAN-ORBIT] Fully moon-docked ships still have world-space velocity because the hull
+    /// co-orbits with the gem moon (<see cref="ShipPhysicsDriveLogic"/>). This HUD pins SPD and
+    /// ACC to 0 while landed — the ship has parked, even though kinematics are not at rest.
+    /// </para>
     /// </summary>
     public class ShipSpeedometerHUD : MonoBehaviour
     {
@@ -1300,6 +1305,25 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// True when the local ship is fully landed on a gem moon (orbit store / deposit allowed).
+        /// Pins SPD/ACC at 0 — the hull is parked even though it co-orbits in world space.
+        /// </summary>
+        /// <returns>True when a moon id is set and landing progress has completed.</returns>
+        static bool IsLocalShipFullyMoonDocked()
+        {
+            // --- Read ghosted dock state ---
+            // [HYBRID] Presentation-only. ShipMoonDockState is written by ShipMoonDockSystem
+            // (server) and replicated; this HUD never writes it.
+            if (!EcsGameBridge.TryGetLocalShipMoonDockState(out ShipMoonDockState moonDock))
+                return false;
+
+            // MoonPlanetId 0 = not in a docking sequence. LandingProgress reaches ~1 when
+            // the dwell timer finishes (same threshold as OrbitStationShipView / deposit).
+            return moonDock.MoonPlanetId != 0
+                && moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
+        }
+
+        /// <summary>
         /// Same movement mass the motor uses (hull bulk + gems + people) — not hull-reference alone.
         /// </summary>
         static float GetMovementMass(in ShipState ship, in ShipMotorConfig motor)
@@ -1453,6 +1477,21 @@ namespace TitanOrbit.UI
             }
 
             float cur = GetHorizontalSpeed(kinematics);
+
+            // --- Landed on moon: treat flight speed as 0 ---
+            // [TITAN-ORBIT] Fully docked hulls co-orbit with the gem moon via
+            // ShipPhysicsDriveLogic so the moving pad cannot leave the dock zone.
+            // That writes a real world-space velocity (the moon's orbital speed) into
+            // ShipKinematics — not player flight. The speedometer would flicker with
+            // that orbital motion. The ship has landed, so SPD / ACC read 0 until takeoff.
+            // Dropping the last-speed sample also prevents a huge ACC spike on the first
+            // docked frame and on the first airborne frame after thrust-off.
+            if (IsLocalShipFullyMoonDocked())
+            {
+                cur = 0f;
+                hasLastHorizontalSpeed = false;
+                smoothedHorizontalAccel = 0f;
+            }
 
             // --- Chassis baselines (leveled + attrs) — only pre–mass-tax numbers ---
             // [TITAN-ORBIT] Do not use motor.MaxSpeed / EngineThrust as a second "untaxed" source;

@@ -15,6 +15,7 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative planetary defense fire. Active turrets aim at the nearest enemy ship
+    /// (skipping hulls fully landed on a gem moon — same gate as bullet / ram immunity)
     /// or people transport within absolute engage range (world units from the pad; Level 1→6
     /// from <see cref="PlanetaryDefenseConfig"/>, default 20 at Lv1 then +4/level) and append
     /// <see cref="BulletElement"/> shots with <see cref="BulletDamageFilter.ShipsAndTransports"/>
@@ -280,8 +281,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Nearest living enemy ship or people transport within engage range of the turret muzzle
-        /// (toroidal). Prefers the closest hostile to that muzzle. Also returns planar velocity
-        /// for <see cref="PlanetaryDefenseAimMath"/> lead aiming.
+        /// (toroidal). Prefers the closest hostile to that muzzle. Ships fully landed on a gem
+        /// moon are skipped (they are combat-immune and must not waste turret cadence).
+        /// Also returns planar velocity for <see cref="PlanetaryDefenseAimMath"/> lead aiming.
         /// <para>
         /// Ships: <see cref="ShipKinematics.Velocity"/> — server mirror of
         /// <c>PhysicsVelocity.Linear</c> after physics (world units/sec on XZ), same space
@@ -324,6 +326,9 @@ namespace TitanOrbit.ECS
                 if (ship.IsDead || ship.AwaitingTeamSelection || ship.Team == TeamId.None)
                     continue;
                 if (ship.Team == ownerTeam)
+                    continue;
+                // Landed on a moon — immune to hull damage; do not acquire or fire.
+                if (ShipMoonDockState.IsFullyLandedOnMoon(EntityManager, e))
                     continue;
 
                 float3 pos = EntityManager.GetComponentData<LocalTransform>(e).Position;
