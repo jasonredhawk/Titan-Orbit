@@ -74,6 +74,10 @@ namespace TitanOrbit.Data
 
         public string familyId;
 
+        [Header("Part Calc Profiles")]
+        [Tooltip("Profile set used by Recalculate Component Stats. Leave empty to use Resources/ShipFamilyPartCalcProfileSet.")]
+        public ShipFamilyPartCalcProfileSet partCalcProfileSet;
+
         [Header("Ship Tier Growth (Legacy)")]
         [Tooltip(
             "[LEGACY] Unused by combat. Stats now use Extra Level: " +

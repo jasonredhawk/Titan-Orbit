@@ -13,39 +13,45 @@ MonoBehaviour:
   m_Name: HyperFalconShipFamily
   m_EditorClassIdentifier: Assembly-CSharp::TitanOrbit.Data.ShipFamilyDefinition
   familyId: HyperFalcon
+  partCalcProfileSet: {fileID: 11400000, guid: a8e7c3f1b2044d6e9f0a1b2c3d4e5f60, type: 2}
+  shipLevelStatGrowthFraction: 0.1
   defaultFallbackStats:
     firePower: 3
-    firePowerPerLevel: 0.75
+    firePowerPerExtraLevel: 0.75
     bulletSpeed: 12
-    bulletSpeedPerLevel: 3
+    bulletSpeedPerExtraLevel: 3
     bulletRange: 0
-    bulletRangePerLevel: 0
+    bulletRangePerExtraLevel: 0
     fireRate: 3
-    fireRatePerLevel: 0
+    fireRatePerExtraLevel: 0
     rammingPower: 1
-    rammingPowerPerLevel: 0.25
+    rammingPowerPerExtraLevel: 0.25
     healthCap: 6.3
-    healthCapPerLevel: 1.575
+    healthCapPerExtraLevel: 1.575
     healthRegen: 0.22500002
-    healthRegenPerLevel: 0.056250006
+    healthRegenPerExtraLevel: 0.056250006
     energyCap: 18
-    energyCapPerLevel: 4.5
+    energyCapPerExtraLevel: 4.5
     energyRegen: 3
-    energyRegenPerLevel: 0.75
+    energyRegenPerExtraLevel: 0.75
     moveSpeed: 9
-    moveSpeedPerLevel: 1.8000001
+    moveSpeedPerExtraLevel: 1.8000001
     accelerationCap: 2.4
-    accelerationCapPerLevel: 0.6
+    accelerationCapPerExtraLevel: 0.6
+    extraSpeedPercent: 0
+    extraSpeedPercentPerExtraLevel: 0
+    extraSpeedEnergyDrain: 0
+    extraSpeedEnergyDrainPerExtraLevel: 0
     turnSpeed: 14
-    turnSpeedPerLevel: 3.5
+    turnSpeedPerExtraLevel: 3.5
     maxGems: 8
-    maxGemsPerLevel: 2
+    maxGemsPerExtraLevel: 2
     tractorBeamDistance: 3
-    tractorBeamDistancePerLevel: 0.75
+    tractorBeamDistancePerExtraLevel: 0.75
     tractorBeamPower: 4
-    tractorBeamPowerPerLevel: 1
+    tractorBeamPowerPerExtraLevel: 1
     maxPeople: 2
-    maxPeoplePerLevel: 0
+    maxPeoplePerExtraLevel: 0
   specialBonuses:
     moveSpeedMul: 1
     accelerationMul: 1
@@ -59,12 +65,14 @@ MonoBehaviour:
     healthRegenMul: 1
     energyCapMul: 1
     energyRegenMul: 1
-    overdrivePercentMul: 1
+    extraSpeedPercentMul: 1
+    extraSpeedEnergyDrainMul: 1
     maxGemsMul: 1
     maxPeopleMul: 1
     tractorDistanceMul: 1
     tractorPowerMul: 1
   bulletPrefabIndex: 0
+  weaponFireMode: 0
   planetaryDefense: {fileID: 0}
   cameraFollowSettings: {fileID: 11400000, guid: 90d7e8197d9477d40bc1400865e6a4af, type: 2}
   damageSmokeSettings: {fileID: 11400000, guid: 9a2f168e386dd484c9335fb37c499705, type: 2}
@@ -77,37 +85,41 @@ MonoBehaviour:
     statCategories: 000000000100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerExtraLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerExtraLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerExtraLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerExtraLevel: 0
       rammingPower: 1
-      rammingPowerPerLevel: 0.25
+      rammingPowerPerExtraLevel: 0.25
       healthCap: 6.3
-      healthCapPerLevel: 1.575
+      healthCapPerExtraLevel: 1.575
       healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      healthRegenPerExtraLevel: 0.056250006
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerExtraLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerExtraLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerExtraLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerExtraLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerExtraLevel: 0
       maxGems: 8
-      maxGemsPerLevel: 2
+      maxGemsPerExtraLevel: 4
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      tractorBeamPowerPerExtraLevel: 0
+      maxPeople: 10
+      maxPeoplePerExtraLevel: 5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 5988eaab1a819e74c86729dca198879e, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -131,41 +143,45 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Core
-    displayName: Core 1
+    displayName: Hull 1
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerExtraLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerExtraLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerExtraLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerExtraLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerLevel: 0.7875
+      healthCapPerExtraLevel: 0.7875
       healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.028125003
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerExtraLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerExtraLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerExtraLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerExtraLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerExtraLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerExtraLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 2d59216415621a847b5f5bfa23307331, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -193,37 +209,41 @@ MonoBehaviour:
     statCategories: 0300000002000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerExtraLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerExtraLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerExtraLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerExtraLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerExtraLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerExtraLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
-      energyCap: 15.3
-      energyCapPerLevel: 3.825
-      energyRegen: 3.15
-      energyRegenPerLevel: 0.7875
+      healthRegenPerExtraLevel: 0
+      energyCap: 18
+      energyCapPerExtraLevel: 6
+      energyRegen: 3
+      energyRegenPerExtraLevel: 1
       moveSpeed: 6
-      moveSpeedPerLevel: 1.2
-      accelerationCap: 3
-      accelerationCapPerLevel: 0.6
+      moveSpeedPerExtraLevel: 0.5
+      accelerationCap: 6
+      accelerationCapPerExtraLevel: 1
+      extraSpeedPercent: 0.25
+      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedEnergyDrain: 12
+      extraSpeedEnergyDrainPerExtraLevel: 6
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerExtraLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerExtraLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: c8db584a7fdb8504d98ca6b981f87c2e, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -247,41 +267,45 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Exhaust
-    displayName: Exhaust 1
+    displayName: Thruster 1
     statCategories: 03000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerExtraLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerExtraLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerExtraLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerExtraLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerExtraLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerExtraLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerExtraLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerExtraLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerExtraLevel: 0
       moveSpeed: 6
-      moveSpeedPerLevel: 1.2
+      moveSpeedPerExtraLevel: 0.5
       accelerationCap: 3
-      accelerationCapPerLevel: 0.6
-      turnSpeed: 4.1621623
-      turnSpeedPerLevel: 1.0405406
+      accelerationCapPerExtraLevel: 0.6
+      extraSpeedPercent: 0
+      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerExtraLevel: 0
+      turnSpeed: 10
+      turnSpeedPerExtraLevel: 2
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerExtraLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 640e432e50f7dd34abf3b4c3998ec36c, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -305,41 +329,45 @@ MonoBehaviour:
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
   - componentId: Support
-    displayName: Support 1
+    displayName: Hull 1
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerExtraLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerExtraLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerExtraLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerExtraLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerLevel: 0.7875
+      healthCapPerExtraLevel: 0.7875
       healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.028125003
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerExtraLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerExtraLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerExtraLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerExtraLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerExtraLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerExtraLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 09319c5eaa2809b4c8d4b2c7fbc88640, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -367,37 +395,41 @@ MonoBehaviour:
     statCategories: 03000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerExtraLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerExtraLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerExtraLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerExtraLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerExtraLevel: 0
       healthCap: 0
-      healthCapPerLevel: 0
+      healthCapPerExtraLevel: 0
       healthRegen: 0
-      healthRegenPerLevel: 0
+      healthRegenPerExtraLevel: 0
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerExtraLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerExtraLevel: 0
       moveSpeed: 6
-      moveSpeedPerLevel: 1.2
+      moveSpeedPerExtraLevel: 0.5
       accelerationCap: 3
-      accelerationCapPerLevel: 0.6
-      turnSpeed: 4.1621623
-      turnSpeedPerLevel: 1.0405406
+      accelerationCapPerExtraLevel: 0.6
+      extraSpeedPercent: 0
+      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerExtraLevel: 0
+      turnSpeed: 10
+      turnSpeedPerExtraLevel: 2
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerExtraLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 922a3bed0d2bb0241b18e1b8a4537389, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -421,41 +453,45 @@ MonoBehaviour:
     enablePropulsionVfx: 1
     propulsionVfxScale: 1
   - componentId: Tracks
-    displayName: Tracks 1
+    displayName: Hull 1
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerExtraLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerExtraLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerExtraLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerExtraLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerLevel: 0.7875
+      healthCapPerExtraLevel: 0.7875
       healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.028125003
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerExtraLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerExtraLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerExtraLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerExtraLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerExtraLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerExtraLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: eb7d11e98a225384db597b915cb79abc, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -479,41 +515,45 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   - componentId: Vents
-    displayName: Vents 1
+    displayName: Hull 1
     statCategories: 01000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerExtraLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerExtraLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerExtraLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerExtraLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerLevel: 0.7875
+      healthCapPerExtraLevel: 0.7875
       healthRegen: 0.11250001
-      healthRegenPerLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.028125003
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerExtraLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerExtraLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerExtraLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerExtraLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
+      turnSpeedPerExtraLevel: 0
       maxGems: 0
-      maxGemsPerLevel: 0
+      maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
-      tractorBeamDistancePerLevel: 0
+      tractorBeamDistancePerExtraLevel: 0
       tractorBeamPower: 0
-      tractorBeamPowerPerLevel: 0
+      tractorBeamPowerPerExtraLevel: 0
       maxPeople: 0
-      maxPeoplePerLevel: 0
+      maxPeoplePerExtraLevel: 0
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: a8b20477c91f5c649933936184f79da6, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -541,37 +581,41 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerExtraLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerExtraLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerExtraLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerExtraLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerExtraLevel: 0
       healthCap: 6.3
-      healthCapPerLevel: 1.575
+      healthCapPerExtraLevel: 1.575
       healthRegen: 0.22500002
-      healthRegenPerLevel: 0.056250006
+      healthRegenPerExtraLevel: 0.056250006
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerExtraLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerExtraLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerExtraLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerExtraLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 8
-      maxGemsPerLevel: 2
+      turnSpeedPerExtraLevel: 0
+      maxGems: 20
+      maxGemsPerExtraLevel: 4
       tractorBeamDistance: 3
-      tractorBeamDistancePerLevel: 0.75
+      tractorBeamDistancePerExtraLevel: 0.75
       tractorBeamPower: 4
-      tractorBeamPowerPerLevel: 1
-      maxPeople: 2
-      maxPeoplePerLevel: 0.5
+      tractorBeamPowerPerExtraLevel: 1
+      maxPeople: 9
+      maxPeoplePerExtraLevel: 3
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: d9adfeb388ae6ff478cec4055de42c3d, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -599,37 +643,41 @@ MonoBehaviour:
     statCategories: 0100000004000000
     stats:
       firePower: 0
-      firePowerPerLevel: 0
+      firePowerPerExtraLevel: 0
       bulletSpeed: 0
-      bulletSpeedPerLevel: 0
+      bulletSpeedPerExtraLevel: 0
       bulletRange: 0
-      bulletRangePerLevel: 0
+      bulletRangePerExtraLevel: 0
       fireRate: 0
-      fireRatePerLevel: 0
+      fireRatePerExtraLevel: 0
       rammingPower: 0
-      rammingPowerPerLevel: 0
+      rammingPowerPerExtraLevel: 0
       healthCap: 8.1
-      healthCapPerLevel: 2.025
+      healthCapPerExtraLevel: 2.025
       healthRegen: 0.28928575
-      healthRegenPerLevel: 0.07232144
+      healthRegenPerExtraLevel: 0.07232144
       energyCap: 0
-      energyCapPerLevel: 0
+      energyCapPerExtraLevel: 0
       energyRegen: 0
-      energyRegenPerLevel: 0
+      energyRegenPerExtraLevel: 0
       moveSpeed: 0
-      moveSpeedPerLevel: 0
+      moveSpeedPerExtraLevel: 0
       accelerationCap: 0
-      accelerationCapPerLevel: 0
+      accelerationCapPerExtraLevel: 0
+      extraSpeedPercent: 0
+      extraSpeedPercentPerExtraLevel: 0
+      extraSpeedEnergyDrain: 0
+      extraSpeedEnergyDrainPerExtraLevel: 0
       turnSpeed: 0
-      turnSpeedPerLevel: 0
-      maxGems: 16
-      maxGemsPerLevel: 4
+      turnSpeedPerExtraLevel: 0
+      maxGems: 30
+      maxGemsPerExtraLevel: 6
       tractorBeamDistance: 6
-      tractorBeamDistancePerLevel: 1.5
+      tractorBeamDistancePerExtraLevel: 1.5
       tractorBeamPower: 8
-      tractorBeamPowerPerLevel: 2
-      maxPeople: 4
-      maxPeoplePerLevel: 1
+      tractorBeamPowerPerExtraLevel: 2
+      maxPeople: 15
+      maxPeoplePerExtraLevel: 5
     bulletPrefabIndex: -1
     menuPreviewSprite: {fileID: 21300000, guid: 159f4283b24724c4b93f2bd22c0da9be, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
@@ -653,50 +701,95 @@ MonoBehaviour:
     enablePropulsionVfx: 0
     propulsionVfxScale: 1
   upgradeTree:
-  - chassisId: HyperFalcon_01
+  - chassisId: HyperFalcon_06
     upgradeTreeShipName: 
-    prefab: {fileID: 8437679288721851717, guid: 68c9e5c8d8ab9bb478eaf0571ee10961, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 19cab182ed4d95f41b8cdac1a7b55c9d, type: 3}
+    prefab: {fileID: 3291292398803739974, guid: 90c80e02e8a7b20419486b7e6143751c, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 19cab182ed4d95f41b8cdac1a7b55c9d, type: 3}
+      sprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 9594a7244b466a4429a109bf57450e75, type: 3}
+      sprite: {fileID: 21300000, guid: 75f814ccd8f062d4d8e7638f196385af, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 978a77611bd74fe45860c3aa04e79a0b, type: 3}
+      sprite: {fileID: 21300000, guid: 8cd530e3aeb31a6428a88c4f2935187f, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 3469486bf6dc6574882c676de592defa, type: 3}
+      sprite: {fileID: 21300000, guid: 18fbb675dc94d234c8bcda4291c6f1d5, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 0cbf26c6c622af241ab153840cadec74, type: 3}
+      sprite: {fileID: 21300000, guid: e017ddaa44c29984382e569efbb4a886, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 1
-    powerScore: 120.046326
-    powerScoreAtMaxLevel: 165.8279
+    powerScore: 120.46806
+    powerScoreAtMaxLevel: 158.1488
     powerScoreBreakdown:
       offense: 19
-      defense: 37.39222
-      energy: 25.768654
-      mobility: 35.36865
-      capacity: 18.5168
+      defense: 17.259441
+      energy: 21
+      mobility: 19
+      capacity: 51.208626
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 36.102833
-      healthRegen: 1.289387
-      energyCap: 21.369127
-      energyRegen: 4.399526
-      moveSpeed: 6.72
-      turnSpeed: 16.64865
-      gemCap: 14.81344
-      peopleCap: 3.70336
-    componentMass: 15.006214
+      healthCap: 16.664288
+      healthRegen: 0.5951532
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 6
+      turnSpeed: 10
+      gemCap: 30.9025
+      peopleCap: 20.306126
+    componentMass: 8.568384
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_20
+    upgradeTreeShipName: 
+    prefab: {fileID: 8502949886050205693, guid: 22124f0ba44537547bfd80bcdb9bed0f, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 55f667961eddc1040a66a2ffd2c50a6c, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 0ad9eb411766aec4fb2ea816852f85bb, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 2b999d5d44f74374497218b3dc6779aa, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: a055d359c1d0dbe4e99c27d39a73f0b9, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 2
+    powerScore: 121.43241
+    powerScoreAtMaxLevel: 194.82362
+    powerScoreBreakdown:
+      offense: 19
+      defense: 16.382412
+      energy: 11.550001
+      mobility: 26
+      capacity: 58.5
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 15.817501
+      healthRegen: 0.56491077
+      energyCap: 9.900001
+      energyRegen: 1.6500001
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 36
+      peopleCap: 22.5
+    componentMass: 13.286121
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_10
     upgradeTreeShipName: 
@@ -721,297 +814,162 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 152.32082
-    powerScoreAtMaxLevel: 250.74123
+    powerScore: 121.16
+    powerScoreAtMaxLevel: 198.39
     powerScoreBreakdown:
       offense: 19
-      defense: 33.93
-      energy: 36.9
-      mobility: 45.290813
-      capacity: 38
+      defense: 15.660001
+      energy: 21
+      mobility: 26
+      capacity: 49.5
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 32.760002
-      healthRegen: 1.1700001
-      energyCap: 30.6
-      energyRegen: 6.3
-      moveSpeed: 7.6800003
-      turnSpeed: 20.810812
-      gemCap: 30.400002
-      peopleCap: 7.6000004
+      healthCap: 15.120001
+      healthRegen: 0.5400001
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 29
+      peopleCap: 20.5
     componentMass: 14.356342
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_03
+  - chassisId: HyperFalcon_13
     upgradeTreeShipName: 
-    prefab: {fileID: 8771789760030154906, guid: ca88eb8e52507e247ae76ad7e9225bfe, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: d0d1d12030f83c546a28fb9e16a135bc, type: 3}
+    prefab: {fileID: 4919701350902243033, guid: 761c8ba191d9b9941bad5ff458918bf2, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: d0d1d12030f83c546a28fb9e16a135bc, type: 3}
+      sprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: fdbc8f3835a1d1b49b2250a85114f876, type: 3}
+      sprite: {fileID: 21300000, guid: 110d91a7f1befe74cbec0875d42e46ec, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: b6344fa2cd9d01a428a131bad15c3894, type: 3}
+      sprite: {fileID: 21300000, guid: 77c30f76544de614195456ec51055cb4, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: ea244ef34c5d23845a6a808f49f8d824, type: 3}
+      sprite: {fileID: 21300000, guid: 022b49e73de242e428cce8d767e3c87a, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 98da724788bd81546911d564b17674e4, type: 3}
+      sprite: {fileID: 21300000, guid: 5a22dc54fde77d74e8a861e87ffbb3a7, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 2
-    powerScore: 116.70862
-    powerScoreAtMaxLevel: 183.88292
+    minHomePlanetLevel: 3
+    powerScore: 121.671074
+    powerScoreAtMaxLevel: 225.28688
     powerScoreBreakdown:
       offense: 19
-      defense: 33.437412
-      energy: 18.45
-      mobility: 21.284325
-      capacity: 35.73688
+      defense: 14.821072
+      energy: 21
+      mobility: 26
+      capacity: 50.85
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 32.284397
-      healthRegen: 1.1530144
-      energyCap: 15.3
-      energyRegen: 3.15
-      moveSpeed: 5.7599998
-      turnSpeed: 8.324325
-      gemCap: 28.589504
-      peopleCap: 7.147376
-    componentMass: 9.506616
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_04
-    upgradeTreeShipName: 
-    prefab: {fileID: 5184615716735559179, guid: 5e515ed97c5dd0448a038c848bc9d8a8, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 0c81d1f27d6b16642b763bc9cabdcb6f, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: d995d4eedbd652d42a3103ac20148401, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 8444712222bc3474e9ec4ac1bdc9be85, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: ca2a137d2ad68a3449c67eaad5e48b11, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 3
-    powerScore: 151.99828
-    powerScoreAtMaxLevel: 275.37698
-    powerScoreBreakdown:
-      offense: 20
-      defense: 37.75178
-      energy: 21
-      mobility: 25.446487
-      capacity: 60
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      rammingPower: 2
-      healthCap: 36.449997
-      healthRegen: 1.3017858
+      healthCap: 14.31
+      healthRegen: 0.5110715
       energyCap: 18
       energyRegen: 3
-      moveSpeed: 5.7599998
-      turnSpeed: 12.486486
-      gemCap: 48
-      peopleCap: 12
-    componentMass: 8.780899
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_02
-    upgradeTreeShipName: 
-    prefab: {fileID: 6431040843001023359, guid: 74ffec7e11c266c418900c7e17d00534, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: fd43680d4fa130349bcdb26c61634c9e, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 1ef163d97e182ae4eb79a71132d5e1a4, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 21e7f4058fbde9f44bf3ae6ee6979b55, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: d55692e737551ee438b7ab63c152e566, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 3
-    powerScore: 149.27954
-    powerScoreAtMaxLevel: 261.1892
-    powerScoreBreakdown:
-      offense: 19
-      defense: 38.323864
-      energy: 18.153288
-      mobility: 21.2
-      capacity: 59.002388
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      rammingPower: 1
-      healthCap: 37.00235
-      healthRegen: 1.3215127
-      energyCap: 15.053946
-      energyRegen: 3.0993419
-      moveSpeed: 4.8
+      moveSpeed: 6
       turnSpeed: 14
-      gemCap: 47.201912
-      peopleCap: 11.800478
-    componentMass: 7.7465672
+      gemCap: 32.1
+      peopleCap: 18.75
+    componentMass: 16.85
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_09
+  - chassisId: HyperFalcon_08
     upgradeTreeShipName: 
-    prefab: {fileID: 5015609858578011754, guid: 00a4ee30e7d043f409030ebb13180816, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
+    prefab: {fileID: 6592500596467918042, guid: ee106c28e11618c48b09ebd75f31d802, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
+      sprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 12b734f9c98310d4e86fd3978a15a740, type: 3}
+      sprite: {fileID: 21300000, guid: 266867cb5d29c2f49b8a958b434c3810, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 39ee1ab8bf907c34db43ad63d35739d8, type: 3}
+      sprite: {fileID: 21300000, guid: c02124cc45eef234bb8984aa32f33373, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: b7f9fef01ade825419a4a8d5a764f357, type: 3}
+      sprite: {fileID: 21300000, guid: c2465ccc98631f2438cede90f16f6f49, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 5be264939cfea8c49a4e3f689a7a0824, type: 3}
+      sprite: {fileID: 21300000, guid: 53c2adc29f7f42c4285d05e9ace3490c, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 205.87788
-    powerScoreAtMaxLevel: 379.43628
+    powerScore: 122.57516
+    powerScoreAtMaxLevel: 229.5239
     powerScoreBreakdown:
       offense: 19
-      defense: 38.22523
-      energy: 89.25988
-      mobility: 29.924326
-      capacity: 47.868443
+      defense: 14.68533
+      energy: 24.149998
+      mobility: 26
+      capacity: 48.739822
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 36.90712
-      healthRegen: 1.3181115
-      energyCap: 74.020386
-      energyRegen: 15.239492
-      moveSpeed: 7.2000003
-      turnSpeed: 8.324325
-      gemCap: 38.294754
-      peopleCap: 9.5736885
-    componentMass: 15.006784
+      healthCap: 14.17894
+      healthRegen: 0.5063907
+      energyCap: 20.699999
+      energyRegen: 3.4499998
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 30.162144
+      peopleCap: 18.57768
+    componentMass: 16.49111
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_07
+  - chassisId: HyperFalcon_01
     upgradeTreeShipName: 
-    prefab: {fileID: 3571592331501742404, guid: b4d69c4f9c3d162448102b7fb3a96fbf, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
+    prefab: {fileID: 8437679288721851717, guid: 68c9e5c8d8ab9bb478eaf0571ee10961, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 19cab182ed4d95f41b8cdac1a7b55c9d, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
+      sprite: {fileID: 21300000, guid: 19cab182ed4d95f41b8cdac1a7b55c9d, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: b1cd86a6300df2f44bd39564092ab21a, type: 3}
+      sprite: {fileID: 21300000, guid: 9594a7244b466a4429a109bf57450e75, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: beacb1f2a270ba14aa8d7d9f7065fb19, type: 3}
+      sprite: {fileID: 21300000, guid: 978a77611bd74fe45860c3aa04e79a0b, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 38d0a7a351cce434aa49e875fb691242, type: 3}
+      sprite: {fileID: 21300000, guid: 3469486bf6dc6574882c676de592defa, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: bd80bd24087ed294c86a52c7aff075b8, type: 3}
+      sprite: {fileID: 21300000, guid: 0cbf26c6c622af241ab153840cadec74, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 4
-    powerScore: 153.34203
-    powerScoreAtMaxLevel: 310.80405
-    powerScoreBreakdown:
-      offense: 20
-      defense: 41.226925
-      energy: 18.45
-      mobility: 14.242163
-      capacity: 69.22294
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      rammingPower: 2
-      healthCap: 39.805305
-      healthRegen: 1.4216181
-      energyCap: 15.3
-      energyRegen: 3.15
-      moveSpeed: 5.28
-      turnSpeed: 4.1621623
-      gemCap: 55.37835
-      peopleCap: 13.844587
-    componentMass: 8.258868
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_06
-    upgradeTreeShipName: 
-    prefab: {fileID: 3291292398803739974, guid: 90c80e02e8a7b20419486b7e6143751c, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: e1aa525e22c338249bd95f0d12df8867, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 75f814ccd8f062d4d8e7638f196385af, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 8cd530e3aeb31a6428a88c4f2935187f, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 18fbb675dc94d234c8bcda4291c6f1d5, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: e017ddaa44c29984382e569efbb4a886, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 4
-    powerScore: 152.48512
-    powerScoreAtMaxLevel: 307.09024
+    minHomePlanetLevel: 3
+    powerScore: 122.373604
+    powerScoreAtMaxLevel: 236.0976
     powerScoreBreakdown:
       offense: 19
-      defense: 39.879337
-      energy: 21
-      mobility: 18.404325
-      capacity: 63.00146
+      defense: 15.344712
+      energy: 29.330175
+      mobility: 26
+      capacity: 42.69872
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 38.50419
-      healthRegen: 1.3751497
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 5.28
-      turnSpeed: 8.324325
-      gemCap: 50.40117
-      peopleCap: 12.600292
-    componentMass: 8.568384
+      healthCap: 14.815584
+      healthRegen: 0.5291281
+      energyCap: 25.14015
+      energyRegen: 4.190025
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 25.0336
+      peopleCap: 17.66512
+    componentMass: 15.006214
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_15
     upgradeTreeShipName: 
@@ -1036,117 +994,162 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 183.09041
-    powerScoreAtMaxLevel: 394.22083
+    powerScore: 129.47429
+    powerScoreAtMaxLevel: 278.3986
     powerScoreBreakdown:
       offense: 19
-      defense: 48.117256
-      energy: 27.675001
-      mobility: 52.332977
-      capacity: 59.165176
+      defense: 17.524286
+      energy: 15.75
+      mobility: 26
+      capacity: 61.2
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 46.45804
-      healthRegen: 1.659216
-      energyCap: 22.95
-      energyRegen: 4.7250004
-      moveSpeed: 8.16
-      turnSpeed: 24.972975
-      gemCap: 47.33214
-      peopleCap: 11.833035
+      healthCap: 16.92
+      healthRegen: 0.6042858
+      energyCap: 13.5
+      energyRegen: 2.25
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 37.2
+      peopleCap: 24
     componentMass: 16.074923
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_08
+  - chassisId: HyperFalcon_16
     upgradeTreeShipName: 
-    prefab: {fileID: 6592500596467918042, guid: ee106c28e11618c48b09ebd75f31d802, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
+    prefab: {fileID: 3220722000867962959, guid: ce7b91020bbc0454e928d6b346b92ce5, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 0d23d0e7459b45c42a60fc617f54c4f3, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: f0c9e80d5da6559479f09ef578d00519, type: 3}
+      sprite: {fileID: 21300000, guid: 0d23d0e7459b45c42a60fc617f54c4f3, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 266867cb5d29c2f49b8a958b434c3810, type: 3}
+      sprite: {fileID: 21300000, guid: ba1a0f1bd0450864ba02e27ff4c0f510, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: c02124cc45eef234bb8984aa32f33373, type: 3}
+      sprite: {fileID: 21300000, guid: 23ec02a7d1252954cb1a6bd9e8460dd2, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: c2465ccc98631f2438cede90f16f6f49, type: 3}
+      sprite: {fileID: 21300000, guid: 8d6a00c77ced0634cb7404dc8354f6a6, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 53c2adc29f7f42c4285d05e9ace3490c, type: 3}
+      sprite: {fileID: 21300000, guid: c1357e88e40f3e343b82aa94f96862fb, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 184.00919
-    powerScoreAtMaxLevel: 391.73834
+    powerScore: 129.29803
+    powerScoreAtMaxLevel: 277.49606
     powerScoreBreakdown:
       offense: 19
-      defense: 45.97727
-      energy: 42.434998
-      mobility: 45.290813
-      capacity: 52.106102
+      defense: 17.198038
+      energy: 16.800001
+      mobility: 26
+      capacity: 60.3
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 44.391846
-      healthRegen: 1.5854231
-      energyCap: 35.19
-      energyRegen: 7.245
-      moveSpeed: 7.6800003
-      turnSpeed: 20.810812
-      gemCap: 41.684883
-      peopleCap: 10.421221
-    componentMass: 16.49111
+      healthCap: 16.605001
+      healthRegen: 0.5930358
+      energyCap: 14.400001
+      energyRegen: 2.4
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 36.8
+      peopleCap: 23.5
+    componentMass: 18.1
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_20
+  - chassisId: HyperFalcon_14
     upgradeTreeShipName: 
-    prefab: {fileID: 8502949886050205693, guid: 22124f0ba44537547bfd80bcdb9bed0f, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+    prefab: {fileID: 700671235637858216, guid: 9abcb08127d0aa9419be3b369bf695b7, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 772c4380465bff7468088f6437b678d1, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 7b8f8abee8f4f1143aeea5150e3cf173, type: 3}
+      sprite: {fileID: 21300000, guid: 772c4380465bff7468088f6437b678d1, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 55f667961eddc1040a66a2ffd2c50a6c, type: 3}
+      sprite: {fileID: 21300000, guid: 5382d6b3bad184142bfc7ddfa8fb34e2, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 0ad9eb411766aec4fb2ea816852f85bb, type: 3}
+      sprite: {fileID: 21300000, guid: 66d6fbe4d162540498bb79f221e70a2a, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 2b999d5d44f74374497218b3dc6779aa, type: 3}
+      sprite: {fileID: 21300000, guid: 57bd737dd1c192844943e9a868e5c15f, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: a055d359c1d0dbe4e99c27d39a73f0b9, type: 3}
+      sprite: {fileID: 21300000, guid: 040238b6476534648abcf4dadf7f8a82, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 5
-    powerScore: 195.04233
-    powerScoreAtMaxLevel: 463.29523
+    minHomePlanetLevel: 4
+    powerScore: 125.81928
+    powerScoreAtMaxLevel: 255.63858
     powerScoreBreakdown:
       offense: 19
-      defense: 50.75651
-      energy: 20.295
-      mobility: 45.290813
-      capacity: 80.5
+      defense: 16.219286
+      energy: 21
+      mobility: 19
+      capacity: 57.6
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 49.006287
-      healthRegen: 1.7502246
-      energyCap: 16.83
-      energyRegen: 3.4650002
-      moveSpeed: 7.6800003
-      turnSpeed: 20.810812
-      gemCap: 64.4
-      peopleCap: 16.1
-    componentMass: 13.286121
+      healthCap: 15.66
+      healthRegen: 0.55928576
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 6
+      turnSpeed: 10
+      gemCap: 35.6
+      peopleCap: 22
+    componentMass: 14.957066
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_03
+    upgradeTreeShipName: 
+    prefab: {fileID: 8771789760030154906, guid: ca88eb8e52507e247ae76ad7e9225bfe, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: d0d1d12030f83c546a28fb9e16a135bc, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: d0d1d12030f83c546a28fb9e16a135bc, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: fdbc8f3835a1d1b49b2250a85114f876, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: b6344fa2cd9d01a428a131bad15c3894, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: ea244ef34c5d23845a6a808f49f8d824, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 98da724788bd81546911d564b17674e4, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 4
+    powerScore: 125.79654
+    powerScoreAtMaxLevel: 274.80624
+    powerScoreBreakdown:
+      offense: 19
+      defense: 16.388561
+      energy: 21
+      mobility: 26
+      capacity: 53.40798
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 15.823438
+      healthRegen: 0.5651228
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 31.60532
+      peopleCap: 21.80266
+    componentMass: 9.506616
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_12
     upgradeTreeShipName: 
@@ -1171,117 +1174,162 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 189.1172
-    powerScoreAtMaxLevel: 440.3637
+    powerScore: 137.17679
+    powerScoreAtMaxLevel: 334.89777
     powerScoreBreakdown:
       offense: 19
-      defense: 48.010723
-      energy: 36.9
-      mobility: 31.206486
-      capacity: 70
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      rammingPower: 1
-      healthCap: 46.35518
-      healthRegen: 1.6555425
-      energyCap: 30.6
-      energyRegen: 6.3
-      moveSpeed: 6.72
-      turnSpeed: 12.486486
-      gemCap: 56
-      peopleCap: 14
-    componentMass: 13.279276
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_14
-    upgradeTreeShipName: 
-    prefab: {fileID: 700671235637858216, guid: 9abcb08127d0aa9419be3b369bf695b7, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 772c4380465bff7468088f6437b678d1, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 772c4380465bff7468088f6437b678d1, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 5382d6b3bad184142bfc7ddfa8fb34e2, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 66d6fbe4d162540498bb79f221e70a2a, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 57bd737dd1c192844943e9a868e5c15f, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 040238b6476534648abcf4dadf7f8a82, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 5
-    powerScore: 192.22961
-    powerScoreAtMaxLevel: 461.76666
-    powerScoreBreakdown:
-      offense: 19
-      defense: 47.772324
+      defense: 18.176786
       energy: 21
-      mobility: 60.6573
-      capacity: 67
+      mobility: 26
+      capacity: 63
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 46.125
-      healthRegen: 1.6473217
+      healthCap: 17.550001
+      healthRegen: 0.62678576
       energyCap: 18
       energyRegen: 3
-      moveSpeed: 8.16
-      turnSpeed: 33.2973
-      gemCap: 53.6
-      peopleCap: 13.4
-    componentMass: 14.957066
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 38
+      peopleCap: 25
+    componentMass: 13.279276
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_13
+  - chassisId: HyperFalcon_04
     upgradeTreeShipName: 
-    prefab: {fileID: 4919701350902243033, guid: 761c8ba191d9b9941bad5ff458918bf2, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
+    prefab: {fileID: 5184615716735559179, guid: 5e515ed97c5dd0448a038c848bc9d8a8, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 70bb0dece54f12a4c9ce85fb08c31e67, type: 3}
+      sprite: {fileID: 21300000, guid: 5234d6c978d0df3419cc8b706d6d947c, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: 110d91a7f1befe74cbec0875d42e46ec, type: 3}
+      sprite: {fileID: 21300000, guid: 0c81d1f27d6b16642b763bc9cabdcb6f, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 77c30f76544de614195456ec51055cb4, type: 3}
+      sprite: {fileID: 21300000, guid: d995d4eedbd652d42a3103ac20148401, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 022b49e73de242e428cce8d767e3c87a, type: 3}
+      sprite: {fileID: 21300000, guid: 8444712222bc3474e9ec4ac1bdc9be85, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: 5a22dc54fde77d74e8a861e87ffbb3a7, type: 3}
+      sprite: {fileID: 21300000, guid: ca2a137d2ad68a3449c67eaad5e48b11, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 192.0333
-    powerScoreAtMaxLevel: 451.7249
+    powerScore: 133.17679
+    powerScoreAtMaxLevel: 309.64777
     powerScoreBreakdown:
       offense: 19
-      defense: 53.78464
-      energy: 36.9
-      mobility: 38.24865
-      capacity: 62.5
+      defense: 18.176786
+      energy: 21
+      mobility: 19
+      capacity: 63
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 51.929996
-      healthRegen: 1.8546431
-      energyCap: 30.6
-      energyRegen: 6.3
-      moveSpeed: 7.2000003
-      turnSpeed: 16.64865
-      gemCap: 50
-      peopleCap: 12.5
-    componentMass: 16.85
+      healthCap: 17.550001
+      healthRegen: 0.62678576
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 6
+      turnSpeed: 10
+      gemCap: 38
+      peopleCap: 25
+    componentMass: 8.780899
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_11
+    upgradeTreeShipName: 
+    prefab: {fileID: 6227767746155620266, guid: 7a68d04ea37628a4881aabbeacc2a513, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 647fdd723dc76fe459c57d741ad5bc38, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: 647fdd723dc76fe459c57d741ad5bc38, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: c7c16bd51c6dc9941b8887d1a9e0c1cb, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 7da74933911355c4792ded7886cfce39, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 96fc5987ae7d9004e884618edc95dba8, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 78d97e39693ec1c438409eb5269c6064, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 5
+    powerScore: 129.75494
+    powerScoreAtMaxLevel: 315.1062
+    powerScoreBreakdown:
+      offense: 19
+      defense: 18.176786
+      energy: 13.578159
+      mobility: 26
+      capacity: 63
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 17.550001
+      healthRegen: 0.62678576
+      energyCap: 11.638422
+      energyRegen: 1.9397371
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 38
+      peopleCap: 25
+    componentMass: 13.57174
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_18
+    upgradeTreeShipName: 
+    prefab: {fileID: 7908124874434234893, guid: 67222b168e900f444b60c72af989bc47, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: c7ac7511ac2f2a042b5fed4dbdfedfa7, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: c7ac7511ac2f2a042b5fed4dbdfedfa7, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: 9c03d1c882f697840a98d08a11f3b701, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: a641b49f248d5f34ca5e036f51a1f01f, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 778030c7733333e41a1ddb9f55b16096, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: 24bd784f54ee11a4c946830c56be99d3, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 5
+    powerScore: 132.27179
+    powerScoreAtMaxLevel: 319.3615
+    powerScoreBreakdown:
+      offense: 19
+      defense: 16.871786
+      energy: 21
+      mobility: 26
+      capacity: 59.4
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 16.29
+      healthRegen: 0.5817858
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 36.4
+      peopleCap: 23
+    componentMass: 19.28497
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_05
     upgradeTreeShipName: 
@@ -1306,26 +1354,26 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 170.2783
-    powerScoreAtMaxLevel: 393.17618
+    powerScore: 130.7208
+    powerScoreAtMaxLevel: 323.3902
     powerScoreBreakdown:
       offense: 19
-      defense: 52.29073
-      energy: 24.16212
-      mobility: 28.326487
-      capacity: 60.09896
+      defense: 16.357866
+      energy: 27.5016
+      mobility: 26
+      capacity: 51.86133
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 50.487602
-      healthRegen: 1.8031288
-      energyCap: 20.03688
-      energyRegen: 4.1252403
-      moveSpeed: 6.2400002
-      turnSpeed: 12.486486
-      gemCap: 48.07917
-      peopleCap: 12.019793
+      healthCap: 15.793802
+      healthRegen: 0.5640644
+      energyCap: 23.5728
+      energyRegen: 3.9288
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 30.57422
+      peopleCap: 21.28711
     componentMass: 14.0440035
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_17
@@ -1351,27 +1399,117 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 276.84973
-    powerScoreAtMaxLevel: 727.8643
+    powerScore: 142.63892
+    powerScoreAtMaxLevel: 400.33563
     powerScoreBreakdown:
       offense: 19
-      defense: 79.31932
-      energy: 20.295
-      mobility: 59.375137
-      capacity: 124.460266
+      defense: 22.38989
+      energy: 11.550001
+      mobility: 26
+      capacity: 73.69902
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 76.58417
-      healthRegen: 2.7351499
-      energyCap: 16.83
-      energyRegen: 3.4650002
-      moveSpeed: 8.639999
-      turnSpeed: 29.135138
-      gemCap: 99.568214
-      peopleCap: 24.892054
+      healthCap: 21.617825
+      healthRegen: 0.7720652
+      energyCap: 9.900001
+      energyRegen: 1.6500001
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 42.33268
+      peopleCap: 31.36634
     componentMass: 18.061779
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_02
+    upgradeTreeShipName: 
+    prefab: {fileID: 6431040843001023359, guid: 74ffec7e11c266c418900c7e17d00534, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: b01c0ec983cd2bc4b8138750556469e5, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: fd43680d4fa130349bcdb26c61634c9e, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: 1ef163d97e182ae4eb79a71132d5e1a4, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 21e7f4058fbde9f44bf3ae6ee6979b55, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: d55692e737551ee438b7ab63c152e566, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 6
+    powerScore: 140.51198
+    powerScoreAtMaxLevel: 380.5079
+    powerScoreBreakdown:
+      offense: 19
+      defense: 18.753927
+      energy: 20.662277
+      mobility: 26
+      capacity: 66.09578
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 18.10724
+      healthRegen: 0.64668715
+      energyCap: 17.710524
+      energyRegen: 2.951754
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 40.06385
+      peopleCap: 26.031925
+    componentMass: 7.7465672
+    lockedInUpgradeTree: 0
+  - chassisId: HyperFalcon_07
+    upgradeTreeShipName: 
+    prefab: {fileID: 3571592331501742404, guid: b4d69c4f9c3d162448102b7fb3a96fbf, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: TeamA
+      team: 1
+      sprite: {fileID: 21300000, guid: fb826daee2e78974e84ac4026edebb9d, type: 3}
+    - variantName: TeamB
+      team: 2
+      sprite: {fileID: 21300000, guid: b1cd86a6300df2f44bd39564092ab21a, type: 3}
+    - variantName: TeamC
+      team: 3
+      sprite: {fileID: 21300000, guid: beacb1f2a270ba14aa8d7d9f7065fb19, type: 3}
+    - variantName: TeamD
+      team: 4
+      sprite: {fileID: 21300000, guid: 38d0a7a351cce434aa49e875fb691242, type: 3}
+    - variantName: TeamE
+      team: 5
+      sprite: {fileID: 21300000, guid: bd80bd24087ed294c86a52c7aff075b8, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 6
+    powerScore: 137.89508
+    powerScoreAtMaxLevel: 376.06625
+    powerScoreBreakdown:
+      offense: 19
+      defense: 17.676027
+      energy: 21
+      mobility: 26
+      capacity: 64.219055
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 17.06651
+      healthRegen: 0.6095183
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 38.5418
+      peopleCap: 25.67725
+    componentMass: 8.258868
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_19
     upgradeTreeShipName: 
@@ -1396,162 +1534,72 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 278.0151
-    powerScoreAtMaxLevel: 725.4978
+    powerScore: 137.17679
+    powerScoreAtMaxLevel: 372.44196
     powerScoreBreakdown:
       offense: 19
-      defense: 78.0419
-      energy: 36.9
-      mobility: 52.332977
-      capacity: 114.94025
+      defense: 18.176786
+      energy: 21
+      mobility: 26
+      capacity: 63
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 75.3508
-      healthRegen: 2.6911001
-      energyCap: 30.6
-      energyRegen: 6.3
-      moveSpeed: 8.16
-      turnSpeed: 24.972975
-      gemCap: 91.952194
-      peopleCap: 22.988049
+      healthCap: 17.550001
+      healthRegen: 0.62678576
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 38
+      peopleCap: 25
     componentMass: 22.027992
     lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_16
+  - chassisId: HyperFalcon_09
     upgradeTreeShipName: 
-    prefab: {fileID: 3220722000867962959, guid: ce7b91020bbc0454e928d6b346b92ce5, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 0d23d0e7459b45c42a60fc617f54c4f3, type: 3}
+    prefab: {fileID: 5015609858578011754, guid: 00a4ee30e7d043f409030ebb13180816, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
     teamMenuPreviewSprites:
     - variantName: TeamA
       team: 1
-      sprite: {fileID: 21300000, guid: 0d23d0e7459b45c42a60fc617f54c4f3, type: 3}
+      sprite: {fileID: 21300000, guid: 8518f01ffde49b5428719eabb0d96ca5, type: 3}
     - variantName: TeamB
       team: 2
-      sprite: {fileID: 21300000, guid: ba1a0f1bd0450864ba02e27ff4c0f510, type: 3}
+      sprite: {fileID: 21300000, guid: 12b734f9c98310d4e86fd3978a15a740, type: 3}
     - variantName: TeamC
       team: 3
-      sprite: {fileID: 21300000, guid: 23ec02a7d1252954cb1a6bd9e8460dd2, type: 3}
+      sprite: {fileID: 21300000, guid: 39ee1ab8bf907c34db43ad63d35739d8, type: 3}
     - variantName: TeamD
       team: 4
-      sprite: {fileID: 21300000, guid: 8d6a00c77ced0634cb7404dc8354f6a6, type: 3}
+      sprite: {fileID: 21300000, guid: b7f9fef01ade825419a4a8d5a764f357, type: 3}
     - variantName: TeamE
       team: 5
-      sprite: {fileID: 21300000, guid: c1357e88e40f3e343b82aa94f96862fb, type: 3}
+      sprite: {fileID: 21300000, guid: 5be264939cfea8c49a4e3f689a7a0824, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 246.38853
-    powerScoreAtMaxLevel: 651.7113
+    powerScore: 141.2952
+    powerScoreAtMaxLevel: 381.6558
     powerScoreBreakdown:
       offense: 19
-      defense: 62.5934
-      energy: 29.520002
-      mobility: 59.375137
-      capacity: 101.5
+      defense: 16.785944
+      energy: 30.34605
+      mobility: 26
+      capacity: 59.163193
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 60.435005
-      healthRegen: 2.1583931
-      energyCap: 24.480001
-      energyRegen: 5.0400004
-      moveSpeed: 8.639999
-      turnSpeed: 29.135138
-      gemCap: 81.2
-      peopleCap: 20.3
-    componentMass: 18.1
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_11
-    upgradeTreeShipName: 
-    prefab: {fileID: 6227767746155620266, guid: 7a68d04ea37628a4881aabbeacc2a513, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 647fdd723dc76fe459c57d741ad5bc38, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: 647fdd723dc76fe459c57d741ad5bc38, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: c7c16bd51c6dc9941b8887d1a9e0c1cb, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: 7da74933911355c4792ded7886cfce39, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 96fc5987ae7d9004e884618edc95dba8, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 78d97e39693ec1c438409eb5269c6064, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 6
-    powerScore: 194.19327
-    powerScoreAtMaxLevel: 489.54315
-    powerScoreBreakdown:
-      offense: 19
-      defense: 60.5603
-      energy: 23.858767
-      mobility: 17.122162
-      capacity: 84.852036
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      rammingPower: 1
-      healthCap: 58.47201
-      healthRegen: 2.0882864
-      energyCap: 19.785318
-      energyRegen: 4.073448
-      moveSpeed: 5.7599998
-      turnSpeed: 4.1621623
-      gemCap: 67.88163
-      peopleCap: 16.970407
-    componentMass: 13.57174
-    lockedInUpgradeTree: 0
-  - chassisId: HyperFalcon_18
-    upgradeTreeShipName: 
-    prefab: {fileID: 7908124874434234893, guid: 67222b168e900f444b60c72af989bc47, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: c7ac7511ac2f2a042b5fed4dbdfedfa7, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: TeamA
-      team: 1
-      sprite: {fileID: 21300000, guid: c7ac7511ac2f2a042b5fed4dbdfedfa7, type: 3}
-    - variantName: TeamB
-      team: 2
-      sprite: {fileID: 21300000, guid: 9c03d1c882f697840a98d08a11f3b701, type: 3}
-    - variantName: TeamC
-      team: 3
-      sprite: {fileID: 21300000, guid: a641b49f248d5f34ca5e036f51a1f01f, type: 3}
-    - variantName: TeamD
-      team: 4
-      sprite: {fileID: 21300000, guid: 778030c7733333e41a1ddb9f55b16096, type: 3}
-    - variantName: TeamE
-      team: 5
-      sprite: {fileID: 21300000, guid: 24bd784f54ee11a4c946830c56be99d3, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 6
-    powerScore: 225.89435
-    powerScoreAtMaxLevel: 595.19586
-    powerScoreBreakdown:
-      offense: 19
-      defense: 60.25926
-      energy: 36.9
-      mobility: 52.332977
-      capacity: 80.60212
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      rammingPower: 1
-      healthCap: 58.18135
-      healthRegen: 2.077906
-      energyCap: 30.6
-      energyRegen: 6.3
-      moveSpeed: 8.16
-      turnSpeed: 24.972975
-      gemCap: 64.4817
-      peopleCap: 16.120424
-    componentMass: 19.28497
+      healthCap: 16.207119
+      healthRegen: 0.5788257
+      energyCap: 26.0109
+      energyRegen: 4.33515
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 36.294754
+      peopleCap: 22.86844
+    componentMass: 15.006784
     lockedInUpgradeTree: 0
   teamMaterials:
   - variantName: 
@@ -1575,4 +1623,4 @@ MonoBehaviour:
     materials:
     - {fileID: 2100000, guid: d491dbf671d97f9498e6e211186b66d8, type: 2}
   upgradeCardDeck: {fileID: 0}
-  TotalComponentMass: 15.006214
+  TotalComponentMass: 8.568384

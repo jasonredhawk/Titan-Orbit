@@ -124,16 +124,38 @@ namespace TitanOrbit.Editor
             EditorGUILayout.EndVertical();
         }
 
-        static void DrawProfileSetLink()
+        static void DrawProfileSetLink(ShipFamilyDefinition def)
         {
             EditorGUILayout.Space(4);
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-            EditorGUILayout.LabelField("Shared Part Calc Profile Set", EditorStyles.boldLabel);
-            var set = ShipFamilyPartCalcProfileSetEditorUtility.FindOrLoadShared();
-            EditorGUI.BeginDisabledGroup(true);
-            EditorGUILayout.ObjectField("Profile Set", set, typeof(ShipFamilyPartCalcProfileSet), false);
-            EditorGUI.EndDisabledGroup();
-                if (GUILayout.Button("Open / Create Shared Profile Set"))
+            EditorGUILayout.LabelField("Part Calc Profile Set", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Recalculate Component Stats reads this family's Part Calc Profile Set field. " +
+                "Leave empty to use the shared Resources/ShipFamilyPartCalcProfileSet.",
+                MessageType.None);
+
+            if (def != null && def.partCalcProfileSet == null)
+            {
+                if (GUILayout.Button("Assign Shared Profile Set"))
+                {
+                    var shared = ShipFamilyPartCalcProfileSetEditorUtility.FindOrLoadShared();
+                    if (shared == null)
+                    {
+                        EditorUtility.DisplayDialog(
+                            "Missing Profile Set",
+                            "Create Resources/ShipFamilyPartCalcProfileSet first (Open / Create Shared Profile Set).",
+                            "OK");
+                    }
+                    else
+                    {
+                        Undo.RecordObject(def, "Assign Shared Profile Set");
+                        def.partCalcProfileSet = shared;
+                        EditorUtility.SetDirty(def);
+                    }
+                }
+            }
+
+            if (GUILayout.Button("Open / Create Shared Profile Set"))
                 ShipFamilyPartCalcProfileSetEditorUtility.PingOrCreateShared();
             EditorGUILayout.HelpBox(
                 "On the ProfileSet: Discover All Ship Families scans Assets/Prefabs/Ships/* " +
@@ -243,7 +265,7 @@ namespace TitanOrbit.Editor
             DrawMassSummary(def);
             DrawDefaultFallbackStatsSummary(def);
             DrawSpecialBonusesSummary(def);
-            DrawProfileSetLink();
+            DrawProfileSetLink(def);
 
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox(
@@ -299,6 +321,19 @@ namespace TitanOrbit.Editor
                 if (GUILayout.Button("Resort Upgrade Tree & Recalculate Power Scores"))
                 {
                     ResortUpgradeTreeAndRecalculateStats(def);
+                }
+
+                if (GUILayout.Button("Recalculate Stats & Resort Upgrade Tree"))
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    ShipFamilyDefinition defCapture = def;
+                    EditorApplication.delayCall += () =>
+                    {
+                        if (defCapture == null)
+                            return;
+                        RecalculateAndResort(defCapture);
+                    };
+                    GUIUtility.ExitGUI();
                 }
 
                 if (GUILayout.Button("Rebalance Cockpit Ramming Stats (Lower For Heavy Ships)"))
@@ -585,6 +620,87 @@ namespace TitanOrbit.Editor
         }
 
         /// <summary>
+        /// Result of pushing Part Profile stats onto a family's component rows.
+        /// </summary>
+        public struct RecalculateComponentsResult
+        {
+            public bool success;
+            public string error;
+            public int profilesUpdated;
+            public int updated;
+            public int cosmetics;
+            public int missingProfile;
+            public int totalRows;
+        }
+
+        /// <summary>
+        /// Result of resorting a family's upgrade tree and rewriting power scores.
+        /// </summary>
+        public struct ResortUpgradeTreeResult
+        {
+            public bool success;
+            public string error;
+            public int resortedUnlocked;
+            public int lockedCount;
+            public int trailingNoPrefab;
+        }
+
+        /// <summary>
+        /// Resolves the ProfileSet this family should use for Recalculate:
+        /// assigned <see cref="ShipFamilyDefinition.partCalcProfileSet"/>, else the shared Resources asset.
+        /// </summary>
+        public static ShipFamilyPartCalcProfileSet ResolveProfileSet(ShipFamilyDefinition def)
+        {
+            if (def != null && def.partCalcProfileSet != null)
+                return def.partCalcProfileSet;
+            return ShipFamilyPartCalcProfileSetEditorUtility.FindOrLoadShared();
+        }
+
+        /// <summary>
+        /// Recalculate component stats from profiles, then resort the upgrade tree and rewrite power scores.
+        /// Used by the per-family combined button and the catalog batch button.
+        /// </summary>
+        public static bool RecalculateAndResort(
+            ShipFamilyDefinition def,
+            ShipFamilyPartCalcProfileSet profileSet = null,
+            bool refreshProfiles = true,
+            bool showDialog = true,
+            bool saveAssets = true)
+        {
+            RecalculateComponentsResult recalc = RecalculateComponentsFromProfiles(
+                def, profileSet, refreshProfiles, showDialog: false, saveAssets: false);
+            if (!recalc.success)
+            {
+                if (showDialog)
+                    EditorUtility.DisplayDialog("Recalculate & Resort", recalc.error ?? "Recalculate failed.", "OK");
+                return false;
+            }
+
+            ResortUpgradeTreeResult resort = ResortUpgradeTreeAndRecalculateStats(
+                def, showDialog: false, saveAssets: saveAssets);
+            if (!resort.success)
+            {
+                if (showDialog)
+                    EditorUtility.DisplayDialog("Recalculate & Resort", resort.error ?? "Resort failed.", "OK");
+                return false;
+            }
+
+            if (showDialog)
+            {
+                EditorUtility.DisplayDialog(
+                    "Recalculate & Resort",
+                    $"Part profiles refreshed: {recalc.profilesUpdated}.\n" +
+                    $"Components with ability stats: {recalc.updated}. Cosmetics zeroed: {recalc.cosmetics}.\n" +
+                    $"Rows without a matching Part Profile: {recalc.missingProfile}.\n" +
+                    $"Resorted {resort.resortedUnlocked} unlocked tier(s). " +
+                    $"{resort.lockedCount} locked. {resort.trailingNoPrefab} with no prefab appended.",
+                    "OK");
+            }
+
+            return true;
+        }
+
+        /// <summary>
         /// Pushes Part Profile stats onto every component row (categories + ability numbers + VFX).
         /// <para>
         /// [TITAN-ORBIT] Unlike Scan Folder, this does <b>not</b> run weapon/engine energy rebalance
@@ -592,29 +708,42 @@ namespace TitanOrbit.Editor
         /// Writes through SerializedObject so the Inspector refreshes.
         /// </para>
         /// </summary>
-        static void RecalculateComponentsFromProfiles(ShipFamilyDefinition def)
+        public static RecalculateComponentsResult RecalculateComponentsFromProfiles(
+            ShipFamilyDefinition def,
+            ShipFamilyPartCalcProfileSet profileSet = null,
+            bool refreshProfiles = true,
+            bool showDialog = true,
+            bool saveAssets = true)
         {
+            var result = new RecalculateComponentsResult();
             if (def?.components == null || def.components.Count == 0)
             {
-                EditorUtility.DisplayDialog("Recalculate", "No components on this family. Scan a folder first.", "OK");
-                return;
+                result.error = "No components on this family. Scan a folder first.";
+                if (showDialog)
+                    EditorUtility.DisplayDialog("Recalculate", result.error, "OK");
+                return result;
             }
 
-            var profileSet = ShipFamilyPartCalcProfileSetEditorUtility.FindOrLoadShared();
+            if (profileSet == null)
+                profileSet = ResolveProfileSet(def);
             if (profileSet == null)
             {
-                EditorUtility.DisplayDialog(
-                    "Missing Profile Set",
-                    "Create Resources/ShipFamilyPartCalcProfileSet first (Open / Create Shared Profile Set).",
-                    "OK");
-                return;
+                result.error =
+                    "Create Resources/ShipFamilyPartCalcProfileSet first (Open / Create Shared Profile Set).";
+                if (showDialog)
+                    EditorUtility.DisplayDialog("Missing Profile Set", result.error, "OK");
+                return result;
             }
 
-            // --- Refresh every Part Profile first (so EvaluateAtVersion uses current seeds) ---
-            Undo.RecordObject(profileSet, "Refresh Part Profiles For Recalculate");
-            int profilesUpdated = RefreshAllPartProfiles(profileSet);
-            profileSet.InvalidateLookups();
-            EditorUtility.SetDirty(profileSet);
+            int profilesUpdated = 0;
+            if (refreshProfiles)
+            {
+                // --- Refresh every Part Profile first (so EvaluateAtVersion uses current seeds) ---
+                Undo.RecordObject(profileSet, "Refresh Part Profiles For Recalculate");
+                profilesUpdated = RefreshAllPartProfiles(profileSet);
+                profileSet.InvalidateLookups();
+                EditorUtility.SetDirty(profileSet);
+            }
 
             Undo.RecordObject(def, "Recalculate Component Stats From Profiles");
             int updated = 0;
@@ -700,16 +829,29 @@ namespace TitanOrbit.Editor
 
             def.InvalidateComponentStatsLookup();
             EditorUtility.SetDirty(def);
-            AssetDatabase.SaveAssets();
+            if (saveAssets)
+                AssetDatabase.SaveAssets();
 
-            EditorUtility.DisplayDialog(
-                "Recalculate",
-                $"Part profiles refreshed: {profilesUpdated}.\n" +
-                $"Components with ability stats: {updated}. Cosmetics zeroed: {cosmetics}.\n" +
-                $"Rows without a matching Part Profile (heuristic seed): {missingProfile}.\n" +
-                $"Total rows: {def.components.Count}.\n\n" +
-                "Energy Cap/Regen come from the Engine Part Profile (no weapon-based rebalance).",
-                "OK");
+            result.success = true;
+            result.profilesUpdated = profilesUpdated;
+            result.updated = updated;
+            result.cosmetics = cosmetics;
+            result.missingProfile = missingProfile;
+            result.totalRows = def.components.Count;
+
+            if (showDialog)
+            {
+                EditorUtility.DisplayDialog(
+                    "Recalculate",
+                    $"Part profiles refreshed: {profilesUpdated}.\n" +
+                    $"Components with ability stats: {updated}. Cosmetics zeroed: {cosmetics}.\n" +
+                    $"Rows without a matching Part Profile (heuristic seed): {missingProfile}.\n" +
+                    $"Total rows: {def.components.Count}.\n\n" +
+                    "Energy Cap/Regen come from the Engine Part Profile (no weapon-based rebalance).",
+                    "OK");
+            }
+
+            return result;
         }
 
         /// <summary>
@@ -817,7 +959,7 @@ namespace TitanOrbit.Editor
         /// from complete authoring. Does not wipe authored base stats — only fills empty per-level.
         /// </summary>
         /// <returns>Number of profiles touched.</returns>
-        static int RefreshAllPartProfiles(ShipFamilyPartCalcProfileSet profileSet)
+        public static int RefreshAllPartProfiles(ShipFamilyPartCalcProfileSet profileSet)
         {
             if (profileSet == null)
                 return 0;
@@ -969,23 +1111,33 @@ namespace TitanOrbit.Editor
         /// Reorders unlocked upgrade-tree entries using the same rules as <see cref="BuildUpgradeTreeFromFolder"/>.
         /// Locked entries stay at their current list index; power scores are still refreshed for all tiers with prefabs.
         /// </summary>
-        private static void ResortUpgradeTreeAndRecalculateStats(ShipFamilyDefinition def)
+        public static ResortUpgradeTreeResult ResortUpgradeTreeAndRecalculateStats(
+            ShipFamilyDefinition def,
+            bool showDialog = true,
+            bool saveAssets = true)
         {
+            var result = new ResortUpgradeTreeResult();
             if (def == null)
-                return;
+            {
+                result.error = "Ship family definition is missing.";
+                return result;
+            }
 
             string familyId = def.familyId != null ? def.familyId.Trim() : string.Empty;
             if (string.IsNullOrEmpty(familyId))
             {
-                EditorUtility.DisplayDialog("Missing Family Id",
-                    "Please set 'familyId' on the ShipFamilyDefinition before resorting the upgrade tree.", "OK");
-                return;
+                result.error = "Please set 'familyId' on the ShipFamilyDefinition before resorting the upgrade tree.";
+                if (showDialog)
+                    EditorUtility.DisplayDialog("Missing Family Id", result.error, "OK");
+                return result;
             }
 
             if (def.upgradeTree == null || def.upgradeTree.Count == 0)
             {
-                EditorUtility.DisplayDialog("No Upgrade Tree", "Upgrade tree is empty. Build the upgrade tree from a folder first.", "OK");
-                return;
+                result.error = "Upgrade tree is empty. Build the upgrade tree from a folder first.";
+                if (showDialog)
+                    EditorUtility.DisplayDialog("No Upgrade Tree", result.error, "OK");
+                return result;
             }
 
             int treeCount = def.upgradeTree.Count;
@@ -1021,9 +1173,10 @@ namespace TitanOrbit.Editor
 
             if (unlockedWithPrefab.Count == 0 && lockedCount == 0)
             {
-                EditorUtility.DisplayDialog("No Prefabs",
-                    "No upgrade-tree entries have a prefab assigned; nothing to resort.", "OK");
-                return;
+                result.error = "No upgrade-tree entries have a prefab assigned; nothing to resort.";
+                if (showDialog)
+                    EditorUtility.DisplayDialog("No Prefabs", result.error, "OK");
+                return result;
             }
 
             List<(ShipFamilyChassisTierEntry entry, float power, ShipFamilyPowerScoreBreakdown breakdown)> orderedUnlocked =
@@ -1085,15 +1238,28 @@ namespace TitanOrbit.Editor
             def.RecalculateTotalComponentMass();
 
             EditorUtility.SetDirty(def);
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
+            if (saveAssets)
+            {
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
 
-            EditorUtility.DisplayDialog(
-                "Resort Upgrade Tree",
-                $"Resorted {orderedUnlocked.Count} unlocked tier(s) with prefabs. " +
-                $"{lockedCount} locked tier(s) kept at their list index. " +
-                $"{trailingNoPrefab.Count} unlocked entr(y/ies) with no prefab appended at the end.",
-                "OK");
+            result.success = true;
+            result.resortedUnlocked = orderedUnlocked.Count;
+            result.lockedCount = lockedCount;
+            result.trailingNoPrefab = trailingNoPrefab.Count;
+
+            if (showDialog)
+            {
+                EditorUtility.DisplayDialog(
+                    "Resort Upgrade Tree",
+                    $"Resorted {orderedUnlocked.Count} unlocked tier(s) with prefabs. " +
+                    $"{lockedCount} locked tier(s) kept at their list index. " +
+                    $"{trailingNoPrefab.Count} unlocked entr(y/ies) with no prefab appended at the end.",
+                    "OK");
+            }
+
+            return result;
         }
 
         /// <summary>
