@@ -141,8 +141,9 @@ namespace TitanOrbit.NetCode
         /// GhostSpawn OnCreate path exists.</item>
         /// </list>
         /// Uses stock <see cref="ClientServerBootstrap.CreateClientWorld(string, NativeList{SystemTypeIndex})"/>
-        /// so <c>Netcode.Client.Init()</c> still runs. Relay join remains blocked until ClientWorld
-        /// is re-ticked with GhostSpawn + CommandBuffers restored.
+        /// so <c>Netcode.Client.Init()</c> still runs. Join ticks via
+        /// <see cref="TitanOrbitWebGlClientTick.SafeUpdate"/> (Transform forced OFF). GhostSpawn
+        /// + CommandBuffers stay excluded until a WebGL-safe OnCreate path exists.
         /// </summary>
         static void CreateWebGlClientWorld()
         {
@@ -165,10 +166,12 @@ namespace TitanOrbit.NetCode
                 // --- Create world (registers systems + Netcode.Client.Init) ---
                 World world = CreateClientWorld("ClientWorld", filtered);
 
-                // --- Menu-safe: do not tick ClientWorld yet ---
-                // [TITAN-ORBIT] With CommandBufferSystems excluded, Simulation/Physics group Update
-                // OOBs on the first Browser_mainLoop frames after MainMenuUiBootstrap. Unticking
-                // keeps GO/UI (main menu) alive. Re-append when WebGL-safe ECB + GhostSpawn exist.
+                // --- Menu-safe: do not tick ClientWorld from the player loop ---
+                // [TITAN-ORBIT] With CommandBufferSystems excluded, a full Simulation Update can
+                // OOB on the first Browser_mainLoop frames. Untick keeps the main menu alive.
+                // Join uses TitanOrbitWebGlClientTick.SafeUpdate (Transform forced OFF) — do not
+                // re-append this world to the player loop (that would double-tick + re-enable Transform).
+                TitanOrbitWebGlClientTick.DisableUnsafeGroups(world);
                 ScriptBehaviourUpdateOrder.RemoveWorldFromCurrentPlayerLoop(world);
                 Debug.Log("[TitanOrbitBootstrap] WebGL ClientWorld created (filtered, unticked for menu boot).");
             }

@@ -1010,6 +1010,21 @@ namespace TitanOrbit.NetCode
             world.Update();
         }
 
+        /// <summary>
+        /// Ticks ClientWorld. WebGL uses <see cref="TitanOrbitWebGlClientTick.SafeUpdate"/> so
+        /// Transform / predicted-fixed Burst never run (Chrome WASM OOB on join).
+        /// </summary>
+        static void TickClientWorld(World world)
+        {
+            if (world == null || !world.IsCreated)
+                return;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            TitanOrbitWebGlClientTick.SafeUpdate(world);
+#else
+            world.Update();
+#endif
+        }
+
         static void LogServerWorldWaitStatus(int waitFrames)
         {
             var serverWorld = ClientServerBootstrap.ServerWorld;
@@ -1486,7 +1501,10 @@ namespace TitanOrbit.NetCode
 
                 RequestDisconnectAllConnections(world);
                 // Must tick THIS world (client or server). Shared TickServerWorld frame-gate can skip client ticks.
-                world.Update();
+                if (world == ClientServerBootstrap.ClientWorld)
+                    TickClientWorld(world);
+                else
+                    world.Update();
                 await Task.Yield();
             }
         }
@@ -1574,7 +1592,7 @@ namespace TitanOrbit.NetCode
                 string hostProtocol = lobby.Data.TryGetValue(TitanOrbitLobbyService.LobbyRelayProtocolKey, out var proto)
                     ? TitanOrbitRelayUtility.SanitizeRelayProtocolForRelaySdk(proto.Value)
                     : TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
-                // Host and editor client both use dtls to the same Relay allocation (legacy NGO behavior).
+                // Platform-valid client endpoint on the same allocation (wss on WebGL, dtls otherwise).
                 string clientProtocol = TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
 
                 Debug.Log("[TitanOrbitSessionManager] Joining Relay lobby=" + lobby.Id + " code=" + joinCode +
@@ -1606,7 +1624,7 @@ namespace TitanOrbit.NetCode
                 ConnectRelayClient(clientWorld);
                 for (int i = 0; i < 30; i++)
                 {
-                    clientWorld.Update();
+                    TickClientWorld(clientWorld);
                     await Task.Yield();
                 }
 
@@ -1710,7 +1728,7 @@ namespace TitanOrbit.NetCode
                     return;
 
                 RequestDisconnectAllConnections(clientWorld);
-                clientWorld.Update();
+                TickClientWorld(clientWorld);
                 await Task.Yield();
             }
 
@@ -1756,7 +1774,7 @@ namespace TitanOrbit.NetCode
             for (int i = 0; i < 10; i++)
             {
                 if (client != null && client.IsCreated)
-                    client.Update();
+                    TickClientWorld(client);
                 await Task.Yield();
             }
         }
@@ -2036,7 +2054,7 @@ namespace TitanOrbit.NetCode
             {
                 if (client != null && client.IsCreated)
                 {
-                    client.Update();
+                    TickClientWorld(client);
 
                     // [TITAN-ORBIT] Never force client NetworkStreamInGame here.
                     // TitanOrbitGoInGameClientSystem does that after seed hydrate.

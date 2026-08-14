@@ -10,8 +10,9 @@ namespace TitanOrbit.ECS
     /// <c>ToEntityArray</c> scans (chunks may be structurally changing). GameObject Instantiates
     /// stay rate-limited via Pending drain.
     /// <para>
-    /// <see cref="Unity.Transforms.TransformSystemGroup"/> stays <b>enabled</b> during play
-    /// (seed-hydrate model). Session-long Transform quarantine was retired.
+    /// <see cref="Unity.Transforms.TransformSystemGroup"/> stays <b>enabled</b> on desktop
+    /// (seed-hydrate model). WebGL keeps it disabled (Chrome WASM OOB on join). Session-long
+    /// Transform quarantine was retired on desktop.
     /// </para>
     /// Written by <see cref="TitanOrbitClientJoinTransformGateSystem"/>.
     /// </summary>
