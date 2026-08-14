@@ -10,7 +10,7 @@ namespace TitanOrbit.ECS
     /// <see cref="ShipVisualBankPivotTag"/> children so hull meshes bank during turns without
     /// affecting physics yaw. Ported from <c>ShipBankVisualApplier</c> (hybrid proxy path).
     /// Reads Max Bank / Sensitivity / Smoothing from <see cref="ShipBankVisualSettingsCache"/>
-    /// (published by <c>EcsWorldVisualizer</c> Inspector fields).
+    /// (published from <c>ShipBankVisualSettings</c> — shared Resources default today).
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation)]
     [UpdateInGroup(typeof(PresentationSystemGroup))]
@@ -36,7 +36,7 @@ namespace TitanOrbit.ECS
             if (dt <= 0f)
                 return;
 
-            // --- Designer knobs (Inspector → EcsWorldVisualizer → Ship Banking) ---
+            // --- Designer knobs (ShipBankVisualSettings → ShipBankVisualSettingsCache) ---
             float maxBank = ShipBankVisualSettingsCache.MaxBankAngleDegrees;
             float sensitivity = ShipBankVisualSettingsCache.BankSensitivity;
             float smoothing = ShipBankVisualSettingsCache.BankSmoothing;

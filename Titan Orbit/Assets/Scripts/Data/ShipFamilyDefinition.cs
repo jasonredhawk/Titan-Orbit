@@ -61,7 +61,8 @@ namespace TitanOrbit.Data
     /// Holds per-component ability stats, the upgrade-tree chassis tiers, team materials,
     /// optional <see cref="planetaryDefense"/> turret recipe, optional
     /// <see cref="cameraFollowSettings"/> gameplay camera profile, optional
-    /// <see cref="damageSmokeSettings"/> hull-damage VFX profile, and lookup helpers.
+    /// <see cref="damageSmokeSettings"/> hull-damage VFX profile, optional
+    /// <see cref="bankVisualSettings"/> roll-while-turning profile, and lookup helpers.
     /// Read by <see cref="ShipFamilyStatsCalculator"/>, <see cref="PlanetShipFamilyConfig"/>, and orbit-station UI
     /// to resolve prefabs, power bars, and moon-dock component prices. Does not run in ECS sim directly.
     /// </summary>
@@ -143,6 +144,14 @@ namespace TitanOrbit.Data
             "Families may share one asset today; assign a unique asset later for per-family VFX. " +
             "Leave empty to fall back to Resources/ShipDamageSmokeSettings.")]
         public ShipDamageSmokeSettings damageSmokeSettings;
+
+        [Header("Ship Banking (visual roll)")]
+        [Tooltip(
+            "Client-only roll-while-turning profile for this family. " +
+            "Create via Assets → Create → Titan Orbit → Ship Bank Visual Settings. " +
+            "Families may share one asset today; assign a unique asset later for per-family lean. " +
+            "Leave empty to fall back to Resources/ShipBankVisualSettings.")]
+        public ShipBankVisualSettings bankVisualSettings;
 
         [Header("Menu Preview Camera")]
         [Tooltip("Field of view for theatrical (3/4 hero) menu preview renders.")]

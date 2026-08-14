@@ -937,7 +937,7 @@ namespace TitanOrbit.Game
                 vis.BankYawRateDegPerSec = math.lerp(vis.BankYawRateDegPerSec, instantRate, velT);
             }
 
-            // --- Target bank from turn rate (shared ship curve + Inspector knobs) ---
+            // --- Target bank from turn rate (shared ship curve + ShipBankVisualSettings) ---
             float signedRate = vis.BankYawRateDegPerSec;
             if (math.abs(signedRate) < IdleBankAngularVelDeadbandDegPerSec)
                 signedRate = 0f;

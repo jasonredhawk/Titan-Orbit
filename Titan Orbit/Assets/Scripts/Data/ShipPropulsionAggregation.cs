@@ -72,7 +72,7 @@ namespace TitanOrbit.Data
         /// <param name="globalMaxTurnDegPerSec">Reference max turn speed for the fleet (°/s).</param>
         /// <param name="sensitivity">
         /// Multiplier on turn fraction before clamp. Default 1 matches the old linear curve.
-        /// Tuned live via <c>EcsWorldVisualizer</c> → Ship Banking.
+        /// Tuned on <see cref="ShipBankVisualSettings"/> (shared Resources asset, or per-family).
         /// </param>
         public static float ComputeVisualBankTargetAngle(
             float signedAngularVelDegPerSec,
