@@ -597,7 +597,6 @@ namespace TitanOrbit.UI
                 : 1f;
 
             ShipStatTooltipChrome.AppendSectionBanner(sb, "FORMULA", "7DFFB2");
-            AppendFormulaLegend(sb, field);
             sb.AppendLine(DescribeFormula(field, pools.Count > 1));
 
             float running = 0f;
@@ -690,34 +689,6 @@ namespace TitanOrbit.UI
                 sb.Append(" ");
                 AppendTint(sb, HexMute, unitLabel);
             }
-            sb.AppendLine();
-        }
-
-        /// <summary>
-        /// One-line colour key. Each word matches the tint used on numbers below
-        /// (violet <c>Scale</c> is the prefab start size — not part count <c>N</c>).
-        /// </summary>
-        static void AppendFormulaLegend(StringBuilder sb, StatField field)
-        {
-            AppendTint(sb, HexScale, "Scale");
-            sb.Append("  ");
-            AppendTint(sb, HexCount, "N");
-            sb.Append("  ");
-            AppendTint(sb, HexShip, "ship−1");
-            sb.Append("  ");
-            AppendTint(sb, HexAbility, "ability");
-            sb.Append("  ");
-            AppendTint(sb, HexPrimary, "Primary");
-            sb.Append("  ");
-            AppendTint(sb, HexPerExtra, "PerExtra");
-            sb.Append("  ");
-            AppendTint(sb, HexResult, "TOTAL");
-            if (IsMassAffectedField(field))
-            {
-                sb.Append("  ");
-                AppendTint(sb, HexMass, "mass");
-            }
-
             sb.AppendLine();
         }
 
