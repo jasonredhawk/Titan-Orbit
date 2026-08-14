@@ -134,6 +134,10 @@ namespace TitanOrbit.ECS
                 float damage = math.max(0.05f, stats.damage);
                 float engageRange = math.max(0.5f, stats.engageRange);
                 int bankIndex = ResolveBankIndex(config, familyDef);
+                float unusedLifetime = 0f;
+                float rangeMul = 1f;
+                BulletBankCombatLogic.ApplyFireModifiers(
+                    bankIndex, ref damage, ref bulletSpeed, ref rangeMul, ref unusedLifetime, ref fireRate);
                 if (_vfxBank != null)
                     categoryUpgradeScale = _vfxBank.GetCategoryUpgradeVisualScaleMultiplier(bankIndex);
 
@@ -149,7 +153,7 @@ namespace TitanOrbit.ECS
                 float3 bulletVel = aim * bulletSpeed;
                 uint sequence = BulletVfxBridge.NextSequence();
                 // Manual aim — flight budget is engage range (no lead intercept extension).
-                float maxDistance = engageRange;
+                float maxDistance = engageRange * math.max(0.1f, rangeMul);
                 byte ownerTeam = (byte)planet.Ownership;
 
                 var spawn = new BulletElement

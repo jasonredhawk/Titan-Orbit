@@ -148,6 +148,11 @@ namespace TitanOrbit.Game
                 world.EntityManager.GetComponentData<ShipOrbitState>(shipEntity).InOrbitRing)
                 return;
 
+            if (world.EntityManager.HasComponent<ShipElectricShockState>(shipEntity) &&
+                world.EntityManager.GetComponentData<ShipElectricShockState>(shipEntity)
+                    .IsActive(world.Time.ElapsedTime))
+                return;
+
             // --- Sync predicted energy with ghost (before planning fire) ---
             SyncPredictedEnergy(shipState.CurrentEnergy);
 
@@ -200,25 +205,34 @@ namespace TitanOrbit.Game
                 float refDamage = mount.ReferenceFirePower > 0.01f
                     ? mount.ReferenceFirePower
                     : fallbackRefDamage;
+                float damage = planned.Damage;
+                float bulletSpeed = weaponCfg.BulletSpeed;
+                float maxDistance = weaponCfg.BulletMaxDistance;
+                float lifetime = weaponCfg.BulletLifetime;
+                float fireRate = weaponCfg.FireRate;
+                BulletBankCombatLogic.ApplyFireModifiers(
+                    bankIndex, ref damage, ref bulletSpeed, ref maxDistance, ref lifetime, ref fireRate);
+                float fireRateMul = fireRate / math.max(0.1f, weaponCfg.FireRate);
+
                 float visualScale = BulletVisualScale.ComputePerShotScale(
                     weaponCfg.BulletScale,
-                    planned.Damage,
-                    weaponCfg.BulletSpeed,
+                    damage,
+                    bulletSpeed,
                     refDamage,
                     refSpeed,
                     categoryUpgradeScale);
 
                 float3 bulletVel = BulletMuzzlePresentation.BuildBulletWorldVelocity(
-                    fireForward, weaponCfg.BulletSpeed, shipVel);
+                    fireForward, bulletSpeed, shipVel);
 
                 if (!BulletVfxBridge.TryEnqueueSpawn(new BulletVfxBridge.SpawnRequest
                 {
                     Sequence = 0,
                     SpawnPosition = fireOrigin,
                     Velocity = bulletVel,
-                    Lifetime = math.max(0.1f, weaponCfg.BulletLifetime),
-                    MaxDistance = math.max(10f, weaponCfg.BulletMaxDistance),
-                    Damage = planned.Damage,
+                    Lifetime = math.max(0.1f, lifetime),
+                    MaxDistance = math.max(10f, maxDistance),
+                    Damage = damage,
                     OwnerTeam = (byte)shipState.Team,
                     OwnerNetworkId = ownerNetworkId,
                     BankIndex = bankIndex,
@@ -230,7 +244,7 @@ namespace TitanOrbit.Game
                     break;
 
                 // Arm this barrel’s client-side cooldown so we do not spam tracers faster than server.
-                mount.FireCooldown = planned.CooldownSeconds;
+                mount.FireCooldown = planned.CooldownSeconds / math.max(0.05f, fireRateMul);
                 mounts[mountIdx] = mount;
                 spent += planned.EnergyCost;
                 enqueued++;

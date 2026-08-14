@@ -314,9 +314,9 @@ namespace TitanOrbit.Entities
 
         /// <summary>
         /// Immediately deactivates and stacks a rented instance. Stops particles so the next
-        /// Rent starts clean.
+        /// Rent starts clean. Public so looping status VFX can return when burn / shock ends.
         /// </summary>
-        static void ReturnNow(GameObject instance)
+        public static void ReturnNow(GameObject instance)
         {
             if (instance == null)
                 return;

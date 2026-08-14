@@ -301,14 +301,19 @@ namespace TitanOrbit.ECS
                         continue;
                     aimDir = math.normalize(aimDir);
 
+                    float fireRateForMods = fireRate;
+                    float shotMax = maxDist;
+                    float shotLife = lifetime;
+                    BulletBankCombatLogic.ApplyFireModifiers(
+                        bankIndex, ref damage, ref bulletSpeed, ref shotMax, ref shotLife, ref fireRateForMods);
                     float3 bulletVel = aimDir * math.max(1f, bulletSpeed) + shipVel;
                     uint sequence = BulletVfxBridge.NextSequence();
                     var spawn = new BulletElement
                     {
                         Position = new float3(firePos.x, DroneSwarmLogic.FixedY, firePos.z),
                         Velocity = bulletVel,
-                        MaxDistance = maxDist,
-                        Lifetime = lifetime,
+                        MaxDistance = shotMax,
+                        Lifetime = shotLife,
                         Damage = damage,
                         OwnerNetworkId = ownerNetId,
                         OwnerTeam = ownerTeam,
@@ -333,7 +338,7 @@ namespace TitanOrbit.ECS
 
                     BulletNetNotify.SendSpawn(ref ecb, spawn, mountIndex: DroneSwarmLogic.NoWeaponMountReproject);
                     bullets.Add(spawn);
-                    _nextFireTime[cooldownKey] = now + (1f / math.max(0.05f, fireRate));
+                    _nextFireTime[cooldownKey] = now + (1f / math.max(0.05f, fireRateForMods));
                 }
             }
 

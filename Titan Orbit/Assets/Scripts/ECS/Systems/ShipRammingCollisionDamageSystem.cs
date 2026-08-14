@@ -149,6 +149,10 @@ namespace TitanOrbit.ECS
                 float familyRam = motor.RammingPower > 0.001f
                     ? motor.RammingPower
                     : ShipFamilyDefaultFallbackStats.CreateBaseline().rammingPower;
+                int ramBankIndex = 0;
+                if (state.EntityManager.HasComponent<ShipLoadoutState>(shipEntity))
+                    ramBankIndex = math.max(0, state.EntityManager.GetComponentData<ShipLoadoutState>(shipEntity).RuntimeBulletIndex);
+                familyRam *= BulletBankCombatLogic.GetRammingPowerMultiplier(ramBankIndex);
                 float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(familyRam);
 
                 // Closing speed: measured approach preferred; impulse only as a clamped hint.
@@ -445,8 +449,12 @@ namespace TitanOrbit.ECS
             var vicShip = state.EntityManager.GetComponentData<ShipState>(victim);
 
             ResolveMobilityRamInputs(in offShip, in offMotor, out float totalMass, out _);
-            float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(
-                offMotor.RammingPower);
+            float ramPower = offMotor.RammingPower;
+            int ramBankIndex = 0;
+            if (state.EntityManager.HasComponent<ShipLoadoutState>(offender))
+                ramBankIndex = math.max(0, state.EntityManager.GetComponentData<ShipLoadoutState>(offender).RuntimeBulletIndex);
+            ramPower *= BulletBankCombatLogic.GetRammingPowerMultiplier(ramBankIndex);
+            float ramRating = ShipComponentRammingSuggestions.ComputeDamageRatingFromFamilyPower(ramPower);
 
             float damage = ShipComponentRammingSuggestions.ComputeImpactDamage(
                 ramRating, totalMass, closing);

@@ -119,7 +119,7 @@ namespace TitanOrbit.Data
         public float duration = 1f;
         [Tooltip("Seconds between burn damage ticks.")]
         public float tickInterval = 0.25f;
-        [Tooltip("GravityPull: pull radius (world units). BurnOverTime: bullet travel range multiplier (1 = default, 1.5 = 50% farther).")]
+        [Tooltip("GravityPull: pull radius. ConcussivePush: gem blast radius (0 = 6). BurnOverTime: bullet travel range multiplier.")]
         public float radius = 0f;
         [Tooltip("For DamageMultiplier* abilities: which target class this entry applies to.")]
         public BulletBankDamageTarget damageTarget = BulletBankDamageTarget.Asteroid;

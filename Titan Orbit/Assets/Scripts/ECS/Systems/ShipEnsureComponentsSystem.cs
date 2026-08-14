@@ -203,6 +203,21 @@ namespace TitanOrbit.ECS
                     ecb.AddComponent(entity, new ShipCombatAttribution());
             }
 
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipElectricShockState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipElectricShockState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipBurnOverTimeState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipBurnOverTimeState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<BurnOverTimeElement>()
+                         .WithEntityAccess())
+                ecb.AddBuffer<BurnOverTimeElement>(entity);
+
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
         }

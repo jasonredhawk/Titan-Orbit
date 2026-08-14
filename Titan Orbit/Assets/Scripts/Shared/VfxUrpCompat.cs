@@ -125,6 +125,34 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
+        /// Stops every particle system, then sets <c>main.loop</c>. Must stop first — Unity
+        /// warns if loop/duration change while playing. Used so burn / shock impact VFX
+        /// persist for the status duration, then restore one-shot before pool Return.
+        /// </summary>
+        public static void SetParticleSystemsLooping(GameObject root, bool looping)
+        {
+            if (root == null)
+                return;
+
+            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem ps = systems[i];
+                if (ps == null)
+                    continue;
+
+                if (ps.isPlaying)
+                    ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+                var main = ps.main;
+                main.loop = looping;
+                main.playOnAwake = false;
+                if (looping)
+                    ps.Play(true);
+            }
+        }
+
+        /// <summary>
         /// One-time material/light fix on first use, then restart particles every Rent.
         /// Pooled shells keep the marker so destroy frames skip GrabPass walks.
         /// </summary>
@@ -156,6 +184,18 @@ namespace TitanOrbit.Core
         {
             if (root == null)
                 return;
+
+            // Sci-Fi Arsenal flicker scripts keep running after the Light is destroyed and
+            // spam MissingComponentException (gravity-well / rift impacts).
+            MonoBehaviour[] behaviours = root.GetComponentsInChildren<MonoBehaviour>(true);
+            for (int i = 0; i < behaviours.Length; i++)
+            {
+                MonoBehaviour behaviour = behaviours[i];
+                if (behaviour == null)
+                    continue;
+                if (behaviour.GetType().Name == "SciFiLightFlicker")
+                    UnityEngine.Object.Destroy(behaviour);
+            }
 
             Light[] lights = root.GetComponentsInChildren<Light>(true);
             for (int i = 0; i < lights.Length; i++)
@@ -214,7 +254,7 @@ namespace TitanOrbit.Core
 
             GameObject go = new GameObject("MobileMuzzleFlash");
             go.transform.SetPositionAndRotation(position, rot);
-            var ps = go.AddComponent<ParticleSystem>();
+            var ps = CreateStoppedParticleSystem(go);
             var main = ps.main;
             main.playOnAwake = false;
             main.loop = false;
@@ -261,7 +301,7 @@ namespace TitanOrbit.Core
 
             GameObject go = new GameObject("MobileImpactBurst");
             go.transform.position = position;
-            var ps = go.AddComponent<ParticleSystem>();
+            var ps = CreateStoppedParticleSystem(go);
             var main = ps.main;
             main.playOnAwake = false;
             main.loop = false;
@@ -297,6 +337,18 @@ namespace TitanOrbit.Core
 
             ps.Play();
             UnityEngine.Object.Destroy(go, 0.65f);
+        }
+
+        /// <summary>
+        /// <see cref="ParticleSystem"/> play-on-awake starts as soon as the component is added.
+        /// Duration / lifetime writes then log "Setting the duration while system is still playing".
+        /// Stop and clear first (Fireballs and other banks without a muzzle prefab hit this path).
+        /// </summary>
+        static ParticleSystem CreateStoppedParticleSystem(GameObject go)
+        {
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            return ps;
         }
 
         private static Material NewMobileParticleMaterial(Color color)

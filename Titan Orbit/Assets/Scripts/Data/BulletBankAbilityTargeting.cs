@@ -58,5 +58,29 @@ namespace TitanOrbit.Data
             if (effective == BulletBankDamageTarget.Everything) return true;
             return effective == queryTarget;
         }
+
+        /// <summary>
+        /// Maps a <c>BulletSimulationSystem</c> hit kind (byte) to a damage-multiplier target.
+        /// Keep in sync with <c>BulletHitKind</c>: None=0 Planet=1 Moon=2 Ship=3 Asteroid=4
+        /// Transport=5 Drone=6 PlanetaryDefense=7.
+        /// </summary>
+        public static BulletBankDamageTarget FromHitKind(byte hitKind)
+        {
+            // --- FromHitKind ---
+            switch (hitKind)
+            {
+                case 2: // Moon
+                    return BulletBankDamageTarget.GemMoon;
+                case 3: // Ship
+                case 5: // Transport
+                case 6: // Drone
+                case 7: // PlanetaryDefense
+                    return BulletBankDamageTarget.ShipOrDrone;
+                case 4: // Asteroid
+                    return BulletBankDamageTarget.Asteroid;
+                default:
+                    return BulletBankDamageTarget.Asteroid;
+            }
+        }
     }
 }

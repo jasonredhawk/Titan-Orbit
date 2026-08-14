@@ -17,22 +17,31 @@ namespace TitanOrbit.Editor
         static BulletBankAbilityEditorUI()
         {
             // --- BulletBankAbilityEditorUI ---
+            // Filter by *name*, not enum equality. ElectricShockRotationLock aliases
+            // ElectricShockDisable (same int 0); `t == ElectricShockRotationLock` would hide both.
             var values = new List<BulletBankAbilityType>();
             var labels = new List<string>();
-            foreach (BulletBankAbilityType t in Enum.GetValues(typeof(BulletBankAbilityType)))
+            foreach (string name in Enum.GetNames(typeof(BulletBankAbilityType)))
             {
-                if (t == BulletBankAbilityType.ElectricShockRotationLock)
+                if (string.Equals(name, nameof(BulletBankAbilityType.ElectricShockRotationLock), StringComparison.Ordinal))
                     continue;
-                var name = t.ToString();
                 var field = typeof(BulletBankAbilityType).GetField(name);
                 if (field != null && Attribute.IsDefined(field, typeof(ObsoleteAttribute)))
                     continue;
+                var t = (BulletBankAbilityType)Enum.Parse(typeof(BulletBankAbilityType), name);
                 values.Add(t);
-                labels.Add(ObjectNames.NicifyVariableName(name));
+                labels.Add(TypeDisplayName(t, name));
             }
 
             TypePopupValues = values.ToArray();
             TypePopupLabels = labels.ToArray();
+        }
+
+        static string TypeDisplayName(BulletBankAbilityType type, string enumName)
+        {
+            if (type == BulletBankAbilityType.ElectricShockDisable)
+                return "Electric Shock";
+            return ObjectNames.NicifyVariableName(enumName);
         }
 
         public static BulletBankAbilityType ReadType(SerializedProperty abilityProperty)
@@ -93,7 +102,8 @@ namespace TitanOrbit.Editor
                     break;
 
                 case BulletBankAbilityType.ConcussivePush:
-                    DrawLabeled(new Rect(rect.x, y, rect.width, line), magnitudeProp, "Push Force");
+                    y = DrawLabeledRow(rect, y, line, gap, magnitudeProp, "Push Force");
+                    DrawLabeled(new Rect(rect.x, y, rect.width, line), radiusProp, "Blast Radius");
                     break;
 
                 case BulletBankAbilityType.GravityPull:
@@ -147,7 +157,7 @@ namespace TitanOrbit.Editor
                 BulletBankAbilityType.ElectricShockDisable => 1,
                 BulletBankAbilityType.BurnOverTime => 4,
                 BulletBankAbilityType.HealFriendly => 1,
-                BulletBankAbilityType.ConcussivePush => 1,
+                BulletBankAbilityType.ConcussivePush => 2,
                 BulletBankAbilityType.GravityPull => 3,
                 BulletBankAbilityType.DamageMultiplier => 2,
                 BulletBankAbilityType.DamageMultiplierVsAsteroid => 1,

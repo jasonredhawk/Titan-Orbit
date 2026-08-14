@@ -87,8 +87,118 @@ namespace TitanOrbit.ECS.Editor
             }
 
             PopulateFromDemoPrefabs(bank, force: true);
+            ApplyDefaultProfilesIfEmpty(bank);
             AssetDatabase.SaveAssets();
             Debug.Log($"[BulletVfxBankSetup] Populated {bank.CategoryCount} categories from {DemoPrefabsFolder}.");
+        }
+
+        /// <summary>
+        /// Fills empty ability lists and unset stat mods from category-name tokens.
+        /// Does not overwrite a designer-edited row.
+        /// </summary>
+        [MenuItem("Titan Orbit/Apply Default Bullet Bank Abilities")]
+        public static void ApplyDefaultProfilesMenu()
+        {
+            var bank = EnsureAsset();
+            if (bank == null)
+            {
+                Debug.LogError("[BulletVfxBankSetup] Could not load BulletVfxBank.");
+                return;
+            }
+
+            int changed = ApplyDefaultProfilesIfEmpty(bank);
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[BulletVfxBankSetup] Applied default abilities/stats on {changed} categor(ies).");
+        }
+
+        /// <summary>Writes name-token defaults onto empty profiles. Returns how many categories changed.</summary>
+        public static int ApplyDefaultProfilesIfEmpty(BulletVfxBank bank)
+        {
+            if (bank == null)
+                return 0;
+
+            var so = new SerializedObject(bank);
+            var categories = so.FindProperty("categories");
+            if (categories == null || !categories.isArray)
+                return 0;
+
+            int changed = 0;
+            for (int i = 0; i < categories.arraySize; i++)
+            {
+                var cat = categories.GetArrayElementAtIndex(i);
+                string name = cat.FindPropertyRelative("categoryName").stringValue;
+                BulletBankDefaultProfiles.BuildDefaults(name, out var stats, out var abilities);
+
+                var profile = cat.FindPropertyRelative("profile");
+                var statMods = profile.FindPropertyRelative("statModifiers");
+                var abilitiesProp = profile.FindPropertyRelative("abilities");
+
+                bool wroteStats = false;
+                if (ShouldFillSerializedStats(statMods))
+                {
+                    WriteStatModifiers(statMods, stats);
+                    wroteStats = true;
+                }
+
+                bool wroteAbilities = false;
+                if (abilitiesProp != null && abilitiesProp.arraySize == 0 && abilities != null && abilities.Count > 0)
+                {
+                    WriteAbilities(abilitiesProp, abilities);
+                    wroteAbilities = true;
+                }
+
+                if (wroteStats || wroteAbilities)
+                    changed++;
+            }
+
+            so.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(bank);
+            return changed;
+        }
+
+        static bool ShouldFillSerializedStats(SerializedProperty statMods)
+        {
+            if (statMods == null)
+                return false;
+            float fp = statMods.FindPropertyRelative("firePowerMultiplier").floatValue;
+            float sp = statMods.FindPropertyRelative("bulletSpeedMultiplier").floatValue;
+            float fr = statMods.FindPropertyRelative("fireRateMultiplier").floatValue;
+            float rm = statMods.FindPropertyRelative("rammingPowerMultiplier").floatValue;
+            float rg = statMods.FindPropertyRelative("bulletRangeMultiplier").floatValue;
+            var current = new BulletBankStatModifiers
+            {
+                firePowerMultiplier = fp,
+                bulletSpeedMultiplier = sp,
+                fireRateMultiplier = fr,
+                rammingPowerMultiplier = rm,
+                bulletRangeMultiplier = rg,
+            };
+            return BulletBankDefaultProfiles.ShouldFillStatModifiers(current);
+        }
+
+        static void WriteStatModifiers(SerializedProperty statMods, BulletBankStatModifiers stats)
+        {
+            statMods.FindPropertyRelative("firePowerMultiplier").floatValue = stats.firePowerMultiplier;
+            statMods.FindPropertyRelative("bulletSpeedMultiplier").floatValue = stats.bulletSpeedMultiplier;
+            statMods.FindPropertyRelative("fireRateMultiplier").floatValue = stats.fireRateMultiplier;
+            statMods.FindPropertyRelative("rammingPowerMultiplier").floatValue = stats.rammingPowerMultiplier;
+            statMods.FindPropertyRelative("bulletRangeMultiplier").floatValue = stats.bulletRangeMultiplier;
+        }
+
+        static void WriteAbilities(SerializedProperty abilitiesProp, List<BulletBankAbility> abilities)
+        {
+            abilitiesProp.arraySize = abilities.Count;
+            for (int i = 0; i < abilities.Count; i++)
+            {
+                var a = abilities[i];
+                var el = abilitiesProp.GetArrayElementAtIndex(i);
+                el.FindPropertyRelative("type").intValue = (int)a.type;
+                el.FindPropertyRelative("magnitude").floatValue = a.magnitude;
+                el.FindPropertyRelative("duration").floatValue = a.duration;
+                el.FindPropertyRelative("tickInterval").floatValue = a.tickInterval;
+                el.FindPropertyRelative("radius").floatValue = a.radius;
+                el.FindPropertyRelative("damageTarget").intValue = (int)a.damageTarget;
+            }
         }
 
         static void DeleteLegacyDataCopyIfPresent()
@@ -172,6 +282,7 @@ namespace TitanOrbit.ECS.Editor
             EnsureScaleDefaults(so);
             so.ApplyModifiedPropertiesWithoutUndo();
             EditorUtility.SetDirty(bank);
+            ApplyDefaultProfilesIfEmpty(bank);
         }
 
         /// <summary>

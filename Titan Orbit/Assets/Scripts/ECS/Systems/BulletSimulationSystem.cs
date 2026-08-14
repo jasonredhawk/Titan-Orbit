@@ -312,6 +312,11 @@ namespace TitanOrbit.ECS
                 if (!input.ValueRO.Fire.IsSet)
                     continue;
 
+                // --- Electric shock: cannot fire while stunned ---
+                if (SystemAPI.HasComponent<ShipElectricShockState>(entity) &&
+                    SystemAPI.GetComponentRO<ShipElectricShockState>(entity).ValueRO.IsActive(serverElapsed))
+                    continue;
+
                 // --- Orbit ring: weapons locked ---
                 // [TITAN-ORBIT] InOrbitRing is written by ShipPhysicsDriveLogic (toroidal annulus).
                 // Fire input may still be held (player mashing shoot) — ignore it here; thrust
@@ -319,6 +324,11 @@ namespace TitanOrbit.ECS
                 if (SystemAPI.HasComponent<ShipOrbitState>(entity) &&
                     SystemAPI.GetComponentRO<ShipOrbitState>(entity).ValueRO.InOrbitRing)
                     continue;
+
+                // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
+                int bankIndex = 0;
+                if (SystemAPI.HasComponent<ShipLoadoutState>(entity))
+                    bankIndex = math.max(0, SystemAPI.GetComponentRO<ShipLoadoutState>(entity).ValueRO.RuntimeBulletIndex);
 
                 // --- Volley / round-robin / hybrid per ShipWeaponConfig.FireMode ---
                 if (!ShipWeaponFireLogic.TryPlanFire(
@@ -333,11 +343,6 @@ namespace TitanOrbit.ECS
                         out float energySpend,
                         out int nextMountIndexAfter))
                     continue;
-
-                // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
-                int bankIndex = 0;
-                if (SystemAPI.HasComponent<ShipLoadoutState>(entity))
-                    bankIndex = math.max(0, SystemAPI.GetComponentRO<ShipLoadoutState>(entity).ValueRO.RuntimeBulletIndex);
 
                 // Per-category Upgrade Visual Scale (default 1). Global category scale is applied
                 // later in BulletVisualFactory — ScaleMultiplier is fire-power upgrade only.
@@ -384,26 +389,35 @@ namespace TitanOrbit.ECS
                             + math.rotate(transform.ValueRO.Rotation, presentationLocal);
                     }
 
+                    float damage = planned.Damage;
+                    float bulletSpeed = weaponCfg.ValueRO.BulletSpeed;
+                    float maxDistance = weaponCfg.ValueRO.BulletMaxDistance;
+                    float lifetime = weaponCfg.ValueRO.BulletLifetime;
+                    float fireRate = weaponCfg.ValueRO.FireRate;
+                    BulletBankCombatLogic.ApplyFireModifiers(
+                        bankIndex, ref damage, ref bulletSpeed, ref maxDistance, ref lifetime, ref fireRate);
+                    float fireRateMul = fireRate / math.max(0.1f, weaponCfg.ValueRO.FireRate);
+
                     float refDamage = mount.ReferenceFirePower > 0.01f
                         ? mount.ReferenceFirePower
                         : fallbackRefDamage;
                     float visualScale = BulletVisualScale.ComputePerShotScale(
                         weaponCfg.ValueRO.BulletScale,
-                        planned.Damage,
-                        weaponCfg.ValueRO.BulletSpeed,
+                        damage,
+                        bulletSpeed,
                         refDamage,
                         refSpeed,
                         categoryUpgradeScale);
 
-                    float3 bulletVel = fireForward * math.max(1f, weaponCfg.ValueRO.BulletSpeed) + shipVel;
+                    float3 bulletVel = fireForward * math.max(1f, bulletSpeed) + shipVel;
                     uint sequence = BulletVfxBridge.NextSequence();
                     var spawn = new BulletElement
                     {
                         Position = fireOrigin,
                         Velocity = bulletVel,
-                        MaxDistance = math.max(10f, weaponCfg.ValueRO.BulletMaxDistance),
-                        Lifetime = math.max(0.1f, weaponCfg.ValueRO.BulletLifetime),
-                        Damage = planned.Damage,
+                        MaxDistance = math.max(10f, maxDistance),
+                        Lifetime = math.max(0.1f, lifetime),
+                        Damage = damage,
                         OwnerNetworkId = ghostOwner.ValueRO.NetworkId,
                         OwnerTeam = (byte)shipState.ValueRO.Team,
                         Sequence = sequence,
@@ -428,7 +442,7 @@ namespace TitanOrbit.ECS
                     BulletNetNotify.SendSpawn(ref ecb, spawn, mountIdx);
 
                     // --- Arm this barrel’s own cooldown (independent of other mounts) ---
-                    mount.FireCooldown = planned.CooldownSeconds;
+                    mount.FireCooldown = planned.CooldownSeconds / math.max(0.05f, fireRateMul);
                     mounts[mountIdx] = mount;
 
                     // --- Same-frame spawn collide (first-bullet tunnel fix) ---
@@ -552,6 +566,9 @@ namespace TitanOrbit.ECS
             planetaryDefenseSlotIndex = 0;
             planetaryDefenseHealthAfter = -1f;
 
+            BulletBankCombatLogic.TryGetProfile(b.BankIndex, out BulletBankProfile profile);
+            bool healFriendly = BulletBankCombatLogic.HasHealFriendly(profile);
+
             // --- Pass 1: scan every obstacle, keep nearest contact (smallest segment t) ---
             // [TITAN-ORBIT] Do not apply damage inside the scan — a farther body must not win
             // just because its category or entity index appears earlier in the query.
@@ -621,7 +638,7 @@ namespace TitanOrbit.ECS
                 if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
                     state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
                     continue;
-                if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam)
+                if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam && !healFriendly)
                     continue;
                 if (b.OwnerNetworkId > 0 &&
                     state.EntityManager.HasComponent<GhostOwner>(shipEntity) &&
@@ -769,10 +786,14 @@ namespace TitanOrbit.ECS
 
             // --- Pass 2: apply damage (or planet block) only to the nearest winner ---
             hitPoint = bestHit;
+            float hitDamage = BulletBankCombatLogic.ResolveHitDamage(
+                profile, BulletBankAbilityTargeting.FromHitKind((byte)bestKind), b.Damage);
+
             switch (bestKind)
             {
                 case BulletHitKind.Planet:
                     // Body absorbs the round — no component write.
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
                     return true;
 
                 case BulletHitKind.Moon:
@@ -782,17 +803,21 @@ namespace TitanOrbit.ECS
                     // same-team moons so home moons block without taking HP.
                     if (!state.EntityManager.HasComponent<PlanetGemMoonState>(bestEntity) ||
                         !state.EntityManager.HasComponent<PlanetState>(bestEntity))
+                    {
+                        TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
                         return true;
+                    }
 
                     var moon = state.EntityManager.GetComponentData<PlanetGemMoonState>(bestEntity);
                     var planet = state.EntityManager.GetComponentData<PlanetState>(bestEntity);
                     PlanetGemMoonCombatLogic.ApplyBulletDamage(
                         ref moon,
-                        b.Damage,
+                        hitDamage,
                         (TeamId)b.OwnerTeam,
                         planet.Ownership,
                         serverElapsed);
                     state.EntityManager.SetComponentData(bestEntity, moon);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
                     return true;
                 }
 
@@ -811,6 +836,16 @@ namespace TitanOrbit.ECS
                                      moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
                     }
 
+                    // --- HealFriendly: ally hulls gain HP instead of taking damage ---
+                    if (healFriendly && ship.Team == (TeamId)b.OwnerTeam)
+                    {
+                        float heal = BulletBankCombatLogic.GetHealFriendlyAmount(profile);
+                        if (heal > 0f && !ship.IsDead)
+                            ship.Health = math.min(ship.MaxHealth, ship.Health + heal);
+                        TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
+                        return true;
+                    }
+
                     float health = ship.Health;
                     float gems = ship.CurrentGems;
                     bool isDead = ship.IsDead;
@@ -818,7 +853,7 @@ namespace TitanOrbit.ECS
                         ref health,
                         ref gems,
                         ref isDead,
-                        b.Damage,
+                        hitDamage,
                         ship.Team,
                         (TeamId)b.OwnerTeam,
                         gemExpulsionPerHullDamage: 0f,
@@ -871,6 +906,17 @@ namespace TitanOrbit.ECS
                             sourceNetworkId);
                     }
 
+                    if (!moonImmune && !ship.IsDead)
+                    {
+                        float3 shipPosForFx = state.EntityManager.HasComponent<LocalTransform>(bestEntity)
+                            ? state.EntityManager.GetComponentData<LocalTransform>(bestEntity).Position
+                            : hitPoint;
+                        BulletBankHitEffects.ApplyShipOnHit(
+                            state.EntityManager, bestEntity, in b, hitPoint, shipPosForFx,
+                            profile, serverElapsed, mapW, mapH);
+                    }
+
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
                     return true;
                 }
 
@@ -888,7 +934,7 @@ namespace TitanOrbit.ECS
                         return true;
                     }
 
-                    asteroid.Health -= b.Damage;
+                    asteroid.Health -= hitDamage;
                     // [TITAN-ORBIT] Destroy yellow gems use LastInteractTeam ∩ TerritoryTeamsMask.
                     asteroid.LastInteractTeam = (TeamId)b.OwnerTeam;
                     if (asteroid.Health <= 0f)
@@ -906,19 +952,30 @@ namespace TitanOrbit.ECS
                     // the mesh — the predicted ship then reconciled into empty space.
                     if (asteroid.IsDestroyed || asteroid.Health <= 0.01f)
                         AsteroidDeathPhysics.QueueStripColliders(ecb, state.EntityManager, bestEntity);
+                    else if (profile != null &&
+                             profile.TryGetAbility(BulletBankAbilityType.BurnOverTime, out BulletBankAbility asteroidBurn) &&
+                             asteroidBurn != null)
+                        BulletBankHitEffects.ApplyAsteroidBurn(
+                            state.EntityManager, bestEntity, asteroidBurn, in b, hitPoint,
+                            state.EntityManager.HasComponent<LocalTransform>(bestEntity)
+                                ? state.EntityManager.GetComponentData<LocalTransform>(bestEntity).Position
+                                : hitPoint,
+                            serverElapsed, mapW, mapH);
 
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
                     return true;
                 }
 
                 case BulletHitKind.Transport:
                 {
                     var t = state.EntityManager.GetComponentData<PeopleTransportState>(bestEntity);
-                    t.Health -= b.Damage;
+                    t.Health -= hitDamage;
                     if (t.Health <= 0f)
                         PeopleTransportSimulationSystem.DestroyFromBulletDamage(ref state, bestEntity, t);
                     else
                         state.EntityManager.SetComponentData(bestEntity, t);
 
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
                     return true;
                 }
 
@@ -926,7 +983,8 @@ namespace TitanOrbit.ECS
                 {
                     // Equipment RemainingCharges is the ghosted drone HP (store GetDroneMaxHp).
                     DroneSwarmHitScan.ApplyDamageToDroneSlot(
-                        state.EntityManager, bestEntity, s_BestDroneSlot, b.Damage);
+                        state.EntityManager, bestEntity, s_BestDroneSlot, hitDamage);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
                     return true;
                 }
 
@@ -934,7 +992,7 @@ namespace TitanOrbit.ECS
                 {
                     // [TITAN-ORBIT] Slot HP → 0 resets to empty placeholder (rebuild with gems).
                     PlanetaryDefenseHitScan.ApplyDamage(
-                        state.EntityManager, bestEntity, s_BestDefenseSlot, b.Damage, serverElapsed);
+                        state.EntityManager, bestEntity, s_BestDefenseSlot, hitDamage, serverElapsed);
 
                     // Publish post-hit HP on BulletHitRpc — planet ghost MaxSendRate lags the bar.
                     if (state.EntityManager.HasComponent<PlanetState>(bestEntity))
@@ -956,12 +1014,37 @@ namespace TitanOrbit.ECS
                         }
                     }
 
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
                     return true;
                 }
 
                 default:
                     return false;
             }
+        }
+
+        void TrySpawnWell(
+            ref SystemState state,
+            float3 hitPoint,
+            BulletBankProfile profile,
+            double serverElapsed,
+            float mapW,
+            float mapH,
+            in BulletElement bullet)
+        {
+            if (profile == null)
+                return;
+
+            if (SystemAPI.TryGetSingletonEntity<ActiveBulletsTag>(out var bulletEntity) &&
+                state.EntityManager.HasBuffer<GravityWellElement>(bulletEntity))
+            {
+                var wells = state.EntityManager.GetBuffer<GravityWellElement>(bulletEntity);
+                BulletBankHitEffects.TrySpawnGravityWell(
+                    wells, hitPoint, profile, serverElapsed, bullet.OwnerNetworkId, bullet.OwnerTeam);
+            }
+
+            BulletBankHitEffects.TryApplyConcussiveGemBlast(
+                state.EntityManager, hitPoint, profile, mapW, mapH);
         }
 
         /// <summary>Warm family/default defense configs once for hit-sphere rebuilds.</summary>

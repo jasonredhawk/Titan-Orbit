@@ -43,6 +43,7 @@ namespace TitanOrbit.ECS
             state.EntityManager.AddBuffer<BulletElement>(entity);
             state.EntityManager.AddBuffer<BulletSpawnEventElement>(entity);
             state.EntityManager.AddBuffer<BulletHitEventElement>(entity);
+            state.EntityManager.AddBuffer<GravityWellElement>(entity);
             state.EntityManager.AddBuffer<MapLayoutEntryElement>(entity);
             // [NETCODE] Server roster only — not a ghost. Clients get names via PlayerNameAnnounceRpc.
             state.EntityManager.AddBuffer<PlayerNameElement>(entity);

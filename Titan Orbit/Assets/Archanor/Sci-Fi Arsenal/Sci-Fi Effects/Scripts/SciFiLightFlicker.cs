@@ -19,12 +19,23 @@ namespace SciFiArsenal
 		// Store the original color
 		void Start ()
 		{
-			originalColor = GetComponent<Light>().color;
+			Light light = GetComponent<Light>();
+			if (light == null)
+			{
+				enabled = false;
+				return;
+			}
+			originalColor = light.color;
 		}
 		 
 		void Update ()
 		{
 			Light light = GetComponent<Light>();
+			if (light == null)
+			{
+				enabled = false;
+				return;
+			}
 			Color newColor = originalColor * EvalWave();
 
 			// Clamp the color values to ensure they are within the valid range

@@ -30,6 +30,8 @@ namespace TitanOrbit.ECS
                 em.AddBuffer<BulletSpawnEventElement>(bulletEntity);
             if (!em.HasBuffer<BulletHitEventElement>(bulletEntity))
                 em.AddBuffer<BulletHitEventElement>(bulletEntity);
+            if (!em.HasBuffer<GravityWellElement>(bulletEntity))
+                em.AddBuffer<GravityWellElement>(bulletEntity);
 
             // [ECS/DOTS] One-shot bootstrap — no need to run every frame.
             state.Enabled = false;

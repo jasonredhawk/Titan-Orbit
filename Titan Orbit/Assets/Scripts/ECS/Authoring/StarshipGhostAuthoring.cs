@@ -138,6 +138,9 @@ namespace TitanOrbit.ECS.Authoring
                 // [NETCODE] ShipInput is IInputComponentData — replicated from owner client each tick.
                 AddComponent(entity, new ShipInput());
                 AddComponent(entity, new ShipKinematics());
+                // [NETCODE] Shock expiry must bake so GhostField replicates to owner prediction.
+                AddComponent(entity, new ShipElectricShockState());
+                AddComponent(entity, new ShipBurnOverTimeState());
                 BakeWeaponMounts(authoring, entity);
                 BakeWingTractorBeams(authoring, entity);
                 BakeShipPhysicsBody(entity, authoring.Mass);

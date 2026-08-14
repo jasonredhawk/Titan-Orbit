@@ -2266,6 +2266,12 @@ namespace TitanOrbit.Game
                 smokeSettings = ShipDamageSmokeSettings.LoadDefault();
             damageSmokeVisual.Bind(entity, smokeSettings, familyPrefix, bindFamily);
 
+            // --- Burn / shock looping impact (DoT + stun duration) ---
+            var statusLoopVfx = go.GetComponent<ShipStatusLoopVfxApplier>();
+            if (statusLoopVfx == null)
+                statusLoopVfx = go.AddComponent<ShipStatusLoopVfxApplier>();
+            statusLoopVfx.Bind(entity);
+
             var attributeScaleVisual = go.GetComponent<ShipComponentAttributeScaleApplier>();
             if (attributeScaleVisual == null)
                 attributeScaleVisual = go.AddComponent<ShipComponentAttributeScaleApplier>();

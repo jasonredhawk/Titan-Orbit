@@ -24,12 +24,18 @@ MonoBehaviour:
     - {fileID: 171462, guid: ee648e9d50d9ac9458d25447f58e5056, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 0.9
+        bulletSpeedMultiplier: 1.25
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1.15
+      abilities:
+      - type: 10
+        magnitude: 2
+        duration: 1
+        tickInterval: 0.25
+        radius: 0.5
+        damageTarget: 0
   - categoryName: Bullets
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -41,12 +47,18 @@ MonoBehaviour:
     - {fileID: 137890, guid: 2be0a4f9a33ccd8488fd22ceda827d88, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 1
+        bulletSpeedMultiplier: 1
+        fireRateMultiplier: 1.2
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 5
+        magnitude: 1.2
+        duration: 1
+        tickInterval: 0.25
+        radius: 0
+        damageTarget: 0
   - categoryName: EnergySpheres
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -58,12 +70,18 @@ MonoBehaviour:
     - {fileID: 143282, guid: 01bc6cdd4fabeb04198505bd32996ba7, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 0.75
+        bulletSpeedMultiplier: 1
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 2
+        magnitude: 12
+        duration: 1
+        tickInterval: 0.25
+        radius: 0
+        damageTarget: 0
   - categoryName: Fireballs
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -75,12 +93,18 @@ MonoBehaviour:
     - {fileID: 135228, guid: dee5c87301ac7b942b67803932d4780d, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 1.15
+        bulletSpeedMultiplier: 0.8
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1.2
+      abilities:
+      - type: 1
+        magnitude: 8
+        duration: 2.5
+        tickInterval: 0.25
+        radius: 1.2
+        damageTarget: 0
   - categoryName: FireballsV2
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -92,12 +116,18 @@ MonoBehaviour:
     - {fileID: 114088, guid: 839cf5777496e2642be45ea065d34f83, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 1.15
+        bulletSpeedMultiplier: 0.8
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1.2
+      abilities:
+      - type: 1
+        magnitude: 8
+        duration: 2.5
+        tickInterval: 0.25
+        radius: 1.2
+        damageTarget: 0
   - categoryName: Laser
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -109,12 +139,18 @@ MonoBehaviour:
     - {fileID: 179554, guid: 0d83e615f1a143845924d338711efd68, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 0.9
+        bulletSpeedMultiplier: 1.25
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1.15
+      abilities:
+      - type: 10
+        magnitude: 2
+        duration: 1
+        tickInterval: 0.25
+        radius: 0.5
+        damageTarget: 0
   - categoryName: LaserSmall
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -126,12 +162,18 @@ MonoBehaviour:
     - {fileID: 128200, guid: 7f2f36bd6a647724f9be19a963f0e60a, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 0.9
+        bulletSpeedMultiplier: 1.25
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1.15
+      abilities:
+      - type: 10
+        magnitude: 2
+        duration: 1
+        tickInterval: 0.25
+        radius: 0.5
+        damageTarget: 0
   - categoryName: Lightning
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -143,12 +185,18 @@ MonoBehaviour:
     - {fileID: 153672, guid: fdbf99d9c38b81041894b86429d929c7, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 0.9
+        bulletSpeedMultiplier: 1
+        fireRateMultiplier: 0.85
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 0
+        magnitude: 1
+        duration: 1.5
+        tickInterval: 0.25
+        radius: 0
+        damageTarget: 0
   - categoryName: Liquid
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -161,12 +209,18 @@ MonoBehaviour:
     - {fileID: 176544, guid: a8480d07ae6238244888c800dea877d0, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 1
+        bulletSpeedMultiplier: 0.85
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 1
+        magnitude: 4
+        duration: 2
+        tickInterval: 0.3
+        radius: 1.1
+        damageTarget: 0
   - categoryName: Plasma
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -178,12 +232,24 @@ MonoBehaviour:
     - {fileID: 183934, guid: f3918da5b11c93342a13536694184d61, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 1
+        bulletSpeedMultiplier: 1
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 6
+        magnitude: 1.15
+        duration: 1
+        tickInterval: 0.25
+        radius: 0
+        damageTarget: 0
+      - type: 1
+        magnitude: 3
+        duration: 1.5
+        tickInterval: 0.25
+        radius: 1
+        damageTarget: 0
   - categoryName: Rift
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -195,12 +261,18 @@ MonoBehaviour:
     - {fileID: 133874, guid: a7c402cf10661d649ae488a532f90ac9, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 1
+        bulletSpeedMultiplier: 1
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 4
+        magnitude: 18
+        duration: 2
+        tickInterval: 0.25
+        radius: 12
+        damageTarget: 0
   - categoryName: Ring
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -212,12 +284,18 @@ MonoBehaviour:
     - {fileID: 133874, guid: db81be3bee8f5244b8de8529375f410a, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 1
+        bulletSpeedMultiplier: 1
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 4
+        magnitude: 12
+        duration: 1.5
+        tickInterval: 0.25
+        radius: 8
+        damageTarget: 0
   - categoryName: Ring2
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -229,12 +307,18 @@ MonoBehaviour:
     - {fileID: 133874, guid: 45cde0730473c994887b8a7223513eb4, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 1
+        bulletSpeedMultiplier: 1
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 4
+        magnitude: 12
+        duration: 1.5
+        tickInterval: 0.25
+        radius: 8
+        damageTarget: 0
   - categoryName: Rockets
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -246,12 +330,24 @@ MonoBehaviour:
     - {fileID: 153892, guid: 42975cf06de4e0f4e9b2e291b5075749, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 1.4
+        bulletSpeedMultiplier: 0.7
+        fireRateMultiplier: 0.6
+        rammingPowerMultiplier: 1.15
+        bulletRangeMultiplier: 1.3
+      abilities:
+      - type: 3
+        magnitude: 18
+        duration: 1
+        tickInterval: 0.25
+        radius: 0
+        damageTarget: 0
+      - type: 5
+        magnitude: 1.35
+        duration: 1
+        tickInterval: 0.25
+        radius: 0
+        damageTarget: 0
   - categoryName: Sharp
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -263,12 +359,18 @@ MonoBehaviour:
     - {fileID: 184960, guid: d5d7cbbb1c43ff74fabef14f09b4758e, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 1.2
+        bulletSpeedMultiplier: 1.15
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 6
+        magnitude: 1.25
+        duration: 1
+        tickInterval: 0.25
+        radius: 0
+        damageTarget: 0
   - categoryName: Shockwave
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -280,12 +382,18 @@ MonoBehaviour:
     - {fileID: 178846, guid: 0d40627991c244c44b13eb93f05b4f91, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 1.1
+        bulletSpeedMultiplier: 0.9
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1.15
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 3
+        magnitude: 16
+        duration: 1
+        tickInterval: 0.25
+        radius: 0
+        damageTarget: 0
   - categoryName: Sparkler
     globalVisualScaleMultiplier: 1
     upgradeVisualScaleMultiplier: 1
@@ -297,12 +405,18 @@ MonoBehaviour:
     - {fileID: 151260, guid: f5180366a1e630d4cad6645dcd06dcbf, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0
-        bulletSpeedMultiplier: 0
-        fireRateMultiplier: 0
-        rammingPowerMultiplier: 0
-        bulletRangeMultiplier: 0
-      abilities: []
+        firePowerMultiplier: 0.85
+        bulletSpeedMultiplier: 1
+        fireRateMultiplier: 1.25
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
+      abilities:
+      - type: 1
+        magnitude: 2
+        duration: 1.2
+        tickInterval: 0.2
+        radius: 1
+        damageTarget: 0
   fallbackImpactPrefab: {fileID: 660604078598729712, guid: 28e3a12f83bb82d4187803aac2e18d7f, type: 3}
   globalVisualScaleMultiplier: 0.3
   upgradeVisualScaleMultiplier: 0.25

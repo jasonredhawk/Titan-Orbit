@@ -188,6 +188,10 @@ namespace TitanOrbit.ECS
                     float fireRate = math.max(0.05f, stats.fireRate);
                     float bulletSpeed = math.max(1f, stats.bulletSpeed);
                     float damage = math.max(0.05f, stats.damage);
+                    float unusedLifetime = 0f;
+                    float unusedRange = 1f;
+                    BulletBankCombatLogic.ApplyFireModifiers(
+                        bankIndex, ref damage, ref bulletSpeed, ref unusedRange, ref unusedLifetime, ref fireRate);
                     int cooldownKey = (planetEntity.Index << 16) ^ (i & 0xFFFF);
                     if (_nextFireTime.TryGetValue(cooldownKey, out float next) && now < next)
                         continue;
@@ -237,7 +241,7 @@ namespace TitanOrbit.ECS
                     // before the intercept (transports inbound rarely hit this). Lifetime = 0
                     // disables the age timer so slow bullets can use the full flight budget.
                     float maxDistance = PlanetaryDefenseAimMath.ComputeBulletMaxDistance(
-                        engageRange, interceptDistance);
+                        engageRange, interceptDistance) * math.max(0.1f, unusedRange);
                     var spawn = new BulletElement
                     {
                         Position = muzzle,

@@ -71,11 +71,20 @@ namespace TitanOrbit.ECS
             RefRW<LocalTransform> transform,
             RefRW<ShipOrbitState> orbitState,
             RefRW<ShipTerritoryBoostLatch> territoryLatch,
-            RefRO<ShipAsteroidContactState> asteroidContact)
+            RefRO<ShipAsteroidContactState> asteroidContact,
+            RefRO<ShipElectricShockState> electricShock)
         {
             // --- Stowed in planetary defense turret: freeze hull (server + predicted client) ---
             // [TITAN-ORBIT] Aim/Fire still flow through ShipInput for the pad; thrust = exit on server.
             if (turretControl.ValueRO.IsControlling)
+            {
+                physicsVelocity.ValueRW = PhysicsVelocity.Zero;
+                physicsDamping.ValueRW = default;
+                return;
+            }
+
+            // --- Electric shock: lock thrust, turn, and leave velocity at zero ---
+            if (electricShock.ValueRO.IsActive(Elapsed))
             {
                 physicsVelocity.ValueRW = PhysicsVelocity.Zero;
                 physicsDamping.ValueRW = default;
