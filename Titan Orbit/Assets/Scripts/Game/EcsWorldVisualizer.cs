@@ -2299,7 +2299,7 @@ namespace TitanOrbit.Game
                 : null;
             if (smokeSettings == null)
                 smokeSettings = ShipDamageSmokeSettings.LoadDefault();
-            damageSmokeVisual.Bind(entity, smokeSettings);
+            damageSmokeVisual.Bind(entity, smokeSettings, familyPrefix, bindFamily);
 
             var attributeScaleVisual = go.GetComponent<ShipComponentAttributeScaleApplier>();
             if (attributeScaleVisual == null)
