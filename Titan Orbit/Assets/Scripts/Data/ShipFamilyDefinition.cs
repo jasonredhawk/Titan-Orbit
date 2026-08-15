@@ -20,38 +20,38 @@ namespace TitanOrbit.Data
             return new ShipComponentAbilityStats
             {
                 firePower = 3f,
-                firePowerPerAbilityLevel = 0.75f,
+                firePowerPerExtraLevel = 0.75f,
                 bulletSpeed = 12f,
-                bulletSpeedPerAbilityLevel = 3f,
+                bulletSpeedPerExtraLevel = 3f,
                 // [TITAN-ORBIT] Matches ShipWeaponConfig.DefaultBulletMaxDistance; +25%/level like most offense stats.
                 bulletRange = 30f,
-                bulletRangePerAbilityLevel = 7.5f,
+                bulletRangePerExtraLevel = 7.5f,
                 fireRate = 3f,
-                fireRatePerAbilityLevel = 0f,
+                fireRatePerExtraLevel = 0f,
                 rammingPower = 1f,
-                rammingPowerPerAbilityLevel = 0.25f,
+                rammingPowerPerExtraLevel = 0.25f,
                 healthCap = 6.3f,
-                healthCapPerAbilityLevel = 1.575f,
+                healthCapPerExtraLevel = 1.575f,
                 healthRegen = 0.225f,
-                healthRegenPerAbilityLevel = 0.05625f,
+                healthRegenPerExtraLevel = 0.05625f,
                 energyCap = 18f,
-                energyCapPerAbilityLevel = 4.5f,
+                energyCapPerExtraLevel = 4.5f,
                 energyRegen = 3f,
-                energyRegenPerAbilityLevel = 0.75f,
+                energyRegenPerExtraLevel = 0.75f,
                 moveSpeed = 9f,
-                moveSpeedPerAbilityLevel = 1.8f,
+                moveSpeedPerExtraLevel = 1.8f,
                 accelerationCap = 2.4f,
-                accelerationCapPerAbilityLevel = 0.6f,
+                accelerationCapPerExtraLevel = 0.6f,
                 turnSpeed = 14f,
-                turnSpeedPerAbilityLevel = 3.5f,
+                turnSpeedPerExtraLevel = 3.5f,
                 maxGems = 8f,
-                maxGemsPerAbilityLevel = 2f,
+                maxGemsPerExtraLevel = 2f,
                 tractorBeamDistance = 3f,
-                tractorBeamDistancePerAbilityLevel = 0.75f,
+                tractorBeamDistancePerExtraLevel = 0.75f,
                 tractorBeamPower = 4f,
-                tractorBeamPowerPerAbilityLevel = 1f,
+                tractorBeamPowerPerExtraLevel = 1f,
                 maxPeople = 2f,
-                maxPeoplePerAbilityLevel = 0f,
+                maxPeoplePerExtraLevel = 0f,
             };
         }
     }
@@ -61,7 +61,8 @@ namespace TitanOrbit.Data
     /// Holds per-component ability stats, the upgrade-tree chassis tiers, team materials,
     /// optional <see cref="planetaryDefense"/> turret recipe, optional
     /// <see cref="cameraFollowSettings"/> gameplay camera profile, optional
-    /// <see cref="damageSmokeSettings"/> hull-damage VFX profile, and lookup helpers.
+    /// <see cref="damageSmokeSettings"/> hull-damage VFX profile, optional
+    /// <see cref="bankVisualSettings"/> roll-while-turning profile, and lookup helpers.
     /// Read by <see cref="ShipFamilyStatsCalculator"/>, <see cref="PlanetShipFamilyConfig"/>, and orbit-station UI
     /// to resolve prefabs, power bars, and moon-dock component prices. Does not run in ECS sim directly.
     /// </summary>
@@ -74,19 +75,24 @@ namespace TitanOrbit.Data
 
         public string familyId;
 
-        [Header("Ship Tier Growth")]
+        [Header("Part Calc Profiles")]
+        [Tooltip("Profile set used by Recalculate Component Stats. Leave empty to use Resources/ShipFamilyPartCalcProfileSet.")]
+        public ShipFamilyPartCalcProfileSet partCalcProfileSet;
+
+        [Header("Ship Tier Growth (Legacy)")]
         [Tooltip(
-            "Per ship level above 1, each chassis base stat grows by this fraction of its level-1 value " +
-            "(0.10 = +10% of base per ship level). Applies in GetEffectiveStatsAtShipLevel. " +
-            "Component *PerAbilityLevel fields are for bottom-HUD ability upgrades, not ship tier.")]
+            "[LEGACY] Unused by combat. Stats now use Extra Level: " +
+            "non-weapons Base + PerExtra × ((shipLevel−1)+ability+(N−1)); " +
+            "weapons Base + PerExtra × ((shipLevel−1)+ability) per barrel. " +
+            "Kept on the asset so older family YAML still loads cleanly.")]
         [Min(0f)]
         public float shipLevelStatGrowthFraction = DefaultShipLevelStatGrowthFraction;
 
-        /// <summary>Default +10% of base per ship level above 1 (family-tunable).</summary>
+        /// <summary>[LEGACY] Old default +10% ship-tier growth — Extra Level formula replaced this.</summary>
         public const float DefaultShipLevelStatGrowthFraction = 0.10f;
 
         /// <summary>
-        /// Resolves this family's ship-tier growth fraction (falls back to default when unset / negative).
+        /// [LEGACY] Resolves authored growth fraction. Combat no longer multiplies by this.
         /// </summary>
         public float ResolveShipLevelStatGrowthFraction() =>
             shipLevelStatGrowthFraction > 0.0001f
@@ -101,6 +107,7 @@ namespace TitanOrbit.Data
         public ShipFamilySpecialBonuses specialBonuses = ShipFamilySpecialBonuses.Identity;
 
         [Header("Bullets")]
+        [Tooltip("BulletVfxBank category this family fires. Do not assign Rockets — that bank is reserved for store rocket packs.")]
         public int bulletPrefabIndex = 0;
 
         /// <summary>
@@ -138,6 +145,14 @@ namespace TitanOrbit.Data
             "Families may share one asset today; assign a unique asset later for per-family VFX. " +
             "Leave empty to fall back to Resources/ShipDamageSmokeSettings.")]
         public ShipDamageSmokeSettings damageSmokeSettings;
+
+        [Header("Ship Banking (visual roll)")]
+        [Tooltip(
+            "Client-only roll-while-turning profile for this family. " +
+            "Create via Assets → Create → Titan Orbit → Ship Bank Visual Settings. " +
+            "Families may share one asset today; assign a unique asset later for per-family lean. " +
+            "Leave empty to fall back to Resources/ShipBankVisualSettings.")]
+        public ShipBankVisualSettings bankVisualSettings;
 
         [Header("Menu Preview Camera")]
         [Tooltip("Field of view for theatrical (3/4 hero) menu preview renders.")]
@@ -525,10 +540,14 @@ namespace TitanOrbit.Data
                 : ShipPropulsionAggregation.VisualBankReferenceMaxTurnSpeedAuthoredUnits;
         }
 
-        /// <summary>Clears cached global max turn speed (call after upgrade-tree stat scans in the editor).</summary>
+        /// <summary>
+        /// Clears cached global max turn speed and upgrade-tree power-bar maxes
+        /// (call after upgrade-tree stat scans in the editor).
+        /// </summary>
         public static void InvalidateGlobalMaxUpgradeTreeTurnSpeedCache()
         {
             s_cachedGlobalMaxUpgradeTreeTurnSpeedAuthored = -1f;
+            ShipFamilyPowerBarNorm.InvalidateCache();
         }
 
 #if UNITY_EDITOR
@@ -566,7 +585,19 @@ namespace TitanOrbit.Data
         public int minHomePlanetLevel = 1;
         public float powerScore;
         public float powerScoreAtMaxLevel;
+        /// <summary>
+        /// Level-1 Extra Level sum (abilities = 0). Used for gem cost, tree sort, and
+        /// runtime chassis bases. Do not put ship-level PerExtra growth here — that
+        /// double-applies when the live ship is evaluated.
+        /// </summary>
         public ShipFamilyPowerScoreBreakdown powerScoreBreakdown;
+        /// <summary>
+        /// Ten display stats at <see cref="minHomePlanetLevel"/> with every HUD ability
+        /// maxed (<c>abilityLevel = shipLevel</c>). Orbit Menu power bars use this so
+        /// higher-tier ships show their Extra Level ceiling (including weapon bullet speed).
+        /// Baked in the editor; live sum is the fallback when empty or stale.
+        /// </summary>
+        public ShipFamilyPowerScoreBreakdown powerScoreBreakdownAtShipLevel;
         public float componentMass;
         public bool lockedInUpgradeTree;
 

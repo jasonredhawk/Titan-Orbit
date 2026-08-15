@@ -16,6 +16,8 @@ namespace TitanOrbit.ECS
     {
         static readonly HashSet<Entity> LiveGems = new HashSet<Entity>();
         static readonly List<Entity> UrgentVisualQueue = new List<Entity>(8);
+        /// <summary>Scratch for <see cref="PruneMissing"/> — avoid allocating a List every tractor gather.</summary>
+        static readonly List<Entity> PruneScratch = new List<Entity>(8);
 
         /// <summary>
         /// Called after a gem ghost Instantiates. Tracks the entity and requests an immediate GO proxy.
@@ -45,6 +47,34 @@ namespace TitanOrbit.ECS
             dst.Clear();
             foreach (var e in LiveGems)
                 dst.Add(e);
+        }
+
+        /// <summary>
+        /// Removes registry entries whose gem entity no longer exists or is no longer a gem.
+        /// Call from client tractor gather so a consumed gem cannot keep a beam after DestroyEntity,
+        /// and so Entity.Index reuse cannot keep a dead gem in the live set.
+        /// </summary>
+        /// <param name="em">Client visualization world EntityManager.</param>
+        public static void PruneMissing(EntityManager em)
+        {
+            if (LiveGems.Count == 0)
+                return;
+
+            PruneScratch.Clear();
+            foreach (var e in LiveGems)
+            {
+                // Gone, or no longer a gem (index reuse after DestroyEntity).
+                // Do not prune ghostId == 0 — new Instantiates may not have an id yet.
+                if (e == Entity.Null ||
+                    !em.Exists(e) ||
+                    !em.HasComponent<GemTag>(e))
+                {
+                    PruneScratch.Add(e);
+                }
+            }
+
+            for (int i = 0; i < PruneScratch.Count; i++)
+                NotifyDestroyed(PruneScratch[i]);
         }
 
         /// <summary>
@@ -79,6 +109,7 @@ namespace TitanOrbit.ECS
         {
             LiveGems.Clear();
             UrgentVisualQueue.Clear();
+            PruneScratch.Clear();
         }
     }
 }

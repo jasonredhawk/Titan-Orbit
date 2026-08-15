@@ -110,6 +110,11 @@ namespace TitanOrbit.UI
                     continue;
                 if (canvas.renderMode != RenderMode.ScreenSpaceOverlay)
                     continue;
+                // Rocket / brakes HUDs hide their panels; never steal those canvases for Orbit Menu.
+                if (canvas.GetComponent<RocketLoadoutHUD>() != null)
+                    continue;
+                if (canvas.GetComponent<SpaceBrakesHUD>() != null)
+                    continue;
                 if (best == null || canvas.sortingOrder > best.sortingOrder)
                     best = canvas;
             }
@@ -370,7 +375,7 @@ namespace TitanOrbit.UI
             RefreshShipTree();
             RefreshStore();
             RefreshGemDepositFlow();
-            _sidebar?.RefreshCurrentShip(PopulateTreeNode, 100f);
+            _sidebar?.RefreshCurrentShip(PopulateTreeNode, ResolvePowerBarStatMaxes());
         }
 
         void EnsureUiBuilt()
@@ -558,9 +563,7 @@ namespace TitanOrbit.UI
             AddStoreSection(contentGo.transform, "Rockets & Mines", new[]
             {
                 StoreItemType.SmallRockets,
-                StoreItemType.LargeRockets,
                 StoreItemType.SmallMines,
-                StoreItemType.LargeMines,
             });
         }
 
@@ -574,7 +577,7 @@ namespace TitanOrbit.UI
             for (int i = 0; i < items.Length; i++)
             {
                 var item = items[i];
-                // Initial label uses level 1; RefreshStore rewrites with live ShipLevel.
+                // Initial label uses level 1; RefreshStore rewrites with min(ship, planet).
                 string label = FormatStoreRowLabel(item, 1);
                 var btn = CreateButton(parent, label, Vector2.zero);
                 var le = btn.gameObject.AddComponent<LayoutElement>();
@@ -593,12 +596,12 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>Builds the store button caption for the ship's current level.</summary>
+        /// <summary>Builds the store button caption for the store purchase level (min of ship and planet).</summary>
         static string FormatStoreRowLabel(StoreItemType item, int shipLevel)
         {
             int level = Mathf.Max(1, shipLevel);
             float price = StoreItemData.GetPrice(item, level);
-            string name = StoreItemData.IsLeveledDrone(item)
+            string name = StoreItemData.IsLeveledStoreGood(item)
                 ? StoreItemData.GetDisplayName(item, level)
                 : StoreItemData.GetDisplayName(item);
             string desc = StoreItemData.GetDescription(item, level);
@@ -634,8 +637,9 @@ namespace TitanOrbit.UI
 
         void RefreshStore()
         {
-            // --- Rewrite combat-drone rows with the live ship level (price + damage text) ---
-            int level = Mathf.Max(1, ShipLevel);
+            // --- Rewrite drone rows at min(ship, this moon's planet) ---
+            // [TITAN-ORBIT] A level-6 ship on a level-3 moon sees level-3 prices and damage text.
+            int level = StoreItemData.GetStorePurchaseLevel(ShipLevel, StorePlanetLevel);
             for (int i = 0; i < _storeRows.Count; i++)
             {
                 var row = _storeRows[i];
@@ -694,7 +698,7 @@ namespace TitanOrbit.UI
             return true;
         }
 
-        public void RefreshShipUpgradeTreeNodeStates(IReadOnlyList<ShipUpgradeTreeNodeUI> nodes, float maxPower)
+        public void RefreshShipUpgradeTreeNodeStates(IReadOnlyList<ShipUpgradeTreeNodeUI> nodes, ShipPowerBarStatMaxes maxes)
         {
             // --- Hint line (debug vs normal purchase rules) ---
             UpdateShipTreeHintText();
@@ -702,7 +706,7 @@ namespace TitanOrbit.UI
             if (nodes == null)
                 return;
             for (int i = 0; i < nodes.Count; i++)
-                PopulateTreeNode(nodes[i], maxPower);
+                PopulateTreeNode(nodes[i], maxes);
         }
 
         /// <summary>
@@ -731,7 +735,7 @@ namespace TitanOrbit.UI
         /// Colors, prices, and click handlers for one tree node (or current-ship display).
         /// Debug mode unlocks every node; normal mode only next-tier purchases / current slot.
         /// </summary>
-        public void PopulateTreeNode(ShipUpgradeTreeNodeUI view, float maxPower)
+        public void PopulateTreeNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
             if (view == null || upgradeTree == null)
                 return;
@@ -740,7 +744,7 @@ namespace TitanOrbit.UI
             // [HYBRID] Left panel "You" node uses the same populate path with IsCurrentShipDisplay.
             if (view.IsCurrentShipDisplay)
             {
-                PopulateCurrentShipDisplayNode(view, maxPower);
+                PopulateCurrentShipDisplayNode(view, maxes);
                 return;
             }
 
@@ -748,7 +752,7 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] GameManager.DebugFreeShipUpgradeTree — Inspector toggle on NceGameRoot.
             if (IsDebugFreeShipUpgradeTree())
             {
-                PopulateTreeNodeDebug(view, maxPower);
+                PopulateTreeNodeDebug(view, maxes);
                 return;
             }
 
@@ -785,7 +789,7 @@ namespace TitanOrbit.UI
             else
                 view.SetPrice("—");
 
-            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxPower);
+            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(view.Level, view.BranchIndex), maxes);
             UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(view.Level, view.BranchIndex);
             view.SetClickHandler(canPurchase || isCurrent ? click : null);
             view.SetPriceClickHandler(canPurchase || isCurrent ? click : null);
@@ -794,7 +798,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Debug populate: every node is interactable and priced "Free" so designers can jump to any hull.
         /// </summary>
-        void PopulateTreeNodeDebug(ShipUpgradeTreeNodeUI view, float maxPower)
+        void PopulateTreeNodeDebug(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
             int level = view.Level;
             int branch = view.BranchIndex;
@@ -812,7 +816,7 @@ namespace TitanOrbit.UI
             view.SetShipName(GetShipDisplayNameForSlot(level, branch, chassisId));
             view.SetPreview(GetMenuPreviewForChassis(chassisId));
             view.SetPrice(hasChassis ? "Free" : "—");
-            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(level, branch), maxPower);
+            view.ApplyPowerBreakdown(GetPowerBreakdownForTreeNode(level, branch), maxes);
 
             // Whole card + Free button both purchase (not only the price chip).
             UnityEngine.Events.UnityAction click = () => OnUpgradeTreeNodeClicked(level, branch);
@@ -821,7 +825,7 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>Sidebar "current ship" card — always shows your hull; debug mode still allows click-through.</summary>
-        void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, float maxPower)
+        void PopulateCurrentShipDisplayNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes)
         {
             bool debugFree = IsDebugFreeShipUpgradeTree();
             view.SetInteractable(debugFree);
@@ -833,7 +837,7 @@ namespace TitanOrbit.UI
                 view.SetLevelLabel("You");
             view.SetShipName($"Lv {ShipLevel}");
             view.SetPrice(debugFree ? "Free" : "—");
-            view.ApplyPowerBreakdown(GetCurrentShipPowerBreakdown(), maxPower);
+            view.ApplyPowerBreakdown(GetCurrentShipPowerBreakdown(), maxes);
         }
 
         /// <summary>
@@ -865,20 +869,35 @@ namespace TitanOrbit.UI
         public void OnCurrentShipDisplayNodeClicked() =>
             OnUpgradeTreeNodeClicked(ShipLevel, BranchIndex);
 
+        /// <summary>Your Ship bar: Extra Level at current ship level with every HUD ability maxed.</summary>
         public ShipFamilyPowerScoreBreakdown GetCurrentShipPowerBreakdown()
         {
             if (!TryGetChassisIdForTreeSlot(ShipLevel, BranchIndex, out string chassisId))
                 return default;
             var config = ShipStatApplyLogic.Config;
-            return config != null ? config.GetPowerScoreBreakdownForChassisId(chassisId) : default;
+            return config != null
+                ? config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, ShipLevel)
+                : default;
         }
 
+        /// <summary>Tree node bar: Extra Level at the node's ship <paramref name="level"/> with every HUD ability maxed.</summary>
         public ShipFamilyPowerScoreBreakdown GetPowerBreakdownForTreeNode(int level, int branchIndex)
         {
             if (!TryGetChassisIdForTreeSlot(level, branchIndex, out string chassisId))
                 return default;
             var config = ShipStatApplyLogic.Config;
-            return config != null ? config.GetPowerScoreBreakdownForChassisId(chassisId) : default;
+            return config != null
+                ? config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, level)
+                : default;
+        }
+
+        /// <summary>Global per-stat ceilings for equal-slot power bars (all families, tree-level Extra Level).</summary>
+        static ShipPowerBarStatMaxes ResolvePowerBarStatMaxes()
+        {
+            var config = ShipStatApplyLogic.Config;
+            return config != null
+                ? config.GetGlobalPowerBarStatMaxes()
+                : ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
         }
 
         /// <summary>

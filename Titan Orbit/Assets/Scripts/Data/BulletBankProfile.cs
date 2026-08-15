@@ -113,16 +113,61 @@ namespace TitanOrbit.Data
     public class BulletBankAbility
     {
         public BulletBankAbilityType type = BulletBankAbilityType.BurnOverTime;
-        [Tooltip("Meaning depends on type: DPS (burn), heal amount, push/pull force, gravity pull force, or damage multiplier (2 = double).")]
+        [Tooltip("Primary value. Meaning depends on type: DPS (burn), heal, push/pull force, or damage multiplier.")]
         public float magnitude = 1f;
-        [Tooltip("Duration in seconds (shock, burn DoT, gravity well).")]
+        [Tooltip("Added per Fire Power Extra Level: (shipLevel−1) + Fire Power purchases.")]
+        public float magnitudePerExtra;
+        [Tooltip("Primary duration in seconds (shock, burn DoT, gravity well).")]
         public float duration = 1f;
-        [Tooltip("Seconds between burn damage ticks.")]
+        [Tooltip("Duration added per Fire Power Extra Level.")]
+        public float durationPerExtra;
+        [Tooltip("Primary seconds between burn damage ticks.")]
         public float tickInterval = 0.25f;
-        [Tooltip("GravityPull: pull radius (world units). BurnOverTime: bullet travel range multiplier (1 = default, 1.5 = 50% farther).")]
+        [Tooltip("Tick interval added per Fire Power Extra Level (use negative to tick faster).")]
+        public float tickIntervalPerExtra;
+        [Tooltip("Primary radius / extra-range / stretch-start, depending on type.")]
         public float radius = 0f;
+        [Tooltip("Radius added per Fire Power Extra Level.")]
+        public float radiusPerExtra;
+        [Tooltip("Extra energy spent per shot for this ability (added on top of fire power).")]
+        public float energyDrain;
+        [Tooltip("Energy drain added per Fire Power Extra Level.")]
+        public float energyDrainPerExtra;
         [Tooltip("For DamageMultiplier* abilities: which target class this entry applies to.")]
         public BulletBankDamageTarget damageTarget = BulletBankDamageTarget.Asteroid;
+
+        /// <summary>
+        /// Weapon Extra Level steps: <c>(shipLevel−1) + Fire Power purchases</c>.
+        /// </summary>
+        public static int FirePowerExtraLevels(int shipLevel, int firePowerAbilityLevel) =>
+            ShipComponentExtraLevelMath.CountWeaponExtraLevels(shipLevel, firePowerAbilityLevel);
+
+        public float ScaledMagnitude(int extras) => ScaleField(magnitude, magnitudePerExtra, extras);
+        public float ScaledDuration(int extras) => ScaleField(duration, durationPerExtra, extras);
+        public float ScaledTickInterval(int extras) => ScaleField(tickInterval, tickIntervalPerExtra, extras);
+        public float ScaledRadius(int extras) => ScaleField(radius, radiusPerExtra, extras);
+        public float ScaledEnergyDrain(int extras) => Mathf.Max(0f, ScaleField(energyDrain, energyDrainPerExtra, extras));
+
+        /// <summary>
+        /// Copy with fields already scaled. Never mutate the authored ScriptableObject row.
+        /// </summary>
+        public BulletBankAbility Resolved(int firePowerExtraLevels)
+        {
+            int extras = Mathf.Max(0, firePowerExtraLevels);
+            return new BulletBankAbility
+            {
+                type = type,
+                magnitude = ScaledMagnitude(extras),
+                duration = ScaledDuration(extras),
+                tickInterval = ScaledTickInterval(extras),
+                radius = ScaledRadius(extras),
+                energyDrain = ScaledEnergyDrain(extras),
+                damageTarget = damageTarget,
+            };
+        }
+
+        static float ScaleField(float primary, float perExtra, int extras) =>
+            primary + perExtra * Mathf.Max(0, extras);
     }
 
     /// <summary>
@@ -168,8 +213,24 @@ namespace TitanOrbit.Data
             return false;
         }
 
+        /// <summary>Authored row scaled by Fire Power Extra Levels (copy — does not mutate the asset).</summary>
+        public bool TryGetResolvedAbility(
+            BulletBankAbilityType type,
+            int firePowerExtraLevels,
+            out BulletBankAbility ability)
+        {
+            if (!TryGetAbility(type, out BulletBankAbility authored) || authored == null)
+            {
+                ability = null;
+                return false;
+            }
+
+            ability = authored.Resolved(firePowerExtraLevels);
+            return true;
+        }
+
         /// <summary>Multiplies all damage-multiplier abilities that match <paramref name="target"/>.</summary>
-        public float GetDamageMultiplier(BulletBankDamageTarget target)
+        public float GetDamageMultiplier(BulletBankDamageTarget target, int firePowerExtraLevels = 0)
         {
             // --- Compute value ---
             float mul = 1f;
@@ -179,14 +240,15 @@ namespace TitanOrbit.Data
                 BulletBankAbility a = abilities[i];
                 if (a == null || !BulletBankAbilityTargeting.IsDamageMultiplierType(a.type)) continue;
                 if (!BulletBankAbilityTargeting.MatchesDamageTarget(a, target)) continue;
-                float m = a.magnitude > 0f ? a.magnitude : 1f;
+                float m = a.ScaledMagnitude(firePowerExtraLevels);
+                if (m <= 0f) m = 1f;
                 mul *= m;
             }
             return mul;
         }
 
         /// <summary>Longest burn DoT duration on this profile (0 if none).</summary>
-        public float GetBurnDuration()
+        public float GetBurnDuration(int firePowerExtraLevels = 0)
         {
             // --- Compute value ---
             float best = 0f;
@@ -195,13 +257,14 @@ namespace TitanOrbit.Data
             {
                 BulletBankAbility a = abilities[i];
                 if (a == null || a.type != BulletBankAbilityType.BurnOverTime) continue;
-                best = Mathf.Max(best, a.duration > 0f ? a.duration : 2f);
+                float d = a.ScaledDuration(firePowerExtraLevels);
+                best = Mathf.Max(best, d > 0f ? d : 2f);
             }
             return best;
         }
 
         /// <summary>Max bullet travel range multiplier from burn abilities (1 = unchanged).</summary>
-        public float GetBurnBulletRangeMultiplier()
+        public float GetBurnBulletRangeMultiplier(int firePowerExtraLevels = 0)
         {
             // --- Compute value ---
             float best = 1f;
@@ -210,10 +273,25 @@ namespace TitanOrbit.Data
             {
                 BulletBankAbility a = abilities[i];
                 if (a == null || a.type != BulletBankAbilityType.BurnOverTime) continue;
-                float m = a.radius > 0f ? a.radius : 1.35f;
+                float m = a.ScaledRadius(firePowerExtraLevels);
+                if (m <= 0f) m = 1.35f;
                 best = Mathf.Max(best, m);
             }
             return best;
+        }
+
+        /// <summary>Sum of every ability row's scaled energy drain (0 when none).</summary>
+        public float GetTotalAbilityEnergyDrain(int firePowerExtraLevels = 0)
+        {
+            float sum = 0f;
+            if (abilities == null) return 0f;
+            for (int i = 0; i < abilities.Count; i++)
+            {
+                BulletBankAbility a = abilities[i];
+                if (a == null) continue;
+                sum += a.ScaledEnergyDrain(firePowerExtraLevels);
+            }
+            return sum;
         }
 
         public bool HasBurn => HasAbility(BulletBankAbilityType.BurnOverTime);
@@ -221,12 +299,14 @@ namespace TitanOrbit.Data
         public bool HasStretchLengthInFlight => HasAbility(BulletBankAbilityType.StretchLengthInFlight);
 
         /// <summary>Start/end length multipliers for <see cref="BulletBankAbilityType.StretchLengthInFlight"/> (defaults 0.5 → 2).</summary>
-        public bool TryGetStretchLengthFactors(out float startFactor, out float endFactor)
+        public bool TryGetStretchLengthFactors(out float startFactor, out float endFactor, int firePowerExtraLevels = 0)
         {
             // --- Attempt resolution ---
             startFactor = 0.5f;
             endFactor = 2f;
-            if (!TryGetAbility(BulletBankAbilityType.StretchLengthInFlight, out BulletBankAbility ability) || ability == null)
+            if (!TryGetResolvedAbility(
+                    BulletBankAbilityType.StretchLengthInFlight, firePowerExtraLevels, out BulletBankAbility ability) ||
+                ability == null)
                 return false;
 
             startFactor = ability.radius > 0f ? ability.radius : 0.5f;

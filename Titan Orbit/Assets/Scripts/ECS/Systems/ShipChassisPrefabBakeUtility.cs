@@ -511,11 +511,11 @@ namespace TitanOrbit.ECS
                     {
                         LocalPosition = localPos,
                         TractorBeamDistance = bestAuth.tractorBeamDistance,
-                        TractorBeamDistancePerLevel = bestAuth.tractorBeamDistancePerAbilityLevel,
+                        TractorBeamDistancePerLevel = bestAuth.tractorBeamDistancePerExtraLevel,
                         TractorBeamPower = bestAuth.tractorBeamPower,
-                        TractorBeamPowerPerLevel = bestAuth.tractorBeamPowerPerAbilityLevel,
+                        TractorBeamPowerPerLevel = bestAuth.tractorBeamPowerPerExtraLevel,
                         MaxGems = bestAuth.maxGems,
-                        MaxGemsPerLevel = bestAuth.maxGemsPerAbilityLevel,
+                        MaxGemsPerLevel = bestAuth.maxGemsPerExtraLevel,
                     });
                 }
                 else

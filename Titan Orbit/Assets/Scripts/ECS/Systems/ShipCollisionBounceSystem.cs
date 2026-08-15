@@ -94,6 +94,7 @@ namespace TitanOrbit.ECS
             var motorLookup = SystemAPI.GetComponentLookup<ShipMotorConfig>(true);
             var shipStateLookup = SystemAPI.GetComponentLookup<ShipState>(true);
             var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
+            var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
 
             // Working velocities start from the pre-collision snapshot so multiple contacts
@@ -118,7 +119,7 @@ namespace TitanOrbit.ECS
                 {
                     ApplyShipVsAsteroid(
                         pair, ref working, snapshotLookup, motorLookup, shipStateLookup,
-                        asteroidStateLookup, asteroidMassPerSize, asteroidRestitution);
+                        asteroidStateLookup, culledLookup, asteroidMassPerSize, asteroidRestitution);
                 }
                 else if (pair.Kind == KindInfiniteWall)
                 {
@@ -230,6 +231,10 @@ namespace TitanOrbit.ECS
             working[b] = vB;
         }
 
+        /// <summary>
+        /// Mass-aware bounce off one asteroid. Skips dead / client-culled rocks so a leftover
+        /// PhysX contact after the mesh hid cannot keep shoving the hull.
+        /// </summary>
         static void ApplyShipVsAsteroid(
             BouncePair pair,
             ref NativeHashMap<Entity, float3> working,
@@ -237,6 +242,7 @@ namespace TitanOrbit.ECS
             ComponentLookup<ShipMotorConfig> motors,
             ComponentLookup<ShipState> shipStates,
             ComponentLookup<AsteroidState> asteroidStates,
+            ComponentLookup<AsteroidClientCulledTag> culled,
             float massPerSize,
             float restitution)
         {
@@ -248,7 +254,11 @@ namespace TitanOrbit.ECS
             if (!asteroidStates.HasComponent(asteroid))
                 return;
             var rock = asteroidStates[asteroid];
-            if (rock.IsDestroyed || rock.Health <= 0f)
+            // Dead / client-culled rocks must not bounce — PhysX can still emit events for a
+            // stale static hull after the mesh hid (phantom grind).
+            if (rock.IsDestroyed || !(rock.Health > 0.01f))
+                return;
+            if (culled.HasComponent(asteroid))
                 return;
 
             float3 vShip = GetWorkingOrSnapshot(ship, ref working, snapshots);

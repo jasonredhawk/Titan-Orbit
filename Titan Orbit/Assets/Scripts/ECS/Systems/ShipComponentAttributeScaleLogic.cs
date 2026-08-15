@@ -21,7 +21,7 @@ namespace TitanOrbit.ECS
     /// </list>
     /// </para>
     /// <para>
-    /// Example: Wing has N=4 drivers, <c>healthCap=10</c>, <c>healthCapPerAbilityLevel=1</c> → one
+    /// Example: Wing has N=4 drivers, <c>healthCap=10</c>, <c>healthCapPerExtraLevel=1</c> → one
     /// MaxHealth purchase grows the wing by +(10%/4)=+2.5%. Full single-driver feel returns when
     /// all N drivers are maxed at the same fraction (sum of shares ≈ one full percent curve).
     /// </para>
@@ -142,32 +142,32 @@ namespace TitanOrbit.ECS
             ShipComponentAbilityStats weaponCannon = EvaluateOrDefault(profileSet, ShipFamilyPartTypes.WeaponCannon);
 
             // Cockpit Offense uses rammingPower (FirePower is the bottom-bar stand-in).
-            rates.CockpitOffense = PerLevelFraction(cockpit.rammingPower, cockpit.rammingPowerPerAbilityLevel);
-            rates.CockpitHealth = PerLevelFraction(cockpit.healthCap, cockpit.healthCapPerAbilityLevel);
-            rates.CockpitHealthRegen = PerLevelFraction(cockpit.healthRegen, cockpit.healthRegenPerAbilityLevel);
-            rates.CockpitGems = PerLevelFraction(cockpit.maxGems, cockpit.maxGemsPerAbilityLevel);
-            rates.CockpitPeople = PerLevelFraction(cockpit.maxPeople, cockpit.maxPeoplePerAbilityLevel);
+            rates.CockpitOffense = PerLevelFraction(cockpit.rammingPower, cockpit.rammingPowerPerExtraLevel);
+            rates.CockpitHealth = PerLevelFraction(cockpit.healthCap, cockpit.healthCapPerExtraLevel);
+            rates.CockpitHealthRegen = PerLevelFraction(cockpit.healthRegen, cockpit.healthRegenPerExtraLevel);
+            rates.CockpitGems = PerLevelFraction(cockpit.maxGems, cockpit.maxGemsPerExtraLevel);
+            rates.CockpitPeople = PerLevelFraction(cockpit.maxPeople, cockpit.maxPeoplePerExtraLevel);
 
-            rates.WingHealth = PerLevelFraction(wing.healthCap, wing.healthCapPerAbilityLevel);
-            rates.WingHealthRegen = PerLevelFraction(wing.healthRegen, wing.healthRegenPerAbilityLevel);
-            rates.WingGems = PerLevelFraction(wing.maxGems, wing.maxGemsPerAbilityLevel);
-            rates.WingPeople = PerLevelFraction(wing.maxPeople, wing.maxPeoplePerAbilityLevel);
+            rates.WingHealth = PerLevelFraction(wing.healthCap, wing.healthCapPerExtraLevel);
+            rates.WingHealthRegen = PerLevelFraction(wing.healthRegen, wing.healthRegenPerExtraLevel);
+            rates.WingGems = PerLevelFraction(wing.maxGems, wing.maxGemsPerExtraLevel);
+            rates.WingPeople = PerLevelFraction(wing.maxPeople, wing.maxPeoplePerExtraLevel);
 
             // Engine: MovementSpeed + Energy Cap/Regen (power plant).
             rates.EngineMove = AverageFraction(
-                PerLevelFraction(engine.moveSpeed, engine.moveSpeedPerAbilityLevel),
-                PerLevelFraction(engine.accelerationCap, engine.accelerationCapPerAbilityLevel));
-            rates.EngineEnergyCap = PerLevelFraction(engine.energyCap, engine.energyCapPerAbilityLevel);
-            rates.EngineEnergyRegen = PerLevelFraction(engine.energyRegen, engine.energyRegenPerAbilityLevel);
+                PerLevelFraction(engine.moveSpeed, engine.moveSpeedPerExtraLevel),
+                PerLevelFraction(engine.accelerationCap, engine.accelerationCapPerExtraLevel));
+            rates.EngineEnergyCap = PerLevelFraction(engine.energyCap, engine.energyCapPerExtraLevel);
+            rates.EngineEnergyRegen = PerLevelFraction(engine.energyRegen, engine.energyRegenPerExtraLevel);
 
             // Thruster: MovementSpeed + RotationSpeed (Fin-scale turn on the Thruster profile).
             rates.ThrusterMove = AverageFraction(
-                PerLevelFraction(thruster.moveSpeed, thruster.moveSpeedPerAbilityLevel),
-                PerLevelFraction(thruster.accelerationCap, thruster.accelerationCapPerAbilityLevel));
+                PerLevelFraction(thruster.moveSpeed, thruster.moveSpeedPerExtraLevel),
+                PerLevelFraction(thruster.accelerationCap, thruster.accelerationCapPerExtraLevel));
             // Fallback if Thruster profile missing move seeds — use Engine move curve.
             if (rates.ThrusterMove <= 0.0001f)
                 rates.ThrusterMove = rates.EngineMove;
-            rates.ThrusterTurn = PerLevelFraction(thruster.turnSpeed, thruster.turnSpeedPerAbilityLevel);
+            rates.ThrusterTurn = PerLevelFraction(thruster.turnSpeed, thruster.turnSpeedPerExtraLevel);
             if (rates.ThrusterTurn <= 0.0001f)
             {
                 rates.ThrusterTurn = PerLevelFraction(
@@ -176,21 +176,21 @@ namespace TitanOrbit.ECS
                         ShipComponentTurnSpeedSuggestions.GetSuggestedFinTurnSpeed(1)));
             }
 
-            rates.TailTurn = PerLevelFraction(tail.turnSpeed, tail.turnSpeedPerAbilityLevel);
+            rates.TailTurn = PerLevelFraction(tail.turnSpeed, tail.turnSpeedPerExtraLevel);
 
             rates.WeaponFirePower = AverageFraction(
-                PerLevelFraction(weaponBullet.firePower, weaponBullet.firePowerPerAbilityLevel),
-                PerLevelFraction(weaponCannon.firePower, weaponCannon.firePowerPerAbilityLevel));
+                PerLevelFraction(weaponBullet.firePower, weaponBullet.firePowerPerExtraLevel),
+                PerLevelFraction(weaponCannon.firePower, weaponCannon.firePowerPerExtraLevel));
             rates.WeaponBulletSpeed = AverageFraction(
-                PerLevelFraction(weaponBullet.bulletSpeed, weaponBullet.bulletSpeedPerAbilityLevel),
-                PerLevelFraction(weaponCannon.bulletSpeed, weaponCannon.bulletSpeedPerAbilityLevel));
+                PerLevelFraction(weaponBullet.bulletSpeed, weaponBullet.bulletSpeedPerExtraLevel),
+                PerLevelFraction(weaponCannon.bulletSpeed, weaponCannon.bulletSpeedPerExtraLevel));
             // [TITAN-ORBIT] Weapons add Cap storage; EnergyCapacity upgrades grow gun meshes slightly.
             rates.WeaponEnergyCap = AverageFraction(
-                PerLevelFraction(weaponBullet.energyCap, weaponBullet.energyCapPerAbilityLevel),
-                PerLevelFraction(weaponCannon.energyCap, weaponCannon.energyCapPerAbilityLevel));
+                PerLevelFraction(weaponBullet.energyCap, weaponBullet.energyCapPerExtraLevel),
+                PerLevelFraction(weaponCannon.energyCap, weaponCannon.energyCapPerExtraLevel));
 
-            rates.HullHealth = PerLevelFraction(hull.healthCap, hull.healthCapPerAbilityLevel);
-            rates.HullHealthRegen = PerLevelFraction(hull.healthRegen, hull.healthRegenPerAbilityLevel);
+            rates.HullHealth = PerLevelFraction(hull.healthCap, hull.healthCapPerExtraLevel);
+            rates.HullHealthRegen = PerLevelFraction(hull.healthRegen, hull.healthRegenPerExtraLevel);
 
             return rates;
         }

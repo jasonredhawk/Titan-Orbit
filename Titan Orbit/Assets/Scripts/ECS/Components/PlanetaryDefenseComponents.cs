@@ -22,6 +22,8 @@ namespace TitanOrbit.ECS
     /// <para>
     /// [TITAN-ORBIT] <see cref="TurretLevel"/> 0 = empty placeholder (build progress fills toward
     /// level 1). Destroyed turrets and planet captures reset the slot to empty.
+    /// <see cref="OccupiedByNetworkId"/> is the GhostOwner NetworkId of the player currently
+    /// controlling this turret (0 = free). Only one player may occupy a slot.
     /// </para>
     /// </summary>
     [InternalBufferCapacity(6)]
@@ -36,11 +38,22 @@ namespace TitanOrbit.ECS
         /// <summary>Gems contributed toward the next activation or upgrade rung.</summary>
         [GhostField(Quantization = 100)] public float BuildProgress;
 
-        /// <summary>Current HP when <see cref="TurretLevel"/> &gt; 0; ignored when empty.</summary>
+        /// <summary>
+        /// Current HP when <see cref="TurretLevel"/> &gt; 0; ignored when empty.
+        /// Server combat writes this. On clients, live HP is
+        /// <see cref="PlanetaryDefenseClientHealthSync"/> (HitRpc); this ghost field is
+        /// layout seed / regen, not the combat channel.
+        /// </summary>
         [GhostField(Quantization = 100)] public float Health;
 
         /// <summary>Max HP for the current turret level (mirrors config at last activate/upgrade).</summary>
         [GhostField(Quantization = 100)] public float MaxHealth;
+
+        /// <summary>
+        /// [NETCODE] GhostOwner.NetworkId of the player piloting this turret, or 0 when free.
+        /// Clients use this to hide Take Control when another player already occupies the pad.
+        /// </summary>
+        [GhostField] public int OccupiedByNetworkId;
     }
 
     /// <summary>
@@ -110,6 +123,7 @@ namespace TitanOrbit.ECS
                 BuildProgress = 0f,
                 Health = 0f,
                 MaxHealth = 0f,
+                OccupiedByNetworkId = 0,
             };
         }
 
@@ -270,6 +284,7 @@ namespace TitanOrbit.ECS
                     BuildProgress = 0f,
                     Health = hp,
                     MaxHealth = hp,
+                    OccupiedByNetworkId = 0,
                 };
             }
         }

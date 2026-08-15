@@ -83,6 +83,11 @@ namespace TitanOrbit.Game
         string _statusMessage = "Join a match or start local play.";
         bool _mainMenuButtonsBuilt;
         bool _initialized;
+        /// <summary>
+        /// Keeps the loading overlay up from the Play/join click until connecting flags catch up,
+        /// so MainMenuPanel cannot flash under the (slightly transparent) loading backdrop.
+        /// </summary>
+        bool _holdLoadingOverlay;
 
         /// <summary>
         /// [TITAN-ORBIT] Once the local ship has been seen this session, keep gameplay HUD up even if
@@ -101,7 +106,7 @@ namespace TitanOrbit.Game
         int _teamPickRetryCount;
 
         /// <summary>Seconds to wait for TeamChoiceResult before clearing spawn-wait and retrying.</summary>
-        const float TeamPickResultTimeoutSeconds = 3f;
+        const float TeamPickResultTimeoutSeconds = 8f;
 
         /// <summary>Max automatic retries after a TeamChoiceResult timeout (then re-enable manual pick).</summary>
         const int TeamPickMaxAutoRetries = 2;
@@ -615,8 +620,8 @@ namespace TitanOrbit.Game
         /// [TITAN-ORBIT] If Join Team was clicked but <see cref="TeamChoiceResultRpc"/> never arrives,
         /// clear the in-flight latch and retry (then re-enable buttons). Prevents soft-lock on
         /// "Spawning your ship..." when RequestTeam is lost under Local Host IPC load.
-        /// Does <b>not</b> fire while Confirm is deferred through the post–TeamChoice Instantiates
-        /// hold — that is a successful result waiting for Crash!!!-safe unlock, not a lost RPC.
+        /// Does <b>not</b> fire while Confirm is deferred or a live owned-ship seed already exists —
+        /// those are in-flight Join Team success (waiting on GhostReceive), not a lost RPC.
         /// </summary>
         /// <param name="teamPickInFlight">True while pick requested and not yet confirmed.</param>
         /// <param name="teamConfirmed">True after deferred Confirm flushed.</param>
@@ -626,9 +631,16 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] Deferred Confirm keeps TeamChoiceConfirmed false for ~PostTeamChoiceHold
             // frames after a successful TeamChoiceResult. Treating that as a lost RPC would
             // ClearTeamPickRequest + re-send RequestTeam while the ship is Instantiating.
+            // Also wait while GhostReceive already seeded the owner hull — late Join Team clicks
+            // used to look like a lost RPC while the snapshot was still in flight.
+            World clientWorld = EcsGameBridge.ClientWorld;
+            bool hasLiveSeed = clientWorld != null &&
+                               clientWorld.IsCreated &&
+                               LocalShipEntitySeed.HasLiveOwnedShipSeed(clientWorld.EntityManager);
             if (teamConfirmed ||
                 !teamPickInFlight ||
-                ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending)
+                ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending ||
+                hasLiveSeed)
             {
                 _teamPickRequestedAt = -1f;
                 if (teamConfirmed || !IsInGameFlow())
@@ -689,10 +701,17 @@ namespace TitanOrbit.Game
         void TickPostConfirmShipWatchdog(bool teamConfirmed, bool hasShipLive)
         {
             // --- Idle / success ---
-            if (!teamConfirmed || hasShipLive || _latchedHasShipThisSession)
+            // Also treat a live owned-ship seed as success — HasLocalPlayerShip can lag one frame
+            // after Confirm promotes PendingOwnedShip, and RequestTeam.Clear must not wipe it.
+            World clientWorld = EcsGameBridge.ClientWorld;
+            bool hasLiveSeed = clientWorld != null &&
+                               clientWorld.IsCreated &&
+                               LocalShipEntitySeed.HasLiveOwnedShipSeed(clientWorld.EntityManager);
+
+            if (!teamConfirmed || hasShipLive || hasLiveSeed || _latchedHasShipThisSession)
             {
                 _postConfirmShipWaitAt = -1f;
-                if (hasShipLive || _latchedHasShipThisSession)
+                if (hasShipLive || hasLiveSeed || _latchedHasShipThisSession)
                     _postConfirmShipRetryCount = 0;
                 return;
             }
@@ -708,12 +727,14 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] TryRecoverOwnedShip is Crash!!!-gated; only call when safe.
             if (!ClientJoinSettleCache.ShouldSkipShipEntityQueries)
             {
-                World clientWorld = EcsGameBridge.ClientWorld;
                 if (clientWorld != null && clientWorld.IsCreated)
                     LocalShipEntitySeed.TryRecoverOwnedShip(clientWorld.EntityManager);
             }
 
-            if (EcsGameBridge.HasLocalPlayerShip())
+            if (EcsGameBridge.HasLocalPlayerShip() ||
+                (clientWorld != null &&
+                 clientWorld.IsCreated &&
+                 LocalShipEntitySeed.HasLiveOwnedShipSeed(clientWorld.EntityManager)))
             {
                 _postConfirmShipWaitAt = -1f;
                 _postConfirmShipRetryCount = 0;
@@ -724,9 +745,10 @@ namespace TitanOrbit.Game
                 return;
 
             // --- Timeout: no hull after Confirm ---
+            // [TITAN-ORBIT] Do not Clear() a seed we never saw — RequestTeam clears on retry.
+            // Clearing here wiped a same-frame seed and bounced UI back to Join Team.
             var team = ClientTeamFlowState.LastRequestedTeam;
             ClientTeamFlowState.ResetTeamChoiceForShipSpawnFailure();
-            LocalShipEntitySeed.Clear();
             _postConfirmShipWaitAt = -1f;
             _latchedHasShipThisSession = false;
 
@@ -791,6 +813,7 @@ namespace TitanOrbit.Game
                 _statusMessage = "Finding a dedicated match...";
                 if (playButton != null)
                     playButton.interactable = false;
+                BeginLoadingOverlay();
                 QuickJoinDedicatedFromMenuAsync();
                 return;
             }
@@ -815,6 +838,8 @@ namespace TitanOrbit.Game
                 : "Connecting to game server...";
             if (playButton != null)
                 playButton.interactable = false;
+
+            BeginLoadingOverlay();
 
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance())
                 TitanOrbitSessionManager.Instance.StartLocalClientForLanTest();
@@ -859,6 +884,9 @@ namespace TitanOrbit.Game
             {
                 if (playButton != null)
                     playButton.interactable = true;
+                if (!TitanOrbitSessionManager.IsJoinConnecting &&
+                    (TitanOrbitSessionManager.Instance == null || !TitanOrbitSessionManager.Instance.IsInGame))
+                    _holdLoadingOverlay = false;
             }
         }
 
@@ -960,11 +988,11 @@ namespace TitanOrbit.Game
             if (TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance() && IsInGameFlow() && _mppmConnectedSince < 0f)
                 _mppmConnectedSince = Time.time;
 
-            bool connectingDedicated = TitanOrbitSessionManager.IsDedicatedJoinConnecting;
+            bool connecting = TitanOrbitSessionManager.IsJoinConnecting;
             bool connected = IsInGameFlow();
             if (TitanOrbitSessionManager.IsDedicatedOnlineClient && connected && _dedicatedConnectedAt < 0f)
                 _dedicatedConnectedAt = Time.time;
-            if (!connected && !connectingDedicated)
+            if (!connected && !connecting)
                 _dedicatedConnectedAt = -1f;
 
             bool mapLoaded = connected && IsMapReadyForTeamSelection();
@@ -1047,8 +1075,33 @@ namespace TitanOrbit.Game
                           " — team selection ready. Click Join on any team.");
             }
 
+            // --- Loading Map owns the screen ---
+            // [TITAN-ORBIT] Overlay until JoinWorldReady (via IsMapLoadingComplete) — not extra
+            // recipe/hydrate/GoInGame ORs that can disagree with Join Team.
+            // Compute this BEFORE toggling MainMenuPanel so Play cannot flash under the
+            // slightly transparent loading backdrop for a frame.
+            bool joinHandoff = _joinBrowser != null && _joinBrowser.IsHandedOffToLoading;
+            bool showLoadingOverlay =
+                _holdLoadingOverlay ||
+                joinHandoff ||
+                (connecting && !connected) ||
+                (EcsGameBridge.HasClientNetworkId() &&
+                 !EcsGameBridge.IsMapLoadingComplete() &&
+                 !ClientTeamFlowState.TeamChoiceConfirmed &&
+                 !ClientTeamFlowState.HasRequestedTeamPick);
+
+            if (EcsGameBridge.IsMapLoadingComplete() ||
+                ClientTeamFlowState.TeamChoiceConfirmed ||
+                ClientTeamFlowState.HasRequestedTeamPick)
+            {
+                _holdLoadingOverlay = false;
+                if (_joinBrowser != null)
+                    _joinBrowser.ClearLoadingHandoff();
+            }
+
             if (mainMenuPanel != null)
-                mainMenuPanel.SetActive(!connected && !connectingDedicated &&
+                mainMenuPanel.SetActive(!connected && !connecting &&
+                                      !showLoadingOverlay &&
                                       (_joinBrowser == null || !_joinBrowser.IsVisible));
 
             if (showRejoinChoice && hasRejoinableShip && _rejoinChoice != null)
@@ -1063,9 +1116,11 @@ namespace TitanOrbit.Game
 
             if (statusText != null)
             {
-                if (!connected || showLoading || showRejoinChoice || showTeam || showTeamCountWait || showSpawnWait || connectingDedicated)
-                    statusText.text = connectingDedicated && !connected
-                        ? "Connecting to dedicated server..."
+                if (!connected || showLoading || showRejoinChoice || showTeam || showTeamCountWait || showSpawnWait || connecting)
+                    statusText.text = connecting && !connected
+                        ? (TitanOrbitSessionManager.IsDedicatedJoinConnecting
+                            ? "Connecting to dedicated server..."
+                            : "Connecting...")
                         : !connected
                         ? _statusMessage
                         : showLoading
@@ -1095,17 +1150,6 @@ namespace TitanOrbit.Game
             if (showTeam)
                 CleanupJoinTeamScreenUi();
 
-            // --- Loading Map owns the screen ---
-            // [TITAN-ORBIT] Show loading while Relay connect is in flight, while seed-hydrate
-            // builds asteroids (pre-InGame), or while post-InGame map catch-up runs.
-            bool seedHydrating = ClientMapHydrateCache.HasFullRecipe && !ClientMapHydrateCache.IsComplete;
-            bool awaitingGoInGame = ClientMapHydrateCache.HasFullRecipe &&
-                                    ClientMapHydrateCache.IsComplete &&
-                                    !connected;
-            bool showLoadingOverlay = showLoading ||
-                                      (connectingDedicated && !connected) ||
-                                      seedHydrating ||
-                                      awaitingGoInGame;
             if (showLoadingOverlay && _joinBrowser != null && _joinBrowser.IsVisible)
                 _joinBrowser.DismissForLoading();
 
@@ -1149,6 +1193,22 @@ namespace TitanOrbit.Game
 
             if (shipStatsPanel != null)
                 shipStatsPanel.SetActive(showGameplayHud);
+        }
+
+        /// <summary>
+        /// Hides the main menu and shows the loading overlay immediately — before connecting
+        /// flags exist — so Play cannot peek through the backdrop for a frame.
+        /// </summary>
+        void BeginLoadingOverlay()
+        {
+            _holdLoadingOverlay = true;
+            if (mainMenuPanel != null)
+                mainMenuPanel.SetActive(false);
+            EnsureLoadingScreen();
+            if (loadingRoot != null)
+                loadingRoot.SetActive(true);
+            if (_loadingScreen != null)
+                _loadingScreen.Show();
         }
 
         void EnsureLoadingScreen()

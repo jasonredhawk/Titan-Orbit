@@ -27,6 +27,9 @@ namespace TitanOrbit.Core
         {
             /// <summary>True after particle systems were switched to Hierarchy scaling.</summary>
             public bool HierarchyScaleReady;
+
+            /// <summary>Authored <see cref="TrailRenderer.widthMultiplier"/> captured on first scale.</summary>
+            public float[] TrailBaseWidths;
         }
 
         /// <summary>
@@ -125,6 +128,34 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
+        /// Stops every particle system, then sets <c>main.loop</c>. Must stop first — Unity
+        /// warns if loop/duration change while playing. Used so burn / shock impact VFX
+        /// persist for the status duration, then restore one-shot before pool Return.
+        /// </summary>
+        public static void SetParticleSystemsLooping(GameObject root, bool looping)
+        {
+            if (root == null)
+                return;
+
+            ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < systems.Length; i++)
+            {
+                ParticleSystem ps = systems[i];
+                if (ps == null)
+                    continue;
+
+                if (ps.isPlaying)
+                    ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+                var main = ps.main;
+                main.loop = looping;
+                main.playOnAwake = false;
+                if (looping)
+                    ps.Play(true);
+            }
+        }
+
+        /// <summary>
         /// One-time material/light fix on first use, then restart particles every Rent.
         /// Pooled shells keep the marker so destroy frames skip GrabPass walks.
         /// </summary>
@@ -157,6 +188,18 @@ namespace TitanOrbit.Core
             if (root == null)
                 return;
 
+            // Sci-Fi Arsenal flicker scripts keep running after the Light is destroyed and
+            // spam MissingComponentException (gravity-well / rift impacts).
+            MonoBehaviour[] behaviours = root.GetComponentsInChildren<MonoBehaviour>(true);
+            for (int i = 0; i < behaviours.Length; i++)
+            {
+                MonoBehaviour behaviour = behaviours[i];
+                if (behaviour == null)
+                    continue;
+                if (behaviour.GetType().Name == "SciFiLightFlicker")
+                    UnityEngine.Object.Destroy(behaviour);
+            }
+
             Light[] lights = root.GetComponentsInChildren<Light>(true);
             for (int i = 0; i < lights.Length; i++)
             {
@@ -171,9 +214,11 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// Scales impact VFX via root transform. On first call, switches particle systems to
-        /// Hierarchy scaling so later Rents only set <c>localScale</c> (no module *= drift,
-        /// no GetComponentsInChildren every kill — session 74383c destroy hitch).
+        /// Scales muzzle / impact / tracer VFX via root transform. On first call, switches
+        /// particle systems to Hierarchy scaling (and World → Local) so later Rents only set
+        /// <c>localScale</c> (no module *= drift, no GetComponentsInChildren every kill).
+        /// World-space particles ignore transform scale — drone 0.58× flashes stayed ship-sized.
+        /// One-shot flashes do not move, so Local matches the authored look and then shrinks.
         /// </summary>
         public static void ApplyImpactVisualScale(GameObject root, float scale)
         {
@@ -184,21 +229,35 @@ namespace TitanOrbit.Core
             root.transform.localScale = Vector3.one * s;
 
             var marker = root.GetComponent<VfxPreparedMarker>();
-            if (marker != null && marker.HierarchyScaleReady)
-                return;
-
-            // --- One-time: make modules follow root scale ---
             ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
             for (int i = 0; i < systems.Length; i++)
             {
                 if (systems[i] == null)
                     continue;
                 var main = systems[i].main;
+                // World-space particles ignore transform scale (drone tracers stayed ship-sized).
+                if (main.simulationSpace == ParticleSystemSimulationSpace.World)
+                    main.simulationSpace = ParticleSystemSimulationSpace.Local;
                 main.scalingMode = ParticleSystemScalingMode.Hierarchy;
             }
 
+            // Trail width is world units — parent scale does not shrink the ribbon.
+            TrailRenderer[] trails = root.GetComponentsInChildren<TrailRenderer>(true);
             if (marker == null)
                 marker = root.AddComponent<VfxPreparedMarker>();
+            if (marker.TrailBaseWidths == null || marker.TrailBaseWidths.Length != trails.Length)
+            {
+                marker.TrailBaseWidths = new float[trails.Length];
+                for (int i = 0; i < trails.Length; i++)
+                    marker.TrailBaseWidths[i] = trails[i] != null ? trails[i].widthMultiplier : 1f;
+            }
+
+            for (int i = 0; i < trails.Length; i++)
+            {
+                if (trails[i] != null)
+                    trails[i].widthMultiplier = Mathf.Max(0.001f, marker.TrailBaseWidths[i] * s);
+            }
+
             marker.HierarchyScaleReady = true;
         }
 
@@ -214,7 +273,7 @@ namespace TitanOrbit.Core
 
             GameObject go = new GameObject("MobileMuzzleFlash");
             go.transform.SetPositionAndRotation(position, rot);
-            var ps = go.AddComponent<ParticleSystem>();
+            var ps = CreateStoppedParticleSystem(go);
             var main = ps.main;
             main.playOnAwake = false;
             main.loop = false;
@@ -261,7 +320,7 @@ namespace TitanOrbit.Core
 
             GameObject go = new GameObject("MobileImpactBurst");
             go.transform.position = position;
-            var ps = go.AddComponent<ParticleSystem>();
+            var ps = CreateStoppedParticleSystem(go);
             var main = ps.main;
             main.playOnAwake = false;
             main.loop = false;
@@ -297,6 +356,18 @@ namespace TitanOrbit.Core
 
             ps.Play();
             UnityEngine.Object.Destroy(go, 0.65f);
+        }
+
+        /// <summary>
+        /// <see cref="ParticleSystem"/> play-on-awake starts as soon as the component is added.
+        /// Duration / lifetime writes then log "Setting the duration while system is still playing".
+        /// Stop and clear first (Fireballs and other banks without a muzzle prefab hit this path).
+        /// </summary>
+        static ParticleSystem CreateStoppedParticleSystem(GameObject go)
+        {
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            return ps;
         }
 
         private static Material NewMobileParticleMaterial(Color color)

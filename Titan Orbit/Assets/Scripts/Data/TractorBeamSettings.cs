@@ -78,17 +78,17 @@ namespace TitanOrbit.Data
         [Tooltip(
             "Instant cargo absorb radius at each wing tip (world units) — same idea as Hull Pickup Range, " +
             "but measured from the wing tip instead of the hull center. " +
-            "Effective wing pickup = WingCollectRadius + gem.Size × GemSizeCollectFactor. " +
+            "Effective wing pickup = WingCollectRadius + max(gem.Size × GemSizeCollectFactor, gem.Size × 0.5). " +
             "Does NOT require a tractor beam connection: if a gem is inside this sphere " +
             "(fly a tip over it, or a beam finishes pulling it in), cargo consumes it immediately. " +
             "Tractor search reach is separate (wing distance × RangeMultiplier). " +
-            "Legacy default 0.25 (tight to the tip). Raise to scoop more easily near wings.")]
+            "Default 0.65 (comfortable tip fly-over). Lower toward 0.25 for a tighter tractor destination.")]
         [Min(0.01f)]
-        public float WingCollectRadius = 0.25f;
+        public float WingCollectRadius = 0.65f;
 
         [Tooltip(
-            "Extra wing-tip pickup radius per unit of gem.Size. " +
-            "Larger gems touch the wing slightly earlier. Legacy default 0.25. " +
+            "Extra pickup radius from gem visual size, applied to both wing tips and hull. " +
+            "Pickup also uses at least half of gem.Size so overlapping the visible gem counts. " +
             "Still no tractor lock required — size only widens the absorb sphere.")]
         [Min(0f)]
         public float GemSizeCollectFactor = 0.25f;
@@ -133,15 +133,41 @@ namespace TitanOrbit.Data
         void OnValidate() => ClampValues();
 
         /// <summary>
-        /// Effective wing-tip collect radius for one gem (base + size factor).
+        /// Extra absorb padding from gem visual scale (<c>GemState.Size</c> / LocalTransform scale).
+        /// Uses the larger of the designer factor and half the gem scale so overlapping the
+        /// visible gem mesh counts as a touch — not only a hit on the exact center point.
+        /// </summary>
+        /// <param name="gemSize">Gem visual/collision size from <c>GemState.Size</c>.</param>
+        /// <returns>World units added to wing-tip or hull-center pickup radius.</returns>
+        public float ResolveGemSizePad(float gemSize)
+        {
+            float size = Mathf.Max(0f, gemSize);
+            return Mathf.Max(size * GemSizeCollectFactor, size * 0.5f);
+        }
+
+        /// <summary>
+        /// Effective wing-tip collect radius for one gem (base + size pad).
         /// Used by <c>GemPickupSystem</c> so tractor destination and fly-over scoop match.
+        /// No tractor lock required — distance alone consumes.
         /// </summary>
         /// <param name="gemSize">Gem visual/collision size from <c>GemState.Size</c>.</param>
         /// <returns>Toroidal distance threshold from wing tip to gem center.</returns>
         public float ResolveWingCollectRadius(float gemSize)
         {
             ClampValues();
-            return WingCollectRadius + Mathf.Max(0f, gemSize) * GemSizeCollectFactor;
+            return WingCollectRadius + ResolveGemSizePad(gemSize);
+        }
+
+        /// <summary>
+        /// Effective hull-center collect radius for one gem (base + size pad).
+        /// Same fly-over rule as <see cref="ResolveWingCollectRadius"/> — no tractor lock.
+        /// </summary>
+        /// <param name="gemSize">Gem visual/collision size from <c>GemState.Size</c>.</param>
+        /// <returns>Toroidal distance threshold from hull center to gem center.</returns>
+        public float ResolveHullPickupRange(float gemSize)
+        {
+            ClampValues();
+            return HullPickupRange + ResolveGemSizePad(gemSize);
         }
     }
 }

@@ -5,14 +5,16 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Client-side fade in/out for tractor beam visuals so wing reassignment does not pop beams.
-    /// Orchestrates <see cref="GemTractorBeamDeployTracker"/> and <see cref="GemTractorBeamClientLogic"/>
-    /// each LateUpdate. Visibility 0–1 multiplied into Shapes alpha in <see cref="GemTractorBeamVisual"/>.
-    /// [TITAN-ORBIT] Gems from hybrid proxies under TransformQuarantine — never full gem ToEntityArray.
+    /// [HYBRID] Client-side fade in/out for tractor beam visuals so a lock appearing or
+    /// clearing does not pop the Shapes beam. Orchestrates <see cref="GemTractorBeamDeployTracker"/>
+    /// and <see cref="GemTractorBeamClientLogic"/> each LateUpdate. Visibility 0–1 is multiplied
+    /// into Shapes alpha in <see cref="GemTractorBeamVisual"/>.
+    /// Fade targets are server locks only — we do not fade in a client-invented pair.
+    /// [TITAN-ORBIT] Gems from hybrid proxies — never a full gem ToEntityArray.
     /// </summary>
     public static class GemTractorBeamVisibilityTracker
     {
-        /// <summary>0 = hidden, 1 = fully visible — keyed by packed shipIndex|gemIndex.</summary>
+        /// <summary>0 = hidden, 1 = fully visible — keyed by packed shipIndex|gemGhostId.</summary>
         static readonly Dictionary<long, float> VisibilityByPair = new Dictionary<long, float>(128);
         static readonly List<GemTractorBeamClientLogic.GemProxySnapshot> GemScratch =
             new List<GemTractorBeamClientLogic.GemProxySnapshot>(64);
@@ -77,7 +79,7 @@ namespace TitanOrbit.Game
                 for (int gi = 0; gi < GemScratch.Count; gi++)
                 {
                     var gem = GemScratch[gi];
-                    long key = PairKey(ships[si].Index, gem.Entity.Index);
+                    long key = PairKey(ships[si].Index, gem.GhostId);
                     touched.Add(key);
 
                     bool wantsVisible = GemTractorBeamClientLogic.IsEligibleForBeamVisual(
@@ -86,7 +88,7 @@ namespace TitanOrbit.Game
 
                     VisibilityByPair.TryGetValue(key, out float visibility);
 
-                    if (wantsVisible && GemTractorBeamDeployTracker.IsInDeployAnimation(ships[si].Index, gem.Entity.Index))
+                    if (wantsVisible && GemTractorBeamDeployTracker.IsInDeployAnimation(ships[si].Index, gem.GhostId))
                         visibility = 1f;
                     else
                     {
@@ -123,8 +125,9 @@ namespace TitanOrbit.Game
             }
         }
 
-        public static float GetVisibility(int shipIndex, int gemIndex) =>
-            VisibilityByPair.TryGetValue(PairKey(shipIndex, gemIndex), out float visibility) ? visibility : 0f;
+        /// <summary>Current 0–1 fade for this ship→gem ghost lock, or 0 if never drawn.</summary>
+        public static float GetVisibility(int shipIndex, int gemGhostId) =>
+            VisibilityByPair.TryGetValue(PairKey(shipIndex, gemGhostId), out float visibility) ? visibility : 0f;
 
         public static void Clear()
         {
@@ -136,6 +139,6 @@ namespace TitanOrbit.Game
             GemTractorBeamClientLogic.Clear();
         }
 
-        static long PairKey(int shipIndex, int gemIndex) => ((long)shipIndex << 32) | (uint)gemIndex;
+        static long PairKey(int shipIndex, int gemGhostId) => ((long)shipIndex << 32) | (uint)gemGhostId;
     }
 }

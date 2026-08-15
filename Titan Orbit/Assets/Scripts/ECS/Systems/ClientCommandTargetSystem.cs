@@ -57,7 +57,11 @@ namespace TitanOrbit.ECS
             {
                 if (!LocalShipEntitySeed.TryGetSeededShip(state.EntityManager, out shipEntity) ||
                     shipEntity == Entity.Null)
-                    return;
+                {
+                    if (!LocalShipEntitySeed.TryGetOwnedShipEntityUnchecked(state.EntityManager, out shipEntity) ||
+                        shipEntity == Entity.Null)
+                        return;
+                }
                 BindCommandTarget(ref state, shipEntity);
                 return;
             }
@@ -82,8 +86,15 @@ namespace TitanOrbit.ECS
             entities.Dispose();
             owners.Dispose();
 
+            // --- Seeded hull when GhostOwner NetworkId has not replicated yet ---
+            // [TITAN-ORBIT] GhostReceive Instantiates the owner ship; a gather can still miss
+            // one frame. Bind the known seed so ShipInput is packaged.
             if (shipEntity == Entity.Null)
-                return;
+            {
+                if (!LocalShipEntitySeed.TryGetOwnedShipEntityUnchecked(state.EntityManager, out shipEntity) ||
+                    shipEntity == Entity.Null)
+                    return;
+            }
 
             BindCommandTarget(ref state, shipEntity);
         }

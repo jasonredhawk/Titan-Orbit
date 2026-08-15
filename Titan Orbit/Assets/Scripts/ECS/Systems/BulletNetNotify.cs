@@ -5,7 +5,8 @@ using Unity.NetCode;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Server → client notify helpers for bullet VFX (spawn + hit).
+    /// Server → client notify helpers for bullet VFX (spawn + hit) and ram/grind explosions
+    /// (Sequence 0 <see cref="BulletHitRpc"/>).
     /// Mirrors <see cref="PeopleTransportNetNotify"/>: in-process bridge for host + broadcast RPC.
     /// </summary>
     public static class BulletNetNotify
@@ -46,6 +47,9 @@ namespace TitanOrbit.ECS
                 IsAnticipation = false,
                 IsDisplaySpace = false,
                 DamageFilter = (byte)bullet.DamageFilter,
+                Homing = bullet.Homing,
+                TurnSpeedDeg = bullet.TurnSpeedDeg,
+                AcquireRange = bullet.AcquireRange,
             };
 
             // --- Host in-process (Editor / listen-server) ---
@@ -68,6 +72,9 @@ namespace TitanOrbit.ECS
                 ScaleMultiplier = bullet.ScaleMultiplier > 0f ? bullet.ScaleMultiplier : 1f,
                 MountIndex = safeMount,
                 DamageFilter = (byte)bullet.DamageFilter,
+                Homing = bullet.Homing,
+                TurnSpeedDeg = bullet.TurnSpeedDeg,
+                AcquireRange = bullet.AcquireRange,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }
@@ -131,6 +138,74 @@ namespace TitanOrbit.ECS
                 PlanetaryDefensePlanetId = planetaryDefensePlanetId,
                 PlanetaryDefenseSlotIndex = planetaryDefenseSlotIndex,
                 PlanetaryDefenseHealthAfter = planetaryDefenseHealthAfter,
+            });
+            ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Broadcasts a ram / grind asteroid impact using the existing
+        /// <see cref="BulletHitRpc"/> wire layout (no new RPC type — Linux headless stays compatible).
+        /// <c>Sequence = 0</c> means there is no tracer to adopt; clients play the ship's bullet
+        /// explosion and apply <paramref name="asteroidHealthAfter"/> onto the seed-hydrated rock.
+        /// </summary>
+        /// <param name="ecb">Server ECB for the broadcast RPC entity.</param>
+        /// <param name="hitPosition">Contact point on the asteroid surface (logical XZ).</param>
+        /// <param name="damage">Asteroid damage this impact or grind pulse (VFX intensity).</param>
+        /// <param name="ownerTeam">Ramming ship's team as a byte.</param>
+        /// <param name="bankIndex">
+        /// <c>ShipLoadoutState.RuntimeBulletIndex</c> — the explosion prefab that ship currently fires.
+        /// </param>
+        /// <param name="scaleMultiplier">Visual size from ram damage (kill frames are larger).</param>
+        /// <param name="asteroidHealthAfter">Health after this pulse; 0 means the rock died.</param>
+        public static void SendRamAsteroidHit(
+            ref EntityCommandBuffer ecb,
+            float3 hitPosition,
+            float damage,
+            byte ownerTeam,
+            int bankIndex,
+            float scaleMultiplier,
+            float asteroidHealthAfter)
+        {
+            // --- Flatten to the play plane ---
+            // [TITAN-ORBIT] Combat and display are XZ; Y is unused on the torus.
+            hitPosition.y = 0f;
+            float safeScale = scaleMultiplier > 0f ? scaleMultiplier : 1f;
+            int safeBank = math.max(0, bankIndex);
+
+            var req = new BulletVfxBridge.HitRequest
+            {
+                Sequence = 0,
+                HitPosition = hitPosition,
+                Damage = damage,
+                OwnerTeam = ownerTeam,
+                BankIndex = safeBank,
+                ScaleMultiplier = safeScale,
+                AsteroidHealthAfter = asteroidHealthAfter,
+                PlanetaryDefensePlanetId = 0,
+                PlanetaryDefenseSlotIndex = 0,
+                PlanetaryDefenseHealthAfter = -1f,
+            };
+
+            // --- Host in-process (Editor / listen-server) ---
+            // Sequence 0 is allowed here; BulletVfxBridge dedupes host+RPC by pose this frame.
+            if (ClientServerBootstrap.ClientWorld != null && ClientServerBootstrap.ClientWorld.IsCreated)
+                BulletVfxBridge.EnqueueHit(req);
+
+            // --- All clients (including the host connection) ---
+            // [NETCODE] TargetConnection Null = broadcast. Wire fields match BulletHitRpc exactly.
+            Entity rpcEntity = ecb.CreateEntity();
+            ecb.AddComponent(rpcEntity, new BulletHitRpc
+            {
+                Sequence = 0,
+                HitPosition = hitPosition,
+                Damage = damage,
+                OwnerTeam = ownerTeam,
+                BankIndex = safeBank,
+                ScaleMultiplier = safeScale,
+                AsteroidHealthAfter = asteroidHealthAfter,
+                PlanetaryDefensePlanetId = 0,
+                PlanetaryDefenseSlotIndex = 0,
+                PlanetaryDefenseHealthAfter = -1f,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }

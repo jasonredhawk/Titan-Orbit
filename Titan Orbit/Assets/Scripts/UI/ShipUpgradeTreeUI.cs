@@ -210,8 +210,8 @@ namespace TitanOrbit.UI
             if (_nodes.Count == 0 && _currentShipNode == null)
                 return;
 
-            float maxPower = ComputeMaxDisplayPower();
-            _station.RefreshShipUpgradeTreeNodeStates(_nodes, maxPower);
+            ShipPowerBarStatMaxes maxes = ComputePowerBarStatMaxes();
+            _station.RefreshShipUpgradeTreeNodeStates(_nodes, maxes);
         }
 
         /// <summary>Editor: populate all tier slots and connectors. Uses <paramref name="family"/> when assigned.</summary>
@@ -223,16 +223,7 @@ namespace TitanOrbit.UI
             if (nodesCanvas == null || nodePrefab == null)
                 return;
 
-            float maxPower = 0.001f;
-            if (family?.upgradeTree != null)
-            {
-                foreach (var tier in family.upgradeTree)
-                {
-                    if (tier == null) continue;
-                    float t = ShipUpgradeTreePowerBarUI.GetMoonTreeBarDisplayTotal(tier.powerScoreBreakdown);
-                    if (t > maxPower) maxPower = t;
-                }
-            }
+            ShipPowerBarStatMaxes maxes = ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
 
             const int maxLevel = 7;
             PrepareHorizontalContainerLayout();
@@ -267,9 +258,13 @@ namespace TitanOrbit.UI
                     node.SetPrice(family != null ? "ΓÇö" : "Preview");
                     node.SetPreview(tier != null ? tier.menuPreviewSprite : null);
                     if (tier != null)
-                        node.ApplyPowerBreakdown(tier.powerScoreBreakdown, maxPower);
+                    {
+                        ShipFamilyPowerScoreBreakdown breakdown = ShipFamilyPowerBarNorm.GetBreakdownAtShipLevel(
+                            family, tier, level);
+                        node.ApplyPowerBreakdown(breakdown, maxes);
+                    }
                     else
-                        node.ApplyPowerBreakdown(default, maxPower);
+                        node.ApplyPowerBreakdown(default, maxes);
 
                     GetMoonNodePosition(level, b, count, nodeW, nodeH, canvasW, canvasH, ComputeMaxColumnStackHeight(nodeH),
                         out colX, out nodeY);
@@ -325,7 +320,6 @@ namespace TitanOrbit.UI
             ApplyHorizontalTreeCanvasLayout(canvasW, canvasH);
             float trackW = GetMoonPowerBarTrackWidth(nodeW);
 
-            float maxPower = ComputeMaxDisplayPower();
             _station.TryGetPlayerUpgradePathEdges(out HashSet<(int fL, int fB, int tL, int tB)> pathEdges);
             var byLevel = new Dictionary<int, List<ShipUpgradeTreeNodeUI>>();
 
@@ -378,7 +372,6 @@ namespace TitanOrbit.UI
             nodesCanvas.sizeDelta = new Vector2(nodesCanvas.sizeDelta.x, contentH);
             ApplyCenterRowHeight(contentH);
 
-            float maxPower = ComputeMaxDisplayPower();
             var byLevel = new Dictionary<int, List<ShipUpgradeTreeNodeUI>>();
 
             for (int level = 1; level <= maxLevel; level++)
@@ -468,7 +461,7 @@ namespace TitanOrbit.UI
 
             view.BindSlot(level, branch, node, w, h, trackW);
             view.EnsureStableButtonRendering();
-            _station.PopulateTreeNode(view, ComputeMaxDisplayPower());
+            _station.PopulateTreeNode(view, ComputePowerBarStatMaxes());
             view.SetPriceClickHandler(() => _station.OnUpgradeTreeNodeClicked(view.Level, view.BranchIndex));
             _nodes.Add(view);
             _visuals.Add(view.gameObject);
@@ -728,30 +721,17 @@ namespace TitanOrbit.UI
             }
         }
 
-        private float ComputeMaxDisplayPower()
+        /// <summary>
+        /// Ten global catalog maxes for equal-slot bars (all families, each chassis at its tree level).
+        /// </summary>
+        ShipPowerBarStatMaxes ComputePowerBarStatMaxes()
         {
-            // --- Compute value ---
-            float max = 0f;
-            if (_station != null)
-            {
-                float current = ShipUpgradeTreePowerBarUI.GetMoonTreeBarDisplayTotal(_station.GetCurrentShipPowerBreakdown());
-                if (current > max) max = current;
-            }
-
-            for (int level = 1; level <= 7; level++)
-            {
-                int count = UpgradeTree.GetShipCountForLevel(level);
-                for (int b = 0; b < count; b++)
-                {
-                    float t = ShipUpgradeTreePowerBarUI.GetMoonTreeBarDisplayTotal(
-                        _station.GetPowerBreakdownForTreeNode(level, b));
-                    if (t > max) max = t;
-                }
-            }
-
-            return Mathf.Max(max, 0.001f);
+            var config = TitanOrbit.ECS.ShipStatApplyLogic.Config;
+            return config != null
+                ? config.GetGlobalPowerBarStatMaxes()
+                : ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
         }
 
-        public float GetMaxDisplayPower() => ComputeMaxDisplayPower();
+        public ShipPowerBarStatMaxes GetPowerBarStatMaxes() => ComputePowerBarStatMaxes();
     }
 }

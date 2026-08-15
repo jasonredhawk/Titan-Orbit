@@ -20,12 +20,12 @@ namespace TitanOrbit.UI
         int ShipLevel { get; }
         int BranchIndex { get; }
 
-        // --- Tree layout and node population ---
+        // --- Tree layout and node population (maxes = global per-stat ceilings for equal-slot bars) ---
         bool IsTreeDataAvailable();
         float GetShipTreeLayoutBasisWidthPublic();
         bool TryGetPlayerUpgradePathEdges(out HashSet<(int fL, int fB, int tL, int tB)> edges);
-        void RefreshShipUpgradeTreeNodeStates(IReadOnlyList<ShipUpgradeTreeNodeUI> nodes, float maxPower);
-        void PopulateTreeNode(ShipUpgradeTreeNodeUI view, float maxPower);
+        void RefreshShipUpgradeTreeNodeStates(IReadOnlyList<ShipUpgradeTreeNodeUI> nodes, ShipPowerBarStatMaxes maxes);
+        void PopulateTreeNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes);
         void OnUpgradeTreeNodeClicked(int nodeLevel, int targetBranchIndex);
         void OnCurrentShipDisplayNodeClicked();
 

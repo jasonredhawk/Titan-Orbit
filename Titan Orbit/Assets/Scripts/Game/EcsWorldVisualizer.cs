@@ -46,7 +46,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Cap while GhostSpawn Instantiates are still draining (Settling).
-        /// Instantiates are 1/frame — keep GO create modest so Instantiates + GO do not flood one frame.
+        /// Instantiates of relevant ghosts are 16/frame — keep GO create modest so Instantiates + GO do not flood one frame.
         /// Still drains every frame so the loading screen absorbs map-build cost.
         /// </summary>
         const int MaxNewWorldBodyProxiesWhileSettling = 8;
@@ -90,32 +90,7 @@ namespace TitanOrbit.Game
         [Header("Ship Propulsion VFX")]
         [SerializeField] ShipPropulsionVisualApplier.Settings propulsionVfxSettings;
 
-        // --- Ship banking (cosmetic only; published to ShipBankVisualSettingsCache) ---
-
-        /// <summary>
-        /// Peak roll (°) at full turn when sensitivity is 1. Tune in Inspector under Ship Banking.
-        /// </summary>
-        [Header("Ship Banking (visual roll while turning)")]
-        [Tooltip(
-            "Peak roll angle in degrees at full turn (when Bank Sensitivity is 1). " +
-            "Raise for a deeper lean; does not affect turn rate or physics.")]
-        [SerializeField] [Range(15f, 160f)]
-        float shipBankMaxAngleDegrees = ShipPropulsionAggregation.VisualBankReferenceMaxAngleDegrees;
-
-        /// <summary>
-        /// Multiplier on turn-rate → bank. Default 1.35 is a bit more responsive than the old linear curve.
-        /// </summary>
-        [Tooltip(
-            "How sensitive banking is to yaw rate. 1 = linear (old feel). " +
-            "Higher values lean harder at partial turn stick — try 1.35–2.0.")]
-        [SerializeField] [Range(0.25f, 3f)]
-        float shipBankSensitivity = 1.35f;
-
-        /// <summary>Exponential catch-up for yaw sampling and roll lerp (higher = snappier).</summary>
-        [Tooltip(
-            "How quickly roll catches up to the target bank angle. Higher = snappier, lower = floatier.")]
-        [SerializeField] [Range(1f, 24f)]
-        float shipBankSmoothing = 8f;
+        // Ship banking knobs live on ShipBankVisualSettings (Resources default + family field).
 
         // --- Runtime proxy registries (entity → GameObject) ---
 
@@ -256,6 +231,11 @@ namespace TitanOrbit.Game
             /// True when the ship is fully moon-docked — nameplate stays hidden for that state.
             /// </summary>
             public bool IsLandedOnMoon;
+
+            /// <summary>
+            /// True when the ship is stowed in a planetary defense turret — nameplate stays hidden.
+            /// </summary>
+            public bool IsStowedInTurret;
         }
 
         /// <summary>
@@ -460,31 +440,19 @@ namespace TitanOrbit.Game
             }
 
             // --- Ship banking (cosmetic roll) ---
-            // [TITAN-ORBIT] Publish Inspector knobs so hybrid + EG bank paths share one feel.
-            // Damage smoke profiles live on ShipFamilyDefinition.damageSmokeSettings (ScriptableObject).
+            // [TITAN-ORBIT] Shared profile on Resources/ShipBankVisualSettings; families may
+            // override via ShipFamilyDefinition.bankVisualSettings (same pattern as damage smoke).
             PublishShipBankVisualSettings();
         }
 
-#if UNITY_EDITOR
         /// <summary>
-        /// [EDITOR] Live-publish banking knobs while scrubbing the Inspector in Play Mode.
-        /// </summary>
-        void OnValidate()
-        {
-            PublishShipBankVisualSettings();
-        }
-#endif
-
-        /// <summary>
-        /// Copies Max Bank / Sensitivity / Smoothing into <see cref="ShipBankVisualSettingsCache"/>
-        /// for <see cref="ShipBankVisualApplier"/> and Entities Graphics bank systems.
+        /// Points <see cref="ShipBankVisualSettingsCache"/> at the shared Resources default
+        /// so Entities Graphics and turret bank match hybrid proxies that have no family bind.
         /// </summary>
         void PublishShipBankVisualSettings()
         {
-            ShipBankVisualSettingsCache.Publish(
-                shipBankMaxAngleDegrees,
-                shipBankSensitivity,
-                shipBankSmoothing);
+            ShipBankVisualSettingsCache.Publish(ShipBankVisualSettings.LoadDefault());
+            ShipBankVisualSettingsCache.PublishDefaultIfNeeded();
         }
 
         /// <summary>
@@ -878,7 +846,28 @@ namespace TitanOrbit.Game
                 foreach (var kv in _proxies)
                 {
                     if (kv.Value == null || !em.Exists(kv.Key))
+                    {
                         _removeScratch.Add(kv.Key);
+                        continue;
+                    }
+
+                    // --- Gem ghost despawned but GO lingered (relevancy drop / DestroyEntity) ---
+                    if (_proxyKinds.TryGetValue(kv.Key, out var pruneKind) &&
+                        pruneKind == ProxyVisualKind.Gem)
+                    {
+                        if (!em.HasComponent<GemTag>(kv.Key))
+                        {
+                            _removeScratch.Add(kv.Key);
+                            continue;
+                        }
+
+                        if (em.HasComponent<GemState>(kv.Key) &&
+                            em.GetComponentData<GemState>(kv.Key).IsConsumed)
+                        {
+                            _removeScratch.Add(kv.Key);
+                            continue;
+                        }
+                    }
                 }
 
                 for (int i = 0; i < _removeScratch.Count; i++)
@@ -964,7 +953,16 @@ namespace TitanOrbit.Game
                 {
                     // --- Gem value scale + end-of-life shrink (original Gem.shrinkDuration) ---
                     var gemState = em.GetComponentData<GemState>(entity);
+                    if (gemState.IsConsumed)
+                    {
+                        if (go.activeSelf)
+                            go.SetActive(false);
+                        continue;
+                    }
                     gemValue = gemState.Value;
+                    // [TITAN-ORBIT] IsBonusGem can arrive one snapshot after Instantiates — retint
+                    // so a territory yellow gem does not stay on the pooled red material.
+                    GemVisualApplier.ApplyTintForBonusFlag(go, gemState.IsBonusGem);
                     // [TITAN-ORBIT] ServerTick clock — World.Time diverges on late-join (moon orbit rule).
                     float now = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(out double tickNow, includeTickFraction: true)
                         ? (float)tickNow
@@ -976,7 +974,7 @@ namespace TitanOrbit.Game
                 alive.Add(entity);
 
                 // --- World-body / gem pose ---
-                // Gems: GemClientMotionApplier owns position from ghosted LocalTransform + GemKinematics.
+                // Gems: GemClientMotionApplier copies interpolated LocalTransform (no second sim).
                 // Other bodies: snap to toroidal display of LocalTransform.
                 if (isGem)
                 {
@@ -1302,7 +1300,7 @@ namespace TitanOrbit.Game
 
             // --- Collect up to this frame's budget, then mutate ---
             // [TITAN-ORBIT] Prefer GemTag first so destroy/mining pickups appear before leftover
-            // asteroid proxies fill the same budget (Instantiates stays 1/frame — unchanged).
+            // asteroid proxies fill the same budget (GhostSpawn Instantiates is 16/frame).
             //
             // Player.log 2026-07-22: EntityManager.GetEntityTypeHandle() + ToArchetypeChunkArray
             // → ArchetypeChunk.GetNativeArray NRE every LateUpdate (~2500×) → zero proxy climb →
@@ -1449,13 +1447,14 @@ namespace TitanOrbit.Game
             if (em.HasComponent<GemState>(entity) && em.HasComponent<GemTag>(entity))
             {
                 var state = em.GetComponentData<GemState>(entity);
+                if (state.IsConsumed)
+                    return false;
                 scale = GemVisualApplier.ComputeVisualScale(math.max(0.25f, state.Value));
                 Vector3 displayPos = GetVisualPosition(entity, lt.Position);
 
                 // --- Network gem proxy from Instantiates ghost only ---
-                // [TITAN-ORBIT] No ClientGemBurstPresenter invent. Count/pose/velocity come from
-                // server gem ghosts; GemClientMotionApplier presents ghosted LocalTransform +
-                // GemKinematics between snapshots.
+                // [TITAN-ORBIT] No ClientGemBurstPresenter invent. Pose comes from the
+                // interpolated gem ghost; GemClientMotionApplier copies LocalTransform.
                 if (!GemVisualApplier.TryCreateGemVisual(
                         gemVisualPrefab, state.Value, state.IsBonusGem, out go))
                 {
@@ -1483,13 +1482,6 @@ namespace TitanOrbit.Game
                 if (motion == null)
                     motion = go.AddComponent<GemClientMotionApplier>();
                 motion.Bind(entity, lt.Position);
-
-                // Seed from server kinematics so the GO coasts immediately if LT snapshots lag.
-                if (em.HasComponent<GemKinematics>(entity))
-                {
-                    var kin = em.GetComponentData<GemKinematics>(entity);
-                    motion.SeedVelocity(kin.Velocity, kin.AngularVelocity);
-                }
 
                 return true;
             }
@@ -1919,7 +1911,10 @@ namespace TitanOrbit.Game
                 _proxyShipLevels[shipEntity] = Mathf.Max(1, ship.ShipLevel);
                 _proxyTeams[shipEntity] = ship.Team;
                 _proxyBranchIndices[shipEntity] = Mathf.Max(0, ship.BranchIndex);
-                if (ship.IsDead)
+                // --- Hide dead hulls and ships stowed in planetary defense turrets ---
+                bool stowedInTurret = em.HasComponent<ShipTurretControlState>(shipEntity) &&
+                    em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling;
+                if (ship.IsDead || stowedInTurret)
                     proxyGo.SetActive(false);
                 else if (!proxyGo.activeSelf)
                     proxyGo.SetActive(true);
@@ -1940,10 +1935,11 @@ namespace TitanOrbit.Game
                     peopleDelivered = stats.PeopleDelivered;
                 }
 
-                // [TITAN-ORBIT] Same fully-landed gate as the batched nameplate path.
+                // [TITAN-ORBIT] Same fully-landed / turret-stow gates as the batched nameplate path.
                 bool landedOnMoon = IsShipFullyLandedOnMoon(em, shipEntity);
                 ApplyShipNameplatePresentation(
-                    proxyGo, networkId, ship, kills, gemsDeposited, peopleDelivered, landedOnMoon);
+                    proxyGo, networkId, ship, kills, gemsDeposited, peopleDelivered,
+                    landedOnMoon, stowedInTurret);
             }
         }
 
@@ -2148,7 +2144,10 @@ namespace TitanOrbit.Game
                     _proxyShipLevels[entity] = Mathf.Max(1, ship.ShipLevel);
                     _proxyTeams[entity] = ship.Team;
                     _proxyBranchIndices[entity] = Mathf.Max(0, ship.BranchIndex);
-                    if (ship.IsDead)
+                    // --- Hide dead hulls and ships stowed in planetary defense turrets ---
+                    bool stowedInTurret = em.HasComponent<ShipTurretControlState>(entity) &&
+                        em.GetComponentData<ShipTurretControlState>(entity).IsControlling;
+                    if (ship.IsDead || stowedInTurret)
                         go.SetActive(false);
                     else if (!go.activeSelf)
                         go.SetActive(true);
@@ -2226,11 +2225,6 @@ namespace TitanOrbit.Game
             _proxies[entity] = go;
             RegisterProxyKind(entity, ProxyVisualKind.Ship);
 
-            var bankVisual = go.GetComponent<ShipBankVisualApplier>();
-            if (bankVisual == null)
-                bankVisual = go.AddComponent<ShipBankVisualApplier>();
-            bankVisual.Bind(entity);
-
             var moonDockVisual = go.GetComponent<ShipMoonDockVisualApplier>();
             if (moonDockVisual == null)
                 moonDockVisual = go.AddComponent<ShipMoonDockVisualApplier>();
@@ -2253,6 +2247,13 @@ namespace TitanOrbit.Game
 
             propulsionVisual.Bind(entity, familyPrefix, propulsionVfxSettings, bindFamily);
 
+            // --- Cosmetic bank (roll while turning) ---
+            // [HYBRID] Profile from ShipFamilyDefinition.bankVisualSettings (shared asset today).
+            var bankVisual = go.GetComponent<ShipBankVisualApplier>();
+            if (bankVisual == null)
+                bankVisual = go.AddComponent<ShipBankVisualApplier>();
+            bankVisual.Bind(entity, ShipBankVisualSettings.ResolveForFamily(bindFamily));
+
             // --- Damage smoke (hull HP → trail density) ---
             // [HYBRID] Cosmetic only — profile from ShipFamilyDefinition.damageSmokeSettings.
             var damageSmokeVisual = go.GetComponent<ShipDamageSmokeVisualApplier>();
@@ -2263,7 +2264,13 @@ namespace TitanOrbit.Game
                 : null;
             if (smokeSettings == null)
                 smokeSettings = ShipDamageSmokeSettings.LoadDefault();
-            damageSmokeVisual.Bind(entity, smokeSettings);
+            damageSmokeVisual.Bind(entity, smokeSettings, familyPrefix, bindFamily);
+
+            // --- Burn / shock looping impact (DoT + stun duration) ---
+            var statusLoopVfx = go.GetComponent<ShipStatusLoopVfxApplier>();
+            if (statusLoopVfx == null)
+                statusLoopVfx = go.AddComponent<ShipStatusLoopVfxApplier>();
+            statusLoopVfx.Bind(entity);
 
             var attributeScaleVisual = go.GetComponent<ShipComponentAttributeScaleApplier>();
             if (attributeScaleVisual == null)
@@ -2302,6 +2309,9 @@ namespace TitanOrbit.Game
         /// <param name="isLandedOnMoon">
         /// True when the ship is fully docked on a gem moon — plate is hidden for that state.
         /// </param>
+        /// <param name="isStowedInTurret">
+        /// True when the ship is piloting a planetary defense pad — plate is hidden.
+        /// </param>
         void ApplyShipNameplatePresentation(
             GameObject proxyGo,
             int networkId,
@@ -2309,7 +2319,8 @@ namespace TitanOrbit.Game
             int kills,
             int gemsDeposited,
             int peopleDelivered,
-            bool isLandedOnMoon)
+            bool isLandedOnMoon,
+            bool isStowedInTurret)
         {
             // --- ApplyShipNameplatePresentation ---
             if (proxyGo == null)
@@ -2331,6 +2342,7 @@ namespace TitanOrbit.Game
                 ship.IsDead,
                 ship.AwaitingTeamSelection,
                 isLandedOnMoon,
+                isStowedInTurret,
                 ship.ShipLevel,
                 score,
                 rank,
@@ -2366,7 +2378,8 @@ namespace TitanOrbit.Game
                     pending.Kills,
                     pending.GemsDeposited,
                     pending.PeopleDelivered,
-                    pending.IsLandedOnMoon);
+                    pending.IsLandedOnMoon,
+                    pending.IsStowedInTurret);
             }
 
             _pendingShipNameplates.Clear();
@@ -2403,6 +2416,10 @@ namespace TitanOrbit.Game
 
             // [NETCODE] ShipMoonDockState is ghosted — same component the orbit menu / dock VFX read.
             bool landedOnMoon = IsShipFullyLandedOnMoon(em, entity);
+            // [NETCODE] ShipTurretControlState is ghosted — nameplate root is unparented, so we
+            // must hide explicitly (SetActive(false) on the hull proxy is not enough).
+            bool stowedInTurret = em.HasComponent<ShipTurretControlState>(entity) &&
+                em.GetComponentData<ShipTurretControlState>(entity).IsControlling;
 
             _nameplateRoleCandidates.Add(new ShipTopOfTeamRoles.Candidate
             {
@@ -2423,6 +2440,7 @@ namespace TitanOrbit.Game
                 GemsDeposited = gemsDeposited,
                 PeopleDelivered = peopleDelivered,
                 IsLandedOnMoon = landedOnMoon,
+                IsStowedInTurret = stowedInTurret,
             });
         }
 
@@ -2467,7 +2485,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Max networked gem GO proxies per frame from the urgent Instantiates queue.
-        /// GhostSpawn Instantiates stays 1/frame (join-crash invariant). Once a gem ghost exists,
+        /// GhostSpawn Instantiates is 16/frame. Once a gem ghost exists,
         /// we may Rent several pool GOs per frame so a small destroy burst becomes visible
         /// within a split second — still server-driven (no local invent).
         /// </summary>
@@ -2567,6 +2585,8 @@ namespace TitanOrbit.Game
 
             _proxies.Remove(entity);
             _proxyNetworkIds.Remove(entity);
+            // Mesh is gone — strip ECS collision now or the ship rams empty space.
+            ClientAsteroidCollisionCull.TryDisablePhysicsCollider(entity);
             // Intentionally skip AsteroidClientEntityRegistry.NotifyDestroyed — ECS zombie remains.
         }
 
@@ -2779,10 +2799,11 @@ namespace TitanOrbit.Game
                     if (bulletVfxBank != null
                         && bulletVfxBank.TryGetProfile(bankIndex, out var profile)
                         && profile != null
-                        && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor)
-                        && ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
+                        && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor))
                     {
-                        _bulletStretchVisuals[entity] = go.GetComponent<ClientBulletStretchVisual>();
+                        ClientBulletStretchVisual.ApplyShotScale(scaleMul, ref startFactor, ref endFactor);
+                        if (ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
+                            _bulletStretchVisuals[entity] = go.GetComponent<ClientBulletStretchVisual>();
                     }
                 }
 
@@ -3004,16 +3025,11 @@ namespace TitanOrbit.Game
                 if (motion == null)
                     motion = go.AddComponent<GemClientMotionApplier>();
                 motion.Bind(entity, lt.Position);
-                if (em.HasComponent<GemKinematics>(entity))
-                {
-                    var kin = em.GetComponentData<GemKinematics>(entity);
-                    motion.SeedVelocity(kin.Velocity, kin.AngularVelocity);
-                }
             }
         }
 
         /// <summary>
-        /// Per-frame GO Instantiates cap — tighter while Settling (GhostSpawn Instantiates 1/frame).
+        /// Per-frame GO Instantiates cap — tighter while Settling (GhostSpawn Instantiates 16/frame).
         /// </summary>
         static int GetWorldBodyProxyBudgetThisFrame()
         {

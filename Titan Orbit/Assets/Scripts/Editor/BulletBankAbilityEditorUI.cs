@@ -17,22 +17,31 @@ namespace TitanOrbit.Editor
         static BulletBankAbilityEditorUI()
         {
             // --- BulletBankAbilityEditorUI ---
+            // Filter by *name*, not enum equality. ElectricShockRotationLock aliases
+            // ElectricShockDisable (same int 0); `t == ElectricShockRotationLock` would hide both.
             var values = new List<BulletBankAbilityType>();
             var labels = new List<string>();
-            foreach (BulletBankAbilityType t in Enum.GetValues(typeof(BulletBankAbilityType)))
+            foreach (string name in Enum.GetNames(typeof(BulletBankAbilityType)))
             {
-                if (t == BulletBankAbilityType.ElectricShockRotationLock)
+                if (string.Equals(name, nameof(BulletBankAbilityType.ElectricShockRotationLock), StringComparison.Ordinal))
                     continue;
-                var name = t.ToString();
                 var field = typeof(BulletBankAbilityType).GetField(name);
                 if (field != null && Attribute.IsDefined(field, typeof(ObsoleteAttribute)))
                     continue;
+                var t = (BulletBankAbilityType)Enum.Parse(typeof(BulletBankAbilityType), name);
                 values.Add(t);
-                labels.Add(ObjectNames.NicifyVariableName(name));
+                labels.Add(TypeDisplayName(t, name));
             }
 
             TypePopupValues = values.ToArray();
             TypePopupLabels = labels.ToArray();
+        }
+
+        static string TypeDisplayName(BulletBankAbilityType type, string enumName)
+        {
+            if (type == BulletBankAbilityType.ElectricShockDisable)
+                return "Electric Shock";
+            return ObjectNames.NicifyVariableName(enumName);
         }
 
         public static BulletBankAbilityType ReadType(SerializedProperty abilityProperty)
@@ -65,9 +74,15 @@ namespace TitanOrbit.Editor
 
             var typeProp = abilityProperty.FindPropertyRelative("type");
             var magnitudeProp = abilityProperty.FindPropertyRelative("magnitude");
+            var magnitudePerProp = abilityProperty.FindPropertyRelative("magnitudePerExtra");
             var durationProp = abilityProperty.FindPropertyRelative("duration");
+            var durationPerProp = abilityProperty.FindPropertyRelative("durationPerExtra");
             var tickIntervalProp = abilityProperty.FindPropertyRelative("tickInterval");
+            var tickIntervalPerProp = abilityProperty.FindPropertyRelative("tickIntervalPerExtra");
             var radiusProp = abilityProperty.FindPropertyRelative("radius");
+            var radiusPerProp = abilityProperty.FindPropertyRelative("radiusPerExtra");
+            var energyDrainProp = abilityProperty.FindPropertyRelative("energyDrain");
+            var energyDrainPerProp = abilityProperty.FindPropertyRelative("energyDrainPerExtra");
             var damageTargetProp = abilityProperty.FindPropertyRelative("damageTarget");
 
             DrawTypePopup(new Rect(rect.x, y, rect.width, line), typeProp);
@@ -78,47 +93,55 @@ namespace TitanOrbit.Editor
             switch (type)
             {
                 case BulletBankAbilityType.ElectricShockDisable:
-                    DrawLabeled(new Rect(rect.x, y, rect.width, line), durationProp, "Stun Duration (sec)");
+                    DrawPrimaryPerExtra(new Rect(rect.x, y, rect.width, line), durationProp, durationPerProp, "Stun Duration (sec)");
                     break;
 
                 case BulletBankAbilityType.BurnOverTime:
-                    y = DrawLabeledRow(rect, y, line, gap, magnitudeProp, "Damage Per Second");
-                    y = DrawLabeledRow(rect, y, line, gap, durationProp, "Burn Duration (sec)");
-                    y = DrawLabeledRow(rect, y, line, gap, tickIntervalProp, "Tick Interval (sec)");
-                    DrawLabeled(new Rect(rect.x, y, rect.width, line), radiusProp, "Extra Range (burn only)");
+                    y = DrawPrimaryPerExtraRow(rect, y, line, gap, magnitudeProp, magnitudePerProp, "Damage Per Second");
+                    y = DrawPrimaryPerExtraRow(rect, y, line, gap, durationProp, durationPerProp, "Burn Duration (sec)");
+                    y = DrawPrimaryPerExtraRow(rect, y, line, gap, tickIntervalProp, tickIntervalPerProp, "Tick Interval (sec)");
+                    DrawPrimaryPerExtra(new Rect(rect.x, y, rect.width, line), radiusProp, radiusPerProp, "Extra Range (burn only)");
                     break;
 
                 case BulletBankAbilityType.HealFriendly:
-                    DrawLabeled(new Rect(rect.x, y, rect.width, line), magnitudeProp, "Heal Per Hit");
+                    DrawPrimaryPerExtra(new Rect(rect.x, y, rect.width, line), magnitudeProp, magnitudePerProp, "Heal Per Hit");
                     break;
 
                 case BulletBankAbilityType.ConcussivePush:
-                    DrawLabeled(new Rect(rect.x, y, rect.width, line), magnitudeProp, "Push Force");
+                    y = DrawPrimaryPerExtraRow(rect, y, line, gap, magnitudeProp, magnitudePerProp, "Push Force");
+                    DrawPrimaryPerExtra(new Rect(rect.x, y, rect.width, line), radiusProp, radiusPerProp, "Blast Radius");
                     break;
 
                 case BulletBankAbilityType.GravityPull:
-                    y = DrawLabeledRow(rect, y, line, gap, radiusProp, "Pull Radius");
-                    y = DrawLabeledRow(rect, y, line, gap, magnitudeProp, "Pull Force");
-                    DrawLabeled(new Rect(rect.x, y, rect.width, line), durationProp, "Field Duration (sec)");
+                    y = DrawPrimaryPerExtraRow(rect, y, line, gap, radiusProp, radiusPerProp, "Pull Radius");
+                    y = DrawPrimaryPerExtraRow(rect, y, line, gap, magnitudeProp, magnitudePerProp, "Pull Force");
+                    DrawPrimaryPerExtra(new Rect(rect.x, y, rect.width, line), durationProp, durationPerProp, "Field Duration (sec)");
                     break;
 
                 case BulletBankAbilityType.DamageMultiplier:
                     y = DrawLabeledRow(rect, y, line, gap, damageTargetProp, "Damage Target");
-                    DrawLabeled(new Rect(rect.x, y, rect.width, line), magnitudeProp, "Damage Multiplier");
+                    DrawPrimaryPerExtra(new Rect(rect.x, y, rect.width, line), magnitudeProp, magnitudePerProp, "Damage Multiplier");
                     break;
 
                 case BulletBankAbilityType.DamageMultiplierVsAsteroid:
                 case BulletBankAbilityType.DamageMultiplierVsShip:
                 case BulletBankAbilityType.DamageMultiplierVsGemMoon:
                 case BulletBankAbilityType.DamageMultiplierVsGem:
-                    DrawLabeled(new Rect(rect.x, y, rect.width, line), magnitudeProp, "Damage Multiplier");
+                    DrawPrimaryPerExtra(new Rect(rect.x, y, rect.width, line), magnitudeProp, magnitudePerProp, "Damage Multiplier");
                     break;
 
                 case BulletBankAbilityType.StretchLengthInFlight:
-                    y = DrawLabeledRow(rect, y, line, gap, radiusProp, "Start Length (×)");
-                    DrawLabeled(new Rect(rect.x, y, rect.width, line), magnitudeProp, "End Length (×)");
+                    y = DrawPrimaryPerExtraRow(rect, y, line, gap, radiusProp, radiusPerProp, "Start Length (×)");
+                    DrawPrimaryPerExtra(new Rect(rect.x, y, rect.width, line), magnitudeProp, magnitudePerProp, "End Length (×)");
                     break;
             }
+
+            float energyY = rect.y + CountVisibleFields(type) * (line + gap);
+            DrawPrimaryPerExtra(
+                new Rect(rect.x, energyY, rect.width, line),
+                energyDrainProp,
+                energyDrainPerProp,
+                "Energy Drain");
         }
 
         private static void DrawTypePopup(Rect rect, SerializedProperty typeProp)
@@ -144,18 +167,18 @@ namespace TitanOrbit.Editor
             // --- CountVisibleFields ---
             return type switch
             {
-                BulletBankAbilityType.ElectricShockDisable => 1,
-                BulletBankAbilityType.BurnOverTime => 4,
-                BulletBankAbilityType.HealFriendly => 1,
-                BulletBankAbilityType.ConcussivePush => 1,
-                BulletBankAbilityType.GravityPull => 3,
-                BulletBankAbilityType.DamageMultiplier => 2,
-                BulletBankAbilityType.DamageMultiplierVsAsteroid => 1,
-                BulletBankAbilityType.DamageMultiplierVsShip => 1,
-                BulletBankAbilityType.DamageMultiplierVsGemMoon => 1,
-                BulletBankAbilityType.DamageMultiplierVsGem => 1,
-                BulletBankAbilityType.StretchLengthInFlight => 2,
-                _ => 1,
+                BulletBankAbilityType.ElectricShockDisable => 2,
+                BulletBankAbilityType.BurnOverTime => 5,
+                BulletBankAbilityType.HealFriendly => 2,
+                BulletBankAbilityType.ConcussivePush => 3,
+                BulletBankAbilityType.GravityPull => 4,
+                BulletBankAbilityType.DamageMultiplier => 3,
+                BulletBankAbilityType.DamageMultiplierVsAsteroid => 2,
+                BulletBankAbilityType.DamageMultiplierVsShip => 2,
+                BulletBankAbilityType.DamageMultiplierVsGemMoon => 2,
+                BulletBankAbilityType.DamageMultiplierVsGem => 2,
+                BulletBankAbilityType.StretchLengthInFlight => 3,
+                _ => 2,
             };
         }
 
@@ -165,12 +188,41 @@ namespace TitanOrbit.Editor
             return y + line + gap;
         }
 
+        private static float DrawPrimaryPerExtraRow(
+            Rect block, float y, float line, float gap,
+            SerializedProperty primary, SerializedProperty perExtra, string label)
+        {
+            DrawPrimaryPerExtra(new Rect(block.x, y, block.width, line), primary, perExtra, label);
+            return y + line + gap;
+        }
+
         private static void DrawLabeled(Rect rect, SerializedProperty prop, string label)
         {
             // --- DrawLabeled ---
             float labelW = rect.width * 0.44f;
             EditorGUI.LabelField(new Rect(rect.x, rect.y, labelW, rect.height), label);
             EditorGUI.PropertyField(new Rect(rect.x + labelW, rect.y, rect.width - labelW, rect.height), prop, GUIContent.none);
+        }
+
+        private static void DrawPrimaryPerExtra(
+            Rect rect, SerializedProperty primary, SerializedProperty perExtra, string label)
+        {
+            float labelW = Mathf.Min(160f, rect.width * 0.34f);
+            EditorGUI.LabelField(new Rect(rect.x, rect.y, labelW, rect.height), label);
+
+            float restX = rect.x + labelW;
+            float restW = rect.width - labelW;
+            float primaryW = restW * 0.38f;
+            EditorGUI.PropertyField(new Rect(restX, rect.y, primaryW, rect.height), primary, GUIContent.none);
+
+            float perLabelW = 64f;
+            float perX = restX + primaryW + 6f;
+            EditorGUI.LabelField(new Rect(perX, rect.y, perLabelW, rect.height), "Per Extra");
+            float perFieldX = perX + perLabelW;
+            EditorGUI.PropertyField(
+                new Rect(perFieldX, rect.y, rect.xMax - perFieldX, rect.height),
+                perExtra,
+                GUIContent.none);
         }
     }
 }

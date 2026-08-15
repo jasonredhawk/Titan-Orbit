@@ -81,6 +81,9 @@ namespace TitanOrbit.ECS
                 var shipState = em.GetComponentData<ShipState>(ship);
                 if (shipState.IsDead || shipState.AwaitingTeamSelection)
                     continue;
+                // [TITAN-ORBIT] No shield spheres while the owner is piloting a defense pad.
+                if (PlanetaryDefenseTurretControlLogic.IsControllingTurret(em, ship))
+                    continue;
 
                 var buf = em.GetBuffer<EquippedEquipmentElement>(ship);
                 rearSlotsScratch.Clear();

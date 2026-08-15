@@ -16,6 +16,7 @@ namespace TitanOrbit.Data
     /// <para>
     /// Balance via <see cref="ShipRammingSettings"/> —
     /// <see cref="GlobalDamageMultiplier"/>, <see cref="SelfToAsteroidDamageRatio"/> —
+    /// grind pulse interval on <see cref="AsteroidSettings"/> —
     /// and each ShipFamilyDefinition component's <c>rammingPower</c>.
     /// No MaxHealth fraction caps — calculated damage is applied as-is.
     /// </para>
@@ -67,8 +68,34 @@ namespace TitanOrbit.Data
         /// </summary>
         public const float GrindMinPushNewtons = 8f;
 
-        /// <summary>Min seconds between grind damage pulses per asteroid contact (0.25 = 4 pulses/sec).</summary>
-        public const float GrindPulseIntervalSeconds = 0.25f;
+        /// <summary>
+        /// Extra visual scale on a ram/grind pulse that kills the rock. Grind chips stay at
+        /// <see cref="TitanOrbit.Simulation.BulletVisualScale.ComputePerShotScale"/>; the finishing
+        /// blow is a bigger boom.
+        /// </summary>
+        public const float RamKillImpactVisualScale = 1.75f;
+
+        /// <summary>
+        /// Fallback grind pulse interval when <see cref="AsteroidSettings"/> is missing or authored 0
+        /// (old YAML without the field deserializes as 0 and would zero grind DPS).
+        /// 0.25 seconds = 4 Hz = four gems per second, each sized to that pulse's damage.
+        /// </summary>
+        public const float DefaultGrindPulseIntervalSeconds = 0.25f;
+
+        /// <summary>
+        /// Min seconds between grind damage pulses per asteroid contact.
+        /// Source: <see cref="AsteroidSettings.GrindPulseIntervalSeconds"/> (default 0.25 = 4 Hz).
+        /// Damage per pulse multiplies by this interval, then one gem spawns with that pulse's
+        /// expelled cargo — 4 Hz means 4 gems/s, no banking.
+        /// </summary>
+        public static float GrindPulseIntervalSeconds
+        {
+            get
+            {
+                float authored = AsteroidSettingsCache.ResolveOrDefault().GrindPulseIntervalSeconds;
+                return authored >= 0.05f ? authored : DefaultGrindPulseIntervalSeconds;
+            }
+        }
 
         /// <summary>Ramming power at version 1 (cockpit) for Scan / ProfileSet seeds.</summary>
         public const float RammingPowerV1 = 1f;
@@ -86,7 +113,7 @@ namespace TitanOrbit.Data
             return RammingPowerV1 + (v - 1) * RammingPowerPerVersion;
         }
 
-        /// <summary>Suggested rammingPowerPerAbilityLevel for Scan / ProfileSet — float only (no RoundToInt).</summary>
+        /// <summary>Suggested rammingPowerPerExtraLevel for Scan / ProfileSet — float only (no RoundToInt).</summary>
         public static float GetSuggestedRammingPowerPerLevel(int version) =>
             Mathf.Max(0f, GetSuggestedRammingPower(version) * RammingPerLevelFractionOfBase);
 

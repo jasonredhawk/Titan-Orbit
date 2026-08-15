@@ -15,6 +15,43 @@ namespace TitanOrbit
         public static bool FreeShipUpgradeTree;
 
         /// <summary>
+        /// When true, B-key cycles every <c>BulletVfxBank</c> category including heal.
+        /// Written by GameManager; dedicated server stays false.
+        /// </summary>
+        public static bool CycleAllBulletBanks;
+
+        /// <summary>
+        /// When true, ALT rocket fire does not consume equipment charges and works with an
+        /// empty loadout. The 5s reload still applies. Written by GameManager; dedicated
+        /// server stays false (not a remote cheat channel).
+        /// </summary>
+        public static bool InfiniteRockets;
+
+        /// <summary>
+        /// When true, E mine place does not consume equipment charges and works with an
+        /// empty loadout. The deploy cooldown still applies. Written by GameManager;
+        /// dedicated server stays false (not a remote cheat channel).
+        /// </summary>
+        public static bool InfiniteMines;
+
+        /// <summary>
+        /// When true, store rockets and mines treat the owner (and same team) as an enemy
+        /// after <see cref="SelfHarmArmDelaySeconds"/>. Local Editor / MPPM host only.
+        /// </summary>
+        public static bool SelfHarmRocketsAndMines;
+
+        /// <summary>Seconds after fire / place before self-harm debug arms.</summary>
+        public const float SelfHarmArmDelaySeconds = 2f;
+
+        /// <summary>True when rocket <paramref name="ageSeconds"/> has passed the self-harm arm delay.</summary>
+        public static bool IsSelfHarmArmed(float ageSeconds) =>
+            SelfHarmRocketsAndMines && ageSeconds >= SelfHarmArmDelaySeconds;
+
+        /// <summary>True when a mine placed at <paramref name="placeTime"/> is armed against its owner.</summary>
+        public static bool IsSelfHarmArmed(double placeTime, double now) =>
+            SelfHarmRocketsAndMines && now >= placeTime + SelfHarmArmDelaySeconds;
+
+        /// <summary>
         /// When true, asteroid-destroy paths log millisecond timings (local gem burst, urgent gem
         /// proxies). Use this to find hitch frames — Console filter: <c>[AsteroidDestroy]</c>.
         /// </summary>

@@ -200,6 +200,25 @@ namespace TitanOrbit.Game
         void OnDestroy() => ClearVfxInstances();
 
         /// <summary>
+        /// Copies live thruster jet instance transforms (same objects <see cref="RebuildVfx"/> spawned).
+        /// Used by <see cref="ShipDamageSmokeVisualApplier"/> so damage smoke sits on each flame.
+        /// </summary>
+        /// <param name="dest">Cleared then filled; null is ignored.</param>
+        public void CopyThrusterVfxAnchors(List<Transform> dest)
+        {
+            if (dest == null)
+                return;
+
+            dest.Clear();
+            for (int i = 0; i < _thrusterVfxInstances.Count; i++)
+            {
+                GameObject go = _thrusterVfxInstances[i];
+                if (go != null)
+                    dest.Add(go.transform);
+            }
+        }
+
+        /// <summary>
         /// Instantiates engine/thruster flame prefabs at <see cref="ChassisComponentStats"/> mount sites.
         /// Sets <c>_initialized</c> only when at least one particle instance was created — otherwise
         /// LateUpdate exits early and the ship stays without thrust VFX.

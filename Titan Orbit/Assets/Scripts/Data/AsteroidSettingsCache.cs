@@ -6,7 +6,7 @@ namespace TitanOrbit.Data
     /// Runtime pointer to the active <see cref="AsteroidSettings"/> ScriptableObject.
     /// Set by <see cref="Game.AsteroidSettingsLoader"/> at boot; read by map generation and
     /// <see cref="ECS.AsteroidSpawning"/>. Null → code defaults (size 1–70, HP/gems per size = 1,
-    /// visual scale 0.35–3.5).
+    /// visual scale 0.35–3.5, grind pulse 0.25s / 4 Hz).
     /// </summary>
     public static class AsteroidSettingsCache
     {

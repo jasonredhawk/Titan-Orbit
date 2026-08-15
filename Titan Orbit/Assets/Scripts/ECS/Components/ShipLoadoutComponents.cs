@@ -30,11 +30,31 @@ namespace TitanOrbit.ECS
         /// </summary>
         [GhostField] public int RuntimeBulletIndex;
 
+        /// <summary>
+        /// Orbit Menu Damage vs Heal. When true, fire uses the shared EnergySpheres heal bank
+        /// instead of <see cref="RuntimeBulletIndex"/> (unless debug cycle-all is on).
+        /// </summary>
+        [GhostField] public bool HealingBulletsActive;
+
         /// <summary>Upgrade tree branch — selects chassis row from PlanetShipFamilyConfig.</summary>
         [GhostField] public int BranchIndex;
 
         /// <summary>Chassis variant within the family branch (visual + base stats).</summary>
         [GhostField] public int ChassisIndex;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Server <c>ElapsedTime</c> when the next rocket may fire.
+        /// Ghosted so the left-middle HUD can show the 5s reload without a separate RPC.
+        /// 0 = ready.
+        /// </summary>
+        [GhostField] public double NextRocketFireTime;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Server <c>ElapsedTime</c> when the next mine may be placed.
+        /// Ghosted so the left-middle HUD can show the drop cooldown without a separate RPC.
+        /// 0 = ready.
+        /// </summary>
+        [GhostField] public double NextMinePlaceTime;
     }
 
     /// <summary>
@@ -58,13 +78,15 @@ namespace TitanOrbit.ECS
         [GhostField] public int RemainingCharges;
 
         /// <summary>
-        /// Ship level at purchase time for leveled drones (fighter / mining / shield).
-        /// [TITAN-ORBIT] Damage, HP, cost, and visual size use this fixed level — drones do not
-        /// auto-upgrade when the ship levels. Non-drone items store 0 (ignored).
+        /// Store purchase level at buy time: <c>min(ship, docked planet)</c> for drones,
+        /// rockets, mines, and extra components. [TITAN-ORBIT] Drones, rockets, and mines
+        /// lock combat stats to this level and do not auto-upgrade when the ship levels.
         /// </summary>
         [GhostField] public int ItemLevel;
 
-        /// <summary>Stable component id string for stat lookup in ShipPartCatalog.</summary>
+        /// <summary>
+        /// Ship-part catalog id, or <c>DroneFam:{configIndex}</c> for drones (purchase-planet family).
+        /// </summary>
         [GhostField] public FixedString64Bytes ComponentId;
     }
 

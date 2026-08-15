@@ -47,6 +47,9 @@ namespace TitanOrbit.ECS
                     IsAnticipation = false,
                     IsDisplaySpace = false,
                     DamageFilter = r.DamageFilter,
+                    Homing = r.Homing,
+                    TurnSpeedDeg = r.TurnSpeedDeg,
+                    AcquireRange = r.AcquireRange,
                 });
                 ecb.DestroyEntity(entity);
             }

@@ -88,7 +88,6 @@ namespace TitanOrbit.ECS
             // session-long OR Settling). Must use IsClient() — Local Host shares the static
             // cache with the server world, and the server must keep seam resolve.
             // Under quarantine the client relies on same-tile PhysX + server authority for seams.
-            // See titan-orbit-teamchoice-crash-hardstop.mdc.
             if (state.World.IsClient() && ClientJoinSettleCache.ShouldSkipMapBodyQueries)
                 return;
 
@@ -140,7 +139,7 @@ namespace TitanOrbit.ECS
                          .WithAll<AsteroidTag>()
                          .WithEntityAccess())
             {
-                if (asteroidState.ValueRO.IsDestroyed || asteroidState.ValueRO.Health <= 0f)
+                if (asteroidState.ValueRO.IsDestroyed || !(asteroidState.ValueRO.Health > 0.01f))
                     continue;
                 if (state.EntityManager.HasComponent<AsteroidClientCulledTag>(entity))
                     continue;

@@ -12,8 +12,9 @@ namespace TitanOrbit.ECS
     /// Restores the NGO-era <c>AsteroidRespawnManager</c> behavior (default 30s) under NetCode/ECS.
     /// <para>
     /// Flow: <see cref="AsteroidDestructionSystem"/> enqueues <see cref="PendingAsteroidRespawnElement"/>
-    /// → this system Instantiates a fresh asteroid ghost when <c>ElapsedTime</c> is due.
+    /// → this system Instantiates a fresh asteroid when <c>ElapsedTime</c> is due.
     /// Fresh instances avoid carrying stale destroyed state (same reason the original despawned + respawned).
+    /// Instances are not NetCode ghosts — relevancy never streams asteroids (seed-hydrate).
     /// </para>
     /// World: ServerSimulation. Group: SimulationSystemGroup, after destruction.
     /// </summary>
@@ -100,6 +101,7 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Shared asteroid Instantiates helper for map bootstrap and timed respawn.
     /// Writes <see cref="AsteroidState"/> with full RemainingGems / Health / MaxGems / Size.
+    /// Strips ghost identity so <c>DestroyEntity</c> fully deletes the rock (no GhostCleanup hull).
     /// </summary>
     public static class AsteroidSpawning
     {
@@ -120,8 +122,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Instantiates one asteroid ghost at <paramref name="position"/> with uniform scale,
+        /// Instantiates one asteroid at <paramref name="position"/> with uniform scale,
         /// gem capacity, max Health, and designer Size (HP may differ from gems via AsteroidSettings ratios).
+        /// Strips NetCode ghost identity — asteroids are seed-hydrated, not streamed.
         /// </summary>
         /// <param name="em">Server EntityManager.</param>
         /// <param name="asteroidPrefab">Ghost prefab from <see cref="GamePrefabs.Asteroid"/>.</param>
@@ -197,6 +200,14 @@ namespace TitanOrbit.ECS
 
             if (!em.HasComponent<AsteroidTag>(e))
                 em.AddComponent<AsteroidTag>(e);
+
+            // --- Not a replicated ghost ---
+            // [NETCODE] The prefab is a ghost asset (GhostCollection / bake), but asteroids are
+            // not in DefaultRelevancyQuery. Leaving GhostInstance on the server instance made
+            // DestroyEntity a delayed GhostCleanup zombie — Unity Physics kept the static hull,
+            // the client hid the mesh from HitRpc, and the ship rammed empty space.
+            // [TITAN-ORBIT] Same strip the client already runs in ClientLocalMapBodySpawn.
+            ClientLocalMapBodySpawn.StripGhostNetworking(em, e);
 
             return e;
         }

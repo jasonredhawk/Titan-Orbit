@@ -15,6 +15,7 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-authoritative planetary defense fire. Active turrets aim at the nearest enemy ship
+    /// (skipping hulls fully landed on a gem moon — same gate as bullet / ram immunity)
     /// or people transport within absolute engage range (world units from the pad; Level 1→6
     /// from <see cref="PlanetaryDefenseConfig"/>, default 20 at Lv1 then +4/level) and append
     /// <see cref="BulletElement"/> shots with <see cref="BulletDamageFilter.ShipsAndTransports"/>
@@ -30,9 +31,9 @@ namespace TitanOrbit.ECS
     /// transport velocity from <see cref="PeopleTransportState.Velocity"/>.
     /// Lead uses <see cref="PlanetaryDefenseAimMath.ShipVelocityLeadScale"/> (1 — no accel bias)
     /// for ships and transports so constant-velocity strafe matches the quadratic.
-    /// <see cref="BulletVisualScale"/> grows tracers with fire power. Bullet bank comes from
-    /// the turret asset category name, else the family's
-    /// <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>.
+    /// <see cref="BulletVisualScale"/> grows tracers with fire power. Bullet bank is the
+    /// family's <see cref="ShipFamilyDefinition.bulletPrefabIndex"/>; fire applies that
+    /// profile's stat multipliers (fire power, speed, fire rate, range).
     /// Each shot's <see cref="BulletElement.MaxDistance"/> is
     /// <see cref="PlanetaryDefenseAimMath.ComputeBulletMaxDistance"/> — at least engage range,
     /// but longer when lead intercept sits past the acquisition sphere (fleeing/crossing ships).
@@ -52,7 +53,6 @@ namespace TitanOrbit.ECS
         readonly Dictionary<int, float> _nextFireTime = new Dictionary<int, float>(64);
 
         PlanetShipFamilyConfig _familyConfig;
-        PlanetaryDefenseConfig _defaultConfig;
         BulletVfxBank _vfxBank;
         readonly Dictionary<int, int> _bankIndexByFamily = new Dictionary<int, int>(16);
         bool _warmed;
@@ -142,7 +142,7 @@ namespace TitanOrbit.ECS
                 float planetSize = math.max(0.25f, xf.Scale);
                 int slotCount = buffer.Length;
                 byte ownerTeam = (byte)planet.Ownership;
-                int bankIndex = ResolveBankIndex(config, familyDef);
+                int bankIndex = ResolveBankIndex(familyDef);
                 if (_vfxBank != null)
                     categoryUpgradeScale = _vfxBank.GetCategoryUpgradeVisualScaleMultiplier(bankIndex);
 
@@ -177,10 +177,20 @@ namespace TitanOrbit.ECS
                         }
                     }
 
+                    // --- Player-occupied pads: AI must not steal the fire cadence ---
+                    // [TITAN-ORBIT] PlanetaryDefensePlayerCombatSystem aims/fires from ShipInput.
+                    // Regen above still runs so occupied turrets heal out of combat.
+                    if (slot.OccupiedByNetworkId != 0)
+                        continue;
+
                     var stats = config.GetLevelStats(slot.TurretLevel);
                     float fireRate = math.max(0.05f, stats.fireRate);
                     float bulletSpeed = math.max(1f, stats.bulletSpeed);
                     float damage = math.max(0.05f, stats.damage);
+                    float unusedLifetime = 0f;
+                    float rangeMul = 1f;
+                    BulletBankCombatLogic.ApplyFireModifiers(
+                        bankIndex, ref damage, ref bulletSpeed, ref rangeMul, ref unusedLifetime, ref fireRate);
                     int cooldownKey = (planetEntity.Index << 16) ^ (i & 0xFFFF);
                     if (_nextFireTime.TryGetValue(cooldownKey, out float next) && now < next)
                         continue;
@@ -230,7 +240,7 @@ namespace TitanOrbit.ECS
                     // before the intercept (transports inbound rarely hit this). Lifetime = 0
                     // disables the age timer so slow bullets can use the full flight budget.
                     float maxDistance = PlanetaryDefenseAimMath.ComputeBulletMaxDistance(
-                        engageRange, interceptDistance);
+                        engageRange, interceptDistance) * math.max(0.1f, rangeMul);
                     var spawn = new BulletElement
                     {
                         Position = muzzle,
@@ -274,8 +284,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Nearest living enemy ship or people transport within engage range of the turret muzzle
-        /// (toroidal). Prefers the closest hostile to that muzzle. Also returns planar velocity
-        /// for <see cref="PlanetaryDefenseAimMath"/> lead aiming.
+        /// (toroidal). Prefers the closest hostile to that muzzle. Ships fully landed on a gem
+        /// moon are skipped (they are combat-immune and must not waste turret cadence).
+        /// Also returns planar velocity for <see cref="PlanetaryDefenseAimMath"/> lead aiming.
         /// <para>
         /// Ships: <see cref="ShipKinematics.Velocity"/> — server mirror of
         /// <c>PhysicsVelocity.Linear</c> after physics (world units/sec on XZ), same space
@@ -318,6 +329,9 @@ namespace TitanOrbit.ECS
                 if (ship.IsDead || ship.AwaitingTeamSelection || ship.Team == TeamId.None)
                     continue;
                 if (ship.Team == ownerTeam)
+                    continue;
+                // Landed on a moon — immune to hull damage; do not acquire or fire.
+                if (ShipMoonDockState.IsFullyLandedOnMoon(EntityManager, e))
                     continue;
 
                 float3 pos = EntityManager.GetComponentData<LocalTransform>(e).Position;
@@ -381,48 +395,19 @@ namespace TitanOrbit.ECS
             if (_warmed)
                 return;
             _familyConfig = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
-            _defaultConfig = PlanetaryDefenseConfig.LoadDefault();
             _vfxBank = BulletVfxBank.LoadDefault();
             _warmed = true;
         }
 
-        /// <summary>
-        /// Resolves BulletVfxBank category: turret asset name first, then family bullet index.
-        /// </summary>
-        int ResolveBankIndex(PlanetaryDefenseConfig config, ShipFamilyDefinition family)
+        /// <summary>Owning family's default damage bank (heal is never a family default).</summary>
+        int ResolveBankIndex(ShipFamilyDefinition family)
         {
-            if (config == null)
-                config = _defaultConfig;
-            // Key by asset name + family bullet index so family fallback caches separately.
             int familyBullet = family != null ? family.bulletPrefabIndex : 0;
-            int key = (config != null ? config.name.GetHashCode() : 0) ^ (familyBullet * 397);
-            if (_bankIndexByFamily.TryGetValue(key, out int cached))
+            if (_bankIndexByFamily.TryGetValue(familyBullet, out int cached))
                 return cached;
 
-            // --- Prefer turret asset category name ---
-            int idx = -1;
-            if (_vfxBank != null &&
-                config != null &&
-                !string.IsNullOrEmpty(config.bulletBankCategoryName) &&
-                _vfxBank.TryGetCategoryIndexByName(config.bulletBankCategoryName, out int found))
-            {
-                idx = found;
-            }
-
-            // --- Fallback: owning family's ship bullet bank index ---
-            if (idx < 0)
-                idx = BulletBankProfileUtility.ResolveBankIndexForFamily(family);
-
-            // --- Last resort: fighter drone bank name ---
-            if (idx < 0 &&
-                _vfxBank != null &&
-                _vfxBank.TryGetCategoryIndexByName(DroneSwarmLogic.FighterBankCategoryName, out int fighter))
-            {
-                idx = fighter;
-            }
-
-            idx = math.max(0, idx);
-            _bankIndexByFamily[key] = idx;
+            int idx = BulletBankProfileUtility.ResolveBankIndexForPlanetaryDefense(family);
+            _bankIndexByFamily[familyBullet] = idx;
             return idx;
         }
     }

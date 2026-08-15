@@ -34,13 +34,15 @@ namespace TitanOrbit.Data
         // -------------------------------------------------------------------------
 
         [Header("Prefab / Placement")]
-        [Tooltip("Particle prefab Instantiated on the hull root (usually Resources/ShipDamageSmoke).")]
+        [Tooltip("Particle prefab Instantiated once per thruster VFX mount (usually Resources/ShipDamageSmoke).")]
         public GameObject smokePrefab;
 
-        [Tooltip("Local offset from the ship proxy root (aft + up clears the mesh).")]
+        [Tooltip(
+            "Local offset from the ship proxy root when the chassis has no thruster VFX mounts. " +
+            "Ignored while smoke is snapped to thruster VFX positions.")]
         public Vector3 localOffset = new Vector3(0f, 0.25f, -0.35f);
 
-        [Tooltip("Local euler for the emitter. ~-90° X makes Archanor smoke billow upward.")]
+        [Tooltip("Local euler for each emitter. ~-90° X makes Archanor smoke billow upward.")]
         public Vector3 localEuler = new Vector3(-90f, 0f, 0f);
 
         [Tooltip(

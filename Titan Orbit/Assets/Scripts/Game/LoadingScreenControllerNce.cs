@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit.ECS;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -9,9 +10,12 @@ namespace TitanOrbit.Game
     /// Full-screen join overlay shown while the map builds on the client.
     /// Content sits in a tight vertical cluster in the middle of the screen (not pinned to
     /// the top/bottom edges): HOW TO PLAY → five instruction cards → BUILDING GALAXY →
-    /// status → progress bar → percent. Progress is driven by
-    /// <see cref="EcsGameBridge.TryGetJoinLoadProgress"/> (planet/asteroid GameObject proxies
-    /// vs server meta N).
+    /// one progress bar (live status + % drawn inside the track).
+    /// <para>
+    /// Fill is 50% world sync (seed hydrate + occupancy + ghosts) plus 50% map visuals
+    /// (planet/asteroid GameObject Instantiates). Join Team stays hidden until
+    /// JoinWorldReadyCache.IsComplete.
+    /// </para>
     /// <para>
     /// The instruction strip matches the five-step guide from <c>InstructionScreenUI</c>.
     /// Art loads from <c>Resources/InstructionScreens/</c>. Does not gather asteroid entities
@@ -21,9 +25,10 @@ namespace TitanOrbit.Game
     public class LoadingScreenControllerNce : MonoBehaviour
     {
         // --- Progress bar chrome ---
+        // [TITAN-ORBIT] Taller track so live status + % fit inside; no title/caption rows.
         const float BarPadding = 2f;
-        const float ProgressBarWidth = 520f;
-        const float ProgressBarHeight = 18f;
+        const float ProgressBarWidth = 640f;
+        const float ProgressBarHeight = 32f;
 
         // --- Centered content cluster ---
         // [TITAN-ORBIT] Pack labels + cards + bar toward screen center so large monitors
@@ -36,8 +41,6 @@ namespace TitanOrbit.Game
         const float SectionGap = 14f;
         const float HowToHeight = 36f;
         const float TitleHeight = 40f;
-        const float StatusHeight = 26f;
-        const float PercentHeight = 22f;
 
         // --- Instruction strip (matches InstructionScreenUI topics) ---
         const int StepCount = 5;
@@ -113,15 +116,22 @@ namespace TitanOrbit.Game
             new Color(0.98f, 0.48f, 0.38f, 1f),
         };
 
+        /// <summary>
+        /// One progress bar: fill track with in-bar overlay (live status + percent).
+        /// </summary>
+        sealed class ProgressBarUi
+        {
+            public RectTransform Track;
+            public Image Fill;
+            /// <summary>Centered overlay on the track: e.g. "Loading asteroids  120 / 678   45%".</summary>
+            public TextMeshProUGUI Overlay;
+        }
+
         RectTransform _panelRoot;
         RectTransform _contentRoot;
-        RectTransform _barTrackRect;
-        RectTransform _fillRect;
-        Image _fillImage;
+        ProgressBarUi _loadBar;
         TextMeshProUGUI _howToText;
         TextMeshProUGUI _titleText;
-        TextMeshProUGUI _statusText;
-        TextMeshProUGUI _percentText;
         RectTransform _instructionsRow;
         readonly List<StepColumn> _columns = new List<StepColumn>();
         readonly Dictionary<string, Sprite> _spriteCache = new Dictionary<string, Sprite>();
@@ -149,6 +159,20 @@ namespace TitanOrbit.Game
         /// <summary>True when the loading panel GameObject is active.</summary>
         public bool IsVisible => _panelRoot != null && _panelRoot.gameObject.activeSelf;
 
+        /// <summary>
+        /// Shows the overlay even if the controller GameObject was deactivated (Find skips inactive).
+        /// Used by Join Game handoff so this frame is covered before RefreshUi runs.
+        /// </summary>
+        public static void ShowExisting()
+        {
+            var loading = Object.FindFirstObjectByType<LoadingScreenControllerNce>(FindObjectsInactive.Include);
+            if (loading == null)
+                return;
+            if (!loading.gameObject.activeSelf)
+                loading.gameObject.SetActive(true);
+            loading.Show();
+        }
+
         /// <summary>[UNITY] Build UI once, start hidden.</summary>
         void Awake()
         {
@@ -165,51 +189,37 @@ namespace TitanOrbit.Game
         float _stuckWatchSince = -1f;
 
         /// <summary>
-        /// Per-frame: fill from <see cref="EcsGameBridge.TryGetJoinLoadProgress"/>
-        /// (planet/asteroid GameObject proxies vs server meta N).
+        /// Per-frame: fill is 50% world sync + 50% map visuals. Overlay names the current step.
         /// </summary>
         void Update()
         {
             if (!IsVisible)
                 return;
 
-            // --- Map GO build progress ---
-            // [TITAN-ORBIT] Bar covers hybrid Instantiates cost — complete only when proxies ≈ N.
-            if (!EcsGameBridge.TryGetJoinLoadProgress(out float progress))
-                return;
+            float networkProgress = 0f;
+            EcsGameBridge.TryGetNetworkJoinLoadProgress(out networkProgress);
+            float proxyProgress = 0f;
+            EcsGameBridge.TryGetProxyJoinLoadProgress(out proxyProgress);
+            float combined = Mathf.Clamp01(0.5f * networkProgress + 0.5f * proxyProgress);
 
-            if (_statusText != null)
+            // --- Stuck hint after a few seconds (recipe / prefabs vs Instantiates drain) ---
+            string mapHint = null;
+            bool proxyReady = EcsGameBridge.IsMapProxyCountReady(out _, out _, out _);
+            bool networkLooksStuck = !ClientMapHydrateCache.HydrateStarted && networkProgress < 0.99f;
+            if (proxyReady || !networkLooksStuck)
             {
-                string baseStatus;
-                if (EcsGameBridge.TryGetMapLoadingStepCounts(out int done, out int total) && total > 0)
-                    baseStatus = "Loading map... " + done + " / " + total;
-                else
-                    baseStatus = "Loading map...";
+                _stuckWatchSince = -1f;
+            }
+            else
+            {
+                if (_stuckWatchSince < 0f)
+                    _stuckWatchSince = Time.realtimeSinceStartup;
 
-                // --- Stuck hint after a few seconds (Settling vs Instantiates vs drain) ---
-                // [TITAN-ORBIT] 314/315 with Settling ON looked like a hang with no explanation.
-                bool proxyReady = EcsGameBridge.IsMapProxyCountReady(out _, out _, out _);
-                if (proxyReady || progress >= 0.99f)
-                {
-                    _stuckWatchSince = -1f;
-                    _statusText.text = baseStatus;
-                }
-                else
-                {
-                    if (_stuckWatchSince < 0f)
-                        _stuckWatchSince = Time.realtimeSinceStartup;
-
-                    string hint = string.Empty;
-                    if (Time.realtimeSinceStartup - _stuckWatchSince >= StuckHintAfterSeconds)
-                        hint = EcsGameBridge.GetMapLoadStuckHint();
-
-                    _statusText.text = string.IsNullOrEmpty(hint)
-                        ? baseStatus
-                        : baseStatus + " — " + hint;
-                }
+                if (Time.realtimeSinceStartup - _stuckWatchSince >= StuckHintAfterSeconds)
+                    mapHint = EcsGameBridge.GetMapLoadStuckHint();
             }
 
-            ApplyProgress(progress);
+            ApplyBar(_loadBar, combined, EcsGameBridge.GetJoinLoadStatusLabel(), mapHint);
         }
 
         /// <summary>
@@ -225,10 +235,13 @@ namespace TitanOrbit.Game
         public void Show()
         {
             BuildUi();
-            ApplyProgress(0f);
-            _stuckWatchSince = Time.realtimeSinceStartup;
-            if (_statusText != null)
-                _statusText.text = "Loading map...";
+            bool alreadyVisible = IsVisible;
+            if (!alreadyVisible)
+            {
+                ApplyBar(_loadBar, 0f, EcsGameBridge.GetJoinLoadStatusLabel(), stuckHint: null);
+                _stuckWatchSince = Time.realtimeSinceStartup;
+            }
+
             if (_panelRoot != null)
             {
                 _panelRoot.SetAsLastSibling();
@@ -249,22 +262,37 @@ namespace TitanOrbit.Game
                 _panelRoot.gameObject.SetActive(false);
         }
 
-        /// <summary>Applies 0–1 fill amount and percent label.</summary>
-        void ApplyProgress(float progress)
+        /// <summary>
+        /// Updates fill amount and the in-bar overlay (live status + percent, optional stuck hint).
+        /// </summary>
+        static void ApplyBar(ProgressBarUi bar, float progress, string status, string stuckHint)
         {
+            if (bar == null)
+                return;
+
             progress = Mathf.Clamp01(progress);
 
-            if (_fillImage != null)
-                _fillImage.fillAmount = progress;
+            if (bar.Fill != null)
+                bar.Fill.fillAmount = progress;
 
-            if (_percentText != null)
-                _percentText.text = Mathf.RoundToInt(progress * 100f) + "%";
+            if (bar.Overlay == null)
+                return;
+
+            string percent = Mathf.RoundToInt(progress * 100f) + "%";
+            string overlay = string.IsNullOrEmpty(status)
+                ? percent
+                : status + "   " + percent;
+
+            if (!string.IsNullOrEmpty(stuckHint))
+                overlay += "  —  " + stuckHint;
+
+            bar.Overlay.text = overlay;
         }
 
         /// <summary>
         /// [UNITY] Builds the full-screen panel once under the parent Canvas:
         /// full-screen backdrop + centered content cluster
-        /// (HOW TO PLAY → cards → BUILDING GALAXY → status → bar → percent).
+        /// (HOW TO PLAY → cards → BUILDING GALAXY → combined load bar).
         /// </summary>
         void BuildUi()
         {
@@ -283,9 +311,15 @@ namespace TitanOrbit.Game
             _panelRoot = CreateRect("LoadingPanel", canvasRect);
             StretchFill(_panelRoot);
 
-            // [TITAN-ORBIT] Slightly transparent so players can watch asteroids/planets Instantiates
-            // during join. Join Game is dismissed before this shows — so the lobby list does not
-            // bleed through (see JoinGameBrowserController.DismissForLoading).
+            // [TITAN-ORBIT] Nested canvas so this overlay always paints above MainMenuPanel /
+            // Join Game even if those siblings are re-activated for a frame. Slightly transparent
+            // so players can watch asteroids/planets Instantiates during join — menu chrome must
+            // be hidden (see NceGameFlowController + JoinGameBrowserController.DismissForLoading).
+            var overlayCanvas = _panelRoot.gameObject.AddComponent<Canvas>();
+            overlayCanvas.overrideSorting = true;
+            overlayCanvas.sortingOrder = 500;
+            _panelRoot.gameObject.AddComponent<GraphicRaycaster>();
+
             var backdrop = _panelRoot.gameObject.AddComponent<Image>();
             backdrop.color = new Color(0.02f, 0.04f, 0.1f, 0.97f);
             backdrop.raycastTarget = true;
@@ -314,34 +348,55 @@ namespace TitanOrbit.Game
             _titleText.alignment = TextAlignmentOptions.Center;
             _titleText.color = new Color(0.85f, 0.92f, 1f, 1f);
 
-            _statusText = CreateText(_contentRoot, "Status", "Loading map...", 17, FontStyles.Normal);
-            _statusText.alignment = TextAlignmentOptions.Center;
-            _statusText.color = new Color(0.62f, 0.76f, 0.92f, 0.95f);
-
-            // Progress bar
-            var barBackground = CreateRect("ProgressBarBackground", _contentRoot);
-            _barTrackRect = barBackground;
-            var barBgImage = barBackground.gameObject.AddComponent<Image>();
-            barBgImage.sprite = WhiteSprite;
-            barBgImage.color = new Color(0.08f, 0.12f, 0.2f, 0.95f);
-            barBgImage.raycastTarget = false;
-
-            _fillRect = CreateRect("Fill", barBackground);
-            StretchFill(_fillRect, BarPadding, BarPadding, BarPadding, BarPadding);
-            _fillImage = _fillRect.gameObject.AddComponent<Image>();
-            _fillImage.sprite = WhiteSprite;
-            _fillImage.type = Image.Type.Filled;
-            _fillImage.fillMethod = Image.FillMethod.Horizontal;
-            _fillImage.fillOrigin = (int)Image.OriginHorizontal.Left;
-            _fillImage.fillAmount = 0f;
-            _fillImage.color = new Color(0.28f, 0.62f, 0.98f, 1f);
-            _fillImage.raycastTarget = false;
-
-            _percentText = CreateText(_contentRoot, "Percent", "0%", 16, FontStyles.Bold);
-            _percentText.alignment = TextAlignmentOptions.Center;
-            _percentText.color = new Color(0.75f, 0.85f, 1f, 0.95f);
+            // --- Combined bar: 50% world sync + 50% map visuals ---
+            _loadBar = CreateProgressBar(
+                _contentRoot,
+                "LoadBar",
+                new Color(0.28f, 0.62f, 0.98f, 1f));
 
             _uiBuilt = true;
+        }
+
+        /// <summary>
+        /// Builds a compact track with in-bar overlay (live status + percent).
+        /// </summary>
+        ProgressBarUi CreateProgressBar(RectTransform parent, string rootName, Color fillColor)
+        {
+            var track = CreateRect(rootName + "Track", parent);
+            var trackImage = track.gameObject.AddComponent<Image>();
+            trackImage.sprite = WhiteSprite;
+            trackImage.color = new Color(0.08f, 0.12f, 0.2f, 0.95f);
+            trackImage.raycastTarget = false;
+
+            var fillRect = CreateRect("Fill", track);
+            StretchFill(fillRect, BarPadding, BarPadding, BarPadding, BarPadding);
+            var fill = fillRect.gameObject.AddComponent<Image>();
+            fill.sprite = WhiteSprite;
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            fill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            fill.fillAmount = 0f;
+            fill.color = fillColor;
+            fill.raycastTarget = false;
+
+            // --- Overlay text sits on top of fill (sibling after Fill) ---
+            var overlay = CreateText(track, "Overlay", "Syncing with server   0%", 15, FontStyles.Bold);
+            StretchFill(overlay.rectTransform, 8f, 8f, 0f, 0f);
+            overlay.alignment = TextAlignmentOptions.Center;
+            overlay.verticalAlignment = VerticalAlignmentOptions.Middle;
+            overlay.color = new Color(0.96f, 0.98f, 1f, 1f);
+            overlay.raycastTarget = false;
+            overlay.enableWordWrapping = false;
+            overlay.overflowMode = TextOverflowModes.Ellipsis;
+            overlay.outlineWidth = 0.2f;
+            overlay.outlineColor = new Color32(8, 12, 22, 220);
+
+            return new ProgressBarUi
+            {
+                Track = track,
+                Fill = fill,
+                Overlay = overlay,
+            };
         }
 
         /// <summary>
@@ -399,7 +454,7 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Packs the content cluster toward screen center and lays out equal-width cards.
-        /// Order: HOW TO PLAY → cards → BUILDING GALAXY → status → bar → percent.
+        /// Order: HOW TO PLAY → cards → BUILDING GALAXY → combined load bar.
         /// </summary>
         void LayoutContent()
         {
@@ -436,7 +491,7 @@ namespace TitanOrbit.Game
 
             float cardHeight = Mathf.Min(maxCardHeight, MaxCardHeight);
 
-            // --- Total cluster height (tight stack) ---
+            // --- Total cluster height (tight stack, single bar) ---
             float clusterHeight =
                 HowToHeight
                 + SectionGap
@@ -444,11 +499,7 @@ namespace TitanOrbit.Game
                 + SectionGap
                 + TitleHeight
                 + 6f
-                + StatusHeight
-                + SectionGap
-                + ProgressBarHeight
-                + 6f
-                + PercentHeight;
+                + ProgressBarHeight;
 
             // Cap to ~78% of screen so it never feels edge-to-edge on short windows.
             float maxCluster = panelHeight * 0.78f;
@@ -463,11 +514,7 @@ namespace TitanOrbit.Game
                     + SectionGap
                     + TitleHeight
                     + 6f
-                    + StatusHeight
-                    + SectionGap
-                    + ProgressBarHeight
-                    + 6f
-                    + PercentHeight;
+                    + ProgressBarHeight;
             }
 
             _contentRoot.sizeDelta = new Vector2(contentWidth, clusterHeight);
@@ -506,18 +553,25 @@ namespace TitanOrbit.Game
 
             PlaceTopBand(_titleText.rectTransform, contentWidth, TitleHeight, ref yFromTop);
             yFromTop += 6f;
-            PlaceTopBand(_statusText.rectTransform, contentWidth, StatusHeight, ref yFromTop);
-            yFromTop += SectionGap;
 
-            // Progress bar (fixed width, centered)
-            _barTrackRect.anchorMin = new Vector2(0.5f, 1f);
-            _barTrackRect.anchorMax = new Vector2(0.5f, 1f);
-            _barTrackRect.pivot = new Vector2(0.5f, 1f);
-            _barTrackRect.anchoredPosition = new Vector2(0f, -yFromTop);
-            _barTrackRect.sizeDelta = new Vector2(ProgressBarWidth, ProgressBarHeight);
-            yFromTop += ProgressBarHeight + 6f;
+            PlaceProgressBar(_loadBar, ref yFromTop);
+        }
 
-            PlaceTopBand(_percentText.rectTransform, contentWidth, PercentHeight, ref yFromTop);
+        /// <summary>
+        /// Places the combined load track (overlay is a child of the track) and advances
+        /// <paramref name="yFromTop"/>.
+        /// </summary>
+        void PlaceProgressBar(ProgressBarUi bar, ref float yFromTop)
+        {
+            if (bar == null)
+                return;
+
+            bar.Track.anchorMin = new Vector2(0.5f, 1f);
+            bar.Track.anchorMax = new Vector2(0.5f, 1f);
+            bar.Track.pivot = new Vector2(0.5f, 1f);
+            bar.Track.anchoredPosition = new Vector2(0f, -yFromTop);
+            bar.Track.sizeDelta = new Vector2(ProgressBarWidth, ProgressBarHeight);
+            yFromTop += ProgressBarHeight;
         }
 
         /// <summary>

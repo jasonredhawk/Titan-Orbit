@@ -2,7 +2,6 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
-using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
@@ -10,8 +9,15 @@ namespace TitanOrbit.ECS
     /// [NETCODE] Client applies <see cref="AsteroidRespawnRpc"/> by spawning a local (non-ghost)
     /// asteroid — map asteroids are not streamed under dynamic ghost relevancy.
     /// <para>
-    /// Copies RPC payloads out of the query first, destroys receive entities, then Instantiates.
+    /// Copies RPC payloads out of the query first, consumes receive entities, then Instantiates.
     /// Structural changes (Instantiate / strip GhostInstance) must not run inside SystemAPI foreach.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] This system ticks every client sim frame (no RequireForUpdate). Respawn
+    /// receive entities must be consumed immediately (MaxRpcAgeFrames). A failed apply (join skip,
+    /// missing prefab) is queued and retried — otherwise the server has a live rock and the client
+    /// has empty space that still rams the hull.
+    /// Zombie wipe is pose-tight and culled-only so a respawn cannot hard-destroy live neighbors.
     /// </para>
     /// World: ClientSimulation.
     /// </summary>
@@ -30,27 +36,22 @@ namespace TitanOrbit.ECS
             public Entity RpcEntity;
         }
 
+        /// <summary>No RequireForUpdate — retries must run on frames with zero inbound RPCs.</summary>
         public void OnCreate(ref SystemState state)
         {
-            var builder = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<AsteroidRespawnRpc>()
-                .WithAll<ReceiveRpcCommandRequest>();
-            state.RequireForUpdate(state.GetEntityQuery(builder));
         }
 
         /// <summary>
-        /// Spawns one local asteroid per RPC, then destroys the receive entity.
+        /// Consumes inbound respawn RPCs, applies or queues them, then retries earlier misses.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            // --- Prefab ---
-            if (!SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs) || prefabs.Asteroid == Entity.Null)
-                return;
-
             var em = state.EntityManager;
             var pending = new NativeList<Pending>(8, Allocator.Temp);
 
-            // --- Phase 1: copy payloads (no structural changes) ---
+            // --- Phase 1: copy inbound respawn RPCs ---
+            // Consume even when GamePrefabs is missing — MaxRpcAgeFrames would otherwise drop
+            // the spawn forever and leave an invisible server rock.
             foreach (var (rpc, reqEntity) in SystemAPI.Query<RefRO<AsteroidRespawnRpc>>()
                          .WithAll<ReceiveRpcCommandRequest>().WithEntityAccess())
             {
@@ -66,43 +67,38 @@ namespace TitanOrbit.ECS
                 });
             }
 
-            if (pending.Length == 0)
+            // --- Phase 2: consume RPCs ---
+            if (pending.Length > 0)
             {
-                pending.Dispose();
-                return;
+                var destroyEcb = new EntityCommandBuffer(Allocator.Temp);
+                for (int i = 0; i < pending.Length; i++)
+                    destroyEcb.DestroyEntity(pending[i].RpcEntity);
+                destroyEcb.Playback(em);
+                destroyEcb.Dispose();
             }
 
-            // --- Phase 2: consume RPCs (avoids MaxRpcAgeFrames stale warnings) ---
-            var destroyEcb = new EntityCommandBuffer(Allocator.Temp);
-            for (int i = 0; i < pending.Length; i++)
-                destroyEcb.DestroyEntity(pending[i].RpcEntity);
-            destroyEcb.Playback(em);
-            destroyEcb.Dispose();
+            Entity prefab = Entity.Null;
+            if (SystemAPI.TryGetSingleton<GamePrefabs>(out var prefabs))
+                prefab = prefabs.Asteroid;
 
-            // --- Phase 3: clear zombies at pose, then spawn ---
-            // [TITAN-ORBIT] Kill only culled/hid the old local rock — without this, respawn
-            // Instantiates a second body on top of the invulnerable leftover.
+            // --- Phase 3: wipe the zombie at this slot, then Instantiates ---
             for (int i = 0; i < pending.Length; i++)
             {
                 var p = pending[i];
                 float3 pos = p.Position;
                 pos.y = 0f;
-                ClientLocalAsteroidCombatSync.DestroyLocalAsteroidsNear(em, pos, p.Scale);
-
-                var body = new MapLayoutBlueprint.Body
+                if (!ClientLocalAsteroidCombatSync.TryApplyAsteroidRespawn(
+                    em, prefab, pos, p.Scale, p.GemValue, p.MaxHealth, p.Size))
                 {
-                    EntityKind = 3,
-                    Position = p.Position,
-                    Scale = p.Scale,
-                    AsteroidScale = new float3(p.Scale),
-                    GemValue = p.GemValue,
-                    MaxHealth = p.MaxHealth,
-                    Size = p.Size,
-                };
-                ClientLocalMapBodySpawn.SpawnAsteroid(em, prefabs.Asteroid, body);
+                    ClientLocalAsteroidCombatSync.QueueUnmatchedRespawn(
+                        pos, p.Scale, p.GemValue, p.MaxHealth, p.Size);
+                }
             }
 
             pending.Dispose();
+
+            // --- Phase 4: retry earlier misses ---
+            ClientLocalAsteroidCombatSync.RetryUnmatchedRespawns(em, prefab);
         }
     }
 }

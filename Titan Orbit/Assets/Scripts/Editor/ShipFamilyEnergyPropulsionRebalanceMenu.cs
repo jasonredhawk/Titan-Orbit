@@ -102,7 +102,10 @@ namespace TitanOrbit.Editor
                             tier.minHomePlanetLevel);
                         tier.powerScoreAtMaxLevel = ShipFamilyPowerScoreBreakdown.FromSummedShipStats(
                             ShipFamilyPowerScoreBreakdown.ApplyMaxEffectiveLevels(summed, maxUpgrades)).Total;
+                        ShipFamilyPowerBarNorm.BakeAtShipLevel(tier, def);
                     }
+
+                    ShipFamilyDefinition.InvalidateGlobalMaxUpgradeTreeTurnSpeedCache();
                 }
 
                 EditorUtility.SetDirty(def);

@@ -17,7 +17,8 @@ namespace TitanOrbit.NetCode
     /// [TITAN-ORBIT] Solid join: do <b>not</b> add <see cref="NetworkStreamInGame"/> until
     /// <see cref="ClientMapHydrateCache.IsComplete"/> (local seed map built) and the ghost
     /// collection is present. Then send <see cref="GoInGameRequest"/>. This matches Unity's
-    /// lobby→game pattern: hydrate first, then receive dynamic ghosts (ships/gems).
+    /// lobby→game pattern: hydrate first, occupancy catch-up, then GhostSpawn Instantiates of
+    /// live ships/planets/gems.
     /// </para>
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
@@ -25,6 +26,7 @@ namespace TitanOrbit.NetCode
     [UpdateAfter(typeof(MapSessionMetaClientSystem))]
     public partial struct TitanOrbitGoInGameClientSystem : ISystem
     {
+        /// <summary>Caches the driver query and the not-yet-InGame connection query.</summary>
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<NetworkStreamDriver>();
@@ -34,19 +36,17 @@ namespace TitanOrbit.NetCode
             state.RequireForUpdate(state.GetEntityQuery(builder));
         }
 
+        /// <summary>
+        /// After local asteroid hydrate finishes, marks the connection InGame and sends
+        /// <see cref="GoInGameRequest"/> so the server will start ghost snapshots.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             // --- Gate: local map hydrate must finish before ghost stream ---
-            // [TITAN-ORBIT] Full recipe → wait for IsComplete. Counts-only meta → allow InGame.
-            // No meta yet → wait (server catch-up sends recipe pre-InGame).
-            bool hydrateReady;
-            if (ClientMapHydrateCache.HasFullRecipe)
-                hydrateReady = ClientMapHydrateCache.IsComplete;
-            else if (ClientMapHydrateCache.HasRecipe || MapSessionMetaCache.HasMeta)
-                hydrateReady = true;
-            else
-                hydrateReady = false;
-            if (!hydrateReady)
+            // [TITAN-ORBIT] Seed-hydrate join: wait for a full recipe, then IsComplete.
+            // Do not treat counts-only / HasMeta as ready — that skipped hydrate, left the
+            // loading bar on the 8% crawl with no 0/N, and never spawned local asteroids.
+            if (!ClientMapHydrateCache.HasFullRecipe || !ClientMapHydrateCache.IsComplete)
                 return;
 
             // --- Ghost prefabs registered ---
@@ -82,6 +82,7 @@ namespace TitanOrbit.NetCode
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct TitanOrbitGoInGameServerSystem : ISystem
     {
+        /// <summary>Requires an inbound GoInGameRequest receive entity.</summary>
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<NetworkStreamDriver>();
@@ -91,6 +92,9 @@ namespace TitanOrbit.NetCode
             state.RequireForUpdate(state.GetEntityQuery(builder));
         }
 
+        /// <summary>
+        /// Marks the source connection InGame and sends a late recipe if catch-up missed this client.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             var commandBuffer = new EntityCommandBuffer(Allocator.Temp);
@@ -113,10 +117,8 @@ namespace TitanOrbit.NetCode
 
                 if (hasMeta && !state.EntityManager.HasComponent<MapSessionMetaSent>(connection))
                 {
-                    Entity metaEntity = commandBuffer.CreateEntity();
-                    commandBuffer.AddComponent(metaEntity, meta);
-                    commandBuffer.AddComponent(metaEntity, new SendRpcCommandRequest { TargetConnection = connection });
-                    commandBuffer.AddComponent<MapSessionMetaSent>(connection);
+                    MapSessionMetaCache.QueueRecipeRpc(commandBuffer, connection, meta);
+                    commandBuffer.AddComponent(connection, new MapSessionMetaSent());
                 }
 
                 commandBuffer.DestroyEntity(reqEntity);

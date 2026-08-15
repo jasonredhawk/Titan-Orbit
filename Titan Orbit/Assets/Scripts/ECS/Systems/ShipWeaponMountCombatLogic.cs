@@ -8,24 +8,17 @@ using UnityEngine;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Fills each <see cref="ShipWeaponMountElement"/> with its own fire power and fire rate from
-    /// the chassis <b>prefab</b> weapon child (authored localScale × family stats + ship level +
-    /// Fire Power attributes).
+    /// Fills each <see cref="ShipWeaponMountElement"/> with Extra Level fire power / fire rate.
     /// <para>
-    /// [TITAN-ORBIT] Bullets use <b>per-mount</b> firePower — not a hull-wide average. A fat main
-    /// cannon can hit hard and cool slowly while small side guns hit lighter and shoot faster,
-    /// driven by each Weapon child’s <b>authored prefab</b> XY / Z scale.
+    /// [TITAN-ORBIT] Each barrel keeps its own Base / PerExtra (prefab XY/Z scale) and evaluates
+    /// independently — weapons do <b>not</b> use the non-weapon <c>(N−1)</c> stack term:
+    /// <c>Base + PerExtra × ((shipLevel−1) + abilityLevel)</c>.
     /// </para>
     /// <para>
-    /// [TITAN-ORBIT] Intentional: combat stats are read from a fresh Instantiates of the chassis
-    /// prefab — <b>never</b> from the live hybrid proxy or attribute-grown meshes. Bottom-bar
-    /// upgrades grow weapon meshes (and PhysicsCollider children) via
-    /// <see cref="ShipComponentAttributeScaleLogic"/>; that runtime scale must not multiply
-    /// firePower / fireRate again (attributes already apply via
-    /// <see cref="ShipAttributeUpgradeLogic.MultiplierPerLevel"/> on the numeric stats).
+    /// Combat stats are read from a fresh Instantiates of the chassis prefab — never from the
+    /// live hybrid proxy. Paired with <see cref="ShipWeaponFireLogic"/> and
+    /// <see cref="ShipStatApplyLogic"/>.
     /// </para>
-    /// Paired with <see cref="ShipWeaponFireLogic"/> (volley + energy-queue round-robin) and
-    /// <see cref="ShipStatApplyLogic"/> / <see cref="ShipChassisCatalogApplySystem"/>.
     /// </summary>
     public static class ShipWeaponMountCombatLogic
     {
@@ -45,13 +38,13 @@ namespace TitanOrbit.ECS
             /// <summary>Authored firePower × XY transform scale.</summary>
             public float FirePower;
 
-            /// <summary>Authored firePowerPerAbilityLevel × XY transform scale.</summary>
+            /// <summary>Authored firePowerPerExtraLevel × XY transform scale.</summary>
             public float FirePowerPerLevel;
 
             /// <summary>Authored fireRate × (1/Z) transform scale.</summary>
             public float FireRate;
 
-            /// <summary>Authored fireRatePerAbilityLevel × (1/Z) transform scale.</summary>
+            /// <summary>Authored fireRatePerExtraLevel × (1/Z) transform scale.</summary>
             public float FireRatePerLevel;
         }
 
@@ -92,40 +85,46 @@ namespace TitanOrbit.ECS
             if (chassisPrefab != null && family != null)
                 CollectWeaponCombatBases(chassisPrefab, family, CombatScratch);
 
-            int perLvl = Mathf.Max(0, shipLevel - 1);
-            // [TITAN-ORBIT] Attribute Fire Power: +10% per purchased level on every barrel.
-            float firePowerAttrMul = 1f + attrs.FirePower * ShipAttributeUpgradeLogic.MultiplierPerLevel;
-
+            // --- Each mount: own Base + PerExtra × ((shipLevel−1) + ability) — no (N−1) ---
             float damageSum = 0f;
             float rateSum = 0f;
             int armed = 0;
 
-            // --- Write each mount: level curve, then attribute mul; keep cooldown ---
             for (int i = 0; i < mounts.Length; i++)
             {
                 ShipWeaponMountElement mount = mounts[i];
                 float basePower = fallbackDamage;
-                float powerPerLevel = 0f;
+                float powerPer = 0f;
                 float baseRate = fallbackFireRate;
-                float ratePerLevel = 0f;
+                float ratePer = 0f;
 
                 if (TryFindCombatBase(CombatScratch, mount.CannonIndex, i, out WeaponCombatBase combat))
                 {
                     basePower = combat.FirePower;
-                    powerPerLevel = combat.FirePowerPerLevel;
+                    powerPer = combat.FirePowerPerLevel;
                     baseRate = combat.FireRate;
-                    ratePerLevel = combat.FireRatePerLevel;
+                    ratePer = combat.FireRatePerLevel;
                 }
 
-                // Level-1 reference for bullet VFX growth (before attribute mul).
-                float referencePower = Mathf.Max(0.1f, basePower);
-                float leveledPower = basePower + powerPerLevel * perLvl;
-                float leveledRate = baseRate + ratePerLevel * perLvl;
+                // [TITAN-ORBIT] Weapons fire individually — componentCount ignored (false stack flag).
+                float leveledPower = ShipComponentExtraLevelMath.Evaluate(
+                    basePower,
+                    powerPer,
+                    shipLevel,
+                    attrs.FirePower,
+                    componentCount: 1,
+                    includeExtraComponentLevels: false);
+                float leveledRate = ShipComponentExtraLevelMath.Evaluate(
+                    baseRate,
+                    ratePer,
+                    shipLevel,
+                    abilityLevel: 0,
+                    componentCount: 1,
+                    includeExtraComponentLevels: false);
 
-                mount.FirePower = Mathf.Max(0.1f, leveledPower * firePowerAttrMul);
+                mount.FirePower = Mathf.Max(0.1f, leveledPower);
                 mount.FireRate = Mathf.Max(0.1f, leveledRate);
-                mount.ReferenceFirePower = referencePower;
-                // FireCooldown preserved across stat refresh so mid-fight re-apply does not reset.
+                mount.ReferenceFirePower = Mathf.Max(0.1f, basePower);
                 mounts[i] = mount;
 
                 damageSum += mount.FirePower;
@@ -256,9 +255,9 @@ namespace TitanOrbit.ECS
             {
                 CannonIndex = cannonIndex,
                 FirePower = scaled.firePower,
-                FirePowerPerLevel = scaled.firePowerPerAbilityLevel,
+                FirePowerPerLevel = scaled.firePowerPerExtraLevel,
                 FireRate = scaled.fireRate,
-                FireRatePerLevel = scaled.fireRatePerAbilityLevel,
+                FireRatePerLevel = scaled.fireRatePerExtraLevel,
             };
             return result.FirePower > 0.01f || result.FireRate > 0.01f;
         }

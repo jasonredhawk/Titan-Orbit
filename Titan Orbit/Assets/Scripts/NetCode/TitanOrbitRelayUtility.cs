@@ -95,15 +95,15 @@ namespace TitanOrbit.NetCode
         }
 
         /// <summary>[NETCODE] Converts host Relay allocation to UTP RelayServerData.</summary>
-        public static RelayServerData FromAllocation(Allocation allocation, string connectionType = "dtls")
+        public static RelayServerData FromAllocation(Allocation allocation, string connectionType = null)
         {
-            return allocation.ToRelayServerData(connectionType);
+            return allocation.ToRelayServerData(SanitizeRelayProtocolForRelaySdk(connectionType));
         }
 
         /// <summary>[NETCODE] Converts client join allocation to UTP RelayServerData.</summary>
-        public static RelayServerData FromJoinAllocation(JoinAllocation allocation, string connectionType = "dtls")
+        public static RelayServerData FromJoinAllocation(JoinAllocation allocation, string connectionType = null)
         {
-            return allocation.ToRelayServerData(connectionType);
+            return allocation.ToRelayServerData(SanitizeRelayProtocolForRelaySdk(connectionType));
         }
 
         /// <summary>True when Relay endpoint parsed successfully from allocation.</summary>
@@ -112,28 +112,50 @@ namespace TitanOrbit.NetCode
             return relay.Endpoint.IsValid;
         }
 
+        /// <summary>
+        /// True when Relay SDK <c>ToRelayServerData</c> only accepts <c>wss</c>.
+        /// Matches MPS 2.2 <c>AllocationUtils.GetValidProtocols</c>: <c>#if UNITY_WEBGL</c>
+        /// (WebGL player <b>and</b> Editor with WebGL as the active build target).
+        /// </summary>
+        public static bool PlatformRequiresWebSocketRelay()
+        {
+#if UNITY_WEBGL
+            return true;
+#else
+            return false;
+#endif
+        }
+
         /// <summary>Relay connection type for joining clients (not the host listen type).</summary>
         public static string ClientConnectionTypeForPlatform()
         {
-#if UNITY_WEBGL && !UNITY_EDITOR
-            return "wss";
-#else
-            return "dtls";
-#endif
+            // Must match GetValidProtocols() — do not exclude UNITY_EDITOR.
+            // Editor + WebGL target still defines UNITY_WEBGL; dtls throws
+            // Invalid connection type: "DTLS". Connection type must be one of:  or "wss".
+            return PlatformRequiresWebSocketRelay() ? "wss" : "dtls";
         }
 
         /// <summary>
         /// Relay connection type for the dedicated host allocation. GCE may pass <c>--relayProtocol=udp</c>;
         /// that is normalized to <c>dtls</c> for MPS 2.0 (same as legacy NGO dedicated bootstrap).
+        /// On WebGL / Editor-with-WebGL-target this is coerced to <c>wss</c> so CreateAllocation
+        /// conversion does not throw; Linux dedicated (<c>UNITY_SERVER</c>) stays dtls.
         /// </summary>
         public static string HostConnectionTypeForPlatform(string commandLineOverride = null)
         {
             return SanitizeRelayProtocolForRelaySdk(commandLineOverride);
         }
 
-        /// <summary>Maps lobby/CLI relay tokens to a UTP Relay connection type.</summary>
+        /// <summary>Maps lobby/CLI relay tokens to a UTP Relay connection type the current SDK accepts.</summary>
         public static string SanitizeRelayProtocolForRelaySdk(string raw)
         {
+            if (PlatformRequiresWebSocketRelay())
+            {
+                // Lobby/CLI may still advertise dtls (Linux dedicated host). This process
+                // joins the same allocation via its wss endpoint — Relay bridges protocols.
+                return "wss";
+            }
+
             if (string.IsNullOrWhiteSpace(raw))
                 return ClientConnectionTypeForPlatform();
 

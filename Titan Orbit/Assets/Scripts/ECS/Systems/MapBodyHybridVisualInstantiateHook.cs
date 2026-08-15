@@ -14,7 +14,7 @@ namespace TitanOrbit.Game
     /// [TITAN-ORBIT] Player.log 2026-07-19: loading stuck at 0/N then starve-escape → Join Team →
     /// Crash!!!. Root cause: no Pending on Instantiated ghosts, so Pending drain created zero GOs.
     /// Scanning all asteroids to AddComponent SpawnRequest also Crash!!! — instead GhostSpawn calls
-    /// this hook once per successful Instantiates (1/frame) with the exact entity.
+    /// this hook once per successful Instantiates (16/frame) with the exact entity.
     /// </para>
     /// <para>
     /// Structural AddComponent is deferred to <see cref="FlushPending"/> (called from the visualizer)
@@ -37,7 +37,7 @@ namespace TitanOrbit.Game
             LocalShipEntitySeed.Clear();
             // --- Replace any prior handler (domain reload / play mode) ---
             TitanOrbitJoinLoadCounters.OnDelayedGhostInstantiate = OnDelayedGhostInstantiate;
-            // Prefer ship / gem Instantiates among ready delayed ghosts (still 1/frame).
+            // Prefer ship / gem Instantiates among ready delayed ghosts (16/frame budget).
             // [TITAN-ORBIT] Ships must jump the post-settle asteroid Instantiates queue or Join Team
             // leaves the client on "Spawning your ship..." for minutes while map bodies drain.
             TitanOrbitJoinLoadCounters.IsPriorityDelayedInstantiate = IsPriorityPlaceholder;
@@ -45,11 +45,11 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// True when this delayed-spawn placeholder should Instantiates before map asteroids/planets.
-        /// Ships (Join Team) and gems (destroy bursts) are prioritized; still capped at 1/frame.
+        /// Ships (Join Team) and gems (destroy bursts) are prioritized; capped at 16/frame.
         /// <para>
         /// [TITAN-ORBIT] Placeholders are bare <c>GhostInstance</c> + snapshot buffers — they do
         /// <b>not</b> carry <see cref="ShipTag"/> / <see cref="GemTag"/>. Checking tags on the
-        /// placeholder always returned false, so TeamChoice ships waited behind the 1/frame map
+        /// placeholder always returned false, so TeamChoice ships waited behind the old 1/frame map
         /// Instantiates queue ("Spawning your ship..." forever). Resolve the ghost prefab via
         /// <see cref="GhostCollectionPrefab"/> and test tags on the prefab entity instead.
         /// </para>

@@ -61,12 +61,52 @@ namespace TitanOrbit.ECS
         public float ScaleMultiplier;
 
         /// <summary>
+        /// Fire Power Extra Levels on the shooter at fire time:
+        /// <c>(shipLevel−1) + Fire Power purchases</c>. Scales bank abilities.
+        /// Drone shots stamp 0 so abilities stay at authored primary (times unscaled).
+        /// </summary>
+        public int FirePowerExtraLevels;
+
+        /// <summary>
+        /// Gameplay strength vs the same authored bullet type. Ship / PD = 1.
+        /// Drones stamp <c>DroneSwarmLogic.DroneFirePowerScale</c> (1/6) for forces,
+        /// radii, burn DPS, and heal. 0 is treated as 1. Visual scale is separate
+        /// (<see cref="ScaleMultiplier"/>).
+        /// </summary>
+        public float StrengthScale;
+
+        /// <summary>
         /// [TITAN-ORBIT] Collision / damage mask. Ship guns use <see cref="BulletDamageFilter.Everything"/>;
         /// mining drones use <see cref="BulletDamageFilter.AsteroidsOnly"/>; fighters use
         /// <see cref="BulletDamageFilter.ShipsOnly"/>; planetary defense uses
         /// <see cref="BulletDamageFilter.ShipsAndTransports"/> (ships, transports, asteroids).
         /// </summary>
         public BulletDamageFilter DamageFilter;
+
+        /// <summary>
+        /// [TITAN-ORBIT] 1 = store homing rocket. Each tick steers toward the closest enemy
+        /// ship or turret at <see cref="TurnSpeedDeg"/>. 0 = straight gun / drone / PD shot.
+        /// </summary>
+        public byte Homing;
+
+        /// <summary>Max yaw rate in degrees per second while <see cref="Homing"/> is set.</summary>
+        public float TurnSpeedDeg;
+
+        /// <summary>
+        /// Toroidal search radius. Closest enemy ship or turret inside this bubble is locked.
+        /// Empty bubble = fly straight. 0 is sanitized to a positive default (never whole-map).
+        /// </summary>
+        public float AcquireRange;
+
+        /// <summary>
+        /// Last raw lock point (the chosen target's current position). Sticky targeting
+        /// uses this — never a lagged/smoothed point, or the rocket can turn back toward
+        /// a ship it already passed.
+        /// </summary>
+        public float3 HomingLockPos;
+
+        /// <summary>1 when <see cref="HomingLockPos"/> is a live lock.</summary>
+        public byte HomingHasLock;
     }
 
     /// <summary>

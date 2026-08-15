@@ -203,8 +203,7 @@ namespace TitanOrbit.UI
         /// <summary>
         /// Quarantine-safe rebuild: ships via small query; planets/asteroids from hybrid proxies.
         /// [TITAN-ORBIT] Must not call <see cref="SyncPlanets"/> / <see cref="SyncAsteroids"/> —
-        /// those <c>ToEntityArray</c> map bodies and Crash!!! after Settling OFF
-        /// (see titan-orbit-windows-join-crash rule).
+        /// those <c>ToEntityArray</c> map bodies while GhostSpawn Instantiates is in flight.
         /// </summary>
         void RebuildAnchorsFromHybridProxies(EntityManager em)
         {

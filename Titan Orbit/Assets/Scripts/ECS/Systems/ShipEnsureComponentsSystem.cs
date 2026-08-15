@@ -122,6 +122,12 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipMoonDockState());
 
+            // --- Ghosted planetary-defense turret possession (prefer bake on ship ghost) ---
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipTurretControlState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipTurretControlState());
+
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipDepositIntent>()
                          .WithEntityAccess())
@@ -161,6 +167,8 @@ namespace TitanOrbit.ECS
                     ecb.AddBuffer<EquippedEquipmentElement>(entity);
                 if (!state.EntityManager.HasBuffer<EquippedCardElement>(entity))
                     ecb.AddBuffer<EquippedCardElement>(entity);
+                if (!state.EntityManager.HasBuffer<DeployedMineElement>(entity))
+                    ecb.AddBuffer<DeployedMineElement>(entity);
             }
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
@@ -196,6 +204,21 @@ namespace TitanOrbit.ECS
                              .WithEntityAccess())
                     ecb.AddComponent(entity, new ShipCombatAttribution());
             }
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipElectricShockState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipElectricShockState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipBurnOverTimeState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipBurnOverTimeState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<BurnOverTimeElement>()
+                         .WithEntityAccess())
+                ecb.AddBuffer<BurnOverTimeElement>(entity);
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();

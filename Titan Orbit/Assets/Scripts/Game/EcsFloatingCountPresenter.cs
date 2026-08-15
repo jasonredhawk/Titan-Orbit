@@ -57,6 +57,8 @@ namespace TitanOrbit.Game
             /// Advances → one remote deposit SFX tick (server-driven).
             /// </summary>
             public uint LastDepositBeatSequence;
+            /// <summary>Last observed <see cref="ShipBurnOverTimeState.TickSequence"/> for DoT floats.</summary>
+            public uint LastBurnTickSequence;
         }
 
         readonly Dictionary<int, ShipSnapshot> _ships = new Dictionary<int, ShipSnapshot>();
@@ -267,6 +269,7 @@ namespace TitanOrbit.Game
                 ComponentType.ReadOnly<GhostOwner>());
             using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
             using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var shipEntities = shipQuery.ToEntityArray(Allocator.Temp);
 
             for (int i = 0; i < shipStates.Length; i++)
             {
@@ -293,6 +296,7 @@ namespace TitanOrbit.Game
                         Health = state.Health,
                         IsDead = state.IsDead,
                         ShipLevel = state.ShipLevel,
+                        LastBurnTickSequence = ReadBurnTickSequence(em, shipEntities[i]),
                     };
                 }
             }
@@ -316,6 +320,7 @@ namespace TitanOrbit.Game
                 ComponentType.ReadOnly<GhostOwner>());
             using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
             using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var shipEntities = shipQuery.ToEntityArray(Allocator.Temp);
             for (int i = 0; i < shipStates.Length; i++)
             {
                 int networkId = owners[i].NetworkId;
@@ -330,6 +335,7 @@ namespace TitanOrbit.Game
                     Health = state.Health,
                     IsDead = state.IsDead,
                     ShipLevel = state.ShipLevel,
+                    LastBurnTickSequence = ReadBurnTickSequence(em, shipEntities[i]),
                 };
             }
 
@@ -386,9 +392,11 @@ namespace TitanOrbit.Game
                 ComponentType.ReadOnly<GhostOwner>());
             using var shipStates = shipQuery.ToComponentDataArray<ShipState>(Allocator.Temp);
             using var owners = shipQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            using var shipEntities = shipQuery.ToEntityArray(Allocator.Temp);
 
             int localNetworkId = EcsGameBridge.GetLocalNetworkId();
             bool hasLocalNetworkId = localNetworkId > 0;
+            double elapsed = em.World.Time.ElapsedTime;
 
             for (int i = 0; i < shipStates.Length; i++)
             {
@@ -397,8 +405,11 @@ namespace TitanOrbit.Game
                     continue;
 
                 var state = shipStates[i];
+                Entity shipEntity = shipEntities[i];
                 if (!TryGetShipAnchor(networkId, out Transform anchor))
                     continue;
+
+                ReadBurnTick(em, shipEntity, out uint burnSeq, out float burnTickDamage, out bool burnActive, elapsed);
 
                 if (!_ships.TryGetValue(networkId, out ShipSnapshot last))
                 {
@@ -409,6 +420,7 @@ namespace TitanOrbit.Game
                         Health = state.Health,
                         IsDead = state.IsDead,
                         ShipLevel = state.ShipLevel,
+                        LastBurnTickSequence = burnSeq,
                     };
                     continue;
                 }
@@ -439,10 +451,28 @@ namespace TitanOrbit.Game
                     }
                 }
 
+                bool showedBurnDamage = false;
+                if (!justRespawned &&
+                    !TitanOrbitDebugFlags.IsolateDisableFloatingCounts &&
+                    burnSeq > last.LastBurnTickSequence &&
+                    burnTickDamage > 0.01f)
+                {
+                    uint skipped = burnSeq - last.LastBurnTickSequence;
+                    float shown = burnTickDamage * skipped;
+                    WorldFloatingCountManager.Instance.ShowFloatingCount(
+                        anchor,
+                        FloatingCountChannel.DamageShipOrDrone,
+                        -shown,
+                        state.Team);
+                    showedBurnDamage = true;
+                }
+
                 if (hasLocalNetworkId && networkId == localNetworkId && !state.IsDead && !justDied && !justRespawned)
                 {
                     float healthDelta = state.Health - last.Health;
-                    if (Mathf.Abs(healthDelta) >= 1f)
+                    // Burn ticks already spawned Damage floats — skip the overlapping Health line.
+                    bool skipBurnHealth = (showedBurnDamage || burnActive) && healthDelta < 0f;
+                    if (!skipBurnHealth && Mathf.Abs(healthDelta) >= 1f)
                     {
                         WorldFloatingCountManager.Instance.ShowFloatingCount(
                             anchor,
@@ -461,6 +491,7 @@ namespace TitanOrbit.Game
                     IsDead = state.IsDead,
                     ShipLevel = state.ShipLevel,
                     LastDepositBeatSequence = snap.LastDepositBeatSequence,
+                    LastBurnTickSequence = burnSeq,
                 };
             }
         }
@@ -741,6 +772,7 @@ namespace TitanOrbit.Game
                         IsDead = state.IsDead,
                         ShipLevel = state.ShipLevel,
                         LastDepositBeatSequence = feedback.BeatSequence,
+                        LastBurnTickSequence = ReadBurnTickSequence(em, shipEntity),
                     };
                     _ships[networkId] = snap;
                     continue;
@@ -816,6 +848,35 @@ namespace TitanOrbit.Game
                 FloatingCountChannel.GemDeposit,
                 gemValue,
                 team);
+        }
+
+        /// <summary>Ghosted burn tick counter, or 0 when the ship has no burn component.</summary>
+        static uint ReadBurnTickSequence(EntityManager em, Entity shipEntity)
+        {
+            if (shipEntity == Entity.Null || !em.HasComponent<ShipBurnOverTimeState>(shipEntity))
+                return 0;
+            return em.GetComponentData<ShipBurnOverTimeState>(shipEntity).TickSequence;
+        }
+
+        /// <summary>Reads ghosted burn tick fields used for DoT floating damage.</summary>
+        static void ReadBurnTick(
+            EntityManager em,
+            Entity shipEntity,
+            out uint sequence,
+            out float lastTickDamage,
+            out bool isActive,
+            double elapsed)
+        {
+            sequence = 0;
+            lastTickDamage = 0f;
+            isActive = false;
+            if (shipEntity == Entity.Null || !em.HasComponent<ShipBurnOverTimeState>(shipEntity))
+                return;
+
+            var burn = em.GetComponentData<ShipBurnOverTimeState>(shipEntity);
+            sequence = burn.TickSequence;
+            lastTickDamage = burn.LastTickDamage;
+            isActive = burn.IsActive(elapsed);
         }
 
         /// <summary>[HYBRID] Popup anchor is ship hull proxy transform from ShipWeaponProxyRegistry.</summary>

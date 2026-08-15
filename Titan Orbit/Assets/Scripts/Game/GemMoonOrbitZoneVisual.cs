@@ -78,12 +78,14 @@ namespace TitanOrbit.Game
             if (!drawOrbitZoneFill || _moon == null)
                 return;
 
-            // --- Distance cull ---
+            // --- Distance cull (planar XZ only) ---
             // [TITAN-ORBIT] Avoid map-wide soft discs; nearby moons keep the capture-zone cue.
+            // XZ-only so gameplay camera height (turret zoom / ship level) does not hide the zone.
             if (cam != null)
             {
                 float maxDistSq = MaxDrawDistance * MaxDrawDistance;
-                if ((transform.position - cam.transform.position).sqrMagnitude > maxDistSq)
+                Vector3 delta = transform.position - cam.transform.position;
+                if ((delta.x * delta.x + delta.z * delta.z) > maxDistSq)
                     return;
             }
 

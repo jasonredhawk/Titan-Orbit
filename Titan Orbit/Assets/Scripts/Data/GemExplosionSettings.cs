@@ -89,9 +89,10 @@ namespace TitanOrbit.Data
 
         [Header("Damage expulsion (ship cargo spill)")]
         [Tooltip(
-            "Seconds after a ship spills gems from damage before THAT ship may tractor or pick them up. " +
-            "Other ships can take them immediately. 0 = no penalty. Default 2 makes reclaiming your " +
-            "own spilled cargo a real fight risk.")]
+            "Seconds after a ship spills gems from damage before THAT ship may tractor them. " +
+            "Absorb-zone pickup uses a shorter grace (GemEconomyConstants.SelfPickupAbsorbBlockSeconds) " +
+            "so exploded nuggets are not stuck uncollectable. Other ships can take them immediately. " +
+            "0 = no penalty.")]
         [Min(0f)]
         public float SelfPickupBlockSeconds = 2f;
 

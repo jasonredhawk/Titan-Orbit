@@ -1,86 +1,108 @@
-using TitanOrbit.Data;
 using TitanOrbit.ECS;
-using TitanOrbit.Simulation;
+using TitanOrbit.Generation;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Client gem GameObject presenter driven only by <b>server ghost data</b>.
+    /// [HYBRID] Client gem GameObject presenter. Puts the crystal at <b>estimated server-now</b>
+    /// so the mesh you fly over is the gem <c>GemPickupSystem</c> will scoop.
     /// <para>
-    /// Contract (no client invent):
-    /// 1. The gem GO is created only after the gem ghost Instantiates
-    ///    (<see cref="EcsWorldVisualizer"/> / urgent Instantiates queue).
-    /// 2. Pose authority is the ghosted <see cref="LocalTransform"/>.
-    /// 3. Flight uses ghosted <see cref="GemKinematics.Velocity"/> / AngularVelocity — the same
-    ///    fields the server writes in <see cref="GemMotionSystem"/>.
-    /// 4. When LT samples advance, we blend toward them. When LT is stale during coast, we
-    ///    extrapolate with the latest ghost Velocity (no second invented burst, no extra damping —
-    ///    server already damped the ghosted Velocity).
+                /// NetCode interpolated <c>LocalTransform</c> is the recent <em>past</em> (interpolation
+                /// delay). For remote ships that is correct (pillar 2). For idle / coasting pickups
+                /// it is wrong: the player overlaps yesterday's pose and the server gem has already
+                /// moved. We start from that interpolated sample, then advance it by ghosted
+                /// <see cref="GemKinematics.Velocity"/> × the interpolation delay — the same velocity
+                /// the server already applied. Cap the delay so a starved snapshot cannot throw the
+                /// crystal across the map.
+                /// </para>
+                /// Tractor-locked gems skip that lead. Interpolated LT already includes server pull;
+                /// adding burst leftovers × delay put the last crystal inside the scoop on the client
+                /// while the server gem was still outside (beam connected, mesh shaking, never consumed).
     /// </para>
-    /// Why not “copy LT only”: if LT snapshots lag during coast, a GO stuck on the spawn sample
-    /// looks invisible until the idle pose finally arrives. Velocity is ghosted so the client can
-    /// present the server flight without inventing a local burst.
+    /// When the gem is idle (velocity ≈ 0) we copy interpolated pose as-is.
+    /// Tractor pull is server-authored; once snapshots include the pull, velocity points at
+    /// the wing and this extrapolation shows the gem coming in.
     /// </summary>
     public sealed class GemClientMotionApplier : MonoBehaviour
     {
+        int _bindSerial;
         Entity _entity;
         float3 _logicalPos;
-        float3 _velocity;
-        float3 _angularVelocity;
-        float3 _lastGhostPos;
         bool _bound;
-        bool _hasGhostSample;
+
+        /// <summary>
+        /// Increments on each <see cref="Bind"/>. Collect-hide must not revive a pooled shell
+        /// that was rebound to a different gem.
+        /// </summary>
+        public int BindSerial => _bindSerial;
+
+        /// <summary>Ghost entity this shell is currently posing; <see cref="Entity.Null"/> when unbound.</summary>
+        public Entity BoundEntity => _entity;
+
+        /// <summary>Frame stamp for the shared interpolation-delay cache.</summary>
+        static int s_delayFrame = -1;
+
+        /// <summary>Seconds from InterpolationTick to ServerTick this frame (clamped).</summary>
+        static float s_cachedDelaySeconds;
+
+        /// <summary>
+        /// Hard cap on how far we may lead the interpolated sample. 250 ms is well above a
+        /// healthy interpolation buffer and well below a stale-snapshot runaway.
+        /// </summary>
+        const float MaxExtrapolationSeconds = 0.25f;
 
         /// <summary>
         /// Binds this GO to a gem ghost that has already Instantiated.
-        /// Starts presentation at the ghost's current logical pose.
         /// </summary>
         /// <param name="entity">Instantiated gem ghost entity.</param>
         /// <param name="logicalPosition">Ghost <see cref="LocalTransform.Position"/> at bind time.</param>
         public void Bind(Entity entity, float3 logicalPosition)
         {
+            _bindSerial++;
             _entity = entity;
             _logicalPos = logicalPosition;
-            _lastGhostPos = logicalPosition;
-            _hasGhostSample = true;
             _bound = true;
-            _velocity = float3.zero;
-            _angularVelocity = float3.zero;
         }
 
         /// <summary>
-        /// Clears bind/velocity so a pooled gem can be rented again without chasing a dead entity.
+        /// Estimated server-now logical XZ pose (interpolated LT + velocity × delay).
+        /// Same unbounded space as ECS pickup.
+        /// </summary>
+        public bool TryGetLogicalPosition(out float3 logicalPos)
+        {
+            logicalPos = _logicalPos;
+            return _bound && _entity != Entity.Null;
+        }
+
+        /// <summary>
+        /// Clears bind so a pooled gem can be rented again without chasing a dead entity.
         /// Called from <see cref="GemVisualPool.TryReturn"/>.
         /// </summary>
         public void Unbind()
         {
             _entity = Entity.Null;
             _logicalPos = float3.zero;
-            _lastGhostPos = float3.zero;
-            _velocity = float3.zero;
-            _angularVelocity = float3.zero;
             _bound = false;
-            _hasGhostSample = false;
         }
 
         /// <summary>
-        /// Seeds presentation velocity from the ghost's current <see cref="GemKinematics"/>
-        /// (call at proxy create). Pass server values only — do not invent a launch direction.
+        /// [LEGACY] No-op kept so older visualizer call sites compile. Pose comes from
+        /// interpolated LT + ghosted velocity, not a seeded local integrator.
         /// </summary>
-        /// <param name="velocity">Ghosted linear velocity (XZ).</param>
-        /// <param name="angularVelocity">Ghosted tumble (rad/s).</param>
         public void SeedVelocity(float3 velocity, float3 angularVelocity)
         {
-            _velocity = new float3(velocity.x, 0f, velocity.z);
-            _angularVelocity = angularVelocity;
+            _ = velocity;
+            _ = angularVelocity;
         }
 
         /// <summary>
-        /// [UNITY] LateUpdate: present ghost pose + kinematics on the hybrid GO.
+        /// [UNITY] LateUpdate: interpolated ghost pose, plus a short velocity lead to server-now,
+        /// then toroidal display retile.
         /// </summary>
         void LateUpdate()
         {
@@ -95,105 +117,74 @@ namespace TitanOrbit.Game
             if (!em.Exists(_entity) || !em.HasComponent<LocalTransform>(_entity))
                 return;
 
-            float dt = math.min(Time.deltaTime, 0.05f);
-            var settings = GemExplosionSettingsCache.ResolveOrDefault();
-            bool underTractor = false;
-
-            // --- Authoritative ghost pose sample ---
+            // --- Interpolated sample (NetCode past) ---
             var serverLt = em.GetComponentData<LocalTransform>(_entity);
-            float3 ghostPos = serverLt.Position;
-            bool ghostPoseAdvanced = !_hasGhostSample ||
-                                     math.distancesq(ghostPos, _lastGhostPos) > 1e-8f;
-            _lastGhostPos = ghostPos;
-            _hasGhostSample = true;
+            float3 present = serverLt.Position;
 
-            // --- Ghost kinematics (server Velocity / AngularVelocity) ---
-            bool adoptedFreshGhostVelocity = false;
-            if (em.HasComponent<GemKinematics>(_entity))
-            {
-                var kin = em.GetComponentData<GemKinematics>(_entity);
-                float3 ghostVel = new float3(kin.Velocity.x, 0f, kin.Velocity.z);
-                // Replace local coast state whenever the ghost sample differs (new server tick).
-                if (math.distancesq(ghostVel, _velocity) > 1e-8f ||
-                    math.distancesq(kin.AngularVelocity, _angularVelocity) > 1e-8f)
-                {
-                    _velocity = ghostVel;
-                    _angularVelocity = kin.AngularVelocity;
-                    adoptedFreshGhostVelocity = true;
-                }
-            }
-
-            // --- Optional tractor pull from ghost lock only ---
-            // [TITAN-ORBIT] May resolve a ship by NetworkId — skip during Instantiates storms.
-            if (!ClientJoinSettleCache.ShouldSkipShipEntityQueries &&
-                em.HasComponent<GemMotionState>(_entity))
+            // --- Lead to estimated server-now (coast / burst only) ---
+            // [NETCODE] InterpolationTick is what LocalTransform currently shows.
+            // ServerTick is "now" on the server timeline. Velocity is ghosted from GemMotionSystem.
+            // Tractor-locked gems must NOT take this lead: interpolated LT already includes
+            // server pull, and leftover asteroid-burst speed × delay throws the last crystal
+            // into the scoop zone on the client only (visible, shaking, unconsumable).
+            bool underTractor = false;
+            if (em.HasComponent<GemMotionState>(_entity))
             {
                 var motion = em.GetComponentData<GemMotionState>(_entity);
-                if (GemTractorBeamClientLogic.TryGetPullVelocityFromGhostLock(
-                        _entity, motion, _logicalPos, out float3 tractorVel))
-                {
-                    _velocity = tractorVel;
-                    underTractor = true;
-                    adoptedFreshGhostVelocity = true;
-                }
+                underTractor = motion.Phase == GemMotionState.PhaseTractor && motion.TractorShipId != 0;
             }
 
-            bool nearlyStopped = math.lengthsq(_velocity) <
-                                 settings.StopSpeedThreshold * settings.StopSpeedThreshold;
-
-            if (underTractor || ghostPoseAdvanced || nearlyStopped)
+            if (!underTractor && em.HasComponent<GemKinematics>(_entity))
             {
-                // --- Trust / blend to the latest ghost LocalTransform ---
-                float correctRate = underTractor ? 3f : (nearlyStopped ? 14f : 10f);
-                float correct = 1f - math.exp(-correctRate * dt);
-                _logicalPos = math.lerp(_logicalPos, ghostPos, correct);
-            }
-            else
-            {
-                // --- LT sample unchanged while still flying: coast with ghost Velocity ---
-                // If Velocity snapshots are also sparse, apply the same damping step as the server
-                // so we do not fly forever on a stale seed. When a fresh ghost Velocity arrives,
-                // skip damping this frame (server already applied it for that sample).
-                if (!adoptedFreshGhostVelocity)
-                {
-                    _velocity = GemExplosionMath.IntegrateLinearVelocity(
-                        _velocity, settings.LinearDamping, settings.StopSpeedThreshold, dt);
-                    _angularVelocity = GemExplosionMath.IntegrateAngularVelocity(
-                        _angularVelocity, settings.AngularDamping, dt);
-                }
-
-                _logicalPos += _velocity * dt;
+                float3 vel = em.GetComponentData<GemKinematics>(_entity).Velocity;
+                vel.y = 0f;
+                float delay = GetInterpolationDelaySeconds(em);
+                if (math.lengthsq(vel) > 0.0001f && delay > 0.0001f)
+                    present += vel * delay;
             }
 
-            // --- Toroidal display (ship reference) — same as other world bodies ---
-            // [TITAN-ORBIT] Latch rolled map size before retile. Missing size → skip display
-            // update (never invent 1000 — wrap-tile gems would land on the wrong copy).
+            _logicalPos = present;
+
+            // --- Toroidal display ---
             if (!ToroidalDisplay.ResolveMapSize(default, out _, out _))
                 return;
-
             if (!ToroidalDisplay.TryGetReferencePosition(out var reference))
-            {
-                // No ship/camera yet — leave the GO where it is (do not snap to canonical logical,
-                // which would teleport wrap-tile gems onto the main map tile).
                 return;
-            }
 
             Vector3 displayPos = ToroidalDisplay.ToDisplayPositionWithHysteresis(
                 _entity, _logicalPos, reference);
-            transform.position = displayPos;
+            transform.SetPositionAndRotation(displayPos, serverLt.Rotation);
+        }
 
-            if (math.lengthsq(_angularVelocity) > 0.0001f)
-            {
-                float angle = math.length(_angularVelocity) * dt;
-                float3 axis = math.normalizesafe(_angularVelocity, new float3(0f, 1f, 0f));
-                transform.rotation = math.mul(quaternion.AxisAngle(axis, angle), (quaternion)transform.rotation);
-            }
-            else if (underTractor || ghostPoseAdvanced || nearlyStopped)
-            {
-                float correctRate = nearlyStopped ? 14f : 10f;
-                float correct = 1f - math.exp(-correctRate * dt);
-                transform.rotation = Quaternion.Slerp(transform.rotation, serverLt.Rotation, correct);
-            }
+        /// <summary>
+        /// Seconds between the interpolated tick and the server tick, computed once per frame.
+        /// </summary>
+        static float GetInterpolationDelaySeconds(EntityManager em)
+        {
+            if (Time.frameCount == s_delayFrame)
+                return s_cachedDelaySeconds;
+
+            s_delayFrame = Time.frameCount;
+            s_cachedDelaySeconds = 0f;
+
+            using var timeQuery = em.CreateEntityQuery(ComponentType.ReadOnly<NetworkTime>());
+            if (timeQuery.IsEmptyIgnoreFilter)
+                return 0f;
+
+            var networkTime = timeQuery.GetSingleton<NetworkTime>();
+            if (!networkTime.ServerTick.IsValid || !networkTime.InterpolationTick.IsValid)
+                return 0f;
+
+            int hz = PlanetGemMoonOrbitClock.FallbackSimulationHz;
+            using var rateQuery = em.CreateEntityQuery(ComponentType.ReadOnly<ClientServerTickRate>());
+            if (!rateQuery.IsEmptyIgnoreFilter)
+                hz = math.max(1, rateQuery.GetSingleton<ClientServerTickRate>().SimulationTickRate);
+
+            int ticks = networkTime.ServerTick.TicksSince(networkTime.InterpolationTick);
+            float frac = networkTime.ServerTickFraction - networkTime.InterpolationTickFraction;
+            float seconds = (ticks + frac) / hz;
+            s_cachedDelaySeconds = math.clamp(seconds, 0f, MaxExtrapolationSeconds);
+            return s_cachedDelaySeconds;
         }
     }
 }

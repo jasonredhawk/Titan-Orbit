@@ -1,14 +1,23 @@
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
 using Unity.Physics;
+using Unity.Transforms;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// Re-applies a no-collide <see cref="PhysicsCollider"/> on culled asteroid ghosts each predicted
-    /// fixed step so prediction / structural churn cannot restore a solid hull after HitRpc hide.
-    /// ClientSimulation only. Paired with <see cref="Game.ClientAsteroidCollisionCull"/>.
+    /// Client predicted step: drop culled asteroid hulls out of Unity Physics <b>before</b> the
+    /// solver runs. Blob-swapping <see cref="PhysicsCollider"/> to a zero-filter sphere was not
+    /// enough — static collision worlds often keep the previous sphere, so the ship still rammed
+    /// empty space after the mesh hid.
+    /// <para>
+    /// Also walks the Instantiates registry for dead rocks that never got
+    /// <see cref="AsteroidClientCulledTag"/> (HitRpc hide / GO teardown race).
+    /// </para>
+    /// World: ClientSimulation. Group: PredictedFixedStepSimulationSystemGroup OrderFirst
+    /// (before PhysicsSystemGroup). Paired with <see cref="Game.ClientAsteroidCollisionCull"/>.
     /// </summary>
     // OrderFirst: before default-slot physics without UpdateInGroup(PhysicsSystemGroup) —
     // ClientWorld often lacks PhysicsSystemGroup as a PredictedFixedStep sibling (sorter spam).
@@ -19,32 +28,57 @@ namespace TitanOrbit.ECS
         /// <summary>Shared zero-filter sphere — never mutate bake-shared asteroid blobs.</summary>
         static BlobAssetReference<Collider> s_noCollide;
 
-        /// <summary>Ensures the zero-filter collider blob exists once per process.</summary>
+        /// <summary>
+        /// No RequireForUpdate on CulledTag — we must also catch dead rocks that were never tagged.
+        /// </summary>
         public void OnCreate(ref SystemState state)
         {
             EnsureNoCollideBlob();
-            state.RequireForUpdate<AsteroidClientCulledTag>();
         }
 
         /// <summary>
-        /// For every culled asteroid that still has a PhysicsCollider, force the no-collide blob.
+        /// Tags leftover dead rocks, then removes PhysicsCollider from every culled entity so
+        /// this tick's physics step cannot block the ship.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            // [TITAN-ORBIT] Asteroid PhysicsCollider writes during Settling / TransformQuarantine
-            // Instantiates are Crash!!!-adjacent — cull is cosmetic; wait until map gathers are safe.
+            // [TITAN-ORBIT] Structural collider strips during Settling Instantiates are
+            // Crash!!!-adjacent — wait until map gathers are safe.
             if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
                 return;
 
             EnsureNoCollideBlob();
 
-            foreach (var collider in SystemAPI
-                         .Query<RefRW<PhysicsCollider>>()
+            var em = state.EntityManager;
+
+            // --- Catch dead rocks that still look solid (match miss / GO-only hide) ---
+            ClientLocalAsteroidCombatSync.CullDeadAsteroidsStillSolid(em);
+
+            // --- Drop hulls from the static physics world (blob-swap is not enough) ---
+            // [PHYSICS] RemoveComponent forces BuildPhysicsWorld to rebuild static bodies.
+            // Do this before PhysicsSystemGroup this predicted step.
+            var stripEcb = new EntityCommandBuffer(Allocator.Temp);
+            foreach (var (_, entity) in SystemAPI
+                         .Query<RefRO<PhysicsCollider>>()
+                         .WithAll<AsteroidClientCulledTag>()
+                         .WithEntityAccess())
+            {
+                stripEcb.RemoveComponent<PhysicsCollider>(entity);
+            }
+
+            stripEcb.Playback(em);
+            stripEcb.Dispose();
+
+            // --- Keep scale squashed if a collider is restored this tick before strip ---
+            foreach (var transform in SystemAPI
+                         .Query<RefRW<LocalTransform>>()
                          .WithAll<AsteroidClientCulledTag, AsteroidTag>())
             {
-                if (collider.ValueRO.Value == s_noCollide)
+                if (transform.ValueRO.Scale <= 0.011f)
                     continue;
-                collider.ValueRW.Value = s_noCollide;
+                var lt = transform.ValueRW;
+                lt.Scale = 0.01f;
+                transform.ValueRW = lt;
             }
         }
 

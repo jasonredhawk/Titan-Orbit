@@ -532,8 +532,9 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
-        /// Gem mining / destroy multiplier when the ship's team is one of the asteroid's
-        /// territory owners (mask bit set). Enemy-only rocks return 1 (no yellow bonus).
+        /// Extra mining / destroy yield when the ship's team owns this asteroid (mask bit).
+        /// Enemy-only rocks return 1 (no extra crystals). The extra gems Instantiates yellow
+        /// so the bonus is visible; scoop is still free-for-all.
         /// </summary>
         public static float FriendlyTerritoryGemMultiplier(
             TeamId shipTeam,

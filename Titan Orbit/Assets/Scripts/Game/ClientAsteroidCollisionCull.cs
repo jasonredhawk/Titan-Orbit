@@ -1,27 +1,27 @@
 using TitanOrbit.ECS;
 using Unity.Entities;
-using Unity.Physics;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Marks a client asteroid ghost as destroyed for collision the moment HitRpc
-    /// hides the mesh — before NetCode despawn / Health snapshot catches up.
+    /// [HYBRID] Marks a client asteroid as destroyed for collision the moment HitRpc
+    /// hides the mesh — before a delayed DestroyRpc / Health write catches up.
     /// <para>
     /// Evidence (session 74383c): after hide, logs showed <c>hidden:true dead:false colliderOn:false</c>
-    /// — ghost Health still &gt;0 so toroidal resolve could treat the rock as solid. We add
-    /// <see cref="AsteroidClientCulledTag"/> (not ghosted) and swap <see cref="PhysicsCollider"/>
-    /// to a shared zero-filter blob (never mutate bake-shared spheres).
+    /// — Health still &gt;0 so toroidal resolve could treat the rock as solid. Delegates to
+    /// <see cref="ClientLocalAsteroidCombatSync.CullPhysics"/> so presentation-thread hide and
+    /// sim-group soft-destroy share one cull (LinkedEntityGroup + no-collide blob + scale squash).
+    /// SimulationSystemGroup then removes PhysicsCollider; this presentation path must not.
     /// </para>
     /// </summary>
     public static class ClientAsteroidCollisionCull
     {
         /// <summary>
-        /// Tags the entity as culled and forces a no-collide physics hull.
-        /// Safe to call repeatedly.
+        /// Tags the entity as culled and forces a no-collide physics hull on the root and
+        /// every LinkedEntityGroup child. Safe to call repeatedly.
         /// </summary>
-        /// <param name="asteroidEntity">Asteroid ghost from HitRpc lookup.</param>
+        /// <param name="asteroidEntity">Asteroid entity from HitRpc lookup.</param>
         /// <returns>True when cull state was applied or already present.</returns>
         public static bool TryDisablePhysicsCollider(Entity asteroidEntity)
         {
@@ -36,28 +36,9 @@ namespace TitanOrbit.Game
             if (!em.Exists(asteroidEntity) || !em.HasComponent<AsteroidTag>(asteroidEntity))
                 return false;
 
-            bool changed = false;
-
-            // --- Non-ghost tag (Health snapshots cannot clear this) ---
-            if (!em.HasComponent<AsteroidClientCulledTag>(asteroidEntity))
-            {
-                em.AddComponent<AsteroidClientCulledTag>(asteroidEntity);
-                changed = true;
-            }
-
-            // --- Zero-filter collider (do not mutate shared bake blobs) ---
-            var noCollide = AsteroidClientCullPhysicsSystem.NoCollideCollider;
-            if (em.HasComponent<PhysicsCollider>(asteroidEntity))
-            {
-                var pc = em.GetComponentData<PhysicsCollider>(asteroidEntity);
-                if (pc.Value != noCollide)
-                {
-                    em.SetComponentData(asteroidEntity, new PhysicsCollider { Value = noCollide });
-                    changed = true;
-                }
-            }
-
-            return changed || em.HasComponent<AsteroidClientCulledTag>(asteroidEntity);
+            // Same cull as AsteroidDestroyedRpc / HitRpc sim apply — do not diverge.
+            ClientLocalAsteroidCombatSync.CullPhysics(em, asteroidEntity);
+            return em.HasComponent<AsteroidClientCulledTag>(asteroidEntity);
         }
     }
 }

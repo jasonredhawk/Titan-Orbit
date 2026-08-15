@@ -23,12 +23,6 @@ namespace TitanOrbit.Game
         /// <summary>Resources path for player builds (<c>Assets/Resources/Gem.prefab</c>).</summary>
         const string DefaultGemResourcesName = "Gem";
 
-        /// <summary>Designer reference range for visual scale curve.</summary>
-        const float MinGemValue = 1f;
-        const float MaxGemValue = 100f;
-        const float ScaleAtMinValue = 0.5f;
-        const float ScaleAtMaxValue = 4f;
-
         /// <summary>
         /// Semi-transparent red so gems read on busy backgrounds.
         /// Alpha is only correct when URP Lit keywords/blend state are set together — see
@@ -37,7 +31,8 @@ namespace TitanOrbit.Game
         static readonly Color GemTintColor = new Color(1f, 0.2f, 0.2f, 0.55f);
 
         /// <summary>
-        /// [TITAN-ORBIT] Territory bonus gem tint (NGO bonusGemTintColor ≈ yellow).
+        /// [TITAN-ORBIT] Extra-yield gem tint (NGO bonusGemTintColor ≈ yellow). Cosmetic only —
+        /// same pickup as the red crystal.
         /// </summary>
         static readonly Color BonusGemTintColor = new Color(1f, 0.9f, 0.15f, 0.55f);
 
@@ -185,11 +180,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>Maps gem value to uniform local scale via inverse lerp between min and max value.</summary>
-        public static float ComputeVisualScale(float gemValue)
-        {
-            float t = Mathf.InverseLerp(MinGemValue, MaxGemValue, gemValue);
-            return Mathf.Lerp(ScaleAtMinValue, ScaleAtMaxValue, t);
-        }
+        public static float ComputeVisualScale(float gemValue) =>
+            GemPresentationScale.ComputeVisualScale(gemValue);
 
         /// <summary>
         /// Value scale × lifetime shrink (original: full size until last 3s, then linear to zero).

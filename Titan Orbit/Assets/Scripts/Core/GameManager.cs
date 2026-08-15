@@ -64,6 +64,22 @@ namespace TitanOrbit.Core
         [Tooltip("When enabled, the moon orbit ship upgrade tree unlocks every node. Click any ship to try it for free (local Editor / development only).")]
         [SerializeField] bool debugFreeShipUpgradeTree;
 
+        [Header("Debug — Bullet Banks")]
+        [Tooltip("When enabled, B-key cycles every bullet bank category including healing EnergySpheres. Leave OFF so B only cycles owned damage banks.")]
+        [SerializeField] bool debugCycleAllBulletBanks;
+
+        [Header("Debug — Rockets")]
+        [Tooltip("When enabled, ALT fires a homing rocket without consuming charges (and with an empty loadout). The 5s reload still applies. Local Editor / MPPM host only.")]
+        [SerializeField] bool debugInfiniteRockets;
+
+        [Header("Debug — Mines")]
+        [Tooltip("When enabled, E places a mine without consuming charges (and with an empty loadout). The deploy cooldown still applies. Local Editor / MPPM host only.")]
+        [SerializeField] bool debugInfiniteMines;
+
+        [Header("Debug — Rocket / Mine Self-Harm")]
+        [Tooltip("After 2 seconds, your own rockets and mines treat you (and your team) as an enemy so you can test hits and blasts on yourself. Local Editor / MPPM host only.")]
+        [SerializeField] bool debugSelfHarmRocketsAndMines;
+
         [Header("Debug — Asteroid Destroy Hitch")]
         [Tooltip("Logs [AsteroidDestroy] timings in the Console when an asteroid explodes (local gem Instantiates + urgent gem proxies). Filter the Console with that tag.")]
         [SerializeField] bool debugLogAsteroidDestroyPerf;
@@ -96,6 +112,9 @@ namespace TitanOrbit.Core
 
         /// <summary>True when designers enabled free upgrades in the Inspector (client + local-host convenience).</summary>
         public bool DebugFreeShipUpgradeTree => debugFreeShipUpgradeTree;
+
+        /// <summary>True when B-key cycles every bullet bank including heal.</summary>
+        public bool DebugCycleAllBulletBanks => debugCycleAllBulletBanks;
 
         /// <summary>True when asteroid-destroy hitch logging is enabled in the Inspector.</summary>
         public bool DebugLogAsteroidDestroyPerf => debugLogAsteroidDestroyPerf;
@@ -185,6 +204,10 @@ namespace TitanOrbit.Core
             {
                 Instance = null;
                 TitanOrbitDebugFlags.FreeShipUpgradeTree = false;
+                TitanOrbitDebugFlags.CycleAllBulletBanks = false;
+                TitanOrbitDebugFlags.InfiniteRockets = false;
+                TitanOrbitDebugFlags.InfiniteMines = false;
+                TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
                 TitanOrbitDebugFlags.InstructionImageCaptureEnabled = false;
                 TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
@@ -201,6 +224,16 @@ namespace TitanOrbit.Core
         {
             // [TITAN-ORBIT] ECS MoonOrbitStoreSystem cannot reference TitanOrbit.Core — Shared bridge.
             TitanOrbitDebugFlags.FreeShipUpgradeTree = debugFreeShipUpgradeTree;
+            TitanOrbitDebugFlags.CycleAllBulletBanks = debugCycleAllBulletBanks;
+#if UNITY_SERVER && !UNITY_EDITOR
+            TitanOrbitDebugFlags.InfiniteRockets = false;
+            TitanOrbitDebugFlags.InfiniteMines = false;
+            TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
+#else
+            TitanOrbitDebugFlags.InfiniteRockets = debugInfiniteRockets;
+            TitanOrbitDebugFlags.InfiniteMines = debugInfiniteMines;
+            TitanOrbitDebugFlags.SelfHarmRocketsAndMines = debugSelfHarmRocketsAndMines;
+#endif
             TitanOrbitDebugFlags.LogAsteroidDestroyPerf = debugLogAsteroidDestroyPerf;
             // [TITAN-ORBIT] Instruction capture stays OFF unless you flip this for art rebuilds —
             // otherwise F8/F9 and the bottom status banner stay inactive during normal play.

@@ -75,7 +75,30 @@ namespace TitanOrbit.ECS
         public static bool HasLiveOwnedShipSeed(EntityManager em)
         {
             PruneStale(em);
+            // GhostReceive can Instantiates one frame before GhostOwner.NetworkId is readable.
+            // Promote that deferred handle without a ship gather (safe during Join Team suppress).
+            TryResolveDeferredOwnership(em);
             return HasOwnedShipSeed;
+        }
+
+        /// <summary>
+        /// Owned-ship entity even while team suppress is on (pending Instantiates under Join Team).
+        /// Does not promote pending → SeededShip and does not require Confirm.
+        /// </summary>
+        /// <param name="em">Client EntityManager.</param>
+        /// <param name="ship">Pending or live seed, or Null.</param>
+        /// <returns>True when a live ShipTag handle exists.</returns>
+        public static bool TryGetOwnedShipEntityUnchecked(EntityManager em, out Entity ship)
+        {
+            PruneStale(em);
+            ship = SeededShip != Entity.Null ? SeededShip : s_PendingOwnedShip;
+            if (ship == Entity.Null || !em.Exists(ship) || !em.HasComponent<ShipTag>(ship))
+            {
+                ship = Entity.Null;
+                return false;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -115,9 +138,9 @@ namespace TitanOrbit.ECS
             // --- Ownership may lag Instantiates by a frame ---
             // [TITAN-ORBIT] Two races (Editor.log 2026-08-10):
             // 1) local NetworkId not ready yet
-            // 2) GhostOwner.NetworkId still 0 on the first Instantiates frame (snapshot lag /
-            //    predicted spawn before owner field applies). Dropping the entity forever left
-            //    hasSeed=false while InstantiatesSession already counted the hull.
+            // 2) GhostOwner.NetworkId still 0 on the first Instantiates frame (snapshot lag).
+            //    Dropping the entity forever left hasSeed=false while InstantiatesSession
+            //    already counted the hull.
             if (!TryIsLocallyOwnedShip(em, entity, out bool localIdReady, out int ownerId))
             {
                 if (em.HasComponent<GhostOwner>(entity) &&
@@ -241,6 +264,18 @@ namespace TitanOrbit.ECS
             // [TITAN-ORBIT] Placeholder is often gone the same frame Instantiates succeeds. Without
             // a short hold, ship WithEntityAccess / EnsureShipProxies fail-open → Crash!!!.
             ClientJoinSettleCache.ArmPostShipInstantiateHold();
+        }
+
+        /// <summary>
+        /// Accepts a known-local hull without re-reading <see cref="GhostOwner"/>.
+        /// Leftover helper — Join Team no longer Instantiates a client predicted ship.
+        /// </summary>
+        /// <param name="entity">ClientWorld ship entity that this player owns.</param>
+        public static void ForceAcceptOwnedShip(Entity entity)
+        {
+            if (entity == Entity.Null)
+                return;
+            AcceptOwnedShip(entity);
         }
 
         /// <summary>Promotes <see cref="s_UnresolvedOwnershipShip"/> once NetworkId is ready.</summary>

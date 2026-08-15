@@ -47,12 +47,16 @@ namespace TitanOrbit.Game
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
             AsteroidClientEntityRegistry.Clear();
+            ClientLocalAsteroidCombatSync.ClearPendingQueues();
+            PlanetaryDefenseClientHealthSync.Clear();
             PlanetConnectionGraphCache.Clear();
             PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();
             s_PlanetPoseByIdCache.Clear();
             s_PlanetStateCacheFrame = -1;
             InvalidateLocalPlayerShipFrameCache();
+            PlayerNameRosterCache.Clear();
+            PlayerNameRpcClient.ResetSession();
         }
 
         // --- Per-frame local ship cache (avoids N× CreateEntityQuery in HUD / dock / deposit) ---
@@ -345,11 +349,12 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// True when map is loaded, team flow allows control, and a local ship position resolves.
+        /// True when this client has a playable local hull (presentation pose, seed, or ECS lookup).
         /// Used by <c>NceGameFlowController</c> to dismiss the semi-transparent
         /// "Spawning your ship..." lobby overlay after Join Team.
+        /// Returns false while team suppress is on (Join Team / deferred Confirm still pending).
         /// </summary>
-                public static bool HasLocalPlayerShip()
+        public static bool HasLocalPlayerShip()
         {
             // --- Suppress until Join Team / resume Confirm ---
             if (ClientTeamFlowState.ShouldSuppressLocalPlayerControl())
@@ -368,26 +373,23 @@ namespace TitanOrbit.Game
             if (ShipDisplayPose.HasLocalPose)
                 return true;
 
-            // --- Instantiates-hook seed (pose may land one frame later) ---
-            // [TITAN-ORBIT] After Join Team, seed is set the Instantiates frame; ShipDisplayPose may
-            // not publish until ShipVisualSync runs. Treat seed as "have a ship" so spawn-wait UI
-            // does not stick on "Spawning your ship..." for that gap.
-            // HasOwnedShipSeed covers pending Instantiates that happened under suppress before
-            // Confirm flushed — promote via TryGetSeededShip once control is allowed.
-            if (LocalShipEntitySeed.HasOwnedShipSeed)
-            {
-                var seededWorld = ClientWorld;
-                if (seededWorld != null && seededWorld.IsCreated &&
-                    LocalShipEntitySeed.TryGetSeededShip(seededWorld.EntityManager, out _))
-                    return true;
-            }
-
             var client = ClientWorld;
             if (client != null && client.IsCreated)
             {
                 var em = client.EntityManager;
-                if (LocalShipEntitySeed.TryGetSeededShip(em, out _))
-                    return true;
+
+                // --- Live seed (pending under suppress, promoted after Confirm) ---
+                // [TITAN-ORBIT] Predicted Instantiates stores PendingOwnedShip while suppress is on.
+                // After Confirm, HasLiveOwnedShipSeed is enough for spawn-wait UI even if
+                // TryGetSeededShip races one frame — do not let the 8s watchdog bounce Join Team.
+                if (LocalShipEntitySeed.HasLiveOwnedShipSeed(em))
+                {
+                    if (LocalShipEntitySeed.TryGetSeededShip(em, out _))
+                        return true;
+                    // Pending/seed handle still live after Confirm — treat as have-ship.
+                    if (ClientTeamFlowState.TeamChoiceConfirmed)
+                        return true;
+                }
 
                 // --- Recover if Instantiates-hook seed was missed (idle Instantiates only) ---
                 // [TITAN-ORBIT] Old gate TeamChoiceConfirmed&&!seed made ShouldSkip forever when the
@@ -858,6 +860,23 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// True when the client connection has a <see cref="NetworkId"/> (handshake finished)
+        /// even if <see cref="NetworkStreamInGame"/> is not set yet. Used to keep the loading
+        /// overlay up while we wait for the map recipe before GoInGame.
+        /// </summary>
+        public static bool HasClientNetworkId()
+        {
+            var world = ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            using var query = world.EntityManager.CreateEntityQuery(
+                ComponentType.ReadOnly<NetworkStreamConnection>(),
+                ComponentType.ReadOnly<NetworkId>());
+            return query.CalculateEntityCount() > 0;
+        }
+
+        /// <summary>
         /// True when this machine runs both client and server worlds in one process (editor host / MPPM host).
         /// </summary>
         public static bool IsLocalHost()
@@ -948,21 +967,22 @@ namespace TitanOrbit.Game
         /// </summary>
         static bool EvaluateMapLoadingComplete()
         {
-            // --- Seed-hydrate path (preferred) ---
-            // [TITAN-ORBIT] Map ready when local asteroid hydrate finished and Settling exited
-            // (or InGame + hydrate done for local host that forced InGame early).
+            ClientJoinSettleCache.SetMapProxyBuildReady(
+                IsMapProxyCountReady(out _, out _, out _));
+            JoinWorldReadyCache.SetMoonProxyCount(PlanetGemMoonVisualRegistry.Count);
+
+            // --- Seed-hydrate live-join contract ---
+            // [TITAN-ORBIT] JoinWorldReadyCache is the only dismiss gate: hydrate, occupancy,
+            // InGame, planet/ship Instantiates, GhostCount, hybrid proxies.
             if (ClientMapHydrateCache.HasFullRecipe)
             {
                 if (!ClientMapHydrateCache.IsComplete)
                     return false;
 
-                // Pre-InGame: hydrate alone is not "Join Team" yet — wait for InGame catch-up.
                 if (!IsNetworkInGame())
                     return false;
 
-                return ClientJoinSettleCache.JoinSettleCompleted ||
-                       ClientJoinSettleCache.InGameFrames >=
-                       TitanOrbitClientJoinTransformGateSystem.MinInGameFramesBeforeExit;
+                return JoinWorldReadyCache.IsComplete;
             }
 
             // --- Local host: server must finish generation, then wait for local GO proxies ---
@@ -985,21 +1005,22 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Loading-bar fill (0–1). Driven by planet/asteroid GameObject proxies vs server meta N
-        /// so the bar covers real map-build cost. Soft crawl until meta arrives <b>and</b> until
-        /// GhostSpawn Instantiates / proxies start (avoids a frozen 0/N while the stream is still
-        /// quiet). Never gathers asteroid entities.
+        /// Overall loading-bar fill (0–1). Prefer the split APIs
+        /// <see cref="TryGetNetworkJoinLoadProgress"/> + <see cref="TryGetProxyJoinLoadProgress"/>
+        /// for the two-bar loading screen. This aggregate is the min of both phases so a single
+        /// consumer never reports 100% while GameObject proxies are still Instantiating.
+        /// Never gathers asteroid entities.
         /// </summary>
         public static bool TryGetJoinLoadProgress(out float progress)
         {
             progress = 0f;
 
-            // --- Seed-hydrate model: progress before NetworkStreamInGame is valid ---
-            // [TITAN-ORBIT] Recipe arrives pre-InGame; bar tracks local asteroid hydrate, not
-            // GhostSpawn Instantiates=1 of the whole field.
+            // --- Publish real GO readiness (do not treat hydrate-complete as proxy-ready) ---
+            // [TITAN-ORBIT] Older code ORed hydrate IsComplete into MapProxyBuildReady, which
+            // dismissed Join Team before rocks had GameObjects.
             ClientJoinSettleCache.SetMapProxyBuildReady(
-                ClientMapHydrateCache.IsComplete ||
                 IsMapProxyCountReady(out _, out _, out _));
+            JoinWorldReadyCache.SetMoonProxyCount(PlanetGemMoonVisualRegistry.Count);
 
             if (IsMapLoadingComplete())
             {
@@ -1007,13 +1028,47 @@ namespace TitanOrbit.Game
                 return true;
             }
 
-            // --- Phase: building map from seed ---
+            bool hasNetwork = TryGetNetworkJoinLoadProgress(out float networkProgress);
+            bool hasProxy = TryGetProxyJoinLoadProgress(out float proxyProgress);
+            if (!hasNetwork && !hasProxy)
+                return false;
+
+            // --- Combined fill ---
+            // Until proxy meta exists, show network/hydrate only; once GO counts exist, require both.
+            if (hasNetwork && hasProxy)
+                progress = Mathf.Min(networkProgress, proxyProgress);
+            else if (hasNetwork)
+                progress = networkProgress;
+            else
+                progress = proxyProgress;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Bar 1 (0–1): seed hydrate + occupancy + GhostCount Instantiates.
+        /// This is the “sync world / build ECS bodies” phase — not hybrid GameObject Instantiates.
+        /// </summary>
+        public static bool TryGetNetworkJoinLoadProgress(out float progress)
+        {
+            progress = 0f;
+
+            // --- Only snap to 100% when this session actually finished loading ---
+            // Do not use a fake 1/1 InGame fallback — that flashed World at 100% before the recipe.
+            if (IsMapLoadingComplete())
+            {
+                progress = 1f;
+                return true;
+            }
+
+            // --- Phase: building map from seed (local asteroid Instantiates) ---
+            // Honest fill: 0 until hydrate actually Instantiates. No exponential crawl —
+            // that looked like loading while the client was idle (recipe / prefabs wait).
             if (ClientMapHydrateCache.HasFullRecipe || ClientMapHydrateCache.HydrateStarted)
             {
                 if (ClientMapHydrateCache.ExpectedBodies > 0)
                     s_LatchedLoadingTotalSteps = ClientMapHydrateCache.ExpectedBodies;
 
-                // Hydrate is ~0–85% of the bar; remaining is InGame dynamic catch-up.
                 float hydrate = ClientMapHydrateCache.Progress01;
                 if (!IsNetworkInGame())
                 {
@@ -1021,44 +1076,57 @@ namespace TitanOrbit.Game
                     return true;
                 }
 
-                float catchUp = ClientJoinSettleCache.JoinSettleCompleted
-                    ? 1f
-                    : Mathf.Clamp01(ClientJoinSettleCache.InGameFrames / 30f);
-                progress = Mathf.Clamp01(0.85f * hydrate + 0.15f * catchUp);
+                if (JoinWorldReadyCache.IsComplete)
+                {
+                    progress = 1f;
+                    return true;
+                }
+
+                float occ = JoinWorldReadyCache.OccupancyApplied ? 1f : 0.5f;
+                float ghosts = JoinWorldReadyCache.GhostCountOnServer > 0
+                    ? Mathf.Clamp01(
+                        (float)JoinWorldReadyCache.GhostCountInstantiated /
+                        JoinWorldReadyCache.GhostCountOnServer)
+                    : 0.5f;
+                progress = Mathf.Clamp01(0.70f * hydrate + 0.15f * occ + 0.15f * ghosts);
                 return true;
             }
 
-            // --- Waiting for recipe / connection ---
-            if (!IsNetworkInGame() && !MapSessionMetaCache.HasMeta)
+            progress = 0f;
+            return true;
+        }
+
+        /// <summary>
+        /// Bar 2 (0–1): hybrid planet/asteroid GameObject proxies vs server meta N.
+        /// Covers the Instantiates drain in <see cref="EcsWorldVisualizer"/> — what the player
+        /// actually sees on the map. Safe — Dictionary count only, no ECS asteroid gathers.
+        /// </summary>
+        public static bool TryGetProxyJoinLoadProgress(out float progress)
+        {
+            progress = 0f;
+
+            if (IsMapLoadingComplete())
             {
-                if (s_JoinLoadSmoothStart < 0f)
-                    s_JoinLoadSmoothStart = Time.realtimeSinceStartup;
-
-                float elapsed = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
-                float t = Mathf.Max(0f, elapsed) / JoinLoadSmoothSeconds;
-                progress = (1f - Mathf.Exp(-2.2f * t)) * 0.08f;
+                progress = 1f;
                 return true;
             }
-
-            // --- Legacy fallback: hybrid proxies / meta (no full recipe) ---
-            if (!IsNetworkInGame())
-                return false;
 
             int total = ResolveMapLoadingDenominator();
-            int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
-            if (total > 0)
+            if (total <= 0)
             {
-                s_LatchedLoadingTotalSteps = total;
-                progress = Mathf.Clamp01((float)proxies / total);
+                if (ClientMapHydrateCache.HasFullRecipe || ClientMapHydrateCache.HydrateStarted)
+                {
+                    progress = Mathf.Clamp01(ClientMapHydrateCache.Progress01 * 0.35f);
+                    return true;
+                }
+
+                progress = 0f;
                 return true;
             }
 
-            if (s_JoinLoadSmoothStart < 0f)
-                s_JoinLoadSmoothStart = Time.realtimeSinceStartup;
-
-            float waitElapsed2 = Time.realtimeSinceStartup - s_JoinLoadSmoothStart;
-            float waitT2 = Mathf.Max(0f, waitElapsed2) / JoinLoadSmoothSeconds;
-            progress = (1f - Mathf.Exp(-2.2f * waitT2)) * 0.12f;
+            s_LatchedLoadingTotalSteps = total;
+            int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
+            progress = Mathf.Clamp01((float)proxies / total);
             return true;
         }
 
@@ -1069,26 +1137,61 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Planet/asteroid GO count vs server meta total for status text (e.g. 120/678).
-        /// Safe — does not scan ECS asteroids.
+        /// Legacy single status counts — prefers network/hydrate steps when seed-hydrate is active,
+        /// else planet/asteroid GO counts. Prefer
+        /// <see cref="TryGetNetworkJoinLoadStepCounts"/> /
+        /// <see cref="TryGetProxyJoinLoadStepCounts"/> for the two-bar UI.
         /// </summary>
         public static bool TryGetMapLoadingStepCounts(out int completedSteps, out int totalSteps)
+        {
+            if (ClientMapHydrateCache.HasFullRecipe || ClientMapHydrateCache.HydrateStarted)
+                return TryGetNetworkJoinLoadStepCounts(out completedSteps, out totalSteps);
+
+            return TryGetProxyJoinLoadStepCounts(out completedSteps, out totalSteps);
+        }
+
+        /// <summary>
+        /// Bar 1 status counts: local seed-hydrate bodies (asteroids) vs expected.
+        /// Returns false until the recipe exposes a real denominator (avoids a fake 1/1 flash).
+        /// </summary>
+        public static bool TryGetNetworkJoinLoadStepCounts(out int completedSteps, out int totalSteps)
         {
             completedSteps = 0;
             totalSteps = 0;
 
-            // --- Seed-hydrate counts (valid before InGame) ---
-            if (ClientMapHydrateCache.HasFullRecipe || ClientMapHydrateCache.HydrateStarted)
+            // --- No fake 1/1 before recipe ---
+            // [TITAN-ORBIT] Legacy path used totalSteps=1 / completedSteps=1 once InGame, which
+            // painted "1 / 1" + 100% on the World bar for a frame before ExpectedBodies arrived.
+            if (!ClientMapHydrateCache.HasFullRecipe && !ClientMapHydrateCache.HydrateStarted)
+                return false;
+
+            if (ClientMapHydrateCache.ExpectedBodies <= 0)
+                return false;
+
+            totalSteps = ClientMapHydrateCache.ExpectedBodies;
+            completedSteps = Mathf.Clamp(ClientMapHydrateCache.BuiltBodies, 0, totalSteps);
+
+            // After hydrate + InGame settle, bar 1 is done even if GOs still Instantiates.
+            if (ClientMapHydrateCache.IsComplete &&
+                IsNetworkInGame() &&
+                (ClientJoinSettleCache.JoinSettleCompleted ||
+                 ClientJoinSettleCache.InGameFrames >=
+                 TitanOrbitClientJoinTransformGateSystem.MinInGameFramesBeforeExit))
             {
-                totalSteps = Mathf.Max(1, ClientMapHydrateCache.ExpectedBodies);
-                completedSteps = Mathf.Clamp(ClientMapHydrateCache.BuiltBodies, 0, totalSteps);
-                if (IsMapLoadingComplete())
-                    completedSteps = totalSteps;
-                return true;
+                completedSteps = totalSteps;
             }
 
-            if (!IsNetworkInGame())
-                return false;
+            return true;
+        }
+
+        /// <summary>
+        /// Bar 2 status counts: planet/asteroid GameObject proxies vs server meta total (e.g. 120/678).
+        /// Safe — does not scan ECS asteroids.
+        /// </summary>
+        public static bool TryGetProxyJoinLoadStepCounts(out int completedSteps, out int totalSteps)
+        {
+            completedSteps = 0;
+            totalSteps = 0;
 
             totalSteps = ResolveMapLoadingDenominator();
             if (totalSteps <= 0)
@@ -1680,8 +1783,7 @@ namespace TitanOrbit.Game
             s_ProxyPlateauSince = -1f;
             // [TITAN-ORBIT] Drop latched MapSessionMetaRpc so the next join does not reuse old totals.
             MapSessionMetaCache.Clear();
-            // JoinSettleCompleted / TransformQuarantine are static — clear on session end so a second
-            // Editor Play does not think Instantiates already finished.
+            JoinWorldReadyCache.Clear();
             ClientJoinSettleCache.Clear();
             LocalShipEntitySeed.Clear();
             // Tear down hybrid GOs only on true leave-session — not a soft count reset.
@@ -1689,12 +1791,16 @@ namespace TitanOrbit.Game
             GemClientEntityRegistry.Clear();
             PlanetClientEntityRegistry.Clear();
             AsteroidClientEntityRegistry.Clear();
+            ClientLocalAsteroidCombatSync.ClearPendingQueues();
+            PlanetaryDefenseClientHealthSync.Clear();
             PlanetConnectionGraphCache.Clear();
             PlanetConnectionPresentationTriangles.Clear();
             s_PlanetStateByIdCache.Clear();
             s_PlanetPoseByIdCache.Clear();
             s_PlanetStateCacheFrame = -1;
             GemTractorBeamVisibilityTracker.Clear();
+            PlayerNameRosterCache.Clear();
+            PlayerNameRpcClient.ResetSession();
         }
 
         /// <summary>
@@ -1826,6 +1932,7 @@ namespace TitanOrbit.Game
             bool proxyReady = IsMapProxyCountReady(out int proxies, out int total, out int readyAt);
             // --- Mirror for ECS join gate (cannot reference this Game assembly) ---
             ClientJoinSettleCache.SetMapProxyBuildReady(proxyReady);
+            JoinWorldReadyCache.SetMoonProxyCount(PlanetGemMoonVisualRegistry.Count);
 
             if (proxyReady)
             {
@@ -1881,33 +1988,81 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// In-bar join status: a few words for the current phase, plus counts when we have them.
+        /// Honest — never “looks busy” while waiting. No ECS asteroid gathers.
+        /// </summary>
+        public static string GetJoinLoadStatusLabel()
+        {
+            if (IsMapLoadingComplete())
+                return "Ready";
+
+            if (!ClientMapHydrateCache.HasFullRecipe)
+                return "Syncing with server";
+            if (ClientMapHydrateCache.WaitingForPrefabs)
+                return "Loading map prefabs";
+            if (!ClientMapHydrateCache.HydrateStarted)
+                return "Preparing map";
+            if (!ClientMapHydrateCache.IsComplete)
+            {
+                if (ClientMapHydrateCache.ExpectedBodies > 0)
+                    return "Loading asteroids  " + ClientMapHydrateCache.BuiltBodies +
+                           " / " + ClientMapHydrateCache.ExpectedBodies;
+                return "Loading asteroids";
+            }
+
+            if (!JoinWorldReadyCache.OccupancyApplied)
+                return JoinWorldReadyCache.OccupancyReceived
+                    ? "Applying occupancy"
+                    : "Syncing with server";
+            if (JoinWorldReadyCache.InGameRealtime < 0f)
+                return "Syncing with server";
+
+            if (!JoinWorldReadyCache.PlanetsReady)
+            {
+                int expect = Mathf.Max(JoinWorldReadyCache.ExpectedPlanets, 0);
+                if (expect > 0)
+                    return "Loading planets  " + JoinWorldReadyCache.ReceivedPlanets + " / " + expect;
+                return "Loading planets";
+            }
+
+            if (!JoinWorldReadyCache.MoonsReady)
+                return "Loading moons";
+
+            if (!JoinWorldReadyCache.ShipsReady)
+            {
+                if (JoinWorldReadyCache.ExpectedShips > 0)
+                    return "Loading ships  " + JoinWorldReadyCache.ReceivedShips +
+                           " / " + JoinWorldReadyCache.ExpectedShips;
+                return "Loading ships";
+            }
+
+            if (!JoinWorldReadyCache.GhostCatchUpReady)
+                return "Syncing with server";
+
+            int total = ResolveMapLoadingDenominator();
+            int proxies = EcsWorldVisualizer.MapLoadingProxyCount;
+            if (total > 0)
+                return "Loading map visuals  " + proxies + " / " + total;
+            return "Loading map visuals";
+        }
+
+        /// <summary>
         /// Short stuck-load hint for the loading status line (no ECS asteroid gathers).
-        /// Empty when progress is healthy or meta is not ready yet.
+        /// Honest labels — empty fill plus this text means we are waiting, not secretly loading.
         /// </summary>
         public static string GetMapLoadStuckHint()
         {
-            if (!IsNetworkInGame() || IsMapLoadingComplete())
+            if (IsMapLoadingComplete())
                 return string.Empty;
 
-            // --- Snapshot counts (IsMapProxyCountReady always fills outs) ---
-            IsMapProxyCountReady(out int proxies, out int total, out int readyAt);
+            // --- Recipe / hydrate (pre-InGame is the 8% crawl) ---
+            if (!ClientMapHydrateCache.HasFullRecipe)
+                return ClientMapHydrateCache.GetWorldBarStatusLabel();
 
-            if (total <= 0)
-                return "waiting for map meta";
+            if (!ClientMapHydrateCache.IsComplete)
+                return ClientMapHydrateCache.GetWorldBarStatusLabel();
 
-            if (proxies <= 0 && TitanOrbitJoinLoadCounters.InstantiatesSession <= 0)
-                return "waiting for Instantiates";
-
-            if (proxies <= 0)
-                return "proxies=0 (SpawnRequest drain?)";
-
-            if (proxies < readyAt)
-                return $"proxies {proxies}/{readyAt} (settling={ClientJoinSettleCache.Settling})";
-
-            if (ClientJoinSettleCache.Settling)
-                return "proxy-ready, exiting settle";
-
-            return string.Empty;
+            return JoinWorldReadyCache.GetStatusLabel();
         }
 
         /// <summary>Length of ghost-replicated map layout buffer on the client (0 until finalize).</summary>
@@ -1979,9 +2134,6 @@ namespace TitanOrbit.Game
         /// is missing on the client (that field is not a GhostField).
         /// </summary>
         const int DefaultMaxPlayersPerTeam = 20;
-
-        /// <summary>Scratch NetworkId → display name for one Join Team refresh.</summary>
-        static readonly Dictionary<int, string> s_JoinTeamNameByNetworkId = new Dictionary<int, string>(16);
 
         /// <summary>Per-slot StringBuilders reused across Join Team refreshes (TeamA…E).</summary>
         static readonly System.Text.StringBuilder[] s_JoinTeamLabelBuilders =
@@ -2139,9 +2291,10 @@ namespace TitanOrbit.Game
             using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
 
             // --- Name lookup once per refresh ---
-            // [TITAN-ORBIT] PlayerNameElement lives on the match singleton; SetPlayerName RPC is not
-            // wired yet, so this map is often empty and labels fall back to "Player {id}".
-            FillJoinTeamNameLookup(em);
+            // [TITAN-ORBIT] Merge the server/client name buffer into PlayerNameRosterCache, then
+            // overlay the local Main Menu name so Join Team lists never wait on the RPC round-trip.
+            MergePlayerNamesFromWorld(em);
+            OverlayLocalPlayerDisplayName();
 
             for (int i = 0; i < slots; i++)
             {
@@ -2174,10 +2327,16 @@ namespace TitanOrbit.Game
             }
         }
 
-        /// <summary>Copies <see cref="PlayerNameElement"/> rows into <see cref="s_JoinTeamNameByNetworkId"/>.</summary>
-        static void FillJoinTeamNameLookup(EntityManager em)
+        /// <summary>
+        /// Copies <see cref="PlayerNameElement"/> rows from a world into <see cref="PlayerNameRosterCache"/>.
+        /// Does not clear existing cache entries — late announce RPCs stay until session reset.
+        /// </summary>
+        /// <param name="em">ServerWorld (Local Host) or ClientWorld EntityManager.</param>
+        static void MergePlayerNamesFromWorld(EntityManager em)
         {
-            s_JoinTeamNameByNetworkId.Clear();
+            // --- Singleton buffer only (no ship gather) ---
+            // [NETCODE] PlayerNameElement lives on the match singleton. Dedicated ClientWorld
+            // usually has no copy — then this no-ops and the announce RPC cache is the source.
             using var nameQuery = em.CreateEntityQuery(ComponentType.ReadOnly<PlayerNameElement>());
             if (nameQuery.IsEmptyIgnoreFilter)
                 return;
@@ -2192,57 +2351,73 @@ namespace TitanOrbit.Game
                 string name = buffer[i].DisplayName.ToString();
                 if (string.IsNullOrWhiteSpace(name))
                     continue;
-                s_JoinTeamNameByNetworkId[buffer[i].NetworkId] = name;
+                PlayerNameRosterCache.Upsert(buffer[i].NetworkId, name);
             }
         }
 
         /// <summary>
-        /// Resolves a display name from the cached name map; otherwise "Player {networkId}".
+        /// Forces the local Main Menu name onto this client's NetworkId so the owner plate
+        /// never shows "Player {id}" while the SetPlayerName RPC is in flight.
         /// </summary>
-        static string ResolveJoinTeamPlayerLabel(int networkId)
+        static void OverlayLocalPlayerDisplayName()
         {
-            if (networkId <= 0)
-                return "Player";
-
-            if (s_JoinTeamNameByNetworkId.TryGetValue(networkId, out string name) &&
-                !string.IsNullOrWhiteSpace(name))
-                return name;
-
-            return "Player " + networkId;
+            int localId = GetLocalNetworkId();
+            if (localId <= 0)
+                return;
+            PlayerNameRosterCache.Upsert(localId, LocalPlayerDisplayName.Get());
         }
 
         /// <summary>
-        /// Reloads <see cref="PlayerNameElement"/> into the shared name cache for scoreboards / HUD.
+        /// Resolves a display name from the roster cache; otherwise "Player {networkId}".
+        /// </summary>
+        static string ResolveJoinTeamPlayerLabel(int networkId) =>
+            GetCachedPlayerDisplayName(networkId);
+
+        /// <summary>
+        /// Reloads names into <see cref="PlayerNameRosterCache"/> for scoreboards / HUD.
         /// Safe on the client — reads a singleton buffer only; never walks ship or map-body entities.
         /// Call once at the start of a leaderboard refresh, then use <see cref="GetCachedPlayerDisplayName"/>.
         /// </summary>
         public static void RefreshPlayerDisplayNameCache()
         {
-            // --- Prefer ClientWorld (ghosted names); fall back to ServerWorld on Local Host ---
-            // [NETCODE] PlayerNameElement lives on the match singleton and replicates when SetPlayerName is wired.
+            // --- Prefer ServerWorld on Local Host (authoritative roster); else ClientWorld ---
+            // [NETCODE] PlayerNameElement is not ghosted. Dedicated clients fill the cache from
+            // PlayerNameAnnounceRpc; Local Host can read the server buffer directly.
             World world = null;
-            if (ClientWorld != null && ClientWorld.IsCreated)
+            if (IsLocalHost() && ServerWorld != null && ServerWorld.IsCreated)
+                world = ServerWorld;
+            else if (ClientWorld != null && ClientWorld.IsCreated)
                 world = ClientWorld;
             else if (ServerWorld != null && ServerWorld.IsCreated)
                 world = ServerWorld;
 
-            if (world == null || !world.IsCreated)
-            {
-                s_JoinTeamNameByNetworkId.Clear();
-                return;
-            }
+            if (world != null && world.IsCreated)
+                MergePlayerNamesFromWorld(world.EntityManager);
 
-            FillJoinTeamNameLookup(world.EntityManager);
+            OverlayLocalPlayerDisplayName();
         }
 
         /// <summary>
-        /// Display name from the last <see cref="RefreshPlayerDisplayNameCache"/> pass.
-        /// Falls back to "Player {networkId}" when the name RPC has not populated the buffer yet.
+        /// Display name from <see cref="PlayerNameRosterCache"/> (announce RPC + local overlay).
+        /// Falls back to "Player {networkId}" when this id has not published a name yet.
         /// </summary>
         /// <param name="networkId">GhostOwner.NetworkId for the ship / connection.</param>
         /// <returns>Cached custom name, or a stable fallback label.</returns>
-        public static string GetCachedPlayerDisplayName(int networkId) =>
-            ResolveJoinTeamPlayerLabel(networkId);
+        public static string GetCachedPlayerDisplayName(int networkId)
+        {
+            if (networkId <= 0)
+                return "Player";
+
+            if (PlayerNameRosterCache.TryGet(networkId, out string name))
+                return name;
+
+            // --- Last-chance local overlay ---
+            // Refresh may not have run this frame (first nameplate paint after Join Team).
+            if (networkId == GetLocalNetworkId())
+                return LocalPlayerDisplayName.Get();
+
+            return "Player " + networkId;
+        }
 
         /// <summary>Number of teams in this match (from home planets, then server team state).</summary>
         public static bool TryGetActiveTeamCount(out int activeTeamCount)

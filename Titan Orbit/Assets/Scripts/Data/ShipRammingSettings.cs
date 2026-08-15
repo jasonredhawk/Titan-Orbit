@@ -37,6 +37,7 @@ namespace TitanOrbit.Data
         /// <summary>
         /// Sanitizes self-damage ratio after Inspector edits.
         /// <see cref="GlobalDamageMultiplier"/> is left as authored (not clamped).
+        /// Grind pulse interval lives on <see cref="AsteroidSettings"/> (rock-contact pacing).
         /// </summary>
         public void ClampValues()
         {
@@ -46,6 +47,7 @@ namespace TitanOrbit.Data
             SelfToAsteroidDamageRatio = Mathf.Max(0f, SelfToAsteroidDamageRatio);
         }
 
+        /// <summary>[UNITY] Inspector edit — keep authored values legal.</summary>
         void OnValidate() => ClampValues();
     }
 }

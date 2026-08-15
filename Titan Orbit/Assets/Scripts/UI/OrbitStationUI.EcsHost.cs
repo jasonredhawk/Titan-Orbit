@@ -51,11 +51,11 @@ namespace TitanOrbit.UI
         bool IOrbitStationHost.TryGetPlayerUpgradePathEdges(out HashSet<(int fL, int fB, int tL, int tB)> edges) =>
             TryGetPlayerUpgradePathEdges(out edges);
 
-        void IOrbitStationHost.RefreshShipUpgradeTreeNodeStates(IReadOnlyList<ShipUpgradeTreeNodeUI> nodes, float maxPower) =>
-            RefreshShipUpgradeTreeNodeStates(nodes, maxPower);
+        void IOrbitStationHost.RefreshShipUpgradeTreeNodeStates(IReadOnlyList<ShipUpgradeTreeNodeUI> nodes, ShipPowerBarStatMaxes maxes) =>
+            RefreshShipUpgradeTreeNodeStates(nodes, maxes);
 
-        void IOrbitStationHost.PopulateTreeNode(ShipUpgradeTreeNodeUI view, float maxPower) =>
-            PopulateTreeNode(view, maxPower);
+        void IOrbitStationHost.PopulateTreeNode(ShipUpgradeTreeNodeUI view, ShipPowerBarStatMaxes maxes) =>
+            PopulateTreeNode(view, maxes);
 
         void IOrbitStationHost.OnUpgradeTreeNodeClicked(int nodeLevel, int targetBranchIndex) =>
             OnUpgradeTreeNodeClicked(nodeLevel, targetBranchIndex);

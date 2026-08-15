@@ -58,13 +58,22 @@ namespace TitanOrbit.Simulation
         public const float ActivePullTowardSpeedThreshold = 0.22f;
 
         /// <summary>
-        /// Deploy VFX: thin line shoots from wing → gem, then cone mouth opens, then pull starts.
-        /// Kept short for snappy feel but long enough to read (not instant).
+        /// Deploy VFX: thin line shoots from wing → gem, then cone mouth opens.
+        /// Pull physics waits until extend + widen finish (see
+        /// <see cref="IsDeployPullReady"/>). Duration scales with distance via
+        /// <see cref="ComputeExtendDuration"/>.
         /// </summary>
         public const float ExtendLineSpeed = 11f;
         public const float MinExtendDuration = 0.12f;
         public const float MaxExtendDuration = 0.42f;
         public const float WidthExpandDuration = 0.14f;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Drawn beam length may exceed search radius slightly (wing mesh mid-center
+        /// vs sim tip, gem size, one-frame presentation lag). Beyond this slack the line is a bug
+        /// (stale proxy / coast extrapolation) — do not draw it.
+        /// </summary>
+        public const float VisualRangeSlack = 1.25f;
 
         /// <summary>
         /// Converts wing Max Gems Capacity (at current ship level) into tractor reach and pull strength.
@@ -179,11 +188,11 @@ namespace TitanOrbit.Simulation
         /// </summary>
         public static void GetTractorBeamFromStats(
             float tractorBeamDistance,
-            float tractorBeamDistancePerAbilityLevel,
+            float tractorBeamDistancePerExtraLevel,
             float tractorBeamPower,
-            float tractorBeamPowerPerAbilityLevel,
+            float tractorBeamPowerPerExtraLevel,
             float maxGems,
-            float maxGemsPerAbilityLevel,
+            float maxGemsPerExtraLevel,
             int shipLevel,
             bool inOrbitZone,
             out float searchRadius,
@@ -191,13 +200,13 @@ namespace TitanOrbit.Simulation
         {
             // --- Level-scaled authoring ---
             int perLvl = math.max(0, shipLevel - 1);
-            searchRadius = tractorBeamDistance + tractorBeamDistancePerAbilityLevel * perLvl;
-            attractionSpeed = tractorBeamPower + tractorBeamPowerPerAbilityLevel * perLvl;
+            searchRadius = tractorBeamDistance + tractorBeamDistancePerExtraLevel * perLvl;
+            attractionSpeed = tractorBeamPower + tractorBeamPowerPerExtraLevel * perLvl;
 
             // --- Legacy fallback: only MaxGems was authored ---
             if (searchRadius <= 0f && attractionSpeed <= 0f)
             {
-                float effectiveMaxGems = math.max(0f, maxGems + maxGemsPerAbilityLevel * perLvl);
+                float effectiveMaxGems = math.max(0f, maxGems + maxGemsPerExtraLevel * perLvl);
                 GetTractorBeamFromMaxGems(effectiveMaxGems, inOrbitZone, out searchRadius, out attractionSpeed);
                 return;
             }
@@ -233,10 +242,64 @@ namespace TitanOrbit.Simulation
             return ToroidalDistance(gemPos, beamOrigin, mapW, mapH) <= searchRadius;
         }
 
+        /// <summary>
+        /// True when an already-computed display-space beam length is still legal to draw.
+        /// Uses <see cref="VisualRangeSlack"/> so the cone does not pop at the exact sim radius.
+        /// </summary>
+        /// <param name="drawnXzDistance">Euclidean XZ length of the Shapes beam this frame.</param>
+        /// <param name="searchRadius">That wing's search radius (after level / orbit / settings).</param>
+        /// <returns>False when the line would stretch past reach — caller should skip the draw.</returns>
+        public static bool IsDrawnBeamWithinReach(float drawnXzDistance, float searchRadius)
+        {
+            float radius = math.max(0.5f, searchRadius);
+            float dist = math.max(0f, drawnXzDistance);
+            return dist <= radius * VisualRangeSlack;
+        }
+
         public static float ComputeExtendDuration(float toroidalDistance)
         {
             float dist = math.max(0f, toroidalDistance);
             return math.clamp(dist / ExtendLineSpeed, MinExtendDuration, MaxExtendDuration);
+        }
+
+        /// <summary>
+        /// Seconds since the ghosted lock tick on the ServerTick timeline.
+        /// <paramref name="nowServerSeconds"/> must use the same clock as
+        /// <c>PlanetGemMoonOrbitClock</c> (tick index / sim Hz).
+        /// </summary>
+        public static float ComputeDeployElapsedSeconds(
+            uint lockTick,
+            double nowServerSeconds,
+            int simulationTickRate)
+        {
+            if (lockTick == 0 || simulationTickRate <= 0)
+                return 0f;
+            double lockSec = lockTick / (double)simulationTickRate;
+            return (float)math.max(0d, nowServerSeconds - lockSec);
+        }
+
+        /// <summary>
+        /// Thin-line extend plus cone widen. Pull must not start before this elapses.
+        /// </summary>
+        public static float ComputeDeployTotalDuration(float extendDuration)
+        {
+            float extend = extendDuration > 0.0001f ? extendDuration : MinExtendDuration;
+            return extend + WidthExpandDuration;
+        }
+
+        /// <summary>
+        /// True when the extend line has reached the gem and the cone has finished widening.
+        /// </summary>
+        public static bool IsDeployPullReady(
+            uint lockTick,
+            float extendDuration,
+            double nowServerSeconds,
+            int simulationTickRate)
+        {
+            if (lockTick == 0)
+                return false;
+            float elapsed = ComputeDeployElapsedSeconds(lockTick, nowServerSeconds, simulationTickRate);
+            return elapsed >= ComputeDeployTotalDuration(extendDuration) - 0.0001f;
         }
 
         /// <summary>

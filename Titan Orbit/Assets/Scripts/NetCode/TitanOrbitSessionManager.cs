@@ -86,6 +86,14 @@ namespace TitanOrbit.NetCode
         public static bool IsDedicatedJoinConnecting =>
             IsDedicatedOnlineClient && Instance != null && !Instance.IsInGame;
 
+        /// <summary>
+        /// Dedicated Relay join, or Local Host boot coroutine still running.
+        /// Keeps the loading overlay up before NetworkId / recipe exist.
+        /// </summary>
+        public static bool IsJoinConnecting =>
+            IsDedicatedJoinConnecting ||
+            (Instance != null && Instance._localBootRunning);
+
         /// <summary>[UNITY] Editor-only: local ServerWorld sim suspended while joining dedicated online.</summary>
         static bool s_EditorLocalServerSuspendedForOnline;
 
@@ -458,44 +466,38 @@ namespace TitanOrbit.NetCode
 
         bool _localBootRunning;
 
-        /// <summary>Polls client world until NetworkStreamInGame or timeout — LAN host/client bootstrap.</summary>
+        /// <summary>Polls client world until a NetworkId exists — LAN host/client bootstrap.</summary>
         IEnumerator MaintainClientSession()
         {
             float deadline = Time.realtimeSinceStartup + 45f;
-            while (Time.realtimeSinceStartup < deadline && !HasClientInGame())
+            while (Time.realtimeSinceStartup < deadline)
             {
-                var client = ClientServerBootstrap.ClientWorld;
+                World client = ClientServerBootstrap.ClientWorld;
                 if (client != null && client.IsCreated)
                 {
                     if (!HasClientConnection(client))
                         ConnectLocalClient(serverPort);
-                    else
-                        RequestGoInGame(client);
                 }
 
-                if (HasClientInGame())
+                if (HasClientNetworkId(client))
                 {
                     IsInGame = true;
                     LastStatusMessage = TitanOrbitPlayModeUtility.IsMppmAdditionalEditorInstance()
-                        ? "Connected to host — choose a team."
-                        : "Connected.";
-                    Debug.Log("[TitanOrbitSessionManager] Client in-game.");
+                        ? "Connected to host — building map..."
+                        : "Connected — building map...";
+                    Debug.Log("[TitanOrbitSessionManager] Client connected (NetworkId). Seed hydrate runs before InGame.");
                     yield break;
                 }
-
 
                 yield return null;
             }
 
-            if (!HasClientInGame())
-            {
-                var client = ClientServerBootstrap.ClientWorld;
-                var server = ClientServerBootstrap.ServerWorld;
-                Debug.LogWarning("[TitanOrbitSessionManager] Client never reached in-game. client=" +
-                                 (client != null && client.IsCreated ? client.Name : "missing") +
-                                 " server=" + (server != null && server.IsCreated ? server.Name : "missing") +
-                                 ". Press Play on the main Editor Game view, or disable the MPPM Server virtual player.");
-            }
+            World timedOutClient = ClientServerBootstrap.ClientWorld;
+            World timedOutServer = ClientServerBootstrap.ServerWorld;
+            Debug.LogWarning("[TitanOrbitSessionManager] Client never received NetworkId. client=" +
+                             (timedOutClient != null && timedOutClient.IsCreated ? timedOutClient.Name : "missing") +
+                             " server=" + (timedOutServer != null && timedOutServer.IsCreated ? timedOutServer.Name : "missing") +
+                             ". Press Play on the main Editor Game view, or disable the MPPM Server virtual player.");
         }
 
         /// <summary>
@@ -504,7 +506,7 @@ namespace TitanOrbit.NetCode
         public void StartLocalPlay()
         {
             LastStatusMessage = "Starting local play...";
-            if (_localBootRunning || HasClientInGame())
+            if (_localBootRunning || HasClientInGame() || IsInGame)
                 return;
             StartCoroutine(BootLanHost());
         }
@@ -591,7 +593,7 @@ namespace TitanOrbit.NetCode
         public bool StartLocalClientForLanTest(string address = "127.0.0.1")
         {
             LastStatusMessage = "Connecting to local server...";
-            if (_localBootRunning || HasClientInGame())
+            if (_localBootRunning || HasClientInGame() || IsInGame)
                 return false;
             StartCoroutine(BootLanClient(address));
             return true;
@@ -625,15 +627,13 @@ namespace TitanOrbit.NetCode
                     port = serverPort;
                 ConnectLocalClient(port);
 
-                float deadline = Time.realtimeSinceStartup + 20f;
+                float deadline = Time.realtimeSinceStartup + 60f;
                 while (Time.realtimeSinceStartup < deadline)
                 {
-                    if (HasClientConnection(client))
-                        RequestGoInGame(client);
-                    if (HasClientInGame())
+                    if (HasClientNetworkId(client))
                     {
                         IsInGame = true;
-                        LastStatusMessage = "Connected to local server.";
+                        LastStatusMessage = "Connected — building map...";
                         yield break;
                     }
 
@@ -741,26 +741,20 @@ namespace TitanOrbit.NetCode
             ResetClientDriverIfNeeded();
             ConnectLocalClient(serverPort);
 
-            float deadline = Time.realtimeSinceStartup + 20f;
+            float deadline = Time.realtimeSinceStartup + 60f;
             while (Time.realtimeSinceStartup < deadline)
             {
-                if (HasClientConnection(client))
-                    RequestGoInGame(client);
-
-                if (HasClientInGame())
+                if (HasClientNetworkId(client))
                 {
                     RequestGoInGame(server);
                     IsInGame = true;
-                    LastStatusMessage = "Connected.";
-                    Debug.Log("[TitanOrbitSessionManager] Local Client+Server connected.");
+                    LastStatusMessage = "Connected — building map...";
+                    Debug.Log("[TitanOrbitSessionManager] Local Client+Server connected (NetworkId). Hydrate before InGame.");
                     yield break;
                 }
 
                 if (HasLocalConnection(server, client))
-                {
                     RequestGoInGame(server);
-                    RequestGoInGame(client);
-                }
 
                 yield return null;
             }
@@ -778,6 +772,19 @@ namespace TitanOrbit.NetCode
         {
             if (client == null || !client.IsCreated) return false;
             return client.EntityManager.CreateEntityQuery(typeof(NetworkStreamConnection)).CalculateEntityCount() > 0;
+        }
+
+        /// <summary>
+        /// True when the client connection has a <see cref="NetworkId"/> (handshake finished).
+        /// Does not require <see cref="NetworkStreamInGame"/> — that waits for seed hydrate.
+        /// </summary>
+        static bool HasClientNetworkId(World client)
+        {
+            if (client == null || !client.IsCreated)
+                return false;
+            return client.EntityManager
+                .CreateEntityQuery(typeof(NetworkStreamConnection), typeof(NetworkId))
+                .CalculateEntityCount() > 0;
         }
 
         static bool HasClientInGame()
@@ -1001,6 +1008,21 @@ namespace TitanOrbit.NetCode
                 return;
             s_LastServerTickFrame = Time.frameCount;
             world.Update();
+        }
+
+        /// <summary>
+        /// Ticks ClientWorld. WebGL uses <see cref="TitanOrbitWebGlClientTick.SafeUpdate"/> so
+        /// Transform / predicted-fixed Burst never run (Chrome WASM OOB on join).
+        /// </summary>
+        static void TickClientWorld(World world)
+        {
+            if (world == null || !world.IsCreated)
+                return;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            TitanOrbitWebGlClientTick.SafeUpdate(world);
+#else
+            world.Update();
+#endif
         }
 
         static void LogServerWorldWaitStatus(int waitFrames)
@@ -1479,7 +1501,10 @@ namespace TitanOrbit.NetCode
 
                 RequestDisconnectAllConnections(world);
                 // Must tick THIS world (client or server). Shared TickServerWorld frame-gate can skip client ticks.
-                world.Update();
+                if (world == ClientServerBootstrap.ClientWorld)
+                    TickClientWorld(world);
+                else
+                    world.Update();
                 await Task.Yield();
             }
         }
@@ -1567,7 +1592,7 @@ namespace TitanOrbit.NetCode
                 string hostProtocol = lobby.Data.TryGetValue(TitanOrbitLobbyService.LobbyRelayProtocolKey, out var proto)
                     ? TitanOrbitRelayUtility.SanitizeRelayProtocolForRelaySdk(proto.Value)
                     : TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
-                // Host and editor client both use dtls to the same Relay allocation (legacy NGO behavior).
+                // Platform-valid client endpoint on the same allocation (wss on WebGL, dtls otherwise).
                 string clientProtocol = TitanOrbitRelayUtility.ClientConnectionTypeForPlatform();
 
                 Debug.Log("[TitanOrbitSessionManager] Joining Relay lobby=" + lobby.Id + " code=" + joinCode +
@@ -1599,7 +1624,7 @@ namespace TitanOrbit.NetCode
                 ConnectRelayClient(clientWorld);
                 for (int i = 0; i < 30; i++)
                 {
-                    clientWorld.Update();
+                    TickClientWorld(clientWorld);
                     await Task.Yield();
                 }
 
@@ -1703,7 +1728,7 @@ namespace TitanOrbit.NetCode
                     return;
 
                 RequestDisconnectAllConnections(clientWorld);
-                clientWorld.Update();
+                TickClientWorld(clientWorld);
                 await Task.Yield();
             }
 
@@ -1749,7 +1774,7 @@ namespace TitanOrbit.NetCode
             for (int i = 0; i < 10; i++)
             {
                 if (client != null && client.IsCreated)
-                    client.Update();
+                    TickClientWorld(client);
                 await Task.Yield();
             }
         }
@@ -2029,11 +2054,10 @@ namespace TitanOrbit.NetCode
             {
                 if (client != null && client.IsCreated)
                 {
-                    client.Update();
+                    TickClientWorld(client);
 
-                    // Local/loopback: manual in-game. Dedicated uses TitanOrbitGoInGameClientSystem RPC handshake.
-                    if (!dedicatedJoin && HasClientConnection(client))
-                        RequestGoInGame(client);
+                    // [TITAN-ORBIT] Never force client NetworkStreamInGame here.
+                    // TitanOrbitGoInGameClientSystem does that after seed hydrate.
 
                     if (dedicatedJoin && Time.realtimeSinceStartup - lastDiag >= 5f)
                     {
@@ -2111,9 +2135,17 @@ namespace TitanOrbit.NetCode
             return world.EntityManager.CreateEntityQuery(typeof(NetworkStreamInGame)).CalculateEntityCount() > 0;
         }
 
+        /// <summary>
+        /// Marks <see cref="NetworkStreamInGame"/> on SERVER connection entities only.
+        /// Client InGame is owned by <c>TitanOrbitGoInGameClientSystem</c> after seed hydrate —
+        /// forcing it here made the loading bar move while zero asteroids spawned.
+        /// </summary>
         static void RequestGoInGame(World world)
         {
             if (world == null || !world.IsCreated)
+                return;
+
+            if (world == ClientServerBootstrap.ClientWorld)
                 return;
 
             var em = world.EntityManager;
@@ -2386,10 +2418,16 @@ namespace TitanOrbit.NetCode
             ClientTeamFlowState.NotifyTeamPickRequested(team);
 
             // --- Drop stale local-ship seed from a prior Play / failed TeamChoice ---
-            // [TITAN-ORBIT] Domain Reload disabled: SeededShip can stay non-null while destroyed,
-            // which blocked ClientPredictedShipSpawnRequest and bounced UI back to Join Team.
-            LocalShipEntitySeed.Clear();
-            ClientPredictedShipSpawnRequest.Clear();
+            // [TITAN-ORBIT] Domain Reload disabled: SeededShip can stay non-null while destroyed.
+            // Watchdog retries call RequestTeam again — do not Clear a live hull that already
+            // Instantiated via GhostReceive (late Join Team click: seed exists, Result still in flight).
+            bool keepLiveHull = LocalShipEntitySeed.HasLiveOwnedShipSeed(world.EntityManager) &&
+                                ClientTeamFlowState.LastRequestedTeam == team;
+            if (!keepLiveHull)
+            {
+                LocalShipEntitySeed.Clear();
+                ClientPredictedShipSpawnRequest.ResetForTeamPick();
+            }
 
             // --- Pre-arm ship Instantiates hold before the server can reply ---
             // [TITAN-ORBIT] Player.log 2026-07-31: TeamChoiceResult → Crash!!! the same frame.

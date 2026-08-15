@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace TitanOrbit.ECS
 {
@@ -45,6 +46,15 @@ namespace TitanOrbit.ECS
             /// [TITAN-ORBIT] Matches server <c>BulletElement.DamageFilter</c> for cosmetic pass-through.
             /// </summary>
             public byte DamageFilter;
+
+            /// <summary>1 = homing rocket — client tracer steers toward the closest enemy.</summary>
+            public byte Homing;
+
+            /// <summary>Max yaw rate in degrees per second while Homing is set.</summary>
+            public float TurnSpeedDeg;
+
+            /// <summary>Toroidal search radius. Empty bubble = fly straight (never whole-map at 0).</summary>
+            public float AcquireRange;
         }
 
         /// <summary>Authoritative impact — destroy matching tracer and play impact VFX.</summary>
@@ -95,6 +105,15 @@ namespace TitanOrbit.ECS
 
         static uint s_NextSequence = 1;
         const int MaxSeen = 512;
+
+        /// <summary>
+        /// Sequence=0 ram/grind fingerprints already enqueued this Unity frame.
+        /// Host in-process + broadcast RPC would otherwise play each pulse twice.
+        /// </summary>
+        static readonly HashSet<uint> RamHitsThisFrame = new HashSet<uint>();
+
+        /// <summary>[UNITY] Frame index that <see cref="RamHitsThisFrame"/> belongs to.</summary>
+        static int s_RamHitFrame = -1;
 
         /// <summary>
         /// Max live Sequence=0 anticipation tracers for the local player.
@@ -149,12 +168,22 @@ namespace TitanOrbit.ECS
         public static bool TryDequeueSpawn(out SpawnRequest request) => SpawnQueue.TryDequeue(out request);
 
         /// <summary>
-        /// Enqueues an impact. Dedupes by Sequence so Local Host bridge + HitRpc do not double-apply.
+        /// Enqueues an impact. Non-zero Sequence is deduped so Local Host bridge + HitRpc do not
+        /// double-apply. Sequence 0 is a ram/grind flash (no tracer) — those are deduped by pose
+        /// on the same Unity frame instead, because every ram pulse shares Sequence 0.
         /// </summary>
         public static void EnqueueHit(in HitRequest request)
         {
             if (request.Sequence == 0)
+            {
+                // --- Ram / grind (no tracer) ---
+                // [TITAN-ORBIT] Same pulse arrives twice on listen-server (in-process + RPC).
+                if (!RememberRamHitThisFrame(in request))
+                    return;
+                HitQueue.Enqueue(request);
                 return;
+            }
+
             if (!RememberHitSequence(request.Sequence))
                 return;
             HitQueue.Enqueue(request);
@@ -173,6 +202,29 @@ namespace TitanOrbit.ECS
             SeenHitSequences.Clear();
             SeenHitOrder.Clear();
             LiveAnticipationCount = 0;
+            RamHitsThisFrame.Clear();
+            s_RamHitFrame = -1;
+        }
+
+        /// <summary>
+        /// True when this Sequence=0 ram hit should play. False when the same pose/damage/team
+        /// was already enqueued this Unity frame (listen-server in-process + RPC).
+        /// </summary>
+        static bool RememberRamHitThisFrame(in HitRequest request)
+        {
+            int frame = Time.frameCount;
+            if (frame != s_RamHitFrame)
+            {
+                RamHitsThisFrame.Clear();
+                s_RamHitFrame = frame;
+            }
+
+            uint fingerprint = math.hash(new float4(
+                request.HitPosition.x,
+                request.HitPosition.z,
+                request.Damage,
+                request.OwnerTeam));
+            return RamHitsThisFrame.Add(fingerprint);
         }
 
         static bool RememberSpawnSequence(uint sequence)

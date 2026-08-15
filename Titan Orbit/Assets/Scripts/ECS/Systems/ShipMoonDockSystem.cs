@@ -17,8 +17,9 @@ namespace TitanOrbit.ECS
     /// lives in shared <see cref="ShipPhysicsDriveLogic"/> so client prediction matches.
     /// Fully-landed ships also ignore other friendly moon dock zones whose spheres briefly overlap
     /// when planet orbit rings cross — stealing the dock used to reset LandingProgress and replay
-    /// the client grow/shrink land cinematic. Runs before <see cref="GemDepositSystem"/> so deposit
-    /// sees the latest dock flags.
+    /// the client grow/shrink land cinematic. Ships stowed in a planetary defense turret never
+    /// accumulate dock state (pad parks under home-moon paths). Runs before
+    /// <see cref="GemDepositSystem"/> so deposit sees the latest dock flags.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -60,12 +61,22 @@ namespace TitanOrbit.ECS
                 return;
             float approachDelayRequired = GemEconomyConstants.MoonLandingApproachDelaySeconds;
 
-            foreach (var (shipTransform, shipInput, shipKinematics, shipState, moonDock, physicsVelocity) in SystemAPI
+            foreach (var (shipTransform, shipInput, shipKinematics, shipState, moonDock, physicsVelocity, shipEntity) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRO<ShipInput>, RefRW<ShipKinematics>, RefRO<ShipState>, RefRW<ShipMoonDockState>, RefRW<PhysicsVelocity>>()
-                         .WithAll<ShipTag>())
+                         .WithAll<ShipTag>()
+                         .WithEntityAccess())
             {
                 // --- Dead / team-select: clear dock ---
                 if (shipState.ValueRO.IsDead || shipState.ValueRO.AwaitingTeamSelection)
+                {
+                    moonDock.ValueRW = default;
+                    continue;
+                }
+
+                // --- Planetary defense turret possession: never moon-dock ---
+                // [TITAN-ORBIT] Stow parks the hull on the pad. Home moons sweeping that zone used
+                // to accumulate LandingProgress and open Orbit Menu while the player was piloting.
+                if (PlanetaryDefenseTurretControlLogic.IsControllingTurret(state.EntityManager, shipEntity))
                 {
                     moonDock.ValueRW = default;
                     continue;

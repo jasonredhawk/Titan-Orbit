@@ -70,6 +70,11 @@ namespace TitanOrbit.UI
     /// <see cref="ShipSpeedometerStatTooltips"/> / <see cref="ShipAttributeUpgradeHUD"/>.
     /// </para>
     /// Hidden during team select, death, and when the upgrade tree obscures HUD.
+    /// <para>
+    /// [TITAN-ORBIT] Fully moon-docked ships still have world-space velocity because the hull
+    /// co-orbits with the gem moon (<see cref="ShipPhysicsDriveLogic"/>). This HUD pins SPD and
+    /// ACC to 0 while landed — the ship has parked, even though kinematics are not at rest.
+    /// </para>
     /// </summary>
     public class ShipSpeedometerHUD : MonoBehaviour
     {
@@ -268,17 +273,41 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// [UNITY] OnDestroy — drop the static event subscription and dispose the cached ECS query.
+        /// [UNITY] OnDestroy — drop the static event subscription and release the cached ECS query
+        /// only if the visualization world that created it is still alive.
         /// </summary>
         void OnDestroy()
         {
             GameManager.ShowSpeedometerChanged -= OnShowSpeedometerChanged;
+            DisposeHudTaggedQuery();
+        }
 
-            if (_hudTaggedQuery != default)
+        /// <summary>
+        /// Releases the cached <see cref="LocalPlayerShipTag"/> query, or drops the handle if the
+        /// world already tore it down.
+        /// <para>
+        /// [ECS/DOTS] <see cref="EntityManager.CreateEntityQuery"/> handles are caller-owned while
+        /// the world lives, so we Dispose when swapping worlds or destroying this HUD mid-session.
+        /// <see cref="EntityQuery.Dispose"/> unregisters from the world's <c>AliveEntityQueries</c>
+        /// map. On Play Mode exit the visualization <see cref="World"/> is often disposed first and
+        /// already freed that map — a second Dispose then NullReferenceExceptions inside
+        /// <c>UnsafeParallelHashMap.Remove</c> (this Entities version has no
+        /// <c>EntityQuery.IsCreated</c>). If the world is gone, clear the fields only.
+        /// </para>
+        /// </summary>
+        void DisposeHudTaggedQuery()
+        {
+            if (_hudTaggedQuery == default)
             {
-                _hudTaggedQuery.Dispose();
-                _hudTaggedQuery = default;
+                _hudTaggedQueryWorld = null;
+                return;
             }
+
+            // --- World still alive: we own this CreateEntityQuery handle ---
+            if (_hudTaggedQueryWorld != null && _hudTaggedQueryWorld.IsCreated)
+                _hudTaggedQuery.Dispose();
+
+            _hudTaggedQuery = default;
             _hudTaggedQueryWorld = null;
         }
 
@@ -656,7 +685,8 @@ namespace TitanOrbit.UI
             in ShipState ship,
             in ShipAttributeUpgradeState attrs,
             int equipmentHash,
-            string chassisId)
+            string chassisId,
+            int fireBankKey = 0)
         {
             unchecked
             {
@@ -678,6 +708,7 @@ namespace TitanOrbit.UI
                 h = h * 31 + equipmentHash;
                 // Chassis id — rare rebuild; GetHashCode is acceptable here.
                 h = h * 31 + (chassisId != null ? chassisId.GetHashCode() : 0);
+                h = h * 31 + fireBankKey;
                 return h;
             }
         }
@@ -962,8 +993,8 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] Cache the EntityQuery — recreating it every LateUpdate was ~3ms.
             if (_hudTaggedQueryWorld != world || _hudTaggedQuery == default)
             {
-                if (_hudTaggedQuery != default)
-                    _hudTaggedQuery.Dispose();
+                // Old world may already be disposed (session recycle) — never Dispose blindly.
+                DisposeHudTaggedQuery();
                 _hudTaggedQuery = em.CreateEntityQuery(
                     typeof(LocalPlayerShipTag),
                     typeof(ShipState),
@@ -1079,23 +1110,49 @@ namespace TitanOrbit.UI
                 _cachedChassisId = chassisId;
             }
 
-            if (!string.IsNullOrEmpty(chassisId) &&
-                ShipStatApplyLogic.TryGetBaseStatsForChassis(chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))
+            if (!string.IsNullOrEmpty(chassisId))
             {
-                float growth = ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
-                if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family) &&
-                    family != null)
-                    growth = family.ResolveShipLevelStatGrowthFraction();
-                effectiveStats = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
-                    summed, ship.ShipLevel, growth);
-                if (hasAttrs)
+                // --- Prefer Extra Level AggregateAndEvaluate when part lists are available ---
+                // [TITAN-ORBIT] Part cache Instantiates the chassis prefab; matches ShipStatApplyLogic.
+                ShipSpeedometerStatTooltips.TryRefreshPartCache(
+                    em, shipEntity, chassisId, ship.ShipLevel, ref _partCache);
+
+                ShipAbilityLevelCounts abilityCounts = hasAttrs
+                    ? ShipAttributeUpgradeLogic.ToAbilityLevelCounts(in attrs)
+                    : default;
+
+                if (_partCache.Valid && _partCache.Ids != null && _partCache.Ids.Count > 0)
                 {
-                    ShipAttributeUpgradeLogic.ApplyMultipliers(ref effectiveStats, attrs);
-                    // [TITAN-ORBIT] Same additive Move Speed path as ShipStatApplyLogic (not ×1.1).
-                    ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
-                        summed, out float moveStep, out float accelStep, out float odDrainStep);
-                    ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
-                        ref effectiveStats, attrs, moveStep, accelStep, odDrainStep);
+                    effectiveStats = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                        _partCache.Ids,
+                        _partCache.Stats,
+                        ship.ShipLevel,
+                        in abilityCounts);
+                    effectiveStats = ShipComponentExtraLevelMath.ApplyMobilityPenalties(
+                        effectiveStats, ship.ShipLevel);
+                    if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
+                        && family != null)
+                    {
+                        effectiveStats = family.ApplyStatFallbacks(effectiveStats);
+                        effectiveStats = family.ApplySpecialBonuses(effectiveStats);
+                    }
+                }
+                else if (ShipStatApplyLogic.TryGetBaseStatsForChassis(
+                             chassisId, ship.ShipLevel, out ShipComponentAbilityStats summed))
+                {
+                    // Fallback: single-pool Extra Level (count=1) when prefab parts are unavailable.
+                    effectiveStats = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
+                        summed, ship.ShipLevel);
+                    if (hasAttrs)
+                    {
+                        // [LEGACY] ApplyMultipliers / ApplyMoveSpeedAbilitySteps are no-ops —
+                        // Extra Level already includes ability purchases when part lists exist.
+                        ShipAttributeUpgradeLogic.ApplyMultipliers(ref effectiveStats, attrs);
+                        ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
+                            summed, out float moveStep, out float accelStep, out float odDrainStep);
+                        ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
+                            ref effectiveStats, attrs, moveStep, accelStep, odDrainStep);
+                    }
                 }
             }
 
@@ -1274,6 +1331,25 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
+        /// True when the local ship is fully landed on a gem moon (orbit store / deposit allowed).
+        /// Pins SPD/ACC at 0 — the hull is parked even though it co-orbits in world space.
+        /// </summary>
+        /// <returns>True when a moon id is set and landing progress has completed.</returns>
+        static bool IsLocalShipFullyMoonDocked()
+        {
+            // --- Read ghosted dock state ---
+            // [HYBRID] Presentation-only. ShipMoonDockState is written by ShipMoonDockSystem
+            // (server) and replicated; this HUD never writes it.
+            if (!EcsGameBridge.TryGetLocalShipMoonDockState(out ShipMoonDockState moonDock))
+                return false;
+
+            // MoonPlanetId 0 = not in a docking sequence. LandingProgress reaches ~1 when
+            // the dwell timer finishes (same threshold as OrbitStationShipView / deposit).
+            return moonDock.MoonPlanetId != 0
+                && moonDock.LandingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
+        }
+
+        /// <summary>
         /// Same movement mass the motor uses (hull bulk + gems + people) — not hull-reference alone.
         /// </summary>
         static float GetMovementMass(in ShipState ship, in ShipMotorConfig motor)
@@ -1428,6 +1504,21 @@ namespace TitanOrbit.UI
 
             float cur = GetHorizontalSpeed(kinematics);
 
+            // --- Landed on moon: treat flight speed as 0 ---
+            // [TITAN-ORBIT] Fully docked hulls co-orbit with the gem moon via
+            // ShipPhysicsDriveLogic so the moving pad cannot leave the dock zone.
+            // That writes a real world-space velocity (the moon's orbital speed) into
+            // ShipKinematics — not player flight. The speedometer would flicker with
+            // that orbital motion. The ship has landed, so SPD / ACC read 0 until takeoff.
+            // Dropping the last-speed sample also prevents a huge ACC spike on the first
+            // docked frame and on the first airborne frame after thrust-off.
+            if (IsLocalShipFullyMoonDocked())
+            {
+                cur = 0f;
+                hasLastHorizontalSpeed = false;
+                smoothedHorizontalAccel = 0f;
+            }
+
             // --- Chassis baselines (leveled + attrs) — only pre–mass-tax numbers ---
             // [TITAN-ORBIT] Do not use motor.MaxSpeed / EngineThrust as a second "untaxed" source;
             // those should match chassis after ApplyToShip, and when they diverge the motor line confused the HUD.
@@ -1497,7 +1588,8 @@ namespace TitanOrbit.UI
             }
 
             int tipSnapshotKey = ComputeTooltipSnapshotKey(
-                in ship, in _statsCacheAttrs, _partCache.EquipmentHash, _cachedChassisId);
+                in ship, in _statsCacheAttrs, _partCache.EquipmentHash, _cachedChassisId,
+                BulletBankHudCopy.SnapshotKey());
             bool tipSnapshotDirty = tipSnapshotKey != _tooltipSnapshotKey;
             if (tipSnapshotDirty)
             {
@@ -1543,9 +1635,11 @@ namespace TitanOrbit.UI
                     ComponentSize = componentSize,
                     MoveSpeedAbilityLevel = _moveSpeedAbilityLevel,
                     MoveStepPreview = _partCache.Valid
-                        ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerAbilityLevel)
+                        ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerExtraLevel)
                         : 0f,
+                    FirePowerAbilityLevel = _statsCacheAttrs.FirePower,
                 };
+                BulletBankHudCopy.ApplyLoadout(ref _liveTooltipContext);
             }
 
             // --- Accel bar from frame-to-frame speed delta ---

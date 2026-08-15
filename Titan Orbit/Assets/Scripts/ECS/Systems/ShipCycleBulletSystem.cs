@@ -1,19 +1,14 @@
 using TitanOrbit.Data;
 using Unity.Entities;
+using TitanOrbit;
 using Unity.NetCode;
 
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// B-key bullet bank cycle. When the owner presses CycleBullet (<c>ShipInput.CycleBullet</c>),
-    /// increments <see cref="ShipLoadoutState.RuntimeBulletIndex"/> modulo
-    /// <see cref="BulletVfxBank.CategoryCount"/> (wraps to 0 after the last category).
-    /// <para>
-    /// Runs on <b>server</b> (authoritative GhostField write) and <b>client prediction</b> so local
-    /// tracers / floating names update immediately. Requires <see cref="ShipLoadoutState"/> baked
-    /// on the ship ghost — runtime-added GhostFields do not replicate.
-    /// </para>
-    /// World: ServerSimulation + ClientSimulation. Before <see cref="BulletSimulationSystem"/> on server.
+    /// B-key bullet bank cycle. Default: owned damage banks only (hull family + purchased
+    /// foreign weapons). Heal mode ignores B. Debug <c>CycleAllBulletBanks</c> wraps every
+    /// <see cref="BulletVfxBank"/> category including EnergySpheres.
     /// </summary>
     [UpdateInGroup(typeof(PredictedSimulationSystemGroup))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation | WorldSystemFilterFlags.ClientSimulation)]
@@ -25,8 +20,6 @@ namespace TitanOrbit.ECS
         /// <summary>Load bank size once — categories do not change at runtime.</summary>
         public void OnCreate(ref SystemState state)
         {
-            // --- Cache bank size ---
-            // [TITAN-ORBIT] BulletVfxBank is a ScriptableObject; safe to read on main thread in OnCreate.
             var bank = BulletVfxBank.LoadDefault();
             _categoryCount = bank != null ? bank.CategoryCount : 0;
             state.RequireForUpdate<NetworkStreamInGame>();
@@ -39,18 +32,14 @@ namespace TitanOrbit.ECS
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
-            // --- Guard ---
             if (_categoryCount < 1)
                 return;
 
-            // --- One-shot guard (client prediction) ---
-            // [NETCODE] Partial ticks / rollback re-run this system; only apply once per full tick.
-            // [NETCODE] World.IsServer — NetCode extension; client must one-shot-guard prediction.
             if (!state.World.IsServer())
             {
-                // [TITAN-ORBIT] TeamChoice / ship Instantiates holds only (ShouldSkipShipSimulation).
-                // Map Instantiates backlog must not freeze weapon cycle after Join Team.
-                if (ClientJoinSettleCache.ShouldSkipShipSimulation)
+                // WithEntityAccess + equipped-weapon lookup — skip the whole Join Team Instantiates
+                // window, not only ShouldSkipShipSimulation (map Instantiates keep GhostSpawnBacklog).
+                if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
                     return;
 
                 var networkTime = SystemAPI.GetSingleton<NetworkTime>();
@@ -58,19 +47,28 @@ namespace TitanOrbit.ECS
                     return;
             }
 
-            // --- Cycle pass ---
-            foreach (var (input, loadout) in SystemAPI
+            foreach (var (input, loadout, entity) in SystemAPI
                          .Query<RefRO<ShipInput>, RefRW<ShipLoadoutState>>()
-                         .WithAll<ShipTag, Simulate>())
+                         .WithAll<ShipTag, Simulate>()
+                         .WithEntityAccess())
             {
-                // [NETCODE] InputEvent.IsSet — true on the tick the client called Set().
                 if (!input.ValueRO.CycleBullet.IsSet)
                     continue;
 
-                int current = loadout.ValueRO.RuntimeBulletIndex;
-                // Negative / stale → start at 0; otherwise wrap (current+1) % count.
-                int next = current < 0 ? 0 : (current + 1) % _categoryCount;
-                loadout.ValueRW.RuntimeBulletIndex = next;
+                if (TitanOrbitDebugFlags.CycleAllBulletBanks)
+                {
+                    int current = loadout.ValueRO.RuntimeBulletIndex;
+                    int next = BulletBankProfileUtility.NextDebugCycleBankIndex(current, _categoryCount);
+                    loadout.ValueRW.RuntimeBulletIndex = next;
+                    loadout.ValueRW.HealingBulletsActive = BulletBankProfileUtility.IsHealBankIndex(next);
+                    continue;
+                }
+
+                if (loadout.ValueRO.HealingBulletsActive)
+                    continue;
+
+                loadout.ValueRW.RuntimeBulletIndex = BulletBankOwnership.NextOwnedDamageBank(
+                    state.EntityManager, entity, loadout.ValueRO.RuntimeBulletIndex);
             }
         }
     }

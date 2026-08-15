@@ -49,6 +49,7 @@ namespace TitanOrbit.ECS
                     IsLoad = r.IsLoad,
                     Team = r.Team,
                 });
+                JoinWorldReadyCache.TransportsCatchUpReady = true;
                 ecb.DestroyEntity(entity);
             }
 

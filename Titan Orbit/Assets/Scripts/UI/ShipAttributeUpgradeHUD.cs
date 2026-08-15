@@ -18,7 +18,7 @@ namespace TitanOrbit.UI
     /// ShipState and ShipAttributeUpgradeState from EcsGameBridge; sends purchases via
     /// MoonOrbitRpcClient.PurchaseAttributeUpgrade (server validates in ShipAttributeUpgradeSystem).
     /// Cost = ShipLevel × 5 gems; max levels per attribute = ShipLevel.
-    /// Most abilities are +10% per purchase; Move Speed adds one chassis PerAbilityLevel step
+    /// Most abilities are +10% per purchase; Move Speed adds one chassis PerExtraLevel step
     /// (move + accel + OD drain together) — see ShipAttributeUpgradeLogic.
     /// <para>
     /// [TITAN-ORBIT] Optional quick-stat chips above each button show <b>current</b> and
@@ -1042,10 +1042,10 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Hash of ship chassis identity + the ten ability levels + hull ComponentSize.
+        /// Hash of ship chassis identity + the ten ability levels + hull ComponentSize + cargo.
         /// Used to dirty-check chip/tip rebuilds without allocating.
         /// </summary>
-        /// <param name="ship">Local ship vitals (level / team / branch / family).</param>
+        /// <param name="ship">Local ship vitals (level / team / branch / family / cargo).</param>
         /// <param name="attrs">Ghost attribute upgrade levels.</param>
         /// <param name="componentSize">
         /// Hull ComponentSize used for mass tax. Included so MS/TS chips repaint when
@@ -1077,6 +1077,10 @@ namespace TitanOrbit.UI
                 h = h * 31 + attrs.PeopleCapacity;
                 // Centi-units — ignores sub-0.01 noise, still catches MinMass → real hull size.
                 h = h * 31 + Mathf.RoundToInt(componentSize * 100f);
+                // [TITAN-ORBIT] Gems / people change mass tax → Move Speed and Turn chips must repaint.
+                h = h * 31 + Mathf.RoundToInt(ship.CurrentGems);
+                h = h * 31 + ship.CurrentPeople;
+                h = h * 31 + BulletBankHudCopy.SnapshotKey();
                 return h;
             }
         }
@@ -1288,9 +1292,8 @@ namespace TitanOrbit.UI
             if (_cachedSpeedometer != null)
                 _cachedSpeedometer.TryGetTooltipSharedState(out parts, out _);
 
-            // --- Fresh chassis pipeline (same steps as ShipSpeedometerHUD stats cache) ---
-            // [TITAN-ORBIT] TryGetBaseStatsForChassis returns level-1 sums — we must call
-            // GetEffectiveStatsAtShipLevel, then ApplyMultipliers, then ApplyMoveSpeedAbilitySteps.
+            // --- Fresh chassis pipeline (same Extra Level path as ShipSpeedometerHUD) ---
+            // [TITAN-ORBIT] Prefer AggregateAndEvaluate when part Ids/Stats are available.
             live = new ShipSpeedometerStatTooltips.LiveContext
             {
                 Ship = ship,
@@ -1302,7 +1305,9 @@ namespace TitanOrbit.UI
                 BarMaxSpeed = barMax,
                 OverdriveCapacityMult = odCap,
                 ComponentSize = hasComponentSize ? componentSize : 0f,
+                FirePowerAbilityLevel = attrs.FirePower,
             };
+            BulletBankHudCopy.ApplyLoadout(ref live);
 
             if (ShipStatApplyLogic.TryResolveChassisId(
                     ship.Team,
@@ -1310,23 +1315,44 @@ namespace TitanOrbit.UI
                     ship.BranchIndex,
                     out string chassisId,
                     allowFallback: true,
-                    ship.ShipFamilyConfigIndex)
-                && ShipStatApplyLogic.TryGetBaseStatsForChassis(
-                    chassisId, ship.ShipLevel, out ShipComponentAbilityStats levelOneSummed))
+                    ship.ShipFamilyConfigIndex))
             {
-                // Family growth fraction — same source the speedometer / ApplyToShip use.
-                float growth = ShipFamilyDefinition.DefaultShipLevelStatGrowthFraction;
-                if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
-                    && family != null)
-                    growth = family.ResolveShipLevelStatGrowthFraction();
+                ShipAbilityLevelCounts abilityCounts =
+                    ShipAttributeUpgradeLogic.ToAbilityLevelCounts(in attrs);
+                ShipComponentAbilityStats effective;
 
-                ShipComponentAbilityStats effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
-                    levelOneSummed, ship.ShipLevel, growth);
-                ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, in attrs);
-                ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
-                    levelOneSummed, out float moveStep, out float accelStep, out float odDrainStep);
-                ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
-                    ref effective, attrs, moveStep, accelStep, odDrainStep);
+                if (parts.Valid && parts.Ids != null && parts.Ids.Count > 0)
+                {
+                    effective = ShipComponentExtraLevelMath.AggregateAndEvaluate(
+                        parts.Ids,
+                        parts.Stats,
+                        ship.ShipLevel,
+                        in abilityCounts);
+                    effective = ShipComponentExtraLevelMath.ApplyMobilityPenalties(effective, ship.ShipLevel);
+                    if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition family)
+                        && family != null)
+                    {
+                        effective = family.ApplyStatFallbacks(effective);
+                        effective = family.ApplySpecialBonuses(effective);
+                    }
+                }
+                else if (ShipStatApplyLogic.TryGetBaseStatsForChassis(
+                             chassisId, ship.ShipLevel, out ShipComponentAbilityStats levelOneSummed))
+                {
+                    // Fallback when part cache is not ready yet.
+                    effective = ShipComponentStoreData.GetEffectiveStatsAtShipLevel(
+                        levelOneSummed, ship.ShipLevel);
+                    // [LEGACY] No-ops — kept so this path matches older call sites.
+                    ShipAttributeUpgradeLogic.ApplyMultipliers(ref effective, in attrs);
+                    ShipAttributeUpgradeLogic.ResolveMoveSpeedAbilitySteps(
+                        levelOneSummed, out float moveStep, out float accelStep, out float odDrainStep);
+                    ShipAttributeUpgradeLogic.ApplyMoveSpeedAbilitySteps(
+                        ref effective, attrs, moveStep, accelStep, odDrainStep);
+                }
+                else
+                {
+                    effective = default;
+                }
 
                 live.EffectiveStats = effective;
                 live.ChassisMaxSpeed = effective.moveSpeed;
@@ -1364,11 +1390,11 @@ namespace TitanOrbit.UI
                 }
 
                 if (moveStepPreview <= 0.0001f)
-                    live.MoveStepPreview = Mathf.Max(0f, moveStep);
+                    live.MoveStepPreview = Mathf.Max(0f, effective.moveSpeedPerExtraLevel);
             }
 
             if (live.MoveStepPreview <= 0.0001f)
-                live.MoveStepPreview = Mathf.Max(0f, live.EffectiveStats.moveSpeedPerAbilityLevel);
+                live.MoveStepPreview = Mathf.Max(0f, live.EffectiveStats.moveSpeedPerExtraLevel);
 
             return true;
         }
@@ -1407,12 +1433,25 @@ namespace TitanOrbit.UI
         /// Chip glance text: <b>current</b> and green <c>+per-buy</c> only (no FP/MS title).
         /// Ability name lives on the bottom button; full math is on hover.
         /// </summary>
-        static string FormatChipText(int index, float value, float nextStep, int abilityLv, string unit)
+        static string FormatChipText(
+            int index,
+            float value,
+            float nextStep,
+            int abilityLv,
+            string unit,
+            in ShipSpeedometerStatTooltips.LiveContext live)
         {
-            _ = index;
             _ = abilityLv;
-            var sb = new System.Text.StringBuilder(48);
+            var sb = new System.Text.StringBuilder(64);
             AppendCurrentAndPerBuy(sb, value, nextStep, unit, sizePercent: 100);
+            // Fire Power / Bullet Speed glance: live bullet type under the number.
+            if (index == 0 || index == 1)
+            {
+                string typeLine = BulletBankHudCopy.FormatChipTypeLine(in live);
+                if (!string.IsNullOrEmpty(typeLine))
+                    sb.Append('\n').Append("<size=85%><color=#FFAA66>").Append(typeLine).Append("</color></size>");
+            }
+
             return sb.ToString();
         }
 
@@ -1763,7 +1802,8 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Rebuilds STATS chips when the loadout / hull-size snapshot changes.
+        /// Rebuilds STATS chips when the loadout / hull-size / cargo snapshot changes.
+        /// Gems and people are in the fingerprint because mass tax changes Move / Turn chips.
         /// Runs from LateUpdate so <see cref="ShipSpeedometerHUD"/> can publish ComponentSize first.
         /// </summary>
         void TryRefreshAbilityChipSnapshot(in ShipState ship, in ShipAttributeUpgradeState attrs)
@@ -1775,7 +1815,7 @@ namespace TitanOrbit.UI
             if (!TryResolveChipLiveContext(out _, out var live, out _) || !IsChipLiveContextReady(in live))
                 return;
 
-            // Key includes ComponentSize so MinMass→real hull (or late HullMassReference) repaints MS/TS.
+            // Key includes ComponentSize + CurrentGems/People so cargo mass tax repaints MS/TS.
             int snapshotKey = ComputeStatsSnapshotKey(in ship, in attrs, live.ComponentSize);
             if (snapshotKey == _statsSnapshotKey)
                 return;
@@ -1800,7 +1840,7 @@ namespace TitanOrbit.UI
 
                 ShipAbilityStatBreakdown.ResolveChipDisplay(
                     i, in live, in attrs, out float value, out float nextStep, out int abilityLv, out string unit);
-                string chipText = FormatChipText(i, value, nextStep, abilityLv, unit);
+                string chipText = FormatChipText(i, value, nextStep, abilityLv, unit, in live);
                 if (_lastChipText[i] == chipText)
                     continue;
                 _lastChipText[i] = chipText;

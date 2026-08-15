@@ -10,6 +10,8 @@ namespace TitanOrbit.Simulation
     /// <para>
     /// [TITAN-ORBIT] <see cref="GetOrbitRingSpeed"/> is the single tangential speed for a planet's
     /// ring — ships (passive motor) and gem moons (analytic offset) both use it so they co-orbit.
+    /// The passive motor also applies a radial spring toward the ring centerline (stronger at the
+    /// inner/outer lips) so coasting hulls stay in the zone; thrust still cancels the motor.
     /// </para>
     /// </summary>
     public static class PlanetOrbitMath
@@ -25,13 +27,30 @@ namespace TitanOrbit.Simulation
         /// <summary>Gap between the outermost level band and the inner edge of the ship orbit ring.</summary>
         const float OrbitRingClearanceFromLevelBandsLocal = LevelBandGapLocal * 2f;
         /// <summary>
-        /// Radial pull when off orbit centerline. Matches legacy Starship.orbitRadiusPullStrength.
+        /// Radial spring toward the orbit-ring centerline (world units/s per world-unit of radius error).
+        /// [TITAN-ORBIT] Stronger than the old Starship.orbitRadiusPullStrength (2.5) so a coasting
+        /// hull cannot drift through the thin annulus before the lerp captures it. Thrust still
+        /// cancels the whole orbit motor — this only holds ships that are already riding the ring.
         /// </summary>
-        const float OrbitRadiusPullStrength = 2.5f;
+        const float OrbitRadiusPullStrength = 5f;
         /// <summary>
-        /// How quickly velocity steers toward ideal orbit. Matches legacy orbitCaptureResponsiveness.
+        /// Extra radial-spring scale at the inner/outer lips (1 at centerline, this value at the edge).
+        /// Squared with normalized |radiusError| so the middle of the band stays smooth and the
+        /// lips yank harder — that is what actually keeps ships from slipping out of the zone.
         /// </summary>
-        const float OrbitCaptureResponsiveness = 3.5f;
+        const float OrbitEdgePullMultiplier = 2.25f;
+        /// <summary>
+        /// How quickly velocity steers toward ideal orbit (1/s before gravity / mass).
+        /// [TITAN-ORBIT] Stronger than the old orbitCaptureResponsiveness (3.5) so the radial
+        /// spring actually applies within a few ticks instead of leaking outward first.
+        /// Still a continuous lerp (Starblast pillar 3) — not a one-frame snap onto the rail.
+        /// </summary>
+        const float OrbitCaptureResponsiveness = 5f;
+        /// <summary>
+        /// Extra align-rate scale at the inner/outer lips (1 at centerline). Dumps leftover
+        /// inbound/outbound speed before the hull crosses the visual ring.
+        /// </summary>
+        const float OrbitEdgeCaptureMultiplier = 1.6f;
         /// <summary>
         /// Base tangential speed at the orbit-ring centerline (world units/s).
         /// [TITAN-ORBIT] Ships and gem moons share this ring speed — one value per planet ring.
@@ -237,6 +256,8 @@ namespace TitanOrbit.Simulation
         /// Builds desired tangential velocity and alignment rate for the passive ship orbit motor
         /// when the hull is inside a planet orbit ring. Called from shared
         /// <see cref="TitanOrbit.ECS.ShipPhysicsDriveLogic"/> before Unity Physics integrates position.
+        /// Radial spring is stronger near the inner/outer lips so coasting ships stay in the zone;
+        /// thrust still cancels this motor entirely (player can always leave).
         /// </summary>
         /// <param name="shipPos">Ship world position (may be unbounded — do not Wrap).</param>
         /// <param name="planetPos">Planet logical world position.</param>
@@ -245,8 +266,8 @@ namespace TitanOrbit.Simulation
         /// <param name="shipMass">Movement mass — heavier ships settle into orbit slower.</param>
         /// <param name="mapWidth">Toroidal map width from <c>MapStateSingleton</c>.</param>
         /// <param name="mapHeight">Toroidal map height from <c>MapStateSingleton</c>.</param>
-        /// <param name="desiredVelocity">Clockwise tangential velocity plus radial correction toward ring centerline.</param>
-        /// <param name="alignRate">Lerp rate toward desired velocity (1/s), scaled by gravity / sqrt(mass).</param>
+        /// <param name="desiredVelocity">Clockwise tangential velocity plus radial spring toward ring centerline (stronger at the lips).</param>
+        /// <param name="alignRate">Lerp rate toward desired velocity (1/s), scaled by gravity, edge capture, and 1/sqrt(mass).</param>
         public static void BuildOrbitMotorParams(
             float3 shipPos,
             float3 planetPos,
@@ -284,19 +305,31 @@ namespace TitanOrbit.Simulation
             // Do not scale by position-in-band or territory — that made ships drift vs the moon.
             float targetSpeed = GetOrbitRingSpeed(planetSize);
 
-            // --- Soft radial pull toward ring centerline (legacy orbitRadiusPullStrength) ---
-            // Keeps the hull on the centerline; does not change the tangential ring speed.
+            // --- Radial spring toward ring centerline ---
+            // [TITAN-ORBIT] desiredVelocity is a target, not an instant shove. ShipPhysicsDriveLogic
+            // lerps current velocity toward this each tick (alignRate). The spring is stronger near
+            // the inner/outer lips so leftover inbound speed cannot coast the hull out of the zone.
+            // Tangential ring speed is unchanged — only the radial (in/out) component is corrected.
             float radiusError = dist - centerWorld;
+            float halfThickness = math.max(0.01f, (outerWorld - innerWorld) * 0.5f);
+            // 0 on the centerline, 1 at either lip of the visual annulus.
+            float edgeT = math.saturate(math.abs(radiusError) / halfThickness);
+            float edgeTSq = edgeT * edgeT;
+            float pullScale = math.lerp(1f, OrbitEdgePullMultiplier, edgeTSq);
+
             float3 radialCorrection = float3.zero;
             if (math.abs(radiusError) > 0.02f)
-                radialCorrection = -radial * radiusError * OrbitRadiusPullStrength;
+                radialCorrection = -radial * radiusError * OrbitRadiusPullStrength * pullScale;
 
             desiredVelocity = tangent * targetSpeed + radialCorrection;
 
-            // --- Align rate: stronger near centerline / large planets; slower for heavy hulls ---
+            // --- Align rate: gravity / mass, then extra capture at the lips ---
+            // GetGravityFactor is still stronger on large planets and inner orbits (legacy curve).
+            // Edge capture is separate so the *outer* lip — historically the weakest — also holds.
             float gravityFactor = GetGravityFactor(planetSize, dist, innerWorld, outerWorld, centerWorld);
             float massFactor = math.sqrt(math.max(0.5f, shipMass));
-            alignRate = (OrbitCaptureResponsiveness * gravityFactor) / massFactor;
+            float captureScale = math.lerp(1f, OrbitEdgeCaptureMultiplier, edgeT);
+            alignRate = (OrbitCaptureResponsiveness * gravityFactor * captureScale) / massFactor;
         }
     }
 }

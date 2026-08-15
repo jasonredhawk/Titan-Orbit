@@ -1,6 +1,7 @@
 using TitanOrbit.Core;
 using TitanOrbit.ECS;
 using TitanOrbit.Game;
+using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using UnityEngine;
 
@@ -80,6 +81,15 @@ namespace TitanOrbit.UI
 
             // --- Hard leave: thrust always undocks ---
             if (EcsGameBridge.TryGetLocalShipInput(out var input) && input.Thrust)
+            {
+                HideMenuImmediate();
+                return;
+            }
+
+            // --- Planetary defense turret possession — never open Orbit Menu on the pad ---
+            // [TITAN-ORBIT] Server also clears ShipMoonDockState while controlling; this is a
+            // client belt-and-suspenders so a late ghost blip cannot flash the store UI.
+            if (PlanetaryDefenseTurretClientState.IsControlling)
             {
                 HideMenuImmediate();
                 return;

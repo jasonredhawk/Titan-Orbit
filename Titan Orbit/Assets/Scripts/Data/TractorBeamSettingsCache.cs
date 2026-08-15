@@ -4,24 +4,40 @@ namespace TitanOrbit.Data
 {
     /// <summary>
     /// Runtime pointer to the active <see cref="TractorBeamSettings"/> ScriptableObject.
-    /// Set by <see cref="Game.TractorBeamSettingsLoader"/> at boot; read by
-    /// <c>GemTractorBeamSystem</c>, <c>GemTractorBeamClientLogic</c>, and <c>GemPickupSystem</c>.
-    /// Null → code defaults (primary sticky, max 8 cooperating beams, 1× range/power,
-    /// wing collect 0.25, hull pickup 2.5 with hull scoop enabled).
+    /// Set by <see cref="Game.TractorBeamSettingsLoader"/> at boot; also auto-loaded from
+    /// <c>Resources/TractorBeamSettings</c> the first time a system asks — dedicated-server
+    /// boot can spawn a bare NceGameRoot without the loader MonoBehaviour.
+    /// Read by <c>GemTractorBeamSystem</c>, <c>GemTractorBeamClientLogic</c>, and <c>GemPickupSystem</c>.
+    /// Missing asset → code defaults (primary sticky, max 8 cooperating beams, 1× range/power,
+    /// wing collect 0.65, hull pickup 2.5 with hull scoop enabled).
     /// </summary>
     public static class TractorBeamSettingsCache
     {
-        /// <summary>Current tractor / pickup balance asset, or null until loader runs.</summary>
+        /// <summary>[UNITY] Name passed to <see cref="Resources.Load"/> (no folder / extension).</summary>
+        const string ResourcesLoadName = "TractorBeamSettings";
+
+        /// <summary>Current tractor / pickup balance asset, or null until loader / first resolve.</summary>
         public static TractorBeamSettings Settings { get; set; }
 
         /// <summary>
-        /// Resolved settings, or a transient default instance when none assigned.
-        /// Safe to call from ECS systems every tick — creates the fallback once.
+        /// Resolved settings: assigned loader asset, then Resources, then a transient default.
+        /// Safe to call from ECS systems every tick — Resources.Load / fallback run at most once.
         /// </summary>
         public static TractorBeamSettings ResolveOrDefault()
         {
             if (Settings != null)
                 return Settings;
+
+            // --- Dedicated server / missing loader ---
+            // [UNITY] Headless boot may never run TractorBeamSettingsLoader. Resources.Load still
+            // finds Assets/Resources/TractorBeamSettings.asset in player builds and Editor Play Mode.
+            var fromResources = Resources.Load<TractorBeamSettings>(ResourcesLoadName);
+            if (fromResources != null)
+            {
+                fromResources.ClampValues();
+                Settings = fromResources;
+                return Settings;
+            }
 
             // --- Cold start / missing asset ---
             // [UNITY] HideAndDontSave — not written to disk; exists only for this Play session.

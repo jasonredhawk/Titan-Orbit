@@ -5,6 +5,37 @@ using UnityEngine;
 namespace TitanOrbit.Data
 {
     /// <summary>
+    /// Which Base / PerExtra pair <see cref="ShipComponentAbilityStatsMath.GetScaleMultiplier"/> answers for.
+    /// Mirrors the branches inside <see cref="ShipComponentAbilityStatsMath.ScaleStatsByTransform"/> so the
+    /// ability details card can show <c>catalog × starting scale</c> with the same factor the motor applied.
+    /// </summary>
+    public enum ShipComponentScaleChannel
+    {
+        /// <summary>Weapon XY average; non-weapon average localScale.</summary>
+        FirePower = 0,
+        /// <summary>Weapon <c>1/Z</c>; non-weapon average localScale.</summary>
+        FireRate = 1,
+        /// <summary>Unscaled on weapons; average localScale on non-weapons.</summary>
+        BulletSpeed = 2,
+        /// <summary>Unscaled on weapons; average localScale on non-weapons.</summary>
+        BulletRange = 3,
+        /// <summary>Average localScale (cockpit / hull health fields).</summary>
+        Health = 4,
+        /// <summary>Average localScale (engine energy fields — not move/accel).</summary>
+        Energy = 5,
+        /// <summary>Unscaled on propulsion; average localScale otherwise.</summary>
+        MoveOrAccel = 6,
+        /// <summary>Never mesh-scaled (designer turn number).</summary>
+        Turn = 7,
+        /// <summary>Never mesh-scaled (ramming rating).</summary>
+        Ramming = 8,
+        /// <summary>Average localScale (gems / people / tractor).</summary>
+        Capacity = 9,
+        /// <summary>Unscaled on propulsion; average localScale otherwise.</summary>
+        Overdrive = 10
+    }
+
+    /// <summary>
     /// Pure math helpers for <see cref="ShipComponentAbilityStats"/> — addition, zero checks, fallback fill,
     /// transform-based scaling, weapon projectile-speed / range aggregation (max, not sum), and component-id
     /// classification (weapon vs engine vs thruster). Fire power / fire rate stay as field-wise sums
@@ -23,46 +54,44 @@ namespace TitanOrbit.Data
             return new ShipComponentAbilityStats
             {
                 firePower = a.firePower + b.firePower,
-                firePowerPerAbilityLevel = a.firePowerPerAbilityLevel + b.firePowerPerAbilityLevel,
+                firePowerPerExtraLevel = a.firePowerPerExtraLevel + b.firePowerPerExtraLevel,
                 bulletSpeed = a.bulletSpeed + b.bulletSpeed,
-                bulletSpeedPerAbilityLevel = a.bulletSpeedPerAbilityLevel + b.bulletSpeedPerAbilityLevel,
+                bulletSpeedPerExtraLevel = a.bulletSpeedPerExtraLevel + b.bulletSpeedPerExtraLevel,
                 bulletRange = a.bulletRange + b.bulletRange,
-                bulletRangePerAbilityLevel = a.bulletRangePerAbilityLevel + b.bulletRangePerAbilityLevel,
+                bulletRangePerExtraLevel = a.bulletRangePerExtraLevel + b.bulletRangePerExtraLevel,
                 fireRate = a.fireRate + b.fireRate,
-                fireRatePerAbilityLevel = a.fireRatePerAbilityLevel + b.fireRatePerAbilityLevel,
+                fireRatePerExtraLevel = a.fireRatePerExtraLevel + b.fireRatePerExtraLevel,
                 rammingPower = a.rammingPower + b.rammingPower,
-                rammingPowerPerAbilityLevel = a.rammingPowerPerAbilityLevel + b.rammingPowerPerAbilityLevel,
+                rammingPowerPerExtraLevel = a.rammingPowerPerExtraLevel + b.rammingPowerPerExtraLevel,
                 healthCap = a.healthCap + b.healthCap,
-                healthCapPerAbilityLevel = a.healthCapPerAbilityLevel + b.healthCapPerAbilityLevel,
+                healthCapPerExtraLevel = a.healthCapPerExtraLevel + b.healthCapPerExtraLevel,
                 healthRegen = a.healthRegen + b.healthRegen,
-                healthRegenPerAbilityLevel = a.healthRegenPerAbilityLevel + b.healthRegenPerAbilityLevel,
+                healthRegenPerExtraLevel = a.healthRegenPerExtraLevel + b.healthRegenPerExtraLevel,
                 energyCap = a.energyCap + b.energyCap,
-                energyCapPerAbilityLevel = a.energyCapPerAbilityLevel + b.energyCapPerAbilityLevel,
+                energyCapPerExtraLevel = a.energyCapPerExtraLevel + b.energyCapPerExtraLevel,
                 energyRegen = a.energyRegen + b.energyRegen,
-                energyRegenPerAbilityLevel = a.energyRegenPerAbilityLevel + b.energyRegenPerAbilityLevel,
+                energyRegenPerExtraLevel = a.energyRegenPerExtraLevel + b.energyRegenPerExtraLevel,
                 moveSpeed = a.moveSpeed + b.moveSpeed,
-                moveSpeedPerAbilityLevel = a.moveSpeedPerAbilityLevel + b.moveSpeedPerAbilityLevel,
+                moveSpeedPerExtraLevel = a.moveSpeedPerExtraLevel + b.moveSpeedPerExtraLevel,
                 accelerationCap = a.accelerationCap + b.accelerationCap,
-                accelerationCapPerAbilityLevel = a.accelerationCapPerAbilityLevel + b.accelerationCapPerAbilityLevel,
+                accelerationCapPerExtraLevel = a.accelerationCapPerExtraLevel + b.accelerationCapPerExtraLevel,
                 // [TITAN-ORBIT] OVERDRIVE speed fraction — max across parts (do not sum 0.75+0.75).
                 extraSpeedPercent = Mathf.Max(a.extraSpeedPercent, b.extraSpeedPercent),
-                extraSpeedPercentPerAbilityLevel = Mathf.Max(a.extraSpeedPercentPerAbilityLevel, b.extraSpeedPercentPerAbilityLevel),
+                extraSpeedPercentPerExtraLevel = Mathf.Max(a.extraSpeedPercentPerExtraLevel, b.extraSpeedPercentPerExtraLevel),
                 // [TITAN-ORBIT] Absolute OD drain — sum engines (matches ResolveOverdriveFromEngines).
                 extraSpeedEnergyDrain = a.extraSpeedEnergyDrain + b.extraSpeedEnergyDrain,
-                extraSpeedEnergyDrainPerAbilityLevel =
-                    a.extraSpeedEnergyDrainPerAbilityLevel + b.extraSpeedEnergyDrainPerAbilityLevel,
+                extraSpeedEnergyDrainPerExtraLevel =
+                    a.extraSpeedEnergyDrainPerExtraLevel + b.extraSpeedEnergyDrainPerExtraLevel,
                 turnSpeed = a.turnSpeed + b.turnSpeed,
-                turnSpeedPerAbilityLevel = a.turnSpeedPerAbilityLevel + b.turnSpeedPerAbilityLevel,
+                turnSpeedPerExtraLevel = a.turnSpeedPerExtraLevel + b.turnSpeedPerExtraLevel,
                 maxGems = a.maxGems + b.maxGems,
-                maxGemsPerAbilityLevel = a.maxGemsPerAbilityLevel + b.maxGemsPerAbilityLevel,
+                maxGemsPerExtraLevel = a.maxGemsPerExtraLevel + b.maxGemsPerExtraLevel,
                 tractorBeamDistance = a.tractorBeamDistance + b.tractorBeamDistance,
-                tractorBeamDistancePerAbilityLevel = a.tractorBeamDistancePerAbilityLevel + b.tractorBeamDistancePerAbilityLevel,
+                tractorBeamDistancePerExtraLevel = a.tractorBeamDistancePerExtraLevel + b.tractorBeamDistancePerExtraLevel,
                 tractorBeamPower = a.tractorBeamPower + b.tractorBeamPower,
-                tractorBeamPowerPerAbilityLevel = a.tractorBeamPowerPerAbilityLevel + b.tractorBeamPowerPerAbilityLevel,
+                tractorBeamPowerPerExtraLevel = a.tractorBeamPowerPerExtraLevel + b.tractorBeamPowerPerExtraLevel,
                 maxPeople = a.maxPeople + b.maxPeople,
-                maxPeoplePerAbilityLevel = a.maxPeoplePerAbilityLevel + b.maxPeoplePerAbilityLevel,
-                // [TITAN-ORBIT] Weight is per-part authoring — do not sum into hull totals.
-                extraStackWeight = 0f,
+                maxPeoplePerExtraLevel = a.maxPeoplePerExtraLevel + b.maxPeoplePerExtraLevel,
             };
         }
 
@@ -78,7 +107,7 @@ namespace TitanOrbit.Data
         /// Field-wise <see cref="Add"/> turns a 6-gun hull into 6× speed (e.g. 72) — top-tier free
         /// ships then shoot lasers. Projectile speed uses max (fastest barrel). Player speed growth
         /// is attribute upgrades / Shard cards only (<see cref="ShipComponentStoreData.GetEffectiveStatsAtShipLevel"/>
-        /// also skips <c>bulletSpeedPerAbilityLevel</c> for chassis leveling).
+        /// also skips <c>bulletSpeedPerExtraLevel</c> for chassis leveling).
         /// </para>
         /// Call after summing scaled component stats (same slot as propulsion aggregation).
         /// </summary>
@@ -106,9 +135,9 @@ namespace TitanOrbit.Data
 
                 ShipComponentAbilityStats s = perComponentStats[i];
                 total.bulletSpeed -= s.bulletSpeed;
-                total.bulletSpeedPerAbilityLevel -= s.bulletSpeedPerAbilityLevel;
+                total.bulletSpeedPerExtraLevel -= s.bulletSpeedPerExtraLevel;
                 maxSpeed = Mathf.Max(maxSpeed, s.bulletSpeed);
-                maxSpeedPerLevel = Mathf.Max(maxSpeedPerLevel, s.bulletSpeedPerAbilityLevel);
+                maxSpeedPerLevel = Mathf.Max(maxSpeedPerLevel, s.bulletSpeedPerExtraLevel);
                 anyWeapon = true;
             }
 
@@ -117,7 +146,7 @@ namespace TitanOrbit.Data
 
             // --- One projectile speed for the hull (fastest barrel), not N× sum ---
             total.bulletSpeed = Mathf.Max(0f, total.bulletSpeed) + maxSpeed;
-            total.bulletSpeedPerAbilityLevel = Mathf.Max(0f, total.bulletSpeedPerAbilityLevel) + maxSpeedPerLevel;
+            total.bulletSpeedPerExtraLevel = Mathf.Max(0f, total.bulletSpeedPerExtraLevel) + maxSpeedPerLevel;
             return total;
         }
 
@@ -126,7 +155,7 @@ namespace TitanOrbit.Data
         /// <para>
         /// [TITAN-ORBIT] Bullet range is a per-projectile property (same as speed — one travel
         /// distance for the hull, not N× guns). Unlike fire power, range is <b>not</b> a bottom-bar
-        /// attribute; it grows with ship level via <c>bulletRangePerAbilityLevel</c> and family
+        /// attribute; it grows with ship level via <c>bulletRangePerExtraLevel</c> and family
         /// <c>bulletRangeMul</c>. Writes into <c>ShipWeaponConfig.BulletMaxDistance</c> at apply time.
         /// </para>
         /// Call after summing scaled component stats (same slot as projectile-speed aggregation).
@@ -155,9 +184,9 @@ namespace TitanOrbit.Data
 
                 ShipComponentAbilityStats s = perComponentStats[i];
                 total.bulletRange -= s.bulletRange;
-                total.bulletRangePerAbilityLevel -= s.bulletRangePerAbilityLevel;
+                total.bulletRangePerExtraLevel -= s.bulletRangePerExtraLevel;
                 maxRange = Mathf.Max(maxRange, s.bulletRange);
-                maxRangePerLevel = Mathf.Max(maxRangePerLevel, s.bulletRangePerAbilityLevel);
+                maxRangePerLevel = Mathf.Max(maxRangePerLevel, s.bulletRangePerExtraLevel);
                 anyWeapon = true;
             }
 
@@ -166,7 +195,7 @@ namespace TitanOrbit.Data
 
             // --- One projectile range for the hull (longest barrel), not N× sum ---
             total.bulletRange = Mathf.Max(0f, total.bulletRange) + maxRange;
-            total.bulletRangePerAbilityLevel = Mathf.Max(0f, total.bulletRangePerAbilityLevel) + maxRangePerLevel;
+            total.bulletRangePerExtraLevel = Mathf.Max(0f, total.bulletRangePerExtraLevel) + maxRangePerLevel;
             return total;
         }
 
@@ -212,24 +241,24 @@ namespace TitanOrbit.Data
         public static bool IsAllZero(in ShipComponentAbilityStats s)
         {
             // --- IsAllZero ---
-            return s.firePower == 0f && s.firePowerPerAbilityLevel == 0f &&
-                   s.bulletSpeed == 0f && s.bulletSpeedPerAbilityLevel == 0f &&
-                   s.bulletRange == 0f && s.bulletRangePerAbilityLevel == 0f &&
-                   s.fireRate == 0f && s.fireRatePerAbilityLevel == 0f &&
-                   s.rammingPower == 0f && s.rammingPowerPerAbilityLevel == 0f &&
-                   s.healthCap == 0f && s.healthCapPerAbilityLevel == 0f &&
-                   s.healthRegen == 0f && s.healthRegenPerAbilityLevel == 0f &&
-                   s.energyCap == 0f && s.energyCapPerAbilityLevel == 0f &&
-                   s.energyRegen == 0f && s.energyRegenPerAbilityLevel == 0f &&
-                   s.moveSpeed == 0f && s.moveSpeedPerAbilityLevel == 0f &&
-                   s.accelerationCap == 0f && s.accelerationCapPerAbilityLevel == 0f &&
-                   s.extraSpeedPercent == 0f && s.extraSpeedPercentPerAbilityLevel == 0f &&
-                   s.extraSpeedEnergyDrain == 0f && s.extraSpeedEnergyDrainPerAbilityLevel == 0f &&
-                   s.turnSpeed == 0f && s.turnSpeedPerAbilityLevel == 0f &&
-                   s.maxGems == 0f && s.maxGemsPerAbilityLevel == 0f &&
-                   s.tractorBeamDistance == 0f && s.tractorBeamDistancePerAbilityLevel == 0f &&
-                   s.tractorBeamPower == 0f && s.tractorBeamPowerPerAbilityLevel == 0f &&
-                   s.maxPeople == 0f && s.maxPeoplePerAbilityLevel == 0f;
+            return s.firePower == 0f && s.firePowerPerExtraLevel == 0f &&
+                   s.bulletSpeed == 0f && s.bulletSpeedPerExtraLevel == 0f &&
+                   s.bulletRange == 0f && s.bulletRangePerExtraLevel == 0f &&
+                   s.fireRate == 0f && s.fireRatePerExtraLevel == 0f &&
+                   s.rammingPower == 0f && s.rammingPowerPerExtraLevel == 0f &&
+                   s.healthCap == 0f && s.healthCapPerExtraLevel == 0f &&
+                   s.healthRegen == 0f && s.healthRegenPerExtraLevel == 0f &&
+                   s.energyCap == 0f && s.energyCapPerExtraLevel == 0f &&
+                   s.energyRegen == 0f && s.energyRegenPerExtraLevel == 0f &&
+                   s.moveSpeed == 0f && s.moveSpeedPerExtraLevel == 0f &&
+                   s.accelerationCap == 0f && s.accelerationCapPerExtraLevel == 0f &&
+                   s.extraSpeedPercent == 0f && s.extraSpeedPercentPerExtraLevel == 0f &&
+                   s.extraSpeedEnergyDrain == 0f && s.extraSpeedEnergyDrainPerExtraLevel == 0f &&
+                   s.turnSpeed == 0f && s.turnSpeedPerExtraLevel == 0f &&
+                   s.maxGems == 0f && s.maxGemsPerExtraLevel == 0f &&
+                   s.tractorBeamDistance == 0f && s.tractorBeamDistancePerExtraLevel == 0f &&
+                   s.tractorBeamPower == 0f && s.tractorBeamPowerPerExtraLevel == 0f &&
+                   s.maxPeople == 0f && s.maxPeoplePerExtraLevel == 0f;
         }
 
         /// <summary>
@@ -242,44 +271,44 @@ namespace TitanOrbit.Data
         {
             var result = stats;
             if (result.firePower == 0f) result.firePower = defaults.firePower;
-            if (result.firePowerPerAbilityLevel == 0f) result.firePowerPerAbilityLevel = defaults.firePowerPerAbilityLevel;
+            if (result.firePowerPerExtraLevel == 0f) result.firePowerPerExtraLevel = defaults.firePowerPerExtraLevel;
             if (result.bulletSpeed == 0f) result.bulletSpeed = defaults.bulletSpeed;
-            if (result.bulletSpeedPerAbilityLevel == 0f) result.bulletSpeedPerAbilityLevel = defaults.bulletSpeedPerAbilityLevel;
+            if (result.bulletSpeedPerExtraLevel == 0f) result.bulletSpeedPerExtraLevel = defaults.bulletSpeedPerExtraLevel;
             if (result.bulletRange == 0f) result.bulletRange = defaults.bulletRange;
-            if (result.bulletRangePerAbilityLevel == 0f) result.bulletRangePerAbilityLevel = defaults.bulletRangePerAbilityLevel;
+            if (result.bulletRangePerExtraLevel == 0f) result.bulletRangePerExtraLevel = defaults.bulletRangePerExtraLevel;
             if (result.fireRate == 0f) result.fireRate = defaults.fireRate;
-            if (result.fireRatePerAbilityLevel == 0f) result.fireRatePerAbilityLevel = defaults.fireRatePerAbilityLevel;
+            if (result.fireRatePerExtraLevel == 0f) result.fireRatePerExtraLevel = defaults.fireRatePerExtraLevel;
             if (result.rammingPower == 0f) result.rammingPower = defaults.rammingPower;
-            if (result.rammingPowerPerAbilityLevel == 0f) result.rammingPowerPerAbilityLevel = defaults.rammingPowerPerAbilityLevel;
+            if (result.rammingPowerPerExtraLevel == 0f) result.rammingPowerPerExtraLevel = defaults.rammingPowerPerExtraLevel;
             if (result.healthCap == 0f) result.healthCap = defaults.healthCap;
-            if (result.healthCapPerAbilityLevel == 0f) result.healthCapPerAbilityLevel = defaults.healthCapPerAbilityLevel;
+            if (result.healthCapPerExtraLevel == 0f) result.healthCapPerExtraLevel = defaults.healthCapPerExtraLevel;
             if (result.healthRegen == 0f) result.healthRegen = defaults.healthRegen;
-            if (result.healthRegenPerAbilityLevel == 0f) result.healthRegenPerAbilityLevel = defaults.healthRegenPerAbilityLevel;
+            if (result.healthRegenPerExtraLevel == 0f) result.healthRegenPerExtraLevel = defaults.healthRegenPerExtraLevel;
             if (result.energyCap == 0f) result.energyCap = defaults.energyCap;
-            if (result.energyCapPerAbilityLevel == 0f) result.energyCapPerAbilityLevel = defaults.energyCapPerAbilityLevel;
+            if (result.energyCapPerExtraLevel == 0f) result.energyCapPerExtraLevel = defaults.energyCapPerExtraLevel;
             if (result.energyRegen == 0f) result.energyRegen = defaults.energyRegen;
-            if (result.energyRegenPerAbilityLevel == 0f) result.energyRegenPerAbilityLevel = defaults.energyRegenPerAbilityLevel;
+            if (result.energyRegenPerExtraLevel == 0f) result.energyRegenPerExtraLevel = defaults.energyRegenPerExtraLevel;
             if (result.moveSpeed == 0f) result.moveSpeed = defaults.moveSpeed;
-            if (result.moveSpeedPerAbilityLevel == 0f) result.moveSpeedPerAbilityLevel = defaults.moveSpeedPerAbilityLevel;
+            if (result.moveSpeedPerExtraLevel == 0f) result.moveSpeedPerExtraLevel = defaults.moveSpeedPerExtraLevel;
             if (result.accelerationCap == 0f) result.accelerationCap = defaults.accelerationCap;
-            if (result.accelerationCapPerAbilityLevel == 0f) result.accelerationCapPerAbilityLevel = defaults.accelerationCapPerAbilityLevel;
+            if (result.accelerationCapPerExtraLevel == 0f) result.accelerationCapPerExtraLevel = defaults.accelerationCapPerExtraLevel;
             if (result.extraSpeedPercent == 0f) result.extraSpeedPercent = defaults.extraSpeedPercent;
-            if (result.extraSpeedPercentPerAbilityLevel == 0f)
-                result.extraSpeedPercentPerAbilityLevel = defaults.extraSpeedPercentPerAbilityLevel;
+            if (result.extraSpeedPercentPerExtraLevel == 0f)
+                result.extraSpeedPercentPerExtraLevel = defaults.extraSpeedPercentPerExtraLevel;
             if (result.extraSpeedEnergyDrain == 0f)
                 result.extraSpeedEnergyDrain = defaults.extraSpeedEnergyDrain;
-            if (result.extraSpeedEnergyDrainPerAbilityLevel == 0f)
-                result.extraSpeedEnergyDrainPerAbilityLevel = defaults.extraSpeedEnergyDrainPerAbilityLevel;
+            if (result.extraSpeedEnergyDrainPerExtraLevel == 0f)
+                result.extraSpeedEnergyDrainPerExtraLevel = defaults.extraSpeedEnergyDrainPerExtraLevel;
             if (result.turnSpeed == 0f) result.turnSpeed = defaults.turnSpeed;
-            if (result.turnSpeedPerAbilityLevel == 0f) result.turnSpeedPerAbilityLevel = defaults.turnSpeedPerAbilityLevel;
+            if (result.turnSpeedPerExtraLevel == 0f) result.turnSpeedPerExtraLevel = defaults.turnSpeedPerExtraLevel;
             if (result.maxGems == 0f) result.maxGems = defaults.maxGems;
-            if (result.maxGemsPerAbilityLevel == 0f) result.maxGemsPerAbilityLevel = defaults.maxGemsPerAbilityLevel;
+            if (result.maxGemsPerExtraLevel == 0f) result.maxGemsPerExtraLevel = defaults.maxGemsPerExtraLevel;
             if (result.tractorBeamDistance == 0f) result.tractorBeamDistance = defaults.tractorBeamDistance;
-            if (result.tractorBeamDistancePerAbilityLevel == 0f) result.tractorBeamDistancePerAbilityLevel = defaults.tractorBeamDistancePerAbilityLevel;
+            if (result.tractorBeamDistancePerExtraLevel == 0f) result.tractorBeamDistancePerExtraLevel = defaults.tractorBeamDistancePerExtraLevel;
             if (result.tractorBeamPower == 0f) result.tractorBeamPower = defaults.tractorBeamPower;
-            if (result.tractorBeamPowerPerAbilityLevel == 0f) result.tractorBeamPowerPerAbilityLevel = defaults.tractorBeamPowerPerAbilityLevel;
+            if (result.tractorBeamPowerPerExtraLevel == 0f) result.tractorBeamPowerPerExtraLevel = defaults.tractorBeamPowerPerExtraLevel;
             if (result.maxPeople == 0f) result.maxPeople = defaults.maxPeople;
-            if (result.maxPeoplePerAbilityLevel == 0f) result.maxPeoplePerAbilityLevel = defaults.maxPeoplePerAbilityLevel;
+            if (result.maxPeoplePerExtraLevel == 0f) result.maxPeoplePerExtraLevel = defaults.maxPeoplePerExtraLevel;
             return result;
         }
 
@@ -354,13 +383,82 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Multiplier <see cref="ScaleStatsByTransform"/> applies to one Base / PerExtra pair.
+        /// <para>
+        /// [TITAN-ORBIT] Starting prefab <c>localScale</c> is an art lever: a Cockpit at
+        /// scale 3 contributes <c>3 ×</c> catalog Health / Gems / People. Weapons use
+        /// wider XY for fire power and deeper Z for a slower fire rate. Turn, ramming,
+        /// propulsion move/accel, and weapon bullet speed/range stay at ×1.
+        /// </para>
+        /// Safe with a default <c>(1,1,1)</c> scale (moon-store extras have no prefab child).
+        /// </summary>
+        /// <param name="localScale">Authored chassis-prefab child scale (not live mesh grow).</param>
+        /// <param name="componentId">Part id used to classify weapon vs propulsion vs cockpit.</param>
+        /// <param name="channel">Which ability field we are scaling.</param>
+        /// <returns>Factor to multiply catalog Base and PerExtra by (≥ 0.01 for fire-rate Z).</returns>
+        public static float GetScaleMultiplier(
+            Vector3 localScale,
+            string componentId,
+            ShipComponentScaleChannel channel)
+        {
+            // --- Same branches as ScaleStatsByTransform (keep these twins in lockstep) ---
+            float x = localScale.x;
+            float y = localScale.y;
+            float z = Mathf.Max(localScale.z, 0.01f);
+            float average = (x + y + z) / 3f;
+
+            if (channel == ShipComponentScaleChannel.Turn
+                || channel == ShipComponentScaleChannel.Ramming)
+                return 1f;
+
+            if (IsWeaponComponent(componentId))
+            {
+                if (channel == ShipComponentScaleChannel.FirePower)
+                    return (x + y) * 0.5f;
+                if (channel == ShipComponentScaleChannel.FireRate)
+                    return 1f / z;
+                return 1f;
+            }
+
+            if (IsPropulsionComponent(componentId)
+                && (channel == ShipComponentScaleChannel.MoveOrAccel
+                    || channel == ShipComponentScaleChannel.Overdrive))
+                return 1f;
+
+            return average;
+        }
+
+        /// <summary>
+        /// Short HUD reason for the scale factor (empty when the multiplier is ~1).
+        /// </summary>
+        public static string DescribeScaleReason(
+            string componentId,
+            ShipComponentScaleChannel channel,
+            float multiplier)
+        {
+            if (Mathf.Abs(multiplier - 1f) <= 0.01f)
+                return string.Empty;
+
+            if (IsWeaponComponent(componentId))
+            {
+                if (channel == ShipComponentScaleChannel.FirePower)
+                    return "weapon XY";
+                if (channel == ShipComponentScaleChannel.FireRate)
+                    return "weapon 1/Z";
+            }
+
+            return "prefab start";
+        }
+
+        /// <summary>
         /// Scales authored stats by prefab child transform size. Weapons: XY → fire power, Z → fire rate.
         /// Propulsion move/accel ignore scale; turn and ramming are never scaled.
         /// <para>
         /// [TITAN-ORBIT] Call only with <b>chassis prefab</b> authored localScale (art lever for
         /// mixed calibers on one hull). Do not pass live hybrid proxies after attribute mesh grow —
         /// combat already applies Fire Power attributes as numeric multipliers (mesh/collider grow
-        /// is separate from firePower / fireRate).
+        /// is separate from firePower / fireRate). Ability-chip math uses
+        /// <see cref="GetScaleMultiplier"/> so the details card can show the same factor.
         /// </para>
         /// </summary>
         public static ShipComponentAbilityStats ScaleStatsByTransform(
@@ -382,112 +480,108 @@ namespace TitanOrbit.Data
                 return new ShipComponentAbilityStats
                 {
                     firePower = stats.firePower * firePowerScale,
-                    firePowerPerAbilityLevel = stats.firePowerPerAbilityLevel * firePowerScale,
+                    firePowerPerExtraLevel = stats.firePowerPerExtraLevel * firePowerScale,
                     bulletSpeed = stats.bulletSpeed,
-                    bulletSpeedPerAbilityLevel = stats.bulletSpeedPerAbilityLevel,
+                    bulletSpeedPerExtraLevel = stats.bulletSpeedPerExtraLevel,
                     // [TITAN-ORBIT] Range is hull-level (like speed) — not scaled by mesh size.
                     bulletRange = stats.bulletRange,
-                    bulletRangePerAbilityLevel = stats.bulletRangePerAbilityLevel,
+                    bulletRangePerExtraLevel = stats.bulletRangePerExtraLevel,
                     fireRate = stats.fireRate * fireRateScale,
-                    fireRatePerAbilityLevel = stats.fireRatePerAbilityLevel * fireRateScale,
+                    fireRatePerExtraLevel = stats.fireRatePerExtraLevel * fireRateScale,
                     rammingPower = stats.rammingPower,
-                    rammingPowerPerAbilityLevel = stats.rammingPowerPerAbilityLevel,
+                    rammingPowerPerExtraLevel = stats.rammingPowerPerExtraLevel,
                     healthCap = stats.healthCap,
-                    healthCapPerAbilityLevel = stats.healthCapPerAbilityLevel,
+                    healthCapPerExtraLevel = stats.healthCapPerExtraLevel,
                     healthRegen = stats.healthRegen,
-                    healthRegenPerAbilityLevel = stats.healthRegenPerAbilityLevel,
+                    healthRegenPerExtraLevel = stats.healthRegenPerExtraLevel,
                     energyCap = stats.energyCap,
-                    energyCapPerAbilityLevel = stats.energyCapPerAbilityLevel,
+                    energyCapPerExtraLevel = stats.energyCapPerExtraLevel,
                     energyRegen = stats.energyRegen,
-                    energyRegenPerAbilityLevel = stats.energyRegenPerAbilityLevel,
+                    energyRegenPerExtraLevel = stats.energyRegenPerExtraLevel,
                     moveSpeed = stats.moveSpeed,
-                    moveSpeedPerAbilityLevel = stats.moveSpeedPerAbilityLevel,
+                    moveSpeedPerExtraLevel = stats.moveSpeedPerExtraLevel,
                     accelerationCap = stats.accelerationCap,
-                    accelerationCapPerAbilityLevel = stats.accelerationCapPerAbilityLevel,
+                    accelerationCapPerExtraLevel = stats.accelerationCapPerExtraLevel,
                     extraSpeedPercent = stats.extraSpeedPercent,
-                    extraSpeedPercentPerAbilityLevel = stats.extraSpeedPercentPerAbilityLevel,
+                    extraSpeedPercentPerExtraLevel = stats.extraSpeedPercentPerExtraLevel,
                     extraSpeedEnergyDrain = stats.extraSpeedEnergyDrain,
-                    extraSpeedEnergyDrainPerAbilityLevel = stats.extraSpeedEnergyDrainPerAbilityLevel,
+                    extraSpeedEnergyDrainPerExtraLevel = stats.extraSpeedEnergyDrainPerExtraLevel,
                     turnSpeed = stats.turnSpeed,
-                    turnSpeedPerAbilityLevel = stats.turnSpeedPerAbilityLevel,
+                    turnSpeedPerExtraLevel = stats.turnSpeedPerExtraLevel,
                     maxGems = stats.maxGems,
-                    maxGemsPerAbilityLevel = stats.maxGemsPerAbilityLevel,
+                    maxGemsPerExtraLevel = stats.maxGemsPerExtraLevel,
                     tractorBeamDistance = stats.tractorBeamDistance,
-                    tractorBeamDistancePerAbilityLevel = stats.tractorBeamDistancePerAbilityLevel,
+                    tractorBeamDistancePerExtraLevel = stats.tractorBeamDistancePerExtraLevel,
                     tractorBeamPower = stats.tractorBeamPower,
-                    tractorBeamPowerPerAbilityLevel = stats.tractorBeamPowerPerAbilityLevel,
+                    tractorBeamPowerPerExtraLevel = stats.tractorBeamPowerPerExtraLevel,
                     maxPeople = stats.maxPeople,
-                    maxPeoplePerAbilityLevel = stats.maxPeoplePerAbilityLevel,
-                    extraStackWeight = stats.extraStackWeight,
+                    maxPeoplePerExtraLevel = stats.maxPeoplePerExtraLevel,
                 };
             }
 
             float scale = (x + y + z) / 3f;
             var scaled = Multiply(stats, scale);
             scaled.turnSpeed = stats.turnSpeed;
-            scaled.turnSpeedPerAbilityLevel = stats.turnSpeedPerAbilityLevel;
+            scaled.turnSpeedPerExtraLevel = stats.turnSpeedPerExtraLevel;
             scaled.rammingPower = stats.rammingPower;
-            scaled.rammingPowerPerAbilityLevel = stats.rammingPowerPerAbilityLevel;
-            scaled.extraStackWeight = stats.extraStackWeight;
+            scaled.rammingPowerPerExtraLevel = stats.rammingPowerPerExtraLevel;
             if (IsPropulsionComponent(componentId))
             {
                 scaled.moveSpeed = stats.moveSpeed;
-                scaled.moveSpeedPerAbilityLevel = stats.moveSpeedPerAbilityLevel;
+                scaled.moveSpeedPerExtraLevel = stats.moveSpeedPerExtraLevel;
                 scaled.accelerationCap = stats.accelerationCap;
-                scaled.accelerationCapPerAbilityLevel = stats.accelerationCapPerAbilityLevel;
+                scaled.accelerationCapPerExtraLevel = stats.accelerationCapPerExtraLevel;
                 // OVERDRIVE fractions are designer knobs — not mesh-scale dependent.
                 scaled.extraSpeedPercent = stats.extraSpeedPercent;
-                scaled.extraSpeedPercentPerAbilityLevel = stats.extraSpeedPercentPerAbilityLevel;
+                scaled.extraSpeedPercentPerExtraLevel = stats.extraSpeedPercentPerExtraLevel;
                 scaled.extraSpeedEnergyDrain = stats.extraSpeedEnergyDrain;
-                scaled.extraSpeedEnergyDrainPerAbilityLevel = stats.extraSpeedEnergyDrainPerAbilityLevel;
+                scaled.extraSpeedEnergyDrainPerExtraLevel = stats.extraSpeedEnergyDrainPerExtraLevel;
             }
             return scaled;
         }
 
-        /// <summary>Multiplies every <b>numeric</b> stat field by <paramref name="factor"/> (not extraStackWeight).</summary>
+        /// <summary>Multiplies every numeric stat field by <paramref name="factor"/>.</summary>
         public static ShipComponentAbilityStats Multiply(ShipComponentAbilityStats s, float factor)
         {
             // --- Multiply ---
             return new ShipComponentAbilityStats
             {
                 firePower = s.firePower * factor,
-                firePowerPerAbilityLevel = s.firePowerPerAbilityLevel * factor,
+                firePowerPerExtraLevel = s.firePowerPerExtraLevel * factor,
                 bulletSpeed = s.bulletSpeed * factor,
-                bulletSpeedPerAbilityLevel = s.bulletSpeedPerAbilityLevel * factor,
+                bulletSpeedPerExtraLevel = s.bulletSpeedPerExtraLevel * factor,
                 bulletRange = s.bulletRange * factor,
-                bulletRangePerAbilityLevel = s.bulletRangePerAbilityLevel * factor,
+                bulletRangePerExtraLevel = s.bulletRangePerExtraLevel * factor,
                 fireRate = s.fireRate * factor,
-                fireRatePerAbilityLevel = s.fireRatePerAbilityLevel * factor,
+                fireRatePerExtraLevel = s.fireRatePerExtraLevel * factor,
                 rammingPower = s.rammingPower * factor,
-                rammingPowerPerAbilityLevel = s.rammingPowerPerAbilityLevel * factor,
+                rammingPowerPerExtraLevel = s.rammingPowerPerExtraLevel * factor,
                 healthCap = s.healthCap * factor,
-                healthCapPerAbilityLevel = s.healthCapPerAbilityLevel * factor,
+                healthCapPerExtraLevel = s.healthCapPerExtraLevel * factor,
                 healthRegen = s.healthRegen * factor,
-                healthRegenPerAbilityLevel = s.healthRegenPerAbilityLevel * factor,
+                healthRegenPerExtraLevel = s.healthRegenPerExtraLevel * factor,
                 energyCap = s.energyCap * factor,
-                energyCapPerAbilityLevel = s.energyCapPerAbilityLevel * factor,
+                energyCapPerExtraLevel = s.energyCapPerExtraLevel * factor,
                 energyRegen = s.energyRegen * factor,
-                energyRegenPerAbilityLevel = s.energyRegenPerAbilityLevel * factor,
+                energyRegenPerExtraLevel = s.energyRegenPerExtraLevel * factor,
                 moveSpeed = s.moveSpeed * factor,
-                moveSpeedPerAbilityLevel = s.moveSpeedPerAbilityLevel * factor,
+                moveSpeedPerExtraLevel = s.moveSpeedPerExtraLevel * factor,
                 accelerationCap = s.accelerationCap * factor,
-                accelerationCapPerAbilityLevel = s.accelerationCapPerAbilityLevel * factor,
+                accelerationCapPerExtraLevel = s.accelerationCapPerExtraLevel * factor,
                 extraSpeedPercent = s.extraSpeedPercent * factor,
-                extraSpeedPercentPerAbilityLevel = s.extraSpeedPercentPerAbilityLevel * factor,
+                extraSpeedPercentPerExtraLevel = s.extraSpeedPercentPerExtraLevel * factor,
                 extraSpeedEnergyDrain = s.extraSpeedEnergyDrain * factor,
-                extraSpeedEnergyDrainPerAbilityLevel = s.extraSpeedEnergyDrainPerAbilityLevel * factor,
+                extraSpeedEnergyDrainPerExtraLevel = s.extraSpeedEnergyDrainPerExtraLevel * factor,
                 turnSpeed = s.turnSpeed * factor,
-                turnSpeedPerAbilityLevel = s.turnSpeedPerAbilityLevel * factor,
+                turnSpeedPerExtraLevel = s.turnSpeedPerExtraLevel * factor,
                 maxGems = s.maxGems * factor,
-                maxGemsPerAbilityLevel = s.maxGemsPerAbilityLevel * factor,
+                maxGemsPerExtraLevel = s.maxGemsPerExtraLevel * factor,
                 tractorBeamDistance = s.tractorBeamDistance * factor,
-                tractorBeamDistancePerAbilityLevel = s.tractorBeamDistancePerAbilityLevel * factor,
+                tractorBeamDistancePerExtraLevel = s.tractorBeamDistancePerExtraLevel * factor,
                 tractorBeamPower = s.tractorBeamPower * factor,
-                tractorBeamPowerPerAbilityLevel = s.tractorBeamPowerPerAbilityLevel * factor,
+                tractorBeamPowerPerExtraLevel = s.tractorBeamPowerPerExtraLevel * factor,
                 maxPeople = s.maxPeople * factor,
-                maxPeoplePerAbilityLevel = s.maxPeoplePerAbilityLevel * factor,
-                // [TITAN-ORBIT] Stack weight is a fraction, not a scaled ability number.
-                extraStackWeight = s.extraStackWeight,
+                maxPeoplePerExtraLevel = s.maxPeoplePerExtraLevel * factor,
             };
         }
     }

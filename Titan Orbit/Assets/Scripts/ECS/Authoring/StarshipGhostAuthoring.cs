@@ -75,6 +75,9 @@ namespace TitanOrbit.ECS.Authoring
                 // AddBuffer from ShipEnsureComponentsSystem does not register them on the ghost.
                 AddBuffer<EquippedEquipmentElement>(entity);
                 AddBuffer<EquippedCardElement>(entity);
+                // [NETCODE] Deployed mines must bake so GhostFields replicate. Runtime-only
+                // AddBuffer from ShipEnsureComponentsSystem does not register them on the ghost.
+                AddBuffer<DeployedMineElement>(entity);
                 AddComponent(entity, new ShipMotorConfig
                 {
                     EngineThrust = authoring.EngineThrust,
@@ -125,6 +128,8 @@ namespace TitanOrbit.ECS.Authoring
                     HoldUntilElapsed = -1.0,
                 });
                 AddComponent(entity, new ShipMoonDockState());
+                // [NETCODE] Turret possession mode — must bake so IsControlling / PlanetId replicate.
+                AddComponent(entity, new ShipTurretControlState());
                 AddComponent(entity, new ShipDepositIntent());
                 // [NETCODE] Server bumps BeatSequence each deposit chunk; clients play SFX/UI from it.
                 AddComponent(entity, new ShipDepositFeedback());
@@ -134,8 +139,11 @@ namespace TitanOrbit.ECS.Authoring
                 // [TITAN-ORBIT] Server-only last-damager for kill credit — not ghosted.
                 AddComponent(entity, new ShipCombatAttribution());
                 // [NETCODE] ShipInput is IInputComponentData — replicated from owner client each tick.
-                AddComponent(entity, new ShipInput());
+                AddComponent(entity, new ShipInput { DisableSpaceBrakes = false });
                 AddComponent(entity, new ShipKinematics());
+                // [NETCODE] Shock expiry must bake so GhostField replicates to owner prediction.
+                AddComponent(entity, new ShipElectricShockState());
+                AddComponent(entity, new ShipBurnOverTimeState());
                 BakeWeaponMounts(authoring, entity);
                 BakeWingTractorBeams(authoring, entity);
                 BakeShipPhysicsBody(entity, authoring.Mass);
@@ -279,11 +287,11 @@ namespace TitanOrbit.ECS.Authoring
                     {
                         LocalPosition = localPos,
                         TractorBeamDistance = wing.tractorBeamDistance,
-                        TractorBeamDistancePerLevel = wing.tractorBeamDistancePerAbilityLevel,
+                        TractorBeamDistancePerLevel = wing.tractorBeamDistancePerExtraLevel,
                         TractorBeamPower = wing.tractorBeamPower,
-                        TractorBeamPowerPerLevel = wing.tractorBeamPowerPerAbilityLevel,
+                        TractorBeamPowerPerLevel = wing.tractorBeamPowerPerExtraLevel,
                         MaxGems = wing.maxGems,
-                        MaxGemsPerLevel = wing.maxGemsPerAbilityLevel,
+                        MaxGemsPerLevel = wing.maxGemsPerExtraLevel,
                     });
                 }
 

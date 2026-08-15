@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using Unity.Collections;
+using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
 
@@ -9,7 +10,8 @@ namespace TitanOrbit.ECS
     /// [NETCODE] RPC commands (Remote Procedure Calls) — one-shot network messages outside ghost
     /// replication. Each struct implements <c>IRpcCommand</c>; clients send requests, server systems
     /// validate and reply. Handlers: <see cref="TeamManagementSystem"/>,
-    /// <see cref="RejoinShipManagementSystem"/>, moon orbit store systems, attribute upgrade systems.
+    /// <see cref="RejoinShipManagementSystem"/>, <see cref="PlayerNameServerSystem"/>,
+    /// moon orbit store systems, attribute upgrade systems.
     /// Ghost replication handles continuous state; RPCs handle discrete player actions.
     /// </summary>
 
@@ -28,6 +30,12 @@ namespace TitanOrbit.ECS
 
     /// <summary>
     /// [NETCODE] Server confirms or rejects team choice; client reads in <see cref="TeamChoiceResultClientSystem"/>.
+    /// <para>
+    /// [TITAN-ORBIT] <see cref="SpawnPosition"/> travels with the ack for logs / diagnostics.
+    /// Join Team does <b>not</b> Instantiates a client predicted hull — GhostReceive delivers
+    /// the server ship at this pose. Keep these fields: changing the RPC layout requires a
+    /// matching Linux headless rebuild.
+    /// </para>
     /// </summary>
     public struct TeamChoiceResultRpc : IRpcCommand
     {
@@ -40,14 +48,46 @@ namespace TitanOrbit.ECS
         /// <summary>[STANDARD] 1 = success, 0 = failure.</summary>
         public byte Success;
 
+        /// <summary>
+        /// [TITAN-ORBIT] 1 when <see cref="SpawnPosition"/> is the server home-ring spawn.
+        /// 0 on failure, or when an older server omitted the pose (client finds the ring itself).
+        /// </summary>
+        public byte HasSpawnPos;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Unbounded world spawn on the home orbit ring (same value the server
+        /// wrote to the ship <c>LocalTransform</c>). Ignored when <see cref="HasSpawnPos"/> is 0.
+        /// </summary>
+        public float3 SpawnPosition;
+
         /// <summary>[TITAN-ORBIT] Human-readable rejection or confirmation message for lobby UI.</summary>
         public FixedString128Bytes Message;
     }
 
-    /// <summary>[NETCODE] Client sets display name shown in scoreboard and HUD.</summary>
+    /// <summary>
+    /// [NETCODE] Client publishes the Main Menu display name after GoInGame.
+    /// Server: <see cref="PlayerNameServerSystem"/> (NetworkId comes from the connection, not this
+    /// payload — clients cannot spoof another player's name). Adding fields changes RPC layout:
+    /// client and Linux headless must rebuild together.
+    /// </summary>
     public struct SetPlayerNameCommand : IRpcCommand
     {
         /// <summary>[TITAN-ORBIT] UTF-8 display name (length capped by FixedString64).</summary>
+        public FixedString64Bytes DisplayName;
+    }
+
+    /// <summary>
+    /// [NETCODE] Server → all clients: one player's display name for nameplates and leaderboards.
+    /// The match-singleton <see cref="PlayerNameElement"/> buffer is not a ghost (runtime entity,
+    /// not a ghost prefab), so names travel on this RPC instead of snapshot replication.
+    /// Late joiners get a one-shot dump tagged with <see cref="PlayerNameRosterSent"/>.
+    /// </summary>
+    public struct PlayerNameAnnounceRpc : IRpcCommand
+    {
+        /// <summary>[NETCODE] Owner connection id (GhostOwner.NetworkId on that player's ship).</summary>
+        public int NetworkId;
+
+        /// <summary>[TITAN-ORBIT] Sanitized UTF-8 display name.</summary>
         public FixedString64Bytes DisplayName;
     }
 
@@ -77,6 +117,31 @@ namespace TitanOrbit.ECS
     {
         /// <summary>[TITAN-ORBIT] Desired deposit toggle state.</summary>
         public bool WantDeposit;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client toggles Damage vs Heal bullets from the Orbit Menu.
+    /// Server writes <see cref="ShipLoadoutState.HealingBulletsActive"/>.
+    /// </summary>
+    public struct SetHealingBulletsCommand : IRpcCommand
+    {
+        /// <summary>True = fire the shared EnergySpheres heal bank.</summary>
+        public bool HealingActive;
+    }
+
+    /// <summary>
+    /// [NETCODE] Client requests to take control of a built planetary defense turret pad.
+    /// Server validates zone / team / occupancy, then sets <see cref="ShipTurretControlState"/>
+    /// and <see cref="PlanetaryDefenseSlotElement.OccupiedByNetworkId"/>. Exit is not an RPC —
+    /// server ejects when <see cref="ShipInput.Thrust"/> is held while controlling.
+    /// </summary>
+    public struct EnterPlanetaryDefenseTurretCommand : IRpcCommand
+    {
+        /// <summary>[TITAN-ORBIT] Stable <see cref="PlanetState.PlanetId"/> hosting the pad.</summary>
+        public int PlanetId;
+
+        /// <summary>[TITAN-ORBIT] 0-based defense slot index on that planet.</summary>
+        public byte SlotIndex;
     }
 
     /// <summary>
@@ -347,6 +412,15 @@ namespace TitanOrbit.ECS
         /// Must match server <see cref="BulletElement.DamageFilter"/>.
         /// </summary>
         public byte DamageFilter;
+
+        /// <summary>1 = homing rocket tracer (client steers with the same turn cap).</summary>
+        public byte Homing;
+
+        /// <summary>Max yaw rate in degrees per second for homing tracers.</summary>
+        public float TurnSpeedDeg;
+
+        /// <summary>Toroidal search radius. 0 is sanitized to a positive default (never whole-map).</summary>
+        public float AcquireRange;
     }
 
     /// <summary>
@@ -355,7 +429,7 @@ namespace TitanOrbit.ECS
     /// </summary>
     public struct BulletHitRpc : IRpcCommand
     {
-        /// <summary>Same id as <see cref="BulletSpawnRpc.Sequence"/>.</summary>
+        /// <summary>Same id as <see cref="BulletSpawnRpc.Sequence"/>. 0 = ram/grind (no tracer).</summary>
         public uint Sequence;
 
         /// <summary>World hit position (logical / unbounded XZ).</summary>
@@ -385,9 +459,10 @@ namespace TitanOrbit.ECS
         /// Stable <see cref="PlanetState.PlanetId"/> when this hit damaged a planetary-defense
         /// turret slot; 0 when the impact was not PD.
         /// <para>
-        /// [TITAN-ORBIT] Planet ghosts use low Importance / MaxSendRate (~15), so ghosted
-        /// <see cref="PlanetaryDefenseSlotElement.Health"/> can lag for a long time. Clients
-        /// punch the HP bar from this HitRpc payload, then reconcile when the ghost catches up.
+        /// [TITAN-ORBIT] Live turret HP is <b>this field</b>, applied on the client by
+        /// <see cref="PlanetaryDefenseClientHealthSync"/> — the same HitRpc channel asteroids
+        /// use. Planet ghost <see cref="PlanetaryDefenseSlotElement.Health"/> is layout seed
+        /// only; it is not the combat HP stream.
         /// </para>
         /// </summary>
         public int PlanetaryDefensePlanetId;
@@ -468,4 +543,60 @@ namespace TitanOrbit.ECS
         /// <summary>Designer Size for bounce mass.</summary>
         public float Size;
     }
+
+    /// <summary>
+    /// [NETCODE] Server → joining client: which seed-layout asteroid slots are currently alive.
+    /// Bit i = 1 means the rock at blueprint asteroid index i still exists (or has respawned).
+    /// Late joiners seed-hydrate t=0 then SoftDestroy dead slots. 16 ulongs cover 1024 rocks.
+    /// </summary>
+    public struct AsteroidOccupancyRpc : IRpcCommand
+    {
+        /// <summary>Match seed — ignore if it does not match the latched recipe.</summary>
+        public uint MatchSeed;
+
+        /// <summary>How many asteroid slots the bitmask describes (bits beyond this are unused).</summary>
+        public int SlotCount;
+
+        /// <summary>
+        /// Occupancy words: slot i is alive when bit (i % 64) in word (i / 64) is 1.
+        /// 16 ulongs = 1024 slots. IRpcCommand cannot carry a NativeArray, so the mask is flattened.
+        /// </summary>
+        public ulong Bits0;
+        /// <summary>Occupancy word 1 (slots 64–127). See <see cref="Bits0"/>.</summary>
+        public ulong Bits1;
+        /// <summary>Occupancy word 2 (slots 128–191). See <see cref="Bits0"/>.</summary>
+        public ulong Bits2;
+        /// <summary>Occupancy word 3 (slots 192–255). See <see cref="Bits0"/>.</summary>
+        public ulong Bits3;
+        /// <summary>Occupancy word 4 (slots 256–319). See <see cref="Bits0"/>.</summary>
+        public ulong Bits4;
+        /// <summary>Occupancy word 5 (slots 320–383). See <see cref="Bits0"/>.</summary>
+        public ulong Bits5;
+        /// <summary>Occupancy word 6 (slots 384–447). See <see cref="Bits0"/>.</summary>
+        public ulong Bits6;
+        /// <summary>Occupancy word 7 (slots 448–511). See <see cref="Bits0"/>.</summary>
+        public ulong Bits7;
+        /// <summary>Occupancy word 8 (slots 512–575). See <see cref="Bits0"/>.</summary>
+        public ulong Bits8;
+        /// <summary>Occupancy word 9 (slots 576–639). See <see cref="Bits0"/>.</summary>
+        public ulong Bits9;
+        /// <summary>Occupancy word 10 (slots 640–703). See <see cref="Bits0"/>.</summary>
+        public ulong Bits10;
+        /// <summary>Occupancy word 11 (slots 704–767). See <see cref="Bits0"/>.</summary>
+        public ulong Bits11;
+        /// <summary>Occupancy word 12 (slots 768–831). See <see cref="Bits0"/>.</summary>
+        public ulong Bits12;
+        /// <summary>Occupancy word 13 (slots 832–895). See <see cref="Bits0"/>.</summary>
+        public ulong Bits13;
+        /// <summary>Occupancy word 14 (slots 896–959). See <see cref="Bits0"/>.</summary>
+        public ulong Bits14;
+        /// <summary>Occupancy word 15 (slots 960–1023). See <see cref="Bits0"/>.</summary>
+        public ulong Bits15;
+    }
+
+    /// <summary>Server connection tag: occupancy RPC already queued for this joiner.</summary>
+    public struct AsteroidOccupancySent : IComponentData { }
+
+    /// <summary>Server connection tag: in-flight people-transport SpawnRpcs dumped once.</summary>
+    public struct PeopleTransportCatchUpSent : IComponentData { }
 }

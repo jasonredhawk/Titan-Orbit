@@ -5,27 +5,48 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Ten-segment power bar grouped into five category pairs (no gap within a pair).
-    /// Each segment width is proportional to its stat value; category pairs share only a visual grouping gap.
-    /// Assign segment images in the inspector (pair order: offense ΓÇª capacity).
+    /// Ten-segment power bar grouped into five ODEMC pairs (Offense … Capacity).
+    /// Moon upgrade-tree cards use equal slots: each pair is 20% of the track, each
+    /// ability 10%. That 10% slot is 100% of the global catalog max for that stat;
+    /// the ship's value is a solid fill and the rest is a dimmed matching color.
+    /// Equipment cards keep the older proportional widths (one or two stats, hide empty pairs).
+    /// Built at runtime by <see cref="Create"/> / <see cref="CreateInTrack"/>, or upgraded
+    /// in place from the serialized node prefab.
     /// </summary>
     public class ShipUpgradeTreePowerBarUI : MonoBehaviour
     {
         /// <summary>
         /// Gem Cap (8) and People Cap (9) bar widths use this fraction of raw stat power
-        /// so high gem capacity does not dominate the moon-menu upgrade tree bar (0.5 = 50% smaller).
+        /// on equipment cards only, so high gem capacity does not dominate those bars.
+        /// Moon-tree equal slots no longer need this — each stat has its own 10% lane.
         /// </summary>
         public const float MoonTreeCapacityStatBarScale = 0.5f;
+
+        const float DimRgbScale = 0.22f;
+        const float DimAlpha = 0.9f;
+        /// <summary>
+        /// Pixels between the two abilities in a pair (Fire Power | Bullet Speed).
+        /// Smaller than <see cref="MoonTreePairGapPx"/> so ODEMC groups still read as pairs.
+        /// </summary>
+        const float MoonTreeInnerGapPx = 2f;
+        /// <summary>
+        /// Pixels between the five ODEMC pairs (Offense | Defense | Energy | …).
+        /// Not scaled with node width so the gutter stays visible on small cards.
+        /// </summary>
+        const float MoonTreePairGapPx = 6f;
 
         [SerializeField] private Image[] segments = new Image[ShipAbilityCategoryColors.PowerBreakdownStatCount];
         [SerializeField] private float barHeight = 10f;
         [SerializeField] private float pairGap = 4f;
 
+        Image[] _remainders;
+        bool _slotLayersReady;
+
         public float TrackWidth { get; private set; }
 
+        /// <summary>Stores segment images and bar metrics from <see cref="BuildBar"/>.</summary>
         public void Initialize(Image[] segmentImages, float height, float gap)
         {
-            // --- Initialize ---
             segments = segmentImages;
             barHeight = height;
             pairGap = gap;
@@ -52,7 +73,7 @@ namespace TitanOrbit.UI
             return BuildBar(parent, barHeight, pairGap, trackWidth, trackBackground, 2f);
         }
 
-        private static ShipUpgradeTreePowerBarUI BuildBar(
+        static ShipUpgradeTreePowerBarUI BuildBar(
             Transform parent,
             float barHeight,
             float pairGap,
@@ -102,48 +123,114 @@ namespace TitanOrbit.UI
             barHlg.childAlignment = TextAnchor.MiddleLeft;
             barHlg.childControlWidth = true;
             barHlg.childControlHeight = true;
-            barHlg.childForceExpandWidth = false;
+            barHlg.childForceExpandWidth = true;
             barHlg.childForceExpandHeight = true;
 
             var segments = new Image[ShipAbilityCategoryColors.PowerBreakdownStatCount];
+            var remainders = new Image[ShipAbilityCategoryColors.PowerBreakdownStatCount];
+            Sprite fillSprite = GetFillSprite();
             for (int pair = 0; pair < ShipAbilityCategoryColors.PowerBreakdownPairCount; pair++)
             {
                 var pairGo = new GameObject("Pair_" + pair);
                 pairGo.transform.SetParent(barRow.transform, false);
                 var pairHlg = pairGo.AddComponent<HorizontalLayoutGroup>();
-                pairHlg.spacing = 0f;
+                pairHlg.spacing = MoonTreeInnerGapPx;
                 pairHlg.childAlignment = TextAnchor.MiddleLeft;
                 pairHlg.childControlWidth = true;
                 pairHlg.childControlHeight = true;
-                pairHlg.childForceExpandWidth = false;
+                pairHlg.childForceExpandWidth = true;
                 pairHlg.childForceExpandHeight = true;
                 var pairLe = pairGo.AddComponent<LayoutElement>();
-                pairLe.flexibleWidth = 0f;
+                pairLe.flexibleWidth = 1f;
+                pairLe.minWidth = 0f;
+                pairLe.preferredWidth = 0f;
 
                 for (int tone = 0; tone < 2; tone++)
                 {
                     int idx = pair * 2 + tone;
-                    var segGo = new GameObject("Seg_" + idx);
-                    segGo.transform.SetParent(pairGo.transform, false);
-                    var segImg = segGo.AddComponent<Image>();
-                    segImg.color = ShipAbilityCategoryColors.GetPowerBreakdownStatColor(idx);
-                    segImg.raycastTarget = false;
-                    var segLe = segGo.AddComponent<LayoutElement>();
-                    segLe.flexibleWidth = 0f;
-                    segLe.minWidth = 0f;
-                    segLe.preferredHeight = barHeight;
-                    segments[idx] = segImg;
+                    CreateSlot(pairGo.transform, idx, barHeight, fillSprite, out Image fill, out Image dim);
+                    segments[idx] = fill;
+                    remainders[idx] = dim;
                 }
             }
 
             var powerBar = barRow.AddComponent<ShipUpgradeTreePowerBarUI>();
             powerBar.Initialize(segments, barHeight, pairGap);
+            powerBar._remainders = remainders;
+            powerBar._slotLayersReady = true;
             return powerBar;
+        }
+
+        static void CreateSlot(
+            Transform pairParent,
+            int statIndex,
+            float barHeight,
+            Sprite fillSprite,
+            out Image fill,
+            out Image dim)
+        {
+            var slotGo = new GameObject("Slot_" + statIndex);
+            slotGo.transform.SetParent(pairParent, false);
+            if (slotGo.GetComponent<RectTransform>() == null)
+                slotGo.AddComponent<RectTransform>();
+            var slotLe = slotGo.AddComponent<LayoutElement>();
+            slotLe.flexibleWidth = 1f;
+            slotLe.minWidth = 0f;
+            slotLe.preferredWidth = 0f;
+            slotLe.preferredHeight = barHeight;
+            slotLe.minHeight = barHeight;
+
+            dim = CreateStretchImage(slotGo.transform, "Dim_" + statIndex, fillSprite);
+            dim.color = GetDimmedStatColor(statIndex);
+            dim.type = Image.Type.Simple;
+
+            fill = CreateStretchImage(slotGo.transform, "Seg_" + statIndex, fillSprite);
+            fill.color = ShipAbilityCategoryColors.GetPowerBreakdownStatColor(statIndex);
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            fill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            fill.fillAmount = 0f;
+        }
+
+        static Image CreateStretchImage(Transform parent, string name, Sprite sprite)
+        {
+            // Image replaces Transform with RectTransform — stretch only after that swap.
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            var img = go.AddComponent<Image>();
+            img.sprite = sprite;
+            img.raycastTarget = false;
+            StretchRect(img.rectTransform);
+            return img;
+        }
+
+        static Sprite s_fillSprite;
+
+        /// <summary>1×1 white sprite so <see cref="Image.Type.Filled"/> has a texture to clip.</summary>
+        static Sprite GetFillSprite()
+        {
+            if (s_fillSprite != null)
+                return s_fillSprite;
+
+            Texture2D tex = Texture2D.whiteTexture;
+            s_fillSprite = Sprite.Create(
+                tex,
+                new Rect(0f, 0f, tex.width, tex.height),
+                new Vector2(0.5f, 0.5f),
+                100f);
+            s_fillSprite.name = "PowerBarFillWhite";
+            return s_fillSprite;
+        }
+
+        /// <summary>Same hue as the solid fill, darkened so the empty part of the 10% slot still reads as that ability.</summary>
+        public static Color GetDimmedStatColor(int statIndex)
+        {
+            Color c = ShipAbilityCategoryColors.GetPowerBreakdownStatColor(statIndex);
+            return new Color(c.r * DimRgbScale, c.g * DimRgbScale, c.b * DimRgbScale, DimAlpha);
         }
 
         public static float GetMoonTreeBarStatValue(ShipFamilyPowerScoreBreakdown breakdown, int statIndex)
         {
-            // --- Compute value ---
             float value = breakdown.GetDisplayStatValue(statIndex);
             if (statIndex == 8 || statIndex == 9)
                 return value * MoonTreeCapacityStatBarScale;
@@ -156,7 +243,6 @@ namespace TitanOrbit.UI
         /// </summary>
         public static float GetEquipmentBarStatValue(ShipFamilyPowerScoreBreakdown breakdown, int statIndex)
         {
-            // --- Compute value ---
             switch (statIndex)
             {
                 case 0: return breakdown.firePower + breakdown.rammingPower;
@@ -167,7 +253,6 @@ namespace TitanOrbit.UI
 
         public static float GetEquipmentBarDisplayTotal(ShipFamilyPowerScoreBreakdown breakdown)
         {
-            // --- Compute value ---
             float total = 0f;
             for (int i = 0; i < ShipFamilyPowerScoreBreakdown.DisplayStatCount; i++)
                 total += GetEquipmentBarStatValue(breakdown, i);
@@ -176,19 +261,17 @@ namespace TitanOrbit.UI
 
         public static float GetMoonTreeBarDisplayTotal(ShipFamilyPowerScoreBreakdown breakdown)
         {
-            // --- Compute value ---
             float total = 0f;
             for (int i = 0; i < ShipFamilyPowerScoreBreakdown.DisplayStatCount; i++)
                 total += GetMoonTreeBarStatValue(breakdown, i);
             return total;
         }
 
-        private float _widthScale = 1f;
-        private float _heightScale = 1f;
+        float _widthScale = 1f;
+        float _heightScale = 1f;
 
         public void ConfigureLayoutScale(float widthScale, float heightScale)
         {
-            // --- ConfigureLayoutScale ---
             _widthScale = Mathf.Max(0.01f, widthScale);
             _heightScale = Mathf.Max(0.01f, heightScale);
 
@@ -197,44 +280,138 @@ namespace TitanOrbit.UI
                 hlg.spacing = pairGap * _widthScale;
         }
 
-        public void ApplyBreakdown(ShipFamilyPowerScoreBreakdown breakdown, float strongestShipTotalPower, float trackWidth)
+        /// <summary>
+        /// Moon upgrade-tree layout: full track width, equal 10% slots, fill = value / global max.
+        /// </summary>
+        public void ApplyBreakdown(
+            ShipFamilyPowerScoreBreakdown breakdown,
+            in ShipPowerBarStatMaxes globalMaxes,
+            float trackWidth)
         {
-            ApplyBreakdownInternal(breakdown, strongestShipTotalPower, trackWidth, equipmentLayout: false);
+            EnsureSlotLayers();
+            TrackWidth = Mathf.Max(0f, trackWidth);
+            float nodeW = TrackWidth > 0.01f ? TrackWidth : 100f;
+            float scaledBarHeight = barHeight * _heightScale;
+            bool hasData = breakdown.HasDisplayStats;
+
+            ApplyMoonTreeFlexLayout(scaledBarHeight);
+
+            for (int i = 0; i < ShipAbilityCategoryColors.PowerBreakdownStatCount; i++)
+            {
+                float val = breakdown.GetDisplayStatValue(i);
+                float max = globalMaxes.Get(i);
+                float ratio = hasData && max > ShipPowerBarStatMaxes.MinDenominator
+                    ? Mathf.Clamp01(val / max)
+                    : 0f;
+                ApplyMoonSlotFill(i, ratio, hasData, scaledBarHeight);
+            }
+
+            ApplyBarRowSize(nodeW, scaledBarHeight);
         }
 
         /// <summary>
         /// Equipment cards usually contribute one or two stats. Hide empty category pairs and
         /// scale the active segments across the full track width for readability.
         /// </summary>
-        public void ApplyEquipmentBreakdown(ShipFamilyPowerScoreBreakdown breakdown, float strongestComponentTotalPower, float trackWidth)
+        public void ApplyEquipmentBreakdown(
+            ShipFamilyPowerScoreBreakdown breakdown,
+            float strongestComponentTotalPower,
+            float trackWidth)
         {
+            EnsureSlotLayers();
             ApplyBreakdownInternal(breakdown, strongestComponentTotalPower, trackWidth, equipmentLayout: true);
         }
 
-        private void ApplyBreakdownInternal(
+        void ApplyMoonTreeFlexLayout(float scaledBarHeight)
+        {
+            var barHlg = GetComponent<HorizontalLayoutGroup>();
+            if (barHlg != null)
+            {
+                barHlg.childForceExpandWidth = true;
+                barHlg.spacing = MoonTreePairGapPx;
+            }
+
+            int pairCount = ShipAbilityCategoryColors.PowerBreakdownPairCount;
+            for (int pair = 0; pair < pairCount; pair++)
+            {
+                int statA = pair * 2;
+                ApplyPairWidth(statA, 0f, scaledBarHeight, flexible: true);
+                ApplySlotFlex(statA, scaledBarHeight);
+                ApplySlotFlex(statA + 1, scaledBarHeight);
+                SetPairActive(statA, true);
+            }
+
+        }
+
+        void ApplyMoonSlotFill(int statIndex, float ratio, bool hasData, float scaledBarHeight)
+        {
+            if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
+                return;
+
+            Image fill = segments[statIndex];
+            fill.sprite = GetFillSprite();
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            fill.fillOrigin = (int)Image.OriginHorizontal.Left;
+            fill.fillAmount = hasData ? ratio : 0f;
+            fill.enabled = true;
+            fill.color = hasData
+                ? ShipAbilityCategoryColors.GetPowerBreakdownStatColor(statIndex)
+                : new Color(0.22f, 0.25f, 0.3f, 0.55f);
+            fill.raycastTarget = false;
+
+            var fillLe = fill.GetComponent<LayoutElement>();
+            if (fillLe != null)
+                fillLe.ignoreLayout = true;
+
+            StretchRect(fill.rectTransform);
+
+            if (_remainders != null && statIndex < _remainders.Length && _remainders[statIndex] != null)
+            {
+                Image dim = _remainders[statIndex];
+                dim.sprite = GetFillSprite();
+                dim.type = Image.Type.Simple;
+                dim.enabled = true;
+                dim.color = hasData
+                    ? GetDimmedStatColor(statIndex)
+                    : new Color(0.22f, 0.25f, 0.3f, 0.35f);
+                dim.raycastTarget = false;
+                var dimLe = dim.GetComponent<LayoutElement>();
+                if (dimLe != null)
+                    dimLe.ignoreLayout = true;
+                StretchRect(dim.rectTransform);
+            }
+
+            ApplySlotFlex(statIndex, scaledBarHeight);
+        }
+
+        void ApplyBreakdownInternal(
             ShipFamilyPowerScoreBreakdown breakdown,
             float strongestTotalPower,
             float trackWidth,
             bool equipmentLayout)
         {
             TrackWidth = Mathf.Max(0f, trackWidth);
-            float total = equipmentLayout
-                ? GetEquipmentBarDisplayTotal(breakdown)
-                : GetMoonTreeBarDisplayTotal(breakdown);
+            float total = GetEquipmentBarDisplayTotal(breakdown);
             bool hasData = total > 0.01f;
             float maxDen = Mathf.Max(strongestTotalPower, 0.001f);
             float nodeW = TrackWidth > 0.01f ? TrackWidth : 100f;
             float scaledBarHeight = barHeight * _heightScale;
-            // Bar fill width scales with this node's total vs the strongest reference on the tree.
             float barFillW = hasData ? nodeW * total / maxDen : nodeW;
 
             int pairCount = ShipAbilityCategoryColors.PowerBreakdownPairCount;
             var barHlg = GetComponent<HorizontalLayoutGroup>();
+            if (barHlg != null)
+            {
+                barHlg.childForceExpandWidth = false;
+                barHlg.spacing = pairGap * _widthScale;
+            }
+
             float gap = barHlg != null ? barHlg.spacing : pairGap * _widthScale;
 
             float activePairSum = 0f;
             int activePairCount = 0;
-            if (equipmentLayout && hasData)
+            if (hasData)
             {
                 for (int pair = 0; pair < pairCount; pair++)
                 {
@@ -248,29 +425,21 @@ namespace TitanOrbit.UI
                 }
             }
 
-            if (equipmentLayout && hasData && activePairCount > 0)
+            if (hasData && activePairCount > 0)
                 barFillW = nodeW * activePairSum / maxDen;
 
-            float totalGap = equipmentLayout && hasData
-                ? gap * Mathf.Max(0, activePairCount - 1)
-                : gap * Mathf.Max(0, pairCount - 1);
+            float totalGap = gap * Mathf.Max(0, activePairCount - 1);
             float usableW = Mathf.Max(0f, barFillW - totalGap);
-            float widthDenominator = equipmentLayout && hasData && activePairSum > 0.01f
-                ? activePairSum
-                : total;
+            float widthDenominator = hasData && activePairSum > 0.01f ? activePairSum : total;
 
             for (int pair = 0; pair < pairCount; pair++)
             {
                 int statA = pair * 2;
                 int statB = statA + 1;
-                float valA = equipmentLayout
-                    ? GetEquipmentBarStatValue(breakdown, statA)
-                    : GetMoonTreeBarStatValue(breakdown, statA);
-                float valB = equipmentLayout
-                    ? GetEquipmentBarStatValue(breakdown, statB)
-                    : GetMoonTreeBarStatValue(breakdown, statB);
+                float valA = GetEquipmentBarStatValue(breakdown, statA);
+                float valB = GetEquipmentBarStatValue(breakdown, statB);
                 float pairSum = valA + valB;
-                bool pairActive = pairSum > 0.01f || (!equipmentLayout && !hasData);
+                bool pairActive = pairSum > 0.01f || !hasData;
 
                 float pairWidth;
                 float segWA;
@@ -281,7 +450,7 @@ namespace TitanOrbit.UI
                     segWA = pairWidth * valA / pairSum;
                     segWB = pairWidth * valB / pairSum;
                 }
-                else if (!hasData && !equipmentLayout)
+                else if (!hasData)
                 {
                     pairWidth = usableW / pairCount;
                     segWA = segWB = pairWidth * 0.5f;
@@ -292,42 +461,59 @@ namespace TitanOrbit.UI
                     segWA = segWB = 0f;
                 }
 
-                ApplySegmentWidth(statA, segWA, hasData && pairActive, scaledBarHeight);
-                ApplySegmentWidth(statB, segWB, hasData && pairActive, scaledBarHeight);
-                ApplyPairWidth(statA, pairWidth, scaledBarHeight);
-
-                if (equipmentLayout && segments != null && statA < segments.Length && segments[statA] != null)
-                {
-                    Transform pairTransform = segments[statA].transform.parent;
-                    if (pairTransform != null)
-                        pairTransform.gameObject.SetActive(pairActive || !hasData);
-                }
+                ApplyEquipmentSegment(statA, segWA, hasData && pairActive, scaledBarHeight);
+                ApplyEquipmentSegment(statB, segWB, hasData && pairActive, scaledBarHeight);
+                ApplyPairWidth(statA, pairWidth, scaledBarHeight, flexible: false);
+                SetPairActive(statA, pairActive || !hasData);
             }
 
-            var barRow = GetComponent<RectTransform>();
-            if (barRow != null)
-            {
-                var barLe = GetComponent<LayoutElement>();
-                if (barLe != null)
-                {
-                    barLe.preferredWidth = Mathf.Round(nodeW);
-                    barLe.flexibleWidth = 1f;
-                    barLe.minWidth = Mathf.Round(nodeW);
-                    barLe.preferredHeight = scaledBarHeight;
-                    barLe.minHeight = scaledBarHeight;
-                }
-
-                LayoutRebuilder.ForceRebuildLayoutImmediate(barRow);
-            }
+            ApplyBarRowSize(nodeW, scaledBarHeight);
         }
 
-        private void ApplyPairWidth(int statIndex, float pairWidth, float scaledBarHeight)
+        void ApplyEquipmentSegment(int statIndex, float segW, bool hasData, float scaledBarHeight)
         {
-            // --- Apply changes ---
             if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
                 return;
 
-            Transform pairTransform = segments[statIndex].transform.parent;
+            if (_remainders != null && statIndex < _remainders.Length && _remainders[statIndex] != null)
+                _remainders[statIndex].enabled = false;
+
+            Image fill = segments[statIndex];
+            fill.sprite = GetFillSprite();
+            fill.type = Image.Type.Simple;
+            fill.fillAmount = 1f;
+            fill.enabled = segW > 0.01f;
+            fill.color = hasData
+                ? ShipAbilityCategoryColors.GetPowerBreakdownStatColor(statIndex)
+                : new Color(0.22f, 0.25f, 0.3f, 0.55f);
+
+            var fillLe = fill.GetComponent<LayoutElement>();
+            if (fillLe != null)
+                fillLe.ignoreLayout = true;
+            StretchRect(fill.rectTransform);
+
+            Transform slot = fill.transform.parent;
+            if (slot == null)
+                return;
+
+            var slotLe = slot.GetComponent<LayoutElement>();
+            if (slotLe == null)
+                slotLe = slot.gameObject.AddComponent<LayoutElement>();
+
+            float rounded = segW > 0.01f ? Mathf.Max(1f, Mathf.Round(segW)) : 0f;
+            slotLe.preferredWidth = rounded;
+            slotLe.flexibleWidth = 0f;
+            slotLe.minWidth = 0f;
+            slotLe.preferredHeight = scaledBarHeight;
+            slotLe.minHeight = scaledBarHeight;
+        }
+
+        void ApplyPairWidth(int statIndex, float pairWidth, float scaledBarHeight, bool flexible)
+        {
+            if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
+                return;
+
+            Transform pairTransform = GetPairTransform(statIndex);
             if (pairTransform == null)
                 return;
 
@@ -335,35 +521,164 @@ namespace TitanOrbit.UI
             if (pairLe == null)
                 return;
 
-            float roundedPairWidth = Mathf.Round(pairWidth);
-            pairLe.preferredWidth = roundedPairWidth;
-            pairLe.flexibleWidth = 0f;
-            pairLe.minWidth = 0f;
+            if (flexible)
+            {
+                pairLe.preferredWidth = 0f;
+                pairLe.flexibleWidth = 1f;
+                pairLe.minWidth = 0f;
+            }
+            else
+            {
+                float roundedPairWidth = Mathf.Round(pairWidth);
+                pairLe.preferredWidth = roundedPairWidth;
+                pairLe.flexibleWidth = 0f;
+                pairLe.minWidth = 0f;
+            }
+
             pairLe.preferredHeight = scaledBarHeight;
             pairLe.minHeight = scaledBarHeight;
+
+            var pairHlg = pairTransform.GetComponent<HorizontalLayoutGroup>();
+            if (pairHlg != null)
+            {
+                pairHlg.childForceExpandWidth = flexible;
+                // Moon tree: gap between the two abilities in the pair. Equipment stays flush.
+                pairHlg.spacing = flexible ? MoonTreeInnerGapPx : 0f;
+            }
         }
 
-        private void ApplySegmentWidth(int statIndex, float segW, bool hasData, float scaledBarHeight)
+        void ApplySlotFlex(int statIndex, float scaledBarHeight)
         {
-            // --- Apply changes ---
             if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
                 return;
 
-            Color statColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColor(statIndex);
-            var seg = segments[statIndex];
-            var le = seg.GetComponent<LayoutElement>();
+            Transform slot = segments[statIndex].transform.parent;
+            if (slot == null)
+                return;
 
-            if (le != null)
+            var slotLe = slot.GetComponent<LayoutElement>();
+            if (slotLe == null)
+                slotLe = slot.gameObject.AddComponent<LayoutElement>();
+
+            slotLe.preferredWidth = 0f;
+            slotLe.flexibleWidth = 1f;
+            slotLe.minWidth = 0f;
+            slotLe.preferredHeight = scaledBarHeight;
+            slotLe.minHeight = scaledBarHeight;
+        }
+
+        void SetPairActive(int statIndex, bool active)
+        {
+            Transform pairTransform = GetPairTransform(statIndex);
+            if (pairTransform != null)
+                pairTransform.gameObject.SetActive(active);
+        }
+
+        Transform GetPairTransform(int statIndex)
+        {
+            if (segments == null || statIndex < 0 || statIndex >= segments.Length || segments[statIndex] == null)
+                return null;
+
+            Transform slot = segments[statIndex].transform.parent;
+            return slot != null ? slot.parent : null;
+        }
+
+        void ApplyBarRowSize(float nodeW, float scaledBarHeight)
+        {
+            var barRow = GetComponent<RectTransform>();
+            if (barRow == null)
+                return;
+
+            var barLe = GetComponent<LayoutElement>();
+            if (barLe != null)
             {
-                le.preferredWidth = segW > 0.01f ? Mathf.Max(1f, Mathf.Round(segW)) : 0f;
-                le.flexibleWidth = 0f;
-                le.minWidth = 0f;
-                le.preferredHeight = scaledBarHeight;
-                le.minHeight = scaledBarHeight;
+                barLe.preferredWidth = Mathf.Round(nodeW);
+                barLe.flexibleWidth = 1f;
+                barLe.minWidth = Mathf.Round(nodeW);
+                barLe.preferredHeight = scaledBarHeight;
+                barLe.minHeight = scaledBarHeight;
             }
 
-            seg.enabled = segW > 0.01f;
-            seg.color = hasData ? statColor : new Color(0.22f, 0.25f, 0.3f, 0.55f);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(barRow);
+        }
+
+        static void StretchRect(RectTransform rt)
+        {
+            if (rt == null)
+                return;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+        }
+
+        /// <summary>
+        /// Prefab nodes still have Pair → Seg Image. Wrap each segment in a Slot and add a
+        /// dim Image behind it so equal-slot fills work without rebaking the node prefab.
+        /// </summary>
+        void EnsureSlotLayers()
+        {
+            if (_slotLayersReady)
+                return;
+            if (segments == null || segments.Length == 0)
+                return;
+
+            Sprite fillSprite = GetFillSprite();
+            _remainders = new Image[segments.Length];
+
+            for (int i = 0; i < segments.Length; i++)
+            {
+                Image fill = segments[i];
+                if (fill == null)
+                    continue;
+
+                Transform currentParent = fill.transform.parent;
+                if (currentParent != null && currentParent.name.StartsWith("Slot_"))
+                {
+                    _remainders[i] = FindDimInSlot(currentParent);
+                    continue;
+                }
+
+                var slotGo = new GameObject("Slot_" + i);
+                slotGo.transform.SetParent(currentParent, false);
+                if (slotGo.GetComponent<RectTransform>() == null)
+                    slotGo.AddComponent<RectTransform>();
+                slotGo.transform.SetSiblingIndex(fill.transform.GetSiblingIndex());
+                var slotLe = slotGo.AddComponent<LayoutElement>();
+                slotLe.flexibleWidth = 1f;
+                slotLe.minWidth = 0f;
+                slotLe.preferredWidth = 0f;
+
+                fill.transform.SetParent(slotGo.transform, false);
+                fill.sprite = fillSprite;
+                fill.type = Image.Type.Filled;
+                fill.fillMethod = Image.FillMethod.Horizontal;
+                fill.fillOrigin = (int)Image.OriginHorizontal.Left;
+                var oldLe = fill.GetComponent<LayoutElement>();
+                if (oldLe != null)
+                    oldLe.ignoreLayout = true;
+                StretchRect(fill.rectTransform);
+
+                Image dim = CreateStretchImage(slotGo.transform, "Dim_" + i, fillSprite);
+                dim.transform.SetAsFirstSibling();
+                dim.color = GetDimmedStatColor(i);
+                dim.type = Image.Type.Simple;
+                _remainders[i] = dim;
+            }
+
+            _slotLayersReady = true;
+        }
+
+        static Image FindDimInSlot(Transform slot)
+        {
+            for (int i = 0; i < slot.childCount; i++)
+            {
+                Transform child = slot.GetChild(i);
+                if (child != null && child.name.StartsWith("Dim_"))
+                    return child.GetComponent<Image>();
+            }
+
+            return null;
         }
     }
 }

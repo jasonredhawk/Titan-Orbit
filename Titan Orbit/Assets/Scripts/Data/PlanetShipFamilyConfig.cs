@@ -400,6 +400,24 @@ namespace TitanOrbit.Data
             return default;
         }
 
+        /// <summary>
+        /// Upgrade-tree power-bar breakdown at <paramref name="shipLevel"/> with every HUD ability maxed.
+        /// Prefers the baked at-ship-level field; does not change level-1
+        /// <see cref="GetPowerScoreBreakdownForChassisId"/>.
+        /// </summary>
+        public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisIdAtShipLevel(
+            string chassisId,
+            int shipLevel)
+        {
+            ShipFamilyDefinition family = GetShipFamilyDefinitionForChassisId(chassisId);
+            ShipFamilyChassisTierEntry tier = GetTierEntryForChassisId(chassisId);
+            return ShipFamilyPowerBarNorm.GetBreakdownAtShipLevel(family, tier, shipLevel);
+        }
+
+        /// <summary>Ten global maxes for equal-slot power bars (cached; all families × chassis at tree level).</summary>
+        public ShipPowerBarStatMaxes GetGlobalPowerBarStatMaxes() =>
+            ShipFamilyPowerBarNorm.GetGlobalMaxPerStat(this);
+
         /// <summary>Gets chassis ID for the given planet and ship index (0-based). Uses the entry's ShipFamilyDefinition upgradeTree.</summary>
         public string GetChassisIdForPlanetAndIndex(int planetId, int index, bool isHomePlanet = false, int shipFamilyConfigIndex = -1)
         {

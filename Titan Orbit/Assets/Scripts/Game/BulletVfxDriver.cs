@@ -1,10 +1,13 @@
 using System.Collections.Generic;
+using TitanOrbit;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
+using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
+using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -29,13 +32,25 @@ namespace TitanOrbit.Game
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Client-predicted impact: while tracers fly, swept-collide against hybrid-proxy
-    /// spheres (<see cref="BulletCosmeticHitQuery"/>) so cosmetics stop at the rock/ship surface
-    /// immediately (no visual tunnel waiting for RTT). <see cref="BulletHitRpc"/> then reconciles
-    /// (skip duplicate impact flash / destroy late misses) and applies authoritative mining floats
-    /// via <c>AsteroidHealthAfter</c> — cosmetics never write damage / HP.
+    /// spheres (<see cref="BulletCosmeticHitQuery"/>) so cosmetics stop at the rock / ship /
+    /// planetary-defense turret surface immediately (no visual tunnel waiting for RTT).
+    /// <see cref="BulletHitRpc"/> then reconciles (skip duplicate impact flash / destroy late
+    /// misses) and applies authoritative mining floats via <c>AsteroidHealthAfter</c>. Turret HP
+    /// is applied in <see cref="BulletHitRpcClientSystem"/> via
+    /// <see cref="PlanetaryDefenseClientHealthSync"/> — this driver does not write pad Health.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Sequence 0 HitRpcs are ram/grind explosions (no tracer). They must play
+    /// impact VFX and must not adopt/destroy a nearby flying tracer.
+    /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Homing rockets (local-fired and incoming remote) dead-reckon on the
+    /// client from spawn: 60 Hz step + one-tick lerp + client homing steer. Server still
+    /// owns hits. Display is observer-hull-relative (<see cref="ShipDisplayPose"/>) so a
+    /// 60 Hz camera snap does not make any on-screen rocket look stepped while dodging.
     /// </para>
     /// </summary>
-    [DefaultExecutionOrder(66150)]
+    [DefaultExecutionOrder(67010)]
     public class BulletVfxDriver : MonoBehaviour
     {
         /// <summary>One active cosmetic tracer keyed by server Sequence (or anticipation slot).</summary>
@@ -66,6 +81,34 @@ namespace TitanOrbit.Game
             public int AnticipationOrder;
             /// <summary>[TITAN-ORBIT] Cosmetic collide filter (mining / fighter pass-through).</summary>
             public byte DamageFilter;
+            /// <summary>1 = store rocket — cosmetic tracer steers toward the closest enemy.</summary>
+            public byte Homing;
+            /// <summary>Max yaw rate in degrees per second while Homing is set.</summary>
+            public float TurnSpeedDeg;
+            /// <summary>Toroidal acquire radius. 0 uses the catalog default.</summary>
+            public float AcquireRange;
+            /// <summary>Seconds since spawn — self-harm debug arms rockets after 2s.</summary>
+            public float Age;
+            /// <summary>Last raw lock (sticky). Not a lagged steer point.</summary>
+            public float3 RawLock;
+            public bool HasRawLock;
+            /// <summary>Logical pose at the previous fixed tick — display lerps from here.</summary>
+            public float3 PrevLogicalPos;
+            public float3 PrevVelocity;
+            /// <summary>
+            /// Observer hull (<see cref="ShipDisplayPose"/>) sampled on the same 60 Hz ticks
+            /// as this rocket — camera frame for every tracer, not the firing ship.
+            /// </summary>
+            public float3 PrevHullDisplay;
+            public float3 CurrHullDisplay;
+            public bool HasHullTick;
+            /// <summary>Smoothed hull-relative XZ offset (hides leftover 60 Hz relative steps).</summary>
+            public float3 SmoothedOffset;
+            public float3 OffsetSmoothVel;
+            public bool HasSmoothedOffset;
+            /// <summary>Leftover seconds toward the next 60 Hz rocket tick.</summary>
+            public float TickCarry;
+            public bool HasPrevTick;
             public ClientBulletStretchVisual Stretch;
         }
 
@@ -111,6 +154,22 @@ namespace TitanOrbit.Game
         /// <summary>How long a mount skip waits for the matching server spawn after anticipation predicted-hit.</summary>
         const float PredictedAdoptSkipTtlSeconds = 1.25f;
 
+        /// <summary>
+        /// Homing rockets (local and remote) dead-reckon at sim rate, then the mesh
+        /// lerps one tick behind (Fix Your Timestep). Display is hull-relative so a
+        /// 60 Hz camera snap does not make the tracer look stepped while chasing.
+        /// </summary>
+        const float RocketPresentationTickDt = 1f / TitanOrbitServerTickRateSystem.SimulationHz;
+
+        /// <summary>Catch-up cap so a hitch does not spiral rocket ticks.</summary>
+        const int MaxRocketPresentationTicksPerFrame = 4;
+
+        /// <summary>
+        /// Offset-space SmoothDamp. Short enough that homing turns stay readable;
+        /// long enough to hide leftover tick-rate relative steps while dodging.
+        /// </summary>
+        const float RocketOffsetSmoothTime = 0.04f;
+
         /// <summary>Display-space radius for matching HitRpc to a recent predicted impact (no Sequence yet).</summary>
         const float PredictedImpactMatchRadius = 14f;
 
@@ -133,6 +192,9 @@ namespace TitanOrbit.Game
 
         BulletVfxBank _bank;
         int _lastTickFrame = -1;
+        /// <summary>Last observer hull XZ — fallback velocity when kinematics are gated.</summary>
+        float3 _lastObserverHull;
+        bool _hasLastObserverHull;
         /// <summary>Increments per anticipation CreateTracer so FIFO adopt survives RemoveAtSwap.</summary>
         int _nextAnticipationOrder;
 
@@ -166,12 +228,15 @@ namespace TitanOrbit.Game
             _clientPredictedHitExpiry.Clear();
             _pendingPredictedAdoptSkips.Clear();
             _recentPredictedImpacts.Clear();
+            _hasLastObserverHull = false;
         }
 
         /// <summary>
-        /// LateUpdate: drain spawns/hits, dead-reckon, cosmetic collide, place GOs.
-        /// Never Instantiates in onBeforeRender.
-        /// Runs after <see cref="ClientLocalBulletVfxBridge"/> (66100) so anticipation is queued first.
+        /// LateUpdate after <see cref="CameraFollowEcs"/> (67001): drain spawns/hits, dead-reckon,
+        /// place GOs. Never Instantiates in onBeforeRender.
+        /// After the camera so every rocket (local-fired and incoming remote) is placed in this
+        /// frame's <see cref="ShipDisplayPose"/> — the pose the camera hard-locks to.
+        /// Anticipation is still queued first by <see cref="ClientLocalBulletVfxBridge"/> (66100).
         /// </summary>
         void LateUpdate()
         {
@@ -212,6 +277,23 @@ namespace TitanOrbit.Game
 
             float dt = math.min(0.05f, math.max(0f, Time.deltaTime));
             bool hasRef = ToroidalDisplay.TryGetReferencePosition(out Vector3 reference);
+            bool hasHull = TryGetObserverHullDisplay(out float3 frameHull);
+            float3 frameHullVel = float3.zero;
+            if (hasHull)
+            {
+                if (!blockInstantiates && EcsGameBridge.TryGetLocalShipVelocity(out var shipVel))
+                {
+                    frameHullVel = new float3(shipVel.x, 0f, shipVel.z);
+                }
+                else if (_hasLastObserverHull && dt > 1e-5f)
+                {
+                    frameHullVel = (frameHull - _lastObserverHull) / dt;
+                    frameHullVel.y = 0f;
+                }
+
+                _lastObserverHull = frameHull;
+                _hasLastObserverHull = true;
+            }
 
             // --- Cosmetic hit prediction (hybrid-proxy spheres; no map ToEntityArray) ---
             // Skip while join Instantiates are incomplete — HitRpc still destroys tracers.
@@ -226,62 +308,74 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
-                // --- Advance logical / display flight ---
-                float3 prevPos = t.LogicalPos;
-                t.RemainingLifetime -= dt;
-                float step = math.length(t.Velocity) * dt;
-                t.Traveled += step;
-                t.LogicalPos += t.Velocity * dt;
-
-                // --- Client-predicted impact before lifetime cull ---
-                // [TITAN-ORBIT] Destroy tracer at the surface now so bullets do not visually tunnel
-                // while waiting for BulletHitRpc RTT. Obstacles come only from hybrid proxies
-                // (never a full asteroid gather — Windows late-join Crash!!!). Mining floats stay
-                // on HitRpc (AsteroidHealthAfter) so optimistic HP cannot drift from authority.
-                // Safe again after ShipWeaponPose presentation-scale fix aligned server muzzles
-                // with client tracers / proxy rocks.
-                if (canPredictHits &&
-                    TryPredictCosmeticHit(
-                        in t, prevPos, t.LogicalPos,
-                        out float3 hitPoint,
-                        out _,
-                        out _))
+                float3 displayLogical;
+                float3 displayVel;
+                if (t.Homing != 0)
                 {
-                    ApplyPredictedHit(i, in t, hitPoint);
-                    continue;
-                }
-
-                // RemainingLifetime is +∞ for distance-only shots (PD Lifetime = 0).
-                if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
-                {
-                    DestroyTracerGo(t);
-                    RemoveAtSwap(i);
-                    continue;
-                }
-
-                // --- Toroidal display unwrap (logical sim → nearest tile to local ship) ---
-                // Keep mount-height Y — ToDisplayPosition helpers are XZ-only; restore after unwrap.
-                float mountY = t.LogicalPos.y;
-                Vector3 displayPos;
-                if (t.IsDisplaySpace)
-                    displayPos = t.LogicalPos;
-                else if (hasRef)
-                {
-                    int stableKey = unchecked((int)t.Sequence) ^ (t.OwnerNetworkId * 397);
-                    displayPos = ToroidalDisplay.ToDisplayPositionWithHysteresis(
-                        stableKey, t.LogicalPos, reference);
-                    // Seam retile can yank the GO — clear TrailRenderer to avoid stretched spikes.
-                    Vector3 prevDisplay = t.Go.transform.position;
-                    if ((displayPos - prevDisplay).sqrMagnitude > 40f * 40f)
-                        ResetTrail(t.Go);
+                    // --- Fixed 60 Hz step + one-tick-behind lerp (homing / coast rockets) ---
+                    if (!AdvanceRocketPresentation(
+                            ref t, dt, !blockInstantiates, canPredictHits,
+                            hasHull, frameHull, frameHullVel,
+                            out displayLogical, out displayVel, out float3 hitPoint, out bool hit))
+                    {
+                        if (hit)
+                            ApplyPredictedHit(i, in t, hitPoint);
+                        else
+                        {
+                            DestroyTracerGo(t);
+                            RemoveAtSwap(i);
+                        }
+                        continue;
+                    }
                 }
                 else
-                    displayPos = t.LogicalPos;
+                {
+                    // --- Gun / drone / PD: variable-dt dead reckon (already a straight line) ---
+                    float3 prevPos = t.LogicalPos;
+                    t.RemainingLifetime -= dt;
+                    float step = math.length(t.Velocity) * dt;
+                    t.Traveled += step;
+                    t.LogicalPos += t.Velocity * dt;
+
+                    if (canPredictHits &&
+                        TryPredictCosmeticHit(
+                            in t, prevPos, t.LogicalPos,
+                            out float3 hitPoint,
+                            out _,
+                            out _,
+                            out _,
+                            out _))
+                    {
+                        ApplyPredictedHit(i, in t, hitPoint);
+                        continue;
+                    }
+
+                    if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
+                    {
+                        DestroyTracerGo(t);
+                        RemoveAtSwap(i);
+                        continue;
+                    }
+
+                    displayLogical = t.LogicalPos;
+                    displayVel = t.Velocity;
+                }
+
+                // --- Display pose ---
+                // Keep mount-height Y — unwrap helpers are XZ-only; restore after.
+                float mountY = displayLogical.y;
+                int stableKey = unchecked((int)t.Sequence) ^ (t.OwnerNetworkId * 397);
+                Vector3 displayPos = ResolveTracerDisplayPosition(
+                    ref t, displayLogical, hasRef, reference, stableKey, dt,
+                    t.HasPrevTick ? math.saturate(t.TickCarry / RocketPresentationTickDt) : 1f);
+                Vector3 prevDisplay = t.Go.transform.position;
+                if ((displayPos - prevDisplay).sqrMagnitude > 40f * 40f)
+                    ResetTrail(t.Go);
 
                 displayPos.y = mountY;
                 t.Go.transform.position = displayPos;
-                if (math.lengthsq(t.Velocity) > 0.0001f)
-                    t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)t.Velocity).normalized, Vector3.up);
+                if (math.lengthsq(displayVel) > 0.0001f)
+                    t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)displayVel).normalized, Vector3.up);
 
                 if (t.Stretch != null)
                 {
@@ -291,6 +385,231 @@ namespace TitanOrbit.Game
 
                 _tracers[i] = t;
             }
+        }
+
+        /// <summary>
+        /// Every rocket (own shot or incoming) rides the observer camera hull.
+        /// Offset is <c>lerp(shortest(rocket − hull))</c> from poses sampled on the
+        /// <b>same</b> 60 Hz ticks — never interpolated-rocket minus live sim
+        /// (that cancelled out under H73 raw-follow and jittered while chasing).
+        /// <c>display = shipDisplayNow + offset</c> so a camera snap moves the tracer with you.
+        /// </summary>
+        static Vector3 ResolveTracerDisplayPosition(
+            ref Tracer t,
+            float3 displayLogical,
+            bool hasRef,
+            Vector3 reference,
+            int stableKey,
+            float dt,
+            float tickAlpha)
+        {
+            if (t.IsDisplaySpace)
+                return displayLogical;
+
+            if (t.Homing != 0 &&
+                ShipDisplayPose.HasLocalPose &&
+                t.HasHullTick)
+            {
+                Vector3 shipDisp = ShipDisplayPose.LocalPosition;
+                float3 rocketInterp = t.HasPrevTick
+                    ? math.lerp(t.PrevLogicalPos, t.LogicalPos, tickAlpha)
+                    : displayLogical;
+                float3 hullInterp = math.lerp(t.PrevHullDisplay, t.CurrHullDisplay, tickAlpha);
+                float3 targetOffset = HullRelativeOffset(hullInterp, rocketInterp);
+                float3 offset = SmoothHullOffset(ref t, targetOffset, dt);
+                return new Vector3(shipDisp.x + offset.x, displayLogical.y, shipDisp.z + offset.z);
+            }
+
+            if (hasRef)
+            {
+                return ToroidalDisplay.ToDisplayPositionWithHysteresis(
+                    stableKey, displayLogical, reference);
+            }
+
+            return displayLogical;
+        }
+
+        /// <summary>
+        /// Camera / presentation hull XZ — the same pose <see cref="CameraFollowEcs"/> hard-locks to.
+        /// No ship-entity query (join-safe). Used as the attachment frame for all rocket tracers.
+        /// </summary>
+        static bool TryGetObserverHullDisplay(out float3 hull)
+        {
+            hull = default;
+            if (!ShipDisplayPose.HasLocalPose)
+                return false;
+            Vector3 p = ShipDisplayPose.LocalPosition;
+            hull = new float3(p.x, 0f, p.z);
+            return true;
+        }
+
+        /// <summary>
+        /// Near-tile XZ from observer hull to rocket. Raw subtract misses the seam
+        /// when the unbounded hull and a spawn on the canonical tile differ by a map width.
+        /// </summary>
+        static float3 HullRelativeOffset(float3 hull, float3 rocket)
+        {
+            if (ToroidalMapEcs.HasValidMapSize)
+                return ToroidalMapEcs.ShortestOffsetXZ(
+                    hull, rocket, ToroidalMapEcs.MapWidth, ToroidalMapEcs.MapHeight);
+
+            float3 d = rocket - hull;
+            d.y = 0f;
+            return d;
+        }
+
+        /// <summary>
+        /// Smooths only the hull-relative offset. World-space SmoothDamp would fight camera snaps.
+        /// </summary>
+        static float3 SmoothHullOffset(ref Tracer t, float3 targetOffset, float dt)
+        {
+            if (!t.HasSmoothedOffset ||
+                math.distancesq(t.SmoothedOffset, targetOffset) > 40f * 40f)
+            {
+                t.SmoothedOffset = targetOffset;
+                t.OffsetSmoothVel = float3.zero;
+                t.HasSmoothedOffset = true;
+                return targetOffset;
+            }
+
+            Vector3 vel = t.OffsetSmoothVel;
+            Vector3 smoothed = Vector3.SmoothDamp(
+                t.SmoothedOffset,
+                targetOffset,
+                ref vel,
+                RocketOffsetSmoothTime,
+                Mathf.Infinity,
+                dt);
+            t.SmoothedOffset = smoothed;
+            t.OffsetSmoothVel = vel;
+            return t.SmoothedOffset;
+        }
+
+        /// <summary>
+        /// Steps a rocket at 60 Hz, then returns a pose lerped from the previous tick
+        /// (up to one sim tick behind). Hit tests use the discrete tick segments.
+        /// </summary>
+        /// <returns>False when the tracer should be removed (hit or lifetime/range).</returns>
+        bool AdvanceRocketPresentation(
+            ref Tracer t,
+            float dt,
+            bool canSteer,
+            bool canPredictHits,
+            bool hasHull,
+            float3 frameHull,
+            float3 frameHullVel,
+            out float3 displayLogical,
+            out float3 displayVel,
+            out float3 hitPoint,
+            out bool hit)
+        {
+            hitPoint = default;
+            hit = false;
+            float tickDt = RocketPresentationTickDt;
+            t.TickCarry += dt;
+
+            int steps = 0;
+            while (t.TickCarry >= tickDt && steps < MaxRocketPresentationTicksPerFrame)
+            {
+                t.PrevLogicalPos = t.LogicalPos;
+                t.PrevVelocity = t.Velocity;
+                if (hasHull)
+                {
+                    t.PrevHullDisplay = t.HasHullTick ? t.CurrHullDisplay : frameHull;
+                    t.CurrHullDisplay = steps == 0
+                        ? frameHull
+                        : t.CurrHullDisplay + frameHullVel * tickDt;
+                    t.HasHullTick = true;
+                }
+                t.HasPrevTick = true;
+
+                if (canSteer && t.TurnSpeedDeg > 0.01f)
+                    TrySteerHomingTracer(ref t, tickDt);
+
+                float3 prevPos = t.LogicalPos;
+                t.LogicalPos += t.Velocity * tickDt;
+                t.Traveled += math.length(t.Velocity) * tickDt;
+                t.Age += tickDt;
+                t.RemainingLifetime -= tickDt;
+                t.TickCarry -= tickDt;
+                steps++;
+
+                if (canPredictHits &&
+                    TryPredictCosmeticHit(
+                        in t, prevPos, t.LogicalPos,
+                        out hitPoint,
+                        out _,
+                        out _,
+                        out _,
+                        out _))
+                {
+                    hit = true;
+                    displayLogical = t.LogicalPos;
+                    displayVel = t.Velocity;
+                    return false;
+                }
+
+                if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
+                {
+                    displayLogical = t.LogicalPos;
+                    displayVel = t.Velocity;
+                    return false;
+                }
+            }
+
+            if (steps >= MaxRocketPresentationTicksPerFrame)
+                t.TickCarry = math.min(t.TickCarry, tickDt);
+
+            if (t.HasPrevTick)
+            {
+                float alpha = math.saturate(t.TickCarry / tickDt);
+                displayLogical = math.lerp(t.PrevLogicalPos, t.LogicalPos, alpha);
+                displayVel = math.lerp(t.PrevVelocity, t.Velocity, alpha);
+            }
+            else
+            {
+                displayLogical = t.LogicalPos;
+                displayVel = t.Velocity;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Steers a homing tracer toward the closest enemy ship or turret.
+        /// Uses the client world ghost poses. Skips when join gates block ship queries.
+        /// </summary>
+        static void TrySteerHomingTracer(ref Tracer t, float dt)
+        {
+            // --- Join safety ---
+            // [TITAN-ORBIT] Ship + planet gathers Crash!!! during Join Team Instantiates.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+            if (!ToroidalMapEcs.HasValidMapSize)
+                return;
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            float mapW = ToroidalMapEcs.MapWidth;
+            float mapH = ToroidalMapEcs.MapHeight;
+            if (!RocketHomingTargeting.TryFindClosestTarget(
+                    world.EntityManager, t.LogicalPos, t.OwnerTeam, t.OwnerNetworkId,
+                    t.AcquireRange, mapW, mapH,
+                    t.RawLock, t.HasRawLock, out float3 lockPos,
+                    includeOwner: TitanOrbitDebugFlags.IsSelfHarmArmed(t.Age)))
+            {
+                t.HasRawLock = false;
+                return;
+            }
+
+            t.RawLock = lockPos;
+            t.HasRawLock = true;
+            float3 vel = t.Velocity;
+            RocketHomingLogic.TrySteerToward(
+                t.LogicalPos, ref vel, lockPos, t.TurnSpeedDeg, dt, mapW, mapH);
+            t.Velocity = vel;
         }
 
         /// <summary>Creates tracers from the bridge (budgeted Instantiates).</summary>
@@ -369,7 +688,8 @@ namespace TitanOrbit.Game
         /// cosmetics do not keep flying through the rock after a real server hit.
         /// Skips duplicate impact flash when client already predicted this Sequence / nearby impact.
         /// Mining floats always use HitRpc <c>AsteroidHealthAfter</c> (never cosmetic-predicted HP).
-        /// Planetary-defense HP bars use <c>PlanetaryDefenseHealthAfter</c> (ghost MaxSendRate lag).
+        /// Turret HP is written in <see cref="BulletHitRpcClientSystem"/> (not here).
+        /// Sequence 0 (ram/grind) plays VFX only — never adopts a tracer.
         /// </summary>
         void DrainHits()
         {
@@ -381,8 +701,27 @@ namespace TitanOrbit.Game
                     hitPos = ToroidalDisplay.ToDisplayPosition(hitPos, reference);
                 hitPos.y = 0f;
 
+                // --- Ram / grind: Sequence 0 means there is no tracer ---
+                // [TITAN-ORBIT] Reusing BulletHitRpc so every client gets the ship's bullet
+                // explosion scaled by ram damage. Nearest-tracer fallback would eat a live shot
+                // if you ram while firing. Predicted-bullet suppress would hide the ram boom.
+                if (hit.Sequence == 0)
+                {
+                    var ramTeam = (TeamId)hit.OwnerTeam;
+                    int ramBank = math.max(0, hit.BankIndex);
+                    float ramScale = hit.ScaleMultiplier > 0f ? hit.ScaleMultiplier : 1f;
+                    BulletVisualFactory.SpawnBulletImpactVfx(
+                        hitPos, _bank, ramBank, ramTeam, hit.Damage, ramScale);
+
+                    var ramSynth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
+                    TryShowAsteroidFloatForHitRpc(
+                        hitPos, hit.HitPosition, hit.Damage, ramTeam,
+                        hit.AsteroidHealthAfter, in ramSynth);
+                    continue;
+                }
+
                 // --- Reconcile: client already showed impact for this Sequence ---
-                // Tracer + impact VFX already done; still apply authoritative mining float / PD bar.
+                // Tracer + impact VFX already done; still apply authoritative mining float.
                 if (hit.Sequence != 0 && _clientPredictedHitSequences.Remove(hit.Sequence))
                 {
                     int ownerNetworkId = 0;
@@ -400,7 +739,6 @@ namespace TitanOrbit.Game
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
                         hit.AsteroidHealthAfter, in synth);
-                    TryNotifyPlanetaryDefenseHitRpc(in hit);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                     continue;
                 }
@@ -428,7 +766,6 @@ namespace TitanOrbit.Game
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
                         hit.AsteroidHealthAfter, in tracer);
-                    TryNotifyPlanetaryDefenseHitRpc(in hit);
 
                     DestroyTracerGo(tracer);
                     RemoveAtSwap(idx);
@@ -448,7 +785,6 @@ namespace TitanOrbit.Game
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
                         hit.AsteroidHealthAfter, in nearTracer);
-                    TryNotifyPlanetaryDefenseHitRpc(in hit);
 
                     DestroyTracerGo(nearTracer);
                     RemoveAtSwap(nearIdx);
@@ -464,36 +800,17 @@ namespace TitanOrbit.Game
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
                         hit.AsteroidHealthAfter, in synth);
-                    TryNotifyPlanetaryDefenseHitRpc(in hit);
                     ClearStaleAnticipationTracers(hit.OwnerTeam);
                 }
                 else
                 {
-                    // No tracer to destroy — still punch PD HP bar / asteroid teardown from HitRpc.
+                    // No tracer to destroy — still apply asteroid teardown from HitRpc.
                     var synth = new Tracer { OwnerNetworkId = 0, IsAnticipation = false };
                     TryShowAsteroidFloatForHitRpc(
                         hitPos, hit.HitPosition, hit.Damage, (TeamId)hit.OwnerTeam,
                         hit.AsteroidHealthAfter, in synth);
-                    TryNotifyPlanetaryDefenseHitRpc(in hit);
                 }
             }
-        }
-
-        /// <summary>
-        /// Forwards server PD Health-after from <see cref="BulletHitRpc"/> into the hybrid
-        /// turret HP bar so it dips immediately (planet ghost MaxSendRate otherwise lags).
-        /// No-op when PlanetId is 0 (not a planetary-defense impact).
-        /// </summary>
-        /// <param name="hit">Dequeued HitRequest (already display-space for VFX position).</param>
-        static void TryNotifyPlanetaryDefenseHitRpc(in BulletVfxBridge.HitRequest hit)
-        {
-            if (hit.PlanetaryDefensePlanetId <= 0)
-                return;
-
-            PlanetaryDefenseVisualDriver.NotifyAuthoritativeHit(
-                hit.PlanetaryDefensePlanetId,
-                hit.PlanetaryDefenseSlotIndex,
-                hit.PlanetaryDefenseHealthAfter);
         }
 
         /// <summary>
@@ -537,20 +854,12 @@ namespace TitanOrbit.Game
                     authoritativeRemainingHealth: asteroidHealthAfter);
             }
 
-            // --- Kill: hide GO only on the presentation thread ---
-            // [TITAN-ORBIT] Do NOT EntityManager.DestroyEntity from BulletVfxDriver (Update/LateUpdate).
-            // Structural changes outside SimulationSystemGroup while NetCode/physics jobs run can
-            // corrupt the client world and freeze predicted ship movement. Authoritative teardown
-            // is AsteroidDestroyedRpcClientSystem + BulletHitRpcClientSystem (sim group).
-            if (asteroidHealthAfter > 0.01f)
+            // --- Kill: do not hide from HitRpc ---
+            // [TITAN-ORBIT] Surface-fit on a packed belt can hide a neighbor while DestroyRpc
+            // culls the rock the server actually killed (two client hides, one server destroy,
+            // leftover invisible hull). Authoritative teardown is AsteroidDestroyedRpc only.
+            if (asteroidHealthAfter <= 0.01f)
                 return;
-
-            var visualizer = EcsWorldVisualizer.Active;
-            if (asteroidEntity != Entity.Null)
-            {
-                visualizer?.TryHideAsteroidProxyFromHitRpc(asteroidEntity);
-                ClientLocalAsteroidCombatSync.QueueProxyDestroy(asteroidEntity);
-            }
         }
 
         /// <summary>
@@ -560,6 +869,13 @@ namespace TitanOrbit.Game
         /// </summary>
         bool TryAdoptAnticipation(in BulletVfxBridge.SpawnRequest req)
         {
+            // --- World / planetary-defense spawns (MountIndex < 0) ---
+            // [TITAN-ORBIT] Never adopt ship-mount anticipation. Local Fire while piloting a pad
+            // used to leave ship-gun tracers that stole PD SpawnRpcs and kept the wrong velocity
+            // (turret aimed at mouse, bullets flew hull-forward).
+            if (req.MountIndex < 0)
+                return false;
+
             // --- FIFO adopt (oldest AnticipationOrder for this owner + mount) ---
             // [TITAN-ORBIT] Prefer matching MountIndex so a 4-gun volley binds each server Sequence
             // onto the anticipation that left that barrel. Fall back to any mount if none match
@@ -741,25 +1057,32 @@ namespace TitanOrbit.Game
             go.transform.SetPositionAndRotation(spawnDisplay, rot);
 
             // Refresh tint / scale / particles on a recycled shell.
+            // Scale the tracer ROOT (same as muzzle/impact). Scaling only the visual child
+            // left World-space particles and trail widths at ship size.
             GameObject visual = go.transform.childCount > 0
                 ? go.transform.GetChild(0).gameObject
                 : go;
             float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex);
             BulletVisualFactory.ApplyColorToVisual(visual, BulletVisualFactory.GetTeamBulletColor(team));
-            VfxUrpCompat.ApplyImpactVisualScale(visual, visualScale);
+            VfxUrpCompat.ApplyImpactVisualScale(go, visualScale);
             VfxUrpCompat.PrepareVfxInstance(go);
             BulletVisualFactory.SetAudioPitchInHierarchy(
                 go, BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
 
             ClientBulletStretchVisual stretch = go.GetComponent<ClientBulletStretchVisual>();
-            if (stretch == null
-                && _bank != null
+            if (_bank != null
                 && _bank.TryGetProfile(bankIndex, out var profile)
                 && profile != null
-                && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor)
-                && ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
+                && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor))
             {
-                stretch = go.GetComponent<ClientBulletStretchVisual>();
+                // Root already carries drone/ship shot scale — do not shrink length again.
+                if (stretch == null)
+                {
+                    if (ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
+                        stretch = go.GetComponent<ClientBulletStretchVisual>();
+                }
+                else
+                    stretch.Rebind(visual, startFactor, endFactor);
             }
 
             var tracer = new Tracer
@@ -784,8 +1107,23 @@ namespace TitanOrbit.Game
                 // Only anticipations need order; server-only tracers keep 0.
                 AnticipationOrder = req.IsAnticipation ? _nextAnticipationOrder++ : 0,
                 DamageFilter = req.DamageFilter,
+                Homing = req.Homing,
+                TurnSpeedDeg = req.TurnSpeedDeg,
+                AcquireRange = req.AcquireRange,
                 Stretch = stretch,
             };
+
+            // Seed observer-hull samples so the first frame can already ride the camera
+            // (incoming remote rockets included — no local-owner check).
+            if (req.Homing != 0 && TryGetObserverHullDisplay(out float3 hull))
+            {
+                tracer.PrevLogicalPos = req.SpawnPosition;
+                tracer.PrevVelocity = req.Velocity;
+                tracer.PrevHullDisplay = hull;
+                tracer.CurrHullDisplay = hull;
+                tracer.HasHullTick = true;
+                tracer.HasPrevTick = true;
+            }
 
             _tracers.Add(tracer);
             if (req.Sequence != 0)
@@ -853,7 +1191,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Swept cosmetic collide for one tracer step using <see cref="BulletCosmeticHitQuery"/>.
-        /// Hit kind / entity are available for future use; mining floats stay on HitRpc.
+        /// Passes <see cref="Tracer.ScaleMultiplier"/> so turret spheres match server
+        /// <c>ExpandRadiusForBulletScale</c> (heavy bolts connect like hull hits).
         /// </summary>
         static bool TryPredictCosmeticHit(
             in Tracer t,
@@ -861,8 +1200,12 @@ namespace TitanOrbit.Game
             float3 to,
             out float3 hitPoint,
             out BulletCosmeticHitQuery.ObstacleKind hitKind,
-            out Entity hitEntity)
+            out Entity hitEntity,
+            out int hitPlanetId,
+            out int hitSlotIndex)
         {
+            // [HYBRID] Same obstacle set as server TryResolveBulletHit, including derived
+            // planetary-defense pad spheres. Without those, tracers tunnel through guns.
             return BulletCosmeticHitQuery.TryHitSegment(
                 from,
                 to,
@@ -872,13 +1215,16 @@ namespace TitanOrbit.Game
                 out hitPoint,
                 out hitKind,
                 out hitEntity,
-                t.DamageFilter);
+                out hitPlanetId,
+                out hitSlotIndex,
+                t.DamageFilter,
+                t.ScaleMultiplier);
         }
 
         /// <summary>
         /// Plays impact VFX, records reconcile keys, destroys the tracer.
         /// Does not write damage / HP — server HitRpc still owns mining floats
-        /// (<c>AsteroidHealthAfter</c>) so optimistic “HP Left: 0” cannot drift from authority.
+        /// (<c>AsteroidHealthAfter</c>) and turret HP (<see cref="PlanetaryDefenseClientHealthSync"/>).
         /// </summary>
         void ApplyPredictedHit(int tracerIndex, in Tracer t, float3 hitPoint)
         {
@@ -897,7 +1243,7 @@ namespace TitanOrbit.Game
                 hitDisplay, _bank, bankIndex, team, t.Damage, scaleMul);
 
             // --- Remember for HitRpc / SpawnRpc reconcile ---
-            // Mining floats intentionally wait for HitRpc (authoritative AsteroidHealthAfter).
+            // Mining floats and turret HP wait for HitRpc (authoritative remaining Health).
             float now = Time.unscaledTime;
             if (t.Sequence != 0)
                 RememberPredictedSequence(t.Sequence, t.OwnerNetworkId, now);

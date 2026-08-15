@@ -10,8 +10,11 @@ namespace TitanOrbit.ECS
     /// <c>BulletVfxDriver</c> can play impact VFX and destroy the matching tracer.
     /// <para>
     /// [TITAN-ORBIT] Also applies <see cref="BulletHitRpc.AsteroidHealthAfter"/> onto seed-hydrated
-    /// local asteroids (not ghost-relevant). Without this, HitRpc only hid the hybrid mesh while
-    /// the ECS rock stayed at full HP — phantom collision until the delayed respawn RPC.
+    /// local asteroids (not ghost-relevant). Sequence 0 (ram/grind) uses body-radius matching so
+    /// a packed neighbor is not culled instead of the rock the server damaged.
+    /// Planetary-defense remaining HP is applied the same way via
+    /// <see cref="PlanetaryDefenseClientHealthSync"/> — a client store filled from HitRpc,
+    /// not from the planet ghost buffer (layout channel: level, occupancy, MaxHealth).
     /// </para>
     /// World: ClientSimulation. Group: SimulationSystemGroup.
     /// </summary>
@@ -25,6 +28,8 @@ namespace TitanOrbit.ECS
         {
             public float3 HitPosition;
             public float AsteroidHealthAfter;
+            /// <summary>0 = ram/grind (body-radius match); non-zero = bullet (hit-sphere match).</summary>
+            public uint Sequence;
         }
 
         /// <summary>Re-queues broadcast hit RPCs into the VFX bridge and syncs local asteroid HP.</summary>
@@ -64,7 +69,20 @@ namespace TitanOrbit.ECS
                     {
                         HitPosition = hit,
                         AsteroidHealthAfter = r.AsteroidHealthAfter,
+                        Sequence = r.Sequence,
                     });
+                }
+
+                // --- Turret combat HP (HitRpc channel, not planet ghost Health) ---
+                // [TITAN-ORBIT] Same phase as asteroid writes. Broadcast RPC — every client
+                // applies remaining HP so the bar stays injured after you stop firing.
+                if (r.PlanetaryDefensePlanetId > 0)
+                {
+                    PlanetaryDefenseClientHealthSync.ApplyHitRpc(
+                        em,
+                        r.PlanetaryDefensePlanetId,
+                        r.PlanetaryDefenseSlotIndex,
+                        r.PlanetaryDefenseHealthAfter);
                 }
 
                 destroyEcb.DestroyEntity(entity);
@@ -73,14 +91,26 @@ namespace TitanOrbit.ECS
             destroyEcb.Playback(em);
             destroyEcb.Dispose();
 
-            // --- Phase 2: apply HP; kill frames DestroyEntity immediately ---
-            // Prefer AsteroidDestroyedRpc for authoritative teardown (mining/ram too).
-            // HitRpc still updates mid-fight HP and is a belt-and-suspenders kill path.
+            // --- Phase 2: apply HP for living rocks only ---
+            // Kill frames (HealthAfter <= 0) must NOT cull here. Surface-fit / ram residual
+            // picks a packed neighbor, then DestroyRpc culls the real rock — two client hides,
+            // one server kill, invisible hull. DestroyRpc matches the server center.
             for (int i = 0; i < asteroidHits.Length; i++)
             {
                 var hit = asteroidHits[i];
-                ClientLocalAsteroidCombatSync.ApplyHitAtPosition(
-                    em, hit.HitPosition, hit.AsteroidHealthAfter);
+                if (hit.AsteroidHealthAfter <= 0.01f)
+                    continue;
+
+                if (hit.Sequence == 0)
+                {
+                    ClientLocalAsteroidCombatSync.ApplyRamHitAtPosition(
+                        em, hit.HitPosition, hit.AsteroidHealthAfter);
+                }
+                else
+                {
+                    ClientLocalAsteroidCombatSync.ApplyHitAtPosition(
+                        em, hit.HitPosition, hit.AsteroidHealthAfter);
+                }
             }
 
             asteroidHits.Dispose();

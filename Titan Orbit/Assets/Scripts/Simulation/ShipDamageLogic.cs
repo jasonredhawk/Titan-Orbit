@@ -4,9 +4,12 @@ namespace TitanOrbit.Simulation
 {
     /// <summary>
     /// Shared server hull + cargo damage rules ported from the pre-ECS <c>Starship.ApplyDamageOnServer</c>.
-    /// Hull absorbs damage first; gems spill only from excess on the breaking hit or while hull is already 0.
-    /// Death requires both hull and carried gems depleted — not hull alone.
-    /// Pure math (no Entities / spawning); callers spawn world gems from <see cref="Result.GemsToExpel"/>.
+    /// Hull absorbs damage first. Leftover / post-zero damage spills cargo 1:1. Death requires
+    /// both hull and carried gems depleted — not hull alone — for every combat source
+    /// (bullets, burn, mines, rockets, ram). A living 0-HP ship (cargo still aboard,
+    /// <c>IsDead</c> false) may still tractor and scoop gems. Pickup is blocked only when
+    /// <c>IsDead</c>. Pure math (no Entities / spawning); callers spawn world gems from
+    /// <see cref="Result.GemsToExpel"/>.
     /// </summary>
     public static class ShipDamageLogic
     {
@@ -14,15 +17,25 @@ namespace TitanOrbit.Simulation
         public const float DeathThreshold = 0.001f;
 
         /// <summary>
-        /// [TITAN-ORBIT] Bullet path: after hull is 0, ~50% of damage converts to expelled gem value
-        /// (legacy NGO tuning).
+        /// 1:1 cargo spill from excess / post-zero hull damage. Every combat source uses this
+        /// so hull-zero does not dump remaining cargo or mark death unless leftover damage
+        /// also empties gems.
+        /// </summary>
+        public const float ExcessDamageGemExpulsionPerHullDamage = 1f;
+
+        /// <summary>
+        /// [LEGACY] Older bullet tuning (~50% of damage → gem value). Unused after 1:1 spill.
         /// </summary>
         public const float LegacyGemExpulsionPerDamage = 0.5f;
 
-        /// <summary>Cap on gem spill when the hull-breaking hit still has cargo.</summary>
+        /// <summary>
+        /// [LEGACY] Former cap on gem spill on the hull-breaking bullet hit. Unused after full dump.
+        /// </summary>
         public const float MaxLethalExpulsionFraction = 0.6f;
 
-        /// <summary>Cap on gem spill per hit while hull is already 0 (bullets only).</summary>
+        /// <summary>
+        /// [LEGACY] Former per-hit cargo fraction while hull was already 0. Unused after full dump.
+        /// </summary>
         public const float MaxPostDeathExpulsionFraction = 0.4f;
 
         /// <summary>
@@ -55,8 +68,8 @@ namespace TitanOrbit.Simulation
         /// <param name="shipTeam">Target ship team.</param>
         /// <param name="attackerTeam">Attacker team; <see cref="TeamId.None"/> skips friendly check (ram/self).</param>
         /// <param name="gemExpulsionPerHullDamage">
-        /// When &gt; 0 (ram/grind): 1:1 gem value from excess / post-zero damage.
-        /// When ≤ 0 (bullets): legacy 50% rules with per-hit cargo fraction caps.
+        /// Cargo value per unit of leftover / post-zero hull damage. ≤ 0 is treated as
+        /// <see cref="ExcessDamageGemExpulsionPerHullDamage"/> (1:1). There is no dump-all path.
         /// </param>
         /// <param name="isImmune">True when fully moon-docked — no damage or spill.</param>
         /// <returns>Expulsion amount and death/hull flags for the caller.</returns>
@@ -81,7 +94,9 @@ namespace TitanOrbit.Simulation
             if (isImmune)
                 return result;
 
-            bool ramGrindGemExpulsion = gemExpulsionPerHullDamage > 0f;
+            float expulsionRate = gemExpulsionPerHullDamage > 0f
+                ? gemExpulsionPerHullDamage
+                : ExcessDamageGemExpulsionPerHullDamage;
             float healthBefore = health;
             bool wasAlive = healthBefore > DeathThreshold;
 
@@ -96,39 +111,21 @@ namespace TitanOrbit.Simulation
                 result.AppliedHullDamage = true;
             }
 
-            // --- Gem spill (only after hull is 0, plus excess on the breaking hit) ---
+            // --- Gem spill (all combat) ---
+            // Hull absorbs first. Leftover damage on the breaking hit, or full damage while
+            // hull is already 0, converts to cargo 1:1. Death still needs both empty.
             float gemsToExpel = 0f;
-            if (currentGems > 0.0001f)
+            if (currentGems > 0.0001f && damage > 0.0001f)
             {
-                if (ramGrindGemExpulsion)
-                {
-                    // Ram/grind: 1:1 gem value with damage (excess on breaking hit; full damage when hull already 0).
-                    if (wasAlive)
-                    {
-                        float excessDamage = damage - healthBefore;
-                        if (excessDamage > 0f)
-                            gemsToExpel = excessDamage * gemExpulsionPerHullDamage;
-                    }
-                    else
-                    {
-                        gemsToExpel = damage * gemExpulsionPerHullDamage;
-                    }
-                }
-                else if (wasAlive)
+                if (wasAlive)
                 {
                     float excessDamage = damage - healthBefore;
                     if (excessDamage > 0f)
-                    {
-                        float desired = excessDamage * LegacyGemExpulsionPerDamage;
-                        float maxForThisHit = currentGems * MaxLethalExpulsionFraction;
-                        gemsToExpel = desired < maxForThisHit ? desired : maxForThisHit;
-                    }
+                        gemsToExpel = excessDamage * expulsionRate;
                 }
                 else
                 {
-                    float desired = damage * LegacyGemExpulsionPerDamage;
-                    float maxForThisHit = currentGems * MaxPostDeathExpulsionFraction;
-                    gemsToExpel = desired < maxForThisHit ? desired : maxForThisHit;
+                    gemsToExpel = damage * expulsionRate;
                 }
 
                 if (gemsToExpel > currentGems)

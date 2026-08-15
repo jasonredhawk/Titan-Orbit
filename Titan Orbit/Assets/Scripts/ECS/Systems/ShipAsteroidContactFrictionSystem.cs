@@ -93,6 +93,8 @@ namespace TitanOrbit.ECS
             // Unity's DisplayCollisionEventsSystem). Writing Velocities here is legal post-Export.
             var shipLookup = SystemAPI.GetComponentLookup<ShipTag>(true);
             var asteroidLookup = SystemAPI.GetComponentLookup<AsteroidTag>(true);
+            var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
+            var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
             var contactLookup = SystemAPI.GetComponentLookup<ShipAsteroidContactState>(false);
 
@@ -100,6 +102,8 @@ namespace TitanOrbit.ECS
             {
                 Ships = shipLookup,
                 Asteroids = asteroidLookup,
+                AsteroidStates = asteroidStateLookup,
+                Culled = culledLookup,
                 Velocities = velocityLookup,
                 Contacts = contactLookup,
                 Friction = friction,
@@ -120,6 +124,8 @@ namespace TitanOrbit.ECS
         {
             [ReadOnly] public ComponentLookup<ShipTag> Ships;
             [ReadOnly] public ComponentLookup<AsteroidTag> Asteroids;
+            [ReadOnly] public ComponentLookup<AsteroidState> AsteroidStates;
+            [ReadOnly] public ComponentLookup<AsteroidClientCulledTag> Culled;
             public ComponentLookup<PhysicsVelocity> Velocities;
             public ComponentLookup<ShipAsteroidContactState> Contacts;
             public float Friction;
@@ -154,6 +160,16 @@ namespace TitanOrbit.ECS
 
                 if (other == Entity.Null)
                     return;
+
+                // Phantom hull: mesh already hid / Health=0 but PhysX still raised a contact.
+                if (Culled.HasComponent(other))
+                    return;
+                if (AsteroidStates.HasComponent(other))
+                {
+                    var rock = AsteroidStates[other];
+                    if (rock.IsDestroyed || !(rock.Health > 0.01f))
+                        return;
+                }
 
                 float3 normal = collisionEvent.Normal;
                 if (!normalFromOtherToShip)

@@ -63,6 +63,14 @@ namespace TitanOrbit.UI
         private TextMeshProUGUI _autoDepositToggleStateLabel;
         private Action<bool> _onAutoDepositChanged;
         private bool _autoDepositEnabled;
+        private Button _damageModeButton;
+        private Image _damageModeBg;
+        private TextMeshProUGUI _damageModeLabel;
+        private Button _healModeButton;
+        private Image _healModeBg;
+        private TextMeshProUGUI _healModeLabel;
+        private Action<bool> _onHealingChanged;
+        private bool _healingEnabled;
         private ShipUpgradeTreeNodeUI _currentShipNode;
         private Button _navUpgradesBtn;
         private Button _navStoreBtn;
@@ -108,6 +116,8 @@ namespace TitanOrbit.UI
             {
                 if (_autoDepositToggle == null)
                     CreateAutoDepositToggle(_contentRoot);
+                if (_damageModeButton == null)
+                    CreateHealingBulletsToggle(_contentRoot);
                 return;
             }
 
@@ -182,6 +192,7 @@ namespace TitanOrbit.UI
 
             CreateBankBalanceBanner(_contentRoot);
             CreateAutoDepositToggle(_contentRoot);
+            CreateHealingBulletsToggle(_contentRoot);
 
             CreateAccentSectionHeader(_contentRoot, SectionTitleUpgradeCards,
                 "Equipped cards ΓÇö tap Γ£ò to remove.", UpgradeCardsAccent);
@@ -332,6 +343,17 @@ namespace TitanOrbit.UI
             _onAutoDepositChanged = onChanged;
         }
 
+        public void BindHealingBullets(Action<bool> onChanged)
+        {
+            _onHealingChanged = onChanged;
+        }
+
+        public void RefreshHealingBulletsToggle(bool healingActive)
+        {
+            EnsureBuilt();
+            SetHealingToggleVisual(healingActive, notify: false);
+        }
+
         public void RefreshAutoDepositToggle(bool enabled)
         {
             EnsureBuilt();
@@ -371,12 +393,14 @@ namespace TitanOrbit.UI
                 _planetProgressText.text = planetStr;
         }
 
-        public void RefreshCurrentShip(Action<ShipUpgradeTreeNodeUI, float> populateNode, float maxPower)
+        public void RefreshCurrentShip(
+            Action<ShipUpgradeTreeNodeUI, ShipPowerBarStatMaxes> populateNode,
+            ShipPowerBarStatMaxes maxes)
         {
             // --- RefreshCurrentShip ---
             if (_currentShipNode == null || populateNode == null)
                 return;
-            populateNode(_currentShipNode, maxPower);
+            populateNode(_currentShipNode, maxes);
         }
 
         private void CreateSectionHeader(Transform parent, string text, float height)
@@ -735,6 +759,145 @@ namespace TitanOrbit.UI
                 PlayerPrefs.Save();
                 _onAutoDepositChanged?.Invoke(enabled);
             }
+        }
+
+        private void CreateHealingBulletsToggle(Transform parent)
+        {
+            var rowGo = new GameObject("HealingBulletsToggle");
+            rowGo.transform.SetParent(parent, false);
+            var rowLe = rowGo.AddComponent<LayoutElement>();
+            rowLe.preferredHeight = AutoDepositToggleHeight;
+            rowLe.minHeight = AutoDepositToggleHeight;
+            rowLe.flexibleHeight = 0f;
+            rowLe.flexibleWidth = 1f;
+
+            var rowBg = rowGo.AddComponent<Image>();
+            rowBg.color = new Color(0.09f, 0.11f, 0.17f, 0.96f);
+            rowBg.raycastTarget = false;
+            if (panelBackgroundSprite != null)
+            {
+                rowBg.sprite = panelBackgroundSprite;
+                rowBg.type = panelBackgroundSprite.border.sqrMagnitude > 0 ? Image.Type.Sliced : Image.Type.Simple;
+            }
+
+            var rowHlg = rowGo.AddComponent<HorizontalLayoutGroup>();
+            rowHlg.spacing = 6f;
+            rowHlg.padding = new RectOffset(8, 8, 6, 6);
+            rowHlg.childAlignment = TextAnchor.MiddleCenter;
+            rowHlg.childControlWidth = true;
+            rowHlg.childControlHeight = true;
+            rowHlg.childForceExpandWidth = true;
+            rowHlg.childForceExpandHeight = true;
+
+            CreateModeButton(
+                rowGo.transform,
+                "Damage",
+                "DAMAGE",
+                out _damageModeButton,
+                out _damageModeBg,
+                out _damageModeLabel);
+            _damageModeButton.onClick.AddListener(OnDamageModeClicked);
+
+            CreateModeButton(
+                rowGo.transform,
+                "Heal",
+                "HEAL",
+                out _healModeButton,
+                out _healModeBg,
+                out _healModeLabel);
+            _healModeButton.onClick.AddListener(OnHealModeClicked);
+
+            SetHealingToggleVisual(false, notify: false);
+        }
+
+        private void CreateModeButton(
+            Transform parent,
+            string objectName,
+            string label,
+            out Button button,
+            out Image background,
+            out TextMeshProUGUI labelTmp)
+        {
+            var go = new GameObject(objectName);
+            go.transform.SetParent(parent, false);
+            var le = go.AddComponent<LayoutElement>();
+            le.flexibleWidth = 1f;
+            le.minWidth = 72f;
+            le.preferredHeight = 24f;
+            le.minHeight = 24f;
+
+            background = go.AddComponent<Image>();
+            background.color = new Color(0.14f, 0.18f, 0.28f, 0.95f);
+            if (buttonSprite != null)
+            {
+                background.sprite = buttonSprite;
+                background.type = Image.Type.Sliced;
+            }
+
+            button = go.AddComponent<Button>();
+
+            var stateGo = new GameObject("Label");
+            stateGo.transform.SetParent(go.transform, false);
+            var stateRt = stateGo.AddComponent<RectTransform>();
+            stateRt.anchorMin = Vector2.zero;
+            stateRt.anchorMax = Vector2.one;
+            stateRt.offsetMin = Vector2.zero;
+            stateRt.offsetMax = Vector2.zero;
+            labelTmp = stateGo.AddComponent<TextMeshProUGUI>();
+            labelTmp.text = label;
+            labelTmp.fontSize = 11f;
+            labelTmp.fontStyle = FontStyles.Bold;
+            labelTmp.alignment = TextAlignmentOptions.Center;
+            labelTmp.color = Color.white;
+            labelTmp.raycastTarget = false;
+            ApplyFont(labelTmp);
+        }
+
+        private void OnDamageModeClicked()
+        {
+            SetHealingToggleVisual(false, notify: true);
+        }
+
+        private void OnHealModeClicked()
+        {
+            SetHealingToggleVisual(true, notify: true);
+        }
+
+        private void SetHealingToggleVisual(bool healingActive, bool notify)
+        {
+            bool changed = _healingEnabled != healingActive;
+            _healingEnabled = healingActive;
+
+            ApplyModeButtonVisual(
+                _damageModeBg,
+                _damageModeLabel,
+                selected: !healingActive,
+                selectedColor: new Color(0.42f, 0.18f, 0.16f, 0.98f));
+            ApplyModeButtonVisual(
+                _healModeBg,
+                _healModeLabel,
+                selected: healingActive,
+                selectedColor: new Color(0.18f, 0.48f, 0.42f, 0.98f));
+
+            if (notify && changed)
+                _onHealingChanged?.Invoke(healingActive);
+        }
+
+        private static void ApplyModeButtonVisual(
+            Image background,
+            TextMeshProUGUI label,
+            bool selected,
+            Color selectedColor)
+        {
+            if (background != null)
+            {
+                background.color = selected
+                    ? selectedColor
+                    : new Color(0.14f, 0.18f, 0.28f, 0.95f);
+            }
+
+            if (label != null)
+                label.color = selected ? Color.white : new Color(0.72f, 0.78f, 0.88f, 0.7f);
         }
 
         private TextMeshProUGUI CreateBodyLabel(Transform parent, string name, string text, float height)

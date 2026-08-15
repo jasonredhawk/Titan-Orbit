@@ -292,7 +292,7 @@ namespace TitanOrbit.ECS
                     motor.BrakeDeceleration,
                     movementMass,
                     input.Thrust,
-                    input.SpaceBrakes,
+                    !input.DisableSpaceBrakes,
                     dt,
                     hardCapToMaxSpeed: !overdriveActive);
 
@@ -417,6 +417,7 @@ namespace TitanOrbit.ECS
         /// Skipped entirely on ticks where passive orbit motor owns velocity.
         /// When <paramref name="spaceBrakes"/> is false and the player is not thrusting,
         /// velocity is left alone (frictionless coast — Left Ctrl / AIR BRAKES toggle).
+        /// Callers pass <c>!input.DisableSpaceBrakes</c> so a zeroed command still brakes.
         /// </summary>
         /// <param name="hardCapToMaxSpeed">
         /// When true (OVERDRIVE off), clamp planar speed to <paramref name="maxSpeed"/> so
@@ -475,7 +476,7 @@ namespace TitanOrbit.ECS
                 else
                     vel += brake;
             }
-            // else: space brakes OFF → frictionless coast (keep velocity; no CoastFriction).
+            // else: DisableSpaceBrakes → frictionless coast (keep velocity; no CoastFriction).
             // PlayerInputHandler documents this as "float endlessly" when SpaceBrakesEnabled is false.
 
             vel.y = 0f;

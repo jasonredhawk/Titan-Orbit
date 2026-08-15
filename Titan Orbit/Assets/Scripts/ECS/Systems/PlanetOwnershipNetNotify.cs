@@ -79,6 +79,10 @@ namespace TitanOrbit.ECS
             // --- Graph override (works even if the entity is not Instantiated yet) ---
             PlanetConnectionGraphCache.SetClientOwnershipOverride(planetId, team, population, planetLevel);
 
+            // Capture / team flip wipes every turret on the server. Drop client combat HP
+            // for this planet so a leftover HitRpc value cannot paint the new owner's pads.
+            PlanetaryDefenseClientHealthSync.ClearPlanet(planetId);
+
             // --- Per-entity write via Instantiates registry (no planet archetype gather) ---
             PlanetClientEntityRegistry.CopyLive(s_RegistryScratch);
             for (int i = 0; i < s_RegistryScratch.Count; i++)

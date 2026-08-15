@@ -23,6 +23,8 @@ namespace TitanOrbit.Game
     /// Ship flight smoothing stays owned by NetCode — we only SmoothDamp camera composition.
     /// </para>
     /// Moon-dock cinematic overrides the follow target with a hard lock on the spinning hull.
+    /// Planetary defense turret possession follows the pad and zooms out so the pad's
+    /// engage/bullet range fits on screen (<see cref="PlanetaryDefenseTurretClientState.DesiredViewRadiusWorld"/>).
     /// </summary>
     [DefaultExecutionOrder(67001)]
     public class CameraFollowEcs : MonoBehaviour
@@ -254,10 +256,20 @@ namespace TitanOrbit.Game
                 _initialized = true;
             }
 
-            // --- Height zoom from ship level ---
-            // [TITAN-ORBIT] Profile owns the curve; SmoothDamp so level-ups / family swaps ease out.
-            // Uses last-good level so gem Instantiates (GhostSpawnBacklog) never snap height to L1.
+            // --- Height zoom ---
+            // Default: ship-level curve from the active family profile.
+            // Turret possession: raise height so the pad's engage/bullet radius fits the viewport
+            // (never zoom in closer than the normal ship framing).
             float targetHeight = profile.ComputeTargetHeight(ResolveShipLevel());
+            if (Shared.PlanetaryDefenseTurretClientState.IsControlling &&
+                Shared.PlanetaryDefenseTurretClientState.DesiredViewRadiusWorld > 0.01f)
+            {
+                float turretHeight = ComputeHeightForViewRadius(
+                    Shared.PlanetaryDefenseTurretClientState.DesiredViewRadiusWorld,
+                    profile.gameplayFieldOfView);
+                targetHeight = Mathf.Max(targetHeight, turretHeight);
+            }
+
             _currentHeight = Mathf.SmoothDamp(
                 _currentHeight,
                 targetHeight,
@@ -387,8 +399,36 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Converts a desired on-screen world radius into camera height for a top-down
+        /// perspective lens (rotation 90° pitch). Fixed FOV ⇒ height ∝ visible radius.
+        /// </summary>
+        /// <param name="viewRadiusWorld">Half-extent of the circle that must fit on screen.</param>
+        /// <param name="fieldOfViewDegrees">Vertical FOV from <see cref="CameraFollowSettings"/>.</param>
+        /// <returns>World-Y height that just fits the circle on the narrower viewport axis.</returns>
+        float ComputeHeightForViewRadius(float viewRadiusWorld, float fieldOfViewDegrees)
+        {
+            // --- Perspective top-down framing ---
+            // Looking straight down: visible half-height = height * tan(vFOV/2).
+            // Visible half-width = half-height * aspect. A circle of radius R must fit in both.
+            float radius = Mathf.Max(0.5f, viewRadiusWorld);
+            float fov = Mathf.Clamp(fieldOfViewDegrees, 10f, 120f);
+            float tanHalf = Mathf.Tan(0.5f * fov * Mathf.Deg2Rad);
+            if (tanHalf < 0.001f)
+                return radius * 4f;
+
+            float aspect = 1f;
+            if (cam != null && cam.aspect > 0.01f)
+                aspect = cam.aspect;
+
+            // Narrower axis limits the fit: portrait → width; landscape → height.
+            float axisFactor = Mathf.Min(1f, aspect);
+            return radius / (tanHalf * axisFactor);
+        }
+
+        /// <summary>
         /// Resolves world follow position. Moon-dock cinematic overrides presentation when active
-        /// (ship hull through landing, surface spin, and takeoff).
+        /// (ship hull through landing, surface spin, and takeoff). Planetary defense turret control
+        /// follows the pad pose (ship hull is stowed/hidden).
         /// </summary>
         /// <param name="targetPos">World point under the camera (before look-ahead / height).</param>
         /// <param name="isMoonDockOverride">True when following the moon-dock hull applier.</param>
@@ -401,6 +441,17 @@ namespace TitanOrbit.Game
             // follow the spinning hull, not the moon center.
             if (ShipMoonDockVisualApplier.TryGetLocalFollowPosition(out targetPos))
             {
+                isMoonDockOverride = true;
+                return true;
+            }
+
+            // --- Planetary defense turret possession ---
+            // [TITAN-ORBIT] Hull is SetActive(false); follow the pad so aim framing stays useful.
+            // Treat like moon-dock override (no look-ahead yank while stationary on the pad).
+            if (Shared.PlanetaryDefenseTurretClientState.IsControlling &&
+                Shared.PlanetaryDefenseTurretClientState.HasPadWorldPosition)
+            {
+                targetPos = Shared.PlanetaryDefenseTurretClientState.PadWorldPosition;
                 isMoonDockOverride = true;
                 return true;
             }

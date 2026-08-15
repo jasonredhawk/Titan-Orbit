@@ -16,8 +16,9 @@ namespace TitanOrbit.NetCode
     /// seed + generation config so the client can hydrate the map locally, plus size/team counts
     /// for UI and lobby.
     /// <para>
-    /// [TITAN-ORBIT] Solid join architecture: clients build planets/asteroids from this recipe
-    /// (<see cref="ClientMapHydrateSystem"/>). GhostSpawn no longer Instantiates the full field.
+    /// [TITAN-ORBIT] Solid join architecture: clients build asteroids from this recipe
+    /// (<see cref="ClientMapHydrateSystem"/>). Planets arrive as ghosts. Occupancy RPC
+    /// then culls rocks the server already destroyed.
     /// Loading bar tracks local hydrate progress, not hybrid Instantiates=1.
     /// </para>
     /// </summary>
@@ -73,12 +74,35 @@ namespace TitanOrbit.NetCode
 
         /// <summary>See <see cref="AsteroidMinSize"/>.</summary>
         public float AsteroidVisualScaleAtMaxSize;
+
+        /// <summary>Live planet ghosts on the server at send time (homes + neutrals still in play).</summary>
+        public int LivePlanetCount;
+
+        /// <summary>Live ship ghosts on the server at send time (0 in an empty match is valid).</summary>
+        public int LiveShipCount;
     }
 
     /// <summary>
-    /// [NETCODE] Tag on a server connection entity after MapSessionMetaRpc was sent once.
+    /// [NETCODE] Empty client→server RPC: "I am connected but still have no map recipe."
+    /// The first recipe send is easy to drop (handshake / not-yet-Connected), and tagging
+    /// <see cref="MapSessionMetaSent"/> used to prevent any retry — loading then soft-crawls
+    /// to 8% with no 0/N counts and never finishes.
     /// </summary>
-    public struct MapSessionMetaSent : IComponentData { }
+    public struct MapSessionMetaRequestRpc : IRpcCommand { }
+
+    /// <summary>
+    /// [NETCODE] On a server connection after we queued at least one <see cref="MapSessionMetaRpc"/>.
+    /// Not proof the client applied it — we still resend until that connection is InGame, and
+    /// we always answer <see cref="MapSessionMetaRequestRpc"/>.
+    /// </summary>
+    public struct MapSessionMetaSent : IComponentData
+    {
+        /// <summary>
+        /// [NETCODE] <see cref="NetworkTime.ServerTick"/> index when we last queued a recipe RPC.
+        /// Used so resends are once per second, not every sim tick.
+        /// </summary>
+        public uint LastSentSimulationTick;
+    }
 
     /// <summary>
     /// [TITAN-ORBIT] Managed cache of the last MapSessionMetaRpc + lobby helpers.
@@ -100,6 +124,12 @@ namespace TitanOrbit.NetCode
         /// <summary>Asteroids for this match.</summary>
         public static int AsteroidCount { get; private set; }
 
+        /// <summary>Server live planet count at last recipe send.</summary>
+        public static int LivePlanetCount { get; private set; }
+
+        /// <summary>Server live ship count at last recipe send.</summary>
+        public static int LiveShipCount { get; private set; }
+
         /// <summary>Rolled map width from the server (0 until meta arrives).</summary>
         public static float MapWidth { get; private set; }
 
@@ -108,6 +138,15 @@ namespace TitanOrbit.NetCode
 
         /// <summary>True when MapWidth/Height look like a real rolled map (not missing).</summary>
         public static bool HasMapSize => MapWidth >= 100f && MapHeight >= 100f;
+
+        /// <summary>
+        /// [TITAN-ORBIT] realtimeSinceStartup of the last client recipe request (or a large
+        /// negative when none this session). Reset in <see cref="Clear"/>.
+        /// </summary>
+        public static float LastClientRecipeRequestRealtime { get; set; } = -999f;
+
+        /// <summary>Ticks between recipe resends (~1 s at 60 Hz sim).</summary>
+        public const uint RecipeResendIntervalTicks = 60;
 
         /// <summary>
         /// Builds a recipe RPC from finalized <see cref="MapStateSingleton"/> + generation config.
@@ -147,6 +186,13 @@ namespace TitanOrbit.NetCode
 
             var asteroid = ResolveAsteroidBodyTuning();
 
+            int livePlanets = 0;
+            int liveShips = 0;
+            using (var planetQ = em.CreateEntityQuery(ComponentType.ReadOnly<PlanetTag>()))
+                livePlanets = planetQ.CalculateEntityCount();
+            using (var shipQ = em.CreateEntityQuery(ComponentType.ReadOnly<ShipTag>()))
+                liveShips = shipQ.CalculateEntityCount();
+
             meta = new MapSessionMetaRpc
             {
                 LoadingTotalSteps = mapState.LoadingTotalSteps,
@@ -164,6 +210,8 @@ namespace TitanOrbit.NetCode
                 AsteroidGemsPerSize = asteroid.GemsPerSize,
                 AsteroidVisualScaleAtMinSize = asteroid.VisualScaleAtMinSize,
                 AsteroidVisualScaleAtMaxSize = asteroid.VisualScaleAtMaxSize,
+                LivePlanetCount = livePlanets,
+                LiveShipCount = liveShips,
             };
             return true;
         }
@@ -240,6 +288,13 @@ namespace TitanOrbit.NetCode
                 rpc.RecipeConfig,
                 asteroidBody,
                 full);
+
+            LivePlanetCount = Mathf.Max(0, rpc.LivePlanetCount);
+            LiveShipCount = Mathf.Max(0, rpc.LiveShipCount);
+            if (LivePlanetCount <= 0)
+                LivePlanetCount = Mathf.Max(0, TeamCount) + Mathf.Max(0, NeutralPlanetCount);
+            JoinWorldReadyCache.ExpectedPlanets = LivePlanetCount;
+            JoinWorldReadyCache.ExpectedShips = LiveShipCount;
         }
 
         /// <summary>
@@ -262,10 +317,44 @@ namespace TitanOrbit.NetCode
             TeamCount = 0;
             NeutralPlanetCount = 0;
             AsteroidCount = 0;
+            LivePlanetCount = 0;
+            LiveShipCount = 0;
             MapWidth = 0f;
             MapHeight = 0f;
+            LastClientRecipeRequestRealtime = -999f;
             ToroidalMapEcs.ClearMapSize();
             ClientMapHydrateCache.Clear();
+            JoinWorldReadyCache.Clear();
+        }
+
+        /// <summary>
+        /// True when NetCode will actually queue a normal (non-approval) RPC to this connection.
+        /// Sending earlier destroys the send entity without delivering — the loading bar then
+        /// stalls at the 8% soft-crawl with no 0/N hydrate counts.
+        /// </summary>
+        /// <param name="conn">Server or client <see cref="NetworkStreamConnection"/>.</param>
+        /// <returns>True when CurrentState is Connected and handshake/approval is finished.</returns>
+        public static bool ConnectionCanReceiveGameplayRpc(in NetworkStreamConnection conn)
+        {
+            // [NETCODE] IsHandshakeOrApproval is internal to the NetCode package — mirror it here.
+            var connectionState = conn.CurrentState;
+            if (connectionState == ConnectionState.State.Handshake ||
+                connectionState == ConnectionState.State.Approval)
+                return false;
+            return connectionState == ConnectionState.State.Connected;
+        }
+
+        /// <summary>
+        /// Queues one targeted <see cref="MapSessionMetaRpc"/> (does not tag the connection).
+        /// </summary>
+        /// <param name="ecb">Temp command buffer played back this system update.</param>
+        /// <param name="connection">Server connection entity to send to.</param>
+        /// <param name="meta">Recipe payload built by <see cref="TryBuildRecipeRpc"/>.</param>
+        public static void QueueRecipeRpc(EntityCommandBuffer ecb, Entity connection, in MapSessionMetaRpc meta)
+        {
+            Entity metaEntity = ecb.CreateEntity();
+            ecb.AddComponent(metaEntity, meta);
+            ecb.AddComponent(metaEntity, new SendRpcCommandRequest { TargetConnection = connection });
         }
 
         /// <summary>
@@ -384,20 +473,23 @@ namespace TitanOrbit.NetCode
     }
 
     /// <summary>
-    /// [NETCODE] Client applies MapSessionMetaRpc into <see cref="MapSessionMetaCache"/>.
+    /// [NETCODE] Client applies inbound <see cref="MapSessionMetaRpc"/> into
+    /// <see cref="MapSessionMetaCache"/> so seed-hydrate can start.
+    /// No RequireForUpdate — consume immediately (MaxRpcAgeFrames is only 4).
+    /// World: ClientSimulation. Group: SimulationSystemGroup.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct MapSessionMetaClientSystem : ISystem
     {
+        /// <summary>No singleton gate — inbound recipe RPCs must be destroyed the same tick.</summary>
         public void OnCreate(ref SystemState state)
         {
-            var builder = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<MapSessionMetaRpc>()
-                .WithAll<ReceiveRpcCommandRequest>();
-            state.RequireForUpdate(state.GetEntityQuery(builder));
         }
 
+        /// <summary>
+        /// Latches every inbound recipe RPC, then destroys the receive entity.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             var commandBuffer = new EntityCommandBuffer(Allocator.Temp);
@@ -423,37 +515,185 @@ namespace TitanOrbit.NetCode
     }
 
     /// <summary>
-    /// [NETCODE] Server sends MapSessionMetaRpc (with seed recipe) to connections that have
-    /// <see cref="NetworkId"/> but have not received meta yet — <b>before</b> they go InGame
-    /// so clients can hydrate the map first (Unity EnterInGame handshake pattern).
+    /// [TITAN-ORBIT] Local Host / Editor: copy the recipe from ServerWorld without waiting for
+    /// an RPC. Same-process join used to stall at the 8% loading crawl when the one-shot
+    /// <see cref="MapSessionMetaRpc"/> was queued during handshake and never delivered.
+    /// Dedicated clients have no ServerWorld here — they use the RPC + request path.
+    /// World: ClientSimulation. Group: InitializationSystemGroup (before hydrate in Simulation).
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
+    [UpdateInGroup(typeof(InitializationSystemGroup))]
+    public partial struct MapSessionMetaLocalHostCopySystem : ISystem
+    {
+        /// <summary>No RequireForUpdate — must tick while the recipe is still missing.</summary>
+        public void OnCreate(ref SystemState state)
+        {
+        }
+
+        /// <summary>
+        /// When this process also has a ServerWorld and map gen is complete, latch the recipe
+        /// locally so ClientMapHydrateSystem can start the same frame Simulation runs.
+        /// </summary>
+        public void OnUpdate(ref SystemState state)
+        {
+            // --- Already latched this session ---
+            if (ClientMapHydrateCache.HasFullRecipe)
+                return;
+
+            // --- Dedicated / remote client: no in-process server ---
+            World serverWorld = ClientServerBootstrap.ServerWorld;
+            if (serverWorld == null || !serverWorld.IsCreated)
+                return;
+
+            if (!MapSessionMetaCache.TryBuildRecipeRpc(serverWorld, out var meta))
+                return;
+
+            MapSessionMetaCache.Apply(meta);
+            Debug.Log(
+                "[MapSessionMeta] Local host copied recipe from ServerWorld seed=" + meta.MatchSeed +
+                " asteroids=" + meta.AsteroidCount +
+                " (skipped RPC wait)");
+        }
+    }
+
+    /// <summary>
+    /// [NETCODE] Client asks the server for the map recipe when connected but still missing
+    /// <see cref="ClientMapHydrateCache.HasFullRecipe"/>. Cooldown avoids flooding the reliable
+    /// RPC queue. World: ClientSimulation. Group: SimulationSystemGroup.
+    /// </summary>
+    [WorldSystemFilter(WorldSystemFilterFlags.ClientSimulation | WorldSystemFilterFlags.ThinClientSimulation)]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    public partial struct MapSessionMetaRequestClientSystem : ISystem
+    {
+        /// <summary>Seconds between recipe requests (handshake drops are retried, not spammed).</summary>
+        const float RequestCooldownSeconds = 1f;
+
+        /// <summary>Log once so Player.log shows a hang instead of silent 8% crawl.</summary>
+        bool _loggedWaiting;
+
+        /// <summary>Needs a live NetCode driver; ticks even when no request RPC is in flight.</summary>
+        public void OnCreate(ref SystemState state)
+        {
+            state.RequireForUpdate<NetworkStreamDriver>();
+        }
+
+        /// <summary>
+        /// Sends <see cref="MapSessionMetaRequestRpc"/> to the server when this client has a
+        /// Connected <see cref="NetworkId"/> but no full recipe yet.
+        /// </summary>
+        public void OnUpdate(ref SystemState state)
+        {
+            // --- Stop once seed-hydrate can run ---
+            if (ClientMapHydrateCache.HasFullRecipe)
+            {
+                _loggedWaiting = false;
+                return;
+            }
+
+            float now = UnityEngine.Time.realtimeSinceStartup;
+            if (now - MapSessionMetaCache.LastClientRecipeRequestRealtime < RequestCooldownSeconds)
+                return;
+
+            var commandBuffer = new EntityCommandBuffer(Allocator.Temp);
+            bool queued = false;
+
+            foreach (var (conn, id) in SystemAPI.Query<RefRO<NetworkStreamConnection>, RefRO<NetworkId>>())
+            {
+                // [NETCODE] Non-approval RPCs queued during Handshake are destroyed without sending.
+                if (!MapSessionMetaCache.ConnectionCanReceiveGameplayRpc(conn.ValueRO))
+                    continue;
+
+                Entity req = commandBuffer.CreateEntity();
+                commandBuffer.AddComponent<MapSessionMetaRequestRpc>(req);
+                commandBuffer.AddComponent(req, new SendRpcCommandRequest());
+                queued = true;
+
+                if (!_loggedWaiting)
+                {
+                    _loggedWaiting = true;
+                    Debug.LogWarning(
+                        "[MapSessionMeta] Client has NetworkId=" + id.ValueRO.Value +
+                        " but no map recipe yet — requesting from server. " +
+                        "Loading bar stays on the 8% crawl until this arrives.");
+                }
+
+                break;
+            }
+
+            if (queued)
+                MapSessionMetaCache.LastClientRecipeRequestRealtime = now;
+
+            commandBuffer.Playback(state.EntityManager);
+        }
+    }
+
+    /// <summary>
+    /// [NETCODE] Server sends the seed recipe to connections that can receive gameplay RPCs.
+    /// First send waits until Connected (not Handshake). Resends every
+    /// <see cref="MapSessionMetaCache.RecipeResendIntervalTicks"/> until that connection is
+    /// InGame. Always answers <see cref="MapSessionMetaRequestRpc"/>.
+    /// World: ServerSimulation. Group: SimulationSystemGroup, before GoInGame accept.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateBefore(typeof(TitanOrbitGoInGameServerSystem))]
     public partial struct MapSessionMetaServerCatchUpSystem : ISystem
     {
+        /// <summary>Map must be finalized before we can build a recipe payload.</summary>
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<MapStateSingleton>();
             state.RequireForUpdate<NetworkStreamDriver>();
         }
 
+        /// <summary>
+        /// Drains client recipe requests, then catch-up / resend to Connected connections.
+        /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             if (!MapSessionMetaCache.TryBuildRecipeRpc(state.World, out var meta))
                 return;
 
             var commandBuffer = new EntityCommandBuffer(Allocator.Temp);
+            uint tick = 0;
+            if (SystemAPI.HasSingleton<NetworkTime>())
+                tick = SystemAPI.GetSingleton<NetworkTime>().ServerTick.TickIndexForValidTick;
 
-            // --- Send to any connected client missing the recipe (InGame not required) ---
-            foreach (var (_, connection) in SystemAPI.Query<RefRO<NetworkId>>()
+            // --- Client asked because the first send never latched ---
+            foreach (var (req, rpcEntity) in SystemAPI.Query<RefRO<ReceiveRpcCommandRequest>>()
+                         .WithAll<MapSessionMetaRequestRpc>()
+                         .WithEntityAccess())
+            {
+                Entity connection = req.ValueRO.SourceConnection;
+                commandBuffer.DestroyEntity(rpcEntity);
+
+                if (!state.EntityManager.Exists(connection) ||
+                    !state.EntityManager.HasComponent<NetworkStreamConnection>(connection) ||
+                    !state.EntityManager.HasComponent<NetworkId>(connection))
+                    continue;
+
+                var conn = state.EntityManager.GetComponentData<NetworkStreamConnection>(connection);
+                if (!MapSessionMetaCache.ConnectionCanReceiveGameplayRpc(conn))
+                    continue;
+
+                MapSessionMetaCache.QueueRecipeRpc(commandBuffer, connection, meta);
+                StampSent(commandBuffer, connection, tick, state.EntityManager);
+                Debug.Log(
+                    "[MapSessionMeta] Server answered recipe request seed=" + meta.MatchSeed +
+                    " asteroids=" + meta.AsteroidCount);
+            }
+
+            // --- First send: Connected + NetworkId, not yet tagged ---
+            foreach (var (conn, connection) in SystemAPI.Query<RefRO<NetworkStreamConnection>>()
+                         .WithAll<NetworkId>()
                          .WithNone<MapSessionMetaSent>()
                          .WithEntityAccess())
             {
-                Entity metaEntity = commandBuffer.CreateEntity();
-                commandBuffer.AddComponent(metaEntity, meta);
-                commandBuffer.AddComponent(metaEntity, new SendRpcCommandRequest { TargetConnection = connection });
-                commandBuffer.AddComponent<MapSessionMetaSent>(connection);
+                if (!MapSessionMetaCache.ConnectionCanReceiveGameplayRpc(conn.ValueRO))
+                    continue;
+
+                MapSessionMetaCache.QueueRecipeRpc(commandBuffer, connection, meta);
+                commandBuffer.AddComponent(connection, new MapSessionMetaSent { LastSentSimulationTick = tick });
                 Debug.Log(
                     "[MapSessionMeta] Server sent recipe seed=" + meta.MatchSeed +
                     " steps=" + meta.LoadingTotalSteps +
@@ -462,7 +702,42 @@ namespace TitanOrbit.NetCode
                     " (pre-InGame ok)");
             }
 
+            // --- Resend until InGame (first queue can still be dropped the same tick) ---
+            foreach (var (sent, conn, connection) in SystemAPI
+                         .Query<RefRW<MapSessionMetaSent>, RefRO<NetworkStreamConnection>>()
+                         .WithAll<NetworkId>()
+                         .WithNone<NetworkStreamInGame>()
+                         .WithEntityAccess())
+            {
+                if (!MapSessionMetaCache.ConnectionCanReceiveGameplayRpc(conn.ValueRO))
+                    continue;
+
+                uint last = sent.ValueRO.LastSentSimulationTick;
+                uint elapsed = tick >= last ? tick - last : MapSessionMetaCache.RecipeResendIntervalTicks;
+                if (elapsed < MapSessionMetaCache.RecipeResendIntervalTicks)
+                    continue;
+
+                MapSessionMetaCache.QueueRecipeRpc(commandBuffer, connection, meta);
+                sent.ValueRW.LastSentSimulationTick = tick;
+            }
+
             commandBuffer.Playback(state.EntityManager);
+        }
+
+        /// <summary>
+        /// Adds or refreshes <see cref="MapSessionMetaSent"/> after queueing a recipe RPC.
+        /// </summary>
+        static void StampSent(
+            EntityCommandBuffer commandBuffer,
+            Entity connection,
+            uint tick,
+            EntityManager entityManager)
+        {
+            var sent = new MapSessionMetaSent { LastSentSimulationTick = tick };
+            if (entityManager.HasComponent<MapSessionMetaSent>(connection))
+                commandBuffer.SetComponent(connection, sent);
+            else
+                commandBuffer.AddComponent(connection, sent);
         }
     }
 }

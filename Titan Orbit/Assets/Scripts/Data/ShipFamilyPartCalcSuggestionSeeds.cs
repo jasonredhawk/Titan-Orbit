@@ -178,7 +178,7 @@ namespace TitanOrbit.Data
 
             float sustainedDrain = ComputeSustainedEnergyDrain(firePower, fireRate);
             stats.energyRegen = sustainedDrain * EnergyRegenFractionOfSustainedDrain;
-            stats.energyRegenPerAbilityLevel = stats.energyRegen * ShipPropulsionAggregation.PerLevelFractionOfBase;
+            stats.energyRegenPerExtraLevel = stats.energyRegen * ShipPropulsionAggregation.PerLevelFractionOfBase;
         }
 
         /// <summary>
@@ -193,18 +193,18 @@ namespace TitanOrbit.Data
             if (firePower <= 0f)
             {
                 stats.energyRegen = 0f;
-                stats.energyRegenPerAbilityLevel = 0f;
+                stats.energyRegenPerExtraLevel = 0f;
                 return;
             }
 
             // --- Cap: 1 second of sustained fire at this gun's authored firePower × fireRate ---
             float fireRate = Mathf.Max(0.01f, stats.fireRate);
             stats.energyCap = ComputeSustainedEnergyDrain(firePower, fireRate);
-            stats.energyCapPerAbilityLevel = stats.energyCap * ShipPropulsionAggregation.PerLevelFractionOfBase;
+            stats.energyCapPerExtraLevel = stats.energyCap * ShipPropulsionAggregation.PerLevelFractionOfBase;
 
             // Weapons never produce Regen.
             stats.energyRegen = 0f;
-            stats.energyRegenPerAbilityLevel = 0f;
+            stats.energyRegenPerExtraLevel = 0f;
         }
 
         /// <summary>Cannon energy: Cap = firePower × fireRate (1 sec); regen &lt; sustained drain.</summary>

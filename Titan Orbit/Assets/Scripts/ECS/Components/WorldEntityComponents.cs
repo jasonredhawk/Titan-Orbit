@@ -67,8 +67,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// [TITAN-ORBIT] Bitmask of every team whose triangle covers this rock (TeamA=bit0…TeamE=bit4).
-        /// Overlaps set multiple bits — the asteroid is “both teams” for friendly mining / destroy
-        /// yellow gems. Client tint prefers the local team when their bit is set.
+        /// Overlaps set multiple bits — the asteroid is “both teams” for extra mining / destroy
+        /// yield (yellow tint). Client rock tint prefers the local team when their bit is set.
+        /// Extra crystals are still free-for-all once they Instantiates.
         /// </summary>
         [GhostField] public byte TerritoryTeamsMask;
 
@@ -85,8 +86,9 @@ namespace TitanOrbit.ECS
         public float MaxHealth;
 
         /// <summary>
-        /// [TITAN-ORBIT] Server-only: last ship team that mined or shot this rock. Destroy bonus
-        /// yellow gems require this team to be in <see cref="TerritoryTeamsMask"/> (friendly only).
+        /// [TITAN-ORBIT] Server-only: last ship team that mined or shot this rock. Extra yellow
+        /// crystals Instantiates on destroy only when this team owns the rock (triangle bonus
+        /// yield). Once spawned, yellow gems scoop like red — any ship, including enemies.
         /// Not ghosted — clients do not need it for presentation.
         /// </summary>
         public TeamId LastInteractTeam;
@@ -101,6 +103,12 @@ namespace TitanOrbit.ECS
     /// <summary>[NETCODE] Loose gem pickup spawned by mining or moon drain.</summary>
     public struct GemState : IComponentData
     {
+        /// <summary>
+        /// Session-unique id stamped at spawn. <see cref="GhostInstance.ghostId"/> is reused
+        /// after despawn, so leftovers cannot be traced by ghostId alone.
+        /// </summary>
+        [GhostField] public int SpawnId;
+
         /// <summary>[TITAN-ORBIT] Gem value when deposited or collected.</summary>
         [GhostField] public float Value;
 
@@ -118,8 +126,9 @@ namespace TitanOrbit.ECS
         [GhostField] public float SpawnServerTime;
 
         /// <summary>
-        /// [TITAN-ORBIT] Territory bonus gem (yellow tint). True for the bonus portion of mining /
-        /// destroy yield inside a friendly triangle — NGO <c>isBonusGem</c>.
+        /// [TITAN-ORBIT] Yellow tint only (NGO <c>isBonusGem</c>). Marks extra yield from a
+        /// friendly triangle so players can see the bonus. Tractor, pickup, and cargo treat
+        /// this like any other gem — colour does not gate who may collect.
         /// </summary>
         [GhostField] public bool IsBonusGem;
 
@@ -136,6 +145,25 @@ namespace TitanOrbit.ECS
         /// show tractor beams again. 0 = no exclusion. Ghosted with <see cref="ExcludePickupNetworkId"/>.
         /// </summary>
         [GhostField] public float ExcludePickupUntilServerTime;
+
+        /// <summary>
+        /// [NETCODE] True after the server scoops this crystal into cargo. Ghosted so clients
+        /// hide the mesh immediately — interpolated despawn can lag or drop, which left a
+        /// shrinking leftover on the map while cargo had already increased.
+        /// Server destroys the entity after a couple of GhostSend ticks
+        /// (<see cref="GemConsumedPendingDestroy"/>).
+        /// </summary>
+        [GhostField] public bool IsConsumed;
+    }
+
+    /// <summary>
+    /// Server-only: keep a scooped gem alive for a few GhostSend ticks so
+    /// <see cref="GemState.IsConsumed"/> can replicate, then DestroyEntity.
+    /// </summary>
+    public struct GemConsumedPendingDestroy : IComponentData
+    {
+        /// <summary>GhostSend passes remaining before DestroyEntity (decremented after each send).</summary>
+        public byte SendsLeft;
     }
 
     /// <summary>

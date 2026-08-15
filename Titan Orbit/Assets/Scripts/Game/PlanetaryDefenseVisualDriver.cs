@@ -8,6 +8,7 @@ using TitanOrbit.Simulation;
 using TMPro;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -21,9 +22,11 @@ namespace TitanOrbit.Game
     /// [HYBRID] Pad = Shapes soft blue disc matching the planet orbit-ring fill and
     /// <see cref="GemMoonOrbitZoneVisual"/> tint. Turret sits in the disc center; level +
     /// gem cost text (with the same gem icon as the moon label) sits screen-below the pad.
-    /// Active turrets also show a thin horizontal HP bar under the mesh. Empty pads show
-    /// placeholder copy instead of “Lv 0”. Parents to the unit-scale planet proxy root so
-    /// pad/text/turret use true world sizes (no ÷ planetScale). See <see cref="PlanetVisualBody"/>.
+    /// When a player occupies the pad, the level line also shows their display name
+    /// (ship nameplate is hidden while stowed). Active turrets also show a thin horizontal
+    /// HP bar under the mesh. Empty pads show placeholder copy instead of “Lv 0”. Parents to
+    /// the unit-scale planet proxy root so pad/text/turret use true world sizes (no ÷ planetScale).
+    /// See <see cref="PlanetVisualBody"/>.
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Active turrets bank (roll) while turning to aim — same cosmetic curve as
@@ -46,11 +49,11 @@ namespace TitanOrbit.Game
     /// session-long TransformQuarantine).
     /// </para>
     /// <para>
-    /// [NETCODE] Slot <see cref="PlanetaryDefenseSlotElement.Health"/> is ghosted, but planet
-    /// ghosts use a low MaxSendRate — the HP bar would look “stuck” for a long time after a
-    /// real hit. <see cref="NotifyAuthoritativeHit"/> applies a short optimistic bar punch from
-    /// <see cref="BulletHitRpc"/> (server Health-after), then reconciles when the ghost catches up.
-    /// Friendly fire is off: same-team shots never damage pads (no HitRpc PD payload).
+    /// [NETCODE] Pad layout (level, occupancy, MaxHealth) still comes from the planet ghost
+    /// buffer. Live turret HP does not: <see cref="BulletHitRpcClientSystem"/> writes remaining
+    /// HP into <see cref="PlanetaryDefenseClientHealthSync"/> the same way asteroid HitRpcs write
+    /// local rock Health. The bar reads that store so a slow planet snapshot cannot snap the
+    /// strip back to 100%. Friendly fire is off: same-team shots never damage pads.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(66300)]
@@ -177,28 +180,13 @@ namespace TitanOrbit.Game
         static readonly Color HealthBarFillEmpty = new Color(1f, 0.15f, 0.12f, 0.98f);
 
         /// <summary>
-        /// Brief white/red flash tint while a HitRpc optimistic punch is live.
+        /// Brief white/red flash tint while a HitRpc HP apply is live.
         /// Client presentation only — does not affect server combat.
         /// </summary>
         static readonly Color HealthBarHitFlashColor = new Color(1f, 0.95f, 0.85f, 1f);
 
-        /// <summary>
-        /// How long (seconds) we prefer HitRpc Health-after over lagging ghost Health.
-        /// Safety timeout — ghost usually catches up sooner under MaxSendRate.
-        /// </summary>
-        const float OptimisticHpHoldSeconds = 2.5f;
-
-        /// <summary>How long (seconds) the bar/turret hit flash lasts after a HitRpc punch.</summary>
-        const float HitFlashSeconds = 0.22f;
-
         /// <summary>Turret scale mul at the peak of the hit punch (1 = no punch).</summary>
         const float HitPunchScalePeak = 1.12f;
-
-        /// <summary>
-        /// Ghost Health within this of optimistic Health → clear override (reconciled).
-        /// Quantization=100 on the ghost field is 0.01; this is a comfortable match window.
-        /// </summary>
-        const float OptimisticHpReconcileEpsilon = 0.75f;
 
         /// <summary>Shared 1×1 white sprite for outline + bg + fill (created once).</summary>
         static Sprite s_HealthBarSprite;
@@ -211,6 +199,12 @@ namespace TitanOrbit.Game
 
         /// <summary>Bold level line (top of the stack, closer to the pad).</summary>
         const float LevelFontSize = 9.35f;
+
+        /// <summary>
+        /// Max characters for the occupant name under “Lv N” (pad labels are small).
+        /// Longer names truncate with an ellipsis.
+        /// </summary>
+        const int MaxOccupantNameChars = 14;
 
         /// <summary>Gem progress line under the level (slightly smaller / softer).</summary>
         const float CostFontSize = 6.875f;
@@ -232,7 +226,8 @@ namespace TitanOrbit.Game
         /// Bump when pad-label materials / hierarchy change so live SlotVisuals rebuild the
         /// info plate once (gem icon, orientation) without a turret-level fingerprint change.
         /// </summary>
-        const byte InfoStyleVersion = 3;
+        // Bump cleans orphan per-pad WorldSpace Canvas Take Control buttons (FPS regression).
+        const byte InfoStyleVersion = 6;
 
         static readonly int RenderQueueOverlay = (int)RenderQueue.Overlay;
 
@@ -264,33 +259,19 @@ namespace TitanOrbit.Game
         bool _mapQueryCreated;
 
         /// <summary>
+        /// Cached ship-aim query for occupied pads (GhostOwner + ShipInput).
+        /// Created once — per-slot CreateEntityQuery was an FPS bomb while anyone piloted.
+        /// </summary>
+        EntityQuery _occupantAimQuery;
+
+        /// <summary>True after <see cref="_occupantAimQuery"/> has been created.</summary>
+        bool _occupantAimQueryCreated;
+
+        /// <summary>
         /// Scratch for people-transport VFX aim samples (no ECS gather — VFX driver list walk).
         /// </summary>
         readonly List<PeopleTransportVfxDriver.AimFlightSample> _transportAimScratch =
             new List<PeopleTransportVfxDriver.AimFlightSample>(32);
-
-        /// <summary>
-        /// HitRpc Health-after overrides keyed by planetId×slot (see <see cref="MakeOptimisticKey"/>).
-        /// Cleared when ghost Health catches up or the hold timer expires.
-        /// </summary>
-        readonly Dictionary<long, OptimisticSlotHp> _optimisticHpBySlot =
-            new Dictionary<long, OptimisticSlotHp>(32);
-
-        /// <summary>
-        /// Short-lived client display of server Health-after from <see cref="BulletHitRpc"/>.
-        /// Not a second sim — presentation only until the planet ghost buffer updates.
-        /// </summary>
-        struct OptimisticSlotHp
-        {
-            /// <summary>Authoritative remaining HP from the HitRpc (0 = destroyed this hit).</summary>
-            public float HealthAfter;
-
-            /// <summary>Unity <c>Time.time</c> when we stop preferring this over ghost Health.</summary>
-            public float ExpireAt;
-
-            /// <summary>Unity <c>Time.time</c> until the bar/turret flash ends.</summary>
-            public float FlashUntil;
-        }
 
         /// <summary>One planet's pad + turret GameObjects.</summary>
         sealed class PlanetDefenseGroup
@@ -410,80 +391,25 @@ namespace TitanOrbit.Game
             _font = ResolveFont();
         }
 
-        /// <summary>
-        /// Applies a server-authored turret HP punch from <see cref="BulletHitRpc"/>.
-        /// Called by <see cref="BulletVfxDriver"/> when PlanetId &gt; 0 on the hit payload.
-        /// <para>
-        /// [TITAN-ORBIT] Planet ghosts lag MaxSendRate — without this the HP bar looks frozen
-        /// even though <see cref="PlanetaryDefenseHitScan.ApplyDamage"/> already ran on the server.
-        /// We never invent permanent HP: ghost Health wins as soon as it is ≤ this value
-        /// (or within epsilon), or when the hold timer expires.
-        /// </para>
-        /// </summary>
-        /// <param name="planetId">Stable <see cref="PlanetState.PlanetId"/>.</param>
-        /// <param name="slotIndex">Slot index in the planet’s defense buffer.</param>
-        /// <param name="healthAfter">
-        /// Remaining Health after the hit (0 = destroyed / empty placeholder).
-        /// </param>
-        public static void NotifyAuthoritativeHit(int planetId, int slotIndex, float healthAfter)
-        {
-            if (s_Instance == null || planetId <= 0 || slotIndex < 0)
-                return;
-
-            s_Instance.ApplyOptimisticHit(planetId, slotIndex, healthAfter);
-        }
-
-        /// <summary>
-        /// Stores or tightens the optimistic HP for one pad and arms the hit flash.
-        /// Instance path for <see cref="NotifyAuthoritativeHit"/>.
-        /// </summary>
-        /// <param name="planetId">Stable planet id.</param>
-        /// <param name="slotIndex">Defense slot index.</param>
-        /// <param name="healthAfter">Server Health after this hit.</param>
-        void ApplyOptimisticHit(int planetId, int slotIndex, float healthAfter)
-        {
-            // --- Key + clamp ---
-            // [STANDARD] Dictionary key packs planet + slot so multi-pad planets stay independent.
-            long key = MakeOptimisticKey(planetId, slotIndex);
-            float clampedHp = math.max(0f, healthAfter);
-            float now = Time.time;
-
-            // --- Prefer the lowest remaining HP when multiple HitRpcs race ---
-            // [TITAN-ORBIT] Rapid fire can enqueue several hits before LateUpdate reads once;
-            // keep the most damaged value so the bar never “heals” from an older RPC.
-            if (_optimisticHpBySlot.TryGetValue(key, out var existing) &&
-                existing.ExpireAt > now)
-            {
-                clampedHp = math.min(clampedHp, existing.HealthAfter);
-            }
-
-            _optimisticHpBySlot[key] = new OptimisticSlotHp
-            {
-                HealthAfter = clampedHp,
-                ExpireAt = now + OptimisticHpHoldSeconds,
-                FlashUntil = now + HitFlashSeconds,
-            };
-        }
-
-        /// <summary>
-        /// Packs planet id + slot into one dictionary key (planet in high bits, slot in low byte).
-        /// </summary>
-        static long MakeOptimisticKey(int planetId, int slotIndex) =>
-            ((long)planetId << 8) | (byte)math.clamp(slotIndex, 0, 255);
-
         void OnDestroy()
         {
             if (s_Instance == this)
                 s_Instance = null;
             ClearAllGroups();
 
-            // --- Dispose cached map singleton query ---
+            // --- Dispose cached ECS queries ---
             // [ECS/DOTS] EntityQuery owns native allocations; leave them when the driver dies.
-            // This Entities version has no EntityQuery.IsCreated — track lifetime with _mapQueryCreated.
+            // This Entities version has no EntityQuery.IsCreated — track lifetime with bool flags.
             if (_mapQueryCreated)
             {
                 _mapQuery.Dispose();
                 _mapQueryCreated = false;
+            }
+
+            if (_occupantAimQueryCreated)
+            {
+                _occupantAimQuery.Dispose();
+                _occupantAimQueryCreated = false;
             }
         }
 
@@ -524,6 +450,11 @@ namespace TitanOrbit.Game
 
             float mapW = 0f, mapH = 0f;
             bool hasMap = TryResolveMapSize(em, out mapW, out mapH);
+
+            // --- Player names for occupied-pad labels (Lv N + name) ---
+            // [HYBRID] Singleton PlayerNameElement buffer only — no ship gathers.
+            // Needed because ship nameplates hide while the hull is stowed in a turret.
+            EcsGameBridge.RefreshPlayerDisplayNameCache();
 
             _alivePlanetIds.Clear();
             bool canAimShips = !ClientJoinSettleCache.ShouldSkipShipEntityQueries;
@@ -621,6 +552,7 @@ namespace TitanOrbit.Game
                         vis.ZoneVisual.SetRadiusLocal(padWorldRadius);
 
                     // --- Level + gems just below / outside the pad rim ---
+                    // Take Control is a single screen-space HUD button (not per-pad Canvas).
                     UpdateInfoPlate(
                         ref vis, slot, config, maxTurretLevel,
                         padWorldRadius, planetDisplay, slotWorld);
@@ -659,13 +591,20 @@ namespace TitanOrbit.Game
                             // Rest pose = radially outward from planet center. When a hostile is
                             // in this pad’s engage range, ease toward the lead aim point instead
                             // (same PlanetaryDefenseAimMath as server fire direction).
+                            // Player-occupied pads aim from the occupant ship's ShipInput instead.
                             Vector3 outwardFlat = new Vector3(
                                 slotWorld.x - planetDisplay.x,
                                 0f,
                                 slotWorld.z - planetDisplay.z);
                             Vector3 aimFlat = outwardFlat;
                             float bulletSpeed = math.max(1f, levelStats.bulletSpeed);
-                            if (canAimShips &&
+                            if (slot.OccupiedByNetworkId != 0)
+                            {
+                                // [HYBRID] Manual control — ghosted AimPlanarDir from the piloting ship.
+                                if (TryGetOccupantAimFlat(em, slot.OccupiedByNetworkId, out Vector3 occupiedAim))
+                                    aimFlat = occupiedAim;
+                            }
+                            else if (canAimShips &&
                                 hasMap &&
                                 TryFindNearestHostileDisplay(
                                     em, planet.Ownership, slotWorld, engageFromTurret,
@@ -696,7 +635,7 @@ namespace TitanOrbit.Game
                     }
 
                     // Thin HP strip under the turret footprint (hidden on empty pads).
-                    // [NETCODE] May punch from HitRpc optimistic Health before the ghost arrives.
+                    // [TITAN-ORBIT] HP from PlanetaryDefenseClientHealthSync (HitRpc), not planet ghost.
                     float turretScaleForBar = 0f;
                     if (vis.TurretInstance != null && vis.TurretInstance.activeSelf)
                         turretScaleForBar = vis.TurretInstance.transform.localScale.x;
@@ -740,6 +679,17 @@ namespace TitanOrbit.Game
             _ = planetDisplay;
             _ = slotWorld;
 
+            // --- Strip legacy per-pad WorldSpace Take Control canvases (FPS bomb) ---
+            // [TITAN-ORBIT] Style v5 parented a Canvas+GraphicRaycaster under every SlotRoot.
+            // Dozens of GraphicRaycasters made EventSystem crawl (~6 FPS). Always strip —
+            // do not wait for InfoStyleVersion rebuild (already-v6 pads can still hold orphans).
+            if (vis.SlotRoot != null)
+            {
+                Transform legacy = vis.SlotRoot.Find("TakeControlButton");
+                if (legacy != null)
+                    Destroy(legacy.gameObject);
+            }
+
             // --- Rebuild plate when style/hierarchy changes (adds gem icon, fixes orientation) ---
             // Do not key off GemIcon.sprite — Editor-only load can be null without looping Destroy.
             if (vis.InfoRoot == null || vis.StyleVersion != InfoStyleVersion)
@@ -765,12 +715,9 @@ namespace TitanOrbit.Game
 
             // --- Resolve desired copy (no TMP writes yet) ---
             // Empty pad → placeholder title (not “Lv 0”). Built pads → “Lv N”.
+            // Occupied pads → “Lv N” + player display name (second line) so others see who pilots.
             // Crown rung shows as Lv 7 (Solfeggio 963) once unlocked + built.
-            string levelText = slot.TurretLevel <= 0
-                ? EmptyPadPlaceholder
-                : slot.TurretLevel >= PlanetaryDefenseMath.CrownTurretLevel
-                    ? "Lv 7"
-                    : ResolveLevelLabel(slot.TurretLevel);
+            string levelText = ResolvePadTitleLabel(slot);
 
             bool atCap = slot.TurretLevel >= maxTurretLevel && slot.TurretLevel > 0;
             int costCurrent = 0;
@@ -810,6 +757,13 @@ namespace TitanOrbit.Game
                 vis.LevelText.fontSize = LevelFontSize;
                 vis.LevelText.fontStyle = FontStyles.Bold;
                 vis.LevelText.color = Color.white;
+                // Occupant name is a second line — allow height growth for layout preferredHeight.
+                bool twoLine = levelText.IndexOf('\n') >= 0;
+                vis.LevelText.enableWordWrapping = false;
+                vis.LevelText.overflowMode = TextOverflowModes.Overflow;
+                vis.LevelText.rectTransform.sizeDelta = twoLine
+                    ? new Vector2(18f, 6.4f)
+                    : new Vector2(18f, 3.2f);
                 vis.LevelText.text = levelText;
                 vis.CachedLevelText = levelText;
             }
@@ -863,6 +817,32 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Pad title line(s): Empty / Lv N, or Lv N + occupant display name when controlled.
+        /// </summary>
+        /// <param name="slot">Ghosted defense slot (level + OccupiedByNetworkId).</param>
+        static string ResolvePadTitleLabel(in PlanetaryDefenseSlotElement slot)
+        {
+            // --- Empty pad ---
+            if (slot.TurretLevel <= 0)
+                return EmptyPadPlaceholder;
+
+            // --- Level label ---
+            string levelLabel = slot.TurretLevel >= PlanetaryDefenseMath.CrownTurretLevel
+                ? "Lv 7"
+                : ResolveLevelLabel(slot.TurretLevel);
+
+            // --- Free pad: level only ---
+            if (slot.OccupiedByNetworkId <= 0)
+                return levelLabel;
+
+            // --- Occupied: show who is piloting (nameplate is hidden on the stowed hull) ---
+            // [HYBRID] Names come from EcsGameBridge cache (refreshed once per LateUpdate).
+            string rawName = EcsGameBridge.GetCachedPlayerDisplayName(slot.OccupiedByNetworkId);
+            string shortName = TruncateOccupantName(rawName);
+            return levelLabel + "\n" + shortName;
+        }
+
+        /// <summary>
         /// Interned-style level labels for common turret levels (avoids <c>"Lv " + n</c> every paint).
         /// </summary>
         /// <param name="turretLevel">1–6 (caller handles 0 / crown).</param>
@@ -878,6 +858,23 @@ namespace TitanOrbit.Game
                 case 6: return "Lv 6";
                 default: return "Lv " + turretLevel;
             }
+        }
+
+        /// <summary>
+        /// Shortens a player display name for pad labels (fixed char budget + ellipsis).
+        /// </summary>
+        static string TruncateOccupantName(string raw)
+        {
+            if (string.IsNullOrEmpty(raw))
+                return "Player";
+
+            string trimmed = raw.Trim();
+            if (trimmed.Length <= MaxOccupantNameChars)
+                return trimmed;
+
+            // Keep room for "…" so the glyph budget stays MaxOccupantNameChars.
+            int keep = Mathf.Max(1, MaxOccupantNameChars - 1);
+            return trimmed.Substring(0, keep) + "…";
         }
 
         /// <summary>
@@ -940,7 +937,7 @@ namespace TitanOrbit.Game
                 vis.BankYawRateDegPerSec = math.lerp(vis.BankYawRateDegPerSec, instantRate, velT);
             }
 
-            // --- Target bank from turn rate (shared ship curve + Inspector knobs) ---
+            // --- Target bank from turn rate (shared ship curve + ShipBankVisualSettings) ---
             float signedRate = vis.BankYawRateDegPerSec;
             if (math.abs(signedRate) < IdleBankAngularVelDeadbandDegPerSec)
                 signedRate = 0f;
@@ -1024,13 +1021,14 @@ namespace TitanOrbit.Game
 
             // Level on top (toward the pad when plate sits on −Z); cost row underneath.
             vis.LevelText.transform.localPosition = new Vector3(0f, top - levelH * 0.5f, 0f);
-            vis.CostText.transform.localPosition = new Vector3(textCenterX, -top + costH * 0.5f, 0f);
+            float costY = top - levelH - InfoLineGapLocal - costH * 0.5f;
+            vis.CostText.transform.localPosition = new Vector3(textCenterX, costY, 0f);
 
             if (vis.GemIcon != null && vis.GemIcon.enabled && vis.GemIcon.sprite != null)
             {
                 vis.GemIcon.transform.localPosition = new Vector3(
                     costRowLeft + iconW * 0.5f,
-                    -top + costH * 0.5f,
+                    costY,
                     0f);
             }
         }
@@ -1265,16 +1263,16 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Shows/hides the HP bar and sets fill width + color from ghosted Health / MaxHealth,
-        /// optionally punched by HitRpc optimistic Health-after (planet ghost MaxSendRate lag).
+        /// Shows/hides the HP bar and sets fill width + color from HitRpc remaining HP
+        /// (<see cref="PlanetaryDefenseClientHealthSync"/>) over ghost MaxHealth.
         /// Places the strip just past the turret mesh toward screen-below so it does not cut
         /// through the gun. Outline + bg always span full max HP; fill shrinks with current HP.
         /// </summary>
         /// <param name="turretWorldScale">
         /// Live turret <c>localScale.x</c> (0 when inactive) — drives bar offset and width.
         /// </param>
-        /// <param name="planetId">Stable planet id for optimistic HitRpc lookup.</param>
-        /// <param name="slotIndex">Slot index for optimistic HitRpc lookup.</param>
+        /// <param name="planetId">Stable planet id for the HitRpc HP store.</param>
+        /// <param name="slotIndex">Slot index for the HitRpc HP store.</param>
         void UpdateHealthBar(
             ref SlotVisual vis,
             PlanetaryDefenseSlotElement slot,
@@ -1285,47 +1283,23 @@ namespace TitanOrbit.Game
             if (vis.HealthBarRoot == null)
                 return;
 
-            // --- Resolve display HP (ghost vs HitRpc optimistic punch) ---
-            // [NETCODE] Ghost Health is truth long-term; HitRpc Health-after is truth for the
-            // short window after a confirmed server hit (same idea as asteroid AsteroidHealthAfter).
-            float displayHealth = slot.Health;
+            // --- Resolve display HP ---
+            // [TITAN-ORBIT] Same contract as asteroid HitRpc Health writes: remaining HP from
+            // BulletHitRpc is client truth. Planet ghost Health is layout seed / regen only.
             float maxHealth = slot.MaxHealth;
             bool showFromGhost = slot.TurretLevel > 0 && maxHealth > 0.01f;
-            bool hitFlash = false;
-            float flashT = 0f; // 1 = flash peak, 0 = flash done
-            bool optimisticDestroyed = false;
+            float displayHealth = PlanetaryDefenseClientHealthSync.ResolveDisplayHealth(
+                planetId,
+                slotIndex,
+                in slot,
+                Time.time,
+                out bool hitFlash,
+                out float flashT,
+                out bool overlayDestroyed);
 
-            long optKey = MakeOptimisticKey(planetId, slotIndex);
-            if (_optimisticHpBySlot.TryGetValue(optKey, out var opt))
-            {
-                float now = Time.time;
-                bool expired = now >= opt.ExpireAt;
-                // Ghost caught up (equal/lower) → drop override so regen / later snapshots win.
-                bool ghostCaughtUp = showFromGhost &&
-                    slot.Health <= opt.HealthAfter + OptimisticHpReconcileEpsilon;
-                // Ghost already shows empty/destroyed while we still hold a destroy punch.
-                bool ghostEmpty = !showFromGhost && opt.HealthAfter <= 0.01f;
-
-                if (expired || ghostCaughtUp || ghostEmpty)
-                {
-                    _optimisticHpBySlot.Remove(optKey);
-                }
-                else
-                {
-                    displayHealth = opt.HealthAfter;
-                    optimisticDestroyed = opt.HealthAfter <= 0.01f;
-                    if (now < opt.FlashUntil)
-                    {
-                        hitFlash = true;
-                        flashT = math.saturate(
-                            (opt.FlashUntil - now) / math.max(0.01f, HitFlashSeconds));
-                    }
-                }
-            }
-
-            // Show bar while the turret is alive on the ghost, or while we still punch a
-            // destroy-to-empty transition (bar drains to 0 before the mesh hides).
-            bool show = showFromGhost || (optimisticDestroyed && maxHealth > 0.01f);
+            // Show bar while the turret is alive on the ghost, or while we still drain a
+            // destroy-to-empty transition (bar empties before the mesh hides).
+            bool show = showFromGhost || (overlayDestroyed && maxHealth > 0.01f);
             if (vis.HealthBarRoot.gameObject.activeSelf != show)
                 vis.HealthBarRoot.gameObject.SetActive(show);
 
@@ -1608,9 +1582,51 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Reads ghosted <see cref="ShipInput.AimPlanarDir"/> from the ship owned by
+        /// <paramref name="networkId"/> (player currently occupying a defense pad).
+        /// Skipped during <see cref="ClientJoinSettleCache.ShouldSkipShipEntityQueries"/>.
+        /// Uses a cached EntityQuery — never allocates a new query per occupied pad per frame.
+        /// </summary>
+        bool TryGetOccupantAimFlat(EntityManager em, int networkId, out Vector3 aimFlat)
+        {
+            aimFlat = Vector3.zero;
+            if (networkId <= 0 || ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
+            // --- Ensure cached ship-aim query ---
+            // [ECS/DOTS] CreateEntityQuery every LateUpdate (× occupied pads) destroyed FPS (~6).
+            if (!_occupantAimQueryCreated)
+            {
+                _occupantAimQuery = em.CreateEntityQuery(
+                    ComponentType.ReadOnly<ShipTag>(),
+                    ComponentType.ReadOnly<GhostOwner>(),
+                    ComponentType.ReadOnly<ShipInput>());
+                _occupantAimQueryCreated = true;
+            }
+
+            using var owners = _occupantAimQuery.ToComponentDataArray<GhostOwner>(
+                Unity.Collections.Allocator.Temp);
+            using var inputs = _occupantAimQuery.ToComponentDataArray<ShipInput>(
+                Unity.Collections.Allocator.Temp);
+            for (int i = 0; i < owners.Length; i++)
+            {
+                if (owners[i].NetworkId != networkId)
+                    continue;
+                float2 dir = inputs[i].AimPlanarDir;
+                if (math.lengthsq(dir) < 0.0001f)
+                    return false;
+                aimFlat = new Vector3(dir.x, 0f, dir.y);
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Nearest enemy ship or people-transport VFX flight within
         /// <paramref name="engageRange"/> of the turret pad (<paramref name="muzzleDisplay"/>),
-        /// for cosmetic lead aim only. Returns planar velocity so
+        /// for cosmetic lead aim only. Ships fully landed on a gem moon are skipped so barrels
+        /// match server acquisition. Returns planar velocity so
         /// <see cref="PlanetaryDefenseAimMath"/> can match server fire direction.
         /// <para>
         /// Ships: presentation cache + ghosted <see cref="ShipKinematics"/> (dictionary walk —
@@ -1653,6 +1669,8 @@ namespace TitanOrbit.Game
 
                 var ship = em.GetComponentData<ShipState>(shipEntity);
                 if (ship.IsDead || ship.Team == TeamId.None || ship.Team == ownerTeam)
+                    continue;
+                if (ShipMoonDockState.IsFullyLandedOnMoon(em, shipEntity))
                     continue;
 
                 if (!GhostPresentationTransformCache.TryGetShip(shipEntity, out var snap))
@@ -1748,15 +1766,14 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Destroys every pad hub and clears HitRpc optimistic HP (session leave / no proxies).
+        /// Destroys every pad hub (session leave / no proxies). Turret HP lives in
+        /// <see cref="PlanetaryDefenseClientHealthSync"/> and is cleared with the session.
         /// </summary>
         void ClearAllGroups()
         {
             foreach (var kv in _groupsByPlanetId)
                 DestroyGroup(kv.Value);
             _groupsByPlanetId.Clear();
-            // [TITAN-ORBIT] Drop stale punches so a new join cannot flash old planet ids.
-            _optimisticHpBySlot.Clear();
         }
 
         static void DestroyGroup(PlanetDefenseGroup group)

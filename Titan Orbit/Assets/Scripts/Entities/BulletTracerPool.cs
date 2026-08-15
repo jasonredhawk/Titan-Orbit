@@ -143,6 +143,17 @@ namespace TitanOrbit.Entities
                     trails[i].Clear();
             }
 
+            // Stretch writes child localScale.Z during flight — restore uniform XY so the
+            // next Rent does not start from a longer slug.
+            if (root.transform.childCount > 0)
+            {
+                Transform visual = root.transform.GetChild(0);
+                Vector3 s = visual.localScale;
+                float uniform = Mathf.Max(0.01f, (Mathf.Abs(s.x) + Mathf.Abs(s.y)) * 0.5f);
+                visual.localScale = new Vector3(uniform, uniform, uniform);
+                visual.localPosition = Vector3.zero;
+            }
+
             EnsureRoot();
             root.SetActive(false);
             root.transform.SetParent(s_root, false);

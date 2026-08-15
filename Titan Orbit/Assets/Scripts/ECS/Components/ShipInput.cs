@@ -46,15 +46,49 @@ namespace TitanOrbit.ECS
         [GhostField]
         public InputEvent CycleBullet;
 
-        /// <summary>True when space-brake deceleration is toggled on.</summary>
+        /// <summary>
+        /// [NETCODE] InputEvent — ALT / FireRocket. Server <c>ShipRocketFireSystem</c> consumes
+        /// one store rocket charge (unless infinite-rocket debug) and spawns a homing shot.
+        /// </summary>
         [GhostField]
-        public bool SpaceBrakes;
+        public InputEvent FireRocket;
+
+        /// <summary>
+        /// When true, skip space-brake deceleration (frictionless coast). Default
+        /// <c>false</c> so <c>default(ShipInput)</c> / baked ghosts still brake.
+        /// Left Ctrl toggles this via <c>PlayerInputHandler</c>.
+        /// </summary>
+        [GhostField]
+        public bool DisableSpaceBrakes;
 
         /// <summary>When true at a landed moon, gems transfer to the planet (manual or auto-deposit toggle).</summary>
         [GhostField]
         public bool WantDepositGems;
 
+        /// <summary>
+        /// Which rocket HUD row to fire (0 = first pack). Client <c>RocketSlotSelection</c>
+        /// updates this every tick; the server maps it onto the equipment buffer.
+        /// Kept last so older command layouts still line up on <see cref="DisableSpaceBrakes"/>.
+        /// </summary>
+        [GhostField]
+        public int SelectedRocketSlot;
+
+        /// <summary>
+        /// [NETCODE] InputEvent — E / PlaceMine. Server <c>ShipMineDeploySystem</c> consumes
+        /// one store mine charge (unless infinite-mine debug) and appends a deployed mine.
+        /// Appended after <see cref="SelectedRocketSlot"/> so older command layouts still line up.
+        /// </summary>
+        [GhostField]
+        public InputEvent PlaceMine;
+
+        /// <summary>
+        /// Which mine HUD row to place (0 = first pack). Client <c>MineSlotSelection</c>
+        /// updates this every tick; the server maps it onto the equipment buffer.
+        /// </summary>
+        [GhostField]
+        public int SelectedMineSlot;
+
         public FixedString512Bytes ToFixedString() =>
-            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},b={SpaceBrakes},d={WantDepositGems}]";
+            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},m={PlaceMine.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot},n={SelectedMineSlot}]";
     }
 }

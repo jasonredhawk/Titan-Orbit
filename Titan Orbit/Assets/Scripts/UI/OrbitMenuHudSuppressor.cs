@@ -33,9 +33,8 @@ namespace TitanOrbit.UI
         void LateUpdate()
         {
             // --- Toggle hide when orbit station opens/closes ---
-            bool shouldHide = OrbitStationUI.Instance != null
-                ? OrbitStationUI.Instance.IsMoonDockMenuOpen
-                : MoonOrbitClientState.IsOrbitMenuVisible;
+            bool shouldHide = MoonOrbitClientState.IsOrbitMenuVisible
+                || (OrbitStationUI.Instance != null && OrbitStationUI.Instance.IsMoonDockMenuOpen);
             if (shouldHide == _isHiding)
                 return;
 
@@ -53,8 +52,11 @@ namespace TitanOrbit.UI
             // --- Alpha-zero all gameplay canvases except orbit station ---
             RestoreGameplayHud();
 
-            Transform keepVisible = OrbitStationUI.Instance != null
+            Transform keepA = OrbitStationUI.Instance != null
                 ? OrbitStationUI.Instance.transform
+                : null;
+            Transform keepB = MoonOrbitStationUI.Instance != null
+                ? MoonOrbitStationUI.Instance.transform
                 : null;
 
             var canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
@@ -64,17 +66,39 @@ namespace TitanOrbit.UI
                 if (canvas == null)
                     continue;
 
-                if (keepVisible != null && keepVisible.IsChildOf(canvas.transform))
+                // Rocket / brakes HUDs hide their own panels — do not alpha-zero a shared parent canvas.
+                if (canvas.GetComponent<RocketLoadoutHUD>() != null)
+                    continue;
+                if (canvas.GetComponent<SpaceBrakesHUD>() != null)
+                    continue;
+
+                if (ShouldKeepOrbitCanvas(canvas.transform, keepA, keepB))
+                    continue;
+
+                if (keepA != null && keepA.IsChildOf(canvas.transform))
                 {
-                    HideCanvasSiblingsExcept(canvas.transform, keepVisible, _hidden);
+                    HideCanvasSiblingsExcept(canvas.transform, keepA, _hidden);
                     continue;
                 }
 
-                if (keepVisible != null && canvas.transform.IsChildOf(keepVisible))
+                if (keepB != null && keepB.IsChildOf(canvas.transform))
+                {
+                    HideCanvasSiblingsExcept(canvas.transform, keepB, _hidden);
                     continue;
+                }
 
                 PushCanvasGroupHide(canvas.gameObject, _hidden);
             }
+        }
+
+        /// <summary>True when this canvas is the orbit menu (or nested under it).</summary>
+        static bool ShouldKeepOrbitCanvas(Transform canvasTransform, Transform keepA, Transform keepB)
+        {
+            if (keepA != null && canvasTransform.IsChildOf(keepA))
+                return true;
+            if (keepB != null && canvasTransform.IsChildOf(keepB))
+                return true;
+            return false;
         }
 
         static void HideCanvasSiblingsExcept(Transform canvasTransform, Transform keepVisible, List<HiddenUiState> hidden)

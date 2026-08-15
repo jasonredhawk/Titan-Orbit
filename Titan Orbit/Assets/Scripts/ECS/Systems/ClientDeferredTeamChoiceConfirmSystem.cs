@@ -1,7 +1,5 @@
 using TitanOrbit.Core;
-using Unity.Collections;
 using Unity.Entities;
-using Unity.Mathematics;
 using Unity.NetCode;
 
 namespace TitanOrbit.ECS
@@ -17,10 +15,14 @@ namespace TitanOrbit.ECS
     /// deferred for the full <see cref="ClientJoinSettleCache.ArmPostTeamChoiceHold"/> countdown.
     /// </para>
     /// <para>
-    /// Debug 1af271: hold expired with Instantiates still at map meta-N and no seed — Confirm
-    /// unlocked spawn-wait UI with no hull forever. After the hold, wait up to
-    /// <see cref="MaxHullWaitFrames"/> for Instantiates-hook seed or InstantiatesSession climbing
-    /// past the Result baseline before flushing.
+    /// After the hold, wait up to <see cref="MaxHullWaitFrames"/> for the <b>real</b> owner ship
+    /// from GhostReceive (<see cref="LocalShipEntitySeed.HasLiveOwnedShipSeed"/>). Do not Instantiates
+    /// a client predicted hull — that workaround produced a visible ship that could not move.
+    /// Overlay wait is the server spawn + snapshot RTT.
+    /// </para>
+    /// <para>
+    /// Do <b>not</b> treat <c>InstantiatesSession</c> climbing as “hull arrived”. That counter
+    /// only tracks GhostSpawn map Instantiates.
     /// </para>
     /// World: ClientSimulation.
     /// </summary>
@@ -29,15 +31,12 @@ namespace TitanOrbit.ECS
     public partial struct ClientDeferredTeamChoiceConfirmSystem : ISystem
     {
         /// <summary>
-        /// Extra frames after Instantiates hold to wait for hull Instantiates / seed before Confirm.
-        /// ~4s at 60 Hz — covers Local Host GhostSend + client Instantiates 1/frame.
+        /// Extra frames after Instantiates hold to wait for GhostReceive of the server ship.
+        /// ~6s at 60 Hz — covers Relay RTT + GhostSend after sitting on Join Team.
         /// </summary>
-        public const int MaxHullWaitFrames = 240;
+        public const int MaxHullWaitFrames = 360;
 
-        /// <summary>InstantiatesSession sampled when deferred Confirm was first seen.</summary>
-        static int s_BaselineInstantiates = -1;
-
-        /// <summary>Frames spent waiting for hull after the post–TeamChoice hold expired.</summary>
+        /// <summary>Frames spent waiting for the GhostReceive hull after the hold expired.</summary>
         static int s_HullWaitFrames;
 
         /// <summary>Clears hull-wait statics on domain reload.</summary>
@@ -45,28 +44,21 @@ namespace TitanOrbit.ECS
             UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
         static void ResetStatics()
         {
-            s_BaselineInstantiates = -1;
             s_HullWaitFrames = 0;
         }
 
         /// <summary>
         /// Applies a queued deferred Confirm once the post–TeamChoice Instantiates hold has expired
-        /// and (when possible) a local hull seed or Instantiates bump is observed.
+        /// and (when possible) GhostReceive has Instantiated the owned ship ghost.
         /// </summary>
         public void OnUpdate(ref SystemState state)
         {
             // --- Nothing queued ---
             if (!ClientTeamFlowState.HasDeferredTeamChoiceConfirmPending)
             {
-                s_BaselineInstantiates = -1;
                 s_HullWaitFrames = 0;
                 return;
             }
-
-            // --- Latch Instantiates baseline while deferred is pending ---
-            // [TITAN-ORBIT] Map Instantiates may already equal meta N; ship Instantiates bumps the counter.
-            if (s_BaselineInstantiates < 0)
-                s_BaselineInstantiates = TitanOrbitJoinLoadCounters.InstantiatesSession;
 
             // --- Drop stale seed handles (Domain Reload off) before hull checks ---
             var em = state.EntityManager;
@@ -76,47 +68,23 @@ namespace TitanOrbit.ECS
             if (ClientJoinSettleCache.IsPostTeamChoiceHoldActive)
                 return;
 
-            // --- After hold: wait for hull Instantiates / live seed (or timeout) ---
-            bool hasLiveSeed = LocalShipEntitySeed.HasLiveOwnedShipSeed(em);
-            bool hullArrived =
-                hasLiveSeed ||
-                TitanOrbitJoinLoadCounters.InstantiatesSession > s_BaselineInstantiates;
+            // --- After hold: wait for GhostReceive owner ship (or timeout) ---
+            // [NETCODE] TeamManagementSystem Instantiates the ship on the server. GhostSend
+            // streams it (relevancy includes ShipTag; GhostConnectionPosition is set at spawn).
+            // LocalShipEntitySeed.NotifyShipInstantiated records the client replica — no gather.
+            bool hullArrived = LocalShipEntitySeed.HasLiveOwnedShipSeed(em);
+
+            int instantiates = TitanOrbitJoinLoadCounters.InstantiatesSession;
 
             if (!hullArrived && s_HullWaitFrames < MaxHullWaitFrames)
             {
                 s_HullWaitFrames++;
-
-                // --- Re-arm predicted Instantiates if the first Request was skipped / lost ---
-                // [TITAN-ORBIT] Editor.log: first Play Instantiates predicted hull; later Plays
-                // (Domain Reload off) never logged Instantiates while Confirm waited 240 frames.
-                if (!ClientPredictedShipSpawnRequest.Pending &&
-                    (s_HullWaitFrames == 1 || s_HullWaitFrames % 30 == 0))
-                {
-                    int networkId = 0;
-                    using (var ids = em.CreateEntityQuery(
-                                   typeof(NetworkStreamConnection),
-                                   typeof(NetworkStreamInGame),
-                                   typeof(NetworkId))
-                               .ToComponentDataArray<NetworkId>(Allocator.Temp))
-                    {
-                        if (ids.Length > 0)
-                            networkId = ids[0].Value;
-                    }
-
-                    var team = ClientTeamFlowState.LastRequestedTeam;
-                    if (networkId > 0 && team != TeamId.None)
-                        ClientPredictedShipSpawnRequest.Request(
-                            networkId, team, float3.zero, hasSpawnPos: false);
-                }
-
                 if (s_HullWaitFrames == 1 || s_HullWaitFrames % 60 == 0)
                 {
                     UnityEngine.Debug.Log(
-                        "[TeamChoiceResult] Waiting for hull Instantiates/seed before Confirm " +
+                        "[TeamChoiceResult] Waiting for GhostReceive owner ship before Confirm " +
                         $"(wait={s_HullWaitFrames}/{MaxHullWaitFrames}, " +
-                        $"instantiates={TitanOrbitJoinLoadCounters.InstantiatesSession}, " +
-                        $"baseline={s_BaselineInstantiates}, hasSeed={hasLiveSeed}, " +
-                        $"predPending={ClientPredictedShipSpawnRequest.Pending}).");
+                        $"instantiates={instantiates}).");
                 }
 
                 return;
@@ -133,7 +101,6 @@ namespace TitanOrbit.ECS
                 $"instantiates={TitanOrbitJoinLoadCounters.InstantiatesSession} " +
                 $"hullWait={s_HullWaitFrames} hullArrived={hullArrived}).");
 
-            s_BaselineInstantiates = -1;
             s_HullWaitFrames = 0;
         }
     }

@@ -7,15 +7,12 @@
   Scans client-facing C# for patterns that historically cause native Crash!!! after Join Team,
   and for regressions that reintroduce full-map asteroid GhostSpawn Instantiates floods.
 
-  Run before every Windows client build:
-    powershell -File tools/verify-join-crash-gates.ps1
+  Optional diagnostic (not a ship gate). Live-match late-join uses seed-hydrate + occupancy
+  + Unity GhostSpawn Instantiates of ships/planets/gems.
 
-  Exit codes:
-    0 = no high-severity findings
-    1 = high-severity findings (do not ship Windows client)
-    2 = script / path error
+  powershell -File tools/verify-join-crash-gates.ps1
 
-  Paired: Titan Orbit/tools/netcode-patches/JOIN-CRASH-VERIFY.md
+  Paired: Titan Orbit/tools/netcode-patches/JOIN-WORLD-READY.md
 #>
 
 [CmdletBinding()]
@@ -124,6 +121,7 @@ $exemptBaseNames = @(
     'BulletHitRpcClientSystem',
     'BulletSpawnRpcClientSystem',
     'AsteroidRespawnRpcClientSystem',
+    'PlayerNameAnnounceClientSystem',
     'ClientLocalMapBodySpawn',
     'ClientMapHydrateSystem',
     'MapLayoutBlueprint',

@@ -6,6 +6,7 @@ using UnityEngine.UI;
 using TMPro;
 using TitanOrbit.Entities;
 using TitanOrbit.Core;
+using TitanOrbit.ECS;
 using TitanOrbit.Game;
 using TitanOrbit.Systems;
 using TitanOrbit.Data;
@@ -330,17 +331,17 @@ namespace TitanOrbit.UI
                 return existing;
             }
 
-            Canvas canvas = UnityEngine.Object.FindFirstObjectByType<Canvas>();
-            if (canvas == null)
-            {
-                var go = new GameObject("Canvas");
-                canvas = go.AddComponent<Canvas>();
-                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                var scaler = go.AddComponent<CanvasScaler>();
-                scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-                scaler.referenceResolution = new Vector2(1920, 1080);
-                go.AddComponent<GraphicRaycaster>();
-            }
+            // --- Dedicated canvas ---
+            // [TITAN-ORBIT] Do not parent under RocketLoadoutHUD (or any other AfterSceneLoad
+            // overlay). That HUD hides itself on the moon; sharing its Canvas hid Orbit Menu.
+            var canvasGo = new GameObject("OrbitStationCanvas");
+            var canvas = canvasGo.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 200;
+            var scaler = canvasGo.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920, 1080);
+            canvasGo.AddComponent<GraphicRaycaster>();
 
             var uiObj = new GameObject("OrbitStationUI");
             uiObj.transform.SetParent(canvas.transform, false);
@@ -3266,7 +3267,10 @@ namespace TitanOrbit.UI
             bool isHomeStore = currentPlanet is HomePlanet;
             bool hasEmptySlot = currentShip.HasEmptySlot;
             int shipLevel = currentShip.ShipLevel;
-            int spinTier = CardShopSystem.GetSpinCardTier(shipLevel, homeLevel);
+            // [TITAN-ORBIT] Card tier is min(ship, this moon's planet), not home.
+            // A level-6 ship on a level-3 moon only spins level-3 cards.
+            int storePlanetLevel = GetStorePurchasePlanetLevel();
+            int spinTier = CardShopSystem.GetSpinCardTier(shipLevel, storePlanetLevel);
             float spinCost = CardShopSystem.Instance.GetCardSpinCost(spinTier);
             int poolCount = CardShopSystem.Instance.GetCardPoolCountForSpin(currentShip, spinTier, homeLevel, isHomeStore, currentPlanet.PlanetId, currentShip.ShipTeam);
 
@@ -3376,7 +3380,7 @@ namespace TitanOrbit.UI
                     cardRarityLabels[i].color = new Color(1f, 1f, 1f, 0.88f);
                 }
                 int cardLvl = Mathf.Max(1, card.cardLevel);
-                bool levelOk = cardLvl <= shipLevel;
+                bool levelOk = cardLvl <= StoreItemData.GetStorePurchaseLevel(shipLevel, storePlanetLevel);
                 if (cardButtons[i] != null)
                 {
                     bool canChoose = hasEmptySlot && levelOk && !string.IsNullOrEmpty(offerId);
@@ -3495,8 +3499,13 @@ namespace TitanOrbit.UI
             // Do NOT re-apply auto-deposit every sidebar refresh — that spammed SetWantDepositGems
             // RPCs and could race HideMenu / metronome clear on the Windows client.
             orbitDockSidebar.RefreshAutoDepositToggle(GetSavedAutoDepositGems());
-            float maxPower = shipUpgradeTree != null ? shipUpgradeTree.GetMaxDisplayPower() : 0.001f;
-            orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxPower);
+            bool healingActive = EcsGameBridge.TryGetLocalShipLoadout(out ShipLoadoutState healLoadout)
+                && healLoadout.HealingBulletsActive;
+            orbitDockSidebar.RefreshHealingBulletsToggle(healingActive);
+            ShipPowerBarStatMaxes maxes = shipUpgradeTree != null
+                ? shipUpgradeTree.GetPowerBarStatMaxes()
+                : ShipFamilyPowerBarNorm.GetGlobalMaxPerStat();
+            orbitDockSidebar.RefreshCurrentShip(PopulateTreeNode, maxes);
             RefreshMoonDockStore();
         }
 
@@ -3509,6 +3518,11 @@ namespace TitanOrbit.UI
         private void OnAutoDepositToggleChanged(bool enabled)
         {
             ApplyAutoDepositToShip(enabled);
+        }
+
+        private void OnHealingBulletsToggleChanged(bool healingActive)
+        {
+            MoonOrbitRpcClient.SetHealingBullets(healingActive);
         }
 
         private void ApplyAutoDepositPreferenceToShip()
@@ -3555,7 +3569,7 @@ namespace TitanOrbit.UI
             if (needsEquipmentRebuild)
                 RebuildMoonDockEquipmentStore(family);
 
-            int shipLevel = currentShip != null ? currentShip.ShipLevel : 1;
+            int shipLevel = GetStorePurchaseLevel();
             for (int i = 0; i < _moonDockStoreCards.Count; i++)
             {
                 MoonDockStoreCardBinding card = _moonDockStoreCards[i];
@@ -3600,12 +3614,12 @@ namespace TitanOrbit.UI
                     int count = CountSupportItem(currentShip, card.supportItem);
                     canBuy = currentShip != null && contributedGems >= price && currentShip.HasEmptyEquipmentSlot;
                     string supportDesc = StoreItemData.GetDescription(card.supportItem, shipLevel);
-                    string supportName = StoreItemData.IsLeveledDrone(card.supportItem)
+                    string supportName = StoreItemData.IsLeveledStoreGood(card.supportItem)
                         ? StoreItemData.GetDisplayName(card.supportItem, shipLevel)
                         : null;
                     if (card.titleText != null && supportName != null)
                         card.titleText.text = supportName;
-                    if (card.descriptionText != null && StoreItemData.IsLeveledDrone(card.supportItem))
+                    if (card.descriptionText != null && StoreItemData.IsLeveledStoreGood(card.supportItem))
                         card.descriptionText.text = supportDesc;
                     subline = count > 0 ? $"\u00d7{count} owned" : supportDesc;
                 }
@@ -3667,7 +3681,7 @@ namespace TitanOrbit.UI
             for (int c = _moonDockStoreGridContent.childCount - 1; c >= 0; c--)
                 Destroy(_moonDockStoreGridContent.GetChild(c).gameObject);
 
-            int shipLevel = currentShip != null ? currentShip.ShipLevel : 1;
+            int shipLevel = GetStorePurchaseLevel();
             if (family?.components != null)
             {
                 var sorted = new List<ShipFamilyComponentEntry>();
@@ -3692,7 +3706,7 @@ namespace TitanOrbit.UI
 
             foreach (StoreItemType item in Enum.GetValues(typeof(StoreItemType)))
             {
-                if (StoreItemData.IsShipComponent(item))
+                if (!StoreItemData.IsSoldInOrbitMenu(item))
                     continue;
                 CreateMoonDockSupportStoreCard(_moonDockStoreGridContent, item);
             }
@@ -3922,7 +3936,7 @@ namespace TitanOrbit.UI
             Color cardColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
                 StoreItemData.GetAbilityColorStatIndex(itemType), 0.92f);
 
-            int shipLevel = currentShip != null ? Mathf.Max(1, currentShip.ShipLevel) : 1;
+            int shipLevel = GetStorePurchaseLevel();
             CreateMoonDockEquipmentItemTile(
                 parent,
                 "Support_" + itemType,
@@ -3944,7 +3958,7 @@ namespace TitanOrbit.UI
 
             if (titleTmp != null)
             {
-                titleTmp.text = StoreItemData.IsLeveledDrone(itemType)
+                titleTmp.text = StoreItemData.IsLeveledStoreGood(itemType)
                     ? StoreItemData.GetDisplayName(itemType, shipLevel)
                     : StoreItemData.GetShortDisplayName(itemType);
             }
@@ -5308,7 +5322,10 @@ namespace TitanOrbit.UI
                     if (!filled)
                         equipmentDescTexts[i].text = "Buy from Store tab";
                     else if (entry.IsShipComponent && componentEntry != null)
-                        equipmentDescTexts[i].text = ShipComponentStoreData.GetStatsDescription(componentEntry, shipLevel, shipFamily, 2);
+                    {
+                        int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
+                        equipmentDescTexts[i].text = ShipComponentStoreData.GetStatsDescription(componentEntry, componentLevel, shipFamily, 2);
+                    }
                     else
                         equipmentDescTexts[i].text = StoreItemData.GetDescription(itemType);
                 }
@@ -5404,11 +5421,13 @@ namespace TitanOrbit.UI
                     equipmentTitleTexts[index].text = ShipComponentStoreData.GetDisplayName(componentEntry);
                 else if (entry.IsShipComponent)
                     equipmentTitleTexts[index].text = ShipComponentStoreData.FormatComponentId(entry.ComponentId);
-                else if (StoreItemData.IsLeveledDrone(itemType))
+                else if (StoreItemData.IsLeveledStoreGood(itemType))
                 {
                     int titleLevel = entry.itemLevel > 0
                         ? entry.itemLevel
-                        : StoreItemData.DroneReferenceMaxLevel;
+                        : (StoreItemData.IsRocket(itemType) || StoreItemData.IsMine(itemType)
+                            ? 1
+                            : StoreItemData.DroneReferenceMaxLevel);
                     equipmentTitleTexts[index].text = StoreItemData.GetDisplayName(itemType, titleLevel);
                 }
                 else
@@ -5423,8 +5442,9 @@ namespace TitanOrbit.UI
             {
                 if (filled && entry.IsShipComponent && componentEntry != null)
                 {
-                    float power = ShipComponentStoreData.GetComponentPowerScore(componentEntry, shipLevel, family);
-                    slotUi.sublineText.text = FormatMoonDockEquipmentSubline(shipLevel, power, owned: true);
+                    int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
+                    float power = ShipComponentStoreData.GetComponentPowerScore(componentEntry, componentLevel, family);
+                    slotUi.sublineText.text = FormatMoonDockEquipmentSubline(componentLevel, power, owned: true);
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else if (filled && StoreItemData.IsDrone(itemType))
@@ -5440,6 +5460,18 @@ namespace TitanOrbit.UI
                     }
                     else
                         slotUi.sublineText.text = $"{entry.remainingCharges}/{maxHp} HP";
+                    slotUi.sublineText.gameObject.SetActive(true);
+                }
+                else if (filled && StoreItemData.IsRocket(itemType))
+                {
+                    int rocketLevel = entry.itemLevel > 0 ? entry.itemLevel : 1;
+                    slotUi.sublineText.text = $"Lv.{rocketLevel} · \u00d7{entry.remainingCharges}";
+                    slotUi.sublineText.gameObject.SetActive(true);
+                }
+                else if (filled && StoreItemData.IsMine(itemType))
+                {
+                    int mineLevel = entry.itemLevel > 0 ? entry.itemLevel : 1;
+                    slotUi.sublineText.text = $"Lv.{mineLevel} · \u00d7{entry.remainingCharges}";
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else if (filled && !entry.IsShipComponent)
@@ -5462,9 +5494,10 @@ namespace TitanOrbit.UI
                 slotUi.powerBar.gameObject.SetActive(showComponentPowerBar);
                 if (showComponentPowerBar)
                 {
+                    int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
                     slotUi.powerBar.ConfigureLayoutScale(1f, 1f);
                     slotUi.powerBar.ApplyEquipmentBreakdown(
-                        ShipComponentStoreData.GetPowerBreakdown(componentEntry, shipLevel, family),
+                        ShipComponentStoreData.GetPowerBreakdown(componentEntry, componentLevel, family),
                         maxComponentPower,
                         trackWidth);
                 }
@@ -5742,6 +5775,7 @@ namespace TitanOrbit.UI
             orbitDockSidebar.BindStation(this);
             orbitDockSidebar.BindNavigation(OnSidebarNavSelected);
             orbitDockSidebar.BindAutoDeposit(OnAutoDepositToggleChanged);
+            orbitDockSidebar.BindHealingBullets(OnHealingBulletsToggleChanged);
             orbitDockSidebar.EnsureBuilt();
 
             moonDockMainHost = new GameObject("MoonDockMainHost").AddComponent<RectTransform>();
@@ -6331,6 +6365,29 @@ namespace TitanOrbit.UI
                 _cardSpinButtonLayout.preferredWidth = spinBandWidth;
                 _cardSpinButtonLayout.minWidth = spinBandWidth;
             }
+        }
+
+        /// <summary>
+        /// Level of the planet whose moon is hosting this Orbit Menu (1 if unknown).
+        /// </summary>
+        private int GetStorePurchasePlanetLevel()
+        {
+            Planet store = GetShipUpgradeStorePlanet();
+            if (store != null)
+                return Mathf.Max(1, store.PlanetLevel);
+            if (currentPlanet != null)
+                return Mathf.Max(1, currentPlanet.PlanetLevel);
+            return 1;
+        }
+
+        /// <summary>
+        /// Level the store may sell drones, components, and cards at:
+        /// <c>min(ship, docked planet)</c>. Slot counts still follow the real ship level.
+        /// </summary>
+        private int GetStorePurchaseLevel()
+        {
+            int shipLevel = currentShip != null ? Mathf.Max(1, currentShip.ShipLevel) : 1;
+            return StoreItemData.GetStorePurchaseLevel(shipLevel, GetStorePurchasePlanetLevel());
         }
 
         private Planet GetShipUpgradeStorePlanet()

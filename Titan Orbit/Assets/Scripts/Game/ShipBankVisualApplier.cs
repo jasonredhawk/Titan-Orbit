@@ -13,9 +13,9 @@ namespace TitanOrbit.Game
     /// EcsWorldVisualizer does not overwrite it. Reads ShipKinematics for idle detection and yaw rate
     /// from proxy rotation. Suppressed during moon dock. Cosmetic only — no sim effect.
     /// <para>
-    /// Tune Max Bank / Sensitivity / Smoothing on the scene <see cref="EcsWorldVisualizer"/>
-    /// (Ship Banking header). Those values publish into <see cref="ShipBankVisualSettingsCache"/>;
-    /// this component samples the cache each frame so Inspector tweaks apply without respawning.
+    /// Tune Max Bank / Sensitivity / Smoothing on <see cref="ShipBankVisualSettings"/>
+    /// (family field or Resources default). Bound assets are sampled each frame so
+    /// Inspector tweaks apply without respawning.
     /// </para>
     /// </summary>
     [DefaultExecutionOrder(85)]
@@ -28,17 +28,18 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Optional per-proxy override for peak roll (°). ≤ 0 means use
-        /// <see cref="ShipBankVisualSettingsCache.MaxBankAngleDegrees"/>.
+        /// the bound <see cref="ShipBankVisualSettings"/> / cache.
         /// </summary>
         [SerializeField] float maxBankAngleOverride = -1f;
 
         /// <summary>
         /// Optional per-proxy override for smoothing. ≤ 0 means use
-        /// <see cref="ShipBankVisualSettingsCache.BankSmoothing"/>.
+        /// the bound <see cref="ShipBankVisualSettings"/> / cache.
         /// </summary>
         [SerializeField] float bankSmoothingOverride = -1f;
 
         Entity _shipEntity;
+        ShipBankVisualSettings _settings;
         Transform _bankPivot;
         float _currentBankAngle;
         float _cachedBankAngularVelDegPerSec;
@@ -48,16 +49,25 @@ namespace TitanOrbit.Game
 
         /// <summary>Links to ship entity and ensures BankPivot hierarchy exists under the proxy root.</summary>
         /// <param name="shipEntity">ECS ship ghost this proxy follows.</param>
+        /// <param name="settings">
+        /// Family or shared bank profile. Null falls back to
+        /// <see cref="ShipBankVisualSettingsCache"/> (Resources default).
+        /// </param>
         /// <param name="maxBankDegrees">
-        /// Peak roll override (°). ≤ 0 keeps cache / Inspector defaults from EcsWorldVisualizer.
+        /// Peak roll override (°). ≤ 0 keeps the bound asset / cache.
         /// </param>
         /// <param name="bankSmooth">
-        /// Smoothing override. ≤ 0 keeps cache / Inspector defaults.
+        /// Smoothing override. ≤ 0 keeps the bound asset / cache.
         /// </param>
-        public void Bind(Entity shipEntity, float maxBankDegrees = -1f, float bankSmooth = -1f)
+        public void Bind(
+            Entity shipEntity,
+            ShipBankVisualSettings settings = null,
+            float maxBankDegrees = -1f,
+            float bankSmooth = -1f)
         {
             // --- Bind ---
             _shipEntity = shipEntity;
+            _settings = settings != null ? settings : ShipBankVisualSettings.LoadDefault();
             if (maxBankDegrees > 0f)
                 maxBankAngleOverride = maxBankDegrees;
             if (bankSmooth > 0f)
@@ -163,17 +173,31 @@ namespace TitanOrbit.Game
             ApplyVisualBanking(dt, smoothing);
         }
 
-        /// <summary>Peak roll from per-proxy override, else the visualizer-published cache.</summary>
-        float ResolveMaxBankAngle() =>
-            maxBankAngleOverride > 0f
-                ? maxBankAngleOverride
+        /// <summary>Peak roll from per-proxy override, else the bound asset / cache.</summary>
+        float ResolveMaxBankAngle()
+        {
+            if (maxBankAngleOverride > 0f)
+                return maxBankAngleOverride;
+            return _settings != null
+                ? _settings.ClampedMaxBankAngleDegrees
                 : ShipBankVisualSettingsCache.MaxBankAngleDegrees;
+        }
 
-        /// <summary>Smoothing from per-proxy override, else the visualizer-published cache.</summary>
-        float ResolveSmoothing() =>
-            bankSmoothingOverride > 0f
-                ? bankSmoothingOverride
+        /// <summary>Smoothing from per-proxy override, else the bound asset / cache.</summary>
+        float ResolveSmoothing()
+        {
+            if (bankSmoothingOverride > 0f)
+                return bankSmoothingOverride;
+            return _settings != null
+                ? _settings.ClampedBankSmoothing
                 : ShipBankVisualSettingsCache.BankSmoothing;
+        }
+
+        /// <summary>Turn-rate → bank multiplier from the bound asset / cache.</summary>
+        float ResolveSensitivity() =>
+            _settings != null
+                ? _settings.ClampedBankSensitivity
+                : ShipBankVisualSettingsCache.BankSensitivity;
 
         /// <summary>Smooths yaw rate from proxy root rotation (presentation pose).</summary>
         void SampleBankAngularVelocity(float dt, float smoothing)
@@ -225,13 +249,13 @@ namespace TitanOrbit.Game
                 && Mathf.Abs(signedAngularVelDegPerSec) < IdleBankAngularVelDeadbandDegPerSec)
                 signedAngularVelDegPerSec = 0f;
 
-            // --- Target bank from turn rate + Inspector sensitivity ---
+            // --- Target bank from turn rate + family / shared asset sensitivity ---
             float globalMaxTurnDegPerSec = ShipPropulsionAggregation.GetGlobalMaxTurnSpeedDegreesPerSecond();
             float targetBankAngle = ShipPropulsionAggregation.ComputeVisualBankTargetAngle(
                 signedAngularVelDegPerSec,
                 ResolveMaxBankAngle(),
                 globalMaxTurnDegPerSec,
-                ShipBankVisualSettingsCache.BankSensitivity);
+                ResolveSensitivity());
 
             float bankT = 1f - Mathf.Exp(-smoothing * dt);
             _currentBankAngle = Mathf.Lerp(_currentBankAngle, targetBankAngle, bankT);
