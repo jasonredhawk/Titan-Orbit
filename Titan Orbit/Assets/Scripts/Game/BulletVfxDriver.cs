@@ -77,8 +77,17 @@ namespace TitanOrbit.Game
             public byte Homing;
             /// <summary>Max yaw rate in degrees per second while Homing is set.</summary>
             public float TurnSpeedDeg;
-            /// <summary>Toroidal acquire radius. 0 = whole map.</summary>
+            /// <summary>Toroidal acquire radius. 0 uses the catalog default.</summary>
             public float AcquireRange;
+            /// <summary>Last raw lock (sticky). Not a lagged steer point.</summary>
+            public float3 RawLock;
+            public bool HasRawLock;
+            /// <summary>Logical pose at the previous fixed tick — display lerps from here.</summary>
+            public float3 PrevLogicalPos;
+            public float3 PrevVelocity;
+            /// <summary>Leftover seconds toward the next 60 Hz rocket tick.</summary>
+            public float TickCarry;
+            public bool HasPrevTick;
             public ClientBulletStretchVisual Stretch;
         }
 
@@ -123,6 +132,15 @@ namespace TitanOrbit.Game
 
         /// <summary>How long a mount skip waits for the matching server spawn after anticipation predicted-hit.</summary>
         const float PredictedAdoptSkipTtlSeconds = 1.25f;
+
+        /// <summary>
+        /// Homing rockets step at sim rate, then the mesh lerps one tick behind
+        /// (Fix Your Timestep). Straight-line flight stays smooth at any render FPS.
+        /// </summary>
+        const float RocketPresentationTickDt = 1f / TitanOrbitServerTickRateSystem.SimulationHz;
+
+        /// <summary>Catch-up cap so a hitch does not spiral rocket ticks.</summary>
+        const int MaxRocketPresentationTicksPerFrame = 4;
 
         /// <summary>Display-space radius for matching HitRpc to a recent predicted impact (no Sequence yet).</summary>
         const float PredictedImpactMatchRadius = 14f;
@@ -239,70 +257,81 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
-                // --- Homing rockets: cosmetic steer (same math as server) ---
-                // Enemy ships / turrets only — never follow asteroids, moons, or planets.
-                // Skip ship/planet gathers during Join Team Instantiates (Windows Crash!!!).
-                if (t.Homing != 0 && t.TurnSpeedDeg > 0.01f && !blockInstantiates)
-                    TrySteerHomingTracer(ref t, dt);
-
-                // --- Advance logical / display flight ---
-                float3 prevPos = t.LogicalPos;
-                t.RemainingLifetime -= dt;
-                float step = math.length(t.Velocity) * dt;
-                t.Traveled += step;
-                t.LogicalPos += t.Velocity * dt;
-
-                // --- Client-predicted impact before lifetime cull ---
-                // [TITAN-ORBIT] Destroy tracer at the surface now so bullets do not visually tunnel
-                // while waiting for BulletHitRpc RTT. Obstacles come only from hybrid proxies
-                // (never a full asteroid gather — Windows late-join Crash!!!). Mining floats stay
-                // on HitRpc (AsteroidHealthAfter) so optimistic HP cannot drift from authority.
-                // Safe again after ShipWeaponPose presentation-scale fix aligned server muzzles
-                // with client tracers / proxy rocks.
-                if (canPredictHits &&
-                    TryPredictCosmeticHit(
-                        in t, prevPos, t.LogicalPos,
-                        out float3 hitPoint,
-                        out _,
-                        out _,
-                        out _,
-                        out _))
+                float3 displayLogical;
+                float3 displayVel;
+                if (t.Homing != 0)
                 {
-                    ApplyPredictedHit(i, in t, hitPoint);
-                    continue;
+                    // --- Fixed 60 Hz step + one-tick-behind lerp (homing / coast rockets) ---
+                    if (!AdvanceRocketPresentation(
+                            ref t, dt, !blockInstantiates, canPredictHits,
+                            out displayLogical, out displayVel, out float3 hitPoint, out bool hit))
+                    {
+                        if (hit)
+                            ApplyPredictedHit(i, in t, hitPoint);
+                        else
+                        {
+                            DestroyTracerGo(t);
+                            RemoveAtSwap(i);
+                        }
+                        continue;
+                    }
                 }
-
-                // RemainingLifetime is +∞ for distance-only shots (PD Lifetime = 0).
-                if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
+                else
                 {
-                    DestroyTracerGo(t);
-                    RemoveAtSwap(i);
-                    continue;
+                    // --- Gun / drone / PD: variable-dt dead reckon (already a straight line) ---
+                    float3 prevPos = t.LogicalPos;
+                    t.RemainingLifetime -= dt;
+                    float step = math.length(t.Velocity) * dt;
+                    t.Traveled += step;
+                    t.LogicalPos += t.Velocity * dt;
+
+                    if (canPredictHits &&
+                        TryPredictCosmeticHit(
+                            in t, prevPos, t.LogicalPos,
+                            out float3 hitPoint,
+                            out _,
+                            out _,
+                            out _,
+                            out _))
+                    {
+                        ApplyPredictedHit(i, in t, hitPoint);
+                        continue;
+                    }
+
+                    if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
+                    {
+                        DestroyTracerGo(t);
+                        RemoveAtSwap(i);
+                        continue;
+                    }
+
+                    displayLogical = t.LogicalPos;
+                    displayVel = t.Velocity;
                 }
 
                 // --- Toroidal display unwrap (logical sim → nearest tile to local ship) ---
                 // Keep mount-height Y — ToDisplayPosition helpers are XZ-only; restore after unwrap.
-                float mountY = t.LogicalPos.y;
+                float mountY = displayLogical.y;
                 Vector3 displayPos;
                 if (t.IsDisplaySpace)
-                    displayPos = t.LogicalPos;
+                    displayPos = displayLogical;
                 else if (hasRef)
                 {
                     int stableKey = unchecked((int)t.Sequence) ^ (t.OwnerNetworkId * 397);
                     displayPos = ToroidalDisplay.ToDisplayPositionWithHysteresis(
-                        stableKey, t.LogicalPos, reference);
+                        stableKey, displayLogical, reference);
                     // Seam retile can yank the GO — clear TrailRenderer to avoid stretched spikes.
                     Vector3 prevDisplay = t.Go.transform.position;
                     if ((displayPos - prevDisplay).sqrMagnitude > 40f * 40f)
                         ResetTrail(t.Go);
                 }
                 else
-                    displayPos = t.LogicalPos;
+                    displayPos = displayLogical;
 
                 displayPos.y = mountY;
                 t.Go.transform.position = displayPos;
-                if (math.lengthsq(t.Velocity) > 0.0001f)
-                    t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)t.Velocity).normalized, Vector3.up);
+                if (math.lengthsq(displayVel) > 0.0001f)
+                    t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)displayVel).normalized, Vector3.up);
 
                 if (t.Stretch != null)
                 {
@@ -312,6 +341,84 @@ namespace TitanOrbit.Game
 
                 _tracers[i] = t;
             }
+        }
+
+        /// <summary>
+        /// Steps a rocket at 60 Hz, then returns a pose lerped from the previous tick
+        /// (up to one sim tick behind). Hit tests use the discrete tick segments.
+        /// </summary>
+        /// <returns>False when the tracer should be removed (hit or lifetime/range).</returns>
+        bool AdvanceRocketPresentation(
+            ref Tracer t,
+            float dt,
+            bool canSteer,
+            bool canPredictHits,
+            out float3 displayLogical,
+            out float3 displayVel,
+            out float3 hitPoint,
+            out bool hit)
+        {
+            hitPoint = default;
+            hit = false;
+            float tickDt = RocketPresentationTickDt;
+            t.TickCarry += dt;
+
+            int steps = 0;
+            while (t.TickCarry >= tickDt && steps < MaxRocketPresentationTicksPerFrame)
+            {
+                t.PrevLogicalPos = t.LogicalPos;
+                t.PrevVelocity = t.Velocity;
+                t.HasPrevTick = true;
+
+                if (canSteer && t.TurnSpeedDeg > 0.01f)
+                    TrySteerHomingTracer(ref t, tickDt);
+
+                float3 prevPos = t.LogicalPos;
+                t.LogicalPos += t.Velocity * tickDt;
+                t.Traveled += math.length(t.Velocity) * tickDt;
+                t.RemainingLifetime -= tickDt;
+                t.TickCarry -= tickDt;
+                steps++;
+
+                if (canPredictHits &&
+                    TryPredictCosmeticHit(
+                        in t, prevPos, t.LogicalPos,
+                        out hitPoint,
+                        out _,
+                        out _,
+                        out _,
+                        out _))
+                {
+                    hit = true;
+                    displayLogical = t.LogicalPos;
+                    displayVel = t.Velocity;
+                    return false;
+                }
+
+                if (t.RemainingLifetime <= 0f || t.Traveled >= math.max(0.5f, t.MaxDistance))
+                {
+                    displayLogical = t.LogicalPos;
+                    displayVel = t.Velocity;
+                    return false;
+                }
+            }
+
+            if (steps >= MaxRocketPresentationTicksPerFrame)
+                t.TickCarry = math.min(t.TickCarry, tickDt);
+
+            if (t.HasPrevTick)
+            {
+                float alpha = math.saturate(t.TickCarry / tickDt);
+                displayLogical = math.lerp(t.PrevLogicalPos, t.LogicalPos, alpha);
+                displayVel = math.lerp(t.PrevVelocity, t.Velocity, alpha);
+            }
+            else
+            {
+                displayLogical = t.LogicalPos;
+                displayVel = t.Velocity;
+            }
+
+            return true;
         }
 
         /// <summary>
@@ -335,9 +442,15 @@ namespace TitanOrbit.Game
             float mapH = ToroidalMapEcs.MapHeight;
             if (!RocketHomingTargeting.TryFindClosestTarget(
                     world.EntityManager, t.LogicalPos, t.OwnerTeam, t.OwnerNetworkId,
-                    t.AcquireRange, mapW, mapH, out float3 lockPos))
+                    t.AcquireRange, mapW, mapH,
+                    t.RawLock, t.HasRawLock, out float3 lockPos))
+            {
+                t.HasRawLock = false;
                 return;
+            }
 
+            t.RawLock = lockPos;
+            t.HasRawLock = true;
             float3 vel = t.Velocity;
             RocketHomingLogic.TrySteerToward(
                 t.LogicalPos, ref vel, lockPos, t.TurnSpeedDeg, dt, mapW, mapH);

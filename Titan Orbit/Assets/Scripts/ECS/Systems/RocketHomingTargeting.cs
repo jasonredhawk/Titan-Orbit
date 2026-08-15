@@ -23,6 +23,12 @@ namespace TitanOrbit.ECS
     public static class RocketHomingTargeting
     {
         /// <summary>
+        /// Keep the current lock unless another target is this much closer (0.82 = 18% nearer).
+        /// Stops the seek point from flipping between two similar-range enemies.
+        /// </summary>
+        public const float StickySwitchRatio = 0.82f;
+
+        /// <summary>
         /// Picks the nearest valid lock. Returns false when nothing is in range (fly straight).
         /// </summary>
         /// <param name="em">Server or client EntityManager.</param>
@@ -33,6 +39,7 @@ namespace TitanOrbit.ECS
         /// <param name="mapW">Toroidal width.</param>
         /// <param name="mapH">Toroidal height.</param>
         /// <param name="targetPos">Winning lock position (XZ).</param>
+
         public static bool TryFindClosestTarget(
             EntityManager em,
             float3 from,
@@ -41,6 +48,27 @@ namespace TitanOrbit.ECS
             float acquireRange,
             float mapW,
             float mapH,
+            out float3 targetPos)
+        {
+            return TryFindClosestTarget(
+                em, from, ownerTeam, ownerNetworkId, acquireRange, mapW, mapH,
+                default, hasPrevious: false, out targetPos);
+        }
+
+        /// <summary>
+        /// Same as <see cref="TryFindClosestTarget(EntityManager,float3,byte,int,float,float,float,out float3)"/>
+        /// but prefers the previous lock while it stays in range.
+        /// </summary>
+        public static bool TryFindClosestTarget(
+            EntityManager em,
+            float3 from,
+            byte ownerTeam,
+            int ownerNetworkId,
+            float acquireRange,
+            float mapW,
+            float mapH,
+            float3 previousLock,
+            bool hasPrevious,
             out float3 targetPos)
         {
             targetPos = from;
@@ -61,8 +89,12 @@ namespace TitanOrbit.ECS
             bool skipTurrets = ClientJoinSettleCache.ShouldSkipMapBodyQueries;
 
             from.y = 0f;
+            previousLock.y = 0f;
             float bestDist = float.MaxValue;
             bool found = false;
+            float stickyDist = float.MaxValue;
+            float3 stickyPos = previousLock;
+            bool stickyFound = false;
 
             // --- Enemy ships only ---
             // [TITAN-ORBIT] AsteroidTag / PlanetTag / moon hulls are excluded even if a
@@ -88,12 +120,17 @@ namespace TitanOrbit.ECS
                     float3 pos = transforms[i].Position;
                     pos.y = 0f;
                     ConsiderLock(from, pos, acquireRange, mapW, mapH, ref bestDist, ref targetPos, ref found);
+                    if (hasPrevious)
+                        ConsiderSticky(from, pos, previousLock, acquireRange, mapW, mapH,
+                            ref stickyDist, ref stickyPos, ref stickyFound);
                 }
             }
 
             // --- Enemy turrets only (derived pad spheres — not the planet / moon / rock) ---
             if (skipTurrets)
-                return found;
+                return PickStickyOrClosest(
+                    ref targetPos, from, mapW, mapH,
+                    found, bestDist, stickyFound, stickyPos);
 
             using (var query = em.CreateEntityQuery(
                        ComponentType.ReadOnly<PlanetTag>(),
@@ -115,10 +152,15 @@ namespace TitanOrbit.ECS
                     float3 pos = pad.Position;
                     pos.y = 0f;
                     ConsiderLock(from, pos, acquireRange, mapW, mapH, ref bestDist, ref targetPos, ref found);
+                    if (hasPrevious)
+                        ConsiderSticky(from, pos, previousLock, acquireRange, mapW, mapH,
+                            ref stickyDist, ref stickyPos, ref stickyFound);
                 }
             }
 
-            return found;
+            return PickStickyOrClosest(
+                ref targetPos, from, mapW, mapH,
+                found, bestDist, stickyFound, stickyPos);
         }
 
         /// <summary>
@@ -179,6 +221,58 @@ namespace TitanOrbit.ECS
             bestDist = dist;
             targetPos = pos;
             found = true;
+        }
+
+        /// <summary>
+        /// Among in-range enemies, keep the one nearest last frame's lock so the seek
+        /// point tracks that hull instead of hopping to a neighbor.
+        /// </summary>
+        static void ConsiderSticky(
+            float3 from,
+            float3 pos,
+            float3 previousLock,
+            float acquireRange,
+            float mapW,
+            float mapH,
+            ref float stickyDist,
+            ref float3 stickyPos,
+            ref bool stickyFound)
+        {
+            float fromRocket = ToroidalMapEcs.ToroidalDistance(from, pos, mapW, mapH);
+            if (!RocketHomingLogic.IsInAcquireRange(fromRocket, acquireRange))
+                return;
+
+            float toPrev = ToroidalMapEcs.ToroidalDistance(pos, previousLock, mapW, mapH);
+            if (toPrev >= stickyDist)
+                return;
+
+            stickyDist = toPrev;
+            stickyPos = pos;
+            stickyFound = true;
+        }
+
+        /// <summary>Hold the sticky lock unless a new target is clearly closer.</summary>
+        static bool PickStickyOrClosest(
+            ref float3 targetPos,
+            float3 from,
+            float mapW,
+            float mapH,
+            bool foundClosest,
+            float closestDist,
+            bool foundSticky,
+            float3 stickyPos)
+        {
+            if (foundSticky)
+            {
+                float stickyFromRocket = ToroidalMapEcs.ToroidalDistance(from, stickyPos, mapW, mapH);
+                if (!foundClosest || closestDist >= stickyFromRocket * StickySwitchRatio)
+                {
+                    targetPos = stickyPos;
+                    return true;
+                }
+            }
+
+            return foundClosest;
         }
     }
 }

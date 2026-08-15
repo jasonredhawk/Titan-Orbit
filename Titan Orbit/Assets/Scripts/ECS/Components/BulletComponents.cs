@@ -97,6 +97,16 @@ namespace TitanOrbit.ECS
         /// Empty bubble = fly straight. 0 is sanitized to a positive default (never whole-map).
         /// </summary>
         public float AcquireRange;
+
+        /// <summary>
+        /// Last raw lock point (the chosen target's current position). Sticky targeting
+        /// uses this — never a lagged/smoothed point, or the rocket can turn back toward
+        /// a ship it already passed.
+        /// </summary>
+        public float3 HomingLockPos;
+
+        /// <summary>1 when <see cref="HomingLockPos"/> is a live lock.</summary>
+        public byte HomingHasLock;
     }
 
     /// <summary>

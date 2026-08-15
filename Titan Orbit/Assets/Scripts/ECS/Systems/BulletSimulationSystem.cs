@@ -217,14 +217,22 @@ namespace TitanOrbit.ECS
                 // never acquired (they can still be hit and take damage on the sweep).
                 if (b.Homing != 0 && b.TurnSpeedDeg > 0.01f)
                 {
+                    bool hadLock = b.HomingHasLock != 0;
                     if (RocketHomingTargeting.TryFindClosestTarget(
                             state.EntityManager, b.Position, b.OwnerTeam, b.OwnerNetworkId,
-                            b.AcquireRange, mapW, mapH, out float3 lockPos))
+                            b.AcquireRange, mapW, mapH,
+                            b.HomingLockPos, hadLock, out float3 lockPos))
                     {
+                        b.HomingLockPos = lockPos;
+                        b.HomingHasLock = 1;
                         float3 vel = b.Velocity;
                         RocketHomingLogic.TrySteerToward(
                             b.Position, ref vel, lockPos, b.TurnSpeedDeg, dt, mapW, mapH);
                         b.Velocity = vel;
+                    }
+                    else
+                    {
+                        b.HomingHasLock = 0;
                     }
                 }
 

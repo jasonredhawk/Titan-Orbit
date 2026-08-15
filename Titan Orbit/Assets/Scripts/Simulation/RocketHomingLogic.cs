@@ -65,7 +65,11 @@ namespace TitanOrbit.Simulation
 
             // --- Clamp the yaw step ---
             // [STANDARD] math.slerp is for quaternions, so we rotate current→desired about Y.
+            // Skip tiny errors — snapping to a jittering desiredDir weaves left/right.
             float angle = math.acos(math.clamp(math.dot(currentDir, desiredDir), -1f, 1f));
+            if (angle <= math.radians(AlignDeadzoneDegrees))
+                return false;
+
             float maxRadians = math.radians(turnSpeedDeg) * dt;
             float3 newDir;
             if (angle <= maxRadians)
@@ -76,9 +80,8 @@ namespace TitanOrbit.Simulation
             {
                 float3 axis = math.cross(currentDir, desiredDir);
                 if (math.lengthsq(axis) < 1e-8f)
-                    axis = new float3(0f, 1f, 0f);
-                else
-                    axis = math.normalize(axis);
+                    return false;
+                axis = math.normalize(axis);
                 quaternion step = quaternion.AxisAngle(axis, maxRadians);
                 newDir = math.normalize(math.mul(step, currentDir));
             }
@@ -87,6 +90,9 @@ namespace TitanOrbit.Simulation
             velocity.y = 0f;
             return true;
         }
+
+        /// <summary>Ignore heading error inside this cone so ghost jitter cannot flip the turn axis.</summary>
+        public const float AlignDeadzoneDegrees = 3f;
 
         /// <summary>
         /// True when <paramref name="dist"/> is inside the search bubble.
