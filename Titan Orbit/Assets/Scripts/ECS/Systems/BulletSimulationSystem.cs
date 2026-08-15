@@ -211,6 +211,23 @@ namespace TitanOrbit.ECS
             for (int i = bullets.Length - 1; i >= 0; i--)
             {
                 var b = bullets[i];
+
+                // --- Homing rockets: steer before the sweep so this tick's segment follows the turn ---
+                // [TITAN-ORBIT] Closest enemy ship or turret. Asteroids / moons / planets are
+                // never acquired (they can still be hit and take damage on the sweep).
+                if (b.Homing != 0 && b.TurnSpeedDeg > 0.01f)
+                {
+                    if (RocketHomingTargeting.TryFindClosestTarget(
+                            state.EntityManager, b.Position, b.OwnerTeam, b.OwnerNetworkId,
+                            b.AcquireRange, mapW, mapH, out float3 lockPos))
+                    {
+                        float3 vel = b.Velocity;
+                        RocketHomingLogic.TrySteerToward(
+                            b.Position, ref vel, lockPos, b.TurnSpeedDeg, dt, mapW, mapH);
+                        b.Velocity = vel;
+                    }
+                }
+
                 float3 startPos = b.Position;
                 float3 endPos = startPos + b.Velocity * dt;
                 // [TITAN-ORBIT] Euclidean step on unbounded flight (not a wrapped-torus path sum).
@@ -838,7 +855,7 @@ namespace TitanOrbit.ECS
             {
                 case BulletHitKind.Planet:
                     // Body absorbs the round — no component write.
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
                     return true;
 
                 case BulletHitKind.Moon:
@@ -849,7 +866,7 @@ namespace TitanOrbit.ECS
                     if (!state.EntityManager.HasComponent<PlanetGemMoonState>(bestEntity) ||
                         !state.EntityManager.HasComponent<PlanetState>(bestEntity))
                     {
-                        TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
+                        TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
                         return true;
                     }
 
@@ -862,7 +879,7 @@ namespace TitanOrbit.ECS
                         planet.Ownership,
                         serverElapsed);
                     state.EntityManager.SetComponentData(bestEntity, moon);
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
                     return true;
                 }
 
@@ -888,7 +905,7 @@ namespace TitanOrbit.ECS
                             * BulletBankHitEffects.ResolveStrengthScale(b.StrengthScale);
                         if (heal > 0f && !ship.IsDead)
                             ship.Health = math.min(ship.MaxHealth, ship.Health + heal);
-                        TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
+                        TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
                         return true;
                     }
 
@@ -962,7 +979,7 @@ namespace TitanOrbit.ECS
                             profile, serverElapsed, mapW, mapH);
                     }
 
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
                     return true;
                 }
 
@@ -1010,7 +1027,7 @@ namespace TitanOrbit.ECS
                                 : hitPoint,
                             serverElapsed, mapW, mapH);
 
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
                     return true;
                 }
 
@@ -1023,7 +1040,7 @@ namespace TitanOrbit.ECS
                     else
                         state.EntityManager.SetComponentData(bestEntity, t);
 
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
                     return true;
                 }
 
@@ -1032,7 +1049,7 @@ namespace TitanOrbit.ECS
                     // Equipment RemainingCharges is the ghosted drone HP (store GetDroneMaxHp).
                     DroneSwarmHitScan.ApplyDamageToDroneSlot(
                         state.EntityManager, bestEntity, s_BestDroneSlot, hitDamage);
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
                     return true;
                 }
 
@@ -1062,7 +1079,7 @@ namespace TitanOrbit.ECS
                         }
                     }
 
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
                     return true;
                 }
 
@@ -1078,7 +1095,9 @@ namespace TitanOrbit.ECS
             double serverElapsed,
             float mapW,
             float mapH,
-            in BulletElement bullet)
+            in BulletElement bullet,
+            float hitDamage = 0f,
+            Entity skipEntity = default)
         {
             if (profile == null)
                 return;
@@ -1095,6 +1114,16 @@ namespace TitanOrbit.ECS
             BulletBankHitEffects.TryApplyConcussiveGemBlast(
                 state.EntityManager, hitPoint, profile, mapW, mapH, bullet.FirePowerExtraLevels,
                 bullet.StrengthScale);
+
+            // --- Splash damage (center = full hitDamage, edge = 0) ---
+            // [TITAN-ORBIT] Skip the primary hit so it is not double-dipped.
+            if (hitDamage > 0.01f)
+            {
+                BulletBankHitEffects.TryApplyConcussiveBlastDamage(
+                    state.EntityManager, hitPoint, profile, mapW, mapH,
+                    in bullet, hitDamage, skipEntity, serverElapsed,
+                    s_DefenseHitTargets, s_DroneHitTargets);
+            }
         }
 
         /// <summary>Warm family/default defense configs once for hit-sphere rebuilds.</summary>

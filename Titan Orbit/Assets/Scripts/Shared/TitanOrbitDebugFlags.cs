@@ -21,6 +21,13 @@ namespace TitanOrbit
         public static bool CycleAllBulletBanks;
 
         /// <summary>
+        /// When true, ALT rocket fire does not consume equipment charges and works with an
+        /// empty loadout. The 5s reload still applies. Written by GameManager; dedicated
+        /// server stays false (not a remote cheat channel).
+        /// </summary>
+        public static bool InfiniteRockets;
+
+        /// <summary>
         /// When true, asteroid-destroy paths log millisecond timings (local gem burst, urgent gem
         /// proxies). Use this to find hitch frames — Console filter: <c>[AsteroidDestroy]</c>.
         /// </summary>

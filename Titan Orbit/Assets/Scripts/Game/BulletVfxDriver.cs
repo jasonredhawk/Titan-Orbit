@@ -4,6 +4,7 @@ using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Entities;
+using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
 using Unity.Entities;
@@ -72,6 +73,12 @@ namespace TitanOrbit.Game
             public int AnticipationOrder;
             /// <summary>[TITAN-ORBIT] Cosmetic collide filter (mining / fighter pass-through).</summary>
             public byte DamageFilter;
+            /// <summary>1 = store rocket — cosmetic tracer steers toward the closest enemy.</summary>
+            public byte Homing;
+            /// <summary>Max yaw rate in degrees per second while Homing is set.</summary>
+            public float TurnSpeedDeg;
+            /// <summary>Toroidal acquire radius. 0 = whole map.</summary>
+            public float AcquireRange;
             public ClientBulletStretchVisual Stretch;
         }
 
@@ -232,6 +239,12 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
+                // --- Homing rockets: cosmetic steer (same math as server) ---
+                // Enemy ships / turrets only — never follow asteroids, moons, or planets.
+                // Skip ship/planet gathers during Join Team Instantiates (Windows Crash!!!).
+                if (t.Homing != 0 && t.TurnSpeedDeg > 0.01f && !blockInstantiates)
+                    TrySteerHomingTracer(ref t, dt);
+
                 // --- Advance logical / display flight ---
                 float3 prevPos = t.LogicalPos;
                 t.RemainingLifetime -= dt;
@@ -299,6 +312,36 @@ namespace TitanOrbit.Game
 
                 _tracers[i] = t;
             }
+        }
+
+        /// <summary>
+        /// Steers a homing tracer toward the closest enemy ship or turret.
+        /// Uses the client world ghost poses. Skips when join gates block ship queries.
+        /// </summary>
+        static void TrySteerHomingTracer(ref Tracer t, float dt)
+        {
+            // --- Join safety ---
+            // [TITAN-ORBIT] Ship + planet gathers Crash!!! during Join Team Instantiates.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+            if (!ToroidalMapEcs.HasValidMapSize)
+                return;
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+
+            float mapW = ToroidalMapEcs.MapWidth;
+            float mapH = ToroidalMapEcs.MapHeight;
+            if (!RocketHomingTargeting.TryFindClosestTarget(
+                    world.EntityManager, t.LogicalPos, t.OwnerTeam, t.OwnerNetworkId,
+                    t.AcquireRange, mapW, mapH, out float3 lockPos))
+                return;
+
+            float3 vel = t.Velocity;
+            RocketHomingLogic.TrySteerToward(
+                t.LogicalPos, ref vel, lockPos, t.TurnSpeedDeg, dt, mapW, mapH);
+            t.Velocity = vel;
         }
 
         /// <summary>Creates tracers from the bridge (budgeted Instantiates).</summary>
@@ -796,6 +839,9 @@ namespace TitanOrbit.Game
                 // Only anticipations need order; server-only tracers keep 0.
                 AnticipationOrder = req.IsAnticipation ? _nextAnticipationOrder++ : 0,
                 DamageFilter = req.DamageFilter,
+                Homing = req.Homing,
+                TurnSpeedDeg = req.TurnSpeedDeg,
+                AcquireRange = req.AcquireRange,
                 Stretch = stretch,
             };
 

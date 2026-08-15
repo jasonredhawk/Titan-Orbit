@@ -46,6 +46,20 @@ namespace TitanOrbit.ECS
         [GhostField]
         public InputEvent CycleBullet;
 
+        /// <summary>
+        /// [NETCODE] InputEvent — ALT / FireRocket. Server <c>ShipRocketFireSystem</c> consumes
+        /// one store rocket charge (unless infinite-rocket debug) and spawns a homing shot.
+        /// </summary>
+        [GhostField]
+        public InputEvent FireRocket;
+
+        /// <summary>
+        /// Which rocket HUD row to fire (0 = first pack). Client <c>RocketSlotSelection</c>
+        /// updates this every tick; the server maps it onto the equipment buffer.
+        /// </summary>
+        [GhostField]
+        public int SelectedRocketSlot;
+
         /// <summary>True when space-brake deceleration is toggled on.</summary>
         [GhostField]
         public bool SpaceBrakes;
@@ -55,6 +69,6 @@ namespace TitanOrbit.ECS
         public bool WantDepositGems;
 
         public FixedString512Bytes ToFixedString() =>
-            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},b={SpaceBrakes},d={WantDepositGems}]";
+            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},s={SelectedRocketSlot},b={SpaceBrakes},d={WantDepositGems}]";
     }
 }

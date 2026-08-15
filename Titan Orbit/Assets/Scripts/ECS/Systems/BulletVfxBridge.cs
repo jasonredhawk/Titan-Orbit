@@ -46,6 +46,15 @@ namespace TitanOrbit.ECS
             /// [TITAN-ORBIT] Matches server <c>BulletElement.DamageFilter</c> for cosmetic pass-through.
             /// </summary>
             public byte DamageFilter;
+
+            /// <summary>1 = homing rocket — client tracer steers toward the closest enemy.</summary>
+            public byte Homing;
+
+            /// <summary>Max yaw rate in degrees per second while Homing is set.</summary>
+            public float TurnSpeedDeg;
+
+            /// <summary>Toroidal search radius. Empty bubble = fly straight (never whole-map at 0).</summary>
+            public float AcquireRange;
         }
 
         /// <summary>Authoritative impact — destroy matching tracer and play impact VFX.</summary>

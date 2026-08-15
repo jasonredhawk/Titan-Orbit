@@ -1,9 +1,12 @@
 using System.Collections.Generic;
+using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.NetCode;
 using Unity.Physics;
 using Unity.Transforms;
 
@@ -335,6 +338,257 @@ namespace TitanOrbit.ECS
             var vel = em.GetComponentData<PhysicsVelocity>(shipEntity);
             vel.Linear += dir * (force / math.max(ShipCollisionImpulseLogic.MinCollisionMass, mass));
             em.SetComponentData(shipEntity, vel);
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] AoE damage for Concussive Push. Center takes
+        /// <paramref name="centerDamage"/>; linear falloff to 0 at blast radius.
+        /// Skips <paramref name="skipEntity"/> (the primary hit already took full damage).
+        /// Hits enemy ships, asteroids, enemy turrets, and enemy drones.
+        /// </summary>
+        public static void TryApplyConcussiveBlastDamage(
+            EntityManager em,
+            float3 hitPoint,
+            BulletBankProfile profile,
+            float mapW,
+            float mapH,
+            in BulletElement bullet,
+            float centerDamage,
+            Entity skipEntity,
+            double serverElapsed,
+            List<PlanetaryDefenseHitTarget> defenseTargets,
+            List<DroneHitTarget> droneTargets)
+        {
+            if (profile == null || centerDamage <= 0.01f)
+                return;
+            if (!profile.TryGetResolvedAbility(
+                    BulletBankAbilityType.ConcussivePush, bullet.FirePowerExtraLevels,
+                    out BulletBankAbility push) ||
+                push == null)
+                return;
+            if (!ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                return;
+
+            // --- Join Team Crash!!! ---
+            // [TITAN-ORBIT] Splash is server-only today; still honor the helpers so a
+            // future client call cannot gather ships/asteroids during Instantiates.
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
+            float strength = ResolveStrengthScale(bullet.StrengthScale);
+            float radius = (push.radius > 0.1f ? push.radius : 6f) * strength;
+            if (radius < 0.05f)
+                return;
+
+            hitPoint.y = 0f;
+            byte ownerTeam = bullet.OwnerTeam;
+            int ownerNet = bullet.OwnerNetworkId;
+
+            ApplyBlastToShips(em, hitPoint, radius, centerDamage, skipEntity, ownerTeam, ownerNet, serverElapsed, mapW, mapH);
+            ApplyBlastToAsteroids(em, hitPoint, radius, centerDamage, skipEntity, mapW, mapH);
+            ApplyBlastToTurrets(em, hitPoint, radius, centerDamage, skipEntity, ownerTeam, serverElapsed, defenseTargets, mapW, mapH);
+            ApplyBlastToDrones(em, hitPoint, radius, centerDamage, ownerTeam, ownerNet, droneTargets, mapW, mapH);
+        }
+
+        /// <summary>Hull damage on enemy ships in the blast (no gem expulsion — primary hit already spilled).</summary>
+        static void ApplyBlastToShips(
+            EntityManager em,
+            float3 center,
+            float radius,
+            float centerDamage,
+            Entity skipEntity,
+            byte ownerTeam,
+            int ownerNet,
+            double serverElapsed,
+            float mapW,
+            float mapH)
+        {
+            using var query = em.CreateEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadWrite<ShipState>(),
+                ComponentType.ReadOnly<LocalTransform>(),
+                ComponentType.ReadOnly<GhostOwner>());
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                Entity shipEntity = entities[i];
+                if (shipEntity == skipEntity)
+                    continue;
+                if (states[i].IsDead)
+                    continue;
+                if (ownerNet > 0 && owners[i].NetworkId == ownerNet)
+                    continue;
+                if (ownerTeam != 0 && (byte)states[i].Team == ownerTeam)
+                    continue;
+
+                float3 pos = transforms[i].Position;
+                pos.y = 0f;
+                float dist = ToroidalMapEcs.ToroidalDistance(center, pos, mapW, mapH);
+                float splash = BlastFalloffDamage(centerDamage, dist, radius);
+                if (splash <= 0.01f)
+                    continue;
+
+                bool moonImmune = ShipMoonDockState.IsFullyLandedOnMoon(em, shipEntity);
+
+                var ship = states[i];
+                float health = ship.Health;
+                float gems = ship.CurrentGems;
+                bool isDead = ship.IsDead;
+                var result = ShipDamageLogic.ApplyHullAndGemDamage(
+                    ref health, ref gems, ref isDead, splash,
+                    ship.Team, (TeamId)ownerTeam, gemExpulsionPerHullDamage: 0f, isImmune: moonImmune);
+                ship.Health = health;
+                ship.CurrentGems = gems;
+                ship.IsDead = isDead;
+                em.SetComponentData(shipEntity, ship);
+
+                if (result.AppliedHullDamage && em.HasComponent<ShipVitalsState>(shipEntity))
+                {
+                    var vitals = em.GetComponentData<ShipVitalsState>(shipEntity);
+                    vitals.LastHullDamageTime = serverElapsed;
+                    em.SetComponentData(shipEntity, vitals);
+                }
+
+                if ((result.AppliedHullDamage || result.BecameDead) && ownerNet > 0)
+                    ShipMatchStatsLogic.SetLastDamager(em, shipEntity, ownerNet, (float)serverElapsed);
+            }
+        }
+
+        /// <summary>Subtracts falloff damage from asteroids in the blast (can finish a rock).</summary>
+        static void ApplyBlastToAsteroids(
+            EntityManager em,
+            float3 center,
+            float radius,
+            float centerDamage,
+            Entity skipEntity,
+            float mapW,
+            float mapH)
+        {
+            if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return;
+
+            using var query = em.CreateEntityQuery(
+                ComponentType.ReadOnly<AsteroidTag>(),
+                ComponentType.ReadWrite<AsteroidState>(),
+                ComponentType.ReadOnly<LocalTransform>());
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            using var states = query.ToComponentDataArray<AsteroidState>(Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (entities[i] == skipEntity)
+                    continue;
+                if (states[i].IsDestroyed || states[i].Health <= 0f)
+                    continue;
+
+                float3 pos = transforms[i].Position;
+                pos.y = 0f;
+                float dist = ToroidalMapEcs.ToroidalDistance(center, pos, mapW, mapH);
+                float splash = BlastFalloffDamage(centerDamage, dist, radius);
+                if (splash <= 0.01f)
+                    continue;
+
+                var asteroid = states[i];
+                asteroid.Health -= splash;
+                if (asteroid.Health <= 0f)
+                {
+                    asteroid.Health = 0f;
+                    asteroid.IsDestroyed = true;
+                }
+
+                em.SetComponentData(entities[i], asteroid);
+            }
+        }
+
+        /// <summary>
+        /// Damages enemy turrets in the blast. Does not skip a whole planet when the primary
+        /// hit was one pad — other pads still take falloff. The struck pad is usually at
+        /// dist≈0 and would double-dip, so we skip pads whose planet is <paramref name="skipEntity"/>
+        /// and whose position is inside 0.35 of center (the primary pad).
+        /// </summary>
+        static void ApplyBlastToTurrets(
+            EntityManager em,
+            float3 center,
+            float radius,
+            float centerDamage,
+            Entity skipEntity,
+            byte ownerTeam,
+            double serverElapsed,
+            List<PlanetaryDefenseHitTarget> defenseTargets,
+            float mapW,
+            float mapH)
+        {
+            if (defenseTargets == null)
+                return;
+
+            for (int i = 0; i < defenseTargets.Count; i++)
+            {
+                var pad = defenseTargets[i];
+                if (ownerTeam != 0 && pad.Team == ownerTeam)
+                    continue;
+
+                float3 pos = pad.Position;
+                pos.y = 0f;
+                float dist = ToroidalMapEcs.ToroidalDistance(center, pos, mapW, mapH);
+                // Primary turret sits on the impact point — skip so it is not double-dipped.
+                if (pad.PlanetEntity == skipEntity && dist < 0.35f)
+                    continue;
+                float splash = BlastFalloffDamage(centerDamage, dist, radius);
+                if (splash <= 0.01f)
+                    continue;
+
+                PlanetaryDefenseHitScan.ApplyDamage(em, pad.PlanetEntity, pad.SlotIndex, splash, serverElapsed);
+            }
+        }
+
+        /// <summary>Damages enemy drones in the blast using this tick's derived hit spheres.</summary>
+        static void ApplyBlastToDrones(
+            EntityManager em,
+            float3 center,
+            float radius,
+            float centerDamage,
+            byte ownerTeam,
+            int ownerNet,
+            List<DroneHitTarget> droneTargets,
+            float mapW,
+            float mapH)
+        {
+            if (droneTargets == null)
+                return;
+
+            for (int i = 0; i < droneTargets.Count; i++)
+            {
+                var drone = droneTargets[i];
+                if (ownerNet > 0 && drone.OwnerNetworkId == ownerNet)
+                    continue;
+                if (ownerTeam != 0 && drone.Team == ownerTeam)
+                    continue;
+
+                float3 pos = drone.Position;
+                pos.y = 0f;
+                float dist = ToroidalMapEcs.ToroidalDistance(center, pos, mapW, mapH);
+                if (dist < 0.35f)
+                    continue;
+                float splash = BlastFalloffDamage(centerDamage, dist, radius);
+                if (splash <= 0.01f)
+                    continue;
+
+                DroneSwarmHitScan.ApplyDamageToDroneSlot(em, drone.ShipEntity, drone.SlotIndex, splash);
+            }
+        }
+
+        /// <summary>Linear falloff: 1 at center, 0 at radius. Dist ≥ radius → 0.</summary>
+        static float BlastFalloffDamage(float centerDamage, float dist, float radius)
+        {
+            if (radius < 0.05f || dist >= radius)
+                return 0f;
+            float falloff = 1f - (dist / radius);
+            return centerDamage * math.max(0f, falloff);
         }
 
         /// <summary>

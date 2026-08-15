@@ -405,7 +405,7 @@ MonoBehaviour:
         damageTarget: 0
   - categoryName: Rockets
     globalVisualScaleMultiplier: 1
-    upgradeVisualScaleMultiplier: 1
+    upgradeVisualScaleMultiplier: 0.05
     prefabs:
     - {fileID: 107984, guid: 1a2aa1e6f6d149249b940a5686f7af4f, type: 3}
     - {fileID: 100044, guid: 81c812d6e2b61b24bae96c4e5654e484, type: 3}
@@ -414,11 +414,11 @@ MonoBehaviour:
     - {fileID: 153892, guid: 42975cf06de4e0f4e9b2e291b5075749, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 1.4
-        bulletSpeedMultiplier: 0.7
-        fireRateMultiplier: 0.55
-        rammingPowerMultiplier: 1.15
-        bulletRangeMultiplier: 1.3
+        firePowerMultiplier: 1
+        bulletSpeedMultiplier: 1
+        fireRateMultiplier: 1
+        rammingPowerMultiplier: 1
+        bulletRangeMultiplier: 1
       abilities:
       - type: 3
         magnitude: 9

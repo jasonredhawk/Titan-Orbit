@@ -68,6 +68,10 @@ namespace TitanOrbit.Core
         [Tooltip("When enabled, B-key cycles every bullet bank category including healing EnergySpheres. Leave OFF so B only cycles owned damage banks.")]
         [SerializeField] bool debugCycleAllBulletBanks;
 
+        [Header("Debug — Rockets")]
+        [Tooltip("When enabled, ALT fires a homing rocket without consuming charges (and with an empty loadout). The 5s reload still applies. Local Editor / MPPM host only.")]
+        [SerializeField] bool debugInfiniteRockets;
+
         [Header("Debug — Asteroid Destroy Hitch")]
         [Tooltip("Logs [AsteroidDestroy] timings in the Console when an asteroid explodes (local gem Instantiates + urgent gem proxies). Filter the Console with that tag.")]
         [SerializeField] bool debugLogAsteroidDestroyPerf;
@@ -193,6 +197,7 @@ namespace TitanOrbit.Core
                 Instance = null;
                 TitanOrbitDebugFlags.FreeShipUpgradeTree = false;
                 TitanOrbitDebugFlags.CycleAllBulletBanks = false;
+                TitanOrbitDebugFlags.InfiniteRockets = false;
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
                 TitanOrbitDebugFlags.InstructionImageCaptureEnabled = false;
                 TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
@@ -210,6 +215,11 @@ namespace TitanOrbit.Core
             // [TITAN-ORBIT] ECS MoonOrbitStoreSystem cannot reference TitanOrbit.Core — Shared bridge.
             TitanOrbitDebugFlags.FreeShipUpgradeTree = debugFreeShipUpgradeTree;
             TitanOrbitDebugFlags.CycleAllBulletBanks = debugCycleAllBulletBanks;
+#if UNITY_SERVER && !UNITY_EDITOR
+            TitanOrbitDebugFlags.InfiniteRockets = false;
+#else
+            TitanOrbitDebugFlags.InfiniteRockets = debugInfiniteRockets;
+#endif
             TitanOrbitDebugFlags.LogAsteroidDestroyPerf = debugLogAsteroidDestroyPerf;
             // [TITAN-ORBIT] Instruction capture stays OFF unless you flip this for art rebuilds —
             // otherwise F8/F9 and the bottom status banner stay inactive during normal play.

@@ -110,6 +110,9 @@ namespace TitanOrbit.UI
                     continue;
                 if (canvas.renderMode != RenderMode.ScreenSpaceOverlay)
                     continue;
+                // Rocket HUD hides its panel; never steal that canvas for Orbit Menu.
+                if (canvas.GetComponent<RocketLoadoutHUD>() != null)
+                    continue;
                 if (best == null || canvas.sortingOrder > best.sortingOrder)
                     best = canvas;
             }
@@ -558,7 +561,6 @@ namespace TitanOrbit.UI
             AddStoreSection(contentGo.transform, "Rockets & Mines", new[]
             {
                 StoreItemType.SmallRockets,
-                StoreItemType.LargeRockets,
                 StoreItemType.SmallMines,
                 StoreItemType.LargeMines,
             });
@@ -598,7 +600,7 @@ namespace TitanOrbit.UI
         {
             int level = Mathf.Max(1, shipLevel);
             float price = StoreItemData.GetPrice(item, level);
-            string name = StoreItemData.IsLeveledDrone(item)
+            string name = StoreItemData.IsLeveledStoreGood(item)
                 ? StoreItemData.GetDisplayName(item, level)
                 : StoreItemData.GetDisplayName(item);
             string desc = StoreItemData.GetDescription(item, level);

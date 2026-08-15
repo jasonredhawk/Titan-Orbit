@@ -60,6 +60,8 @@ namespace TitanOrbit.ECS
                     state.EntityManager.SetComponentData(seeded, cmd);
                     if (cmd.CycleBullet.IsSet)
                         ShipPendingInput.ConsumeCycleBulletLatch();
+                    if (cmd.FireRocket.IsSet)
+                        ShipPendingInput.ConsumeFireRocketLatch();
                 }
 
                 return;
@@ -89,6 +91,8 @@ namespace TitanOrbit.ECS
             // so the next BuildInput / Set does not keep CycleBullet.IsSet for many ticks.
             if (cmd.CycleBullet.IsSet)
                 ShipPendingInput.ConsumeCycleBulletLatch();
+            if (cmd.FireRocket.IsSet)
+                ShipPendingInput.ConsumeFireRocketLatch();
         }
     }
 }

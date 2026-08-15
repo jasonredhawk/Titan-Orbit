@@ -132,17 +132,17 @@ namespace TitanOrbit.Data
         /// <param name="item">Catalog item kind.</param>
         /// <param name="shipLevel">
         /// Store purchase level from <see cref="GetStorePurchaseLevel"/> — used for
-        /// fighter/mining/shield drones. Ignored for rockets and mines.
+        /// fighter/mining/shield drones and rockets. Ignored for mines.
         /// </param>
         public static float GetPrice(StoreItemType item, int shipLevel = 1)
         {
             // --- Base catalog price (level-1 / non-leveled) ---
             float basePrice = GetBasePrice(item);
-            if (!IsLeveledDrone(item))
+            if (!IsLeveledDrone(item) && !IsLeveledRocket(item))
                 return basePrice;
 
             // --- Scale cost with level power: cost(L) = base × power(L) / power(1) ---
-            // [TITAN-ORBIT] Level 1 stays at the original 70g / 80g / 100g; higher levels pay more.
+            // [TITAN-ORBIT] Level 1 stays at the original catalog price; higher levels pay more.
             return basePrice * GetDroneLevelPowerMul(shipLevel);
         }
 
@@ -172,8 +172,8 @@ namespace TitanOrbit.Data
                 case StoreItemType.FighterDrone: return "Fighter Drone";
                 case StoreItemType.ShieldDrone: return "Shield Drone";
                 case StoreItemType.MiningDrone: return "Mining Drone";
-                case StoreItemType.SmallRockets: return "Small Rockets (x4)";
-                case StoreItemType.LargeRockets: return "Large Rockets (x2)";
+                case StoreItemType.SmallRockets: return "Rockets (x2)";
+                case StoreItemType.LargeRockets: return "Rockets (x2)";
                 case StoreItemType.SmallMines: return "Small Mines (x4)";
                 case StoreItemType.LargeMines: return "Large Mines (x2)";
                 default: return item.ToString();
@@ -187,7 +187,7 @@ namespace TitanOrbit.Data
         public static string GetDisplayName(StoreItemType item, int itemLevel)
         {
             string name = GetDisplayName(item);
-            if (!IsLeveledDrone(item))
+            if (!IsLeveledDrone(item) && !IsLeveledRocket(item))
                 return name;
             return $"{name} Lv.{Mathf.Max(1, itemLevel)}";
         }
@@ -199,8 +199,8 @@ namespace TitanOrbit.Data
             switch (item)
             {
                 case StoreItemType.SmallRockets:
+                case StoreItemType.LargeRockets: return 2;
                 case StoreItemType.SmallMines: return 4;
-                case StoreItemType.LargeRockets:
                 case StoreItemType.LargeMines: return 2;
                 default: return 1;
             }
@@ -215,8 +215,8 @@ namespace TitanOrbit.Data
                 case StoreItemType.FighterDrone: return "Fighter";
                 case StoreItemType.ShieldDrone: return "Shield";
                 case StoreItemType.MiningDrone: return "Mining";
-                case StoreItemType.SmallRockets: return "Rockets S";
-                case StoreItemType.LargeRockets: return "Rockets L";
+                case StoreItemType.SmallRockets: return "Rockets";
+                case StoreItemType.LargeRockets: return "Rockets";
                 case StoreItemType.SmallMines: return "Mines S";
                 case StoreItemType.LargeMines: return "Mines L";
                 default: return item.ToString();
@@ -250,6 +250,35 @@ namespace TitanOrbit.Data
             return item == StoreItemType.FighterDrone
                 || item == StoreItemType.ShieldDrone
                 || item == StoreItemType.MiningDrone;
+        }
+
+        /// <summary>
+        /// True for store rocket packs. Canonical SKU is <see cref="StoreItemType.SmallRockets"/>;
+        /// <see cref="StoreItemType.LargeRockets"/> stays valid if an old slot is still equipped.
+        /// </summary>
+        public static bool IsRocket(StoreItemType item)
+        {
+            return item == StoreItemType.SmallRockets
+                || item == StoreItemType.LargeRockets;
+        }
+
+        /// <summary>
+        /// Rockets stamp <c>ItemLevel = min(ship, planet)</c> and scale price / fire power from it.
+        /// </summary>
+        public static bool IsLeveledRocket(StoreItemType item) => IsRocket(item);
+
+        /// <summary>
+        /// True for store cards that show a purchase level (drones and rockets).
+        /// </summary>
+        public static bool IsLeveledStoreGood(StoreItemType item) =>
+            IsLeveledDrone(item) || IsLeveledRocket(item);
+
+        /// <summary>
+        /// Orbit Menu catalog filter. Hides the legacy Large Rockets SKU and ship-component enum.
+        /// </summary>
+        public static bool IsSoldInOrbitMenu(StoreItemType item)
+        {
+            return !IsShipComponent(item) && item != StoreItemType.LargeRockets;
         }
 
         /// <summary>
@@ -322,8 +351,12 @@ namespace TitanOrbit.Data
                     float dmg = GetCombatDroneDamage(level);
                     return $"Lv.{level} · {dmg:0.##} dmg/shot vs rocks.";
                 }
-                case StoreItemType.SmallRockets: return "Q to fire · pack of 4.";
-                case StoreItemType.LargeRockets: return "Q to fire · pack of 2.";
+                case StoreItemType.SmallRockets:
+                case StoreItemType.LargeRockets:
+                {
+                    float cd = RocketCatalog.Get(level).fireCooldown;
+                    return $"ALT to fire · 2 per slot · Lv.{level} · {cd:0.#}s reload.";
+                }
                 case StoreItemType.SmallMines: return "E to place · pack of 4.";
                 case StoreItemType.LargeMines: return "E to place · pack of 2.";
                 default: return string.Empty;

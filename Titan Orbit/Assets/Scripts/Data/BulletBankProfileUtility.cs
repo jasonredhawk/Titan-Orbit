@@ -137,6 +137,27 @@ namespace TitanOrbit.Data
             return ResolveBankIndexForFamily(hullFallback);
         }
 
+        /// <summary>
+        /// Reserved Rockets bank index for store packs, or -1 when the category is missing.
+        /// Name match is case-insensitive ("Rockets", "Rocket").
+        /// </summary>
+        public static int FindRocketBankIndex()
+        {
+            var bank = BulletVfxBank.LoadDefault();
+            if (bank == null)
+                return -1;
+            if (bank.TryGetCategoryIndexByName("Rockets", out int index))
+                return index;
+            int count = bank.CategoryCount;
+            for (int i = 0; i < count; i++)
+            {
+                if (IsStoreReservedBankIndex(i))
+                    return i;
+            }
+
+            return -1;
+        }
+
         /// <summary>EnergySpheres / HealFriendly bank index, or -1 when missing.</summary>
         public static int FindHealBankIndex()
         {

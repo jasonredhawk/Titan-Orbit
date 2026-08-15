@@ -412,6 +412,15 @@ namespace TitanOrbit.ECS
         /// Must match server <see cref="BulletElement.DamageFilter"/>.
         /// </summary>
         public byte DamageFilter;
+
+        /// <summary>1 = homing rocket tracer (client steers with the same turn cap).</summary>
+        public byte Homing;
+
+        /// <summary>Max yaw rate in degrees per second for homing tracers.</summary>
+        public float TurnSpeedDeg;
+
+        /// <summary>Toroidal search radius. 0 is sanitized to a positive default (never whole-map).</summary>
+        public float AcquireRange;
     }
 
     /// <summary>

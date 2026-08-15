@@ -32,6 +32,12 @@ namespace TitanOrbit.ECS
         static bool s_cycleBulletLatched;
 
         /// <summary>
+        /// [TITAN-ORBIT] Latched ALT / FireRocket press. Same reason as CycleBullet — Unity
+        /// Update can clear WasPressedThisFrame before GhostInputSystemGroup runs.
+        /// </summary>
+        static bool s_fireRocketLatched;
+
+        /// <summary>
         /// [HYBRID] Called from ShipInputBridge.Update each frame. Stores input for the next
         /// GhostInputSystemGroup fixed tick. Preserves latched CycleBullet across frames until
         /// the input apply system consumes it.
@@ -47,6 +53,13 @@ namespace TitanOrbit.ECS
                 var cycle = new Unity.NetCode.InputEvent();
                 cycle.Set();
                 input.CycleBullet = cycle;
+            }
+
+            if (s_fireRocketLatched)
+            {
+                var rocket = new Unity.NetCode.InputEvent();
+                rocket.Set();
+                input.FireRocket = rocket;
             }
 
             Latest = input;
@@ -71,7 +84,80 @@ namespace TitanOrbit.ECS
             s_cycleBulletLatched = false;
         }
 
+        /// <summary>Call when the player presses ALT (or the rocket HUD). Stays true until consumed.</summary>
+        public static void LatchFireRocket()
+        {
+            s_fireRocketLatched = true;
+        }
+
+        /// <summary>Clears the ALT latch after ShipInput has been copied onto the local ghost.</summary>
+        public static void ConsumeFireRocketLatch()
+        {
+            s_fireRocketLatched = false;
+        }
+
         /// <summary>True while a cycle press is waiting to be applied (for floating-name UI).</summary>
         public static bool CycleBulletLatched => s_cycleBulletLatched;
+
+        /// <summary>True while a rocket press is waiting to be applied.</summary>
+        public static bool FireRocketLatched => s_fireRocketLatched;
+    }
+
+    /// <summary>
+    /// Client-side which rocket pack will fire next. HUD UP/DOWN and row clicks write this;
+    /// <c>ShipInputBridge</c> copies it onto <see cref="ShipInput.SelectedRocketSlot"/> each tick.
+    /// Index is among rocket HUD rows (not the raw equipment buffer).
+    /// </summary>
+    public static class RocketSlotSelection
+    {
+        /// <summary>0-based HUD row. Clamped whenever the pack list changes.</summary>
+        public static int SelectedIndex { get; private set; }
+
+        /// <summary>Moves the caret by <paramref name="delta"/> and wraps.</summary>
+        public static void Cycle(int delta, int count)
+        {
+            if (count <= 0)
+            {
+                SelectedIndex = 0;
+                return;
+            }
+
+            int next = SelectedIndex + delta;
+            while (next < 0)
+                next += count;
+            SelectedIndex = next % count;
+        }
+
+        /// <summary>Jumps to a HUD row (click). No-op when the list is empty.</summary>
+        public static void Select(int index, int count)
+        {
+            if (count <= 0)
+            {
+                SelectedIndex = 0;
+                return;
+            }
+
+            if (index < 0)
+                index = 0;
+            if (index >= count)
+                index = count - 1;
+            SelectedIndex = index;
+        }
+
+        /// <summary>Keeps the caret valid after a purchase or consume.</summary>
+        public static int Clamp(int count)
+        {
+            if (count <= 0)
+            {
+                SelectedIndex = 0;
+                return 0;
+            }
+
+            if (SelectedIndex < 0)
+                SelectedIndex = 0;
+            if (SelectedIndex >= count)
+                SelectedIndex = count - 1;
+            return SelectedIndex;
+        }
     }
 }

@@ -82,6 +82,21 @@ namespace TitanOrbit.ECS
         /// <see cref="BulletDamageFilter.ShipsAndTransports"/> (ships, transports, asteroids).
         /// </summary>
         public BulletDamageFilter DamageFilter;
+
+        /// <summary>
+        /// [TITAN-ORBIT] 1 = store homing rocket. Each tick steers toward the closest enemy
+        /// ship or turret at <see cref="TurnSpeedDeg"/>. 0 = straight gun / drone / PD shot.
+        /// </summary>
+        public byte Homing;
+
+        /// <summary>Max yaw rate in degrees per second while <see cref="Homing"/> is set.</summary>
+        public float TurnSpeedDeg;
+
+        /// <summary>
+        /// Toroidal search radius. Closest enemy ship or turret inside this bubble is locked.
+        /// Empty bubble = fly straight. 0 is sanitized to a positive default (never whole-map).
+        /// </summary>
+        public float AcquireRange;
     }
 
     /// <summary>

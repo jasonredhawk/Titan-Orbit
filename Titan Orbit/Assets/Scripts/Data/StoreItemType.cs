@@ -18,10 +18,15 @@ namespace TitanOrbit.Data
         /// <summary>[TITAN-ORBIT] Autonomous miner for nearby asteroids.</summary>
         MiningDrone,
 
-        /// <summary>[TITAN-ORBIT] Consumable rockets — pack of 4, fired with Q.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Canonical store rockets — pack of 2, fired with ALT.
+        /// Enum value stays <c>SmallRockets</c> so ghost <c>ItemType</c> ints stay stable.
+        /// </summary>
         SmallRockets,
 
-        /// <summary>[TITAN-ORBIT] Consumable rockets — pack of 2, fired with Q.</summary>
+        /// <summary>
+        /// Legacy rocket SKU (hidden from Orbit Menu). Still treated as a rocket if equipped.
+        /// </summary>
         LargeRockets,
 
         /// <summary>[TITAN-ORBIT] Deployable mines — pack of 4, placed with E.</summary>

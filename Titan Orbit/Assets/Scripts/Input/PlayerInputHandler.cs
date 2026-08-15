@@ -15,6 +15,7 @@ namespace TitanOrbit.Input
     /// buying an upgrade does not also shoot. Paired with ShipInputBridge / ClientLocalBulletVfxBridge,
     /// which both read ShootPressed.
     /// </summary>
+    [DefaultExecutionOrder(-10050)]
     public class PlayerInputHandler : MonoBehaviour
     {
         [Header("Input Settings")]
@@ -56,6 +57,26 @@ namespace TitanOrbit.Input
         public bool ShootPressed => shootPressed;
         public bool RocketPressed => rocketPressed;
         public bool MinePressed => minePressed;
+
+        /// <summary>True the frame Up Arrow is pressed — cycle the selected rocket pack backward.</summary>
+        public bool CycleRocketUpPressed
+        {
+            get
+            {
+                var k = Keyboard.current;
+                return k != null && k.upArrowKey.wasPressedThisFrame;
+            }
+        }
+
+        /// <summary>True the frame Down Arrow is pressed — cycle the selected rocket pack forward.</summary>
+        public bool CycleRocketDownPressed
+        {
+            get
+            {
+                var k = Keyboard.current;
+                return k != null && k.downArrowKey.wasPressedThisFrame;
+            }
+        }
         /// <summary>True while V is held to voluntarily expel carried gems forward at 2 shots/sec.</summary>
         public bool ExpelGemsHeld
         {
@@ -112,8 +133,8 @@ namespace TitanOrbit.Input
             var k = Keyboard.current;
             if (k != null)
             {
-                if (k.wKey.isPressed || k.upArrowKey.isPressed) move.y += 1f;
-                if (k.sKey.isPressed || k.downArrowKey.isPressed) move.y -= 1f;
+                if (k.wKey.isPressed) move.y += 1f;
+                if (k.sKey.isPressed) move.y -= 1f;
                 if (k.aKey.isPressed || k.leftArrowKey.isPressed) move.x -= 1f;
                 if (k.dKey.isPressed || k.rightArrowKey.isPressed) move.x += 1f;
             }
@@ -226,9 +247,11 @@ namespace TitanOrbit.Input
                 moveForwardPressed = Mouse.current != null && Mouse.current.rightButton.isPressed;
             }
 
-            // --- Space brakes toggle (Left Ctrl) ---
+            // --- Space brakes toggle (Left or Right Ctrl) ---
             // When on: ship slows when not holding move; when off: ship floats.
-            if (Keyboard.current != null && Keyboard.current.leftCtrlKey.wasPressedThisFrame)
+            // [TITAN-ORBIT] Same keyboard resolve as B / V — Keyboard.current is often null
+            // until the Game view is focused, which made Ctrl look "disconnected".
+            if (WasCtrlPressedThisFrame())
                 spaceBrakesEnabled = !spaceBrakesEnabled;
 
             // --- OVERDRIVE modifier (Left/Right Shift) ---
@@ -242,10 +265,58 @@ namespace TitanOrbit.Input
                     || Keyboard.current.rightShiftKey.isPressed;
             }
 
-            // --- Optional secondary actions ---
-            // FireRocket / PlaceMine from the action map; Starship may also use Q / E fallbacks elsewhere.
-            rocketPressed = rocketAction != null && rocketAction.IsPressed();
-            minePressed = mineAction != null && mineAction.IsPressed();
+            // --- Rocket fire (ALT) ---
+            // [TITAN-ORBIT] One-shot: WasPressedThisFrame so holding Alt does not dump the pack.
+            // Keyboard fallback covers missing FireRocket bindings on the Gameplay map.
+            bool actionRocket = rocketAction != null && rocketAction.WasPressedThisFrame();
+            bool altRocket = false;
+            if (Keyboard.current != null)
+            {
+                altRocket = Keyboard.current.leftAltKey.wasPressedThisFrame
+                    || Keyboard.current.rightAltKey.wasPressedThisFrame;
+            }
+
+            rocketPressed = actionRocket || altRocket;
+            minePressed = mineAction != null && mineAction.WasPressedThisFrame();
+        }
+
+        /// <summary>
+        /// Left or Right Ctrl this frame. Uses the same keyboard resolve as B / V so a missing
+        /// <c>Keyboard.current</c> (unfocused Game view) does not drop the toggle.
+        /// </summary>
+        static bool WasCtrlPressedThisFrame()
+        {
+            if (TryResolveKeyboard(out var k) &&
+                (k.leftCtrlKey.wasPressedThisFrame || k.rightCtrlKey.wasPressedThisFrame))
+                return true;
+
+#if ENABLE_LEGACY_INPUT_MANAGER
+            // --- Legacy fallback ---
+            // [UNITY] Some Editor Play setups report Ctrl only on the old Input Manager.
+            if (UnityEngine.Input.GetKeyDown(KeyCode.LeftControl) ||
+                UnityEngine.Input.GetKeyDown(KeyCode.RightControl))
+                return true;
+#endif
+            return false;
+        }
+
+        /// <summary>Keyboard.current, or the first Keyboard device if current is unset.</summary>
+        static bool TryResolveKeyboard(out Keyboard keyboard)
+        {
+            keyboard = Keyboard.current;
+            if (keyboard != null)
+                return true;
+
+            foreach (var d in InputSystem.devices)
+            {
+                if (d is Keyboard kb)
+                {
+                    keyboard = kb;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

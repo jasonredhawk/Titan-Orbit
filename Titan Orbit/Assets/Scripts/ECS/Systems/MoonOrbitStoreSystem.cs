@@ -1060,9 +1060,10 @@ namespace TitanOrbit.ECS
             int charges = StoreItemData.IsDrone(itemType)
                 ? StoreItemData.GetDroneMaxHp(itemType, lockedLevel)
                 : StoreItemData.GetPackSize(itemType);
-            // [TITAN-ORBIT] Drones lock ItemLevel to the store purchase level (min of ship and planet).
-            // Damage/HP/cost/size already used this level; store it so stats stay fixed after buy.
-            int itemLevel = StoreItemData.IsLeveledDrone(itemType)
+            // [TITAN-ORBIT] Drones and rockets lock ItemLevel to the store purchase level
+            // (min of ship and planet). Damage/HP/cost already used this level; store it so
+            // stats stay fixed after buy. Mines stay 0 (no level curve).
+            int itemLevel = StoreItemData.IsLeveledDrone(itemType) || StoreItemData.IsLeveledRocket(itemType)
                 ? lockedLevel
                 : 0;
             FixedString64Bytes componentId = default;

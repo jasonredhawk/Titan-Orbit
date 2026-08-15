@@ -47,6 +47,9 @@ namespace TitanOrbit.ECS
                 IsAnticipation = false,
                 IsDisplaySpace = false,
                 DamageFilter = (byte)bullet.DamageFilter,
+                Homing = bullet.Homing,
+                TurnSpeedDeg = bullet.TurnSpeedDeg,
+                AcquireRange = bullet.AcquireRange,
             };
 
             // --- Host in-process (Editor / listen-server) ---
@@ -69,6 +72,9 @@ namespace TitanOrbit.ECS
                 ScaleMultiplier = bullet.ScaleMultiplier > 0f ? bullet.ScaleMultiplier : 1f,
                 MountIndex = safeMount,
                 DamageFilter = (byte)bullet.DamageFilter,
+                Homing = bullet.Homing,
+                TurnSpeedDeg = bullet.TurnSpeedDeg,
+                AcquireRange = bullet.AcquireRange,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }

@@ -201,6 +201,8 @@ namespace TitanOrbit.UI
                     sb.Append("  blast ");
                     AppendTint(sb, HexResult, F(now.radius));
                     sb.AppendLine();
+                    sb.Append("Splash dmg  full at center, 0 at edge");
+                    sb.AppendLine();
                     AppendAbilityPerExtras(sb, authored, showMagnitude: true, showDuration: false,
                         showTick: false, showRadius: true, magnitudeUnit: " force", radiusLabel: "blast");
                     break;

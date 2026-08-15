@@ -14,8 +14,8 @@ namespace TitanOrbit.Entities
         public string componentId;
         public int remainingCharges;
         /// <summary>
-        /// Store purchase level at buy time (<c>min(ship, docked planet)</c>) for drones and
-        /// extra components. 0 for rockets/mines and legacy rows.
+        /// Store purchase level at buy time (<c>min(ship, docked planet)</c>) for drones,
+        /// rockets, and extra components. 0 for mines and legacy rows.
         /// </summary>
         public int itemLevel;
 

@@ -41,6 +41,13 @@ namespace TitanOrbit.ECS
 
         /// <summary>Chassis variant within the family branch (visual + base stats).</summary>
         [GhostField] public int ChassisIndex;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Server <c>ElapsedTime</c> when the next rocket may fire.
+        /// Ghosted so the left-middle HUD can show the 5s reload without a separate RPC.
+        /// 0 = ready.
+        /// </summary>
+        [GhostField] public double NextRocketFireTime;
     }
 
     /// <summary>
@@ -64,9 +71,9 @@ namespace TitanOrbit.ECS
         [GhostField] public int RemainingCharges;
 
         /// <summary>
-        /// Store purchase level at buy time: <c>min(ship, docked planet)</c> for drones and
-        /// extra components. [TITAN-ORBIT] Drones lock damage/HP/size to this level and do not
-        /// auto-upgrade when the ship levels. Rockets/mines store 0 (ignored).
+        /// Store purchase level at buy time: <c>min(ship, docked planet)</c> for drones,
+        /// rockets, and extra components. [TITAN-ORBIT] Drones and rockets lock combat stats
+        /// to this level and do not auto-upgrade when the ship levels. Mines store 0.
         /// </summary>
         [GhostField] public int ItemLevel;
 

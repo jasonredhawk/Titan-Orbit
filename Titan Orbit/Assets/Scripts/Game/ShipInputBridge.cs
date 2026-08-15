@@ -69,10 +69,16 @@ namespace TitanOrbit.Game
             if (cyclePressed)
                 ShipPendingInput.LatchCycleBullet();
 
+            bool rocketPressed = _input.RocketPressed
+                && !MoonOrbitClientState.IsOrbitMenuVisible
+                && !PlanetaryDefenseTurretClientState.IsControlling;
+            if (rocketPressed)
+                ShipPendingInput.LatchFireRocket();
+
             if (cyclePressed)
                 TryShowBulletCycleName();
 
-            ShipPendingInput.Set(BuildInput(cyclePressed), localHostMode: false);
+            ShipPendingInput.Set(BuildInput(cyclePressed, rocketPressed), localHostMode: false);
         }
 
         /// <summary>
@@ -80,7 +86,7 @@ namespace TitanOrbit.Game
         /// Aim direction is computed from mouse world position relative to local ship.
         /// </summary>
         /// <param name="cyclePressedThisFrame">True when B was pressed this Unity frame (also latched).</param>
-        ShipInput BuildInput(bool cyclePressedThisFrame)
+        ShipInput BuildInput(bool cyclePressedThisFrame, bool rocketPressedThisFrame)
         {
             // --- Build data ---
             // Cache Camera.main — looking it up every frame was part of a ~4ms Update (Profiler 41220).
@@ -126,6 +132,10 @@ namespace TitanOrbit.Game
             if (!turretControl && (cyclePressedThisFrame || ShipPendingInput.CycleBulletLatched))
                 cycleBullet.Set();
 
+            var fireRocket = new InputEvent();
+            if (!turretControl && (rocketPressedThisFrame || ShipPendingInput.FireRocketLatched))
+                fireRocket.Set();
+
             // [TITAN-ORBIT] OVERDRIVE intent = Shift alone (not AND thrust).
             // Latch re-engages at ≥25% energy while Shift stays held; burst applies when thrusting.
             // Clear while stowed so prediction does not fight turret possession.
@@ -139,6 +149,8 @@ namespace TitanOrbit.Game
                 Overdrive = overdrive,
                 Fire = fire,
                 CycleBullet = cycleBullet,
+                FireRocket = fireRocket,
+                SelectedRocketSlot = RocketSlotSelection.SelectedIndex,
                 SpaceBrakes = _input.SpaceBrakesEnabled,
                 WantDepositGems = MoonOrbitClientState.WantDepositGems,
             };
