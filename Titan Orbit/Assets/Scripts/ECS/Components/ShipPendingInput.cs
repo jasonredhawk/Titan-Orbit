@@ -38,6 +38,12 @@ namespace TitanOrbit.ECS
         static bool s_fireRocketLatched;
 
         /// <summary>
+        /// [TITAN-ORBIT] Latched E / PlaceMine press. Same reason as FireRocket — Unity
+        /// Update can clear WasPressedThisFrame before GhostInputSystemGroup runs.
+        /// </summary>
+        static bool s_placeMineLatched;
+
+        /// <summary>
         /// [HYBRID] Called from ShipInputBridge.Update each frame. Stores input for the next
         /// GhostInputSystemGroup fixed tick. Preserves latched CycleBullet across frames until
         /// the input apply system consumes it.
@@ -60,6 +66,13 @@ namespace TitanOrbit.ECS
                 var rocket = new Unity.NetCode.InputEvent();
                 rocket.Set();
                 input.FireRocket = rocket;
+            }
+
+            if (s_placeMineLatched)
+            {
+                var mine = new Unity.NetCode.InputEvent();
+                mine.Set();
+                input.PlaceMine = mine;
             }
 
             Latest = input;
@@ -101,6 +114,21 @@ namespace TitanOrbit.ECS
 
         /// <summary>True while a rocket press is waiting to be applied.</summary>
         public static bool FireRocketLatched => s_fireRocketLatched;
+
+        /// <summary>Call when the player presses E (or the mine HUD). Stays true until consumed.</summary>
+        public static void LatchPlaceMine()
+        {
+            s_placeMineLatched = true;
+        }
+
+        /// <summary>Clears the E latch after ShipInput has been copied onto the local ghost.</summary>
+        public static void ConsumePlaceMineLatch()
+        {
+            s_placeMineLatched = false;
+        }
+
+        /// <summary>True while a mine press is waiting to be applied.</summary>
+        public static bool PlaceMineLatched => s_placeMineLatched;
     }
 
     /// <summary>

@@ -316,7 +316,26 @@ namespace TitanOrbit.ECS
             float mapH,
             float strengthScale = 1f)
         {
+            float force = (push.magnitude > 0f ? push.magnitude : 12f) * ResolveStrengthScale(strengthScale);
+            ApplyConcussivePushForce(em, shipEntity, hitPoint, shipPos, force, mapW, mapH);
+        }
+
+        /// <summary>
+        /// Knockback from a world point using a raw force (mines — no bullet-bank ability row).
+        /// Same mass-aware impulse as <see cref="ApplyConcussivePush"/>.
+        /// </summary>
+        public static void ApplyConcussivePushForce(
+            EntityManager em,
+            Entity shipEntity,
+            float3 hitPoint,
+            float3 shipPos,
+            float force,
+            float mapW,
+            float mapH)
+        {
             if (!em.HasComponent<PhysicsVelocity>(shipEntity))
+                return;
+            if (force <= 0.01f)
                 return;
 
             float3 dir = ToroidalMapEcs.ShortestOffsetXZ(hitPoint, shipPos, mapW, mapH);
@@ -334,10 +353,78 @@ namespace TitanOrbit.ECS
                     mass = 1f / inv;
             }
 
-            float force = (push.magnitude > 0f ? push.magnitude : 12f) * ResolveStrengthScale(strengthScale);
             var vel = em.GetComponentData<PhysicsVelocity>(shipEntity);
             vel.Linear += dir * (force / math.max(ShipCollisionImpulseLogic.MinCollisionMass, mass));
             em.SetComponentData(shipEntity, vel);
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Mine explode splash: falloff hull damage + knockback on enemy ships.
+        /// Does not hit moons (call <see cref="PlanetGemMoonCombatLogic.ApplyBulletDamage"/> for contact).
+        /// Does not hit asteroids (mines are anti-ship / anti-moon).
+        /// </summary>
+        public static void TryApplyMineBlast(
+            EntityManager em,
+            float3 hitPoint,
+            float blastRadius,
+            float blastForce,
+            float centerDamage,
+            Entity skipEntity,
+            byte ownerTeam,
+            int ownerNetworkId,
+            double serverElapsed,
+            float mapW,
+            float mapH)
+        {
+            if (centerDamage <= 0.01f && blastForce <= 0.01f)
+                return;
+            if (!ToroidalMapEcs.IsValidMapSize(mapW, mapH))
+                return;
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return;
+
+            float radius = math.max(0.05f, blastRadius);
+            hitPoint.y = 0f;
+
+            if (centerDamage > 0.01f)
+            {
+                ApplyBlastToShips(
+                    em, hitPoint, radius, centerDamage, skipEntity,
+                    ownerTeam, ownerNetworkId, serverElapsed, mapW, mapH);
+            }
+
+            if (blastForce <= 0.01f)
+                return;
+
+            using var query = em.CreateEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadOnly<ShipState>(),
+                ComponentType.ReadOnly<LocalTransform>(),
+                ComponentType.ReadOnly<GhostOwner>());
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            using var states = query.ToComponentDataArray<ShipState>(Allocator.Temp);
+            using var transforms = query.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+            using var owners = query.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (states[i].IsDead)
+                    continue;
+                if (ownerNetworkId > 0 && owners[i].NetworkId == ownerNetworkId)
+                    continue;
+                if (ownerTeam != 0 && (byte)states[i].Team == ownerTeam)
+                    continue;
+
+                float3 pos = transforms[i].Position;
+                pos.y = 0f;
+                float dist = ToroidalMapEcs.ToroidalDistance(hitPoint, pos, mapW, mapH);
+                if (dist >= radius)
+                    continue;
+
+                float falloff = 1f - (dist / radius);
+                ApplyConcussivePushForce(
+                    em, entities[i], hitPoint, pos, blastForce * math.max(0f, falloff), mapW, mapH);
+            }
         }
 
         /// <summary>

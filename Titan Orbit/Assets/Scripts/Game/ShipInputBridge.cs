@@ -72,13 +72,28 @@ namespace TitanOrbit.Game
             bool rocketPressed = _input.RocketPressed
                 && !MoonOrbitClientState.IsOrbitMenuVisible
                 && !PlanetaryDefenseTurretClientState.IsControlling;
+            bool minePressed = _input.MinePressed
+                && !MoonOrbitClientState.IsOrbitMenuVisible
+                && !PlanetaryDefenseTurretClientState.IsControlling;
+
+            // --- Selected pack owns ALT ---
+            // [TITAN-ORBIT] HUD caret on MINES: ALT places that mine pack. Otherwise ALT
+            // still fires rockets. E always places a mine when a pack (or infinite debug) exists.
+            if (MineSlotSelection.HudFocused && rocketPressed)
+            {
+                minePressed = true;
+                rocketPressed = false;
+            }
+
             if (rocketPressed)
                 ShipPendingInput.LatchFireRocket();
+            if (minePressed)
+                ShipPendingInput.LatchPlaceMine();
 
             if (cyclePressed)
                 TryShowBulletCycleName();
 
-            ShipPendingInput.Set(BuildInput(cyclePressed, rocketPressed), localHostMode: false);
+            ShipPendingInput.Set(BuildInput(cyclePressed, rocketPressed, minePressed), localHostMode: false);
         }
 
         /// <summary>
@@ -86,7 +101,7 @@ namespace TitanOrbit.Game
         /// Aim direction is computed from mouse world position relative to local ship.
         /// </summary>
         /// <param name="cyclePressedThisFrame">True when B was pressed this Unity frame (also latched).</param>
-        ShipInput BuildInput(bool cyclePressedThisFrame, bool rocketPressedThisFrame)
+        ShipInput BuildInput(bool cyclePressedThisFrame, bool rocketPressedThisFrame, bool minePressedThisFrame)
         {
             // --- Build data ---
             // Cache Camera.main — looking it up every frame was part of a ~4ms Update (Profiler 41220).
@@ -136,6 +151,10 @@ namespace TitanOrbit.Game
             if (!turretControl && (rocketPressedThisFrame || ShipPendingInput.FireRocketLatched))
                 fireRocket.Set();
 
+            var placeMine = new InputEvent();
+            if (!turretControl && (minePressedThisFrame || ShipPendingInput.PlaceMineLatched))
+                placeMine.Set();
+
             // [TITAN-ORBIT] OVERDRIVE intent = Shift alone (not AND thrust).
             // Latch re-engages at ≥25% energy while Shift stays held; burst applies when thrusting.
             // Clear while stowed so prediction does not fight turret possession.
@@ -153,6 +172,8 @@ namespace TitanOrbit.Game
                 DisableSpaceBrakes = !_input.SpaceBrakesEnabled,
                 WantDepositGems = MoonOrbitClientState.WantDepositGems,
                 SelectedRocketSlot = RocketSlotSelection.SelectedIndex,
+                PlaceMine = placeMine,
+                SelectedMineSlot = MineSlotSelection.SelectedIndex,
             };
         }
 

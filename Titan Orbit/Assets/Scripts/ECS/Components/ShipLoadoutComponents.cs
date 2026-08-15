@@ -48,6 +48,13 @@ namespace TitanOrbit.ECS
         /// 0 = ready.
         /// </summary>
         [GhostField] public double NextRocketFireTime;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Server <c>ElapsedTime</c> when the next mine may be placed.
+        /// Ghosted so the left-middle HUD can show the drop cooldown without a separate RPC.
+        /// 0 = ready.
+        /// </summary>
+        [GhostField] public double NextMinePlaceTime;
     }
 
     /// <summary>
@@ -72,8 +79,8 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Store purchase level at buy time: <c>min(ship, docked planet)</c> for drones,
-        /// rockets, and extra components. [TITAN-ORBIT] Drones and rockets lock combat stats
-        /// to this level and do not auto-upgrade when the ship levels. Mines store 0.
+        /// rockets, mines, and extra components. [TITAN-ORBIT] Drones, rockets, and mines
+        /// lock combat stats to this level and do not auto-upgrade when the ship levels.
         /// </summary>
         [GhostField] public int ItemLevel;
 

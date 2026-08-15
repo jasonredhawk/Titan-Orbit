@@ -5425,7 +5425,9 @@ namespace TitanOrbit.UI
                 {
                     int titleLevel = entry.itemLevel > 0
                         ? entry.itemLevel
-                        : (StoreItemData.IsRocket(itemType) ? 1 : StoreItemData.DroneReferenceMaxLevel);
+                        : (StoreItemData.IsRocket(itemType) || StoreItemData.IsMine(itemType)
+                            ? 1
+                            : StoreItemData.DroneReferenceMaxLevel);
                     equipmentTitleTexts[index].text = StoreItemData.GetDisplayName(itemType, titleLevel);
                 }
                 else
@@ -5464,6 +5466,12 @@ namespace TitanOrbit.UI
                 {
                     int rocketLevel = entry.itemLevel > 0 ? entry.itemLevel : 1;
                     slotUi.sublineText.text = $"Lv.{rocketLevel} · \u00d7{entry.remainingCharges}";
+                    slotUi.sublineText.gameObject.SetActive(true);
+                }
+                else if (filled && StoreItemData.IsMine(itemType))
+                {
+                    int mineLevel = entry.itemLevel > 0 ? entry.itemLevel : 1;
+                    slotUi.sublineText.text = $"Lv.{mineLevel} · \u00d7{entry.remainingCharges}";
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else if (filled && !entry.IsShipComponent)

@@ -29,10 +29,15 @@ namespace TitanOrbit.Data
         /// </summary>
         LargeRockets,
 
-        /// <summary>[TITAN-ORBIT] Deployable mines — pack of 4, placed with E.</summary>
+        /// <summary>
+        /// [TITAN-ORBIT] Canonical store mines — pack of 4, placed with E.
+        /// Enum value stays <c>SmallMines</c> so ghost <c>ItemType</c> ints stay stable.
+        /// </summary>
         SmallMines,
 
-        /// <summary>[TITAN-ORBIT] Deployable mines — pack of 2, placed with E.</summary>
+        /// <summary>
+        /// Legacy mine SKU (hidden from Orbit Menu). Still treated as a mine if equipped.
+        /// </summary>
         LargeMines,
 
         // --- Authored ship parts ---

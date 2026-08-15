@@ -72,6 +72,10 @@ namespace TitanOrbit.Core
         [Tooltip("When enabled, ALT fires a homing rocket without consuming charges (and with an empty loadout). The 5s reload still applies. Local Editor / MPPM host only.")]
         [SerializeField] bool debugInfiniteRockets;
 
+        [Header("Debug — Mines")]
+        [Tooltip("When enabled, E places a mine without consuming charges (and with an empty loadout). The deploy cooldown still applies. Local Editor / MPPM host only.")]
+        [SerializeField] bool debugInfiniteMines;
+
         [Header("Debug — Asteroid Destroy Hitch")]
         [Tooltip("Logs [AsteroidDestroy] timings in the Console when an asteroid explodes (local gem Instantiates + urgent gem proxies). Filter the Console with that tag.")]
         [SerializeField] bool debugLogAsteroidDestroyPerf;
@@ -198,6 +202,7 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.FreeShipUpgradeTree = false;
                 TitanOrbitDebugFlags.CycleAllBulletBanks = false;
                 TitanOrbitDebugFlags.InfiniteRockets = false;
+                TitanOrbitDebugFlags.InfiniteMines = false;
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
                 TitanOrbitDebugFlags.InstructionImageCaptureEnabled = false;
                 TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
@@ -217,8 +222,10 @@ namespace TitanOrbit.Core
             TitanOrbitDebugFlags.CycleAllBulletBanks = debugCycleAllBulletBanks;
 #if UNITY_SERVER && !UNITY_EDITOR
             TitanOrbitDebugFlags.InfiniteRockets = false;
+            TitanOrbitDebugFlags.InfiniteMines = false;
 #else
             TitanOrbitDebugFlags.InfiniteRockets = debugInfiniteRockets;
+            TitanOrbitDebugFlags.InfiniteMines = debugInfiniteMines;
 #endif
             TitanOrbitDebugFlags.LogAsteroidDestroyPerf = debugLogAsteroidDestroyPerf;
             // [TITAN-ORBIT] Instruction capture stays OFF unless you flip this for art rebuilds —

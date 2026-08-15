@@ -62,6 +62,8 @@ namespace TitanOrbit.ECS
                         ShipPendingInput.ConsumeCycleBulletLatch();
                     if (cmd.FireRocket.IsSet)
                         ShipPendingInput.ConsumeFireRocketLatch();
+                    if (cmd.PlaceMine.IsSet)
+                        ShipPendingInput.ConsumePlaceMineLatch();
                 }
 
                 return;
@@ -93,6 +95,8 @@ namespace TitanOrbit.ECS
                 ShipPendingInput.ConsumeCycleBulletLatch();
             if (cmd.FireRocket.IsSet)
                 ShipPendingInput.ConsumeFireRocketLatch();
+            if (cmd.PlaceMine.IsSet)
+                ShipPendingInput.ConsumePlaceMineLatch();
         }
     }
 }

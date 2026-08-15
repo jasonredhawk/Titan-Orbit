@@ -564,7 +564,6 @@ namespace TitanOrbit.UI
             {
                 StoreItemType.SmallRockets,
                 StoreItemType.SmallMines,
-                StoreItemType.LargeMines,
             });
         }
 

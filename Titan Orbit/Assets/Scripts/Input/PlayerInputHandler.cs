@@ -276,7 +276,13 @@ namespace TitanOrbit.Input
             }
 
             rocketPressed = actionRocket || altRocket;
-            minePressed = mineAction != null && mineAction.WasPressedThisFrame();
+
+            // --- Mine place (E) ---
+            // [TITAN-ORBIT] One-shot: WasPressedThisFrame so holding E does not dump the pack.
+            // Keyboard fallback covers missing PlaceMine bindings on the Gameplay map.
+            bool actionMine = mineAction != null && mineAction.WasPressedThisFrame();
+            bool eMine = Keyboard.current != null && Keyboard.current.eKey.wasPressedThisFrame;
+            minePressed = actionMine || eMine;
         }
 
         /// <summary>

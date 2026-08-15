@@ -73,7 +73,22 @@ namespace TitanOrbit.ECS
         [GhostField]
         public int SelectedRocketSlot;
 
+        /// <summary>
+        /// [NETCODE] InputEvent — E / PlaceMine. Server <c>ShipMineDeploySystem</c> consumes
+        /// one store mine charge (unless infinite-mine debug) and appends a deployed mine.
+        /// Appended after <see cref="SelectedRocketSlot"/> so older command layouts still line up.
+        /// </summary>
+        [GhostField]
+        public InputEvent PlaceMine;
+
+        /// <summary>
+        /// Which mine HUD row to place (0 = first pack). Client <c>MineSlotSelection</c>
+        /// updates this every tick; the server maps it onto the equipment buffer.
+        /// </summary>
+        [GhostField]
+        public int SelectedMineSlot;
+
         public FixedString512Bytes ToFixedString() =>
-            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot}]";
+            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},m={PlaceMine.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot},n={SelectedMineSlot}]";
     }
 }

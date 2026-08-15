@@ -75,6 +75,9 @@ namespace TitanOrbit.ECS.Authoring
                 // AddBuffer from ShipEnsureComponentsSystem does not register them on the ghost.
                 AddBuffer<EquippedEquipmentElement>(entity);
                 AddBuffer<EquippedCardElement>(entity);
+                // [NETCODE] Deployed mines must bake so GhostFields replicate. Runtime-only
+                // AddBuffer from ShipEnsureComponentsSystem does not register them on the ghost.
+                AddBuffer<DeployedMineElement>(entity);
                 AddComponent(entity, new ShipMotorConfig
                 {
                     EngineThrust = authoring.EngineThrust,
