@@ -14,13 +14,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: TitanOrbit.Data::TitanOrbit.Data.MineCatalog
   levels:
   - firePower: 30
-    lifetime: 3
+    lifetime: 300
     visualScale: 0.8
     hitRadius: 1.2
     blastRadius: 6
     blastForce: 10
     explosionVfxScale: 2
-    deployCooldown: 0.35
+    deployCooldown: 2
   - firePower: 45
     lifetime: 300
     visualScale: 0.9
@@ -28,7 +28,7 @@ MonoBehaviour:
     blastRadius: 7.2
     blastForce: 12
     explosionVfxScale: 2.4
-    deployCooldown: 0.35
+    deployCooldown: 2
   - firePower: 65
     lifetime: 300
     visualScale: 1
@@ -36,7 +36,7 @@ MonoBehaviour:
     blastRadius: 8.4
     blastForce: 14
     explosionVfxScale: 2.8
-    deployCooldown: 0.35
+    deployCooldown: 2
   - firePower: 90
     lifetime: 300
     visualScale: 1.1
@@ -44,7 +44,7 @@ MonoBehaviour:
     blastRadius: 9.6
     blastForce: 16
     explosionVfxScale: 3.2
-    deployCooldown: 0.35
+    deployCooldown: 2
   - firePower: 120
     lifetime: 300
     visualScale: 1.2
@@ -52,18 +52,19 @@ MonoBehaviour:
     blastRadius: 10.8
     blastForce: 18
     explosionVfxScale: 3.6
-    deployCooldown: 0.35
+    deployCooldown: 2
   - firePower: 155
-    lifetime: 3
+    lifetime: 300
     visualScale: 1.3
     hitRadius: 2.4
     blastRadius: 12
     blastForce: 20
     explosionVfxScale: 4
-    deployCooldown: 0.35
+    deployCooldown: 2
   visualPrefab: {fileID: 1721587631694800026, guid: aa87783717de43a4c934b944da139b16, type: 3}
   explosionVfxRed: {fileID: 169654, guid: 1dadf691cda82fa44a8a66d7dd374612, type: 3}
   explosionVfxBlue: {fileID: 137586, guid: 0a73ef3872695c14c87225f786afcf7a, type: 3}
   explosionVfxGreen: {fileID: 118086, guid: 0b4783e4abed86a40961a2180adca3b0, type: 3}
   explosionVfxYellow: {fileID: 133064, guid: 1de8b42c6540de34fb2c324a58c34a18, type: 3}
   explosionVfxPurple: {fileID: 137400, guid: ef52d43a5422dc848b423ebfc548e18b, type: 3}
+  explosionGlobalScale: 1

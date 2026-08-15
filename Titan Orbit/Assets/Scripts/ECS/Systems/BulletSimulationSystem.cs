@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Entities;
@@ -221,7 +222,8 @@ namespace TitanOrbit.ECS
                     if (RocketHomingTargeting.TryFindClosestTarget(
                             state.EntityManager, b.Position, b.OwnerTeam, b.OwnerNetworkId,
                             b.AcquireRange, mapW, mapH,
-                            b.HomingLockPos, hadLock, out float3 lockPos))
+                            b.HomingLockPos, hadLock, out float3 lockPos,
+                            includeOwner: TitanOrbitDebugFlags.IsSelfHarmArmed(b.Age)))
                     {
                         b.HomingLockPos = lockPos;
                         b.HomingHasLock = 1;
@@ -685,9 +687,11 @@ namespace TitanOrbit.ECS
                 if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
                     state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
                     continue;
-                if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam && !healFriendly)
+                bool selfHarm = b.Homing != 0 && TitanOrbitDebugFlags.IsSelfHarmArmed(b.Age);
+                if (shipState.ValueRO.Team == (TeamId)b.OwnerTeam && !healFriendly && !selfHarm)
                     continue;
-                if (b.OwnerNetworkId > 0 &&
+                if (!selfHarm &&
+                    b.OwnerNetworkId > 0 &&
                     state.EntityManager.HasComponent<GhostOwner>(shipEntity) &&
                     state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId == b.OwnerNetworkId)
                     continue;
@@ -920,13 +924,17 @@ namespace TitanOrbit.ECS
                     float health = ship.Health;
                     float gems = ship.CurrentGems;
                     bool isDead = ship.IsDead;
+                    bool selfHarmHit = b.Homing != 0 && TitanOrbitDebugFlags.IsSelfHarmArmed(b.Age);
+                    var damageTeam = selfHarmHit && ship.Team == (TeamId)b.OwnerTeam
+                        ? TeamId.None
+                        : (TeamId)b.OwnerTeam;
                     var result = ShipDamageLogic.ApplyHullAndGemDamage(
                         ref health,
                         ref gems,
                         ref isDead,
                         hitDamage,
                         ship.Team,
-                        (TeamId)b.OwnerTeam,
+                        damageTeam,
                         gemExpulsionPerHullDamage: 0f,
                         isImmune: moonImmune);
 

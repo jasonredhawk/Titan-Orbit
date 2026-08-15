@@ -34,6 +34,9 @@ namespace TitanOrbit.ECS
         /// <summary>Server <c>ElapsedTime</c> when the mine self-destructs.</summary>
         [GhostField] public double ExpireTime;
 
+        /// <summary>Server <c>ElapsedTime</c> when the mine was placed (self-harm debug arm).</summary>
+        [GhostField] public double PlaceTime;
+
         /// <summary>Center damage on the contact target and at the blast origin.</summary>
         [GhostField(Quantization = 100)] public float Damage;
 

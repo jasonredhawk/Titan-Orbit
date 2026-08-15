@@ -48,11 +48,12 @@ namespace TitanOrbit.ECS
             float acquireRange,
             float mapW,
             float mapH,
-            out float3 targetPos)
+            out float3 targetPos,
+            bool includeOwner = false)
         {
             return TryFindClosestTarget(
                 em, from, ownerTeam, ownerNetworkId, acquireRange, mapW, mapH,
-                default, hasPrevious: false, out targetPos);
+                default, hasPrevious: false, out targetPos, includeOwner);
         }
 
         /// <summary>
@@ -69,7 +70,8 @@ namespace TitanOrbit.ECS
             float mapH,
             float3 previousLock,
             bool hasPrevious,
-            out float3 targetPos)
+            out float3 targetPos,
+            bool includeOwner = false)
         {
             targetPos = from;
             if (!em.World.IsCreated || !ToroidalMapEcs.IsValidMapSize(mapW, mapH))
@@ -114,7 +116,7 @@ namespace TitanOrbit.ECS
             {
                 for (int i = 0; i < entities.Length; i++)
                 {
-                    if (!IsEnemyShipLock(em, entities[i], states[i], owners[i], ownerTeam, ownerNetworkId))
+                    if (!IsEnemyShipLock(em, entities[i], states[i], owners[i], ownerTeam, ownerNetworkId, includeOwner))
                         continue;
 
                     float3 pos = transforms[i].Position;
@@ -173,14 +175,18 @@ namespace TitanOrbit.ECS
             in ShipState ship,
             in GhostOwner owner,
             byte ownerTeam,
-            int ownerNetworkId)
+            int ownerNetworkId,
+            bool includeOwner)
         {
             if (ship.IsDead || ship.AwaitingTeamSelection)
                 return false;
-            if (ownerNetworkId > 0 && owner.NetworkId == ownerNetworkId)
-                return false;
-            if (!IsEnemyTeam(ownerTeam, (byte)ship.Team))
-                return false;
+            if (!includeOwner)
+            {
+                if (ownerNetworkId > 0 && owner.NetworkId == ownerNetworkId)
+                    return false;
+                if (!IsEnemyTeam(ownerTeam, (byte)ship.Team))
+                    return false;
+            }
 
             // --- Collision-only bodies ---
             // [TITAN-ORBIT] Rockets may hit these and deal damage; they are never seek targets.

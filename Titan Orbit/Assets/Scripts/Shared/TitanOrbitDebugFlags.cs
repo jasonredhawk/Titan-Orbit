@@ -35,6 +35,23 @@ namespace TitanOrbit
         public static bool InfiniteMines;
 
         /// <summary>
+        /// When true, store rockets and mines treat the owner (and same team) as an enemy
+        /// after <see cref="SelfHarmArmDelaySeconds"/>. Local Editor / MPPM host only.
+        /// </summary>
+        public static bool SelfHarmRocketsAndMines;
+
+        /// <summary>Seconds after fire / place before self-harm debug arms.</summary>
+        public const float SelfHarmArmDelaySeconds = 2f;
+
+        /// <summary>True when rocket <paramref name="ageSeconds"/> has passed the self-harm arm delay.</summary>
+        public static bool IsSelfHarmArmed(float ageSeconds) =>
+            SelfHarmRocketsAndMines && ageSeconds >= SelfHarmArmDelaySeconds;
+
+        /// <summary>True when a mine placed at <paramref name="placeTime"/> is armed against its owner.</summary>
+        public static bool IsSelfHarmArmed(double placeTime, double now) =>
+            SelfHarmRocketsAndMines && now >= placeTime + SelfHarmArmDelaySeconds;
+
+        /// <summary>
         /// When true, asteroid-destroy paths log millisecond timings (local gem burst, urgent gem
         /// proxies). Use this to find hitch frames — Console filter: <c>[AsteroidDestroy]</c>.
         /// </summary>

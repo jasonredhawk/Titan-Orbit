@@ -374,7 +374,8 @@ namespace TitanOrbit.ECS
             int ownerNetworkId,
             double serverElapsed,
             float mapW,
-            float mapH)
+            float mapH,
+            bool allowOwnerHits = false)
         {
             if (centerDamage <= 0.01f && blastForce <= 0.01f)
                 return;
@@ -390,7 +391,8 @@ namespace TitanOrbit.ECS
             {
                 ApplyBlastToShips(
                     em, hitPoint, radius, centerDamage, skipEntity,
-                    ownerTeam, ownerNetworkId, serverElapsed, mapW, mapH);
+                    ownerTeam, ownerNetworkId, serverElapsed, mapW, mapH,
+                    allowOwnerHits);
             }
 
             if (blastForce <= 0.01f)
@@ -410,10 +412,13 @@ namespace TitanOrbit.ECS
             {
                 if (states[i].IsDead)
                     continue;
-                if (ownerNetworkId > 0 && owners[i].NetworkId == ownerNetworkId)
-                    continue;
-                if (ownerTeam != 0 && (byte)states[i].Team == ownerTeam)
-                    continue;
+                if (!allowOwnerHits)
+                {
+                    if (ownerNetworkId > 0 && owners[i].NetworkId == ownerNetworkId)
+                        continue;
+                    if (ownerTeam != 0 && (byte)states[i].Team == ownerTeam)
+                        continue;
+                }
 
                 float3 pos = transforms[i].Position;
                 pos.y = 0f;
@@ -488,7 +493,8 @@ namespace TitanOrbit.ECS
             int ownerNet,
             double serverElapsed,
             float mapW,
-            float mapH)
+            float mapH,
+            bool allowOwnerHits = false)
         {
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
@@ -507,10 +513,13 @@ namespace TitanOrbit.ECS
                     continue;
                 if (states[i].IsDead)
                     continue;
-                if (ownerNet > 0 && owners[i].NetworkId == ownerNet)
-                    continue;
-                if (ownerTeam != 0 && (byte)states[i].Team == ownerTeam)
-                    continue;
+                if (!allowOwnerHits)
+                {
+                    if (ownerNet > 0 && owners[i].NetworkId == ownerNet)
+                        continue;
+                    if (ownerTeam != 0 && (byte)states[i].Team == ownerTeam)
+                        continue;
+                }
 
                 float3 pos = transforms[i].Position;
                 pos.y = 0f;
@@ -525,9 +534,12 @@ namespace TitanOrbit.ECS
                 float health = ship.Health;
                 float gems = ship.CurrentGems;
                 bool isDead = ship.IsDead;
+                var damageTeam = allowOwnerHits && ship.Team == (TeamId)ownerTeam
+                    ? TeamId.None
+                    : (TeamId)ownerTeam;
                 var result = ShipDamageLogic.ApplyHullAndGemDamage(
                     ref health, ref gems, ref isDead, splash,
-                    ship.Team, (TeamId)ownerTeam, gemExpulsionPerHullDamage: 0f, isImmune: moonImmune);
+                    ship.Team, damageTeam, gemExpulsionPerHullDamage: 0f, isImmune: moonImmune);
                 ship.Health = health;
                 ship.CurrentGems = gems;
                 ship.IsDead = isDead;

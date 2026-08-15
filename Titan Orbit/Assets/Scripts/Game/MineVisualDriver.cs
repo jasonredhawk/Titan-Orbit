@@ -305,7 +305,8 @@ namespace TitanOrbit.Game
             float burst = req.ExplosionVfxScale > 0.01f
                 ? req.ExplosionVfxScale
                 : math.max(0.05f, stats.explosionVfxScale);
-            float scale = math.max(0.05f, mineScale * burst);
+            float global = MineCatalog.GetExplosionGlobalScale();
+            float scale = math.max(0.05f, mineScale * burst * global);
             float pitch = BulletVisualFactory.GetImpactSoundPitch(req.Damage);
             Vector3 pos = new Vector3(display.x, 0f, display.z);
             if (prefab != null)

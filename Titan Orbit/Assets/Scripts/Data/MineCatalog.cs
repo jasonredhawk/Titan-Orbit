@@ -12,7 +12,8 @@ namespace TitanOrbit.Data
     /// Infinite-mine Editor debug is the exception — those drops use the live ship level.
     /// <para>
     /// Mesh is <c>visualPrefab</c> (Bomb_4). Explosion VFX is the catalog-level FireballsV2
-    /// impact for the owner team, scaled by the row's <c>explosionVfxScale</c> — applied
+    /// impact for the owner team. Burst size is
+    /// <c>visualScale × explosionVfxScale × explosionGlobalScale</c> — applied
     /// directly, not through the bullet-bank 0.25 global multiplier.
     /// </para>
     /// Paired with <c>ShipMineDeploySystem</c> (server place) and <c>MineSimulationSystem</c> (detonate).
@@ -78,7 +79,7 @@ namespace TitanOrbit.Data
             [Tooltip("Knockback impulse applied to enemy ships in the blast.")]
             public float blastForce;
 
-            [Tooltip("Burst size for a 1× mine. Final VFX = visualScale × this (2 = twice authored FireballsV2 at scale 1).")]
+            [Tooltip("Burst size for a 1× mine. Final VFX = visualScale × this × catalog explosionGlobalScale.")]
             public float explosionVfxScale;
 
             [Tooltip("Seconds after a place before the next mine may drop.")]
@@ -106,6 +107,9 @@ namespace TitanOrbit.Data
 
         [Tooltip("TeamE — FireballsV2 PurpleFireImpactV2.")]
         public GameObject explosionVfxPurple;
+
+        [Tooltip("Global burst multiplier on top of level visualScale × row explosionVfxScale. 1 = no extra shrink/grow. Does not change Bomb_4 mesh size.")]
+        public float explosionGlobalScale = 1f;
 
         static MineCatalog _cached;
 
@@ -174,6 +178,18 @@ namespace TitanOrbit.Data
             if (explosionVfxGreen != null) return explosionVfxGreen;
             if (explosionVfxYellow != null) return explosionVfxYellow;
             return explosionVfxPurple;
+        }
+
+        /// <summary>
+        /// Catalog-wide burst multiplier. 0 / missing asset = 1 (no extra shrink).
+        /// Does not change <see cref="LevelStats.visualScale"/> (Bomb_4 mesh).
+        /// </summary>
+        public static float GetExplosionGlobalScale()
+        {
+            var catalog = LoadDefault();
+            if (catalog == null || catalog.explosionGlobalScale <= 0.01f)
+                return 1f;
+            return Mathf.Max(0.05f, catalog.explosionGlobalScale);
         }
 
         /// <summary>

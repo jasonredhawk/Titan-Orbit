@@ -77,7 +77,7 @@ namespace TitanOrbit.ECS
                     if (!timedOut)
                     {
                         if (TryFindEnemyShipContact(
-                                state.EntityManager, in mine, mapW, mapH, out contactShip))
+                                state.EntityManager, in mine, serverElapsed, mapW, mapH, out contactShip))
                         {
                             // Contact ship found — explode below.
                         }
@@ -115,11 +115,13 @@ namespace TitanOrbit.ECS
         static bool TryFindEnemyShipContact(
             EntityManager em,
             in DeployedMineElement mine,
+            double serverElapsed,
             float mapW,
             float mapH,
             out Entity contactShip)
         {
             contactShip = Entity.Null;
+            bool selfHarm = TitanOrbitDebugFlags.IsSelfHarmArmed(mine.PlaceTime, serverElapsed);
 
             using var query = em.CreateEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
@@ -138,10 +140,13 @@ namespace TitanOrbit.ECS
             {
                 if (states[i].IsDead || states[i].AwaitingTeamSelection)
                     continue;
-                if (mine.OwnerNetworkId > 0 && owners[i].NetworkId == mine.OwnerNetworkId)
-                    continue;
-                if (mine.OwnerTeam != 0 && (byte)states[i].Team == mine.OwnerTeam)
-                    continue;
+                if (!selfHarm)
+                {
+                    if (mine.OwnerNetworkId > 0 && owners[i].NetworkId == mine.OwnerNetworkId)
+                        continue;
+                    if (mine.OwnerTeam != 0 && (byte)states[i].Team == mine.OwnerTeam)
+                        continue;
+                }
                 if (ShipMoonDockState.IsFullyLandedOnMoon(em, entities[i]))
                     continue;
 
@@ -239,6 +244,7 @@ namespace TitanOrbit.ECS
             float3 hitPoint = mine.Position;
             hitPoint.y = 0f;
             var attackerTeam = (TeamId)mine.OwnerTeam;
+            bool selfHarm = TitanOrbitDebugFlags.IsSelfHarmArmed(mine.PlaceTime, serverElapsed);
 
             // --- Contact ship (full center damage + push) ---
             if (contactShip != Entity.Null && em.HasComponent<ShipState>(contactShip))
@@ -248,9 +254,11 @@ namespace TitanOrbit.ECS
                 float gems = ship.CurrentGems;
                 bool isDead = ship.IsDead;
                 bool moonImmune = ShipMoonDockState.IsFullyLandedOnMoon(em, contactShip);
+                // Team.None skips the same-team early-out so self-harm debug can hurt the owner.
+                var damageTeam = selfHarm && ship.Team == attackerTeam ? TeamId.None : attackerTeam;
                 var result = ShipDamageLogic.ApplyHullAndGemDamage(
                     ref health, ref gems, ref isDead, mine.Damage,
-                    ship.Team, attackerTeam, gemExpulsionPerHullDamage: 0f, isImmune: moonImmune);
+                    ship.Team, damageTeam, gemExpulsionPerHullDamage: 0f, isImmune: moonImmune);
                 ship.Health = health;
                 ship.CurrentGems = gems;
                 ship.IsDead = isDead;
@@ -321,7 +329,8 @@ namespace TitanOrbit.ECS
                 mine.OwnerNetworkId,
                 serverElapsed,
                 mapW,
-                mapH);
+                mapH,
+                allowOwnerHits: selfHarm);
 
             MineNetNotify.SendExplode(ref ecb, in mine);
         }

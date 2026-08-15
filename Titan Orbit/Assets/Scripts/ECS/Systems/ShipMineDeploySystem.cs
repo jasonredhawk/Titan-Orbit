@@ -97,6 +97,7 @@ namespace TitanOrbit.ECS
                     ItemLevel = math.max(1, itemLevel),
                     Sequence = BulletVfxBridge.NextSequence(),
                     ExpireTime = serverElapsed + math.max(0.1f, stats.lifetime),
+                    PlaceTime = serverElapsed,
                     Damage = math.max(0.1f, damage),
                     HitRadius = math.max(0.1f, stats.hitRadius),
                     BlastRadius = math.max(0.1f, stats.blastRadius),

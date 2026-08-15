@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TitanOrbit;
 using TitanOrbit.Audio;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
@@ -86,6 +87,8 @@ namespace TitanOrbit.Game
             public float TurnSpeedDeg;
             /// <summary>Toroidal acquire radius. 0 uses the catalog default.</summary>
             public float AcquireRange;
+            /// <summary>Seconds since spawn — self-harm debug arms rockets after 2s.</summary>
+            public float Age;
             /// <summary>Last raw lock (sticky). Not a lagged steer point.</summary>
             public float3 RawLock;
             public bool HasRawLock;
@@ -526,6 +529,7 @@ namespace TitanOrbit.Game
                 float3 prevPos = t.LogicalPos;
                 t.LogicalPos += t.Velocity * tickDt;
                 t.Traveled += math.length(t.Velocity) * tickDt;
+                t.Age += tickDt;
                 t.RemainingLifetime -= tickDt;
                 t.TickCarry -= tickDt;
                 steps++;
@@ -593,7 +597,8 @@ namespace TitanOrbit.Game
             if (!RocketHomingTargeting.TryFindClosestTarget(
                     world.EntityManager, t.LogicalPos, t.OwnerTeam, t.OwnerNetworkId,
                     t.AcquireRange, mapW, mapH,
-                    t.RawLock, t.HasRawLock, out float3 lockPos))
+                    t.RawLock, t.HasRawLock, out float3 lockPos,
+                    includeOwner: TitanOrbitDebugFlags.IsSelfHarmArmed(t.Age)))
             {
                 t.HasRawLock = false;
                 return;
