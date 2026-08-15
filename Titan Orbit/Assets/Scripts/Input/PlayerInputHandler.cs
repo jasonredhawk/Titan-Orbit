@@ -248,9 +248,8 @@ namespace TitanOrbit.Input
             }
 
             // --- Space brakes toggle (Left or Right Ctrl) ---
-            // When on: ship slows when not holding move; when off: ship floats.
-            // [TITAN-ORBIT] Same keyboard resolve as B / V — Keyboard.current is often null
-            // until the Game view is focused, which made Ctrl look "disconnected".
+            // Default ON. One Input System edge only — do not also poll legacy GetKeyDown
+            // or a single press can flip twice and leave brakes off.
             if (WasCtrlPressedThisFrame())
                 spaceBrakesEnabled = !spaceBrakesEnabled;
 
@@ -286,18 +285,8 @@ namespace TitanOrbit.Input
         /// </summary>
         static bool WasCtrlPressedThisFrame()
         {
-            if (TryResolveKeyboard(out var k) &&
-                (k.leftCtrlKey.wasPressedThisFrame || k.rightCtrlKey.wasPressedThisFrame))
-                return true;
-
-#if ENABLE_LEGACY_INPUT_MANAGER
-            // --- Legacy fallback ---
-            // [UNITY] Some Editor Play setups report Ctrl only on the old Input Manager.
-            if (UnityEngine.Input.GetKeyDown(KeyCode.LeftControl) ||
-                UnityEngine.Input.GetKeyDown(KeyCode.RightControl))
-                return true;
-#endif
-            return false;
+            return TryResolveKeyboard(out var k) &&
+                   (k.leftCtrlKey.wasPressedThisFrame || k.rightCtrlKey.wasPressedThisFrame);
         }
 
         /// <summary>Keyboard.current, or the first Keyboard device if current is unset.</summary>

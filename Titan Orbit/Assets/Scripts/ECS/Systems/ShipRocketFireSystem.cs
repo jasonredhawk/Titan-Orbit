@@ -62,14 +62,10 @@ namespace TitanOrbit.ECS
             var bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
             var spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
             var ecb = new EntityCommandBuffer(Allocator.Temp);
-            var vfxBank = BulletVfxBank.LoadDefault();
-            float categoryUpgradeScale = vfxBank != null
-                ? vfxBank.GetCategoryUpgradeVisualScaleMultiplier(_rocketBankIndex)
-                : 1f;
 
-            foreach (var (input, shipState, loadout, kinematics, transform, ghostOwner, entity) in SystemAPI
+            foreach (var (input, shipState, loadout, transform, ghostOwner, entity) in SystemAPI
                          .Query<RefRO<ShipInput>, RefRO<ShipState>, RefRW<ShipLoadoutState>,
-                             RefRO<ShipKinematics>, RefRO<LocalTransform>, RefRO<GhostOwner>>()
+                             RefRO<LocalTransform>, RefRO<GhostOwner>>()
                          .WithAll<ShipTag>()
                          .WithEntityAccess())
             {
@@ -100,6 +96,7 @@ namespace TitanOrbit.ECS
                     out float bulletSpeed,
                     out float maxDistance,
                     out float lifetime,
+                    out float visualScale,
                     out int resolvedBank,
                     out int extras);
                 if (resolvedBank >= 0)
@@ -124,18 +121,9 @@ namespace TitanOrbit.ECS
 
                 float3 fireOrigin = transform.ValueRO.Position;
                 fireOrigin.y = transform.ValueRO.Position.y;
-                float3 shipVel = kinematics.ValueRO.Velocity;
-                shipVel.y = 0f;
 
-                float visualScale = BulletVisualScale.ComputePerShotScale(
-                    1f,
-                    damage,
-                    bulletSpeed,
-                    BulletVisualScale.DefaultReferenceBulletDamage,
-                    BulletVisualScale.DefaultReferenceBulletSpeed,
-                    categoryUpgradeScale);
-
-                float3 bulletVel = fireForward * math.max(1f, bulletSpeed) + shipVel;
+                // Catalog speed only — do not add ship velocity (guns do; rockets do not).
+                float3 bulletVel = fireForward * math.max(1f, bulletSpeed);
                 uint sequence = BulletVfxBridge.NextSequence();
                 var spawn = new BulletElement
                 {

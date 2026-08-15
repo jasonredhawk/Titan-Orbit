@@ -150,9 +150,9 @@ namespace TitanOrbit.Game
                 Fire = fire,
                 CycleBullet = cycleBullet,
                 FireRocket = fireRocket,
-                SelectedRocketSlot = RocketSlotSelection.SelectedIndex,
-                SpaceBrakes = _input.SpaceBrakesEnabled,
+                DisableSpaceBrakes = !_input.SpaceBrakesEnabled,
                 WantDepositGems = MoonOrbitClientState.WantDepositGems,
+                SelectedRocketSlot = RocketSlotSelection.SelectedIndex,
             };
         }
 

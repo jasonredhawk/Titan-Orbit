@@ -16,9 +16,9 @@ using UnityEngine.UI;
 namespace TitanOrbit.UI
 {
     /// <summary>
-    /// Left-middle in-flight list of equipped rocket packs. One row per slot: level, damage,
-    /// remaining shots, and a caret for the pack that will fire. UP / DOWN and row clicks
-    /// change the selection. Hidden on the main menu, Join Team, and Orbit Menu.
+    /// Left-middle in-flight list of equipped rocket packs. One compact tile per slot: level,
+    /// damage, remaining shots, and a caret for the pack that will fire. UP / DOWN and tile
+    /// clicks change the selection. Hidden on the main menu, Join Team, and Orbit Menu.
     /// <para>
     /// [TITAN-ORBIT] Reads the local ship's ghosted <see cref="EquippedEquipmentElement"/>
     /// buffer and <see cref="ShipLoadoutState.NextRocketFireTime"/>. Skips all ship queries
@@ -30,9 +30,12 @@ namespace TitanOrbit.UI
     public class RocketLoadoutHUD : MonoBehaviour
     {
         const int MaxRows = 8;
-        const float PanelWidth = 248f;
-        const float RowHeight = 36f;
-        const float HeaderHeight = 64f;
+        const float TileWidth = 88f;
+        const float TileHeight = 44f;
+        const float TileGap = 4f;
+        const float PanelPad = 8f;
+        const float PanelWidth = TileWidth + PanelPad * 2f;
+        const float HeaderHeight = 56f;
 
         static readonly Color FillColor = new Color(0.012f, 0.016f, 0.028f, 0.92f);
         static readonly Color CaptionColor = new Color(0.62f, 0.78f, 0.95f, 0.92f);
@@ -202,8 +205,8 @@ namespace TitanOrbit.UI
                     ? slots[selected].level
                     : Mathf.Max(1, shipLevel);
                 _caption.text = infinite
-                    ? $"ROCKETS  INF  ·  Lv {selLevel}"
-                    : $"ROCKETS  ·  Lv {selLevel}";
+                    ? $"RKT INF  Lv {selLevel}"
+                    : $"ROCKETS  Lv {selLevel}";
             }
 
             int shotLevel = slots != null && selected < slots.Count
@@ -214,7 +217,7 @@ namespace TitanOrbit.UI
 
             if (_cooldown != null)
             {
-                _cooldown.text = ready ? "READY  ·  ALT" : $"{remain:0.0}s  ·  ALT";
+                _cooldown.text = ready ? "READY  ALT" : $"{remain:0.0}s  ALT";
                 _cooldown.color = ready ? ReadyColor : WaitColor;
             }
 
@@ -240,7 +243,8 @@ namespace TitanOrbit.UI
             for (int i = row; i < _rowRoots.Count; i++)
                 _rowRoots[i].SetActive(false);
 
-            float height = HeaderHeight + row * RowHeight;
+            float tiles = row <= 0 ? 0f : row * TileHeight + (row - 1) * TileGap;
+            float height = HeaderHeight + tiles + PanelPad;
             if (_panel != null)
                 _panel.sizeDelta = new Vector2(PanelWidth, height);
         }
@@ -291,7 +295,7 @@ namespace TitanOrbit.UI
             _panel.anchorMax = new Vector2(0f, 0.5f);
             _panel.pivot = new Vector2(0f, 0.5f);
             _panel.anchoredPosition = new Vector2(14f, 0f);
-            _panel.sizeDelta = new Vector2(PanelWidth, 80f);
+            _panel.sizeDelta = new Vector2(PanelWidth, HeaderHeight + TileHeight + PanelPad);
             var bg = panelGo.GetComponent<Image>();
             bg.color = FillColor;
             bg.raycastTarget = true;
@@ -307,24 +311,31 @@ namespace TitanOrbit.UI
             accentGo.GetComponent<Image>().color = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(1);
             accentGo.GetComponent<Image>().raycastTarget = false;
 
-            _caption = CreateLabel(_panel, "Caption", "ROCKETS  ·  Lv 1", 13f, CaptionColor, new Vector2(12f, -6f), TextAlignmentOptions.TopLeft);
-            _cooldown = CreateLabel(_panel, "Cooldown", "READY  ·  ALT", 12f, ReadyColor, new Vector2(12f, -22f), TextAlignmentOptions.TopLeft);
+            _caption = CreateLabel(_panel, "Caption", "ROCKETS", 12f, CaptionColor, new Vector2(0f, -5f), TextAlignmentOptions.Top);
+            var captionRt = _caption.rectTransform;
+            captionRt.offsetMin = new Vector2(6f, captionRt.offsetMin.y);
+            captionRt.offsetMax = new Vector2(-6f, captionRt.offsetMax.y);
+            _cooldown = CreateLabel(_panel, "Cooldown", "READY", 11f, ReadyColor, new Vector2(0f, -20f), TextAlignmentOptions.Top);
+            var cooldownRt = _cooldown.rectTransform;
+            cooldownRt.offsetMin = new Vector2(6f, cooldownRt.offsetMin.y);
+            cooldownRt.offsetMax = new Vector2(-6f, cooldownRt.offsetMax.y);
             BuildCooldownBar(_panel);
 
             for (int i = 0; i < MaxRows; i++)
             {
                 int captured = i;
-                var rowGo = new GameObject($"Row{i}", typeof(RectTransform), typeof(Image), typeof(Button));
+                var rowGo = new GameObject($"Tile{i}", typeof(RectTransform), typeof(Image), typeof(Button));
                 rowGo.transform.SetParent(_panel, false);
                 var rt = rowGo.GetComponent<RectTransform>();
                 rt.anchorMin = new Vector2(0f, 1f);
-                rt.anchorMax = new Vector2(1f, 1f);
-                rt.pivot = new Vector2(0.5f, 1f);
-                rt.anchoredPosition = new Vector2(0f, -HeaderHeight - i * RowHeight);
-                rt.sizeDelta = new Vector2(-8f, RowHeight - 2f);
+                rt.anchorMax = new Vector2(0f, 1f);
+                rt.pivot = new Vector2(0f, 1f);
+                rt.anchoredPosition = new Vector2(PanelPad, -HeaderHeight - i * (TileHeight + TileGap));
+                rt.sizeDelta = new Vector2(TileWidth, TileHeight);
                 var img = rowGo.GetComponent<Image>();
                 img.color = RowIdle;
                 var btn = rowGo.GetComponent<Button>();
+                btn.transition = Selectable.Transition.None;
                 btn.onClick.AddListener(() => OnRowSelected(captured));
                 _rowButtons.Add(btn);
                 _rowBackgrounds.Add(img);
@@ -333,31 +344,32 @@ namespace TitanOrbit.UI
                 var caretGo = new GameObject("Caret", typeof(RectTransform), typeof(Image));
                 caretGo.transform.SetParent(rt, false);
                 var caretRt = caretGo.GetComponent<RectTransform>();
-                caretRt.anchorMin = new Vector2(0f, 0.2f);
-                caretRt.anchorMax = new Vector2(0f, 0.8f);
+                caretRt.anchorMin = new Vector2(0f, 0f);
+                caretRt.anchorMax = new Vector2(0f, 1f);
                 caretRt.pivot = new Vector2(0f, 0.5f);
                 caretRt.sizeDelta = new Vector2(4f, 0f);
-                caretRt.anchoredPosition = new Vector2(6f, 0f);
+                caretRt.anchoredPosition = Vector2.zero;
                 var caretImg = caretGo.GetComponent<Image>();
                 caretImg.color = CaretColor;
                 caretImg.raycastTarget = false;
                 caretImg.enabled = false;
                 _rowCarets.Add(caretImg);
 
-                var level = CreateLabel(rt, "Level", "Lv 1", 16f, LevelColor, new Vector2(16f, 0f), TextAlignmentOptions.MidlineLeft);
+                var level = CreateLabel(rt, "Level", "Lv 1", 15f, LevelColor, Vector2.zero, TextAlignmentOptions.Center);
                 var levelRt = level.rectTransform;
-                levelRt.anchorMin = new Vector2(0f, 0f);
-                levelRt.anchorMax = new Vector2(0.42f, 1f);
-                levelRt.offsetMin = new Vector2(16f, 0f);
-                levelRt.offsetMax = new Vector2(0f, 0f);
+                levelRt.anchorMin = new Vector2(0f, 0.48f);
+                levelRt.anchorMax = new Vector2(1f, 1f);
+                levelRt.offsetMin = new Vector2(8f, 0f);
+                levelRt.offsetMax = new Vector2(-6f, -2f);
                 _levelLabels.Add(level);
 
-                var detail = CreateLabel(rt, "Detail", "56 dmg  ×2", 12f, BodyColor, new Vector2(0f, 0f), TextAlignmentOptions.MidlineLeft);
+                var detail = CreateLabel(rt, "Detail", "40  ×2", 11f, BodyColor, Vector2.zero, TextAlignmentOptions.Center);
                 var detailRt = detail.rectTransform;
-                detailRt.anchorMin = new Vector2(0.42f, 0f);
-                detailRt.anchorMax = Vector2.one;
-                detailRt.offsetMin = Vector2.zero;
-                detailRt.offsetMax = new Vector2(-8f, 0f);
+                detailRt.anchorMin = new Vector2(0f, 0f);
+                detailRt.anchorMax = new Vector2(1f, 0.52f);
+                detailRt.offsetMin = new Vector2(6f, 2f);
+                detailRt.offsetMax = new Vector2(-6f, 0f);
+                detail.enableWordWrapping = false;
                 _detailLabels.Add(detail);
                 rowGo.SetActive(false);
             }
@@ -376,7 +388,7 @@ namespace TitanOrbit.UI
             trackRt.anchorMax = new Vector2(1f, 1f);
             trackRt.pivot = new Vector2(0.5f, 1f);
             trackRt.anchoredPosition = new Vector2(0f, -38f);
-            trackRt.sizeDelta = new Vector2(-24f, 8f);
+            trackRt.sizeDelta = new Vector2(-16f, 6f);
             var trackImg = trackGo.GetComponent<Image>();
             trackImg.color = new Color(0.04f, 0.06f, 0.1f, 0.95f);
             trackImg.raycastTarget = false;
@@ -405,14 +417,14 @@ namespace TitanOrbit.UI
                 _cooldownFillImage.color = ready ? ReadyColor : WaitColor;
         }
 
-        /// <summary>Damage + charges (or INF) for a pack row. Level is a separate label.</summary>
+        /// <summary>Damage + charges (or INF) stacked inside a square tile.</summary>
         static string FormatDetails(int level, int charges, bool infinite)
         {
             float damage = RocketShotMath.ResolveDamage(Mathf.Max(1, level));
-            string dmg = damage.ToString("0.0", CultureInfo.InvariantCulture);
+            string dmg = damage.ToString("0", CultureInfo.InvariantCulture);
             if (infinite)
-                return $"{dmg} dmg  INF";
-            return $"{dmg} dmg  ×{Mathf.Max(0, charges)}";
+                return $"{dmg}  INF";
+            return $"{dmg}  ×{Mathf.Max(0, charges)}";
         }
 
         /// <summary>Creates a TMP label under <paramref name="parent"/>.</summary>

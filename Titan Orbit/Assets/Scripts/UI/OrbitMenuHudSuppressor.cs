@@ -66,8 +66,10 @@ namespace TitanOrbit.UI
                 if (canvas == null)
                     continue;
 
-                // Rocket HUD hides its own panel — do not alpha-zero a shared parent canvas.
+                // Rocket / brakes HUDs hide their own panels — do not alpha-zero a shared parent canvas.
                 if (canvas.GetComponent<RocketLoadoutHUD>() != null)
+                    continue;
+                if (canvas.GetComponent<SpaceBrakesHUD>() != null)
                     continue;
 
                 if (ShouldKeepOrbitCanvas(canvas.transform, keepA, keepB))

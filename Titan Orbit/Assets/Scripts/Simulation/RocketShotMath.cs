@@ -21,9 +21,10 @@ namespace TitanOrbit.Simulation
         /// <param name="itemLevel">Purchase level, or ship level when infinite debug is on.</param>
         /// <param name="stats">Sanitized catalog row.</param>
         /// <param name="damage">Damage written onto the spawned bullet.</param>
-        /// <param name="speed">Flight speed after bank speed mul.</param>
+        /// <param name="speed">Catalog flight speed (not ship velocity, not bank speed mul).</param>
         /// <param name="maxDistance">Travel budget, or <see cref="RocketCatalog.UnlimitedFlightDistance"/> when lifetime-only.</param>
         /// <param name="lifetime">Catalog seconds of flight (not rebuilt from range).</param>
+        /// <param name="visualScale">Mesh size vs a level-1 rocket, from fired damage (not level).</param>
         /// <param name="bankIndex">Reserved Rockets category, or 0 if missing.</param>
         /// <param name="extras">Fire-power extra levels (<c>itemLevel - 1</c>).</param>
         public static void Resolve(
@@ -33,6 +34,7 @@ namespace TitanOrbit.Simulation
             out float speed,
             out float maxDistance,
             out float lifetime,
+            out float visualScale,
             out int bankIndex,
             out int extras)
         {
@@ -57,13 +59,33 @@ namespace TitanOrbit.Simulation
             BulletBankCombatLogic.ApplyFireModifiers(
                 bankIndex, ref damage, ref dummySpeed, ref dummyRange, ref dummyLife, ref fireRate,
                 extras);
+
+            // Size tracks this shot's damage vs a level-1 rocket (same bank mul, extras 0).
+            visualScale = ResolveVisualScaleFromDamage(damage, bankIndex);
         }
 
         /// <summary>Fired damage only — HUD readout (matches the spawned bullet).</summary>
         public static float ResolveDamage(int itemLevel)
         {
-            Resolve(itemLevel, out _, out float damage, out _, out _, out _, out _, out _);
+            Resolve(itemLevel, out _, out float damage, out _, out _, out _, out _, out _, out _);
             return math.max(0.1f, damage);
+        }
+
+        /// <summary>
+        /// <c>1</c> at level-1 catalog damage; grows linearly with fired damage
+        /// (40 → 1.0×, 120 → 3.0× when L1 fire power is 40).
+        /// </summary>
+        public static float ResolveVisualScaleFromDamage(float damage, int bankIndex)
+        {
+            float reference = RocketCatalog.Get(1).firePower;
+            float dummySpeed = 1f;
+            float dummyRange = 1f;
+            float dummyLife = 0f;
+            float dummyRate = 1f;
+            BulletBankCombatLogic.ApplyFireModifiers(
+                bankIndex, ref reference, ref dummySpeed, ref dummyRange, ref dummyLife, ref dummyRate,
+                firePowerExtraLevels: 0);
+            return math.max(0.1f, damage / math.max(0.01f, reference));
         }
     }
 }

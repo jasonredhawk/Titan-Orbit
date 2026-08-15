@@ -12,8 +12,9 @@ namespace TitanOrbit.Data
     /// <para>
     /// Visuals still come from the reserved <c>BulletVfxBank</c> "Rockets" category
     /// (Concussive Push, asteroid bonus, tracers). This catalog owns flight + damage numbers:
-    /// fire power, speed (slower at higher level), lifetime (no max-distance cull),
-    /// acquire range, and a level-scaled reload.
+    /// fire power, independent flight speed (not ship velocity), lifetime (no max-distance cull),
+    /// acquire range, and a level-scaled reload. Mesh size is derived from fired damage
+    /// (see <c>RocketShotMath.ResolveVisualScaleFromDamage</c>), not from level.
     /// </para>
     /// Paired with <c>ShipRocketFireSystem</c> (server spawn) and <c>RocketHomingLogic</c> (turn).
     /// </summary>
@@ -83,6 +84,9 @@ namespace TitanOrbit.Data
 
             [Tooltip("Seconds after a shot before the next rocket may fire. Level 1 = 3s, +0.5s per level.")]
             public float fireCooldown;
+
+            [Tooltip("Unused — rocket mesh size follows fired damage, not this field.")]
+            public float visualScale;
         }
 
         [Tooltip("Per-level rows. Missing or short arrays fall back to baked defaults.")]
@@ -153,6 +157,7 @@ namespace TitanOrbit.Data
             // maxDistance 0 = no range cull (lifetime only). Do not invent a travel budget.
             if (row.acquireRange <= 0.01f) row.acquireRange = DefaultAcquireRange;
             if (row.fireCooldown <= 0.01f) row.fireCooldown = DefaultFireCooldownSeconds;
+            // visualScale 0 = caller uses the level ladder (do not flatten every row to 1).
             return row;
         }
 
@@ -176,12 +181,12 @@ namespace TitanOrbit.Data
             // maxDistance 0 = lifetime-only cull.
             return new[]
             {
-                Row(40f, 16f, 80f, 10f, 0f, 50f, 3.0f),
-                Row(55f, 15f, 90f, 12f, 0f, 60f, 3.5f),
-                Row(70f, 14f, 100f, 14f, 0f, 70f, 4.0f),
-                Row(85f, 13f, 110f, 16f, 0f, 80f, 4.5f),
-                Row(100f, 12f, 120f, 18f, 0f, 90f, 5.0f),
-                Row(120f, 11f, 130f, 20f, 0f, 100f, 5.5f),
+                Row(40f, 16f, 80f, 10f, 0f, 50f, 3.0f, 1.00f),
+                Row(55f, 15f, 90f, 12f, 0f, 60f, 3.5f, 1.30f),
+                Row(70f, 14f, 100f, 14f, 0f, 70f, 4.0f, 1.65f),
+                Row(85f, 13f, 110f, 16f, 0f, 80f, 4.5f, 2.05f),
+                Row(100f, 12f, 120f, 18f, 0f, 90f, 5.0f, 2.50f),
+                Row(120f, 11f, 130f, 20f, 0f, 100f, 5.5f, 3.00f),
             };
         }
 
@@ -193,7 +198,8 @@ namespace TitanOrbit.Data
             float lifetime,
             float maxDistance,
             float acquireRange,
-            float cooldown)
+            float cooldown,
+            float visualScale)
         {
             return new LevelStats
             {
@@ -204,6 +210,7 @@ namespace TitanOrbit.Data
                 maxDistance = maxDistance,
                 acquireRange = acquireRange,
                 fireCooldown = cooldown,
+                visualScale = visualScale,
             };
         }
     }

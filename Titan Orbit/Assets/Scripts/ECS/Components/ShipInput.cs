@@ -54,21 +54,26 @@ namespace TitanOrbit.ECS
         public InputEvent FireRocket;
 
         /// <summary>
-        /// Which rocket HUD row to fire (0 = first pack). Client <c>RocketSlotSelection</c>
-        /// updates this every tick; the server maps it onto the equipment buffer.
+        /// When true, skip space-brake deceleration (frictionless coast). Default
+        /// <c>false</c> so <c>default(ShipInput)</c> / baked ghosts still brake.
+        /// Left Ctrl toggles this via <c>PlayerInputHandler</c>.
         /// </summary>
         [GhostField]
-        public int SelectedRocketSlot;
-
-        /// <summary>True when space-brake deceleration is toggled on.</summary>
-        [GhostField]
-        public bool SpaceBrakes;
+        public bool DisableSpaceBrakes;
 
         /// <summary>When true at a landed moon, gems transfer to the planet (manual or auto-deposit toggle).</summary>
         [GhostField]
         public bool WantDepositGems;
 
+        /// <summary>
+        /// Which rocket HUD row to fire (0 = first pack). Client <c>RocketSlotSelection</c>
+        /// updates this every tick; the server maps it onto the equipment buffer.
+        /// Kept last so older command layouts still line up on <see cref="DisableSpaceBrakes"/>.
+        /// </summary>
+        [GhostField]
+        public int SelectedRocketSlot;
+
         public FixedString512Bytes ToFixedString() =>
-            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},s={SelectedRocketSlot},b={SpaceBrakes},d={WantDepositGems}]";
+            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot}]";
     }
 }
