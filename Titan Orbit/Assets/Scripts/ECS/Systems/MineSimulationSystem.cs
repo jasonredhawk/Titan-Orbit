@@ -14,7 +14,8 @@ namespace TitanOrbit.ECS
     /// Server-authoritative mine detonation. Each live <see cref="DeployedMineElement"/> sits
     /// still until an enemy ship or enemy moon (shield shell, or surface if the shield is down)
     /// overlaps it, or until <see cref="DeployedMineElement.ExpireTime"/> — then it explodes
-    /// with the same damage + concussive blast.
+    /// with the same damage + concussive blast. Hull absorbs first; leftover damage
+    /// expels cargo 1:1. Death still requires hull and gems both empty.
     /// <para>
     /// [TITAN-ORBIT] All range tests use <see cref="ToroidalMapEcs.ToroidalDistance"/> /
     /// <see cref="PlanetOrbitMath.GetMoonWorldPositionNear"/>. Friendly ships and friendly moons
@@ -255,10 +256,13 @@ namespace TitanOrbit.ECS
                 bool isDead = ship.IsDead;
                 bool moonImmune = ShipMoonDockState.IsFullyLandedOnMoon(em, contactShip);
                 // Team.None skips the same-team early-out so self-harm debug can hurt the owner.
+                // 1:1 leftover damage → cargo so hull 0 + remaining gems stays alive.
                 var damageTeam = selfHarm && ship.Team == attackerTeam ? TeamId.None : attackerTeam;
                 var result = ShipDamageLogic.ApplyHullAndGemDamage(
                     ref health, ref gems, ref isDead, mine.Damage,
-                    ship.Team, damageTeam, gemExpulsionPerHullDamage: 0f, isImmune: moonImmune);
+                    ship.Team, damageTeam,
+                    gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
+                    isImmune: moonImmune);
                 ship.Health = health;
                 ship.CurrentGems = gems;
                 ship.IsDead = isDead;
@@ -330,6 +334,8 @@ namespace TitanOrbit.ECS
                 serverElapsed,
                 mapW,
                 mapH,
+                ecb,
+                gemPrefab,
                 allowOwnerHits: selfHarm);
 
             MineNetNotify.SendExplode(ref ecb, in mine);

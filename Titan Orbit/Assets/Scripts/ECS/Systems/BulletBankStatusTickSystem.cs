@@ -33,7 +33,11 @@ namespace TitanOrbit.ECS
             double elapsed = SystemAPI.Time.ElapsedTime;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
-            TickBurns(ref state, ref ecb, elapsed);
+            Entity gemPrefab = Entity.Null;
+            if (SystemAPI.TryGetSingleton<GamePrefabs>(out var gamePrefabs))
+                gemPrefab = gamePrefabs.Gem;
+
+            TickBurns(ref state, ref ecb, elapsed, gemPrefab);
             TickAsteroidBurns(ref state, ref ecb, elapsed);
             TickGravityWells(ref state, dt, elapsed);
 
@@ -41,7 +45,7 @@ namespace TitanOrbit.ECS
             ecb.Dispose();
         }
 
-        void TickBurns(ref SystemState state, ref EntityCommandBuffer ecb, double elapsed)
+        void TickBurns(ref SystemState state, ref EntityCommandBuffer ecb, double elapsed, Entity gemPrefab)
         {
             foreach (var (burnRw, shipRw, vitalsRw, transform, entity) in SystemAPI
                          .Query<RefRW<ShipBurnOverTimeState>, RefRW<ShipState>, RefRW<ShipVitalsState>, RefRO<LocalTransform>>()
@@ -91,7 +95,7 @@ namespace TitanOrbit.ECS
                         damage,
                         ship.Team,
                         (TeamId)inst.SourceTeam,
-                        gemExpulsionPerHullDamage: 0f,
+                        gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
                         isImmune: false);
                     ship.Health = health;
                     ship.CurrentGems = gems;
@@ -100,7 +104,7 @@ namespace TitanOrbit.ECS
                     if (result.AppliedHullDamage)
                         vitalsRw.ValueRW.LastHullDamageTime = elapsed;
 
-                    if (result.AppliedHullDamage || result.BecameDead)
+                    if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
                     {
                         float tickDamage = math.abs(result.HealthDelta);
                         if (tickDamage < 0.0001f)
@@ -119,13 +123,30 @@ namespace TitanOrbit.ECS
                             asteroidHealthAfter: -1f);
                     }
 
-                    if ((result.AppliedHullDamage || result.BecameDead) && inst.SourceNetworkId > 0)
+                    if ((result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead) &&
+                        inst.SourceNetworkId > 0)
                     {
                         ShipMatchStatsLogic.SetLastDamager(
                             state.EntityManager,
                             entity,
                             inst.SourceNetworkId,
                             (float)elapsed);
+                    }
+
+                    if (result.GemsToExpel > 0.0001f && gemPrefab != Entity.Null)
+                    {
+                        int sourceNetworkId = 0;
+                        if (state.EntityManager.HasComponent<GhostOwner>(entity))
+                            sourceNetworkId = state.EntityManager.GetComponentData<GhostOwner>(entity).NetworkId;
+                        ShipGemExpulsion.SpawnFromDamage(
+                            ecb,
+                            gemPrefab,
+                            bodyPos,
+                            result.GemsToExpel,
+                            intensity: 0.5f,
+                            salt: (uint)(entity.Index * 19349663) ^ (uint)(elapsed * 1000.0),
+                            (float)elapsed,
+                            sourceNetworkId);
                     }
 
                     if (ship.IsDead)

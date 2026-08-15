@@ -375,6 +375,8 @@ namespace TitanOrbit.ECS
             double serverElapsed,
             float mapW,
             float mapH,
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
             bool allowOwnerHits = false)
         {
             if (centerDamage <= 0.01f && blastForce <= 0.01f)
@@ -392,6 +394,7 @@ namespace TitanOrbit.ECS
                 ApplyBlastToShips(
                     em, hitPoint, radius, centerDamage, skipEntity,
                     ownerTeam, ownerNetworkId, serverElapsed, mapW, mapH,
+                    ecb, gemPrefab, ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
                     allowOwnerHits);
             }
 
@@ -449,7 +452,10 @@ namespace TitanOrbit.ECS
             Entity skipEntity,
             double serverElapsed,
             List<PlanetaryDefenseHitTarget> defenseTargets,
-            List<DroneHitTarget> droneTargets)
+            List<DroneHitTarget> droneTargets,
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
+            float gemExpulsionPerHullDamage)
         {
             if (profile == null || centerDamage <= 0.01f)
                 return;
@@ -476,13 +482,18 @@ namespace TitanOrbit.ECS
             byte ownerTeam = bullet.OwnerTeam;
             int ownerNet = bullet.OwnerNetworkId;
 
-            ApplyBlastToShips(em, hitPoint, radius, centerDamage, skipEntity, ownerTeam, ownerNet, serverElapsed, mapW, mapH);
+            ApplyBlastToShips(
+                em, hitPoint, radius, centerDamage, skipEntity, ownerTeam, ownerNet,
+                serverElapsed, mapW, mapH, ecb, gemPrefab, gemExpulsionPerHullDamage);
             ApplyBlastToAsteroids(em, hitPoint, radius, centerDamage, skipEntity, mapW, mapH);
             ApplyBlastToTurrets(em, hitPoint, radius, centerDamage, skipEntity, ownerTeam, serverElapsed, defenseTargets, mapW, mapH);
             ApplyBlastToDrones(em, hitPoint, radius, centerDamage, ownerTeam, ownerNet, droneTargets, mapW, mapH);
         }
 
-        /// <summary>Hull damage on enemy ships in the blast (no gem expulsion — primary hit already spilled).</summary>
+        /// <summary>
+        /// Hull + cargo damage on enemy ships in the blast. Leftover damage spills gems 1:1;
+        /// death still needs hull and cargo both empty.
+        /// </summary>
         static void ApplyBlastToShips(
             EntityManager em,
             float3 center,
@@ -494,6 +505,9 @@ namespace TitanOrbit.ECS
             double serverElapsed,
             float mapW,
             float mapH,
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
+            float gemExpulsionPerHullDamage,
             bool allowOwnerHits = false)
         {
             using var query = em.CreateEntityQuery(
@@ -539,7 +553,7 @@ namespace TitanOrbit.ECS
                     : (TeamId)ownerTeam;
                 var result = ShipDamageLogic.ApplyHullAndGemDamage(
                     ref health, ref gems, ref isDead, splash,
-                    ship.Team, damageTeam, gemExpulsionPerHullDamage: 0f, isImmune: moonImmune);
+                    ship.Team, damageTeam, gemExpulsionPerHullDamage, isImmune: moonImmune);
                 ship.Health = health;
                 ship.CurrentGems = gems;
                 ship.IsDead = isDead;
@@ -552,8 +566,23 @@ namespace TitanOrbit.ECS
                     em.SetComponentData(shipEntity, vitals);
                 }
 
-                if ((result.AppliedHullDamage || result.BecameDead) && ownerNet > 0)
+                if ((result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead) &&
+                    ownerNet > 0)
                     ShipMatchStatsLogic.SetLastDamager(em, shipEntity, ownerNet, (float)serverElapsed);
+
+                if (result.GemsToExpel > 0.0001f && gemPrefab != Entity.Null)
+                {
+                    int sourceNetworkId = owners[i].NetworkId;
+                    ShipGemExpulsion.SpawnFromDamage(
+                        ecb,
+                        gemPrefab,
+                        pos,
+                        result.GemsToExpel,
+                        intensity: 0.5f,
+                        salt: (uint)(shipEntity.Index * 19349663) ^ (uint)(serverElapsed * 1000.0),
+                        (float)serverElapsed,
+                        sourceNetworkId);
+                }
             }
         }
 

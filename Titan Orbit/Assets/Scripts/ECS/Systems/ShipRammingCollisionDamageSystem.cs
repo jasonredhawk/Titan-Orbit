@@ -736,7 +736,7 @@ namespace TitanOrbit.ECS
                 damage,
                 ship.Team,
                 TeamId.None,
-                gemExpulsionPerHullDamage: 1f,
+                gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
                 isImmune: false);
 
             ship.Health = health;

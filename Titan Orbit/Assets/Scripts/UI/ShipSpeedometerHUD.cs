@@ -273,17 +273,41 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// [UNITY] OnDestroy — drop the static event subscription and dispose the cached ECS query.
+        /// [UNITY] OnDestroy — drop the static event subscription and release the cached ECS query
+        /// only if the visualization world that created it is still alive.
         /// </summary>
         void OnDestroy()
         {
             GameManager.ShowSpeedometerChanged -= OnShowSpeedometerChanged;
+            DisposeHudTaggedQuery();
+        }
 
-            if (_hudTaggedQuery != default)
+        /// <summary>
+        /// Releases the cached <see cref="LocalPlayerShipTag"/> query, or drops the handle if the
+        /// world already tore it down.
+        /// <para>
+        /// [ECS/DOTS] <see cref="EntityManager.CreateEntityQuery"/> handles are caller-owned while
+        /// the world lives, so we Dispose when swapping worlds or destroying this HUD mid-session.
+        /// <see cref="EntityQuery.Dispose"/> unregisters from the world's <c>AliveEntityQueries</c>
+        /// map. On Play Mode exit the visualization <see cref="World"/> is often disposed first and
+        /// already freed that map — a second Dispose then NullReferenceExceptions inside
+        /// <c>UnsafeParallelHashMap.Remove</c> (this Entities version has no
+        /// <c>EntityQuery.IsCreated</c>). If the world is gone, clear the fields only.
+        /// </para>
+        /// </summary>
+        void DisposeHudTaggedQuery()
+        {
+            if (_hudTaggedQuery == default)
             {
-                _hudTaggedQuery.Dispose();
-                _hudTaggedQuery = default;
+                _hudTaggedQueryWorld = null;
+                return;
             }
+
+            // --- World still alive: we own this CreateEntityQuery handle ---
+            if (_hudTaggedQueryWorld != null && _hudTaggedQueryWorld.IsCreated)
+                _hudTaggedQuery.Dispose();
+
+            _hudTaggedQuery = default;
             _hudTaggedQueryWorld = null;
         }
 
@@ -969,8 +993,8 @@ namespace TitanOrbit.UI
             // [TITAN-ORBIT] Cache the EntityQuery — recreating it every LateUpdate was ~3ms.
             if (_hudTaggedQueryWorld != world || _hudTaggedQuery == default)
             {
-                if (_hudTaggedQuery != default)
-                    _hudTaggedQuery.Dispose();
+                // Old world may already be disposed (session recycle) — never Dispose blindly.
+                DisposeHudTaggedQuery();
                 _hudTaggedQuery = em.CreateEntityQuery(
                     typeof(LocalPlayerShipTag),
                     typeof(ShipState),

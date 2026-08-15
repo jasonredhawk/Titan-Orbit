@@ -867,7 +867,7 @@ namespace TitanOrbit.ECS
             {
                 case BulletHitKind.Planet:
                     // Body absorbs the round — no component write.
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                     return true;
 
                 case BulletHitKind.Moon:
@@ -878,7 +878,7 @@ namespace TitanOrbit.ECS
                     if (!state.EntityManager.HasComponent<PlanetGemMoonState>(bestEntity) ||
                         !state.EntityManager.HasComponent<PlanetState>(bestEntity))
                     {
-                        TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
+                        TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                         return true;
                     }
 
@@ -891,13 +891,13 @@ namespace TitanOrbit.ECS
                         planet.Ownership,
                         serverElapsed);
                     state.EntityManager.SetComponentData(bestEntity, moon);
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                     return true;
                 }
 
                 case BulletHitKind.Ship:
                 {
-                    // [TITAN-ORBIT] Hull first, then gem spill (50% rules); death only when both empty.
+                    // [TITAN-ORBIT] Hull first, leftover damage spills gems 1:1; death only when both empty.
                     var writable = SystemAPI.GetComponentRW<ShipState>(bestEntity);
                     ref var ship = ref writable.ValueRW;
 
@@ -917,7 +917,7 @@ namespace TitanOrbit.ECS
                             * BulletBankHitEffects.ResolveStrengthScale(b.StrengthScale);
                         if (heal > 0f && !ship.IsDead)
                             ship.Health = math.min(ship.MaxHealth, ship.Health + heal);
-                        TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
+                        TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                         return true;
                     }
 
@@ -935,7 +935,7 @@ namespace TitanOrbit.ECS
                         hitDamage,
                         ship.Team,
                         damageTeam,
-                        gemExpulsionPerHullDamage: 0f,
+                        gemExpulsionPerHullDamage: ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage,
                         isImmune: moonImmune);
 
                     ship.Health = health;
@@ -995,7 +995,7 @@ namespace TitanOrbit.ECS
                             profile, serverElapsed, mapW, mapH);
                     }
 
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                     return true;
                 }
 
@@ -1043,7 +1043,7 @@ namespace TitanOrbit.ECS
                                 : hitPoint,
                             serverElapsed, mapW, mapH);
 
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                     return true;
                 }
 
@@ -1056,7 +1056,7 @@ namespace TitanOrbit.ECS
                     else
                         state.EntityManager.SetComponentData(bestEntity, t);
 
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                     return true;
                 }
 
@@ -1065,7 +1065,7 @@ namespace TitanOrbit.ECS
                     // Equipment RemainingCharges is the ghosted drone HP (store GetDroneMaxHp).
                     DroneSwarmHitScan.ApplyDamageToDroneSlot(
                         state.EntityManager, bestEntity, s_BestDroneSlot, hitDamage);
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                     return true;
                 }
 
@@ -1095,7 +1095,7 @@ namespace TitanOrbit.ECS
                         }
                     }
 
-                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, hitDamage, bestEntity);
+                    TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b, ecb, gemPrefab, hitDamage, bestEntity);
                     return true;
                 }
 
@@ -1112,6 +1112,8 @@ namespace TitanOrbit.ECS
             float mapW,
             float mapH,
             in BulletElement bullet,
+            EntityCommandBuffer ecb,
+            Entity gemPrefab,
             float hitDamage = 0f,
             Entity skipEntity = default)
         {
@@ -1138,7 +1140,8 @@ namespace TitanOrbit.ECS
                 BulletBankHitEffects.TryApplyConcussiveBlastDamage(
                     state.EntityManager, hitPoint, profile, mapW, mapH,
                     in bullet, hitDamage, skipEntity, serverElapsed,
-                    s_DefenseHitTargets, s_DroneHitTargets);
+                    s_DefenseHitTargets, s_DroneHitTargets,
+                    ecb, gemPrefab, ShipDamageLogic.ExcessDamageGemExpulsionPerHullDamage);
             }
         }
 
