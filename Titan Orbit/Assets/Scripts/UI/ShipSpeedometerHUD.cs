@@ -661,7 +661,8 @@ namespace TitanOrbit.UI
             in ShipState ship,
             in ShipAttributeUpgradeState attrs,
             int equipmentHash,
-            string chassisId)
+            string chassisId,
+            int fireBankKey = 0)
         {
             unchecked
             {
@@ -683,6 +684,7 @@ namespace TitanOrbit.UI
                 h = h * 31 + equipmentHash;
                 // Chassis id — rare rebuild; GetHashCode is acceptable here.
                 h = h * 31 + (chassisId != null ? chassisId.GetHashCode() : 0);
+                h = h * 31 + fireBankKey;
                 return h;
             }
         }
@@ -1562,7 +1564,8 @@ namespace TitanOrbit.UI
             }
 
             int tipSnapshotKey = ComputeTooltipSnapshotKey(
-                in ship, in _statsCacheAttrs, _partCache.EquipmentHash, _cachedChassisId);
+                in ship, in _statsCacheAttrs, _partCache.EquipmentHash, _cachedChassisId,
+                BulletBankHudCopy.SnapshotKey());
             bool tipSnapshotDirty = tipSnapshotKey != _tooltipSnapshotKey;
             if (tipSnapshotDirty)
             {
@@ -1610,7 +1613,9 @@ namespace TitanOrbit.UI
                     MoveStepPreview = _partCache.Valid
                         ? Mathf.Max(0f, _partCache.Propulsion.moveSpeedPerExtraLevel)
                         : 0f,
+                    FirePowerAbilityLevel = _statsCacheAttrs.FirePower,
                 };
+                BulletBankHudCopy.ApplyLoadout(ref _liveTooltipContext);
             }
 
             // --- Accel bar from frame-to-frame speed delta ---

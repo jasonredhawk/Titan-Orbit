@@ -137,6 +137,15 @@ namespace TitanOrbit.UI
             /// Preview for next Move Speed purchase (aggregated moveSpeedPerExtraLevel step).
             /// </summary>
             public float MoveStepPreview;
+
+            /// <summary>Live B-key / heal bank the ship actually fires.</summary>
+            public int FireBankIndex;
+
+            /// <summary>True when Orbit Menu HEAL is on (EnergySpheres).</summary>
+            public bool HealingBulletsActive;
+
+            /// <summary>Bottom-HUD Fire Power purchases (Extra Level steps with ship level).</summary>
+            public int FirePowerAbilityLevel;
         }
 
         /// <summary>
@@ -469,7 +478,9 @@ namespace TitanOrbit.UI
             float dps = live.Weapon.BulletDamage * live.Weapon.FireRate;
             sb.Append("Hull avg  ").Append(F1(live.Weapon.BulletDamage)).Append("/hit  ");
             sb.Append(F1(dps)).Append("/s  ");
-            sb.Append("<color=#5B7A94>").Append(F1(live.Weapon.FireRate)).Append("/s</color>");
+            sb.Append("<color=#5B7A94>").Append(F1(live.Weapon.FireRate)).Append("/s</color>").AppendLine();
+
+            BulletBankHudCopy.AppendFullSection(sb, in live, default);
         }
 
         // --------------------------------------------------------------------------

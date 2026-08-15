@@ -16,6 +16,9 @@ namespace TitanOrbit.ECS
     /// Server RPC handlers for moon orbit store: contributed gem balance queries, deposit intent,
     /// ship level upgrades, drones/support items, extra components, card spin/take, and loadout remove.
     /// Validates team, planet id, and contributed gem balances before mutating ship/planet state.
+    /// [TITAN-ORBIT] Drones, extra components, and card spins sell at
+    /// <c>min(ship level, docked planet level)</c> — a high-level ship on a low-level moon
+    /// cannot buy max-tier gear there.
     /// Local Host also calls the public <c>Try*ForNetworkId</c> helpers directly (SendRpc on
     /// ServerWorld never becomes <see cref="ReceiveRpcCommandRequest"/>).
     /// Paired with <see cref="MoonOrbitRpcClientSystem"/> on the client.
@@ -391,11 +394,7 @@ namespace TitanOrbit.ECS
             // --- Adopt store planet's ship family ---
             // [TITAN-ORBIT] Home → AstroEagle (index 0). Captured neutrals keep the family rolled at
             // spawn; buying here switches the ship onto that family's upgrade tree (not AstroEagle).
-            byte storeFamilyIndex = storePlanet.IsHomePlanet
-                ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex
-                : (storePlanet.ShipFamilyConfigIndex > 0
-                    ? storePlanet.ShipFamilyConfigIndex
-                    : PlanetShipFamilyAssignment.HomeFamilyConfigIndex);
+            byte storeFamilyIndex = ResolveStoreFamilyConfigIndex(storePlanet);
 
             if (!ShipStatApplyLogic.TryResolveChassisId(
                     ship.Team,
@@ -479,6 +478,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Buys a drone / rocket / mine pack into an empty equipment slot.
+        /// Drones stamp <c>ItemLevel = min(ship, docked planet)</c>.
         /// Local Host calls this directly — do not SendRpc on ServerWorld.
         /// </summary>
         public static bool TryPurchaseStoreItemForNetworkId(
@@ -521,14 +521,18 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            float cost = StoreItemData.GetPrice(itemType, ship.ShipLevel);
+            // [TITAN-ORBIT] Drones lock ItemLevel to min(ship, docked planet). A level-6 ship
+            // on a level-3 moon can only buy a level-3 drone (price, HP, and damage).
+            int purchaseLevel = ResolveStorePurchaseLevel(em, shipEntity, ship, storePlanetIdHint: 0);
+            float cost = StoreItemData.GetPrice(itemType, purchaseLevel);
             if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
             {
                 message = "Not enough contributed gems.";
                 return false;
             }
 
-            if (!TryAddEquipmentItem(em, shipEntity, itemType, ship.ShipLevel, out message))
+            byte sourceFamilyIndex = ResolveDroneSourceFamilyIndex(em, shipEntity);
+            if (!TryAddEquipmentItem(em, shipEntity, itemType, ship.ShipLevel, purchaseLevel, sourceFamilyIndex, out message))
             {
                 ContributedGemsLogic.Refund(em, homeEntity, networkId, cost);
                 return false;
@@ -544,6 +548,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Buys a ship-family extra component by stable id into an empty equipment slot.
+        /// Price and stamped ItemLevel use <c>min(ship, docked planet)</c>.
         /// </summary>
         public static bool TryPurchaseStoreComponentForNetworkId(
             EntityManager em,
@@ -605,14 +610,17 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
-            float cost = ShipComponentStoreData.GetComponentGemPrice(entry, ship.ShipLevel);
+            // [TITAN-ORBIT] Same planet cap as drones: price and stamped ItemLevel use
+            // min(ship, docked planet) so a high-level hull cannot buy max-tier parts on a weak world.
+            int purchaseLevel = ResolveStorePurchaseLevel(em, shipEntity, ship, storePlanetIdHint: 0);
+            float cost = ShipComponentStoreData.GetComponentGemPrice(entry, purchaseLevel);
             if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
             {
                 message = "Not enough contributed gems.";
                 return false;
             }
 
-            if (!TryAddShipComponentItem(em, shipEntity, componentId, ship.ShipLevel, out message))
+            if (!TryAddShipComponentItem(em, shipEntity, componentId, ship.ShipLevel, purchaseLevel, out message))
             {
                 ContributedGemsLogic.Refund(em, homeEntity, networkId, cost);
                 return false;
@@ -625,7 +633,9 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Pays spin cost, rolls three weighted cards, stores a pending offer for take-card.
-        /// On Local Host the caller also mirrors offer ids into <see cref="MoonOrbitClientState"/>.
+        /// Spin tier is <c>min(ship, store planet)</c> so a high-level ship on a low-level moon
+        /// only sees that planet's card tier. On Local Host the caller also mirrors offer ids
+        /// into <see cref="MoonOrbitClientState"/>.
         /// </summary>
         public static bool TryCardSpinForNetworkId(
             EntityManager em,
@@ -688,8 +698,11 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
+            // [TITAN-ORBIT] Spin tier is min(ship, docked store planet) — not home.
+            // Landing on a level-3 moon with a level-6 ship rolls level-3 cards only.
+            int storeLevel = math.max(1, storePlanet.PlanetLevel);
             int homeLevel = math.max(1, homeState.PlanetLevel);
-            int spinTier = math.min(math.max(1, ship.ShipLevel), homeLevel);
+            int spinTier = StoreItemData.GetStorePurchaseLevel(ship.ShipLevel, storeLevel);
             var pool = BuildCardPoolForSpin(family, spinTier, homeLevel);
             if (pool.Count == 0)
             {
@@ -815,10 +828,12 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
+            // [TITAN-ORBIT] Card tier cannot exceed min(ship, this moon's planet).
+            int purchaseLevel = StoreItemData.GetStorePurchaseLevel(ship.ShipLevel, storePlanet.PlanetLevel);
             int cardLvl = math.max(1, card.cardLevel);
-            if (cardLvl > ship.ShipLevel)
+            if (cardLvl > purchaseLevel)
             {
-                message = "Ship level too low.";
+                message = cardLvl > ship.ShipLevel ? "Ship level too low." : "Planet level too low.";
                 return false;
             }
 
@@ -952,11 +967,80 @@ namespace TitanOrbit.ECS
             return false;
         }
 
+        /// <summary>
+        /// Family of the moon the ship is docked at (home family if undocked / unknown).
+        /// Stamped onto purchased drones so each drone keeps that planet's bullet bank.
+        /// </summary>
+        static byte ResolveDroneSourceFamilyIndex(EntityManager em, Entity shipEntity)
+        {
+            if (em.HasComponent<ShipMoonDockState>(shipEntity))
+            {
+                int planetId = em.GetComponentData<ShipMoonDockState>(shipEntity).MoonPlanetId;
+                if (planetId > 0 && TryFindPlanetById(em, planetId, out _, out var storePlanet))
+                    return ResolveStoreFamilyConfigIndex(storePlanet);
+            }
+
+            return PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
+        }
+
+        static byte ResolveStoreFamilyConfigIndex(in PlanetState storePlanet)
+        {
+            return storePlanet.IsHomePlanet
+                ? PlanetShipFamilyAssignment.HomeFamilyConfigIndex
+                : (storePlanet.ShipFamilyConfigIndex > 0
+                    ? storePlanet.ShipFamilyConfigIndex
+                    : PlanetShipFamilyAssignment.HomeFamilyConfigIndex);
+        }
+
+        /// <summary>
+        /// Level the docked moon store may sell: <c>min(ship, that planet)</c>.
+        /// Prefers the moon the ship is actually docked at (authoritative, not client-sent).
+        /// Falls back to <paramref name="storePlanetIdHint"/> then the team's home planet.
+        /// </summary>
+        static int ResolveStorePurchaseLevel(
+            EntityManager em,
+            Entity shipEntity,
+            in ShipState ship,
+            int storePlanetIdHint)
+        {
+            int shipLevel = math.max(1, ship.ShipLevel);
+            int planetLevel = 0;
+
+            // --- Docked moon first (where the Orbit Menu is open) ---
+            if (em.HasComponent<ShipMoonDockState>(shipEntity))
+            {
+                int dockedId = em.GetComponentData<ShipMoonDockState>(shipEntity).MoonPlanetId;
+                if (dockedId > 0 && TryFindPlanetById(em, dockedId, out _, out var docked))
+                    planetLevel = math.max(1, docked.PlanetLevel);
+            }
+
+            // --- Explicit store planet (card RPCs already send this) ---
+            if (planetLevel <= 0 && storePlanetIdHint > 0 &&
+                TryFindPlanetById(em, storePlanetIdHint, out _, out var hinted))
+                planetLevel = math.max(1, hinted.PlanetLevel);
+
+            // --- Home planet if the ship is somehow undocked ---
+            if (planetLevel <= 0 && TryFindHomePlanet(em, ship.Team, out _, out var home))
+                planetLevel = math.max(1, home.PlanetLevel);
+
+            if (planetLevel <= 0)
+                planetLevel = 1;
+
+            return StoreItemData.GetStorePurchaseLevel(shipLevel, planetLevel);
+        }
+
+        /// <summary>
+        /// Appends a drone / rocket / mine into the equipment buffer.
+        /// Slot count uses <paramref name="shipLevel"/>; drone ItemLevel uses
+        /// <paramref name="purchaseLevel"/> (already capped to the docked planet).
+        /// </summary>
         static bool TryAddEquipmentItem(
             EntityManager em,
             Entity shipEntity,
             StoreItemType itemType,
             int shipLevel,
+            int purchaseLevel,
+            byte sourceFamilyConfigIndex,
             out FixedString128Bytes message)
         {
             message = default;
@@ -964,6 +1048,7 @@ namespace TitanOrbit.ECS
                 em.AddBuffer<EquippedEquipmentElement>(shipEntity);
 
             var buffer = em.GetBuffer<EquippedEquipmentElement>(shipEntity);
+            // Slot count follows the ship (a level-6 hull still has 6 slots on a level-3 moon).
             int maxSlots = math.max(1, shipLevel);
             if (buffer.Length >= maxSlots)
             {
@@ -971,29 +1056,38 @@ namespace TitanOrbit.ECS
                 return false;
             }
 
+            int lockedLevel = math.max(1, purchaseLevel);
             int charges = StoreItemData.IsDrone(itemType)
-                ? StoreItemData.GetDroneMaxHp(itemType, math.max(1, shipLevel))
+                ? StoreItemData.GetDroneMaxHp(itemType, lockedLevel)
                 : StoreItemData.GetPackSize(itemType);
-            // [TITAN-ORBIT] All drones lock purchase level to the ship's current level.
+            // [TITAN-ORBIT] Drones lock ItemLevel to the store purchase level (min of ship and planet).
             // Damage/HP/cost/size already used this level; store it so stats stay fixed after buy.
             int itemLevel = StoreItemData.IsLeveledDrone(itemType)
-                ? math.max(1, shipLevel)
+                ? lockedLevel
                 : 0;
+            FixedString64Bytes componentId = default;
+            if (StoreItemData.IsDrone(itemType))
+                componentId = BulletBankProfileUtility.FormatDroneSourceFamilyId(sourceFamilyConfigIndex);
             buffer.Add(new EquippedEquipmentElement
             {
                 ItemType = (int)itemType,
                 RemainingCharges = math.max(1, charges),
                 ItemLevel = itemLevel,
-                ComponentId = default,
+                ComponentId = componentId,
             });
             return true;
         }
 
+        /// <summary>
+        /// Appends a ship-family extra component. Slot count uses the ship;
+        /// ItemLevel stores the planet-capped purchase level for Orbit Menu labels.
+        /// </summary>
         static bool TryAddShipComponentItem(
             EntityManager em,
             Entity shipEntity,
             string componentId,
             int shipLevel,
+            int purchaseLevel,
             out FixedString128Bytes message)
         {
             message = default;
@@ -1012,6 +1106,9 @@ namespace TitanOrbit.ECS
             {
                 ItemType = (int)StoreItemType.ShipComponent,
                 RemainingCharges = 1,
+                // [TITAN-ORBIT] Stamp the planet-capped purchase level so Orbit Menu loadout
+                // can show "Lv 3" for a part bought on a level-3 moon.
+                ItemLevel = math.max(1, purchaseLevel),
                 ComponentId = componentId,
             });
             return true;

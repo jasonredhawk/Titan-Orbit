@@ -574,7 +574,7 @@ namespace TitanOrbit.UI
             for (int i = 0; i < items.Length; i++)
             {
                 var item = items[i];
-                // Initial label uses level 1; RefreshStore rewrites with live ShipLevel.
+                // Initial label uses level 1; RefreshStore rewrites with min(ship, planet).
                 string label = FormatStoreRowLabel(item, 1);
                 var btn = CreateButton(parent, label, Vector2.zero);
                 var le = btn.gameObject.AddComponent<LayoutElement>();
@@ -593,7 +593,7 @@ namespace TitanOrbit.UI
             }
         }
 
-        /// <summary>Builds the store button caption for the ship's current level.</summary>
+        /// <summary>Builds the store button caption for the store purchase level (min of ship and planet).</summary>
         static string FormatStoreRowLabel(StoreItemType item, int shipLevel)
         {
             int level = Mathf.Max(1, shipLevel);
@@ -634,8 +634,9 @@ namespace TitanOrbit.UI
 
         void RefreshStore()
         {
-            // --- Rewrite combat-drone rows with the live ship level (price + damage text) ---
-            int level = Mathf.Max(1, ShipLevel);
+            // --- Rewrite drone rows at min(ship, this moon's planet) ---
+            // [TITAN-ORBIT] A level-6 ship on a level-3 moon sees level-3 prices and damage text.
+            int level = StoreItemData.GetStorePurchaseLevel(ShipLevel, StorePlanetLevel);
             for (int i = 0; i < _storeRows.Count; i++)
             {
                 var row = _storeRows[i];

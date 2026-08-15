@@ -24,23 +24,23 @@ MonoBehaviour:
     - {fileID: 171462, guid: ee648e9d50d9ac9458d25447f58e5056, type: 3}
     profile:
       statModifiers:
-        firePowerMultiplier: 0.9
-        bulletSpeedMultiplier: 1.25
-        fireRateMultiplier: 0.95
+        firePowerMultiplier: 1
+        bulletSpeedMultiplier: 1
+        fireRateMultiplier: 1
         rammingPowerMultiplier: 1
-        bulletRangeMultiplier: 1.15
+        bulletRangeMultiplier: 1
       abilities:
       - type: 10
         magnitude: 2
-        magnitudePerExtra: 0.08
+        magnitudePerExtra: 0.5
         duration: 1
         durationPerExtra: 0
         tickInterval: 0.25
         tickIntervalPerExtra: 0
         radius: 0.5
-        radiusPerExtra: 0.02
-        energyDrain: 0.5
-        energyDrainPerExtra: 0.08
+        radiusPerExtra: 0.0625
+        energyDrain: 0
+        energyDrainPerExtra: 0
         damageTarget: 0
   - categoryName: Bullets
     globalVisualScaleMultiplier: 1

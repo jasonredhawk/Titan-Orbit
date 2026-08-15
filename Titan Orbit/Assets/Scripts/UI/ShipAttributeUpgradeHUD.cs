@@ -1080,6 +1080,7 @@ namespace TitanOrbit.UI
                 // [TITAN-ORBIT] Gems / people change mass tax → Move Speed and Turn chips must repaint.
                 h = h * 31 + Mathf.RoundToInt(ship.CurrentGems);
                 h = h * 31 + ship.CurrentPeople;
+                h = h * 31 + BulletBankHudCopy.SnapshotKey();
                 return h;
             }
         }
@@ -1304,7 +1305,9 @@ namespace TitanOrbit.UI
                 BarMaxSpeed = barMax,
                 OverdriveCapacityMult = odCap,
                 ComponentSize = hasComponentSize ? componentSize : 0f,
+                FirePowerAbilityLevel = attrs.FirePower,
             };
+            BulletBankHudCopy.ApplyLoadout(ref live);
 
             if (ShipStatApplyLogic.TryResolveChassisId(
                     ship.Team,
@@ -1430,12 +1433,25 @@ namespace TitanOrbit.UI
         /// Chip glance text: <b>current</b> and green <c>+per-buy</c> only (no FP/MS title).
         /// Ability name lives on the bottom button; full math is on hover.
         /// </summary>
-        static string FormatChipText(int index, float value, float nextStep, int abilityLv, string unit)
+        static string FormatChipText(
+            int index,
+            float value,
+            float nextStep,
+            int abilityLv,
+            string unit,
+            in ShipSpeedometerStatTooltips.LiveContext live)
         {
-            _ = index;
             _ = abilityLv;
-            var sb = new System.Text.StringBuilder(48);
+            var sb = new System.Text.StringBuilder(64);
             AppendCurrentAndPerBuy(sb, value, nextStep, unit, sizePercent: 100);
+            // Fire Power / Bullet Speed glance: live bullet type under the number.
+            if (index == 0 || index == 1)
+            {
+                string typeLine = BulletBankHudCopy.FormatChipTypeLine(in live);
+                if (!string.IsNullOrEmpty(typeLine))
+                    sb.Append('\n').Append("<size=85%><color=#FFAA66>").Append(typeLine).Append("</color></size>");
+            }
+
             return sb.ToString();
         }
 
@@ -1824,7 +1840,7 @@ namespace TitanOrbit.UI
 
                 ShipAbilityStatBreakdown.ResolveChipDisplay(
                     i, in live, in attrs, out float value, out float nextStep, out int abilityLv, out string unit);
-                string chipText = FormatChipText(i, value, nextStep, abilityLv, unit);
+                string chipText = FormatChipText(i, value, nextStep, abilityLv, unit, in live);
                 if (_lastChipText[i] == chipText)
                     continue;
                 _lastChipText[i] = chipText;

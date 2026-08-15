@@ -96,9 +96,9 @@ MonoBehaviour:
       rammingPower: 1
       rammingPowerPerExtraLevel: 0.25
       healthCap: 6.3
-      healthCapPerExtraLevel: 1.575
+      healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
-      healthRegenPerExtraLevel: 0.056250006
+      healthRegenPerExtraLevel: 0.225
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -158,9 +158,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerExtraLevel: 0.7875
+      healthCapPerExtraLevel: 3.15
       healthRegen: 0.11250001
-      healthRegenPerExtraLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.1125
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -344,9 +344,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerExtraLevel: 0.7875
+      healthCapPerExtraLevel: 3.15
       healthRegen: 0.11250001
-      healthRegenPerExtraLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.1125
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -468,9 +468,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerExtraLevel: 0.7875
+      healthCapPerExtraLevel: 3.15
       healthRegen: 0.11250001
-      healthRegenPerExtraLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.1125
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -530,9 +530,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerExtraLevel: 0.7875
+      healthCapPerExtraLevel: 3.15
       healthRegen: 0.11250001
-      healthRegenPerExtraLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.1125
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -592,9 +592,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 6.3
-      healthCapPerExtraLevel: 1.575
+      healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
-      healthRegenPerExtraLevel: 0.056250006
+      healthRegenPerExtraLevel: 0.225
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -654,9 +654,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 8.1
-      healthCapPerExtraLevel: 2.025
+      healthCapPerExtraLevel: 8.1
       healthRegen: 0.28928575
-      healthRegenPerExtraLevel: 0.07232144
+      healthRegenPerExtraLevel: 0.28928572
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -726,7 +726,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 1
     powerScore: 120.46806
-    powerScoreAtMaxLevel: 158.1488
+    powerScoreAtMaxLevel: 171.09338
     powerScoreBreakdown:
       offense: 19
       defense: 17.259441
@@ -745,6 +745,24 @@ MonoBehaviour:
       turnSpeed: 10
       gemCap: 30.9025
       peopleCap: 20.306126
+    powerScoreBreakdownAtShipLevel:
+      offense: 19
+      defense: 63.459705
+      energy: 21
+      mobility: 25.2
+      capacity: 92.272125
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 61.27144
+      healthRegen: 2.1882656
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 7
+      turnSpeed: 14
+      gemCap: 53.224503
+      peopleCap: 39.047626
     componentMass: 8.568384
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_20
@@ -771,7 +789,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
     powerScore: 121.43241
-    powerScoreAtMaxLevel: 194.82362
+    powerScoreAtMaxLevel: 219.39723
     powerScoreBreakdown:
       offense: 19
       defense: 16.382412
@@ -790,6 +808,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 36
       peopleCap: 22.5
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.25
+      defense: 122.97295
+      energy: 46.200005
+      mobility: 39.5
+      capacity: 166.75
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.25
+      healthCap: 118.732506
+      healthRegen: 4.240446
+      energyCap: 39.600002
+      energyRegen: 6.6000004
+      moveSpeed: 10.5
+      turnSpeed: 14
+      gemCap: 93
+      peopleCap: 73.75
     componentMass: 13.286121
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_10
@@ -816,7 +852,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
     powerScore: 121.16
-    powerScoreAtMaxLevel: 198.39
+    powerScoreAtMaxLevel: 221.88
     powerScoreBreakdown:
       offense: 19
       defense: 15.660001
@@ -835,6 +871,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 29
       peopleCap: 20.5
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.25
+      defense: 81.5625
+      energy: 84
+      mobility: 39.5
+      capacity: 107.3
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.25
+      healthCap: 78.75
+      healthRegen: 2.8125
+      energyCap: 72
+      energyRegen: 12
+      moveSpeed: 10.5
+      turnSpeed: 14
+      gemCap: 57.8
+      peopleCap: 49.5
     componentMass: 14.356342
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_13
@@ -861,7 +915,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
     powerScore: 121.671074
-    powerScoreAtMaxLevel: 225.28688
+    powerScoreAtMaxLevel: 258.63428
     powerScoreBreakdown:
       offense: 19
       defense: 14.821072
@@ -880,6 +934,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 32.1
       peopleCap: 18.75
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.5
+      defense: 136.3259
+      energy: 91
+      mobility: 41
+      capacity: 154.7
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.5
+      healthCap: 131.625
+      healthRegen: 4.700893
+      energyCap: 78
+      energyRegen: 13
+      moveSpeed: 11
+      turnSpeed: 14
+      gemCap: 86.7
+      peopleCap: 68
     componentMass: 16.85
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_08
@@ -906,7 +978,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
     powerScore: 122.57516
-    powerScoreAtMaxLevel: 229.5239
+    powerScoreAtMaxLevel: 262.5659
     powerScoreBreakdown:
       offense: 19
       defense: 14.68533
@@ -925,6 +997,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 30.162144
       peopleCap: 18.57768
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.5
+      defense: 132.01591
+      energy: 112.69999
+      mobility: 42.5
+      capacity: 149.76439
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.5
+      healthCap: 127.46364
+      healthRegen: 4.552273
+      energyCap: 96.59999
+      energyRegen: 16.1
+      moveSpeed: 11.5
+      turnSpeed: 14
+      gemCap: 82.61751
+      peopleCap: 67.14688
     componentMass: 16.49111
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_01
@@ -951,7 +1041,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
     powerScore: 122.373604
-    powerScoreAtMaxLevel: 236.0976
+    powerScoreAtMaxLevel: 270.6232
     powerScoreBreakdown:
       offense: 19
       defense: 15.344712
@@ -970,6 +1060,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 25.0336
       peopleCap: 17.66512
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.5
+      defense: 121.43078
+      energy: 117.3207
+      mobility: 39.5
+      capacity: 117.50752
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.5
+      healthCap: 117.24351
+      healthRegen: 4.187268
+      energyCap: 100.5606
+      energyRegen: 16.7601
+      moveSpeed: 10.5
+      turnSpeed: 14
+      gemCap: 62.0672
+      peopleCap: 55.44032
     componentMass: 15.006214
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_15
@@ -996,7 +1104,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
     powerScore: 129.47429
-    powerScoreAtMaxLevel: 278.3986
+    powerScoreAtMaxLevel: 330.97144
     powerScoreBreakdown:
       offense: 19
       defense: 17.524286
@@ -1015,6 +1123,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 37.2
       peopleCap: 24
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.75
+      defense: 184.93715
+      energy: 89.25
+      mobility: 47
+      capacity: 227.9
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.75
+      healthCap: 178.56001
+      healthRegen: 6.377143
+      energyCap: 76.5
+      energyRegen: 12.75
+      moveSpeed: 13
+      turnSpeed: 14
+      gemCap: 122.399994
+      peopleCap: 105.5
     componentMass: 16.074923
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_16
@@ -1041,7 +1167,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
     powerScore: 129.29803
-    powerScoreAtMaxLevel: 277.49606
+    powerScoreAtMaxLevel: 329.09018
     powerScoreBreakdown:
       offense: 19
       defense: 17.198038
@@ -1060,6 +1186,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 36.8
       peopleCap: 23.5
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.75
+      defense: 192.58072
+      energy: 100.8
+      mobility: 48.5
+      capacity: 245.85
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.75
+      healthCap: 185.94
+      healthRegen: 6.6407146
+      energyCap: 86.4
+      energyRegen: 14.400001
+      moveSpeed: 13.5
+      turnSpeed: 14
+      gemCap: 132.6
+      peopleCap: 113.25
     componentMass: 18.1
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_14
@@ -1086,7 +1230,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
     powerScore: 125.81928
-    powerScoreAtMaxLevel: 255.63858
+    powerScoreAtMaxLevel: 304.29645
     powerScoreBreakdown:
       offense: 19
       defense: 16.219286
@@ -1105,6 +1249,24 @@ MonoBehaviour:
       turnSpeed: 10
       gemCap: 35.6
       peopleCap: 22
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.75
+      defense: 167.97215
+      energy: 21
+      mobility: 62.4
+      capacity: 211.7
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.75
+      healthCap: 162.18001
+      healthRegen: 5.792143
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 13
+      turnSpeed: 38
+      gemCap: 115.2
+      peopleCap: 96.5
     componentMass: 14.957066
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_03
@@ -1131,7 +1293,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
     powerScore: 125.79654
-    powerScoreAtMaxLevel: 274.80624
+    powerScoreAtMaxLevel: 323.97192
     powerScoreBreakdown:
       offense: 19
       defense: 16.388561
@@ -1150,6 +1312,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 31.60532
       peopleCap: 21.80266
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.75
+      defense: 150.75955
+      energy: 84
+      mobility: 39.5
+      capacity: 185.65025
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.75
+      healthCap: 145.56094
+      healthRegen: 5.1986046
+      energyCap: 72
+      energyRegen: 12
+      moveSpeed: 10.5
+      turnSpeed: 14
+      gemCap: 97.37383
+      peopleCap: 88.27642
     componentMass: 9.506616
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_12
@@ -1176,7 +1356,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
     powerScore: 137.17679
-    powerScoreAtMaxLevel: 334.89777
+    powerScoreAtMaxLevel: 403.06073
     powerScoreBreakdown:
       offense: 19
       defense: 18.176786
@@ -1195,6 +1375,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 38
       peopleCap: 25
+    powerScoreBreakdownAtShipLevel:
+      offense: 20
+      defense: 216.72322
+      energy: 112
+      mobility: 45.5
+      capacity: 276
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 209.25
+      healthRegen: 7.473214
+      energyCap: 96
+      energyRegen: 16
+      moveSpeed: 12.5
+      turnSpeed: 14
+      gemCap: 146
+      peopleCap: 130
     componentMass: 13.279276
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_04
@@ -1221,7 +1419,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
     powerScore: 133.17679
-    powerScoreAtMaxLevel: 309.64777
+    powerScoreAtMaxLevel: 377.81073
     powerScoreBreakdown:
       offense: 19
       defense: 18.176786
@@ -1240,6 +1438,24 @@ MonoBehaviour:
       turnSpeed: 10
       gemCap: 38
       peopleCap: 25
+    powerScoreBreakdownAtShipLevel:
+      offense: 20.25
+      defense: 205.07143
+      energy: 21
+      mobility: 53.1
+      capacity: 274
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 198
+      healthRegen: 7.0714283
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 11.5
+      turnSpeed: 32
+      gemCap: 144
+      peopleCap: 130
     componentMass: 8.780899
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_11
@@ -1266,7 +1482,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
     powerScore: 129.75494
-    powerScoreAtMaxLevel: 315.1062
+    powerScoreAtMaxLevel: 383.26913
     powerScoreBreakdown:
       offense: 19
       defense: 18.176786
@@ -1285,6 +1501,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 38
       peopleCap: 25
+    powerScoreBreakdownAtShipLevel:
+      offense: 20
+      defense: 238.1625
+      energy: 63.364746
+      mobility: 42.5
+      capacity: 287
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 229.95001
+      healthRegen: 8.2125
+      energyCap: 54.312637
+      energyRegen: 9.052107
+      moveSpeed: 11.5
+      turnSpeed: 14
+      gemCap: 152
+      peopleCap: 135
     componentMass: 13.57174
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_18
@@ -1311,7 +1545,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
     powerScore: 132.27179
-    powerScoreAtMaxLevel: 319.3615
+    powerScoreAtMaxLevel: 382.6307
     powerScoreBreakdown:
       offense: 19
       defense: 16.871786
@@ -1330,6 +1564,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 36.4
       peopleCap: 23
+    powerScoreBreakdownAtShipLevel:
+      offense: 20
+      defense: 230.2393
+      energy: 133
+      mobility: 50
+      capacity: 278.2
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 222.30002
+      healthRegen: 7.9392858
+      energyCap: 114
+      energyRegen: 19
+      moveSpeed: 14
+      turnSpeed: 14
+      gemCap: 149.2
+      peopleCap: 129
     componentMass: 19.28497
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_05
@@ -1356,7 +1608,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
     powerScore: 130.7208
-    powerScoreAtMaxLevel: 323.3902
+    powerScoreAtMaxLevel: 384.7322
     powerScoreBreakdown:
       offense: 19
       defense: 16.357866
@@ -1375,6 +1627,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 30.57422
       peopleCap: 21.28711
+    powerScoreBreakdownAtShipLevel:
+      offense: 20
+      defense: 200.11755
+      energy: 137.508
+      mobility: 44
+      capacity: 232.1879
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 193.21695
+      healthRegen: 6.900605
+      energyCap: 117.864
+      energyRegen: 19.644001
+      moveSpeed: 12
+      turnSpeed: 14
+      gemCap: 120.75235
+      peopleCap: 111.43555
     componentMass: 14.0440035
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_17
@@ -1401,7 +1671,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
     powerScore: 142.63892
-    powerScoreAtMaxLevel: 400.33563
+    powerScoreAtMaxLevel: 501.09012
     powerScoreBreakdown:
       offense: 19
       defense: 22.38989
@@ -1420,6 +1690,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 42.33268
       peopleCap: 31.36634
+    powerScoreBreakdownAtShipLevel:
+      offense: 20.25
+      defense: 337.9729
+      energy: 84.700005
+      mobility: 54.5
+      capacity: 431.6347
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 326.31866
+      healthRegen: 11.654238
+      energyCap: 72.600006
+      energyRegen: 12.1
+      moveSpeed: 15.5
+      turnSpeed: 14
+      gemCap: 220.57031
+      peopleCap: 211.06438
     componentMass: 18.061779
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_02
@@ -1446,7 +1734,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
     powerScore: 140.51198
-    powerScoreAtMaxLevel: 380.5079
+    powerScoreAtMaxLevel: 464.90057
     powerScoreBreakdown:
       offense: 19
       defense: 18.753927
@@ -1465,6 +1753,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 40.06385
       peopleCap: 26.031925
+    powerScoreBreakdownAtShipLevel:
+      offense: 20.25
+      defense: 249.50499
+      energy: 96.423965
+      mobility: 42.5
+      capacity: 317.93347
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 240.90137
+      healthRegen: 8.60362
+      energyCap: 82.64912
+      energyRegen: 13.774852
+      moveSpeed: 11.5
+      turnSpeed: 14
+      gemCap: 167.42986
+      peopleCap: 150.5036
     componentMass: 7.7465672
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_07
@@ -1491,7 +1797,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
     powerScore: 137.89508
-    powerScoreAtMaxLevel: 376.06625
+    powerScoreAtMaxLevel: 455.60837
     powerScoreBreakdown:
       offense: 19
       defense: 17.676027
@@ -1510,6 +1816,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 38.5418
       peopleCap: 25.67725
+    powerScoreBreakdownAtShipLevel:
+      offense: 20.5
+      defense: 240.49748
+      energy: 105
+      mobility: 44
+      capacity: 322.53336
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2.5
+      healthCap: 232.20447
+      healthRegen: 8.293016
+      energyCap: 90
+      energyRegen: 15
+      moveSpeed: 12
+      turnSpeed: 14
+      gemCap: 167.7926
+      peopleCap: 154.74075
     componentMass: 8.258868
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_19
@@ -1536,7 +1860,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
     powerScore: 137.17679
-    powerScoreAtMaxLevel: 372.44196
+    powerScoreAtMaxLevel: 454.2375
     powerScoreBreakdown:
       offense: 19
       defense: 18.176786
@@ -1555,6 +1879,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 38
       peopleCap: 25
+    powerScoreBreakdownAtShipLevel:
+      offense: 20.25
+      defense: 313.2
+      energy: 147
+      mobility: 53
+      capacity: 382
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 302.40002
+      healthRegen: 10.8
+      energyCap: 126
+      energyRegen: 21
+      moveSpeed: 15
+      turnSpeed: 14
+      gemCap: 202
+      peopleCap: 180
     componentMass: 22.027992
     lockedInUpgradeTree: 0
   - chassisId: HyperFalcon_09
@@ -1581,7 +1923,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
     powerScore: 141.2952
-    powerScoreAtMaxLevel: 381.6558
+    powerScoreAtMaxLevel: 457.19254
     powerScoreBreakdown:
       offense: 19
       defense: 16.785944
@@ -1600,6 +1942,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 36.294754
       peopleCap: 22.86844
+    powerScoreBreakdownAtShipLevel:
+      offense: 20.25
+      defense: 222.87062
+      energy: 192.19164
+      mobility: 50
+      capacity: 269.06076
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 215.18542
+      healthRegen: 7.685193
+      energyCap: 164.73569
+      energyRegen: 27.45595
+      moveSpeed: 14
+      turnSpeed: 14
+      gemCap: 142.9159
+      peopleCap: 126.14486
     componentMass: 15.006784
     lockedInUpgradeTree: 0
   teamMaterials:

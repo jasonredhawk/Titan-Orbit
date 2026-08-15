@@ -96,9 +96,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerExtraLevel: 0.7875
+      healthCapPerExtraLevel: 3.15
       healthRegen: 0.11250001
-      healthRegenPerExtraLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.1125
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -158,9 +158,9 @@ MonoBehaviour:
       rammingPower: 1
       rammingPowerPerExtraLevel: 0.25
       healthCap: 6.3
-      healthCapPerExtraLevel: 1.575
+      healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
-      healthRegenPerExtraLevel: 0.056250006
+      healthRegenPerExtraLevel: 0.225
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -468,9 +468,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 6.3
-      healthCapPerExtraLevel: 1.575
+      healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
-      healthRegenPerExtraLevel: 0.056250006
+      healthRegenPerExtraLevel: 0.225
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -530,9 +530,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 8.1
-      healthCapPerExtraLevel: 2.025
+      healthCapPerExtraLevel: 8.1
       healthRegen: 0.28928575
-      healthRegenPerExtraLevel: 0.07232144
+      healthRegenPerExtraLevel: 0.28928572
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -592,9 +592,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 9.9
-      healthCapPerExtraLevel: 2.475
+      healthCapPerExtraLevel: 9.9
       healthRegen: 0.35357147
-      healthRegenPerExtraLevel: 0.08839287
+      healthRegenPerExtraLevel: 0.35357141
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -654,9 +654,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 11.7
-      healthCapPerExtraLevel: 2.925
+      healthCapPerExtraLevel: 11.7
       healthRegen: 0.41785717
-      healthRegenPerExtraLevel: 0.10446429
+      healthRegenPerExtraLevel: 0.41785714
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -726,7 +726,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 1
     powerScore: 132.07849
-    powerScoreAtMaxLevel: 228.69289
+    powerScoreAtMaxLevel: 240.15129
     powerScoreBreakdown:
       offense: 50.55143
       defense: 15.277873
@@ -745,6 +745,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 28
       peopleCap: 19
+    powerScoreBreakdownAtShipLevel:
+      offense: 53.922207
+      defense: 50.130745
+      energy: 65.07418
+      mobility: 43.666668
+      capacity: 84
+      firePower: 1.8538914
+      bulletSpeed: 15
+      fireRate: 6.068317
+      rammingPower: 1
+      healthCap: 48.4021
+      healthRegen: 1.7286465
+      energyCap: 59.63501
+      energyRegen: 5.439168
+      moveSpeed: 10.666667
+      turnSpeed: 14
+      gemCap: 48
+      peopleCap: 36
     componentMass: 10.876995
     lockedInUpgradeTree: 0
   - chassisId: LightFox_03
@@ -771,7 +789,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
     powerScore: 165.22736
-    powerScoreAtMaxLevel: 269.2502
+    powerScoreAtMaxLevel: 300.40857
     powerScoreBreakdown:
       offense: 19
       defense: 20.772251
@@ -790,6 +808,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 58
       peopleCap: 37
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.5
+      defense: 164.45056
+      energy: 29.061901
+      mobility: 43.666668
+      capacity: 302
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.5
+      healthCap: 158.77985
+      healthRegen: 5.670708
+      energyCap: 24.9102
+      energyRegen: 4.1517
+      moveSpeed: 10.666667
+      turnSpeed: 14
+      gemCap: 164
+      peopleCap: 138
     componentMass: 8.912645
     lockedInUpgradeTree: 0
   - chassisId: LightFox_02
@@ -816,7 +852,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
     powerScore: 143.31976
-    powerScoreAtMaxLevel: 236.24864
+    powerScoreAtMaxLevel: 256.7786
     powerScoreBreakdown:
       offense: 19
       defense: 13.686628
@@ -835,6 +871,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 26.761961
       peopleCap: 19.850029
+    powerScoreBreakdownAtShipLevel:
+      offense: 20.5
+      defense: 94.53314
+      energy: 96.04228
+      mobility: 30.5
+      capacity: 146.75493
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2.5
+      healthCap: 91.27338
+      healthRegen: 3.2597637
+      energyCap: 82.32195
+      energyRegen: 13.720325
+      moveSpeed: 7.5
+      turnSpeed: 14
+      gemCap: 73.77153
+      peopleCap: 72.9834
     componentMass: 16.66678
     lockedInUpgradeTree: 0
   - chassisId: LightFox_12
@@ -861,7 +915,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
     powerScore: 189.99762
-    powerScoreAtMaxLevel: 419.7261
+    powerScoreAtMaxLevel: 469.20096
     powerScoreBreakdown:
       offense: 49.48908
       defense: 21.98882
@@ -880,6 +934,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 58
       peopleCap: 37
+    powerScoreBreakdownAtShipLevel:
+      offense: 76.750084
+      defense: 214.511
+      energy: 126
+      mobility: 35
+      capacity: 358
+      firePower: 4.5198135
+      bulletSpeed: 21
+      fireRate: 4.4802737
+      rammingPower: 1.75
+      healthCap: 207.11407
+      healthRegen: 7.3969316
+      energyCap: 117
+      energyRegen: 9
+      moveSpeed: 9
+      turnSpeed: 14
+      gemCap: 192
+      peopleCap: 166
     componentMass: 16.450035
     lockedInUpgradeTree: 0
   - chassisId: LightFox_05
@@ -906,7 +978,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
     powerScore: 179.64809
-    powerScoreAtMaxLevel: 403.77103
+    powerScoreAtMaxLevel: 452.81854
     powerScoreBreakdown:
       offense: 49
       defense: 21.7989
@@ -925,6 +997,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 50.155193
       peopleCap: 33.693993
+    powerScoreBreakdownAtShipLevel:
+      offense: 77.25
+      defense: 171.8077
+      energy: 126
+      mobility: 35
+      capacity: 275.97217
+      firePower: 6.75
+      bulletSpeed: 21
+      fireRate: 3
+      rammingPower: 1.5
+      healthCap: 165.88329
+      healthRegen: 5.924403
+      energyCap: 117
+      energyRegen: 9
+      moveSpeed: 9
+      turnSpeed: 14
+      gemCap: 147.54318
+      peopleCap: 128.42897
     componentMass: 11.383149
     lockedInUpgradeTree: 0
   - chassisId: LightFox_01
@@ -951,7 +1041,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
     powerScore: 174.06438
-    powerScoreAtMaxLevel: 335.61847
+    powerScoreAtMaxLevel: 380.71088
     powerScoreBreakdown:
       offense: 19
       defense: 20.041073
@@ -970,6 +1060,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 48
       peopleCap: 31
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.5
+      defense: 151.00714
+      energy: 114.0699
+      mobility: 49
+      capacity: 244
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.5
+      healthCap: 145.8
+      healthRegen: 5.207143
+      energyCap: 97.7742
+      energyRegen: 16.2957
+      moveSpeed: 12
+      turnSpeed: 14
+      gemCap: 132
+      peopleCap: 112
     componentMass: 8.386332
     lockedInUpgradeTree: 0
   - chassisId: LightFox_06
@@ -996,7 +1104,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
     powerScore: 191.56429
-    powerScoreAtMaxLevel: 487.5448
+    powerScoreAtMaxLevel: 555.8386
     powerScoreBreakdown:
       offense: 49
       defense: 22.764612
@@ -1015,6 +1123,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 60.322
       peopleCap: 39.9025
+    powerScoreBreakdownAtShipLevel:
+      offense: 89.75
+      defense: 239.0072
+      energy: 138.109
+      mobility: 38
+      capacity: 402.1225
+      firePower: 8.25
+      bulletSpeed: 24
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 230.76558
+      healthRegen: 8.241628
+      energyCap: 129.95056
+      energyRegen: 8.158425
+      moveSpeed: 10
+      turnSpeed: 14
+      gemCap: 211.61
+      peopleCap: 190.5125
     componentMass: 11.17373
     lockedInUpgradeTree: 0
   - chassisId: LightFox_14
@@ -1041,7 +1167,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
     powerScore: 190.25719
-    powerScoreAtMaxLevel: 488.5835
+    powerScoreAtMaxLevel: 554.86774
     powerScoreBreakdown:
       offense: 49
       defense: 22.094746
@@ -1060,6 +1186,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 58.2322
       peopleCap: 37.29025
+    powerScoreBreakdownAtShipLevel:
+      offense: 89.5
+      defense: 344.0776
+      energy: 180.95999
+      mobility: 70.333336
+      capacity: 540.351
+      firePower: 8.25
+      bulletSpeed: 24
+      fireRate: 3
+      rammingPower: 1.75
+      healthCap: 332.21286
+      healthRegen: 11.864744
+      energyCap: 166.68
+      energyRegen: 14.280001
+      moveSpeed: 17.333334
+      turnSpeed: 14
+      gemCap: 287.0449
+      peopleCap: 253.30612
     componentMass: 28.23098
     lockedInUpgradeTree: 0
   - chassisId: LightFox_13
@@ -1086,7 +1230,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
     powerScore: 190.20613
-    powerScoreAtMaxLevel: 490.44086
+    powerScoreAtMaxLevel: 555.66754
     powerScoreBreakdown:
       offense: 49.692482
       defense: 21.742233
@@ -1105,6 +1249,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 58
       peopleCap: 37
+    powerScoreBreakdownAtShipLevel:
+      offense: 88.20431
+      defense: 322.45154
+      energy: 165.93332
+      mobility: 59.666668
+      capacity: 519
+      firePower: 5.1257334
+      bulletSpeed: 24
+      fireRate: 4.8285775
+      rammingPower: 1.75
+      healthCap: 311.33252
+      healthRegen: 11.119018
+      energyCap: 153.79999
+      energyRegen: 12.133333
+      moveSpeed: 14.666667
+      turnSpeed: 14
+      gemCap: 276
+      peopleCap: 243
     componentMass: 20.275246
     lockedInUpgradeTree: 0
   - chassisId: LightFox_08
@@ -1131,7 +1293,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
     powerScore: 194.50919
-    powerScoreAtMaxLevel: 504.17444
+    powerScoreAtMaxLevel: 564.29767
     powerScoreBreakdown:
       offense: 49
       defense: 20.041073
@@ -1150,6 +1312,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 48
       peopleCap: 31
+    powerScoreBreakdownAtShipLevel:
+      offense: 89.75
+      defense: 228.375
+      energy: 256.36185
+      mobility: 59.666668
+      capacity: 346
+      firePower: 8.25
+      bulletSpeed: 24
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 220.5
+      healthRegen: 7.875
+      energyCap: 231.31015
+      energyRegen: 25.051693
+      moveSpeed: 14.666667
+      turnSpeed: 14
+      gemCap: 184
+      peopleCap: 162
     componentMass: 16.394756
     lockedInUpgradeTree: 0
   - chassisId: LightFox_20
@@ -1176,7 +1356,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
     powerScore: 228.5068
-    powerScoreAtMaxLevel: 641.23914
+    powerScoreAtMaxLevel: 737.9684
     powerScoreBreakdown:
       offense: 49
       defense: 25.794456
@@ -1195,6 +1375,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 74.046974
       peopleCap: 45.665367
+    powerScoreBreakdownAtShipLevel:
+      offense: 101.75
+      defense: 289.95847
+      energy: 229.66667
+      mobility: 62.333336
+      capacity: 476.7887
+      firePower: 9.75
+      bulletSpeed: 27
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 279.9599
+      healthRegen: 9.998569
+      energyCap: 211
+      energyRegen: 18.666668
+      moveSpeed: 15.333334
+      turnSpeed: 14
+      gemCap: 255.35033
+      peopleCap: 221.43839
     componentMass: 28.517788
     lockedInUpgradeTree: 0
   - chassisId: LightFox_17
@@ -1221,7 +1419,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
     powerScore: 203.31165
-    powerScoreAtMaxLevel: 570.52545
+    powerScoreAtMaxLevel: 656.5504
     powerScoreBreakdown:
       offense: 49
       defense: 22.939993
@@ -1240,6 +1438,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 65.868225
       peopleCap: 40.503426
+    powerScoreBreakdownAtShipLevel:
+      offense: 101.75
+      defense: 427.67932
+      energy: 190
+      mobility: 41
+      capacity: 646.9081
+      firePower: 9.75
+      bulletSpeed: 27
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 412.93176
+      healthRegen: 14.747562
+      energyCap: 177
+      energyRegen: 13
+      moveSpeed: 11
+      turnSpeed: 14
+      gemCap: 344.59976
+      peopleCap: 302.3083
     componentMass: 21.983665
     lockedInUpgradeTree: 0
   - chassisId: LightFox_09
@@ -1266,7 +1482,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
     powerScore: 220.85725
-    powerScoreAtMaxLevel: 630.53467
+    powerScoreAtMaxLevel: 724.60486
     powerScoreBreakdown:
       offense: 49
       defense: 25.085377
@@ -1285,6 +1501,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 65.2602
       peopleCap: 41.071674
+    powerScoreBreakdownAtShipLevel:
+      offense: 101.75
+      defense: 331.7677
+      energy: 271.2
+      mobility: 65
+      capacity: 494.73978
+      firePower: 9.75
+      bulletSpeed: 27
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 320.32742
+      healthRegen: 11.440265
+      energyCap: 246.6
+      energyRegen: 24.600002
+      moveSpeed: 16
+      turnSpeed: 14
+      gemCap: 263.9572
+      peopleCap: 230.78256
     componentMass: 18.512968
     lockedInUpgradeTree: 0
   - chassisId: LightFox_11
@@ -1311,7 +1545,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
     powerScore: 218.71588
-    powerScoreAtMaxLevel: 625.37476
+    powerScoreAtMaxLevel: 726.30835
     powerScoreBreakdown:
       offense: 49.05676
       defense: 26.915625
@@ -1330,6 +1564,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 65.7
       peopleCap: 44.85
+    powerScoreBreakdownAtShipLevel:
+      offense: 102.80126
+      defense: 348.92435
+      energy: 219.50249
+      mobility: 41
+      capacity: 543.44995
+      firePower: 11.186506
+      bulletSpeed: 27
+      fireRate: 2.6147573
+      rammingPower: 2
+      healthCap: 336.8925
+      healthRegen: 12.031874
+      energyCap: 202.28784
+      energyRegen: 17.21464
+      moveSpeed: 11
+      turnSpeed: 14
+      gemCap: 282.6
+      peopleCap: 260.84998
     componentMass: 20.836893
     lockedInUpgradeTree: 0
   - chassisId: LightFox_07
@@ -1356,7 +1608,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
     powerScore: 197.09247
-    powerScoreAtMaxLevel: 578.76434
+    powerScoreAtMaxLevel: 668.95844
     powerScoreBreakdown:
       offense: 51.45713
       defense: 24.051756
@@ -1375,6 +1627,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 60.6316
       peopleCap: 40.2895
+    powerScoreBreakdownAtShipLevel:
+      offense: 100.516266
+      defense: 300.9229
+      energy: 199.6459
+      mobility: 67.666664
+      capacity: 467.5266
+      firePower: 4.057638
+      bulletSpeed: 27
+      fireRate: 7.2086267
+      rammingPower: 2.25
+      healthCap: 290.54626
+      healthRegen: 10.376652
+      energyCap: 185.26791
+      energyRegen: 14.377985
+      moveSpeed: 16.666666
+      turnSpeed: 14
+      gemCap: 243.78961
+      peopleCap: 223.737
     componentMass: 15.880217
     lockedInUpgradeTree: 0
   - chassisId: LightFox_16
@@ -1401,7 +1671,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
     powerScore: 292.75107
-    powerScoreAtMaxLevel: 886.51013
+    powerScoreAtMaxLevel: 1027.2404
     powerScoreBreakdown:
       offense: 49.11011
       defense: 31.273392
@@ -1420,6 +1690,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 98
       peopleCap: 58.6
+    powerScoreBreakdownAtShipLevel:
+      offense: 112.67373
+      defense: 596.3384
+      energy: 469.8
+      mobility: 81
+      capacity: 973.8
+      firePower: 9.291296
+      bulletSpeed: 30
+      fireRate: 3.632432
+      rammingPower: 2.25
+      healthCap: 575.77496
+      healthRegen: 20.563393
+      energyCap: 419.4
+      energyRegen: 50.4
+      moveSpeed: 20
+      turnSpeed: 14
+      gemCap: 520
+      peopleCap: 453.8
     componentMass: 26.410124
     lockedInUpgradeTree: 0
   - chassisId: LightFox_19
@@ -1446,7 +1734,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
     powerScore: 267.7442
-    powerScoreAtMaxLevel: 823.4105
+    powerScoreAtMaxLevel: 961.3094
     powerScoreBreakdown:
       offense: 49
       defense: 30.644196
@@ -1465,6 +1753,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 90
       peopleCap: 55.7
+    powerScoreBreakdownAtShipLevel:
+      offense: 114
+      defense: 584.10406
+      energy: 311.13333
+      mobility: 67.666664
+      capacity: 938.25
+      firePower: 11.25
+      bulletSpeed: 30
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 563.9625
+      healthRegen: 20.141518
+      energyCap: 283.4
+      energyRegen: 27.733334
+      moveSpeed: 16.666666
+      turnSpeed: 14
+      gemCap: 497
+      peopleCap: 441.25
     componentMass: 23.75
     lockedInUpgradeTree: 0
   - chassisId: LightFox_15
@@ -1491,7 +1797,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
     powerScore: 245.59377
-    powerScoreAtMaxLevel: 751.0257
+    powerScoreAtMaxLevel: 875.2156
     powerScoreBreakdown:
       offense: 49.27222
       defense: 27.597752
@@ -1510,6 +1816,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 87.26489
       peopleCap: 52.28112
+    powerScoreBreakdownAtShipLevel:
+      offense: 117.15972
+      defense: 527.34247
+      energy: 236.46666
+      mobility: 67.666664
+      capacity: 867.8491
+      firePower: 15.187501
+      bulletSpeed: 30
+      fireRate: 2.222222
+      rammingPower: 2.25
+      healthCap: 509.15826
+      healthRegen: 18.184223
+      energyCap: 219.4
+      energyRegen: 17.066668
+      moveSpeed: 16.666666
+      turnSpeed: 14
+      gemCap: 463.22183
+      peopleCap: 404.6273
     componentMass: 20.908112
     lockedInUpgradeTree: 0
   - chassisId: LightFox_10
@@ -1536,7 +1860,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
     powerScore: 233.63828
-    powerScoreAtMaxLevel: 625.2249
+    powerScoreAtMaxLevel: 755.4539
     powerScoreBreakdown:
       offense: 19
       defense: 28.939774
@@ -1555,6 +1879,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 87.025
       peopleCap: 52.6735
+    powerScoreBreakdownAtShipLevel:
+      offense: 20.25
+      defense: 481.34323
+      energy: 177.33333
+      mobility: 75.66667
+      capacity: 779.2295
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 464.74518
+      healthRegen: 16.598042
+      energyCap: 152
+      energyRegen: 25.333334
+      moveSpeed: 18.666668
+      turnSpeed: 14
+      gemCap: 415.515
+      peopleCap: 363.7145
     componentMass: 14.851418
     lockedInUpgradeTree: 0
   - chassisId: LightFox_18
@@ -1581,7 +1923,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
     powerScore: 231.95685
-    powerScoreAtMaxLevel: 726.7864
+    powerScoreAtMaxLevel: 845.3899
     powerScoreBreakdown:
       offense: 49.418964
       defense: 26.356339
@@ -1600,6 +1942,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 74.2
       peopleCap: 46.6
+    powerScoreBreakdownAtShipLevel:
+      offense: 118.13147
+      defense: 508.414
+      energy: 316.15366
+      mobility: 81
+      capacity: 802.75
+      firePower: 16.312502
+      bulletSpeed: 30
+      fireRate: 2.0689654
+      rammingPower: 2.25
+      healthCap: 490.88248
+      healthRegen: 17.531517
+      energyCap: 287.70312
+      energyRegen: 28.450521
+      moveSpeed: 20
+      turnSpeed: 14
+      gemCap: 423.8
+      peopleCap: 378.94998
     componentMass: 21.714724
     lockedInUpgradeTree: 0
   teamMaterials:

@@ -107,6 +107,7 @@ namespace TitanOrbit.Data
         public ShipFamilySpecialBonuses specialBonuses = ShipFamilySpecialBonuses.Identity;
 
         [Header("Bullets")]
+        [Tooltip("BulletVfxBank category this family fires. Do not assign Rockets — that bank is reserved for store rocket packs.")]
         public int bulletPrefabIndex = 0;
 
         /// <summary>

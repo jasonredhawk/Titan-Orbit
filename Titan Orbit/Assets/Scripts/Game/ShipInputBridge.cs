@@ -161,7 +161,8 @@ namespace TitanOrbit.Game
                 if (TitanOrbitDebugFlags.CycleAllBulletBanks)
                 {
                     int current = loadout.RuntimeBulletIndex < 0 ? 0 : loadout.RuntimeBulletIndex;
-                    _displayBankIndex = (current + 1) % _bank.CategoryCount;
+                    _displayBankIndex = BulletBankProfileUtility.NextDebugCycleBankIndex(
+                        current, _bank.CategoryCount);
                 }
                 else if (loadout.HealingBulletsActive)
                 {

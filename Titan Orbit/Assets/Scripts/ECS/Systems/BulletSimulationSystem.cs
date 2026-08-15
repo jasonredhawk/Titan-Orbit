@@ -824,7 +824,8 @@ namespace TitanOrbit.ECS
                     if (ship.Team == (TeamId)b.OwnerTeam && !ship.IsDead)
                     {
                         float heal = BulletBankCombatLogic.GetHealFriendlyAmount(
-                            profile, b.FirePowerExtraLevels);
+                            profile, b.FirePowerExtraLevels)
+                            * BulletBankHitEffects.ResolveStrengthScale(b.StrengthScale);
                         if (heal > 0f)
                             ship.Health = math.min(ship.MaxHealth, ship.Health + heal);
                     }
@@ -883,7 +884,8 @@ namespace TitanOrbit.ECS
                     // --- HealFriendly: ally hulls gain HP instead of taking damage ---
                     if (healFriendly && ship.Team == (TeamId)b.OwnerTeam)
                     {
-                        float heal = BulletBankCombatLogic.GetHealFriendlyAmount(profile, b.FirePowerExtraLevels);
+                        float heal = BulletBankCombatLogic.GetHealFriendlyAmount(profile, b.FirePowerExtraLevels)
+                            * BulletBankHitEffects.ResolveStrengthScale(b.StrengthScale);
                         if (heal > 0f && !ship.IsDead)
                             ship.Health = math.min(ship.MaxHealth, ship.Health + heal);
                         TrySpawnWell(ref state, hitPoint, profile, serverElapsed, mapW, mapH, in b);
@@ -1087,11 +1089,12 @@ namespace TitanOrbit.ECS
                 var wells = state.EntityManager.GetBuffer<GravityWellElement>(bulletEntity);
                 BulletBankHitEffects.TrySpawnGravityWell(
                     wells, hitPoint, profile, serverElapsed, bullet.OwnerNetworkId, bullet.OwnerTeam,
-                    bullet.FirePowerExtraLevels);
+                    bullet.FirePowerExtraLevels, bullet.StrengthScale);
             }
 
             BulletBankHitEffects.TryApplyConcussiveGemBlast(
-                state.EntityManager, hitPoint, profile, mapW, mapH, bullet.FirePowerExtraLevels);
+                state.EntityManager, hitPoint, profile, mapW, mapH, bullet.FirePowerExtraLevels,
+                bullet.StrengthScale);
         }
 
         /// <summary>Warm family/default defense configs once for hit-sphere rebuilds.</summary>

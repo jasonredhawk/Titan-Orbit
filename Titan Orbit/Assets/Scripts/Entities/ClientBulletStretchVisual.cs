@@ -13,9 +13,24 @@ namespace TitanOrbit.Entities
 
         private Transform visualRoot;
         private Vector3 baseUniformScale = Vector3.one;
+        private Vector3 authoredUniformScale = Vector3.one;
+        private bool haveAuthoredScale;
         private float rearLocalZ;
+        private bool haveRearExtent;
         private float startLengthFactor = DefaultStartLengthFactor;
         private float endLengthFactor = DefaultEndLengthFactor;
+
+        /// <summary>
+        /// Shrinks stretch length when the shot is a mini tracer (drone <c>ScaleMultiplier</c> &lt; 1).
+        /// Ship / turret shots stay at authored length.
+        /// </summary>
+        public static void ApplyShotScale(float scaleMultiplier, ref float startFactor, ref float endFactor)
+        {
+            if (scaleMultiplier <= 0.01f || scaleMultiplier >= 1f)
+                return;
+            startFactor *= scaleMultiplier;
+            endFactor *= scaleMultiplier;
+        }
 
         public static bool TryAttach(
             Transform tracerRoot,
@@ -33,13 +48,41 @@ namespace TitanOrbit.Entities
                 return false;
 
             var stretch = tracerRoot.gameObject.AddComponent<ClientBulletStretchVisual>();
-            stretch.visualRoot = visual.transform;
-            stretch.baseUniformScale = visual.transform.localScale;
-            stretch.startLengthFactor = startFactor;
-            stretch.endLengthFactor = endFactor;
-            stretch.CacheRearExtent();
-            stretch.ApplyLengthFactor(startFactor);
+            stretch.Rebind(visual, startFactor, endFactor);
             return true;
+        }
+
+        /// <summary>
+        /// Refresh stretch after a pool Rent. Authored XY is captured once — never from a
+        /// mid-flight Z (that made each shot longer than the last). Shot size lives on the
+        /// tracer root (<c>ApplyImpactVisualScale</c>), not on this child.
+        /// </summary>
+        public void Rebind(GameObject visual, float startFactor, float endFactor)
+        {
+            if (visual == null)
+                return;
+            visualRoot = visual.transform;
+            if (!haveAuthoredScale)
+            {
+                Vector3 current = visualRoot.localScale;
+                // Z may already be stretch-dirty from a prior shot; XY is the prefab size.
+                float uniform = Mathf.Max(0.01f, (Mathf.Abs(current.x) + Mathf.Abs(current.y)) * 0.5f);
+                authoredUniformScale = new Vector3(uniform, uniform, uniform);
+                haveAuthoredScale = true;
+            }
+
+            baseUniformScale = authoredUniformScale;
+            visualRoot.localScale = authoredUniformScale;
+            visualRoot.localPosition = Vector3.zero;
+            startLengthFactor = startFactor > 0f ? startFactor : DefaultStartLengthFactor;
+            endLengthFactor = endFactor > 0f ? endFactor : DefaultEndLengthFactor;
+            if (!haveRearExtent)
+            {
+                CacheRearExtent();
+                haveRearExtent = true;
+            }
+
+            ApplyLengthFactor(startLengthFactor);
         }
 
         public void ApplyTravelProgress(float progress)

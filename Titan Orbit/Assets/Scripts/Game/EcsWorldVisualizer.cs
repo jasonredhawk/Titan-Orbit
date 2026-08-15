@@ -2799,10 +2799,11 @@ namespace TitanOrbit.Game
                     if (bulletVfxBank != null
                         && bulletVfxBank.TryGetProfile(bankIndex, out var profile)
                         && profile != null
-                        && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor)
-                        && ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
+                        && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor))
                     {
-                        _bulletStretchVisuals[entity] = go.GetComponent<ClientBulletStretchVisual>();
+                        ClientBulletStretchVisual.ApplyShotScale(scaleMul, ref startFactor, ref endFactor);
+                        if (ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
+                            _bulletStretchVisuals[entity] = go.GetComponent<ClientBulletStretchVisual>();
                     }
                 }
 

@@ -62,7 +62,39 @@ namespace TitanOrbit.Data
             if (family == null)
                 return 0;
             int index = family.bulletPrefabIndex < 0 ? 0 : family.bulletPrefabIndex;
-            return IsHealBankIndex(index) ? 0 : index;
+            if (IsHealBankIndex(index) || IsStoreReservedBankIndex(index))
+                return 0;
+            return index;
+        }
+
+        /// <summary>
+        /// Rockets (and any category whose name contains "rocket") stay off family guns,
+        /// B-key ownership, and drones — reserved for store rocket packs.
+        /// </summary>
+        public static bool IsStoreReservedBankIndex(int bankIndex)
+        {
+            var bank = BulletVfxBank.LoadDefault();
+            if (bank == null || !bank.TryGetCategoryName(bankIndex, out string name) ||
+                string.IsNullOrEmpty(name))
+                return false;
+            return name.IndexOf("rocket", System.StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>Next bank for debug cycle-all, skipping store-reserved categories (Rockets).</summary>
+        public static int NextDebugCycleBankIndex(int current, int categoryCount)
+        {
+            if (categoryCount < 1)
+                return 0;
+            int start = current < 0 ? 0 : current;
+            int next = (start + 1) % categoryCount;
+            for (int i = 0; i < categoryCount; i++)
+            {
+                if (!IsStoreReservedBankIndex(next))
+                    return next;
+                next = (next + 1) % categoryCount;
+            }
+
+            return start;
         }
 
         /// <summary>
@@ -70,6 +102,40 @@ namespace TitanOrbit.Data
         /// </summary>
         public static int ResolveBankIndexForPlanetaryDefense(ShipFamilyDefinition family) =>
             Mathf.Max(0, ResolveBankIndexForFamily(family));
+
+        /// <summary>Prefix stamped on drone <c>EquippedEquipmentElement.ComponentId</c> at purchase.</summary>
+        public const string DroneSourceFamilyIdPrefix = "DroneFam:";
+
+        /// <summary>Encodes the store planet's family config index onto a purchased drone.</summary>
+        public static string FormatDroneSourceFamilyId(int familyConfigIndex) =>
+            DroneSourceFamilyIdPrefix + Mathf.Max(0, familyConfigIndex);
+
+        /// <summary>True when <paramref name="componentId"/> is a drone source-family stamp.</summary>
+        public static bool TryParseDroneSourceFamilyId(string componentId, out int familyConfigIndex)
+        {
+            familyConfigIndex = 0;
+            if (string.IsNullOrEmpty(componentId) ||
+                !componentId.StartsWith(DroneSourceFamilyIdPrefix, System.StringComparison.Ordinal))
+                return false;
+            return int.TryParse(componentId.Substring(DroneSourceFamilyIdPrefix.Length), out familyConfigIndex);
+        }
+
+        /// <summary>
+        /// Bank for a combat drone: stamped purchase-planet family, else the hull family default.
+        /// Never returns the heal bank.
+        /// </summary>
+        public static int ResolveBankIndexForDrone(string componentId, ShipFamilyDefinition hullFallback = null)
+        {
+            if (TryParseDroneSourceFamilyId(componentId, out int familyIndex))
+            {
+                var config = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+                var entry = config != null ? config.GetFamilyByConfigIndex(familyIndex) : null;
+                if (entry?.shipFamilyDefinition != null)
+                    return ResolveBankIndexForFamily(entry.shipFamilyDefinition);
+            }
+
+            return ResolveBankIndexForFamily(hullFallback);
+        }
 
         /// <summary>EnergySpheres / HealFriendly bank index, or -1 when missing.</summary>
         public static int FindHealBankIndex()

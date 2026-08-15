@@ -27,6 +27,9 @@ namespace TitanOrbit.Core
         {
             /// <summary>True after particle systems were switched to Hierarchy scaling.</summary>
             public bool HierarchyScaleReady;
+
+            /// <summary>Authored <see cref="TrailRenderer.widthMultiplier"/> captured on first scale.</summary>
+            public float[] TrailBaseWidths;
         }
 
         /// <summary>
@@ -211,9 +214,11 @@ namespace TitanOrbit.Core
         }
 
         /// <summary>
-        /// Scales impact VFX via root transform. On first call, switches particle systems to
-        /// Hierarchy scaling so later Rents only set <c>localScale</c> (no module *= drift,
-        /// no GetComponentsInChildren every kill — session 74383c destroy hitch).
+        /// Scales muzzle / impact / tracer VFX via root transform. On first call, switches
+        /// particle systems to Hierarchy scaling (and World → Local) so later Rents only set
+        /// <c>localScale</c> (no module *= drift, no GetComponentsInChildren every kill).
+        /// World-space particles ignore transform scale — drone 0.58× flashes stayed ship-sized.
+        /// One-shot flashes do not move, so Local matches the authored look and then shrinks.
         /// </summary>
         public static void ApplyImpactVisualScale(GameObject root, float scale)
         {
@@ -224,21 +229,35 @@ namespace TitanOrbit.Core
             root.transform.localScale = Vector3.one * s;
 
             var marker = root.GetComponent<VfxPreparedMarker>();
-            if (marker != null && marker.HierarchyScaleReady)
-                return;
-
-            // --- One-time: make modules follow root scale ---
             ParticleSystem[] systems = root.GetComponentsInChildren<ParticleSystem>(true);
             for (int i = 0; i < systems.Length; i++)
             {
                 if (systems[i] == null)
                     continue;
                 var main = systems[i].main;
+                // World-space particles ignore transform scale (drone tracers stayed ship-sized).
+                if (main.simulationSpace == ParticleSystemSimulationSpace.World)
+                    main.simulationSpace = ParticleSystemSimulationSpace.Local;
                 main.scalingMode = ParticleSystemScalingMode.Hierarchy;
             }
 
+            // Trail width is world units — parent scale does not shrink the ribbon.
+            TrailRenderer[] trails = root.GetComponentsInChildren<TrailRenderer>(true);
             if (marker == null)
                 marker = root.AddComponent<VfxPreparedMarker>();
+            if (marker.TrailBaseWidths == null || marker.TrailBaseWidths.Length != trails.Length)
+            {
+                marker.TrailBaseWidths = new float[trails.Length];
+                for (int i = 0; i < trails.Length; i++)
+                    marker.TrailBaseWidths[i] = trails[i] != null ? trails[i].widthMultiplier : 1f;
+            }
+
+            for (int i = 0; i < trails.Length; i++)
+            {
+                if (trails[i] != null)
+                    trails[i].widthMultiplier = Mathf.Max(0.001f, marker.TrailBaseWidths[i] * s);
+            }
+
             marker.HierarchyScaleReady = true;
         }
 

@@ -58,7 +58,7 @@ namespace TitanOrbit.ECS
                 if (TitanOrbitDebugFlags.CycleAllBulletBanks)
                 {
                     int current = loadout.ValueRO.RuntimeBulletIndex;
-                    int next = current < 0 ? 0 : (current + 1) % _categoryCount;
+                    int next = BulletBankProfileUtility.NextDebugCycleBankIndex(current, _categoryCount);
                     loadout.ValueRW.RuntimeBulletIndex = next;
                     loadout.ValueRW.HealingBulletsActive = BulletBankProfileUtility.IsHealBankIndex(next);
                     continue;

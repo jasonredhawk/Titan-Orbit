@@ -45,7 +45,7 @@ namespace TitanOrbit.ECS
 
             if (profile.TryGetResolvedAbility(BulletBankAbilityType.ConcussivePush, extras, out BulletBankAbility push) &&
                 push != null)
-                ApplyConcussivePush(em, shipEntity, hitPoint, shipPos, push, mapW, mapH);
+                ApplyConcussivePush(em, shipEntity, hitPoint, shipPos, push, mapW, mapH, bullet.StrengthScale);
         }
 
         /// <summary>Spawns a gravity well at <paramref name="hitPoint"/> when the profile has GravityPull.</summary>
@@ -56,7 +56,8 @@ namespace TitanOrbit.ECS
             double serverElapsed,
             int ownerNetworkId,
             byte ownerTeam,
-            int firePowerExtraLevels = 0)
+            int firePowerExtraLevels = 0,
+            float strengthScale = 1f)
         {
             if (profile == null ||
                 !profile.TryGetResolvedAbility(
@@ -64,8 +65,9 @@ namespace TitanOrbit.ECS
                 gravity == null)
                 return;
 
-            float radius = gravity.radius > 0.1f ? gravity.radius : 8f;
-            float pull = gravity.magnitude > 0.01f ? gravity.magnitude : 12f;
+            float strength = ResolveStrengthScale(strengthScale);
+            float radius = (gravity.radius > 0.1f ? gravity.radius : 8f) * strength;
+            float pull = (gravity.magnitude > 0.01f ? gravity.magnitude : 12f) * strength;
             float duration = gravity.duration > 0.05f ? gravity.duration : 1.5f;
             wells.Add(new GravityWellElement
             {
@@ -224,7 +226,7 @@ namespace TitanOrbit.ECS
         {
             float duration = math.max(0.05f, burn.duration > 0f ? burn.duration : 2f);
             float tick = math.max(0.05f, burn.tickInterval > 0f ? burn.tickInterval : 0.25f);
-            float dps = burn.magnitude > 0f ? burn.magnitude : 1f;
+            float dps = (burn.magnitude > 0f ? burn.magnitude : 1f) * ResolveStrengthScale(bullet.StrengthScale);
             hitPoint.y = 0f;
             bodyPos.y = 0f;
             float3 offset = ToroidalMapEcs.IsValidMapSize(mapW, mapH)
@@ -308,7 +310,8 @@ namespace TitanOrbit.ECS
             float3 shipPos,
             BulletBankAbility push,
             float mapW,
-            float mapH)
+            float mapH,
+            float strengthScale = 1f)
         {
             if (!em.HasComponent<PhysicsVelocity>(shipEntity))
                 return;
@@ -328,7 +331,7 @@ namespace TitanOrbit.ECS
                     mass = 1f / inv;
             }
 
-            float force = push.magnitude > 0f ? push.magnitude : 12f;
+            float force = (push.magnitude > 0f ? push.magnitude : 12f) * ResolveStrengthScale(strengthScale);
             var vel = em.GetComponentData<PhysicsVelocity>(shipEntity);
             vel.Linear += dir * (force / math.max(ShipCollisionImpulseLogic.MinCollisionMass, mass));
             em.SetComponentData(shipEntity, vel);
@@ -344,7 +347,8 @@ namespace TitanOrbit.ECS
             BulletBankProfile profile,
             float mapW,
             float mapH,
-            int firePowerExtraLevels = 0)
+            int firePowerExtraLevels = 0,
+            float strengthScale = 1f)
         {
             if (profile == null ||
                 !profile.TryGetResolvedAbility(
@@ -352,8 +356,9 @@ namespace TitanOrbit.ECS
                 push == null)
                 return;
 
-            float radius = push.radius > 0.1f ? push.radius : 6f;
-            float force = push.magnitude > 0f ? push.magnitude : 12f;
+            float strength = ResolveStrengthScale(strengthScale);
+            float radius = (push.radius > 0.1f ? push.radius : 6f) * strength;
+            float force = (push.magnitude > 0f ? push.magnitude : 12f) * strength;
             // Gems are scripted pickups (explosion speeds ~2); keep the blast readable, not a teleport.
             float impulse = math.min(force * 0.4f, 8f);
             AddGemVelocityInRadius(em, hitPoint, radius, impulse, towardCenter: false, mapW, mapH);
@@ -431,6 +436,22 @@ namespace TitanOrbit.ECS
                 }
             }
         }
+
+        /// <summary>
+        /// Gameplay strength vs the authored bullet type. Ship / PD leave this unset (0 → 1).
+        /// Drones stamp <c>DroneSwarmLogic.DroneFirePowerScale</c> (1/6) for force, radius,
+        /// burn DPS, and heal. Durations, tick intervals, and bank multipliers are not scaled here.
+        /// </summary>
+        public static float ResolveStrengthScale(float strengthScale)
+        {
+            if (strengthScale <= 0.01f)
+                return 1f;
+            return strengthScale;
+        }
+
+        /// <summary>Legacy name — same as <see cref="ResolveStrengthScale"/>.</summary>
+        public static float EffectScaleFromBullet(float scaleMultiplier) =>
+            ResolveStrengthScale(scaleMultiplier);
 
         static bool IsGemUnderTractor(EntityManager em, Entity gem)
         {

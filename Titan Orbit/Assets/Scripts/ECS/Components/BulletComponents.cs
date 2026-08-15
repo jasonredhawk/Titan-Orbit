@@ -63,8 +63,17 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Fire Power Extra Levels on the shooter at fire time:
         /// <c>(shipLevel−1) + Fire Power purchases</c>. Scales bank abilities.
+        /// Drone shots stamp 0 so abilities stay at authored primary (times unscaled).
         /// </summary>
         public int FirePowerExtraLevels;
+
+        /// <summary>
+        /// Gameplay strength vs the same authored bullet type. Ship / PD = 1.
+        /// Drones stamp <c>DroneSwarmLogic.DroneFirePowerScale</c> (1/6) for forces,
+        /// radii, burn DPS, and heal. 0 is treated as 1. Visual scale is separate
+        /// (<see cref="ScaleMultiplier"/>).
+        /// </summary>
+        public float StrengthScale;
 
         /// <summary>
         /// [TITAN-ORBIT] Collision / damage mask. Ship guns use <see cref="BulletDamageFilter.Everything"/>;

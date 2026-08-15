@@ -78,7 +78,9 @@ namespace TitanOrbit.ECS
 
         static void AddUniqueDamageBank(List<int> list, int bankIndex)
         {
-            if (bankIndex < 0 || BulletBankProfileUtility.IsHealBankIndex(bankIndex))
+            if (bankIndex < 0 ||
+                BulletBankProfileUtility.IsHealBankIndex(bankIndex) ||
+                BulletBankProfileUtility.IsStoreReservedBankIndex(bankIndex))
                 return;
             for (int i = 0; i < list.Count; i++)
             {

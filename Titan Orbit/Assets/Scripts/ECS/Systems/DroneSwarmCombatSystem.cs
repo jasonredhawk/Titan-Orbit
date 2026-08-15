@@ -25,7 +25,13 @@ namespace TitanOrbit.ECS
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] Combat drones fire at purchase-level damage from
-    /// <see cref="StoreItemData.GetCombatDroneDamage"/> (not ship <c>BulletDamage</c>).
+    /// <see cref="StoreItemData.GetCombatDroneDamage"/> (not ship <c>BulletDamage</c>) —
+    /// about 1/6 of the ship fire-power curve. Each drone uses the bullet bank of the
+    /// planet family it was bought from (stamped on
+    /// <see cref="EquippedEquipmentElement.ComponentId"/>). Bank multipliers stay as
+    /// authored (1.25 fire power stays 1.25). Strength stats (pull/push force, radii,
+    /// burn DPS) use <see cref="DroneSwarmLogic.DroneFirePowerScale"/> (1/6); durations
+    /// and tick intervals stay at the bullet type's authored times.
     /// Mining bolts use <see cref="BulletDamageFilter.AsteroidsOnly"/>; fighters use
     /// <see cref="BulletDamageFilter.ShipsOnly"/> — Starblast-style pass-through.
     /// </para>
@@ -50,10 +56,8 @@ namespace TitanOrbit.ECS
         EntityQuery _asteroidQuery;
 
         /// <summary>Warmed once — avoid Resources.Load every tick.</summary>
-        BulletVfxBank _vfxBank;
-        int _fighterBankIndex;
-        int _miningBankIndex;
-        bool _banksResolved;
+        PlanetShipFamilyConfig _familyConfig;
+        bool _familyConfigWarmed;
 
         /// <summary>Cache queries used every tick.</summary>
         protected override void OnCreate()
@@ -111,7 +115,7 @@ namespace TitanOrbit.ECS
                 mapH = mapState.MapHeight;
             }
 
-            EnsureBanksResolved();
+            EnsureFamilyConfigWarmed();
 
             // --- Gather once per tick (not per drone) ---
             using var ships = _shipQuery.ToEntityArray(Allocator.Temp);
@@ -200,12 +204,7 @@ namespace TitanOrbit.ECS
                 shipVel.y = 0f;
                 int ownerNetId = ghostOwner.NetworkId;
                 byte ownerTeam = (byte)shipState.Team;
-                int firePowerAbilityLv = 0;
-                if (EntityManager.HasComponent<ShipAttributeUpgradeState>(entity))
-                    firePowerAbilityLv = EntityManager.GetComponentData<ShipAttributeUpgradeState>(entity).FirePower;
-                int firePowerExtras = BulletBankCombatLogic.CountFirePowerExtraLevels(
-                    shipState.ShipLevel, firePowerAbilityLv);
-                // [TITAN-ORBIT] Combat drones use their purchase ItemLevel damage — NOT ship BulletDamage.
+                // [TITAN-ORBIT] Combat drones use purchase ItemLevel damage — NOT ship BulletDamage.
                 // Range / lifetime still borrow the hull weapon config so bolts travel a sensible distance.
                 float maxDist = math.max(10f, weaponCfg.BulletMaxDistance);
                 float lifetime = math.max(0.1f, weaponCfg.BulletLifetime);
@@ -266,14 +265,19 @@ namespace TitanOrbit.ECS
                     bool isFighter = type == StoreItemType.FighterDrone;
                     float fireRate = isFighter ? DroneSwarmLogic.FighterFireRate : DroneSwarmLogic.MiningFireRate;
                     float bulletSpeed = isFighter ? DroneSwarmLogic.FighterBulletSpeed : DroneSwarmLogic.MiningBulletSpeed;
-                    int bankIndex = isFighter ? _fighterBankIndex : _miningBankIndex;
+                    int bankIndex = ResolveDroneBankIndex(buf[slot], shipState.ShipFamilyConfigIndex);
 
                     // --- Per-drone leveled damage (purchase ItemLevel, not live ship guns) ---
                     // ItemLevel 0 = legacy drone (pre-leveling) — treat as reference max for damage.
                     int droneLevel = buf[slot].ItemLevel > 0
                         ? buf[slot].ItemLevel
                         : StoreItemData.DroneReferenceMaxLevel;
+                    // One-sixth ship fire-power curve (L1 ≈ 0.67, L6 = 1.5). Bank multipliers
+                    // (e.g. 1.25 fire power) then apply unchanged — never the hull's live guns.
                     float damage = math.max(0.05f, StoreItemData.GetCombatDroneDamage(droneLevel));
+                    // Authored primary abilities only; StrengthScale (1/6) shrinks force/radius/DPS.
+                    // Durations and tick intervals stay at the bullet type's authored times.
+                    const int firePowerExtras = 0;
                     // [TITAN-ORBIT] Starblast-style target filters — mining ignores ships; fighters ignore rocks.
                     var damageFilter = isFighter
                         ? BulletDamageFilter.ShipsOnly
@@ -325,9 +329,11 @@ namespace TitanOrbit.ECS
                         OwnerTeam = ownerTeam,
                         Sequence = sequence,
                         BankIndex = math.max(0, bankIndex),
+                        // Mini tracer (0.58) is visual only. Gameplay strength is 1/6.
                         ScaleMultiplier = DroneSwarmLogic.DroneBulletVisualScale,
                         DamageFilter = damageFilter,
                         FirePowerExtraLevels = firePowerExtras,
+                        StrengthScale = DroneSwarmLogic.DroneFirePowerScale,
                     };
 
                     spawnEvents.Add(new BulletSpawnEventElement
@@ -361,23 +367,26 @@ namespace TitanOrbit.ECS
             }
         }
 
-        /// <summary>Warm BulletVfxBank category indices once.</summary>
-        void EnsureBanksResolved()
+        void EnsureFamilyConfigWarmed()
         {
-            if (_banksResolved)
+            if (_familyConfigWarmed)
                 return;
-            _vfxBank = BulletVfxBank.LoadDefault();
-            _fighterBankIndex = ResolveBankIndex(_vfxBank, DroneSwarmLogic.FighterBankCategoryName);
-            _miningBankIndex = ResolveBankIndex(_vfxBank, DroneSwarmLogic.MiningBankCategoryName);
-            _banksResolved = true;
+            _familyConfig = Resources.Load<PlanetShipFamilyConfig>("PlanetShipFamilyConfig");
+            _familyConfigWarmed = true;
         }
 
-        /// <summary>Resolves BulletVfxBank category by name; falls back to 0.</summary>
-        static int ResolveBankIndex(BulletVfxBank bank, string categoryName)
+        /// <summary>Purchase-planet family bank, else the hull family's default damage bank.</summary>
+        int ResolveDroneBankIndex(in EquippedEquipmentElement equipment, byte hullFamilyIndex)
         {
-            if (bank != null && bank.TryGetCategoryIndexByName(categoryName, out int idx))
-                return idx;
-            return 0;
+            ShipFamilyDefinition hullFamily = null;
+            if (_familyConfig != null)
+            {
+                var entry = _familyConfig.GetFamilyByConfigIndex(hullFamilyIndex);
+                hullFamily = entry != null ? entry.shipFamilyDefinition : null;
+            }
+
+            return BulletBankProfileUtility.ResolveBankIndexForDrone(
+                equipment.ComponentId.ToString(), hullFamily);
         }
 
         /// <summary>Nearest living enemy ship within engage range (toroidal from owner).</summary>

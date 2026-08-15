@@ -746,25 +746,32 @@ namespace TitanOrbit.Game
             go.transform.SetPositionAndRotation(spawnDisplay, rot);
 
             // Refresh tint / scale / particles on a recycled shell.
+            // Scale the tracer ROOT (same as muzzle/impact). Scaling only the visual child
+            // left World-space particles and trail widths at ship size.
             GameObject visual = go.transform.childCount > 0
                 ? go.transform.GetChild(0).gameObject
                 : go;
             float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex);
             BulletVisualFactory.ApplyColorToVisual(visual, BulletVisualFactory.GetTeamBulletColor(team));
-            VfxUrpCompat.ApplyImpactVisualScale(visual, visualScale);
+            VfxUrpCompat.ApplyImpactVisualScale(go, visualScale);
             VfxUrpCompat.PrepareVfxInstance(go);
             BulletVisualFactory.SetAudioPitchInHierarchy(
                 go, BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
 
             ClientBulletStretchVisual stretch = go.GetComponent<ClientBulletStretchVisual>();
-            if (stretch == null
-                && _bank != null
+            if (_bank != null
                 && _bank.TryGetProfile(bankIndex, out var profile)
                 && profile != null
-                && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor)
-                && ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
+                && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor))
             {
-                stretch = go.GetComponent<ClientBulletStretchVisual>();
+                // Root already carries drone/ship shot scale — do not shrink length again.
+                if (stretch == null)
+                {
+                    if (ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
+                        stretch = go.GetComponent<ClientBulletStretchVisual>();
+                }
+                else
+                    stretch.Rebind(visual, startFactor, endFactor);
             }
 
             var tracer = new Tracer

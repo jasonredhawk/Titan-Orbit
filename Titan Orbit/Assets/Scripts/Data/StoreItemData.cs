@@ -8,9 +8,10 @@ namespace TitanOrbit.Data
     /// <see cref="Systems.HomePlanetStoreSystem"/> and orbit station equipment UI. Prices are
     /// code constants today — not ScriptableObject tunables.
     /// <para>
-    /// [TITAN-ORBIT] All drones (fighter, mining, shield) are sold at the <b>ship's current
-    /// level only</b>. Cost, visual size, and (for combat drones) damage scale with that
-    /// purchase level — they do <b>not</b> copy the ship's live <c>BulletDamage</c>.
+    /// [TITAN-ORBIT] Drones (fighter, mining, shield) and other leveled store goods are sold at
+    /// <see cref="GetStorePurchaseLevel"/> — <c>min(ship, docked planet)</c>. A level-6 ship on a
+    /// level-3 moon can only buy level-3 gear. Cost, visual size, and (for combat drones) damage
+    /// scale with that purchase level — they do <b>not</b> copy the ship's live <c>BulletDamage</c>.
     /// Rough ship firepower thumb-rule is ~3 + 1 per level; combat drones deal one-sixth:
     /// <c>0.5 + (1/6)×level</c> (level 1 → ≈0.67, level 6 → 1.5 DPS at 1 shot/sec).
     /// Visual size uses the same relative curve with level 6 = prefab scale 1.0.
@@ -61,12 +62,27 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
-        /// True when any autonomous drone sold at ship level (fighter, mining, shield).
+        /// True when any autonomous drone sold at store purchase level (fighter, mining, shield).
         /// Cost, size, and ItemLevel apply to all of these.
         /// </summary>
         public static bool IsLeveledDrone(StoreItemType item)
         {
             return IsDrone(item);
+        }
+
+        /// <summary>
+        /// Level the moon Orbit Menu may sell drones, components, and cards at.
+        /// [TITAN-ORBIT] The docked planet is a hard cap: you cannot buy gear above that world's
+        /// level even if the ship is higher. Same formula as card-spin tier.
+        /// </summary>
+        /// <param name="shipLevel">Current ship chassis tier (1-based).</param>
+        /// <param name="planetLevel">Level of the planet whose moon the ship is docked at.</param>
+        /// <returns>At least 1; never above the weaker of the two inputs.</returns>
+        public static int GetStorePurchaseLevel(int shipLevel, int planetLevel)
+        {
+            // --- Limiting level ---
+            // [TITAN-ORBIT] Example: ship 6 + planet 3 → buy level 3. Ship 2 + planet 6 → buy level 2.
+            return Mathf.Min(Mathf.Max(1, shipLevel), Mathf.Max(1, planetLevel));
         }
 
         /// <summary>
@@ -115,8 +131,8 @@ namespace TitanOrbit.Data
         /// </summary>
         /// <param name="item">Catalog item kind.</param>
         /// <param name="shipLevel">
-        /// Current ship level — used for fighter/mining/shield drones (purchase level).
-        /// Ignored for rockets and mines.
+        /// Store purchase level from <see cref="GetStorePurchaseLevel"/> — used for
+        /// fighter/mining/shield drones. Ignored for rockets and mines.
         /// </param>
         public static float GetPrice(StoreItemType item, int shipLevel = 1)
         {
@@ -281,7 +297,7 @@ namespace TitanOrbit.Data
 
         /// <summary>
         /// Short description for equipment / store UI. Leveled drones include level so
-        /// players see they are buying ship-level gear.
+        /// players see they are buying store-capped gear (<c>min(ship, planet)</c>).
         /// </summary>
         public static string GetDescription(StoreItemType item, int itemLevel)
         {

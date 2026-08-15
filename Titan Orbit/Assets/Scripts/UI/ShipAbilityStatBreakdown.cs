@@ -215,11 +215,13 @@ namespace TitanOrbit.UI
                 case 0:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.FirePower, "Fire Power", lv, live.EffectiveStats.firePower);
                     AppendRelatedFireExtras(sb, parts, live);
+                    BulletBankHudCopy.AppendFullSection(sb, in live, in attrs);
                     break;
                 case 1:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.BulletSpeed, "Bullet Speed", lv, live.EffectiveStats.bulletSpeed);
                     // Bullet range has no bottom-HUD ability — abilityLv forced to 0.
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.BulletRange, "Range", 0, live.EffectiveStats.bulletRange);
+                    BulletBankHudCopy.AppendFullSection(sb, in live, in attrs);
                     break;
                 case 2:
                     // Cap only — no live HP vitals (those changed every frame and forced TMP rebuilds).
@@ -230,9 +232,11 @@ namespace TitanOrbit.UI
                     break;
                 case 4:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.EnergyCap, "Energy Cap", lv, live.EffectiveStats.energyCap);
+                    BulletBankHudCopy.AppendFullSection(sb, in live, in attrs);
                     break;
                 case 5:
                     AppendTenPercentPipeline(sb, parts, live, attrs, StatField.EnergyRegen, "Energy Regen", lv, live.EffectiveStats.energyRegen);
+                    BulletBankHudCopy.AppendFullSection(sb, in live, in attrs);
                     break;
                 case 6:
                     AppendMoveAbilityCard(sb, parts, live, attrs, lv);

@@ -88,13 +88,26 @@ namespace TitanOrbit.Entities
         /// </summary>
         public const int NoWeaponMountReproject = -1;
 
-        /// <summary>Visual scale of drone-fired bullets (legacy).</summary>
+        /// <summary>Visual scale of drone-fired bullets (tracer / impact size only).</summary>
         public const float DroneBulletVisualScale = 0.58f;
 
-        /// <summary>BulletVfxBank category name for fighter drones.</summary>
+        /// <summary>
+        /// Gameplay strength of drone shots vs the same authored bullet type on a ship.
+        /// Applies to damage (via <see cref="StoreItemData.GetCombatDroneDamage"/>), burn DPS,
+        /// heal amount, pull/push force, pull radius, and blast radius.
+        /// Does <b>not</b> scale bank multipliers (e.g. 1.25 fire power stays 1.25) or
+        /// time fields (burn duration, tick interval, shock / gravity lifetime).
+        /// </summary>
+        public const float DroneFirePowerScale = 1f / 6f;
+
+        /// <summary>
+        /// Legacy fighter bank name. Live combat uses the drone's purchase-planet family bank.
+        /// </summary>
         public const string FighterBankCategoryName = "Bullets";
 
-        /// <summary>BulletVfxBank category name for mining drones.</summary>
+        /// <summary>
+        /// Legacy mining bank name. Live combat uses the drone's purchase-planet family bank.
+        /// </summary>
         public const string MiningBankCategoryName = "Laserbolt";
 
         /// <summary>

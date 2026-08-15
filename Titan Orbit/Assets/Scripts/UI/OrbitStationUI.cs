@@ -3267,7 +3267,10 @@ namespace TitanOrbit.UI
             bool isHomeStore = currentPlanet is HomePlanet;
             bool hasEmptySlot = currentShip.HasEmptySlot;
             int shipLevel = currentShip.ShipLevel;
-            int spinTier = CardShopSystem.GetSpinCardTier(shipLevel, homeLevel);
+            // [TITAN-ORBIT] Card tier is min(ship, this moon's planet), not home.
+            // A level-6 ship on a level-3 moon only spins level-3 cards.
+            int storePlanetLevel = GetStorePurchasePlanetLevel();
+            int spinTier = CardShopSystem.GetSpinCardTier(shipLevel, storePlanetLevel);
             float spinCost = CardShopSystem.Instance.GetCardSpinCost(spinTier);
             int poolCount = CardShopSystem.Instance.GetCardPoolCountForSpin(currentShip, spinTier, homeLevel, isHomeStore, currentPlanet.PlanetId, currentShip.ShipTeam);
 
@@ -3377,7 +3380,7 @@ namespace TitanOrbit.UI
                     cardRarityLabels[i].color = new Color(1f, 1f, 1f, 0.88f);
                 }
                 int cardLvl = Mathf.Max(1, card.cardLevel);
-                bool levelOk = cardLvl <= shipLevel;
+                bool levelOk = cardLvl <= StoreItemData.GetStorePurchaseLevel(shipLevel, storePlanetLevel);
                 if (cardButtons[i] != null)
                 {
                     bool canChoose = hasEmptySlot && levelOk && !string.IsNullOrEmpty(offerId);
@@ -3566,7 +3569,7 @@ namespace TitanOrbit.UI
             if (needsEquipmentRebuild)
                 RebuildMoonDockEquipmentStore(family);
 
-            int shipLevel = currentShip != null ? currentShip.ShipLevel : 1;
+            int shipLevel = GetStorePurchaseLevel();
             for (int i = 0; i < _moonDockStoreCards.Count; i++)
             {
                 MoonDockStoreCardBinding card = _moonDockStoreCards[i];
@@ -3678,7 +3681,7 @@ namespace TitanOrbit.UI
             for (int c = _moonDockStoreGridContent.childCount - 1; c >= 0; c--)
                 Destroy(_moonDockStoreGridContent.GetChild(c).gameObject);
 
-            int shipLevel = currentShip != null ? currentShip.ShipLevel : 1;
+            int shipLevel = GetStorePurchaseLevel();
             if (family?.components != null)
             {
                 var sorted = new List<ShipFamilyComponentEntry>();
@@ -3933,7 +3936,7 @@ namespace TitanOrbit.UI
             Color cardColor = ShipAbilityCategoryColors.GetPowerBreakdownStatColorForHud(
                 StoreItemData.GetAbilityColorStatIndex(itemType), 0.92f);
 
-            int shipLevel = currentShip != null ? Mathf.Max(1, currentShip.ShipLevel) : 1;
+            int shipLevel = GetStorePurchaseLevel();
             CreateMoonDockEquipmentItemTile(
                 parent,
                 "Support_" + itemType,
@@ -5319,7 +5322,10 @@ namespace TitanOrbit.UI
                     if (!filled)
                         equipmentDescTexts[i].text = "Buy from Store tab";
                     else if (entry.IsShipComponent && componentEntry != null)
-                        equipmentDescTexts[i].text = ShipComponentStoreData.GetStatsDescription(componentEntry, shipLevel, shipFamily, 2);
+                    {
+                        int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
+                        equipmentDescTexts[i].text = ShipComponentStoreData.GetStatsDescription(componentEntry, componentLevel, shipFamily, 2);
+                    }
                     else
                         equipmentDescTexts[i].text = StoreItemData.GetDescription(itemType);
                 }
@@ -5434,8 +5440,9 @@ namespace TitanOrbit.UI
             {
                 if (filled && entry.IsShipComponent && componentEntry != null)
                 {
-                    float power = ShipComponentStoreData.GetComponentPowerScore(componentEntry, shipLevel, family);
-                    slotUi.sublineText.text = FormatMoonDockEquipmentSubline(shipLevel, power, owned: true);
+                    int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
+                    float power = ShipComponentStoreData.GetComponentPowerScore(componentEntry, componentLevel, family);
+                    slotUi.sublineText.text = FormatMoonDockEquipmentSubline(componentLevel, power, owned: true);
                     slotUi.sublineText.gameObject.SetActive(true);
                 }
                 else if (filled && StoreItemData.IsDrone(itemType))
@@ -5473,9 +5480,10 @@ namespace TitanOrbit.UI
                 slotUi.powerBar.gameObject.SetActive(showComponentPowerBar);
                 if (showComponentPowerBar)
                 {
+                    int componentLevel = entry.itemLevel > 0 ? entry.itemLevel : shipLevel;
                     slotUi.powerBar.ConfigureLayoutScale(1f, 1f);
                     slotUi.powerBar.ApplyEquipmentBreakdown(
-                        ShipComponentStoreData.GetPowerBreakdown(componentEntry, shipLevel, family),
+                        ShipComponentStoreData.GetPowerBreakdown(componentEntry, componentLevel, family),
                         maxComponentPower,
                         trackWidth);
                 }
@@ -6343,6 +6351,29 @@ namespace TitanOrbit.UI
                 _cardSpinButtonLayout.preferredWidth = spinBandWidth;
                 _cardSpinButtonLayout.minWidth = spinBandWidth;
             }
+        }
+
+        /// <summary>
+        /// Level of the planet whose moon is hosting this Orbit Menu (1 if unknown).
+        /// </summary>
+        private int GetStorePurchasePlanetLevel()
+        {
+            Planet store = GetShipUpgradeStorePlanet();
+            if (store != null)
+                return Mathf.Max(1, store.PlanetLevel);
+            if (currentPlanet != null)
+                return Mathf.Max(1, currentPlanet.PlanetLevel);
+            return 1;
+        }
+
+        /// <summary>
+        /// Level the store may sell drones, components, and cards at:
+        /// <c>min(ship, docked planet)</c>. Slot counts still follow the real ship level.
+        /// </summary>
+        private int GetStorePurchaseLevel()
+        {
+            int shipLevel = currentShip != null ? Mathf.Max(1, currentShip.ShipLevel) : 1;
+            return StoreItemData.GetStorePurchaseLevel(shipLevel, GetStorePurchasePlanetLevel());
         }
 
         private Planet GetShipUpgradeStorePlanet()

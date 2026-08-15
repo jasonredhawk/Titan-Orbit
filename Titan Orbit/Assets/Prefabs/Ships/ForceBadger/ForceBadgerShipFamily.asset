@@ -96,9 +96,9 @@ MonoBehaviour:
       rammingPower: 1
       rammingPowerPerExtraLevel: 0.25
       healthCap: 6.3
-      healthCapPerExtraLevel: 1.575
+      healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
-      healthRegenPerExtraLevel: 0.056250006
+      healthRegenPerExtraLevel: 0.225
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -235,8 +235,8 @@ MonoBehaviour:
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 0
       extraSpeedEnergyDrainPerExtraLevel: 0
-      turnSpeed: 20
-      turnSpeedPerExtraLevel: 4
+      turnSpeed: 10
+      turnSpeedPerExtraLevel: 2
       maxGems: 0
       maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
@@ -282,9 +282,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerExtraLevel: 0.7875
+      healthCapPerExtraLevel: 3.15
       healthRegen: 0.11250001
-      healthRegenPerExtraLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.1125
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -344,9 +344,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerExtraLevel: 0.7875
+      healthCapPerExtraLevel: 3.15
       healthRegen: 0.11250001
-      healthRegenPerExtraLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.1125
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -421,8 +421,8 @@ MonoBehaviour:
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 0
       extraSpeedEnergyDrainPerExtraLevel: 0
-      turnSpeed: 20
-      turnSpeedPerExtraLevel: 4
+      turnSpeed: 10
+      turnSpeedPerExtraLevel: 2
       maxGems: 0
       maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
@@ -592,9 +592,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 6.3
-      healthCapPerExtraLevel: 1.575
+      healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
-      healthRegenPerExtraLevel: 0.056250006
+      healthRegenPerExtraLevel: 0.225
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -663,13 +663,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 1
-    powerScore: 92.7875
-    powerScoreAtMaxLevel: 168.28438
+    powerScore: 82.7875
+    powerScoreAtMaxLevel: 163.625
     powerScoreBreakdown:
       offense: 49
       defense: 9.7875
       energy: 21
-      mobility: 33.8
+      mobility: 23.8
       capacity: 18
       firePower: 3
       bulletSpeed: 12
@@ -680,9 +680,27 @@ MonoBehaviour:
       energyCap: 18
       energyRegen: 3
       moveSpeed: 9
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 8
       peopleCap: 10
+    powerScoreBreakdownAtShipLevel:
+      offense: 52.75
+      defense: 32.625
+      energy: 30
+      mobility: 31.8
+      capacity: 27
+      firePower: 3.75
+      bulletSpeed: 15
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 31.500002
+      healthRegen: 1.125
+      energyCap: 27
+      energyRegen: 3
+      moveSpeed: 9
+      turnSpeed: 18
+      gemCap: 12
+      peopleCap: 15
     componentMass: 14.25155
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_02
@@ -708,13 +726,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 106.759926
-    powerScoreAtMaxLevel: 229.51237
+    powerScore: 96.759926
+    powerScoreAtMaxLevel: 225.29988
     powerScoreBreakdown:
       offense: 49
       defense: 6.525
       energy: 41.234924
-      mobility: 32
+      mobility: 22
       capacity: 18
       firePower: 3
       bulletSpeed: 12
@@ -725,9 +743,27 @@ MonoBehaviour:
       energyCap: 37.91565
       energyRegen: 3.3192751
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 8
       peopleCap: 10
+    powerScoreBreakdownAtShipLevel:
+      offense: 65
+      defense: 26.1
+      energy: 99.21482
+      mobility: 46
+      capacity: 45
+      firePower: 5.25
+      bulletSpeed: 18
+      fireRate: 3
+      rammingPower: 1.25
+      healthCap: 25.2
+      healthRegen: 0.9
+      energyCap: 91.46985
+      energyRegen: 7.744975
+      moveSpeed: 8
+      turnSpeed: 28
+      gemCap: 20
+      peopleCap: 25
     componentMass: 12.163958
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_09
@@ -753,13 +789,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 106.44194
-    powerScoreAtMaxLevel: 228.16911
+    powerScore: 96.44194
+    powerScoreAtMaxLevel: 228.31339
     powerScoreBreakdown:
       offense: 49
       defense: 9.429506
       energy: 39
-      mobility: 32
+      mobility: 22
       capacity: 17.01243
       firePower: 3
       bulletSpeed: 12
@@ -770,9 +806,27 @@ MonoBehaviour:
       energyCap: 36
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 7.56108
       peopleCap: 9.45135
+    powerScoreBreakdownAtShipLevel:
+      offense: 65
+      defense: 44.243027
+      energy: 115
+      mobility: 42.5
+      capacity: 42.531075
+      firePower: 5.25
+      bulletSpeed: 18
+      fireRate: 3
+      rammingPower: 1.25
+      healthCap: 42.717403
+      healthRegen: 1.5256214
+      energyCap: 105
+      energyRegen: 10
+      moveSpeed: 9.5
+      turnSpeed: 20
+      gemCap: 18.9027
+      peopleCap: 23.628376
     componentMass: 13.282901
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_01
@@ -798,13 +852,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 115.03445
-    powerScoreAtMaxLevel: 217.31783
+    powerScore: 105.03445
+    powerScoreAtMaxLevel: 234.55968
     powerScoreBreakdown:
       offense: 19
       defense: 14.774158
       energy: 21
-      mobility: 32
+      mobility: 22
       capacity: 38.260292
       firePower: 3
       bulletSpeed: 12
@@ -815,9 +869,27 @@ MonoBehaviour:
       energyCap: 18
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 22.278708
       peopleCap: 15.981585
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.5
+      defense: 96.3694
+      energy: 77
+      mobility: 50
+      capacity: 106.09821
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.5
+      healthCap: 93.04632
+      healthRegen: 3.3230824
+      energyCap: 66
+      energyRegen: 11
+      moveSpeed: 10
+      turnSpeed: 26
+      gemCap: 55.725227
+      peopleCap: 50.372986
     componentMass: 12.394701
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_11
@@ -844,7 +916,7 @@ MonoBehaviour:
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
     powerScore: 119.206024
-    powerScoreAtMaxLevel: 281.1147
+    powerScoreAtMaxLevel: 305.55124
     powerScoreBreakdown:
       offense: 49.296494
       defense: 10.8607
@@ -863,6 +935,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 20
       peopleCap: 9
+    powerScoreBreakdownAtShipLevel:
+      offense: 78.42518
+      defense: 84.7392
+      energy: 163.9695
+      mobility: 39.5
+      capacity: 85
+      firePower: 9.231638
+      bulletSpeed: 21
+      fireRate: 2.1935437
+      rammingPower: 1
+      healthCap: 81.817154
+      healthRegen: 2.9220414
+      energyCap: 149.54529
+      energyRegen: 14.424216
+      moveSpeed: 10.5
+      turnSpeed: 14
+      gemCap: 52
+      peopleCap: 33
     componentMass: 13.906126
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_03
@@ -888,13 +978,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 125.228485
-    powerScoreAtMaxLevel: 306.19604
+    powerScore: 115.228485
+    powerScoreAtMaxLevel: 315.1002
     powerScoreBreakdown:
       offense: 49
       defense: 11.068505
       energy: 56.14755
-      mobility: 32
+      mobility: 22
       capacity: 17.01243
       firePower: 3
       bulletSpeed: 12
@@ -905,9 +995,27 @@ MonoBehaviour:
       energyCap: 50.6979
       energyRegen: 5.44965
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 7.56108
       peopleCap: 9.45135
+    powerScoreBreakdownAtShipLevel:
+      offense: 77.25
+      defense: 76.21402
+      energy: 190.1585
+      mobility: 42.5
+      capacity: 59.543507
+      firePower: 6.75
+      bulletSpeed: 21
+      fireRate: 3
+      rammingPower: 1.5
+      healthCap: 73.58595
+      healthRegen: 2.6280696
+      energyCap: 171.993
+      energyRegen: 18.1655
+      moveSpeed: 9.5
+      turnSpeed: 20
+      gemCap: 26.46378
+      peopleCap: 33.079727
     componentMass: 13.218161
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_06
@@ -933,13 +1041,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 142.4413
-    powerScoreAtMaxLevel: 381.99432
+    powerScore: 132.4413
+    powerScoreAtMaxLevel: 420.03815
     powerScoreBreakdown:
       offense: 49
       defense: 18.681273
       energy: 39
-      mobility: 32
+      mobility: 22
       capacity: 43.760033
       firePower: 3
       bulletSpeed: 12
@@ -950,9 +1058,27 @@ MonoBehaviour:
       energyCap: 36
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 25.76554
       peopleCap: 17.994493
+    powerScoreBreakdownAtShipLevel:
+      offense: 89.5
+      defense: 155.24619
+      energy: 172
+      mobility: 57
+      capacity: 156.50354
+      firePower: 8.25
+      bulletSpeed: 24
+      fireRate: 3
+      rammingPower: 1.75
+      healthCap: 149.89287
+      healthRegen: 5.3533163
+      energyCap: 159
+      energyRegen: 13
+      moveSpeed: 11
+      turnSpeed: 30
+      gemCap: 82.1904
+      peopleCap: 74.31314
     componentMass: 13.72606
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_16
@@ -978,13 +1104,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 142.81259
-    powerScoreAtMaxLevel: 381.5561
+    powerScore: 132.81259
+    powerScoreAtMaxLevel: 417.80542
     powerScoreBreakdown:
       offense: 49
       defense: 18.083113
       energy: 45.09525
-      mobility: 32
+      mobility: 22
       capacity: 38.63424
       firePower: 3
       bulletSpeed: 12
@@ -995,9 +1121,27 @@ MonoBehaviour:
       energyCap: 41.2245
       energyRegen: 3.87075
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 23.033913
       peopleCap: 15.600326
+    powerScoreBreakdownAtShipLevel:
+      offense: 89.5
+      defense: 164.7766
+      energy: 207.44449
+      mobility: 52.5
+      capacity: 136.33914
+      firePower: 8.25
+      bulletSpeed: 24
+      fireRate: 3
+      rammingPower: 1.75
+      healthCap: 159.09465
+      healthRegen: 5.6819515
+      energyCap: 189.381
+      energyRegen: 18.0635
+      moveSpeed: 11.5
+      turnSpeed: 24
+      gemCap: 72.32145
+      peopleCap: 64.017685
     componentMass: 17.265245
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_04
@@ -1023,13 +1167,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 134.33635
-    powerScoreAtMaxLevel: 365.97128
+    powerScore: 124.33634
+    powerScoreAtMaxLevel: 395.95764
     powerScoreBreakdown:
       offense: 49
       defense: 15.995451
       energy: 39
-      mobility: 32
+      mobility: 22
       capacity: 38.34089
       firePower: 3
       bulletSpeed: 12
@@ -1040,9 +1184,27 @@ MonoBehaviour:
       energyCap: 36
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 22.0282
       peopleCap: 16.31269
+    powerScoreBreakdownAtShipLevel:
+      offense: 89.5
+      defense: 142.3278
+      energy: 151
+      mobility: 48.5
+      capacity: 140.61984
+      firePower: 8.25
+      bulletSpeed: 24
+      fireRate: 3
+      rammingPower: 1.75
+      healthCap: 137.41995
+      healthRegen: 4.907855
+      energyCap: 141
+      energyRegen: 10
+      moveSpeed: 9.5
+      turnSpeed: 26
+      gemCap: 72.47332
+      peopleCap: 68.14653
     componentMass: 10.90282
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_13
@@ -1068,13 +1230,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 131.8941
-    powerScoreAtMaxLevel: 361.1008
+    powerScore: 121.894104
+    powerScoreAtMaxLevel: 384.978
     powerScoreBreakdown:
       offense: 49
       defense: 13.959069
       energy: 39
-      mobility: 32
+      mobility: 22
       capacity: 37.935036
       firePower: 3
       bulletSpeed: 12
@@ -1085,9 +1247,27 @@ MonoBehaviour:
       energyCap: 36
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 21.7483
       peopleCap: 16.186735
+    powerScoreBreakdownAtShipLevel:
+      offense: 89.5
+      defense: 127.95269
+      energy: 179
+      mobility: 58.5
+      capacity: 139.43027
+      firePower: 8.25
+      bulletSpeed: 24
+      fireRate: 3
+      rammingPower: 1.75
+      healthCap: 123.54053
+      healthRegen: 4.412162
+      energyCap: 165
+      energyRegen: 14
+      moveSpeed: 11.5
+      turnSpeed: 30
+      gemCap: 71.74558
+      peopleCap: 67.68469
     componentMass: 14.143673
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_20
@@ -1113,13 +1293,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 147.30203
-    powerScoreAtMaxLevel: 448.45218
+    powerScore: 137.30203
+    powerScoreAtMaxLevel: 491.39957
     powerScoreBreakdown:
       offense: 50.98246
       defense: 16.785973
       energy: 44.157307
-      mobility: 32
+      mobility: 22
       capacity: 47
       firePower: 1.358757
       bulletSpeed: 12
@@ -1130,9 +1310,27 @@ MonoBehaviour:
       energyCap: 40.420547
       energyRegen: 3.7367582
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 28
       peopleCap: 19
+    powerScoreBreakdownAtShipLevel:
+      offense: 100.03966
+      defense: 181.85664
+      energy: 238.50565
+      mobility: 69.5
+      capacity: 198
+      firePower: 4.4159603
+      bulletSpeed: 27
+      fireRate: 6.623701
+      rammingPower: 2
+      healthCap: 175.58572
+      healthRegen: 6.270919
+      energyCap: 218.57626
+      energyRegen: 19.929377
+      moveSpeed: 12.5
+      turnSpeed: 38
+      gemCap: 104
+      peopleCap: 94
     componentMass: 17.96118
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_08
@@ -1158,13 +1356,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 147.91823
-    powerScoreAtMaxLevel: 445.55057
+    powerScore: 137.91823
+    powerScoreAtMaxLevel: 503.11594
     powerScoreBreakdown:
       offense: 49
       defense: 20.684101
       energy: 42.2508
-      mobility: 32
+      mobility: 22
       capacity: 43.983334
       firePower: 3
       bulletSpeed: 12
@@ -1175,9 +1373,27 @@ MonoBehaviour:
       energyCap: 38.7864
       energyRegen: 3.4644003
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 25.91954
       peopleCap: 18.063793
+    powerScoreBreakdownAtShipLevel:
+      offense: 101.75
+      defense: 206.84099
+      energy: 212.17041
+      mobility: 60.5
+      capacity: 181.42989
+      firePower: 9.75
+      bulletSpeed: 27
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 199.70854
+      healthRegen: 7.132448
+      energyCap: 196.0032
+      energyRegen: 16.1672
+      moveSpeed: 11.5
+      turnSpeed: 32
+      gemCap: 94.17471
+      peopleCap: 87.25517
     componentMass: 11.956184
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_17
@@ -1203,13 +1419,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 143.23366
-    powerScoreAtMaxLevel: 435.72504
+    powerScore: 133.23366
+    powerScoreAtMaxLevel: 472.89334
     powerScoreBreakdown:
       offense: 49
       defense: 15.24488
       energy: 43.876198
-      mobility: 32
+      mobility: 22
       capacity: 43.11258
       firePower: 3
       bulletSpeed: 12
@@ -1220,9 +1436,27 @@ MonoBehaviour:
       energyCap: 40.1796
       energyRegen: 3.6966
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 25.31902
       peopleCap: 17.79356
+    powerScoreBreakdownAtShipLevel:
+      offense: 101.75
+      defense: 195.07066
+      energy: 211.1302
+      mobility: 59
+      capacity: 221.09909
+      firePower: 9.75
+      bulletSpeed: 27
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 188.34409
+      healthRegen: 6.7265744
+      energyCap: 195.1116
+      energyRegen: 16.0186
+      moveSpeed: 11
+      turnSpeed: 32
+      gemCap: 116.73988
+      peopleCap: 104.35921
     componentMass: 18.100136
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_14
@@ -1248,13 +1482,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 149.42184
-    powerScoreAtMaxLevel: 456.6586
+    powerScore: 139.42184
+    powerScoreAtMaxLevel: 495.38892
     powerScoreBreakdown:
       offense: 50.736256
       defense: 15.661413
       energy: 52.612724
-      mobility: 32
+      mobility: 22
       capacity: 41.72139
       firePower: 1.426323
       bulletSpeed: 12
@@ -1265,9 +1499,27 @@ MonoBehaviour:
       energyCap: 47.66805
       energyRegen: 4.944675
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 24.35958
       peopleCap: 17.36181
+    powerScoreBreakdownAtShipLevel:
+      offense: 99.94548
+      defense: 184.02336
+      energy: 295.1388
+      mobility: 61
+      capacity: 191.43163
+      firePower: 4.63555
+      bulletSpeed: 27
+      fireRate: 6.309931
+      rammingPower: 2
+      healthCap: 177.67773
+      healthRegen: 6.345633
+      energyCap: 267.11896
+      energyRegen: 28.019825
+      moveSpeed: 13
+      turnSpeed: 28
+      gemCap: 99.622574
+      peopleCap: 91.80905
     componentMass: 15.173198
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_05
@@ -1293,13 +1545,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 143.61281
-    powerScoreAtMaxLevel: 437.4389
+    powerScore: 133.61281
+    powerScoreAtMaxLevel: 477.77472
     powerScoreBreakdown:
       offense: 49
       defense: 16.08955
       energy: 45.704773
-      mobility: 32
+      mobility: 22
       capacity: 40.818478
       firePower: 3
       bulletSpeed: 12
@@ -1310,9 +1562,27 @@ MonoBehaviour:
       energyCap: 41.74695
       energyRegen: 3.9578252
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 23.736881
       peopleCap: 17.081596
+    powerScoreBreakdownAtShipLevel:
+      offense: 101.75
+      defense: 165.3259
+      energy: 219.05403
+      mobility: 61
+      capacity: 171.38965
+      firePower: 9.75
+      bulletSpeed: 27
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 159.625
+      healthRegen: 5.700893
+      energyCap: 201.90346
+      energyRegen: 17.150576
+      moveSpeed: 11
+      turnSpeed: 34
+      gemCap: 88.06326
+      peopleCap: 83.326385
     componentMass: 12.304628
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_10
@@ -1338,13 +1608,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 158.35626
-    powerScoreAtMaxLevel: 524.4347
+    powerScore: 148.35626
+    powerScoreAtMaxLevel: 570.472
     powerScoreBreakdown:
       offense: 49
       defense: 15.119391
       energy: 46.039577
-      mobility: 32
+      mobility: 22
       capacity: 56.197292
       firePower: 3
       bulletSpeed: 12
@@ -1355,9 +1625,27 @@ MonoBehaviour:
       energyCap: 42.033924
       energyRegen: 4.005654
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 34.34296
       peopleCap: 21.854332
+    powerScoreBreakdownAtShipLevel:
+      offense: 114
+      defense: 207.21587
+      energy: 257.19788
+      mobility: 64
+      capacity: 284.27777
+      firePower: 11.25
+      bulletSpeed: 30
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 200.0705
+      healthRegen: 7.1453743
+      energyCap: 237.16962
+      energyRegen: 20.028269
+      moveSpeed: 12
+      turnSpeed: 34
+      gemCap: 152.10324
+      peopleCap: 132.17455
     componentMass: 11.025713
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_12
@@ -1383,13 +1671,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 164.65828
-    powerScoreAtMaxLevel: 541.0974
+    powerScore: 154.65828
+    powerScoreAtMaxLevel: 608.41223
     powerScoreBreakdown:
       offense: 49
       defense: 19.847746
       energy: 47.832138
-      mobility: 32
+      mobility: 22
       capacity: 55.9784
       firePower: 3
       bulletSpeed: 12
@@ -1400,9 +1688,27 @@ MonoBehaviour:
       energyCap: 43.570404
       energyRegen: 4.261734
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 34.192
       peopleCap: 21.7864
+    powerScoreBreakdownAtShipLevel:
+      offense: 114
+      defense: 256.27332
+      energy: 286.04877
+      mobility: 73
+      capacity: 264.9848
+      firePower: 11.25
+      bulletSpeed: 30
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 247.43631
+      healthRegen: 8.83701
+      energyCap: 261.89896
+      energyRegen: 24.149826
+      moveSpeed: 13
+      turnSpeed: 40
+      gemCap: 141.0528
+      peopleCap: 123.932
     componentMass: 18.096426
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_18
@@ -1428,13 +1734,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 156.52614
-    powerScoreAtMaxLevel: 520.1532
+    powerScore: 146.52614
+    powerScoreAtMaxLevel: 580.0819
     powerScoreBreakdown:
       offense: 49
       defense: 18.20638
       energy: 46.111122
-      mobility: 32
+      mobility: 22
       capacity: 51.208626
       firePower: 3
       bulletSpeed: 12
@@ -1445,9 +1751,27 @@ MonoBehaviour:
       energyCap: 42.09525
       energyRegen: 4.015875
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 30.9025
       peopleCap: 20.306126
+    powerScoreBreakdownAtShipLevel:
+      offense: 114
+      defense: 257.73016
+      energy: 276.2964
+      mobility: 65
+      capacity: 262.4309
+      firePower: 11.25
+      bulletSpeed: 30
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 248.84293
+      healthRegen: 8.887247
+      energyCap: 253.53975
+      energyRegen: 22.756624
+      moveSpeed: 13
+      turnSpeed: 32
+      gemCap: 139.02951
+      peopleCap: 123.40138
     componentMass: 19.104778
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_15
@@ -1473,13 +1797,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 152.19429
-    powerScoreAtMaxLevel: 510.15833
+    powerScore: 142.19429
+    powerScoreAtMaxLevel: 563.97925
     powerScoreBreakdown:
       offense: 49
       defense: 16.8491
       energy: 47.345192
-      mobility: 32
+      mobility: 22
       capacity: 47
       firePower: 3
       bulletSpeed: 12
@@ -1490,9 +1814,27 @@ MonoBehaviour:
       energyCap: 43.153023
       energyRegen: 4.19217
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 28
       peopleCap: 19
+    powerScoreBreakdownAtShipLevel:
+      offense: 114
+      defense: 223.9106
+      energy: 302.85287
+      mobility: 70
+      capacity: 230
+      firePower: 11.25
+      bulletSpeed: 30
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 216.18954
+      healthRegen: 7.721055
+      energyCap: 276.30246
+      energyRegen: 26.550411
+      moveSpeed: 14
+      turnSpeed: 34
+      gemCap: 120
+      peopleCap: 110
     componentMass: 17.224258
     lockedInUpgradeTree: 0
   - chassisId: ForceBadger_19
@@ -1518,13 +1860,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 156.2153
-    powerScoreAtMaxLevel: 522.4725
+    powerScore: 146.2153
+    powerScoreAtMaxLevel: 572.41064
     powerScoreBreakdown:
       offense: 49.151676
       defense: 15.986252
       energy: 52.924404
-      mobility: 32
+      mobility: 22
       capacity: 45.55
       firePower: 3.7546499
       bulletSpeed: 12
@@ -1535,9 +1877,27 @@ MonoBehaviour:
       energyCap: 47.935204
       energyRegen: 4.989201
       moveSpeed: 6
-      turnSpeed: 20
+      turnSpeed: 10
       gemCap: 27
       peopleCap: 18.55
+    powerScoreBreakdownAtShipLevel:
+      offense: 116.22697
+      defense: 216.95625
+      energy: 338.18793
+      mobility: 70
+      capacity: 237.65
+      firePower: 14.079937
+      bulletSpeed: 30
+      fireRate: 2.3970277
+      rammingPower: 2.25
+      healthCap: 209.475
+      healthRegen: 7.48125
+      energyCap: 306.58966
+      energyRegen: 31.598272
+      moveSpeed: 14
+      turnSpeed: 34
+      gemCap: 124.2
+      peopleCap: 113.45
     componentMass: 19.341873
     lockedInUpgradeTree: 0
   teamMaterials:

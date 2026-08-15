@@ -96,9 +96,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerExtraLevel: 0.7875
+      healthCapPerExtraLevel: 3.15
       healthRegen: 0.11250001
-      healthRegenPerExtraLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.1125
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -282,9 +282,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerExtraLevel: 0.7875
+      healthCapPerExtraLevel: 3.15
       healthRegen: 0.11250001
-      healthRegenPerExtraLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.1125
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -344,9 +344,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 3.15
-      healthCapPerExtraLevel: 0.7875
+      healthCapPerExtraLevel: 3.15
       healthRegen: 0.11250001
-      healthRegenPerExtraLevel: 0.028125003
+      healthRegenPerExtraLevel: 0.1125
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -530,9 +530,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 6.3
-      healthCapPerExtraLevel: 1.575
+      healthCapPerExtraLevel: 6.3
       healthRegen: 0.22500002
-      healthRegenPerExtraLevel: 0.056250006
+      healthRegenPerExtraLevel: 0.225
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -592,9 +592,9 @@ MonoBehaviour:
       rammingPower: 0
       rammingPowerPerExtraLevel: 0
       healthCap: 8.1
-      healthCapPerExtraLevel: 2.025
+      healthCapPerExtraLevel: 8.1
       healthRegen: 0.28928575
-      healthRegenPerExtraLevel: 0.07232144
+      healthRegenPerExtraLevel: 0.28928572
       energyCap: 0
       energyCapPerExtraLevel: 0
       energyRegen: 0
@@ -679,7 +679,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 7464ced0f5d0db241adc0255d1cc0f0c, type: 3}
     minHomePlanetLevel: 1
     powerScore: 93.36629
-    powerScoreAtMaxLevel: 166.97823
+    powerScoreAtMaxLevel: 172.87346
     powerScoreBreakdown:
       offense: 49.009827
       defense: 7.8603086
@@ -698,6 +698,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 14.092899
       peopleCap: 6.341805
+    powerScoreBreakdownAtShipLevel:
+      offense: 52.718113
+      defense: 39.30154
+      energy: 55.555634
+      mobility: 32
+      capacity: 40.164764
+      firePower: 3.5414362
+      bulletSpeed: 15
+      fireRate: 3.1766772
+      rammingPower: 1
+      healthCap: 37.946316
+      healthRegen: 1.3552256
+      energyCap: 51.476257
+      energyRegen: 4.079376
+      moveSpeed: 8
+      turnSpeed: 14
+      gemCap: 25.367218
+      peopleCap: 14.7975445
     componentMass: 10.1388035
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_01
@@ -739,7 +757,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: edf1f16325f0b324783e0644a5322c98, type: 3}
     minHomePlanetLevel: 2
     powerScore: 107.02074
-    powerScoreAtMaxLevel: 224.38074
+    powerScoreAtMaxLevel: 238.74356
     powerScoreBreakdown:
       offense: 51.032238
       defense: 9.57522
@@ -758,6 +776,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 22.57422
       peopleCap: 11.28711
+    powerScoreBreakdownAtShipLevel:
+      offense: 65.54178
+      defense: 57.45132
+      energy: 73.55563
+      mobility: 32
+      capacity: 75.247406
+      firePower: 2.3556068
+      bulletSpeed: 18
+      fireRate: 6.6861753
+      rammingPower: 1
+      healthCap: 55.47024
+      healthRegen: 1.98108
+      energyCap: 69.47626
+      energyRegen: 4.079376
+      moveSpeed: 8
+      turnSpeed: 14
+      gemCap: 45.14844
+      peopleCap: 30.09896
     componentMass: 6.673217
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_16
@@ -799,7 +835,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 11410dd0cc3452441b6c4f4a24d8209c, type: 3}
     minHomePlanetLevel: 2
     powerScore: 100.53396
-    powerScoreAtMaxLevel: 218.19635
+    powerScoreAtMaxLevel: 228.65018
     powerScoreBreakdown:
       offense: 49.39617
       defense: 6.969211
@@ -818,6 +854,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 10.26646
       peopleCap: 4.619907
+    powerScoreBreakdownAtShipLevel:
+      offense: 66.12576
+      defense: 86.43927
+      energy: 89.74451
+      mobility: 41
+      capacity: 65.192024
+      firePower: 7.535718
+      bulletSpeed: 18
+      fireRate: 2.0900462
+      rammingPower: 1
+      healthCap: 83.4586
+      healthRegen: 2.9806643
+      energyCap: 83.35243
+      energyRegen: 6.392072
+      moveSpeed: 10
+      turnSpeed: 14
+      gemCap: 39.01255
+      peopleCap: 26.179472
     componentMass: 21.803186
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_03
@@ -859,7 +913,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 7c4a5f9eee2263a4c873c94af1da91ba, type: 3}
     minHomePlanetLevel: 3
     powerScore: 113.90132
-    powerScoreAtMaxLevel: 267.3897
+    powerScoreAtMaxLevel: 293.60623
     powerScoreBreakdown:
       offense: 49
       defense: 11.651786
@@ -878,6 +932,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 30
       peopleCap: 15
+    powerScoreBreakdownAtShipLevel:
+      offense: 76.75
+      defense: 103.00179
+      energy: 77.16513
+      mobility: 36.5
+      capacity: 122
+      firePower: 6.75
+      bulletSpeed: 21
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 99.450005
+      healthRegen: 3.5517857
+      energyCap: 75.14154
+      energyRegen: 2.02359
+      moveSpeed: 9.5
+      turnSpeed: 14
+      gemCap: 72
+      peopleCap: 50
     componentMass: 9.979266
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_11
@@ -919,7 +991,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 97335c1c0bdd2774499d8329f8e7baff, type: 3}
     minHomePlanetLevel: 3
     powerScore: 116.26118
-    powerScoreAtMaxLevel: 287.13324
+    powerScoreAtMaxLevel: 310.87018
     powerScoreBreakdown:
       offense: 52.01179
       defense: 10.549757
@@ -938,6 +1010,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 22.709
       peopleCap: 10.21905
+    powerScoreBreakdownAtShipLevel:
+      offense: 77.44165
+      defense: 94.947815
+      energy: 148.10442
+      mobility: 59.666668
+      capacity: 96.51325
+      firePower: 2.573748
+      bulletSpeed: 21
+      fireRate: 7.867903
+      rammingPower: 1
+      healthCap: 91.67375
+      healthRegen: 3.2740624
+      energyCap: 135.94664
+      energyRegen: 12.157773
+      moveSpeed: 14.666667
+      turnSpeed: 14
+      gemCap: 59.0434
+      peopleCap: 37.469852
     componentMass: 14.088717
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_14
@@ -979,7 +1069,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 087cadcfb11c0ca46814d1b48ba81e34, type: 3}
     minHomePlanetLevel: 3
     powerScore: 108.92302
-    powerScoreAtMaxLevel: 275.75183
+    powerScoreAtMaxLevel: 298.0162
     powerScoreBreakdown:
       offense: 53.142155
       defense: 9.895276
@@ -998,6 +1088,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 18.21082
       peopleCap: 8.194869
+    powerScoreBreakdownAtShipLevel:
+      offense: 78.37038
+      defense: 112.82261
+      energy: 148.10442
+      mobility: 59.666668
+      capacity: 102.89113
+      firePower: 2.2108006
+      bulletSpeed: 21
+      fireRate: 9.159578
+      rammingPower: 1
+      healthCap: 108.932175
+      healthRegen: 3.8904347
+      energyCap: 135.94664
+      energyRegen: 12.157773
+      moveSpeed: 14.666667
+      turnSpeed: 14
+      gemCap: 61.916786
+      peopleCap: 40.974342
     componentMass: 12.598206
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_15
@@ -1039,7 +1147,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: b8d3b0b5a516dfb46807f81e8208ce51, type: 3}
     minHomePlanetLevel: 4
     powerScore: 123.54567
-    powerScoreAtMaxLevel: 262.09134
+    powerScoreAtMaxLevel: 302.72833
     powerScoreBreakdown:
       offense: 19
       defense: 13.545668
@@ -1058,6 +1166,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 30
       peopleCap: 15
+    powerScoreBreakdownAtShipLevel:
+      offense: 19
+      defense: 138.68958
+      energy: 177.33333
+      mobility: 75.66667
+      capacity: 155
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 133.90718
+      healthRegen: 4.782399
+      energyCap: 152
+      energyRegen: 25.333334
+      moveSpeed: 18.666668
+      turnSpeed: 14
+      gemCap: 90
+      peopleCap: 65
     componentMass: 15.103362
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_20
@@ -1099,7 +1225,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 2306616957aea65439d67711e3e42ee0, type: 3}
     minHomePlanetLevel: 4
     powerScore: 127.26876
-    powerScoreAtMaxLevel: 347.21957
+    powerScoreAtMaxLevel: 378.75214
     powerScoreBreakdown:
       offense: 49.188904
       defense: 10.510855
@@ -1118,6 +1244,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 25.58466
       peopleCap: 12.79233
+    powerScoreBreakdownAtShipLevel:
+      offense: 87.77647
+      defense: 197.23395
+      energy: 233.28607
+      mobility: 75.66667
+      capacity: 225.99783
+      firePower: 6.4233093
+      bulletSpeed: 24
+      fireRate: 3.8531537
+      rammingPower: 1
+      healthCap: 190.43277
+      healthRegen: 6.8011703
+      energyCap: 211.53091
+      energyRegen: 21.755154
+      moveSpeed: 18.666668
+      turnSpeed: 14
+      gemCap: 127.923294
+      peopleCap: 98.07453
     componentMass: 21.213142
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_09
@@ -1159,7 +1303,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 0e37842573fd3374789358dfaad4e6fc, type: 3}
     minHomePlanetLevel: 4
     powerScore: 119.75478
-    powerScoreAtMaxLevel: 332.9888
+    powerScoreAtMaxLevel: 364.07916
     powerScoreBreakdown:
       offense: 50.44981
       defense: 10.363456
@@ -1178,6 +1322,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 23.89694
       peopleCap: 10.753623
+    powerScoreBreakdownAtShipLevel:
+      offense: 87.60453
+      defense: 150.31767
+      energy: 180.0443
+      mobility: 62.333336
+      capacity: 151.74557
+      firePower: 4.1717033
+      bulletSpeed: 24
+      fireRate: 5.9328284
+      rammingPower: 1
+      healthCap: 145.13431
+      healthRegen: 5.1833677
+      energyCap: 165.89511
+      energyRegen: 14.149185
+      moveSpeed: 15.333334
+      turnSpeed: 14
+      gemCap: 90.80837
+      peopleCap: 60.937195
     componentMass: 13.981721
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_07
@@ -1219,7 +1381,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: dd638fa4da37c954ab5ab5e5a473fcc9, type: 3}
     minHomePlanetLevel: 4
     powerScore: 121.27767
-    powerScoreAtMaxLevel: 335.12634
+    powerScoreAtMaxLevel: 363.00537
     powerScoreBreakdown:
       offense: 49.009796
       defense: 9.293016
@@ -1238,6 +1400,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 21.229681
       peopleCap: 10.6148405
+    powerScoreBreakdownAtShipLevel:
+      offense: 88.46825
+      defense: 114.09663
+      energy: 190.66252
+      mobility: 59.666668
+      capacity: 125.25511
+      firePower: 7.7918444
+      bulletSpeed: 24
+      fireRate: 3.1763983
+      rammingPower: 1
+      healthCap: 110.16226
+      healthRegen: 3.9343665
+      energyCap: 174.99644
+      energyRegen: 15.666075
+      moveSpeed: 14.666667
+      turnSpeed: 14
+      gemCap: 72.180916
+      peopleCap: 53.0742
     componentMass: 12.852068
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_17
@@ -1279,7 +1459,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 7a5ead7bc9ef74c4cb7a08490a943286, type: 3}
     minHomePlanetLevel: 5
     powerScore: 132.36426
-    powerScoreAtMaxLevel: 390.4794
+    powerScoreAtMaxLevel: 434.1736
     powerScoreBreakdown:
       offense: 49.6223
       defense: 11.651786
@@ -1298,6 +1478,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 30
       peopleCap: 15
+    powerScoreBreakdownAtShipLevel:
+      offense: 105.225365
+      defense: 151.47322
+      energy: 218
+      mobility: 47
+      capacity: 177
+      firePower: 15.315543
+      bulletSpeed: 27
+      fireRate: 1.9098246
+      rammingPower: 1
+      healthCap: 146.25
+      healthRegen: 5.223214
+      energyCap: 201
+      energyRegen: 17
+      moveSpeed: 13
+      turnSpeed: 14
+      gemCap: 102
+      peopleCap: 75
     componentMass: 13.971352
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_02
@@ -1339,7 +1537,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 3ae000ae5fd4c354bb30ae55476e0d95, type: 3}
     minHomePlanetLevel: 5
     powerScore: 131.6096
-    powerScoreAtMaxLevel: 389.1456
+    powerScoreAtMaxLevel: 432.83978
     powerScoreBreakdown:
       offense: 49.2318
       defense: 11.651786
@@ -1358,6 +1556,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 30
       peopleCap: 15
+    powerScoreBreakdownAtShipLevel:
+      offense: 103.13691
+      defense: 166.85358
+      energy: 183
+      mobility: 39.5
+      capacity: 210
+      firePower: 12.862932
+      bulletSpeed: 27
+      fireRate: 2.2739763
+      rammingPower: 1
+      healthCap: 161.1
+      healthRegen: 5.7535715
+      energyCap: 171
+      energyRegen: 12
+      moveSpeed: 10.5
+      turnSpeed: 14
+      gemCap: 120
+      peopleCap: 90
     componentMass: 10.526135
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_13
@@ -1399,7 +1615,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: e9f8e4994321bb64095094f26ce85f9d, type: 3}
     minHomePlanetLevel: 5
     powerScore: 128.56967
-    powerScoreAtMaxLevel: 396.16107
+    powerScoreAtMaxLevel: 437.0232
     powerScoreBreakdown:
       offense: 50.871243
       defense: 10.896568
@@ -1418,6 +1634,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 26.95854
       peopleCap: 13.47927
+    powerScoreBreakdownAtShipLevel:
+      offense: 98.9948
+      defense: 205.3233
+      energy: 234.13322
+      mobility: 70.333336
+      capacity: 238.13376
+      firePower: 4.5118027
+      bulletSpeed: 27
+      fireRate: 6.4829965
+      rammingPower: 1
+      healthCap: 198.2432
+      healthRegen: 7.080113
+      energyCap: 214.82848
+      energyRegen: 19.304747
+      moveSpeed: 17.333334
+      turnSpeed: 14
+      gemCap: 134.7927
+      peopleCap: 103.341064
     componentMass: 16.25998
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_18
@@ -1459,7 +1693,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 5cda926dea4808546a71181f51da041a, type: 3}
     minHomePlanetLevel: 5
     powerScore: 132.12761
-    powerScoreAtMaxLevel: 403.58325
+    powerScoreAtMaxLevel: 442.93167
     powerScoreBreakdown:
       offense: 49.20675
       defense: 10.492915
@@ -1478,6 +1712,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 25.85589
       peopleCap: 12.927945
+    powerScoreBreakdownAtShipLevel:
+      offense: 99.40214
+      defense: 171.14914
+      energy: 260.73688
+      mobility: 70.333336
+      capacity: 180.99124
+      firePower: 7.5044575
+      bulletSpeed: 27
+      fireRate: 3.8976831
+      rammingPower: 1
+      healthCap: 165.24745
+      healthRegen: 5.9016943
+      energyCap: 237.6316
+      energyRegen: 23.105268
+      moveSpeed: 17.333334
+      turnSpeed: 14
+      gemCap: 103.42356
+      peopleCap: 77.56767
     componentMass: 18.053732
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_19
@@ -1519,7 +1771,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 7d565d7dcec2b9344b97bab03af2aa04, type: 3}
     minHomePlanetLevel: 5
     powerScore: 130.79579
-    powerScoreAtMaxLevel: 400.33655
+    powerScoreAtMaxLevel: 439.2041
     powerScoreBreakdown:
       offense: 49.189323
       defense: 10.364685
@@ -1538,6 +1790,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 25.39734
       peopleCap: 12.69867
+    powerScoreBreakdownAtShipLevel:
+      offense: 99.4433
+      defense: 211.71059
+      energy: 257.66666
+      mobility: 70.333336
+      capacity: 233.65552
+      firePower: 7.589078
+      bulletSpeed: 27
+      fireRate: 3.8542233
+      rammingPower: 1
+      healthCap: 204.41022
+      healthRegen: 7.300364
+      energyCap: 235
+      energyRegen: 22.666668
+      moveSpeed: 17.333334
+      turnSpeed: 14
+      gemCap: 132.06616
+      peopleCap: 101.58936
     componentMass: 20.670462
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_04
@@ -1579,7 +1849,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 4b39b2c87031d994ebdca5782e1f31c7, type: 3}
     minHomePlanetLevel: 6
     powerScore: 149.45828
-    powerScoreAtMaxLevel: 495.54895
+    powerScoreAtMaxLevel: 547.982
     powerScoreBreakdown:
       offense: 49
       defense: 11.651786
@@ -1598,6 +1868,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 30
       peopleCap: 15
+    powerScoreBreakdownAtShipLevel:
+      offense: 112.75
+      defense: 186.42857
+      energy: 343.839
+      mobility: 73
+      capacity: 210
+      firePower: 11.25
+      bulletSpeed: 30
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 180
+      healthRegen: 6.4285717
+      energyCap: 311.4334
+      energyRegen: 32.40557
+      moveSpeed: 18
+      turnSpeed: 14
+      gemCap: 120
+      peopleCap: 90
     componentMass: 14.911454
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_12
@@ -1639,7 +1927,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: aa0e05a435a2bdc4282577dd5974f73f, type: 3}
     minHomePlanetLevel: 6
     powerScore: 149.22134
-    powerScoreAtMaxLevel: 493.9814
+    powerScoreAtMaxLevel: 554.125
     powerScoreBreakdown:
       offense: 49
       defense: 13.365245
@@ -1658,6 +1946,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 30
       peopleCap: 15
+    powerScoreBreakdownAtShipLevel:
+      offense: 112.75
+      defense: 200.47867
+      energy: 332.1366
+      mobility: 73
+      capacity: 199
+      firePower: 11.25
+      bulletSpeed: 30
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 193.56561
+      healthRegen: 6.9130573
+      energyCap: 301.4028
+      energyRegen: 30.733803
+      moveSpeed: 18
+      turnSpeed: 14
+      gemCap: 114
+      peopleCap: 85
     componentMass: 15.351725
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_05
@@ -1699,7 +2005,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: e9c13ecbb485a424b82ae50547261823, type: 3}
     minHomePlanetLevel: 6
     powerScore: 147.05495
-    powerScoreAtMaxLevel: 489.73428
+    powerScoreAtMaxLevel: 542.1673
     powerScoreBreakdown:
       offense: 49.25698
       defense: 11.651786
@@ -1718,6 +2024,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 30
       peopleCap: 15
+    powerScoreBreakdownAtShipLevel:
+      offense: 110.92002
+      defense: 168.2518
+      energy: 321.91833
+      mobility: 70.333336
+      capacity: 199
+      firePower: 8.404144
+      bulletSpeed: 30
+      fireRate: 4.015876
+      rammingPower: 1
+      healthCap: 162.45001
+      healthRegen: 5.801786
+      energyCap: 292.6443
+      energyRegen: 29.274046
+      moveSpeed: 17.333334
+      turnSpeed: 14
+      gemCap: 114
+      peopleCap: 85
     componentMass: 10.23275
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_10
@@ -1759,7 +2083,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: bf18e0e634e2aab45aa0d5bf8c9bdc28, type: 3}
     minHomePlanetLevel: 6
     powerScore: 138.52696
-    powerScoreAtMaxLevel: 465.11694
+    powerScoreAtMaxLevel: 517.55
     powerScoreBreakdown:
       offense: 49.674725
       defense: 11.651786
@@ -1778,6 +2102,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 30
       peopleCap: 15
+    powerScoreBreakdownAtShipLevel:
+      offense: 110.33146
+      defense: 176.64107
+      energy: 285
+      mobility: 73
+      capacity: 210
+      firePower: 7.0319138
+      bulletSpeed: 30
+      fireRate: 4.799547
+      rammingPower: 1
+      healthCap: 170.55
+      healthRegen: 6.0910716
+      energyCap: 261
+      energyRegen: 24
+      moveSpeed: 18
+      turnSpeed: 14
+      gemCap: 120
+      peopleCap: 90
     componentMass: 12.507719
     lockedInUpgradeTree: 0
   - chassisId: CosmicShark_06
@@ -1819,7 +2161,7 @@ MonoBehaviour:
       sprite: {fileID: 21300000, guid: 10fb778370d6a004b930b2a07ebf902e, type: 3}
     minHomePlanetLevel: 6
     powerScore: 138.27219
-    powerScoreAtMaxLevel: 465.23465
+    powerScoreAtMaxLevel: 517.66766
     powerScoreBreakdown:
       offense: 50.174595
       defense: 11.651786
@@ -1838,6 +2180,24 @@ MonoBehaviour:
       turnSpeed: 14
       gemCap: 30
       peopleCap: 15
+    powerScoreBreakdownAtShipLevel:
+      offense: 110.130684
+      defense: 172.9125
+      energy: 285
+      mobility: 73
+      capacity: 188
+      firePower: 6.0764847
+      bulletSpeed: 30
+      fireRate: 5.554198
+      rammingPower: 1
+      healthCap: 166.95001
+      healthRegen: 5.9625
+      energyCap: 261
+      energyRegen: 24
+      moveSpeed: 18
+      turnSpeed: 14
+      gemCap: 108
+      peopleCap: 80
     componentMass: 11.497492
     lockedInUpgradeTree: 0
   teamMaterials:

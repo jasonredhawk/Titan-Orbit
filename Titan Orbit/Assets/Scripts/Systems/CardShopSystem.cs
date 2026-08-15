@@ -320,12 +320,18 @@ namespace TitanOrbit.Systems
             PurchaseShipLevelUpgradeServerRpc(planetNetworkId, shipNetworkId, targetBranchIndex);
         }
 
-        public static int GetSpinCardTier(int shipLevel, int homePlanetLevel)
+        /// <summary>
+        /// Card-spin tier at a moon store: <c>min(ship, docked planet)</c>.
+        /// [TITAN-ORBIT] Same limiter as drones and components — a high-level ship on a
+        /// low-level moon only rolls that planet's card tier.
+        /// </summary>
+        /// <param name="shipLevel">Current ship chassis tier.</param>
+        /// <param name="storePlanetLevel">Level of the planet whose moon is hosting the store.</param>
+        public static int GetSpinCardTier(int shipLevel, int storePlanetLevel)
         {
-            // --- Compute value ---
-            int s = Mathf.Max(1, shipLevel);
-            int h = Mathf.Max(1, homePlanetLevel);
-            return Mathf.Min(s, h);
+            // --- Limiting tier ---
+            // [TITAN-ORBIT] Delegates to StoreItemData so card spins stay in lockstep with drone buys.
+            return StoreItemData.GetStorePurchaseLevel(shipLevel, storePlanetLevel);
         }
 
         public float GetCardSpinCost(int spinCardTier)
@@ -340,6 +346,12 @@ namespace TitanOrbit.Systems
             return GetCardPoolForSpin(ship, spinCardTier, homePlanetLevel, isHomeStore, storePlanetId, team).Count;
         }
 
+        /// <summary>
+        /// Cards that can appear on a paid spin. <paramref name="spinCardTier"/> is
+        /// <see cref="GetSpinCardTier"/> (min of ship and the docked planet).
+        /// <paramref name="homePlanetLevel"/> still gates <see cref="CardData.minHomePlanetLevel"/>
+        /// (career unlock on the team's home world).
+        /// </summary>
         public List<CardData> GetCardPoolForSpin(
             Starship ship, int spinCardTier, int homePlanetLevel, bool isHomeStore, int storePlanetId, TeamManager.Team team)
         {
@@ -348,6 +360,7 @@ namespace TitanOrbit.Systems
             if (family == null)
                 return pool;
 
+            // --- Filter family deck to this spin tier ---
             int tier = Mathf.Max(1, spinCardTier);
             foreach (var card in family.GetUpgradeCards())
             {
