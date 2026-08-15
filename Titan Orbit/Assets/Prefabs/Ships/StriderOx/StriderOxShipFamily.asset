@@ -421,8 +421,8 @@ MonoBehaviour:
       extraSpeedPercentPerExtraLevel: 0
       extraSpeedEnergyDrain: 0
       extraSpeedEnergyDrainPerExtraLevel: 0
-      turnSpeed: 10
-      turnSpeedPerExtraLevel: 2
+      turnSpeed: 20
+      turnSpeedPerExtraLevel: 4
       maxGems: 0
       maxGemsPerExtraLevel: 0
       tractorBeamDistance: 0
@@ -725,13 +725,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 1
-    powerScore: 97.7875
-    powerScoreAtMaxLevel: 184.575
+    powerScore: 107.7875
+    powerScoreAtMaxLevel: 196.575
     powerScoreBreakdown:
       offense: 49
       defense: 9.7875
       energy: 39
-      mobility: 22
+      mobility: 32
       capacity: 18
       firePower: 3
       bulletSpeed: 12
@@ -742,14 +742,14 @@ MonoBehaviour:
       energyCap: 36
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 8
       peopleCap: 10
     powerScoreBreakdownAtShipLevel:
       offense: 52.75
       defense: 32.625
       energy: 83
-      mobility: 33.5
+      mobility: 47.5
       capacity: 27
       firePower: 3.75
       bulletSpeed: 15
@@ -760,10 +760,73 @@ MonoBehaviour:
       energyCap: 75
       energyRegen: 8
       moveSpeed: 8.5
-      turnSpeed: 14
+      turnSpeed: 28
       gemCap: 12
       peopleCap: 15
     componentMass: 12.860202
+    lockedInUpgradeTree: 0
+  - chassisId: StriderOx_01
+    upgradeTreeShipName: 
+    prefab: {fileID: 3842808552899110803, guid: 8715fbb5ffa94cd439cdbd31bb788b85, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 169a73cd68c638b4f9dcadcce22e4b45, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 169a73cd68c638b4f9dcadcce22e4b45, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 7bee6494272923b4cbd0d6d8795ccb5d, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 30da55dfc01db6c4380b0149e8112381, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: bdb6d0c2e2e984c4a82ff30f7914d5f8, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 5bc1c441f7459b743b4dd06a257a4795, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 2
+    powerScore: 119.3125
+    powerScoreAtMaxLevel: 219.9375
+    powerScoreBreakdown:
+      offense: 19
+      defense: 16.312502
+      energy: 21
+      mobility: 26
+      capacity: 47
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 15.750001
+      healthRegen: 0.56250006
+      energyCap: 18
+      energyRegen: 3
+      moveSpeed: 6
+      turnSpeed: 14
+      gemCap: 28
+      peopleCap: 19
+    powerScoreBreakdownAtShipLevel:
+      offense: 19.25
+      defense: 71.775
+      energy: 70
+      mobility: 36.5
+      capacity: 95
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1.25
+      healthCap: 69.3
+      healthRegen: 2.475
+      energyCap: 60
+      energyRegen: 10
+      moveSpeed: 9.5
+      turnSpeed: 14
+      gemCap: 52
+      peopleCap: 43
+    componentMass: 8.64983
     lockedInUpgradeTree: 0
   - chassisId: StriderOx_16
     upgradeTreeShipName: 
@@ -788,13 +851,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 2
-    powerScore: 113.24657
-    powerScoreAtMaxLevel: 258.51483
+    powerScore: 123.24657
+    powerScoreAtMaxLevel: 272.51483
     powerScoreBreakdown:
       offense: 49.342857
       defense: 14.524944
       energy: 27.466318
-      mobility: 22
+      mobility: 32
       capacity: 39.055305
       firePower: 4.2
       bulletSpeed: 12
@@ -805,14 +868,14 @@ MonoBehaviour:
       energyCap: 26.113987
       energyRegen: 1.3523309
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 22.5209
       peopleCap: 16.534405
     powerScoreBreakdownAtShipLevel:
       offense: 66.24286
       defense: 75.887215
       energy: 70.243515
-      mobility: 37.5
+      mobility: 55.5
       capacity: 86.38457
       firePower: 7.3499994
       bulletSpeed: 18
@@ -823,199 +886,10 @@ MonoBehaviour:
       energyCap: 66.6373
       energyRegen: 3.606216
       moveSpeed: 8.5
-      turnSpeed: 18
+      turnSpeed: 36
       gemCap: 46.13762
       peopleCap: 40.246944
     componentMass: 15.863933
-    lockedInUpgradeTree: 0
-  - chassisId: StriderOx_13
-    upgradeTreeShipName: 
-    prefab: {fileID: 5580504212120642270, guid: 5e5147c87a2fdcf42ad30c3aa59af1a5, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: c60b36494ff06ed4d9c63746381d8d7f, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: c60b36494ff06ed4d9c63746381d8d7f, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 5c962cd88f59cca4eaa9ab8a326c6b73, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: cfe63dfea33028243b0d50ded16ca008, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 042cac5e16b9ca849aa02e1c1bbecd8d, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 0deda9d33d49b3f4c8781a8000f306b2, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 2
-    powerScore: 115.143555
-    powerScoreAtMaxLevel: 262.5426
-    powerScoreBreakdown:
-      offense: 49.18442
-      defense: 14.900502
-      energy: 29.92147
-      mobility: 22
-      capacity: 38.47986
-      firePower: 3.841725
-      bulletSpeed: 12
-      fireRate: 2.3426976
-      rammingPower: 1
-      healthCap: 14.386692
-      healthRegen: 0.5138105
-      energyCap: 28.218403
-      energyRegen: 1.7030671
-      moveSpeed: 6
-      turnSpeed: 10
-      gemCap: 22.124039
-      peopleCap: 16.355818
-    powerScoreBreakdownAtShipLevel:
-      offense: 65.81572
-      defense: 75.51259
-      energy: 80.764404
-      mobility: 39
-      capacity: 85.25351
-      firePower: 6.723019
-      bulletSpeed: 18
-      fireRate: 2.3426976
-      rammingPower: 1.25
-      healthCap: 72.90871
-      healthRegen: 2.6038823
-      energyCap: 75.655205
-      energyRegen: 5.109201
-      moveSpeed: 9
-      turnSpeed: 18
-      gemCap: 45.42327
-      peopleCap: 39.830242
-    componentMass: 13.311462
-    lockedInUpgradeTree: 0
-  - chassisId: StriderOx_14
-    upgradeTreeShipName: 
-    prefab: {fileID: 407803044532099141, guid: 0a9a629b5bb9bb147902ed0bc0ec860d, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 0f38b24eda18ce141ac97b4935811116, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 0f38b24eda18ce141ac97b4935811116, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 967737f290adc014ea2cb40445456d33, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 6fc27ad3a0c8b6a43b9127ddcce83ee6, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: cb2e951649bc3a046ae646e68202a9cc, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: e7000bb949f2baf4898f147f737388b0, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 3
-    powerScore: 124.60564
-    powerScoreAtMaxLevel: 337.2446
-    powerScoreBreakdown:
-      offense: 49.033333
-      defense: 16.312502
-      energy: 30.593132
-      mobility: 22
-      capacity: 47
-      firePower: 2.6999998
-      bulletSpeed: 12
-      fireRate: 3.3333335
-      rammingPower: 1
-      healthCap: 15.750001
-      healthRegen: 0.56250006
-      energyCap: 28.794113
-      energyRegen: 1.7990189
-      moveSpeed: 6
-      turnSpeed: 10
-      gemCap: 28
-      peopleCap: 19
-    powerScoreBreakdownAtShipLevel:
-      offense: 76.90833
-      defense: 110.925
-      energy: 109.17482
-      mobility: 50
-      capacity: 134
-      firePower: 6.075
-      bulletSpeed: 21
-      fireRate: 3.3333335
-      rammingPower: 1.5
-      healthCap: 107.100006
-      healthRegen: 3.825
-      energyCap: 102.578415
-      energyRegen: 6.5964026
-      moveSpeed: 10
-      turnSpeed: 26
-      gemCap: 72
-      peopleCap: 62
-    componentMass: 14.999346
-    lockedInUpgradeTree: 0
-  - chassisId: StriderOx_01
-    upgradeTreeShipName: 
-    prefab: {fileID: 3842808552899110803, guid: 8715fbb5ffa94cd439cdbd31bb788b85, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 169a73cd68c638b4f9dcadcce22e4b45, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 169a73cd68c638b4f9dcadcce22e4b45, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 7bee6494272923b4cbd0d6d8795ccb5d, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 30da55dfc01db6c4380b0149e8112381, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: bdb6d0c2e2e984c4a82ff30f7914d5f8, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: 5bc1c441f7459b743b4dd06a257a4795, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 3
-    powerScore: 119.3125
-    powerScoreAtMaxLevel: 265.25
-    powerScoreBreakdown:
-      offense: 19
-      defense: 16.312502
-      energy: 21
-      mobility: 26
-      capacity: 47
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      rammingPower: 1
-      healthCap: 15.750001
-      healthRegen: 0.56250006
-      energyCap: 18
-      energyRegen: 3
-      moveSpeed: 6
-      turnSpeed: 14
-      gemCap: 28
-      peopleCap: 19
-    powerScoreBreakdownAtShipLevel:
-      offense: 19.5
-      defense: 104.4
-      energy: 84
-      mobility: 39.5
-      capacity: 127
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      rammingPower: 1.5
-      healthCap: 100.8
-      healthRegen: 3.6
-      energyCap: 72
-      energyRegen: 12
-      moveSpeed: 10.5
-      turnSpeed: 14
-      gemCap: 68
-      peopleCap: 59
-    componentMass: 8.64983
     lockedInUpgradeTree: 0
   - chassisId: StriderOx_03
     upgradeTreeShipName: 
@@ -1040,13 +914,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 3
-    powerScore: 115.3125
-    powerScoreAtMaxLevel: 256.75
+    powerScore: 125.3125
+    powerScoreAtMaxLevel: 272.75
     powerScoreBreakdown:
       offense: 19
       defense: 16.312502
       energy: 21
-      mobility: 22
+      mobility: 32
       capacity: 47
       firePower: 3
       bulletSpeed: 12
@@ -1057,14 +931,14 @@ MonoBehaviour:
       energyCap: 18
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 28
       peopleCap: 19
     powerScoreBreakdownAtShipLevel:
       offense: 19.5
       defense: 114.1875
       energy: 70
-      mobility: 42.5
+      mobility: 62.5
       capacity: 134
       firePower: 3
       bulletSpeed: 12
@@ -1075,73 +949,199 @@ MonoBehaviour:
       energyCap: 60
       energyRegen: 10
       moveSpeed: 9.5
-      turnSpeed: 20
+      turnSpeed: 40
       gemCap: 72
       peopleCap: 62
     componentMass: 11
     lockedInUpgradeTree: 0
-  - chassisId: StriderOx_15
+  - chassisId: StriderOx_04
     upgradeTreeShipName: 
-    prefab: {fileID: 2932255946319442920, guid: 9114374a9856b7045b62b005affeb048, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 62220356510500446a6cabf3698c5e81, type: 3}
+    prefab: {fileID: 3960258064163292872, guid: dd5efb1b37d38a34c91cd1485e22116e, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 881994685ca39aa44808fa587f7741b7, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 62220356510500446a6cabf3698c5e81, type: 3}
+      sprite: {fileID: 21300000, guid: 881994685ca39aa44808fa587f7741b7, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 051b5b69071f584439a4a1d956399aca, type: 3}
+      sprite: {fileID: 21300000, guid: 4811f810f3582fd4c8927b55af304ddf, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 98b8e56c3b3acf24ebcf989bebd26024, type: 3}
+      sprite: {fileID: 21300000, guid: 2b34347bb2f768b4bad98cc799e7cc89, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: ea42a5bd86c45b24a9a11af36c24a375, type: 3}
+      sprite: {fileID: 21300000, guid: aae21b8fce514464091963fbd3958a15, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: 9ba619a2e6d336e4bab0dfa55345d8d0, type: 3}
+      sprite: {fileID: 21300000, guid: a5c9794b6aa986d4c807c9dd1254d785, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 4
-    powerScore: 130.1306
-    powerScoreAtMaxLevel: 407.13806
+    minHomePlanetLevel: 3
+    powerScore: 127.07901
+    powerScoreAtMaxLevel: 339.3282
     powerScoreBreakdown:
       offense: 49
-      defense: 16.312502
-      energy: 35.818104
-      mobility: 22
-      capacity: 47
+      defense: 15.502535
+      energy: 32.24623
+      mobility: 26
+      capacity: 44.33024
       firePower: 3
       bulletSpeed: 12
       fireRate: 3
       rammingPower: 1
-      healthCap: 15.750001
-      healthRegen: 0.56250006
-      energyCap: 33.27266
-      energyRegen: 2.545443
+      healthCap: 14.967965
+      healthRegen: 0.5345702
+      energyCap: 30.211056
+      energyRegen: 2.035176
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 14
+      gemCap: 26.81344
+      peopleCap: 17.5168
+    powerScoreBreakdownAtShipLevel:
+      offense: 77.25
+      defense: 116.64184
+      energy: 105.73869
+      mobility: 35
+      capacity: 124.65584
+      firePower: 6.75
+      bulletSpeed: 21
+      fireRate: 3
+      rammingPower: 1.5
+      healthCap: 112.619705
+      healthRegen: 4.022132
+      energyCap: 99.63316
+      energyRegen: 6.105528
+      moveSpeed: 9
+      turnSpeed: 14
+      gemCap: 67.84704
+      peopleCap: 56.8088
+    componentMass: 11.427373
+    lockedInUpgradeTree: 0
+  - chassisId: StriderOx_13
+    upgradeTreeShipName: 
+    prefab: {fileID: 5580504212120642270, guid: 5e5147c87a2fdcf42ad30c3aa59af1a5, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: c60b36494ff06ed4d9c63746381d8d7f, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: c60b36494ff06ed4d9c63746381d8d7f, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 5c962cd88f59cca4eaa9ab8a326c6b73, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: cfe63dfea33028243b0d50ded16ca008, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 042cac5e16b9ca849aa02e1c1bbecd8d, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 0deda9d33d49b3f4c8781a8000f306b2, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 3
+    powerScore: 125.143555
+    powerScoreAtMaxLevel: 332.57077
+    powerScoreBreakdown:
+      offense: 49.18442
+      defense: 14.900502
+      energy: 29.92147
+      mobility: 32
+      capacity: 38.47986
+      firePower: 3.841725
+      bulletSpeed: 12
+      fireRate: 2.3426976
+      rammingPower: 1
+      healthCap: 14.386692
+      healthRegen: 0.5138105
+      energyCap: 28.218403
+      energyRegen: 1.7030671
+      moveSpeed: 6
+      turnSpeed: 20
+      gemCap: 22.124039
+      peopleCap: 16.355818
+    powerScoreBreakdownAtShipLevel:
+      offense: 78.48658
+      defense: 105.3136
+      energy: 106.71205
+      mobility: 68
+      capacity: 113.140335
+      firePower: 8.643882
+      bulletSpeed: 21
+      fireRate: 2.3426976
+      rammingPower: 1.5
+      healthCap: 101.6821
+      healthRegen: 3.631503
+      energyCap: 100.467476
+      energyRegen: 6.2445793
+      moveSpeed: 10
+      turnSpeed: 44
+      gemCap: 59.072887
+      peopleCap: 54.06745
+    componentMass: 13.311462
+    lockedInUpgradeTree: 0
+  - chassisId: StriderOx_02
+    upgradeTreeShipName: 
+    prefab: {fileID: 561415009097887925, guid: 60c38944ee14584488989e66c3d17b6a, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: af4b5c157c95a9a4e89f0eaf9cf94edb, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: af4b5c157c95a9a4e89f0eaf9cf94edb, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 5e606b5377c38fd49ab2c9141122c58f, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: e3a2444ed7e2e40499edbb12c7a6f2a0, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: 58a1179a9533a374eb59326b711fe33d, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: a5b6a682a542edf4390429791d47e587, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 4
+    powerScore: 137.50745
+    powerScoreAtMaxLevel: 428.35086
+    powerScoreBreakdown:
+      offense: 49.18442
+      defense: 17.16475
+      energy: 39
+      mobility: 26
+      capacity: 47
+      firePower: 2.342697
+      bulletSpeed: 12
+      fireRate: 3.8417263
+      rammingPower: 1
+      healthCap: 16.57286
+      healthRegen: 0.5918879
+      energyCap: 36
+      energyRegen: 3
+      moveSpeed: 6
+      turnSpeed: 14
       gemCap: 28
       peopleCap: 19
     powerScoreBreakdownAtShipLevel:
-      offense: 89.5
-      defense: 146.8125
-      energy: 158.21178
-      mobility: 59
-      capacity: 166
-      firePower: 8.25
+      offense: 88.53414
+      defense: 145.54747
+      energy: 165
+      mobility: 39.5
+      capacity: 159
+      firePower: 6.4424167
       bulletSpeed: 24
-      fireRate: 3
+      fireRate: 3.8417263
       rammingPower: 1.75
-      healthCap: 141.75
-      healthRegen: 5.0625
-      energyCap: 147.18152
-      energyRegen: 11.030253
-      moveSpeed: 11
-      turnSpeed: 32
-      gemCap: 88
-      peopleCap: 78
-    componentMass: 16.646961
+      healthCap: 140.5286
+      healthRegen: 5.018878
+      energyCap: 153
+      energyRegen: 12
+      moveSpeed: 10.5
+      turnSpeed: 14
+      gemCap: 84
+      peopleCap: 75
+    componentMass: 9.042124
     lockedInUpgradeTree: 0
   - chassisId: StriderOx_17
     upgradeTreeShipName: 
@@ -1166,13 +1166,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 127.142746
-    powerScoreAtMaxLevel: 400.16638
+    powerScore: 137.14275
+    powerScoreAtMaxLevel: 418.16638
     powerScoreBreakdown:
       offense: 49
       defense: 16.312502
       energy: 32.830242
-      mobility: 22
+      mobility: 32
       capacity: 47
       firePower: 3
       bulletSpeed: 12
@@ -1183,14 +1183,14 @@ MonoBehaviour:
       energyCap: 30.711636
       energyRegen: 2.1186059
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 28
       peopleCap: 19
     powerScoreBreakdownAtShipLevel:
       offense: 89.5
       defense: 140.2875
       energy: 145.26437
-      mobility: 53
+      mobility: 79
       capacity: 159
       firePower: 8.25
       bulletSpeed: 24
@@ -1201,7 +1201,7 @@ MonoBehaviour:
       energyCap: 136.08376
       energyRegen: 9.180626
       moveSpeed: 11
-      turnSpeed: 26
+      turnSpeed: 52
       gemCap: 84
       peopleCap: 75
     componentMass: 14.748362
@@ -1229,13 +1229,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 127.042114
-    powerScoreAtMaxLevel: 399.9316
+    powerScore: 137.04211
+    powerScoreAtMaxLevel: 417.9316
     powerScoreBreakdown:
       offense: 49
       defense: 16.312502
       energy: 32.72961
-      mobility: 22
+      mobility: 32
       capacity: 47
       firePower: 3
       bulletSpeed: 12
@@ -1246,14 +1246,14 @@ MonoBehaviour:
       energyCap: 30.62538
       energyRegen: 2.10423
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 28
       peopleCap: 19
     powerScoreBreakdownAtShipLevel:
       offense: 89.5
       defense: 140.2875
       energy: 139.91844
-      mobility: 51.5
+      mobility: 77.5
       capacity: 159
       firePower: 8.25
       bulletSpeed: 24
@@ -1264,136 +1264,73 @@ MonoBehaviour:
       energyCap: 131.50153
       energyRegen: 8.41692
       moveSpeed: 10.5
-      turnSpeed: 26
+      turnSpeed: 52
       gemCap: 84
       peopleCap: 75
     componentMass: 11.212462
     lockedInUpgradeTree: 0
-  - chassisId: StriderOx_04
+  - chassisId: StriderOx_14
     upgradeTreeShipName: 
-    prefab: {fileID: 3960258064163292872, guid: dd5efb1b37d38a34c91cd1485e22116e, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 881994685ca39aa44808fa587f7741b7, type: 3}
+    prefab: {fileID: 407803044532099141, guid: 0a9a629b5bb9bb147902ed0bc0ec860d, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 0f38b24eda18ce141ac97b4935811116, type: 3}
     teamMenuPreviewSprites:
     - variantName: Red
       team: 1
-      sprite: {fileID: 21300000, guid: 881994685ca39aa44808fa587f7741b7, type: 3}
+      sprite: {fileID: 21300000, guid: 0f38b24eda18ce141ac97b4935811116, type: 3}
     - variantName: Blue
       team: 2
-      sprite: {fileID: 21300000, guid: 4811f810f3582fd4c8927b55af304ddf, type: 3}
+      sprite: {fileID: 21300000, guid: 967737f290adc014ea2cb40445456d33, type: 3}
     - variantName: Green
       team: 3
-      sprite: {fileID: 21300000, guid: 2b34347bb2f768b4bad98cc799e7cc89, type: 3}
+      sprite: {fileID: 21300000, guid: 6fc27ad3a0c8b6a43b9127ddcce83ee6, type: 3}
     - variantName: Orange
       team: 4
-      sprite: {fileID: 21300000, guid: aae21b8fce514464091963fbd3958a15, type: 3}
+      sprite: {fileID: 21300000, guid: cb2e951649bc3a046ae646e68202a9cc, type: 3}
     - variantName: Purple
       team: 5
-      sprite: {fileID: 21300000, guid: a5c9794b6aa986d4c807c9dd1254d785, type: 3}
+      sprite: {fileID: 21300000, guid: e7000bb949f2baf4898f147f737388b0, type: 3}
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 4
-    powerScore: 127.07901
-    powerScoreAtMaxLevel: 396.7446
+    powerScore: 134.60564
+    powerScoreAtMaxLevel: 412.6798
     powerScoreBreakdown:
-      offense: 49
-      defense: 15.502535
-      energy: 32.24623
-      mobility: 26
-      capacity: 44.33024
-      firePower: 3
-      bulletSpeed: 12
-      fireRate: 3
-      rammingPower: 1
-      healthCap: 14.967965
-      healthRegen: 0.5345702
-      energyCap: 30.211056
-      energyRegen: 2.035176
-      moveSpeed: 6
-      turnSpeed: 14
-      gemCap: 26.81344
-      peopleCap: 17.5168
-    powerScoreBreakdownAtShipLevel:
-      offense: 89.5
-      defense: 147.64691
-      energy: 133.23619
-      mobility: 38
-      capacity: 153.98608
-      firePower: 8.25
-      bulletSpeed: 24
-      fireRate: 3
-      rammingPower: 1.75
-      healthCap: 142.55563
-      healthRegen: 5.0912724
-      energyCap: 125.77387
-      energyRegen: 7.4623117
-      moveSpeed: 10
-      turnSpeed: 14
-      gemCap: 82.66048
-      peopleCap: 71.3256
-    componentMass: 11.427373
-    lockedInUpgradeTree: 0
-  - chassisId: StriderOx_10
-    upgradeTreeShipName: 
-    prefab: {fileID: 7361958943603416556, guid: 211726727e019b846998dd0e0dbbbc6a, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: 4fcd7d922f34ad44d8cab52dcaa32b92, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: 4fcd7d922f34ad44d8cab52dcaa32b92, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: bfb2b520df0fc7b40960ffa7ee79bba0, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: 805722e601feaae40a9ed1eacdb992e9, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: f8286b6eb01dcb4469a57e9031e29e62, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: f7b236a53dbba8643abe42a7843372ec, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 5
-    powerScore: 134.10162
-    powerScoreAtMaxLevel: 479.6097
-    powerScoreBreakdown:
-      offense: 49
-      defense: 17.101616
-      energy: 39
-      mobility: 22
+      offense: 49.033333
+      defense: 16.312502
+      energy: 30.593132
+      mobility: 32
       capacity: 47
-      firePower: 3
+      firePower: 2.6999998
       bulletSpeed: 12
-      fireRate: 3
+      fireRate: 3.3333335
       rammingPower: 1
-      healthCap: 16.511906
-      healthRegen: 0.589711
-      energyCap: 36
-      energyRegen: 3
+      healthCap: 15.750001
+      healthRegen: 0.56250006
+      energyCap: 28.794113
+      energyRegen: 1.7990189
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 28
       peopleCap: 19
     powerScoreBreakdownAtShipLevel:
-      offense: 101.75
-      defense: 189.69603
-      energy: 204
-      mobility: 60
-      capacity: 198
-      firePower: 9.75
-      bulletSpeed: 27
-      fireRate: 3
-      rammingPower: 2
-      healthCap: 183.15479
-      healthRegen: 6.541242
-      energyCap: 189
-      energyRegen: 15
-      moveSpeed: 12
-      turnSpeed: 30
-      gemCap: 104
-      peopleCap: 94
-    componentMass: 16.76961
+      offense: 89.00833
+      defense: 143.55
+      energy: 135.57024
+      mobility: 87
+      capacity: 166
+      firePower: 7.424999
+      bulletSpeed: 24
+      fireRate: 3.3333335
+      rammingPower: 1.75
+      healthCap: 138.6
+      healthRegen: 4.95
+      energyCap: 127.77449
+      energyRegen: 7.7957487
+      moveSpeed: 11
+      turnSpeed: 60
+      gemCap: 88
+      peopleCap: 78
+    componentMass: 14.999346
     lockedInUpgradeTree: 0
   - chassisId: StriderOx_08
     upgradeTreeShipName: 
@@ -1418,13 +1355,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 133.3125
-    powerScoreAtMaxLevel: 474.875
+    powerScore: 143.3125
+    powerScoreAtMaxLevel: 494.875
     powerScoreBreakdown:
       offense: 49
       defense: 16.312502
       energy: 39
-      mobility: 22
+      mobility: 32
       capacity: 47
       firePower: 3
       bulletSpeed: 12
@@ -1435,14 +1372,14 @@ MonoBehaviour:
       energyCap: 36
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 28
       peopleCap: 19
     powerScoreBreakdownAtShipLevel:
       offense: 101.75
       defense: 182.7
       energy: 197
-      mobility: 58.5
+      mobility: 88.5
       capacity: 191
       firePower: 9.75
       bulletSpeed: 27
@@ -1453,7 +1390,7 @@ MonoBehaviour:
       energyCap: 183
       energyRegen: 14
       moveSpeed: 11.5
-      turnSpeed: 30
+      turnSpeed: 60
       gemCap: 100
       peopleCap: 91
     componentMass: 15.412404
@@ -1481,13 +1418,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 132.00328
-    powerScoreAtMaxLevel: 474.59195
+    powerScore: 142.00328
+    powerScoreAtMaxLevel: 494.59195
     powerScoreBreakdown:
       offense: 49.321518
       defense: 17.66978
       energy: 35.17756
-      mobility: 22
+      mobility: 32
       capacity: 47
       firePower: 4.155945
       bulletSpeed: 12
@@ -1498,14 +1435,14 @@ MonoBehaviour:
       energyCap: 32.72362
       energyRegen: 2.453937
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 28
       peopleCap: 19
     powerScoreBreakdownAtShipLevel:
       offense: 104.67239
       defense: 192.46237
       energy: 179.16194
-      mobility: 56.5
+      mobility: 84.5
       capacity: 198
       firePower: 13.506821
       bulletSpeed: 27
@@ -1516,10 +1453,73 @@ MonoBehaviour:
       energyCap: 167.71024
       energyRegen: 11.451706
       moveSpeed: 11.5
-      turnSpeed: 28
+      turnSpeed: 56
       gemCap: 104
       peopleCap: 94
     componentMass: 12.959619
+    lockedInUpgradeTree: 0
+  - chassisId: StriderOx_15
+    upgradeTreeShipName: 
+    prefab: {fileID: 2932255946319442920, guid: 9114374a9856b7045b62b005affeb048, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 62220356510500446a6cabf3698c5e81, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 62220356510500446a6cabf3698c5e81, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: 051b5b69071f584439a4a1d956399aca, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 98b8e56c3b3acf24ebcf989bebd26024, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: ea42a5bd86c45b24a9a11af36c24a375, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: 9ba619a2e6d336e4bab0dfa55345d8d0, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 5
+    powerScore: 140.1306
+    powerScoreAtMaxLevel: 486.38995
+    powerScoreBreakdown:
+      offense: 49
+      defense: 16.312502
+      energy: 35.818104
+      mobility: 32
+      capacity: 47
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 15.750001
+      healthRegen: 0.56250006
+      energyCap: 33.27266
+      energyRegen: 2.545443
+      moveSpeed: 6
+      turnSpeed: 20
+      gemCap: 28
+      peopleCap: 19
+    powerScoreBreakdownAtShipLevel:
+      offense: 101.75
+      defense: 179.4375
+      energy: 188.0905
+      mobility: 102
+      capacity: 198
+      firePower: 9.75
+      bulletSpeed: 27
+      fireRate: 3
+      rammingPower: 2
+      healthCap: 173.25
+      healthRegen: 6.1875
+      energyCap: 175.36328
+      energyRegen: 12.727215
+      moveSpeed: 12
+      turnSpeed: 72
+      gemCap: 104
+      peopleCap: 94
+    componentMass: 16.646961
     lockedInUpgradeTree: 0
   - chassisId: StriderOx_09
     upgradeTreeShipName: 
@@ -1544,13 +1544,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 132.08626
-    powerScoreAtMaxLevel: 469.76752
+    powerScore: 142.08626
+    powerScoreAtMaxLevel: 489.76752
     powerScoreBreakdown:
       offense: 49
       defense: 15.986251
       energy: 39
-      mobility: 22
+      mobility: 32
       capacity: 46.1
       firePower: 3
       bulletSpeed: 12
@@ -1561,14 +1561,14 @@ MonoBehaviour:
       energyCap: 36
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 27.6
       peopleCap: 18.5
     powerScoreBreakdownAtShipLevel:
       offense: 101.75
       defense: 169.65001
       energy: 204
-      mobility: 60
+      mobility: 90
       capacity: 193.05
       firePower: 9.75
       bulletSpeed: 27
@@ -1579,7 +1579,7 @@ MonoBehaviour:
       energyCap: 189
       energyRegen: 15
       moveSpeed: 12
-      turnSpeed: 30
+      turnSpeed: 60
       gemCap: 101.8
       peopleCap: 91.25
     componentMass: 13.101576
@@ -1607,13 +1607,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 5
-    powerScore: 132.63965
-    powerScoreAtMaxLevel: 477.14706
+    powerScore: 142.63965
+    powerScoreAtMaxLevel: 497.14706
     powerScoreBreakdown:
       offense: 49.52512
       defense: 17.55426
       energy: 39
-      mobility: 22
+      mobility: 32
       capacity: 43.54053
       firePower: 4.544862
       bulletSpeed: 12
@@ -1624,14 +1624,14 @@ MonoBehaviour:
       energyCap: 36
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 25.614159
       peopleCap: 17.926373
     powerScoreBreakdownAtShipLevel:
       offense: 105.75106
       defense: 207.70242
       energy: 204
-      mobility: 62
+      mobility: 94
       capacity: 186.1901
       firePower: 14.770801
       bulletSpeed: 27
@@ -1642,7 +1642,7 @@ MonoBehaviour:
       energyCap: 189
       energyRegen: 15
       moveSpeed: 12
-      turnSpeed: 32
+      turnSpeed: 64
       gemCap: 96.842476
       peopleCap: 89.34761
     componentMass: 22.835682
@@ -1670,13 +1670,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 135.29625
-    powerScoreAtMaxLevel: 543.72375
+    powerScore: 145.29625
+    powerScoreAtMaxLevel: 565.72375
     powerScoreBreakdown:
       offense: 49.5
       defense: 18.59625
       energy: 28.5
-      mobility: 22
+      mobility: 32
       capacity: 55.7
       firePower: 4.5
       bulletSpeed: 12
@@ -1687,14 +1687,14 @@ MonoBehaviour:
       energyCap: 27
       energyRegen: 1.5
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 34
       peopleCap: 21.7
     powerScoreBreakdownAtShipLevel:
       offense: 118.625
       defense: 249.58125
       energy: 176.5
-      mobility: 67
+      mobility: 101
       capacity: 263.9
       firePower: 16.875
       bulletSpeed: 30
@@ -1705,7 +1705,7 @@ MonoBehaviour:
       energyCap: 168
       energyRegen: 8.5
       moveSpeed: 13
-      turnSpeed: 34
+      turnSpeed: 68
       gemCap: 140.4
       peopleCap: 123.5
     componentMass: 15.030383
@@ -1733,13 +1733,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 135.16225
-    powerScoreAtMaxLevel: 543.622
+    powerScore: 145.16225
+    powerScoreAtMaxLevel: 565.622
     powerScoreBreakdown:
       offense: 49.012283
       defense: 18.227367
       energy: 30.599998
-      mobility: 22
+      mobility: 32
       capacity: 55.136673
       firePower: 3.198204
       bulletSpeed: 12
@@ -1750,14 +1750,14 @@ MonoBehaviour:
       energyCap: 28.8
       energyRegen: 1.8000001
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 33.6115
       peopleCap: 21.525175
     powerScoreBreakdownAtShipLevel:
       offense: 114.55734
       defense: 233.77739
       energy: 188.4
-      mobility: 67
+      mobility: 101
       capacity: 261.705
       firePower: 11.993265
       bulletSpeed: 30
@@ -1768,7 +1768,7 @@ MonoBehaviour:
       energyCap: 178.2
       energyRegen: 10.200001
       moveSpeed: 13
-      turnSpeed: 34
+      turnSpeed: 68
       gemCap: 139.0791
       peopleCap: 122.62588
     componentMass: 14.218746
@@ -1796,13 +1796,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 139.63156
-    powerScoreAtMaxLevel: 565.92444
+    powerScore: 149.63156
+    powerScoreAtMaxLevel: 587.92444
     powerScoreBreakdown:
       offense: 49
       defense: 18.13272
       energy: 39
-      mobility: 22
+      mobility: 32
       capacity: 51.498848
       firePower: 3
       bulletSpeed: 12
@@ -1813,14 +1813,14 @@ MonoBehaviour:
       energyCap: 36
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 29.999489
       peopleCap: 21.49936
     powerScoreBreakdownAtShipLevel:
       offense: 114
       defense: 234.47331
       energy: 236
-      mobility: 67
+      mobility: 101
       capacity: 259.24252
       firePower: 11.25
       bulletSpeed: 30
@@ -1831,73 +1831,10 @@ MonoBehaviour:
       energyCap: 219
       energyRegen: 17
       moveSpeed: 13
-      turnSpeed: 34
+      turnSpeed: 68
       gemCap: 132.99667
       peopleCap: 126.24584
     componentMass: 16.377075
-    lockedInUpgradeTree: 0
-  - chassisId: StriderOx_02
-    upgradeTreeShipName: 
-    prefab: {fileID: 561415009097887925, guid: 60c38944ee14584488989e66c3d17b6a, type: 3}
-    menuPreviewSprite: {fileID: 21300000, guid: af4b5c157c95a9a4e89f0eaf9cf94edb, type: 3}
-    teamMenuPreviewSprites:
-    - variantName: Red
-      team: 1
-      sprite: {fileID: 21300000, guid: af4b5c157c95a9a4e89f0eaf9cf94edb, type: 3}
-    - variantName: Blue
-      team: 2
-      sprite: {fileID: 21300000, guid: 5e606b5377c38fd49ab2c9141122c58f, type: 3}
-    - variantName: Green
-      team: 3
-      sprite: {fileID: 21300000, guid: e3a2444ed7e2e40499edbb12c7a6f2a0, type: 3}
-    - variantName: Orange
-      team: 4
-      sprite: {fileID: 21300000, guid: 58a1179a9533a374eb59326b711fe33d, type: 3}
-    - variantName: Purple
-      team: 5
-      sprite: {fileID: 21300000, guid: a5b6a682a542edf4390429791d47e587, type: 3}
-    theatricalMenuPreviewSprite: {fileID: 0}
-    teamTheatricalMenuPreviewSprites: []
-    minHomePlanetLevel: 6
-    powerScore: 137.50745
-    powerScoreAtMaxLevel: 553.3517
-    powerScoreBreakdown:
-      offense: 49.18442
-      defense: 17.16475
-      energy: 39
-      mobility: 26
-      capacity: 47
-      firePower: 2.342697
-      bulletSpeed: 12
-      fireRate: 3.8417263
-      rammingPower: 1
-      healthCap: 16.57286
-      healthRegen: 0.5918879
-      energyCap: 36
-      energyRegen: 3
-      moveSpeed: 6
-      turnSpeed: 14
-      gemCap: 28
-      peopleCap: 19
-    powerScoreBreakdownAtShipLevel:
-      offense: 112.37684
-      defense: 214.20647
-      energy: 229
-      mobility: 45.5
-      capacity: 223
-      firePower: 8.785113
-      bulletSpeed: 30
-      fireRate: 3.8417263
-      rammingPower: 2.25
-      healthCap: 206.82004
-      healthRegen: 7.38643
-      energyCap: 213
-      energyRegen: 16
-      moveSpeed: 12.5
-      turnSpeed: 14
-      gemCap: 116
-      peopleCap: 107
-    componentMass: 9.042124
     lockedInUpgradeTree: 0
   - chassisId: StriderOx_19
     upgradeTreeShipName: 
@@ -1922,13 +1859,13 @@ MonoBehaviour:
     theatricalMenuPreviewSprite: {fileID: 0}
     teamTheatricalMenuPreviewSprites: []
     minHomePlanetLevel: 6
-    powerScore: 135.69255
-    powerScoreAtMaxLevel: 539.8105
+    powerScore: 145.69255
+    powerScoreAtMaxLevel: 561.8105
     powerScoreBreakdown:
       offense: 50.0529
       defense: 16.312502
       energy: 39
-      mobility: 22
+      mobility: 32
       capacity: 47
       firePower: 5.3800497
       bulletSpeed: 12
@@ -1939,14 +1876,14 @@ MonoBehaviour:
       energyCap: 36
       energyRegen: 3
       moveSpeed: 6
-      turnSpeed: 10
+      turnSpeed: 20
       gemCap: 28
       peopleCap: 19
     powerScoreBreakdownAtShipLevel:
       offense: 121.59803
       defense: 218.58752
       energy: 236
-      mobility: 71
+      mobility: 109
       capacity: 230
       firePower: 20.175186
       bulletSpeed: 30
@@ -1957,10 +1894,73 @@ MonoBehaviour:
       energyCap: 219
       energyRegen: 17
       moveSpeed: 13
-      turnSpeed: 38
+      turnSpeed: 76
       gemCap: 120
       peopleCap: 110
     componentMass: 18.883884
+    lockedInUpgradeTree: 0
+  - chassisId: StriderOx_10
+    upgradeTreeShipName: 
+    prefab: {fileID: 7361958943603416556, guid: 211726727e019b846998dd0e0dbbbc6a, type: 3}
+    menuPreviewSprite: {fileID: 21300000, guid: 4fcd7d922f34ad44d8cab52dcaa32b92, type: 3}
+    teamMenuPreviewSprites:
+    - variantName: Red
+      team: 1
+      sprite: {fileID: 21300000, guid: 4fcd7d922f34ad44d8cab52dcaa32b92, type: 3}
+    - variantName: Blue
+      team: 2
+      sprite: {fileID: 21300000, guid: bfb2b520df0fc7b40960ffa7ee79bba0, type: 3}
+    - variantName: Green
+      team: 3
+      sprite: {fileID: 21300000, guid: 805722e601feaae40a9ed1eacdb992e9, type: 3}
+    - variantName: Orange
+      team: 4
+      sprite: {fileID: 21300000, guid: f8286b6eb01dcb4469a57e9031e29e62, type: 3}
+    - variantName: Purple
+      team: 5
+      sprite: {fileID: 21300000, guid: f7b236a53dbba8643abe42a7843372ec, type: 3}
+    theatricalMenuPreviewSprite: {fileID: 0}
+    teamTheatricalMenuPreviewSprites: []
+    minHomePlanetLevel: 6
+    powerScore: 144.10162
+    powerScoreAtMaxLevel: 562.7113
+    powerScoreBreakdown:
+      offense: 49
+      defense: 17.101616
+      energy: 39
+      mobility: 32
+      capacity: 47
+      firePower: 3
+      bulletSpeed: 12
+      fireRate: 3
+      rammingPower: 1
+      healthCap: 16.511906
+      healthRegen: 0.589711
+      energyCap: 36
+      energyRegen: 3
+      moveSpeed: 6
+      turnSpeed: 20
+      gemCap: 28
+      peopleCap: 19
+    powerScoreBreakdownAtShipLevel:
+      offense: 114
+      defense: 223.89925
+      energy: 236
+      mobility: 101
+      capacity: 230
+      firePower: 11.25
+      bulletSpeed: 30
+      fireRate: 3
+      rammingPower: 2.25
+      healthCap: 216.17859
+      healthRegen: 7.720664
+      energyCap: 219
+      energyRegen: 17
+      moveSpeed: 13
+      turnSpeed: 68
+      gemCap: 120
+      peopleCap: 110
+    componentMass: 16.76961
     lockedInUpgradeTree: 0
   teamMaterials:
   - variantName: Red
