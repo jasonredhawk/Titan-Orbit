@@ -13,8 +13,8 @@ namespace TitanOrbit.Data
     /// Visuals still come from the reserved <c>BulletVfxBank</c> "Rockets" category
     /// (Concussive Push, asteroid bonus, tracers). This catalog owns flight + damage numbers:
     /// fire power, independent flight speed (not ship velocity), lifetime (no max-distance cull),
-    /// acquire range, and a level-scaled reload. Mesh size is derived from fired damage
-    /// (see <c>RocketShotMath.ResolveVisualScaleFromDamage</c>), not from level.
+    /// acquire range, and a level-scaled reload. Mesh size is the row's <c>visualScale</c>
+    /// (0.25 = quarter size). 0 falls back to fired-damage vs level 1.
     /// </para>
     /// Paired with <c>ShipRocketFireSystem</c> (server spawn) and <c>RocketHomingLogic</c> (turn).
     /// </summary>
@@ -85,7 +85,7 @@ namespace TitanOrbit.Data
             [Tooltip("Seconds after a shot before the next rocket may fire. Level 1 = 3s, +0.5s per level.")]
             public float fireCooldown;
 
-            [Tooltip("Unused — rocket mesh size follows fired damage, not this field.")]
+            [Tooltip("Mesh size vs a 1× rocket (0.25 = quarter size). 0 = derive from fired damage vs level 1.")]
             public float visualScale;
         }
 
@@ -157,7 +157,7 @@ namespace TitanOrbit.Data
             // maxDistance 0 = no range cull (lifetime only). Do not invent a travel budget.
             if (row.acquireRange <= 0.01f) row.acquireRange = DefaultAcquireRange;
             if (row.fireCooldown <= 0.01f) row.fireCooldown = DefaultFireCooldownSeconds;
-            // visualScale 0 = caller uses the level ladder (do not flatten every row to 1).
+            // visualScale 0 = RocketShotMath derives size from damage vs L1 (do not force 1).
             return row;
         }
 

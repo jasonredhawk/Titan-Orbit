@@ -6,6 +6,7 @@ using TitanOrbit.ECS;
 using TitanOrbit.Entities;
 using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
+using TitanOrbit.Shared;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -41,8 +42,14 @@ namespace TitanOrbit.Game
     /// [TITAN-ORBIT] Sequence 0 HitRpcs are ram/grind explosions (no tracer). They must play
     /// impact VFX and must not adopt/destroy a nearby flying tracer.
     /// </para>
+    /// <para>
+    /// [TITAN-ORBIT] Homing rockets (local-fired and incoming remote) dead-reckon on the
+    /// client from spawn: 60 Hz step + one-tick lerp + client homing steer. Server still
+    /// owns hits. Display is observer-hull-relative (<see cref="ShipDisplayPose"/>) so a
+    /// 60 Hz camera snap does not make any on-screen rocket look stepped while dodging.
+    /// </para>
     /// </summary>
-    [DefaultExecutionOrder(66150)]
+    [DefaultExecutionOrder(67010)]
     public class BulletVfxDriver : MonoBehaviour
     {
         /// <summary>One active cosmetic tracer keyed by server Sequence (or anticipation slot).</summary>
@@ -85,6 +92,17 @@ namespace TitanOrbit.Game
             /// <summary>Logical pose at the previous fixed tick — display lerps from here.</summary>
             public float3 PrevLogicalPos;
             public float3 PrevVelocity;
+            /// <summary>
+            /// Observer hull (<see cref="ShipDisplayPose"/>) sampled on the same 60 Hz ticks
+            /// as this rocket — camera frame for every tracer, not the firing ship.
+            /// </summary>
+            public float3 PrevHullDisplay;
+            public float3 CurrHullDisplay;
+            public bool HasHullTick;
+            /// <summary>Smoothed hull-relative XZ offset (hides leftover 60 Hz relative steps).</summary>
+            public float3 SmoothedOffset;
+            public float3 OffsetSmoothVel;
+            public bool HasSmoothedOffset;
             /// <summary>Leftover seconds toward the next 60 Hz rocket tick.</summary>
             public float TickCarry;
             public bool HasPrevTick;
@@ -134,13 +152,20 @@ namespace TitanOrbit.Game
         const float PredictedAdoptSkipTtlSeconds = 1.25f;
 
         /// <summary>
-        /// Homing rockets step at sim rate, then the mesh lerps one tick behind
-        /// (Fix Your Timestep). Straight-line flight stays smooth at any render FPS.
+        /// Homing rockets (local and remote) dead-reckon at sim rate, then the mesh
+        /// lerps one tick behind (Fix Your Timestep). Display is hull-relative so a
+        /// 60 Hz camera snap does not make the tracer look stepped while chasing.
         /// </summary>
         const float RocketPresentationTickDt = 1f / TitanOrbitServerTickRateSystem.SimulationHz;
 
         /// <summary>Catch-up cap so a hitch does not spiral rocket ticks.</summary>
         const int MaxRocketPresentationTicksPerFrame = 4;
+
+        /// <summary>
+        /// Offset-space SmoothDamp. Short enough that homing turns stay readable;
+        /// long enough to hide leftover tick-rate relative steps while dodging.
+        /// </summary>
+        const float RocketOffsetSmoothTime = 0.04f;
 
         /// <summary>Display-space radius for matching HitRpc to a recent predicted impact (no Sequence yet).</summary>
         const float PredictedImpactMatchRadius = 14f;
@@ -164,6 +189,9 @@ namespace TitanOrbit.Game
 
         BulletVfxBank _bank;
         int _lastTickFrame = -1;
+        /// <summary>Last observer hull XZ — fallback velocity when kinematics are gated.</summary>
+        float3 _lastObserverHull;
+        bool _hasLastObserverHull;
         /// <summary>Increments per anticipation CreateTracer so FIFO adopt survives RemoveAtSwap.</summary>
         int _nextAnticipationOrder;
 
@@ -197,12 +225,15 @@ namespace TitanOrbit.Game
             _clientPredictedHitExpiry.Clear();
             _pendingPredictedAdoptSkips.Clear();
             _recentPredictedImpacts.Clear();
+            _hasLastObserverHull = false;
         }
 
         /// <summary>
-        /// LateUpdate: drain spawns/hits, dead-reckon, cosmetic collide, place GOs.
-        /// Never Instantiates in onBeforeRender.
-        /// Runs after <see cref="ClientLocalBulletVfxBridge"/> (66100) so anticipation is queued first.
+        /// LateUpdate after <see cref="CameraFollowEcs"/> (67001): drain spawns/hits, dead-reckon,
+        /// place GOs. Never Instantiates in onBeforeRender.
+        /// After the camera so every rocket (local-fired and incoming remote) is placed in this
+        /// frame's <see cref="ShipDisplayPose"/> — the pose the camera hard-locks to.
+        /// Anticipation is still queued first by <see cref="ClientLocalBulletVfxBridge"/> (66100).
         /// </summary>
         void LateUpdate()
         {
@@ -243,6 +274,23 @@ namespace TitanOrbit.Game
 
             float dt = math.min(0.05f, math.max(0f, Time.deltaTime));
             bool hasRef = ToroidalDisplay.TryGetReferencePosition(out Vector3 reference);
+            bool hasHull = TryGetObserverHullDisplay(out float3 frameHull);
+            float3 frameHullVel = float3.zero;
+            if (hasHull)
+            {
+                if (!blockInstantiates && EcsGameBridge.TryGetLocalShipVelocity(out var shipVel))
+                {
+                    frameHullVel = new float3(shipVel.x, 0f, shipVel.z);
+                }
+                else if (_hasLastObserverHull && dt > 1e-5f)
+                {
+                    frameHullVel = (frameHull - _lastObserverHull) / dt;
+                    frameHullVel.y = 0f;
+                }
+
+                _lastObserverHull = frameHull;
+                _hasLastObserverHull = true;
+            }
 
             // --- Cosmetic hit prediction (hybrid-proxy spheres; no map ToEntityArray) ---
             // Skip while join Instantiates are incomplete — HitRpc still destroys tracers.
@@ -264,6 +312,7 @@ namespace TitanOrbit.Game
                     // --- Fixed 60 Hz step + one-tick-behind lerp (homing / coast rockets) ---
                     if (!AdvanceRocketPresentation(
                             ref t, dt, !blockInstantiates, canPredictHits,
+                            hasHull, frameHull, frameHullVel,
                             out displayLogical, out displayVel, out float3 hitPoint, out bool hit))
                     {
                         if (hit)
@@ -309,24 +358,16 @@ namespace TitanOrbit.Game
                     displayVel = t.Velocity;
                 }
 
-                // --- Toroidal display unwrap (logical sim → nearest tile to local ship) ---
-                // Keep mount-height Y — ToDisplayPosition helpers are XZ-only; restore after unwrap.
+                // --- Display pose ---
+                // Keep mount-height Y — unwrap helpers are XZ-only; restore after.
                 float mountY = displayLogical.y;
-                Vector3 displayPos;
-                if (t.IsDisplaySpace)
-                    displayPos = displayLogical;
-                else if (hasRef)
-                {
-                    int stableKey = unchecked((int)t.Sequence) ^ (t.OwnerNetworkId * 397);
-                    displayPos = ToroidalDisplay.ToDisplayPositionWithHysteresis(
-                        stableKey, displayLogical, reference);
-                    // Seam retile can yank the GO — clear TrailRenderer to avoid stretched spikes.
-                    Vector3 prevDisplay = t.Go.transform.position;
-                    if ((displayPos - prevDisplay).sqrMagnitude > 40f * 40f)
-                        ResetTrail(t.Go);
-                }
-                else
-                    displayPos = displayLogical;
+                int stableKey = unchecked((int)t.Sequence) ^ (t.OwnerNetworkId * 397);
+                Vector3 displayPos = ResolveTracerDisplayPosition(
+                    ref t, displayLogical, hasRef, reference, stableKey, dt,
+                    t.HasPrevTick ? math.saturate(t.TickCarry / RocketPresentationTickDt) : 1f);
+                Vector3 prevDisplay = t.Go.transform.position;
+                if ((displayPos - prevDisplay).sqrMagnitude > 40f * 40f)
+                    ResetTrail(t.Go);
 
                 displayPos.y = mountY;
                 t.Go.transform.position = displayPos;
@@ -344,6 +385,104 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
+        /// Every rocket (own shot or incoming) rides the observer camera hull.
+        /// Offset is <c>lerp(shortest(rocket − hull))</c> from poses sampled on the
+        /// <b>same</b> 60 Hz ticks — never interpolated-rocket minus live sim
+        /// (that cancelled out under H73 raw-follow and jittered while chasing).
+        /// <c>display = shipDisplayNow + offset</c> so a camera snap moves the tracer with you.
+        /// </summary>
+        static Vector3 ResolveTracerDisplayPosition(
+            ref Tracer t,
+            float3 displayLogical,
+            bool hasRef,
+            Vector3 reference,
+            int stableKey,
+            float dt,
+            float tickAlpha)
+        {
+            if (t.IsDisplaySpace)
+                return displayLogical;
+
+            if (t.Homing != 0 &&
+                ShipDisplayPose.HasLocalPose &&
+                t.HasHullTick)
+            {
+                Vector3 shipDisp = ShipDisplayPose.LocalPosition;
+                float3 rocketInterp = t.HasPrevTick
+                    ? math.lerp(t.PrevLogicalPos, t.LogicalPos, tickAlpha)
+                    : displayLogical;
+                float3 hullInterp = math.lerp(t.PrevHullDisplay, t.CurrHullDisplay, tickAlpha);
+                float3 targetOffset = HullRelativeOffset(hullInterp, rocketInterp);
+                float3 offset = SmoothHullOffset(ref t, targetOffset, dt);
+                return new Vector3(shipDisp.x + offset.x, displayLogical.y, shipDisp.z + offset.z);
+            }
+
+            if (hasRef)
+            {
+                return ToroidalDisplay.ToDisplayPositionWithHysteresis(
+                    stableKey, displayLogical, reference);
+            }
+
+            return displayLogical;
+        }
+
+        /// <summary>
+        /// Camera / presentation hull XZ — the same pose <see cref="CameraFollowEcs"/> hard-locks to.
+        /// No ship-entity query (join-safe). Used as the attachment frame for all rocket tracers.
+        /// </summary>
+        static bool TryGetObserverHullDisplay(out float3 hull)
+        {
+            hull = default;
+            if (!ShipDisplayPose.HasLocalPose)
+                return false;
+            Vector3 p = ShipDisplayPose.LocalPosition;
+            hull = new float3(p.x, 0f, p.z);
+            return true;
+        }
+
+        /// <summary>
+        /// Near-tile XZ from observer hull to rocket. Raw subtract misses the seam
+        /// when the unbounded hull and a spawn on the canonical tile differ by a map width.
+        /// </summary>
+        static float3 HullRelativeOffset(float3 hull, float3 rocket)
+        {
+            if (ToroidalMapEcs.HasValidMapSize)
+                return ToroidalMapEcs.ShortestOffsetXZ(
+                    hull, rocket, ToroidalMapEcs.MapWidth, ToroidalMapEcs.MapHeight);
+
+            float3 d = rocket - hull;
+            d.y = 0f;
+            return d;
+        }
+
+        /// <summary>
+        /// Smooths only the hull-relative offset. World-space SmoothDamp would fight camera snaps.
+        /// </summary>
+        static float3 SmoothHullOffset(ref Tracer t, float3 targetOffset, float dt)
+        {
+            if (!t.HasSmoothedOffset ||
+                math.distancesq(t.SmoothedOffset, targetOffset) > 40f * 40f)
+            {
+                t.SmoothedOffset = targetOffset;
+                t.OffsetSmoothVel = float3.zero;
+                t.HasSmoothedOffset = true;
+                return targetOffset;
+            }
+
+            Vector3 vel = t.OffsetSmoothVel;
+            Vector3 smoothed = Vector3.SmoothDamp(
+                t.SmoothedOffset,
+                targetOffset,
+                ref vel,
+                RocketOffsetSmoothTime,
+                Mathf.Infinity,
+                dt);
+            t.SmoothedOffset = smoothed;
+            t.OffsetSmoothVel = vel;
+            return t.SmoothedOffset;
+        }
+
+        /// <summary>
         /// Steps a rocket at 60 Hz, then returns a pose lerped from the previous tick
         /// (up to one sim tick behind). Hit tests use the discrete tick segments.
         /// </summary>
@@ -353,6 +492,9 @@ namespace TitanOrbit.Game
             float dt,
             bool canSteer,
             bool canPredictHits,
+            bool hasHull,
+            float3 frameHull,
+            float3 frameHullVel,
             out float3 displayLogical,
             out float3 displayVel,
             out float3 hitPoint,
@@ -368,6 +510,14 @@ namespace TitanOrbit.Game
             {
                 t.PrevLogicalPos = t.LogicalPos;
                 t.PrevVelocity = t.Velocity;
+                if (hasHull)
+                {
+                    t.PrevHullDisplay = t.HasHullTick ? t.CurrHullDisplay : frameHull;
+                    t.CurrHullDisplay = steps == 0
+                        ? frameHull
+                        : t.CurrHullDisplay + frameHullVel * tickDt;
+                    t.HasHullTick = true;
+                }
                 t.HasPrevTick = true;
 
                 if (canSteer && t.TurnSpeedDeg > 0.01f)
@@ -957,6 +1107,18 @@ namespace TitanOrbit.Game
                 AcquireRange = req.AcquireRange,
                 Stretch = stretch,
             };
+
+            // Seed observer-hull samples so the first frame can already ride the camera
+            // (incoming remote rockets included — no local-owner check).
+            if (req.Homing != 0 && TryGetObserverHullDisplay(out float3 hull))
+            {
+                tracer.PrevLogicalPos = req.SpawnPosition;
+                tracer.PrevVelocity = req.Velocity;
+                tracer.PrevHullDisplay = hull;
+                tracer.CurrHullDisplay = hull;
+                tracer.HasHullTick = true;
+                tracer.HasPrevTick = true;
+            }
 
             _tracers.Add(tracer);
             if (req.Sequence != 0)

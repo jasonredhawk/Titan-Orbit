@@ -24,7 +24,7 @@ namespace TitanOrbit.Simulation
         /// <param name="speed">Catalog flight speed (not ship velocity, not bank speed mul).</param>
         /// <param name="maxDistance">Travel budget, or <see cref="RocketCatalog.UnlimitedFlightDistance"/> when lifetime-only.</param>
         /// <param name="lifetime">Catalog seconds of flight (not rebuilt from range).</param>
-        /// <param name="visualScale">Mesh size vs a level-1 rocket, from fired damage (not level).</param>
+        /// <param name="visualScale">Mesh size from the catalog row (<c>visualScale</c>), or damage vs L1 when that field is 0.</param>
         /// <param name="bankIndex">Reserved Rockets category, or 0 if missing.</param>
         /// <param name="extras">Fire-power extra levels (<c>itemLevel - 1</c>).</param>
         public static void Resolve(
@@ -60,8 +60,11 @@ namespace TitanOrbit.Simulation
                 bankIndex, ref damage, ref dummySpeed, ref dummyRange, ref dummyLife, ref fireRate,
                 extras);
 
-            // Size tracks this shot's damage vs a level-1 rocket (same bank mul, extras 0).
-            visualScale = ResolveVisualScaleFromDamage(damage, bankIndex);
+            // Catalog visualScale is the mesh size (0.25 = quarter of a 1× rocket).
+            // 0 = derive from fired damage vs level-1 so a blank row still has a ladder.
+            visualScale = stats.visualScale > 0.01f
+                ? math.max(0.05f, stats.visualScale)
+                : ResolveVisualScaleFromDamage(damage, bankIndex);
         }
 
         /// <summary>Fired damage only — HUD readout (matches the spawned bullet).</summary>
@@ -72,6 +75,7 @@ namespace TitanOrbit.Simulation
         }
 
         /// <summary>
+        /// Fallback when a catalog row leaves <c>visualScale</c> at 0.
         /// <c>1</c> at level-1 catalog damage; grows linearly with fired damage
         /// (40 → 1.0×, 120 → 3.0× when L1 fire power is 40).
         /// </summary>
