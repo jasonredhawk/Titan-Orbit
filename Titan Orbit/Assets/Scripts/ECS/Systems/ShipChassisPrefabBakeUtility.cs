@@ -14,6 +14,12 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class ShipChassisPrefabBakeUtility
     {
+        static readonly Dictionary<int, List<ShipWeaponMountBakeData>> WeaponMountBakeCache =
+            new Dictionary<int, List<ShipWeaponMountBakeData>>(16);
+        static readonly Dictionary<int, List<ShipWingTractorBeamBakeData>> WingBakeCache =
+            new Dictionary<int, List<ShipWingTractorBeamBakeData>>(16);
+        static readonly Dictionary<int, int> WeaponCountCache = new Dictionary<int, int>(16);
+        static readonly Dictionary<int, int> WingCountCache = new Dictionary<int, int>(16);
         /// <summary>
         /// Bakes render parts and attachment points from a chassis prefab hierarchy.
         /// </summary>
@@ -66,35 +72,61 @@ namespace TitanOrbit.ECS
             if (chassisPrefab == null)
                 return false;
 
-            GameObject instance = null;
-            try
-            {
-                // --- Temp instance at identity (same as BakeVisualEntry / wing live-bake) ---
-                instance = Object.Instantiate(chassisPrefab);
-                instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-                instance.transform.localScale = Vector3.one;
-                BakeWeaponMounts(instance.transform, dst);
-            }
-            finally
-            {
-                DestroyTemporaryInstance(instance);
-            }
+            // Prefab-asset walk + cache. Do not Instantiate — catalog apply used to clone
+            // the whole MEGA hull every tick when a dirty flag stuck on.
+            if (TryCopyCachedWeaponMounts(chassisPrefab, dst))
+                return dst.Count > 0;
 
+            BakeWeaponMounts(chassisPrefab.transform, dst);
+            StoreCachedWeaponMounts(chassisPrefab, dst);
             return dst.Count > 0;
         }
 
+        static bool TryCopyCachedWeaponMounts(GameObject chassisPrefab, List<ShipWeaponMountBakeData> dst)
+        {
+            if (!WeaponMountBakeCache.TryGetValue(chassisPrefab.GetInstanceID(), out var cached))
+                return false;
+            dst.AddRange(cached);
+            return true;
+        }
+
+        static void StoreCachedWeaponMounts(GameObject chassisPrefab, List<ShipWeaponMountBakeData> src)
+        {
+            var copy = new List<ShipWeaponMountBakeData>(src.Count);
+            copy.AddRange(src);
+            WeaponMountBakeCache[chassisPrefab.GetInstanceID()] = copy;
+        }
+
+        static bool TryCopyCachedWings(GameObject chassisPrefab, List<ShipWingTractorBeamBakeData> dst)
+        {
+            if (!WingBakeCache.TryGetValue(chassisPrefab.GetInstanceID(), out var cached))
+                return false;
+            dst.AddRange(cached);
+            return true;
+        }
+
+        static void StoreCachedWings(GameObject chassisPrefab, List<ShipWingTractorBeamBakeData> src)
+        {
+            var copy = new List<ShipWingTractorBeamBakeData>(src.Count);
+            copy.AddRange(src);
+            WingBakeCache[chassisPrefab.GetInstanceID()] = copy;
+        }
+
         /// <summary>
-        /// Counts distinct weapon <b>bodies</b> on a chassis prefab (no Instantiates).
-        /// Used to detect undercounted <see cref="ShipWeaponMountElement"/> buffers after the
-        /// old bake stopped at the first <see cref="ShipWeaponMountAuthoring"/>.
+        /// Counts distinct weapon bodies on a chassis prefab (cached, no Instantiates).
         /// </summary>
         public static int CountDistinctWeaponBodies(GameObject chassisPrefab)
         {
             if (chassisPrefab == null)
                 return 0;
 
+            int id = chassisPrefab.GetInstanceID();
+            if (WeaponCountCache.TryGetValue(id, out int cached))
+                return cached;
+
             var bodies = new List<Transform>(8);
             CollectDistinctWeaponBodies(chassisPrefab.transform, bodies);
+            WeaponCountCache[id] = bodies.Count;
             return bodies.Count;
         }
 
@@ -232,24 +264,9 @@ namespace TitanOrbit.ECS
         /// </summary>
         static void CollectDistinctWeaponBodies(Transform root, List<Transform> dst)
         {
-            dst.Clear();
-            if (root == null)
-                return;
-
-            var seen = new HashSet<int>();
-            var all = root.GetComponentsInChildren<Transform>(true);
-            for (int i = 0; i < all.Length; i++)
-            {
-                Transform t = all[i];
-                if (t == null || t == root || !LooksLikeWeaponChildForBake(t))
-                    continue;
-
-                Transform body = ResolveWeaponBodyRoot(t, root);
-                if (body == null || !seen.Add(body.GetInstanceID()))
-                    continue;
-
-                dst.Add(body);
-            }
+            // First weapon-named child in each branch is the whole gun. Nested Cannon /
+            // Turret / barrel meshes are not extra mounts (MEGA StarSparrow assemblies).
+            MegaShipPartClassifier.CollectWeaponAssemblies(root, dst);
         }
 
         /// <summary>
@@ -315,8 +332,8 @@ namespace TitanOrbit.ECS
                 if (auth == null || auth.transform == null || auth.transform == hullRoot)
                     continue;
 
-                Transform authBody = ResolveWeaponBodyRoot(auth.transform, hullRoot);
-                if (authBody != body)
+                Transform marker = auth.transform;
+                if (marker != body && !marker.IsChildOf(body))
                     continue;
 
                 float d = (auth.transform.position - body.position).sqrMagnitude;
@@ -435,21 +452,11 @@ namespace TitanOrbit.ECS
             if (chassisPrefab == null)
                 return false;
 
-            GameObject instance = null;
-            try
-            {
-                // --- Temp instance at identity (same as BakeVisualEntry) ---
-                // [UNITY] InverseTransformPoint needs a consistent root pose; Instantiates at identity.
-                instance = Object.Instantiate(chassisPrefab);
-                instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-                instance.transform.localScale = Vector3.one;
-                BakeWingTractorBeams(instance.transform, dst);
-            }
-            finally
-            {
-                DestroyTemporaryInstance(instance);
-            }
+            if (TryCopyCachedWings(chassisPrefab, dst))
+                return dst.Count > 0;
 
+            BakeWingTractorBeams(chassisPrefab.transform, dst);
+            StoreCachedWings(chassisPrefab, dst);
             return dst.Count > 0;
         }
 
@@ -463,8 +470,13 @@ namespace TitanOrbit.ECS
             if (chassisPrefab == null)
                 return 0;
 
+            int id = chassisPrefab.GetInstanceID();
+            if (WingCountCache.TryGetValue(id, out int cached))
+                return cached;
+
             var bodies = new List<Transform>(8);
             CollectDistinctWingBodies(chassisPrefab.transform, bodies);
+            WingCountCache[id] = bodies.Count;
             return bodies.Count;
         }
 

@@ -163,6 +163,11 @@ namespace TitanOrbit.ECS
                              .WithEntityAccess())
                     ecb.AddComponent(entity, new ShipDepositBeatTimer());
 
+                foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                             .WithNone<MegaShipAutoAimSlotElement>()
+                             .WithEntityAccess())
+                    ecb.AddBuffer<MegaShipAutoAimSlotElement>(entity);
+
                 // --- Server-only ramming contact sticky bookkeeping ---
                 foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>().WithEntityAccess())
                 {

@@ -126,6 +126,13 @@ namespace TitanOrbit.Game
             if (shipState.IsDead || shipState.AwaitingTeamSelection)
                 return;
 
+            // --- MEGA hull: server MegaShipAutoFireSystem owns shots ---
+            // Regular anticipation + live-GO muzzle resolve stay hull-forward on these prefabs
+            // and steal the server SpawnRpc velocity (TryReprojectLocalOwnerSpawn).
+            if (world.EntityManager.HasComponent<MegaShipState>(shipEntity)
+                && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                return;
+
             // --- Need ECS mounts for per-barrel cooldown + damage (live GO count alone is not enough) ---
             if (!world.EntityManager.HasBuffer<ShipWeaponMountElement>(shipEntity))
                 return;

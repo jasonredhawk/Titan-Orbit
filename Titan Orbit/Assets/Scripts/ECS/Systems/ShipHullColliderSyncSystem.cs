@@ -58,6 +58,8 @@ namespace TitanOrbit.ECS
             {
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
                     continue;
+                if (IsMegaHull(em, entity))
+                    continue;
 
                 int branch = ship.ValueRO.BranchIndex;
                 if (NeedsHullSync(em, entity, ship.ValueRO, branch))
@@ -77,6 +79,8 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
             {
                 if (ship.ValueRO.IsDead || ship.ValueRO.AwaitingTeamSelection)
+                    continue;
+                if (IsMegaHull(em, entity))
                     continue;
 
                 if (NeedsHullSync(em, entity, ship.ValueRO, branchIndex: 0))
@@ -128,17 +132,31 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// MEGA colliders are baked once by <see cref="ShipChassisCatalogApplySystem"/>.
+        /// Family-ladder resolve here falls back to Hawk and Instantiates that prefab every tick.
+        /// </summary>
+        static bool IsMegaHull(EntityManager em, Entity entity)
+        {
+            return em.HasComponent<MegaShipState>(entity)
+                   && em.GetComponentData<MegaShipState>(entity).IsMega;
+        }
+
+        /// <summary>
         /// True when chassis identity or attribute-upgrade sum differs from the last bake.
         /// </summary>
         static bool NeedsHullSync(EntityManager em, Entity entity, in ShipState ship, int branchIndex)
         {
+            if (IsMegaHull(em, entity))
+                return false;
+
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return false;
 
             int attributeSum = 0;
@@ -168,13 +186,17 @@ namespace TitanOrbit.ECS
             in ShipState ship,
             int branchIndex)
         {
+            if (IsMegaHull(em, entity))
+                return;
+
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return;
 
             var tier = config.GetTierEntryForChassisId(chassisId);

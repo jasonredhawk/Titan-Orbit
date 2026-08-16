@@ -136,12 +136,13 @@ namespace TitanOrbit.ECS
             }
 
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    EntityManager,
+                    shipEntity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return;
 
             if (!catalog.TryGetEntry(chassisId, out var entry) || entry.RenderParts == null || entry.RenderParts.Count == 0)
@@ -174,12 +175,13 @@ namespace TitanOrbit.ECS
             ShipChassisVisualCatalog catalog)
         {
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    EntityManager,
+                    shipEntity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return;
 
             if (!catalog.TryGetEntry(chassisId, out var entry) || entry.RenderParts == null || entry.RenderParts.Count == 0)

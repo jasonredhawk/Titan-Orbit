@@ -226,24 +226,29 @@ namespace TitanOrbit.ECS
 
             try
             {
-                // --- Temp hierarchy (destroyed in finally) ---
-                // [UNITY] Instantiate so we can mutate localScale without dirtying the asset prefab.
-                instance = Object.Instantiate(chassisPrefab);
-                instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-                instance.transform.localScale = Vector3.one;
-                var root = instance.transform;
+                Transform root;
+                bool needsGrow = ShipStatApplyLogic.SumAttributeLevels(attrs) > 0;
+                if (needsGrow)
+                {
+                    // Clone only when attribute grow must mutate localScale.
+                    instance = Object.Instantiate(chassisPrefab);
+                    instance.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                    instance.transform.localScale = Vector3.one;
+                    root = instance.transform;
+                    string prefix = ResolveFamilyPrefix(chassisPrefab, familyPrefix);
+                    ShipComponentAttributeScaleLogic.ApplyToHierarchy(
+                        root,
+                        prefix,
+                        attrs,
+                        territoryMovementMult: 1f);
+                }
+                else
+                {
+                    // Authored size — walk the prefab asset. Do not clone every hull sync.
+                    root = chassisPrefab.transform;
+                }
 
-                // --- Bottom-bar attribute grow (same math as proxy meshes) ---
-                // [TITAN-ORBIT] Territory mult stays 1 — collider size is authoritative sim, not
-                // local-owner triangle feedback. Child Colliders then pick up grown lossyScale.
-                string prefix = ResolveFamilyPrefix(chassisPrefab, familyPrefix);
-                ShipComponentAttributeScaleLogic.ApplyToHierarchy(
-                    root,
-                    prefix,
-                    attrs,
-                    territoryMovementMult: 1f);
-
-                foreach (var collider in instance.GetComponentsInChildren<UnityEngine.Collider>(true))
+                foreach (var collider in root.GetComponentsInChildren<UnityEngine.Collider>(true))
                 {
                     if (collider == null || !collider.enabled || collider.isTrigger)
                         continue;

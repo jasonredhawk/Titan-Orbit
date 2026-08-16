@@ -115,6 +115,30 @@ namespace TitanOrbit.Data
         /// <summary>Minimum health after summing a hull so a MEGA is never a glass cannon.</summary>
         public const float MinHullHealth = 800f;
 
+        /// <summary>Minimum energy cap — several multi-gun salvos, not a 3000 tank.</summary>
+        public const float MinHullEnergy = 800f;
+
+        /// <summary>Default energy cap when the catalog sum is still 0.</summary>
+        public const float DefaultHullEnergy = 1400f;
+
+        /// <summary>Hard cap so stale catalog sums cannot return to ~3000 energy.</summary>
+        public const float MaxHullEnergy = 2200f;
+
+        /// <summary>Minimum energy regen after resolve.</summary>
+        public const float MinHullEnergyRegen = 22f;
+
+        /// <summary>Default energy regen when the catalog sum is still 0.</summary>
+        public const float DefaultHullEnergyRegen = 36f;
+
+        /// <summary>Hard cap on regen — full volley still drains, but the bar recovers between bursts.</summary>
+        public const float MaxHullEnergyRegen = 50f;
+
+        /// <summary>Minimum people capacity after resolve.</summary>
+        public const float MinHullPeople = 400f;
+
+        /// <summary>Default people capacity when the catalog sum is still 0.</summary>
+        public const float DefaultHullPeople = 600f;
+
         /// <summary>Default extra world radius around a MEGA when framing the gameplay camera.</summary>
         public const float DefaultCameraHullViewPadding = 8f;
 
@@ -431,10 +455,18 @@ namespace TitanOrbit.Data
                 ? CreateBuiltInRuntimeMinimums()
                 : runtimeMinimumStats;
             // Existing catalog assets may have seeded health/move defaults with traverse still 0.
-            if (defaults.weaponRotationSpeed <= 0.01f)
-                defaults.weaponRotationSpeed = DefaultWeaponRotationSpeed;
-            if (mins.weaponRotationSpeed <= 0.01f)
-                mins.weaponRotationSpeed = MinWeaponRotationSpeed;
+            if (defaults.maxPeople < DefaultHullPeople)
+                defaults.maxPeople = DefaultHullPeople;
+            if (mins.maxPeople < MinHullPeople)
+                mins.maxPeople = MinHullPeople;
+            if (defaults.energyCap < DefaultHullEnergy)
+                defaults.energyCap = DefaultHullEnergy;
+            if (defaults.energyRegen < DefaultHullEnergyRegen)
+                defaults.energyRegen = DefaultHullEnergyRegen;
+            if (mins.energyCap < MinHullEnergy)
+                mins.energyCap = MinHullEnergy;
+            if (mins.energyRegen < MinHullEnergyRegen)
+                mins.energyRegen = MinHullEnergyRegen;
             return MegaShipPartStats.ApplyRuntimeDefaultsAndMinimums(raw, defaults, mins);
         }
 
@@ -450,8 +482,8 @@ namespace TitanOrbit.Data
         {
             return CreateStatic(
                 firePower: 0f, bulletSpeed: 12f, bulletRange: DefaultBulletAcquireRange, fireRate: 1f, ramming: 8f,
-                health: MinHullHealth, healthRegen: 2f, energy: 30f, energyRegen: 3f,
-                move: MinHullMoveSpeed, accel: MinHullAcceleration, turn: 4f, gems: 0f, people: 20f,
+                health: MinHullHealth, healthRegen: 2f, energy: DefaultHullEnergy, energyRegen: DefaultHullEnergyRegen,
+                move: MinHullMoveSpeed, accel: MinHullAcceleration, turn: 4f, gems: 0f, people: DefaultHullPeople,
                 weaponRotationSpeed: DefaultWeaponRotationSpeed);
         }
 
@@ -459,8 +491,8 @@ namespace TitanOrbit.Data
         {
             return CreateStatic(
                 firePower: 0f, bulletSpeed: 8f, bulletRange: 10f, fireRate: 0.25f, ramming: 2f,
-                health: MinHullHealth, healthRegen: 0.5f, energy: 15f, energyRegen: 1f,
-                move: MinHullMoveSpeed, accel: MinHullAcceleration, turn: 3f, gems: 0f, people: 8f,
+                health: MinHullHealth, healthRegen: 0.5f, energy: MinHullEnergy, energyRegen: MinHullEnergyRegen,
+                move: MinHullMoveSpeed, accel: MinHullAcceleration, turn: 3f, gems: 0f, people: MinHullPeople,
                 weaponRotationSpeed: MinWeaponRotationSpeed);
         }
 
@@ -615,17 +647,17 @@ namespace TitanOrbit.Data
 
             cockpitStats = CreateStatic(
                 firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 4f,
-                health: 220f, healthRegen: 3.5f, energy: 40f, energyRegen: 5f,
-                move: 0f, accel: 0f, turn: 0f, gems: 0f, people: 28f);
+                health: 220f, healthRegen: 3.5f, energy: 600f, energyRegen: 18f,
+                move: 0f, accel: 0f, turn: 0f, gems: 0f, people: 400f);
 
             wingStats = CreateStatic(
                 firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 0f,
                 health: 36f, healthRegen: 0.4f, energy: 0f, energyRegen: 0f,
-                move: 0f, accel: 0f, turn: 0.4f, gems: 0f, people: 8f);
+                move: 0f, accel: 0f, turn: 0.4f, gems: 0f, people: 50f);
 
             engineStats = CreateStatic(
                 firePower: 0f, bulletSpeed: 0f, bulletRange: 0f, fireRate: 0f, ramming: 0f,
-                health: 40f, healthRegen: 0.3f, energy: 28f, energyRegen: 4f,
+                health: 40f, healthRegen: 0.3f, energy: 140f, energyRegen: 5f,
                 move: 12f, accel: 8f, turn: 0f, gems: 0f, people: 0f);
 
             thrusterStats = CreateStatic(
@@ -646,6 +678,7 @@ namespace TitanOrbit.Data
             runtimeDefaultStats = CreateBuiltInRuntimeDefaults();
             runtimeMinimumStats = CreateBuiltInRuntimeMinimums();
             ApplyTypeTableBulletRangesToUniqueWeapons();
+            ApplyTypeTableVitalsToUniqueParts();
             MegaShipComponentInventory.RecalcAllShipSums(this);
             if (cameraHullViewPadding <= 0f)
                 cameraHullViewPadding = DefaultCameraHullViewPadding;
@@ -676,6 +709,36 @@ namespace TitanOrbit.Data
 
                 MegaShipPartStats stats = row.stats;
                 stats.bulletRange = table.bulletRange;
+                row.stats = stats;
+            }
+        }
+
+        /// <summary>
+        /// Writes type-table energy / people onto cockpit, engine, and wing unique rows.
+        /// </summary>
+        void ApplyTypeTableVitalsToUniqueParts()
+        {
+            if (uniqueComponents == null)
+                return;
+
+            for (int i = 0; i < uniqueComponents.Count; i++)
+            {
+                MegaShipComponentEntry row = uniqueComponents[i];
+                if (row == null)
+                    continue;
+                if (!string.Equals(row.partType, ShipFamilyPartTypes.Cockpit, StringComparison.OrdinalIgnoreCase)
+                    && !ShipFamilyPartTypes.IsEngineProfile(row.partType)
+                    && !string.Equals(row.partType, ShipFamilyPartTypes.Wing, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                MegaShipPartStats table = GetStatsForPartType(row.partType);
+                MegaShipPartStats stats = row.stats;
+                if (table.energyCap > 0.5f)
+                    stats.energyCap = table.energyCap;
+                if (table.energyRegen > 0.01f)
+                    stats.energyRegen = table.energyRegen;
+                if (table.maxPeople > 0.5f)
+                    stats.maxPeople = table.maxPeople;
                 row.stats = stats;
             }
         }

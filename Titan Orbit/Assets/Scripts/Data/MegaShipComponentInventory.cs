@@ -11,13 +11,13 @@ namespace TitanOrbit.Data
     [Serializable]
     public class MegaShipComponentEntry
     {
-        /// <summary>Prefab child object name — the unique key (Armor1, not Armor1 [2]).</summary>
+        /// <summary>Prefab asset name — the unique key (not the instance name with (1)).</summary>
         public string displayName;
 
         /// <summary>Part profile id (<see cref="ShipFamilyPartTypes"/>).</summary>
         public string partType;
 
-        /// <summary>True when this name is a live gun mount (TurretBarrel / MissileLauncher).</summary>
+        /// <summary>True when this row is a tagged MEGA weapon prefab (Gun / Cannon / Missile / Sniper).</summary>
         public bool isWeapon;
 
         /// <summary>Per-name stats. Seeded from the type table; then hand-tunable.</summary>
@@ -125,7 +125,8 @@ namespace TitanOrbit.Data
                     if (!TryClassifyChild(t, root, out string partType, out _))
                         continue;
 
-                    MegaShipPartStats part = catalog.TryGetUniqueComponent(t.name, out MegaShipComponentEntry row)
+                    string id = MegaShipPartClassifier.GetPrefabAssetName(t);
+                    MegaShipPartStats part = catalog.TryGetUniqueComponent(id, out MegaShipComponentEntry row)
                         && row != null
                         ? row.stats
                         : catalog.GetStatsForPartType(partType);
@@ -142,7 +143,7 @@ namespace TitanOrbit.Data
                     add.moveSpeed = 0f;
                     sum = MegaShipPartStats.Sum(sum, add);
 
-                    string key = row != null ? row.displayName : t.name;
+                    string key = row != null ? row.displayName : id;
                     if (!tallies.TryGetValue(key, out int n))
                         n = 0;
                     tallies[key] = n + 1;
@@ -216,12 +217,13 @@ namespace TitanOrbit.Data
                 if (!TryClassifyChild(t, root, out string partType, out bool isWeapon))
                     continue;
 
-                if (byName.ContainsKey(t.name))
+                string id = MegaShipPartClassifier.GetPrefabAssetName(t);
+                if (string.IsNullOrEmpty(id) || byName.ContainsKey(id))
                     continue;
 
-                byName[t.name] = new MegaShipComponentEntry
+                byName[id] = new MegaShipComponentEntry
                 {
-                    displayName = t.name,
+                    displayName = id,
                     partType = partType,
                     isWeapon = isWeapon,
                     stats = catalog != null
@@ -242,15 +244,24 @@ namespace TitanOrbit.Data
             isWeapon = false;
             if (t == null || t == root)
                 return false;
-            if (MegaShipPartClassifier.ShouldIgnore(t.name))
+
+            if (MegaShipPartClassifier.IsTaggedWeapon(t))
+            {
+                partType = MegaShipPartClassifier.ResolvePartType(t);
+                isWeapon = true;
+                return true;
+            }
+
+            string id = MegaShipPartClassifier.GetPrefabAssetName(t);
+            if (MegaShipPartClassifier.ShouldIgnore(id) || MegaShipPartClassifier.ShouldIgnore(t.name))
                 return false;
 
-            partType = MegaShipPartClassifier.ResolvePartType(t.name);
+            partType = MegaShipPartClassifier.ResolvePartType(t);
             if (string.Equals(partType, ShipFamilyPartTypes.Ignore, StringComparison.OrdinalIgnoreCase))
                 return false;
 
-            isWeapon = MegaShipPartClassifier.IsWeaponMountTransform(t);
-            if (ShipFamilyPartTypes.IsWeapon(partType) && !isWeapon)
+            isWeapon = false;
+            if (ShipFamilyPartTypes.IsWeapon(partType))
                 return false;
 
             return true;

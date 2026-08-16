@@ -1,4 +1,5 @@
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
 
 namespace TitanOrbit.ECS
@@ -59,6 +60,21 @@ namespace TitanOrbit.ECS
 
         /// <summary>When true, friendlies cannot Take Control of any gun pad.</summary>
         [GhostField] public bool GunsLocked;
+    }
+
+    /// <summary>
+    /// Server-only sticky auto-aim, one slot per weapon mount. A single hull-center
+    /// search fills empty slots when Fire is pressed. Locks clear when Fire is released
+    /// so the next press re-acquires the closest targets.
+    /// </summary>
+    [InternalBufferCapacity(32)]
+    public struct MegaShipAutoAimSlotElement : IBufferElementData
+    {
+        /// <summary>Current lock (ship, planet, or asteroid). Null when none.</summary>
+        public Entity Target;
+
+        /// <summary>Last toroidal aim point written when the lock was validated.</summary>
+        public float3 AimPoint;
     }
 
     /// <summary>

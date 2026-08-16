@@ -42,7 +42,6 @@ namespace TitanOrbit.ECS
                 return;
 
             float now = (float)SystemAPI.Time.ElapsedTime;
-            float dt = SystemAPI.Time.DeltaTime;
             var bullets = EntityManager.GetBuffer<BulletElement>(bulletEntity);
             var spawnEvents = EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
             var ecb = new EntityCommandBuffer(Allocator.Temp);
@@ -78,15 +77,6 @@ namespace TitanOrbit.ECS
                 desiredAim.y = 0f;
                 desiredAim = math.normalizesafe(desiredAim, new float3(0f, 0f, 1f));
 
-                // --- Traverse toward the gunner's aim even when they are not holding Fire ---
-                MegaShipWeaponAim.RotateMountTowardWorldDir(xf, ref mount, desiredAim, dt);
-                mounts[mountIndex] = mount;
-                if (EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega))
-                {
-                    var gunners = EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega);
-                    MegaShipWeaponAim.WriteGhostedYaw(gunners, mountIndex, mount);
-                }
-
                 if (!input.ValueRO.Fire.IsSet)
                     continue;
 
@@ -99,7 +89,7 @@ namespace TitanOrbit.ECS
                     continue;
 
                 float3 muzzle = MegaShipGunnerLogic.GetMountWorldPosition(xf, mount);
-                float3 aim = MegaShipWeaponAim.GetBarrelForward(xf, mount);
+                float3 aim = desiredAim;
 
                 int bankIndex = 0;
                 if (EntityManager.HasComponent<ShipLoadoutState>(mega))

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.Simulation;
@@ -18,6 +19,8 @@ namespace TitanOrbit.ECS
     /// </summary>
     public static class MegaShipStatApplyLogic
     {
+        static readonly List<Transform> WeaponAssemblyScratch = new List<Transform>(16);
+
         /// <summary>
         /// Applies frozen MEGA stats and resizes the gunner-pad buffer to match weapon mounts.
         /// </summary>
@@ -42,11 +45,17 @@ namespace TitanOrbit.ECS
             {
                 var ship = em.GetComponentData<ShipState>(shipEntity);
                 float prevHealthRatio = ship.MaxHealth > 0.01f ? ship.Health / ship.MaxHealth : 1f;
+                float prevEnergyRatio = ship.MaxEnergy > 0.01f ? ship.CurrentEnergy / ship.MaxEnergy : 1f;
                 ship.MaxHealth = Mathf.Max(1f, effective.healthCap);
                 ship.GemCapacity = 0f;
                 ship.CurrentGems = 0f;
-                ship.MaxEnergy = Mathf.Max(1f, effective.energyCap);
-                ship.PeopleCapacity = Mathf.Max(1, Mathf.RoundToInt(effective.maxPeople));
+                ship.MaxEnergy = Mathf.Clamp(
+                    effective.energyCap > 0.01f ? effective.energyCap : MegaShipCatalog.DefaultHullEnergy,
+                    MegaShipCatalog.MinHullEnergy,
+                    MegaShipCatalog.MaxHullEnergy);
+                ship.PeopleCapacity = Mathf.Max(
+                    Mathf.RoundToInt(MegaShipCatalog.MinHullPeople),
+                    Mathf.RoundToInt(effective.maxPeople));
                 ship.ShipLevel = 7;
                 ship.BranchIndex = mega.MegaSlotIndex;
                 ship.Health = ship.AwaitingTeamSelection || ship.Health <= 0.01f
@@ -54,7 +63,7 @@ namespace TitanOrbit.ECS
                     : Mathf.Clamp(ship.MaxHealth * prevHealthRatio, 1f, ship.MaxHealth);
                 ship.CurrentEnergy = ship.AwaitingTeamSelection
                     ? ship.MaxEnergy
-                    : Mathf.Min(ship.CurrentEnergy, ship.MaxEnergy);
+                    : Mathf.Clamp(ship.MaxEnergy * prevEnergyRatio, 0f, ship.MaxEnergy);
                 ship.CurrentPeople = Mathf.Min(ship.CurrentPeople, ship.PeopleCapacity);
                 em.SetComponentData(shipEntity, ship);
             }
@@ -130,7 +139,10 @@ namespace TitanOrbit.ECS
             var vitals = new ShipVitalsConfig
             {
                 HealthRegenPerSecond = Mathf.Max(0f, effective.healthRegen),
-                EnergyRegenPerSecond = Mathf.Max(0f, effective.energyRegen),
+                EnergyRegenPerSecond = Mathf.Clamp(
+                    effective.energyRegen > 0.01f ? effective.energyRegen : MegaShipCatalog.DefaultHullEnergyRegen,
+                    MegaShipCatalog.MinHullEnergyRegen,
+                    MegaShipCatalog.MaxHullEnergyRegen),
                 HealthRegenDelayAfterDamage = 0.35f,
             };
             if (em.HasComponent<ShipVitalsConfig>(shipEntity))
@@ -184,15 +196,16 @@ namespace TitanOrbit.ECS
 
             var mounts = em.GetBuffer<ShipWeaponMountElement>(shipEntity);
             var root = entry.prefab.transform;
-            var children = entry.prefab.GetComponentsInChildren<Transform>(true);
+            MegaShipPartClassifier.CollectWeaponAssemblies(root, WeaponAssemblyScratch);
             int w = 0;
-            for (int i = 0; i < children.Length && w < mounts.Length; i++)
+            for (int i = 0; i < WeaponAssemblyScratch.Count && w < mounts.Length; i++)
             {
-                Transform t = children[i];
+                Transform t = WeaponAssemblyScratch[i];
                 if (!MegaShipComponentInventory.TryClassifyChild(t, root, out _, out bool isWeapon) || !isWeapon)
                     continue;
 
-                if (!catalog.TryGetUniqueComponent(t.name, out MegaShipComponentEntry row) || row == null)
+                string id = MegaShipPartClassifier.GetPrefabAssetName(t);
+                if (!catalog.TryGetUniqueComponent(id, out MegaShipComponentEntry row) || row == null)
                     continue;
 
                 // Resolve traverse / cadence / range through catalog defaults; firePower stays raw
@@ -203,11 +216,7 @@ namespace TitanOrbit.ECS
                 mount.FireRate = math.max(0.15f, resolved.fireRate > 0.01f ? resolved.fireRate : row.stats.fireRate);
                 mount.BulletRange = math.max(4f, resolved.bulletRange > 0.5f ? resolved.bulletRange : row.stats.bulletRange);
                 mount.ReferenceFirePower = math.max(0f, row.stats.firePower);
-                mount.WeaponRotationSpeed = math.max(
-                    MegaShipCatalog.MinWeaponRotationSpeed,
-                    resolved.weaponRotationSpeed > 0.01f
-                        ? resolved.weaponRotationSpeed
-                        : MegaShipCatalog.DefaultWeaponRotationSpeed);
+                mount.WeaponRotationSpeed = 0f;
                 mounts[w] = mount;
                 if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
                 {

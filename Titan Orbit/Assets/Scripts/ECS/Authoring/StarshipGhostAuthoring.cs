@@ -213,9 +213,12 @@ namespace TitanOrbit.ECS.Authoring
 
                 if (mounts.Length == 0)
                 {
-                    foreach (var t in authoring.GetComponentsInChildren<Transform>(true))
+                    var assemblies = new System.Collections.Generic.List<Transform>(16);
+                    MegaShipPartClassifier.CollectWeaponAssemblies(hullRoot, assemblies);
+                    for (int i = 0; i < assemblies.Count; i++)
                     {
-                        if (t == hullRoot || !ShipChassisPrefabBakeUtility.LooksLikeWeaponChildForBake(t))
+                        Transform t = assemblies[i];
+                        if (t == null || t == hullRoot)
                             continue;
 
                         ShipChassisPrefabBakeUtility.GetHullRootLocalPose(

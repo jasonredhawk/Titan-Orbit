@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 6088477594868981066}
   m_Layer: 0
   m_Name: GalacticOkamoto_Turret1
-  m_TagString: Untagged
+  m_TagString: Gun
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -23,6 +23,7 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 6088477594868981065}
+  serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
@@ -34,13 +35,13 @@ Transform:
   - {fileID: 2536672950891778947}
   - {fileID: 2536672950003147514}
   m_Father: {fileID: 0}
-  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &6088477594102311987
 PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 6088477594868981066}
     m_Modifications:
     - target: {fileID: 1307558692383111238, guid: b108ddb8eda6820429b88d5d073febc7, type: 3}
@@ -108,6 +109,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: b108ddb8eda6820429b88d5d073febc7, type: 3}
 --- !u!4 &8654043794924276378 stripped
 Transform:
@@ -119,6 +123,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 6088477594868981066}
     m_Modifications:
     - target: {fileID: 8455558745181638477, guid: 401d7441057ecd542884714621883600, type: 3}
@@ -186,6 +191,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 401d7441057ecd542884714621883600, type: 3}
 --- !u!4 &2536672950891778947 stripped
 Transform:
@@ -197,6 +205,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 6088477594868981066}
     m_Modifications:
     - target: {fileID: 8455558745181638477, guid: 401d7441057ecd542884714621883600, type: 3}
@@ -264,6 +273,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 401d7441057ecd542884714621883600, type: 3}
 --- !u!4 &2536672949804566617 stripped
 Transform:
@@ -275,6 +287,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 6088477594868981066}
     m_Modifications:
     - target: {fileID: 7111236803608818000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
@@ -342,6 +355,9 @@ PrefabInstance:
       value: GalacticOkamoto_Cylinder
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 43d8119995ba5f44c8b15836004c3021, type: 3}
 --- !u!4 &3949285441554575322 stripped
 Transform:
@@ -353,6 +369,7 @@ PrefabInstance:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Modification:
+    serializedVersion: 3
     m_TransformParent: {fileID: 6088477594868981066}
     m_Modifications:
     - target: {fileID: 8455558745181638477, guid: 401d7441057ecd542884714621883600, type: 3}
@@ -420,6 +437,9 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 401d7441057ecd542884714621883600, type: 3}
 --- !u!4 &2536672950003147514 stripped
 Transform:

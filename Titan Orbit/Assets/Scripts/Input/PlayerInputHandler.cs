@@ -38,6 +38,8 @@ namespace TitanOrbit.Input
         /// EventSystem.RaycastAll fills this with every Graphic under the pointer that has raycastTarget.
         /// </summary>
         private readonly List<RaycastResult> _uiRaycastHits = new List<RaycastResult>(8);
+        bool _fireHeld;
+        bool _fireStartedOverUi;
 
         /// <summary>
         /// Reused PointerEventData for the UI raycast. Created lazily once EventSystem exists.
@@ -217,9 +219,9 @@ namespace TitanOrbit.Input
                 bool dedicatedShootButton = mobile.ShootButtonPressed;
                 shootPressed = dedicatedShootButton || actionShoot || editorRightHalfMouseShoot;
 
-                // Drop mouse/action fire when over raycastable UI; never silence the dedicated shoot button.
-                if (shootPressed && !dedicatedShootButton && IsPointerOverUi())
-                    shootPressed = false;
+                // Drop mouse/action fire when the press started over UI; never silence the dedicated shoot button.
+                if (!dedicatedShootButton)
+                    ApplyUiFireHoldGate(ref shootPressed);
 
                 // Phones: thrust only in outer left-drag zone; desktop: legacy on-screen joystick deflection.
                 bool anchorThrust = mobile.LeftThrustFromAnchor;
@@ -240,9 +242,8 @@ namespace TitanOrbit.Input
                 else
                     shootPressed = false;
 
-                // [TITAN-ORBIT] Upgrade bar / any raycastTarget Graphic under the cursor blocks fire.
-                if (shootPressed && IsPointerOverUi())
-                    shootPressed = false;
+                // [TITAN-ORBIT] Upgrade bar blocks the press that started on it — not every hold frame.
+                ApplyUiFireHoldGate(ref shootPressed);
 
                 moveForwardPressed = Mouse.current != null && Mouse.current.rightButton.isPressed;
             }
@@ -323,6 +324,29 @@ namespace TitanOrbit.Input
         /// than the no-arg IsPointerOverGameObject() overload (which often returns false incorrectly).
         /// </summary>
         /// <returns>True if at least one UI graphic is under the mouse; false if no mouse, no EventSystem, or clear sky.</returns>
+        /// <summary>
+        /// UI hit-test once when fire starts. Holding Fire (MEGA volley) must not RaycastAll
+        /// every frame — that was ~3ms in the profiler.
+        /// </summary>
+        void ApplyUiFireHoldGate(ref bool shootPressed)
+        {
+            if (!shootPressed)
+            {
+                _fireHeld = false;
+                _fireStartedOverUi = false;
+                return;
+            }
+
+            if (!_fireHeld)
+            {
+                _fireHeld = true;
+                _fireStartedOverUi = IsPointerOverUi();
+            }
+
+            if (_fireStartedOverUi)
+                shootPressed = false;
+        }
+
         private bool IsPointerOverUi()
         {
             // --- Guards ---

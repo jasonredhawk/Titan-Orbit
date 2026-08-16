@@ -174,6 +174,12 @@ namespace TitanOrbit.Game
             if (!em.HasComponent<ShipWeaponConfig>(shipEntity))
                 return false;
 
+            // MEGA: snap tracer origin onto the live barrel mesh, keep server aim velocity.
+            // Full muzzle reproject would replace velocity with baked hull-forward.
+            if (em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                return TryReprojectMegaBarrelOrigin(ref req);
+
             // [TITAN-ORBIT] Use the spawn's MountIndex — hardcoding 0 snapped every volley bullet
             // onto the first barrel after upgrade-tree multi-cannon hulls landed.
             int mountIndex = req.MountIndex;
@@ -185,6 +191,32 @@ namespace TitanOrbit.Game
             req.SpawnPosition = origin;
             req.Velocity = BuildBulletWorldVelocity(forward, weaponCfg.BulletSpeed, shipVel);
             req.IsDisplaySpace = displaySpace;
+            return true;
+        }
+
+        /// <summary>
+        /// MEGA local tracers: origin on the drawn barrel, velocity unchanged (server aim).
+        /// </summary>
+        static bool TryReprojectMegaBarrelOrigin(ref BulletVfxBridge.SpawnRequest req)
+        {
+            var vis = EcsWorldVisualizer.Active;
+            if (vis == null || vis.LocalPlayerShipProxy == null)
+                return false;
+
+            var binding = vis.LocalPlayerShipProxy.GetComponent<MegaShipWeaponVisualBinding>();
+            if (binding == null || binding.Barrels == null)
+                return false;
+
+            int mountIndex = req.MountIndex;
+            if (mountIndex < 0 || mountIndex >= binding.Barrels.Length)
+                return false;
+
+            Transform barrel = binding.Barrels[mountIndex];
+            if (barrel == null)
+                return false;
+
+            req.SpawnPosition = barrel.position;
+            req.IsDisplaySpace = true;
             return true;
         }
 
@@ -388,20 +420,18 @@ namespace TitanOrbit.Game
             }
 
             // --- Name / family id scan (same rules as chassis bake) ---
-            var transforms = hullRoot.GetComponentsInChildren<Transform>(true);
-            for (int i = 0; i < transforms.Length; i++)
+            var assemblies = new List<Transform>(16);
+            MegaShipPartClassifier.CollectWeaponAssemblies(hullRoot, assemblies);
+            for (int i = 0; i < assemblies.Count; i++)
             {
-                Transform t = transforms[i];
+                Transform t = assemblies[i];
                 if (t == null || t == hullRoot)
-                    continue;
-                if (!ShipWeaponMountCollector.LooksLikeWeaponTransform(t))
                     continue;
 
                 into.Add(new LiveWeaponMount
                 {
                     Weapon = t,
                     DirectionAngleDeg = 0f,
-                    // Unique indices so sort matches hierarchy discovery order.
                     CannonIndex = collectOrder,
                     CollectOrder = collectOrder,
                 });

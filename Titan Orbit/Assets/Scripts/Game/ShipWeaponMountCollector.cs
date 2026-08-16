@@ -21,11 +21,12 @@ namespace TitanOrbit.Game
                 return;
 
             bool taggedAny = false;
-            foreach (var t in hullRoot.GetComponentsInChildren<Transform>(true))
+            var assemblies = new System.Collections.Generic.List<Transform>(16);
+            MegaShipPartClassifier.CollectWeaponAssemblies(hullRoot, assemblies);
+            for (int i = 0; i < assemblies.Count; i++)
             {
-                if (t == hullRoot)
-                    continue;
-                if (!LooksLikeWeaponTransform(t))
+                Transform t = assemblies[i];
+                if (t == null || t == hullRoot)
                     continue;
 
                 if (t.GetComponent<ShipWeaponMountAuthoring>() == null)

@@ -140,12 +140,8 @@ namespace TitanOrbit.ECS
 
             pending.Dispose();
 
-            // --- Pass 3: refill empty / undercounted wing+weapon buffers (no collider Instantiates) ---
-            // [TITAN-ORBIT] After Join Team, ShouldSkipShipEntityQueries can skip this system while
-            // ShipHullColliderSync still writes ShipHullColliderState → NeedsCatalogApply false forever
-            // with Length==0 wings. Also: old wing bake stopped at the first authoring marker so
-            // multi-wing hulls kept a single beam while the hybrid GO showed every wing.
-            // Collect first — AddBuffer is a structural change and cannot run inside the foreach.
+            // --- Pass 3: refill undercounted wing+weapon buffers (chassis already applied) ---
+            // Empty buffers are valid. Only refill when the prefab has more bodies than the buffer.
             var refill = new NativeList<PendingCatalogApply>(4, Allocator.Temp);
             foreach (var (ship, entity) in SystemAPI
                          .Query<RefRO<ShipState>>()
@@ -237,8 +233,8 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// True when wing/weapon buffers are empty or the wing buffer has fewer slots than distinct
-        /// wing bodies on the chassis prefab (cheap name walk — no Instantiates).
+        /// True when this chassis was already applied but wing/weapon buffers have fewer slots
+        /// than the prefab. Empty is valid (unarmed / no wings) — do not re-bake every tick.
         /// </summary>
         static bool NeedsAttachmentRefill(
             EntityManager em,
@@ -246,13 +242,8 @@ namespace TitanOrbit.ECS
             Entity entity,
             in ShipState ship)
         {
-            bool wingsEmpty = !em.HasBuffer<ShipWingTractorBeamElement>(entity)
-                || em.GetBuffer<ShipWingTractorBeamElement>(entity).Length == 0;
-            bool weaponsEmpty = !em.HasBuffer<ShipWeaponMountElement>(entity)
-                || em.GetBuffer<ShipWeaponMountElement>(entity).Length == 0;
-
-            if (wingsEmpty || weaponsEmpty)
-                return true;
+            if (!em.HasComponent<ShipHullColliderState>(entity))
+                return false;
 
             if (!ShipStatApplyLogic.TryResolveChassisId(
                     em,
@@ -264,19 +255,23 @@ namespace TitanOrbit.ECS
                     allowFallback: true))
                 return false;
 
+            var applied = em.GetComponentData<ShipHullColliderState>(entity);
+            if (!applied.ChassisId.Equals(new FixedString64Bytes(chassisId)))
+                return false;
+
             GameObject chassisPrefab = ResolveChassisPrefab(config, chassisId);
             if (chassisPrefab == null)
                 return false;
 
-            // [TITAN-ORBIT] Prefab asset walk only — detects 1-slot buffers on multi-wing / multi-gun hulls.
+            int currentWings = em.HasBuffer<ShipWingTractorBeamElement>(entity)
+                ? em.GetBuffer<ShipWingTractorBeamElement>(entity).Length
+                : 0;
+            int currentWeapons = em.HasBuffer<ShipWeaponMountElement>(entity)
+                ? em.GetBuffer<ShipWeaponMountElement>(entity).Length
+                : 0;
             int expectedWings = ShipChassisPrefabBakeUtility.CountDistinctWingBodies(chassisPrefab);
-            int currentWings = em.GetBuffer<ShipWingTractorBeamElement>(entity).Length;
-            if (expectedWings > currentWings)
-                return true;
-
             int expectedWeapons = ShipChassisPrefabBakeUtility.CountDistinctWeaponBodies(chassisPrefab);
-            int currentWeapons = em.GetBuffer<ShipWeaponMountElement>(entity).Length;
-            return expectedWeapons > currentWeapons;
+            return expectedWings > currentWings || expectedWeapons > currentWeapons;
         }
 
         /// <summary>
@@ -310,38 +305,31 @@ namespace TitanOrbit.ECS
             if (entry == null && chassisPrefab == null)
                 return;
 
-            bool wingsEmpty = !em.HasBuffer<ShipWingTractorBeamElement>(entity)
-                || em.GetBuffer<ShipWingTractorBeamElement>(entity).Length == 0;
-            bool weaponsEmpty = !em.HasBuffer<ShipWeaponMountElement>(entity)
-                || em.GetBuffer<ShipWeaponMountElement>(entity).Length == 0;
-            bool wingsUndercounted = false;
-            bool weaponsUndercounted = false;
-            if (chassisPrefab != null)
-            {
-                if (!wingsEmpty)
-                {
-                    int expectedWings = ShipChassisPrefabBakeUtility.CountDistinctWingBodies(chassisPrefab);
-                    wingsUndercounted =
-                        expectedWings > em.GetBuffer<ShipWingTractorBeamElement>(entity).Length;
-                }
+            int currentWings = em.HasBuffer<ShipWingTractorBeamElement>(entity)
+                ? em.GetBuffer<ShipWingTractorBeamElement>(entity).Length
+                : 0;
+            int currentWeapons = em.HasBuffer<ShipWeaponMountElement>(entity)
+                ? em.GetBuffer<ShipWeaponMountElement>(entity).Length
+                : 0;
+            int expectedWings = chassisPrefab != null
+                ? ShipChassisPrefabBakeUtility.CountDistinctWingBodies(chassisPrefab)
+                : 0;
+            int expectedWeapons = chassisPrefab != null
+                ? ShipChassisPrefabBakeUtility.CountDistinctWeaponBodies(chassisPrefab)
+                : 0;
 
-                if (!weaponsEmpty)
-                {
-                    int expectedWeapons = ShipChassisPrefabBakeUtility.CountDistinctWeaponBodies(chassisPrefab);
-                    weaponsUndercounted =
-                        expectedWeapons > em.GetBuffer<ShipWeaponMountElement>(entity).Length;
-                }
-            }
-
-            if (weaponsEmpty || weaponsUndercounted)
+            if (expectedWeapons > currentWeapons)
             {
                 ApplyWeaponMounts(em, entity, entry, chassisPrefab);
                 ShipStatApplyLogic.TryApplyPerMountWeaponCombat(
                     em, entity, chassisId, ship.ShipLevel);
+                if (em.HasComponent<MegaShipState>(entity)
+                    && em.GetComponentData<MegaShipState>(entity).IsMega)
+                    MegaShipStatApplyLogic.ResizeGunnerSlots(em, entity);
                 TryApplyMegaWeaponMountStats(em, entity);
             }
 
-            if (wingsEmpty || wingsUndercounted)
+            if (expectedWings > currentWings)
                 ApplyWingTractorBeams(em, entity, entry, chassisPrefab);
         }
 

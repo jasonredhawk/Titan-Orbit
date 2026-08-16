@@ -172,57 +172,37 @@ namespace TitanOrbit.ECS
                 ? family.familyId.Trim()
                 : string.Empty;
 
-            GameObject instance = null;
-            bool destroyInstance = false;
-            try
+            // Walk the prefab asset. Do not clone — catalog apply used to Instantiates this
+            // hull every tick when a MEGA chassis id fought the Hawk fallback dirty flag.
+            Transform root = chassisPrefab.transform;
+            var mountAuthorings = root.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
+            if (mountAuthorings != null && mountAuthorings.Length > 0)
             {
-                // [UNITY] Prefab assets are not in a scene — instantiate so children are walkable.
-                // [TITAN-ORBIT] Never walk a live hybrid hull here: attribute scale has already
-                // grown those meshes for cosmetics and would double-count into firePower/fireRate.
-                if (!chassisPrefab.scene.IsValid())
+                for (int i = 0; i < mountAuthorings.Length; i++)
                 {
-                    instance = UnityEngine.Object.Instantiate(chassisPrefab);
-                    destroyInstance = true;
-                }
-                else
-                {
-                    // Scene object (rare) — still clone so we do not read mutated live scales.
-                    instance = UnityEngine.Object.Instantiate(chassisPrefab);
-                    destroyInstance = true;
-                }
-
-                Transform root = instance.transform;
-                var mountAuthorings = root.GetComponentsInChildren<ShipWeaponMountAuthoring>(true);
-                if (mountAuthorings != null && mountAuthorings.Length > 0)
-                {
-                    for (int i = 0; i < mountAuthorings.Length; i++)
-                    {
-                        var auth = mountAuthorings[i];
-                        if (auth == null || auth.transform == root)
-                            continue;
-                        if (!TryBuildCombatBase(family, familyId, auth.transform, auth.CannonIndex, out WeaponCombatBase b))
-                            continue;
-                        dst.Add(b);
-                    }
-
-                    if (dst.Count > 0)
-                        return;
-                }
-
-                // --- Name / family weapon id scan (same fallback as mount bake) ---
-                foreach (var t in root.GetComponentsInChildren<Transform>(true))
-                {
-                    if (t == root || !ShipChassisPrefabBakeUtility.LooksLikeWeaponChildForBake(t))
+                    var auth = mountAuthorings[i];
+                    if (auth == null || auth.transform == root)
                         continue;
-                    if (!TryBuildCombatBase(family, familyId, t, dst.Count, out WeaponCombatBase b))
+                    if (!TryBuildCombatBase(family, familyId, auth.transform, auth.CannonIndex, out WeaponCombatBase b))
                         continue;
                     dst.Add(b);
                 }
+
+                if (dst.Count > 0)
+                    return;
             }
-            finally
+
+            // --- Name / family weapon id scan (same fallback as mount bake) ---
+            var assemblies = new System.Collections.Generic.List<UnityEngine.Transform>(16);
+            MegaShipPartClassifier.CollectWeaponAssemblies(root, assemblies);
+            for (int i = 0; i < assemblies.Count; i++)
             {
-                if (destroyInstance && instance != null)
-                    UnityEngine.Object.Destroy(instance);
+                var t = assemblies[i];
+                if (t == root)
+                    continue;
+                if (!TryBuildCombatBase(family, familyId, t, dst.Count, out WeaponCombatBase b))
+                    continue;
+                dst.Add(b);
             }
         }
 

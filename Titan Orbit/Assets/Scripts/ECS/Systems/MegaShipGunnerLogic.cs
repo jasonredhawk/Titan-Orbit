@@ -1,5 +1,6 @@
 using TitanOrbit.Core;
 using TitanOrbit.Generation;
+using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -149,13 +150,13 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// World position of a weapon mount on a live MEGA transform.
-        /// MEGA visuals already live at <see cref="LocalTransform.Scale"/> — do not also
-        /// multiply by <see cref="TitanOrbit.Simulation.BodyCollisionMath.ShipPresentationScale"/>
-        /// (that path is for regular hybrid hulls and parks MEGA muzzles inside the mesh).
+        /// Same contract as <see cref="ShipWeaponPose"/>: bake locals are unscaled prefab units,
+        /// hybrid proxies draw at <c>LocalTransform.Scale × ShipPresentationScale</c>.
         /// </summary>
         public static float3 GetMountWorldPosition(in LocalTransform xf, in ShipWeaponMountElement mount)
         {
-            float3 local = mount.LocalPosition * math.max(0.01f, xf.Scale);
+            float ecsScale = math.max(0.25f, xf.Scale);
+            float3 local = mount.LocalPosition * (BodyCollisionMath.ShipPresentationScale * ecsScale);
             return xf.Position + math.rotate(xf.Rotation, local);
         }
 
