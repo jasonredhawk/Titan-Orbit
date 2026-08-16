@@ -99,7 +99,7 @@ namespace TitanOrbit.ECS
         /// rotate the classified weapon child). Server writes this from
         /// <see cref="ShipWeaponMountElement.LocalRotation"/> each tick.
         /// </summary>
-        [GhostField(Quantization = 10, Smoothing = SmoothingAction.Interpolate)]
+        [GhostField(Quantization = 10, Smoothing = SmoothingAction.Clamp)]
         public float CurrentYawDeg;
 
         /// <summary>

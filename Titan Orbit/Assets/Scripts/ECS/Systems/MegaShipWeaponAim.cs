@@ -1,4 +1,3 @@
-using TitanOrbit.Data;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -16,8 +15,7 @@ namespace TitanOrbit.ECS
     /// world subtract across a seam. The ship hull transform is never wrapped.
     /// </para>
     /// Paired with <see cref="MegaShipAutoFireSystem"/> and <see cref="MegaShipPlayerCombatSystem"/>.
-    /// Pattern matches planetary turret traverse: rotate toward the target each tick, fire
-    /// along the current barrel even if it is not perfectly aligned.
+    /// Mounts snap to the aim heading — no traverse delay.
     /// </summary>
     public static class MegaShipWeaponAim
     {
@@ -65,23 +63,23 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Slews <paramref name="mount"/>.LocalRotation toward a world-planar aim direction
-        /// at <see cref="ShipWeaponMountElement.WeaponRotationSpeed"/> degrees/sec.
+        /// Snaps <paramref name="mount"/>.LocalRotation to a world-planar aim direction.
         /// Heading is the signed yaw from the MEGA hull's forward to the aim — not a full
         /// quaternion LookAt that can fight baked pitch on the mount.
         /// </summary>
         /// <param name="hull">MEGA hull transform (yaw-only sim, unbounded).</param>
         /// <param name="mount">Mount to rotate (written back by the caller).</param>
         /// <param name="desiredWorldDir">World XZ aim (already toroidal-shortest if from a target).</param>
-        /// <param name="dt">Simulation delta time in seconds.</param>
+        /// <param name="dt">Unused; kept so existing callers do not change.</param>
         public static void RotateMountTowardWorldDir(
             in LocalTransform hull,
             ref ShipWeaponMountElement mount,
             float3 desiredWorldDir,
             float dt)
         {
+            _ = dt;
             desiredWorldDir.y = 0f;
-            if (math.lengthsq(desiredWorldDir) < MinDirectionSq || dt <= 0f)
+            if (math.lengthsq(desiredWorldDir) < MinDirectionSq)
                 return;
 
             desiredWorldDir = math.normalize(desiredWorldDir);
@@ -96,12 +94,7 @@ namespace TitanOrbit.ECS
             hullFwd = math.normalize(hullFwd);
 
             float desiredLocalYaw = SignedPlanarYawDeg(hullFwd, desiredWorldDir);
-            float currentLocalYaw = GetLocalYawDeg(mount.LocalRotation);
-            float speedDeg = mount.WeaponRotationSpeed > 0.01f
-                ? mount.WeaponRotationSpeed
-                : MegaShipCatalog.DefaultWeaponRotationSpeed;
-            float newYaw = MoveTowardsAngleDeg(currentLocalYaw, desiredLocalYaw, speedDeg * dt);
-            mount.LocalRotation = quaternion.AxisAngle(math.up(), math.radians(newYaw));
+            mount.LocalRotation = quaternion.AxisAngle(math.up(), math.radians(desiredLocalYaw));
         }
 
         /// <summary>Signed yaw degrees from planar <paramref name="fromFwd"/> to <paramref name="toFwd"/> (Unity +Y, +Z forward).</summary>
@@ -124,15 +117,6 @@ namespace TitanOrbit.ECS
             float diff = target - current;
             diff -= math.floor((diff + 180f) / 360f) * 360f;
             return diff;
-        }
-
-        /// <summary>Moves a heading toward a target heading without spinning the long way.</summary>
-        public static float MoveTowardsAngleDeg(float current, float target, float maxDelta)
-        {
-            float delta = DeltaAngleDeg(current, target);
-            if (math.abs(delta) <= maxDelta)
-                return current + delta;
-            return current + math.sign(delta) * maxDelta;
         }
 
         /// <summary>

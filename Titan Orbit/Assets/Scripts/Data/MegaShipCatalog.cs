@@ -133,6 +133,20 @@ namespace TitanOrbit.Data
         /// <summary>Hard cap on regen — full volley still drains, but the bar recovers between bursts.</summary>
         public const float MaxHullEnergyRegen = 50f;
 
+        /// <summary>Floor on MEGA PhysicsMass / ramming mass so rocks cannot shove the hull.</summary>
+        public const float MinHullCollisionMass = 160f;
+
+        /// <summary>Authored motor.Mass for MEGAs (SkipMassTax still keeps cruise accel).</summary>
+        public const float DefaultHullCollisionMass = 220f;
+
+        /// <summary>Asteroid bounce coefficient for MEGAs — grind, do not rebound.</summary>
+        public const float AsteroidBounceRestitution = 0.06f;
+
+        /// <summary>
+        /// Bump when MEGA hull collider bake changes so already-spawned hulls rebuild once.
+        /// </summary>
+        public const int HullColliderRevision = 2;
+
         /// <summary>Minimum people capacity after resolve.</summary>
         public const float MinHullPeople = 400f;
 

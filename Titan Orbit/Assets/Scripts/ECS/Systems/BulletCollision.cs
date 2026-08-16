@@ -119,21 +119,8 @@ namespace TitanOrbit.ECS
             if (tEnter < 0f && tExit >= 0f)
             {
                 // --- Started inside the sphere ---
-                // [TITAN-ORBIT] Multi-cannon wing muzzles often spawn already inside a *side*
-                // asteroid in a dense cluster. Counting that as a hit damaged rocks the player
-                // was not aiming at (client tracers look forward; server “point hit” killed sides).
-                // Only accept an interior start when the bullet is moving toward the rock center
-                // (nose-touch / digging into the aimed body). Lateral interior starts are ignored.
-                float3 toCenter = center - from;
-                toCenter.y = 0f;
-                float3 move = delta;
-                move.y = 0f;
-                if (math.lengthsq(toCenter) > 1e-8f && math.lengthsq(move) > 1e-8f)
-                {
-                    if (math.dot(math.normalize(move), math.normalize(toCenter)) < 0.25f)
-                        return false;
-                }
-
+                // MEGA turrets and nose-touch shots spawn inside rocks constantly. Ignoring
+                // those starts (or requiring aim-at-center) lets the bolt exit the far side.
                 t = 0f;
             }
 
@@ -162,6 +149,12 @@ namespace TitanOrbit.ECS
             return math.dot(hitPoint - from, delta) / deltaLenSq;
         }
 
+        /// <summary>
+        /// Extra radius on every asteroid sweep so a zero-thickness tracer cannot slip
+        /// between discrete samples or graze a visual rock that is larger than the hit sphere.
+        /// </summary>
+        public const float AsteroidSweepPad = 0.14f;
+
         /// <summary>World hit radius for asteroid mesh scale (mining VFX alignment).</summary>
         public static float AsteroidHitRadius(float scale)
         {
@@ -169,6 +162,13 @@ namespace TitanOrbit.ECS
             return math.max(
                 GemEconomyConstants.MinAsteroidHitRadius,
                 meshRadius * GemEconomyConstants.AsteroidHitRadiusScale);
+        }
+
+        /// <summary>Asteroid sweep radius including <see cref="AsteroidSweepPad"/> and tracer scale.</summary>
+        public static float AsteroidHitRadiusForSweep(float scale, float bulletScaleMultiplier = 1f)
+        {
+            float pad = math.clamp(AsteroidSweepPad + bulletScaleMultiplier * 0.05f, AsteroidSweepPad, 0.45f);
+            return AsteroidHitRadius(scale) + pad;
         }
 
         /// <summary>Planet body sphere radius from visual scale.</summary>

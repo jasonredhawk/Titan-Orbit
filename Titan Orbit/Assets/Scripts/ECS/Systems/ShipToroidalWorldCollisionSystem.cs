@@ -1,4 +1,5 @@
 using TitanOrbit;
+using TitanOrbit.Data;
 using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Collections;
@@ -61,6 +62,7 @@ namespace TitanOrbit.ECS
             public float3 Velocity;
             public float Radius;
             public float CollisionMass;
+            public byte IsMega;
             public bool Dirty;
         }
 
@@ -195,9 +197,9 @@ namespace TitanOrbit.ECS
 
             // --- Ship snapshots for world + ship↔ship seam resolve ---
             var ships = new NativeList<ShipSphere>(16, Allocator.Temp);
-            foreach (var (transform, velocity, physicsCollider, shipState, motor, shipEntity) in SystemAPI
+            foreach (var (transform, velocity, physicsCollider, shipState, motor, mega, shipEntity) in SystemAPI
                          .Query<RefRO<LocalTransform>, RefRO<PhysicsVelocity>, RefRO<PhysicsCollider>,
-                             RefRO<ShipState>, RefRO<ShipMotorConfig>>()
+                             RefRO<ShipState>, RefRO<ShipMotorConfig>, RefRO<MegaShipState>>()
                          .WithAll<ShipTag, Simulate>()
                          .WithEntityAccess())
             {
@@ -215,6 +217,8 @@ namespace TitanOrbit.ECS
                     shipState.ValueRO.CurrentGems,
                     baseMass,
                     shipState.ValueRO.CurrentPeople);
+                if (mega.ValueRO.IsMega)
+                    collisionMass = math.max(collisionMass, MegaShipCatalog.MinHullCollisionMass);
 
                 ships.Add(new ShipSphere
                 {
@@ -224,6 +228,7 @@ namespace TitanOrbit.ECS
                     Radius = ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
                         physicsCollider.ValueRO, transform.ValueRO.Scale),
                     CollisionMass = collisionMass,
+                    IsMega = mega.ValueRO.IsMega ? (byte)1 : (byte)0,
                     Dirty = false,
                 });
             }
@@ -259,7 +264,9 @@ namespace TitanOrbit.ECS
                             body.AsteroidSize, asteroidMassPerSize)
                         : 0f;
                     float restitution = body.IsAsteroid != 0
-                        ? asteroidBounceRestitution
+                        ? (ship.IsMega != 0
+                            ? math.min(asteroidBounceRestitution, MegaShipCatalog.AsteroidBounceRestitution)
+                            : asteroidBounceRestitution)
                         : ShipToroidalWorldCollisionLogic.WorldRestitution;
 
                     if (ShipToroidalWorldCollisionLogic.TryResolveShipVsWorldSphere(

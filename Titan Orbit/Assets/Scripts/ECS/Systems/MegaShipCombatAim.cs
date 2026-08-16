@@ -6,9 +6,8 @@ using Unity.Transforms;
 namespace TitanOrbit.ECS
 {
     /// <summary>
-    /// MEGA hull colliders are a single AABB that is often offset from the entity pivot.
-    /// Turret lead and bullet spheres that use <see cref="LocalTransform.Position"/> miss
-    /// the visible box. These helpers aim and test against the collider footprint.
+    /// MEGA hull colliders are a compound of the prefab's part colliders.
+    /// These helpers aim and test against that collider footprint.
     /// </summary>
     public static class MegaShipCombatAim
     {

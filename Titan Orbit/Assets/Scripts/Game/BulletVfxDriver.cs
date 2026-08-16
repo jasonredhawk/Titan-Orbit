@@ -333,18 +333,38 @@ namespace TitanOrbit.Game
                     // --- Gun / drone / PD: variable-dt dead reckon (already a straight line) ---
                     float3 prevPos = t.LogicalPos;
                     t.RemainingLifetime -= dt;
-                    float step = math.length(t.Velocity) * dt;
+                    float3 nextPos = prevPos + t.Velocity * dt;
+                    float step = math.distance(prevPos, nextPos);
                     t.Traveled += step;
-                    t.LogicalPos += t.Velocity * dt;
 
-                    if (canPredictHits &&
-                        TryPredictCosmeticHit(
-                            in t, prevPos, t.LogicalPos,
-                            out float3 hitPoint,
-                            out _,
-                            out _,
-                            out _,
-                            out _))
+                    // Same substep budget as server Phase A — one 20 FPS frame at MEGA
+                    // bulletSpeed can be longer than a small rock if we only test the full segment
+                    // after an interior-start ignore (see BulletCollision.SegmentHitsSphere).
+                    int substeps = BulletCollision.ComputeAdvanceSubstepCount(step);
+                    float3 cursor = prevPos;
+                    bool cosmeticHit = false;
+                    float3 hitPoint = nextPos;
+                    for (int s = 0; s < substeps; s++)
+                    {
+                        float3 sample = math.lerp(prevPos, nextPos, (s + 1) / (float)substeps);
+                        if (canPredictHits &&
+                            TryPredictCosmeticHit(
+                                in t, cursor, sample,
+                                out hitPoint,
+                                out _,
+                                out _,
+                                out _,
+                                out _))
+                        {
+                            cosmeticHit = true;
+                            break;
+                        }
+
+                        cursor = sample;
+                    }
+
+                    t.LogicalPos = cosmeticHit ? hitPoint : nextPos;
+                    if (cosmeticHit)
                     {
                         ApplyPredictedHit(i, in t, hitPoint);
                         continue;

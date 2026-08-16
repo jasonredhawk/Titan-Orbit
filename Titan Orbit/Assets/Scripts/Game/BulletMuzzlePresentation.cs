@@ -174,11 +174,10 @@ namespace TitanOrbit.Game
             if (!em.HasComponent<ShipWeaponConfig>(shipEntity))
                 return false;
 
-            // MEGA: snap tracer origin onto the live barrel mesh, keep server aim velocity.
-            // Full muzzle reproject would replace velocity with baked hull-forward.
-            if (em.HasComponent<MegaShipState>(shipEntity)
-                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
-                return TryReprojectMegaBarrelOrigin(ref req);
+            // Gunner shots are owned by the gunner NetworkId but leave the MEGA barrel.
+            // Do not snap them onto the stowed small-ship hull.
+            if (MegaShipGunnerLogic.IsControllingMegaGun(em, shipEntity))
+                return false;
 
             // [TITAN-ORBIT] Use the spawn's MountIndex — hardcoding 0 snapped every volley bullet
             // onto the first barrel after upgrade-tree multi-cannon hulls landed.
@@ -191,32 +190,6 @@ namespace TitanOrbit.Game
             req.SpawnPosition = origin;
             req.Velocity = BuildBulletWorldVelocity(forward, weaponCfg.BulletSpeed, shipVel);
             req.IsDisplaySpace = displaySpace;
-            return true;
-        }
-
-        /// <summary>
-        /// MEGA local tracers: origin on the drawn barrel, velocity unchanged (server aim).
-        /// </summary>
-        static bool TryReprojectMegaBarrelOrigin(ref BulletVfxBridge.SpawnRequest req)
-        {
-            var vis = EcsWorldVisualizer.Active;
-            if (vis == null || vis.LocalPlayerShipProxy == null)
-                return false;
-
-            var binding = vis.LocalPlayerShipProxy.GetComponent<MegaShipWeaponVisualBinding>();
-            if (binding == null || binding.Barrels == null)
-                return false;
-
-            int mountIndex = req.MountIndex;
-            if (mountIndex < 0 || mountIndex >= binding.Barrels.Length)
-                return false;
-
-            Transform barrel = binding.Barrels[mountIndex];
-            if (barrel == null)
-                return false;
-
-            req.SpawnPosition = barrel.position;
-            req.IsDisplaySpace = true;
             return true;
         }
 

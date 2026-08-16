@@ -311,7 +311,6 @@ namespace TitanOrbit.Game
         const float BumpScaleMin = 0.15f;
         const float BumpScaleMax = 5f;
         const float DisplacementMin = 0.025f;
-        const float DisplacementMax = 0.32f;
         const float DetailTilingMin = 12f;
         const float DetailTilingMax = 140f;
 
@@ -451,7 +450,8 @@ namespace TitanOrbit.Game
                 sgt.Properties.SetFloat(ShaderIdDetailTiling, detailTiling);
             }
 
-            sgt.Displacement = Mathf.Lerp(DisplacementMin, DisplacementMax, (float)rng.NextDouble());
+            sgt.Displacement = Mathf.Lerp(
+                DisplacementMin, BodyCollisionMath.AsteroidVisualDisplacementLocal, (float)rng.NextDouble());
             sgt.DirtyMesh();
         }
 

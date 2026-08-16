@@ -3,6 +3,7 @@ using TitanOrbit.Data;
 using TitanOrbit.Simulation;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
 using UnityEngine;
 
@@ -229,6 +230,12 @@ namespace TitanOrbit.ECS
                 && applied.AppliedAttributeSum != attributeSum)
                 return true;
 
+            // MEGA collider bake revision — rebuild once when the core sphere / mass path changes.
+            if (em.HasComponent<MegaShipState>(entity)
+                && em.GetComponentData<MegaShipState>(entity).IsMega
+                && applied.AppliedMegaColliderRevision != MegaShipCatalog.HullColliderRevision)
+                return true;
+
             return false;
         }
 
@@ -386,17 +393,19 @@ namespace TitanOrbit.ECS
                 attributeSum = ShipStatApplyLogic.SumAttributeLevels(attrs);
             }
 
+            bool isMega = em.HasComponent<MegaShipState>(entity)
+                && em.GetComponentData<MegaShipState>(entity).IsMega;
             if (chassisPrefab != null)
             {
                 float motorMass = 1f;
                 if (em.HasComponent<ShipMotorConfig>(entity))
                     motorMass = em.GetComponentData<ShipMotorConfig>(entity).Mass;
+                if (isMega)
+                    motorMass = math.max(motorMass, MegaShipCatalog.DefaultHullCollisionMass);
 
                 // [TITAN-ORBIT] Bake hierarchy with same attribute scale as proxy meshes so
                 // grown wings/engines collide at their visible size (not authored-only).
                 string familyPrefix = ResolveFamilyPrefix(chassisId);
-                bool isMega = em.HasComponent<MegaShipState>(entity)
-                    && em.GetComponentData<MegaShipState>(entity).IsMega;
                 if (isMega)
                     ShipHullColliderLogic.TryApplyMegaBoundsCollider(em, entity, chassisPrefab, motorMass);
                 else
@@ -410,6 +419,7 @@ namespace TitanOrbit.ECS
                 AppliedShipLevel = ship.ShipLevel,
                 AppliedBranchIndex = branchIndex,
                 AppliedAttributeSum = attributeSum,
+                AppliedMegaColliderRevision = isMega ? MegaShipCatalog.HullColliderRevision : 0,
             };
 
             if (em.HasComponent<ShipHullColliderState>(entity))

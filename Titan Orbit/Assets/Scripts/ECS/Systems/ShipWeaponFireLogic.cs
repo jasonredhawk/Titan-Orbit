@@ -45,7 +45,7 @@ namespace TitanOrbit.ECS
         /// <summary>
         /// Maximum shots planned in one tick (hard cap — mount counts are tiny, usually ≤ 8).
         /// </summary>
-        public const int MaxShotsPerTick = 16;
+        public const int MaxShotsPerTick = 32;
 
         /// <summary>
         /// Plans which mounts fire this tick according to <paramref name="fireMode"/>.

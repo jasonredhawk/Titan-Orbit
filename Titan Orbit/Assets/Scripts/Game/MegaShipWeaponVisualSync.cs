@@ -9,16 +9,68 @@ using UnityEngine;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// MEGA turret presentation is frozen — shots aim at the target in sim, not by rotating meshes.
+    /// Hybrid presentation: yaws MEGA turret joints to ship-forward + ghosted mount yaw
+    /// so the drawn barrel matches the server fire ray.
     /// </summary>
     public static class MegaShipWeaponVisualSync
     {
-        /// <summary>No-op. Turret GameObjects are not rotated.</summary>
+        /// <summary>Rotates cached turret joints on <paramref name="proxy"/> to the live MEGA mount yaw.</summary>
         public static void Apply(EntityManager em, Entity shipEntity, GameObject proxy)
         {
-            _ = em;
-            _ = shipEntity;
-            _ = proxy;
+            if (proxy == null || shipEntity == Entity.Null || !em.Exists(shipEntity))
+                return;
+            if (!em.HasComponent<MegaShipState>(shipEntity)
+                || !em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                return;
+
+            var binding = MegaShipWeaponVisualBinding.Ensure(proxy, shipEntity);
+            if (binding == null || binding.YawRoots == null || binding.YawRoots.Length == 0)
+                return;
+
+            bool hasGunners = em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity);
+            var gunners = hasGunners
+                ? em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity)
+                : default;
+            bool hasMounts = em.HasBuffer<ShipWeaponMountElement>(shipEntity);
+            var mounts = hasMounts
+                ? em.GetBuffer<ShipWeaponMountElement>(shipEntity)
+                : default;
+
+            Vector3 hullFwd = Flatten(proxy.transform.forward);
+            Quaternion shipHeading = Quaternion.LookRotation(hullFwd, Vector3.up);
+
+            int count = binding.YawRoots.Length;
+            for (int i = 0; i < count; i++)
+            {
+                Transform yawRoot = binding.YawRoots[i];
+                if (yawRoot == null)
+                    continue;
+
+                float yawDeg = 0f;
+                bool haveYaw = false;
+                if (hasGunners && i < gunners.Length)
+                {
+                    yawDeg = gunners[i].CurrentYawDeg;
+                    haveYaw = true;
+                }
+                else if (hasMounts && i < mounts.Length)
+                {
+                    yawDeg = MegaShipWeaponAim.GetLocalYawDeg(mounts[i].LocalRotation);
+                    haveYaw = true;
+                }
+
+                if (!haveYaw)
+                    continue;
+
+                Quaternion desiredBarrelWorld = shipHeading * Quaternion.AngleAxis(yawDeg, Vector3.up);
+                Vector3 restLocalFwd = binding.RestBarrelLocalFwd != null && i < binding.RestBarrelLocalFwd.Length
+                    ? binding.RestBarrelLocalFwd[i]
+                    : Vector3.forward;
+                if (restLocalFwd.sqrMagnitude < 1e-6f)
+                    restLocalFwd = Vector3.forward;
+                Quaternion restLook = Quaternion.LookRotation(restLocalFwd.normalized, Vector3.up);
+                yawRoot.rotation = desiredBarrelWorld * Quaternion.Inverse(restLook);
+            }
         }
 
         /// <summary>XZ unit vector; degenerate → +Z.</summary>

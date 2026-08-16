@@ -30,6 +30,11 @@ namespace TitanOrbit.ECS
         /// When this changes, part meshes and collider children must grow together.
         /// </summary>
         public int AppliedAttributeSum;
+        /// <summary>
+        /// Last <see cref="MegaShipCatalog.HullColliderRevision"/> baked for a MEGA.
+        /// 0 on older hulls so the next catalog pass rebuilds the origin-centered core collider.
+        /// </summary>
+        public int AppliedMegaColliderRevision;
     }
 
     /// <summary>
@@ -42,7 +47,7 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
-    /// Builds Unity Physics compound colliders from USC chassis prefab colliders (per-component
+    /// Builds Unity Physics compound colliders from chassis prefab colliders (per-component
     /// Box/Mesh/etc.) and applies them to ship ghost entities. Visual proxies intentionally strip
     /// colliders — authoritative hull shape lives only on the ECS entity.
     /// </summary>
@@ -113,8 +118,9 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// MEGA hulls have dozens of StarSparrow mesh colliders — a full compound tanks physics.
-        /// One axis-aligned box from combined renderer bounds is enough for ramming / blocking.
+        /// MEGA hulls use the prefab's authored UnityEngine colliders (one compound child per
+        /// part) so turrets and wings block rocks when the ship yaws. Mesh colliders become
+        /// oriented boxes — dozens of convex StarSparrow meshes would stall physics.
         /// </summary>
         public static bool TryApplyMegaBoundsCollider(
             EntityManager em,
@@ -126,75 +132,104 @@ namespace TitanOrbit.ECS
                 return false;
 
             float presentationScale = BodyCollisionMath.ShipPresentationScale;
-            if (!TryBuildMegaBoundsCollider(chassisPrefab, presentationScale, out var box))
+            if (!TryBuildMegaPrefabCompound(chassisPrefab, presentationScale, out var compound))
                 return false;
 
-            ReplacePhysicsCollider(em, shipEntity, box, motorMass);
+            ReplacePhysicsCollider(em, shipEntity, compound, motorMass);
             return true;
         }
 
-        static bool TryBuildMegaBoundsCollider(
+        /// <summary>
+        /// Walks the MEGA prefab asset (no Instantiate — MEGAs have no attribute grow) and
+        /// builds a Unity Physics compound from each enabled collider.
+        /// </summary>
+        static bool TryBuildMegaPrefabCompound(
             GameObject chassisPrefab,
             float presentationScale,
-            out BlobAssetReference<PhysicsColliderBlob> box)
+            out BlobAssetReference<PhysicsColliderBlob> compound)
         {
-            box = default;
-            var renderers = chassisPrefab.GetComponentsInChildren<Renderer>(true);
-            if (renderers == null || renderers.Length == 0)
-                return false;
-
-            var root = chassisPrefab.transform;
-            bool has = false;
-            Vector3 min = Vector3.zero;
-            Vector3 max = Vector3.zero;
-            for (int i = 0; i < renderers.Length; i++)
+            compound = default;
+            var instances = new List<CompoundCollider.ColliderBlobInstance>(32);
+            Transform root = chassisPrefab.transform;
+            var colliders = root.GetComponentsInChildren<UnityEngine.Collider>(true);
+            for (int i = 0; i < colliders.Length; i++)
             {
-                var renderer = renderers[i];
-                if (renderer == null || renderer is ParticleSystemRenderer)
+                var collider = colliders[i];
+                if (collider == null || !collider.enabled || collider.isTrigger)
                     continue;
 
-                Bounds rb = renderer.localBounds;
-                Vector3 e = rb.extents;
-                Vector3 c = rb.center;
-                for (int cx = -1; cx <= 1; cx += 2)
-                for (int cy = -1; cy <= 1; cy += 2)
-                for (int cz = -1; cz <= 1; cz += 2)
+                if (!TryCreateMegaPartCollider(collider, root, presentationScale, out var childBlob, out var childPose))
+                    continue;
+
+                instances.Add(new CompoundCollider.ColliderBlobInstance
                 {
-                    Vector3 corner = renderer.transform.TransformPoint(
-                        c + new Vector3(e.x * cx, e.y * cy, e.z * cz));
-                    Vector3 local = root.InverseTransformPoint(corner);
-                    if (!has)
-                    {
-                        min = max = local;
-                        has = true;
-                    }
-                    else
-                    {
-                        min = Vector3.Min(min, local);
-                        max = Vector3.Max(max, local);
-                    }
-                }
+                    Collider = childBlob,
+                    CompoundFromChild = childPose,
+                });
             }
 
-            if (!has)
+            if (instances.Count == 0)
+                AppendRendererFallbackBoxes(root, presentationScale, instances);
+
+            if (instances.Count == 0)
                 return false;
 
-            Vector3 localCenter = (min + max) * (0.5f * presentationScale);
-            Vector3 localSize = (max - min) * presentationScale;
-            localSize.x = Mathf.Max(0.15f, localSize.x);
-            localSize.y = Mathf.Max(0.15f, localSize.y);
-            localSize.z = Mathf.Max(0.15f, localSize.z);
+            if (instances.Count == 1)
+            {
+                compound = instances[0].Collider;
+                return compound.IsCreated;
+            }
 
-            box = Unity.Physics.BoxCollider.Create(
-                new BoxGeometry
-                {
-                    Center = (float3)localCenter,
-                    Size = (float3)localSize,
-                    Orientation = quaternion.identity,
-                },
-                TitanOrbitPhysicsLayers.Ship,
-                HullMaterial);
-            return box.IsCreated;
+            var native = new NativeArray<CompoundCollider.ColliderBlobInstance>(instances.Count, Allocator.Temp);
+            for (int i = 0; i < instances.Count; i++)
+                native[i] = instances[i];
+
+            compound = CompoundCollider.Create(native);
+            native.Dispose();
+            return compound.IsCreated;
+        }
+
+        /// <summary>
+        /// Box / sphere / capsule stay authored. Mesh colliders become an oriented box from
+        /// the mesh local AABB so each turret still blocks without a convex mesh blob.
+        /// </summary>
+        static bool TryCreateMegaPartCollider(
+            UnityEngine.Collider unityCollider,
+            Transform root,
+            float presentationScale,
+            out BlobAssetReference<PhysicsColliderBlob> blob,
+            out RigidTransform childPose)
+        {
+            if (unityCollider is UnityEngine.MeshCollider meshCollider)
+            {
+                blob = default;
+                childPose = RigidTransform.identity;
+                if (meshCollider.sharedMesh == null)
+                    return false;
+
+                Matrix4x4 relative = root.worldToLocalMatrix * meshCollider.transform.localToWorldMatrix;
+                DecomposeMatrix(relative, presentationScale, out float3 position, out quaternion orientation, out float3 lossyScale);
+                Bounds mb = meshCollider.sharedMesh.bounds;
+                float3 size = math.abs((float3)mb.size * lossyScale) * presentationScale;
+                if (math.any(size < 0.001f))
+                    return false;
+
+                blob = Unity.Physics.BoxCollider.Create(
+                    new BoxGeometry
+                    {
+                        Center = float3.zero,
+                        Size = size,
+                        Orientation = quaternion.identity,
+                    },
+                    TitanOrbitPhysicsLayers.Ship,
+                    HullMaterial);
+                childPose = new RigidTransform(
+                    orientation,
+                    position + math.mul(orientation, (float3)mb.center * lossyScale * presentationScale));
+                return blob.IsCreated;
+            }
+
+            return TryCreateChildCollider(unityCollider, root, presentationScale, out blob, out childPose);
         }
 
         static Material CreateHullMaterial()

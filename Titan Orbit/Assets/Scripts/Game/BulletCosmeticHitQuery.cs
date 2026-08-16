@@ -244,7 +244,7 @@ namespace TitanOrbit.Game
                         Kind = ObstacleKind.Asteroid,
                         SourceEntity = entity,
                         LogicalCenter = lt.Position,
-                        Radius = BulletCollision.AsteroidHitRadius(lt.Scale),
+                        Radius = BulletCollision.AsteroidHitRadiusForSweep(lt.Scale),
                         Scale = lt.Scale,
                     });
                     continue;

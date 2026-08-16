@@ -35,6 +35,9 @@ namespace TitanOrbit.ECS
     /// (1) same-frame spawn collide on the first <c>vel*dt</c> segment (not a bare point test —
     /// wing muzzles inside side rocks must not count); (2) substep advance when travel is large
     /// vs <see cref="GemEconomyConstants.MinAsteroidHitRadius"/>; (3) collide before lifetime cull.
+    /// MEGA hulls use this same Phase B spawn + collide along barrel forward after
+    /// <see cref="MegaShipAutoFireSystem"/> / <see cref="MegaShipPlayerCombatSystem"/> slew
+    /// the mount. Do not spawn MEGA rounds in another system.
     /// </para>
     /// Broadcasts <see cref="BulletSpawnRpc"/> / <see cref="BulletHitRpc"/> via
     /// <see cref="BulletNetNotify"/>. Damage is server-only. Not Burst-compiled — managed notify.
@@ -87,6 +90,7 @@ namespace TitanOrbit.ECS
         EntityQuery _droneShipQuery;
         EntityQuery _allShipQuery;
         EntityQuery _defensePlanetQuery;
+        EntityQuery _megaGunnerQuery;
 
         /// <summary>Require bullet singleton before ticking.</summary>
         public void OnCreate(ref SystemState state)
@@ -110,6 +114,11 @@ namespace TitanOrbit.ECS
                 ComponentType.ReadOnly<PlanetState>(),
                 ComponentType.ReadOnly<LocalTransform>(),
                 ComponentType.ReadOnly<PlanetaryDefenseSlotElement>());
+            _megaGunnerQuery = state.GetEntityQuery(
+                ComponentType.ReadOnly<ShipTag>(),
+                ComponentType.ReadOnly<ShipMegaGunControlState>(),
+                ComponentType.ReadOnly<ShipInput>(),
+                ComponentType.ReadOnly<GhostOwner>());
 
             // [TITAN-ORBIT] Pull Upgrade Visual Scale Multiplier from the single Resources bank
             // so ScaleMultiplier on spawns matches designer Inspector values (client + server).
@@ -331,12 +340,7 @@ namespace TitanOrbit.ECS
                     SystemAPI.GetComponentRO<ShipTurretControlState>(entity).ValueRO.IsControlling)
                     continue;
 
-                // --- MEGA hull: owner does not fire guns (auto-fire / gunners own the mounts) ---
-                if (SystemAPI.HasComponent<MegaShipState>(entity) &&
-                    SystemAPI.GetComponentRO<MegaShipState>(entity).ValueRO.IsMega)
-                    continue;
-
-                // --- MEGA gunner: Fire drives the borrowed mount, not this ship's own guns ---
+                // --- MEGA gunner: Fire drives the borrowed MEGA mount, not this hull's guns ---
                 if (SystemAPI.HasComponent<ShipMegaGunControlState>(entity) &&
                     SystemAPI.GetComponentRO<ShipMegaGunControlState>(entity).ValueRO.IsControlling)
                     continue;
@@ -354,21 +358,31 @@ namespace TitanOrbit.ECS
                 // a stale "all barrels ready" volley the moment Fire becomes legal again.
                 ShipWeaponFireLogic.TickMountCooldowns(mounts, dt);
 
-                if (!input.ValueRO.Fire.IsSet)
-                    continue;
+                bool isMega = SystemAPI.HasComponent<MegaShipState>(entity) &&
+                              SystemAPI.GetComponentRO<MegaShipState>(entity).ValueRO.IsMega;
+                bool ownerShocked = SystemAPI.HasComponent<ShipElectricShockState>(entity) &&
+                                    SystemAPI.GetComponentRO<ShipElectricShockState>(entity).ValueRO
+                                        .IsActive(serverElapsed);
+                bool ownerInOrbit = SystemAPI.HasComponent<ShipOrbitState>(entity) &&
+                                    SystemAPI.GetComponentRO<ShipOrbitState>(entity).ValueRO.InOrbitRing;
+                bool ownerMayFire = input.ValueRO.Fire.IsSet && !ownerShocked && !ownerInOrbit;
 
-                // --- Electric shock: cannot fire while stunned ---
-                if (SystemAPI.HasComponent<ShipElectricShockState>(entity) &&
-                    SystemAPI.GetComponentRO<ShipElectricShockState>(entity).ValueRO.IsActive(serverElapsed))
-                    continue;
+                if (!isMega)
+                {
+                    if (!input.ValueRO.Fire.IsSet)
+                        continue;
 
-                // --- Orbit ring: weapons locked ---
-                // [TITAN-ORBIT] InOrbitRing is written by ShipPhysicsDriveLogic (toroidal annulus).
-                // Fire input may still be held (player mashing shoot) — ignore it here; thrust
-                // remains the only way to leave the passive orbit motor.
-                if (SystemAPI.HasComponent<ShipOrbitState>(entity) &&
-                    SystemAPI.GetComponentRO<ShipOrbitState>(entity).ValueRO.InOrbitRing)
-                    continue;
+                    // --- Electric shock: cannot fire while stunned ---
+                    if (ownerShocked)
+                        continue;
+
+                    // --- Orbit ring: weapons locked ---
+                    // [TITAN-ORBIT] InOrbitRing is written by ShipPhysicsDriveLogic (toroidal annulus).
+                    // Fire input may still be held (player mashing shoot) — ignore it here; thrust
+                    // remains the only way to leave the passive orbit motor.
+                    if (ownerInOrbit)
+                        continue;
+                }
 
                 // [TITAN-ORBIT] Family bank from ghosted loadout (ShipStatApplyLogic writes it).
                 int bankIndex = 0;
@@ -379,9 +393,34 @@ namespace TitanOrbit.ECS
                 int firePowerAbilityLv = 0;
                 if (SystemAPI.HasComponent<ShipAttributeUpgradeState>(entity))
                     firePowerAbilityLv = SystemAPI.GetComponentRO<ShipAttributeUpgradeState>(entity).ValueRO.FirePower;
-                int firePowerExtras = BulletBankCombatLogic.CountFirePowerExtraLevels(
-                    shipState.ValueRO.ShipLevel, firePowerAbilityLv);
-                float abilityEnergy = BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
+                int firePowerExtras = isMega
+                    ? 0
+                    : BulletBankCombatLogic.CountFirePowerExtraLevels(
+                        shipState.ValueRO.ShipLevel, firePowerAbilityLv);
+                float abilityEnergy = isMega
+                    ? 0f
+                    : BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
+
+                // Per-category Upgrade Visual Scale (default 1). Global category scale is applied
+                // later in BulletVisualFactory — ScaleMultiplier is fire-power upgrade only.
+                float categoryUpgradeScale = vfxBankForScale != null
+                    ? vfxBankForScale.GetCategoryUpgradeVisualScaleMultiplier(bankIndex)
+                    : 1f;
+
+                float3 shipVel = kinematics.ValueRO.Velocity;
+                shipVel.y = 0f;
+
+                if (isMega)
+                {
+                    FireMegaReadyMountsAlongBarrel(
+                        ref state, ref ecb, bulletEntity, entity,
+                        mounts, ownerMayFire, weaponCfg.ValueRO, ref shipState.ValueRW,
+                        transform.ValueRO, ghostOwner.ValueRO,
+                        bankIndex, categoryUpgradeScale, shipVel,
+                        dt, mapW, mapH, moonElapsed, serverElapsed,
+                        gemPrefab, gemSpawnServerTime);
+                    continue;
+                }
 
                 // --- Volley / round-robin / hybrid per ShipWeaponConfig.FireMode ---
                 if (!ShipWeaponFireLogic.TryPlanFire(
@@ -398,135 +437,26 @@ namespace TitanOrbit.ECS
                         abilityEnergy))
                     continue;
 
-                // Per-category Upgrade Visual Scale (default 1). Global category scale is applied
-                // later in BulletVisualFactory — ScaleMultiplier is fire-power upgrade only.
-                float categoryUpgradeScale = vfxBankForScale != null
-                    ? vfxBankForScale.GetCategoryUpgradeVisualScaleMultiplier(bankIndex)
-                    : 1f;
-
-                float3 shipVel = kinematics.ValueRO.Velocity;
-                shipVel.y = 0f;
-                float fallbackRefDamage = weaponCfg.ValueRO.ReferenceBulletDamage > 0f
-                    ? weaponCfg.ValueRO.ReferenceBulletDamage
-                    : BulletVisualScale.DefaultReferenceBulletDamage;
-                float refSpeed = weaponCfg.ValueRO.ReferenceBulletSpeed > 0f
-                    ? weaponCfg.ValueRO.ReferenceBulletSpeed
-                    : BulletVisualScale.DefaultReferenceBulletSpeed;
-
                 // --- Spawn each planned barrel with that mount’s own damage / VFX scale ---
                 for (int shot = 0; shot < shotCount; shot++)
                 {
                     var planned = s_ShotScratch[shot];
                     int mountIdx = planned.MountIndex;
                     var mount = mounts[mountIdx];
-                    float3 fireOrigin;
-                    float3 fireForward;
-                    if (!ShipWeaponPose.TryResolve(transform.ValueRO, mount, out fireOrigin, out fireForward))
-                    {
-                        // Fallback mirrors ShipWeaponPose (presentation-scaled local offset).
-                        float3 localFwd = math.mul(mount.LocalRotation, new float3(0f, 0f, 1f));
-                        localFwd.y = 0f;
-                        if (math.lengthsq(localFwd) < 0.0001f)
-                            localFwd = new float3(0f, 0f, 1f);
-                        else
-                            localFwd = math.normalize(localFwd);
-                        fireForward = math.rotate(transform.ValueRO.Rotation, localFwd);
-                        fireForward.y = 0f;
-                        if (math.lengthsq(fireForward) < 0.0001f)
-                            fireForward = new float3(0f, 0f, 1f);
-                        else
-                            fireForward = math.normalize(fireForward);
-                        float ecsScale = math.max(0.25f, transform.ValueRO.Scale);
-                        float3 presentationLocal = mount.LocalPosition
-                            * (BodyCollisionMath.ShipPresentationScale * ecsScale);
-                        fireOrigin = transform.ValueRO.Position
-                            + math.rotate(transform.ValueRO.Rotation, presentationLocal);
-                    }
+                    ResolveFirePose(transform.ValueRO, in mount, out float3 fireOrigin, out float3 fireForward);
 
-                    float damage = planned.Damage;
-                    float bulletSpeed = weaponCfg.ValueRO.BulletSpeed;
-                    float maxDistance = weaponCfg.ValueRO.BulletMaxDistance;
-                    float lifetime = weaponCfg.ValueRO.BulletLifetime;
-                    float fireRate = weaponCfg.ValueRO.FireRate;
-                    BulletBankCombatLogic.ApplyFireModifiers(
-                        bankIndex, ref damage, ref bulletSpeed, ref maxDistance, ref lifetime, ref fireRate,
-                        firePowerExtras);
-                    float fireRateMul = fireRate / math.max(0.1f, weaponCfg.ValueRO.FireRate);
-
-                    float refDamage = mount.ReferenceFirePower > 0.01f
-                        ? mount.ReferenceFirePower
-                        : fallbackRefDamage;
-                    float visualScale = BulletVisualScale.ComputePerShotScale(
-                        weaponCfg.ValueRO.BulletScale,
-                        damage,
-                        bulletSpeed,
-                        refDamage,
-                        refSpeed,
-                        categoryUpgradeScale);
-
-                    float3 bulletVel = fireForward * math.max(1f, bulletSpeed) + shipVel;
-                    uint sequence = BulletVfxBridge.NextSequence();
-                    var spawn = new BulletElement
-                    {
-                        Position = fireOrigin,
-                        Velocity = bulletVel,
-                        MaxDistance = math.max(10f, maxDistance),
-                        Lifetime = math.max(0.1f, lifetime),
-                        Damage = damage,
-                        OwnerNetworkId = ghostOwner.ValueRO.NetworkId,
-                        OwnerTeam = (byte)shipState.ValueRO.Team,
-                        Sequence = sequence,
-                        BankIndex = bankIndex,
-                        ScaleMultiplier = visualScale,
-                        FirePowerExtraLevels = firePowerExtras,
-                    };
-
-                    spawnEvents.Add(new BulletSpawnEventElement
-                    {
-                        SpawnPosition = spawn.Position,
-                        Velocity = spawn.Velocity,
-                        Lifetime = spawn.Lifetime,
-                        MaxDistance = spawn.MaxDistance,
-                        Damage = spawn.Damage,
-                        OwnerTeam = spawn.OwnerTeam,
-                        Sequence = spawn.Sequence,
-                        BankIndex = bankIndex,
-                        ScaleMultiplier = visualScale,
-                    });
-
-                    // [NETCODE] Cosmetic path for all clients (host bridge + broadcast RPC).
-                    BulletNetNotify.SendSpawn(ref ecb, spawn, mountIdx);
+                    float fireRateMul = SpawnAndCollideShipBullet(
+                        ref state, ref ecb, bulletEntity, mountIdx,
+                        fireOrigin, fireForward, planned.Damage,
+                        weaponCfg.ValueRO, in mount, bankIndex, firePowerExtras,
+                        categoryUpgradeScale, shipVel,
+                        ghostOwner.ValueRO.NetworkId, (byte)shipState.ValueRO.Team,
+                        dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
+                        moonElapsed, serverElapsed);
 
                     // --- Arm this barrel’s own cooldown (independent of other mounts) ---
                     mount.FireCooldown = planned.CooldownSeconds / math.max(0.05f, fireRateMul);
                     mounts[mountIdx] = mount;
-
-                    // --- Same-frame spawn collide (first-bullet tunnel fix) ---
-                    // [TITAN-ORBIT] Collide the first vel*dt segment immediately so nose-touch shots
-                    // do not idle one tick. Do NOT point-test fireOrigin alone — wing muzzles on
-                    // 4-gun hulls sit inside side rocks in clusters and that registered false hits
-                    // with no aim (player saw forward tracers; side asteroids died).
-                    float3 firstEnd = fireOrigin + bulletVel * dt;
-                    bool spawnHit = TryResolveBulletHit(
-                        ref state, ecb, gemPrefab, gemSpawnServerTime,
-                        in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
-                        out float3 spawnHitPoint, out float spawnAsteroidHealthAfter,
-                        out int spawnPdPlanetId, out byte spawnPdSlotIndex,
-                        out float spawnPdHealthAfter);
-
-                    if (spawnHit)
-                    {
-                        BulletNetNotify.SendHit(
-                            ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter,
-                            spawnPdPlanetId, spawnPdSlotIndex, spawnPdHealthAfter);
-                        bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
-                        spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
-                        // Do not add to the live buffer — bullet resolved this frame.
-                    }
-                    else
-                    {
-                        bullets.Add(spawn);
-                    }
                 }
 
                 // Energy equals sum of each firing barrel’s firePower this tick.
@@ -538,6 +468,270 @@ namespace TitanOrbit.ECS
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
             BulletBankHitEffects.FlushPendingBurns(state.EntityManager);
+        }
+
+        /// <summary>
+        /// MEGA Phase B: same <see cref="ResolveFirePose"/> + <see cref="SpawnAndCollideShipBullet"/>
+        /// as regular hulls (barrel origin + barrel forward). Owner Fire skips occupied mounts;
+        /// occupied mounts fire when that gunner holds Fire. Per-mount FirePower / energy stay.
+        /// </summary>
+        void FireMegaReadyMountsAlongBarrel(
+            ref SystemState state,
+            ref EntityCommandBuffer ecb,
+            Entity bulletEntity,
+            Entity mega,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            bool ownerMayFire,
+            in ShipWeaponConfig weaponCfg,
+            ref ShipState shipState,
+            in LocalTransform transform,
+            in GhostOwner ghostOwner,
+            int bankIndex,
+            float categoryUpgradeScale,
+            float3 shipVel,
+            float dt,
+            float mapW,
+            float mapH,
+            double moonElapsed,
+            double serverElapsed,
+            Entity gemPrefab,
+            float gemSpawnServerTime)
+        {
+            var gunners = state.EntityManager.HasBuffer<MegaShipGunnerSlotElement>(mega)
+                ? state.EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
+                : default;
+
+            int megaOwnerNet = ghostOwner.NetworkId;
+            float energy = shipState.CurrentEnergy;
+
+            for (int m = 0; m < mounts.Length; m++)
+            {
+                var mount = mounts[m];
+                if (mount.FireCooldown > 0.001f || mount.FirePower <= 0.01f)
+                    continue;
+
+                bool occupied = gunners.IsCreated && m < gunners.Length &&
+                                gunners[m].OccupiedByNetworkId != 0;
+                int shotOwnerNet = megaOwnerNet;
+                if (occupied)
+                {
+                    if (!TryGetMegaGunnerFire(
+                            ref state, megaOwnerNet, (byte)m, serverElapsed,
+                            out bool fire, out shotOwnerNet) || !fire)
+                        continue;
+                }
+                else if (!ownerMayFire)
+                    continue;
+
+                if (energy < mount.FirePower)
+                    continue;
+
+                ResolveFirePose(transform, in mount, out float3 fireOrigin, out float3 fireForward);
+                float fireRateMul = SpawnAndCollideShipBullet(
+                    ref state, ref ecb, bulletEntity, m,
+                    fireOrigin, fireForward, mount.FirePower,
+                    weaponCfg, in mount, bankIndex, firePowerExtras: 0,
+                    categoryUpgradeScale, shipVel,
+                    shotOwnerNet, (byte)shipState.Team,
+                    dt, gemPrefab, gemSpawnServerTime, mapW, mapH,
+                    moonElapsed, serverElapsed);
+
+                float fireRate = math.max(0.15f, mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate);
+                mount.FireCooldown = (1f / fireRate) / math.max(0.05f, fireRateMul);
+                mounts[m] = mount;
+                energy -= mount.FirePower;
+            }
+
+            shipState.CurrentEnergy = math.max(0f, energy);
+        }
+
+        /// <summary>Whether the gunner on this occupied MEGA mount is holding Fire.</summary>
+        bool TryGetMegaGunnerFire(
+            ref SystemState state,
+            int megaOwnerNetworkId,
+            byte mountIndex,
+            double serverElapsed,
+            out bool fire,
+            out int gunnerNetworkId)
+        {
+            fire = false;
+            gunnerNetworkId = 0;
+
+            using var entities = _megaGunnerQuery.ToEntityArray(Allocator.Temp);
+            using var controls = _megaGunnerQuery.ToComponentDataArray<ShipMegaGunControlState>(Allocator.Temp);
+            using var inputs = _megaGunnerQuery.ToComponentDataArray<ShipInput>(Allocator.Temp);
+            using var ghosts = _megaGunnerQuery.ToComponentDataArray<GhostOwner>(Allocator.Temp);
+            for (int i = 0; i < entities.Length; i++)
+            {
+                var control = controls[i];
+                if (!control.IsControlling)
+                    continue;
+                if (control.MegaOwnerNetworkId != megaOwnerNetworkId)
+                    continue;
+                if (control.MountIndex != mountIndex)
+                    continue;
+
+                Entity gunner = entities[i];
+                if (state.EntityManager.HasComponent<ShipElectricShockState>(gunner) &&
+                    state.EntityManager.GetComponentData<ShipElectricShockState>(gunner)
+                        .IsActive(serverElapsed))
+                    return false;
+
+                fire = inputs[i].Fire.IsSet;
+                gunnerNetworkId = ghosts[i].NetworkId;
+                return fire;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Shared muzzle resolve — same fallback as the old Phase B inline block.
+        /// </summary>
+        static void ResolveFirePose(
+            in LocalTransform transform,
+            in ShipWeaponMountElement mount,
+            out float3 fireOrigin,
+            out float3 fireForward)
+        {
+            if (ShipWeaponPose.TryResolve(transform, mount, out fireOrigin, out fireForward))
+                return;
+
+            float3 localFwd = math.mul(mount.LocalRotation, new float3(0f, 0f, 1f));
+            localFwd.y = 0f;
+            if (math.lengthsq(localFwd) < 0.0001f)
+                localFwd = new float3(0f, 0f, 1f);
+            else
+                localFwd = math.normalize(localFwd);
+            fireForward = math.rotate(transform.Rotation, localFwd);
+            fireForward.y = 0f;
+            if (math.lengthsq(fireForward) < 0.0001f)
+                fireForward = new float3(0f, 0f, 1f);
+            else
+                fireForward = math.normalize(fireForward);
+            float ecsScale = math.max(0.25f, transform.Scale);
+            float3 presentationLocal = mount.LocalPosition
+                * (BodyCollisionMath.ShipPresentationScale * ecsScale);
+            fireOrigin = transform.Position + math.rotate(transform.Rotation, presentationLocal);
+        }
+
+        /// <summary>
+        /// One ship/MEGA shot: modifiers, spawn RPC, same-frame <see cref="TryResolveBulletHit"/>.
+        /// Misses stay in the live buffer for Phase A next tick — never advance twice this tick.
+        /// </summary>
+        float SpawnAndCollideShipBullet(
+            ref SystemState state,
+            ref EntityCommandBuffer ecb,
+            Entity bulletEntity,
+            int mountIdx,
+            float3 fireOrigin,
+            float3 fireForward,
+            float damage,
+            in ShipWeaponConfig weaponCfg,
+            in ShipWeaponMountElement mount,
+            int bankIndex,
+            int firePowerExtras,
+            float categoryUpgradeScale,
+            float3 shipVel,
+            int ownerNetworkId,
+            byte ownerTeam,
+            float dt,
+            Entity gemPrefab,
+            float gemSpawnServerTime,
+            float mapW,
+            float mapH,
+            double moonElapsed,
+            double serverElapsed)
+        {
+            float bulletSpeed = weaponCfg.BulletSpeed;
+            float maxDistance = mount.BulletRange > 0.5f
+                ? mount.BulletRange
+                : weaponCfg.BulletMaxDistance;
+            float lifetime = weaponCfg.BulletLifetime;
+            float fireRate = weaponCfg.FireRate;
+            BulletBankCombatLogic.ApplyFireModifiers(
+                bankIndex, ref damage, ref bulletSpeed, ref maxDistance, ref lifetime, ref fireRate,
+                firePowerExtras);
+            float fireRateMul = fireRate / math.max(0.1f, weaponCfg.FireRate);
+
+            float fallbackRefDamage = weaponCfg.ReferenceBulletDamage > 0f
+                ? weaponCfg.ReferenceBulletDamage
+                : BulletVisualScale.DefaultReferenceBulletDamage;
+            float refSpeed = weaponCfg.ReferenceBulletSpeed > 0f
+                ? weaponCfg.ReferenceBulletSpeed
+                : BulletVisualScale.DefaultReferenceBulletSpeed;
+            float refDamage = mount.ReferenceFirePower > 0.01f
+                ? mount.ReferenceFirePower
+                : fallbackRefDamage;
+            float visualScale = BulletVisualScale.ComputePerShotScale(
+                weaponCfg.BulletScale,
+                damage,
+                bulletSpeed,
+                refDamage,
+                refSpeed,
+                categoryUpgradeScale);
+
+            fireForward.y = 0f;
+            if (math.lengthsq(fireForward) < 0.0001f)
+                fireForward = new float3(0f, 0f, 1f);
+            else
+                fireForward = math.normalize(fireForward);
+
+            float3 bulletVel = fireForward * math.max(1f, bulletSpeed) + shipVel;
+            uint sequence = BulletVfxBridge.NextSequence();
+            var spawn = new BulletElement
+            {
+                Position = fireOrigin,
+                Velocity = bulletVel,
+                MaxDistance = math.max(10f, maxDistance),
+                Lifetime = math.max(0.1f, lifetime),
+                Damage = damage,
+                OwnerNetworkId = ownerNetworkId,
+                OwnerTeam = ownerTeam,
+                Sequence = sequence,
+                BankIndex = bankIndex,
+                ScaleMultiplier = visualScale,
+                FirePowerExtraLevels = firePowerExtras,
+            };
+
+            var spawnEvents = state.EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
+            spawnEvents.Add(new BulletSpawnEventElement
+            {
+                SpawnPosition = spawn.Position,
+                Velocity = spawn.Velocity,
+                Lifetime = spawn.Lifetime,
+                MaxDistance = spawn.MaxDistance,
+                Damage = spawn.Damage,
+                OwnerTeam = spawn.OwnerTeam,
+                Sequence = spawn.Sequence,
+                BankIndex = bankIndex,
+                ScaleMultiplier = visualScale,
+            });
+
+            BulletNetNotify.SendSpawn(ref ecb, spawn, mountIdx);
+
+            // --- Same-frame spawn collide (first-bullet tunnel fix) ---
+            float3 firstEnd = fireOrigin + bulletVel * dt;
+            bool spawnHit = TryResolveBulletHit(
+                ref state, ecb, gemPrefab, gemSpawnServerTime,
+                in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
+                out float3 spawnHitPoint, out float spawnAsteroidHealthAfter,
+                out int spawnPdPlanetId, out byte spawnPdSlotIndex,
+                out float spawnPdHealthAfter);
+
+            var bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
+            if (spawnHit)
+            {
+                BulletNetNotify.SendHit(
+                    ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter,
+                    spawnPdPlanetId, spawnPdSlotIndex, spawnPdHealthAfter);
+            }
+            else
+            {
+                bullets.Add(spawn);
+            }
+
+            return fireRateMul;
         }
 
         /// <summary>
@@ -753,7 +947,8 @@ namespace TitanOrbit.ECS
                 if (asteroidState.ValueRO.IsDestroyed || asteroidState.ValueRO.Health <= 0f)
                     continue;
 
-                float hitRadius = BulletCollision.AsteroidHitRadius(asteroidTransform.ValueRO.Scale);
+                float hitRadius = BulletCollision.AsteroidHitRadiusForSweep(
+                    asteroidTransform.ValueRO.Scale, b.ScaleMultiplier);
                 if (!BulletCollision.SegmentHitsSphereToroidal(
                         from, to, asteroidTransform.ValueRO.Position, hitRadius, mapW, mapH, out float3 rockHit))
                     continue;

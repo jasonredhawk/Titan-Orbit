@@ -14,27 +14,29 @@ namespace TitanOrbit.ECS
     /// <summary>
     /// Server: unoccupied MEGA mounts auto-aim like planetary turrets, but only fire when
     /// the MEGA owner's <see cref="ShipInput.Fire"/> is held. Occupied mounts are skipped
-    /// (the gunner's Fire drives those via <see cref="MegaShipPlayerCombatSystem"/>).
+    /// (the gunner's Fire drives those in <see cref="BulletSimulationSystem"/> Phase B).
     /// Damage mode aims at the nearest enemy ship, planetary turret, or enemy moon.
     /// Heal mode aims at the nearest friendly ship. Asteroids are targeted only when
     /// <see cref="TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids"/> is on (Editor / MPPM host).
     /// <para>
-    /// One hull-center search fills N sticky locks (N = unoccupied guns) when Fire is
-    /// pressed. Locks stay until the target dies, leaves range, or the owner releases Fire
-    /// (release clears locks so the next press re-acquires the closest targets). If that
-    /// search finds nothing, unoccupied guns fire along hull forward until Fire is released.
-    /// Turrets do not rotate. Damage and energy cost are that mount's <c>FirePower</c> only.
+    /// Each unoccupied gun searches from its own muzzle for the closest in-range target
+    /// when Fire is pressed. Locks stay until that target dies, leaves that gun's range,
+    /// or the owner releases Fire (release clears locks so the next press re-acquires).
+    /// If a gun finds nothing, it fires along hull forward until Fire is released.
+    /// Unoccupied turrets slew toward that lock (or hull forward) before Phase B so shots
+    /// leave along the barrel — the same ray regular ships use.
+    /// <see cref="BulletSimulationSystem"/> Phase B fires ready mounts along
+    /// <see cref="ShipWeaponPose"/> barrel forward.
     /// </para>
     /// Map size comes from <see cref="MapStateSingleton"/>. Distances use
     /// <see cref="ToroidalMapEcs.ToroidalDistance"/>.
     /// </summary>
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(BulletSimulationSystem))]
+    [UpdateAfter(typeof(PredictedFixedStepSimulationSystemGroup))]
+    [UpdateBefore(typeof(BulletSimulationSystem))]
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     public partial class MegaShipAutoFireSystem : SystemBase
     {
-        readonly System.Collections.Generic.Dictionary<int, float> _nextMountFireTime =
-            new System.Collections.Generic.Dictionary<int, float>(64);
 
         EntityQuery _megaQuery;
         EntityQuery _shipQuery;
@@ -44,7 +46,6 @@ namespace TitanOrbit.ECS
         /// <summary>Cache queries used every tick.</summary>
         protected override void OnCreate()
         {
-            RequireForUpdate<ActiveBulletsTag>();
             RequireForUpdate<MapStateSingleton>();
             _megaQuery = GetEntityQuery(
                 ComponentType.ReadOnly<ShipTag>(),
@@ -66,14 +67,9 @@ namespace TitanOrbit.ECS
                 ComponentType.ReadOnly<LocalTransform>());
         }
 
-        /// <summary>Auto-aim every unoccupied MEGA mount; fire those mounts only while the owner holds Fire.</summary>
+        /// <summary>Refresh sticky auto-aim while the owner holds Fire. Does not spawn bullets.</summary>
         protected override void OnUpdate()
         {
-            if (!SystemAPI.TryGetSingletonEntity<ActiveBulletsTag>(out var bulletEntity))
-                return;
-            if (!EntityManager.HasBuffer<BulletElement>(bulletEntity) ||
-                !EntityManager.HasBuffer<BulletSpawnEventElement>(bulletEntity))
-                return;
             if (!SystemAPI.TryGetSingleton<MapStateSingleton>(out var map) ||
                 !ToroidalMapEcs.IsValidMapSize(map.MapWidth, map.MapHeight))
                 return;
@@ -117,11 +113,9 @@ namespace TitanOrbit.ECS
             if (!anyFiring)
                 return;
 
+            float dt = SystemAPI.Time.DeltaTime;
             float mapW = map.MapWidth;
             float mapH = map.MapHeight;
-            float now = (float)SystemAPI.Time.ElapsedTime;
-            var bullets = EntityManager.GetBuffer<BulletElement>(bulletEntity);
-            var spawnEvents = EntityManager.GetBuffer<BulletSpawnEventElement>(bulletEntity);
 
             NativeArray<Entity> ships = default;
             NativeArray<ShipState> shipStates = default;
@@ -143,7 +137,6 @@ namespace TitanOrbit.ECS
                 ? PlanetGemMoonOrbitClock.GetElapsedSeconds(networkTime, hz, includeTickFraction: false)
                 : (float)SystemAPI.Time.ElapsedTime;
 
-            var ecb = new EntityCommandBuffer(Allocator.Temp);
             for (int i = 0; i < megas.Length; i++)
             {
                 Entity mega = megas[i];
@@ -161,22 +154,12 @@ namespace TitanOrbit.ECS
                     ? EntityManager.GetBuffer<MegaShipGunnerSlotElement>(mega)
                     : default;
 
-                bool heal = false;
-                int bankIndex = 0;
-                if (EntityManager.HasComponent<ShipLoadoutState>(mega))
-                {
-                    var loadout = EntityManager.GetComponentData<ShipLoadoutState>(mega);
-                    heal = loadout.HealingBulletsActive;
-                    bankIndex = BulletBankFireResolve.ResolveFireBankIndex(loadout);
-                }
+                bool heal = EntityManager.HasComponent<ShipLoadoutState>(mega) &&
+                            EntityManager.GetComponentData<ShipLoadoutState>(mega).HealingBulletsActive;
 
                 var weapon = EntityManager.HasComponent<ShipWeaponConfig>(mega)
                     ? EntityManager.GetComponentData<ShipWeaponConfig>(mega)
                     : default;
-
-                int ownerNet = 0;
-                if (EntityManager.HasComponent<GhostOwner>(mega))
-                    ownerNet = EntityManager.GetComponentData<GhostOwner>(mega).NetworkId;
 
                 bool ownerWantsFire = EntityManager.HasComponent<ShipInput>(mega)
                     && EntityManager.GetComponentData<ShipInput>(mega).Fire.IsSet;
@@ -195,9 +178,7 @@ namespace TitanOrbit.ECS
                 int mountCount = mounts.Length;
                 ResizeAimSlots(aims, mountCount);
 
-                float3 hullPos = xf.Position;
                 int emptySlots = 0;
-                float refillRange = 0f;
                 for (int m = 0; m < mountCount; m++)
                 {
                     if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
@@ -210,9 +191,10 @@ namespace TitanOrbit.ECS
                     if (slot.Target == mega)
                         continue;
 
+                    float3 muzzle = ResolveMuzzle(xf, mounts[m]);
                     float mountRange = ResolveMountRange(mounts[m], in weapon) + 8f;
                     if (TryKeepStickyTarget(
-                        mega, ship.Team, heal, hullPos, mountRange, mapW, mapH, moonElapsed, ref slot))
+                        mega, ship.Team, heal, muzzle, mountRange, mapW, mapH, moonElapsed, ref slot))
                     {
                         aims[m] = slot;
                         continue;
@@ -220,16 +202,10 @@ namespace TitanOrbit.ECS
 
                     aims[m] = default;
                     emptySlots++;
-                    if (mountRange > refillRange)
-                        refillRange = mountRange;
                 }
 
                 if (emptySlots > 0)
                 {
-                    NativeArray<AsteroidState> emptyRocks = default;
-                    NativeArray<LocalTransform> emptyRockXfs = default;
-                    NativeArray<Entity> emptyPlanets = default;
-                    NativeArray<Entity> emptyAsteroids = default;
                     if (!shipsLoaded)
                     {
                         ships = _shipQuery.ToEntityArray(Allocator.Temp);
@@ -238,138 +214,56 @@ namespace TitanOrbit.ECS
                         shipsLoaded = true;
                     }
 
-                    var candidates = new NativeList<AimCandidate>(32, Allocator.Temp);
-                    CollectTargets(
-                        hullPos, ship.Team, mega, heal, refillRange, mapW, mapH, moonElapsed,
-                        ships, shipStates, shipXfs, emptyPlanets,
-                        false, emptyAsteroids, emptyRocks, emptyRockXfs,
-                        aims, candidates);
-                    if (candidates.Length < emptySlots && !heal)
+                    if (!heal && !planetsLoaded)
                     {
-                        if (!planetsLoaded)
-                        {
-                            planets = _planetQuery.ToEntityArray(Allocator.Temp);
-                            planetsLoaded = true;
-                        }
-
-                        CollectTargets(
-                            hullPos, ship.Team, mega, heal, refillRange, mapW, mapH, moonElapsed,
-                            ships, shipStates, shipXfs, planets,
-                            false, emptyAsteroids, emptyRocks, emptyRockXfs,
-                            aims, candidates);
+                        planets = _planetQuery.ToEntityArray(Allocator.Temp);
+                        planetsLoaded = true;
                     }
 
-                    if (candidates.Length < emptySlots && debugAsteroids && !heal)
+                    if (!heal && debugAsteroids && !asteroidsLoaded)
                     {
-                        if (!asteroidsLoaded)
-                        {
-                            asteroidEntities = _asteroidQuery.ToEntityArray(Allocator.Temp);
-                            asteroidStates = _asteroidQuery.ToComponentDataArray<AsteroidState>(Allocator.Temp);
-                            asteroidXfs = _asteroidQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-                            asteroidsLoaded = true;
-                        }
-
-                        CollectTargets(
-                            hullPos, ship.Team, mega, heal, refillRange, mapW, mapH, moonElapsed,
-                            ships, shipStates, shipXfs, emptyPlanets,
-                            true, asteroidEntities, asteroidStates, asteroidXfs,
-                            aims, candidates);
+                        asteroidEntities = _asteroidQuery.ToEntityArray(Allocator.Temp);
+                        asteroidStates = _asteroidQuery.ToComponentDataArray<AsteroidState>(Allocator.Temp);
+                        asteroidXfs = _asteroidQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
+                        asteroidsLoaded = true;
                     }
 
-                    SortCandidatesByDistance(candidates);
-                    AssignUniqueTargets(aims, mounts, in weapon, gunners, candidates);
-                    ShareTargetsIfNeeded(aims, gunners);
-                    ParkEmptySlotsAsHullForward(aims, gunners, mega);
-                    candidates.Dispose();
-                }
-
-                float3 hullForward = FlattenHullForward(xf.Rotation);
-
-                for (int m = 0; m < mountCount; m++)
-                {
-                    if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
-                        continue;
-                    if (aims[m].Target == Entity.Null)
-                        continue;
-
-                    var mount = mounts[m];
-                    float3 muzzle = MegaShipGunnerLogic.GetMountWorldPosition(xf, mount);
-                    float range = ResolveMountRange(in mount, in weapon);
-                    bool hullForwardShot = aims[m].Target == mega;
-                    float3 desiredAim;
-                    if (hullForwardShot)
+                    for (int m = 0; m < mountCount; m++)
                     {
-                        desiredAim = hullForward;
-                    }
-                    else
-                    {
-                        float3 targetPos = aims[m].AimPoint;
-                        float3 offset = ToroidalMapEcs.ShortestOffsetXZ(muzzle, targetPos, mapW, mapH);
-                        offset.y = 0f;
-                        float dist = math.length(offset);
-                        if (dist < 0.05f)
+                        if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
                             continue;
-                        range = math.max(range, dist + 1f);
-                        desiredAim = offset / dist;
+                        if (aims[m].Target != Entity.Null)
+                            continue;
+
+                        float3 muzzle = ResolveMuzzle(xf, mounts[m]);
+                        float mountRange = ResolveMountRange(mounts[m], in weapon) + 8f;
+                        if (TryAcquireClosestTarget(
+                            mega, ship.Team, heal, muzzle, mountRange, mapW, mapH, moonElapsed,
+                            ships, shipStates, shipXfs, planets,
+                            debugAsteroids, asteroidEntities, asteroidStates, asteroidXfs,
+                            out Entity target, out float3 aimPoint))
+                        {
+                            aims[m] = new MegaShipAutoAimSlotElement
+                            {
+                                Target = target,
+                                AimPoint = aimPoint,
+                            };
+                        }
+                        else
+                        {
+                            aims[m] = new MegaShipAutoAimSlotElement
+                            {
+                                Target = mega,
+                                AimPoint = default,
+                            };
+                        }
                     }
-
-                    // --- Turret fire: along the toroidal aim at the acquired target ---
-                    float fireRate = math.max(0.25f, mount.FireRate > 0.01f ? mount.FireRate : weapon.FireRate);
-                    int cooldownKey = (mega.Index << 16) ^ (m & 0xFFFF);
-                    if (_nextMountFireTime.TryGetValue(cooldownKey, out float next) && now < next)
-                        continue;
-
-                    // Per-mount firepower only — 0 means unarmed (do not fall back to hull sum).
-                    float damage = mount.FirePower;
-                    if (damage <= 0.01f)
-                        continue;
-
-                    var liveShip = EntityManager.GetComponentData<ShipState>(mega);
-                    if (liveShip.CurrentEnergy < damage)
-                        continue;
-
-                    liveShip.CurrentEnergy = math.max(0f, liveShip.CurrentEnergy - damage);
-                    EntityManager.SetComponentData(mega, liveShip);
-
-                    // Locked target, or hull forward when this press found nothing in range.
-                    float3 aim = desiredAim;
-                    float bulletSpeed = math.max(4f, weapon.BulletSpeed > 0.1f ? weapon.BulletSpeed : 14f);
-                    uint sequence = BulletVfxBridge.NextSequence();
-                    var spawn = new BulletElement
-                    {
-                        Position = muzzle,
-                        Velocity = aim * bulletSpeed,
-                        MaxDistance = range,
-                        Lifetime = 0f,
-                        Damage = damage,
-                        OwnerNetworkId = ownerNet,
-                        OwnerTeam = (byte)ship.Team,
-                        Sequence = sequence,
-                        BankIndex = math.max(0, bankIndex),
-                        ScaleMultiplier = 1.2f,
-                        DamageFilter = BulletDamageFilter.Everything,
-                    };
-
-                    spawnEvents.Add(new BulletSpawnEventElement
-                    {
-                        SpawnPosition = spawn.Position,
-                        Velocity = spawn.Velocity,
-                        Lifetime = spawn.Lifetime,
-                        MaxDistance = spawn.MaxDistance,
-                        Damage = spawn.Damage,
-                        OwnerTeam = spawn.OwnerTeam,
-                        Sequence = spawn.Sequence,
-                        BankIndex = spawn.BankIndex,
-                        ScaleMultiplier = spawn.ScaleMultiplier,
-                    });
-                    BulletNetNotify.SendSpawn(ref ecb, spawn, mountIndex: (byte)m);
-                    bullets.Add(spawn);
-                    _nextMountFireTime[cooldownKey] = now + (1f / fireRate);
                 }
+
+                // Aim the gun, then Phase B fires along the barrel (regular-ship ray).
+                RotateUnoccupiedMountsTowardAim(mega, xf, mounts, aims, gunners, mapW, mapH, dt);
             }
 
-            ecb.Playback(EntityManager);
-            ecb.Dispose();
             if (ships.IsCreated)
                 ships.Dispose();
             if (shipStates.IsCreated)
@@ -396,11 +290,66 @@ namespace TitanOrbit.ECS
             return MegaShipCatalog.DefaultBulletAcquireRange;
         }
 
-        struct AimCandidate
+        /// <summary>World muzzle for this mount (unbounded hull + bake local). Falls back to hull origin.</summary>
+        static float3 ResolveMuzzle(in LocalTransform xf, in ShipWeaponMountElement mount)
         {
-            public Entity Entity;
-            public float3 Aim;
-            public float Dist;
+            if (ShipWeaponPose.TryResolve(xf, mount, out float3 muzzle, out _))
+                return muzzle;
+            return xf.Position;
+        }
+
+        /// <summary>
+        /// Slews each unoccupied mount toward its sticky lock (toroidal muzzle→AimPoint)
+        /// or hull forward when the slot is parked. Occupied mounts are slewed by
+        /// <see cref="MegaShipPlayerCombatSystem"/>.
+        /// </summary>
+        static void RotateUnoccupiedMountsTowardAim(
+            Entity mega,
+            in LocalTransform xf,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            DynamicBuffer<MegaShipAutoAimSlotElement> aims,
+            DynamicBuffer<MegaShipGunnerSlotElement> gunners,
+            float mapW,
+            float mapH,
+            float dt)
+        {
+            float3 hullForward = math.rotate(xf.Rotation, new float3(0f, 0f, 1f));
+            hullForward.y = 0f;
+            if (math.lengthsq(hullForward) < 0.0001f)
+                hullForward = new float3(0f, 0f, 1f);
+            else
+                hullForward = math.normalize(hullForward);
+
+            int mountCount = mounts.Length;
+            for (int m = 0; m < mountCount; m++)
+            {
+                if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
+                    continue;
+                if (m >= aims.Length || aims[m].Target == Entity.Null)
+                    continue;
+
+                var mount = mounts[m];
+                float3 desired = hullForward;
+                float targetDist = 0f;
+                if (aims[m].Target != mega)
+                {
+                    if (!ShipWeaponPose.TryResolve(xf, mount, out float3 muzzle, out _))
+                        muzzle = xf.Position;
+
+                    float3 offset = ToroidalMapEcs.ShortestOffsetXZ(muzzle, aims[m].AimPoint, mapW, mapH);
+                    offset.y = 0f;
+                    float dist = math.length(offset);
+                    if (dist >= 0.05f)
+                    {
+                        desired = offset / dist;
+                        targetDist = dist;
+                    }
+                }
+
+                MegaShipWeaponAim.RotateMountTowardWorldDir(in xf, ref mount, desired, dt);
+                mounts[m] = mount;
+                MegaShipWeaponAim.WriteGhostedYaw(gunners, m, in mount, targetDist);
+            }
         }
 
         static void ResizeAimSlots(DynamicBuffer<MegaShipAutoAimSlotElement> aims, int mountCount)
@@ -411,35 +360,7 @@ namespace TitanOrbit.ECS
                 aims.RemoveAt(aims.Length - 1);
         }
 
-        /// <summary>
-        /// After a search this press, leftover empty slots park on the hull entity so we
-        /// fire forward and do not gather the world again until Fire is released.
-        /// </summary>
-        static void ParkEmptySlotsAsHullForward(
-            DynamicBuffer<MegaShipAutoAimSlotElement> aims,
-            DynamicBuffer<MegaShipGunnerSlotElement> gunners,
-            Entity mega)
-        {
-            for (int m = 0; m < aims.Length; m++)
-            {
-                if (aims[m].Target != Entity.Null)
-                    continue;
-                if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
-                    continue;
-                aims[m] = new MegaShipAutoAimSlotElement { Target = mega, AimPoint = default };
-            }
-        }
-
-        static float3 FlattenHullForward(quaternion hullRotation)
-        {
-            float3 fwd = math.mul(hullRotation, new float3(0f, 0f, 1f));
-            fwd.y = 0f;
-            if (math.lengthsq(fwd) < 0.0001f)
-                return new float3(0f, 0f, 1f);
-            return math.normalize(fwd);
-        }
-
-        /// <summary>Drop all sticky locks. Next Fire press runs a fresh hull-center search.</summary>
+        /// <summary>Drop all sticky locks. Next Fire press runs a fresh per-muzzle search.</summary>
         void ClearAimSlots(Entity mega)
         {
             if (!EntityManager.HasBuffer<MegaShipAutoAimSlotElement>(mega))
@@ -452,7 +373,7 @@ namespace TitanOrbit.ECS
 
         /// <summary>
         /// Keep the last lock if it still exists, is a valid team, and is inside range
-        /// from the ship center. mapW/mapH from <see cref="MapStateSingleton"/>.
+        /// from this gun's muzzle. mapW/mapH from <see cref="MapStateSingleton"/>.
         /// </summary>
         bool TryKeepStickyTarget(
             Entity self,
@@ -542,14 +463,15 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// One hull-center gather of in-range ships / pads / rocks. Skips entities already locked.
-        /// Distances are toroidal. mapW/mapH from <see cref="MapStateSingleton"/>.
+        /// Closest in-range target from this muzzle. Ships, hostile pads/moons, and (debug)
+        /// asteroids compete by toroidal distance — two guns may lock the same entity.
+        /// mapW/mapH from <see cref="MapStateSingleton"/>.
         /// </summary>
-        void CollectTargets(
-            float3 from,
-            TeamId ownerTeam,
+        bool TryAcquireClosestTarget(
             Entity self,
+            TeamId ownerTeam,
             bool heal,
+            float3 from,
             float range,
             float mapW,
             float mapH,
@@ -562,12 +484,17 @@ namespace TitanOrbit.ECS
             NativeArray<Entity> asteroidEntities,
             NativeArray<AsteroidState> asteroidStates,
             NativeArray<LocalTransform> asteroidXfs,
-            DynamicBuffer<MegaShipAutoAimSlotElement> locked,
-            NativeList<AimCandidate> into)
+            out Entity target,
+            out float3 aimPoint)
         {
-            for (int i = 0; i < ships.Length; i++)
+            target = Entity.Null;
+            aimPoint = default;
+            float best = range;
+
+            int shipCount = math.min(ships.Length, math.min(shipStates.Length, shipXfs.Length));
+            for (int i = 0; i < shipCount; i++)
             {
-                if (ships[i] == self || IsLocked(locked, ships[i]) || ContainsCandidate(into, ships[i]))
+                if (ships[i] == self)
                     continue;
                 var other = shipStates[i];
                 if (other.IsDead || other.Team == TeamId.None)
@@ -580,152 +507,57 @@ namespace TitanOrbit.ECS
                 else if (other.Team == ownerTeam)
                     continue;
 
-                float3 aim = shipXfs[i].Position;
-                float d = ToroidalMapEcs.ToroidalDistance(from, aim, mapW, mapH);
-                if (d > range)
+                float3 pos = shipXfs[i].Position;
+                float d = ToroidalMapEcs.ToroidalDistance(from, pos, mapW, mapH);
+                if (d >= best)
                     continue;
-                into.Add(new AimCandidate { Entity = ships[i], Aim = aim, Dist = d });
+                best = d;
+                target = ships[i];
+                aimPoint = pos;
             }
 
             if (heal)
-                return;
+                return target != Entity.Null;
 
             if (planets.IsCreated)
             {
                 for (int p = 0; p < planets.Length; p++)
                 {
                     Entity planet = planets[p];
-                    if (IsLocked(locked, planet) || ContainsCandidate(into, planet))
-                        continue;
-                    if (!TryResolvePlanetAim(planet, ownerTeam, from, range, mapW, mapH, moonElapsed, out float3 planetAim))
+                    if (!TryResolvePlanetAim(
+                            planet, ownerTeam, from, best, mapW, mapH, moonElapsed, out float3 planetAim))
                         continue;
 
                     float d = ToroidalMapEcs.ToroidalDistance(from, planetAim, mapW, mapH);
-                    if (d > range)
+                    if (d >= best)
                         continue;
-                    into.Add(new AimCandidate { Entity = planet, Aim = planetAim, Dist = d });
+                    best = d;
+                    target = planet;
+                    aimPoint = planetAim;
                 }
             }
 
             if (debugAsteroids && asteroidEntities.IsCreated && asteroidStates.IsCreated && asteroidXfs.IsCreated)
             {
-                int rockCount = math.min(asteroidEntities.Length, math.min(asteroidStates.Length, asteroidXfs.Length));
+                int rockCount = math.min(
+                    asteroidEntities.Length, math.min(asteroidStates.Length, asteroidXfs.Length));
                 for (int a = 0; a < rockCount; a++)
                 {
                     var rock = asteroidStates[a];
                     if (rock.IsDestroyed || rock.Health <= 0.01f)
                         continue;
-                    Entity rockEntity = asteroidEntities[a];
-                    if (IsLocked(locked, rockEntity) || ContainsCandidate(into, rockEntity))
-                        continue;
 
                     float3 rockPos = asteroidXfs[a].Position;
                     float d = ToroidalMapEcs.ToroidalDistance(from, rockPos, mapW, mapH);
-                    if (d > range)
+                    if (d >= best)
                         continue;
-                    into.Add(new AimCandidate { Entity = rockEntity, Aim = rockPos, Dist = d });
+                    best = d;
+                    target = asteroidEntities[a];
+                    aimPoint = rockPos;
                 }
             }
-        }
 
-        static bool IsLocked(DynamicBuffer<MegaShipAutoAimSlotElement> slots, Entity entity)
-        {
-            if (entity == Entity.Null)
-                return false;
-            for (int i = 0; i < slots.Length; i++)
-            {
-                if (slots[i].Target == entity)
-                    return true;
-            }
-
-            return false;
-        }
-
-        static bool ContainsCandidate(NativeList<AimCandidate> candidates, Entity entity)
-        {
-            for (int i = 0; i < candidates.Length; i++)
-            {
-                if (candidates[i].Entity == entity)
-                    return true;
-            }
-
-            return false;
-        }
-
-        static void SortCandidatesByDistance(NativeList<AimCandidate> candidates)
-        {
-            for (int i = 1; i < candidates.Length; i++)
-            {
-                var key = candidates[i];
-                int j = i - 1;
-                while (j >= 0 && candidates[j].Dist > key.Dist)
-                {
-                    candidates[j + 1] = candidates[j];
-                    j--;
-                }
-
-                candidates[j + 1] = key;
-            }
-        }
-
-        static void AssignUniqueTargets(
-            DynamicBuffer<MegaShipAutoAimSlotElement> aims,
-            DynamicBuffer<ShipWeaponMountElement> mounts,
-            in ShipWeaponConfig weapon,
-            DynamicBuffer<MegaShipGunnerSlotElement> gunners,
-            NativeList<AimCandidate> candidates)
-        {
-            int next = 0;
-            for (int m = 0; m < aims.Length; m++)
-            {
-                if (aims[m].Target != Entity.Null)
-                    continue;
-                if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
-                    continue;
-
-                float mountRange = ResolveMountRange(mounts[m], in weapon) + 8f;
-                while (next < candidates.Length)
-                {
-                    var pick = candidates[next++];
-                    if (pick.Entity == Entity.Null || pick.Dist > mountRange || IsLocked(aims, pick.Entity))
-                        continue;
-                    aims[m] = new MegaShipAutoAimSlotElement { Target = pick.Entity, AimPoint = pick.Aim };
-                    break;
-                }
-            }
-        }
-
-        static void ShareTargetsIfNeeded(
-            DynamicBuffer<MegaShipAutoAimSlotElement> aims,
-            DynamicBuffer<MegaShipGunnerSlotElement> gunners)
-        {
-            int filled = 0;
-            for (int i = 0; i < aims.Length; i++)
-            {
-                if (aims[i].Target != Entity.Null)
-                    filled++;
-            }
-
-            if (filled == 0)
-                return;
-
-            int share = 0;
-            for (int m = 0; m < aims.Length; m++)
-            {
-                if (aims[m].Target != Entity.Null)
-                    continue;
-                if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
-                    continue;
-
-                while (share < aims.Length && aims[share].Target == Entity.Null)
-                    share++;
-                if (share >= aims.Length)
-                    return;
-                aims[m] = aims[share];
-                share++;
-                if (share >= aims.Length)
-                    share = 0;
-            }
+            return target != Entity.Null;
         }
 
         /// <summary>

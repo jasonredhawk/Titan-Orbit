@@ -70,7 +70,7 @@ namespace TitanOrbit.ECS
 
             // --- Weapon hull averages (HUD / display only — live shots use per-mount FirePower) ---
             // [TITAN-ORBIT] summedStats.firePower is the sum of every gun for power bars.
-            // MegaShipAutoFireSystem / MegaShipPlayerCombatSystem must NOT read BulletDamage
+            // BulletSimulationSystem Phase B must NOT read BulletDamage
             // as a per-shot fallback — that inflated every bullet to the fleet total.
             if (em.HasComponent<ShipWeaponConfig>(shipEntity))
             {
@@ -123,9 +123,12 @@ namespace TitanOrbit.ECS
                 motor.EngineThrust = accel;
                 motor.RotationSpeed = turnVal;
                 motor.BrakeDeceleration = ShipMassLogic.DefaultBrakeDeceleration;
-                motor.HullMassReference = ShipMassLogic.ComputeHullMassReference(
-                    Mathf.Max(8f, effective.healthCap * 0.15f),
-                    ShipMassLogic.DefaultBaseMass);
+                motor.Mass = MegaShipCatalog.DefaultHullCollisionMass;
+                motor.HullMassReference = Mathf.Max(
+                    MegaShipCatalog.MinHullCollisionMass,
+                    ShipMassLogic.ComputeHullMassReference(
+                        Mathf.Max(MegaShipCatalog.MinHullCollisionMass, effective.healthCap * 0.35f),
+                        MegaShipCatalog.DefaultHullCollisionMass));
                 motor.ChassisReferenceHealth = Mathf.Max(1f, effective.healthCap);
                 motor.RammingPower = Mathf.Max(0f, effective.rammingPower);
                 motor.ThrustEnergyDrainPerSecond = 2f;

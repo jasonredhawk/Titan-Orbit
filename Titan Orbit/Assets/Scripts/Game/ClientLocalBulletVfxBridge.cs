@@ -126,11 +126,8 @@ namespace TitanOrbit.Game
             if (shipState.IsDead || shipState.AwaitingTeamSelection)
                 return;
 
-            // --- MEGA hull: server MegaShipAutoFireSystem owns shots ---
-            // Regular anticipation + live-GO muzzle resolve stay hull-forward on these prefabs
-            // and steal the server SpawnRpc velocity (TryReprojectLocalOwnerSpawn).
-            if (world.EntityManager.HasComponent<MegaShipState>(shipEntity)
-                && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega)
+            // --- MEGA gunner: Fire drives the borrowed MEGA mount, not this hull's guns ---
+            if (MegaShipGunnerLogic.IsControllingMegaGun(world.EntityManager, shipEntity))
                 return;
 
             // --- Need ECS mounts for per-barrel cooldown + damage (live GO count alone is not enough) ---
@@ -163,15 +160,30 @@ namespace TitanOrbit.Game
             // --- Sync predicted energy with ghost (before planning fire) ---
             SyncPredictedEnergy(shipState.CurrentEnergy);
 
+            bool isMega = world.EntityManager.HasComponent<MegaShipState>(shipEntity)
+                          && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
+
             int firePowerAbilityLv = 0;
             if (world.EntityManager.HasComponent<ShipAttributeUpgradeState>(shipEntity))
                 firePowerAbilityLv = world.EntityManager.GetComponentData<ShipAttributeUpgradeState>(shipEntity).FirePower;
-            int firePowerExtras = BulletBankCombatLogic.CountFirePowerExtraLevels(
-                shipState.ShipLevel, firePowerAbilityLv);
-            float abilityEnergy = BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
+            int firePowerExtras = isMega
+                ? 0
+                : BulletBankCombatLogic.CountFirePowerExtraLevels(
+                    shipState.ShipLevel, firePowerAbilityLv);
+            float abilityEnergy = isMega
+                ? 0f
+                : BulletBankCombatLogic.GetAbilityEnergyDrain(bankIndex, firePowerExtras);
 
-            // --- Same planner + FireMode as BulletSimulationSystem (server) ---
-            if (!ShipWeaponFireLogic.TryPlanFire(
+            int shotCount;
+            float energySpend;
+            int nextMountIndexAfter = _nextMountIndex;
+            if (isMega)
+            {
+                if (!TryPlanMegaOwnerFire(world.EntityManager, shipEntity, mounts, weaponCfg,
+                        out shotCount, out energySpend))
+                    return;
+            }
+            else if (!ShipWeaponFireLogic.TryPlanFire(
                     _predictedEnergy,
                     mounts,
                     _nextMountIndex,
@@ -179,11 +191,13 @@ namespace TitanOrbit.Game
                     weaponCfg.FireRate,
                     weaponCfg.FireMode,
                     s_ShotScratch,
-                    out int shotCount,
-                    out float energySpend,
-                    out int nextMountIndexAfter,
+                    out shotCount,
+                    out energySpend,
+                    out nextMountIndexAfter,
                     abilityEnergy))
+            {
                 return;
+            }
 
             // --- Cap pending anticipations — do not arm cooldowns / cursor if the queue is full ---
             if (!BulletVfxBridge.CanEnqueueAnticipation(shotCount))
@@ -275,6 +289,52 @@ namespace TitanOrbit.Game
                 if (enqueued == shotCount)
                     _nextMountIndex = nextMountIndexAfter;
             }
+        }
+
+        /// <summary>
+        /// MEGA owner anticipation: every ready unoccupied mount (same independent cadence
+        /// as server Phase B). Occupied mounts belong to the gunner.
+        /// </summary>
+        bool TryPlanMegaOwnerFire(
+            EntityManager em,
+            Entity mega,
+            DynamicBuffer<ShipWeaponMountElement> mounts,
+            in ShipWeaponConfig weaponCfg,
+            out int shotCount,
+            out float energySpend)
+        {
+            shotCount = 0;
+            energySpend = 0f;
+
+            var gunners = em.HasBuffer<MegaShipGunnerSlotElement>(mega)
+                ? em.GetBuffer<MegaShipGunnerSlotElement>(mega)
+                : default;
+            float energy = _predictedEnergy;
+            int cap = math.min(mounts.Length, ShipWeaponFireLogic.MaxShotsPerTick);
+            for (int m = 0; m < cap; m++)
+            {
+                if (gunners.IsCreated && m < gunners.Length && gunners[m].OccupiedByNetworkId != 0)
+                    continue;
+
+                var mount = mounts[m];
+                if (mount.FireCooldown > 0.001f || mount.FirePower <= 0.01f)
+                    continue;
+                if (energy < mount.FirePower)
+                    continue;
+
+                float fireRate = math.max(0.15f, mount.FireRate > 0.01f ? mount.FireRate : weaponCfg.FireRate);
+                s_ShotScratch[shotCount++] = new ShipWeaponFireLogic.MountShot
+                {
+                    MountIndex = m,
+                    Damage = mount.FirePower,
+                    EnergyCost = mount.FirePower,
+                    CooldownSeconds = 1f / fireRate,
+                };
+                energy -= mount.FirePower;
+                energySpend += mount.FirePower;
+            }
+
+            return shotCount > 0;
         }
 
         /// <summary>

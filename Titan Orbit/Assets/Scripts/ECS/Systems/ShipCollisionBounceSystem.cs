@@ -93,6 +93,7 @@ namespace TitanOrbit.ECS
             var snapshotLookup = SystemAPI.GetComponentLookup<ShipPreCollisionVelocity>(true);
             var motorLookup = SystemAPI.GetComponentLookup<ShipMotorConfig>(true);
             var shipStateLookup = SystemAPI.GetComponentLookup<ShipState>(true);
+            var megaLookup = SystemAPI.GetComponentLookup<MegaShipState>(true);
             var asteroidStateLookup = SystemAPI.GetComponentLookup<AsteroidState>(true);
             var culledLookup = SystemAPI.GetComponentLookup<AsteroidClientCulledTag>(true);
             var velocityLookup = SystemAPI.GetComponentLookup<PhysicsVelocity>(false);
@@ -113,13 +114,13 @@ namespace TitanOrbit.ECS
                     long key = PackEntityPairKey(pair.EntityA, pair.EntityB);
                     if (!seenShipPairs.Add(key))
                         continue;
-                    ApplyShipVsShip(pair, ref working, snapshotLookup, motorLookup, shipStateLookup);
+                    ApplyShipVsShip(pair, ref working, snapshotLookup, motorLookup, shipStateLookup, megaLookup);
                 }
                 else if (pair.Kind == KindAsteroid)
                 {
                     ApplyShipVsAsteroid(
                         pair, ref working, snapshotLookup, motorLookup, shipStateLookup,
-                        asteroidStateLookup, culledLookup, asteroidMassPerSize, asteroidRestitution);
+                        megaLookup, asteroidStateLookup, culledLookup, asteroidMassPerSize, asteroidRestitution);
                 }
                 else if (pair.Kind == KindInfiniteWall)
                 {
@@ -186,7 +187,8 @@ namespace TitanOrbit.ECS
         static float GetShipCollisionMass(
             Entity ship,
             ComponentLookup<ShipMotorConfig> motors,
-            ComponentLookup<ShipState> shipStates)
+            ComponentLookup<ShipState> shipStates,
+            ComponentLookup<MegaShipState> megas)
         {
             if (!motors.HasComponent(ship) || !shipStates.HasComponent(ship))
                 return ShipMassLogic.MinMass;
@@ -194,13 +196,16 @@ namespace TitanOrbit.ECS
             var motor = motors[ship];
             var ss = shipStates[ship];
             float baseMass = motor.Mass > 0f ? motor.Mass : ShipMassLogic.DefaultBaseMass;
-            return ShipMassLogic.ComputeRammingMass(
+            float mass = ShipMassLogic.ComputeRammingMass(
                 motor.HullMassReference,
                 ss.MaxHealth,
                 motor.ChassisReferenceHealth,
                 ss.CurrentGems,
                 baseMass,
                 ss.CurrentPeople);
+            if (megas.HasComponent(ship) && megas[ship].IsMega)
+                mass = math.max(mass, MegaShipCatalog.MinHullCollisionMass);
+            return mass;
         }
 
         static void ApplyShipVsShip(
@@ -208,7 +213,8 @@ namespace TitanOrbit.ECS
             ref NativeHashMap<Entity, float3> working,
             ComponentLookup<ShipPreCollisionVelocity> snapshots,
             ComponentLookup<ShipMotorConfig> motors,
-            ComponentLookup<ShipState> shipStates)
+            ComponentLookup<ShipState> shipStates,
+            ComponentLookup<MegaShipState> megas)
         {
             Entity a = pair.EntityA;
             Entity b = pair.EntityB;
@@ -219,8 +225,8 @@ namespace TitanOrbit.ECS
 
             float3 vA = GetWorkingOrSnapshot(a, ref working, snapshots);
             float3 vB = GetWorkingOrSnapshot(b, ref working, snapshots);
-            float mA = GetShipCollisionMass(a, motors, shipStates);
-            float mB = GetShipCollisionMass(b, motors, shipStates);
+            float mA = GetShipCollisionMass(a, motors, shipStates, megas);
+            float mB = GetShipCollisionMass(b, motors, shipStates, megas);
 
             if (!ShipCollisionImpulseLogic.ApplyTwoBodyImpulse(
                     ref vA, ref vB, pair.NormalAFromB, mA, mB,
@@ -241,6 +247,7 @@ namespace TitanOrbit.ECS
             ComponentLookup<ShipPreCollisionVelocity> snapshots,
             ComponentLookup<ShipMotorConfig> motors,
             ComponentLookup<ShipState> shipStates,
+            ComponentLookup<MegaShipState> megas,
             ComponentLookup<AsteroidState> asteroidStates,
             ComponentLookup<AsteroidClientCulledTag> culled,
             float massPerSize,
@@ -261,12 +268,16 @@ namespace TitanOrbit.ECS
             if (culled.HasComponent(asteroid))
                 return;
 
+            bool isMega = megas.HasComponent(ship) && megas[ship].IsMega;
             float3 vShip = GetWorkingOrSnapshot(ship, ref working, snapshots);
-            float mShip = GetShipCollisionMass(ship, motors, shipStates);
+            float mShip = GetShipCollisionMass(ship, motors, shipStates, megas);
             float mRock = ShipCollisionImpulseLogic.ComputeAsteroidCollisionMass(rock.Size, massPerSize);
+            float e = isMega
+                ? math.min(restitution, MegaShipCatalog.AsteroidBounceRestitution)
+                : restitution;
 
             if (!ShipCollisionImpulseLogic.ApplyShipVsStaticMassiveImpulse(
-                    ref vShip, pair.NormalAFromB, mShip, mRock, restitution))
+                    ref vShip, pair.NormalAFromB, mShip, mRock, e))
                 return;
 
             working[ship] = vShip;
