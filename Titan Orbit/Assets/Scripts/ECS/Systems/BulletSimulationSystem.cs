@@ -331,6 +331,16 @@ namespace TitanOrbit.ECS
                     SystemAPI.GetComponentRO<ShipTurretControlState>(entity).ValueRO.IsControlling)
                     continue;
 
+                // --- MEGA hull: owner does not fire guns (auto-fire / gunners own the mounts) ---
+                if (SystemAPI.HasComponent<MegaShipState>(entity) &&
+                    SystemAPI.GetComponentRO<MegaShipState>(entity).ValueRO.IsMega)
+                    continue;
+
+                // --- MEGA gunner: Fire drives the borrowed mount, not this ship's own guns ---
+                if (SystemAPI.HasComponent<ShipMegaGunControlState>(entity) &&
+                    SystemAPI.GetComponentRO<ShipMegaGunControlState>(entity).ValueRO.IsControlling)
+                    continue;
+
                 // [TITAN-ORBIT] Empty mounts = intentional unarmed — no fire, no default muzzle.
                 if (!SystemAPI.HasBuffer<ShipWeaponMountElement>(entity))
                     continue;
@@ -704,8 +714,8 @@ namespace TitanOrbit.ECS
                 if (state.EntityManager.HasComponent<PhysicsCollider>(shipEntity))
                 {
                     var physicsCollider = state.EntityManager.GetComponentData<PhysicsCollider>(shipEntity);
-                    shipRadius = ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
-                        physicsCollider, shipTransform.ValueRO.Scale);
+                    shipRadius = MegaShipCombatAim.GetHitRadiusWorld(
+                        state.EntityManager, shipEntity, physicsCollider, shipTransform.ValueRO.Scale);
                 }
                 else
                 {
@@ -716,8 +726,10 @@ namespace TitanOrbit.ECS
                 // collision pad so big planetary-defense / upgraded shots do not skim past hulls.
                 float bulletPad = math.clamp(b.ScaleMultiplier * 0.18f, 0f, 0.85f);
                 shipRadius += bulletPad;
+                float3 shipCenter = MegaShipCombatAim.GetAimPoint(
+                    state.EntityManager, shipEntity, shipTransform.ValueRO);
                 if (!BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, shipTransform.ValueRO.Position, shipRadius, mapW, mapH, out float3 shipHit))
+                        from, to, shipCenter, shipRadius, mapW, mapH, out float3 shipHit))
                     continue;
 
                 if (!TryKeepNearestHit(from, to, shipHit, ref bestT, ref bestHit))

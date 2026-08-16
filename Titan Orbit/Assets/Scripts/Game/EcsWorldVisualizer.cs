@@ -1614,6 +1614,8 @@ namespace TitanOrbit.Game
 
             if (isLocalPlayerShip)
                 ShipDisplayPose.SetLocalPose(pos, rot);
+
+            MegaShipWeaponVisualSync.Apply(em, entity, go.gameObject);
         }
 
         /// <summary>
@@ -1853,12 +1855,13 @@ namespace TitanOrbit.Game
             if (team != TeamId.None)
             {
                 ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    shipEntity,
                     team,
                     shipLevel,
                     branchIndex,
                     out chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: shipFamilyConfigIndex);
+                    allowFallback: true);
             }
 
             var lt = em.GetComponentData<LocalTransform>(shipEntity);
@@ -1912,8 +1915,7 @@ namespace TitanOrbit.Game
                 _proxyTeams[shipEntity] = ship.Team;
                 _proxyBranchIndices[shipEntity] = Mathf.Max(0, ship.BranchIndex);
                 // --- Hide dead hulls and ships stowed in planetary defense turrets ---
-                bool stowedInTurret = em.HasComponent<ShipTurretControlState>(shipEntity) &&
-                    em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling;
+                bool stowedInTurret = IsShipHullStowed(em, shipEntity);
                 if (ship.IsDead || stowedInTurret)
                     proxyGo.SetActive(false);
                 else if (!proxyGo.activeSelf)
@@ -2003,12 +2005,13 @@ namespace TitanOrbit.Game
                 if (team != TeamId.None)
                 {
                     ShipStatApplyLogic.TryResolveChassisId(
+                        em,
+                        entity,
                         team,
                         shipLevel,
                         branchIndex,
                         out chassisId,
-                        allowFallback: true,
-                        shipFamilyConfigIndex: shipFamilyConfigIndex);
+                        allowFallback: true);
                 }
 
                 // [TITAN-ORBIT] Chassis swap while moon-docked: keep the old hull's spinning
@@ -2133,9 +2136,11 @@ namespace TitanOrbit.Game
 
                 if (!skipTransformSync)
                     ApplyShipProxyTransform(entity, em, isLocalPlayerShip, lt, go.transform, scale);
-                else if (isLocalPlayerShip)
+                else
                 {
-                    ShipDisplayPose.SetLocalPose(go.transform.position, go.transform.rotation);
+                    if (isLocalPlayerShip)
+                        ShipDisplayPose.SetLocalPose(go.transform.position, go.transform.rotation);
+                    MegaShipWeaponVisualSync.Apply(em, entity, go);
                 }
 
                 if (em.HasComponent<ShipState>(entity))
@@ -2145,8 +2150,7 @@ namespace TitanOrbit.Game
                     _proxyTeams[entity] = ship.Team;
                     _proxyBranchIndices[entity] = Mathf.Max(0, ship.BranchIndex);
                     // --- Hide dead hulls and ships stowed in planetary defense turrets ---
-                    bool stowedInTurret = em.HasComponent<ShipTurretControlState>(entity) &&
-                        em.GetComponentData<ShipTurretControlState>(entity).IsControlling;
+                    bool stowedInTurret = IsShipHullStowed(em, entity);
                     if (ship.IsDead || stowedInTurret)
                         go.SetActive(false);
                     else if (!go.activeSelf)
@@ -2418,8 +2422,7 @@ namespace TitanOrbit.Game
             bool landedOnMoon = IsShipFullyLandedOnMoon(em, entity);
             // [NETCODE] ShipTurretControlState is ghosted — nameplate root is unparented, so we
             // must hide explicitly (SetActive(false) on the hull proxy is not enough).
-            bool stowedInTurret = em.HasComponent<ShipTurretControlState>(entity) &&
-                em.GetComponentData<ShipTurretControlState>(entity).IsControlling;
+            bool stowedInTurret = IsShipHullStowed(em, entity);
 
             _nameplateRoleCandidates.Add(new ShipTopOfTeamRoles.Candidate
             {
@@ -2451,6 +2454,17 @@ namespace TitanOrbit.Game
         /// <param name="em">Client world entity manager from the ship sync path.</param>
         /// <param name="shipEntity">Ship ghost entity already in hand from the ship loop.</param>
         /// <returns>True when MoonPlanetId is set and landing progress is at the complete threshold.</returns>
+        /// <summary>
+        /// True when the hull is hidden on a planetary turret pad or a MEGA gun pad.
+        /// </summary>
+        static bool IsShipHullStowed(EntityManager em, Entity shipEntity)
+        {
+            if (em.HasComponent<ShipTurretControlState>(shipEntity)
+                && em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                return true;
+            return MegaShipGunnerLogic.IsControllingMegaGun(em, shipEntity);
+        }
+
         static bool IsShipFullyLandedOnMoon(EntityManager em, Entity shipEntity)
         {
             // --- Per-entity moon dock read (safe under quarantine — not a planet/asteroid scan) ---

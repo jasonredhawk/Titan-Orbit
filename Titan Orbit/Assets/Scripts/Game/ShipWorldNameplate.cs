@@ -8,7 +8,7 @@ using UnityEngine.Rendering;
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// World-space nameplate sitting <b>screen-below</b> a ship (world −Z), locked to world
+    /// World-space nameplate sitting <b>above mid-center</b> of a ship (world +Y), locked to world
     /// orientation so it does <b>not</b> spin when the hull yaws:
     /// <code>
     /// [Name] .............. [Lv N]
@@ -59,15 +59,12 @@ namespace TitanOrbit.Game
 
         const float HeightAbovePlane = 0.08f;
 
-        /// <summary>Gap past the hull edge — keep readable space under the ship.</summary>
-        const float PaddingPastHull = 0.35f;
+        /// <summary>Gap above the hull top so the plate sits over mid-center, not inside the mesh.</summary>
+        const float PaddingAboveHull = 0.45f;
         const float FallbackHullExtentWorld = 0.4f;
 
-        /// <summary>Hard cap so a bad bounds read can never throw the plate off-screen.</summary>
-        const float MaxClearanceWorld = 1.6f;
-
-        /// <summary>Fraction of half-widest used as offset (full half-extent + padding).</summary>
-        const float ClearanceScale = 1.0f;
+        /// <summary>Hard cap on measured half-height so a bad bounds read cannot throw the plate away.</summary>
+        const float MaxHeightWorld = 8f;
 
         /// <summary>Bar track height in label-local units (world ≈ 0.10 after 25% thinner).</summary>
         const float BarHeight = 0.45f;
@@ -91,7 +88,7 @@ namespace TitanOrbit.Game
         /// <summary>
         /// Bump when row spacing / fonts / clearance policy change so live proxies refresh layout.
         /// </summary>
-        const int LayoutVersion = 12;
+        const int LayoutVersion = 13;
 
         /// <summary>Max name characters before width-fit (wider plate allows longer names).</summary>
         const int MaxNameCharacters = 28;
@@ -111,8 +108,6 @@ namespace TitanOrbit.Game
         static readonly Color FullVersionBadgeColor = new Color(1f, 0.82f, 0.25f, 0.95f);
         static readonly Color MetaRightColor = new Color(0.85f, 0.90f, 1f, 0.95f);
         static readonly Color ScoreColor = new Color(0.95f, 0.86f, 0.55f, 1f);
-
-        static readonly Vector3 ScreenBelowWorld = new Vector3(0f, 0f, -1f);
 
         static Sprite s_WhiteSprite;
         static readonly StringBuilder s_NameScratch = new StringBuilder(32);
@@ -157,6 +152,7 @@ namespace TitanOrbit.Game
         /// Half of the ship's widest horizontal dimension in <b>world</b> units, cached until growth.
         /// </summary>
         float _cachedHalfWidestWorld = -1f;
+        float _cachedHalfHeightWorld;
 
         /// <summary>
         /// Ship-local XZ center of the hull footprint (y ignored). Plate anchors from this point
@@ -358,6 +354,7 @@ namespace TitanOrbit.Game
 
             // Force a fresh snug clearance with the world-unit conversion fix.
             _cachedHalfWidestWorld = -1f;
+            _cachedHalfHeightWorld = 0f;
             _cachedGrowthSignature = float.NaN;
             _hullRenderers = null;
 
@@ -380,8 +377,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// World position screen-below the hull footprint center by half the widest <b>world</b>
-        /// dimension. Clearance is frozen until ability-upgrade growth changes the signature.
+        /// World position above the hull geometric center. Height follows measured half-height
+        /// so MEGAs and tiny fighters both sit the plate just over the mesh.
         /// </summary>
         void RefreshAnchorPose()
         {
@@ -390,15 +387,14 @@ namespace TitanOrbit.Game
 
             RefreshCachedHullFootprintIfGrown();
 
-            float clearance = Mathf.Clamp(
-                Mathf.Max(0.1f, _cachedHalfWidestWorld) * ClearanceScale + PaddingPastHull,
-                0.1f,
-                MaxClearanceWorld);
+            float lift = Mathf.Clamp(
+                Mathf.Max(0.12f, _cachedHalfHeightWorld) + PaddingAboveHull,
+                0.2f,
+                MaxHeightWorld);
 
-            // Anchor from geometric hull center (not raw pivot) so yaw keeps the plate under the ship.
             Vector3 centerWorld = transform.TransformPoint(_cachedLocalCenter);
-            Vector3 worldPos = centerWorld + ScreenBelowWorld * clearance;
-            worldPos.y = centerWorld.y + HeightAbovePlane;
+            Vector3 worldPos = centerWorld;
+            worldPos.y = centerWorld.y + lift + HeightAbovePlane;
 
             // [TITAN-ORBIT] World rotation — plate stays upright while the hull turns.
             _labelRoot.SetPositionAndRotation(worldPos, Quaternion.Euler(-90f, 0f, 0f));
@@ -421,7 +417,7 @@ namespace TitanOrbit.Game
             if (growthChanged)
                 _hullRenderers = null;
 
-            MeasureHullFootprint(out _cachedLocalCenter, out _cachedHalfWidestWorld);
+            MeasureHullFootprint(out _cachedLocalCenter, out _cachedHalfWidestWorld, out _cachedHalfHeightWorld);
             _cachedGrowthSignature = growthSig;
         }
 
@@ -459,18 +455,21 @@ namespace TitanOrbit.Game
         /// ship proxies use <c>ShipPresentationScale</c> (~0.155), so local units are ~6× world.
         /// Using local as world was throwing the plate to the bottom of the screen.
         /// </summary>
-        void MeasureHullFootprint(out Vector3 localCenter, out float halfWidestWorld)
+        void MeasureHullFootprint(out Vector3 localCenter, out float halfWidestWorld, out float halfHeightWorld)
         {
             EnsureHullRendererCache();
 
             localCenter = Vector3.zero;
             halfWidestWorld = FallbackHullExtentWorld;
+            halfHeightWorld = FallbackHullExtentWorld;
 
             if (_hullRenderers == null)
                 return;
 
             float minX = float.PositiveInfinity;
             float maxX = float.NegativeInfinity;
+            float minY = float.PositiveInfinity;
+            float maxY = float.NegativeInfinity;
             float minZ = float.PositiveInfinity;
             float maxZ = float.NegativeInfinity;
             bool any = false;
@@ -495,6 +494,8 @@ namespace TitanOrbit.Game
                     Vector3 shipLocal = transform.InverseTransformPoint(world);
                     if (shipLocal.x < minX) minX = shipLocal.x;
                     if (shipLocal.x > maxX) maxX = shipLocal.x;
+                    if (shipLocal.y < minY) minY = shipLocal.y;
+                    if (shipLocal.y > maxY) maxY = shipLocal.y;
                     if (shipLocal.z < minZ) minZ = shipLocal.z;
                     if (shipLocal.z > maxZ) maxZ = shipLocal.z;
                     any = true;
@@ -504,15 +505,19 @@ namespace TitanOrbit.Game
             if (!any)
                 return;
 
-            localCenter = new Vector3((minX + maxX) * 0.5f, 0f, (minZ + maxZ) * 0.5f);
+            localCenter = new Vector3((minX + maxX) * 0.5f, (minY + maxY) * 0.5f, (minZ + maxZ) * 0.5f);
             float localW = maxX - minX;
+            float localH = maxY - minY;
             float localD = maxZ - minZ;
 
             // Local → world (accounts for ShipPresentationScale on the proxy root).
             float worldW = transform.TransformVector(new Vector3(localW, 0f, 0f)).magnitude;
+            float worldH = transform.TransformVector(new Vector3(0f, localH, 0f)).magnitude;
             float worldD = transform.TransformVector(new Vector3(0f, 0f, localD)).magnitude;
             halfWidestWorld = 0.5f * Mathf.Max(worldW, worldD);
-            halfWidestWorld = Mathf.Clamp(halfWidestWorld, 0.12f, MaxClearanceWorld);
+            halfHeightWorld = 0.5f * Mathf.Max(worldH, 0.2f);
+            halfWidestWorld = Mathf.Max(0.12f, halfWidestWorld);
+            halfHeightWorld = Mathf.Clamp(halfHeightWorld, 0.12f, MaxHeightWorld);
         }
 
         /// <summary>Caches child renderers once (invalidated on chassis / root-scale rebuild).</summary>

@@ -407,6 +407,10 @@ namespace TitanOrbit.ECS
             if (name.IndexOf("Weapon", System.StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
 
+            // [TITAN-ORBIT] MEGA StarSparrow hulls use TurretBarrel / MissileLauncher, not Weapon_*.
+            if (MegaShipPartClassifier.IsWeaponMountTransform(t))
+                return true;
+
             string id = name;
             int underscore = name.IndexOf('_');
             if (underscore > 0 && underscore < name.Length - 1)

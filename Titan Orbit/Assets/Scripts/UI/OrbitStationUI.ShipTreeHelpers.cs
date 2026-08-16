@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
+using TitanOrbit.ECS;
 using TitanOrbit.Entities;
+using TitanOrbit.Game;
 using TitanOrbit.Systems;
 using UnityEngine;
 using UnityEngine.UI;
@@ -234,9 +236,28 @@ namespace TitanOrbit.UI
             int storePlanetLevel = Mathf.Max(1, storePlanet.PlanetLevel);
 
             bool isCurrent = view.Level == currentLevel && view.BranchIndex == currentBranch;
-            bool tierBlockedByHome = view.Level > homeLevel;
-            bool tierBlockedByStore = view.Level > storePlanetLevel;
-            bool tierBlocked = tierBlockedByHome || tierBlockedByStore;
+            bool megaOccupied = false;
+            bool megaUnlockBlocked = false;
+            bool megaUnarmed = false;
+            if (view.Level == 7)
+            {
+                if (EcsGameBridge.TryGetPlanetMegaSlot(storePlanet.PlanetId, view.BranchIndex, out ushort megaIndex, out int occupiedBy))
+                {
+                    if (occupiedBy != 0)
+                        megaOccupied = true;
+                    var mega = MegaShipCatalog.Load();
+                    if (mega != null && !mega.IsEligibleForMatch(megaIndex))
+                        megaUnarmed = true;
+                }
+                if (!EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(storePlanet.PlanetId, out var moon)
+                    || !MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
+                        storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                    megaUnlockBlocked = true;
+            }
+
+            bool tierBlockedByHome = view.Level < 7 && view.Level > homeLevel;
+            bool tierBlockedByStore = view.Level < 7 && view.Level > storePlanetLevel;
+            bool tierBlocked = tierBlockedByHome || tierBlockedByStore || megaUnlockBlocked;
             bool isNextChoice = false;
             if (view.Level == nextLevel)
             {
@@ -253,7 +274,8 @@ namespace TitanOrbit.UI
                 ? CardShopSystem.Instance.GetPurchaseGemCostForUpgradeSlot(
                     currentShip, storePlanet.PlanetId, nextLevel, view.BranchIndex)
                 : 0;
-            bool canPurchase = isNextChoice && canBuyAny && contributedGems >= nodeCost && !tierBlocked && canApplyPurchase;
+            bool canPurchase = isNextChoice && canBuyAny && contributedGems >= nodeCost && !tierBlocked
+                && canApplyPurchase && !megaOccupied && !megaUnarmed;
 
             string slotChassisId = CardShopSystem.Instance.GetChassisIdForUpgradeLadderSlot(
                 currentShip, storePlanet.PlanetId, currentLevel, currentBranch);
@@ -279,7 +301,13 @@ namespace TitanOrbit.UI
 
             view.SetShipName(GetShipDisplayName(view.Node, view.Level, view.BranchIndex));
 
-            if (canSwapHull)
+            if (megaOccupied)
+                view.SetPrice("IN SERVICE");
+            else if (megaUnarmed)
+                view.SetPrice("NO WEAPONS");
+            else if (megaUnlockBlocked)
+                view.SetPrice("MOON FULL");
+            else if (canSwapHull)
                 view.SetPrice("Free");
             else if (isCurrent && storePlanetLevelBlocksSwap)
                 view.SetPrice($"Planet Lv {currentLevel}+");
@@ -393,6 +421,8 @@ namespace TitanOrbit.UI
                 shipUpgradeTree.Hint.text = $"This planet must reach level {currentLevel} to swap your level {currentLevel} ship.";
             else if (upgradeBlockedByStoreLevel)
                 shipUpgradeTree.Hint.text = $"This planet must reach level {nextLevel} to purchase a level {nextLevel} ship.";
+            else if (nextLevel == 7)
+                shipUpgradeTree.Hint.text = "MEGA — planet level 6 and a full gem moon unlock these hulls. Each unique hull is in service on one ship at a time.";
             else if (nextLevel <= 7 && homeLevel < nextLevel)
                 shipUpgradeTree.Hint.text = $"Locked — raise home planet to level {nextLevel}.";
             else

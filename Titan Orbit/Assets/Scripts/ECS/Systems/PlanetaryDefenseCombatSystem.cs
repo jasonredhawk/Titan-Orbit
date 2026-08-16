@@ -334,7 +334,8 @@ namespace TitanOrbit.ECS
                 if (ShipMoonDockState.IsFullyLandedOnMoon(EntityManager, e))
                     continue;
 
-                float3 pos = EntityManager.GetComponentData<LocalTransform>(e).Position;
+                var shipXf = EntityManager.GetComponentData<LocalTransform>(e);
+                float3 pos = MegaShipCombatAim.GetAimPoint(EntityManager, e, shipXf);
                 pos.y = PlanetaryDefenseMath.FixedY;
 
                 float3 fromMuzzle = ToroidalMapEcs.ShortestOffsetXZ(muzzle, pos, mapW, mapH);

@@ -78,6 +78,7 @@ namespace TitanOrbit.ECS
         /// <param name="minSpeed">Floor after subtractive MaxSpeed tax.</param>
         /// <param name="minAccel">Floor after subtractive accel tax.</param>
         /// <param name="minTurn">Floor after subtractive turn tax.</param>
+        /// <param name="skipMassTax">True for MEGA hulls — keep chassis speed / accel / turn.</param>
         public static void Step(
             in ShipInput input,
             in ShipMotorConfig motor,
@@ -104,7 +105,8 @@ namespace TitanOrbit.ECS
             float turnWeightPerMass,
             float minSpeed,
             float minAccel,
-            float minTurn)
+            float minTurn,
+            bool skipMassTax = false)
         {
             // --- Guard: fixed-step dt only ---
             if (dt <= 0f)
@@ -165,24 +167,39 @@ namespace TitanOrbit.ECS
             float componentSize = motor.HullMassReference > 0f
                 ? motor.HullMassReference
                 : math.max(ShipMassLogic.MinMass, baseMass * ShipMassLogic.HullMassScale);
-            float totalMass = ShipMobilityResolution.ComputeTotalMassBurst(
-                shipState.CurrentGems,
-                shipState.CurrentPeople,
-                componentSize,
-                massPerGem,
-                massPerPerson,
-                massPerComponentSize);
-            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxBurst(
-                motor.MaxSpeed,
-                motor.EngineThrust,
-                motor.RotationSpeed,
-                totalMass,
-                speedWeightPerMass,
-                accelWeightPerMass,
-                turnWeightPerMass,
-                minSpeed,
-                minAccel,
-                minTurn);
+            ShipMobilityResolution.TaxedMotorStats taxed;
+            if (skipMassTax)
+            {
+                taxed = new ShipMobilityResolution.TaxedMotorStats
+                {
+                    MaxSpeed = motor.MaxSpeed,
+                    EngineThrust = motor.EngineThrust,
+                    RotationSpeed = motor.RotationSpeed,
+                    TotalMass = 0f,
+                };
+            }
+            else
+            {
+                float totalMass = ShipMobilityResolution.ComputeTotalMassBurst(
+                    shipState.CurrentGems,
+                    shipState.CurrentPeople,
+                    componentSize,
+                    massPerGem,
+                    massPerPerson,
+                    massPerComponentSize);
+                taxed = ShipMobilityResolution.ApplyMassTaxBurst(
+                    motor.MaxSpeed,
+                    motor.EngineThrust,
+                    motor.RotationSpeed,
+                    totalMass,
+                    speedWeightPerMass,
+                    accelWeightPerMass,
+                    turnWeightPerMass,
+                    minSpeed,
+                    minAccel,
+                    minTurn);
+            }
+
             float rotationSpeed = taxed.RotationSpeed;
 
             // --- Yaw: dt-capped slerp toward aim (never snap to mouse in one frame) ---

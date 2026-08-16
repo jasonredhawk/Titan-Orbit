@@ -309,10 +309,24 @@ namespace TitanOrbit.UI
                 return false;
             if (!TryGetUpgradeHudSnapshot(out var ship, out _))
                 return false;
-            return !ship.IsDead
-                && !ship.AwaitingTeamSelection
-                && ship.Team != TeamId.None
-                && !HUDController.ShipUpgradeTreeObscuresHud;
+            if (ship.IsDead || ship.AwaitingTeamSelection || ship.Team == TeamId.None)
+                return false;
+            if (HUDController.ShipUpgradeTreeObscuresHud)
+                return false;
+
+            return true;
+        }
+
+        /// <summary>True when the local hull is a MEGA (stats visible, purchases blocked).</summary>
+        static bool IsLocalShipMega()
+        {
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return false;
+            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out var shipEntity))
+                return false;
+            return world.EntityManager.HasComponent<MegaShipState>(shipEntity)
+                   && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega;
         }
 
         private bool ShouldShowUpgradeBar() =>
@@ -1306,6 +1320,7 @@ namespace TitanOrbit.UI
                 OverdriveCapacityMult = odCap,
                 ComponentSize = hasComponentSize ? componentSize : 0f,
                 FirePowerAbilityLevel = attrs.FirePower,
+                Motor = new ShipMotorConfig { SkipMassTax = IsLocalShipMega() ? (byte)1 : (byte)0 },
             };
             BulletBankHudCopy.ApplyLoadout(ref live);
 
@@ -1367,13 +1382,14 @@ namespace TitanOrbit.UI
                 // so IsChipLiveContextReady keeps retrying (MS would look like chassis / no drag).
                 if (hasComponentSize)
                 {
-                    ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+                    ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
                         live.ChassisMaxSpeed,
                         live.ChassisAccel,
                         live.ChassisTurnDeg,
                         ship.CurrentGems,
                         ship.CurrentPeople,
-                        componentSize);
+                        componentSize,
+                        skipMassTax: IsLocalShipMega());
                     live.TotalMass = taxed.TotalMass;
                     live.CruiseMaxSpeed = taxed.MaxSpeed;
                     live.TaxedAccel = taxed.EngineThrust;
@@ -1751,8 +1767,11 @@ namespace TitanOrbit.UI
                 int current = ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, i);
 
                 // --- Slot state: Ready (buyable) / Locked (broke) / Maxed (cap) ---
-                UpgradeSlotVisualState slotState = ResolveUpgradeSlotState(
-                    current, maxUpgrades, ship.CurrentGems, cost);
+                // MEGAs show the strip for stats but cannot purchase Extra Levels.
+                bool mega = IsLocalShipMega();
+                UpgradeSlotVisualState slotState = mega
+                    ? UpgradeSlotVisualState.Maxed
+                    : ResolveUpgradeSlotState(current, maxUpgrades, ship.CurrentGems, cost);
                 UpdateTickMarks(i, current, maxUpgrades, slotState);
 
                 if (costLabels[i] == null)
@@ -1760,7 +1779,12 @@ namespace TitanOrbit.UI
 
                 string costText;
                 bool showGemIcon;
-                if (slotState == UpgradeSlotVisualState.Maxed)
+                if (mega)
+                {
+                    costText = "—";
+                    showGemIcon = false;
+                }
+                else if (slotState == UpgradeSlotVisualState.Maxed)
                 {
                     // At cap — hide the gem; "MAX" is enough.
                     costText = "MAX";
@@ -1919,7 +1943,7 @@ namespace TitanOrbit.UI
         private void TryUpgrade(int index)
         {
             // --- Attempt resolution ---
-            if (!CanShowUpgradeBar())
+            if (!CanShowUpgradeBar() || IsLocalShipMega())
                 return;
             if (index < 0 || index > 9)
                 return;

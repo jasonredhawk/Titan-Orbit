@@ -269,6 +269,18 @@ namespace TitanOrbit.Data
                 }
 
                 if (!enable)
+                {
+                    // MEGA StarSparrow names (Thruster, Engine) are not family-prefixed.
+                    string megaType = MegaShipPartClassifier.ResolvePartType(t.name);
+                    if (ShipFamilyPartTypes.IsThrusterProfile(megaType)
+                        || ShipFamilyPartTypes.IsEngineProfile(megaType))
+                    {
+                        enable = true;
+                        scale = 1f;
+                    }
+                }
+
+                if (!enable)
                     continue;
 
                 stats.thrusterVfxTransforms.Add(t);

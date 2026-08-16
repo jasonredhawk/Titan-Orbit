@@ -2650,6 +2650,61 @@ namespace TitanOrbit.Game
             return TryFindPlanetState(ClientWorld, planetId, out state);
         }
 
+        /// <summary>
+        /// MEGA L7 slot on a planet (catalog index + occupancy). Used by the Orbit Menu tree.
+        /// Skips during late-join settle so we do not scan planet buffers while ghosts hydrate.
+        /// </summary>
+        public static bool TryGetPlanetMegaSlot(
+            int planetId,
+            int branchIndex,
+            out ushort catalogIndex,
+            out int occupiedByNetworkId)
+        {
+            catalogIndex = 0;
+            occupiedByNetworkId = 0;
+            if (planetId <= 0 || branchIndex < 0 || branchIndex >= MegaShipPlanetLogic.SlotCount)
+                return false;
+            if (ClientJoinSettleCache.ShouldSkipMapBodyQueries)
+                return false;
+
+            if (IsLocalHost() && TryFindPlanetMegaSlot(ServerWorld, planetId, branchIndex, out catalogIndex, out occupiedByNetworkId))
+                return true;
+            return TryFindPlanetMegaSlot(ClientWorld, planetId, branchIndex, out catalogIndex, out occupiedByNetworkId);
+        }
+
+        static bool TryFindPlanetMegaSlot(
+            World world,
+            int planetId,
+            int branchIndex,
+            out ushort catalogIndex,
+            out int occupiedByNetworkId)
+        {
+            catalogIndex = 0;
+            occupiedByNetworkId = 0;
+            if (world == null || !world.IsCreated)
+                return false;
+
+            var em = world.EntityManager;
+            using var query = em.CreateEntityQuery(typeof(PlanetTag), typeof(PlanetState));
+            using var entities = query.ToEntityArray(Allocator.Temp);
+            using var states = query.ToComponentDataArray<PlanetState>(Allocator.Temp);
+            for (int i = 0; i < entities.Length; i++)
+            {
+                if (states[i].PlanetId != planetId)
+                    continue;
+                if (!em.HasBuffer<PlanetMegaShipSlotElement>(entities[i]))
+                    return false;
+                var buffer = em.GetBuffer<PlanetMegaShipSlotElement>(entities[i]);
+                if (branchIndex >= buffer.Length)
+                    return false;
+                catalogIndex = buffer[branchIndex].CatalogIndex;
+                occupiedByNetworkId = buffer[branchIndex].OccupiedByNetworkId;
+                return true;
+            }
+
+            return false;
+        }
+
         /// <summary>Gem-moon combat state for a planet — shield, orbit zone, contributed gems UI.</summary>
         public static bool TryGetPlanetGemMoonStateByPlanetId(int planetId, out PlanetGemMoonState moonState)
         {

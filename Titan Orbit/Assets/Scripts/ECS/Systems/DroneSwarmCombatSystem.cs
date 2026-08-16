@@ -168,7 +168,8 @@ namespace TitanOrbit.ECS
                 if (shipState.IsDead || shipState.AwaitingTeamSelection)
                     continue;
                 // [TITAN-ORBIT] Hull stowed in a defense pad — drones are out of play with the ship.
-                if (PlanetaryDefenseTurretControlLogic.IsControllingTurret(EntityManager, entity))
+                if (PlanetaryDefenseTurretControlLogic.IsControllingTurret(EntityManager, entity)
+                    || MegaShipGunnerLogic.IsControllingMegaGun(EntityManager, entity))
                     continue;
                 if (!EntityManager.HasBuffer<EquippedEquipmentElement>(entity))
                     continue;

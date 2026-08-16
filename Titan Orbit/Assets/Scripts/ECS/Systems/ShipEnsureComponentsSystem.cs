@@ -129,6 +129,21 @@ namespace TitanOrbit.ECS
                 ecb.AddComponent(entity, new ShipTurretControlState());
 
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<MegaShipState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new MegaShipState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipMegaGunControlState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipMegaGunControlState());
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<MegaShipGunnerSlotElement>()
+                         .WithEntityAccess())
+                ecb.AddBuffer<MegaShipGunnerSlotElement>(entity);
+
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<ShipDepositIntent>()
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipDepositIntent());

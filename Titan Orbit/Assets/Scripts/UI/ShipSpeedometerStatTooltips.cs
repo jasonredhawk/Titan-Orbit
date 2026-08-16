@@ -503,6 +503,13 @@ namespace TitanOrbit.UI
             bool includeAccel)
         {
             ShipStatTooltipChrome.AppendSectionBanner(sb, "MASS TAX", "C9A0FF");
+            if (live.Motor.SkipMassTax != 0)
+            {
+                sb.AppendLine("<color=#AAEEDD>MEGA hulls ignore mass tax.</color>");
+                sb.Append("Cruise  ").Append(FResult(live.ChassisMaxSpeed)).AppendLine();
+                sb.Append("Accel  ").Append(FResult(live.ChassisAccel)).AppendLine();
+                return;
+            }
 
             ShipCargoMobilitySettings settings = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             float mGem = settings != null ? settings.massPerGem : 0.01f;

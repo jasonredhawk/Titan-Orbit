@@ -609,6 +609,11 @@ namespace TitanOrbit.ECS
             mapState.AsteroidCount = asteroidCount;
             em.SetComponentData(_mapEntity, mapState);
 
+            // --- MEGA L7 roll (any three catalog hulls per planet, without replacement) ---
+            // [TITAN-ORBIT] Uses the same map-seed RNG as family assignment so clients can
+            // reconstruct the same trio from ghosted PlanetMegaShipSlotElement buffers.
+            MegaShipMatchRoll.AssignAllPlanets(em, ref _rng);
+
             int claimCount = _claimQueue.IsCreated ? _claimQueue.Length : 0;
             UnityEngine.Debug.Log(
                 $"[MapGeneration] Map generated. Size: {_rolled.MapWidth:F0}x{_rolled.MapHeight:F0}, " +

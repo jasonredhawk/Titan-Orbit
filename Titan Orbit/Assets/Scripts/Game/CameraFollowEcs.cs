@@ -1,6 +1,9 @@
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
 using TitanOrbit.Shared;
+using Unity.Entities;
+using Unity.Mathematics;
+using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -36,6 +39,12 @@ namespace TitanOrbit.Game
             "automatically when ShipFamilyConfigIndex changes.")]
         [FormerlySerializedAs("settings")]
         [SerializeField] CameraFollowSettings defaultSettings;
+
+        /// <summary>Gameplay follow camera — used by bullet tracers to stay readable at MEGA height.</summary>
+        public static CameraFollowEcs Instance { get; private set; }
+
+        /// <summary>Last MEGA hull-top Y in display space (0 when the local ship is not a MEGA).</summary>
+        public float MegaHullTopDisplayY { get; private set; }
 
         /// <summary>
         /// Runtime-active profile (family override or <see cref="defaultSettings"/>).
@@ -137,6 +146,15 @@ namespace TitanOrbit.Game
         /// </summary>
         int _lastKnownShipLevel = 1;
 
+        /// <summary>Cached MEGA follow offset (collider center minus pivot) on XZ.</summary>
+        Vector3 _megaFollowOffset;
+
+        /// <summary>Cached MEGA view radius including catalog padding.</summary>
+        float _megaViewRadius;
+
+        /// <summary>True when the local ship is a MEGA and hull framing is valid.</summary>
+        bool _hasMegaView;
+
         /// <summary>
         /// Code defaults matching <see cref="CameraFollowSettings"/> field defaults.
         /// Created once; never written to disk.
@@ -177,6 +195,7 @@ namespace TitanOrbit.Game
         void Awake()
         {
             cam = GetComponent<UnityEngine.Camera>();
+            Instance = this;
 
             // --- Seed runtime profile from the Inspector fallback until a local ship family resolves ---
             if (_activeSettings == null)
@@ -186,6 +205,12 @@ namespace TitanOrbit.Game
 
             // [TITAN-ORBIT] Top-down: pitch 90° so +Y is "out of the screen," XZ is the play plane.
             transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+        }
+
+        void OnDisable()
+        {
+            if (Instance == this)
+                Instance = null;
         }
 
 #if UNITY_EDITOR
@@ -242,6 +267,8 @@ namespace TitanOrbit.Game
             var profile = Settings;
             profile.ClampValues();
 
+            RefreshMegaHullFraming(ref shipPos, isMoonDockOverride);
+
             // --- Seed SmoothDamp state on first lock ---
             // Without this, the first frame would ease from (0,0,0) and the camera would fly in from origin.
             if (!_initialized)
@@ -260,6 +287,7 @@ namespace TitanOrbit.Game
             // Default: ship-level curve from the active family profile.
             // Turret possession: raise height so the pad's engage/bullet radius fits the viewport
             // (never zoom in closer than the normal ship framing).
+            // MEGA: raise just enough to fit the collider box, then cap so tracers stay readable.
             float targetHeight = profile.ComputeTargetHeight(ResolveShipLevel());
             if (Shared.PlanetaryDefenseTurretClientState.IsControlling &&
                 Shared.PlanetaryDefenseTurretClientState.DesiredViewRadiusWorld > 0.01f)
@@ -268,6 +296,13 @@ namespace TitanOrbit.Game
                     Shared.PlanetaryDefenseTurretClientState.DesiredViewRadiusWorld,
                     profile.gameplayFieldOfView);
                 targetHeight = Mathf.Max(targetHeight, turretHeight);
+            }
+            else if (_hasMegaView && _megaViewRadius > 0.01f)
+            {
+                float megaHeight = ComputeHeightForViewRadius(_megaViewRadius, profile.gameplayFieldOfView);
+                var megaCatalog = MegaShipCatalog.Load();
+                float cap = megaCatalog != null ? megaCatalog.GetCameraMaxHeight() : MegaShipCatalog.DefaultCameraMaxHeight;
+                targetHeight = Mathf.Min(cap, Mathf.Max(targetHeight, megaHeight));
             }
 
             _currentHeight = Mathf.SmoothDamp(
@@ -345,6 +380,17 @@ namespace TitanOrbit.Game
                     desired = family.cameraFollowSettings;
             }
 
+            var world = EcsGameBridge.ClientWorld;
+            if (world != null && world.IsCreated
+                && EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out var shipEntity)
+                && world.EntityManager.HasComponent<MegaShipState>(shipEntity)
+                && world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega)
+            {
+                var megaCatalog = MegaShipCatalog.Load();
+                if (megaCatalog != null && megaCatalog.cameraFollowSettings != null)
+                    desired = megaCatalog.cameraFollowSettings;
+            }
+
             // --- Skip if we already applied this family index + same profile instance ---
             if (familyIndex == _syncedFamilyConfigIndex && ReferenceEquals(desired, _syncedProfile))
                 return;
@@ -396,6 +442,74 @@ namespace TitanOrbit.Game
             }
 
             return Vector3.zero;
+        }
+
+        /// <summary>
+        /// Centers the follow target on the MEGA collider box and caches view radius / hull-top Y
+        /// so tracers can ride above the mesh. Skips new ship queries during join settle.
+        /// </summary>
+        void RefreshMegaHullFraming(ref Vector3 shipPos, bool isMoonDockOverride)
+        {
+            MegaHullTopDisplayY = 0f;
+            if (isMoonDockOverride)
+            {
+                _hasMegaView = false;
+                return;
+            }
+
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+            {
+                if (_hasMegaView)
+                {
+                    shipPos += _megaFollowOffset;
+                    MegaHullTopDisplayY = shipPos.y + _megaViewRadius * 0.35f;
+                }
+                return;
+            }
+
+            _hasMegaView = false;
+            _megaFollowOffset = Vector3.zero;
+            _megaViewRadius = 0f;
+
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated)
+                return;
+            if (!EcsGameBridge.TryGetLocalShipEntityOnWorld(world, out var shipEntity))
+                return;
+
+            var em = world.EntityManager;
+            if (!em.HasComponent<MegaShipState>(shipEntity)
+                || !em.GetComponentData<MegaShipState>(shipEntity).IsMega
+                || !em.HasComponent<LocalTransform>(shipEntity))
+                return;
+
+            var xf = em.GetComponentData<LocalTransform>(shipEntity);
+            if (!MegaShipCombatAim.TryGetHullView(em, shipEntity, xf, out float3 center, out float radius, out float hullTopY))
+                return;
+
+            var catalog = MegaShipCatalog.Load();
+            float padding = catalog != null
+                ? catalog.GetCameraHullViewPadding()
+                : MegaShipCatalog.DefaultCameraHullViewPadding;
+
+            Vector3 displayCenter = shipPos;
+            if (ShipDisplayPose.HasLocalPose)
+            {
+                Vector3 localOff = (Vector3)(center - xf.Position);
+                displayCenter = ShipDisplayPose.LocalPosition + ShipDisplayPose.LocalRotation * localOff;
+                displayCenter.y = shipPos.y;
+            }
+            else
+            {
+                displayCenter = new Vector3(center.x, shipPos.y, center.z);
+            }
+
+            _megaFollowOffset = displayCenter - shipPos;
+            _megaFollowOffset.y = 0f;
+            _megaViewRadius = radius + padding;
+            _hasMegaView = true;
+            MegaHullTopDisplayY = hullTopY;
+            shipPos += _megaFollowOffset;
         }
 
         /// <summary>

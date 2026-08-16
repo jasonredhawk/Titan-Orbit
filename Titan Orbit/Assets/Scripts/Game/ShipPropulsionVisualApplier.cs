@@ -92,6 +92,7 @@ namespace TitanOrbit.Game
         ShipFamilyDefinition _family;
         Settings _settings;
         bool _initialized;
+        float _megaVfxScale = 1f;
 
         readonly List<GameObject> _engineVfxInstances = new List<GameObject>();
         readonly List<GameObject> _thrusterVfxInstances = new List<GameObject>();
@@ -194,7 +195,24 @@ namespace TitanOrbit.Game
                 settings.thrusterJetFlameBank = new List<ThrusterVfxColorPrefab>();
 
             _settings = settings;
+            _megaVfxScale = ResolveMegaVfxScale(shipEntity);
             RebuildVfx();
+        }
+
+        /// <summary>MEGA hulls shrink with globalScale — boost jet local scale so flames stay visible.</summary>
+        static float ResolveMegaVfxScale(Entity shipEntity)
+        {
+            var world = EcsGameBridge.ClientWorld;
+            if (world == null || !world.IsCreated || !world.EntityManager.Exists(shipEntity))
+                return 1f;
+            if (ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return 1f;
+            if (!world.EntityManager.HasComponent<MegaShipState>(shipEntity)
+                || !world.EntityManager.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                return 1f;
+
+            var catalog = MegaShipCatalog.Load();
+            return catalog != null ? catalog.GetThrusterVfxScale() : MegaShipCatalog.DefaultThrusterVfxScale;
         }
 
         void OnDestroy() => ClearVfxInstances();
@@ -236,7 +254,11 @@ namespace TitanOrbit.Game
             // [TITAN-ORBIT] thrusterVfxTransforms = enablePropulsionVfx only
             // (Thrusters_Big / Tiny_Thrusters yes; Thruster_Place / Cover no).
             // thrusterTransforms is the attribute-scale group (includes covers) — not used for particles.
-            var stats = ChassisComponentStats.FromTransform(transform, _familyPrefix, _family);
+            bool mega = _megaVfxScale > 1.01f;
+            var stats = ChassisComponentStats.FromTransform(
+                transform,
+                mega ? string.Empty : _familyPrefix,
+                mega ? null : _family);
 
             // --- Engine mounts (main rear jets on AstroEagle-style hulls) ---
             if (_settings.engineVfxPrefab != null)
@@ -249,7 +271,7 @@ namespace TitanOrbit.Game
                     GameObject go = Instantiate(_settings.engineVfxPrefab, t);
                     go.transform.localPosition = Vector3.zero;
                     go.transform.localRotation = Quaternion.identity;
-                    go.transform.localScale = Vector3.one;
+                    go.transform.localScale = Vector3.one * _megaVfxScale;
                     // [HYBRID] URP material fixups so Sci-Fi Arsenal particles render in player builds.
                     VfxUrpCompat.PrepareVfxInstance(go);
                     _engineVfxInstances.Add(go);
@@ -276,7 +298,7 @@ namespace TitanOrbit.Game
                     GameObject go = Instantiate(prefab, t);
                     go.transform.localPosition = _settings.thrusterVfxLocalOffset;
                     go.transform.localRotation = Quaternion.Euler(_settings.thrusterVfxLocalEuler);
-                    go.transform.localScale = Vector3.one * (Mathf.Clamp01(_settings.thrusterVfxIdleScale) * mountScale);
+                    go.transform.localScale = Vector3.one * (Mathf.Clamp01(_settings.thrusterVfxIdleScale) * mountScale * _megaVfxScale);
                     VfxUrpCompat.PrepareVfxInstance(go);
                     _thrusterVfxInstances.Add(go);
                     _thrusterMountScales.Add(mountScale);
@@ -495,7 +517,7 @@ namespace TitanOrbit.Game
                 // [TITAN-ORBIT] Per-mount scale from ProfileSet (Big / Tiny) × idle→thrust blend.
                 // OVERDRIVE size comes from parent thruster mount AttributeScale — not here.
                 float mountScale = i < _thrusterMountScales.Count ? _thrusterMountScales[i] : 1f;
-                float finalScale = scaleLerp * Mathf.Max(0.01f, mountScale);
+                float finalScale = scaleLerp * Mathf.Max(0.01f, mountScale) * _megaVfxScale;
                 go.transform.localScale = Vector3.one * finalScale;
                 bool visible = finalScale > 0.0005f;
                 if (go.activeSelf != visible)

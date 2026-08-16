@@ -52,6 +52,12 @@ namespace TitanOrbit
             SelfHarmRocketsAndMines && now >= placeTime + SelfHarmArmDelaySeconds;
 
         /// <summary>
+        /// When true, unoccupied MEGA mounts auto-aim and fire on living asteroids (damage mode
+        /// only). Local Editor / MPPM host only; dedicated server stays false.
+        /// </summary>
+        public static bool MegaShipsAutoFireAsteroids;
+
+        /// <summary>
         /// When true, asteroid-destroy paths log millisecond timings (local gem burst, urgent gem
         /// proxies). Use this to find hitch frames — Console filter: <c>[AsteroidDestroy]</c>.
         /// </summary>

@@ -69,6 +69,13 @@ namespace TitanOrbit.Game
                 if (config != null)
                     prefab = config.GetPrefabByChassisId(chassisId);
 
+                if (prefab == null && MegaShipCatalog.IsMegaChassisId(chassisId))
+                {
+                    var mega = MegaShipCatalog.Load();
+                    if (mega != null)
+                        prefab = mega.GetPrefabByChassisId(chassisId);
+                }
+
                 if (ShipStatApplyLogic.TryResolveFamilyForChassisId(chassisId, out ShipFamilyDefinition resolvedFamily)
                     && resolvedFamily != null)
                 {

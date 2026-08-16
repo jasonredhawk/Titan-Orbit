@@ -193,17 +193,18 @@ namespace TitanOrbit.ECS
             int branchIndex)
         {
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return false;
 
             // Catalog entry OR tier prefab is enough — wings can live-bake from the prefab alone.
             bool hasCatalog = catalog.TryGetEntry(chassisId, out _);
-            bool hasPrefab = config.GetTierEntryForChassisId(chassisId)?.prefab != null;
+            bool hasPrefab = ResolveChassisPrefab(config, chassisId) != null;
             if (!hasCatalog && !hasPrefab)
                 return false;
 
@@ -254,16 +255,16 @@ namespace TitanOrbit.ECS
                 return true;
 
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     ship.BranchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return false;
 
-            var tier = config.GetTierEntryForChassisId(chassisId);
-            GameObject chassisPrefab = tier != null ? tier.prefab : null;
+            GameObject chassisPrefab = ResolveChassisPrefab(config, chassisId);
             if (chassisPrefab == null)
                 return false;
 
@@ -290,12 +291,13 @@ namespace TitanOrbit.ECS
             in ShipState ship)
         {
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     ship.BranchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return;
 
             // Only refill when the applied chassis key still matches — otherwise Pass 1/2 owns it.
@@ -304,8 +306,7 @@ namespace TitanOrbit.ECS
                 return;
 
             catalog.TryGetEntry(chassisId, out var entry);
-            var tier = config.GetTierEntryForChassisId(chassisId);
-            GameObject chassisPrefab = tier != null ? tier.prefab : null;
+            GameObject chassisPrefab = ResolveChassisPrefab(config, chassisId);
             if (entry == null && chassisPrefab == null)
                 return;
 
@@ -337,6 +338,7 @@ namespace TitanOrbit.ECS
                 ApplyWeaponMounts(em, entity, entry, chassisPrefab);
                 ShipStatApplyLogic.TryApplyPerMountWeaponCombat(
                     em, entity, chassisId, ship.ShipLevel);
+                TryApplyMegaWeaponMountStats(em, entity);
             }
 
             if (wingsEmpty || wingsUndercounted)
@@ -355,26 +357,33 @@ namespace TitanOrbit.ECS
             int branchIndex)
         {
             if (!ShipStatApplyLogic.TryResolveChassisId(
+                    em,
+                    entity,
                     ship.Team,
                     ship.ShipLevel,
                     branchIndex,
                     out string chassisId,
-                    allowFallback: true,
-                    shipFamilyConfigIndex: ship.ShipFamilyConfigIndex))
+                    allowFallback: true))
                 return;
 
             catalog.TryGetEntry(chassisId, out var entry);
-            var tier = config.GetTierEntryForChassisId(chassisId);
-            GameObject chassisPrefab = tier != null ? tier.prefab : null;
+            GameObject chassisPrefab = ResolveChassisPrefab(config, chassisId);
 
             // [TITAN-ORBIT] Weapons: live prefab bake first so multi-cannon upgrade hulls fire from
             // every Weapon child. Stale catalog WeaponMounts often had 0–1 entries while the GO
             // showed 4 barrels — server then only simulated a single muzzle.
             ApplyWeaponMounts(em, entity, entry, chassisPrefab);
 
+            if (em.HasComponent<MegaShipState>(entity)
+                && em.GetComponentData<MegaShipState>(entity).IsMega)
+            {
+                MegaShipStatApplyLogic.ResizeGunnerSlots(em, entity);
+            }
+
             // [TITAN-ORBIT] Pose bake clears combat fields — refill per-barrel firePower / fireRate
             // from family Weapon stats × transform scale × ship level (same helper as ShipStatApply).
             ShipStatApplyLogic.TryApplyPerMountWeaponCombat(em, entity, chassisId, ship.ShipLevel);
+            TryApplyMegaWeaponMountStats(em, entity);
 
             // [TITAN-ORBIT] Wings: live prefab bake first so server pull radius matches the upgrade
             // hull the client draws beams from. Stale catalog lists caused “beam shows, no pull.”
@@ -398,8 +407,13 @@ namespace TitanOrbit.ECS
                 // [TITAN-ORBIT] Bake hierarchy with same attribute scale as proxy meshes so
                 // grown wings/engines collide at their visible size (not authored-only).
                 string familyPrefix = ResolveFamilyPrefix(chassisId);
-                ShipHullColliderLogic.TryApplyChassisCollider(
-                    em, entity, chassisPrefab, motorMass, attrs, familyPrefix);
+                bool isMega = em.HasComponent<MegaShipState>(entity)
+                    && em.GetComponentData<MegaShipState>(entity).IsMega;
+                if (isMega)
+                    ShipHullColliderLogic.TryApplyMegaBoundsCollider(em, entity, chassisPrefab, motorMass);
+                else
+                    ShipHullColliderLogic.TryApplyChassisCollider(
+                        em, entity, chassisPrefab, motorMass, attrs, familyPrefix);
             }
 
             var hullState = new ShipHullColliderState
@@ -428,9 +442,25 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Fills <see cref="ShipWeaponMountElement"/> from a live chassis prefab bake when possible,
-        /// else from the catalog entry list. Empty buffer = intentional unarmed.
+        /// MEGA barrels use catalog unique-component stats (including short <c>bulletRange</c>),
+        /// not the store-planet family's per-mount combat table.
         /// </summary>
+        static void TryApplyMegaWeaponMountStats(EntityManager em, Entity entity)
+        {
+            if (!em.HasComponent<MegaShipState>(entity))
+                return;
+
+            var mega = em.GetComponentData<MegaShipState>(entity);
+            if (!mega.IsMega)
+                return;
+
+            var catalog = MegaShipCatalog.Load();
+            if (catalog == null || !catalog.TryGetEntry(mega.CatalogIndex, out MegaShipCatalogEntry entry))
+                return;
+
+            MegaShipStatApplyLogic.ApplyCatalogWeaponMountStats(em, entity, catalog, entry);
+        }
+
         static void ApplyWeaponMounts(
             EntityManager em,
             Entity entity,
@@ -526,6 +556,23 @@ namespace TitanOrbit.ECS
 
             for (int i = 0; i < entry.WingTractorBeams.Count; i++)
                 buffer.Add(ToWingElement(entry.WingTractorBeams[i]));
+        }
+
+        /// <summary>Family ladder prefab, or MEGA catalog prefab for <c>MEGA_###</c> ids.</summary>
+        static GameObject ResolveChassisPrefab(PlanetShipFamilyConfig config, string chassisId)
+        {
+            var tier = config != null ? config.GetTierEntryForChassisId(chassisId) : null;
+            if (tier != null && tier.prefab != null)
+                return tier.prefab;
+
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+            {
+                var mega = MegaShipCatalog.Load();
+                if (mega != null)
+                    return mega.GetPrefabByChassisId(chassisId);
+            }
+
+            return null;
         }
 
         /// <summary>Maps bake DTO → runtime buffer element.</summary>

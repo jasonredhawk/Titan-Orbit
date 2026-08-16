@@ -1527,16 +1527,18 @@ namespace TitanOrbit.UI
             float chassisTurnDeg = ResolveChassisTurnDeg(motor, effectiveStats);
 
             // --- Live subtractive mass tax (same formula as ShipPhysicsDriveLogic) ---
+            // MEGAs skip cargo / hull-size tax so cruise matches catalog motor numbers.
             float componentSize = motor.HullMassReference > 0f
                 ? motor.HullMassReference
                 : ShipMassLogic.MinMass;
-            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
                 chassisMove,
                 chassisAccel,
                 chassisTurnDeg,
                 ship.CurrentGems,
                 ship.CurrentPeople,
-                componentSize);
+                componentSize,
+                skipMassTax: motor.SkipMassTax != 0);
             float cruiseMax = taxed.MaxSpeed;
             float maxFwd = taxed.EngineThrust;
 

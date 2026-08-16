@@ -8616,7 +8616,7 @@ MonoBehaviour:
   gemVisualPrefab: {fileID: 4800967330874723475, guid: dcd93530a1fb28e4b8d556c55645c7de, type: 3}
   peopleTransportVisualPrefab: {fileID: 947948255951072253, guid: 857d8f2269fb8df41aa955f4023c6362, type: 3}
   planetMaterialPool: {fileID: 11400000, guid: 2c144f1300271b94bb6f0dcbe286a441, type: 2}
-  bulletVfxBank: {fileID: 11400000, guid: 2a974d6fe4bb1904b8ce53e2e35cbb6b, type: 2}
+  bulletVfxBank: {fileID: 0}
   defaultBulletBankIndex: 0
   defaultBulletScaleMultiplier: 1
   propulsionVfxSettings:
@@ -8672,6 +8672,7 @@ MonoBehaviour:
   debugInfiniteRockets: 1
   debugInfiniteMines: 1
   debugSelfHarmRocketsAndMines: 1
+  debugMegaShipsAutoFireAsteroids: 1
   debugLogAsteroidDestroyPerf: 0
   debugEnableInstructionImageCapture: 0
   debugEnableStutterIsolator: 0
@@ -8692,7 +8693,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e65116757f48c404fa99203f9709071f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.ShipRammingSettingsLoader
-  settings: {fileID: 11400000, guid: 6977255f942ccc948bc2302dfed62bfe, type: 2}
+  settings: {fileID: 0}
 --- !u!114 &1418200285
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -8705,7 +8706,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4fe0b2ecb3b00554f81bfc23670c2b84, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.AsteroidSettingsLoader
-  settings: {fileID: 11400000, guid: 55f3d47787ee0f94093dff675c5b41a6, type: 2}
+  settings: {fileID: 0}
 --- !u!114 &1418200286
 MonoBehaviour:
   m_ObjectHideFlags: 0

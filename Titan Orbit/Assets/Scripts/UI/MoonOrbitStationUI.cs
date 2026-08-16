@@ -761,12 +761,38 @@ namespace TitanOrbit.UI
             int currentBranch = BranchIndex;
             int nextLevel = currentLevel + 1;
             bool isCurrent = view.Level == currentLevel && view.BranchIndex == currentBranch;
-            bool tierBlocked = view.Level > StorePlanetLevel || view.Level > HomePlanetLevel;
+            bool megaOccupied = false;
+            bool megaUnlockBlocked = false;
+            bool megaUnarmed = false;
+            if (view.Level == 7)
+            {
+                if (EcsGameBridge.TryGetPlanetMegaSlot(_storePlanetId, view.BranchIndex, out ushort megaIndex, out int occupiedBy))
+                {
+                    if (occupiedBy != 0)
+                        megaOccupied = true;
+                    var mega = MegaShipCatalog.Load();
+                    if (mega != null && !mega.IsEligibleForMatch(megaIndex))
+                        megaUnarmed = true;
+                }
+                if (!EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(_storePlanetId, out var moon)
+                    || !MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
+                        StorePlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                    megaUnlockBlocked = true;
+            }
+
+            bool tierBlocked = view.Level < 7 && (view.Level > StorePlanetLevel || view.Level > HomePlanetLevel)
+                || megaUnlockBlocked;
 
             UpgradeTree.GetNextLevelBranchTargets(currentLevel, currentBranch, _nextTargets);
             bool isNextChoice = view.Level == nextLevel && _nextTargets.Contains(view.BranchIndex);
-            float nodeCost = isNextChoice ? MoonOrbitStorePricing.GetShipUpgradeCost(nextLevel) : 0f;
-            bool canPurchase = isNextChoice && _contributedGems >= nodeCost && !tierBlocked;
+            float nodeCost = isNextChoice
+                ? (nextLevel == 7
+                    ? (MegaShipCatalog.Load() != null
+                        ? MegaShipCatalog.Load().GetPurchaseGemCost()
+                        : MoonOrbitStorePricing.GetShipUpgradeCost(7))
+                    : MoonOrbitStorePricing.GetShipUpgradeCost(nextLevel))
+                : 0f;
+            bool canPurchase = isNextChoice && _contributedGems >= nodeCost && !tierBlocked && !megaOccupied && !megaUnarmed;
 
             view.SetInteractable(canPurchase || isCurrent);
             view.SetButtonBackgroundColor(isCurrent
@@ -780,7 +806,13 @@ namespace TitanOrbit.UI
             view.SetShipName(GetShipDisplayNameForSlot(view.Level, view.BranchIndex, chassisId));
             view.SetPreview(GetMenuPreviewForChassis(chassisId));
 
-            if (isCurrent)
+            if (megaOccupied)
+                view.SetPrice("IN SERVICE");
+            else if (megaUnarmed)
+                view.SetPrice("NO WEAPONS");
+            else if (megaUnlockBlocked)
+                view.SetPrice("MOON FULL");
+            else if (isCurrent)
                 view.SetPrice("You");
             else if (tierBlocked)
                 view.SetPrice($"Planet Lv {view.Level}+");
@@ -885,6 +917,13 @@ namespace TitanOrbit.UI
         {
             if (!TryGetChassisIdForTreeSlot(level, branchIndex, out string chassisId))
                 return default;
+            if (MegaShipCatalog.IsMegaChassisId(chassisId)
+                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
+            {
+                var mega = MegaShipCatalog.Load();
+                return mega != null ? mega.GetPowerBreakdown(megaIndex) : default;
+            }
+
             var config = ShipStatApplyLogic.Config;
             return config != null
                 ? config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, level)
@@ -907,6 +946,20 @@ namespace TitanOrbit.UI
         bool TryGetChassisIdForTreeSlot(int level, int branchIndex, out string chassisId)
         {
             chassisId = null;
+            if (level == 7)
+            {
+                if (EcsGameBridge.TryGetPlanetMegaSlot(_storePlanetId, branchIndex, out ushort catalogIndex, out _))
+                {
+                    var mega = MegaShipCatalog.Load();
+                    if (mega != null && !mega.IsEligibleForMatch(catalogIndex))
+                        return false;
+                    chassisId = MegaShipCatalog.FormatChassisId(catalogIndex);
+                    return true;
+                }
+
+                return false;
+            }
+
             if (!EcsGameBridge.TryGetLocalShipState(out var ship) || ship.Team == TeamId.None)
             {
                 // Menu can open briefly before team is known — still resolve home family ladder.
@@ -945,6 +998,14 @@ namespace TitanOrbit.UI
         /// </summary>
         string GetShipDisplayNameForSlot(int level, int branchIndex, string chassisId)
         {
+            if (MegaShipCatalog.IsMegaChassisId(chassisId)
+                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
+            {
+                var mega = MegaShipCatalog.Load();
+                if (mega != null)
+                    return mega.GetDisplayName(megaIndex);
+            }
+
             var config = ShipStatApplyLogic.Config;
             if (config != null && !string.IsNullOrEmpty(chassisId))
             {
@@ -965,16 +1026,27 @@ namespace TitanOrbit.UI
                 : chassisId;
         }
 
-        /// <summary>Menu thumbnail for the chassis, or null when the slot has no family entry.</summary>
+        /// <summary>Menu thumbnail for the chassis, or null when the slot has no family/MEGA entry.</summary>
         Sprite GetMenuPreviewForChassis(string chassisId)
         {
-            var config = ShipStatApplyLogic.Config;
-            if (config == null || string.IsNullOrEmpty(chassisId))
+            if (string.IsNullOrEmpty(chassisId))
                 return null;
 
             TeamManager.Team team = TeamManager.Team.None;
             if (EcsGameBridge.TryGetLocalShipState(out var ship))
                 team = (TeamManager.Team)(int)ship.Team;
+
+            if (MegaShipCatalog.IsMegaChassisId(chassisId)
+                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
+            {
+                MegaShipCatalog mega = MegaShipCatalog.Load();
+                if (mega != null)
+                    return mega.GetMenuPreviewSprite(megaIndex, team);
+            }
+
+            var config = ShipStatApplyLogic.Config;
+            if (config == null)
+                return null;
 
             return config.GetMenuPreviewSpriteForChassisId(chassisId, team);
         }

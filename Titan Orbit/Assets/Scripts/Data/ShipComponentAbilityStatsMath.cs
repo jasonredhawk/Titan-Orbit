@@ -330,7 +330,9 @@ namespace TitanOrbit.Data
             if (ContainsIsolatedKeyword(id, "weapon")
                 || ContainsIsolatedKeyword(id, "gun")
                 || ContainsIsolatedKeyword(id, "cannon")
-                || ContainsIsolatedKeyword(id, "missile"))
+                || ContainsIsolatedKeyword(id, "missile")
+                || ContainsIsolatedKeyword(id, "turret")
+                || ContainsIsolatedKeyword(id, "launcher"))
                 return true;
             string partType = ShipComponentAbilityStats.ResolvePartTypeForSuggestedStats(componentId);
             return ShipFamilyPartTypes.IsWeapon(partType);

@@ -372,7 +372,7 @@ namespace TitanOrbit.Game
                 if ((displayPos - prevDisplay).sqrMagnitude > 40f * 40f)
                     ResetTrail(t.Go);
 
-                displayPos.y = mountY;
+                displayPos.y = LiftTracerDisplayY(mountY);
                 t.Go.transform.position = displayPos;
                 if (math.lengthsq(displayVel) > 0.0001f)
                     t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)displayVel).normalized, Vector3.up);
@@ -1022,17 +1022,18 @@ namespace TitanOrbit.Game
             float mountY = req.SpawnPosition.y;
             if (!req.IsDisplaySpace && ToroidalDisplay.TryGetReferencePosition(out var reference))
                 spawnDisplay = ToroidalDisplay.ToDisplayPosition(req.SpawnPosition, reference);
-            // Keep weapon-mount height (display unwrap is XZ-only).
-            spawnDisplay.y = mountY;
+            // Keep weapon-mount height (display unwrap is XZ-only), then lift above a MEGA hull.
+            spawnDisplay.y = LiftTracerDisplayY(mountY);
 
             // --- Muzzle flash at fire origin ---
+            float cameraScale = ResolveMegaCameraVisualScale();
             BulletVisualFactory.PlayMuzzleVfx(
                 spawnDisplay,
                 req.Velocity,
                 _bank,
                 bankIndex,
                 team,
-                scaleMul,
+                scaleMul * cameraScale,
                 bulletSpeed);
             AudioManager.Instance?.PlayWeaponShootSound(
                 BulletVisualFactory.GetProjectileSoundPitchBySpeed(bulletSpeed));
@@ -1062,7 +1063,8 @@ namespace TitanOrbit.Game
             GameObject visual = go.transform.childCount > 0
                 ? go.transform.GetChild(0).gameObject
                 : go;
-            float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex);
+            float visualScale = BulletVisualFactory.GetBulletVisualScale(_bank, scaleMul, bankIndex)
+                                * cameraScale;
             BulletVisualFactory.ApplyColorToVisual(visual, BulletVisualFactory.GetTeamBulletColor(team));
             VfxUrpCompat.ApplyImpactVisualScale(go, visualScale);
             VfxUrpCompat.PrepareVfxInstance(go);
@@ -1142,6 +1144,32 @@ namespace TitanOrbit.Game
         /// </summary>
         /// <param name="lifetimeSeconds">Authoritative Lifetime from the spawn request / RPC.</param>
         /// <returns>Seconds for RemainingLifetime, or <see cref="float.PositiveInfinity"/> when unused.</returns>
+        /// <summary>
+        /// MEGA hulls sit on the play plane and hide Y=0 tracers. Lift cosmetics just above
+        /// the local MEGA box when the follow camera has a hull-top sample.
+        /// </summary>
+        static float LiftTracerDisplayY(float logicalY)
+        {
+            var follow = CameraFollowEcs.Instance;
+            if (follow == null || follow.MegaHullTopDisplayY <= 0.01f)
+                return logicalY;
+            return math.max(logicalY, follow.MegaHullTopDisplayY + 1.25f);
+        }
+
+        /// <summary>
+        /// Grow tracers with MEGA camera height so they stay readable when the lens pulls back.
+        /// Regular L7 height (~43) stays near 1×; taller MEGA framing scales up to 4×.
+        /// </summary>
+        static float ResolveMegaCameraVisualScale()
+        {
+            var follow = CameraFollowEcs.Instance;
+            if (follow == null || follow.MegaHullTopDisplayY <= 0.01f)
+                return 1f;
+            float height = follow.CurrentHeight;
+            const float referenceHeight = 25f;
+            return math.clamp(height / referenceHeight, 1f, 4f);
+        }
+
         static float ResolveTracerLifetime(float lifetimeSeconds)
         {
             // [TITAN-ORBIT] Mirror BulletSimulationSystem: Lifetime <= 0 skips the age timer.

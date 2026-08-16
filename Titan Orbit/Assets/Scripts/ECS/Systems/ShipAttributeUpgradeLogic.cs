@@ -157,6 +157,11 @@ namespace TitanOrbit.ECS
             if (ship.IsDead || ship.AwaitingTeamSelection || ship.Team == TeamId.None)
                 return false;
 
+            // [TITAN-ORBIT] MEGA hulls are static — no bottom-bar attribute upgrades.
+            if (em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+                return false;
+
             EnsureComponent(em, shipEntity);
             var attrs = em.GetComponentData<ShipAttributeUpgradeState>(shipEntity);
 

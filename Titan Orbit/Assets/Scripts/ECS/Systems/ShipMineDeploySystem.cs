@@ -59,6 +59,9 @@ namespace TitanOrbit.ECS
                 if (SystemAPI.HasComponent<ShipTurretControlState>(entity) &&
                     SystemAPI.GetComponentRO<ShipTurretControlState>(entity).ValueRO.IsControlling)
                     continue;
+                if (SystemAPI.HasComponent<ShipMegaGunControlState>(entity) &&
+                    SystemAPI.GetComponentRO<ShipMegaGunControlState>(entity).ValueRO.IsControlling)
+                    continue;
                 if (SystemAPI.HasComponent<ShipOrbitState>(entity) &&
                     SystemAPI.GetComponentRO<ShipOrbitState>(entity).ValueRO.InOrbitRing)
                     continue;

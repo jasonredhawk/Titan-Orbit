@@ -65,6 +65,13 @@ namespace TitanOrbit.ECS
                 orbitState.ValueRW.InOrbitRing = false;
                 orbitState.ValueRW.UsingOrbitMotor = false;
 
+                // --- MEGA death: unique hull returns to the store; owner respawns in previous L6 ---
+                if (state.EntityManager.HasComponent<MegaShipState>(entity)
+                    && state.EntityManager.GetComponentData<MegaShipState>(entity).IsMega)
+                {
+                    MegaShipStatApplyLogic.RestorePreviousHull(state.EntityManager, entity);
+                }
+
                 // [TITAN-ORBIT] Schedule respawn — ShipRespawnSystem removes this component later.
                 ecb.AddComponent(entity, new ShipDeathState
                 {

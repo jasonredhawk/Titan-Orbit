@@ -153,6 +153,12 @@ namespace TitanOrbit.ECS
         /// <see cref="ThrustEnergyDrainPerSecond"/>. Legacy mul path left for ghost/bake safety.
         /// </summary>
         public float OverdriveEnergyDrainMultiplier;
+
+        /// <summary>
+        /// 1 = MEGA hull: skip cargo / ComponentSize mass tax on speed, accel, and turn.
+        /// Not ghosted — written by chassis apply on server and client.
+        /// </summary>
+        public byte SkipMassTax;
     }
 
     /// <summary>

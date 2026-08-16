@@ -145,6 +145,38 @@ namespace TitanOrbit.ECS
     }
 
     /// <summary>
+    /// [NETCODE] Friendly requests Take Control of one MEGA gun mount.
+    /// Server validates range / team / lock / occupancy via <c>MegaShipGunnerLogic</c>.
+    /// Exit is RMB thrust (same as planetary turrets) — not an RPC.
+    /// </summary>
+    public struct EnterMegaGunCommand : IRpcCommand
+    {
+        /// <summary>GhostOwner.NetworkId of the MEGA owner (identifies the hull).</summary>
+        public int MegaOwnerNetworkId;
+
+        /// <summary>0-based weapon mount index on that MEGA.</summary>
+        public byte MountIndex;
+    }
+
+    /// <summary>
+    /// [NETCODE] MEGA owner kicks a gunner. MountIndex 255 = kick everyone.
+    /// </summary>
+    public struct KickMegaGunnerCommand : IRpcCommand
+    {
+        /// <summary>Mount to free, or 255 for all pads.</summary>
+        public byte MountIndex;
+    }
+
+    /// <summary>
+    /// [NETCODE] MEGA owner locks or unlocks all gun pads. Auto-fire still runs while locked.
+    /// </summary>
+    public struct SetMegaGunsLockedCommand : IRpcCommand
+    {
+        /// <summary>True = no friendlies may Take Control.</summary>
+        public bool Locked;
+    }
+
+    /// <summary>
     /// [NETCODE] Client purchases a ship upgrade at an orbit station store. Server validates gems,
     /// level prerequisites, and branch availability.
     /// </summary>

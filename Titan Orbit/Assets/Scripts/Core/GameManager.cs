@@ -80,6 +80,10 @@ namespace TitanOrbit.Core
         [Tooltip("After 2 seconds, your own rockets and mines treat you (and your team) as an enemy so you can test hits and blasts on yourself. Local Editor / MPPM host only.")]
         [SerializeField] bool debugSelfHarmRocketsAndMines;
 
+        [Header("Debug — MEGA Ships")]
+        [Tooltip("When enabled, unoccupied MEGA guns auto-aim and fire on asteroids (damage mode). Heal mode is unchanged. Local Editor / MPPM host only.")]
+        [SerializeField] bool debugMegaShipsAutoFireAsteroids;
+
         [Header("Debug — Asteroid Destroy Hitch")]
         [Tooltip("Logs [AsteroidDestroy] timings in the Console when an asteroid explodes (local gem Instantiates + urgent gem proxies). Filter the Console with that tag.")]
         [SerializeField] bool debugLogAsteroidDestroyPerf;
@@ -208,6 +212,7 @@ namespace TitanOrbit.Core
                 TitanOrbitDebugFlags.InfiniteRockets = false;
                 TitanOrbitDebugFlags.InfiniteMines = false;
                 TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
+                TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = false;
                 TitanOrbitDebugFlags.LogAsteroidDestroyPerf = false;
                 TitanOrbitDebugFlags.InstructionImageCaptureEnabled = false;
                 TitanOrbitDebugFlags.StutterIsolatorEnabled = false;
@@ -229,10 +234,12 @@ namespace TitanOrbit.Core
             TitanOrbitDebugFlags.InfiniteRockets = false;
             TitanOrbitDebugFlags.InfiniteMines = false;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = false;
+            TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = false;
 #else
             TitanOrbitDebugFlags.InfiniteRockets = debugInfiniteRockets;
             TitanOrbitDebugFlags.InfiniteMines = debugInfiniteMines;
             TitanOrbitDebugFlags.SelfHarmRocketsAndMines = debugSelfHarmRocketsAndMines;
+            TitanOrbitDebugFlags.MegaShipsAutoFireAsteroids = debugMegaShipsAutoFireAsteroids;
 #endif
             TitanOrbitDebugFlags.LogAsteroidDestroyPerf = debugLogAsteroidDestroyPerf;
             // [TITAN-ORBIT] Instruction capture stays OFF unless you flip this for art rebuilds —

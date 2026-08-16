@@ -155,6 +155,11 @@ namespace TitanOrbit.ECS
                 DecrementTeamCount(ref teamState.ValueRW, shipState.Team);
             }
 
+            // [TITAN-ORBIT] Abandoned MEGA returns to the planet store immediately.
+            MegaShipPlanetLogic.FreeSlotsOccupiedBy(em, networkId);
+            if (em.HasComponent<MegaShipState>(ship) && em.GetComponentData<MegaShipState>(ship).IsMega)
+                MegaShipGunnerLogic.EjectAllGunners(em, ship);
+
             ecb.DestroyEntity(ship);
             ClearCommandTarget(em, ecb, connection);
             SendResult(ecb, connection, success: true, choice: 2, team: TeamId.None, default);

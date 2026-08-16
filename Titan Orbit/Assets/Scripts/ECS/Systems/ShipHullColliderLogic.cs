@@ -112,6 +112,91 @@ namespace TitanOrbit.ECS
             return true;
         }
 
+        /// <summary>
+        /// MEGA hulls have dozens of StarSparrow mesh colliders — a full compound tanks physics.
+        /// One axis-aligned box from combined renderer bounds is enough for ramming / blocking.
+        /// </summary>
+        public static bool TryApplyMegaBoundsCollider(
+            EntityManager em,
+            Entity shipEntity,
+            GameObject chassisPrefab,
+            float motorMass)
+        {
+            if (chassisPrefab == null || !em.Exists(shipEntity))
+                return false;
+
+            float presentationScale = BodyCollisionMath.ShipPresentationScale;
+            if (!TryBuildMegaBoundsCollider(chassisPrefab, presentationScale, out var box))
+                return false;
+
+            ReplacePhysicsCollider(em, shipEntity, box, motorMass);
+            return true;
+        }
+
+        static bool TryBuildMegaBoundsCollider(
+            GameObject chassisPrefab,
+            float presentationScale,
+            out BlobAssetReference<PhysicsColliderBlob> box)
+        {
+            box = default;
+            var renderers = chassisPrefab.GetComponentsInChildren<Renderer>(true);
+            if (renderers == null || renderers.Length == 0)
+                return false;
+
+            var root = chassisPrefab.transform;
+            bool has = false;
+            Vector3 min = Vector3.zero;
+            Vector3 max = Vector3.zero;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var renderer = renderers[i];
+                if (renderer == null || renderer is ParticleSystemRenderer)
+                    continue;
+
+                Bounds rb = renderer.localBounds;
+                Vector3 e = rb.extents;
+                Vector3 c = rb.center;
+                for (int cx = -1; cx <= 1; cx += 2)
+                for (int cy = -1; cy <= 1; cy += 2)
+                for (int cz = -1; cz <= 1; cz += 2)
+                {
+                    Vector3 corner = renderer.transform.TransformPoint(
+                        c + new Vector3(e.x * cx, e.y * cy, e.z * cz));
+                    Vector3 local = root.InverseTransformPoint(corner);
+                    if (!has)
+                    {
+                        min = max = local;
+                        has = true;
+                    }
+                    else
+                    {
+                        min = Vector3.Min(min, local);
+                        max = Vector3.Max(max, local);
+                    }
+                }
+            }
+
+            if (!has)
+                return false;
+
+            Vector3 localCenter = (min + max) * (0.5f * presentationScale);
+            Vector3 localSize = (max - min) * presentationScale;
+            localSize.x = Mathf.Max(0.15f, localSize.x);
+            localSize.y = Mathf.Max(0.15f, localSize.y);
+            localSize.z = Mathf.Max(0.15f, localSize.z);
+
+            box = Unity.Physics.BoxCollider.Create(
+                new BoxGeometry
+                {
+                    Center = (float3)localCenter,
+                    Size = (float3)localSize,
+                    Orientation = quaternion.identity,
+                },
+                TitanOrbitPhysicsLayers.Ship,
+                HullMaterial);
+            return box.IsCreated;
+        }
+
         static Material CreateHullMaterial()
         {
             // [PHYSICS] CollideRaiseCollisionEvents — ship↔asteroid / ship↔ship contacts stream

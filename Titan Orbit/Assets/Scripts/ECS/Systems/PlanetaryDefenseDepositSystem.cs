@@ -87,8 +87,9 @@ namespace TitanOrbit.ECS
                     continue;
 
                 // --- Skip ships currently piloting a defense turret ---
-                if (em.HasComponent<ShipTurretControlState>(shipEntity) &&
+                if ((em.HasComponent<ShipTurretControlState>(shipEntity) &&
                     em.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
+                    || MegaShipGunnerLogic.IsControllingMegaGun(em, shipEntity))
                 {
                     _beatTimers[shipEntity.Index] = 0f;
                     _stillTimers[shipEntity.Index] = 0f;

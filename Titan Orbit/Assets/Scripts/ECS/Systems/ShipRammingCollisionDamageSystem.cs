@@ -130,6 +130,8 @@ namespace TitanOrbit.ECS
                 if (state.EntityManager.HasComponent<ShipTurretControlState>(shipEntity) &&
                     state.EntityManager.GetComponentData<ShipTurretControlState>(shipEntity).IsControlling)
                     continue;
+                if (MegaShipGunnerLogic.IsControllingMegaGun(state.EntityManager, shipEntity))
+                    continue;
 
                 if (IsMoonDockImmune(ref state, shipEntity))
                     continue;
@@ -497,14 +499,15 @@ namespace TitanOrbit.ECS
                 ? motor.HullMassReference
                 : math.max(ShipMassLogic.MinMass, baseMass * ShipMassLogic.HullMassScale);
 
-            // [TITAN-ORBIT] ApplyMassTaxFromCargo reads ShipCargoMobilitySettingsCache — same asset as drive.
-            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ApplyMassTaxFromCargo(
+            // [TITAN-ORBIT] Same live tax as drive / speedometer. MEGAs skip mobility tax.
+            ShipMobilityResolution.TaxedMotorStats taxed = ShipMobilityResolution.ResolveLiveMotorStats(
                 motor.MaxSpeed,
                 motor.EngineThrust,
                 motor.RotationSpeed,
                 ship.CurrentGems,
                 ship.CurrentPeople,
-                componentSize);
+                componentSize,
+                skipMassTax: motor.SkipMassTax != 0);
             totalMass = taxed.TotalMass;
             taxedAccel = taxed.EngineThrust;
         }

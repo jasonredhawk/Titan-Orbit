@@ -97,6 +97,18 @@ namespace TitanOrbit.Systems
         public string GetChassisIdForUpgradeLadderSlot(Starship ship, int storePlanetId, int level, int branchIndex)
         {
             // --- Compute value ---
+            if (level == 7)
+            {
+                if (EcsGameBridge.TryGetPlanetMegaSlot(storePlanetId, branchIndex, out ushort catalogIndex, out _))
+                {
+                    var mega = MegaShipCatalog.Load();
+                    if (mega != null && !mega.IsEligibleForMatch(catalogIndex))
+                        return null;
+                    return MegaShipCatalog.FormatChassisId(catalogIndex);
+                }
+                return null;
+            }
+
             if (Config == null || ship == null)
                 return null;
 
@@ -151,21 +163,53 @@ namespace TitanOrbit.Systems
 
         public Sprite GetMenuPreviewSpriteForChassisId(string chassisId, TeamManager.Team team = TeamManager.Team.None)
         {
+            if (MegaShipCatalog.IsMegaChassisId(chassisId)
+                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
+            {
+                var mega = MegaShipCatalog.Load();
+                if (mega != null)
+                    return mega.GetMenuPreviewSprite(megaIndex, team);
+            }
+
             return Config != null ? Config.GetMenuPreviewSpriteForChassisId(chassisId, team) : null;
         }
 
         public string GetUpgradeTreeShipNameForChassisId(string chassisId)
         {
+            if (MegaShipCatalog.IsMegaChassisId(chassisId)
+                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
+            {
+                var mega = MegaShipCatalog.Load();
+                if (mega != null)
+                    return mega.GetDisplayName(megaIndex);
+            }
+
             return Config != null ? Config.GetUpgradeTreeShipNameForChassisId(chassisId) : null;
         }
 
         public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisId(string chassisId)
         {
+            if (MegaShipCatalog.IsMegaChassisId(chassisId)
+                && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex))
+            {
+                var mega = MegaShipCatalog.Load();
+                if (mega != null)
+                    return mega.GetPowerBreakdown(megaIndex);
+            }
+
             return Config != null ? Config.GetPowerScoreBreakdownForChassisId(chassisId) : default;
         }
 
         public int GetPurchaseGemCostForChassisId(string chassisId, int shipLevel)
         {
+            if (MegaShipCatalog.IsMegaChassisId(chassisId) || shipLevel >= 7)
+            {
+                var mega = MegaShipCatalog.Load();
+                return mega != null
+                    ? Mathf.RoundToInt(mega.GetPurchaseGemCost())
+                    : Mathf.RoundToInt(MegaShipCatalog.DefaultPurchaseGemCost);
+            }
+
             return Config != null ? Config.GetPurchaseGemCostForChassisId(chassisId, shipLevel) : 0;
         }
 
@@ -194,6 +238,9 @@ namespace TitanOrbit.Systems
         public ShipFamilyPowerScoreBreakdown GetPowerScoreBreakdownForChassisIdAtShipLevel(
             string chassisId, int shipLevel)
         {
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+                return GetPowerScoreBreakdownForChassisId(chassisId);
+
             return Config != null
                 ? Config.GetPowerScoreBreakdownForChassisIdAtShipLevel(chassisId, shipLevel)
                 : default;
@@ -235,15 +282,23 @@ namespace TitanOrbit.Systems
 
             int homeLevel = homePlanet.HomePlanetLevel;
             nextLevel = ship.ShipLevel + 1;
-            if (nextLevel > homeLevel)
+            if (nextLevel < 7 && nextLevel > homeLevel)
                 return false;
+            if (nextLevel == 7)
+            {
+                if (!EcsGameBridge.TryGetPlanetGemMoonStateByPlanetId(storePlanet.PlanetId, out var moon)
+                    || !MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
+                        storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                    return false;
+            }
 
             bool isHome = storePlanet is HomePlanet hp && hp.AssignedTeam == ship.ShipTeam;
             bool isCaptured = !isHome && storePlanet.TeamOwnership == ship.ShipTeam;
             if (!isHome && !isCaptured)
                 return false;
 
-            if (nextLevel > storePlanet.PlanetLevel)
+            // Planets cap at level 6; L7 MEGAs use the moon-full gate above, not planet level 7.
+            if (nextLevel < 7 && nextLevel > storePlanet.PlanetLevel)
                 return false;
 
             int storePlanetId = storePlanet.PlanetId;

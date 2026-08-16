@@ -78,6 +78,9 @@ namespace TitanOrbit.Game
             if (name.IndexOf("Weapon", System.StringComparison.OrdinalIgnoreCase) >= 0)
                 return true;
 
+            if (MegaShipPartClassifier.IsWeaponMountTransform(t))
+                return true;
+
             // Strip common "FamilyId_" prefix for IsWeaponComponent (ShipFamilyStatsCalculator style).
             string id = name;
             int underscore = name.IndexOf('_');

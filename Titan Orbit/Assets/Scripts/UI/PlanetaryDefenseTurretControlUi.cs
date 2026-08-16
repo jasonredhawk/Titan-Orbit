@@ -142,6 +142,35 @@ namespace TitanOrbit.UI
                 }
             }
 
+            if (em.HasComponent<ShipMegaGunControlState>(shipEntity))
+            {
+                var megaGun = em.GetComponentData<ShipMegaGunControlState>(shipEntity);
+                if (megaGun.IsControlling
+                    && MegaShipGunnerLogic.TryFindMegaByOwnerNetworkId(
+                        em, megaGun.MegaOwnerNetworkId, out Entity mega)
+                    && em.HasComponent<LocalTransform>(mega)
+                    && em.HasBuffer<ShipWeaponMountElement>(mega)
+                    && megaGun.MountIndex < em.GetBuffer<ShipWeaponMountElement>(mega).Length)
+                {
+                    var megaXf = em.GetComponentData<LocalTransform>(mega);
+                    var mounts = em.GetBuffer<ShipWeaponMountElement>(mega);
+                    float3 pad = MegaShipGunnerLogic.GetMountWorldPosition(megaXf, mounts[megaGun.MountIndex]);
+                    Vector3 padPos = new Vector3(pad.x, pad.y, pad.z);
+                    float viewRadius = 48f;
+                    if (em.HasComponent<ShipWeaponConfig>(mega))
+                    {
+                        float range = em.GetComponentData<ShipWeaponConfig>(mega).BulletMaxDistance;
+                        if (range > 1f)
+                            viewRadius = range + 8f;
+                    }
+
+                    PlanetaryDefenseTurretClientState.SetControlling(true, padPos, true, viewRadius);
+                    PlanetaryDefenseTurretClientState.SetEligibility(false, 0, 0, 0f, padPos, true);
+                    HideButton();
+                    return;
+                }
+            }
+
             PlanetaryDefenseTurretClientState.SetControlling(false, Vector3.zero, false, 0f);
 
             float3 shipPos = em.GetComponentData<LocalTransform>(shipEntity).Position;

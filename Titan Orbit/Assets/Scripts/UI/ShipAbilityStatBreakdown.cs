@@ -974,6 +974,14 @@ namespace TitanOrbit.UI
         /// <summary>Static mass-tax drag on turn (from the last chip/tip snapshot).</summary>
         static void AppendTurnMassTax(StringBuilder sb, in ShipSpeedometerStatTooltips.LiveContext live)
         {
+            if (live.Motor.SkipMassTax != 0)
+            {
+                ShipStatTooltipChrome.AppendSectionBanner(sb, "MASS TAX", HexMass);
+                AppendTint(sb, HexMass, "MEGA hulls ignore mass tax.");
+                sb.AppendLine();
+                return;
+            }
+
             ShipCargoMobilitySettings settings = ShipCargoMobilitySettingsCache.ResolveOrDefault();
             if (settings == null)
                 return;

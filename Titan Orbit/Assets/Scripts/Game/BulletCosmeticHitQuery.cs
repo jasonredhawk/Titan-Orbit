@@ -268,8 +268,8 @@ namespace TitanOrbit.Game
                     if (em.HasComponent<PhysicsCollider>(entity))
                     {
                         var physicsCollider = em.GetComponentData<PhysicsCollider>(entity);
-                        shipRadius = ShipToroidalWorldCollisionLogic.GetShipCollisionRadiusWorld(
-                            physicsCollider, lt.Scale);
+                        shipRadius = MegaShipCombatAim.GetHitRadiusWorld(
+                            em, entity, physicsCollider, lt.Scale);
                     }
                     else
                     {
@@ -280,7 +280,7 @@ namespace TitanOrbit.Game
                     {
                         Kind = ObstacleKind.Ship,
                         SourceEntity = entity,
-                        LogicalCenter = lt.Position,
+                        LogicalCenter = MegaShipCombatAim.GetAimPoint(em, entity, lt),
                         Radius = shipRadius,
                         Scale = lt.Scale,
                         TeamOrOwnership = (byte)ship.Team,

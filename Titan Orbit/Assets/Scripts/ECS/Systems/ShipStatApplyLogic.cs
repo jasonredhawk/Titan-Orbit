@@ -151,6 +151,15 @@ namespace TitanOrbit.ECS
             if (em.Exists(shipEntity) && em.HasComponent<ShipState>(shipEntity))
                 familyIndex = em.GetComponentData<ShipState>(shipEntity).ShipFamilyConfigIndex;
 
+            if (em.Exists(shipEntity)
+                && em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+            {
+                chassisId = MegaShipCatalog.FormatChassisId(
+                    em.GetComponentData<MegaShipState>(shipEntity).CatalogIndex);
+                return true;
+            }
+
             return TryResolveChassisId(team, shipLevel, branchIndex, out chassisId, allowFallback, familyIndex);
         }
 
@@ -195,6 +204,20 @@ namespace TitanOrbit.ECS
         {
             baseStats = default;
             _ = shipLevel;
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+            {
+                var megaCatalog = MegaShipCatalog.Load();
+                if (megaCatalog != null
+                    && MegaShipCatalog.TryParseCatalogIndex(chassisId, out ushort megaIndex)
+                    && megaCatalog.TryGetEntry(megaIndex, out MegaShipCatalogEntry megaEntry)
+                    && megaEntry != null)
+                {
+                    return MegaShipStatsCalculator.SumFromEntry(megaEntry, megaCatalog, out baseStats);
+                }
+
+                return false;
+            }
+
             var config = Config;
             if (config == null || string.IsNullOrEmpty(chassisId))
                 return false;
@@ -277,6 +300,20 @@ namespace TitanOrbit.ECS
             int familyIndex = PlanetShipFamilyAssignment.HomeFamilyConfigIndex;
             if (em.Exists(shipEntity) && em.HasComponent<ShipState>(shipEntity))
                 familyIndex = em.GetComponentData<ShipState>(shipEntity).ShipFamilyConfigIndex;
+
+            // --- MEGA hulls use a frozen stat table (no Extra Level / attributes) ---
+            if (em.Exists(shipEntity)
+                && em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega)
+            {
+                MegaShipStatApplyLogic.ApplyToShip(
+                    em,
+                    shipEntity,
+                    em.GetComponentData<MegaShipState>(shipEntity),
+                    familyIndex,
+                    writeGhostedShipState);
+                return;
+            }
 
             if (!TryResolveChassisId(team, shipLevel, branchIndex, out string chassisId, allowFallback: true, familyIndex))
                 return;
@@ -527,6 +564,7 @@ namespace TitanOrbit.ECS
                 motor.OverdriveThrustMultiplier = odThrust;
                 // Absolute rate already baked into ThrustEnergyDrainPerSecond — mul stays 1.
                 motor.OverdriveEnergyDrainMultiplier = 1f;
+                motor.SkipMassTax = 0;
 
                 em.SetComponentData(shipEntity, motor);
             }

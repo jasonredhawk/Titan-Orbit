@@ -65,6 +65,19 @@ namespace TitanOrbit.ECS
         /// growth baseline so a fat gun looks larger than a peashooter at the same ship level.
         /// </summary>
         public float ReferenceFirePower;
+
+        /// <summary>
+        /// [TITAN-ORBIT] Acquire + travel range for this barrel (MEGA catalog component
+        /// <c>bulletRange</c>). Regular ships leave this 0 and use hull <c>ShipWeaponConfig</c>.
+        /// </summary>
+        public float BulletRange;
+
+        /// <summary>
+        /// [TITAN-ORBIT] MEGA turret traverse in degrees/sec. Regular ships leave this 0
+        /// (barrels stay at bake pose). Written by <c>MegaShipStatApplyLogic</c> from
+        /// <c>MegaShipPartStats.weaponRotationSpeed</c> after runtime defaults/minimums.
+        /// </summary>
+        public float WeaponRotationSpeed;
     }
 
     /// <summary>

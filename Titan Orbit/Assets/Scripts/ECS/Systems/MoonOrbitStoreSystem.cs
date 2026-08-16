@@ -363,7 +363,8 @@ namespace TitanOrbit.ECS
                     return false;
                 }
 
-                if (targetLevel > storePlanet.PlanetLevel)
+                // Planets cap at 6; L7 MEGAs use the moon-full gate below, not planet level 7.
+                if (targetLevel < 7 && targetLevel > storePlanet.PlanetLevel)
                 {
                     message = "Planet level too low.";
                     return false;
@@ -396,7 +397,55 @@ namespace TitanOrbit.ECS
             // spawn; buying here switches the ship onto that family's upgrade tree (not AstroEagle).
             byte storeFamilyIndex = ResolveStoreFamilyConfigIndex(storePlanet);
 
-            if (!ShipStatApplyLogic.TryResolveChassisId(
+            bool buyingMega = targetLevel == 7;
+            ushort megaCatalogIndex = 0;
+            if (buyingMega)
+            {
+                if (!TryFindPlanetById(em, storePlanetId, out var storePlanetEntity, out _))
+                {
+                    message = "Planet not found.";
+                    return false;
+                }
+
+                if (!debugFree)
+                {
+                    var moon = em.HasComponent<PlanetGemMoonState>(storePlanetEntity)
+                        ? em.GetComponentData<PlanetGemMoonState>(storePlanetEntity)
+                        : default;
+                    if (!MegaShipPlanetLogic.IsMegaPurchaseUnlocked(
+                            storePlanet.PlanetLevel, moon.CurrentMoonGems, moon.MaxMoonGems))
+                    {
+                        message = "MEGA locked — planet must be level 6 with a full gem moon.";
+                        return false;
+                    }
+                }
+
+                if (!MegaShipPlanetLogic.TryGetSlot(
+                        em, storePlanetEntity, targetBranchIndex, out var megaSlot))
+                {
+                    message = "No MEGA assigned to that slot.";
+                    return false;
+                }
+
+                if (megaSlot.OccupiedByNetworkId != 0 && megaSlot.OccupiedByNetworkId != networkId)
+                {
+                    message = "That MEGA is already in service.";
+                    return false;
+                }
+
+                megaCatalogIndex = megaSlot.CatalogIndex;
+
+                // --- Unarmed hulls stay in the catalog, never in a match ---
+                // [TITAN-ORBIT] Match roll already skips firepower-0, but a stale slot or
+                // debug click must not spend gems or spawn an unarmed MEGA.
+                var megaCatalog = MegaShipCatalog.Load();
+                if (megaCatalog == null || !megaCatalog.IsEligibleForMatch(megaCatalogIndex))
+                {
+                    message = "That MEGA has no weapons.";
+                    return false;
+                }
+            }
+            else if (!ShipStatApplyLogic.TryResolveChassisId(
                     ship.Team,
                     targetLevel,
                     targetBranchIndex,
@@ -410,11 +459,51 @@ namespace TitanOrbit.ECS
 
             if (!debugFree)
             {
-                float cost = MoonOrbitStorePricing.GetShipUpgradeCost(targetLevel);
+                float cost = buyingMega
+                    ? (MegaShipCatalog.Load() != null
+                        ? MegaShipCatalog.Load().GetPurchaseGemCost()
+                        : MoonOrbitStorePricing.GetShipUpgradeCost(7))
+                    : MoonOrbitStorePricing.GetShipUpgradeCost(targetLevel);
                 if (!ContributedGemsLogic.TrySpend(em, homeEntity, networkId, cost))
                 {
                     message = "Not enough contributed gems.";
                     return false;
+                }
+            }
+
+            if (buyingMega)
+            {
+                if (!MegaShipPlanetLogic.TryOccupySlot(em, storePlanetId, targetBranchIndex, networkId))
+                {
+                    message = "That MEGA is already in service.";
+                    return false;
+                }
+
+                byte prevFamily = ship.ShipFamilyConfigIndex;
+                int prevLevel = math.max(1, ship.ShipLevel);
+                int prevBranch = math.max(0, ship.BranchIndex);
+                if (em.HasComponent<MegaShipState>(shipEntity))
+                {
+                    var existingMega = em.GetComponentData<MegaShipState>(shipEntity);
+                    if (existingMega.IsMega)
+                    {
+                        prevFamily = existingMega.PreviousFamilyIndex;
+                        prevLevel = math.max(1, existingMega.PreviousLevel);
+                        prevBranch = math.max(0, existingMega.PreviousBranch);
+                        MegaShipPlanetLogic.FreeSlot(em, existingMega.StorePlanetId, existingMega.MegaSlotIndex);
+                    }
+
+                    em.SetComponentData(shipEntity, new MegaShipState
+                    {
+                        IsMega = true,
+                        CatalogIndex = megaCatalogIndex,
+                        StorePlanetId = storePlanetId,
+                        MegaSlotIndex = (byte)math.clamp(targetBranchIndex, 0, 2),
+                        PreviousFamilyIndex = prevFamily,
+                        PreviousLevel = prevLevel,
+                        PreviousBranch = prevBranch,
+                        GunsLocked = false,
+                    });
                 }
             }
 

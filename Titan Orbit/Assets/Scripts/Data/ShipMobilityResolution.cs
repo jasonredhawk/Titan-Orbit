@@ -144,6 +144,41 @@ namespace TitanOrbit.Data
         }
 
         /// <summary>
+        /// Live motor numbers for drive / HUD. MEGAs pass <paramref name="skipMassTax"/> and
+        /// keep chassis speed / accel / turn with totalMass 0.
+        /// </summary>
+        public static TaxedMotorStats ResolveLiveMotorStats(
+            float untaxedMaxSpeed,
+            float untaxedAccel,
+            float untaxedRotationSpeedDeg,
+            float gems,
+            float people,
+            float componentSize,
+            bool skipMassTax,
+            ShipCargoMobilitySettings settings = null)
+        {
+            if (skipMassTax)
+            {
+                return new TaxedMotorStats
+                {
+                    MaxSpeed = math.max(0f, untaxedMaxSpeed),
+                    EngineThrust = math.max(0f, untaxedAccel),
+                    RotationSpeed = math.max(0f, untaxedRotationSpeedDeg),
+                    TotalMass = 0f,
+                };
+            }
+
+            return ApplyMassTaxFromCargo(
+                untaxedMaxSpeed,
+                untaxedAccel,
+                untaxedRotationSpeedDeg,
+                gems,
+                people,
+                componentSize,
+                settings);
+        }
+
+        /// <summary>
         /// Convenience: compute totalMass then tax (managed / HUD).
         /// </summary>
         public static TaxedMotorStats ApplyMassTaxFromCargo(

@@ -68,9 +68,38 @@ namespace TitanOrbit.ECS.Editor
                 }
             }
 
+            baked += BakeMegaVisualEntries(catalog);
+
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();
             Debug.Log("[ShipChassisVisualCatalogBakeMenu] Baked " + baked + " chassis entries into ShipChassisVisualCatalog.");
+        }
+
+        /// <summary>Upserts MEGA_### visual entries from <see cref="MegaShipCatalog"/>.</summary>
+        static int BakeMegaVisualEntries(ShipChassisVisualCatalog catalog)
+        {
+            var mega = AssetDatabase.LoadAssetAtPath<MegaShipCatalog>("Assets/Resources/MegaShipCatalog.asset");
+            if (mega?.entries == null || catalog == null)
+                return 0;
+
+            int baked = 0;
+            for (int i = 0; i < mega.entries.Count; i++)
+            {
+                var entry = mega.entries[i];
+                if (entry == null || entry.prefab == null)
+                    continue;
+
+                string chassisId = MegaShipCatalog.FormatChassisId(i);
+                var visualEntry = ShipChassisPrefabBakeUtility.BakeVisualEntry(
+                    entry.prefab,
+                    chassisId,
+                    family: null,
+                    TeamId.TeamA);
+                catalog.UpsertEntry(visualEntry);
+                baked++;
+            }
+
+            return baked;
         }
 
         static void EnsurePresentationConfig()
