@@ -511,8 +511,14 @@ namespace TitanOrbit.Game
                 : FloatingCountChannel.PeopleUnload;
 
             TryGetNearbyPlanetAvoidance(in flight, worldPosition, out Vector3 avoidCenter, out float avoidRadius);
+            int planetId = flight.IsLoad != 0
+                ? flight.SourcePlanetId
+                : (flight.TargetPlanetId != 0 ? flight.TargetPlanetId : flight.SourcePlanetId);
+            int targetId = planetId != 0
+                ? WorldFloatingCountManager.TargetIdForPlanet(planetId)
+                : WorldFloatingCountManager.TargetIdForWorldPosition(worldPosition);
             WorldFloatingCountManager.Instance.ShowFloatingCountAtWorldPosition(
-                worldPosition, channel, signedAmount, team, avoidCenter, avoidRadius);
+                worldPosition, channel, signedAmount, team, avoidCenter, avoidRadius, targetId);
         }
 
         /// <summary>

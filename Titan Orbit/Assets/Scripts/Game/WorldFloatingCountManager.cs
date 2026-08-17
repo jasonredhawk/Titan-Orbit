@@ -1,75 +1,153 @@
+using System;
 using System.Collections.Generic;
+using TitanOrbit;
 using TitanOrbit.Core;
 using TitanOrbit.Simulation;
 using TMPro;
+using Unity.Entities;
 using UnityEngine;
 
 namespace TitanOrbit.Game
 {
     /// <summary>
-    /// [HYBRID] Client-side world floating +/- popups with per-channel visibility toggles.
-    /// Spawned by EcsFloatingCountPresenter on replicated state deltas. Singleton accessed via Instance.
-    /// Pools <see cref="FloatingCountPopup"/> GameObjects so deposit metronome / gem pickups do not
-    /// Allocate+Destroy a new GO every beat (Profiler Instantiates under floating counts).
+    /// Identity for one live floating-count streak: same target + channel + sign reuse one popup.
+    /// </summary>
+    public readonly struct FloatingCountKey : IEquatable<FloatingCountKey>
+    {
+        public readonly int TargetId;
+        public readonly FloatingCountChannel Channel;
+        public readonly int Sign;
+
+        public FloatingCountKey(int targetId, FloatingCountChannel channel, int sign)
+        {
+            TargetId = targetId;
+            Channel = channel;
+            Sign = sign >= 0 ? 1 : -1;
+        }
+
+        public bool Equals(FloatingCountKey other) =>
+            TargetId == other.TargetId && Channel == other.Channel && Sign == other.Sign;
+
+        public override bool Equals(object obj) => obj is FloatingCountKey other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = TargetId;
+                hash = (hash * 397) ^ (int)Channel;
+                hash = (hash * 397) ^ Sign;
+                return hash;
+            }
+        }
+    }
+
+    /// <summary>
+    /// [HYBRID] Client-side world floating +/- popups. Tunables and icons live on
+    /// <see cref="FloatingText"/>. One live popup per target+channel+sign; hits inside
+    /// a rolling streak window accumulate. Pools <see cref="FloatingCountPopup"/> GameObjects.
     /// </summary>
     public class WorldFloatingCountManager : MonoBehaviour
     {
         public static WorldFloatingCountManager Instance { get; private set; }
 
-        [Header("Floating Count Popups")]
-        [SerializeField] FloatingCountFeedbackSettings floatingCountFeedbackSettings;
-        [SerializeField] FloatingCountChannelVisibility floatingCountVisibility = new FloatingCountChannelVisibility();
-        [SerializeField] TMP_FontAsset floatingCountFont;
-        [SerializeField] Sprite floatingCountGemIcon;
-        [SerializeField] Sprite floatingCountDamageIcon;
-        [SerializeField] Sprite floatingCountHealthIcon;
-        [SerializeField] Sprite floatingCountPeopleIcon;
-        [SerializeField] Color floatingCountPeopleColor = new Color(1f, 0.9f, 0.25f, 1f);
+        const float ZoomScaleMin = 1f;
+        const float ZoomScaleMax = 3.5f;
+        const int TargetKindShip = unchecked((int)0x01000000);
+        const int TargetKindAsteroid = unchecked((int)0x0A000000);
+        const int TargetKindPlanet = unchecked((int)0x02000000);
+        const int TargetKindWorld = unchecked((int)0x04000000);
 
-        [SerializeField] float floatingCountDuration = 1.7f;
-        [SerializeField] float floatingCountRiseSpeed = 2.5f;
-        [SerializeField] float floatingCountFontSize = 10f;
-        [SerializeField] float floatingCountIconScale = 0.1f;
-        [SerializeField] Vector3 floatingCountIconLocalOffset = new Vector3(-0.35f, 0f, 0f);
-        [SerializeField] float floatingCountVerticalOffset = 3.5f;
-        [Header("Ship-Local Popups")]
-        [Tooltip("Font size for popups parented to the ship (toroidal / follow-ship mode).")]
-        [SerializeField] float shipFloatingFontSize = 32f;
-        [Tooltip("Base screen-up clearance on the XZ play plane, plus a hull-radius multiplier below.")]
-        [SerializeField] float shipFloatingVerticalOffset = 1.75f;
-        [SerializeField] float shipFloatingOffsetHullRadiusMultiplier = 6f;
-        [SerializeField] float shipFloatingOffsetMin = 2f;
-        [SerializeField] float shipFloatingOffsetMax = 5f;
-        [SerializeField] float shipFloatingIconScale = 0.3f;
-        [SerializeField] float shipFloatingStackLineSpacing = 1.25f;
-        [Tooltip("Optional tiny screen-plane jitter; keep near 0 to stay centered above the ship.")]
-        [SerializeField] float shipFloatingSpawnJitterRadius = 0.05f;
-        [SerializeField] float shipFloatingLateralDriftMax = 0f;
-        [Header("Floating Count Spread")]
-        [SerializeField] float floatingCountSpawnJitterRadius = 1.05f;
-        [SerializeField] float floatingCountSpawnRingStep = 0.32f;
-        [SerializeField] float floatingCountMaxSpreadRadius = 3.75f;
-        [SerializeField] int floatingCountSpiralPeriod = 40;
-        [SerializeField] float floatingCountLateralDriftMax = 0.55f;
-        [SerializeField] float floatingCountStackLineSpacing = 0.82f;
+        [Tooltip("Icons, colors, type toggles, layout, and streak timing. Defaults to Resources/FloatingText.")]
+        [SerializeField] FloatingText floatingText;
 
-        [SerializeField] Color floatingCountDamageFallbackColor = new Color(1f, 0.3f, 0.3f, 1f);
-        [SerializeField] Color floatingCountHealthPositiveColor = new Color(0.2f, 0.9f, 0.3f, 1f);
-        [SerializeField] Color floatingCountHealthNegativeColor = new Color(0.95f, 0.25f, 0.2f, 1f);
-        [SerializeField] Color floatingCountImpactForceColor = new Color(1f, 0.75f, 0.2f, 1f);
+        sealed class LiveSlot
+        {
+            public FloatingCountPopup Popup;
+            public float Accumulated;
+            public float StreakDeadline;
+            public bool Expired;
+            public FloatingCountChannel Channel;
+            public TeamId Team;
+            public Transform Anchor;
+            public Vector3 ParkWorld;
+        }
 
-        /// <summary>Inactive popups ready for reuse (deposit metronome / pickups).</summary>
         readonly Stack<FloatingCountPopup> _popupPool = new Stack<FloatingCountPopup>(16);
+        readonly Dictionary<FloatingCountKey, LiveSlot> _slots = new Dictionary<FloatingCountKey, LiveSlot>(32);
+        readonly Dictionary<FloatingCountPopup, FloatingCountKey> _keyByPopup =
+            new Dictionary<FloatingCountPopup, FloatingCountKey>(32);
+        readonly List<FloatingCountKey> _expireScratch = new List<FloatingCountKey>(8);
 
         Camera _cachedCamera;
+        FloatingText _runtimeFallback;
 
-        public FloatingCountChannelVisibility FloatingCountVisibility => floatingCountVisibility;
+        public FloatingCountChannelVisibility FloatingCountVisibility =>
+            Settings != null ? Settings.show : null;
+
+        /// <summary>Active FloatingText asset (scene assignment, then Resources, then a runtime default).</summary>
+        public FloatingText Settings
+        {
+            get
+            {
+                if (floatingText != null)
+                    return floatingText;
+                if (_runtimeFallback == null)
+                    _runtimeFallback = FloatingText.LoadDefault();
+                return _runtimeFallback;
+            }
+        }
+
+        /// <summary>
+        /// World-scale multiplier so text stays readable as the top-down camera rises with ship level.
+        /// L1 → 1; clamped so MEGA framing does not produce giant type.
+        /// </summary>
+        public static float ResolveCameraZoomScale()
+        {
+            var follow = CameraFollowEcs.Instance;
+            if (follow == null)
+                return 1f;
+            return Mathf.Clamp(follow.CurrentHeightZoomFactor, ZoomScaleMin, ZoomScaleMax);
+        }
+
+        public static int TargetIdForShip(int networkId) =>
+            TargetKindShip | (networkId & 0x00FFFFFF);
+
+        public static int TargetIdForAsteroid(Entity entity)
+        {
+            unchecked
+            {
+                return TargetKindAsteroid ^ (entity.Index * 73856093) ^ (entity.Version * 19349663);
+            }
+        }
+
+        public static int TargetIdForPlanet(int planetId) =>
+            TargetKindPlanet | (planetId & 0x00FFFFFF);
+
+        public static int TargetIdForWorldPosition(Vector3 worldPosition)
+        {
+            int x = Mathf.RoundToInt(worldPosition.x / 4f);
+            int z = Mathf.RoundToInt(worldPosition.z / 4f);
+            unchecked
+            {
+                return TargetKindWorld ^ (x * 397) ^ z;
+            }
+        }
+
+        public static float ResolveShipBodyRadius(Transform shipAnchor)
+        {
+            if (shipAnchor == null)
+                return BodyCollisionMath.MinShipHullRadiusWorld;
+
+            float presentationScale = Mathf.Max(0.0001f, shipAnchor.lossyScale.x);
+            float ecsScale = presentationScale / BodyCollisionMath.ShipPresentationScale;
+            return BodyCollisionMath.GetShipHullRadiusWorld(ecsScale);
+        }
 
         void Awake()
         {
-            // --- Singleton guard for floating count spawner ---
-            if (floatingCountVisibility == null)
-                floatingCountVisibility = new FloatingCountChannelVisibility();
+            if (floatingText == null)
+                floatingText = FloatingText.LoadDefault();
 
             if (Instance == null)
                 Instance = this;
@@ -78,8 +156,6 @@ namespace TitanOrbit.Game
                 Destroy(this);
                 return;
             }
-
-            EnsureDefaultAssets();
         }
 
         void OnDestroy()
@@ -88,50 +164,149 @@ namespace TitanOrbit.Game
                 Instance = null;
         }
 
-        void EnsureDefaultAssets()
+        void Update()
         {
-#if UNITY_EDITOR
-            if (floatingCountGemIcon == null)
-            {
-                floatingCountGemIcon = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(
-                    "Assets/CleanFlatIcon/png_128/icon_line/icon_line_store/icon_line_store_25.png");
-            }
+            ExpireStaleSlots();
+        }
 
-            if (floatingCountDamageIcon == null)
-            {
-                floatingCountDamageIcon = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(
-                    "Assets/CleanFlatIcon/png_128/icon_line/icon_line_game/icon_line_game_165.png");
-            }
+        Sprite ResolveTypeIcon(FloatingCountChannel channel)
+        {
+            var settings = Settings;
+            Sprite fromAsset = settings != null ? settings.ResolveIcon(channel) : null;
+            if (fromAsset != null)
+                return fromAsset;
 
-            if (floatingCountHealthIcon == null)
+            return channel switch
             {
-                floatingCountHealthIcon = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(
-                    "Assets/CleanFlatIcon/png_128/icon/icon_shield/icon_shield_20.png");
-            }
-#endif
+                FloatingCountChannel.GemPickup or FloatingCountChannel.GemDeposit => WorldStatLabelIcons.Gem,
+                FloatingCountChannel.HealthChange or FloatingCountChannel.Healing
+                    or FloatingCountChannel.HealthRegen => WorldStatLabelIcons.Shield,
+                _ => WorldStatLabelIcons.Gem
+            };
         }
 
         /// <summary>
-        /// Spawns a single-line popup parented to a ship hull anchor for the given channel delta.
+        /// Ship-hull convenience: parks on the ship mid-center and accumulates on <paramref name="networkId"/>.
+        /// </summary>
+        public void ShowOrAccumulateOnShip(
+            int networkId,
+            Transform shipAnchor,
+            FloatingCountChannel channel,
+            float signedAmount,
+            TeamId team)
+        {
+            ShowOrAccumulate(
+                TargetIdForShip(networkId),
+                shipAnchor,
+                ResolveShipBodyRadius(shipAnchor),
+                channel,
+                signedAmount,
+                team);
+        }
+
+        /// <summary>
+        /// Legacy entry — still parks on the hull. Prefer <see cref="ShowOrAccumulateOnShip"/>.
         /// </summary>
         public void ShowFloatingCount(Transform shipAnchor, FloatingCountChannel channel, float signedAmount, TeamId team)
         {
             if (shipAnchor == null)
                 return;
-
-            if (!TryBuildFloatingCountVisual(channel, signedAmount, team, out string message, out Sprite icon, out Color color,
-                    out TMP_FontAsset fontToUse))
-                return;
-
-            SpawnPopupAttached(message, icon, color, $"FloatingCountPopup_{channel}", shipAnchor, fontToUse);
+            ShowOrAccumulate(
+                TargetIdForShip(shipAnchor.GetInstanceID()),
+                shipAnchor,
+                ResolveShipBodyRadius(shipAnchor),
+                channel,
+                signedAmount,
+                team);
         }
 
         /// <summary>
-        /// Spawns a floating ±N popup at a fixed world position (does not follow a ship hull).
-        /// Used by people transports so −1/+1 appear at the sphere leave/consume points.
-        /// Matches ship-attached popup scale (<see cref="BodyCollisionMath.ShipPresentationScale"/>).
-        /// When <paramref name="avoidRadius"/> &gt; 0, parks the popup outside that sphere so planet
-        /// meshes do not clip the text.
+        /// Show or add to the live streak for this target. Parks on the target mid-center.
+        /// </summary>
+        public void ShowOrAccumulate(
+            int targetId,
+            Transform anchor,
+            float bodyRadius,
+            FloatingCountChannel channel,
+            float signedAmount,
+            TeamId team,
+            Vector3? impactWorldPosition = null,
+            bool ignoreChannelVisibility = false)
+        {
+            if (anchor == null)
+                return;
+            if (TitanOrbitDebugFlags.IsolateDisableFloatingCounts)
+                return;
+            if (!TryPrepareAmount(channel, signedAmount, out int sign, ignoreChannelVisibility))
+                return;
+
+            _ = impactWorldPosition;
+            Vector3 park = anchor.position;
+            var key = new FloatingCountKey(targetId, channel, sign);
+            var settings = Settings;
+            float now = Time.unscaledTime;
+            float window = settings != null ? settings.AccumulationWindowSeconds : 1f;
+            int lane = ResolveStackLane(channel);
+            float spacing = settings != null ? settings.StackLineSpacing : 1.25f;
+
+            if (_slots.TryGetValue(key, out LiveSlot slot) && slot.Popup != null)
+            {
+                if (!slot.Expired && now < slot.StreakDeadline)
+                    slot.Accumulated += signedAmount;
+                else
+                    slot.Accumulated = signedAmount;
+
+                slot.Expired = false;
+                slot.StreakDeadline = now + window;
+                slot.Team = team;
+                slot.Channel = channel;
+                slot.Anchor = anchor;
+                slot.ParkWorld = park;
+
+                if (!TryBuildFloatingCountVisual(channel, slot.Accumulated, team, out string message, out Sprite refreshIcon,
+                        out Color color, out _, ignoreChannelVisibility))
+                    return;
+
+                slot.Popup.Refresh(message, color, anchor, Vector3.zero, lane, spacing, refreshIcon, bodyRadius);
+                return;
+            }
+
+            if (!TryBuildFloatingCountVisual(channel, signedAmount, team, out string spawnMessage, out Sprite icon,
+                    out Color spawnColor, out TMP_FontAsset fontToUse, ignoreChannelVisibility))
+                return;
+
+            slot = new LiveSlot
+            {
+                Accumulated = signedAmount,
+                StreakDeadline = now + window,
+                Expired = false,
+                Channel = channel,
+                Team = team,
+                Anchor = anchor,
+                ParkWorld = park,
+            };
+
+            var popup = SpawnPopupAttached(
+                spawnMessage,
+                icon,
+                spawnColor,
+                $"FloatingCountPopup_{channel}",
+                anchor,
+                Vector3.zero,
+                lane,
+                spacing,
+                fontToUse,
+                bodyRadius);
+            if (popup == null)
+                return;
+
+            slot.Popup = popup;
+            _slots[key] = slot;
+            _keyByPopup[popup] = key;
+        }
+
+        /// <summary>
+        /// World-position popup (people transports). Accumulates on <paramref name="targetId"/>.
         /// </summary>
         public void ShowFloatingCountAtWorldPosition(
             Vector3 worldPosition,
@@ -139,20 +314,136 @@ namespace TitanOrbit.Game
             float signedAmount,
             TeamId team,
             Vector3 avoidCenter = default,
-            float avoidRadius = 0f)
+            float avoidRadius = 0f,
+            int targetId = 0)
         {
-            if (!TryBuildFloatingCountVisual(channel, signedAmount, team, out string message, out Sprite icon, out Color color,
-                    out TMP_FontAsset fontToUse))
+            if (targetId == 0)
+                targetId = TargetIdForWorldPosition(worldPosition);
+            if (TitanOrbitDebugFlags.IsolateDisableFloatingCounts)
                 return;
 
-            SpawnPopupAtWorldPosition(
-                message, icon, color, $"FloatingCountPopup_{channel}", worldPosition, fontToUse,
-                avoidCenter, avoidRadius);
+            if (!TryPrepareAmount(channel, signedAmount, out int sign))
+                return;
+
+            Vector3 spawnPos = worldPosition;
+            if (avoidRadius > 0.01f)
+                spawnPos = PlaceOutsideAvoidSphere(worldPosition, avoidCenter, avoidRadius);
+
+            var key = new FloatingCountKey(targetId, channel, sign);
+            var settings = Settings;
+            float now = Time.unscaledTime;
+            float window = settings != null ? settings.AccumulationWindowSeconds : 1f;
+
+            if (_slots.TryGetValue(key, out LiveSlot slot) && slot.Popup != null)
+            {
+                if (!slot.Expired && now < slot.StreakDeadline)
+                    slot.Accumulated += signedAmount;
+                else
+                    slot.Accumulated = signedAmount;
+
+                slot.Expired = false;
+                slot.StreakDeadline = now + window;
+                slot.Team = team;
+                slot.Channel = channel;
+                slot.ParkWorld = spawnPos;
+
+                if (!TryBuildFloatingCountVisual(channel, slot.Accumulated, team, out string message, out Sprite refreshIcon,
+                        out Color color, out _))
+                    return;
+
+                slot.Popup.RelocateWorld(spawnPos, avoidRadius);
+                slot.Popup.Refresh(message, color, followAnchor: null, followWorldOffset: Vector3.zero,
+                    stackLane: 0, stackSpacing: 0f, refreshIcon, avoidRadius);
+                return;
+            }
+
+            if (!TryBuildFloatingCountVisual(channel, signedAmount, team, out string spawnMessage, out Sprite icon,
+                    out Color spawnColor, out TMP_FontAsset fontToUse))
+                return;
+
+            var popup = SpawnPopupAtWorldPosition(
+                spawnMessage,
+                icon,
+                spawnColor,
+                $"FloatingCountPopup_{channel}",
+                spawnPos,
+                fontToUse,
+                avoidRadius);
+            if (popup == null)
+                return;
+
+            slot = new LiveSlot
+            {
+                Popup = popup,
+                Accumulated = signedAmount,
+                StreakDeadline = now + window,
+                Expired = false,
+                Channel = channel,
+                Team = team,
+                ParkWorld = spawnPos,
+            };
+            _slots[key] = slot;
+            _keyByPopup[popup] = key;
         }
 
         /// <summary>
-        /// Shared label/icon/color formatting for ship-attached and world-position popups.
+        /// Asteroid mining floats on the target mid-center. Damage accumulates; remaining HP is a separate stacked popup.
         /// </summary>
+        public void ShowAsteroidFeedback(
+            int targetId,
+            Transform targetAnchor,
+            float bodyRadius,
+            AsteroidFloatingFeedback feedback,
+            Vector3? impactWorldPosition = null)
+        {
+            if (targetAnchor == null)
+                return;
+
+            _ = impactWorldPosition;
+
+            if (feedback.Damage.HasValue
+                && feedback.Damage.Value > 0.0001f
+                && (Settings == null || Settings.IsAsteroidDamageEnabled()))
+            {
+                ShowOrAccumulate(
+                    targetId,
+                    targetAnchor,
+                    bodyRadius,
+                    FloatingCountChannel.DamageAsteroid,
+                    feedback.Damage.Value,
+                    feedback.Team);
+            }
+
+            if (feedback.RemainingHealth.HasValue
+                && (Settings == null || Settings.IsAsteroidHealthRemainingEnabled()))
+            {
+                var settings = Settings;
+                Color hpColor = settings != null ? settings.healthColor : new Color(0.2f, 0.9f, 0.3f, 1f);
+                int hp = Mathf.Max(0, Mathf.RoundToInt(feedback.RemainingHealth.Value));
+                ShowOrRefreshLabeled(
+                    targetId,
+                    targetAnchor,
+                    targetAnchor.position,
+                    FloatingCountChannel.HealthChange,
+                    hp.ToString(),
+                    hpColor,
+                    ResolveTypeIcon(FloatingCountChannel.HealthChange),
+                    bodyRadius);
+            }
+        }
+
+        bool TryPrepareAmount(
+            FloatingCountChannel channel,
+            float signedAmount,
+            out int sign,
+            bool ignoreChannelVisibility = false)
+        {
+            sign = signedAmount >= 0f ? 1 : -1;
+            if (!ignoreChannelVisibility && !IsFloatingCountChannelVisible(channel))
+                return false;
+            return Mathf.Abs(signedAmount) >= 0.01f;
+        }
+
         bool TryBuildFloatingCountVisual(
             FloatingCountChannel channel,
             float signedAmount,
@@ -160,207 +451,123 @@ namespace TitanOrbit.Game
             out string message,
             out Sprite icon,
             out Color color,
-            out TMP_FontAsset fontToUse)
+            out TMP_FontAsset fontToUse,
+            bool ignoreChannelVisibility = false)
         {
             message = null;
             icon = null;
             color = Color.white;
-            fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
+            var settings = Settings;
+            fontToUse = settings != null ? settings.ResolveFont() : TMP_Settings.defaultFontAsset;
 
-            if (!IsFloatingCountChannelVisible(channel))
+            if (!ignoreChannelVisibility && !IsFloatingCountChannelVisible(channel))
                 return false;
             if (fontToUse == null)
                 return false;
-
-            float abs = Mathf.Abs(signedAmount);
-            if (abs < 0.01f)
+            if (Mathf.Abs(signedAmount) < 0.01f)
                 return false;
 
-            int amountInt = Mathf.RoundToInt(abs);
-            if (amountInt <= 0)
-                amountInt = 1;
-
-            char sign = signedAmount >= 0f ? '+' : '-';
-            bool compactGemLabel = channel == FloatingCountChannel.GemPickup || channel == FloatingCountChannel.GemDeposit;
-            // People transports use compact ±N so the popup reads at the sphere, not a long "People" label.
-            bool compactPeopleLabel = channel == FloatingCountChannel.PeopleLoad || channel == FloatingCountChannel.PeopleUnload;
-            string label = channel switch
-            {
-                FloatingCountChannel.GemPickup => "Gems",
-                FloatingCountChannel.GemDeposit => "Gems",
-                FloatingCountChannel.DamageAsteroid => "Damage",
-                FloatingCountChannel.DamageShipOrDrone => "Damage",
-                FloatingCountChannel.DamageMoon => "Damage",
-                FloatingCountChannel.HealthChange => "Health",
-                FloatingCountChannel.PeopleLoad => "People",
-                FloatingCountChannel.PeopleUnload => "People",
-                FloatingCountChannel.Healing => "Health",
-                FloatingCountChannel.HealthRegen => "Health",
-                FloatingCountChannel.Energy => "Energy",
-                FloatingCountChannel.Upgrades => "Upgrade",
-                _ => "Value"
-            };
-
-            message = compactGemLabel || compactPeopleLabel ? $"{sign}{amountInt}" : $"{sign}{amountInt} {label}";
-
-            switch (channel)
-            {
-                case FloatingCountChannel.GemPickup:
-                case FloatingCountChannel.GemDeposit:
-                    icon = floatingCountGemIcon;
-                    color = team != TeamId.None ? team.ToColor() : new Color(0.85f, 0.95f, 1f, 1f);
-                    break;
-
-                case FloatingCountChannel.DamageAsteroid:
-                case FloatingCountChannel.DamageShipOrDrone:
-                case FloatingCountChannel.DamageMoon:
-                    icon = floatingCountDamageIcon;
-                    color = team != TeamId.None ? team.ToColor() : floatingCountDamageFallbackColor;
-                    break;
-
-                case FloatingCountChannel.HealthChange:
-                case FloatingCountChannel.Healing:
-                case FloatingCountChannel.HealthRegen:
-                    icon = floatingCountHealthIcon;
-                    color = channel == FloatingCountChannel.HealthChange
-                        ? signedAmount >= 0f ? floatingCountHealthPositiveColor : floatingCountHealthNegativeColor
-                        : floatingCountHealthPositiveColor;
-                    break;
-
-                case FloatingCountChannel.PeopleLoad:
-                case FloatingCountChannel.PeopleUnload:
-                    icon = floatingCountFeedbackSettings != null && floatingCountFeedbackSettings.peopleIcon != null
-                        ? floatingCountFeedbackSettings.peopleIcon
-                        : floatingCountPeopleIcon;
-                    color = floatingCountFeedbackSettings != null
-                        ? floatingCountFeedbackSettings.peopleColor
-                        : floatingCountPeopleColor;
-                    break;
-
-                case FloatingCountChannel.Energy:
-                    color = new Color(0.35f, 0.75f, 1f, 1f);
-                    break;
-
-                case FloatingCountChannel.Upgrades:
-                    color = new Color(0.95f, 0.85f, 0.35f, 1f);
-                    break;
-            }
-
+            message = FormatSignedAmount(signedAmount);
+            icon = ResolveTypeIcon(channel);
+            color = settings != null ? settings.ResolveColor(channel, team) : Color.white;
             return true;
         }
 
-        public void ShowAsteroidFeedback(Transform shipAnchor, AsteroidFloatingFeedback feedback)
+        static string FormatSignedAmount(float signedAmount)
         {
-            if (shipAnchor == null)
-                return;
-
-            FloatingCountStackLine[] lines = BuildAsteroidFeedbackLines(feedback);
-            if (lines == null || lines.Length == 0)
-                return;
-
-            TMP_FontAsset fontToUse = floatingCountFont != null ? floatingCountFont : TMP_Settings.defaultFontAsset;
-            if (fontToUse == null)
-                return;
-
-            var go = new GameObject("FloatingCountStack_AsteroidHit");
-            ComputeShipFollowSpawn(shipAnchor, out float screenUpOffset, out Vector3 initialMotionOffset);
-            go.transform.position = shipAnchor.position;
-            ApplyShipFollowTransformScale(go.transform, shipAnchor);
-
-            var popup = go.AddComponent<FloatingCountStackPopup>();
-            popup.Initialize(
-                lines,
-                fontToUse,
-                shipFloatingFontSize,
-                shipFloatingStackLineSpacing,
-                floatingCountDuration,
-                floatingCountRiseSpeed,
-                Mathf.Max(0f, shipFloatingLateralDriftMax),
-                followAnchor: shipAnchor,
-                followScreenUpOffset: screenUpOffset,
-                initialWorldMotionOffset: initialMotionOffset);
-        }
-
-        FloatingCountStackLine[] BuildAsteroidFeedbackLines(AsteroidFloatingFeedback feedback)
-        {
-            if (floatingCountVisibility == null)
-                return System.Array.Empty<FloatingCountStackLine>();
-
-            var lines = new List<FloatingCountStackLine>(4);
-            TeamId team = feedback.Team;
-
-            if (floatingCountVisibility.IsAsteroidDamageEnabled()
-                && feedback.Damage.HasValue
-                && feedback.Damage.Value > 0.0001f)
-            {
-                int damageInt = Mathf.Max(1, Mathf.RoundToInt(feedback.Damage.Value));
-                Color damageColor = team != TeamId.None ? team.ToColor() : floatingCountDamageFallbackColor;
-                lines.Add(new FloatingCountStackLine($"+{damageInt} Damage", damageColor));
-            }
-
-            if (floatingCountVisibility.IsAsteroidHealthRemainingEnabled()
-                && feedback.RemainingHealth.HasValue)
-            {
-                int hp = Mathf.Max(0, Mathf.RoundToInt(feedback.RemainingHealth.Value));
-                lines.Add(new FloatingCountStackLine($"HP Left: {hp}", floatingCountHealthPositiveColor));
-            }
-
-            if (floatingCountVisibility.IsAsteroidGemsRemainingEnabled()
-                && feedback.RemainingGems.HasValue)
-            {
-                int gems = Mathf.Max(0, Mathf.RoundToInt(feedback.RemainingGems.Value));
-                Color gemsColor = team != TeamId.None ? team.ToColor() : new Color(0.85f, 0.95f, 1f, 1f);
-                lines.Add(new FloatingCountStackLine($"Gems: {gems}", gemsColor));
-            }
-
-            if (floatingCountVisibility.IsAsteroidImpactForceEnabled()
-                && feedback.ImpactForceNewtons.HasValue
-                && feedback.ImpactForceNewtons.Value >= 1f)
-            {
-                int force = Mathf.RoundToInt(feedback.ImpactForceNewtons.Value);
-                lines.Add(new FloatingCountStackLine($"{force:N0} Force", floatingCountImpactForceColor));
-            }
-
-            return lines.Count == 0 ? System.Array.Empty<FloatingCountStackLine>() : lines.ToArray();
+            float abs = Mathf.Abs(signedAmount);
+            int amountInt = Mathf.RoundToInt(abs);
+            if (amountInt <= 0)
+                amountInt = 1;
+            return signedAmount >= 0f ? $"+{amountInt}" : $"-{amountInt}";
         }
 
         bool IsFloatingCountChannelVisible(FloatingCountChannel channel) =>
-            floatingCountVisibility == null || floatingCountVisibility.IsEnabled(channel);
+            Settings == null || Settings.IsEnabled(channel);
 
-        void ComputeShipFollowSpawn(Transform shipAnchor, out float screenUpOffset, out Vector3 initialMotionOffset)
+        void ShowOrRefreshLabeled(
+            int targetId,
+            Transform anchor,
+            Vector3 parkWorld,
+            FloatingCountChannel keyChannel,
+            string message,
+            Color color,
+            Sprite icon,
+            float bodyRadius)
         {
-            screenUpOffset = ResolveShipFloatingOffset(shipAnchor);
-            initialMotionOffset = ComputeSpawnJitterOffset();
-        }
+            if (anchor == null || string.IsNullOrEmpty(message))
+                return;
+            if (TitanOrbitDebugFlags.IsolateDisableFloatingCounts)
+                return;
 
-        Vector3 ComputeSpawnJitterOffset()
-        {
-            if (shipFloatingSpawnJitterRadius <= 0.001f)
-                return Vector3.zero;
+            var settings = Settings;
+            TMP_FontAsset fontToUse = settings != null ? settings.ResolveFont() : TMP_Settings.defaultFontAsset;
+            if (fontToUse == null)
+                return;
 
-            var cam = Camera.main;
-            Vector3 playUp = GetPlayPlaneUp(cam);
-            Vector3 playRight = Vector3.Cross(Vector3.up, playUp);
-            if (playRight.sqrMagnitude < 1e-8f)
-                playRight = Vector3.right;
-            playRight.Normalize();
+            var key = new FloatingCountKey(targetId, keyChannel, 1);
+            float now = Time.unscaledTime;
+            float window = settings != null ? settings.AccumulationWindowSeconds : 1f;
+            int lane = ResolveStackLane(keyChannel);
+            float spacing = settings != null ? settings.StackLineSpacing : 1.25f;
 
-            Vector2 jitter = Random.insideUnitCircle * shipFloatingSpawnJitterRadius;
-            return playRight * jitter.x + playUp * jitter.y;
-        }
-
-        float ResolveShipFloatingOffset(Transform shipAnchor)
-        {
-            float hullRadius = BodyCollisionMath.MinShipHullRadiusWorld;
-            if (shipAnchor != null)
+            if (_slots.TryGetValue(key, out LiveSlot slot) && slot.Popup != null)
             {
-                float presentationScale = Mathf.Max(0.0001f, shipAnchor.lossyScale.x);
-                float ecsScale = presentationScale / BodyCollisionMath.ShipPresentationScale;
-                hullRadius = BodyCollisionMath.GetShipHullRadiusWorld(ecsScale);
+                slot.Expired = false;
+                slot.StreakDeadline = now + window;
+                slot.Anchor = anchor;
+                slot.ParkWorld = parkWorld;
+                slot.Popup.Refresh(message, color, anchor, Vector3.zero, lane, spacing, icon, bodyRadius);
+                return;
             }
 
-            float total = shipFloatingVerticalOffset + hullRadius * shipFloatingOffsetHullRadiusMultiplier;
-            return Mathf.Clamp(total, shipFloatingOffsetMin, shipFloatingOffsetMax);
+            slot = new LiveSlot
+            {
+                Accumulated = 0f,
+                StreakDeadline = now + window,
+                Expired = false,
+                Channel = keyChannel,
+                Anchor = anchor,
+                ParkWorld = parkWorld,
+            };
+
+            var popup = SpawnPopupAttached(
+                message,
+                icon,
+                color,
+                $"FloatingCountPopup_{keyChannel}",
+                anchor,
+                Vector3.zero,
+                lane,
+                spacing,
+                fontToUse,
+                bodyRadius);
+            if (popup == null)
+                return;
+
+            slot.Popup = popup;
+            _slots[key] = slot;
+            _keyByPopup[popup] = key;
+        }
+
+        static int ResolveStackLane(FloatingCountChannel channel)
+        {
+            switch (channel)
+            {
+                case FloatingCountChannel.DamageAsteroid:
+                case FloatingCountChannel.DamageShipOrDrone:
+                case FloatingCountChannel.DamageMoon:
+                    return 0;
+                case FloatingCountChannel.HealthChange:
+                case FloatingCountChannel.Healing:
+                case FloatingCountChannel.HealthRegen:
+                    return 1;
+                case FloatingCountChannel.GemPickup:
+                case FloatingCountChannel.GemDeposit:
+                    return 2;
+                default:
+                    return 0;
+            }
         }
 
         static Vector3 GetPlayPlaneUp(Camera cam)
@@ -377,102 +584,76 @@ namespace TitanOrbit.Game
             return dir.normalized;
         }
 
-        void ApplyShipFollowTransformScale(Transform popupRoot, Transform shipAnchor)
-        {
-            float shipScale = shipAnchor != null
-                ? Mathf.Max(0.0001f, shipAnchor.lossyScale.x)
-                : BodyCollisionMath.ShipPresentationScale;
-            popupRoot.localScale = Vector3.one * shipScale;
-        }
-
-        void SpawnPopupAttached(
+        FloatingCountPopup SpawnPopupAttached(
             string message,
             Sprite icon,
             Color color,
             string popupName,
-            Transform shipAnchor,
-            TMP_FontAsset fontToUse)
+            Transform anchor,
+            Vector3 followWorldOffset,
+            int stackLane,
+            float stackSpacing,
+            TMP_FontAsset fontToUse,
+            float bodyRadius)
         {
-            if (string.IsNullOrEmpty(message) || shipAnchor == null)
-                return;
+            if (string.IsNullOrEmpty(message) || anchor == null)
+                return null;
 
             if (_cachedCamera == null)
                 _cachedCamera = Camera.main;
             if (_cachedCamera == null)
-                return;
+                return null;
 
+            var settings = Settings;
             var popup = RentPopup(popupName);
-            ComputeShipFollowSpawn(shipAnchor, out float screenUpOffset, out Vector3 initialMotionOffset);
-            popup.transform.position = shipAnchor.position;
-            ApplyShipFollowTransformScale(popup.transform, shipAnchor);
-
+            popup.transform.position = anchor.position + followWorldOffset + (settings != null ? settings.worldOffset : Vector3.zero);
             popup.Initialize(
                 message,
                 icon,
                 color,
                 fontToUse,
-                shipFloatingFontSize,
-                floatingCountDuration,
-                floatingCountRiseSpeed,
-                shipFloatingIconScale,
-                floatingCountIconLocalOffset,
-                Mathf.Max(0f, shipFloatingLateralDriftMax),
-                followAnchor: shipAnchor,
-                followScreenUpOffset: screenUpOffset,
-                initialWorldMotionOffset: initialMotionOffset);
+                settings,
+                followAnchor: anchor,
+                followWorldOffset: followWorldOffset,
+                stackLane: stackLane,
+                stackSpacing: stackSpacing,
+                bodyRadius: bodyRadius);
+            return popup;
         }
 
-        /// <summary>
-        /// World-space popup that rises in place (no hull follow) — people transport leave/consume.
-        /// Uses ship presentation scale so font size matches hull-attached popups.
-        /// </summary>
-        void SpawnPopupAtWorldPosition(
+        FloatingCountPopup SpawnPopupAtWorldPosition(
             string message,
             Sprite icon,
             Color color,
             string popupName,
             Vector3 worldPosition,
             TMP_FontAsset fontToUse,
-            Vector3 avoidCenter,
-            float avoidRadius)
+            float bodyRadius)
         {
             if (string.IsNullOrEmpty(message))
-                return;
+                return null;
             if (_cachedCamera == null)
                 _cachedCamera = Camera.main;
             if (_cachedCamera == null)
-                return;
+                return null;
 
-            // --- Place outside planet (or other body) when needed ---
-            Vector3 spawnPos = worldPosition;
-            Vector3 outwardBias = Vector3.zero;
-            if (avoidRadius > 0.01f)
-                spawnPos = PlaceOutsideAvoidSphere(worldPosition, avoidCenter, avoidRadius, out outwardBias);
-
+            var settings = Settings;
             var popup = RentPopup(popupName);
-            popup.transform.position = spawnPos;
-            // [TITAN-ORBIT] Ship-attached popups inherit hull lossyScale (~ShipPresentationScale).
-            // World popups must match that scale or TMP at shipFloatingFontSize looks huge.
-            popup.transform.localScale = Vector3.one * BodyCollisionMath.ShipPresentationScale;
-
+            popup.transform.position = worldPosition + (settings != null ? settings.worldOffset : Vector3.zero);
             popup.Initialize(
                 message,
                 icon,
                 color,
                 fontToUse,
-                shipFloatingFontSize,
-                floatingCountDuration,
-                floatingCountRiseSpeed,
-                shipFloatingIconScale,
-                floatingCountIconLocalOffset,
-                Mathf.Max(0f, shipFloatingLateralDriftMax),
+                settings,
                 followAnchor: null,
-                followScreenUpOffset: 0f,
-                // Bias the first rise frame away from the planet so fade-up stays in empty space.
-                initialWorldMotionOffset: outwardBias);
+                followWorldOffset: Vector3.zero,
+                stackLane: 0,
+                stackSpacing: 0f,
+                bodyRadius: bodyRadius);
+            return popup;
         }
 
-        /// <summary>Takes a pooled popup or creates one; wires recycle callback.</summary>
         FloatingCountPopup RentPopup(string popupName)
         {
             FloatingCountPopup popup = null;
@@ -494,26 +675,56 @@ namespace TitanOrbit.Game
             return popup;
         }
 
-        /// <summary>Deactivates and stacks a finished popup for reuse.</summary>
         void ReturnPopup(FloatingCountPopup popup)
         {
             if (popup == null)
                 return;
+
+            if (_keyByPopup.TryGetValue(popup, out FloatingCountKey key))
+            {
+                _keyByPopup.Remove(popup);
+                if (_slots.TryGetValue(key, out LiveSlot slot) && slot.Popup == popup)
+                    _slots.Remove(key);
+            }
+
             popup.OnFinished = null;
             popup.gameObject.SetActive(false);
             popup.transform.SetParent(transform, false);
             _popupPool.Push(popup);
         }
 
+        void ExpireStaleSlots()
+        {
+            if (_slots.Count == 0)
+                return;
+
+            float now = Time.unscaledTime;
+            _expireScratch.Clear();
+            foreach (var kv in _slots)
+            {
+                if (!kv.Value.Expired && now >= kv.Value.StreakDeadline)
+                    _expireScratch.Add(kv.Key);
+            }
+
+            var settings = Settings;
+            float fade = settings != null ? settings.PostStreakFadeSeconds : 0.6f;
+            for (int i = 0; i < _expireScratch.Count; i++)
+            {
+                FloatingCountKey key = _expireScratch[i];
+                if (!_slots.TryGetValue(key, out LiveSlot slot))
+                    continue;
+
+                slot.Expired = true;
+                slot.Accumulated = 0f;
+                slot.Popup?.BeginFadeOut(fade);
+            }
+        }
+
         /// <summary>
         /// Parks a world popup just outside a planet/body sphere, then nudges along screen-up
         /// so the label sits in empty space beside the mesh rather than rising through it.
         /// </summary>
-        Vector3 PlaceOutsideAvoidSphere(
-            Vector3 hintPosition,
-            Vector3 avoidCenter,
-            float avoidRadius,
-            out Vector3 outwardBias)
+        Vector3 PlaceOutsideAvoidSphere(Vector3 hintPosition, Vector3 avoidCenter, float avoidRadius)
         {
             const float ClearanceMargin = 1.75f;
             const float ScreenUpNudge = 1.1f;
@@ -526,7 +737,6 @@ namespace TitanOrbit.Game
             Vector3 radial = flatHint - flatCenter;
             if (radial.sqrMagnitude < 1e-6f)
             {
-                // Degenerate: tip is at the center — push along camera play-plane right.
                 var cam = Camera.main;
                 Vector3 playUp = GetPlayPlaneUp(cam);
                 Vector3 playRight = Vector3.Cross(Vector3.up, playUp);
@@ -541,12 +751,8 @@ namespace TitanOrbit.Game
 
             float standOff = avoidRadius + ClearanceMargin;
             Vector3 pos = flatCenter + radial * standOff;
-            Vector3 playUpNudge = GetPlayPlaneUp(Camera.main) * ScreenUpNudge;
-            pos += playUpNudge;
+            pos += GetPlayPlaneUp(Camera.main) * ScreenUpNudge;
             pos.y = Mathf.Max(hintPosition.y, 4f);
-
-            // Small outward seed so FloatingCountPopup rise stays clear of the shell.
-            outwardBias = radial * 0.35f + playUpNudge * 0.15f;
             return pos;
         }
     }

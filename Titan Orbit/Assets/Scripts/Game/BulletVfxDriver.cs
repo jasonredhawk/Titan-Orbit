@@ -864,7 +864,8 @@ namespace TitanOrbit.Game
                     asteroidEntity,
                     damage,
                     ownerTeam,
-                    authoritativeRemainingHealth: asteroidHealthAfter);
+                    authoritativeRemainingHealth: asteroidHealthAfter,
+                    impactWorldPosition: hitDisplayPos);
             }
 
             // --- Kill: do not hide from HitRpc ---

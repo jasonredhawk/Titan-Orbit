@@ -19,8 +19,9 @@ namespace TitanOrbit.Game
     /// and immediate bullet-impact hooks.
     /// Compares per-frame snapshots of ship gems/people/health. Asteroid bullet HitRpc floats
     /// use <see cref="TryNotifyLocalAsteroidBulletHit"/> with server <c>AsteroidHealthAfter</c>
-    /// (never ghost − damage). <see cref="PollAsteroids"/> remains a fallback for rams / missed RPCs.
-    /// Delegates display to <see cref="WorldFloatingCountManager"/>. Runs on main thread in Update.
+    /// (never ghost − damage) and park on the asteroid proxy. <see cref="PollAsteroids"/> remains
+    /// a fallback for rams / missed RPCs. Delegates display to <see cref="WorldFloatingCountManager"/>.
+    /// Runs on main thread in Update.
     /// <para>
     /// People load/unload floats are owned by <see cref="PeopleTransportVfxDriver"/> (sphere leave/consume).
     /// Asteroid health polling walks hybrid map-body proxies only — never a full asteroid
@@ -242,7 +243,7 @@ namespace TitanOrbit.Game
 
             // --- Atomic beat: SFX + optimistic Ship/Bank + Orbit Menu ---
             TryGetLocalShipAnchor(out Transform anchor);
-            EmitGemDepositBeat(anchor, chunkAmount, _cachedLocalTeam, 1f);
+            EmitGemDepositBeat(EcsGameBridge.GetLocalNetworkId(), anchor, chunkAmount, _cachedLocalTeam, 1f);
 
             if (_cachedLocalGems >= 0f)
             {
@@ -381,7 +382,8 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Detects ship gem/health deltas and shows floating popups at hull proxy anchor.
+        /// Detects ship gem/health deltas and shows floating popups parked outside the hull.
+        /// Remote health/burn floats only appear when that hull is on screen.
         /// People load/unload popups are driven by <see cref="PeopleTransportVfxDriver"/> instead.
         /// </summary>
         void PollShips(EntityManager em)
@@ -443,7 +445,8 @@ namespace TitanOrbit.Game
                     if (gemsDelta > 0.01f)
                     {
                         AudioManager.Instance?.PlayGemCollectSound(gemsDelta);
-                        WorldFloatingCountManager.Instance.ShowFloatingCount(
+                        WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
+                            networkId,
                             anchor,
                             FloatingCountChannel.GemPickup,
                             gemsDelta,
@@ -459,22 +462,30 @@ namespace TitanOrbit.Game
                 {
                     uint skipped = burnSeq - last.LastBurnTickSequence;
                     float shown = burnTickDamage * skipped;
-                    WorldFloatingCountManager.Instance.ShowFloatingCount(
-                        anchor,
-                        FloatingCountChannel.DamageShipOrDrone,
-                        -shown,
-                        state.Team);
-                    showedBurnDamage = true;
+                    bool isLocalBurn = hasLocalNetworkId && networkId == localNetworkId;
+                    if (isLocalBurn || IsAnchorOnScreen(anchor))
+                    {
+                        WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
+                            networkId,
+                            anchor,
+                            FloatingCountChannel.DamageShipOrDrone,
+                            -shown,
+                            state.Team);
+                        showedBurnDamage = true;
+                    }
                 }
 
-                if (hasLocalNetworkId && networkId == localNetworkId && !state.IsDead && !justDied && !justRespawned)
+                if (!state.IsDead && !justDied && !justRespawned)
                 {
                     float healthDelta = state.Health - last.Health;
                     // Burn ticks already spawned Damage floats — skip the overlapping Health line.
                     bool skipBurnHealth = (showedBurnDamage || burnActive) && healthDelta < 0f;
-                    if (!skipBurnHealth && Mathf.Abs(healthDelta) >= 1f)
+                    bool isLocalHealth = hasLocalNetworkId && networkId == localNetworkId;
+                    if (!skipBurnHealth && Mathf.Abs(healthDelta) >= 1f &&
+                        (isLocalHealth || IsAnchorOnScreen(anchor)))
                     {
-                        WorldFloatingCountManager.Instance.ShowFloatingCount(
+                        WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
+                            networkId,
                             anchor,
                             FloatingCountChannel.HealthChange,
                             healthDelta,
@@ -513,7 +524,8 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// Immediate asteroid mining float for the local player's bullet impact.
-        /// Called from <see cref="BulletVfxDriver"/> on HitRpc (impact VFX may already have
+        /// Parks on the asteroid hybrid proxy (not the local ship). Called from
+        /// <see cref="BulletVfxDriver"/> on HitRpc (impact VFX may already have
         /// played from client-predicted cosmetic collide).
         /// </summary>
         /// <param name="asteroidEntity">Hybrid-proxy asteroid ghost that was hit.</param>
@@ -523,12 +535,14 @@ namespace TitanOrbit.Game
         /// When set (HitRpc <c>AsteroidHealthAfter</c>), show that “HP Left” — never ghost − damage.
         /// Null = +Damage only (legacy / non-authoritative path).
         /// </param>
+        /// <param name="impactWorldPosition">Display-space hit point from the tracer / HitRpc.</param>
         /// <returns>True when a popup was spawned.</returns>
         public static bool TryNotifyLocalAsteroidBulletHit(
             Entity asteroidEntity,
             float damage,
             TeamId ownerTeam,
-            float? authoritativeRemainingHealth = null)
+            float? authoritativeRemainingHealth = null,
+            Vector3? impactWorldPosition = null)
         {
             // [TITAN-ORBIT] Isolation F2 — skip floats to see if Instantiates/UI drives the step.
             if (TitanOrbitDebugFlags.IsolateDisableFloatingCounts)
@@ -541,8 +555,7 @@ namespace TitanOrbit.Game
             if (asteroidEntity == Entity.Null || damage <= 0.01f)
                 return false;
 
-            // --- Hull anchor (stack rises above local ship, same as PollAsteroids) ---
-            if (!TryGetLocalShipAnchor(out Transform localAnchor))
+            if (!TryGetAsteroidAnchor(asteroidEntity, out Transform asteroidAnchor, out float asteroidRadius))
                 return false;
 
             var world = EcsGameBridge.GetVisualizationWorld();
@@ -584,14 +597,16 @@ namespace TitanOrbit.Game
                 tintTeam = ownerTeam;
 
             WorldFloatingCountManager.Instance.ShowAsteroidFeedback(
-                localAnchor,
+                WorldFloatingCountManager.TargetIdForAsteroid(asteroidEntity),
+                asteroidAnchor,
+                asteroidRadius,
                 new AsteroidFloatingFeedback
                 {
                     Team = tintTeam,
                     Damage = damage,
                     RemainingHealth = remainingHealth,
-                    RemainingGems = null,
-                });
+                },
+                impactWorldPosition);
 
             return true;
         }
@@ -610,10 +625,6 @@ namespace TitanOrbit.Game
         /// </summary>
         void PollAsteroids(EntityManager em)
         {
-            // --- Need a hull anchor so the stack rises above the local ship ---
-            if (!TryGetLocalShipAnchor(out Transform localAnchor))
-                return;
-
             var visualizer = EcsWorldVisualizer.Active;
             if (visualizer == null)
                 return;
@@ -684,15 +695,21 @@ namespace TitanOrbit.Game
                 TeamId tintTeam = PlanetConnectionGraphLogic.ResolveAsteroidTintTeam(
                     mask, state.TerritoryTeam, _cachedLocalTeam);
 
+                if (!TryGetAsteroidAnchor(entity, out Transform asteroidAnchor, out float asteroidRadius))
+                    continue;
+
+                Vector3 ramImpact = EstimateAsteroidImpactTowardLocalShip(asteroidAnchor, asteroidRadius);
                 WorldFloatingCountManager.Instance.ShowAsteroidFeedback(
-                    localAnchor,
+                    WorldFloatingCountManager.TargetIdForAsteroid(entity),
+                    asteroidAnchor,
+                    asteroidRadius,
                     new AsteroidFloatingFeedback
                     {
                         Team = tintTeam,
                         Damage = damage,
                         RemainingHealth = state.Health,
-                        RemainingGems = state.RemainingGems,
-                    });
+                    },
+                    ramImpact);
             }
 
             // --- Drop snapshots for despawned / recycled entities ---
@@ -819,7 +836,7 @@ namespace TitanOrbit.Game
                     ? 1f
                     : 1f - Mathf.InverseLerp(fullVolumeRange, hearRange, dist);
 
-                EmitGemDepositBeat(anchor, gemValue, state.Team, volumeScale);
+                EmitGemDepositBeat(networkId, anchor, gemValue, state.Team, volumeScale);
                 snap.ShipLevel = state.ShipLevel;
                 _ships[networkId] = snap;
             }
@@ -833,17 +850,18 @@ namespace TitanOrbit.Game
         /// <param name="gemValue">Actual gems this beat (ship level, or leftover — drives pitch).</param>
         /// <param name="team">Team tint for the floating count.</param>
         /// <param name="volumeScale">Proximity volume 0–1 from toroidal hear range.</param>
-        static void EmitGemDepositBeat(Transform anchor, float gemValue, TeamId team, float volumeScale)
+        static void EmitGemDepositBeat(int networkId, Transform anchor, float gemValue, TeamId team, float volumeScale)
         {
             // Sound does not require a hull proxy — local deposit must tick even if GO sync lags.
             // [TITAN-ORBIT] Use GetOrFind so Windows player builds still hear deposits if Awake
             // order left Instance unset for a frame (Editor often had the singleton already hot).
             AudioManager.GetOrFind()?.PlayGemDepositSound(gemValue, volumeScale);
 
-            if (anchor == null || WorldFloatingCountManager.Instance == null)
+            if (anchor == null || WorldFloatingCountManager.Instance == null || networkId <= 0)
                 return;
 
-            WorldFloatingCountManager.Instance.ShowFloatingCount(
+            WorldFloatingCountManager.Instance.ShowOrAccumulateOnShip(
+                networkId,
                 anchor,
                 FloatingCountChannel.GemDeposit,
                 gemValue,
@@ -883,7 +901,7 @@ namespace TitanOrbit.Game
         static bool TryGetShipAnchor(int networkId, out Transform anchor) =>
             ShipWeaponProxyRegistry.TryGetHull(networkId, out anchor);
 
-        /// <summary>Local player hull proxy — asteroid feedback attaches near own ship.</summary>
+        /// <summary>Local player hull proxy — deposit floats attach near own ship.</summary>
         static bool TryGetLocalShipAnchor(out Transform anchor)
         {
             anchor = null;
@@ -891,6 +909,54 @@ namespace TitanOrbit.Game
             if (localNetworkId <= 0)
                 return false;
             return ShipWeaponProxyRegistry.TryGetHull(localNetworkId, out anchor);
+        }
+
+        /// <summary>
+        /// Surface point on the rock toward the local hull — used when we have no bullet hit position.
+        /// </summary>
+        static Vector3 EstimateAsteroidImpactTowardLocalShip(Transform asteroidAnchor, float asteroidRadius)
+        {
+            Vector3 center = asteroidAnchor.position;
+            if (!TryGetLocalShipAnchor(out Transform ship) || ship == null)
+                return center;
+
+            Vector3 toShip = ship.position - center;
+            toShip.y = 0f;
+            if (toShip.sqrMagnitude < 1e-6f)
+                return center;
+
+            return center + toShip.normalized * Mathf.Max(0.15f, asteroidRadius);
+        }
+
+        /// <summary>
+        /// Hybrid asteroid proxy + drawn-mesh radius. Dictionary lookup only — no map-body gather.
+        /// </summary>
+        static bool TryGetAsteroidAnchor(Entity asteroidEntity, out Transform anchor, out float radius)
+        {
+            anchor = null;
+            radius = 0f;
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null ||
+                !visualizer.TryGetProxy(asteroidEntity, out GameObject proxy) ||
+                proxy == null)
+                return false;
+
+            anchor = proxy.transform;
+            radius = BulletImpactAttach.GetAsteroidVisualRadiusWorld(anchor);
+            return true;
+        }
+
+        /// <summary>True when the hull proxy is in front of the camera and roughly on screen.</summary>
+        static bool IsAnchorOnScreen(Transform anchor)
+        {
+            if (anchor == null)
+                return false;
+            var cam = Camera.main;
+            if (cam == null)
+                return false;
+
+            Vector3 vp = cam.WorldToViewportPoint(anchor.position);
+            return vp.z > 0f && vp.x > -0.08f && vp.x < 1.08f && vp.y > -0.08f && vp.y < 1.08f;
         }
     }
 }

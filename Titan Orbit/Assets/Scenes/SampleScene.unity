@@ -8550,50 +8550,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8a3eda19ffc99104195aafaa41678658, type: 3}
   m_Name: 
   m_EditorClassIdentifier: TitanOrbit.Game::TitanOrbit.Game.WorldFloatingCountManager
-  floatingCountFeedbackSettings: {fileID: 0}
-  floatingCountVisibility:
-    gemPickup: 1
-    gemDeposit: 1
-    asteroidDamage: 1
-    asteroidHealthRemaining: 1
-    asteroidGemsRemaining: 0
-    asteroidImpactForce: 0
-    damageShipOrDrone: 0
-    damageMoon: 0
-    healthChange: 0
-    peopleLoad: 1
-    peopleUnload: 1
-  floatingCountFont: {fileID: 0}
-  floatingCountGemIcon: {fileID: 0}
-  floatingCountDamageIcon: {fileID: 0}
-  floatingCountHealthIcon: {fileID: 0}
-  floatingCountPeopleIcon: {fileID: 0}
-  floatingCountPeopleColor: {r: 1, g: 0.9, b: 0.25, a: 1}
-  floatingCountDuration: 1.7
-  floatingCountRiseSpeed: 2.5
-  floatingCountFontSize: 10
-  floatingCountIconScale: 0.1
-  floatingCountIconLocalOffset: {x: -0.35, y: 0, z: 0}
-  floatingCountVerticalOffset: 3.5
-  shipFloatingFontSize: 32
-  shipFloatingVerticalOffset: 1.75
-  shipFloatingOffsetHullRadiusMultiplier: 6
-  shipFloatingOffsetMin: 2
-  shipFloatingOffsetMax: 5
-  shipFloatingIconScale: 0.3
-  shipFloatingStackLineSpacing: 1.25
-  shipFloatingSpawnJitterRadius: 0.05
-  shipFloatingLateralDriftMax: 0
-  floatingCountSpawnJitterRadius: 1.05
-  floatingCountSpawnRingStep: 0.32
-  floatingCountMaxSpreadRadius: 3.75
-  floatingCountSpiralPeriod: 40
-  floatingCountLateralDriftMax: 0.55
-  floatingCountStackLineSpacing: 0.82
-  floatingCountDamageFallbackColor: {r: 1, g: 0.3, b: 0.3, a: 1}
-  floatingCountHealthPositiveColor: {r: 0.2, g: 0.9, b: 0.3, a: 1}
-  floatingCountHealthNegativeColor: {r: 0.95, g: 0.25, b: 0.2, a: 1}
-  floatingCountImpactForceColor: {r: 1, g: 0.75, b: 0.2, a: 1}
+  floatingText: {fileID: 11400000, guid: e8b2c4d6a1f34e7b9c0d2e5f8a1b3c4d, type: 2}}
 --- !u!114 &1418200280
 MonoBehaviour:
   m_ObjectHideFlags: 0
