@@ -18,7 +18,10 @@ namespace TitanOrbit.Game
     /// Prefers the live weapon component: <c>origin = weapon.position</c>, aim = <b>unbanked</b>
     /// planar <c>weapon.forward</c> (BankPivot roll stripped) + authored
     /// <see cref="ShipWeaponMountAuthoring.DirectionAngleDeg"/>. That keeps sequential fire aligned
-    /// with each barrel mesh. Falls back to ECS <see cref="ShipWeaponPose"/> when no live GO.
+    /// with each barrel mesh. MEGA hulls skip the live GO and use ghosted turret yaw
+    /// (<see cref="MegaShipGunnerSlotElement.CurrentYawDeg"/>) so mixed Gun / Cannon /
+    /// Missile / Sniper prefabs cannot overwrite the server ray with a parent that still
+    /// faces hull-forward. Falls back to ECS <see cref="ShipWeaponPose"/> when no live GO.
     /// Velocity is <c>aim * BulletSpeed + shipVel</c> (planar). Damage is server-side.
     /// </para>
     /// </summary>
@@ -81,6 +84,20 @@ namespace TitanOrbit.Game
 
             if (!em.Exists(shipEntity))
                 return false;
+
+            // --- MEGA: ghosted turret yaw, not the drawn mesh ---
+            // [TITAN-ORBIT] Live GO forward is wrong on mixed MEGA loadouts. Turret-style
+            // guns rotate a child named Turret / TurretBase; the tagged prefab root (and
+            // any ShipWeaponMountAuthoring on it) stays at bake facing — usually hull
+            // forward. Anticipation + TryReprojectSpawn then overwrite the server ray
+            // with that parent forward, so tracers look like they only fire ahead while
+            // hits still land on the aimed target. Use the same yaw the server wrote
+            // onto MegaShipGunnerSlotElement.CurrentYawDeg.
+            if (IsMegaHull(em, shipEntity)
+                && TryResolveMegaMuzzle(
+                    em, shipEntity, mountIndex,
+                    out fireOrigin, out fireForward, out isDisplaySpace, out shipVel))
+                return true;
 
             // --- Preferred: live weapon component (position + unbanked aim) ---
             int cannonIndex = 0;
@@ -319,6 +336,70 @@ namespace TitanOrbit.Game
 
             shipEntity = Entity.Null;
             return false;
+        }
+
+        /// <summary>
+        /// True when this ship is a live MEGA hull (catalog turret loadout).
+        /// </summary>
+        static bool IsMegaHull(EntityManager em, Entity shipEntity)
+        {
+            return em.HasComponent<MegaShipState>(shipEntity)
+                && em.GetComponentData<MegaShipState>(shipEntity).IsMega;
+        }
+
+        /// <summary>
+        /// MEGA muzzle from hull pose + ghosted mount yaw — same ray Phase B uses.
+        /// <see cref="ShipWeaponMountElement.LocalRotation"/> is not ghosted; the client
+        /// rest pose is the bake facing. Overlay <see cref="MegaShipGunnerSlotElement.CurrentYawDeg"/>
+        /// before <see cref="ShipWeaponPose.TryResolve"/>.
+        /// </summary>
+        static bool TryResolveMegaMuzzle(
+            EntityManager em,
+            Entity shipEntity,
+            int mountIndex,
+            out float3 fireOrigin,
+            out float3 fireForward,
+            out bool isDisplaySpace,
+            out float3 shipVel)
+        {
+            fireOrigin = default;
+            fireForward = new float3(0f, 0f, 1f);
+            isDisplaySpace = false;
+            shipVel = float3.zero;
+
+            if (!TryGetLocalHullTransform(em, shipEntity, out LocalTransform shipTransform, out isDisplaySpace))
+                return false;
+            if (!TryGetMountElementFromBuffer(em, shipEntity, mountIndex, out ShipWeaponMountElement mount))
+                return false;
+
+            // --- Overlay ghosted yaw (server wrote this when the turret slewed) ---
+            if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
+            {
+                var gunners = em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity);
+                if (mountIndex >= 0 && mountIndex < gunners.Length)
+                {
+                    mount.LocalRotation = quaternion.AxisAngle(
+                        math.up(), math.radians(gunners[mountIndex].CurrentYawDeg));
+                }
+            }
+
+            if (!ShipWeaponPose.TryResolve(shipTransform, mount, out fireOrigin, out fireForward))
+                return false;
+
+            if (isDisplaySpace && em.HasComponent<LocalTransform>(shipEntity))
+            {
+                float3 shipLogical = em.GetComponentData<LocalTransform>(shipEntity).Position;
+                fireOrigin = ToLogicalMuzzle(fireOrigin, shipLogical, shipTransform.Position);
+                isDisplaySpace = false;
+            }
+
+            shipVel = GetLocalShipVelocity(em, shipEntity, shipTransform.Position);
+            fireForward.y = 0f;
+            if (math.lengthsq(fireForward) < 0.0001f)
+                fireForward = new float3(0f, 0f, 1f);
+            else
+                fireForward = math.normalize(fireForward);
+            return true;
         }
 
         /// <summary>

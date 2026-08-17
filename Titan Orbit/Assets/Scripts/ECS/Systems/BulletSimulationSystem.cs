@@ -935,31 +935,41 @@ namespace TitanOrbit.ECS
                     state.EntityManager.GetComponentData<GhostOwner>(shipEntity).NetworkId == b.OwnerNetworkId)
                     continue;
 
-                // --- Hit radius from attribute-grown PhysicsCollider (XZ AABB) ---
-                // [TITAN-ORBIT] Component upgrades scale compound hull children via
-                // ShipHullColliderLogic — GetShipHullRadiusWorld only sees tier LocalTransform.Scale
-                // and under-hits fat ships. Same helper as ShipToroidalWorldCollisionLogic.
-                float shipRadius;
-                if (state.EntityManager.HasComponent<PhysicsCollider>(shipEntity))
+                // --- Hit shape from attribute-grown PhysicsCollider ---
+                // [TITAN-ORBIT] MEGA hulls are long compounds — a covering sphere parks
+                // planetary-defense / ship tracers in empty space while damage still applies.
+                // Regular ships keep the XZ sphere (GetShipHullRadiusWorld only sees tier scale).
+                float bulletPad = math.clamp(b.ScaleMultiplier * 0.18f, 0f, 0.85f);
+                float3 shipHit;
+                if (MegaShipCombatAim.TryGetHitBoxWorld(
+                        state.EntityManager, shipEntity, shipTransform.ValueRO,
+                        out float3 boxCenter, out float2 boxHe, out float boxYaw))
                 {
-                    var physicsCollider = state.EntityManager.GetComponentData<PhysicsCollider>(shipEntity);
-                    shipRadius = MegaShipCombatAim.GetHitRadiusWorld(
-                        state.EntityManager, shipEntity, physicsCollider, shipTransform.ValueRO.Scale);
+                    if (!BulletCollision.SegmentHitsOrientedBoxToroidal(
+                            from, to, boxCenter, boxHe + bulletPad, boxYaw, mapW, mapH, out shipHit))
+                        continue;
                 }
                 else
                 {
-                    shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
-                }
+                    float shipRadius;
+                    if (state.EntityManager.HasComponent<PhysicsCollider>(shipEntity))
+                    {
+                        var physicsCollider = state.EntityManager.GetComponentData<PhysicsCollider>(shipEntity);
+                        shipRadius = MegaShipCombatAim.GetHitRadiusWorld(
+                            state.EntityManager, shipEntity, physicsCollider, shipTransform.ValueRO.Scale);
+                    }
+                    else
+                    {
+                        shipRadius = BodyCollisionMath.GetShipHullRadiusWorld(shipTransform.ValueRO.Scale);
+                    }
 
-                // [TITAN-ORBIT] Heavier fire-power tracers (ScaleMultiplier) get a matching
-                // collision pad so big planetary-defense / upgraded shots do not skim past hulls.
-                float bulletPad = math.clamp(b.ScaleMultiplier * 0.18f, 0f, 0.85f);
-                shipRadius += bulletPad;
-                float3 shipCenter = MegaShipCombatAim.GetAimPoint(
-                    state.EntityManager, shipEntity, shipTransform.ValueRO);
-                if (!BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, shipCenter, shipRadius, mapW, mapH, out float3 shipHit))
-                    continue;
+                    shipRadius += bulletPad;
+                    float3 shipCenter = MegaShipCombatAim.GetAimPoint(
+                        state.EntityManager, shipEntity, shipTransform.ValueRO);
+                    if (!BulletCollision.SegmentHitsSphereToroidal(
+                            from, to, shipCenter, shipRadius, mapW, mapH, out shipHit))
+                        continue;
+                }
 
                 if (!TryKeepNearestHit(from, to, shipHit, ref bestT, ref bestHit))
                     continue;

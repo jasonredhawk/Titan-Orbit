@@ -31,8 +31,9 @@ namespace TitanOrbit.ECS
         /// Regular ships: OVERDRIVE intent. Motor latch keys off this + energy; burst
         /// speed/drain only while Thrust is also held.
         /// MEGA hulls: no overdrive. This bit locks heading and aims unoccupied
-        /// auto-guns at <see cref="AimPlanarDir"/> (mouse). Occupied mounts stay
-        /// with their gunner. Fire is still required to shoot.
+        /// auto-guns at the mouse world point (<see cref="AimPlanarDir"/> ×
+        /// <see cref="AimDistance"/>). Occupied mounts stay with their gunner.
+        /// Fire is still required to shoot.
         /// </summary>
         [GhostField]
         public bool Overdrive;
@@ -92,7 +93,22 @@ namespace TitanOrbit.ECS
         [GhostField]
         public int SelectedMineSlot;
 
+        /// <summary>
+        /// Planar distance from the local hull (or turret pad) to the mouse world
+        /// point, in world units. <see cref="AimPlanarDir"/> stays a unit vector so
+        /// existing yaw / turret code does not change.
+        /// <para>
+        /// [TITAN-ORBIT] MEGA Shift auto-guns need this so each muzzle aims at the
+        /// same world point (streams converge) instead of sharing one direction
+        /// (parallel volleys that miss the cursor on wide hulls).
+        /// </para>
+        /// Appended after <see cref="SelectedMineSlot"/> so older command layouts
+        /// still line up on the fields above.
+        /// </summary>
+        [GhostField(Quantization = 10)]
+        public float AimDistance;
+
         public FixedString512Bytes ToFixedString() =>
-            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},m={PlaceMine.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot},n={SelectedMineSlot}]";
+            $"ShipInput[t={Thrust},o={Overdrive},f={Fire.Count},c={CycleBullet.Count},r={FireRocket.Count},m={PlaceMine.Count},b={!DisableSpaceBrakes},d={WantDepositGems},s={SelectedRocketSlot},n={SelectedMineSlot},ad={AimDistance}]";
     }
 }

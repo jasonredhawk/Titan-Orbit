@@ -130,6 +130,100 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
+        /// Swept segment vs a yaw-aligned XZ box on a torus — unwraps the box center
+        /// near segment start. Used for MEGA hulls so tracers stop on the long hull
+        /// instead of a covering sphere that floats in empty space.
+        /// </summary>
+        public static bool SegmentHitsOrientedBoxToroidal(
+            float3 from,
+            float3 to,
+            float3 logicalCenter,
+            float2 halfExtents,
+            float yawRadians,
+            float mapW,
+            float mapH,
+            out float3 hitPoint)
+        {
+            float3 center = UnwrapCenterNear(from, logicalCenter, mapW, mapH);
+            return SegmentHitsOrientedBox(from, to, center, halfExtents, yawRadians, out hitPoint);
+        }
+
+        /// <summary>
+        /// Swept segment vs a yaw-aligned XZ box. Returns the first contact along [from, to].
+        /// Started-inside segments report the start point (same as <see cref="SegmentHitsSphere"/>).
+        /// </summary>
+        public static bool SegmentHitsOrientedBox(
+            float3 from,
+            float3 to,
+            float3 center,
+            float2 halfExtents,
+            float yawRadians,
+            out float3 hitPoint)
+        {
+            hitPoint = to;
+            from.y = center.y;
+            to.y = center.y;
+
+            float2 he = math.max(halfExtents, new float2(0.001f, 0.001f));
+            quaternion rot = quaternion.RotateY(yawRadians);
+            quaternion inv = math.inverse(rot);
+
+            float3 localFrom = math.rotate(inv, from - center);
+            float3 localTo = math.rotate(inv, to - center);
+            float3 delta = localTo - localFrom;
+
+            float tEnter = 0f;
+            float tExit = 1f;
+            if (!ClipSlab(localFrom.x, delta.x, -he.x, he.x, ref tEnter, ref tExit))
+                return false;
+            if (!ClipSlab(localFrom.z, delta.z, -he.y, he.y, ref tEnter, ref tExit))
+                return false;
+            if (tEnter > tExit || tExit < 0f || tEnter > 1f)
+                return false;
+
+            float t = tEnter < 0f && tExit >= 0f ? 0f : math.clamp(tEnter, 0f, 1f);
+            float3 localHit = localFrom + delta * t;
+            localHit.y = 0f;
+            hitPoint = center + math.rotate(rot, localHit);
+            hitPoint.y = center.y;
+            return true;
+        }
+
+        /// <summary>XZ distance from a point to a yaw-aligned box (0 when inside).</summary>
+        public static float DistanceToOrientedBoxXZ(
+            float3 point,
+            float3 center,
+            float2 halfExtents,
+            float yawRadians)
+        {
+            float2 he = math.max(halfExtents, new float2(0.001f, 0.001f));
+            quaternion inv = math.inverse(quaternion.RotateY(yawRadians));
+            float3 local = math.rotate(inv, point - center);
+            float2 closest = math.clamp(new float2(local.x, local.z), -he, he);
+            return math.distance(new float2(local.x, local.z), closest);
+        }
+
+        static bool ClipSlab(float start, float dir, float minB, float maxB, ref float tEnter, ref float tExit)
+        {
+            if (math.abs(dir) < 1e-8f)
+                return start >= minB && start <= maxB;
+
+            float inv = 1f / dir;
+            float t1 = (minB - start) * inv;
+            float t2 = (maxB - start) * inv;
+            if (t1 > t2)
+            {
+                float tmp = t1;
+                t1 = t2;
+                t2 = tmp;
+            }
+
+            tEnter = math.max(tEnter, t1);
+            tExit = math.min(tExit, t2);
+            return tEnter <= tExit;
+        }
+
+        /// <summary>
         /// Parameter t along [from, to] for a contact point (0 = start, 1 = end).
         /// Used when several obstacles intersect the same segment — nearest t wins.
         /// </summary>

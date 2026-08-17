@@ -109,6 +109,7 @@ namespace TitanOrbit.Game
                 _cachedCamera = UnityEngine.Camera.main;
             var cam = _cachedCamera;
             float2 aimDir = float2.zero;
+            float aimDistance = 0f;
             // [HYBRID] Prefer presentation pose (already synced) before ECS ship queries.
             // [TITAN-ORBIT] TryGet… — MPPM Player 2 often has NaN mouse until that Game view is focused;
             // leaving aimDir at zero keeps current facing (ShipPhysicsDriveLogic.AimWorldPoint).
@@ -128,7 +129,10 @@ namespace TitanOrbit.Game
                 toAim.y = 0f;
                 if (toAim.sqrMagnitude > 0.001f)
                 {
-                    Vector3 dir = toAim.normalized;
+                    // Unit direction for hull yaw; distance so MEGA barrels can
+                    // converge on the cursor instead of firing parallel.
+                    aimDistance = toAim.magnitude;
+                    Vector3 dir = toAim / aimDistance;
                     aimDir = new float2(dir.x, dir.z);
                 }
             }
@@ -175,6 +179,7 @@ namespace TitanOrbit.Game
                 SelectedRocketSlot = RocketSlotSelection.SelectedIndex,
                 PlaceMine = placeMine,
                 SelectedMineSlot = MineSlotSelection.SelectedIndex,
+                AimDistance = aimDistance,
             };
         }
 

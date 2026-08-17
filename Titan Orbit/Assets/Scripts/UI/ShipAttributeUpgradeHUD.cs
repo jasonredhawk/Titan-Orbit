@@ -26,6 +26,8 @@ namespace TitanOrbit.UI
     /// and paint three purchase states: Ready (affordable), Locked (not enough gems), Maxed.
     /// Both rows share dark-glass + category-accent chrome (space-gamer HUD). Chip hover opens
     /// a calculation card from <see cref="ShipAbilityStatBreakdown"/> when the STATS row is on.
+    /// MEGA hulls keep the ten buttons visible but disabled (no Extra Level purchases) and hide
+    /// the little tick squares so the strip does not look like upgrades are still available.
     /// Chip values and tip bodies are rebuilt when the ship / ability snapshot key changes
     /// (new ship or ability purchase) — never every frame for live HP/speed/cargo.
     /// The snapshot key latches only after chassis stats <b>and</b> hull ComponentSize are ready
@@ -119,13 +121,15 @@ namespace TitanOrbit.UI
 
         /// <summary>
         /// Purchase affordance for one bottom upgrade slot.
-        /// Ready = can buy; Locked = room to level but not enough gems; Maxed = at ship-level cap.
+        /// Ready = can buy; Locked = room to level but not enough gems; Maxed = at ship-level cap;
+        /// Unavailable = MEGA hull — button stays visible but purchases and tick squares are off.
         /// </summary>
         enum UpgradeSlotVisualState
         {
             Ready = 0,
             Locked = 1,
-            Maxed = 2
+            Maxed = 2,
+            Unavailable = 3
         }
 
         private static readonly string[] Titles =
@@ -208,6 +212,11 @@ namespace TitanOrbit.UI
         private int _lastCost = -1;
         private readonly string[] _lastCostText = new string[10];
         private bool _slotVisualsSeeded;
+        /// <summary>
+        /// Last MEGA vs regular hull we painted. Null until the first Update so a MEGA spawn
+        /// hides ticks immediately instead of waiting for a ship swap.
+        /// </summary>
+        private bool? _lastMegaHud;
 
         /// <summary>Cached minimap rect so layout dirty-checks do not FindFirstObjectByType every frame.</summary>
         private RectTransform _cachedMinimapRect;
@@ -317,7 +326,10 @@ namespace TitanOrbit.UI
             return true;
         }
 
-        /// <summary>True when the local hull is a MEGA (stats visible, purchases blocked).</summary>
+        /// <summary>
+        /// True when the local hull is a MEGA. Stats chips stay useful; Extra Level purchases
+        /// and the tick squares are blocked. Reads <see cref="MegaShipState"/> on the owner ghost.
+        /// </summary>
         static bool IsLocalShipMega()
         {
             var world = EcsGameBridge.ClientWorld;
@@ -819,8 +831,10 @@ namespace TitanOrbit.UI
         }
 
         /// <summary>
-        /// Paints one bottom upgrade button for Ready / Locked / Maxed.
+        /// Paints one bottom upgrade button for Ready / Locked / Maxed / Unavailable.
         /// We drive colours ourselves — Unity's default Button grey fade fights dark-glass chrome.
+        /// Called from Update when a slot's affordance changes (gems cross the cost, hit MAX, or
+        /// the local hull becomes a MEGA).
         /// </summary>
         void ApplyUpgradeSlotVisual(int index, UpgradeSlotVisualState state)
         {
@@ -864,6 +878,21 @@ namespace TitanOrbit.UI
                     interactable = false;
                     break;
 
+                case UpgradeSlotVisualState.Unavailable:
+                    // --- MEGA: visible but not purchasable ---
+                    // [TITAN-ORBIT] Same dim as Locked so the button reads "off", but no amber
+                    // “need more gems” — Extra Levels are not a MEGA feature at all.
+                    accent = Color.Lerp(category, new Color(0.35f, 0.38f, 0.42f, 1f), lockedDim);
+                    accent.a = 0.4f;
+                    fillCol = Color.Lerp(glassFillColor, accent, categoryFillBlend * 0.25f);
+                    fillCol.a = glassFillColor.a * 0.92f;
+                    titleCol = Color.Lerp(readyTitleColor, new Color(0.45f, 0.48f, 0.52f, 1f), lockedDim);
+                    keyCol = new Color(0.4f, 0.45f, 0.52f, 0.65f);
+                    costCol = new Color(0.5f, 0.55f, 0.6f, 0.7f);
+                    gemCol = costCol;
+                    interactable = false;
+                    break;
+
                 case UpgradeSlotVisualState.Locked:
                     // Dimmed category glass + amber cost (“need more gems”).
                     accent = Color.Lerp(category, new Color(0.35f, 0.38f, 0.42f, 1f), lockedDim);
@@ -903,7 +932,9 @@ namespace TitanOrbit.UI
             if (rail != null)
             {
                 Color r = accent;
-                r.a = state == UpgradeSlotVisualState.Locked ? 0.4f : 0.95f;
+                r.a = state == UpgradeSlotVisualState.Locked || state == UpgradeSlotVisualState.Unavailable
+                    ? 0.4f
+                    : 0.95f;
                 rail.color = r;
             }
 
@@ -916,7 +947,9 @@ namespace TitanOrbit.UI
                 btn.interactable = interactable;
 
             // Tick marks: lit ticks match the slot accent (category colour when MAXED).
-            ApplyTickStateColors(index, state, category);
+            // Unavailable hides the whole column — do not paint squares the player cannot buy.
+            if (state != UpgradeSlotVisualState.Unavailable)
+                ApplyTickStateColors(index, state, category);
         }
 
         /// <summary>
@@ -926,6 +959,8 @@ namespace TitanOrbit.UI
         void ApplyTickStateColors(int index, UpgradeSlotVisualState state, Color category)
         {
             if (tickContainers == null || index < 0 || index >= tickContainers.Length || tickContainers[index] == null)
+                return;
+            if (!tickContainers[index].activeSelf)
                 return;
 
             Color lit;
@@ -1696,10 +1731,48 @@ namespace TitanOrbit.UI
             }
         }
 
+        /// <summary>
+        /// Shows or hides the vertical Extra Level tick column on every bottom button.
+        /// MEGA hulls hide the squares (they cannot buy Extra Levels). Regular hulls restore them
+        /// and give the title its reserved right inset so text does not sit under the ticks.
+        /// </summary>
+        /// <param name="mega">True when the local ship is a MEGA this frame.</param>
+        void ApplyMegaButtonChrome(bool mega)
+        {
+            // --- Tick column + title inset ---
+            // [TITAN-ORBIT] The ticks are the 7×7 squares that show how many Extra Levels
+            // remain. Painting them as empty or MAXED on a MEGA looked like upgrades were
+            // still on offer. Buttons stay in the strip; only the squares go away.
+            for (int i = 0; i < 10; i++)
+            {
+                if (tickContainers[i] != null && tickContainers[i].activeSelf == mega)
+                    tickContainers[i].SetActive(!mega);
+
+                if (titleTexts[i] == null)
+                    continue;
+
+                // When ticks are gone, reclaim the right gutter so the ability name can center.
+                RectTransform titleRect = titleTexts[i].rectTransform;
+                float rightInset = mega ? E(4f) : E(tickColumnRightInset);
+                titleRect.offsetMax = new Vector2(-rightInset, -E(titleAreaTopInset));
+            }
+        }
+
+        /// <summary>
+        /// Rebuilds or retints the Extra Level squares on one bottom button.
+        /// Skipped while the column is hidden (MEGA). Called from Update for regular hulls only.
+        /// </summary>
+        /// <param name="index">Ability slot 0–9 (Fire Power … Max People).</param>
+        /// <param name="currentLevel">Purchased Extra Levels for this ability.</param>
+        /// <param name="maxLevel">Ship-level cap (how many squares to show).</param>
+        /// <param name="slotState">Ready / Locked / Maxed — drives lit vs empty colours.</param>
         private void UpdateTickMarks(int index, int currentLevel, int maxLevel, UpgradeSlotVisualState slotState)
         {
             // --- Per-slot tick paint ---
             if (tickContainers == null || index < 0 || index >= tickContainers.Length || tickContainers[index] == null) return;
+            // MEGA chrome hides this column — do not spawn squares behind SetActive(false).
+            if (!tickContainers[index].activeSelf)
+                return;
             maxLevel = Mathf.Clamp(maxLevel, 0, 7);
             Transform container = tickContainers[index].transform;
             int childCount = container.childCount;
@@ -1726,6 +1799,10 @@ namespace TitanOrbit.UI
             ApplyTickStateColors(index, slotState, buttonCategoryColors[index]);
         }
 
+        /// <summary>
+        /// Client HUD tick: show/hide the strip, then paint each slot's cost and Ready/Locked/Maxed
+        /// (or Unavailable on a MEGA). Keyboard 1–0 is handled in LateUpdate via TryUpgrade.
+        /// </summary>
         private void Update()
         {
             // --- Per-frame refresh ---
@@ -1762,17 +1839,25 @@ namespace TitanOrbit.UI
             bool maxChanged = maxUpgrades != _lastMaxUpgrades;
             bool costChanged = cost != _lastCost;
 
+            // MEGA — Extra Levels are not sold. Keep the ten buttons, hide the tick squares.
+            bool mega = IsLocalShipMega();
+            if (_lastMegaHud != mega)
+            {
+                _lastMegaHud = mega;
+                _slotVisualsSeeded = false;
+                ApplyMegaButtonChrome(mega);
+            }
+
             for (int i = 0; i < 10; i++)
             {
                 int current = ShipAttributeUpgradeLogic.GetAttributeLevel(attrs, i);
 
-                // --- Slot state: Ready (buyable) / Locked (broke) / Maxed (cap) ---
-                // MEGAs show the strip for stats but cannot purchase Extra Levels.
-                bool mega = IsLocalShipMega();
+                // --- Slot state: Ready (buyable) / Locked (broke) / Maxed (cap) / Unavailable (MEGA) ---
                 UpgradeSlotVisualState slotState = mega
-                    ? UpgradeSlotVisualState.Maxed
+                    ? UpgradeSlotVisualState.Unavailable
                     : ResolveUpgradeSlotState(current, maxUpgrades, ship.CurrentGems, cost);
-                UpdateTickMarks(i, current, maxUpgrades, slotState);
+                if (!mega)
+                    UpdateTickMarks(i, current, maxUpgrades, slotState);
 
                 if (costLabels[i] == null)
                     continue;

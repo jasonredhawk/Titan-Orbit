@@ -7,6 +7,7 @@ using TitanOrbit.Generation;
 using TitanOrbit.Simulation;
 using Unity.Entities;
 using Unity.Mathematics;
+using Unity.Transforms;
 using UnityEngine;
 
 namespace TitanOrbit.Game
@@ -65,9 +66,7 @@ namespace TitanOrbit.Game
                         obstacle.SourceEntity, logicalHit, obstacle.LogicalCenter,
                         math.max(0.05f, obstacle.Radius), out parent, out worldPos);
                 case BulletCosmeticHitQuery.ObstacleKind.Ship:
-                    return TryResolveProxySphere(
-                        obstacle.SourceEntity, logicalHit, obstacle.LogicalCenter,
-                        math.max(0.05f, obstacle.Radius), out parent, out worldPos);
+                    return TryResolveShipContact(in obstacle, logicalHit, out parent, out worldPos);
                 case BulletCosmeticHitQuery.ObstacleKind.PlanetaryDefense:
                     return TryResolveProxySphere(
                         obstacle.SourceEntity, logicalHit, obstacle.LogicalCenter,
@@ -215,6 +214,41 @@ namespace TitanOrbit.Game
             else
                 dir.Normalize();
             worldPos = parent.position + dir * radius;
+            worldPos.y = parent.position.y;
+            return true;
+        }
+
+        /// <summary>
+        /// Places the flash on the drawn hull at the sim contact. MEGA boxes must not be
+        /// projected onto a covering sphere — that parks the VFX in empty space around
+        /// a long hull while damage still applies.
+        /// </summary>
+        static bool TryResolveShipContact(
+            in BulletCosmeticHitQuery.Obstacle obstacle,
+            float3 logicalHit,
+            out Transform parent,
+            out Vector3 worldPos)
+        {
+            parent = null;
+            worldPos = default;
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null ||
+                !visualizer.TryGetProxy(obstacle.SourceEntity, out GameObject go) ||
+                go == null)
+                return false;
+
+            parent = go.transform;
+            float3 logicalPivot = obstacle.LogicalCenter;
+            World world = EcsGameBridge.ClientWorld ?? EcsGameBridge.ServerWorld;
+            if (world != null && world.IsCreated)
+            {
+                var em = world.EntityManager;
+                if (em.Exists(obstacle.SourceEntity) &&
+                    em.HasComponent<LocalTransform>(obstacle.SourceEntity))
+                    logicalPivot = em.GetComponentData<LocalTransform>(obstacle.SourceEntity).Position;
+            }
+
+            worldPos = ProjectLogicalOntoDisplayCenter(parent.position, logicalHit, logicalPivot);
             worldPos.y = parent.position.y;
             return true;
         }

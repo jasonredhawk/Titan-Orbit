@@ -9,9 +9,12 @@ namespace TitanOrbit.Game
     /// <summary>
     /// Instantiates ship-family chassis prefabs as render-only GameObject proxies and applies
     /// team-colored materials. Called by EcsWorldVisualizer when spawning or respawning ship visuals.
-    /// Strips physics colliders, Rigidbodies, and NetCode MonoBehaviour components so the proxy
-    /// cannot affect simulation — authoritative hull colliders are built on the ECS ghost by
+    /// Strips Rigidbodies and NetCode MonoBehaviour components so the proxy cannot affect
+    /// simulation — authoritative hull colliders are built on the ECS ghost by
     /// <see cref="ShipHullColliderLogic"/> from the same chassis prefab.
+    /// Regular ships also destroy UnityEngine colliders. MEGA proxies keep each module's
+    /// authored Collider / Collider2 / … components (disabled) so they stay visible in the
+    /// Inspector during Play Mode.
     /// <para>
     /// Prefers an exact chassis id from <see cref="PlanetShipFamilyConfig"/> (level + branch ladder)
     /// so moon-orbit upgrade-tree clicks load the hull that was selected, not a generic level placeholder.
@@ -93,7 +96,7 @@ namespace TitanOrbit.Game
             // --- Instantiate proxy ---
             instance = Object.Instantiate(prefab);
             instance.name = prefab.name + "Proxy";
-            StripPhysicsAndNetworking(instance);
+            StripPhysicsAndNetworking(instance, keepColliders: IsMegaVisual(chassisId, prefab));
             ApplyTeamMaterials(family, instance, team);
             return true;
         }
@@ -133,12 +136,36 @@ namespace TitanOrbit.Game
 
         /// <summary>
         /// [TITAN-ORBIT] Proxy must not participate in physics or NetCode — ECS ghost is authoritative.
+        /// MEGA hulls keep authored part colliders (disabled) for Editor inspection.
         /// </summary>
         public static void StripPhysicsAndNetworking(GameObject root)
         {
-            // --- Strip components ---
+            StripPhysicsAndNetworking(root, keepColliders: false);
+        }
+
+        /// <summary>
+        /// [TITAN-ORBIT] Proxy must not participate in physics or NetCode — ECS ghost is authoritative.
+        /// </summary>
+        /// <param name="keepColliders">
+        /// When true, leave UnityEngine colliders on the hierarchy and disable them instead of
+        /// Destroy — used for MEGA module boxes so they still show in the Inspector.
+        /// </param>
+        public static void StripPhysicsAndNetworking(GameObject root, bool keepColliders)
+        {
+            if (root == null)
+                return;
+
+            // --- Colliders ---
             foreach (var col in root.GetComponentsInChildren<Collider>(true))
-                Object.Destroy(col);
+            {
+                if (col == null)
+                    continue;
+                if (keepColliders)
+                    col.enabled = false;
+                else
+                    Object.Destroy(col);
+            }
+
             foreach (var rb in root.GetComponentsInChildren<Rigidbody>(true))
                 Object.Destroy(rb);
             foreach (var component in root.GetComponentsInChildren<Component>(true))
@@ -149,6 +176,26 @@ namespace TitanOrbit.Game
                 if (typeName.Contains("Network") || typeName.Contains("Netcode") || typeName.Contains("ClientNetwork"))
                     Object.Destroy(component);
             }
+        }
+
+        /// <summary>True when this proxy is a MEGA catalog hull (keep module colliders).</summary>
+        static bool IsMegaVisual(string chassisId, GameObject prefab)
+        {
+            if (MegaShipCatalog.IsMegaChassisId(chassisId))
+                return true;
+
+            var catalog = MegaShipCatalog.Load();
+            if (catalog?.entries == null || prefab == null)
+                return false;
+
+            for (int i = 0; i < catalog.entries.Count; i++)
+            {
+                var entry = catalog.entries[i];
+                if (entry != null && entry.prefab == prefab)
+                    return true;
+            }
+
+            return false;
         }
     }
 }

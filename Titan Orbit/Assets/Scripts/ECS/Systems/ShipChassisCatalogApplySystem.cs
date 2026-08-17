@@ -230,7 +230,7 @@ namespace TitanOrbit.ECS
                 && applied.AppliedAttributeSum != attributeSum)
                 return true;
 
-            // MEGA collider bake revision — rebuild once when the core sphere / mass path changes.
+            // MEGA collider bake revision — rebuild once when the part-collider path changes.
             if (em.HasComponent<MegaShipState>(entity)
                 && em.GetComponentData<MegaShipState>(entity).IsMega
                 && applied.AppliedMegaColliderRevision != MegaShipCatalog.HullColliderRevision)
@@ -407,7 +407,7 @@ namespace TitanOrbit.ECS
                 // grown wings/engines collide at their visible size (not authored-only).
                 string familyPrefix = ResolveFamilyPrefix(chassisId);
                 if (isMega)
-                    ShipHullColliderLogic.TryApplyMegaBoundsCollider(em, entity, chassisPrefab, motorMass);
+                    ShipHullColliderLogic.TryApplyMegaPartColliders(em, entity, chassisPrefab, motorMass);
                 else
                     ShipHullColliderLogic.TryApplyChassisCollider(
                         em, entity, chassisPrefab, motorMass, attrs, familyPrefix);

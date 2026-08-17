@@ -35,8 +35,9 @@ namespace TitanOrbit.ECS
     /// </para>
     /// <para>
     /// [TITAN-ORBIT] MEGAs have no overdrive. <see cref="ShipInput.Overdrive"/> (Shift)
-    /// locks hull heading and points unoccupied auto-guns at
-    /// <see cref="ShipInput.AimPlanarDir"/>. Occupied mounts stay with their gunner.
+    /// locks hull heading and points each unoccupied auto-gun at the mouse
+    /// world point (<see cref="ShipInput.AimPlanarDir"/> × <see cref="ShipInput.AimDistance"/>).
+    /// Occupied mounts stay with their gunner.
     /// Fire is still required to spend energy.
     /// </para>
     /// Map size comes from <see cref="MapStateSingleton"/>. Distances use
@@ -189,7 +190,7 @@ namespace TitanOrbit.ECS
                 if (ownerShift)
                 {
                     ClearAimSlots(mega);
-                    AimUnoccupiedMountsAtMouse(mega, xf, mounts, gunners, dt);
+                    AimUnoccupiedMountsAtMouse(mega, xf, mounts, gunners, mapW, mapH, dt);
                     continue;
                 }
 
@@ -721,28 +722,51 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Snap unoccupied auto-guns to the owner's mouse aim. Occupied gunner
-        /// mounts are skipped — those keep the gunner's planar aim.
-        /// Called while Shift is held so free barrels track the cursor before Fire.
+        /// Snap each unoccupied auto-gun toward the owner's mouse <b>point</b>, not a
+        /// shared world direction. Occupied gunner mounts are skipped.
+        /// <para>
+        /// [TITAN-ORBIT] A single hull-center direction makes every barrel fire
+        /// parallel — fine on a tiny fighter, wrong on a wide MEGA. Reconstruct the
+        /// cursor as <c>hull + AimPlanarDir × AimDistance</c> (same space as the
+        /// unbounded hull), then aim each muzzle along the toroidal shortest path
+        /// to that point so streams converge on the cursor.
+        /// </para>
         /// </summary>
         void AimUnoccupiedMountsAtMouse(
             Entity mega,
             in LocalTransform xf,
             DynamicBuffer<ShipWeaponMountElement> mounts,
             DynamicBuffer<MegaShipGunnerSlotElement> gunners,
+            float mapW,
+            float mapH,
             float dt)
         {
-            float3 desired = math.rotate(xf.Rotation, new float3(0f, 0f, 1f));
+            float3 hullForward = math.rotate(xf.Rotation, new float3(0f, 0f, 1f));
+            hullForward.y = 0f;
+            hullForward = math.normalizesafe(hullForward, new float3(0f, 0f, 1f));
+
+            float3 aimPoint = xf.Position + hullForward * 100f;
+            bool haveMousePoint = false;
             if (EntityManager.HasComponent<ShipInput>(mega))
             {
-                float2 aim2 = EntityManager.GetComponentData<ShipInput>(mega).AimPlanarDir;
-                float3 mouseAim = new float3(aim2.x, 0f, aim2.y);
-                if (math.lengthsq(mouseAim) >= 0.01f)
-                    desired = mouseAim;
+                var input = EntityManager.GetComponentData<ShipInput>(mega);
+                float2 aim2 = input.AimPlanarDir;
+                float3 mouseDir = new float3(aim2.x, 0f, aim2.y);
+                float dist = input.AimDistance;
+                if (math.lengthsq(mouseDir) >= 0.01f && dist > 0.05f)
+                {
+                    mouseDir = math.normalize(mouseDir);
+                    aimPoint = xf.Position + mouseDir * dist;
+                    aimPoint.y = xf.Position.y;
+                    haveMousePoint = true;
+                }
+                else if (math.lengthsq(mouseDir) >= 0.01f)
+                {
+                    // Distance missing (old client) — still better than hull forward,
+                    // but barrels stay parallel.
+                    hullForward = math.normalize(mouseDir);
+                }
             }
-
-            desired.y = 0f;
-            desired = math.normalizesafe(desired, new float3(0f, 0f, 1f));
 
             int mountCount = mounts.Length;
             for (int m = 0; m < mountCount; m++)
@@ -751,9 +775,24 @@ namespace TitanOrbit.ECS
                     continue;
 
                 var mount = mounts[m];
+                float3 desired = hullForward;
+                float targetDist = 0f;
+                if (haveMousePoint)
+                {
+                    float3 muzzle = ResolveMuzzle(xf, mount);
+                    float3 offset = ToroidalMapEcs.ShortestOffsetXZ(muzzle, aimPoint, mapW, mapH);
+                    offset.y = 0f;
+                    float dist = math.length(offset);
+                    if (dist >= 0.05f)
+                    {
+                        desired = offset / dist;
+                        targetDist = dist;
+                    }
+                }
+
                 MegaShipWeaponAim.RotateMountTowardWorldDir(in xf, ref mount, desired, dt);
                 mounts[m] = mount;
-                MegaShipWeaponAim.WriteGhostedYaw(gunners, m, in mount);
+                MegaShipWeaponAim.WriteGhostedYaw(gunners, m, in mount, targetDist);
             }
         }
 

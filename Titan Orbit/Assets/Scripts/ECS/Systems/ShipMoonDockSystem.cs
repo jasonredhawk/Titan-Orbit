@@ -18,8 +18,9 @@ namespace TitanOrbit.ECS
     /// Fully-landed ships also ignore other friendly moon dock zones whose spheres briefly overlap
     /// when planet orbit rings cross — stealing the dock used to reset LandingProgress and replay
     /// the client grow/shrink land cinematic. Ships stowed in a planetary defense turret never
-    /// accumulate dock state (pad parks under home-moon paths). Runs before
-    /// <see cref="GemDepositSystem"/> so deposit sees the latest dock flags.
+    /// accumulate dock state (pad parks under home-moon paths). MEGA hulls start landing when any
+    /// part of the collider box is inside the moon orbit shell (pivot-only tests missed long ships).
+    /// Runs before <see cref="GemDepositSystem"/> so deposit sees the latest dock flags.
     /// </summary>
     [WorldSystemFilter(WorldSystemFilterFlags.ServerSimulation)]
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -109,6 +110,17 @@ namespace TitanOrbit.ECS
                     float speed = math.length(new float2(shipKinematics.ValueRO.Velocity.x, shipKinematics.ValueRO.Velocity.z));
                     bool disruptLanding = IsDisruptingLanding(shipInput.ValueRO, speed);
 
+                    // Tight MEGA collider box (half-extents). Regular ships leave this false
+                    // and keep the pivot + 0.8 pad. mapW/mapH from MapStateSingleton.
+                    bool megaHull = MegaShipCombatAim.TryGetOverlapBoxWorld(
+                        state.EntityManager,
+                        shipEntity,
+                        shipTransform.ValueRO,
+                        out float3 hullCenter,
+                        out float2 hullHalfExtents,
+                        out float hullYaw);
+                    float3 zoneRef = megaHull ? hullCenter : shipTransform.ValueRO.Position;
+
                     foreach (var (planetState, planetTransform) in SystemAPI
                                  .Query<RefRO<PlanetState>, RefRO<LocalTransform>>()
                                  .WithAll<PlanetTag>())
@@ -130,8 +142,10 @@ namespace TitanOrbit.ECS
 
                         float planetSize = math.max(0.25f, planetTransform.ValueRO.Scale);
                         // [TITAN-ORBIT] Near-tile moon — same unwrap as motor attach / combat.
+                        // MEGA: unwrap next to the collider center so a long hull across a seam
+                        // still sees the moon copy nearest the part that can enter the zone.
                         float3 moonPos = PlanetOrbitMath.GetMoonWorldPositionNear(
-                            shipTransform.ValueRO.Position,
+                            zoneRef,
                             planetTransform.ValueRO.Position,
                             planetSize,
                             planetState.ValueRO.PlanetLevel,
@@ -140,24 +154,25 @@ namespace TitanOrbit.ECS
                             mapW,
                             mapH);
 
-                        float zoneRadius = PlanetGemMoonMath.GetMoonDockZoneRadiusWorld(
-                            planetSize,
-                            planetState.ValueRO.IsHomePlanet,
-                            ShipRadiusEstimate,
-                            MoonDockZoneMultiplier);
-                        float dist = ToroidalMapEcs.ToroidalDistance(
-                            shipTransform.ValueRO.Position,
+                        bool inThisMoon = IsInMoonOrbitDockZone(
+                            megaHull,
+                            shipTransform.ValueRO,
+                            hullCenter,
+                            hullHalfExtents,
+                            hullYaw,
                             moonPos,
                             mapW,
-                            mapH);
+                            mapH,
+                            planetSize,
+                            planetState.ValueRO.IsHomePlanet);
 
                         // Latch path: still resolve orbital velocity for the docked planet even if
                         // the hull briefly sits outside the zone (attach runs next drive tick).
                         bool isLatchedPlanet = fullyLandedLatch && planetState.ValueRO.PlanetId == landedPlanetId;
-                        if (dist > zoneRadius && !isLatchedPlanet)
+                        if (!inThisMoon && !isLatchedPlanet)
                             continue;
 
-                        if (dist <= zoneRadius)
+                        if (inThisMoon)
                             inMoonZone = true;
 
                         // Planet switch only during approach — never after the fully-landed latch.
@@ -184,7 +199,7 @@ namespace TitanOrbit.ECS
                         // (ship pops to full size beside the moon) while MoonPlanetId stayed set.
                         bool alreadyLanded =
                             landingProgress >= GemEconomyConstants.MoonLandingCompleteThreshold;
-                        if (dist <= zoneRadius && !alreadyLanded)
+                        if (inThisMoon && !alreadyLanded)
                         {
                             if (disruptLanding)
                             {
@@ -233,6 +248,55 @@ namespace TitanOrbit.ECS
                     LandingApproachDelay = approachDelay,
                 };
             }
+        }
+
+        /// <summary>
+        /// True when any part of the ship is inside this moon's orbit / dock shell.
+        /// MEGA hulls use the tight yaw-aligned collider box against the drawn orbit
+        /// zone (mapW/mapH from <see cref="ToroidalMapEcs"/>). Regular ships keep the
+        /// legacy pivot + 0.8 radius pad.
+        /// </summary>
+        /// <param name="megaHull">True when <see cref="MegaShipCombatAim.TryGetHitBoxWorld"/> succeeded.</param>
+        /// <param name="shipXf">Ship transform (pivot used for regular ships).</param>
+        /// <param name="hullCenter">MEGA collider center already unwrapped with the moon.</param>
+        /// <param name="hullHalfExtents">MEGA XZ half-extents in world units.</param>
+        /// <param name="hullYaw">MEGA yaw around Y (radians).</param>
+        /// <param name="moonPos">Moon center already placed on the near tile.</param>
+        /// <param name="mapW">Toroidal map width from <c>MapStateSingleton</c>.</param>
+        /// <param name="mapH">Toroidal map height from <c>MapStateSingleton</c>.</param>
+        /// <param name="planetSize">Planet uniform scale (moon radius input).</param>
+        /// <param name="isHomePlanet">Homeworlds use a larger moon / dock shell.</param>
+        static bool IsInMoonOrbitDockZone(
+            bool megaHull,
+            in LocalTransform shipXf,
+            float3 hullCenter,
+            float2 hullHalfExtents,
+            float hullYaw,
+            float3 moonPos,
+            float mapW,
+            float mapH,
+            float planetSize,
+            bool isHomePlanet)
+        {
+            if (megaHull)
+            {
+                // Drawn moon orbit shell — no 0.8 pad and no 1.05 rim expand. The tight
+                // hull box must actually reach that disc (any part inside starts landing).
+                float zoneRadius = PlanetGemMoonMath.GetMoonVisualShellOuterRadiusWorld(
+                    planetSize, isHomePlanet);
+                float3 moonNear = hullCenter + ToroidalMapEcs.ShortestOffsetXZ(hullCenter, moonPos, mapW, mapH);
+                float hullDist = BulletCollision.DistanceToOrientedBoxXZ(
+                    moonNear, hullCenter, hullHalfExtents, hullYaw);
+                return hullDist <= zoneRadius;
+            }
+
+            float paddedZone = PlanetGemMoonMath.GetMoonDockZoneRadiusWorld(
+                planetSize,
+                isHomePlanet,
+                ShipRadiusEstimate,
+                MoonDockZoneMultiplier);
+            float dist = ToroidalMapEcs.ToroidalDistance(shipXf.Position, moonPos, mapW, mapH);
+            return dist <= paddedZone;
         }
 
         /// <summary>

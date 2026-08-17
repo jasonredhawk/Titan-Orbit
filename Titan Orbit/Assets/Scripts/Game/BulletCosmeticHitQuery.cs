@@ -33,7 +33,7 @@ namespace TitanOrbit.Game
     /// </summary>
     public static class BulletCosmeticHitQuery
     {
-        /// <summary>One sphere (or moon orbiting a planet) the cosmetic tracer may collide with.</summary>
+        /// <summary>One sphere or MEGA hull box the cosmetic tracer may collide with.</summary>
         public struct Obstacle
         {
             /// <summary>
@@ -84,6 +84,17 @@ namespace TitanOrbit.Game
             /// Identifies which pad this sphere belongs to (kill skip uses the HitRpc HP store).
             /// </summary>
             public int SlotIndex;
+
+            /// <summary>
+            /// MEGA XZ half-extents. Zero means sphere-only (regular ships).
+            /// </summary>
+            public float2 BoxHalfExtents;
+
+            /// <summary>MEGA hull yaw around Y when <see cref="HasOrientedBox"/> is true.</summary>
+            public float BoxYawRadians;
+
+            /// <summary>True when this ship should use a yaw-aligned box instead of a covering sphere.</summary>
+            public bool HasOrientedBox => BoxHalfExtents.x > 0.01f && BoxHalfExtents.y > 0.01f;
         }
 
         /// <summary>Obstacle category — mirrors server <c>TryResolveBulletHit</c> order.</summary>
@@ -282,10 +293,18 @@ namespace TitanOrbit.Game
                     if (em.HasComponent<GhostOwner>(entity))
                         networkId = em.GetComponentData<GhostOwner>(entity).NetworkId;
 
-                    // [TITAN-ORBIT] Match server BulletSimulationSystem — attribute-grown
-                    // PhysicsCollider XZ AABB (fallback tier sphere when collider missing).
+                    // [TITAN-ORBIT] Match server BulletSimulationSystem — MEGA uses the
+                    // collider box; regular ships keep the attribute-grown sphere.
                     float shipRadius;
-                    if (em.HasComponent<PhysicsCollider>(entity))
+                    float2 boxHe = float2.zero;
+                    float boxYaw = 0f;
+                    float3 shipCenter = MegaShipCombatAim.GetAimPoint(em, entity, lt);
+                    if (MegaShipCombatAim.TryGetHitBoxWorld(
+                            em, entity, lt, out shipCenter, out boxHe, out boxYaw))
+                    {
+                        shipRadius = math.length(boxHe);
+                    }
+                    else if (em.HasComponent<PhysicsCollider>(entity))
                     {
                         var physicsCollider = em.GetComponentData<PhysicsCollider>(entity);
                         shipRadius = MegaShipCombatAim.GetHitRadiusWorld(
@@ -300,11 +319,13 @@ namespace TitanOrbit.Game
                     {
                         Kind = ObstacleKind.Ship,
                         SourceEntity = entity,
-                        LogicalCenter = MegaShipCombatAim.GetAimPoint(em, entity, lt),
+                        LogicalCenter = shipCenter,
                         Radius = shipRadius,
                         Scale = lt.Scale,
                         TeamOrOwnership = (byte)ship.Team,
                         OwnerNetworkId = networkId,
+                        BoxHalfExtents = boxHe,
+                        BoxYawRadians = boxYaw,
                     });
                     ShipProxyScratch.Add(entity);
                 }
@@ -495,8 +516,18 @@ namespace TitanOrbit.Game
                         radius += math.clamp(scaleMultiplier * 0.18f, 0f, 0.85f);
                     }
 
-                    hit = BulletCollision.SegmentHitsSphereToroidal(
-                        from, to, o.LogicalCenter, radius, s_MapW, s_MapH, out hp);
+                    if (o.Kind == ObstacleKind.Ship && o.HasOrientedBox)
+                    {
+                        float pad = math.clamp(scaleMultiplier * 0.18f, 0f, 0.85f);
+                        hit = BulletCollision.SegmentHitsOrientedBoxToroidal(
+                            from, to, o.LogicalCenter, o.BoxHalfExtents + pad, o.BoxYawRadians,
+                            s_MapW, s_MapH, out hp);
+                    }
+                    else
+                    {
+                        hit = BulletCollision.SegmentHitsSphereToroidal(
+                            from, to, o.LogicalCenter, radius, s_MapW, s_MapH, out hp);
+                    }
                 }
 
                 if (!hit)
@@ -575,20 +606,37 @@ namespace TitanOrbit.Game
                 var o = Obstacles[i];
                 float3 center = o.LogicalCenter;
                 center.y = 0f;
-                float dist = ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH)
-                    ? ToroidalMapEcs.ToroidalDistance(hit, center, s_MapW, s_MapH)
-                    : math.distance(hit, center);
+                float dist;
                 float radius = math.max(0.05f, o.Radius);
-                if (o.Kind == ObstacleKind.Moon)
+                float score;
+                if (o.Kind == ObstacleKind.Ship && o.HasOrientedBox)
                 {
-                    radius = math.max(
-                        radius,
-                        PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
-                            o.Scale, o.IsHomePlanet, o.CurrentShield));
+                    float3 boxCenter = o.LogicalCenter;
+                    if (ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH))
+                        boxCenter = BulletCollision.UnwrapCenterNear(hit, o.LogicalCenter, s_MapW, s_MapH);
+                    dist = BulletCollision.DistanceToOrientedBoxXZ(
+                        hit, boxCenter, o.BoxHalfExtents, o.BoxYawRadians);
+                    score = dist;
+                    if (dist > math.max(2f, math.length(o.BoxHalfExtents) * 0.35f))
+                        continue;
                 }
-                float score = math.abs(dist - radius);
-                if (dist > radius + math.max(2f, radius * 0.35f))
-                    continue;
+                else
+                {
+                    dist = ToroidalMapEcs.IsValidMapSize(s_MapW, s_MapH)
+                        ? ToroidalMapEcs.ToroidalDistance(hit, center, s_MapW, s_MapH)
+                        : math.distance(hit, center);
+                    if (o.Kind == ObstacleKind.Moon)
+                    {
+                        radius = math.max(
+                            radius,
+                            PlanetGemMoonMath.GetMoonBulletHitRadiusWorld(
+                                o.Scale, o.IsHomePlanet, o.CurrentShield));
+                    }
+
+                    score = math.abs(dist - radius);
+                    if (dist > radius + math.max(2f, radius * 0.35f))
+                        continue;
+                }
                 if (score < best)
                 {
                     best = score;
