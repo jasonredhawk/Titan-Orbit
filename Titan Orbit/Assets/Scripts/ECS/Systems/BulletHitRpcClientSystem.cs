@@ -55,6 +55,8 @@ namespace TitanOrbit.ECS
                     HitPosition = hit,
                     Damage = r.Damage,
                     OwnerTeam = r.OwnerTeam,
+                    OwnerNetworkId = r.OwnerNetworkId,
+                    MountIndex = r.MountIndex,
                     BankIndex = r.BankIndex,
                     ScaleMultiplier = r.ScaleMultiplier > 0f ? r.ScaleMultiplier : 1f,
                     AsteroidHealthAfter = r.AsteroidHealthAfter,

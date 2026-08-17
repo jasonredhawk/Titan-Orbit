@@ -102,7 +102,8 @@ namespace TitanOrbit.ECS
             float asteroidHealthAfter = -1f,
             int planetaryDefensePlanetId = 0,
             byte planetaryDefenseSlotIndex = 0,
-            float planetaryDefenseHealthAfter = -1f)
+            float planetaryDefenseHealthAfter = -1f,
+            int mountIndex = -1)
         {
             if (bullet.Sequence == 0)
                 return;
@@ -114,6 +115,8 @@ namespace TitanOrbit.ECS
                 HitPosition = hitPosition,
                 Damage = bullet.Damage,
                 OwnerTeam = bullet.OwnerTeam,
+                OwnerNetworkId = bullet.OwnerNetworkId,
+                MountIndex = mountIndex,
                 BankIndex = bullet.BankIndex,
                 ScaleMultiplier = bullet.ScaleMultiplier > 0f ? bullet.ScaleMultiplier : 1f,
                 AsteroidHealthAfter = asteroidHealthAfter,
@@ -138,6 +141,8 @@ namespace TitanOrbit.ECS
                 PlanetaryDefensePlanetId = planetaryDefensePlanetId,
                 PlanetaryDefenseSlotIndex = planetaryDefenseSlotIndex,
                 PlanetaryDefenseHealthAfter = planetaryDefenseHealthAfter,
+                OwnerNetworkId = bullet.OwnerNetworkId,
+                MountIndex = mountIndex,
             });
             ecb.AddComponent(rpcEntity, new SendRpcCommandRequest { TargetConnection = Entity.Null });
         }

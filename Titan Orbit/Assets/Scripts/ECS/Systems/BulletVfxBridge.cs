@@ -64,6 +64,10 @@ namespace TitanOrbit.ECS
             public float3 HitPosition;
             public float Damage;
             public byte OwnerTeam;
+            /// <summary>Shooter NetworkId — orphan anticipation reconcile when Sequence is unbound.</summary>
+            public int OwnerNetworkId;
+            /// <summary>Firing mount (−1 unknown). Prefer this over nearest-tracer fallback.</summary>
+            public int MountIndex;
             public int BankIndex;
             public float ScaleMultiplier;
             /// <summary>
@@ -121,7 +125,7 @@ namespace TitanOrbit.ECS
         /// Client fire still gates on FireCooldown + energy, so this is not an open RoF spam path.
         /// Older Cap=1 hid every muzzle after the first in a volley.
         /// </summary>
-        public const int MaxLiveAnticipations = 8;
+        public const int MaxLiveAnticipations = 32;
 
         /// <summary>Live anticipation tracers (driver maintains; used to gate local enqueue).</summary>
         public static int LiveAnticipationCount { get; private set; }

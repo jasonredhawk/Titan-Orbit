@@ -5,6 +5,7 @@ using TitanOrbit.ECS;
 using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
+using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
 
@@ -100,6 +101,32 @@ namespace TitanOrbit.Game
 
         /// <summary>Live driver instance, or null when disabled.</summary>
         public static PeopleTransportVfxDriver Active => s_Instance;
+
+        /// <summary>
+        /// Join-safe cosmetic spheres for bullet tracers. Transports are not client ghosts —
+        /// this is the pose the observer actually sees.
+        /// </summary>
+        public static void AppendBulletObstacles(List<BulletCosmeticHitQuery.Obstacle> into)
+        {
+            if (into == null || s_Instance == null)
+                return;
+
+            var flights = s_Instance._flights;
+            for (int i = 0; i < flights.Count; i++)
+            {
+                var f = flights[i];
+                if (f.Amount <= 0.01f)
+                    continue;
+                into.Add(new BulletCosmeticHitQuery.Obstacle
+                {
+                    Kind = BulletCosmeticHitQuery.ObstacleKind.Transport,
+                    SourceEntity = Entity.Null,
+                    LogicalCenter = f.LogicalPos,
+                    Radius = PeopleTransportMath.GetBulletHitRadius(PeopleTransportMath.TransportRadius),
+                    TeamOrOwnership = f.Team,
+                });
+            }
+        }
 
         /// <summary>[UNITY] Attach to session manager when the scene loads.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]

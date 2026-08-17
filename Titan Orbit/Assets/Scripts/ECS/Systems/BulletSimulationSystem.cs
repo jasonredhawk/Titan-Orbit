@@ -248,7 +248,7 @@ namespace TitanOrbit.ECS
                 }
 
                 float3 startPos = b.Position;
-                float3 endPos = startPos + b.Velocity * dt;
+                BulletFlight.GetStep(startPos, b.Velocity, dt, out float3 endPos, out int substeps);
                 // [TITAN-ORBIT] Euclidean step on unbounded flight (not a wrapped-torus path sum).
                 // MaxDistance is a straight-line budget from spawn. Planetary defense sets it via
                 // PlanetaryDefenseAimMath.ComputeBulletMaxDistance — at least engage range, but
@@ -261,11 +261,6 @@ namespace TitanOrbit.ECS
                 bool rangeExpired = (b.Traveled + stepDistance) >= b.MaxDistance;
                 bool wouldExpire = lifetimeExpired || rangeExpired;
 
-                // --- Substep when |vel|*dt is large vs smallest asteroid ---
-                // [TITAN-ORBIT] Starblast continuous feel: split long steps so grazing rocks cannot
-                // fall between discrete samples while flying at shipVel + BulletSpeed.
-                // Upgraded hulls (higher BulletSpeed + shipVel) need far more than 4 samples.
-                int substeps = BulletCollision.ComputeAdvanceSubstepCount(stepDistance);
                 float3 cursor = startPos;
                 bool hit = false;
                 float3 hitPoint = endPos;
@@ -276,8 +271,7 @@ namespace TitanOrbit.ECS
 
                 for (int s = 0; s < substeps; s++)
                 {
-                    float t1 = (s + 1) / (float)substeps;
-                    float3 next = math.lerp(startPos, endPos, t1);
+                    float3 next = BulletFlight.SubstepEnd(startPos, endPos, s, substeps);
                     if (TryResolveBulletHit(
                             ref state, ecb, gemPrefab, gemSpawnServerTime,
                             in b, cursor, next, mapW, mapH, moonElapsed, serverElapsed,
@@ -643,17 +637,6 @@ namespace TitanOrbit.ECS
             double moonElapsed,
             double serverElapsed)
         {
-            float bulletSpeed = weaponCfg.BulletSpeed;
-            float maxDistance = mount.BulletRange > 0.5f
-                ? mount.BulletRange
-                : weaponCfg.BulletMaxDistance;
-            float lifetime = weaponCfg.BulletLifetime;
-            float fireRate = weaponCfg.FireRate;
-            BulletBankCombatLogic.ApplyFireModifiers(
-                bankIndex, ref damage, ref bulletSpeed, ref maxDistance, ref lifetime, ref fireRate,
-                firePowerExtras);
-            float fireRateMul = fireRate / math.max(0.1f, weaponCfg.FireRate);
-
             float fallbackRefDamage = weaponCfg.ReferenceBulletDamage > 0f
                 ? weaponCfg.ReferenceBulletDamage
                 : BulletVisualScale.DefaultReferenceBulletDamage;
@@ -663,34 +646,37 @@ namespace TitanOrbit.ECS
             float refDamage = mount.ReferenceFirePower > 0.01f
                 ? mount.ReferenceFirePower
                 : fallbackRefDamage;
-            float visualScale = BulletVisualScale.ComputePerShotScale(
-                weaponCfg.BulletScale,
+
+            var plan = BulletShotMath.Build(
+                fireOrigin,
+                fireForward,
+                shipVel,
                 damage,
-                bulletSpeed,
+                weaponCfg.BulletSpeed,
+                weaponCfg.BulletMaxDistance,
+                weaponCfg.BulletLifetime,
+                weaponCfg.FireRate,
+                mount.BulletRange,
+                weaponCfg.BulletScale,
                 refDamage,
                 refSpeed,
+                bankIndex,
+                firePowerExtras,
                 categoryUpgradeScale);
 
-            fireForward.y = 0f;
-            if (math.lengthsq(fireForward) < 0.0001f)
-                fireForward = new float3(0f, 0f, 1f);
-            else
-                fireForward = math.normalize(fireForward);
-
-            float3 bulletVel = fireForward * math.max(1f, bulletSpeed) + shipVel;
             uint sequence = BulletVfxBridge.NextSequence();
             var spawn = new BulletElement
             {
-                Position = fireOrigin,
-                Velocity = bulletVel,
-                MaxDistance = math.max(10f, maxDistance),
-                Lifetime = math.max(0.1f, lifetime),
-                Damage = damage,
+                Position = plan.Origin,
+                Velocity = plan.Velocity,
+                MaxDistance = plan.MaxDistance,
+                Lifetime = plan.Lifetime,
+                Damage = plan.Damage,
                 OwnerNetworkId = ownerNetworkId,
                 OwnerTeam = ownerTeam,
                 Sequence = sequence,
                 BankIndex = bankIndex,
-                ScaleMultiplier = visualScale,
+                ScaleMultiplier = plan.VisualScale,
                 FirePowerExtraLevels = firePowerExtras,
             };
 
@@ -705,33 +691,51 @@ namespace TitanOrbit.ECS
                 OwnerTeam = spawn.OwnerTeam,
                 Sequence = spawn.Sequence,
                 BankIndex = bankIndex,
-                ScaleMultiplier = visualScale,
+                ScaleMultiplier = plan.VisualScale,
             });
 
             BulletNetNotify.SendSpawn(ref ecb, spawn, mountIdx);
 
-            // --- Same-frame spawn collide (first-bullet tunnel fix) ---
-            float3 firstEnd = fireOrigin + bulletVel * dt;
-            bool spawnHit = TryResolveBulletHit(
-                ref state, ecb, gemPrefab, gemSpawnServerTime,
-                in spawn, fireOrigin, firstEnd, mapW, mapH, moonElapsed, serverElapsed,
-                out float3 spawnHitPoint, out float spawnAsteroidHealthAfter,
-                out int spawnPdPlanetId, out byte spawnPdSlotIndex,
-                out float spawnPdHealthAfter);
+            // --- Same-frame spawn collide (substepped — MEGA sniper + shipVel can skip a rock) ---
+            BulletFlight.GetStep(plan.Origin, plan.Velocity, dt, out float3 firstEnd, out int spawnSteps);
+            float3 cursor = plan.Origin;
+            bool spawnHit = false;
+            float3 spawnHitPoint = firstEnd;
+            float spawnAsteroidHealthAfter = -1f;
+            int spawnPdPlanetId = 0;
+            byte spawnPdSlotIndex = 0;
+            float spawnPdHealthAfter = -1f;
+            for (int s = 0; s < spawnSteps; s++)
+            {
+                float3 next = BulletFlight.SubstepEnd(plan.Origin, firstEnd, s, spawnSteps);
+                if (TryResolveBulletHit(
+                        ref state, ecb, gemPrefab, gemSpawnServerTime,
+                        in spawn, cursor, next, mapW, mapH, moonElapsed, serverElapsed,
+                        out spawnHitPoint, out spawnAsteroidHealthAfter,
+                        out spawnPdPlanetId, out spawnPdSlotIndex,
+                        out spawnPdHealthAfter))
+                {
+                    spawnHit = true;
+                    break;
+                }
+
+                cursor = next;
+            }
 
             var bullets = state.EntityManager.GetBuffer<BulletElement>(bulletEntity);
             if (spawnHit)
             {
                 BulletNetNotify.SendHit(
                     ref ecb, spawn, spawnHitPoint, spawnAsteroidHealthAfter,
-                    spawnPdPlanetId, spawnPdSlotIndex, spawnPdHealthAfter);
+                    spawnPdPlanetId, spawnPdSlotIndex, spawnPdHealthAfter,
+                    mountIdx);
             }
             else
             {
                 bullets.Add(spawn);
             }
 
-            return fireRateMul;
+            return plan.FireRateMul;
         }
 
         /// <summary>

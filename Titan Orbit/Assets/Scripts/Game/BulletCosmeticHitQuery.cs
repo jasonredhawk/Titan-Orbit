@@ -2,9 +2,11 @@ using System.Collections.Generic;
 using TitanOrbit.Core;
 using TitanOrbit.Data;
 using TitanOrbit.ECS;
+using TitanOrbit.Entities;
 using TitanOrbit.Generation;
 using TitanOrbit.NetCode;
 using TitanOrbit.Simulation;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.NetCode;
@@ -96,6 +98,10 @@ namespace TitanOrbit.Game
             /// <see cref="PlanetaryDefenseHitScan"/>.
             /// </summary>
             PlanetaryDefense = 4,
+            /// <summary>People-transport sphere from the client VFX driver (not a ghost).</summary>
+            Transport = 5,
+            /// <summary>Derived shield-drone sphere from owner ship equipment.</summary>
+            Drone = 6,
         }
 
         /// <summary>How often to rebuild the sphere list while tracers are flying (frames).</summary>
@@ -103,6 +109,14 @@ namespace TitanOrbit.Game
 
         static readonly List<Obstacle> Obstacles = new List<Obstacle>(512);
         static readonly List<Entity> ProxyScratch = new List<Entity>(512);
+        static readonly List<Entity> ShipProxyScratch = new List<Entity>(64);
+        static readonly List<DroneHitTarget> DroneScratch = new List<DroneHitTarget>(64);
+        static readonly List<int> DroneRearScratch = new List<int>(8);
+        static readonly List<int> DroneShieldScratch = new List<int>(8);
+        static readonly List<int> DroneEnemyIdsScratch = new List<int>(16);
+        static readonly Dictionary<int, float3> DroneEnemyPos = new Dictionary<int, float3>(16);
+        static readonly Dictionary<int, DroneSwarmPositioning.ShieldAssignment> DroneShieldAssign =
+            new Dictionary<int, DroneSwarmPositioning.ShieldAssignment>(8);
         static int s_LastRefreshFrame = -1;
         // [TITAN-ORBIT] 0 = unset — never invent 1000×1000 for cosmetic hit tests.
         static float s_MapW;
@@ -150,6 +164,7 @@ namespace TitanOrbit.Game
 
             s_LastRefreshFrame = frame;
             Obstacles.Clear();
+            ShipProxyScratch.Clear();
 
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
@@ -244,7 +259,8 @@ namespace TitanOrbit.Game
                         Kind = ObstacleKind.Asteroid,
                         SourceEntity = entity,
                         LogicalCenter = lt.Position,
-                        Radius = BulletCollision.AsteroidHitRadiusForSweep(lt.Scale),
+                        Radius = BulletCollision.AsteroidHitRadiusForSweep(lt.Scale)
+                                 + BodyCollisionMath.AsteroidVisualDisplacementLocal * math.max(0.1f, lt.Scale),
                         Scale = lt.Scale,
                     });
                     continue;
@@ -286,10 +302,63 @@ namespace TitanOrbit.Game
                         TeamOrOwnership = (byte)ship.Team,
                         OwnerNetworkId = networkId,
                     });
+                    ShipProxyScratch.Add(entity);
                 }
             }
 
+            PeopleTransportVfxDriver.AppendBulletObstacles(Obstacles);
+            AppendDroneObstacles(em);
+
             return Obstacles.Count > 0;
+        }
+
+        /// <summary>
+        /// Derived shield-drone spheres from ship-proxy equipment (no drone ghosts).
+        /// Same <see cref="DroneSwarmHitScan.RebuildTargets"/> math as the server.
+        /// </summary>
+        static void AppendDroneObstacles(EntityManager em)
+        {
+            if (ShipProxyScratch.Count == 0)
+                return;
+
+            var ships = new NativeArray<Entity>(ShipProxyScratch.Count, Allocator.Temp);
+            for (int i = 0; i < ShipProxyScratch.Count; i++)
+                ships[i] = ShipProxyScratch[i];
+
+            double timeSeconds = PlanetGemMoonOrbitClock.TryGetElapsedSeconds(
+                out double elapsed, includeTickFraction: true)
+                ? elapsed
+                : Time.timeAsDouble;
+            DroneSwarmHitScan.RebuildTargets(
+                em,
+                ships,
+                ships,
+                timeSeconds,
+                s_MapW,
+                s_MapH,
+                DroneScratch,
+                DroneRearScratch,
+                DroneShieldScratch,
+                DroneEnemyIdsScratch,
+                DroneEnemyPos,
+                DroneShieldAssign);
+            ships.Dispose();
+
+            for (int i = 0; i < DroneScratch.Count; i++)
+            {
+                var d = DroneScratch[i];
+                float radius = DroneSwarmPositioning.DroneHitSphereRadius
+                    * math.max(0.25f, d.HitRadiusScale > 0.01f ? d.HitRadiusScale : 1f);
+                Obstacles.Add(new Obstacle
+                {
+                    Kind = ObstacleKind.Drone,
+                    SourceEntity = d.ShipEntity,
+                    LogicalCenter = d.Position,
+                    Radius = radius,
+                    TeamOrOwnership = d.Team,
+                    OwnerNetworkId = d.OwnerNetworkId,
+                });
+            }
         }
 
         /// <summary>
@@ -334,7 +403,8 @@ namespace TitanOrbit.Game
             out int hitPlanetId,
             out int hitSlotIndex,
             byte damageFilter = 0,
-            float scaleMultiplier = 1f)
+            float scaleMultiplier = 1f,
+            int bankIndex = 0)
         {
             hitPoint = to;
             hitKind = ObstacleKind.Asteroid;
@@ -360,6 +430,7 @@ namespace TitanOrbit.Game
             float3 delta = to - from;
             float deltaLenSq = math.lengthsq(delta);
             var filter = (BulletDamageFilter)damageFilter;
+            bool healFriendly = BulletBankCombatLogic.HasHealFriendly(bankIndex);
 
             // --- Same-planet turret steal (mirrors server PreferDefenseOverPlanetBody) ---
             // Planet body often wins nearest-t by a hair because the pad sits on the hull.
@@ -374,7 +445,7 @@ namespace TitanOrbit.Game
             for (int i = 0; i < Obstacles.Count; i++)
             {
                 var o = Obstacles[i];
-                if (!PassesTeamFilter(in o, ownerTeam, ownerNetworkId))
+                if (!PassesTeamFilter(in o, ownerTeam, ownerNetworkId, healFriendly))
                     continue;
                 if (!PassesDamageFilter(filter, o.Kind))
                     continue;
@@ -414,6 +485,19 @@ namespace TitanOrbit.Game
                         // Heavy tracers get the same pad the server adds in TryKeepNearestTurretHit.
                         radius = PlanetaryDefenseHitScan.ExpandRadiusForBulletScale(
                             o.Radius, scaleMultiplier);
+                    }
+                    else if (o.Kind == ObstacleKind.Ship)
+                    {
+                        radius += math.clamp(scaleMultiplier * 0.18f, 0f, 0.85f);
+                    }
+                    else if (o.Kind == ObstacleKind.Asteroid)
+                    {
+                        float pad = math.clamp(
+                            BulletCollision.AsteroidSweepPad + scaleMultiplier * 0.05f,
+                            BulletCollision.AsteroidSweepPad,
+                            0.45f);
+                        radius = math.max(radius, BulletCollision.AsteroidHitRadius(o.Scale) + pad
+                            + BodyCollisionMath.AsteroidVisualDisplacementLocal * math.max(0.1f, o.Scale));
                     }
 
                     hit = BulletCollision.SegmentHitsSphereToroidal(
@@ -490,7 +574,7 @@ namespace TitanOrbit.Game
         {
             return TryHitSegment(
                 from, to, ownerTeam, ownerNetworkId, isDisplaySpace,
-                out hitPoint, out _, out _, out _, out _);
+                out hitPoint, out _, out _, out _, out _, 0, 1f, 0);
         }
 
         /// <summary>Keeps the contact closest to segment start (parameter t in [0,1]).</summary>
@@ -521,9 +605,20 @@ namespace TitanOrbit.Game
         /// Planets/asteroids always collide; moons always test (friendly uses body-only radius);
         /// ships and planetary-defense turrets skip friendlies / self.
         /// </summary>
-        static bool PassesTeamFilter(in Obstacle o, byte ownerTeam, int ownerNetworkId)
+        static bool PassesTeamFilter(in Obstacle o, byte ownerTeam, int ownerNetworkId, bool healFriendly)
         {
             if (o.Kind == ObstacleKind.Ship)
+            {
+                if (ownerNetworkId > 0 && o.OwnerNetworkId == ownerNetworkId)
+                    return false;
+                if (healFriendly)
+                    return true;
+                if (o.TeamOrOwnership == ownerTeam)
+                    return false;
+                return true;
+            }
+
+            if (o.Kind == ObstacleKind.Transport || o.Kind == ObstacleKind.Drone)
             {
                 if (o.TeamOrOwnership == ownerTeam)
                     return false;
@@ -564,13 +659,15 @@ namespace TitanOrbit.Game
                     // Mining: rocks only. Pass through ships, drones, and enemy turrets.
                     return kind == ObstacleKind.Asteroid;
                 case BulletDamageFilter.ShipsOnly:
-                    // Fighter: enemy ships + enemy planetary turrets (server also hits drones).
-                    return kind == ObstacleKind.Ship || kind == ObstacleKind.PlanetaryDefense;
+                    // Fighter: enemy ships + their drones + enemy planetary turrets.
+                    return kind == ObstacleKind.Ship
+                           || kind == ObstacleKind.Drone
+                           || kind == ObstacleKind.PlanetaryDefense;
                 case BulletDamageFilter.ShipsAndTransports:
-                    // PD: ships + asteroids. Transports are not in this hybrid list yet —
-                    // server BulletSimulation owns real transport hits. PD bolts do not
-                    // collide with other turrets (same as AllowsHitKind).
-                    return kind == ObstacleKind.Ship || kind == ObstacleKind.Asteroid;
+                    // PD: ships + people transports + asteroids (same as server AllowsHitKind).
+                    return kind == ObstacleKind.Ship
+                           || kind == ObstacleKind.Transport
+                           || kind == ObstacleKind.Asteroid;
                 default:
                     return true;
             }
@@ -695,6 +792,8 @@ namespace TitanOrbit.Game
         {
             Obstacles.Clear();
             ProxyScratch.Clear();
+            ShipProxyScratch.Clear();
+            DroneScratch.Clear();
             s_LastRefreshFrame = -1;
         }
 

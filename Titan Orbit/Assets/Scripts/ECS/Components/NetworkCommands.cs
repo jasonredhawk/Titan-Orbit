@@ -511,6 +511,18 @@ namespace TitanOrbit.ECS
         /// not a PD impact (PlanetId already 0 — field unused).
         /// </summary>
         public float PlanetaryDefenseHealthAfter;
+
+        /// <summary>
+        /// Shooter NetworkId for orphan-tracer reconcile when Sequence was never bound.
+        /// 0 on ram/grind (Sequence 0).
+        /// </summary>
+        public int OwnerNetworkId;
+
+        /// <summary>
+        /// Weapon mount that fired this shot (−1 when unknown / non-weapon).
+        /// Lets clients destroy the matching anticipation without a 12u nearest-fallback.
+        /// </summary>
+        public int MountIndex;
     }
 
     /// <summary>

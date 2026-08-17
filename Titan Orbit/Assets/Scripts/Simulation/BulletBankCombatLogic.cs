@@ -126,6 +126,10 @@ namespace TitanOrbit.Simulation
         public static bool HasHealFriendly(BulletBankProfile profile) =>
             profile != null && profile.HasAbility(BulletBankAbilityType.HealFriendly);
 
+        /// <summary>True when bank <paramref name="bankIndex"/> heals same-team ships.</summary>
+        public static bool HasHealFriendly(int bankIndex) =>
+            TryGetProfile(bankIndex, out BulletBankProfile profile) && HasHealFriendly(profile);
+
         /// <summary>Heal amount per ally hit (0 when the ability is missing).</summary>
         public static float GetHealFriendlyAmount(BulletBankProfile profile, int firePowerExtraLevels = 0)
         {

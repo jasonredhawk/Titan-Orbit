@@ -90,7 +90,14 @@ namespace TitanOrbit.Game
             if (TryResolveLiveWeaponMuzzle(em, shipEntity, mountIndex, cannonIndex,
                     out fireOrigin, out fireForward, out float3 hullPosForVel))
             {
-                isDisplaySpace = true;
+                // Live GO is display-tiled on remotes. Flight is always logical.
+                if (em.HasComponent<LocalTransform>(shipEntity))
+                {
+                    float3 shipLogical = em.GetComponentData<LocalTransform>(shipEntity).Position;
+                    fireOrigin = ToLogicalMuzzle(fireOrigin, shipLogical, hullPosForVel);
+                }
+
+                isDisplaySpace = false;
                 shipVel = GetLocalShipVelocity(em, shipEntity, hullPosForVel);
                 return true;
             }
@@ -104,6 +111,13 @@ namespace TitanOrbit.Game
 
             if (!ShipWeaponPose.TryResolve(shipTransform, mount, out fireOrigin, out fireForward))
                 return false;
+
+            if (isDisplaySpace && em.HasComponent<LocalTransform>(shipEntity))
+            {
+                float3 shipLogical = em.GetComponentData<LocalTransform>(shipEntity).Position;
+                fireOrigin = ToLogicalMuzzle(fireOrigin, shipLogical, shipTransform.Position);
+                isDisplaySpace = false;
+            }
 
             shipVel = GetLocalShipVelocity(em, shipEntity, shipTransform.Position);
             fireForward.y = 0f;
@@ -145,52 +159,131 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Rewrites a local-owner spawn onto current live/presentation muzzle with correct velocity.
-        /// Returns false when the local muzzle cannot be resolved — caller should keep server pose.
+        /// Rewrites a spawn onto the shooter's drawn barrel (local, remote, or MEGA gunner).
+        /// Returns false when the hull/mount cannot be resolved — caller keeps server pose.
+        /// Flight origin is always logical; display unwrap is render-only.
         /// </summary>
-        public static bool TryReprojectLocalOwnerSpawn(ref BulletVfxBridge.SpawnRequest req)
+        public static bool TryReprojectSpawn(ref BulletVfxBridge.SpawnRequest req)
         {
             var world = EcsGameBridge.ClientWorld;
             if (world == null || !world.IsCreated)
                 return false;
 
             var em = world.EntityManager;
-            if (!TryGetLocalShipEntity(em, out Entity shipEntity))
-                return false;
-
-            if (req.OwnerNetworkId <= 0 && em.HasComponent<GhostOwner>(shipEntity))
-                req.OwnerNetworkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
-            if (req.OwnerNetworkId <= 0)
-                req.OwnerNetworkId = EcsGameBridge.GetLocalNetworkId();
-
-            if (!req.IsAnticipation && !IsLocalOwner(req.OwnerNetworkId))
-                return false;
 
             // [TITAN-ORBIT] MountIndex < 0 = world spawn (drone swarm) — keep server pose/velocity.
-            // MountIndex >= 0 reprojects onto the matching live weapon barrel for local feel.
             if (req.MountIndex < 0)
                 return false;
 
-            if (!em.HasComponent<ShipWeaponConfig>(shipEntity))
+            if (!TryResolveShooterHull(
+                    em, req.OwnerNetworkId, req.MountIndex,
+                    out Entity hullEntity, out int mountIndex))
                 return false;
 
-            // Gunner shots are owned by the gunner NetworkId but leave the MEGA barrel.
-            // Do not snap them onto the stowed small-ship hull.
-            if (MegaShipGunnerLogic.IsControllingMegaGun(em, shipEntity))
+            if (!em.HasComponent<ShipWeaponConfig>(hullEntity))
                 return false;
 
-            // [TITAN-ORBIT] Use the spawn's MountIndex — hardcoding 0 snapped every volley bullet
-            // onto the first barrel after upgrade-tree multi-cannon hulls landed.
-            int mountIndex = req.MountIndex;
-            if (!TryResolveMuzzle(em, shipEntity, mountIndex, out float3 origin, out float3 forward,
-                    out bool displaySpace, out float3 shipVel))
+            if (!TryResolveMuzzle(em, hullEntity, mountIndex, out float3 origin, out float3 forward,
+                    out _, out float3 shipVel))
                 return false;
 
-            var weaponCfg = em.GetComponentData<ShipWeaponConfig>(shipEntity);
+            var weaponCfg = em.GetComponentData<ShipWeaponConfig>(hullEntity);
             req.SpawnPosition = origin;
-            req.Velocity = BuildBulletWorldVelocity(forward, weaponCfg.BulletSpeed, shipVel);
-            req.IsDisplaySpace = displaySpace;
+            req.IsDisplaySpace = false;
+
+            // Keep bank-modified speed from the server / anticipation plan. Only rebuild
+            // direction from the drawn barrel + current ship vel.
+            float3 oldPlanar = req.Velocity;
+            oldPlanar.y = 0f;
+            float3 shipPlanar = shipVel;
+            shipPlanar.y = 0f;
+            float bulletSpeed = math.length(oldPlanar - shipPlanar);
+            if (bulletSpeed < 0.5f)
+                bulletSpeed = math.length(oldPlanar);
+            if (bulletSpeed < 0.5f)
+                bulletSpeed = weaponCfg.BulletSpeed;
+            req.Velocity = BuildBulletWorldVelocity(forward, bulletSpeed, shipVel);
             return true;
+        }
+
+        /// <summary>
+        /// Local-owner wrapper — same as <see cref="TryReprojectSpawn"/>.
+        /// </summary>
+        public static bool TryReprojectLocalOwnerSpawn(ref BulletVfxBridge.SpawnRequest req) =>
+            TryReprojectSpawn(ref req);
+
+        /// <summary>
+        /// Display-space barrel tip → logical / unbounded muzzle.
+        /// Local hulls are identity (<c>shipDisplay == shipLogical</c>); remotes are hysteresis-tiled.
+        /// </summary>
+        public static float3 ToLogicalMuzzle(float3 visualMuzzle, float3 shipLogical, float3 shipDisplay)
+        {
+            float3 offset = visualMuzzle - shipDisplay;
+            return new float3(shipLogical.x + offset.x, visualMuzzle.y, shipLogical.z + offset.z);
+        }
+
+        /// <summary>
+        /// Hull that actually fired: MEGA when the owner is a gunner, otherwise the owner's ship.
+        /// Walks hybrid proxies only — no ship <c>ToEntityArray</c>.
+        /// </summary>
+        public static bool TryResolveShooterHull(
+            EntityManager em,
+            int ownerNetworkId,
+            int requestedMount,
+            out Entity hullEntity,
+            out int mountIndex)
+        {
+            hullEntity = Entity.Null;
+            mountIndex = requestedMount;
+            if (!TryFindShipProxyByNetworkId(em, ownerNetworkId, out Entity ownerShip))
+                return false;
+
+            if (em.HasComponent<ShipMegaGunControlState>(ownerShip))
+            {
+                var control = em.GetComponentData<ShipMegaGunControlState>(ownerShip);
+                if (control.IsControlling &&
+                    TryFindShipProxyByNetworkId(em, control.MegaOwnerNetworkId, out Entity mega))
+                {
+                    hullEntity = mega;
+                    mountIndex = control.MountIndex;
+                    return true;
+                }
+            }
+
+            hullEntity = ownerShip;
+            return true;
+        }
+
+        static readonly List<Entity> s_ProxyShipScratch = new List<Entity>(64);
+
+        /// <summary>
+        /// Finds a ship ghost by NetworkId from hybrid proxy keys (join-safe).
+        /// </summary>
+        public static bool TryFindShipProxyByNetworkId(EntityManager em, int networkId, out Entity shipEntity)
+        {
+            shipEntity = Entity.Null;
+            if (networkId <= 0 || ClientJoinSettleCache.ShouldSkipShipEntityQueries)
+                return false;
+
+            var visualizer = EcsWorldVisualizer.Active;
+            if (visualizer == null)
+                return false;
+
+            visualizer.CopyLiveProxyEntities(s_ProxyShipScratch);
+            for (int i = 0; i < s_ProxyShipScratch.Count; i++)
+            {
+                Entity entity = s_ProxyShipScratch[i];
+                if (!em.Exists(entity) || !em.HasComponent<ShipTag>(entity))
+                    continue;
+                if (!em.HasComponent<GhostOwner>(entity))
+                    continue;
+                if (em.GetComponentData<GhostOwner>(entity).NetworkId != networkId)
+                    continue;
+                shipEntity = entity;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -481,18 +574,23 @@ namespace TitanOrbit.Game
             return true;
         }
 
-        /// <summary>Hull GO for mount authorings — registry by network id, else local visual root.</summary>
+        /// <summary>
+        /// Hull GO for mount authorings. Registry first (local + remotes). Local visual root
+        /// is only for the owner ship — never reuse it for a remote MEGA.
+        /// </summary>
         static bool TryGetLocalHullRoot(EntityManager em, Entity shipEntity, out Transform hullRoot)
         {
             hullRoot = null;
             int networkId = 0;
             if (em.HasComponent<GhostOwner>(shipEntity))
                 networkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
-            if (networkId <= 0)
-                networkId = EcsGameBridge.GetLocalNetworkId();
 
             if (networkId > 0 && ShipWeaponProxyRegistry.TryGetHull(networkId, out hullRoot) && hullRoot != null)
                 return true;
+
+            bool isLocal = TryGetLocalShipEntity(em, out Entity local) && local == shipEntity;
+            if (!isLocal)
+                return false;
 
             hullRoot = EcsWorldVisualizer.LocalPlayerShipVisualRoot;
             return hullRoot != null;
@@ -515,22 +613,40 @@ namespace TitanOrbit.Game
                 ? em.GetComponentData<LocalTransform>(shipEntity)
                 : default;
 
+            bool isLocal = TryGetLocalShipEntity(em, out Entity local) && local == shipEntity;
             bool hasPresentation = false;
             LocalTransform presentation = default;
-            Transform visualRoot = EcsWorldVisualizer.LocalPlayerShipVisualRoot;
-            if (visualRoot != null)
+            float scale = hasPredicted ? predicted.Scale : 1f;
+
+            if (isLocal)
             {
-                float scale = hasPredicted ? predicted.Scale : 1f;
-                presentation = LocalTransform.FromPositionRotationScale(
-                    visualRoot.position, visualRoot.rotation, scale);
-                hasPresentation = true;
+                Transform visualRoot = EcsWorldVisualizer.LocalPlayerShipVisualRoot;
+                if (visualRoot != null)
+                {
+                    presentation = LocalTransform.FromPositionRotationScale(
+                        visualRoot.position, visualRoot.rotation, scale);
+                    hasPresentation = true;
+                }
+                else if (ShipDisplayPose.HasLocalPose)
+                {
+                    presentation = LocalTransform.FromPositionRotationScale(
+                        ShipDisplayPose.LocalPosition, ShipDisplayPose.LocalRotation, scale);
+                    hasPresentation = true;
+                }
             }
-            else if (ShipDisplayPose.HasLocalPose)
+            else
             {
-                float scale = hasPredicted ? predicted.Scale : 1f;
-                presentation = LocalTransform.FromPositionRotationScale(
-                    ShipDisplayPose.LocalPosition, ShipDisplayPose.LocalRotation, scale);
-                hasPresentation = true;
+                int networkId = 0;
+                if (em.HasComponent<GhostOwner>(shipEntity))
+                    networkId = em.GetComponentData<GhostOwner>(shipEntity).NetworkId;
+                if (networkId > 0 &&
+                    ShipWeaponProxyRegistry.TryGetHull(networkId, out Transform remoteHull) &&
+                    remoteHull != null)
+                {
+                    presentation = LocalTransform.FromPositionRotationScale(
+                        remoteHull.position, remoteHull.rotation, scale);
+                    hasPresentation = true;
+                }
             }
 
             if (hasPredicted && hasPresentation)
@@ -575,9 +691,14 @@ namespace TitanOrbit.Game
             float3 kin = ReadKinematicsOrZero(em, shipEntity);
             if (math.lengthsq(kin) >= MinKinematicsSpeed * MinKinematicsSpeed)
             {
-                UpdateHullSample(currentHullPos);
+                if (TryGetLocalShipEntity(em, out Entity local) && local == shipEntity)
+                    UpdateHullSample(currentHullPos);
                 return kin;
             }
+
+            // Pose-delta is a single-ship sample — remotes must not overwrite the local hull.
+            if (!TryGetLocalShipEntity(em, out Entity owner) || owner != shipEntity)
+                return kin;
 
             float now = Time.realtimeSinceStartup;
             float3 deltaVel = float3.zero;

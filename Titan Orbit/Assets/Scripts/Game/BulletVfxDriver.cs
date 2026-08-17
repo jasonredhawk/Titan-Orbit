@@ -333,20 +333,16 @@ namespace TitanOrbit.Game
                     // --- Gun / drone / PD: variable-dt dead reckon (already a straight line) ---
                     float3 prevPos = t.LogicalPos;
                     t.RemainingLifetime -= dt;
-                    float3 nextPos = prevPos + t.Velocity * dt;
+                    BulletFlight.GetStep(prevPos, t.Velocity, dt, out float3 nextPos, out int substeps);
                     float step = math.distance(prevPos, nextPos);
                     t.Traveled += step;
 
-                    // Same substep budget as server Phase A — one 20 FPS frame at MEGA
-                    // bulletSpeed can be longer than a small rock if we only test the full segment
-                    // after an interior-start ignore (see BulletCollision.SegmentHitsSphere).
-                    int substeps = BulletCollision.ComputeAdvanceSubstepCount(step);
                     float3 cursor = prevPos;
                     bool cosmeticHit = false;
                     float3 hitPoint = nextPos;
                     for (int s = 0; s < substeps; s++)
                     {
-                        float3 sample = math.lerp(prevPos, nextPos, (s + 1) / (float)substeps);
+                        float3 sample = BulletFlight.SubstepEnd(prevPos, nextPos, s, substeps);
                         if (canPredictHits &&
                             TryPredictCosmeticHit(
                                 in t, cursor, sample,
@@ -667,15 +663,11 @@ namespace TitanOrbit.Game
                     HasFreshLocalPresentationTracer(req.OwnerNetworkId, req.MountIndex))
                     continue;
 
-                // --- Starblast: reproject local muzzle/velocity at CreateTracer time (best-effort) ---
-                // [TITAN-ORBIT] Never drop a server spawn when reproject fails — client ECS mounts are
-                // often empty under hybrid/TransformQuarantine while the server still fires (energy +
-                // hits work). Falling back to server pose/vel restores visible tracers; reproject
-                // (ECS or GO mounts) still corrects feel when it succeeds.
-                bool localShot = req.IsAnticipation ||
-                                 BulletMuzzlePresentation.IsLocalOwner(req.OwnerNetworkId);
-                if (localShot)
-                    BulletMuzzlePresentation.TryReprojectLocalOwnerSpawn(ref req);
+                // --- Starblast: reproject onto the drawn barrel (local + every remote observer) ---
+                // [TITAN-ORBIT] Never drop a server spawn when reproject fails — fall back to
+                // server logical pose. MEGA gunner shots resolve the MEGA hull, not the stowed ship.
+                BulletMuzzlePresentation.TryReprojectSpawn(ref req);
+                req.IsDisplaySpace = false;
 
                 CreateTracer(req);
                 spawned++;
@@ -695,7 +687,7 @@ namespace TitanOrbit.Game
                     continue;
                 if (t.MountIndex != mountIndex)
                     continue;
-                if (t.IsDisplaySpace && t.Traveled < 2f)
+                if (t.Traveled < 2f)
                     return true;
             }
 
@@ -796,10 +788,11 @@ namespace TitanOrbit.Game
                     continue;
                 }
 
-                // --- Fallback: nearest same-team tracer near the impact (orphan anticipation) ---
-                // [TITAN-ORBIT] Adopt can miss when OwnerNetworkId was 0 on enqueue; HitRpc still
-                // has a Sequence the client never bound — without this, the cosmetic tunnels.
-                if (TryFindNearestTracerIndex(hitPos, hit.OwnerTeam, maxDistance: 12f, out int nearIdx))
+                // --- Fallback: owner+mount, then nearest same-team tracer (orphan anticipation) ---
+                // [TITAN-ORBIT] A 12u window missed MEGA range and Local Host double-hit used to
+                // destroy a sibling volley tracer. Prefer the barrel that fired.
+                if (TryFindOwnerMountTracerIndex(hit.OwnerNetworkId, hit.MountIndex, hit.OwnerTeam, out int nearIdx)
+                    || TryFindNearestTracerIndex(hitPos, hit.OwnerTeam, maxDistance: 48f, out nearIdx))
                 {
                     var nearTracer = _tracers[nearIdx];
                     TryShowAsteroidFloatForHitRpc(
@@ -1006,6 +999,34 @@ namespace TitanOrbit.Game
         /// Finds the tracer GameObject closest to a display-space impact for the firing team.
         /// Used when HitRpc Sequence was never bound (orphan anticipation).
         /// </summary>
+        /// <summary>
+        /// Orphan anticipation for this shooter + barrel. Prefer this over nearest-point fallback
+        /// so a MEGA volley sibling is not destroyed by the wrong HitRpc.
+        /// </summary>
+        bool TryFindOwnerMountTracerIndex(int ownerNetworkId, int mountIndex, byte ownerTeam, out int index)
+        {
+            index = -1;
+            if (ownerNetworkId <= 0 || mountIndex < 0)
+                return false;
+
+            float bestTravel = float.MaxValue;
+            for (int i = 0; i < _tracers.Count; i++)
+            {
+                var t = _tracers[i];
+                if (t.OwnerTeam != ownerTeam || t.Go == null)
+                    continue;
+                if (t.OwnerNetworkId != ownerNetworkId || t.MountIndex != mountIndex)
+                    continue;
+                if (t.Traveled < bestTravel)
+                {
+                    bestTravel = t.Traveled;
+                    index = i;
+                }
+            }
+
+            return index >= 0;
+        }
+
         bool TryFindNearestTracerIndex(Vector3 hitDisplayPos, byte ownerTeam, float maxDistance, out int index)
         {
             index = -1;
@@ -1259,14 +1280,15 @@ namespace TitanOrbit.Game
                 to,
                 t.OwnerTeam,
                 t.OwnerNetworkId,
-                t.IsDisplaySpace,
+                isDisplaySpace: false,
                 out hitPoint,
                 out hitKind,
                 out hitEntity,
                 out hitPlanetId,
                 out hitSlotIndex,
                 t.DamageFilter,
-                t.ScaleMultiplier);
+                t.ScaleMultiplier,
+                t.BankIndex);
         }
 
         /// <summary>
