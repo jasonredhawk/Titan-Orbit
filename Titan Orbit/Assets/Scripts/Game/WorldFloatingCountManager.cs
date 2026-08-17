@@ -334,6 +334,30 @@ namespace TitanOrbit.Game
             float now = Time.unscaledTime;
             float window = settings != null ? settings.AccumulationWindowSeconds : 1f;
 
+            // Recalled load flights refund the planet (+N) after leave pops accumulated −N.
+            // Same planet + channel, opposite sign: replace the old total instead of leaving −N up.
+            if (IsPeopleChannel(channel) && avoidRadius > 0.01f &&
+                TryTakeOppositePeopleSlot(targetId, channel, sign, out LiveSlot flipped))
+            {
+                flipped.Accumulated = signedAmount;
+                flipped.Expired = false;
+                flipped.StreakDeadline = now + window;
+                flipped.Team = team;
+                flipped.Channel = channel;
+                flipped.ParkWorld = spawnPos;
+
+                if (!TryBuildFloatingCountVisual(channel, flipped.Accumulated, team, out string flipMessage,
+                        out Sprite flipIcon, out Color flipColor, out _))
+                    return;
+
+                flipped.Popup.RelocateWorld(spawnPos, bodyRadius: 0f);
+                flipped.Popup.Refresh(flipMessage, flipColor, followAnchor: null, followWorldOffset: Vector3.zero,
+                    stackLane: 0, stackSpacing: 0f, flipIcon, bodyRadius: 0f);
+                _slots[key] = flipped;
+                _keyByPopup[flipped.Popup] = key;
+                return;
+            }
+
             if (_slots.TryGetValue(key, out LiveSlot slot) && slot.Popup != null)
             {
                 if (!slot.Expired && now < slot.StreakDeadline)
@@ -351,9 +375,9 @@ namespace TitanOrbit.Game
                         out Color color, out _))
                     return;
 
-                slot.Popup.RelocateWorld(spawnPos, avoidRadius);
+                slot.Popup.RelocateWorld(spawnPos, bodyRadius: 0f);
                 slot.Popup.Refresh(message, color, followAnchor: null, followWorldOffset: Vector3.zero,
-                    stackLane: 0, stackSpacing: 0f, refreshIcon, avoidRadius);
+                    stackLane: 0, stackSpacing: 0f, refreshIcon, bodyRadius: 0f);
                 return;
             }
 
@@ -368,7 +392,7 @@ namespace TitanOrbit.Game
                 $"FloatingCountPopup_{channel}",
                 spawnPos,
                 fontToUse,
-                avoidRadius);
+                bodyRadius: 0f);
             if (popup == null)
                 return;
 
@@ -484,6 +508,30 @@ namespace TitanOrbit.Game
 
         bool IsFloatingCountChannelVisible(FloatingCountChannel channel) =>
             Settings == null || Settings.IsEnabled(channel);
+
+        static bool IsPeopleChannel(FloatingCountChannel channel) =>
+            channel == FloatingCountChannel.PeopleLoad || channel == FloatingCountChannel.PeopleUnload;
+
+        /// <summary>
+        /// Pulls a live opposite-sign people slot off the same planet so a leave→return
+        /// (or return→leave) can start a fresh total on the existing popup.
+        /// </summary>
+        bool TryTakeOppositePeopleSlot(
+            int targetId,
+            FloatingCountChannel channel,
+            int sign,
+            out LiveSlot slot)
+        {
+            slot = null;
+            var opposite = new FloatingCountKey(targetId, channel, -sign);
+            if (!_slots.TryGetValue(opposite, out LiveSlot existing) || existing.Popup == null)
+                return false;
+
+            _slots.Remove(opposite);
+            _keyByPopup.Remove(existing.Popup);
+            slot = existing;
+            return true;
+        }
 
         void ShowOrRefreshLabeled(
             int targetId,
@@ -721,13 +769,14 @@ namespace TitanOrbit.Game
         }
 
         /// <summary>
-        /// Parks a world popup just outside a planet/body sphere, then nudges along screen-up
-        /// so the label sits in empty space beside the mesh rather than rising through it.
+        /// Parks people-transport text on the play plane, just outside the planet sphere
+        /// along the leave/land radial — visible around the planet without sitting above it.
         /// </summary>
         Vector3 PlaceOutsideAvoidSphere(Vector3 hintPosition, Vector3 avoidCenter, float avoidRadius)
         {
-            const float ClearanceMargin = 1.75f;
-            const float ScreenUpNudge = 1.1f;
+            var settings = Settings;
+            float clearance = settings != null ? settings.PlanetClearance : 1.25f;
+            float height = settings != null ? settings.WorldPopupHeight : 0.4f;
 
             Vector3 flatHint = hintPosition;
             flatHint.y = 0f;
@@ -749,10 +798,8 @@ namespace TitanOrbit.Game
                 radial.Normalize();
             }
 
-            float standOff = avoidRadius + ClearanceMargin;
-            Vector3 pos = flatCenter + radial * standOff;
-            pos += GetPlayPlaneUp(Camera.main) * ScreenUpNudge;
-            pos.y = Mathf.Max(hintPosition.y, 4f);
+            Vector3 pos = flatCenter + radial * (avoidRadius + clearance);
+            pos.y = height;
             return pos;
         }
     }

@@ -134,9 +134,11 @@ namespace TitanOrbit.Game
             if (followAnchor == null)
             {
                 Vector3 initPos = transform.position + _worldOffset;
-                lockedY = Mathf.Max(initPos.y + ResolveLiftY(), MinPopupWorldY);
+                lockedY = initPos.y;
                 initPos.y = lockedY;
                 transform.position = initPos;
+                _lockedWorldPos = initPos;
+                _hasLockedWorldPos = true;
             }
             else
             {
@@ -199,9 +201,10 @@ namespace TitanOrbit.Game
             if (followAnchor == null)
             {
                 Vector3 pos = transform.position;
-                lockedY = Mathf.Max(pos.y, MinPopupWorldY);
-                pos.y = lockedY;
+                lockedY = pos.y;
                 transform.position = pos;
+                _lockedWorldPos = pos;
+                _hasLockedWorldPos = true;
             }
             else
             {
@@ -311,7 +314,7 @@ namespace TitanOrbit.Game
             CacheTargetHeight(null);
             worldMotionOffset = Vector3.zero;
             worldPosition += _worldOffset;
-            lockedY = Mathf.Max(worldPosition.y + ResolveLiftY(), MinPopupWorldY);
+            lockedY = worldPosition.y;
             worldPosition.y = lockedY;
             transform.position = worldPosition;
             _lockedWorldPos = worldPosition;

@@ -66,12 +66,15 @@ namespace TitanOrbit.Game
             public byte IsLoad;
             public int SourcePlanetId;
             public int TargetPlanetId;
+            public int TargetShipNetworkId;
             public float Amount;
             public byte Team;
             public float RemainingLifetime;
             public int TileK;
             public int TileM;
             public bool LeavePopupShown;
+            /// <summary>True after the load flight turned around (ship left orbit) and +N was shown.</summary>
+            public bool ReturnPopupShown;
             /// <summary>True after at least one Active pose RPC — suppress local arrive guesses.</summary>
             public bool HasServerPose;
         }
@@ -293,6 +296,7 @@ namespace TitanOrbit.Game
                         new Vector3(forward.x, 0f, forward.z), Vector3.up);
                 }
 
+                TryShowReturnToPlanetPopup(ref f);
                 _flights[i] = f;
             }
 
@@ -373,7 +377,8 @@ namespace TitanOrbit.Game
             // higher N → slightly lower pitch. Destroyed (shot down) stays silent like before.
             if (pose.Status == PeopleTransportPoseStatus.Consumed)
             {
-                if (f.Go != null)
+                // Return-to-planet already showed +N at turnaround — don't count the same people twice.
+                if (f.Go != null && !f.ReturnPopupShown)
                     ShowPeoplePopupAt(f.Go.transform.position, f.Amount, (TeamId)f.Team, in f);
 
                 PlayPeopleArriveSound(in f);
@@ -398,6 +403,7 @@ namespace TitanOrbit.Game
             f.Velocity = pose.Velocity;
             f.Velocity.y = 0f;
             f.HasServerPose = true;
+            TryShowReturnToPlanetPopup(ref f);
             _flights[index] = f;
         }
 
@@ -447,6 +453,7 @@ namespace TitanOrbit.Game
                     IsLoad = req.IsLoad,
                     SourcePlanetId = req.SourcePlanetId,
                     TargetPlanetId = req.TargetPlanetId,
+                    TargetShipNetworkId = req.TargetShipNetworkId,
                     Amount = math.max(1f, req.Amount),
                     Team = req.Team,
                     RemainingLifetime = MaxLifetimeSeconds,
@@ -496,6 +503,47 @@ namespace TitanOrbit.Game
         {
             _flights.RemoveAt(index);
             RebuildSequenceIndex();
+        }
+
+        /// <summary>
+        /// When a load flight turns around (ship left orbit), the planet is refunding people.
+        /// Show +N once and replace the live −N streak on that planet.
+        /// </summary>
+        void TryShowReturnToPlanetPopup(ref Flight f)
+        {
+            if (f.ReturnPopupShown || f.IsLoad == 0 || f.Amount < 0.01f)
+                return;
+            if (!IsLoadReturningToPlanet(in f))
+                return;
+
+            Vector3 pos = f.Go != null
+                ? f.Go.transform.position
+                : new Vector3(f.LogicalPos.x, LiftY, f.LogicalPos.z);
+            ShowPeoplePopupAt(pos, f.Amount, (TeamId)f.Team, in f);
+            f.ReturnPopupShown = true;
+        }
+
+        static bool IsLoadReturningToPlanet(in Flight f)
+        {
+            if (f.TargetShipNetworkId > 0 && f.SourcePlanetId != 0 &&
+                EcsGameBridge.TryIsShipEligibleForPeopleLoad(
+                    f.TargetShipNetworkId, f.SourcePlanetId, out bool eligible))
+                return !eligible;
+
+            if (f.SourcePlanetId == 0 || math.lengthsq(f.Velocity) < 0.05f)
+                return false;
+            if (!EcsGameBridge.TryGetPlanetPoseByPlanetId(f.SourcePlanetId, out float3 planetPos, out _, out _))
+                return false;
+            if (!ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                return false;
+
+            float3 toPlanet = ToroidalMapEcs.ShortestOffsetXZ(f.LogicalPos, planetPos, mapW, mapH);
+            toPlanet.y = 0f;
+            if (math.lengthsq(toPlanet) < 1e-6f)
+                return false;
+            float3 vel = f.Velocity;
+            vel.y = 0f;
+            return math.dot(math.normalizesafe(vel), math.normalizesafe(toPlanet)) > 0.35f;
         }
 
         /// <summary>

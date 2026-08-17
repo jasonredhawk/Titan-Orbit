@@ -63,6 +63,12 @@ namespace TitanOrbit.Game
         [Tooltip("Play-plane gap between stacked types on the same target (damage vs HP vs gems).")]
         public float stackLineSpacing = 1.25f;
 
+        [Header("People / Planet")]
+        [Tooltip("How far past the planet radius people-transport text sits on the play plane.")]
+        public float planetClearance = 1.25f;
+        [Tooltip("World Y for people-transport popups. Keep near 0 so text sits beside the planet, not above it.")]
+        public float worldPopupHeight = 0.4f;
+
         [Header("Streak")]
         [Tooltip("Hits on the same target + type add together while this window is open. Each hit restarts the countdown.")]
         public float accumulationWindowSeconds = 1f;
@@ -78,6 +84,8 @@ namespace TitanOrbit.Game
         public float ResolveLiftY(float targetHeight) =>
             Mathf.Max(0f, targetHeight) + ExtraHeight;
         public float StackLineSpacing => Mathf.Max(0.1f, stackLineSpacing);
+        public float PlanetClearance => Mathf.Max(0f, planetClearance);
+        public float WorldPopupHeight => Mathf.Max(0f, worldPopupHeight);
         public float AccumulationWindowSeconds => Mathf.Max(0.05f, accumulationWindowSeconds);
         public float PostStreakFadeSeconds => Mathf.Max(0.08f, postStreakFadeSeconds);
 
