@@ -1879,7 +1879,10 @@ namespace TitanOrbit.Game
                     && lastBranch == branchIndex
                     && lastTeam == team
                     && string.Equals(lastChassis, chassisId, System.StringComparison.Ordinal);
-                needCreate = !sameHull;
+                bool isDead = em.HasComponent<ShipState>(shipEntity)
+                              && em.GetComponentData<ShipState>(shipEntity).IsDead;
+                // Keep the death-frame hull so debris can snapshot MEGA / current modules.
+                needCreate = !sameHull && !isDead;
                 if (needCreate)
                     DestroyProxy(shipEntity);
             }
@@ -1916,10 +1919,19 @@ namespace TitanOrbit.Game
                 _proxyBranchIndices[shipEntity] = Mathf.Max(0, ship.BranchIndex);
                 // --- Hide dead hulls and ships stowed in planetary defense turrets ---
                 bool stowedInTurret = IsShipHullStowed(em, shipEntity);
-                if (ship.IsDead || stowedInTurret)
+                if (ship.IsDead)
+                {
+                    ShipDeathDebrisDriver.TryBegin(shipEntity, proxyGo, em);
                     proxyGo.SetActive(false);
-                else if (!proxyGo.activeSelf)
-                    proxyGo.SetActive(true);
+                }
+                else
+                {
+                    ShipDeathDebrisDriver.End(shipEntity);
+                    if (stowedInTurret)
+                        proxyGo.SetActive(false);
+                    else if (!proxyGo.activeSelf)
+                        proxyGo.SetActive(true);
+                }
 
                 // --- Local nameplate during Instantiates backlog (seeded path only) ---
                 // [TITAN-ORBIT] Full SyncShipProxyTransforms is skipped while ShouldSkipShipEntityQueries;
@@ -2031,7 +2043,9 @@ namespace TitanOrbit.Game
                         && lastBranch == branchIndex
                         && lastTeam == team
                         && string.Equals(lastChassis, chassisId, System.StringComparison.Ordinal);
-                    if (sameHull)
+                    bool isDead = em.HasComponent<ShipState>(entity)
+                                  && em.GetComponentData<ShipState>(entity).IsDead;
+                    if (sameHull || isDead)
                         continue;
 
                     // Capture contact dir before DestroyProxy clears the old applier.
@@ -2151,10 +2165,19 @@ namespace TitanOrbit.Game
                     _proxyBranchIndices[entity] = Mathf.Max(0, ship.BranchIndex);
                     // --- Hide dead hulls and ships stowed in planetary defense turrets ---
                     bool stowedInTurret = IsShipHullStowed(em, entity);
-                    if (ship.IsDead || stowedInTurret)
+                    if (ship.IsDead)
+                    {
+                        ShipDeathDebrisDriver.TryBegin(entity, go, em);
                         go.SetActive(false);
-                    else if (!go.activeSelf)
-                        go.SetActive(true);
+                    }
+                    else
+                    {
+                        ShipDeathDebrisDriver.End(entity);
+                        if (stowedInTurret)
+                            go.SetActive(false);
+                        else if (!go.activeSelf)
+                            go.SetActive(true);
+                    }
 
                     // --- Nameplate vitals / role candidates (no extra ship gather) ---
                     QueueShipNameplate(em, entity, go, networkId, ship);
@@ -2607,6 +2630,8 @@ namespace TitanOrbit.Game
         /// <summary>Tears down proxy GameObject and clears all per-entity registry entries.</summary>
         void DestroyProxy(Entity entity)
         {
+            ShipDeathDebrisDriver.End(entity);
+
             if (entity == _cachedDedicatedLocalShipEntity)
                 _cachedDedicatedLocalShipEntity = Entity.Null;
 

@@ -10,7 +10,7 @@ namespace TitanOrbit.ECS
 {
     /// <summary>
     /// Server-only: respawns destroyed ships on their team's home orbit ring after
-    /// <see cref="RespawnDelaySeconds"/>. Spawn angle is random but outside the gem-moon dock
+    /// <see cref="RespawnDelaySeconds"/> (10s). Spawn angle is random but outside the gem-moon dock
     /// zone so the Orbit Menu does not open immediately. Triggered when
     /// <see cref="ShipDeathState.RespawnAtTime"/> is reached. Resets vitals, cargo, velocity, and
     /// orbit state; removes ShipDeathState. Runs after <see cref="BulletSimulationSystem"/> so
@@ -22,7 +22,7 @@ namespace TitanOrbit.ECS
     public partial struct ShipRespawnSystem : ISystem
     {
         /// <summary>Seconds between death and respawn at home planet.</summary>
-        public const float RespawnDelaySeconds = 5f;
+        public const float RespawnDelaySeconds = 10f;
 
         public void OnUpdate(ref SystemState state)
         {
@@ -55,6 +55,15 @@ namespace TitanOrbit.ECS
                 float3 spawnPos = ShipHomeSpawnLogic.FindHomeSpawnPosition(
                     state.EntityManager, shipState.ValueRO.Team, orbitElapsed);
 
+                // --- MEGA: restore L6 while still IsDead so clients do not flash the MEGA at spawn ---
+                if (state.EntityManager.HasComponent<MegaShipState>(entity)
+                    && state.EntityManager.GetComponentData<MegaShipState>(entity).IsMega)
+                {
+                    MegaShipStatApplyLogic.RestorePreviousHull(state.EntityManager, entity);
+                    // Restore writes ShipState via EM — refresh the query RW so we do not clobber L6.
+                    shipState.ValueRW = state.EntityManager.GetComponentData<ShipState>(entity);
+                }
+
                 RespawnShip(
                     ref shipState.ValueRW,
                     ref kinematics.ValueRW,
@@ -72,8 +81,13 @@ namespace TitanOrbit.ECS
                     {
                         LastDamagerNetworkId = 0,
                         LastDamageServerTime = 0f,
+                        LastImpulseXZ = float2.zero,
+                        LastImpulsePower = 0f,
                     });
                 }
+
+                if (state.EntityManager.HasComponent<ShipDeathVfxState>(entity))
+                    state.EntityManager.SetComponentData(entity, new ShipDeathVfxState { Packed = 0 });
 
                 ecb.RemoveComponent<ShipDeathState>(entity);
             }

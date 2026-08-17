@@ -142,6 +142,8 @@ namespace TitanOrbit.ECS.Authoring
                 AddComponent(entity, new ShipMatchStats());
                 // [TITAN-ORBIT] Server-only last-damager for kill credit — not ghosted.
                 AddComponent(entity, new ShipCombatAttribution());
+                // [NETCODE] Death-explosion seed + impulse — must bake so GhostField replicates.
+                AddComponent(entity, new ShipDeathVfxState());
                 // [NETCODE] ShipInput is IInputComponentData — replicated from owner client each tick.
                 AddComponent(entity, new ShipInput { DisableSpaceBrakes = false });
                 AddComponent(entity, new ShipKinematics());

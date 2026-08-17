@@ -1,4 +1,5 @@
 using Unity.Entities;
+using Unity.Mathematics;
 
 namespace TitanOrbit.ECS
 {
@@ -63,19 +64,71 @@ namespace TitanOrbit.ECS
             int damagerNetworkId,
             float serverElapsed)
         {
-            // --- Guards ---
-            if (victimShip == Entity.Null || damagerNetworkId <= 0 || !em.Exists(victimShip))
+            StampHit(em, victimShip, damagerNetworkId, serverElapsed, float2.zero, 0f);
+        }
+
+        /// <summary>
+        /// Records last damager and the cosmetic death-impulse of this hit.
+        /// Damager 0 is allowed when only the impulse is known (asteroid).
+        /// </summary>
+        public static void SetLastDamager(
+            EntityManager em,
+            Entity victimShip,
+            int damagerNetworkId,
+            float serverElapsed,
+            float2 impulseXZ,
+            float impulsePower)
+        {
+            StampHit(em, victimShip, damagerNetworkId, serverElapsed, impulseXZ, impulsePower);
+        }
+
+        /// <summary>Stamps kill-impulse only (environment hits with no player damager).</summary>
+        public static void SetLastImpulse(
+            EntityManager em,
+            Entity victimShip,
+            float2 impulseXZ,
+            float impulsePower,
+            float serverElapsed)
+        {
+            StampHit(em, victimShip, 0, serverElapsed, impulseXZ, impulsePower);
+        }
+
+        static void StampHit(
+            EntityManager em,
+            Entity victimShip,
+            int damagerNetworkId,
+            float serverElapsed,
+            float2 impulseXZ,
+            float impulsePower)
+        {
+            if (victimShip == Entity.Null || !em.Exists(victimShip))
                 return;
 
-            // [TITAN-ORBIT] Ensure component exists on older prefabs (server-only, not ghosted).
+            bool hasImpulse = math.lengthsq(impulseXZ) > 1e-8f || impulsePower > 0.0001f;
+            if (damagerNetworkId <= 0 && !hasImpulse)
+                return;
+
             if (!em.HasComponent<ShipCombatAttribution>(victimShip))
                 em.AddComponentData(victimShip, new ShipCombatAttribution());
 
-            em.SetComponentData(victimShip, new ShipCombatAttribution
+            var cur = em.GetComponentData<ShipCombatAttribution>(victimShip);
+            if (damagerNetworkId > 0)
             {
-                LastDamagerNetworkId = damagerNetworkId,
-                LastDamageServerTime = serverElapsed,
-            });
+                cur.LastDamagerNetworkId = damagerNetworkId;
+                cur.LastDamageServerTime = serverElapsed;
+            }
+
+            if (hasImpulse)
+            {
+                cur.LastImpulseXZ = math.lengthsq(impulseXZ) > 1e-8f
+                    ? math.normalizesafe(impulseXZ)
+                    : cur.LastImpulseXZ;
+                cur.LastImpulsePower = math.max(0f, impulsePower);
+                if (serverElapsed > 0f)
+                    cur.LastDamageServerTime = serverElapsed;
+            }
+
+            em.SetComponentData(victimShip, cur);
         }
     }
 }

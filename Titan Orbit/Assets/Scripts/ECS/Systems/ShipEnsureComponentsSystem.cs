@@ -235,6 +235,13 @@ namespace TitanOrbit.ECS
                          .WithEntityAccess())
                 ecb.AddComponent(entity, new ShipBurnOverTimeState());
 
+            // [NETCODE] Prefer baking ShipDeathVfxState. Runtime add covers older SubScenes;
+            // GhostField Packed will not replicate until the ship ghost is rebaked.
+            foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
+                         .WithNone<ShipDeathVfxState>()
+                         .WithEntityAccess())
+                ecb.AddComponent(entity, new ShipDeathVfxState());
+
             foreach (var (_, entity) in SystemAPI.Query<RefRO<ShipTag>>()
                          .WithNone<BurnOverTimeElement>()
                          .WithEntityAccess())

@@ -1,6 +1,7 @@
 using TitanOrbit.Core;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 using Unity.NetCode;
 
 namespace TitanOrbit.ECS
@@ -31,6 +32,10 @@ namespace TitanOrbit.ECS
         public void OnUpdate(ref SystemState state)
         {
             float now = (float)SystemAPI.Time.ElapsedTime;
+            uint tick = 0;
+            if (SystemAPI.TryGetSingleton<NetworkTime>(out var networkTime)
+                && networkTime.ServerTick.IsValid)
+                tick = networkTime.ServerTick.TickIndexForValidTick;
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
             foreach (var (shipState, kinematics, orbitState, entity) in SystemAPI
@@ -65,12 +70,14 @@ namespace TitanOrbit.ECS
                 orbitState.ValueRW.InOrbitRing = false;
                 orbitState.ValueRW.UsingOrbitMotor = false;
 
-                // --- MEGA death: unique hull returns to the store; owner respawns in previous L6 ---
+                // --- MEGA death: free the store slot now; keep the MEGA visual until respawn ---
                 if (state.EntityManager.HasComponent<MegaShipState>(entity)
                     && state.EntityManager.GetComponentData<MegaShipState>(entity).IsMega)
                 {
-                    MegaShipStatApplyLogic.RestorePreviousHull(state.EntityManager, entity);
+                    MegaShipStatApplyLogic.ReleaseMegaOccupancy(state.EntityManager, entity);
                 }
+
+                PackDeathVfx(state.EntityManager, entity, now, tick, ecb);
 
                 // [TITAN-ORBIT] Schedule respawn — ShipRespawnSystem removes this component later.
                 ecb.AddComponent(entity, new ShipDeathState
@@ -81,6 +88,37 @@ namespace TitanOrbit.ECS
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
+        }
+
+        /// <summary>
+        /// Writes <see cref="ShipDeathVfxState.Packed"/> from the last hit impulse + a tick seed
+        /// so every client plays the same cosmetic breakup.
+        /// </summary>
+        static void PackDeathVfx(
+            EntityManager em,
+            Entity victim,
+            float now,
+            uint serverTick,
+            EntityCommandBuffer ecb)
+        {
+            uint seed = serverTick != 0 ? serverTick : (uint)math.max(1, (int)(now * 1000f));
+            if (em.HasComponent<GhostOwner>(victim))
+                seed ^= (uint)em.GetComponentData<GhostOwner>(victim).NetworkId * 747796405u;
+
+            float2 impulse = float2.zero;
+            float power = 0f;
+            if (em.HasComponent<ShipCombatAttribution>(victim))
+            {
+                var attr = em.GetComponentData<ShipCombatAttribution>(victim);
+                impulse = attr.LastImpulseXZ;
+                power = attr.LastImpulsePower;
+            }
+
+            var vfx = new ShipDeathVfxState { Packed = ShipDeathVfxState.Pack(seed, impulse, power) };
+            if (em.HasComponent<ShipDeathVfxState>(victim))
+                em.SetComponentData(victim, vfx);
+            else
+                ecb.AddComponent(victim, vfx);
         }
 
         /// <summary>

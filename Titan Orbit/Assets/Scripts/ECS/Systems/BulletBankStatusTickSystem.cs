@@ -124,9 +124,9 @@ namespace TitanOrbit.ECS
                             asteroidHealthAfter: -1f);
                     }
 
-                    if ((result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead) &&
-                        inst.SourceNetworkId > 0)
+                    if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
                     {
+                        // Burn ticks have no clear direction — keep last impulse, credit damager.
                         ShipMatchStatsLogic.SetLastDamager(
                             state.EntityManager,
                             entity,

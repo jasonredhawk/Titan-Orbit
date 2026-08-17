@@ -248,8 +248,28 @@ namespace TitanOrbit.ECS
         }
 
         /// <summary>
-        /// Restores the previous L6 hull after MEGA death: frees the planet slot, clears MEGA
-        /// flags, and reapplies regular chassis stats.
+        /// On MEGA death: free the planet slot and eject gunners, but keep
+        /// <see cref="MegaShipState.IsMega"/> so clients still show the MEGA hull for the
+        /// cosmetic breakup. Call <see cref="RestorePreviousHull"/> on respawn.
+        /// </summary>
+        public static void ReleaseMegaOccupancy(EntityManager em, Entity shipEntity)
+        {
+            if (!em.HasComponent<MegaShipState>(shipEntity))
+                return;
+
+            var mega = em.GetComponentData<MegaShipState>(shipEntity);
+            if (!mega.IsMega)
+                return;
+
+            MegaShipPlanetLogic.FreeSlot(em, mega.StorePlanetId, mega.MegaSlotIndex);
+            MegaShipGunnerLogic.EjectAllGunners(em, shipEntity);
+            if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
+                em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity).Clear();
+        }
+
+        /// <summary>
+        /// Restores the previous L6 hull after MEGA death: frees the planet slot (idempotent),
+        /// clears MEGA flags, and reapplies regular chassis stats.
         /// </summary>
         public static void RestorePreviousHull(EntityManager em, Entity shipEntity)
         {
@@ -260,8 +280,8 @@ namespace TitanOrbit.ECS
             if (!mega.IsMega)
                 return;
 
-            MegaShipPlanetLogic.FreeSlot(em, mega.StorePlanetId, mega.MegaSlotIndex);
-            MegaShipGunnerLogic.EjectAllGunners(em, shipEntity);
+            ReleaseMegaOccupancy(em, shipEntity);
+            mega = em.GetComponentData<MegaShipState>(shipEntity);
 
             int prevLevel = math.max(1, mega.PreviousLevel);
             int prevBranch = math.max(0, mega.PreviousBranch);
@@ -278,9 +298,6 @@ namespace TitanOrbit.ECS
             ship.BranchIndex = prevBranch;
             ship.ShipFamilyConfigIndex = prevFamily;
             em.SetComponentData(shipEntity, ship);
-
-            if (em.HasBuffer<MegaShipGunnerSlotElement>(shipEntity))
-                em.GetBuffer<MegaShipGunnerSlotElement>(shipEntity).Clear();
 
             ShipStatApplyLogic.ApplyToShip(em, shipEntity, ship.Team, prevLevel, prevBranch);
         }

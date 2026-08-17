@@ -220,7 +220,9 @@ namespace TitanOrbit.ECS
                         ApplyShipSelfDamage(
                             ref state, ref ship, shipEntity, selfDamage, intensity,
                             gemPrefab, shipPos, spawnServerTime, ecb, now,
-                            damagerNetworkId: 0);
+                            damagerNetworkId: 0,
+                            impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
+                            impulsePower: selfDamage);
                         state.EntityManager.SetComponentData(shipEntity, ship);
                     }
                     else
@@ -288,7 +290,9 @@ namespace TitanOrbit.ECS
                         ApplyShipSelfDamage(
                             ref state, ref ship, shipEntity, selfPulse, grindIntensity,
                             gemPrefab, shipPos, spawnServerTime, ecb, now,
-                            damagerNetworkId: 0);
+                            damagerNetworkId: 0,
+                            impulseXZ: new float2(normalShipFromOther.x, normalShipFromOther.z),
+                            impulsePower: selfPulse);
                         state.EntityManager.SetComponentData(shipEntity, ship);
 
                         contact.NextGrindTime = now + pulse;
@@ -473,10 +477,27 @@ namespace TitanOrbit.ECS
             if (state.EntityManager.HasComponent<GhostOwner>(offender))
                 offenderNetworkId = state.EntityManager.GetComponentData<GhostOwner>(offender).NetworkId;
 
+            float2 ramImpulse = float2.zero;
+            if (state.EntityManager.HasComponent<LocalTransform>(offender))
+            {
+                float3 offPos = state.EntityManager.GetComponentData<LocalTransform>(offender).Position;
+                if (ToroidalMapEcs.TryGetMapSize(out float mapW, out float mapH))
+                {
+                    float3 off = ToroidalMapEcs.ShortestOffsetXZ(offPos, vicPos, mapW, mapH);
+                    ramImpulse = new float2(off.x, off.z);
+                }
+                else
+                {
+                    ramImpulse = new float2(vicPos.x - offPos.x, vicPos.z - offPos.z);
+                }
+            }
+
             ApplyShipSelfDamage(
                 ref state, ref vicShip, victim, damage, intensity,
                 gemPrefab, vicPos, spawnServerTime, ecb, now,
-                damagerNetworkId: offenderNetworkId);
+                damagerNetworkId: offenderNetworkId,
+                impulseXZ: ramImpulse,
+                impulsePower: damage);
             state.EntityManager.SetComponentData(victim, vicShip);
         }
 
@@ -720,7 +741,9 @@ namespace TitanOrbit.ECS
             float spawnServerTime,
             EntityCommandBuffer ecb,
             double now,
-            int damagerNetworkId)
+            int damagerNetworkId,
+            float2 impulseXZ = default,
+            float impulsePower = -1f)
         {
             if (damage <= 0.0001f || ship.IsDead)
                 return;
@@ -754,16 +777,17 @@ namespace TitanOrbit.ECS
                 state.EntityManager.SetComponentData(shipEntity, vitals);
             }
 
-            // --- Kill attribution ---
-            // [TITAN-ORBIT] Only stamp when another ship dealt the damage (network id > 0).
-            if ((result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead) &&
-                damagerNetworkId > 0)
+            // --- Kill attribution + death-impulse ---
+            if (result.AppliedHullDamage || result.GemsToExpel > 0.0001f || result.BecameDead)
             {
+                float power = impulsePower >= 0f ? impulsePower : damage;
                 ShipMatchStatsLogic.SetLastDamager(
                     state.EntityManager,
                     shipEntity,
                     damagerNetworkId,
-                    (float)now);
+                    (float)now,
+                    impulseXZ,
+                    power);
             }
 
             if (result.GemsToExpel > 0.0001f)
