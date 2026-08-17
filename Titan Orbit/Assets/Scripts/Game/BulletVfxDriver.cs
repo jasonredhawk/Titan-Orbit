@@ -388,7 +388,7 @@ namespace TitanOrbit.Game
                 if ((displayPos - prevDisplay).sqrMagnitude > 40f * 40f)
                     ResetTrail(t.Go);
 
-                displayPos.y = LiftTracerDisplayY(mountY);
+                displayPos.y = ResolveTracerFlightDisplayY(t.SpawnPos.y, t.Traveled);
                 t.Go.transform.position = displayPos;
                 if (math.lengthsq(displayVel) > 0.0001f)
                     t.Go.transform.rotation = Quaternion.LookRotation(((Vector3)displayVel).normalized, Vector3.up);
@@ -1063,8 +1063,9 @@ namespace TitanOrbit.Game
             float mountY = req.SpawnPosition.y;
             if (!req.IsDisplaySpace && ToroidalDisplay.TryGetReferencePosition(out var reference))
                 spawnDisplay = ToroidalDisplay.ToDisplayPosition(req.SpawnPosition, reference);
-            // Keep weapon-mount height (display unwrap is XZ-only), then lift above a MEGA hull.
-            spawnDisplay.y = LiftTracerDisplayY(mountY);
+            // Muzzle flash stays on the drawn barrel. Tracer Y drops to the play plane in Advance
+            // (MEGA barrels sit high — keeping that Y for the whole flight pierced 3D bodies).
+            spawnDisplay.y = mountY;
 
             // --- Muzzle flash at fire origin ---
             float cameraScale = ResolveMegaCameraVisualScale();
@@ -1118,7 +1119,14 @@ namespace TitanOrbit.Game
                 && profile != null
                 && profile.TryGetStretchLengthFactors(out float startFactor, out float endFactor))
             {
-                // Root already carries drone/ship shot scale — do not shrink length again.
+                // Camera scale is on the tracer root (thickness). Divide length so a 4× MEGA
+                // lens does not push the slug tip through the target before XZ collision.
+                if (cameraScale > 1.01f)
+                {
+                    startFactor /= cameraScale;
+                    endFactor /= cameraScale;
+                }
+
                 if (stretch == null)
                 {
                     if (ClientBulletStretchVisual.TryAttach(go.transform, visual, startFactor, endFactor))
@@ -1186,15 +1194,20 @@ namespace TitanOrbit.Game
         /// <param name="lifetimeSeconds">Authoritative Lifetime from the spawn request / RPC.</param>
         /// <returns>Seconds for RemainingLifetime, or <see cref="float.PositiveInfinity"/> when unused.</returns>
         /// <summary>
-        /// MEGA hulls sit on the play plane and hide Y=0 tracers. Lift cosmetics just above
-        /// the local MEGA box when the follow camera has a hull-top sample.
+        /// Display Y for a flying tracer. Regular muzzles already sit on the play plane.
+        /// MEGA barrels are high on a tall hull — if we keep that Y (or lift to hull-top)
+        /// the slug visually tunnels 3D rocks / moons / ships while XZ collision and
+        /// attached impact VFX stay on the surface. Drop onto Y=0 after leaving the barrel.
         /// </summary>
-        static float LiftTracerDisplayY(float logicalY)
+        static float ResolveTracerFlightDisplayY(float muzzleY, float traveled)
         {
-            var follow = CameraFollowEcs.Instance;
-            if (follow == null || follow.MegaHullTopDisplayY <= 0.01f)
-                return logicalY;
-            return math.max(logicalY, follow.MegaHullTopDisplayY + 1.25f);
+            if (math.abs(muzzleY) < 0.75f)
+                return muzzleY;
+
+            const float dropDistance = 3.5f;
+            float t = math.saturate(traveled / dropDistance);
+            t = t * t * (3f - 2f * t);
+            return math.lerp(muzzleY, 0f, t);
         }
 
         /// <summary>
